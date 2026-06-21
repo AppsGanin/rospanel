@@ -1,0 +1,119 @@
+name: release-please
+
+# On every push to main, release-please maintains a "release PR" that bumps the
+# version + CHANGELOG from the Conventional Commits since the last release.
+# Merging that PR tags the release (vX.Y.Z) and publishes a GitHub Release; the
+# build-release job then attaches the compiled Linux binary to it.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The Go binary embeds web/dist (embed.FS), so the frontend must be built first.
+      - name: Build web assets
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      # Build both arches in one job so web/dist is compiled once and a single
+      # SHA256SUMS holds every asset (parallel matrix jobs would race on --clobber).
+      - name: Build binaries (linux/amd64 + linux/arm64)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+        run: |
+          for arch in amd64 arm64; do
+            GOARCH="$arch" go build -trimpath -o "rospanel-linux-$arch" ./cmd/rospanel/
+          done
+
+      # The self-updater verifies the downloaded binary against this file before
+      # ever executing or swapping it in, so it must ship with every release. Each
+      # arch gets its own "<hex>  <name>" line; the updater picks the one matching
+      # its runtime.GOARCH.
+      - name: Generate checksums
+        run: sha256sum rospanel-linux-amd64 rospanel-linux-arm64 > SHA256SUMS
+
+      - name: Attach binaries + checksums to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" rospanel-linux-amd64 rospanel-linux-arm64 SHA256SUMS --clobber
+
+  # Build the multi-arch Docker image and push it to GHCR on every release.
+  build-image:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derive image tags: vX.Y.Z, X.Y, and latest (image name is lowercased).
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=raw,value=latest
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>РосПанель · Подписка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --brand: #0d4cd3;
+        --brand-dark: #0a3fb0;
+        --red: #ee3f58;
+        --ink: #0a1b2e;
+        --muted: #5b6b7e;
+        --line: rgba(13, 76, 211, 0.08);
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: #eaf3ff;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px 16px;
+        background:
+          radial-gradient(
+            1200px 600px at 80% -10%,
+            #eaf3ff 0%,
+            rgba(234, 243, 255, 0) 60%
+          ),
+          linear-gradient(180deg, #f4f8ff 0%, #eaf1fb 100%);
+        background-attachment: fixed;
+        color: var(--ink);
+        font-family:
+          Mulish,
+          Arial,
+          sans-serif,
+          -apple-system;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 480px;
+        margin: 0 auto;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        font-size: 1.5rem;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.25rem;
+      }
+      .logo .logomark {
+        width: 40px;
+        height: 40px;
+      }
+      .logo .b {
+        color: var(--brand);
+      }
+      .logo .r {
+        color: var(--red);
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 8px;
+        padding: 3px 9px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .badge.brand {
+        background: #e7f0ff;
+        color: var(--brand-dark);
+      }
+      .badge.gray {
+        background: #eef1f5;
+        color: var(--muted);
+      }
+      .badge.green {
+        background: #10b981;
+        color: #fff;
+      }
+      .badge.red {
+        background: #ffe9ed;
+        color: #d93350;
+      }
+      .badge.orange {
+        background: #fff1e6;
+        color: #c2410c;
+      }
+      h1 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 0.5rem 0;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+        margin-bottom: 14px;
+        box-shadow: 0 1px 3px rgba(13, 76, 211, 0.04);
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .qr {
+        background: #fff;
+        padding: 6px;
+        border-radius: 12px;
+        display: flex;
+        justify-content: center;
+      }
+      .qr img {
+        display: block;
+        width: 220px;
+        height: 220px;
+      }
+      .btn {
+        display: block;
+        width: 100%;
+        text-align: center;
+        padding: 12px;
+        border-radius: 12px;
+        border: 0;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.95rem;
+        text-decoration: none;
+        cursor: pointer;
+        margin-top: 10px;
+        font-family: inherit;
+        transition:
+          background 0.15s,
+          transform 0.1s;
+      }
+      .btn:hover {
+        background: var(--brand-dark);
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn.alt {
+        background: #eef3fb;
+        color: var(--brand-dark);
+      }
+      .btn.alt:hover {
+        background: #e1eaf9;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      details {
+        margin-top: 8px;
+        border-top: 1px solid var(--line);
+        padding-top: 8px;
+      }
+      details:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 4px 0;
+      }
+      code {
+        word-break: break-all;
+        font-size: 0.78rem;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .lbl {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .bar {
+        background: #ffffff;
+        border-radius: 999px;
+        height: 8px;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        overflow: hidden;
+      }
+      .bar > div {
+        background: var(--brand);
+        height: 100%;
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 50;
+      }
+      .modal.show {
+        display: flex;
+      }
+      .modal-card {
+        background: #fff;
+        border-radius: 18px;
+        width: 100%;
+        max-width: 420px;
+        max-height: 85vh;
+        overflow: auto;
+        padding: 18px;
+      }
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .modal-head b {
+        font-size: 1.05rem;
+      }
+      .modal-head .x {
+        border: 0;
+        background: 0;
+        font-size: 1.2rem;
+        color: var(--muted);
+        cursor: pointer;
+        line-height: 1;
+      }
+      .apps {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .app {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #eef3fb;
+        color: var(--brand-dark);
+        font-weight: 700;
+        text-decoration: none;
+        transition: background 0.15s;
+      }
+      .app:hover {
+        background: #e1eaf9;
+      }
+      .app .plat {
+        font-size: 0.72rem;
+        font-weight: 600;
+        opacity: 0.7;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">
+        <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
+        <span><span class="r">Рос</span><span class="b">Панель</span></span>
+      </div>
+      <h1>Привет{{if .Name}}, {{.Name}}{{end}} 👋</h1>
+
+      <div class="badges">
+        <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
+        {{if .Online}}<span class="badge green">● онлайн</span>{{else}}<span
+          class="badge gray"
+          >○ офлайн{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
+        >{{end}}
+        <span class="badge brand"
+          >Трафик: {{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</span
+        >
+        {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
+      </div>
+      {{if .HasLimit}}
+      <div class="bar"><div style="width:{{.UsedPct}}%"></div></div>
+      {{end}}
+
+      <div class="card">
+        <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
+        <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
+          Отсканируйте QR в приложении или нажмите кнопку ниже
+        </p>
+        <button class="btn" onclick="copy('{{.SubURL}}', this)">
+          Скопировать ссылку подписки
+        </button>
+        <button
+          class="btn alt"
+          onclick="document.getElementById('apps').classList.add('show')"
+        >
+          Открыть в приложении
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="lbl" style="margin-bottom: 8px">Отдельные конфиги</div>
+        {{range .Links}}
+        <details>
+          <summary>{{.Proto}}</summary>
+          <p><code>{{.URL}}</code></p>
+          <button class="btn alt" onclick="copy('{{.URL}}', this)">
+            Скопировать {{.Proto}}
+          </button>
+        </details>
+        {{end}}
+      </div>
+
+    <div
+      id="apps"
+      class="modal"
+      onclick="if (event.target === this) this.classList.remove('show');"
+    >
+      <div class="modal-card">
+        <div class="modal-head">
+          <b>Выберите приложение</b>
+          <button
+            class="x"
+            onclick="document.getElementById('apps').classList.remove('show')"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="apps">
+          {{range $i, $d := .DeepLinks}}<a class="app" href="{{$d.Href}}"
+            ><span>{{$d.Label}}</span
+            ><span class="plat">{{$d.Platform}}</span></a
+          >{{end}}
+        </div>
+      </div>
+    </div>
+    <script>
+      function copy(t, el) {
+        navigator.clipboard.writeText(t).then(function () {
+          var o = el.textContent;
+          el.textContent = "Скопировано";
+          setTimeout(function () {
+            el.textContent = o;
+          }, 1200);
+        });
+      }
+    </script>
+  </body>
+</html>

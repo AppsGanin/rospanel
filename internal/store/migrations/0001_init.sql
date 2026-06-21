@@ -1,0 +1,182 @@
+-- Consolidated initial schema — the full final schema in one file. Folds in every
+-- later migration: hysteria masquerade [dropped/unused], hop_interval, REALITY,
+-- per-connection fingerprints, the proxy-mode inbound, the anti-DPI hardening
+-- columns, the configurable subscription path, and the forced default-password-change
+-- gate. Defaults that earlier migrations applied as post-insert UPDATEs are baked
+-- directly into the column DEFAULT clauses.
+--
+-- NOTE: the migration runner skips any file whose name is already recorded in
+-- schema_migrations, so installs created before this consolidation keep their data
+-- untouched — this file only runs on a fresh database, and records of since-removed
+-- migration files (e.g. 0002/0003) are simply ignored. Older installs retain any
+-- now-unused orphan columns (hysteria_masquerade, reality_dest_port) harmlessly.
+
+CREATE TABLE settings (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+
+    -- TLS / host. Configured in the panel (setup wizard → Домен). ACME is the
+    -- only real-cert mode; a self-signed fallback is used until ACME succeeds.
+    host              TEXT    NOT NULL DEFAULT '',
+    sni               TEXT    NOT NULL DEFAULT '',
+    tls_mode          TEXT    NOT NULL DEFAULT 'acme',
+    acme_email        TEXT    NOT NULL DEFAULT '',
+    acme_provider     TEXT    NOT NULL DEFAULT 'letsencrypt', -- "letsencrypt" | "zerossl"
+    zerossl_eab_kid   TEXT    NOT NULL DEFAULT '',            -- ZeroSSL External Account Binding KID
+    zerossl_eab_hmac  TEXT    NOT NULL DEFAULT '',            -- ZeroSSL EAB HMAC key (base64url)
+    cert_path         TEXT    NOT NULL DEFAULT '',
+    key_path          TEXT    NOT NULL DEFAULT '',
+
+    -- Ports / transport plumbing.
+    vless_port        INTEGER NOT NULL DEFAULT 443,
+    ws_path           TEXT    NOT NULL DEFAULT '',      -- VLESS→Trojan fallback path
+    trojan_port       INTEGER NOT NULL DEFAULT 10001,   -- loopback Trojan-WS inbound
+    hysteria_port     INTEGER NOT NULL DEFAULT 443,
+    hop_start         INTEGER NOT NULL DEFAULT 443,
+    hop_end           INTEGER NOT NULL DEFAULT 443,    -- hop_end == port ⇒ no port-hopping
+    hop_interval      TEXT    NOT NULL DEFAULT '5-10',   -- port-hopping rotation (sec, "min-max")
+
+    -- Panel + masquerade.
+    panel_secret_path TEXT    NOT NULL DEFAULT '',
+    decoy_template    TEXT    NOT NULL DEFAULT 'coming-soon',
+
+    -- Per-protocol toggles.
+    vless_enabled     INTEGER NOT NULL DEFAULT 1,
+    trojan_enabled    INTEGER NOT NULL DEFAULT 1,
+    hysteria_enabled  INTEGER NOT NULL DEFAULT 1,
+    reality_enabled   INTEGER NOT NULL DEFAULT 1,
+
+    -- First-run wizard + operator timezone (anchors the local-day stats boundary).
+    setup_done        INTEGER NOT NULL DEFAULT 0,
+    timezone          TEXT    NOT NULL DEFAULT '',
+
+    -- Forced default-password change. Set to 1 at first-run bootstrap (when the
+    -- default admin/admin is created) and cleared the instant the password is
+    -- changed. While set, requireAuth allows only the password-change / restore
+    -- endpoints, so a panel whose secret path leaks before first setup can't be
+    -- driven with the default credentials.
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+
+    -- Subscription delivery (Settings → Подписки). Auto-routing is on by default
+    -- with the RoscomVPN upstream URLs pre-filled.
+    sub_path            TEXT    NOT NULL DEFAULT 'sub',  -- URL prefix for /<sub_path>/<token>
+    sub_base64          INTEGER NOT NULL DEFAULT 1,
+    sub_email_in_name   INTEGER NOT NULL DEFAULT 0,
+    sub_title           TEXT    NOT NULL DEFAULT 'RosPanel',
+    sub_routing         INTEGER NOT NULL DEFAULT 1,
+    sub_routing_happ    TEXT    NOT NULL DEFAULT 'https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/HAPP/DEFAULT.DEEPLINK',
+    sub_routing_incy    TEXT    NOT NULL DEFAULT 'https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/INCY/DEFAULT.DEEPLINK',
+    sub_routing_mihomo  TEXT    NOT NULL DEFAULT 'https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/MIHOMO/template_remnawave.yaml',
+    sub_update_interval INTEGER NOT NULL DEFAULT 1,
+
+    -- Xray DNS servers (defaults to Cloudflare + Google, newline-separated).
+    xray_dns          TEXT    NOT NULL DEFAULT ('1.1.1.1' || char(10) || '8.8.8.8'),
+
+    -- Cloudflare WARP outbound (WireGuard), provisioned on first enable.
+    warp_enabled      INTEGER NOT NULL DEFAULT 0,
+    warp_private_key  TEXT    NOT NULL DEFAULT '',
+    warp_public_key   TEXT    NOT NULL DEFAULT '',
+    warp_endpoint     TEXT    NOT NULL DEFAULT '',
+    warp_address_v4   TEXT    NOT NULL DEFAULT '',
+    warp_address_v6   TEXT    NOT NULL DEFAULT '',
+    warp_reserved     TEXT    NOT NULL DEFAULT '',
+
+    -- VLESS + gRPC + REALITY (separate port; borrows a real site's TLS instead of
+    -- our cert). Keys / shortId / serviceName are generated by the panel on boot.
+    reality_port         INTEGER NOT NULL DEFAULT 8443,
+    reality_dest         TEXT    NOT NULL DEFAULT 'max.ru',
+    reality_private_key  TEXT    NOT NULL DEFAULT '',
+    reality_public_key   TEXT    NOT NULL DEFAULT '',
+    reality_short_id     TEXT    NOT NULL DEFAULT '',
+    reality_service_name TEXT    NOT NULL DEFAULT '',
+
+    -- Structured routing config (block / direct / WARP categories) as JSON.
+    routing_config    TEXT    NOT NULL DEFAULT '',
+
+    -- Per-connection uTLS fingerprint embedded in share links (fp=). Hysteria2
+    -- (QUIC) has no uTLS.
+    vless_fp          TEXT    NOT NULL DEFAULT 'firefox',
+    trojan_fp         TEXT    NOT NULL DEFAULT 'firefox',
+    reality_fp        TEXT    NOT NULL DEFAULT 'firefox',
+
+    -- Forward-proxy inbound (Режим прокси): lets another RosPanel chain its egress
+    -- through this server (point its proxy pool at host:port).
+    proxy_mode_enabled INTEGER NOT NULL DEFAULT 0,
+    proxy_mode_type    TEXT    NOT NULL DEFAULT 'socks', -- "socks" | "http"
+    proxy_mode_port    INTEGER NOT NULL DEFAULT 1080,
+    proxy_mode_user    TEXT    NOT NULL DEFAULT '',
+    proxy_mode_pass    TEXT    NOT NULL DEFAULT '',
+
+    -- Anti-DPI transport hardening (Settings → Подключения). tls_fragment /
+    -- block_quic shape the generated client configs; tls_min13 / reality_max_time_diff
+    -- change the server inbound.
+    tls_fragment          INTEGER NOT NULL DEFAULT 1,
+    tls_min13             INTEGER NOT NULL DEFAULT 1,
+    block_quic            INTEGER NOT NULL DEFAULT 1,
+    reality_max_time_diff INTEGER NOT NULL DEFAULT 0,
+
+    -- Opera VPN egress (the opera-proxy helper binary exposes a local HTTP proxy
+    -- we add as the "opera" routing lane, parallel to WARP). Country: EU|AS|AM.
+    opera_enabled   INTEGER NOT NULL DEFAULT 0,
+    opera_country   TEXT    NOT NULL DEFAULT 'EU',
+    opera_port      INTEGER NOT NULL DEFAULT 18080,
+
+    config_revision   INTEGER NOT NULL DEFAULT 0,
+    last_config_error TEXT    NOT NULL DEFAULT '',
+    updated_at        INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+INSERT INTO settings (id) VALUES (1);
+
+CREATE TABLE users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    uuid          TEXT    NOT NULL UNIQUE,     -- VLESS id
+    password      TEXT    NOT NULL DEFAULT '', -- Trojan + Hysteria2 (shared)
+    sub_token     TEXT    NOT NULL DEFAULT '', -- /sub/<token> capability
+    enabled       INTEGER NOT NULL DEFAULT 1,  -- manual on/off
+    status        TEXT    NOT NULL DEFAULT 'active', -- legacy; derived on read
+    data_limit    INTEGER NOT NULL DEFAULT 0,  -- bytes, 0 = unlimited
+    expire_at     INTEGER NOT NULL DEFAULT 0,  -- unix, 0 = never
+    used_up       INTEGER NOT NULL DEFAULT 0,
+    used_down     INTEGER NOT NULL DEFAULT 0,
+    last_up       INTEGER NOT NULL DEFAULT 0,  -- last raw Xray counter (delta base)
+    last_down     INTEGER NOT NULL DEFAULT 0,
+    reset_period  TEXT    NOT NULL DEFAULT 'none', -- none|daily|weekly|monthly|yearly
+    last_reset_at INTEGER NOT NULL DEFAULT 0,
+    last_seen     INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE UNIQUE INDEX idx_users_sub_token ON users(sub_token) WHERE sub_token <> '';
+
+CREATE TABLE admins (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE admin_sessions (
+    token_hash TEXT    PRIMARY KEY,         -- sha256(hex) of the opaque token
+    admin_id   INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX idx_sessions_admin ON admin_sessions(admin_id);
+
+CREATE TABLE traffic_daily (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day     TEXT    NOT NULL,            -- 'YYYY-MM-DD' (operator-local)
+    up      INTEGER NOT NULL DEFAULT 0,
+    down    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
+CREATE INDEX idx_traffic_daily_day ON traffic_daily(day);
+
+CREATE TABLE connections (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ip        TEXT    NOT NULL,
+    last_seen INTEGER NOT NULL,
+    count     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, ip)
+);

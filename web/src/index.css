@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/* Brand palette (Госуслуги-like blue + РосПанель red) exposed as Tailwind
+   color utilities: bg-brand-600, text-brandred-600, etc. */
+@theme {
+  --color-brand-50: #e7f0ff;
+  --color-brand-100: #cfe0ff;
+  --color-brand-200: #9dbdff;
+  --color-brand-300: #6a98ff;
+  --color-brand-400: #3f79ff;
+  --color-brand-500: #2566f5;
+  --color-brand-600: #0d4cd3;
+  --color-brand-700: #0a3fb0;
+  --color-brand-800: #08348f;
+  --color-brand-900: #062870;
+
+  --color-brandred-50: #ffe9ed;
+  --color-brandred-100: #ffd1d9;
+  --color-brandred-200: #fba3b2;
+  --color-brandred-300: #f7748a;
+  --color-brandred-400: #f24d68;
+  --color-brandred-500: #ee3f58;
+  --color-brandred-600: #d93350;
+  --color-brandred-700: #b32741;
+
+  --color-ink: #0a1b2e;
+  --color-ink-muted: #5b6b7e;
+
+  --font-sans: Mulish, Arial, sans-serif, -apple-system;
+
+  /* Custom enter animations (usable as animate-fade-in, animate-slide-in-right…). */
+  --animate-fade-in: fade-in 0.18s ease-out both;
+  --animate-fade-in-up: fade-in-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-scale-in: scale-in 0.15s ease-out both;
+  --animate-slide-in-right: slide-in-right 0.26s cubic-bezier(0.32, 0.72, 0, 1)
+    both;
+  --animate-slide-in-left: slide-in-left 0.26s cubic-bezier(0.32, 0.72, 0, 1)
+    both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Height is owned by ONE element: the app shell (`min-h-dvh` in Dashboard).
+   html/body/#root just wrap their content — no min-height here. Setting
+   `min-height: 100dvh` on html/body too made iOS Chrome resolve dvh against the
+   large (toolbars-hidden) viewport and add a whole empty screen below the footer
+   on long pages. Letting the wrappers shrink to the shell removes that gap on
+   every browser while the shell still stretches to a full screen on short pages. */
+html,
+body,
+#root {
+  height: auto;
+}
+
+/* Solid base under the gradient so any area the (iOS-quirky) fixed background
+   fails to paint shows the page colour instead of white. */
+html {
+  background-color: #eaf1fb;
+}
+
+html {
+  box-sizing: border-box;
+}
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+}
+
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+body {
+  margin: 0;
+  color: var(--color-ink);
+  font-family:
+    Mulish,
+    Arial,
+    sans-serif,
+    -apple-system;
+  -webkit-font-smoothing: antialiased;
+  /* Scrolling (non-fixed) gradient. Any fixed background layer —
+     `background-attachment: fixed` OR a `position: fixed` pseudo-element — leaves
+     a compositing seam (a faint horizontal band) on iOS Safari while scrolling,
+     so the gradient is painted normally and stretches over the document. The
+     html background-color is the solid base under it. */
+  background:
+    radial-gradient(
+      1200px 600px at 80% -10%,
+      #eaf3ff 0%,
+      rgba(234, 243, 255, 0) 60%
+    ),
+    linear-gradient(180deg, #f4f8ff 0%, #eaf1fb 100%);
+}
+
+/* Hide scrollbars on horizontal nav strips. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Honour users who prefer less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
