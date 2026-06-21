@@ -83,14 +83,20 @@ chmod +x "$tmp/rospanel"
 # --- install (copies binary → /usr/local/bin, writes unit, enables+starts) --
 info "installing systemd service"
 [ -n "${ROSPANEL_HOST:-}" ] && info "domain: ${BLD}${ROSPANEL_HOST}${RST} (ACME TLS will be requested)"
+install_ts="$(date +%s)"
 "$tmp/rospanel" install
 
 # --- first-run credentials --------------------------------------------------
+# On a fresh boot the panel initialises its DB before it logs the FIRST-RUN
+# block, which can take ~10-15s — so poll for up to ~30s instead of giving up
+# after a few seconds. Scope the search to this install (--since) so a re-run
+# never surfaces stale credentials, and wait for the whole block (the Password
+# line) so a half-written journal entry isn't printed.
 info "fetching first-run credentials"
 creds=""
-for _ in 1 2 3 4 5; do
-	creds="$(journalctl -u rospanel --no-pager 2>/dev/null | grep -A6 FIRST-RUN || true)"
-	[ -n "$creds" ] && break
+for ((i = 0; i < 30; i++)); do
+	creds="$(journalctl -u rospanel --no-pager --since "@$install_ts" 2>/dev/null | grep -A6 FIRST-RUN || true)"
+	case "$creds" in *Password*) break ;; esac
 	sleep 1
 done
 
