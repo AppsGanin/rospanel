@@ -99,13 +99,13 @@
 Одной командой: скачает релиз, поставит systemd-сервис, запустит и покажет логин.
 
 ```bash
-sudo bash <(curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh)
+curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash
 ```
 
 Скрипт спросит домен: укажите его — панель запросит TLS-сертификат через ACME;
 оставьте пустым — будет работать по IP.
 Можно задать заранее, тогда вопроса не будет:
-`sudo ROSPANEL_HOST=vpn.example.com bash <(curl -Ls …)`.
+`curl -Ls … | sudo ROSPANEL_HOST=vpn.example.com bash`.
 
 Xray, geo-базы и TLS-сертификат панель подтянет сама. Откройте
 `https://<ваш-домен-или-IP>/<секрет>/` и войдите. Поддерживаются `linux/amd64`
