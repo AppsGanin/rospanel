@@ -2,7 +2,7 @@
 #
 # RosPanel quick installer.
 #
-#   bash <(curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh)
+#   curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash
 #
 # Downloads the latest release binary, installs it as a systemd service via
 # `rospanel install`, and prints the one-time first-run credentials. Xray,
@@ -53,15 +53,20 @@ else
 fi
 
 # --- ask for a domain (skipped if ROSPANEL_HOST is preset or no terminal) ---
-if [ -z "${ROSPANEL_HOST:-}" ] && [ -t 0 ]; then
-	printf '%sDomain for the panel%s (leave empty to serve over IP): ' "$BLD" "$RST"
-	read -r answer || answer=""
+# The recommended install is piped (curl … | sudo bash), so the script body
+# already occupies stdin — read the prompts from the controlling terminal
+# (/dev/tty) instead. Opening fd 3 on /dev/tty fails when there is no terminal
+# (cron, CI, non-interactive SSH); in that case we skip and serve over IP.
+if [ -z "${ROSPANEL_HOST:-}" ] && { exec 3</dev/tty; } 2>/dev/null; then
+	printf '%sDomain for the panel%s (leave empty to serve over IP): ' "$BLD" "$RST" >&2
+	read -r answer <&3 || answer=""
 	ROSPANEL_HOST="$(printf '%s' "$answer" | tr -d '[:space:]')"
 	if [ -n "$ROSPANEL_HOST" ] && [ -z "${ROSPANEL_ACME_EMAIL:-}" ]; then
-		printf '%sACME e-mail%s for Let'\''s Encrypt (optional): ' "$BLD" "$RST"
-		read -r email || email=""
+		printf '%sACME e-mail%s for Let'\''s Encrypt (optional): ' "$BLD" "$RST" >&2
+		read -r email <&3 || email=""
 		ROSPANEL_ACME_EMAIL="$(printf '%s' "$email" | tr -d '[:space:]')"
 	fi
+	exec 3<&-
 fi
 export ROSPANEL_HOST ROSPANEL_ACME_EMAIL
 
@@ -83,19 +88,27 @@ chmod +x "$tmp/rospanel"
 # --- install (copies binary → /usr/local/bin, writes unit, enables+starts) --
 info "installing systemd service"
 [ -n "${ROSPANEL_HOST:-}" ] && info "domain: ${BLD}${ROSPANEL_HOST}${RST} (ACME TLS will be requested)"
-install_ts="$(date +%s)"
+# Capture a journal cursor just before install so we read only NEW log lines.
+# A cursor is monotonic by write order, so it is robust against clock skew —
+# a wall-clock --since can wrongly exclude the FIRST-RUN line on hosts whose
+# clock steps during boot. An empty cursor (no prior rospanel journal entries)
+# safely falls back to an unscoped read.
+log_cursor="$(journalctl -u rospanel --no-pager -n 0 --show-cursor 2>/dev/null | sed -n 's/^-- cursor: //p')"
 "$tmp/rospanel" install
 
 # --- first-run credentials --------------------------------------------------
-# On a fresh boot the panel initialises its DB before it logs the FIRST-RUN
-# block, which can take ~10-15s — so poll for up to ~30s instead of giving up
-# after a few seconds. Scope the search to this install (--since) so a re-run
-# never surfaces stale credentials, and wait for the whole block (the Password
-# line) so a half-written journal entry isn't printed.
+# A fresh boot initialises the DB before it logs the FIRST-RUN block, which can
+# take ~10-30s — so poll for up to ~40s instead of giving up after a few
+# seconds, and wait for the whole block (the Password line) so a half-written
+# journal entry is never printed.
 info "fetching first-run credentials"
+journal_args=(-u rospanel --no-pager)
+if [ -n "$log_cursor" ]; then
+	journal_args+=(--after-cursor="$log_cursor")
+fi
 creds=""
-for ((i = 0; i < 30; i++)); do
-	creds="$(journalctl -u rospanel --no-pager --since "@$install_ts" 2>/dev/null | grep -A6 FIRST-RUN || true)"
+for ((i = 0; i < 40; i++)); do
+	creds="$(journalctl "${journal_args[@]}" 2>/dev/null | grep -A6 FIRST-RUN || true)"
 	case "$creds" in *Password*) break ;; esac
 	sleep 1
 done
