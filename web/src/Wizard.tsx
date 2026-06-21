@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
-import { finishSetup, regenSecret, setACME, setupPassword, setupTimezone } from './api'
+import { useEffect, useMemo, useState } from 'react'
+import { finishSetup, getTLS, regenSecret, setACME, setupPassword, setupTimezone } from './api'
+import type { TLSStatus } from './api'
 import { BrandLogo } from './Logo'
 import { errMessage, notifyError } from './notify'
 import { BACKUP_ACCEPT, ManifestCard, RestoreWaiting, useRestore, ValidationNote } from './restore'
 import { browserTimezone, tzOptions } from './tz'
 import { Button, Card, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
-import { isValidACMETarget, isValidEmail } from './validate'
+import { isIP, isValidACMETarget, isValidEmail } from './validate'
 
 const STEPS = ['Пароль', 'Время', 'Адрес', 'Путь панели']
 
@@ -69,13 +70,59 @@ export function Wizard({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [timezone, setTimezone] = useState(defaultTz)
-  const [wizMode, setWizMode] = useState<'ip' | 'domain'>('ip')
+  const [wizMode, setWizMode] = useState<'ip' | 'domain' | 'keep'>('ip')
   const [domain, setDomain] = useState('')
   const [email, setEmail] = useState('')
   const [provider, setProvider] = useState('letsencrypt')
   const [finalHost, setFinalHost] = useState('')
   const [pathMode, setPathMode] = useState<'generate' | 'keep'>('generate')
   const [busy, setBusy] = useState(false)
+  const [tls, setTls] = useState<TLSStatus | null>(null)
+
+  // Reflect the panel's actual current address. If it was installed with a
+  // domain (ROSPANEL_HOST set), it already serves a domain certificate — the
+  // address step must say so and default to keeping it, not claim "works over
+  // IP". On failure we silently fall back to the IP wording.
+  useEffect(() => {
+    getTLS()
+      .then((t) => {
+        setTls(t)
+        const h = (t.domain || '').trim()
+        const valid = !!t.cert && !!t.cert.issuer && t.cert.issuer !== t.cert.subject
+        if (h && !isIP(h) && valid) {
+          // Real domain certificate already in place — default to keeping it.
+          setWizMode('keep')
+        } else if (h && !isIP(h)) {
+          // Domain configured but only a temporary self-signed cert (ACME has
+          // not issued yet) — default to (re)issuing it, with the domain
+          // prefilled so the user just confirms.
+          setWizMode('domain')
+          setDomain(h)
+          setProvider(t.acme_provider || 'letsencrypt')
+          if (t.acme_email) setEmail(t.acme_email)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const cert = tls?.cert
+  // A real CA cert has issuer ≠ subject; a self-signed fallback has them equal
+  // (mirrors the settings TLS panel's "valid vs временный" distinction).
+  const certValid = !!cert && !!cert.issuer && cert.issuer !== cert.subject
+  const curHost = (tls?.domain || '').trim()
+  const curIsDomain = curHost !== '' && !isIP(curHost)
+  const onDomainWithCert = curIsDomain && certValid
+
+  // Live ACME validation, mirroring the settings TLS panel (TLSPanel.tsx):
+  // Let's Encrypt accepts a domain or an IP, ZeroSSL domains only; e-mail is
+  // required for ZeroSSL. These drive the inline errors + the disabled button.
+  const isZeroSSL = provider === 'zerossl'
+  const domainTrim = domain.trim()
+  const emailTrim = email.trim()
+  const targetErr = domainTrim !== '' && !isValidACMETarget(domainTrim, isZeroSSL)
+  const emailErr = emailTrim !== '' && !isValidEmail(emailTrim)
+  const emailMissing = isZeroSSL && emailTrim === ''
+  const domainInvalid = domainTrim === '' || targetErr || emailErr || emailMissing
 
   const savePassword = async () => {
     if (password.length < 8) return notifyError('Пароль должен быть не короче 8 символов')
@@ -105,28 +152,24 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
   const advanceAddress = async () => {
     if (wizMode === 'domain') {
-      const d = domain.trim()
-      const e = email.trim()
-      if (!d) return notifyError('Укажите домен')
-      if (!isValidACMETarget(d, provider === 'zerossl')) {
-        return notifyError(
-          provider === 'zerossl'
-            ? 'Введите домен (ZeroSSL не выдаёт сертификаты на IP)'
-            : 'Введите корректный домен или IP-адрес',
-        )
-      }
-      if (provider === 'zerossl' && !e) return notifyError('ZeroSSL требует e-mail')
-      if (e && !isValidEmail(e)) return notifyError('Введите корректный e-mail')
+      // The button is disabled until the inputs are valid (see domainInvalid),
+      // so here we just request the cert and surface any server-side failure.
       setBusy(true)
       try {
-        await setACME(d, email.trim(), provider)
-        setFinalHost(d)
+        await setACME(domainTrim, emailTrim, provider)
+        setFinalHost(domainTrim)
         setActive(3)
       } catch (e) {
         notifyError(errMessage(e, 'Не удалось получить сертификат'))
       } finally {
         setBusy(false)
       }
+    } else if (wizMode === 'keep') {
+      // 'keep' = don't issue anything. Case A (real domain cert) lands on the
+      // domain; Case B (kept a temporary self-signed cert, where the domain may
+      // be unreachable) stays on the current host so we never strand the user.
+      setFinalHost(onDomainWithCert ? curHost : window.location.hostname)
+      setActive(3)
     } else {
       setFinalHost(window.location.hostname)
       setActive(3)
@@ -158,7 +201,9 @@ export function Wizard({ onDone }: { onDone: () => void }) {
     setBusy(true)
     try {
       await finishSetup()
-      if (wizMode === 'domain') redirect(currentSecret())
+      // Both 'domain' (just issued) and 'keep' (already issued) serve only on
+      // the domain, so the IP URL would now mismatch the cert — redirect there.
+      if (wizMode !== 'ip') redirect(currentSecret())
       else onDone()
     } catch (e) {
       notifyError(errMessage(e))
@@ -266,44 +311,123 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
               {active === 2 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">
-                    Панель сейчас работает по IP. Можно перейти на домен и выпустить для него
-                    сертификат Let's Encrypt, либо остаться на IP.
-                  </p>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="mode"
-                      checked={wizMode === 'ip'}
-                      onChange={() => setWizMode('ip')}
-                      className="accent-brand-600"
-                    />
-                    Остаться на IP (текущий сертификат)
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="mode"
-                      checked={wizMode === 'domain'}
-                      onChange={() => setWizMode('domain')}
-                      className="accent-brand-600"
-                    />
-                    Перейти на домен
-                  </label>
+                  {onDomainWithCert ? (
+                    <>
+                      <p className="text-sm text-ink-muted">
+                        Панель уже работает на домене{' '}
+                        <span className="font-medium text-ink">{curHost}</span>
+                        {cert ? `, сертификат действует ещё ${cert.days_left} дн.` : ''}. Можно
+                        оставить как есть или сменить адрес.
+                      </p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'keep'}
+                          onChange={() => setWizMode('keep')}
+                          className="accent-brand-600"
+                        />
+                        Оставить домен {curHost}
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'domain'}
+                          onChange={() => setWizMode('domain')}
+                          className="accent-brand-600"
+                        />
+                        Сменить домен или перейти на IP
+                      </label>
+                    </>
+                  ) : curIsDomain ? (
+                    <>
+                      <p className="text-sm text-ink-muted">
+                        Панель настроена на домен{' '}
+                        <span className="font-medium text-ink">{curHost}</span>, но действующий
+                        сертификат пока временный (самоподписанный) — настоящий ещё не выпущен (домен
+                        не указывает на сервер, закрыт порт 80 или достигнут лимит выпуска).
+                      </p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'domain'}
+                          onChange={() => setWizMode('domain')}
+                          className="accent-brand-600"
+                        />
+                        Выпустить сертификат для {curHost}
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'keep'}
+                          onChange={() => setWizMode('keep')}
+                          className="accent-brand-600"
+                        />
+                        Пока оставить временный сертификат
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-ink-muted">
+                        Панель сейчас работает по IP
+                        {certValid ? '' : ' с временным самоподписанным сертификатом'}. Можно перейти
+                        на домен и выпустить для него сертификат Let's Encrypt, либо остаться на IP.
+                      </p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'ip'}
+                          onChange={() => setWizMode('ip')}
+                          className="accent-brand-600"
+                        />
+                        {certValid
+                          ? 'Остаться на IP (текущий сертификат)'
+                          : 'Остаться на IP (временный сертификат)'}
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="mode"
+                          checked={wizMode === 'domain'}
+                          onChange={() => setWizMode('domain')}
+                          className="accent-brand-600"
+                        />
+                        Перейти на домен
+                      </label>
+                    </>
+                  )}
                   {wizMode === 'domain' && (
                     <>
-                      <TextInput
-                        label="Домен"
-                        placeholder="vpn.example.com"
-                        value={domain}
-                        onChange={setDomain}
-                      />
-                      <TextInput
-                        label={provider === 'zerossl' ? 'E-mail (обязательно)' : 'E-mail (необязательно)'}
-                        placeholder="you@example.com"
-                        value={email}
-                        onChange={setEmail}
-                      />
+                      <div>
+                        <TextInput
+                          label={isZeroSSL ? 'Домен' : 'Домен или IP'}
+                          placeholder={isZeroSSL ? 'vpn.example.com' : 'vpn.example.com или 144.31.159.81'}
+                          value={domain}
+                          onChange={setDomain}
+                        />
+                        {targetErr && (
+                          <p className="mt-1 text-xs text-red-600">
+                            {isZeroSSL
+                              ? 'Введите домен (ZeroSSL не выдаёт сертификаты на IP).'
+                              : 'Введите корректный домен или IP-адрес.'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <TextInput
+                          label={isZeroSSL ? 'E-mail (обязательно для ZeroSSL)' : 'E-mail (необязательно)'}
+                          placeholder="you@example.com"
+                          value={email}
+                          onChange={setEmail}
+                        />
+                        {emailErr && (
+                          <p className="mt-1 text-xs text-red-600">Введите корректный e-mail.</p>
+                        )}
+                      </div>
                       <Select
                         label="Центр сертификации"
                         value={provider}
@@ -313,12 +437,20 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           { value: 'zerossl', label: 'ZeroSSL' },
                         ]}
                       />
+                      {isZeroSSL ? (
+                        <p className="text-sm text-ink-muted">
+                          ZeroSSL поддерживает только домены. EAB-ключи будут получены автоматически
+                          по указанному e-mail.
+                        </p>
+                      ) : (
+                        <p className="text-sm text-ink-muted">
+                          Let's Encrypt выдаёт сертификаты на домены и IP (на IP ~6 дней, продлеваются
+                          автоматически).
+                        </p>
+                      )}
                       <p className="text-xs text-ink-muted">
-                        Домен должен указывать на этот сервер, порт 80 открыт. Выпуск сертификата
-                        занимает 10–30 секунд.
-                        {provider === 'zerossl'
-                          ? ' ZeroSSL: только домены, EAB-ключи получаются автоматически по e-mail.'
-                          : " Let's Encrypt: сертификаты выдаются и на IP-адреса."}
+                        Домен должен указывать на этот сервер, порт 80 открыт. Выпуск занимает
+                        10–30 секунд.
                       </p>
                     </>
                   )}
@@ -386,7 +518,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                 {active === 2 && (
                   <Button
                     loading={busy}
-                    disabled={wizMode === 'domain' && provider === 'zerossl' && !email.trim()}
+                    disabled={wizMode === 'domain' && domainInvalid}
                     onClick={advanceAddress}
                   >
                     {wizMode === 'domain' ? 'Получить сертификат' : 'Далее'}
