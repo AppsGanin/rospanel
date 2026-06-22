@@ -27,6 +27,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/server"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/telegram"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tuning"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -125,6 +126,9 @@ func runServer(dataDir string) {
 	go tlsLoop(mgr)
 	// Periodic traffic accounting + quota/expiry enforcement.
 	go statsPollLoop(mgr)
+	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
+	// enabled with a token in Settings → Telegram, re-reading config each cycle.
+	go telegram.New(mgr, st, dataDir).Run(context.Background())
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {

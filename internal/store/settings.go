@@ -17,6 +17,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subBase64, subEmailInName, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
+	var tgBotEn int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -38,7 +39,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tls_fragment, tls_min13, block_quic,
 		       reality_max_time_diff, sub_path,
 		       acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
-		       opera_enabled, opera_country, opera_port
+		       opera_enabled, opera_country, opera_port,
+		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -61,6 +63,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.RealityMaxTimeDiff, &st.SubPath,
 		&st.ACMEProvider, &st.ZeroSSLEABKID, &st.ZeroSSLEABHMAC,
 		&operaEn, &st.OperaCountry, &st.OperaPort,
+		&tgBotEn, &st.TGBotToken, &st.TGChatIDs, &st.TGLinkCode, &st.TGBackupCron,
 	)
 	if err != nil {
 		return nil, err
@@ -86,7 +89,29 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TLSFragment = tlsFragment != 0
 	st.TLSMin13 = tlsMin13 != 0
 	st.BlockQUIC = blockQUIC != 0
+	st.TGBotEnabled = tgBotEn != 0
 	return &st, nil
+}
+
+// SetTelegramBot persists the bot's enable flag, token, and backup schedule (a
+// 5-field cron expression in the operator timezone; empty disables scheduling).
+func (s *Store) SetTelegramBot(enabled bool, token, cron string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(enabled), token, cron,
+	)
+	return err
+}
+
+// SetTelegramLinkCode stores (or clears, with "") the pending one-time linking code.
+func (s *Store) SetTelegramLinkCode(code string) error {
+	return s.setSetting("tg_link_code", code)
+}
+
+// SetTelegramChats replaces the comma-separated set of authorized chat IDs.
+func (s *Store) SetTelegramChats(csv string) error {
+	return s.setSetting("tg_chat_ids", csv)
 }
 
 // SetAntiDPI persists the anti-DPI transport-hardening settings (Settings →
