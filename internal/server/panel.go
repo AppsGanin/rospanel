@@ -145,6 +145,13 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)
 	authed("POST /api/tls", rt.setACME)
+	authed("GET /api/telegram", rt.getTelegram)
+	authed("POST /api/telegram", rt.saveTelegram)
+	authed("POST /api/telegram/link", rt.genTelegramLink)
+	authed("GET /api/telegram/link/status", rt.telegramLinkStatus)
+	authed("POST /api/telegram/link/cancel", rt.cancelTelegramLink)
+	authed("POST /api/telegram/unlink", rt.unlinkTelegram)
+	authed("POST /api/telegram/test-backup", rt.testTelegramBackup)
 	// Content-hashed build assets (JS/CSS/fonts) never change for a given URL → cache forever.
 	mux.Handle("GET /assets/", cacheControl(rt.assets, "public, max-age=31536000, immutable"))
 	favicon := cacheControl(rt.assets, "public, max-age=604800") // stable name → 1 week

@@ -446,6 +446,50 @@ export const setDecoy = (template: string) =>
     body: JSON.stringify({ template }),
   })
 
+export interface TelegramInfo {
+  enabled: boolean
+  token: string
+  backup_cron: string // 5-field cron in the operator timezone; "" = off
+  chat_ids: number[] // linked (authorized) chat IDs
+  link_code: string // pending one-time linking code (if any)
+  bot_username: string // bot @username (empty if token unset/invalid)
+}
+
+export const getTelegram = () => api<TelegramInfo>('api/telegram')
+
+export const saveTelegram = (
+  enabled: boolean,
+  token: string,
+  backup_cron: string,
+) =>
+  api<{ ok: boolean }>('api/telegram', {
+    method: 'POST',
+    body: JSON.stringify({ enabled, token, backup_cron }),
+  })
+
+export const genTelegramLink = () =>
+  api<{ code: string; bot_username: string }>('api/telegram/link', {
+    method: 'POST',
+  })
+
+// getTelegramLinkStatus is a cheap poll used while a link code is pending, so the
+// page reflects a just-linked chat without a reload. pending=false ⇒ linked.
+export const getTelegramLinkStatus = () =>
+  api<{ chat_ids: number[]; pending: boolean }>('api/telegram/link/status')
+
+// cancelTelegramLink drops the pending one-time link code.
+export const cancelTelegramLink = () =>
+  api<{ ok: boolean }>('api/telegram/link/cancel', { method: 'POST' })
+
+export const unlinkTelegram = (chat_id: number) =>
+  api<{ ok: boolean }>('api/telegram/unlink', {
+    method: 'POST',
+    body: JSON.stringify({ chat_id }),
+  })
+
+export const testTelegramBackup = () =>
+  api<{ ok: boolean }>('api/telegram/test-backup', { method: 'POST' })
+
 export const login = (username: string, password: string) =>
   api<{ ok: boolean }>('api/login', {
     method: 'POST',

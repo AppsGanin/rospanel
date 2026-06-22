@@ -23,6 +23,9 @@ func (m *Manager) mutateUser(done string, fn func() error) error {
 	return nil
 }
 
+// ListUsers returns all users, newest first (read-only; used by the Telegram bot).
+func (m *Manager) ListUsers() ([]model.User, error) { return m.store.ListUsers() }
+
 // CreateUser creates a user (one credential set for all protocols) with optional
 // data limit (bytes, 0=unlimited) and expiry (unix, 0=never), then reconciles.
 func (m *Manager) CreateUser(name string, dataLimit, expireAt int64) (*model.User, error) {

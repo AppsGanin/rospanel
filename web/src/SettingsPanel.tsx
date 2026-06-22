@@ -4,6 +4,7 @@ import { GeneralSettings } from "./GeneralSettings";
 import { navigate, useRoute } from "./router";
 import { RoutingPanel } from "./RoutingPanel";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
+import { TelegramSettings } from "./TelegramSettings";
 import { TLSPanel } from "./TLSPanel";
 import { cn } from "./ui";
 
@@ -13,6 +14,7 @@ const SUBTABS = [
   { value: "subscriptions", label: "Подписки" },
   { value: "routing", label: "Роутинг" },
   { value: "dns", label: "DNS" },
+  { value: "telegram", label: "Telegram" },
   { value: "domain", label: "Домен" },
 ] as const;
 
@@ -51,6 +53,7 @@ export function SettingsPanel() {
         {tab === "subscriptions" && <SubscriptionsPanel />}
         {tab === "routing" && <RoutingPanel />}
         {tab === "dns" && <DnsSettings />}
+        {tab === "telegram" && <TelegramSettings />}
         {tab === "domain" && <TLSPanel />}
       </div>
     </div>

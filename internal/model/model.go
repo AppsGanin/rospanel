@@ -3,6 +3,7 @@ package model
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -180,6 +181,16 @@ type Settings struct {
 	WarpAddressV6  string `json:"-"` // assigned interface IPv6
 	WarpReserved   string `json:"-"` // client id as "a,b,c"
 
+	// Telegram bot (Settings → Telegram). An authorized admin chat can view/add/
+	// remove users via the bot, and scheduled backups are pushed to it. TGChatIDs
+	// is the comma-separated set of authorized chats; TGLinkCode is the pending
+	// one-time code an admin sends as "/start <code>" to link their chat.
+	TGBotEnabled bool   `json:"-"`
+	TGBotToken   string `json:"-"`
+	TGChatIDs    string `json:"-"` // comma-separated authorized chat IDs
+	TGLinkCode   string `json:"-"` // pending one-time linking code (cleared once used)
+	TGBackupCron string `json:"-"` // 5-field cron (operator TZ) for scheduled backups; empty = off
+
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 
 	// Computed per request (NOT stored). When the active cert isn't CA-trusted (a
@@ -192,6 +203,31 @@ type Settings struct {
 
 // WarpRegistered reports whether a WARP account has been provisioned.
 func (s *Settings) WarpRegistered() bool { return s.WarpPrivateKey != "" }
+
+// TelegramChatIDs parses the comma-separated authorized chat IDs into int64s,
+// skipping blanks and unparseable entries.
+func (s *Settings) TelegramChatIDs() []int64 {
+	var out []int64
+	for _, p := range strings.Split(s.TGChatIDs, ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		if id, err := strconv.ParseInt(p, 10, 64); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// TelegramAuthorized reports whether the given chat ID is linked to the bot.
+func (s *Settings) TelegramAuthorized(id int64) bool {
+	for _, c := range s.TelegramChatIDs() {
+		if c == id {
+			return true
+		}
+	}
+	return false
+}
 
 // OperaCountries are the Opera VPN regions opera-proxy accepts.
 var OperaCountries = []string{"EU", "AS", "AM"}
