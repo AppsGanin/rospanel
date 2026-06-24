@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/updater"
@@ -108,6 +109,9 @@ func firstPositional(args []string) string {
 // current certificate so a fresh one is issued for the new host on restart, then
 // restarts the service (when managed by systemd) to apply it.
 func runHost(dataDir string, args []string) {
+	if err := datasec.Init(dataDir); err != nil {
+		log.Fatalf("host: secrets key: %v", err)
+	}
 	st, err := store.Open(filepath.Join(dataDir, "rospanel.db"))
 	if err != nil {
 		log.Fatalf("host: open store: %v", err)
