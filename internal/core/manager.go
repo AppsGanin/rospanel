@@ -182,7 +182,15 @@ func (m *Manager) RecordAccess(email, ip string) {
 		}
 	}
 	m.accMu.Unlock()
-	_ = m.store.AddConnection(id, ip, now)
+	if err := m.store.AddConnection(id, ip, now); err != nil {
+		return
+	}
+	// A new device (source IP) may push the user over their device cap — re-check
+	// the working set and sync promptly so the over-limit user drops out, instead
+	// of waiting for the next periodic reconcile.
+	if working, err := m.store.WorkingUsers(now); err == nil && m.workingChanged(working) {
+		m.TriggerUserSync()
+	}
 }
 
 // TriggerReconcile requests a FULL config reload (regenerate + restart Xray) for

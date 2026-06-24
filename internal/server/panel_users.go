@@ -72,17 +72,39 @@ func (rt *Router) resetUserTraffic(w http.ResponseWriter, _ *http.Request, id in
 
 func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {
-		DataLimit int64 `json:"data_limit"`
-		ExpireAt  int64 `json:"expire_at"`
+		DataLimit   int64 `json:"data_limit"`
+		ExpireAt    int64 `json:"expire_at"`
+		DeviceLimit int   `json:"device_limit"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetUserLimits(id, req.DataLimit, req.ExpireAt); err != nil {
+	if req.DeviceLimit < 0 {
+		writeErr(w, http.StatusBadRequest, "лимит устройств не может быть отрицательным")
+		return
+	}
+	if err := rt.mgr.SetUserLimits(id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	writeOK(w)
+}
+
+// rotateSubToken issues a new subscription URL for a user. The old link stops
+// working; protocol credentials are unchanged.
+func (rt *Router) rotateSubToken(w http.ResponseWriter, _ *http.Request, id int64) {
+	u, err := rt.mgr.RotateSubToken(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.applyTLSHints(set)
+	writeJSON(w, http.StatusOK, makeUserView(*u, set))
 }
 
 func (rt *Router) userConnections(w http.ResponseWriter, _ *http.Request, id int64) {

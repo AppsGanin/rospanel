@@ -25,6 +25,17 @@ export const QUOTA_OPTIONS = [
   { value: '500', label: '500 ГБ' },
 ]
 
+// Per-user simultaneous device cap options ("0" = unlimited), used by the user
+// detail editor.
+export const DEVICE_LIMIT_OPTIONS = [
+  { value: '0', label: 'Без лимита' },
+  { value: '1', label: '1 устройство' },
+  { value: '2', label: '2 устройства' },
+  { value: '3', label: '3 устройства' },
+  { value: '5', label: '5 устройств' },
+  { value: '10', label: '10 устройств' },
+]
+
 // Automatic quota-reset period options, shared by the create form and the user
 // detail editor.
 export const RESET_PERIODS = [
@@ -104,6 +115,8 @@ export function statusInfo(status: string): { label: string; color: string } {
       return { label: 'срок истёк', color: 'red' }
     case 'limited':
       return { label: 'лимит исчерпан', color: 'orange' }
+    case 'device_limited':
+      return { label: 'лишних устройств', color: 'orange' }
     default:
       return { label: status, color: 'gray' }
   }

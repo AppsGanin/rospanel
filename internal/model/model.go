@@ -27,6 +27,19 @@ const (
 	ProtoHysteria = "HYSTERIA-UDP"
 )
 
+// DeviceOnlineWindow is how long (seconds) a source IP counts as an active device.
+// Matches the panel's online indicator (stats poll ~60s + access-log writes).
+const DeviceOnlineWindow int64 = 120
+
+// User status values derived on read (not stored).
+const (
+	StatusActive        = "active"
+	StatusDisabled      = "disabled"
+	StatusExpired       = "expired"
+	StatusLimited       = "limited"        // traffic quota exhausted
+	StatusDeviceLimited = "device_limited" // too many concurrent devices
+)
+
 // User is a VPN user. In v1 one user = one credential set applied across all
 // enabled protocols (M1 only wires VLESS).
 type User struct {
@@ -35,7 +48,7 @@ type User struct {
 	UUID      string    `json:"uuid"`       // VLESS
 	Password  string    `json:"-"`          // Trojan + Hysteria2 (shared); embedded in links only
 	SubToken  string    `json:"-"`          // subscription capability token
-	Status    string    `json:"status"`     // active | disabled | expired | limited
+	Status    string    `json:"status"`     // active | disabled | expired | limited | device_limited
 	Enabled   bool      `json:"enabled"`    // manual on/off toggle (independent of Status)
 	DataLimit int64     `json:"data_limit"` // bytes, 0 = unlimited
 	ExpireAt  int64     `json:"expire_at"`  // unix seconds, 0 = never
@@ -48,6 +61,9 @@ type User struct {
 	ResetPeriod string `json:"reset_period"` // none | daily | weekly | monthly | yearly
 	LastResetAt int64  `json:"-"`            // unix of the last automatic quota reset
 	LastSeen    int64  `json:"last_seen"`    // unix of last activity (0 = never); 0 ⇒ offline
+
+	DeviceLimit   int `json:"device_limit"`   // max concurrent devices (unique IPs), 0 = unlimited
+	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
@@ -139,8 +155,8 @@ type Settings struct {
 	// Subscription delivery settings (Settings → Подписки).
 	SubPath           string `json:"-"` // public subscription URL prefix /<sub_path>/<token>
 	SubBase64         bool   `json:"-"` // base64-encode the universal link list
-	SubEmailInName    bool   `json:"-"` // append the user name to protocol tags
-	SubTitle          string `json:"-"` // profile title (empty ⇒ host)
+	SubNameInTitle    bool   `json:"-"` // append the user name to Profile-Title / group name
+	SubTitle          string `json:"-"` // profile title base (empty ⇒ «РосПанель»)
 	SubRouting        bool   `json:"-"` // attach auto-routing headers
 	SubRoutingHapp    string `json:"-"` // Happ routing config URL
 	SubRoutingIncy    string `json:"-"` // INCY routing config URL

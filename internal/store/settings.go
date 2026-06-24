@@ -14,7 +14,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var updated int64
 	var vlessEn, trojanEn, hysteriaEn, setupDone int
 	var realityEn, proxyModeEn int
-	var subBase64, subEmailInName, subRouting, warpEn int
+	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
 	var tgBotEn int
@@ -49,7 +49,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.WSPath, &st.TrojanPort, &st.HysteriaPort, &st.HopStart, &st.HopEnd,
 		&vlessEn, &trojanEn, &hysteriaEn,
 		&setupDone, &st.Timezone,
-		&subBase64, &subEmailInName, &st.SubTitle, &subRouting,
+		&subBase64, &subNameInTitle, &st.SubTitle, &subRouting,
 		&st.SubRoutingHapp, &st.SubRoutingIncy, &st.SubRoutingMihomo,
 		&st.SubUpdateInterval, &st.XrayDNS,
 		&warpEn, &st.WarpPrivateKey, &st.WarpPublicKey, &st.WarpEndpoint,
@@ -82,7 +82,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.ProxyModeEnabled = proxyModeEn != 0
 	st.SetupDone = setupDone != 0
 	st.SubBase64 = subBase64 != 0
-	st.SubEmailInName = subEmailInName != 0
+	st.SubNameInTitle = subNameInTitle != 0
 	st.SubRouting = subRouting != 0
 	st.WarpEnabled = warpEn != 0
 	st.OperaEnabled = operaEn != 0
@@ -196,7 +196,7 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
-		st.SubBase64, st.SubEmailInName, st.SubTitle, st.SubRouting,
+		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
 		st.SubUpdateInterval,
 	)

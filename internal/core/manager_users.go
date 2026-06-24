@@ -37,7 +37,7 @@ func (m *Manager) CreateUser(name string, dataLimit, expireAt int64) (*model.Use
 	if err != nil {
 		return nil, err
 	}
-	u, err := m.store.CreateUser(name, uuid.NewString(), password, subToken, dataLimit, expireAt)
+	u, err := m.store.CreateUser(name, uuid.NewString(), password, subToken, dataLimit, expireAt, 0)
 	if err != nil {
 		logErr("user create failed", "name", name, "err", err)
 		return nil, err
@@ -87,11 +87,33 @@ func (m *Manager) liveCounter(id int64) (up, down int64) {
 	return t.Up, t.Down
 }
 
-// SetUserLimits updates a user's quota/expiry and re-enables them.
-func (m *Manager) SetUserLimits(id, dataLimit, expireAt int64) error {
-	// store.SetUserLimits recomputes status from the new limit/expiry.
-	return m.mutateUser(fmt.Sprintf("user %d limits updated: limit=%d expire=%d", id, dataLimit, expireAt),
-		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt) })
+// SetUserLimits updates a user's quota/expiry/device cap and re-enables them.
+func (m *Manager) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
+	// store.SetUserLimits recomputes status from the new limit/expiry/devices.
+	return m.mutateUser(fmt.Sprintf("user %d limits updated: limit=%d expire=%d devices=%d", id, dataLimit, expireAt, deviceLimit),
+		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt, deviceLimit) })
+}
+
+// RotateSubToken issues a new subscription URL token for a user. Protocol
+// credentials stay the same — only the public /<sub_path>/<token> link changes,
+// so the old URL stops working immediately. Triggers a user sync so any
+// token-derived state is refreshed.
+func (m *Manager) RotateSubToken(id int64) (*model.User, error) {
+	token, err := auth.RandomToken()
+	if err != nil {
+		return nil, err
+	}
+	if err := m.store.SetSubToken(id, token); err != nil {
+		logErr("sub token rotate failed", "id", id, "err", err)
+		return nil, err
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return nil, err
+	}
+	logInfo("sub token rotated", "id", id)
+	m.TriggerUserSync()
+	return u, nil
 }
 
 // Connections returns a user's recent source IPs.
