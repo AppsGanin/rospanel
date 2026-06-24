@@ -28,6 +28,15 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 			return invalid("неверное расписание (cron): %v", err)
 		}
 	}
+	if enabled && token != "" {
+		set, err := m.store.GetSettings()
+		if err != nil {
+			return err
+		}
+		if set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) == token {
+			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+	}
 	if err := m.store.SetTelegramBot(enabled, token, backupCron); err != nil {
 		return err
 	}
@@ -37,6 +46,29 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 		return m.store.SetTelegramLinkCode("")
 	}
 	return nil
+}
+
+// SaveTelegramUserBot validates and persists the public user bot configuration:
+// the enable flag, its (separate) bot token, and whether open self-registration
+// is allowed. The token must differ from the admin bot's.
+func (m *Manager) SaveTelegramUserBot(enabled bool, token string, regEnabled bool) error {
+	token = strings.TrimSpace(token)
+	if enabled && token == "" {
+		return invalid("укажите токен пользовательского бота")
+	}
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
+	}
+	if enabled && token != "" {
+		set, err := m.store.GetSettings()
+		if err != nil {
+			return err
+		}
+		if set.TGBotEnabled && strings.TrimSpace(set.TGBotToken) == token {
+			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+	}
+	return m.store.SetTelegramUserBot(enabled, token, regEnabled)
 }
 
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).
@@ -54,7 +86,7 @@ func (m *Manager) GenerateTelegramLinkCode() (string, error) {
 		return "", err
 	}
 	if !set.TGBotEnabled {
-		return "", invalid("сначала включите Telegram-бота и сохраните настройки")
+		return "", invalid("сначала включите админ-бота и сохраните настройки")
 	}
 	var b [5]byte
 	if _, err := rand.Read(b[:]); err != nil {

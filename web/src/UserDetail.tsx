@@ -7,6 +7,7 @@ import {
   renameUser,
   resetUserTraffic,
   rotateSubToken,
+  unlinkUserTelegram,
   setResetPeriod,
   setUserEnabled,
   setUserLimits,
@@ -384,6 +385,51 @@ export function UserDetail({
               Сбросить ссылку
             </Button>
           </div>
+
+          <Divider label="Telegram" />
+          {user.telegram_linked ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-teal-700">Бот привязан к чату пользователя</p>
+              <Button
+                size="xs"
+                variant="light"
+                color="orange"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Отвязать Telegram?',
+                    body: 'Пользователь потеряет доступ к боту, пока снова не откроет ссылку привязки.',
+                    confirmLabel: 'Отвязать',
+                    danger: true,
+                  })
+                  if (ok) unlinkUserTelegram(user.id).then(onChanged).catch(fail)
+                }}
+              >
+                Отвязать Telegram
+              </Button>
+            </div>
+          ) : user.telegram_link ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-ink-muted">
+                Новый пользователь: откройте бота → «Зарегистрироваться» → имя.
+                Уже создан в панели — используйте ссылку привязки ниже.
+              </p>
+              <Button size="xs" href={user.telegram_link} target="_blank">
+                Открыть пользовательского бота
+              </Button>
+              {user.telegram_deep_link && (
+                <>
+                  <Button size="xs" variant="light" href={user.telegram_deep_link} target="_blank">
+                    Привязать этот аккаунт
+                  </Button>
+                  <Code block>{user.telegram_deep_link}</Code>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">
+              Включите пользовательского бота в настройках Telegram.
+            </p>
+          )}
 
           <Divider label="Ссылки подключения" />
           <div className="flex flex-col gap-2">

@@ -22,25 +22,36 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		chats = []int64{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":      set.TGBotEnabled,
-		"token":        set.TGBotToken,
-		"backup_cron":  set.TGBackupCron,
-		"chat_ids":     chats,
-		"link_code":    set.TGLinkCode,
-		"bot_username": botUsername(r.Context(), set.TGBotToken),
+		"enabled":           set.TGBotEnabled,
+		"token":             set.TGBotToken,
+		"backup_cron":       set.TGBackupCron,
+		"chat_ids":          chats,
+		"link_code":         set.TGLinkCode,
+		"bot_username":      botUsername(r.Context(), set.TGBotToken),
+		"user_enabled":      set.TGUserBotEnabled,
+		"user_token":        set.TGUserBotToken,
+		"user_reg_enabled":  set.TGUserRegEnabled,
+		"user_bot_username": botUsername(r.Context(), set.TGUserBotToken),
 	})
 }
 
 func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled    bool   `json:"enabled"`
-		Token      string `json:"token"`
-		BackupCron string `json:"backup_cron"`
+		Enabled        bool   `json:"enabled"`
+		Token          string `json:"token"`
+		BackupCron     string `json:"backup_cron"`
+		UserEnabled    bool   `json:"user_enabled"`
+		UserToken      string `json:"user_token"`
+		UserRegEnabled bool   `json:"user_reg_enabled"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if err := rt.mgr.SaveTelegram(req.Enabled, req.Token, req.BackupCron); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if err := rt.mgr.SaveTelegramUserBot(req.UserEnabled, req.UserToken, req.UserRegEnabled); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

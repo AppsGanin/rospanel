@@ -9,7 +9,7 @@ import (
 
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
-	reset_period, last_reset_at, last_seen, device_limit`
+	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -113,6 +113,37 @@ func (s *Store) SetSubToken(id int64, token string) error {
 	return err
 }
 
+// GetUserByTelegramChatID resolves a linked Telegram chat to its VPN user.
+func (s *Store) GetUserByTelegramChatID(chatID int64) (*model.User, error) {
+	if chatID == 0 {
+		return nil, sql.ErrNoRows
+	}
+	users, err := s.queryUsers(`SELECT `+userCols+` FROM users WHERE tg_chat_id = ? LIMIT 1`, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &users[0], nil
+}
+
+// SetUserTelegramChat links a Telegram chat to a VPN user, first detaching the
+// chat from any other user (one chat ⇒ at most one account).
+func (s *Store) SetUserTelegramChat(userID, chatID int64) error {
+	if _, err := s.db.Exec(`UPDATE users SET tg_chat_id = 0 WHERE tg_chat_id = ?`, chatID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE users SET tg_chat_id = ? WHERE id = ?`, chatID, userID)
+	return err
+}
+
+// ClearUserTelegramChat unlinks a VPN user's Telegram chat.
+func (s *Store) ClearUserTelegramChat(userID int64) error {
+	_, err := s.db.Exec(`UPDATE users SET tg_chat_id = 0 WHERE id = ?`, userID)
+	return err
+}
+
 // ResetTraffic zeroes a user's usage (so a "limited" user works again) and
 // re-baselines the raw counters to the supplied live Xray values, so the next
 // stats poll measures the delta from now. Passing 0/0 would make the poll re-add
@@ -173,7 +204,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
-			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit,
+			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.TgChatID,
 		); err != nil {
 			return nil, err
 		}

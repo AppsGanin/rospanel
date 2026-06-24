@@ -115,6 +115,9 @@ export function TelegramSettings() {
   const [busy, setBusy] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [token, setToken] = useState("");
+  const [userEnabled, setUserEnabled] = useState(false);
+  const [userToken, setUserToken] = useState("");
+  const [userRegEnabled, setUserRegEnabled] = useState(true);
   const [preset, setPreset] = useState<Preset>("off");
   const [time, setTime] = useState("03:00");
   const [weekday, setWeekday] = useState("1");
@@ -122,7 +125,15 @@ export function TelegramSettings() {
   const [chats, setChats] = useState<number[]>([]);
   const [linkCode, setLinkCode] = useState("");
   const [botUsername, setBotUsername] = useState("");
-  const [saved, setSaved] = useState({ enabled: false, token: "", cron: "" });
+  const [userBotUsername, setUserBotUsername] = useState("");
+  const [saved, setSaved] = useState({
+    enabled: false,
+    token: "",
+    cron: "",
+    userEnabled: false,
+    userToken: "",
+    userRegEnabled: true,
+  });
   const [linking, setLinking] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -131,15 +142,26 @@ export function TelegramSettings() {
       .then((t) => {
         setEnabled(t.enabled);
         setToken(t.token);
+        setUserEnabled(t.user_enabled);
+        setUserToken(t.user_token);
+        setUserRegEnabled(t.user_reg_enabled);
         setChats(t.chat_ids || []);
         setLinkCode(t.link_code || "");
         setBotUsername(t.bot_username || "");
+        setUserBotUsername(t.user_bot_username || "");
         const d = detectPreset(t.backup_cron || "");
         setPreset(d.preset);
         setTime(d.time);
         setWeekday(d.weekday);
         setCustom(d.custom);
-        setSaved({ enabled: t.enabled, token: t.token, cron: t.backup_cron || "" });
+        setSaved({
+          enabled: t.enabled,
+          token: t.token,
+          cron: t.backup_cron || "",
+          userEnabled: t.user_enabled,
+          userToken: t.user_token,
+          userRegEnabled: t.user_reg_enabled,
+        });
       })
       .catch((e) => notifyError(errMessage(e)));
 
@@ -169,7 +191,10 @@ export function TelegramSettings() {
   const dirty =
     enabled !== saved.enabled ||
     token.trim() !== saved.token.trim() ||
-    cron !== saved.cron;
+    cron !== saved.cron ||
+    userEnabled !== saved.userEnabled ||
+    userToken.trim() !== saved.userToken.trim() ||
+    userRegEnabled !== saved.userRegEnabled;
 
   // Linking only makes sense once the bot is enabled and that state is saved (the
   // bot polls against the persisted config; a code is redeemed by the running bot).
@@ -180,8 +205,22 @@ export function TelegramSettings() {
   const save = async () => {
     setBusy(true);
     try {
-      await saveTelegram(enabled, token.trim(), cron);
-      setSaved({ enabled, token: token.trim(), cron });
+      await saveTelegram(
+        enabled,
+        token.trim(),
+        cron,
+        userEnabled,
+        userToken.trim(),
+        userRegEnabled,
+      );
+      setSaved({
+        enabled,
+        token: token.trim(),
+        cron,
+        userEnabled,
+        userToken: userToken.trim(),
+        userRegEnabled,
+      });
       notifySuccess("Настройки Telegram сохранены");
     } catch (e) {
       notifyError(errMessage(e));
@@ -193,6 +232,9 @@ export function TelegramSettings() {
   const cancel = () => {
     setEnabled(saved.enabled);
     setToken(saved.token);
+    setUserEnabled(saved.userEnabled);
+    setUserToken(saved.userToken);
+    setUserRegEnabled(saved.userRegEnabled);
     const d = detectPreset(saved.cron);
     setPreset(d.preset);
     setTime(d.time);
@@ -266,13 +308,13 @@ export function TelegramSettings() {
   return (
     <div className="flex flex-col gap-4 pb-20">
       <SettingCard
-        title="Telegram-бот"
-        description="Управляйте пользователями и получайте бэкапы прямо в Telegram. Бот работает на кнопках — слать команды не нужно."
+        title="Админ-бот"
+        description="Управление пользователями и бэкапы. Доступ только по коду привязки из панели."
         action={<Switch checked={enabled} onChange={onToggleEnabled} />}
       >
         <div className="flex flex-col gap-3">
           <PasswordInput
-            label="Токен бота (от @BotFather)"
+            label="Токен админ-бота (от @BotFather)"
             value={token}
             onChange={setToken}
             placeholder="123456789:AA..."
@@ -294,8 +336,8 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Привязка чата"
-        description="Бот отвечает только привязанным чатам. Сгенерируйте код и откройте бота, чтобы привязать свой чат."
+        title="Привязка админ-чата"
+        description="Сгенерируйте код и откройте админ-бота — только вы получите доступ к управлению панелью."
         action={
           <Button
             variant="light"
@@ -374,6 +416,50 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
+        title="Пользовательский бот"
+        description="Открытый бот для семьи и друзей: регистрация, подписка и статистика. Создайте второго бота у @BotFather."
+        action={<Switch checked={userEnabled} onChange={setUserEnabled} />}
+      >
+        <div className="flex flex-col gap-3">
+          <PasswordInput
+            label="Токен пользовательского бота"
+            value={userToken}
+            onChange={setUserToken}
+            placeholder="987654321:BB..."
+          />
+          {userBotUsername && (
+            <p className="text-sm text-ink-muted">
+              Бот:{" "}
+              <a
+                href={`https://t.me/${userBotUsername}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-brand-700 hover:underline"
+              >
+                @{userBotUsername}
+              </a>
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-ink">
+                Самостоятельная регистрация
+              </p>
+              <p className="text-xs text-ink-muted">
+                Новые пользователи нажимают «Зарегистрироваться» в боте и получают
+                аккаунт.
+              </p>
+            </div>
+            <Switch
+              checked={userRegEnabled}
+              onChange={setUserRegEnabled}
+              disabled={!userEnabled}
+            />
+          </div>
+        </div>
+      </SettingCard>
+
+      <SettingCard
         title="Бэкапы по расписанию"
         description="Резервные копии отправляются во все привязанные чаты по расписанию (в часовом поясе панели)."
       >
@@ -443,7 +529,7 @@ export function TelegramSettings() {
         busy={busy}
         onSave={save}
         onCancel={cancel}
-        saveDisabled={enabled && !token.trim()}
+        saveDisabled={(enabled && !token.trim()) || (userEnabled && !userToken.trim())}
       />
     </div>
   );
