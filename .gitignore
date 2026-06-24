@@ -1,5 +1,5 @@
 .copilot-specs-cache/
-
+.idea
 # build output
 /rospanel
 /dist/
