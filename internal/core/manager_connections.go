@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"regexp"
 	"strconv"
@@ -330,7 +330,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	// Re-apply the nftables hop redirect (best-effort; it clears its own old rule
 	// first). The host firewall must allow the UDP range.
 	if err := hop.Ensure(u.HopStart, u.HopEnd, u.HysteriaPort); err != nil {
-		log.Printf("hop: re-apply failed: %v", err)
+		slog.Error("hop: re-apply failed", "err", err)
 	}
 	m.TriggerReconcile()
 	return nil

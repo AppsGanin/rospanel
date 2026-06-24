@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 )
 
 // Process supervision tuning.
@@ -34,58 +36,6 @@ type proc struct {
 	done    chan struct{}
 	started time.Time
 	stop    bool
-}
-
-// logBufferSize caps the in-memory Xray log ring shown to newly-opened viewers.
-const logBufferSize = 600
-
-// logHub keeps a ring of recent Xray log lines and fans new lines out to live
-// subscribers (the dashboard log viewer).
-type logHub struct {
-	mu   sync.Mutex
-	buf  []string
-	subs map[chan string]struct{}
-}
-
-func (h *logHub) push(line string) {
-	h.mu.Lock()
-	h.buf = append(h.buf, line)
-	if len(h.buf) > logBufferSize {
-		h.buf = h.buf[len(h.buf)-logBufferSize:]
-	}
-	for ch := range h.subs {
-		select {
-		case ch <- line:
-		default: // drop for a slow subscriber rather than block the log reader
-		}
-	}
-	h.mu.Unlock()
-}
-
-func (h *logHub) tail() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	out := make([]string, len(h.buf))
-	copy(out, h.buf)
-	return out
-}
-
-func (h *logHub) subscribe() (chan string, func()) {
-	ch := make(chan string, 256)
-	h.mu.Lock()
-	if h.subs == nil {
-		h.subs = make(map[chan string]struct{})
-	}
-	h.subs[ch] = struct{}{}
-	h.mu.Unlock()
-	return ch, func() {
-		h.mu.Lock()
-		if _, ok := h.subs[ch]; ok {
-			delete(h.subs, ch)
-			close(ch)
-		}
-		h.mu.Unlock()
-	}
 }
 
 // Supervisor owns the Xray child process and the on-disk config.json. It
@@ -112,14 +62,14 @@ type Supervisor struct {
 	verOnce sync.Once
 	version string
 
-	logs logHub // recent Xray log lines + live subscribers
+	logs *logbuf.Hub // recent Xray log lines + live subscribers
 }
 
 // LogTail returns the buffered recent Xray log lines.
-func (s *Supervisor) LogTail() []string { return s.logs.tail() }
+func (s *Supervisor) LogTail() []string { return s.logs.Tail() }
 
 // SubscribeLogs returns a channel of new Xray log lines and an unsubscribe func.
-func (s *Supervisor) SubscribeLogs() (<-chan string, func()) { return s.logs.subscribe() }
+func (s *Supervisor) SubscribeLogs() (<-chan string, func()) { return s.logs.Subscribe() }
 
 // UptimeSeconds reports how long the current Xray process has been running, or 0
 // if it's down.
@@ -178,9 +128,9 @@ func NewSupervisor(binName, configPath, assetDir string) *Supervisor {
 		}
 	}
 	if bin == "" {
-		log.Printf("xray: binary %q not found; config will be generated but Xray won't be started", binName)
+		slog.Warn("xray: binary not found; config will be generated but Xray won't be started", "binary", binName)
 	}
-	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir}
+	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir, logs: logbuf.New()}
 }
 
 // ConfigBytes returns the on-disk config.json currently applied to Xray.
@@ -383,7 +333,7 @@ func (s *Supervisor) RemoveUsers(apiAddr string, tags, emails []string) error {
 // on-disk config. Caller must hold s.runMu.
 func (s *Supervisor) restart() error {
 	if s.bin == "" {
-		log.Printf("xray: config written to %s (no binary; not started)", s.configPath)
+		slog.Info("xray: config written (no binary; not started)", "path", s.configPath)
 		return nil
 	}
 	s.stopProc()
@@ -421,7 +371,7 @@ func (s *Supervisor) startProc() error {
 	go s.tap(stdout, os.Stdout, true)
 	go s.tap(stderr, os.Stderr, false)
 	go s.monitor(p)
-	log.Printf("xray: started (pid %d) with %s", cmd.Process.Pid, s.configPath)
+	slog.Info("xray: started", "pid", cmd.Process.Pid, "config", s.configPath)
 	return nil
 }
 
@@ -467,7 +417,7 @@ func (s *Supervisor) monitor(p *proc) {
 	}
 	s.mu.Unlock()
 
-	log.Printf("xray: exited unexpectedly (%v) — supervising restart", err)
+	slog.Warn("xray: exited unexpectedly, supervising restart", "err", err)
 	s.superviseRestart(quickCrash)
 }
 
@@ -484,18 +434,18 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 	recentApply := !s.lastApply.IsZero() && time.Since(s.lastApply) < 2*healthyUptime
 	s.mu.Unlock()
 	if quickCrash && firstCrash && recentApply && s.HasBackup() {
-		log.Printf("xray: crashed immediately after config change — attempting auto-rollback to previous config")
+		slog.Warn("xray: crashed after config change, attempting auto-rollback")
 		s.runMu.Lock()
 		s.mu.Lock()
 		skip := s.closed || s.cur != nil
 		s.mu.Unlock()
 		if !skip {
 			if err := s.restoreBackupLocked(); err == nil {
-				log.Printf("xray: auto-rollback succeeded")
+				slog.Info("xray: auto-rollback succeeded")
 				s.runMu.Unlock()
 				return
 			} else {
-				log.Printf("xray: auto-rollback failed: %v", err)
+				slog.Error("xray: auto-rollback failed", "err", err)
 			}
 		}
 		s.runMu.Unlock()
@@ -511,7 +461,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 		s.restarts++
 		s.mu.Unlock()
 
-		log.Printf("xray: restarting in %s", delay)
+		slog.Info("xray: restarting", "delay", delay)
 		time.Sleep(delay)
 
 		s.runMu.Lock()
@@ -527,7 +477,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 		if err == nil {
 			return // the new process's monitor takes over
 		}
-		log.Printf("xray: restart failed: %v", err)
+		slog.Error("xray: restart failed", "err", err)
 	}
 }
 
@@ -558,7 +508,7 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 			continue
 		}
 		fmt.Fprintln(w, line)
-		s.logs.push(line)
+		fmt.Fprintln(s.logs, line)
 		if access && s.onAccess != nil {
 			if email, ip := parseAccess(line); email != "" && ip != "" {
 				s.dispatchAccess(email, ip)
@@ -572,7 +522,7 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 func (s *Supervisor) dispatchAccess(email, ip string) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("xray: onAccess panic recovered: %v", r)
+			slog.Error("xray: onAccess panic recovered", "panic", r)
 		}
 	}()
 	s.onAccess(email, ip)

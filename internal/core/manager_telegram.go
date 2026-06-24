@@ -3,7 +3,7 @@ package core
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -86,7 +86,7 @@ func (m *Manager) UnlinkTelegramChat(id int64) error {
 		return err
 	}
 	if found {
-		log.Printf("telegram: chat %d unlinked", id)
+		slog.Info("telegram: chat unlinked", "id", id)
 	}
 	return nil
 }

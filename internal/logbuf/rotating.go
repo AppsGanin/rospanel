@@ -32,7 +32,7 @@ func NewRotatingFile(path string, maxBytes int64, maxBackups int) (*RotatingFile
 	}
 	fi, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	return &RotatingFile{

@@ -7,11 +7,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -34,6 +37,11 @@ func main() {
 		log.Printf("[WARN] file logging disabled: %v", err)
 	}
 	log.SetOutput(io.MultiWriter(sinks...))
+
+	// Route slog calls through the standard logger so every slog.Info/Warn/Error
+	// lands in all configured sinks (stderr, logbuf, rotating file) and carries
+	// the [INFO]/[WARN]/[ERROR] tag the dashboard log viewer filters on.
+	slog.SetDefault(slog.New(&slogHandler{}))
 
 	// CLI subcommands. Without one, run the panel server (the systemd default).
 	if len(os.Args) > 1 {
@@ -68,6 +76,43 @@ func main() {
 
 	runServer(dataDir)
 }
+
+// slogHandler routes slog calls through the standard logger so they reach all
+// configured sinks (stderr, logbuf, rotating file) and carry the [LEVEL] tag
+// that the dashboard log viewer uses for filtering.
+type slogHandler struct{}
+
+func (*slogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+
+func (*slogHandler) Handle(_ context.Context, r slog.Record) error {
+	tag := "[INFO]"
+	switch {
+	case r.Level >= slog.LevelError:
+		tag = "[ERROR]"
+	case r.Level >= slog.LevelWarn:
+		tag = "[WARN]"
+	}
+	var b strings.Builder
+	b.WriteString(tag)
+	b.WriteByte(' ')
+	b.WriteString(r.Message)
+	r.Attrs(func(a slog.Attr) bool {
+		b.WriteByte(' ')
+		b.WriteString(a.Key)
+		b.WriteByte('=')
+		if a.Value.Kind() == slog.KindString {
+			fmt.Fprintf(&b, "%q", a.Value.String())
+		} else {
+			fmt.Fprint(&b, a.Value.Any())
+		}
+		return true
+	})
+	log.Print(b.String())
+	return nil
+}
+
+func (*slogHandler) WithAttrs([]slog.Attr) slog.Handler { return &slogHandler{} }
+func (*slogHandler) WithGroup(string) slog.Handler      { return &slogHandler{} }
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {

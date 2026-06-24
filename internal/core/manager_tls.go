@@ -100,12 +100,12 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 		return err
 	}
 	// force=true: issue a real cert now for the new target.
-	logInfo("tls: issuing certificate for %q via %s", target, provider)
+	logInfo("tls: issuing certificate", "target", target, "provider", provider)
 	if err := tlsmgr.Ensure(set, m.tls.CertPath, m.tls.KeyPath, m.tls.ACMEDir, true); err != nil {
-		logErr("tls: certificate issuance for %q failed: %v", target, err)
+		logErr("tls: certificate issuance failed", "target", target, "err", err)
 		return err
 	}
-	logInfo("tls: certificate issued for %q", target)
+	logInfo("tls: certificate issued", "target", target)
 	m.TriggerReconcile()
 	return nil
 }
@@ -146,7 +146,7 @@ func (m *Manager) RenewTLSIfNeeded() (bool, error) {
 	after, _ := tlsutil.ReadCertInfo(m.tls.CertPath)
 	changed := before == nil || after == nil || !before.NotAfter.Equal(after.NotAfter)
 	if changed {
-		logInfo("tls: certificate renewed for %q", set.Host)
+		logInfo("tls: certificate renewed", "host", set.Host)
 	}
 	return changed, nil
 }

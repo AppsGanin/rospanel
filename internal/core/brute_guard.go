@@ -64,9 +64,9 @@ func (g *bruteGuard) ban(ip string) {
 		return
 	}
 	if err := exec.Command(tool, "-I", "INPUT", "1", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: %s ban %s: %v", tool, ip, err)
+		logErr("brute-guard: ban failed", "tool", tool, "ip", ip, "err", err)
 	} else {
-		logWarn("brute-guard: banned %s for %s", ip, bruteBanTime)
+		logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
 	}
 }
 
@@ -76,9 +76,9 @@ func (g *bruteGuard) unban(ip string) {
 		return
 	}
 	if err := exec.Command(tool, "-D", "INPUT", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: %s unban %s: %v", tool, ip, err)
+		logErr("brute-guard: unban failed", "tool", tool, "ip", ip, "err", err)
 	} else {
-		logInfo("brute-guard: unbanned %s", ip)
+		logInfo("brute-guard: unbanned", "ip", ip)
 	}
 }
 
