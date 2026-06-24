@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
 func (rt *Router) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -115,6 +116,30 @@ func (rt *Router) unlinkUserTelegram(w http.ResponseWriter, _ *http.Request, id 
 		return
 	}
 	writeOK(w)
+}
+
+// genUserTelegramLink mints a fresh one-time bind deep link for a user. The code
+// expires after model.TelegramLinkCodeTTL and is burned once used.
+func (rt *Router) genUserTelegramLink(w http.ResponseWriter, r *http.Request, id int64) {
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	bot := botUsername(r.Context(), set.TGUserBotToken)
+	if !set.TGUserBotEnabled || bot == "" {
+		writeErr(w, http.StatusBadRequest, "пользовательский бот выключен или недоступен")
+		return
+	}
+	code, err := rt.mgr.GenerateUserTgLinkCode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deep_link":   telegram.UserDeepLink(bot, code),
+		"expires_sec": int(model.TelegramLinkCodeTTL.Seconds()),
+	})
 }
 
 func (rt *Router) userConnections(w http.ResponseWriter, _ *http.Request, id int64) {
