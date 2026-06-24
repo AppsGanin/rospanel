@@ -14,6 +14,8 @@ export interface User {
   created_at: string
   reset_period: string
   last_seen: number
+  device_limit: number
+  active_devices: number
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
   vless: string
@@ -188,10 +190,15 @@ export const deleteUser = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}`, { method: 'DELETE' })
 export const resetUserTraffic = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}/reset`, { method: 'POST' })
-export const setUserLimits = (id: number, data_limit: number, expire_at: number) =>
+export const setUserLimits = (
+  id: number,
+  data_limit: number,
+  expire_at: number,
+  device_limit: number,
+) =>
   api<{ ok: boolean }>(`api/users/${id}/limits`, {
     method: 'POST',
-    body: JSON.stringify({ data_limit, expire_at }),
+    body: JSON.stringify({ data_limit, expire_at, device_limit }),
   })
 export const setUserEnabled = (id: number, enabled: boolean) =>
   api<{ ok: boolean }>(`api/users/${id}/enabled`, {
@@ -208,6 +215,8 @@ export const setResetPeriod = (id: number, period: string) =>
     method: 'POST',
     body: JSON.stringify({ period }),
   })
+export const rotateSubToken = (id: number) =>
+  api<User>(`api/users/${id}/rotate-sub`, { method: 'POST' })
 
 export const getStatsSeries = (p: { user_id?: number; from?: string; to?: string }) => {
   const q = new URLSearchParams()
@@ -325,7 +334,7 @@ export const updateCredentials = (
 export interface SubSettings {
   sub_path: string
   sub_base64: boolean
-  sub_email_in_name: boolean
+  sub_name_in_title: boolean
   sub_title: string
   sub_routing: boolean
   sub_routing_happ: string

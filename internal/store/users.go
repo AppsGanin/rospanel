@@ -9,16 +9,16 @@ import (
 
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
-	reset_period, last_reset_at, last_seen`
+	reset_period, last_reset_at, last_seen, device_limit`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
-func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, expireAt int64) (*model.User, error) {
+func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, expireAt int64, deviceLimit int) (*model.User, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at)
-		 VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
-		name, uuid, password, subToken, dataLimit, expireAt,
+		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, device_limit)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		name, uuid, password, subToken, dataLimit, expireAt, deviceLimit,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -36,15 +36,32 @@ func (s *Store) ListUsers() ([]model.User, error) {
 }
 
 // WorkingUsers returns users that should be in the proxy config right now:
-// manually enabled AND not expired AND within their data limit. enabled is an
-// independent manual flag — expiry/quota never change it, they just exclude the
-// user from the config here.
+// manually enabled AND not expired AND within their data limit AND within their
+// device limit. enabled is an independent manual flag — expiry/quota/devices
+// never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
+	since := now - model.DeviceOnlineWindow
 	return s.queryUsers(`SELECT `+userCols+` FROM users
 		WHERE enabled = 1
 		  AND (expire_at = 0 OR expire_at > ?)
 		  AND (data_limit = 0 OR used_up + used_down < data_limit)
-		ORDER BY id ASC`, now)
+		  AND (device_limit = 0 OR (
+		    SELECT COUNT(DISTINCT c.ip) FROM connections c
+		    WHERE c.user_id = users.id AND c.last_seen > ?
+		  ) <= device_limit)
+		ORDER BY id ASC`, now, since)
+}
+
+// GetUser returns one user by id.
+func (s *Store) GetUser(id int64) (*model.User, error) {
+	users, err := s.queryUsers(`SELECT `+userCols+` FROM users WHERE id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &users[0], nil
 }
 
 // GetUserBySubToken resolves a subscription token to its user.
@@ -72,16 +89,27 @@ func (s *Store) UpdateTraffic(id, addUp, addDown, lastUp, lastDown int64) error 
 	return err
 }
 
-// SetUserLimits sets the data limit (bytes) and expiry (unix, 0 = none). Does
-// not touch the manual enabled flag; status is derived on read.
-func (s *Store) SetUserLimits(id, dataLimit, expireAt int64) error {
-	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, expire_at = ? WHERE id = ?`, dataLimit, expireAt, id)
+// SetUserLimits sets the data limit (bytes), expiry (unix, 0 = none), and the
+// simultaneous device cap (0 = unlimited). Does not touch the manual enabled
+// flag; status is derived on read.
+func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ? WHERE id = ?`,
+		dataLimit, expireAt, deviceLimit, id,
+	)
 	return err
 }
 
 // SetUserName updates a user's display name.
 func (s *Store) SetUserName(id int64, name string) error {
 	_, err := s.db.Exec(`UPDATE users SET name = ? WHERE id = ?`, name, id)
+	return err
+}
+
+// SetSubToken replaces a user's subscription capability token. The old URL stops
+// working immediately; protocol credentials (UUID/password) are unchanged.
+func (s *Store) SetSubToken(id int64, token string) error {
+	_, err := s.db.Exec(`UPDATE users SET sub_token = ? WHERE id = ?`, token, id)
 	return err
 }
 
@@ -112,18 +140,20 @@ func (s *Store) DeleteUser(id int64) error {
 }
 
 // deriveStatus computes the display status from the independent enabled flag and
-// the expiry/quota conditions. Order: disabled (manual) > expired > limited >
-// active.
-func deriveStatus(enabled bool, expireAt, used, limit, now int64) string {
+// the expiry/quota/device conditions. Order: disabled (manual) > expired >
+// limited (traffic) > device_limited > active.
+func deriveStatus(enabled bool, expireAt, used, limit, now int64, activeDevices, deviceLimit int) string {
 	switch {
 	case !enabled:
-		return "disabled"
+		return model.StatusDisabled
 	case expireAt > 0 && expireAt <= now:
-		return "expired"
+		return model.StatusExpired
 	case limit > 0 && used >= limit:
-		return "limited"
+		return model.StatusLimited
+	case deviceLimit > 0 && activeDevices > deviceLimit:
+		return model.StatusDeviceLimited
 	default:
-		return "active"
+		return model.StatusActive
 	}
 }
 
@@ -143,14 +173,35 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
-			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen,
+			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit,
 		); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled != 0
 		u.CreatedAt = time.Unix(created, 0)
-		u.Status = deriveStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now)
 		out = append(out, u)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	s.applyUserStatus(out, now)
+	return out, nil
+}
+
+// applyUserStatus fills each user's ActiveDevices (distinct source IPs seen
+// within DeviceOnlineWindow) and derives their display status.
+func (s *Store) applyUserStatus(users []model.User, now int64) {
+	if len(users) == 0 {
+		return
+	}
+	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	for i := range users {
+		u := &users[i]
+		active := counts[u.ID]
+		u.ActiveDevices = active
+		u.Status = deriveStatus(
+			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
+			active, u.DeviceLimit,
+		)
+	}
 }

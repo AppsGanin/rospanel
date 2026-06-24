@@ -6,6 +6,7 @@ import {
   getUserConnections,
   renameUser,
   resetUserTraffic,
+  rotateSubToken,
   setResetPeriod,
   setUserEnabled,
   setUserLimits,
@@ -21,13 +22,14 @@ import {
   gbToBytes,
   isOnline,
   localDay,
+  DEVICE_LIMIT_OPTIONS,
   QUOTA_OPTIONS,
   RANGES,
   RESET_PERIODS,
   statusInfo,
 } from './format'
 import { useAction } from './hooks'
-import { errMessage, notifyError } from './notify'
+import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
 import {
   Badge,
@@ -35,7 +37,7 @@ import {
   Code,
   DatePicker,
   Divider,
-  Drawer,
+  Modal,
   IconButton,
   IconCheck,
   IconClose,
@@ -70,7 +72,7 @@ function LinkRow({ name, url }: { name: string; url: string }) {
 }
 
 // EditableName renders the user's name with a pencil; clicking it swaps to an
-// inline input with save/cancel. Used as the drawer title.
+// inline input with save/cancel. Used as the modal title.
 function EditableName({ user, onChanged }: { user: User; onChanged: () => void }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(user.name)
@@ -155,12 +157,14 @@ export function UserDetail({
   const [conns, setConns] = useState<Connection[]>([])
   const [range, setRange] = useState('30')
   const [limitGb, setLimitGb] = useState('0')
+  const [deviceLimit, setDeviceLimit] = useState('0')
   const sub = useCopy()
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
   useEffect(() => {
     setLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
+    setDeviceLimit(user ? String(user.device_limit ?? 0) : '0')
   }, [user])
 
   useEffect(() => {
@@ -184,11 +188,15 @@ export function UserDetail({
       return
     }
     let alive = true
-    getUserConnections(user.id)
-      .then((d) => alive && setConns(d))
-      .catch(() => {})
+    const load = () =>
+      getUserConnections(user.id)
+        .then((d) => alive && setConns(d))
+        .catch(() => {})
+    load()
+    const t = setInterval(load, 30_000)
     return () => {
       alive = false
+      clearInterval(t)
     }
   }, [user])
 
@@ -210,13 +218,18 @@ export function UserDetail({
       : [...QUOTA_OPTIONS, { value: limitGb, label: fmtBytes(user.data_limit) }]
     : QUOTA_OPTIONS
 
+  const saveLimits = (dl: number, ea: number, dev: number) =>
+    setUserLimits(user!.id, dl, ea, dev).then(onChanged).catch(fail)
+
+  const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
+
   return (
     <>
-    <Drawer
+    <Modal
       open={!!user}
       onClose={onClose}
-      side="right"
-      title={user ? <EditableName user={user} onChanged={onChanged} /> : ''}
+      size="xl"
+      title={user ? <EditableName user={user} onChanged={onChanged} /> : undefined}
     >
       {user && (
         <div className="flex flex-col gap-3">
@@ -228,6 +241,11 @@ export function UserDetail({
             <Badge color="brand">{fmtQuota(user.used_up + user.used_down, user.data_limit)}</Badge>
             {user.expire_at > 0 && (
               <Badge color="gray">до {fmtExpire(user.expire_at)}</Badge>
+            )}
+            {user.device_limit > 0 && (
+              <Badge color={user.status === 'device_limited' ? 'orange' : 'gray'}>
+                устройств {user.active_devices}/{user.device_limit}
+              </Badge>
             )}
           </div>
 
@@ -257,7 +275,7 @@ export function UserDetail({
             value={unixToDate(user.expire_at)}
             onChange={(v) => {
               const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
-              setUserLimits(user.id, user.data_limit, ea).then(onChanged).catch(fail)
+              saveLimits(user.data_limit, ea, user.device_limit)
             }}
           />
 
@@ -267,9 +285,23 @@ export function UserDetail({
             value={limitGb}
             onChange={(v) => {
               setLimitGb(v)
-              setUserLimits(user.id, gbToBytes(Number(v)), user.expire_at).then(onChanged).catch(fail)
+              saveLimits(gbToBytes(Number(v)), user.expire_at, user.device_limit)
             }}
           />
+          <Select
+            label="Лимит устройств"
+            data={DEVICE_LIMIT_OPTIONS}
+            value={deviceLimit}
+            onChange={(v) => {
+              setDeviceLimit(v)
+              saveLimits(user.data_limit, user.expire_at, Number(v))
+            }}
+          />
+          <p className="-mt-1 text-xs text-ink-muted">
+            Одно устройство = один публичный IP. Телефон и компьютер в одной Wi‑Fi сети
+            считаются одним устройством. Для раздельного учёта используйте мобильный
+            интернет на одном из них.
+          </p>
           <Select
             label="Автосброс трафика"
             data={RESET_PERIODS}
@@ -321,12 +353,35 @@ export function UserDetail({
             </div>
           </div>
           <Code block>{user.sub_url}</Code>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="xs" color={sub.copied ? 'teal' : 'brand'} onClick={() => sub.copy(user.sub_url)}>
               {sub.copied ? 'Скопировано' : 'Копировать подписку'}
             </Button>
             <Button size="xs" variant="light" href={user.sub_url} target="_blank">
               Открыть подписку
+            </Button>
+            <Button
+              size="xs"
+              variant="light"
+              color="orange"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Сбросить ссылку подписки?',
+                  body:
+                    'Будет выдана новая ссылка. Старая перестанет работать — на всех устройствах нужно обновить подписку в клиенте. UUID и пароли протоколов не меняются.',
+                  confirmLabel: 'Сбросить ссылку',
+                  danger: true,
+                })
+                if (!ok) return
+                rotateSubToken(user.id)
+                  .then(() => {
+                    notifySuccess('Ссылка подписки обновлена')
+                    onChanged()
+                  })
+                  .catch(fail)
+              }}
+            >
+              Сбросить ссылку
             </Button>
           </div>
 
@@ -339,6 +394,37 @@ export function UserDetail({
               ))}
           </div>
 
+          <Divider label="Устройства (IP)" />
+          <p className="text-sm text-ink-muted">
+            {user.device_limit > 0
+              ? `Активно ${activeConnCount} из ${user.device_limit} · всего ${conns.length} IP`
+              : `Активно ${activeConnCount} · всего ${conns.length} IP`}
+          </p>
+          {conns.length === 0 ? (
+            <p className="py-2 text-center text-sm text-ink-muted">Пока нет подключений</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {conns.map((c) => (
+                <div
+                  key={c.ip}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {isOnline(c.last_seen) ? (
+                      <Badge color="greenSolid">онлайн</Badge>
+                    ) : (
+                      <Badge color="gray">офлайн</Badge>
+                    )}
+                    <span className="truncate font-mono text-sm">{c.ip}</span>
+                  </div>
+                  <span className="shrink-0 text-xs text-ink-muted">
+                    {fmtLastSeen(c.last_seen)} · {c.count}×
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <Divider label="Трафик" />
           <SegmentedControl fullWidth value={range} onChange={setRange} data={RANGES} />
           {chart.length === 0 ? (
@@ -346,25 +432,9 @@ export function UserDetail({
           ) : (
             <TrafficArea data={chart} height={200} fmt={fmtBytes} />
           )}
-
-          <Divider label="Подключения (IP)" />
-          {conns.length === 0 ? (
-            <p className="py-2 text-center text-sm text-ink-muted">Нет данных о подключениях</p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {conns.map((c) => (
-                <div key={c.ip} className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-sm">{c.ip}</span>
-                  <span className="text-xs text-ink-muted">
-                    {fmtLastSeen(c.last_seen)} · {c.count}×
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
-    </Drawer>
+    </Modal>
     {confirmNode}
     </>
   )

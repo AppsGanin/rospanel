@@ -104,6 +104,29 @@ func (s *Store) TouchLastSeen(userID, ts int64) error {
 	return err
 }
 
+// ActiveDeviceCounts returns how many distinct source IPs were seen per user
+// since the given unix timestamp (typically now - DeviceOnlineWindow).
+func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
+	rows, err := s.db.Query(
+		`SELECT user_id, COUNT(DISTINCT ip) FROM connections WHERE last_seen > ? GROUP BY user_id`,
+		since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]int)
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
 // RecentConnections returns a user's source IPs, most recent first.
 func (s *Store) RecentConnections(userID int64, limit int) ([]model.Connection, error) {
 	rows, err := s.db.Query(`
