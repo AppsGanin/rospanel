@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -36,12 +37,15 @@ func main() {
 	} else {
 		log.Printf("[WARN] file logging disabled: %v", err)
 	}
-	log.SetOutput(io.MultiWriter(sinks...))
+	out := io.MultiWriter(sinks...)
+	log.SetOutput(out)
 
-	// Route slog calls through the standard logger so every slog.Info/Warn/Error
-	// lands in all configured sinks (stderr, logbuf, rotating file) and carries
-	// the [INFO]/[WARN]/[ERROR] tag the dashboard log viewer filters on.
-	slog.SetDefault(slog.New(&slogHandler{}))
+	// Route slog (and, via slog.SetDefault, the standard log package) straight to
+	// the sinks with an [INFO]/[WARN]/[ERROR] tag the dashboard log viewer filters
+	// on. The handler must write to `out` DIRECTLY, not via log.Print: SetDefault
+	// repoints the standard logger's output at this handler, so calling log.Print
+	// here would loop back into the handler and self-deadlock on the log mutex.
+	slog.SetDefault(slog.New(newSlogHandler(out)))
 
 	// CLI subcommands. Without one, run the panel server (the systemd default).
 	if len(os.Args) > 1 {
@@ -77,14 +81,23 @@ func main() {
 	runServer(dataDir)
 }
 
-// slogHandler routes slog calls through the standard logger so they reach all
-// configured sinks (stderr, logbuf, rotating file) and carry the [LEVEL] tag
-// that the dashboard log viewer uses for filtering.
-type slogHandler struct{}
+// slogHandler writes slog records straight to the configured sinks (stderr,
+// logbuf, rotating file) with a [LEVEL] tag the dashboard log viewer filters on.
+// It writes to its own io.Writer — NOT log.Print — because slog.SetDefault
+// repoints the standard log package at this handler; routing back through
+// log.Print would recurse into Handle and self-deadlock on the log mutex.
+type slogHandler struct {
+	w  io.Writer
+	mu *sync.Mutex // serialises writes so concurrent records don't interleave
+}
+
+func newSlogHandler(w io.Writer) *slogHandler {
+	return &slogHandler{w: w, mu: &sync.Mutex{}}
+}
 
 func (*slogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
 
-func (*slogHandler) Handle(_ context.Context, r slog.Record) error {
+func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 	tag := "[INFO]"
 	switch {
 	case r.Level >= slog.LevelError:
@@ -107,12 +120,15 @@ func (*slogHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 		return true
 	})
-	log.Print(b.String())
-	return nil
+	b.WriteByte('\n')
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, err := io.WriteString(h.w, b.String())
+	return err
 }
 
-func (*slogHandler) WithAttrs([]slog.Attr) slog.Handler { return &slogHandler{} }
-func (*slogHandler) WithGroup(string) slog.Handler      { return &slogHandler{} }
+func (h *slogHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *slogHandler) WithGroup(string) slog.Handler      { return h }
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
