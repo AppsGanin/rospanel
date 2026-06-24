@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/auth"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // mutateUser runs a single-user store write, logging the outcome and triggering

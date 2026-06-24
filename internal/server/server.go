@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/core"
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	webui "github.com/AppsGanin/rospanel/web"
+	"github.com/msTimofeev/rospanel/internal/core"
+	"github.com/msTimofeev/rospanel/internal/decoy"
+	webui "github.com/msTimofeev/rospanel/web"
 )
 
 const (

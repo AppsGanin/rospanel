@@ -3,7 +3,7 @@ package core
 import (
 	"log"
 
-	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/msTimofeev/rospanel/internal/logbuf"
 )
 
 // Leveled log helpers. The "[INFO]"/"[WARN]"/"[ERROR]" tag rides in front of the

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 func (rt *Router) listUsers(w http.ResponseWriter, _ *http.Request) {

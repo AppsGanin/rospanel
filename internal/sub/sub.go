@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/link"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // ShareLinks returns the enabled protocol links for a user, in client-import

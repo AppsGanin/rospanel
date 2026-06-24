@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/cron"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/cron"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // backupLoop fires scheduled backups: it wakes every minute and lets maybeBackup

@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/opera"
-	"github.com/AppsGanin/rospanel/internal/proxypool"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/sysstat"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/opera"
+	"github.com/msTimofeev/rospanel/internal/proxypool"
+	"github.com/msTimofeev/rospanel/internal/store"
+	"github.com/msTimofeev/rospanel/internal/sysstat"
+	"github.com/msTimofeev/rospanel/internal/xray"
 )
 
 // TLSPaths are the on-disk locations the panel manages for TLS material.

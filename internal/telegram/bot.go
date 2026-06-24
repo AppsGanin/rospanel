@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/msTimofeev/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/store"
 )
 
 // Panel is the slice of the core Manager the bot drives. Defining it here (rather

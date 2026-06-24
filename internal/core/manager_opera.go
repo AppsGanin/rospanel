@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/opera"
+	"github.com/msTimofeev/rospanel/internal/opera"
 )
 
 // operaReadyTimeout bounds how long we wait for the opera-proxy helper to start

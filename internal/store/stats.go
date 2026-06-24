@@ -1,6 +1,6 @@
 package store
 
-import "github.com/AppsGanin/rospanel/internal/model"
+import "github.com/msTimofeev/rospanel/internal/model"
 
 // AddDailyTraffic adds up/down deltas to a user's row for the given UTC day.
 func (s *Store) AddDailyTraffic(userID int64, day string, up, down int64) error {

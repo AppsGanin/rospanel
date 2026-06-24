@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/tlsutil"
 )
 
 // Ensure obtains (or renews) the certificate for the configured host into

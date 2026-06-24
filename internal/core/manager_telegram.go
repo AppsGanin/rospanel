@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/cron"
+	"github.com/msTimofeev/rospanel/internal/cron"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable

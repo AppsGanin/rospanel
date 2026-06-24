@@ -3,7 +3,7 @@ package link
 import (
 	"net/url"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // Trojan builds a trojan:// share link for Trojan-over-WebSocket on :443.

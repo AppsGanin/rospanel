@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/updater"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/msTimofeev/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/store"
+	"github.com/msTimofeev/rospanel/internal/updater"
+	"github.com/msTimofeev/rospanel/internal/version"
 )
 
 // printUsage writes the CLI help to w.

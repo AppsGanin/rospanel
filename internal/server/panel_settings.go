@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/decoy"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 func (rt *Router) setupPassword(w http.ResponseWriter, r *http.Request) {

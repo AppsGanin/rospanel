@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/tlsmgr"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/tlsmgr"
+	"github.com/msTimofeev/rospanel/internal/tlsutil"
 )
 
 // TLSStatus is the current TLS configuration plus active cert metadata.

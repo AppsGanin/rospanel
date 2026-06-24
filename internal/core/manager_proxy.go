@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/proxypool"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/proxypool"
 )
 
 // defaultProxyRefresh is the auto-refresh cadence for the URL-sourced proxy list

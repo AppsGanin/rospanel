@@ -7,8 +7,8 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/link"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 //go:embed logo.svg

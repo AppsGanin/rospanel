@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 const userCols = `id, name, uuid, password, sub_token, enabled,

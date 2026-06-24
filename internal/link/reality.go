@@ -3,7 +3,7 @@ package link
 import (
 	"net/url"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // Reality builds a vless:// share link for VLESS + gRPC + REALITY.

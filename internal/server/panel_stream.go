@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/msTimofeev/rospanel/internal/core"
 )
 
 // xrayStatus is a lightweight check the UI polls to detect when a config change

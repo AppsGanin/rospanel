@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/link"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // SubTitle is the profile title: the configured subscription title, or the

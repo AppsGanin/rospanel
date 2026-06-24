@@ -1,4 +1,4 @@
-module github.com/AppsGanin/rospanel
+module github.com/msTimofeev/rospanel
 
 go 1.26.1
 

@@ -3,8 +3,8 @@ package link
 import (
 	"net/url"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/xray"
 )
 
 // VLESS builds a vless:// share link for raw-TCP + TLS + Vision.

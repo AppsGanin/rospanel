@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
 
-	"github.com/AppsGanin/rospanel/internal/logbuf"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/msTimofeev/rospanel/internal/logbuf"
+	"github.com/msTimofeev/rospanel/internal/version"
 )
 
 func main() {

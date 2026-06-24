@@ -26,7 +26,7 @@ import (
 
 // Repo is the GitHub "owner/repo" this panel self-updates from, baked into the
 // build. Change it here if the project moves.
-const Repo = "AppsGanin/rospanel"
+const Repo = "msTimofeev/rospanel"
 
 // AssetName is the release asset this build updates from, e.g. "rospanel-linux-amd64".
 var AssetName = fmt.Sprintf("rospanel-%s-%s", runtime.GOOS, runtime.GOARCH)

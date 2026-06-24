@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // GetSettings returns the singleton settings row.

@@ -184,7 +184,7 @@ export function Dashboard({
           </button>
         </div>
         <a
-          href="https://github.com/AppsGanin/rospanel"
+          href="https://github.com/msTimofeev/rospanel"
           target="_blank"
           rel="noreferrer"
           aria-label="GitHub"

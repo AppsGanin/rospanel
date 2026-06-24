@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/sub"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/msTimofeev/rospanel/internal/auth"
+	"github.com/msTimofeev/rospanel/internal/link"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/sub"
+	"github.com/msTimofeev/rospanel/internal/version"
 )
 
 // validDNSServer reports whether s is an acceptable Xray DNS server: "localhost",

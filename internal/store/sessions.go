@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/msTimofeev/rospanel/internal/auth"
 )
 
 func hashToken(token string) string {

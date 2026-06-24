@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // Parse turns proxy lines into endpoints, skipping blanks/comments/dupes and

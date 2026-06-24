@@ -10,8 +10,8 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/sub"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/sub"
 )
 
 // menuHeader is the main-menu caption.

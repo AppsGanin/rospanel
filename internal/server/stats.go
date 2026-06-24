@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/model"
 )
 
 // dateRange reads ?from=&to= (YYYY-MM-DD), defaulting to the last 30 days in the

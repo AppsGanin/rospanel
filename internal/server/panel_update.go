@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/updater"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/msTimofeev/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/updater"
+	"github.com/msTimofeev/rospanel/internal/version"
 )
 
 // updateRepo is the "owner/repo" the panel self-updates from: the baked-in

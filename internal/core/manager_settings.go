@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/warp"
+	"github.com/msTimofeev/rospanel/internal/auth"
+	"github.com/msTimofeev/rospanel/internal/geo"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/warp"
 )
 
 // SetTimezone validates and persists the operator's IANA timezone, then updates

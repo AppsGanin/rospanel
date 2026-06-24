@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/netinfo"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/msTimofeev/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/netinfo"
+	"github.com/msTimofeev/rospanel/internal/store"
 )
 
 // scheduleRestart sends the process SIGTERM after a short delay so the current

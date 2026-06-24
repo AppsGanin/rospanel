@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/telegram"
+	"github.com/msTimofeev/rospanel/internal/telegram"
 )
 
 // telegramConfig is the bot configuration returned to the settings UI. The token

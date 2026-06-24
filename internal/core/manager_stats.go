@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/sysstat"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/msTimofeev/rospanel/internal/model"
+	"github.com/msTimofeev/rospanel/internal/sysstat"
+	"github.com/msTimofeev/rospanel/internal/tlsutil"
 )
 
 // PollStats reads per-user traffic from Xray, accumulates lifetime totals

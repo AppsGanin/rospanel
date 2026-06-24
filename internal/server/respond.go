@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/msTimofeev/rospanel/internal/core"
 )
 
 // maxJSONBody caps every admin JSON request body. The admin API is authenticated

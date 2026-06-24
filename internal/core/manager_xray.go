@@ -3,7 +3,7 @@ package core
 import (
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/msTimofeev/rospanel/internal/backup"
 )
 
 // XrayLogTail returns the buffered recent Xray log lines.
