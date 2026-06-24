@@ -46,7 +46,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
-		supportURL := telegramSupportURL(r.Context(), set, *u)
+		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
 		switch subFormat(r) {
@@ -119,7 +119,7 @@ func servePage(w http.ResponseWriter, u model.User, set *model.Settings) {
 
 // telegramSupportURL is the Happ/INCY support-url (Telegram user bot deep link),
 // or "" when the user bot is disabled or its @username can't be resolved.
-func telegramSupportURL(ctx context.Context, set *model.Settings, u model.User) string {
+func (rt *Router) telegramSupportURL(ctx context.Context, set *model.Settings, u model.User) string {
 	if !set.TGUserBotEnabled {
 		return ""
 	}
@@ -127,7 +127,16 @@ func telegramSupportURL(ctx context.Context, set *model.Settings, u model.User) 
 	if bot == "" {
 		return ""
 	}
-	return telegram.UserDeepLink(bot, u.SubToken)
+	// Already linked: just point at the bot (no bind needed). Otherwise mint a
+	// fresh one-time bind code so the subscription page's link binds this account.
+	if u.TgChatID != 0 {
+		return telegram.UserBotLink(bot)
+	}
+	code, err := rt.mgr.GenerateUserTgLinkCode(u.ID)
+	if err != nil {
+		return telegram.UserBotLink(bot)
+	}
+	return telegram.UserDeepLink(bot, code)
 }
 
 // setSubHeaders adds the standard subscription headers every client reads:

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -114,6 +116,28 @@ func (m *Manager) RotateSubToken(id int64) (*model.User, error) {
 	logInfo("sub token rotated", "id", id)
 	m.TriggerUserSync()
 	return u, nil
+}
+
+// GenerateUserTgLinkCode issues a fresh one-time code for binding a VPN user to
+// the public Telegram bot. It replaces the old sub-token deep link, so a leaked
+// link expires (TelegramLinkCodeTTL) and can't be reused after binding.
+func (m *Manager) GenerateUserTgLinkCode(userID int64) (string, error) {
+	u, err := m.store.GetUser(userID)
+	if err != nil {
+		return "", err
+	}
+	if u.TgChatID != 0 {
+		return "", invalid("Telegram уже привязан к этому пользователю")
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	code := hex.EncodeToString(b[:])
+	if err := m.store.SetUserTgLinkCode(userID, code); err != nil {
+		return "", err
+	}
+	return code, nil
 }
 
 // Connections returns a user's recent source IPs.
