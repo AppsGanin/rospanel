@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSettings, saveSubSettings, type SubSettings } from "./api";
-import { useAction } from "./hooks";
+import { useAction, useDirtyForm } from "./hooks";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
@@ -40,8 +40,7 @@ const INTERVALS = [
 
 export function SubscriptionsPanel() {
   const [loaded, setLoaded] = useState(false);
-  const [s, setS] = useState<SubSettings>(EMPTY_SUB);
-  const [saved, setSaved] = useState<SubSettings>(EMPTY_SUB);
+  const { draft: s, setDraft: setS, isDirty: dirty, load, commit, reset } = useDirtyForm<SubSettings>(EMPTY_SUB);
   const [secret, setSecret] = useState("");
   const { busy, run } = useAction();
 
@@ -59,8 +58,7 @@ export function SubscriptionsPanel() {
           sub_routing_mihomo: d.sub_routing_mihomo,
           sub_update_interval: d.sub_update_interval,
         };
-        setS(init);
-        setSaved(init);
+        load(init);
         setSecret(d.secret_path);
       })
       .catch(() => {})
@@ -68,13 +66,12 @@ export function SubscriptionsPanel() {
   }, []);
 
   const patch = (p: Partial<SubSettings>) => setS((cur) => ({ ...cur, ...p }));
-  const dirty = JSON.stringify(s) !== JSON.stringify(saved);
   const pathErr = subPathError(s.sub_path, secret);
 
   const save = () =>
     run(async () => {
       await saveSubSettings(s);
-      setSaved(s);
+      commit();
       notifySuccess("Настройки подписок сохранены");
     });
 
@@ -192,7 +189,7 @@ export function SubscriptionsPanel() {
         busy={busy}
         saveDisabled={!!pathErr}
         onSave={save}
-        onCancel={() => setS(saved)}
+        onCancel={reset}
       />
     </div>
   );
