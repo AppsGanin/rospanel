@@ -16,6 +16,8 @@ export interface User {
   last_seen: number
   device_limit: number
   active_devices: number
+  plan_id: number
+  plan_name?: string
   telegram_linked?: boolean
   telegram_link?: string
   telegram_deep_link?: string
@@ -222,6 +224,11 @@ export const rotateSubToken = (id: number) =>
   api<User>(`api/users/${id}/rotate-sub`, { method: 'POST' })
 export const unlinkUserTelegram = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}/telegram/unlink`, { method: 'POST' })
+export const genUserTelegramLink = (id: number) =>
+  api<{ deep_link: string; expires_sec: number }>(
+    `api/users/${id}/telegram/link`,
+    { method: 'POST' },
+  )
 
 export const getStatsSeries = (p: { user_id?: number; from?: string; to?: string }) => {
   const q = new URLSearchParams()
@@ -558,3 +565,84 @@ export const setACME = (target: string, email: string, provider: string) =>
     body: JSON.stringify({ target, email, provider }),
   })
 
+
+// --- Billing / tariffs (Settings → Тарифы) ---
+
+export interface TariffPlan {
+  id: number
+  slug: string
+  name: string
+  price_rub: number
+  period_days: number
+  data_limit: number
+  device_limit: number
+  is_free: boolean
+  payment_url: string
+  sort_order: number
+  enabled: boolean
+}
+
+export interface PaymentOrder {
+  id: number
+  user_id: number
+  user_name?: string
+  plan_id: number
+  plan_name?: string
+  amount_rub: number
+  status: string
+  created_at: number
+  paid_at: number
+}
+
+export interface BillingInfo {
+  enabled: boolean
+  trial_days: number
+  free_plan_id: number
+  trial_plan_id: number
+  payment_note: string
+  plans: TariffPlan[]
+}
+
+export const getBilling = () => api<BillingInfo>('api/billing')
+
+export const saveBilling = (b: {
+  enabled: boolean
+  trial_days: number
+  free_plan_id: number
+  trial_plan_id: number
+  payment_note: string
+}) =>
+  api<{ ok: boolean }>('api/billing', {
+    method: 'POST',
+    body: JSON.stringify(b),
+  })
+
+export const saveTariffPlan = (p: TariffPlan) =>
+  api<TariffPlan>('api/billing/plans', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
+
+export const deleteTariffPlan = (id: number) =>
+  api<{ ok: boolean }>(`api/billing/plans/${id}`, { method: 'DELETE' })
+
+export const listPaymentOrders = (status?: string) =>
+  api<PaymentOrder[]>(`api/billing/orders${status ? `?status=${status}` : ''}`)
+
+export const confirmPaymentOrder = (id: number, current_password: string) =>
+  api<{ ok: boolean }>(`api/billing/orders/${id}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ current_password }),
+  })
+
+export const cancelPaymentOrder = (id: number, current_password: string) =>
+  api<{ ok: boolean }>(`api/billing/orders/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ current_password }),
+  })
+
+export const setUserPlan = (id: number, plan_id: number) =>
+  api<{ ok: boolean }>(`api/users/${id}/plan`, {
+    method: 'POST',
+    body: JSON.stringify({ plan_id }),
+  })

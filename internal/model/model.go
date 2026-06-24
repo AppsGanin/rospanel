@@ -66,6 +66,53 @@ type User struct {
 	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
 
 	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
+
+	TgLinkCode   string `json:"-"` // pending one-time Telegram bind code (replaces sub-token deep links)
+	TgLinkCodeAt int64  `json:"-"` // unix when TgLinkCode was issued (0 = none)
+
+	PlanID    int64  `json:"plan_id"`             // active tariff (0 = manual limits)
+	TrialUsed bool   `json:"trial_used"`          // trial period already consumed
+	PlanName  string `json:"plan_name,omitempty"` // computed for API views (not stored)
+}
+
+// TelegramLinkCodeTTL is how long a one-time Telegram bind code stays valid.
+const TelegramLinkCodeTTL = 15 * time.Minute
+
+// UserTgLinkCodeValid reports whether the user's pending Telegram bind code
+// exists and has not expired.
+func (u User) UserTgLinkCodeValid() bool {
+	if strings.TrimSpace(u.TgLinkCode) == "" || u.TgLinkCodeAt == 0 {
+		return false
+	}
+	return time.Now().Unix()-u.TgLinkCodeAt <= int64(TelegramLinkCodeTTL.Seconds())
+}
+
+// TariffPlan is a billing tier (free, trial template, or paid).
+type TariffPlan struct {
+	ID          int64  `json:"id"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	PriceRub    int    `json:"price_rub"`
+	PeriodDays  int    `json:"period_days"`
+	DataLimit   int64  `json:"data_limit"`
+	DeviceLimit int    `json:"device_limit"`
+	IsFree      bool   `json:"is_free"`
+	PaymentURL  string `json:"payment_url"`
+	SortOrder   int    `json:"sort_order"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// PaymentOrder is a user payment request awaiting admin confirmation.
+type PaymentOrder struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	UserName  string `json:"user_name,omitempty"`
+	PlanID    int64  `json:"plan_id"`
+	PlanName  string `json:"plan_name,omitempty"`
+	AmountRub int    `json:"amount_rub"`
+	Status    string `json:"status"` // pending | paid | cancelled
+	CreatedAt int64  `json:"created_at"`
+	PaidAt    int64  `json:"paid_at"`
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
@@ -214,6 +261,13 @@ type Settings struct {
 	TGUserBotEnabled bool   `json:"-"`
 	TGUserBotToken   string `json:"-"`
 	TGUserRegEnabled bool   `json:"-"` // allow /start self-registration (creates a new VPN account)
+
+	// Billing (Settings → Тарифы): plans, trial period, free-tier fallback.
+	BillingEnabled     bool   `json:"-"`
+	BillingTrialDays   int    `json:"-"`
+	BillingFreePlanID  int64  `json:"-"`
+	BillingTrialPlanID int64  `json:"-"`
+	BillingPaymentNote string `json:"-"`
 
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 

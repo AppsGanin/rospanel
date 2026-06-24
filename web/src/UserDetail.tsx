@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   deleteUser,
+  genUserTelegramLink,
+  getBilling,
   getStatsSeries,
   getUserConnections,
   renameUser,
@@ -11,8 +13,10 @@ import {
   setResetPeriod,
   setUserEnabled,
   setUserLimits,
+  setUserPlan,
   type Connection,
   type DailyPoint,
+  type TariffPlan,
   type User,
 } from './api'
 import {
@@ -50,6 +54,25 @@ import {
   useConfirm,
   useCopy,
 } from './ui'
+
+// planSelectData builds the tariff dropdown: "manual" plus enabled plans, and a
+// fallback entry if the user is on a plan that's hidden/disabled (so the current
+// value still resolves to a label).
+function planSelectData(plans: TariffPlan[], user: User) {
+  const data = [
+    { value: '0', label: 'Вручную (без лимитов)' },
+    ...plans
+      .filter((p) => p.enabled)
+      .map((p) => ({
+        value: String(p.id),
+        label: p.name + (p.is_free ? ' (бесплатный)' : ''),
+      })),
+  ]
+  if (user.plan_id && !data.some((o) => o.value === String(user.plan_id))) {
+    data.push({ value: String(user.plan_id), label: user.plan_name || `тариф #${user.plan_id}` })
+  }
+  return data
+}
 
 function unixToDate(unix: number): string {
   return unix ? new Date(unix * 1000).toISOString().slice(0, 10) : ''
@@ -159,6 +182,9 @@ export function UserDetail({
   const [range, setRange] = useState('30')
   const [limitGb, setLimitGb] = useState('0')
   const [deviceLimit, setDeviceLimit] = useState('0')
+  const [billingOn, setBillingOn] = useState(false)
+  const [plans, setPlans] = useState<TariffPlan[]>([])
+  const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
   const sub = useCopy()
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
@@ -166,6 +192,7 @@ export function UserDetail({
   useEffect(() => {
     setLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
     setDeviceLimit(user ? String(user.device_limit ?? 0) : '0')
+    setTgLink(null) // a one-time bind link is per-user; don't leak it across switches
   }, [user])
 
   useEffect(() => {
@@ -198,6 +225,22 @@ export function UserDetail({
     return () => {
       alive = false
       clearInterval(t)
+    }
+  }, [user])
+
+  // Tariffs (only meaningful when billing is enabled); loaded once the card opens.
+  useEffect(() => {
+    if (!user) return
+    let alive = true
+    getBilling()
+      .then((b) => {
+        if (!alive) return
+        setBillingOn(!!b.enabled)
+        setPlans(b.plans ?? [])
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
     }
   }, [user])
 
@@ -309,6 +352,22 @@ export function UserDetail({
             value={user.reset_period || 'none'}
             onChange={(v) => setResetPeriod(user.id, v).then(onChanged).catch(fail)}
           />
+          {billingOn && (
+            <>
+              <Select
+                label="Тариф"
+                data={planSelectData(plans, user)}
+                value={String(user.plan_id || 0)}
+                onChange={(v) =>
+                  setUserPlan(user.id, Number(v)).then(onChanged).catch(fail)
+                }
+              />
+              <p className="-mt-1 text-xs text-ink-muted">
+                Назначение тарифа применяет его лимиты трафика, срок и устройства.
+                «Вручную» снимает тариф и обнуляет лимиты.
+              </p>
+            </>
+          )}
           <Button
             color="orange"
             variant="light"
@@ -416,12 +475,28 @@ export function UserDetail({
               <Button size="xs" href={user.telegram_link} target="_blank">
                 Открыть пользовательского бота
               </Button>
-              {user.telegram_deep_link && (
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() =>
+                  genUserTelegramLink(user.id)
+                    .then((r) =>
+                      setTgLink({ url: r.deep_link, mins: Math.round(r.expires_sec / 60) }),
+                    )
+                    .catch(fail)
+                }
+              >
+                Получить ссылку привязки
+              </Button>
+              {tgLink && (
                 <>
-                  <Button size="xs" variant="light" href={user.telegram_deep_link} target="_blank">
+                  <Button size="xs" variant="light" href={tgLink.url} target="_blank">
                     Привязать этот аккаунт
                   </Button>
-                  <Code block>{user.telegram_deep_link}</Code>
+                  <Code block>{tgLink.url}</Code>
+                  <p className="text-xs text-ink-muted">
+                    Одноразовая ссылка, действует {tgLink.mins} мин.
+                  </p>
                 </>
               )}
             </div>

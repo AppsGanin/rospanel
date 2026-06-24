@@ -1,3 +1,4 @@
+import { BillingPanel } from "./BillingPanel";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { DnsSettings } from "./DnsSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -15,6 +16,7 @@ const SUBTABS = [
   { value: "routing", label: "Роутинг" },
   { value: "dns", label: "DNS" },
   { value: "telegram", label: "Telegram" },
+  { value: "billing", label: "Тарифы" },
   { value: "domain", label: "Домен" },
 ] as const;
 
@@ -54,6 +56,7 @@ export function SettingsPanel() {
         {tab === "routing" && <RoutingPanel />}
         {tab === "dns" && <DnsSettings />}
         {tab === "telegram" && <TelegramSettings />}
+        {tab === "billing" && <BillingPanel />}
         {tab === "domain" && <TLSPanel />}
       </div>
     </div>

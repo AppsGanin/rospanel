@@ -140,8 +140,8 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 
 func (s *UserService) handleStart(ctx context.Context, client *Client, set *model.Settings, chatID int64, args []string) {
 	if len(args) >= 1 {
-		if token := userStartToken(args[0]); token != "" {
-			s.linkUserFromToken(ctx, client, set, chatID, token)
+		if code := userStartLinkCode(args[0]); code != "" {
+			s.linkUserFromCode(ctx, client, set, chatID, code)
 			return
 		}
 	}
@@ -216,7 +216,9 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
 		return
 	}
-	u, err := s.panel.CreateUser(name, 0, 0)
+	// CreateRegisteredUser applies the trial/free plan when billing is on; falls
+	// back to a plain unlimited account otherwise.
+	u, err := s.panel.CreateRegisteredUser(name)
 	if err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось создать аккаунт: "+esc(err.Error()))
 		return
@@ -228,8 +230,8 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	log.Printf("telegram user: registered user %d from chat %d", u.ID, chatID)
 	u.TgChatID = chatID
 	s.sendMenu(ctx, client, chatID,
-		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, s.panel.Location()),
-		userMenuRows())
+		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, set, s.panel),
+		userMenuRows(set.BillingEnabled))
 }
 
 func (s *UserService) findLinkedUser(chatID int64) (model.User, bool) {
@@ -240,31 +242,49 @@ func (s *UserService) findLinkedUser(chatID int64) (model.User, bool) {
 	return *u, true
 }
 
-func (s *UserService) linkUserFromToken(ctx context.Context, client *Client, set *model.Settings, chatID int64, token string) {
-	u, err := s.store.GetUserBySubToken(token)
+func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set *model.Settings, chatID int64, code string) {
+	u, err := s.store.GetUserByTgLinkCode(code)
 	if err != nil {
-		s.send(ctx, client, chatID, "⚠️ Ссылка недействительна или устарела.")
+		s.send(ctx, client, chatID, "⚠️ Код недействителен или устарел. Откройте страницу подписки и получите новый.")
+		return
+	}
+	if u.TgChatID != 0 && u.TgChatID != chatID {
+		s.send(ctx, client, chatID, "⚠️ Этот аккаунт уже привязан к другому чату.")
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось привязать чат: "+esc(err.Error()))
 		return
 	}
-	log.Printf("telegram user: user %d linked to chat %d", u.ID, chatID)
+	_ = s.store.ClearUserTgLinkCode(u.ID) // one-time: burn the code
+	log.Printf("telegram user: user %d linked to chat %d via link code", u.ID, chatID)
 	u.TgChatID = chatID
 	s.sendUserMenu(ctx, client, chatID, set, *u)
 }
 
-func userMenuRows() [][]InlineButton {
-	return [][]InlineButton{
+func userMenuRows(billingEnabled bool) [][]InlineButton {
+	rows := [][]InlineButton{
 		{{Text: "📲 Подписка", CallbackData: "vu:sub"}},
-		{{Text: "🔄 Обновить", CallbackData: "vu:menu"}},
-		{{Text: "🔓 Отвязать", CallbackData: "vu:unlink"}},
 	}
+	if billingEnabled {
+		rows = append(rows, []InlineButton{{Text: "💳 Тарифы", CallbackData: "vu:plans"}})
+	}
+	rows = append(rows,
+		[]InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}},
+		[]InlineButton{{Text: "🔓 Отвязать", CallbackData: "vu:unlink"}},
+	)
+	return rows
 }
 
-func userSelfCard(u model.User, loc *time.Location) string {
-	card := userCard(u, loc)
+func userSelfCard(u model.User, set *model.Settings, panel Panel) string {
+	card := userCard(u, panel.Location())
+	if u.PlanID != 0 {
+		if name := panel.PlanName(u.PlanID); name != "" {
+			card += "\nТариф: " + esc(name)
+		}
+	} else if set.BillingEnabled {
+		card += "\nТариф: вручную"
+	}
 	if u.DeviceLimit > 0 {
 		card += fmt.Sprintf("\nУстройства: %d / %d", u.ActiveDevices, u.DeviceLimit)
 	}
@@ -275,14 +295,14 @@ func (s *UserService) sendUserMenu(ctx context.Context, client *Client, chatID i
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.sendMenu(ctx, client, chatID, userSelfCard(u, s.panel.Location()), userMenuRows())
+	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel), userMenuRows(set.BillingEnabled))
 }
 
-func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, msgID int64, u model.User) {
+func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.edit(ctx, client, chatID, msgID, userSelfCard(u, s.panel.Location()), userMenuRows())
+	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel), userMenuRows(set.BillingEnabled))
 }
 
 func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb *CallbackQuery, set *model.Settings, u model.User) {
@@ -293,9 +313,11 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	msgID := cb.Message.MessageID
 	switch cb.Data {
 	case "vu:menu":
-		s.editUserMenu(ctx, client, chatID, msgID, u)
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 	case "vu:sub":
 		s.sendSubscription(ctx, client, chatID, set, u)
+	case "vu:plans":
+		s.showPlans(ctx, client, chatID, msgID, set, u)
 	case "vu:unlink":
 		s.edit(ctx, client, chatID, msgID,
 			"Отвязать этот Telegram от VPN-подписки?\nПосле отвязки можно зарегистрироваться снова или привязать другой аккаунт.",
@@ -307,7 +329,120 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		_ = s.store.ClearUserTelegramChat(u.ID)
 		s.edit(ctx, client, chatID, msgID, "Чат отвязан.", [][]InlineButton{})
 		s.sendWelcome(ctx, client, set, chatID)
+	default:
+		if planStr, ok := strings.CutPrefix(cb.Data, "vu:buy:"); ok {
+			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planStr)
+		} else if planStr, ok := strings.CutPrefix(cb.Data, "vu:pick:"); ok {
+			s.handlePickPlan(ctx, client, chatID, msgID, set, u, planStr)
+		}
 	}
+}
+
+// showPlans lists the tariffs a linked user can pick (free, applied instantly) or
+// buy (paid, creates a pending order for admin confirmation).
+func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
+	if !set.BillingEnabled {
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+		return
+	}
+	plans, err := s.panel.ListTariffPlans(false)
+	if err != nil || len(plans) == 0 {
+		s.edit(ctx, client, chatID, msgID,
+			"Сейчас нет доступных тарифов.",
+			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
+		return
+	}
+	var rows [][]InlineButton
+	var freeRows, paidRows int
+	for _, p := range plans {
+		if p.IsFree || p.PriceRub <= 0 {
+			rows = append(rows, []InlineButton{{
+				Text:         planButtonLabel(p),
+				CallbackData: fmt.Sprintf("vu:pick:%d", p.ID),
+			}})
+			freeRows++
+		} else {
+			rows = append(rows, []InlineButton{{
+				Text:         planButtonLabel(p),
+				CallbackData: fmt.Sprintf("vu:buy:%d", p.ID),
+			}})
+			paidRows++
+		}
+	}
+	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: "vu:menu"}})
+	msg := "💳 <b>Тарифы</b>\n\n"
+	if paidRows > 0 {
+		msg += "Платные — оплата и подтверждение админом.\n"
+	}
+	if freeRows > 0 {
+		msg += "Бесплатные — применяются сразу."
+	}
+	s.edit(ctx, client, chatID, msgID, msg, rows)
+}
+
+func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
+	var planID int64
+	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+		return
+	}
+	plans, err := s.panel.ListTariffPlans(false)
+	if err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
+		return
+	}
+	var plan *model.TariffPlan
+	for i := range plans {
+		if plans[i].ID == planID {
+			plan = &plans[i]
+			break
+		}
+	}
+	if plan == nil {
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+		return
+	}
+	if !plan.IsFree && plan.PriceRub > 0 {
+		s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planIDStr)
+		return
+	}
+	if err := s.panel.ApplyPlanToUser(u.ID, planID, false); err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+			[][]InlineButton{
+				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
+				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			})
+		return
+	}
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = fresh
+	}
+	s.edit(ctx, client, chatID, msgID,
+		"✅ Тариф «"+esc(plan.Name)+"» применён.\n\n"+userSelfCard(u, set, s.panel),
+		userMenuRows(set.BillingEnabled))
+}
+
+func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
+	var planID int64
+	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
+		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+		return
+	}
+	_, msg, err := s.panel.RequestPlanPayment(u.ID, planID)
+	if err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+			[][]InlineButton{
+				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
+				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			})
+		return
+	}
+	s.edit(ctx, client, chatID, msgID, esc(msg),
+		[][]InlineButton{
+			{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
+			{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+		})
 }
 
 func (s *UserService) sendSubscription(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User) {
@@ -323,14 +458,15 @@ func (s *UserService) sendSubscription(ctx context.Context, client *Client, chat
 	}
 }
 
-// UserDeepLink builds a t.me link that binds an existing panel user on /start.
-func UserDeepLink(botUsername, subToken string) string {
+// UserDeepLink builds a t.me link that binds an existing panel user via a
+// one-time, short-lived bind code (see model.TelegramLinkCodeTTL).
+func UserDeepLink(botUsername, linkCode string) string {
 	botUsername = strings.TrimPrefix(strings.TrimSpace(botUsername), "@")
-	subToken = strings.TrimSpace(subToken)
-	if botUsername == "" || subToken == "" {
+	linkCode = strings.TrimSpace(linkCode)
+	if botUsername == "" || linkCode == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://t.me/%s?start=u_%s", botUsername, subToken)
+	return fmt.Sprintf("https://t.me/%s?start=l_%s", botUsername, linkCode)
 }
 
 // UserBotLink is the public bot URL (open /start, no payload).
@@ -342,14 +478,12 @@ func UserBotLink(botUsername string) string {
 	return "https://t.me/" + botUsername
 }
 
-// userStartToken extracts a subscription token from a /start argument.
-func userStartToken(arg string) string {
+// userStartLinkCode extracts a one-time bind code from a /start argument
+// ("l_<code>"), the payload produced by UserDeepLink.
+func userStartLinkCode(arg string) string {
 	arg = strings.TrimSpace(arg)
-	if strings.HasPrefix(arg, "u_") {
-		return strings.TrimPrefix(arg, "u_")
-	}
-	if len(arg) >= 32 {
-		return arg
+	if code, ok := strings.CutPrefix(arg, "l_"); ok && len(code) >= 16 {
+		return code
 	}
 	return ""
 }

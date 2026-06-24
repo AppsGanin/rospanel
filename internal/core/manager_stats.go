@@ -60,6 +60,9 @@ func (m *Manager) PollStats() error {
 		slog.Info("working set changed (limit/expiry), syncing users")
 		m.TriggerUserSync()
 	}
+	// Downgrade users whose paid/trial period ended to the free plan (no-op unless
+	// billing is enabled with a configured free plan).
+	_ = m.EnforceBilling(time.Now().Unix())
 	return nil
 }
 
