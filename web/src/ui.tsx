@@ -312,7 +312,7 @@ export function Card({
       style={style}
       className={cn(
         "rounded-2xl border border-brand-600/6 bg-white shadow-sm transition",
-        "hover:shadow-lg",
+        "hover:shadow-lg flex flex-col",
         onClick && "cursor-pointer",
         className,
       )}

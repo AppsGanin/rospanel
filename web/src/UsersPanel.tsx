@@ -128,7 +128,7 @@ export function UsersPanel() {
                   )}
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-auto">
                   <Button
                     size="sm"
                     variant="light"
