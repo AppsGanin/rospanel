@@ -14,10 +14,10 @@ import (
 // selector, and a minimal route. Targeted at official SFA/SFI/SFM clients; other
 // sing-box-based clients (Hiddify, NekoBox) consume the base64 list instead.
 func SingBoxJSON(u model.User, set *model.Settings) string {
-	nV := link.Label(model.ProtoVLESS, u, set)
-	nR := link.Label(model.ProtoReality, u, set)
-	nT := link.Label(model.ProtoTrojan, u, set)
-	nH := link.Label(model.ProtoHysteria, u, set)
+	nV := link.Label(model.ProtoVLESS)
+	nR := link.Label(model.ProtoReality)
+	nT := link.Label(model.ProtoTrojan)
+	nH := link.Label(model.ProtoHysteria)
 	insecure := set.TLSInsecure // true only for a self-signed/IP cert
 
 	vless := map[string]any{
@@ -103,7 +103,7 @@ func SingBoxJSON(u model.User, set *model.Settings) string {
 		tags = append(tags, nH)
 	}
 
-	group := SubTitle(set)
+	group := SubTitle(u, set)
 	outbounds := []any{
 		map[string]any{"type": "selector", "tag": group, "outbounds": append([]string{"auto"}, tags...), "default": "auto"},
 		map[string]any{"type": "urltest", "tag": "auto", "outbounds": tags,

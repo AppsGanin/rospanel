@@ -112,7 +112,7 @@ func servePage(w http.ResponseWriter, u model.User, set *model.Settings) {
 // setSubHeaders adds the standard subscription headers every client reads:
 // title, update interval, usage/quota/expiry, and the profile web page.
 func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings) {
-	title := sub.SubTitle(set)
+	title := sub.SubTitle(u, set)
 	// Go canonicalizes header keys on the wire and clients match case-insensitively
 	// (RFC 7230), so a single canonical "Profile-Title" suffices — a second
 	// lowercase Set() would just overwrite this with the same value.

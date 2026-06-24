@@ -8,13 +8,20 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// SubTitle is the profile title: the configured subscription title, or the
-// default "РосПанель" when none is set.
-func SubTitle(set *model.Settings) string {
-	if t := strings.TrimSpace(set.SubTitle); t != "" {
-		return t
+// SubTitle is the per-user profile title: the configured subscription title (or
+// «РосПанель» by default), optionally suffixed with the user name when
+// SubNameInTitle is enabled.
+func SubTitle(u model.User, set *model.Settings) string {
+	base := strings.TrimSpace(set.SubTitle)
+	if base == "" {
+		base = "РосПанель"
 	}
-	return "РосПанель"
+	if set.SubNameInTitle {
+		if name := strings.TrimSpace(u.Name); name != "" {
+			return base + " — " + name
+		}
+	}
+	return base
 }
 
 // clashProxy is one Clash proxy: its node name and the YAML flow-map line
@@ -32,19 +39,19 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 	}
 	var out []clashProxy
 	if set.VLESSEnabled {
-		n := link.Label(model.ProtoVLESS, u, set)
+		n := link.Label(model.ProtoVLESS)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
 			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
 	}
 	if set.RealityEnabled {
-		n := link.Label(model.ProtoReality, u, set)
+		n := link.Label(model.ProtoReality)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: grpc, tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, grpc-opts: {grpc-service-name: %q}}",
 			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityServiceName)})
 	}
 	if set.TrojanEnabled {
-		n := link.Label(model.ProtoTrojan, u, set)
+		n := link.Label(model.ProtoTrojan)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: trojan, server: %q, port: %d, password: %q, network: ws, sni: %q, client-fingerprint: %s, skip-cert-verify: %s, ws-opts: {path: %q, headers: {Host: %q}}}",
 			n, set.Host, set.VLESSPort, u.Password, set.SNI, set.TrojanFP(), sv, set.WSPath, set.SNI)})
@@ -54,7 +61,7 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 		if set.HopEnd > set.HysteriaPort {
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", set.HysteriaPort, set.HopEnd))
 		}
-		n := link.Label(model.ProtoHysteria, u, set)
+		n := link.Label(model.ProtoHysteria)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop)})
@@ -78,7 +85,7 @@ func ClashYAML(u model.User, set *model.Settings) string {
 		b.WriteString(p.line + "\n")
 		quoted[i] = fmt.Sprintf("%q", p.name)
 	}
-	group := SubTitle(set)
+	group := SubTitle(u, set)
 	fmt.Fprintf(&b,
 		"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
 		group, strings.Join(quoted, ", "))

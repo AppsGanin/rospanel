@@ -1164,6 +1164,7 @@ export function Modal({
   title,
   children,
   dismissible = true,
+  size = "md",
 }: {
   open: boolean;
   onClose: () => void;
@@ -1172,31 +1173,39 @@ export function Modal({
   // When false the modal can't be dismissed (no X, no backdrop click, no Esc) —
   // used for blocking states like "panel restarting".
   dismissible?: boolean;
+  size?: "md" | "lg" | "xl";
 }) {
   useLockBody(open);
   useEscape(onClose, open && dismissible);
   if (!open) return null;
+  const maxW =
+    size === "xl" ? "max-w-3xl" : size === "lg" ? "max-w-2xl" : "max-w-lg";
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={dismissible ? onClose : undefined}
       />
-      <div className="relative z-10 max-h-[90vh] w-full max-w-lg animate-fade-in-up overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+      <div
+        className={cn(
+          "relative z-10 flex max-h-[90vh] w-full animate-fade-in-up flex-col overflow-hidden rounded-2xl bg-white shadow-xl",
+          maxW,
+        )}
+      >
         {title && (
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-ink">{title}</h3>
+          <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-5 py-4">
+            <div className="min-w-0 flex-1 text-lg font-bold text-ink">{title}</div>
             {dismissible && (
               <button
                 onClick={onClose}
-                className="text-gray-400 hover:text-gray-600"
+                className="shrink-0 text-gray-400 hover:text-gray-600"
               >
                 <IconClose />
               </button>
             )}
           </div>
         )}
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
       </div>
     </div>,
     document.body,
