@@ -417,12 +417,12 @@ export function TelegramSettings() {
 
       <SettingCard
         title="Пользовательский бот"
-        description="Открытый бот для семьи и друзей: регистрация, подписка и статистика. Создайте второго бота у @BotFather."
+        description="Открытый бот для семьи и друзей: регистрация, подписка и статистика."
         action={<Switch checked={userEnabled} onChange={setUserEnabled} />}
       >
         <div className="flex flex-col gap-3">
           <PasswordInput
-            label="Токен пользовательского бота"
+            label="Токен пользовательского бота (от @BotFather)"
             value={userToken}
             onChange={setUserToken}
             placeholder="987654321:BB..."
