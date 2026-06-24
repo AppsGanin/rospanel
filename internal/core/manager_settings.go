@@ -3,8 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,6 +11,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/netguard"
 	"github.com/AppsGanin/rospanel/internal/warp"
 )
 
@@ -304,6 +303,9 @@ const (
 // subscription pull from timing out when GitHub is slow: previously a cold/stale
 // cache forced an inline 8s GET, so the whole subscription response hung.
 func (m *Manager) FetchRoutingTemplate(url string) (string, error) {
+	if err := netguard.ValidateFetchURL(url); err != nil {
+		return "", err
+	}
 	m.tmplMu.Lock()
 	e, ok := m.tmplCache[url]
 	m.tmplMu.Unlock()
@@ -325,22 +327,9 @@ func (m *Manager) fetchRoutingTemplate(url string) (string, error) {
 		e, ok := m.tmplCache[url]
 		return e.body, ok
 	}
-	client := &http.Client{Timeout: routingFetchBudget}
-	resp, err := client.Get(url)
-	if err != nil {
-		if b, ok := stale(); ok {
-			return b, nil
-		}
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		if b, ok := stale(); ok {
-			return b, nil
-		}
-		return "", fmt.Errorf("routing template: status %d", resp.StatusCode)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	ctx, cancel := context.WithTimeout(context.Background(), routingFetchBudget)
+	defer cancel()
+	b, err := netguard.Get(ctx, url, 1<<20)
 	if err != nil {
 		if s, ok := stale(); ok {
 			return s, nil

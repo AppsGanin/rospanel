@@ -5,13 +5,15 @@ package proxypool
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/netguard"
 )
 
 // Parse turns proxy lines into endpoints, skipping blanks/comments/dupes and
@@ -59,19 +61,23 @@ func Parse(lines []string) []model.ProxyEndpoint {
 	return out
 }
 
-// Fetch downloads a proxy-list URL and returns its non-empty lines.
+// Fetch downloads a proxy-list URL and returns its non-empty lines. The URL is
+// SSRF-validated (https only, no private/metadata addresses) before any request.
 func Fetch(ctx context.Context, rawURL string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err := netguard.ValidateFetchURL(rawURL); err != nil {
+		return nil, err
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+	}
+	body, err := netguard.Get(ctx, rawURL, 1<<20)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 	var lines []string
-	sc := bufio.NewScanner(resp.Body)
+	sc := bufio.NewScanner(bytes.NewReader(body))
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
