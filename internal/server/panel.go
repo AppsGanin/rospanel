@@ -61,9 +61,11 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string) use
 		SubURL:         sub.URL(set, u.SubToken),
 		TelegramLinked: u.TgChatID != 0,
 	}
+	// The bind deep link is no longer embedded here (it carried the permanent
+	// sub-token). It's now minted on demand as a one-time code via
+	// POST /api/users/{id}/telegram/link.
 	if set.TGUserBotEnabled && userBotUsername != "" && u.TgChatID == 0 {
 		v.TelegramLink = telegram.UserBotLink(userBotUsername)
-		v.TelegramDeepLink = telegram.UserDeepLink(userBotUsername, u.SubToken)
 	}
 	// A protocol switched off in the Connections panel drops out of the user's
 	// links (empty string ⇒ the UI hides it).
@@ -153,7 +155,16 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("GET /api/users/{id}/connections", rt.userConnections)
 	authedID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
 	authedID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
+	authedID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
 	authedID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
+	authedID("POST /api/users/{id}/plan", rt.setUserPlan)
+	authed("GET /api/billing", rt.getBilling)
+	authed("POST /api/billing", rt.saveBilling)
+	authed("POST /api/billing/plans", rt.saveTariffPlan)
+	authedID("DELETE /api/billing/plans/{id}", rt.deleteTariffPlan)
+	authed("GET /api/billing/orders", rt.listPaymentOrders)
+	authedID("POST /api/billing/orders/{id}/confirm", rt.confirmPaymentOrder)
+	authedID("POST /api/billing/orders/{id}/cancel", rt.cancelPaymentOrder)
 	authed("GET /api/stats/series", rt.statsSeries)
 	authed("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)
@@ -278,6 +289,42 @@ func (rt *Router) adminID(r *http.Request) (int64, bool) {
 	}
 	id, _, ok := rt.mgr.Store().LookupSession(c.Value)
 	return id, ok
+}
+
+// verifyStepUp re-checks the admin password before a sensitive operation. It is
+// skipped while the first-run wizard is still in progress (!SetupDone) — the
+// session was only just issued and the operator is completing guided setup.
+// On failure it writes the error response and returns false.
+func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password string) bool {
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+		return false
+	}
+	if !set.SetupDone {
+		return true
+	}
+	return rt.verifyAdminPassword(w, r, password)
+}
+
+// verifyAdminPassword checks the current admin password (step-up for sensitive
+// ops). On failure it writes the error response and returns false.
+func (rt *Router) verifyAdminPassword(w http.ResponseWriter, r *http.Request, password string) bool {
+	id, ok := rt.adminID(r)
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "не авторизован")
+		return false
+	}
+	hash, err := rt.mgr.Store().GetAdminHash(id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+		return false
+	}
+	if !auth.VerifyPassword(hash, password) {
+		writeErr(w, http.StatusUnauthorized, "неверный пароль")
+		return false
+	}
+	return true
 }
 
 // mustChangeAllowed lists the only panel paths reachable while the admin still has

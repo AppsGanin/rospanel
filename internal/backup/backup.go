@@ -74,6 +74,9 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 			return filepath.SkipDir
 		}
 		base := filepath.Base(path)
+		// secrets.key IS included so a backup restores to a working panel on a fresh
+		// host (the at-rest encryption key travels with the encrypted DB). Treat the
+		// backup as sensitive accordingly.
 		if strings.HasSuffix(path, ".db-wal") || strings.HasSuffix(path, ".db-shm") {
 			return nil
 		}

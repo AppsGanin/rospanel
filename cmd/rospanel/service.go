@@ -20,6 +20,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -62,11 +63,21 @@ func runServer(dataDir string) {
 		log.Print("restore: staged backup applied")
 	}
 
+	// After any staged restore has put the real secrets.key in place, load it —
+	// doing this before ApplyPending would pin a freshly-generated key in memory
+	// that the restore then overwrites on disk, breaking decryption.
+	if err := datasec.Init(dataDir); err != nil {
+		log.Fatalf("secrets key: %v", err)
+	}
+
 	st, err := store.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	if err := st.ReencryptSensitiveFields(); err != nil {
+		log.Printf("[WARN] reencrypt secrets: %v", err)
+	}
 
 	// Obtain the ACME cert before Xray opens :443. Non-fatal: if ACME isn't
 	// reachable yet, a self-signed fallback is written so Xray still comes up, and

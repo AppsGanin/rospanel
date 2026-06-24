@@ -17,7 +17,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
-	var tgBotEn, tgUserBotEn, tgUserRegEn int
+	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -41,7 +41,9 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 		       opera_enabled, opera_country, opera_port,
 		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron,
-		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled
+		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled,
+		       billing_enabled, billing_trial_days, billing_free_plan_id,
+		       billing_trial_plan_id, billing_payment_note
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -66,6 +68,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&operaEn, &st.OperaCountry, &st.OperaPort,
 		&tgBotEn, &st.TGBotToken, &st.TGChatIDs, &st.TGLinkCode, &st.TGBackupCron,
 		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
+		&billingEn, &st.BillingTrialDays, &st.BillingFreePlanID,
+		&st.BillingTrialPlanID, &st.BillingPaymentNote,
 	)
 	if err != nil {
 		return nil, err
@@ -94,6 +98,14 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGBotEnabled = tgBotEn != 0
 	st.TGUserBotEnabled = tgUserBotEn != 0
 	st.TGUserRegEnabled = tgUserRegEn != 0
+	st.BillingEnabled = billingEn != 0
+	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
+	st.TGBotToken = decField(st.TGBotToken)
+	st.TGUserBotToken = decField(st.TGUserBotToken)
+	st.WarpPrivateKey = decField(st.WarpPrivateKey)
+	st.RealityPrivateKey = decField(st.RealityPrivateKey)
+	st.ProxyModePass = decField(st.ProxyModePass)
+	st.ZeroSSLEABHMAC = decField(st.ZeroSSLEABHMAC)
 	return &st, nil
 }
 
@@ -103,7 +115,7 @@ func (s *Store) SetTelegramBot(enabled bool, token, cron string) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(enabled), token, cron,
+		boolToInt(enabled), encField(token), cron,
 	)
 	return err
 }
@@ -114,7 +126,7 @@ func (s *Store) SetTelegramUserBot(enabled bool, token string, regEnabled bool) 
 	_, err := s.db.Exec(
 		`UPDATE settings SET tg_user_bot_enabled = ?, tg_user_bot_token = ?,
 		        tg_user_reg_enabled = ?, updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(enabled), token, boolToInt(regEnabled),
+		boolToInt(enabled), encField(token), boolToInt(regEnabled),
 	)
 	return err
 }
@@ -183,7 +195,7 @@ func (s *Store) SetWarp(st *model.Settings) error {
 			warp_endpoint = ?, warp_address_v4 = ?, warp_address_v6 = ?,
 			warp_reserved = ?, updated_at = unixepoch()
 		WHERE id = 1`,
-		boolToInt(st.WarpEnabled), st.WarpPrivateKey, st.WarpPublicKey,
+		boolToInt(st.WarpEnabled), encField(st.WarpPrivateKey), st.WarpPublicKey,
 		st.WarpEndpoint, st.WarpAddressV4, st.WarpAddressV6, st.WarpReserved,
 	)
 	return err
@@ -287,7 +299,7 @@ func (s *Store) SetACMEProvider(provider, eabKID, eabHMAC string) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET acme_provider = ?, zerossl_eab_kid = ?,
 		        zerossl_eab_hmac = ?, updated_at = unixepoch() WHERE id = 1`,
-		provider, eabKID, eabHMAC,
+		provider, eabKID, encField(eabHMAC),
 	)
 	return err
 }
@@ -315,7 +327,7 @@ func (s *Store) SetProxyMode(enabled bool, typ string, port int, user, pass stri
 		`UPDATE settings SET proxy_mode_enabled = ?, proxy_mode_type = ?,
 		        proxy_mode_port = ?, proxy_mode_user = ?, proxy_mode_pass = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
-		enabled, typ, port, user, pass,
+		enabled, typ, port, user, encField(pass),
 	)
 	return err
 }
@@ -339,7 +351,7 @@ func (s *Store) SetRealityKeys(priv, pub, shortID, serviceName string) error {
 		`UPDATE settings SET reality_private_key = ?, reality_public_key = ?,
 		        reality_short_id = ?, reality_service_name = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
-		priv, pub, shortID, serviceName,
+		encField(priv), pub, shortID, serviceName,
 	)
 	return err
 }

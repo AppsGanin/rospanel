@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -9,7 +10,8 @@ import (
 
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
-	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id`
+	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id,
+	plan_id, trial_used, tg_link_code, tg_link_code_at`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -18,7 +20,7 @@ func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, exp
 	err := s.db.QueryRow(
 		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, device_limit)
 		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		name, uuid, password, subToken, dataLimit, expireAt, deviceLimit,
+		name, uuid, encField(password), subToken, dataLimit, expireAt, deviceLimit,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -62,6 +64,47 @@ func (s *Store) GetUser(id int64) (*model.User, error) {
 		return nil, sql.ErrNoRows
 	}
 	return &users[0], nil
+}
+
+// GetUserByTgLinkCode resolves a pending one-time Telegram bind code to its user,
+// rejecting codes that are blank, unknown, or expired.
+func (s *Store) GetUserByTgLinkCode(code string) (*model.User, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, sql.ErrNoRows
+	}
+	users, err := s.queryUsers(`SELECT `+userCols+` FROM users WHERE tg_link_code = ? LIMIT 1`, code)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	u := &users[0]
+	if !u.UserTgLinkCodeValid() {
+		return nil, sql.ErrNoRows
+	}
+	return u, nil
+}
+
+// SetUserTgLinkCode stores (or clears, with "") a user's pending Telegram bind
+// code, stamping the issue time so it can expire.
+func (s *Store) SetUserTgLinkCode(userID int64, code string) error {
+	at := int64(0)
+	if strings.TrimSpace(code) != "" {
+		at = time.Now().Unix()
+	}
+	_, err := s.db.Exec(
+		`UPDATE users SET tg_link_code = ?, tg_link_code_at = ? WHERE id = ?`,
+		code, at, userID,
+	)
+	return err
+}
+
+// ClearUserTgLinkCode burns a user's pending Telegram bind code (after a
+// successful link or on demand).
+func (s *Store) ClearUserTgLinkCode(userID int64) error {
+	return s.SetUserTgLinkCode(userID, "")
 }
 
 // GetUserBySubToken resolves a subscription token to its user.
@@ -200,15 +243,18 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 	for rows.Next() {
 		var u model.User
 		var created int64
-		var enabled int
+		var enabled, trialUsed int
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.TgChatID,
+			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt,
 		); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled != 0
+		u.TrialUsed = trialUsed != 0
+		u.Password = decField(u.Password)
 		u.CreatedAt = time.Unix(created, 0)
 		out = append(out, u)
 	}
