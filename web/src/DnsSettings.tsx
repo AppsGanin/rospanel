@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { getSettings, setXrayDNS } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
+import { useDirtyForm } from "./hooks";
 import { notifyError, notifySuccess } from "./notify";
 import { Card, CenterLoader, Checkbox, SaveBar } from "./ui";
+
+type DnsState = { sel: string[]; custom: string };
 
 // Popular Xray DNS resolvers offered as checkboxes.
 const POPULAR_DNS: { value: string; label: string }[] = [
@@ -43,9 +46,8 @@ function isValidDns(s: string): boolean {
 export function DnsSettings() {
   const [loaded, setLoaded] = useState(false);
   const { applying, apply } = useXrayApply();
-  const [sel, setSel] = useState<string[]>([]);
-  const [custom, setCustom] = useState("");
-  const [saved, setSaved] = useState({ sel: [] as string[], custom: "" });
+  const { draft, setDraft, saved, load, commit, reset } = useDirtyForm<DnsState>({ sel: [], custom: "" });
+  const { sel, custom } = draft;
 
   useEffect(() => {
     getSettings()
@@ -58,18 +60,18 @@ export function DnsSettings() {
         const initCustom = items
           .filter((x) => !POPULAR_DNS_SET.has(x))
           .join("\n");
-        setSel(initSel);
-        setCustom(initCustom);
-        setSaved({ sel: initSel, custom: initCustom });
+        load({ sel: initSel, custom: initCustom });
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggle = (v: string) =>
-    setSel((cur) =>
-      cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v],
-    );
+    setDraft((cur) => ({
+      ...cur,
+      sel: cur.sel.includes(v) ? cur.sel.filter((x) => x !== v) : [...cur.sel, v],
+    }));
 
   const norm = (a: string[]) => [...a].sort().join("|");
   const dirty =
@@ -87,14 +89,9 @@ export function DnsSettings() {
     }
     apply(async () => {
       await setXrayDNS([...sel, ...customList].join("\n"));
-      setSaved({ sel, custom });
+      commit();
       notifySuccess("DNS сохранён");
     });
-  };
-
-  const cancel = () => {
-    setSel(saved.sel);
-    setCustom(saved.custom);
   };
 
   if (!loaded) return <CenterLoader />;
@@ -124,14 +121,14 @@ export function DnsSettings() {
           </p>
           <textarea
             value={custom}
-            onChange={(e) => setCustom(e.currentTarget.value)}
+            onChange={(e) => setDraft((cur) => ({ ...cur, custom: e.currentTarget.value }))}
             rows={3}
             placeholder={"1.0.0.1\nhttps://dns.quad9.net/dns-query"}
             className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </div>
       </Card>
-      <SaveBar dirty={dirty} busy={applying} onSave={save} onCancel={cancel} />
+      <SaveBar dirty={dirty} busy={applying} onSave={save} onCancel={reset} />
       <ApplyingModal open={applying} />
     </div>
   );

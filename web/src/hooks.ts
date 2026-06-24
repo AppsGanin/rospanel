@@ -25,6 +25,24 @@ export function useFetch<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   return { data, loaded, setData };
 }
 
+// useDirtyForm<T> tracks a draft value and its last-committed snapshot.
+// `load(v)` sets both when the server response arrives; `commit()` advances the
+// snapshot after a successful save; `reset()` discards edits on cancel.
+// `isDirty` is true while draft differs from the snapshot (JSON comparison).
+export function useDirtyForm<T>(initial: T) {
+  const [draft, setDraft] = useState<T>(initial);
+  const [saved, setSaved] = useState<T>(initial);
+  return {
+    draft,
+    setDraft,
+    saved,
+    isDirty: JSON.stringify(draft) !== JSON.stringify(saved),
+    load: (v: T) => { setDraft(v); setSaved(v); },
+    commit: () => setSaved(draft),
+    reset: () => setDraft(saved),
+  };
+}
+
 // useAction wraps a user-triggered async call with busy state and an error toast.
 // In-flight actions are tracked as a Set of keys (not a single slot), so when a
 // panel fires several keyed actions at once each keeps its own spinner — the first
