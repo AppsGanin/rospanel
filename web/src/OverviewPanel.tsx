@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { type SystemStatus } from "./api";
 import { fmtBytes, fmtDuration, plural } from "./format";
-import { Badge, Button, Card, CenterLoader } from "./ui";
+import { Badge, Button, Card, Skeleton } from "./ui";
 import { XrayLogs } from "./XrayLogs";
 import { XrayConfigView } from "./XrayConfig";
 import { ManagementCard } from "./Management";
@@ -91,6 +91,41 @@ function Metric({
   );
 }
 
+function OverviewSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 animate-fade-in">
+      <Card className="p-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex flex-col items-center gap-2">
+              <Skeleton className="h-24 w-24 rounded-full" />
+              <Skeleton className="h-4 w-10" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          ))}
+        </div>
+      </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {[...Array(6)].map((_, i) => (
+          <Card key={i} className="p-4">
+            <Skeleton className="mb-3 h-5 w-20" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-7 w-20" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-7 w-20" />
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function OverviewPanel() {
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -112,7 +147,7 @@ export function OverviewPanel() {
     return () => es.close();
   }, []);
 
-  if (!loaded) return <CenterLoader />;
+  if (!loaded) return <OverviewSkeleton />;
   if (!s) return null;
 
   const pct = (used: number, total: number) =>

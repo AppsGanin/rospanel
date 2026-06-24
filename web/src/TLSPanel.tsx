@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getTLS, setACME } from "./api";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Badge, Button, Card, CenterLoader, Select, TextInput } from "./ui";
+import { Badge, Button, Card, Select, Skeleton, TextInput } from "./ui";
 import { isValidACMETarget, isValidEmail } from "./validate";
 
 export function TLSPanel() {
@@ -36,7 +36,21 @@ export function TLSPanel() {
     }
   };
 
-  if (!loaded) return <CenterLoader />;
+  if (!loaded) return (
+    <div className="flex flex-col gap-3">
+      <Card className="p-4">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-6 w-20 rounded-full" />
+        </div>
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-9 w-32 rounded-lg" />
+        </div>
+      </Card>
+    </div>
+  );
 
   const cert = status?.cert;
   const valid = cert && cert.issuer && cert.issuer !== cert.subject;

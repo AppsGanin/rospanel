@@ -9,7 +9,7 @@ import {
 import { fmtBytes, localDay, RANGES } from './format'
 import { useAction } from './hooks'
 import { TrafficArea, TrafficDonut } from './charts'
-import { Button, Card, CenterLoader, SegmentedControl, useConfirm } from './ui'
+import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
 const PALETTE = [
   '#2566f5', '#0d9488', '#9333ea', '#f97316', '#ef4444',
@@ -68,7 +68,35 @@ export function StatsPanel() {
     color: colorById[t.user_id],
   }))
 
-  if (!loaded) return <CenterLoader />
+  if (!loaded) return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-9 w-64 rounded-full" />
+        <Skeleton className="h-8 w-32 rounded-lg" />
+      </div>
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-4 w-36" />
+        </div>
+        <Skeleton className="h-48 w-full rounded-lg" />
+      </Card>
+      <Card className="p-4">
+        <Skeleton className="mb-3 h-5 w-24" />
+        <div className="flex items-center gap-6">
+          <Skeleton className="h-36 w-36 rounded-full" />
+          <div className="flex flex-col gap-2 flex-1">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Skeleton className="h-3 w-3 rounded-full" />
+                <Skeleton className="h-3 flex-1" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
 
   return (
     <div className="flex flex-col gap-3">
