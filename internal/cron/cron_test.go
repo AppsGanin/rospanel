@@ -20,21 +20,21 @@ func TestMatch(t *testing.T) {
 		when string
 		want bool
 	}{
-		{"0 3 * * *", "2026-06-22 03:00", true},   // daily 03:00 (a Monday)
-		{"0 3 * * *", "2026-06-22 03:01", false},  // wrong minute
-		{"0 3 * * *", "2026-06-22 04:00", false},  // wrong hour
+		{"0 3 * * *", "2026-06-22 03:00", true},  // daily 03:00 (a Monday)
+		{"0 3 * * *", "2026-06-22 03:01", false}, // wrong minute
+		{"0 3 * * *", "2026-06-22 04:00", false}, // wrong hour
 		{"*/15 * * * *", "2026-06-22 12:30", true},
 		{"*/15 * * * *", "2026-06-22 12:31", false},
-		{"0 */6 * * *", "2026-06-22 12:00", true},  // 0,6,12,18
+		{"0 */6 * * *", "2026-06-22 12:00", true}, // 0,6,12,18
 		{"0 */6 * * *", "2026-06-22 13:00", false},
-		{"0 3 * * 1", "2026-06-22 03:00", true},    // Monday
-		{"0 3 * * 1", "2026-06-23 03:00", false},   // Tuesday
-		{"0 0 1 * 1", "2026-06-01 00:00", true},    // 1st (Monday too) — OR rule
-		{"0 0 1 * 5", "2026-06-22 00:00", false},   // neither the 1st nor a Friday
-		{"30 9 * * 1-5", "2026-06-22 09:30", true}, // weekday range
+		{"0 3 * * 1", "2026-06-22 03:00", true},     // Monday
+		{"0 3 * * 1", "2026-06-23 03:00", false},    // Tuesday
+		{"0 0 1 * 1", "2026-06-01 00:00", true},     // 1st (Monday too) — OR rule
+		{"0 0 1 * 5", "2026-06-22 00:00", false},    // neither the 1st nor a Friday
+		{"30 9 * * 1-5", "2026-06-22 09:30", true},  // weekday range
 		{"30 9 * * 1-5", "2026-06-21 09:30", false}, // Sunday
-		{"0 12 * * 0", "2026-06-21 12:00", true},   // Sunday as 0
-		{"0 12 * * 7", "2026-06-21 12:00", true},   // Sunday as 7
+		{"0 12 * * 0", "2026-06-21 12:00", true},    // Sunday as 0
+		{"0 12 * * 7", "2026-06-21 12:00", true},    // Sunday as 7
 	}
 	for _, c := range cases {
 		s, err := Parse(c.expr)

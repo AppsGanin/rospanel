@@ -33,8 +33,8 @@ const (
 // Router is the top-level HTTP handler. The secret path, SPA shell and decoy can
 // be swapped at runtime (from the settings page) without restarting.
 type Router struct {
-	mgr      *core.Manager
-	dataDir  string
+	mgr        *core.Manager
+	dataDir    string
 	panel      http.Handler
 	assets     http.Handler
 	indexRaw   []byte // index.html before <base href> injection

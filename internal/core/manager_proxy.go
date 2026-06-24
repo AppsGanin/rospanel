@@ -49,7 +49,7 @@ func (m *Manager) buildProxies(rc model.RoutingConfig) []model.ProxyEndpoint {
 		fetched, err := proxypool.Fetch(ctx, url)
 		cancel()
 		if err != nil {
-			logWarn("proxypool: fetch %s failed: %v", url, err)
+			logWarn("proxypool: fetch failed", "url", url, "err", err)
 			continue
 		}
 		lines = append(lines, fetched...)

@@ -16,12 +16,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge/http01"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
 )
 
 // shortLivedProfile is Let's Encrypt's profile for IP-address certificates

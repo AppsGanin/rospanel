@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/google/uuid"
 )
 
 // mutateUser runs a single-user store write, logging the outcome and triggering
@@ -15,10 +15,10 @@ import (
 // "user 7 deleted"); failures log it with the error appended.
 func (m *Manager) mutateUser(done string, fn func() error) error {
 	if err := fn(); err != nil {
-		logErr("%s — failed: %v", done, err)
+		logErr("mutation failed", "op", done, "err", err)
 		return err
 	}
-	logInfo("%s", done)
+	logInfo(done)
 	m.TriggerUserSync()
 	return nil
 }
@@ -39,10 +39,10 @@ func (m *Manager) CreateUser(name string, dataLimit, expireAt int64) (*model.Use
 	}
 	u, err := m.store.CreateUser(name, uuid.NewString(), password, subToken, dataLimit, expireAt)
 	if err != nil {
-		logErr("user create %q failed: %v", name, err)
+		logErr("user create failed", "name", name, "err", err)
 		return nil, err
 	}
-	logInfo("user created: id=%d name=%q limit=%d expire=%d", u.ID, name, dataLimit, expireAt)
+	logInfo("user created", "id", u.ID, "name", name, "limit", dataLimit, "expire", expireAt)
 	m.TriggerUserSync()
 	return u, nil
 }
@@ -124,7 +124,7 @@ func (m *Manager) applyResets(users []model.User, now int64, counter func(int64)
 		}
 	}
 	if reset > 0 {
-		logInfo("quota reset: %d user(s) rolled over their cycle", reset)
+		logInfo("quota reset", "count", reset)
 		m.TriggerUserSync() // re-enabled users must re-enter the config
 	}
 }

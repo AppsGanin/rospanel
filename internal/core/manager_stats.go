@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"runtime"
 	"time"
 
@@ -57,7 +57,7 @@ func (m *Manager) PollStats() error {
 		return err
 	}
 	if m.workingChanged(working) {
-		log.Printf("working set changed (limit/expiry) — syncing users")
+		slog.Info("working set changed (limit/expiry), syncing users")
 		m.TriggerUserSync()
 	}
 	return nil

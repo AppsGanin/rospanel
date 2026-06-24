@@ -189,15 +189,15 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	if err != nil {
 		return err
 	}
-	logInfo("routing: applying (warp=%v opera=%v/%s)", warpEnabled, operaEnabled, operaCountry)
+	logInfo("routing: applying", "warp", warpEnabled, "opera", operaEnabled, "country", operaCountry)
 	set.WarpEnabled = warpEnabled
 	if warpEnabled && !set.WarpRegistered() {
-		logInfo("warp: registering a new Cloudflare WARP account")
+		logInfo("warp: registering new Cloudflare WARP account")
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		acc, err := warp.Register(ctx)
 		if err != nil {
-			logErr("warp: registration failed: %v", err)
+			logErr("warp: registration failed", "err", err)
 			return fmt.Errorf("регистрация WARP не удалась: %w", err)
 		}
 		set.WarpPrivateKey = acc.PrivateKey

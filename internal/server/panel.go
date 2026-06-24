@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -178,7 +178,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	username := strings.TrimSpace(req.Username)
 	if rt.limiter.blocked(ip, username) {
-		log.Printf("[WARN] login: rate-limited %s", ip)
+		slog.Warn("login: rate-limited", "ip", ip)
 		writeErr(w, http.StatusTooManyRequests, "слишком много попыток, повторите позже")
 		return
 	}
@@ -188,13 +188,13 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		// Unknown user: equalize timing against the real verify path.
 		auth.DummyVerify()
 		rt.limiter.fail(ip, username)
-		log.Printf("[WARN] login: failed (unknown user) from %s", ip)
+		slog.Warn("login: unknown user", "ip", ip)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
 	if !auth.VerifyPassword(hash, req.Password) {
 		rt.limiter.fail(ip, username)
-		log.Printf("[WARN] login: failed (bad password) for %q from %s", username, ip)
+		slog.Warn("login: bad password", "user", username, "ip", ip)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
@@ -202,11 +202,11 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second)
 	if err != nil {
-		log.Printf("[ERROR] login: session creation failed: %v", err)
+		slog.Error("login: session creation failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "не удалось создать сессию")
 		return
 	}
-	log.Printf("[INFO] login: admin %q authenticated from %s", req.Username, ip)
+	slog.Info("login: authenticated", "user", req.Username, "ip", ip)
 	rt.setSessionCookie(w, r, token, rt.cookiePath())
 	writeOK(w)
 }

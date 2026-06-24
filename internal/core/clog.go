@@ -1,18 +1,17 @@
 package core
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 )
 
-// Leveled log helpers. The "[INFO]"/"[WARN]"/"[ERROR]" tag rides in front of the
-// message (the std logger already prefixes "rospanel: " and a timestamp), which
-// lets the dashboard log viewer filter lines by severity. Use these for the
-// panel's own operational logging so coverage and format stay consistent.
-func logInfo(format string, a ...any) { log.Printf("[INFO] "+format, a...) }
-func logWarn(format string, a ...any) { log.Printf("[WARN] "+format, a...) }
-func logErr(format string, a ...any)  { log.Printf("[ERROR] "+format, a...) }
+// logInfo/logWarn/logErr are package-level structured logging helpers for the
+// core package. They delegate to slog so calls are routed through the process-wide
+// slogHandler (installed in main) and end up in all configured sinks.
+func logInfo(msg string, args ...any) { slog.Info(msg, args...) }
+func logWarn(msg string, args ...any) { slog.Warn(msg, args...) }
+func logErr(msg string, args ...any)  { slog.Error(msg, args...) }
 
 // AppLogTail returns the buffered recent panel log lines (for the dashboard).
 func (m *Manager) AppLogTail() []string { return logbuf.Default.Tail() }

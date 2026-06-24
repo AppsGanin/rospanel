@@ -137,7 +137,7 @@ func loadLocation(name string) *time.Location {
 	}
 	loc, err := time.LoadLocation(name)
 	if err != nil {
-		logWarn("timezone %q not found, using server local time: %v", name, err)
+		logWarn("timezone not found, using server local time", "timezone", name, "err", err)
 		return time.Local
 	}
 	return loc
@@ -225,11 +225,11 @@ func (m *Manager) reconcileLoop() {
 func (m *Manager) syncUsersOnce() {
 	defer func() {
 		if r := recover(); r != nil {
-			logErr("user sync: panic recovered: %v", r)
+			logErr("user sync: panic recovered", "panic", r)
 		}
 	}()
 	if err := m.syncUsers(); err != nil {
-		logWarn("user sync: %v; falling back to full reconcile", err)
+		logWarn("user sync failed, falling back to full reconcile", "err", err)
 		m.reconcileOnce()
 	}
 }
@@ -275,7 +275,7 @@ func (m *Manager) syncUsers() error {
 	if len(added) == 0 && len(removedEmails) == 0 {
 		return nil
 	}
-	logInfo("user sync: +%d / -%d users (live, no restart)", len(added), len(removedEmails))
+	logInfo("user sync (live, no restart)", "added", len(added), "removed", len(removedEmails))
 
 	apiAddr := m.sup.APIAddr()
 	if len(removedEmails) > 0 {
@@ -307,11 +307,11 @@ func (m *Manager) syncUsers() error {
 func (m *Manager) reconcileOnce() {
 	defer func() {
 		if r := recover(); r != nil {
-			logErr("reconcile: panic recovered: %v", r)
+			logErr("reconcile: panic recovered", "panic", r)
 		}
 	}()
 	if err := m.Reconcile(); err != nil {
-		logErr("reconcile: %v", err)
+		logErr("reconcile failed", "err", err)
 	}
 }
 
@@ -349,17 +349,17 @@ func (m *Manager) reconcileLocked() error {
 	}
 	cfg, err := xray.Generate(set, users, m.opts, m.getProxies())
 	if err != nil {
-		logErr("reconcile: config generation failed: %v", err)
+		logErr("reconcile: config generation failed", "err", err)
 		_ = m.store.SetConfigError(err.Error())
 		return err
 	}
 	if err := m.sup.Apply(cfg); err != nil {
-		logErr("reconcile: applying config to Xray failed: %v", err)
+		logErr("reconcile: applying config failed", "err", err)
 		_ = m.store.SetConfigError(err.Error())
 		return err
 	}
 	m.setApplied(users)
-	logInfo("reconcile: config applied (%d working users)", len(users))
+	logInfo("reconcile: config applied", "users", len(users))
 	return m.store.MarkConfigApplied()
 }
 
