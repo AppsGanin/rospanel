@@ -7,7 +7,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-func (rt *Router) listUsers(w http.ResponseWriter, _ *http.Request) {
+func (rt *Router) listUsers(w http.ResponseWriter, r *http.Request) {
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil {
 		writeManagerErr(w, err)
@@ -19,9 +19,10 @@ func (rt *Router) listUsers(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	rt.applyTLSHints(set)
+	bot := botUsername(r.Context(), set.TGUserBotToken)
 	views := make([]userView, 0, len(users))
 	for _, u := range users {
-		views = append(views, makeUserView(u, set))
+		views = append(views, makeUserView(u, set, bot))
 	}
 	writeJSON(w, http.StatusOK, views)
 }
@@ -51,7 +52,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusCreated, makeUserView(*u, set))
+	writeJSON(w, http.StatusCreated, makeUserView(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
 }
 
 func (rt *Router) deleteUser(w http.ResponseWriter, _ *http.Request, id int64) {
@@ -92,7 +93,7 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 
 // rotateSubToken issues a new subscription URL for a user. The old link stops
 // working; protocol credentials are unchanged.
-func (rt *Router) rotateSubToken(w http.ResponseWriter, _ *http.Request, id int64) {
+func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int64) {
 	u, err := rt.mgr.RotateSubToken(id)
 	if err != nil {
 		writeManagerErr(w, err)
@@ -104,7 +105,16 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, _ *http.Request, id int6
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusOK, makeUserView(*u, set))
+	writeJSON(w, http.StatusOK, makeUserView(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
+}
+
+// unlinkUserTelegram detaches a VPN user's linked Telegram chat (admin action).
+func (rt *Router) unlinkUserTelegram(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.Store().ClearUserTelegramChat(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
 }
 
 func (rt *Router) userConnections(w http.ResponseWriter, _ *http.Request, id int64) {
