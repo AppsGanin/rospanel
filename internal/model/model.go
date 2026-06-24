@@ -64,6 +64,8 @@ type User struct {
 
 	DeviceLimit   int `json:"device_limit"`   // max concurrent devices (unique IPs), 0 = unlimited
 	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
+
+	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
@@ -206,6 +208,12 @@ type Settings struct {
 	TGChatIDs    string `json:"-"` // comma-separated authorized chat IDs
 	TGLinkCode   string `json:"-"` // pending one-time linking code (cleared once used)
 	TGBackupCron string `json:"-"` // 5-field cron (operator TZ) for scheduled backups; empty = off
+
+	// Separate public user bot (Settings → Telegram): VPN clients self-register and
+	// self-serve their subscription. Must use a different token than the admin bot.
+	TGUserBotEnabled bool   `json:"-"`
+	TGUserBotToken   string `json:"-"`
+	TGUserRegEnabled bool   `json:"-"` // allow /start self-registration (creates a new VPN account)
 
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 

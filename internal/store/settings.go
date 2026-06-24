@@ -17,7 +17,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
-	var tgBotEn int
+	var tgBotEn, tgUserBotEn, tgUserRegEn int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -40,7 +40,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       reality_max_time_diff, sub_path,
 		       acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 		       opera_enabled, opera_country, opera_port,
-		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron
+		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron,
+		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -64,6 +65,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.ACMEProvider, &st.ZeroSSLEABKID, &st.ZeroSSLEABHMAC,
 		&operaEn, &st.OperaCountry, &st.OperaPort,
 		&tgBotEn, &st.TGBotToken, &st.TGChatIDs, &st.TGLinkCode, &st.TGBackupCron,
+		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
 	)
 	if err != nil {
 		return nil, err
@@ -90,6 +92,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TLSMin13 = tlsMin13 != 0
 	st.BlockQUIC = blockQUIC != 0
 	st.TGBotEnabled = tgBotEn != 0
+	st.TGUserBotEnabled = tgUserBotEn != 0
+	st.TGUserRegEnabled = tgUserRegEn != 0
 	return &st, nil
 }
 
@@ -100,6 +104,17 @@ func (s *Store) SetTelegramBot(enabled bool, token, cron string) error {
 		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), token, cron,
+	)
+	return err
+}
+
+// SetTelegramUserBot persists the public user bot's enable flag, token, and the
+// self-registration toggle.
+func (s *Store) SetTelegramUserBot(enabled bool, token string, regEnabled bool) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_user_bot_enabled = ?, tg_user_bot_token = ?,
+		        tg_user_reg_enabled = ?, updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(enabled), token, boolToInt(regEnabled),
 	)
 	return err
 }

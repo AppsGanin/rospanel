@@ -116,7 +116,7 @@ export function statusInfo(status: string): { label: string; color: string } {
     case 'limited':
       return { label: 'лимит исчерпан', color: 'orange' }
     case 'device_limited':
-      return { label: 'лишних устройств', color: 'orange' }
+      return { label: 'лимит устройств', color: 'orange' }
     default:
       return { label: status, color: 'gray' }
   }

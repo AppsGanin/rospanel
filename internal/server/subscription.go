@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
+	"github.com/AppsGanin/rospanel/internal/telegram"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -44,7 +46,8 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
-		setSubHeaders(w, *u, set)
+		supportURL := telegramSupportURL(r.Context(), set, *u)
+		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
 		switch subFormat(r) {
 		case "clash":
@@ -64,11 +67,16 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			links := sub.ShareLinks(*u, set)
+			var body string
 			if set.SubBase64 {
-				_, _ = w.Write([]byte(sub.Base64Payload(links)))
+				body = sub.Base64Payload(links)
 			} else {
-				_, _ = w.Write([]byte(strings.Join(links, "\n")))
+				body = strings.Join(links, "\n")
+				if supportURL != "" {
+					body = "#support-url: " + supportURL + "\n" + body
+				}
 			}
+			_, _ = w.Write([]byte(body))
 		}
 
 	case "logo.svg":
@@ -109,9 +117,22 @@ func servePage(w http.ResponseWriter, u model.User, set *model.Settings) {
 	_, _ = w.Write(html)
 }
 
+// telegramSupportURL is the Happ/INCY support-url (Telegram user bot deep link),
+// or "" when the user bot is disabled or its @username can't be resolved.
+func telegramSupportURL(ctx context.Context, set *model.Settings, u model.User) string {
+	if !set.TGUserBotEnabled {
+		return ""
+	}
+	bot := botUsername(ctx, set.TGUserBotToken)
+	if bot == "" {
+		return ""
+	}
+	return telegram.UserDeepLink(bot, u.SubToken)
+}
+
 // setSubHeaders adds the standard subscription headers every client reads:
-// title, update interval, usage/quota/expiry, and the profile web page.
-func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings) {
+// title, update interval, usage/quota/expiry, profile web page, and Happ support-url.
+func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings, supportURL string) {
 	title := sub.SubTitle(u, set)
 	// Go canonicalizes header keys on the wire and clients match case-insensitively
 	// (RFC 7230), so a single canonical "Profile-Title" suffices — a second
@@ -126,6 +147,11 @@ func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings) {
 		"upload=%d; download=%d; total=%d; expire=%d",
 		u.UsedUp, u.UsedDown, u.DataLimit, u.ExpireAt))
 	w.Header().Set("Profile-Web-Page-Url", sub.URL(set, u.SubToken))
+	if supportURL != "" {
+		// Happ shows it as a support button on the traffic bar; Telegram links get
+		// the TG icon. Points the client at the public user bot.
+		w.Header().Set("support-url", supportURL)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 }
 
