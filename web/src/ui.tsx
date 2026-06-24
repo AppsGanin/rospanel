@@ -159,6 +159,11 @@ export function CenterLoader() {
   );
 }
 
+// Skeleton is a pulsing placeholder block. Pass className to set size and shape.
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded bg-gray-200", className)} />;
+}
+
 /* ------------------------------------------------------------------ button */
 type Color = "brand" | "red" | "teal" | "orange" | "gray";
 type Variant = "filled" | "light" | "subtle" | "outline";
