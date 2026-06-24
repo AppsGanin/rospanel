@@ -27,6 +27,13 @@ type Panel interface {
 	ResetTraffic(id int64) error
 	BackupManifest() backup.Manifest
 	Location() *time.Location
+
+	// Billing (no-op surface unless tariffs are enabled).
+	ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error)
+	ApplyPlanToUser(userID, planID int64, extendFromCurrent bool) error
+	PlanName(planID int64) string
+	RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error)
+	CreateRegisteredUser(name string) (*model.User, error)
 }
 
 // pollTimeout is the long-poll window (seconds). A change to the bot token or
@@ -263,6 +270,8 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 	case "reset":
 		_ = s.panel.ResetTraffic(id)
 		s.showUserCard(ctx, client, chatID, msgID, set, id)
+	case "plans":
+		s.showUserPlans(ctx, client, chatID, msgID, set, id)
 	case "del": // ask for confirmation in place
 		u, ok := s.findUser(id)
 		if !ok {
@@ -280,6 +289,15 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 			s.send(ctx, client, chatID, "⚠️ Ошибка: "+esc(derr.Error()))
 		}
 		s.showUsers(ctx, client, chatID, msgID, 0)
+	default:
+		// "plan:<id>" — assign a tariff (planID 0 = manual, no limits).
+		if planStr, ok := strings.CutPrefix(action, "plan:"); ok {
+			planID, _ := strconv.ParseInt(planStr, 10, 64)
+			if perr := s.panel.ApplyPlanToUser(id, planID, false); perr != nil {
+				s.send(ctx, client, chatID, "⚠️ Не удалось сменить тариф: "+esc(perr.Error()))
+			}
+			s.showUserCard(ctx, client, chatID, msgID, set, id)
+		}
 	}
 }
 
@@ -346,10 +364,49 @@ func (s *Service) showUserCard(ctx context.Context, client *Client, chatID, msgI
 	rows := [][]InlineButton{
 		{{Text: "📲 Подписка", CallbackData: fmt.Sprintf("u:%d:sub", id)}},
 		{toggle, {Text: "♻️ Сбросить трафик", CallbackData: fmt.Sprintf("u:%d:reset", id)}},
-		{{Text: "🗑 Удалить", CallbackData: fmt.Sprintf("u:%d:del", id)}},
-		{{Text: "⬅️ К списку", CallbackData: "users:0"}},
 	}
-	s.edit(ctx, client, chatID, msgID, userCard(u, s.panel.Location()), rows)
+	if set.BillingEnabled {
+		rows = append(rows, []InlineButton{{Text: "💳 Тариф", CallbackData: fmt.Sprintf("u:%d:plans", id)}})
+	}
+	rows = append(rows,
+		[]InlineButton{{Text: "🗑 Удалить", CallbackData: fmt.Sprintf("u:%d:del", id)}},
+		[]InlineButton{{Text: "⬅️ К списку", CallbackData: "users:0"}},
+	)
+	planName := ""
+	if u.PlanID != 0 {
+		planName = s.panel.PlanName(u.PlanID)
+	}
+	s.edit(ctx, client, chatID, msgID, userCardWithPlan(u, s.panel.Location(), planName, set.BillingEnabled), rows)
+}
+
+// showUserPlans lets the admin assign a tariff (or switch back to manual limits).
+func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, userID int64) {
+	u, ok := s.findUser(userID)
+	if !ok {
+		s.showUsers(ctx, client, chatID, msgID, 0)
+		return
+	}
+	plans, err := s.panel.ListTariffPlans(false)
+	if err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()), [][]InlineButton{
+			{{Text: "⬅️ Назад", CallbackData: fmt.Sprintf("u:%d", userID)}},
+		})
+		return
+	}
+	rows := [][]InlineButton{{{
+		Text:         "✋ Вручную (без лимитов)",
+		CallbackData: fmt.Sprintf("u:%d:plan:0", userID),
+	}}}
+	for _, p := range plans {
+		rows = append(rows, []InlineButton{{
+			Text:         planButtonLabel(p),
+			CallbackData: fmt.Sprintf("u:%d:plan:%d", userID, p.ID),
+		}})
+	}
+	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: fmt.Sprintf("u:%d", userID)}})
+	s.edit(ctx, client, chatID, msgID,
+		fmt.Sprintf("💳 <b>Тариф — #%d %s</b>\n\nВыберите тариф:", u.ID, esc(u.Name)),
+		rows)
 }
 
 // promptAdd asks for the new user's details and arms the pending-input state.

@@ -174,6 +174,32 @@ func userCard(u model.User, loc *time.Location) string {
 	return b.String()
 }
 
+// planButtonLabel is the inline-button text for a tariff plan.
+func planButtonLabel(p model.TariffPlan) string {
+	if p.IsFree {
+		return p.Name + " · бесплатно"
+	}
+	if p.PriceRub > 0 && p.PeriodDays > 0 {
+		return fmt.Sprintf("%s · %d ₽ / %d дн.", p.Name, p.PriceRub, p.PeriodDays)
+	}
+	if p.PriceRub > 0 {
+		return fmt.Sprintf("%s · %d ₽", p.Name, p.PriceRub)
+	}
+	return p.Name
+}
+
+// userCardWithPlan extends userCard with the active billing plan (if any).
+func userCardWithPlan(u model.User, loc *time.Location, planName string, billingOn bool) string {
+	card := userCard(u, loc)
+	switch {
+	case planName != "":
+		card += "\nТариф: " + esc(planName)
+	case billingOn && u.PlanID == 0:
+		card += "\nТариф: вручную"
+	}
+	return card
+}
+
 // subCaption is the caption shown with the subscription QR: the user's
 // subscription URL (the QR encodes the same URL).
 func subCaption(u model.User, set *model.Settings) string {
