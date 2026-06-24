@@ -16,6 +16,9 @@ export interface User {
   last_seen: number
   device_limit: number
   active_devices: number
+  telegram_linked?: boolean
+  telegram_link?: string
+  telegram_deep_link?: string
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
   vless: string
@@ -217,6 +220,8 @@ export const setResetPeriod = (id: number, period: string) =>
   })
 export const rotateSubToken = (id: number) =>
   api<User>(`api/users/${id}/rotate-sub`, { method: 'POST' })
+export const unlinkUserTelegram = (id: number) =>
+  api<{ ok: boolean }>(`api/users/${id}/telegram/unlink`, { method: 'POST' })
 
 export const getStatsSeries = (p: { user_id?: number; from?: string; to?: string }) => {
   const q = new URLSearchParams()
@@ -461,7 +466,11 @@ export interface TelegramInfo {
   backup_cron: string // 5-field cron in the operator timezone; "" = off
   chat_ids: number[] // linked (authorized) chat IDs
   link_code: string // pending one-time linking code (if any)
-  bot_username: string // bot @username (empty if token unset/invalid)
+  bot_username: string // admin bot @username (empty if token unset/invalid)
+  user_enabled: boolean
+  user_token: string
+  user_reg_enabled: boolean
+  user_bot_username: string // user bot @username
 }
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
@@ -470,10 +479,20 @@ export const saveTelegram = (
   enabled: boolean,
   token: string,
   backup_cron: string,
+  user_enabled: boolean,
+  user_token: string,
+  user_reg_enabled: boolean,
 ) =>
   api<{ ok: boolean }>('api/telegram', {
     method: 'POST',
-    body: JSON.stringify({ enabled, token, backup_cron }),
+    body: JSON.stringify({
+      enabled,
+      token,
+      backup_cron,
+      user_enabled,
+      user_token,
+      user_reg_enabled,
+    }),
   })
 
 export const genTelegramLink = () =>

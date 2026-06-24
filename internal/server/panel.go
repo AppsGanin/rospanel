@@ -12,6 +12,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
+	"github.com/AppsGanin/rospanel/internal/telegram"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -39,19 +40,30 @@ func validDNSServer(s string) bool {
 // protocols).
 type userView struct {
 	model.User
-	SystemEmail string `json:"system_email"` // Xray client id "u<id>" (logs/stats/links)
-	SubURL      string `json:"sub_url"`
-	VLESS       string `json:"vless"`
-	Trojan      string `json:"trojan"`
-	Hysteria2   string `json:"hysteria2"`
-	Reality     string `json:"reality"`
+	SystemEmail      string `json:"system_email"` // Xray client id "u<id>" (logs/stats/links)
+	SubURL           string `json:"sub_url"`
+	VLESS            string `json:"vless"`
+	Trojan           string `json:"trojan"`
+	Hysteria2        string `json:"hysteria2"`
+	Reality          string `json:"reality"`
+	TelegramLinked   bool   `json:"telegram_linked"`
+	TelegramLink     string `json:"telegram_link"`      // public user bot URL
+	TelegramDeepLink string `json:"telegram_deep_link"` // bind this (panel-created) account
 }
 
-func makeUserView(u model.User, set *model.Settings) userView {
+// makeUserView builds the API view for a user. userBotUsername is the resolved
+// @username of the public user bot ("" when disabled/unresolved) — passed in so
+// the caller resolves it once per request instead of per user.
+func makeUserView(u model.User, set *model.Settings, userBotUsername string) userView {
 	v := userView{
-		User:        u,
-		SystemEmail: model.UserEmail(u.ID),
-		SubURL:      sub.URL(set, u.SubToken),
+		User:           u,
+		SystemEmail:    model.UserEmail(u.ID),
+		SubURL:         sub.URL(set, u.SubToken),
+		TelegramLinked: u.TgChatID != 0,
+	}
+	if set.TGUserBotEnabled && userBotUsername != "" && u.TgChatID == 0 {
+		v.TelegramLink = telegram.UserBotLink(userBotUsername)
+		v.TelegramDeepLink = telegram.UserDeepLink(userBotUsername, u.SubToken)
 	}
 	// A protocol switched off in the Connections panel drops out of the user's
 	// links (empty string ⇒ the UI hides it).
@@ -140,6 +152,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/users/{id}/name", rt.renameUser)
 	authedID("GET /api/users/{id}/connections", rt.userConnections)
 	authedID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
+	authedID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
 	authedID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authed("GET /api/stats/series", rt.statsSeries)
 	authed("GET /api/stats/users", rt.statsByUser)

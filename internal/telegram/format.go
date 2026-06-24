@@ -18,7 +18,7 @@ import (
 const menuHeader = "<b>Меню управления</b>\nВыберите действие:"
 
 // accessDenied is shown to a chat that isn't linked.
-const accessDenied = "🚫 Доступ запрещён.\n\nОткройте раздел <b>Telegram</b> в панели, сгенерируйте код привязки и отправьте <code>/start КОД</code>."
+const accessDenied = "🚫 Доступ запрещён.\n\nЭто админ-бот панели. Откройте раздел <b>Telegram</b> в настройках, сгенерируйте код и отправьте <code>/start КОД</code>.\n\nДля VPN-подписки используйте отдельного пользовательского бота."
 
 // mainMenuRows is the top-level inline keyboard.
 func mainMenuRows() [][]InlineButton {

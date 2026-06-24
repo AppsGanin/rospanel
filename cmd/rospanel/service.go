@@ -129,6 +129,9 @@ func runServer(dataDir string) {
 	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
 	// enabled with a token in Settings → Telegram, re-reading config each cycle.
 	go telegram.New(mgr, st, dataDir).Run(context.Background())
+	// Telegram user bot: public self-service for VPN clients (registration,
+	// subscription, stats). Idles until enabled with its own token in Settings.
+	go telegram.NewUser(mgr, st).Run(context.Background())
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {
