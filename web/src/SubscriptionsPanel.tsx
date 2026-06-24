@@ -18,7 +18,7 @@ const ROUTING_REPO = "https://github.com/hydraponique/roscomvpn-routing";
 const EMPTY_SUB: SubSettings = {
   sub_path: "sub",
   sub_base64: true,
-  sub_email_in_name: false,
+  sub_name_in_title: false,
   sub_title: "",
   sub_routing: true,
   sub_routing_happ: "",
@@ -50,7 +50,7 @@ export function SubscriptionsPanel() {
         const init: SubSettings = {
           sub_path: d.sub_path,
           sub_base64: d.sub_base64,
-          sub_email_in_name: d.sub_email_in_name,
+          sub_name_in_title: d.sub_name_in_title,
           sub_title: d.sub_title,
           sub_routing: d.sub_routing,
           sub_routing_happ: d.sub_routing_happ,
@@ -106,17 +106,17 @@ export function SubscriptionsPanel() {
             checked={s.sub_base64}
             onChange={(v) => patch({ sub_base64: v })}
           />
-          <ToggleRow
-            label="Имя пользователя в названии протокола"
-            hint="Добавлять имя пользователя к названию каждого протокола в конфиге."
-            checked={s.sub_email_in_name}
-            onChange={(v) => patch({ sub_email_in_name: v })}
-          />
           <TextInput
             label="Заголовок подписки"
             placeholder="Например, имя вашего сервера"
             value={s.sub_title}
             onChange={(v) => patch({ sub_title: v })}
+          />
+          <ToggleRow
+            label="Имя пользователя в заголовке подписки"
+            hint="Добавлять имя пользователя к заголовку профиля в клиенте (например, «Мой VPN — Маша»)."
+            checked={s.sub_name_in_title}
+            onChange={(v) => patch({ sub_name_in_title: v })}
           />
           <Select
             label="Интервал автообновления"

@@ -121,6 +121,11 @@ export function UsersPanel() {
                   {u.expire_at > 0 && (
                     <Badge color="gray">до {fmtExpire(u.expire_at)}</Badge>
                   )}
+                  {u.device_limit > 0 && (
+                    <Badge color={u.status === "device_limited" ? "orange" : "gray"}>
+                      {u.active_devices}/{u.device_limit} устр.
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="flex gap-2">

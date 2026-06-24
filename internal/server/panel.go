@@ -139,6 +139,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/users/{id}/enabled", rt.setUserEnabled)
 	authedID("POST /api/users/{id}/name", rt.renameUser)
 	authedID("GET /api/users/{id}/connections", rt.userConnections)
+	authedID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
 	authedID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authed("GET /api/stats/series", rt.statsSeries)
 	authed("GET /api/stats/users", rt.statsByUser)

@@ -55,7 +55,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"decoy_templates":     templates,
 		"sub_path":            set.SubPathOr(),
 		"sub_base64":          set.SubBase64,
-		"sub_email_in_name":   set.SubEmailInName,
+		"sub_name_in_title":   set.SubNameInTitle,
 		"sub_title":           set.SubTitle,
 		"sub_routing":         set.SubRouting,
 		"sub_routing_happ":    set.SubRoutingHapp,
@@ -182,7 +182,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path           string `json:"sub_path"`
 		Base64         bool   `json:"sub_base64"`
-		EmailInName    bool   `json:"sub_email_in_name"`
+		NameInTitle    bool   `json:"sub_name_in_title"`
 		Title          string `json:"sub_title"`
 		Routing        bool   `json:"sub_routing"`
 		RoutingHapp    string `json:"sub_routing_happ"`
@@ -200,7 +200,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	err := rt.mgr.SaveSubSettings(&model.Settings{
 		SubPath:           path,
 		SubBase64:         req.Base64,
-		SubEmailInName:    req.EmailInName,
+		SubNameInTitle:    req.NameInTitle,
 		SubTitle:          strings.TrimSpace(req.Title),
 		SubRouting:        req.Routing,
 		SubRoutingHapp:    strings.TrimSpace(req.RoutingHapp),

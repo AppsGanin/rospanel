@@ -57,7 +57,7 @@ type DeepLink struct {
 func DeepLinks(subURL string) []DeepLink {
 	enc := url.QueryEscape(subURL)
 	return []DeepLink{
-		{"Happ", "Все платформы · TV", template.URL("happ://add/" + enc)},
+		{"Happ", "Все платформы · TV", template.URL("happ://add/" + subURL)},
 		{"INCY", "Все платформы · TV", template.URL("incy://import/" + subURL)},
 		{"Hiddify", "Все платформы", template.URL("hiddify://import/" + subURL)},
 		{"Karing", "Все платформы · TV", template.URL("karing://install-config?url=" + enc)},

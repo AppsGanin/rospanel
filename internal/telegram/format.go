@@ -119,6 +119,8 @@ func statusEmoji(status string) string {
 		return "⌛"
 	case "limited":
 		return "📵"
+	case "device_limited":
+		return "📱"
 	default:
 		return "•"
 	}
@@ -135,6 +137,8 @@ func statusLabel(status string) string {
 		return "⌛ истёк"
 	case "limited":
 		return "📵 лимит"
+	case "device_limited":
+		return "📱 лишние устройства"
 	default:
 		return esc(status)
 	}
