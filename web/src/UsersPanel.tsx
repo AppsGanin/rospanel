@@ -159,7 +159,7 @@ export function UsersPanel() {
         onClick={() => setAddOpen(true)}
         aria-label="Добавить пользователя"
         title="Добавить пользователя"
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg transition hover:bg-brand-700 hover:shadow-xl active:scale-95"
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700 hover:shadow-xl active:scale-95"
       >
         <svg
           width="26"
@@ -273,7 +273,7 @@ function AddUser({
           <p className="text-sm text-ink-muted">
             Подписка (все протоколы) — отсканируйте или поделитесь ссылкой
           </p>
-          <div className="rounded-lg bg-white p-3">
+          <div className="rounded-lg bg-onaccent p-3">
             <QRCodeSVG value={created.sub_url} size={200} />
           </div>
           <Code block className="w-full">

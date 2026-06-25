@@ -66,7 +66,7 @@ export function ValidationNote({
     return null;
   }
   return (
-    <p className="mt-2 text-sm text-red-600">
+    <p className="mt-2 text-sm text-danger">
       ✗ {inspection.issue || "Бэкап нельзя восстановить."}
     </p>
   );
@@ -190,13 +190,13 @@ export function RestoreWaiting({
           <p className="text-xs text-ink-muted">Адрес панели:</p>
           <a
             href={newUrl}
-            className="break-all font-mono text-xs text-brand-600 hover:underline"
+            className="break-all font-mono text-xs text-accent hover:underline"
           >
             {newUrl}
           </a>
         </div>
         {crossDomain && (
-          <p className="text-center text-sm text-orange-600">
+          <p className="text-center text-sm text-warning">
             Домен изменился. После входа проверьте раздел Настройки → Домен.
           </p>
         )}

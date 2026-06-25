@@ -153,7 +153,7 @@ export function Spinner({ size = 16, className }: IconProps) {
 // initial data is still loading.
 export function CenterLoader() {
   return (
-    <div className="flex animate-fade-in justify-center py-20 text-brand-600">
+    <div className="flex animate-fade-in justify-center py-20 text-accent">
       <Spinner size={34} />
     </div>
   );
@@ -171,32 +171,32 @@ type Size = "xs" | "sm" | "md";
 
 const BTN: Record<Variant, Record<Color, string>> = {
   filled: {
-    brand: "bg-brand-600 text-white hover:bg-brand-700",
-    red: "bg-brandred-500 text-white hover:bg-brandred-600",
-    teal: "bg-emerald-600 text-white hover:bg-emerald-700",
-    orange: "bg-orange-500 text-white hover:bg-orange-600",
-    gray: "bg-gray-700 text-white hover:bg-gray-800",
+    brand: "bg-brand-600 text-onaccent hover:bg-brand-700",
+    red: "bg-brandred-500 text-onaccent hover:bg-brandred-600",
+    teal: "bg-emerald-600 text-onaccent hover:bg-emerald-700",
+    orange: "bg-orange-500 text-onaccent hover:bg-orange-600",
+    gray: "bg-gray-700 text-gray-50 hover:bg-gray-800",
   },
   light: {
-    brand: "bg-brand-50 text-brand-700 hover:bg-brand-100",
-    red: "bg-brandred-50 text-brandred-700 hover:bg-brandred-100",
-    teal: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-    orange: "bg-orange-50 text-orange-700 hover:bg-orange-100",
+    brand: "accent-tint text-accent accent-tint-hover",
+    red: "danger-tint text-danger danger-tint-hover",
+    teal: "success-tint text-success success-tint-hover",
+    orange: "warning-tint text-warning warning-tint-hover",
     gray: "bg-gray-100 text-gray-700 hover:bg-gray-200",
   },
   subtle: {
-    brand: "bg-transparent text-brand-700 hover:bg-brand-50",
-    red: "bg-transparent text-brandred-600 hover:bg-brandred-50",
-    teal: "bg-transparent text-emerald-700 hover:bg-emerald-50",
-    orange: "bg-transparent text-orange-700 hover:bg-orange-50",
+    brand: "bg-transparent text-accent accent-tint-hover",
+    red: "bg-transparent text-danger danger-tint-hover",
+    teal: "bg-transparent text-success success-tint-hover",
+    orange: "bg-transparent text-warning warning-tint-hover",
     gray: "bg-transparent text-gray-600 hover:bg-gray-100",
   },
   outline: {
-    brand: "bg-white text-brand-700 border border-brand-200 hover:bg-brand-50",
-    red: "bg-white text-brandred-600 border border-brandred-200 hover:bg-brandred-50",
-    teal: "bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50",
+    brand: "bg-white text-accent border border-accent accent-tint-hover",
+    red: "bg-white text-danger border border-danger danger-tint-hover",
+    teal: "bg-white text-success border border-success success-tint-hover",
     orange:
-      "bg-white text-orange-700 border border-orange-200 hover:bg-orange-50",
+      "bg-white text-warning border border-warning warning-tint-hover",
     gray: "bg-white text-gray-800 border border-gray-300 hover:bg-gray-50",
   },
 };
@@ -607,11 +607,11 @@ export function Select({
                     onClick={() => pick(o.value)}
                     className={cn(
                       'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
-                      o.value === value ? 'font-semibold text-brand-700' : 'text-ink',
+                      o.value === value ? 'font-semibold text-accent' : 'text-ink',
                     )}
                   >
                     <span className="truncate">{o.label}</span>
-                    {o.value === value && <IconCheck className="shrink-0 text-brand-600" />}
+                    {o.value === value && <IconCheck className="shrink-0 text-accent" />}
                   </button>
                 ))}
               </div>
@@ -893,8 +893,8 @@ export function DatePicker({
                       className={cn(
                         'flex h-8 items-center justify-center rounded-md text-sm transition',
                         value === ymd(d)
-                          ? 'bg-brand-600 font-semibold text-white'
-                          : 'text-ink hover:bg-brand-50',
+                          ? 'bg-brand-600 font-semibold text-onaccent'
+                          : 'text-ink accent-tint-hover',
                         'disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent',
                       )}
                     >
@@ -910,7 +910,7 @@ export function DatePicker({
                     onChange('')
                     setOpen(false)
                   }}
-                  className="mt-2 w-full rounded-md py-1.5 text-sm font-medium text-brandred-600 hover:bg-brandred-50"
+                  className="mt-2 w-full rounded-md py-1.5 text-sm font-medium text-danger danger-tint-hover"
                 >
                   Очистить
                 </button>
@@ -947,7 +947,7 @@ export function Switch({
     >
       <span
         className={cn(
-          "inline-block h-5 w-5 transform rounded-full bg-white shadow transition",
+          "inline-block h-5 w-5 transform rounded-full bg-onaccent shadow transition",
           checked ? "translate-x-5" : "translate-x-0.5",
         )}
       />
@@ -998,7 +998,7 @@ export function Checkbox({
       className={cn(
         "flex cursor-pointer select-none items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
         checked
-          ? "border-brand-300 bg-brand-50"
+          ? "border-accent accent-tint"
           : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
       )}
     >
@@ -1011,7 +1011,7 @@ export function Checkbox({
       <span
         className={cn(
           "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition",
-          checked ? "border-brand-600 bg-brand-600 text-white" : "border-gray-300 bg-white",
+          checked ? "border-brand-600 bg-brand-600 text-onaccent" : "border-gray-300 bg-white",
         )}
       >
         {checked && <IconCheck size={14} />}
@@ -1026,13 +1026,13 @@ export function Checkbox({
 
 /* ------------------------------------------------------------------- badge */
 const BADGE: Record<string, string> = {
-  brand: "bg-brand-50 text-brand-700",
-  red: "bg-brandred-50 text-brandred-700",
-  teal: "bg-emerald-50 text-emerald-700",
-  green: "bg-emerald-100 text-emerald-800",
-  orange: "bg-orange-50 text-orange-700",
+  brand: "accent-tint text-accent",
+  red: "danger-tint text-danger",
+  teal: "success-tint text-success",
+  green: "success-tint text-success",
+  orange: "warning-tint text-warning",
   gray: "bg-gray-100 text-gray-600",
-  greenSolid: "bg-emerald-500 text-white",
+  greenSolid: "bg-emerald-500 text-onaccent",
 };
 export function Badge({
   children,
@@ -1111,7 +1111,7 @@ export function SegmentedControl({
             "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
             fullWidth && "flex-1",
             value === o.value
-              ? "bg-white text-brand-700 shadow-sm"
+              ? "bg-brand-600 text-onaccent shadow-sm"
               : "text-gray-500 hover:text-gray-700",
           )}
         >
@@ -1377,7 +1377,7 @@ export function DropdownItem({
   const { close } = useContext(DropCtx);
   const cls = cn(
     "block w-full px-4 py-2 text-left text-sm transition hover:bg-gray-50",
-    color === "red" ? "text-brandred-600" : "text-ink",
+    color === "red" ? "text-danger" : "text-ink",
   );
   const handle = () => {
     onClick?.();
@@ -1455,7 +1455,7 @@ export function InfoModal({
       <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl animate-fade-in-up flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-gray-100 bg-white px-5 py-4">
           <div className="flex items-center gap-2">
-            {icon && <span className="text-brand-600">{icon}</span>}
+            {icon && <span className="text-accent">{icon}</span>}
             <h2 className="text-lg font-bold text-ink">{title}</h2>
           </div>
           {onClose && (
@@ -1492,7 +1492,7 @@ export function InfoSection({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-bold uppercase tracking-wider text-brand-600">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-accent">
         {title}
       </h3>
       {bordered ? (

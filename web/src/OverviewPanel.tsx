@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { type SystemStatus } from "./api";
+import { cssVar } from "./charts";
 import { fmtBytes, fmtDuration, plural } from "./format";
 import { Badge, Button, Card, Skeleton } from "./ui";
 import { XrayLogs } from "./XrayLogs";
@@ -20,7 +21,9 @@ function Gauge({
   const r = 40;
   const c = 2 * Math.PI * r;
   const dash = (p / 100) * c;
-  const color = p < 70 ? "#0d4cd3" : p < 90 ? "#f97316" : "#ef4444";
+  const color =
+    p < 70 ? cssVar("--color-brand-600", "#0d4cd3") : p < 90 ? "#f97316" : "#ef4444";
+  const track = cssVar("--color-gray-200", "#e7eef9");
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative h-24 w-24">
@@ -30,7 +33,7 @@ function Gauge({
             cy="50"
             r={r}
             fill="none"
-            stroke="#e7eef9"
+            stroke={track}
             strokeWidth="9"
           />
           <circle

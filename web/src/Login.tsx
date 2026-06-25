@@ -46,14 +46,14 @@ export function Login({
             <button
               type="button"
               onClick={onShowAgreement}
-              className="transition hover:text-brand-600"
+              className="transition hover:text-accent"
             >
               Пользовательское соглашение
             </button>
             <button
               type="button"
               onClick={onShowDonate}
-              className="transition hover:text-brand-600"
+              className="transition hover:text-accent"
             >
               Пожертвования
             </button>

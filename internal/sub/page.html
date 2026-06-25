@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>РосПанель · Подписка</title>
+    <title>{{.BrandName}} · Подписка</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,19 +13,24 @@
     />
     <style>
       :root {
-        --brand: #0d4cd3;
-        --brand-dark: #0a3fb0;
-        --red: #ee3f58;
-        --ink: #0a1b2e;
-        --muted: #5b6b7e;
-        --line: rgba(13, 76, 211, 0.08);
-        color-scheme: light;
+        --brand: {{.Brand}};
+        --brand-dark: {{.BrandDark}};
+        --accent-fg: {{.AccentFg}};
+        --success-fg: {{.SuccessFg}};
+        --warning-fg: {{.WarningFg}};
+        --danger-fg: {{.DangerFg}};
+        --ink: {{.Ink}};
+        --muted: {{.Muted}};
+        --bg: {{.Bg}};
+        --surface: {{.Surface}};
+        --line: color-mix(in srgb, var(--brand) 8%, transparent);
+        color-scheme: light dark;
       }
       * {
         box-sizing: border-box;
       }
       html {
-        background: #eaf3ff;
+        background: var(--bg);
       }
       body {
         margin: 0;
@@ -34,10 +39,14 @@
         background:
           radial-gradient(
             1200px 600px at 80% -10%,
-            #eaf3ff 0%,
-            rgba(234, 243, 255, 0) 60%
+            color-mix(in srgb, var(--brand) 12%, var(--bg)) 0%,
+            color-mix(in srgb, var(--brand) 0%, var(--bg)) 60%
           ),
-          linear-gradient(180deg, #f4f8ff 0%, #eaf1fb 100%);
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--bg) 55%, white) 0%,
+            var(--bg) 100%
+          );
         background-attachment: fixed;
         color: var(--ink);
         font-family:
@@ -67,9 +76,6 @@
       .logo .b {
         color: var(--brand);
       }
-      .logo .r {
-        color: var(--red);
-      }
       .badges {
         display: flex;
         flex-wrap: wrap;
@@ -86,11 +92,11 @@
         white-space: nowrap;
       }
       .badge.brand {
-        background: #e7f0ff;
-        color: var(--brand-dark);
+        background: color-mix(in srgb, var(--brand) 16%, transparent);
+        color: var(--accent-fg);
       }
       .badge.gray {
-        background: #eef1f5;
+        background: color-mix(in srgb, var(--muted) 18%, transparent);
         color: var(--muted);
       }
       .badge.green {
@@ -98,12 +104,12 @@
         color: #fff;
       }
       .badge.red {
-        background: #ffe9ed;
-        color: #d93350;
+        background: color-mix(in srgb, #dc2626 16%, transparent);
+        color: var(--danger-fg);
       }
       .badge.orange {
-        background: #fff1e6;
-        color: #c2410c;
+        background: color-mix(in srgb, #ea580c 16%, transparent);
+        color: var(--warning-fg);
       }
       h1 {
         font-size: 1rem;
@@ -112,12 +118,12 @@
         margin: 0.5rem 0;
       }
       .card {
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 18px;
         padding: 18px;
         margin-bottom: 14px;
-        box-shadow: 0 1px 3px rgba(13, 76, 211, 0.04);
+        box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 8%, transparent);
       }
       .row {
         display: flex;
@@ -162,11 +168,11 @@
         transform: scale(0.98);
       }
       .btn.alt {
-        background: #eef3fb;
-        color: var(--brand-dark);
+        background: color-mix(in srgb, var(--brand) 12%, transparent);
+        color: var(--accent-fg);
       }
       .btn.alt:hover {
-        background: #e1eaf9;
+        background: color-mix(in srgb, var(--brand) 20%, transparent);
       }
       .muted {
         color: var(--muted);
@@ -199,7 +205,7 @@
         margin-bottom: 4px;
       }
       .bar {
-        background: #ffffff;
+        background: color-mix(in srgb, var(--muted) 22%, transparent);
         border-radius: 999px;
         height: 8px;
         margin-top: 8px;
@@ -224,7 +230,7 @@
         display: flex;
       }
       .modal-card {
-        background: #fff;
+        background: var(--surface);
         border-radius: 18px;
         width: 100%;
         max-width: 420px;
@@ -260,14 +266,14 @@
         align-items: center;
         padding: 12px 14px;
         border-radius: 12px;
-        background: #eef3fb;
-        color: var(--brand-dark);
+        background: color-mix(in srgb, var(--brand) 12%, transparent);
+        color: var(--accent-fg);
         font-weight: 700;
         text-decoration: none;
         transition: background 0.15s;
       }
       .app:hover {
-        background: #e1eaf9;
+        background: color-mix(in srgb, var(--brand) 20%, transparent);
       }
       .app .plat {
         font-size: 0.72rem;
@@ -281,7 +287,7 @@
     <div class="wrap">
       <div class="logo">
         <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
-        <span><span class="r">Рос</span><span class="b">Панель</span></span>
+        {{if .IsDefault}}<span class="b">РосПанель</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
       </div>
       <h1>Привет{{if .Name}}, {{.Name}}{{end}} 👋</h1>
 

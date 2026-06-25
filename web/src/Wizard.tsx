@@ -225,7 +225,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
             <div className="flex animate-fade-in flex-col gap-3">
               <p className="text-sm text-ink-muted">Выберите, как начать работу с панелью.</p>
               <button
-                className="flex flex-col gap-1 rounded-xl border-2 border-brand-200 bg-brand-50 p-4 text-left transition hover:border-brand-400"
+                className="flex flex-col gap-1 rounded-xl border-2 border-accent accent-tint p-4 text-left transition hover:border-brand-500"
                 onClick={() => setMode('new')}
               >
                 <span className="font-semibold text-ink">Новый сервер</span>
@@ -259,8 +259,8 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                       <span
                         className={cn(
                           'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold',
-                          i < active && 'bg-brand-600 text-white',
-                          i === active && 'bg-brand-600 text-white',
+                          i < active && 'bg-brand-600 text-onaccent',
+                          i === active && 'bg-brand-600 text-onaccent',
                           i > active && 'bg-gray-200 text-gray-500',
                         )}
                       >
@@ -410,7 +410,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={setDomain}
                         />
                         {targetErr && (
-                          <p className="mt-1 text-xs text-red-600">
+                          <p className="mt-1 text-xs text-danger">
                             {isZeroSSL
                               ? 'Введите домен (ZeroSSL не выдаёт сертификаты на IP).'
                               : 'Введите корректный домен или IP-адрес.'}
@@ -425,7 +425,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={setEmail}
                         />
                         {emailErr && (
-                          <p className="mt-1 text-xs text-red-600">Введите корректный e-mail.</p>
+                          <p className="mt-1 text-xs text-danger">Введите корректный e-mail.</p>
                         )}
                       </div>
                       <Select

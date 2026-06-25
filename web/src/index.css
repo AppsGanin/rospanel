@@ -26,6 +26,15 @@
   --color-ink: #0a1b2e;
   --color-ink-muted: #5b6b7e;
 
+  /* Text/icons on a coloured (accent/red/green) fill. Always true white — kept
+     separate from --color-white because the theme repurposes white as the
+     surface colour, which can be dark. */
+  --color-onaccent: #ffffff;
+
+  /* Page background base. The configurable theme overrides --ui-bg (and the
+     brand ramp / ink / white / gray ramp) at runtime in brand.tsx. */
+  --ui-bg: #eaf1fb;
+
   --font-sans: Mulish, Arial, sans-serif, -apple-system;
 
   /* Custom enter animations (usable as animate-fade-in, animate-slide-in-right…). */
@@ -98,7 +107,7 @@ body,
 /* Solid base under the gradient so any area the (iOS-quirky) fixed background
    fails to paint shows the page colour instead of white. */
 html {
-  background-color: #eaf1fb;
+  background-color: var(--ui-bg);
 }
 
 html {
@@ -134,10 +143,78 @@ body {
   background:
     radial-gradient(
       1200px 600px at 80% -10%,
-      #eaf3ff 0%,
-      rgba(234, 243, 255, 0) 60%
+      color-mix(in srgb, var(--color-brand-600) 12%, var(--ui-bg)) 0%,
+      color-mix(in srgb, var(--color-brand-600) 0%, var(--ui-bg)) 60%
     ),
-    linear-gradient(180deg, #f4f8ff 0%, #eaf1fb 100%);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--ui-bg) 55%, white) 0%,
+      var(--ui-bg) 100%
+    );
+}
+
+/* Accent tint helpers for selected/hover surfaces. Translucent so they composite
+   over whatever surface is behind them — readable in both light and dark themes —
+   and built from the live --color-brand-600 so they follow the configured accent
+   (Tailwind bakes a static hex for `bg-brand-NN` opacity utilities, which would
+   neither follow the theme nor adapt to a dark surface). */
+/* Accent-coloured text/icons on a surface. --accent-fg (set in brand.tsx) is the
+   accent adjusted for contrast against the current surface; falls back to the
+   default dark accent before the script runs. Defined as a @utility so variants
+   like hover:text-accent work. */
+@utility text-accent {
+  color: var(--accent-fg, var(--color-brand-700));
+}
+
+.accent-tint {
+  background-color: color-mix(in srgb, var(--color-brand-600) 12%, transparent);
+}
+.accent-tint-hover:hover {
+  background-color: color-mix(in srgb, var(--color-brand-600) 12%, transparent);
+}
+.border-accent {
+  border-color: color-mix(in srgb, var(--color-brand-600) 40%, transparent);
+}
+
+/* Status colours (success/warning/danger). Hue is fixed (green/orange/red keeps
+   its meaning); --*-fg is lightness-adjusted for the current surface in brand.tsx
+   so status text stays readable in both light and dark themes. Tints are
+   translucent so the chip composites over the surface. */
+@utility text-success {
+  color: var(--success-fg, #047857);
+}
+@utility text-warning {
+  color: var(--warning-fg, #c2410c);
+}
+@utility text-danger {
+  color: var(--danger-fg, #b91c1c);
+}
+.success-tint {
+  background-color: color-mix(in srgb, #059669 16%, transparent);
+}
+.warning-tint {
+  background-color: color-mix(in srgb, #ea580c 16%, transparent);
+}
+.danger-tint {
+  background-color: color-mix(in srgb, #dc2626 16%, transparent);
+}
+.success-tint-hover:hover {
+  background-color: color-mix(in srgb, #059669 16%, transparent);
+}
+.warning-tint-hover:hover {
+  background-color: color-mix(in srgb, #ea580c 16%, transparent);
+}
+.danger-tint-hover:hover {
+  background-color: color-mix(in srgb, #dc2626 16%, transparent);
+}
+.border-success {
+  border-color: color-mix(in srgb, #059669 45%, transparent);
+}
+.border-warning {
+  border-color: color-mix(in srgb, #ea580c 45%, transparent);
+}
+.border-danger {
+  border-color: color-mix(in srgb, #dc2626 45%, transparent);
 }
 
 /* Hide scrollbars on horizontal nav strips. */

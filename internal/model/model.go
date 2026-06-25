@@ -160,12 +160,16 @@ type Settings struct {
 	LastConfigError string    `json:"last_config_error"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	PanelSecretPath string    `json:"-"` // never serialized to clients
-	DecoyTemplate   string    `json:"decoy_template"`
-	WSPath          string    `json:"-"` // Trojan-WS path matched by VLESS fallbacks
-	TrojanPort      int       `json:"-"` // loopback Trojan inbound port
-	HysteriaPort    int       `json:"hysteria_port"`
-	HopStart        int       `json:"hop_start"`
-	HopEnd          int       `json:"hop_end"`
+	// Branding: custom panel display name + colour theme (empty ⇒ defaults). A
+	// custom logo lives as a file under <dataDir>/branding/, not here.
+	PanelName     string `json:"-"`
+	PanelTheme    string `json:"-"` // JSON {accent,text,muted,bg,surface}, empty ⇒ defaults
+	DecoyTemplate string `json:"decoy_template"`
+	WSPath        string `json:"-"` // Trojan-WS path matched by VLESS fallbacks
+	TrojanPort    int    `json:"-"` // loopback Trojan inbound port
+	HysteriaPort  int    `json:"hysteria_port"`
+	HopStart      int    `json:"hop_start"`
+	HopEnd        int    `json:"hop_end"`
 	// HopInterval is the port-hopping rotation interval in seconds ("min-max"),
 	// embedded in the Hysteria2 share link's quicParams.
 	HopInterval string `json:"-"`

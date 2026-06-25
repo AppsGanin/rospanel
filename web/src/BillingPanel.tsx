@@ -254,7 +254,7 @@ export function BillingPanel() {
   if (loadErr || !cfg || !saved) {
     return (
       <SettingCard title="Тарифы">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           {loadErr || "Не удалось загрузить настройки тарифов."}
         </p>
         <Button className="mt-3" onClick={() => reload()}>

@@ -129,7 +129,7 @@ function EditableName({ user, onChanged }: { user: User; onChanged: () => void }
             setDraft(user.name)
             setEditing(true)
           }}
-          className="shrink-0 text-gray-400 transition hover:text-brand-600"
+          className="shrink-0 text-gray-400 transition hover:text-accent"
           title="Переименовать"
         >
           <IconPencil size={16} />
@@ -153,7 +153,7 @@ function EditableName({ user, onChanged }: { user: User; onChanged: () => void }
         onClick={save}
         disabled={busy}
         title="Сохранить"
-        className="shrink-0 text-teal-600 transition hover:text-teal-700 disabled:opacity-50"
+        className="shrink-0 text-success transition hover:text-success disabled:opacity-50"
       >
         <IconCheck size={18} />
       </button>
@@ -408,7 +408,7 @@ export function UserDetail({
 
           <Divider label="Подписка" />
           <div className="flex justify-center">
-            <div className="rounded-lg bg-white p-3">
+            <div className="rounded-lg bg-onaccent p-3">
               <QRCodeSVG value={user.sub_url} size={200} />
             </div>
           </div>
@@ -448,7 +448,7 @@ export function UserDetail({
           <Divider label="Telegram" />
           {user.telegram_linked ? (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-teal-700">Бот привязан к чату пользователя</p>
+              <p className="text-sm text-success">Бот привязан к чату пользователя</p>
               <Button
                 size="xs"
                 variant="light"

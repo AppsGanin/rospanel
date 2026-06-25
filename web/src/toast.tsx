@@ -45,7 +45,7 @@ export function Toaster() {
           key={t.id}
           className={cn(
             'flex animate-slide-in-right items-start gap-3 rounded-xl border bg-white p-3 shadow-lg',
-            t.color === 'red' ? 'border-brandred-200' : 'border-emerald-200',
+            t.color === 'red' ? 'border-danger' : 'border-success',
           )}
         >
           <span

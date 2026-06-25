@@ -66,7 +66,7 @@ function ManageBtn({
       onClick={onClick}
       className={cn(
         "flex flex-1 items-center justify-center gap-2 px-2 py-2 text-sm font-medium transition",
-        danger ? "text-red-600 hover:text-red-700" : "text-ink-muted hover:text-ink",
+        danger ? "text-danger hover:text-danger" : "text-ink-muted hover:text-ink",
       )}
     >
       {icon}
@@ -97,7 +97,7 @@ function Row({
 }
 
 const sqBtn =
-  "flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-white transition hover:bg-brand-700";
+  "flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-onaccent transition hover:bg-brand-700";
 
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {
@@ -186,13 +186,13 @@ export function ManagementCard() {
             <ManifestCard m={manifest} label="В бэкапе" />
             {inspection && <ValidationNote inspection={inspection} />}
             {manifest.domain && info?.domain && manifest.domain !== info.domain && (
-              <p className="mt-3 text-sm text-orange-600">
+              <p className="mt-3 text-sm text-warning">
                 Домен в бэкапе ({manifest.domain}) отличается от текущего ({info.domain}). После
                 восстановления войдите через новый адрес.
               </p>
             )}
             {inspection?.valid && (
-              <p className="mt-3 text-sm text-red-600">
+              <p className="mt-3 text-sm text-danger">
                 Все текущие данные будут заменены. Панель перезапустится — войдите заново.
               </p>
             )}
@@ -217,7 +217,7 @@ export function ManagementCard() {
 
       {/* Reset */}
       <Modal open={resetOpen} onClose={() => setResetOpen(false)} title="Сброс до заводских настроек">
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           Все данные будут удалены без возможности восстановления: пользователи, настройки,
           секретный путь, TLS-сертификат. Панель перезапустится в режиме первого запуска по адресу{" "}
           <code>/rospanel/</code> (admin/admin). Сделайте бэкап заранее.
