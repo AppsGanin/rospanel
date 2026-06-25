@@ -56,6 +56,16 @@ func validDomain(s string) bool {
 	return false
 }
 
+// NormalizeACMEHost lowercases domain targets for ACME (CAs canonicalize DNS
+// names; mixed case like WaifuVPN.example.com makes lego reject the order).
+func NormalizeACMEHost(target string) string {
+	target = strings.TrimSpace(strings.TrimSuffix(target, "."))
+	if validDomain(target) {
+		return strings.ToLower(target)
+	}
+	return target // IP addresses and odd inputs pass through unchanged
+}
+
 // validACMETarget reports whether target is acceptable for the given provider:
 // Let's Encrypt accepts a domain OR an IP; ZeroSSL accepts domains only.
 func validACMETarget(target, provider string) bool {

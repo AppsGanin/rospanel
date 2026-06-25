@@ -83,7 +83,11 @@ func (u *acmeUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
 // Requires inbound :80 reachable for target (the panel binds it for
 // /.well-known/acme-challenge/).
 func ObtainACME(target, email, certPath, keyPath, acmeDir, provider, eabKID, eabHMAC string) error {
+	target = strings.TrimSpace(target)
 	isIP := net.ParseIP(target) != nil
+	if !isIP {
+		target = strings.ToLower(target)
+	}
 
 	accountKey, err := loadOrCreateAccountKey(accountKeyPath(acmeDir, provider))
 	if err != nil {
