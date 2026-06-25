@@ -56,6 +56,8 @@ func main() {
 			runRestore(dataDir, os.Args[2:])
 		case "host":
 			runHost(dataDir, os.Args[2:])
+		case "path":
+			runPath(dataDir)
 		case "install":
 			runInstall()
 		case "uninstall":

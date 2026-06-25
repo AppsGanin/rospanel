@@ -46,6 +46,7 @@ func printUsage(w io.Writer) {
                      следующем старте панели (нужно перезапустить сервис).
   host [-y] [домен|IP]
                      Показать текущий адрес или сменить домен/IP (перевыпуск TLS).
+  path               Показать URL панели и проверить secrets.key / БД.
   reset [-y]         Сброс к заводским настройкам — стирает всю базу данных.
   version            Показать версию.
   help               Показать эту справку.
@@ -104,6 +105,39 @@ func firstPositional(args []string) string {
 		}
 	}
 	return ""
+}
+
+// runPath prints the panel URL and checks secrets.key / database health.
+func runPath(dataDir string) {
+	if err := datasec.Init(dataDir); err != nil {
+		fmt.Fprintln(os.Stderr, "Ошибка secrets.key:", err)
+		os.Exit(1)
+	}
+	st, err := store.Open(filepath.Join(dataDir, "rospanel.db"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Ошибка БД:", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+	set, err := st.GetSettings()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Ошибка настроек:", err)
+		os.Exit(1)
+	}
+	host := strings.TrimSpace(set.Host)
+	if host == "" {
+		host = "<домен-не-настроен>"
+	}
+	secret := strings.TrimSpace(set.PanelSecretPath)
+	if secret == "" {
+		fmt.Println("Секретный путь панели ещё не задан (первый запуск?).")
+		return
+	}
+	fmt.Printf("Панель: https://%s/%s/\n", host, secret)
+	fmt.Printf("Подписки: https://%s/%s/<токен>\n", host, set.SubPathOr())
+	if strings.TrimSpace(set.TGBotToken) == "" && set.TGBotEnabled {
+		fmt.Println("ВНИМАНИЕ: админ-бот включён, но токен пуст (проверьте secrets.key).")
+	}
 }
 
 // runHost prints or sets the panel host (domain or IP). Setting it drops the
