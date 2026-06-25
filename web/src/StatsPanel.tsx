@@ -147,7 +147,7 @@ export function StatsPanel() {
                     <td className="py-2 pr-2">
                       <span
                         className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
-                        style={{ background: colorById[t.user_id] || '#cbd5e1' }}
+                        style={{ background: colorById[t.user_id] || 'var(--color-gray-300)' }}
                       />
                       {t.name}
                     </td>

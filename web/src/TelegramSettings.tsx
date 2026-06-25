@@ -326,7 +326,7 @@ export function TelegramSettings() {
                 href={`https://t.me/${botUsername}`}
                 target="_blank"
                 rel="noreferrer"
-                className="font-medium text-brand-700 hover:underline"
+                className="font-medium text-accent hover:underline"
               >
                 @{botUsername}
               </a>
@@ -351,7 +351,7 @@ export function TelegramSettings() {
       >
         <div className="flex flex-col gap-3">
           {enabled && linkCode ? (
-            <div className="relative rounded-lg border border-brand-100 bg-brand-50 p-3 pr-11">
+            <div className="relative rounded-lg border border-accent accent-tint p-3 pr-11">
               <div className="absolute right-1.5 top-1.5">
                 <IconButton title="Отменить привязку" onClick={cancelLink}>
                   <IconClose size={18} />
@@ -434,7 +434,7 @@ export function TelegramSettings() {
                 href={`https://t.me/${userBotUsername}`}
                 target="_blank"
                 rel="noreferrer"
-                className="font-medium text-brand-700 hover:underline"
+                className="font-medium text-accent hover:underline"
               >
                 @{userBotUsername}
               </a>

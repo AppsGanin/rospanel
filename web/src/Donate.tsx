@@ -40,10 +40,10 @@ function MethodRow({ label, value }: { label: string; value: string }) {
     <button
       type="button"
       onClick={() => copy(value)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left transition hover:border-brand-200 hover:bg-brand-50"
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-left transition hover:border-brand-300 accent-tint-hover"
     >
       <span className="min-w-0">
-        <span className="block text-xs font-bold uppercase tracking-wider text-brand-600">
+        <span className="block text-xs font-bold uppercase tracking-wider text-accent">
           {label}
         </span>
         <span className="block truncate font-mono text-sm text-ink">
@@ -85,7 +85,7 @@ export function Donate({ onClose }: { onClose: () => void }) {
           href={BOOSTY_URL}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center justify-center gap-2 rounded-lg bg-[#f15f2c] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[#d94e1f]"
+          className="flex items-center justify-center gap-2 rounded-lg bg-[#f15f2c] px-3 py-2.5 text-sm font-bold text-onaccent transition hover:bg-[#d94e1f]"
         >
           <IconHeart size={18} />
           Поддержать на Boosty

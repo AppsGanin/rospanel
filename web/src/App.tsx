@@ -6,10 +6,19 @@ import { Dashboard } from './Dashboard'
 import { Wizard } from './Wizard'
 import { Agreement, agreementAccepted } from './Agreement'
 import { Donate } from './Donate'
+import { BrandProvider } from './brand'
 
 type AuthState = 'loading' | 'out' | 'setup' | 'in'
 
 export function App() {
+  return (
+    <BrandProvider>
+      <AppInner />
+    </BrandProvider>
+  )
+}
+
+function AppInner() {
   const [state, setState] = useState<AuthState>('loading')
   const [username, setUsername] = useState('')
   const [version, setVersion] = useState('')
@@ -43,7 +52,7 @@ export function App() {
   let content
   if (state === 'loading') {
     content = (
-      <div className="flex h-dvh items-center justify-center text-brand-600">
+      <div className="flex h-dvh items-center justify-center text-accent">
         <Spinner size={36} />
       </div>
     )

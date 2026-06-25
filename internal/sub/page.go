@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -24,6 +25,18 @@ var pageTmpl = template.Must(template.New("sub").Parse(pageHTML))
 
 type pageData struct {
 	Name      string
+	BrandName string // panel display name (defaults to «РосПанель»)
+	Brand     string // accent colour #rrggbb
+	BrandDark string // darker accent for hover/active states
+	AccentFg  string // accent text colour adjusted for the surface
+	SuccessFg string // status text colours adjusted for the surface
+	WarningFg string
+	DangerFg  string
+	Ink       string // main text colour
+	Muted     string // secondary text colour
+	Bg        string // page background base
+	Surface   string // card background
+	IsDefault bool   // true when the stock РосПанель name is in effect
 	SubURL    string
 	Links     []protoLink
 	DeepLinks []DeepLink
@@ -83,8 +96,21 @@ func Page(u model.User, set *model.Settings) ([]byte, error) {
 	}
 
 	statusLabel, statusClass := subStatus(u.Status)
+	theme := branding.ParseTheme(set.PanelTheme)
 	data := pageData{
 		Name:        u.Name,
+		BrandName:   branding.Name(set.PanelName),
+		Brand:       theme.Accent,
+		BrandDark:   branding.Darken(theme.Accent, 0.16),
+		AccentFg:    branding.Fg(theme.Accent, theme.Surface),
+		SuccessFg:   branding.Fg("#059669", theme.Surface),
+		WarningFg:   branding.Fg("#ea580c", theme.Surface),
+		DangerFg:    branding.Fg("#dc2626", theme.Surface),
+		Ink:         theme.Text,
+		Muted:       theme.Muted,
+		Bg:          theme.Bg,
+		Surface:     theme.Surface,
+		IsDefault:   branding.Name(set.PanelName) == branding.DefaultName,
 		SubURL:      subURL,
 		Links:       protoLinks,
 		DeepLinks:   DeepLinks(subURL),

@@ -115,6 +115,13 @@ func (rt *Router) panelMux() http.Handler {
 	}
 	mux.HandleFunc("POST /api/login", rt.login)
 	mux.HandleFunc("POST /api/logout", rt.logout)
+	// Branding reads are unauthenticated: the login screen (under the secret path)
+	// renders the panel name/accent/logo before any session exists.
+	mux.HandleFunc("GET /api/branding", rt.getBranding)
+	mux.HandleFunc("GET /api/branding/logo", rt.brandingLogo)
+	authed("POST /api/settings/branding", rt.saveBranding)
+	authed("POST /api/settings/branding/logo", rt.uploadBrandingLogo)
+	authed("DELETE /api/settings/branding/logo", rt.deleteBrandingLogo)
 	authed("GET /api/me", rt.me)
 	authed("GET /api/update", rt.checkUpdate)
 	authed("POST /api/update", rt.applyUpdate)

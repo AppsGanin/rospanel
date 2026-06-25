@@ -10,9 +10,9 @@ function classify(l: string): string {
 }
 
 const COLORS: Record<string, string> = {
-  error: 'text-red-600',
-  warning: 'text-amber-600',
-  info: 'text-emerald-600',
+  error: 'text-danger',
+  warning: 'text-warning',
+  info: 'text-success',
 }
 
 const FILTERS = [

@@ -7,8 +7,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
@@ -105,6 +107,25 @@ func (m *Manager) RegenerateSecretPath() (string, error) {
 		return "", err
 	}
 	return p, nil
+}
+
+// SetPanelName validates and persists the panel display name (empty ⇒ default).
+func (m *Manager) SetPanelName(name string) error {
+	name = strings.TrimSpace(name)
+	if utf8.RuneCountInString(name) > branding.MaxNameLen {
+		return invalid("название панели не длиннее %d символов", branding.MaxNameLen)
+	}
+	return m.store.SetPanelName(name)
+}
+
+// SetPanelTheme validates and persists the colour theme (each field empty ⇒ the
+// matching default applies).
+func (m *Manager) SetPanelTheme(t branding.Theme) error {
+	js, err := branding.NormalizeTheme(t)
+	if err != nil {
+		return invalid("%s", err.Error())
+	}
+	return m.store.SetPanelTheme(js)
 }
 
 // SetDecoyTemplate persists the chosen masquerade template (caller swaps the

@@ -77,7 +77,7 @@ export function Dashboard({
             </button>
             <BrandLogo size={26} />
             {version && (
-              <span className="rounded-full self-start bg-brand-50 px-2 py-0.5 text-xs font-medium text-ink-muted sm:inline">
+              <span className="rounded-full self-start accent-tint px-2 py-0.5 text-xs font-medium text-ink-muted sm:inline">
                 v{version}
               </span>
             )}
@@ -94,7 +94,7 @@ export function Dashboard({
                     "whitespace-nowrap py-1 text-sm font-medium transition",
                     tab === n.value
                       ? " text-brand-800"
-                      : " text-brand-600 hover:text-brand-800",
+                      : " text-accent hover:text-brand-800",
                   )}
                 >
                   {n.label}
@@ -141,7 +141,7 @@ export function Dashboard({
               onClick={() => go(n.value)}
               className={cn(
                 "py-2 text-left text-lg font-medium transition",
-                tab === n.value ? "text-brand-800" : "text-brand-600",
+                tab === n.value ? "text-brand-800" : "text-accent",
               )}
             >
               {n.label}
@@ -151,7 +151,7 @@ export function Dashboard({
         <hr className="my-4 border-gray-200" />
         <button
           onClick={doLogout}
-          className="text-lg font-medium text-brandred-600"
+          className="text-lg font-medium text-danger"
         >
           Выйти
         </button>
@@ -172,13 +172,13 @@ export function Dashboard({
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center">
           <button
             onClick={onShowAgreement}
-            className="transition hover:text-brand-600"
+            className="transition hover:text-accent"
           >
             Пользовательское соглашение
           </button>
           <button
             onClick={onShowDonate}
-            className="transition hover:text-brand-600"
+            className="transition hover:text-accent"
           >
             Пожертвования
           </button>
@@ -189,7 +189,7 @@ export function Dashboard({
           rel="noreferrer"
           aria-label="GitHub"
           title="Исходный код на GitHub"
-          className="justify-self-end text-gray-400 transition hover:text-brand-600"
+          className="justify-self-end text-gray-400 transition hover:text-accent"
         >
           <IconGithub size={18} />
         </a>

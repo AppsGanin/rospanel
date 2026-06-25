@@ -92,7 +92,7 @@ export function SubscriptionsPanel() {
               }
             />
             {pathErr ? (
-              <p className="mt-1 text-xs text-red-600">{pathErr}</p>
+              <p className="mt-1 text-xs text-danger">{pathErr}</p>
             ) : (
               <p className="mt-1 text-xs text-ink-muted">
                 Адрес подписки: /{s.sub_path || "sub"}/токен. Смена пути ломает
@@ -137,7 +137,7 @@ export function SubscriptionsPanel() {
                 href={ROUTING_REPO}
                 target="_blank"
                 rel="noreferrer"
-                className="text-brand-600 hover:underline"
+                className="text-accent hover:underline"
               >
                 roscomvpn-routing
               </a>

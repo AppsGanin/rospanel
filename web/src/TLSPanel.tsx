@@ -107,7 +107,7 @@ export function TLSPanel() {
               onChange={setTarget}
             />
             {targetErr && (
-              <p className="mt-1 text-xs text-red-600">
+              <p className="mt-1 text-xs text-danger">
                 {isZeroSSL
                   ? "Введите домен (ZeroSSL не выдаёт сертификаты на IP)."
                   : "Введите корректный домен или IP-адрес."}
@@ -126,7 +126,7 @@ export function TLSPanel() {
               onChange={setEmail}
             />
             {emailErr && (
-              <p className="mt-1 text-xs text-red-600">
+              <p className="mt-1 text-xs text-danger">
                 Введите корректный e-mail.
               </p>
             )}

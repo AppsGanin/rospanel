@@ -33,7 +33,7 @@ export function XrayConfigView({ onClose }: { onClose: () => void }) {
     >
       <div className="flex-1 overflow-auto bg-gray-50 p-3 font-mono text-xs leading-relaxed">
         {err ? (
-          <p className="text-red-600">{err}</p>
+          <p className="text-danger">{err}</p>
         ) : text ? (
           <pre className="whitespace-pre-wrap break-all text-gray-700">{text}</pre>
         ) : (

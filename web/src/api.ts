@@ -458,6 +458,36 @@ export const saveSubSettings = (s: SubSettings) =>
     body: JSON.stringify(s),
   })
 
+export interface ThemeColors {
+  accent: string // primary colour #rrggbb (drives the whole brand ramp)
+  text: string // main text
+  muted: string // secondary/muted text
+  bg: string // page background
+  surface: string // cards / inputs / panels
+}
+
+export interface BrandingInfo {
+  panel_name: string
+  theme: ThemeColors
+  has_custom_logo: boolean
+  default_name: string
+  default_theme: ThemeColors
+}
+
+export const getBranding = () => api<BrandingInfo>('api/branding')
+export const saveBranding = (panelName: string, theme: ThemeColors) =>
+  api<BrandingInfo>('api/settings/branding', {
+    method: 'POST',
+    body: JSON.stringify({ panel_name: panelName, theme }),
+  })
+export const uploadBrandingLogo = (file: File) => {
+  const fd = new FormData()
+  fd.append('logo', file)
+  return apiForm<BrandingInfo>('api/settings/branding/logo', fd)
+}
+export const deleteBrandingLogo = () =>
+  api<BrandingInfo>('api/settings/branding/logo', { method: 'DELETE' })
+
 export const getSettings = () => api<SettingsInfo>('api/settings')
 export const regenSecret = () =>
   api<{ secret_path: string }>('api/settings/secret', { method: 'POST' })

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -80,9 +81,15 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 
 	case "logo.svg":
-		w.Header().Set("Content-Type", "image/svg+xml")
-		w.Header().Set("Cache-Control", "public, max-age=604800")
-		_, _ = w.Write(sub.Logo())
+		// Honour a custom branding logo on the public subscription page too; falls
+		// back to the built-in mark when none is set.
+		b, err := branding.ReadLogo(rt.dataDir)
+		if err != nil {
+			b = sub.Logo()
+		}
+		w.Header().Set("Content-Type", branding.LogoContentType(b))
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		_, _ = w.Write(b)
 
 	case "qr.png":
 		png, err := qrcode.Encode(sub.URL(set, u.SubToken), qrcode.Medium, 512)

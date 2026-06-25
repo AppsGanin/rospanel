@@ -22,7 +22,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
-		       panel_secret_path, decoy_template,
+		       panel_secret_path, panel_name, panel_theme, decoy_template,
 		       ws_path, trojan_port, hysteria_port, hop_start, hop_end,
 		       vless_enabled, trojan_enabled, hysteria_enabled,
 		       setup_done, timezone,
@@ -48,7 +48,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
 		&st.VLESSPort, &st.ConfigRevision, &st.LastConfigError, &updated,
-		&st.PanelSecretPath, &st.DecoyTemplate,
+		&st.PanelSecretPath, &st.PanelName, &st.PanelTheme, &st.DecoyTemplate,
 		&st.WSPath, &st.TrojanPort, &st.HysteriaPort, &st.HopStart, &st.HopEnd,
 		&vlessEn, &trojanEn, &hysteriaEn,
 		&setupDone, &st.Timezone,
@@ -320,6 +320,10 @@ func (s *Store) SetXrayDNS(dns string) error { return s.setSetting("xray_dns", d
 
 // SetDecoyTemplate persists the masquerade (decoy) template slug.
 func (s *Store) SetDecoyTemplate(name string) error { return s.setSetting("decoy_template", name) }
+
+func (s *Store) SetPanelName(name string) error { return s.setSetting("panel_name", name) }
+
+func (s *Store) SetPanelTheme(themeJSON string) error { return s.setSetting("panel_theme", themeJSON) }
 
 // SetProxyMode persists the forward-proxy inbound configuration.
 func (s *Store) SetProxyMode(enabled bool, typ string, port int, user, pass string) error {
