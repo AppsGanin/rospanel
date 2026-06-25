@@ -46,7 +46,7 @@ func (m *Manager) TLSStatus() (*TLSStatus, error) {
 // certificate, and reloads Xray. host and sni are both set to the target so the
 // cert, the client link address and the SNI all match.
 func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string) error {
-	target = strings.TrimSpace(target)
+	target = NormalizeACMEHost(target)
 	email = strings.TrimSpace(email)
 	if target == "" {
 		return invalid("укажите домен или IP-адрес")

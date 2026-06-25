@@ -202,10 +202,11 @@ func bootstrapTLS(st *store.Store, certPath, keyPath, acmeDir string) error {
 	// or IP) takes priority so an operator can pin a domain; otherwise auto-detect
 	// the server's public IP. Loopback is the last resort (ACME can't issue for it,
 	// so the panel then stays on its loopback API until a real host is configured).
-	host := set.Host
+	host := core.NormalizeACMEHost(set.Host)
 	if host == "" || host == "127.0.0.1" {
 		host = firstNonEmpty(strings.TrimSpace(os.Getenv("ROSPANEL_HOST")), netinfo.PublicIP(), "127.0.0.1")
 	}
+	host = core.NormalizeACMEHost(host)
 	// SNI always equals the ACME target (host) so the cert, link address and SNI
 	// all match. ACME (model.TLSModeACME) is the only mode.
 	if err := st.SetTLS(host, host, model.TLSModeACME, certPath, keyPath); err != nil {

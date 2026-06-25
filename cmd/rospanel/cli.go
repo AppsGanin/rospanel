@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -121,7 +122,7 @@ func runHost(dataDir string, args []string) {
 	if err != nil {
 		log.Fatalf("host: %v", err)
 	}
-	host := strings.TrimSpace(firstPositional(args))
+	host := core.NormalizeACMEHost(strings.TrimSpace(firstPositional(args)))
 	if host == "" {
 		// No target given → just report the current host.
 		if cur.Host == "" {
