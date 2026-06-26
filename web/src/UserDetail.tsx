@@ -469,12 +469,9 @@ export function UserDetail({
           ) : user.telegram_link ? (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-ink-muted">
-                Новый пользователь: откройте бота → «Зарегистрироваться» → имя.
-                Уже создан в панели — используйте ссылку привязки ниже.
+                Сгенерируйте одноразовую ссылку привязки и отправьте её
+                пользователю — он откроет её и привяжет аккаунт к боту.
               </p>
-              <Button size="xs" href={user.telegram_link} target="_blank">
-                Открыть пользовательского бота
-              </Button>
               <Button
                 size="xs"
                 variant="light"
@@ -490,12 +487,10 @@ export function UserDetail({
               </Button>
               {tgLink && (
                 <>
-                  <Button size="xs" variant="light" href={tgLink.url} target="_blank">
-                    Привязать этот аккаунт
-                  </Button>
-                  <Code block>{tgLink.url}</Code>
+                  <Code block copy>{tgLink.url}</Code>
                   <p className="text-xs text-ink-muted">
-                    Одноразовая ссылка, действует {tgLink.mins} мин.
+                    Скопируйте и отправьте пользователю. Одноразовая ссылка,
+                    действует {tgLink.mins} мин.
                   </p>
                 </>
               )}
