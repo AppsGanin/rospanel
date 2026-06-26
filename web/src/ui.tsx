@@ -1071,15 +1071,33 @@ export function Divider({ label }: { label?: string }) {
 export function Code({
   children,
   block,
+  copy,
   className,
 }: {
   children: ReactNode;
   block?: boolean;
+  copy?: boolean; // show a copy button inside (block only); copies the text content
   className?: string;
 }) {
+  const { copied, copy: doCopy } = useCopy();
   const base =
     "rounded-md bg-gray-100 font-mono text-xs text-ink " +
     (block ? "block whitespace-pre-wrap break-all p-3" : "px-1.5 py-0.5");
+  if (copy && block) {
+    return (
+      <div className="relative">
+        <code className={cn(base, "pr-10", className)}>{children}</code>
+        <button
+          type="button"
+          onClick={() => doCopy(String(children))}
+          title={copied ? "Скопировано" : "Копировать"}
+          className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-ink-muted transition hover:bg-gray-200 hover:text-accent"
+        >
+          {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+        </button>
+      </div>
+    );
+  }
   return <code className={cn(base, className)}>{children}</code>;
 }
 
