@@ -6,6 +6,7 @@
 
 **Простая self-hosted панель управления VPN на Xray-core.**
 
+![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=версия&sort=semver&color=2ea44f)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.1-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
@@ -234,18 +235,6 @@ docker logs rospanel | grep -A6 FIRST-RUN
 
 > ⚠️ После смены панель доступна **только по секретному пути** — корень отдаёт
 > страницу-обманку. Без знания `/<secret>/` форму логина не найти.
-
----
-
-## 🖥️ Скриншоты (Mock)
-
-<img src="docs/img/dashboard.png" alt="Дашборд: CPU/RAM/диск, трафик, аптайм, статус выходов" width="100%"><br><sub><b>Дашборд</b> — ресурсы сервера, VPN-трафик и статус выходов в реальном времени</sub>
-
-<img src="docs/img/users.png" alt="Пользователи: лимиты, срок действия, онлайн-статус" width="100%"><br><sub><b>Пользователи</b> — лимиты трафика и устройств, срок действия, онлайн-статус, ссылка на подписку</sub>
-
-<img src="docs/img/connections.png" alt="Подключения: протоколы" width="100%"><br><sub><b>Подключения</b> — настроийка протоколов</sub>
-
-<img src="docs/img/routing.png" alt="Маршрутизация: порядок выходов, WARP, Opera, прокси, geo-базы" width="100%"><br><sub><b>Маршрутизация</b> — порядок выходов (proxy / WARP / Opera / direct), geosite/geoip-правила,прокси</sub>
 
 ---
 
