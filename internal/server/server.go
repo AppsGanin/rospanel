@@ -42,11 +42,12 @@ type Router struct {
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	streams    *streamGate    // caps concurrent SSE streams
 
-	mu       sync.RWMutex
-	secret   string
-	subPath  string       // public subscription URL prefix (/<subPath>/<token>)
-	spaIndex []byte       // index.html with <base href> injected for the secret
-	decoy    http.Handler // current decoy template handler
+	mu        sync.RWMutex
+	secret    string
+	subPath   string       // public subscription URL prefix (/<subPath>/<token>)
+	paySecret string       // random segment for the public payment-webhook path
+	spaIndex  []byte       // index.html with <base href> injected for the secret
+	decoy     http.Handler // current decoy template handler
 }
 
 // New builds the masquerade router for the given secret path and decoy template.
@@ -65,8 +66,12 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	}
 
 	subPath := "sub"
-	if set, err := mgr.Store().GetSettings(); err == nil && set.SubPath != "" {
-		subPath = set.SubPath
+	var paySecret string
+	if set, err := mgr.Store().GetSettings(); err == nil {
+		if set.SubPath != "" {
+			subPath = set.SubPath
+		}
+		paySecret = set.PaymentWebhookSecret
 	}
 
 	rt := &Router{
@@ -79,6 +84,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		streams:    newStreamGate(),
 		secret:     secret,
 		subPath:    subPath,
+		paySecret:  paySecret,
 		spaIndex:   injectBase(indexRaw, "/"+secret+"/"),
 		decoy:      d,
 	}
@@ -112,6 +118,13 @@ func (rt *Router) setDecoy(h http.Handler) {
 	rt.decoy = h
 }
 
+// setPaySecret swaps the payment-webhook URL segment (generated on first save).
+func (rt *Router) setPaySecret(s string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.paySecret = s
+}
+
 func (rt *Router) currentSecret() string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -140,8 +153,17 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	seg, rest := firstSegment(r.URL.Path)
 
 	rt.mu.RLock()
-	secret, decoy, subPath := rt.secret, rt.decoy, rt.subPath
+	secret, decoy, subPath, paySecret := rt.secret, rt.decoy, rt.subPath, rt.paySecret
 	rt.mu.RUnlock()
+
+	// Public payment-webhook surface, mounted under a random unguessable segment so
+	// providers (YooKassa / CryptoBot) can POST to a fixed URL without revealing the
+	// hidden panel. The webhook itself verifies the payload (signature / re-fetch).
+	if paySecret != "" && seg == paySecret {
+		leaf, _ := firstSegment(rest)
+		handlePaymentWebhook(rt, w, r, leaf)
+		return
+	}
 
 	// Public subscription surface (invalid tokens fall through to the decoy). The
 	// path is just an obscurity prefix — the token is the real secret — so a plain

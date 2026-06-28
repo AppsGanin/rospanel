@@ -267,6 +267,9 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
 	msg += fmt.Sprintf("\n\nВ комментарии к переводу укажите: заказ #%d", order.ID)
+	m.notifyAdmin(fmt.Sprintf(
+		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
+		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
 	return order, msg, nil
 }
 

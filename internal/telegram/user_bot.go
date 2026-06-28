@@ -67,6 +67,14 @@ func (s *UserService) clearPending(chatID int64) {
 
 // Run long-polls the user bot until ctx is cancelled.
 func (s *UserService) Run(ctx context.Context) {
+	// Let the panel push payment confirmations to a user's chat via this bot.
+	s.panel.SetUserNotifier(func(chatID int64, html string) {
+		set, err := s.store.GetSettings()
+		if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
+			return
+		}
+		_ = NewClient(strings.TrimSpace(set.TGUserBotToken)).SendMessage(context.Background(), chatID, html)
+	})
 	for {
 		if ctx.Err() != nil {
 			return
@@ -159,12 +167,26 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 		return
 	}
 	s.sendMenu(ctx, client, chatID,
-		"👋 <b>Добро пожаловать!</b>\n\nНажмите «Зарегистрироваться», затем отправьте имя — вам будет создана VPN-подписка.",
+		"👋 <b>Добро пожаловать!</b>\n\nНажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически.",
 		welcomeRows())
 }
 
 func welcomeRows() [][]InlineButton {
 	return [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
+}
+
+// tgDisplayName derives a user's panel name from their Telegram profile: the
+// first name, or the numeric Telegram id when it's empty (no manual entry).
+func tgDisplayName(from *User, fallbackID int64) string {
+	if from != nil {
+		if name := strings.TrimSpace(from.FirstName); name != "" {
+			return name
+		}
+		if from.ID != 0 {
+			return fmt.Sprintf("%d", from.ID)
+		}
+	}
+	return fmt.Sprintf("%d", fallbackID)
 }
 
 func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *CallbackQuery) {
@@ -192,10 +214,10 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 				"Регистрация закрыта. Обратитесь к администратору.", [][]InlineButton{})
 			return
 		}
-		s.setPending(chatID, "reg")
-		s.edit(ctx, client, chatID, msgID,
-			"✨ <b>Регистрация</b>\n\nОтправьте имя сообщением (как вас показывать в панели).",
-			[][]InlineButton{{{Text: "⬅️ Отмена", CallbackData: "vu:cancel"}}})
+		// Name is taken automatically from the Telegram profile (first name, or the
+		// numeric Telegram id when it's empty) — no manual entry needed.
+		s.edit(ctx, client, chatID, msgID, "✨ Создаю аккаунт…", [][]InlineButton{})
+		s.doRegister(ctx, client, chatID, set, tgDisplayName(cb.From, chatID))
 	case "vu:cancel":
 		s.sendWelcome(ctx, client, set, chatID)
 	}
@@ -334,6 +356,11 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planStr)
 		} else if planStr, ok := strings.CutPrefix(cb.Data, "vu:pick:"); ok {
 			s.handlePickPlan(ctx, client, chatID, msgID, set, u, planStr)
+		} else if rest, ok := strings.CutPrefix(cb.Data, "vu:pay:"); ok {
+			// rest = "<provider>:<planID>"
+			if prov, planStr, found := strings.Cut(rest, ":"); found {
+				s.startProviderPayment(ctx, client, chatID, msgID, u, planStr, prov)
+			}
 		}
 	}
 }
@@ -352,10 +379,16 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
 		return
 	}
+	// While a paid plan is active, switching to a free/cheaper plan would throw away
+	// the remaining paid time — so only extension (buying a paid plan) is offered.
+	locked := userOnActivePaid(u, plans)
 	var rows [][]InlineButton
 	var freeRows, paidRows int
 	for _, p := range plans {
 		if p.IsFree || p.PriceRub <= 0 {
+			if locked {
+				continue // no downgrade to free while a paid plan is active
+			}
 			rows = append(rows, []InlineButton{{
 				Text:         planButtonLabel(p),
 				CallbackData: fmt.Sprintf("vu:pick:%d", p.ID),
@@ -371,13 +404,42 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	}
 	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: "vu:menu"}})
 	msg := "💳 <b>Тарифы</b>\n\n"
+	if locked {
+		msg += "У вас активен платный тариф" + planActiveUntil(u, s.panel) + " — доступно только продление.\n"
+	}
 	if paidRows > 0 {
-		msg += "Платные — оплата и подтверждение админом.\n"
+		if len(s.panel.PaymentMethods()) > 0 {
+			msg += "Платные — оплата картой или криптой, тариф активируется автоматически.\n"
+		} else {
+			msg += "Платные — оплата и подтверждение админом.\n"
+		}
 	}
 	if freeRows > 0 {
 		msg += "Бесплатные — применяются сразу."
 	}
 	s.edit(ctx, client, chatID, msgID, msg, rows)
+}
+
+// userOnActivePaid reports whether the user has remaining paid time or is currently
+// on a paid plan (so they may only extend, never downgrade to free).
+func userOnActivePaid(u model.User, plans []model.TariffPlan) bool {
+	if u.ExpireAt > time.Now().Unix() {
+		return true
+	}
+	for i := range plans {
+		if plans[i].ID == u.PlanID && !plans[i].IsFree && plans[i].PriceRub > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// planActiveUntil renders " до DD.MM.YYYY" for a user's paid expiry (empty if none).
+func planActiveUntil(u model.User, panel Panel) string {
+	if u.ExpireAt <= 0 {
+		return ""
+	}
+	return " до " + time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006")
 }
 
 func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
@@ -407,6 +469,18 @@ func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID
 		s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planIDStr)
 		return
 	}
+	// Block downgrading to a free plan while a paid plan is still active — only
+	// extension is allowed (otherwise the remaining paid time would be lost).
+	if userOnActivePaid(u, plans) {
+		s.edit(ctx, client, chatID, msgID,
+			"❗ У вас активен платный тариф"+planActiveUntil(u, s.panel)+
+				".\nБесплатный станет доступен после его окончания — сейчас можно только продлить.",
+			[][]InlineButton{
+				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
+				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			})
+		return
+	}
 	if err := s.panel.ApplyPlanToUser(u.ID, planID, false); err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{
@@ -423,12 +497,65 @@ func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID
 		userMenuRows(set.BillingEnabled))
 }
 
+// providerLabel is the button text for a payment method.
+func providerLabel(p string) string {
+	switch p {
+	case "yookassa":
+		return "💳 Картой (ЮКасса)"
+	case "cryptobot":
+		return "🪙 Криптой (CryptoBot)"
+	default:
+		return p
+	}
+}
+
 func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
 	var planID int64
 	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 		return
 	}
+	methods := s.panel.PaymentMethods()
+	switch len(methods) {
+	case 0:
+		s.manualPayment(ctx, client, chatID, msgID, u, planID) // no provider → manual instructions
+	case 1:
+		s.startProviderPayment(ctx, client, chatID, msgID, u, planIDStr, methods[0])
+	default:
+		var rows [][]InlineButton
+		for _, p := range methods {
+			rows = append(rows, []InlineButton{{Text: providerLabel(p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
+		}
+		rows = append(rows, []InlineButton{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}})
+		s.edit(ctx, client, chatID, msgID, "Выберите способ оплаты:", rows)
+	}
+}
+
+// startProviderPayment creates a provider payment and shows the pay button. The
+// tariff is applied automatically once the provider confirms (webhook/poll).
+func (s *UserService) startProviderPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planIDStr, provider string) {
+	var planID int64
+	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
+		return
+	}
+	order, err := s.panel.StartPlanPayment(u.ID, planID, provider)
+	if err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+			[][]InlineButton{
+				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
+				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			})
+		return
+	}
+	msg := fmt.Sprintf("💳 <b>Оплата заказа #%d</b>\nСумма: %d ₽\n\nНажмите кнопку, чтобы оплатить. Тариф активируется автоматически после оплаты.", order.ID, order.AmountRub)
+	s.edit(ctx, client, chatID, msgID, msg,
+		[][]InlineButton{
+			{{Text: "💳 Оплатить", URL: order.PayURL}},
+			{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+		})
+}
+
+func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64) {
 	_, msg, err := s.panel.RequestPlanPayment(u.ID, planID)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),

@@ -18,6 +18,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
 	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
+	var yooEn, cryptoEn, yooTest, cryptoTest int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -43,7 +44,9 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron,
 		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled,
 		       billing_enabled, billing_trial_days, billing_free_plan_id,
-		       billing_trial_plan_id, billing_payment_note
+		       billing_trial_plan_id, billing_payment_note,
+		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
+		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -70,6 +73,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
 		&billingEn, &st.BillingTrialDays, &st.BillingFreePlanID,
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
+		&yooEn, &st.YooKassaShopID, &st.YooKassaSecretKey, &yooTest,
+		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
 	)
 	if err != nil {
 		return nil, err
@@ -99,6 +104,10 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGUserBotEnabled = tgUserBotEn != 0
 	st.TGUserRegEnabled = tgUserRegEn != 0
 	st.BillingEnabled = billingEn != 0
+	st.YooKassaEnabled = yooEn != 0
+	st.YooKassaTest = yooTest != 0
+	st.CryptoBotEnabled = cryptoEn != 0
+	st.CryptoBotTestnet = cryptoTest != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
@@ -106,6 +115,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.RealityPrivateKey = decField(st.RealityPrivateKey)
 	st.ProxyModePass = decField(st.ProxyModePass)
 	st.ZeroSSLEABHMAC = decField(st.ZeroSSLEABHMAC)
+	st.YooKassaSecretKey = decField(st.YooKassaSecretKey)
+	st.CryptoBotToken = decField(st.CryptoBotToken)
 	return &st, nil
 }
 

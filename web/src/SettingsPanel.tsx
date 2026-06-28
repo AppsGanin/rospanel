@@ -16,7 +16,7 @@ const SUBTABS = [
   { value: "routing", label: "Роутинг" },
   { value: "dns", label: "DNS" },
   { value: "telegram", label: "Telegram" },
-  { value: "billing", label: "Тарифы" },
+  { value: "billing", label: "Оплата" },
   { value: "domain", label: "Домен" },
 ] as const;
 

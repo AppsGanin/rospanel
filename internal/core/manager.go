@@ -68,6 +68,13 @@ type Manager struct {
 	tmplMu    sync.Mutex
 	tmplCache map[string]routingTmpl // cached routing templates by URL
 
+	// userNotify pushes a message to a VPN user's Telegram chat (set by the user
+	// bot; nil when off); adminNotify broadcasts to the admin chats (set by the
+	// admin bot). Used e.g. to report payment start/completion.
+	notifyMu    sync.Mutex
+	userNotify  func(chatID int64, html string)
+	adminNotify func(html string)
+
 	vpnMu       sync.Mutex
 	vpnUp       int64 // current VPN throughput (bytes/sec), from Xray stats deltas
 	vpnDown     int64

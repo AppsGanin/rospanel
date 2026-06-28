@@ -137,6 +137,9 @@ func runServer(dataDir string) {
 	go tlsLoop(mgr)
 	// Periodic traffic accounting + quota/expiry enforcement.
 	go statsPollLoop(mgr)
+	// Payment polling fallback: reconciles pending provider orders in case a webhook
+	// was missed. Idles cheaply when there are no pending orders.
+	go paymentPollLoop(mgr)
 	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
 	// enabled with a token in Settings → Telegram, re-reading config each cycle.
 	go telegram.New(mgr, st, dataDir).Run(context.Background())
@@ -250,6 +253,15 @@ func statsPollLoop(mgr *core.Manager) {
 				log.Printf("stats poll: %v", err)
 			}
 		})
+	}
+}
+
+// paymentPollLoop reconciles pending provider orders (webhook fallback) every 25s.
+func paymentPollLoop(mgr *core.Manager) {
+	t := time.NewTicker(25 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		safeTick("payment poll", mgr.PollPendingPayments)
 	}
 }
 

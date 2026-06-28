@@ -102,17 +102,20 @@ type TariffPlan struct {
 	Enabled     bool   `json:"enabled"`
 }
 
-// PaymentOrder is a user payment request awaiting admin confirmation.
+// PaymentOrder is a user payment request (manual or via a payment provider).
 type PaymentOrder struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"user_id"`
-	UserName  string `json:"user_name,omitempty"`
-	PlanID    int64  `json:"plan_id"`
-	PlanName  string `json:"plan_name,omitempty"`
-	AmountRub int    `json:"amount_rub"`
-	Status    string `json:"status"` // pending | paid | cancelled
-	CreatedAt int64  `json:"created_at"`
-	PaidAt    int64  `json:"paid_at"`
+	ID         int64  `json:"id"`
+	UserID     int64  `json:"user_id"`
+	UserName   string `json:"user_name,omitempty"`
+	PlanID     int64  `json:"plan_id"`
+	PlanName   string `json:"plan_name,omitempty"`
+	AmountRub  int    `json:"amount_rub"`
+	Status     string `json:"status"`                // pending | paid | cancelled
+	Provider   string `json:"provider"`              // "" (manual) | yookassa | cryptobot
+	ProviderID string `json:"provider_id,omitempty"` // external payment/invoice id (admin-only view)
+	PayURL     string `json:"pay_url,omitempty"`     // hosted payment URL for the user
+	CreatedAt  int64  `json:"created_at"`
+	PaidAt     int64  `json:"paid_at"`
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
@@ -266,12 +269,24 @@ type Settings struct {
 	TGUserBotToken   string `json:"-"`
 	TGUserRegEnabled bool   `json:"-"` // allow /start self-registration (creates a new VPN account)
 
-	// Billing (Settings → Тарифы): plans, trial period, free-tier fallback.
+	// Billing (Settings → Оплата): plans, trial period, free-tier fallback.
 	BillingEnabled     bool   `json:"-"`
 	BillingTrialDays   int    `json:"-"`
 	BillingFreePlanID  int64  `json:"-"`
 	BillingTrialPlanID int64  `json:"-"`
 	BillingPaymentNote string `json:"-"`
+
+	// Payment providers (Settings → Оплата). Secret key / token are stored
+	// encrypted at rest. PaymentWebhookSecret is a random URL segment for the
+	// provider webhook path so it's unguessable yet fixed.
+	YooKassaEnabled      bool   `json:"-"`
+	YooKassaShopID       string `json:"-"`
+	YooKassaSecretKey    string `json:"-"`
+	YooKassaTest         bool   `json:"-"` // using a YooKassa test shop
+	CryptoBotEnabled     bool   `json:"-"`
+	CryptoBotToken       string `json:"-"`
+	CryptoBotTestnet     bool   `json:"-"` // use the CryptoBot testnet endpoint
+	PaymentWebhookSecret string `json:"-"`
 
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 

@@ -34,6 +34,12 @@ type Panel interface {
 	PlanName(planID int64) string
 	RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error)
 	CreateRegisteredUser(name string) (*model.User, error)
+
+	// Automatic payment providers (no-op surface unless configured).
+	PaymentMethods() []string
+	StartPlanPayment(userID, planID int64, provider string) (*model.PaymentOrder, error)
+	SetUserNotifier(fn func(chatID int64, html string))
+	SetAdminNotifier(fn func(html string))
 }
 
 // pollTimeout is the long-poll window (seconds). A change to the bot token or
@@ -111,6 +117,17 @@ func (s *Service) clearPending(chatID int64) {
 // token it idles, re-checking periodically.
 func (s *Service) Run(ctx context.Context) {
 	go s.backupLoop(ctx)
+	// Broadcast payment events (start/completion) to the authorized admin chats.
+	s.panel.SetAdminNotifier(func(html string) {
+		set, err := s.store.GetSettings()
+		if err != nil || strings.TrimSpace(set.TGBotToken) == "" {
+			return
+		}
+		c := NewClient(strings.TrimSpace(set.TGBotToken))
+		for _, id := range set.TelegramChatIDs() {
+			_ = c.SendMessage(context.Background(), id, html)
+		}
+	})
 	for {
 		if ctx.Err() != nil {
 			return
