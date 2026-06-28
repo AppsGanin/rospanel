@@ -172,6 +172,8 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/billing/orders", rt.listPaymentOrders)
 	authedID("POST /api/billing/orders/{id}/confirm", rt.confirmPaymentOrder)
 	authedID("POST /api/billing/orders/{id}/cancel", rt.cancelPaymentOrder)
+	authed("GET /api/payments", rt.getPayments)
+	authed("POST /api/payments", rt.savePayments)
 	authed("GET /api/stats/series", rt.statsSeries)
 	authed("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)

@@ -52,6 +52,7 @@ func (s *Store) ReencryptSensitiveFields() error {
 	for _, c := range []col{
 		{"tg_bot_token"}, {"tg_user_bot_token"}, {"warp_private_key"},
 		{"reality_private_key"}, {"proxy_mode_pass"}, {"zerossl_eab_hmac"},
+		{"yookassa_secret_key"}, {"cryptobot_token"},
 	} {
 		var val string
 		if err := s.db.QueryRow(`SELECT ` + c.name + ` FROM settings WHERE id = 1`).Scan(&val); err != nil {

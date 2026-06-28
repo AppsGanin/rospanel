@@ -116,9 +116,12 @@ func (s *Store) CreatePaymentOrder(userID, planID int64, amountRub int) (*model.
 	return s.GetPaymentOrder(id)
 }
 
+const orderCols = `o.id, o.user_id, u.name, o.plan_id, p.name, o.amount_rub, o.status,
+	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at`
+
 func (s *Store) GetPaymentOrder(id int64) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
-		`SELECT o.id, o.user_id, u.name, o.plan_id, p.name, o.amount_rub, o.status, o.created_at, o.paid_at
+		`SELECT `+orderCols+`
 		 FROM payment_orders o
 		 JOIN users u ON u.id = o.user_id
 		 JOIN tariff_plans p ON p.id = o.plan_id
@@ -132,11 +135,28 @@ func (s *Store) GetPaymentOrder(id int64) (*model.PaymentOrder, error) {
 	return &orders[0], nil
 }
 
+// GetPaymentOrderByProvider finds a pending-or-any order by its external id.
+func (s *Store) GetPaymentOrderByProvider(provider, providerID string) (*model.PaymentOrder, error) {
+	orders, err := s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN tariff_plans p ON p.id = o.plan_id
+		 WHERE o.provider = ? AND o.provider_id = ?`, provider, providerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &orders[0], nil
+}
+
 func (s *Store) ListPaymentOrders(status string, limit int) ([]model.PaymentOrder, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT o.id, o.user_id, u.name, o.plan_id, p.name, o.amount_rub, o.status, o.created_at, o.paid_at
+	q := `SELECT ` + orderCols + `
 	      FROM payment_orders o
 	      JOIN users u ON u.id = o.user_id
 	      JOIN tariff_plans p ON p.id = o.plan_id`
@@ -155,6 +175,14 @@ func (s *Store) SetPaymentOrderStatus(id int64, status string, paidAt int64) err
 	return err
 }
 
+// SetPaymentOrderProvider links an order to an external provider payment.
+func (s *Store) SetPaymentOrderProvider(id int64, provider, providerID, payURL string) error {
+	_, err := s.db.Exec(
+		`UPDATE payment_orders SET provider = ?, provider_id = ?, pay_url = ? WHERE id = ?`,
+		provider, providerID, payURL, id)
+	return err
+}
+
 func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrder, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -166,7 +194,8 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 		var o model.PaymentOrder
 		if err := rows.Scan(
 			&o.ID, &o.UserID, &o.UserName, &o.PlanID, &o.PlanName,
-			&o.AmountRub, &o.Status, &o.CreatedAt, &o.PaidAt,
+			&o.AmountRub, &o.Status, &o.Provider, &o.ProviderID, &o.PayURL,
+			&o.CreatedAt, &o.PaidAt,
 		); err != nil {
 			return nil, err
 		}
@@ -184,4 +213,38 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
 	)
 	return err
+}
+
+// SetPaymentSettings persists the payment-provider config (secrets encrypted).
+func (s *Store) SetPaymentSettings(st *model.Settings) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET yookassa_enabled = ?, yookassa_shop_id = ?, yookassa_secret_key = ?,
+		 yookassa_test = ?, cryptobot_enabled = ?, cryptobot_token = ?, cryptobot_testnet = ?,
+		 updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(st.YooKassaEnabled), st.YooKassaShopID, encField(st.YooKassaSecretKey),
+		boolToInt(st.YooKassaTest), boolToInt(st.CryptoBotEnabled), encField(st.CryptoBotToken),
+		boolToInt(st.CryptoBotTestnet),
+	)
+	return err
+}
+
+// SetPaymentWebhookSecret stores the random webhook URL segment.
+func (s *Store) SetPaymentWebhookSecret(secret string) error {
+	return s.setSetting("payment_webhook_secret", secret)
+}
+
+// PendingProviderOrders returns pending orders that were started through a payment
+// provider (for the polling fallback). Stale ones (older than maxAge seconds) are
+// skipped — the caller marks them cancelled.
+func (s *Store) PendingProviderOrders(limit int) ([]model.PaymentOrder, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	return s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN tariff_plans p ON p.id = o.plan_id
+		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != ''
+		 ORDER BY o.created_at ASC LIMIT ?`, limit)
 }

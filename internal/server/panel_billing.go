@@ -59,6 +59,61 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// getPayments returns the payment-provider config. Secrets are never returned —
+// only whether they're set — plus the webhook URLs to paste into provider panels.
+func (rt *Router) getPayments(w http.ResponseWriter, r *http.Request) {
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	yooURL, cryptoURL := rt.mgr.PaymentWebhookURLs()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"yookassa_enabled":    set.YooKassaEnabled,
+		"yookassa_shop_id":    set.YooKassaShopID,
+		"yookassa_test":       set.YooKassaTest,
+		"yookassa_key_set":    set.YooKassaSecretKey != "",
+		"cryptobot_enabled":   set.CryptoBotEnabled,
+		"cryptobot_testnet":   set.CryptoBotTestnet,
+		"cryptobot_token_set": set.CryptoBotToken != "",
+		"webhook_yookassa":    yooURL,
+		"webhook_cryptobot":   cryptoURL,
+	})
+}
+
+func (rt *Router) savePayments(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		YooKassaEnabled   bool   `json:"yookassa_enabled"`
+		YooKassaShopID    string `json:"yookassa_shop_id"`
+		YooKassaSecretKey string `json:"yookassa_secret_key"` // empty = keep current
+		YooKassaTest      bool   `json:"yookassa_test"`
+		CryptoBotEnabled  bool   `json:"cryptobot_enabled"`
+		CryptoBotToken    string `json:"cryptobot_token"` // empty = keep current
+		CryptoBotTestnet  bool   `json:"cryptobot_testnet"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set.YooKassaEnabled = req.YooKassaEnabled
+	set.YooKassaShopID = req.YooKassaShopID
+	set.YooKassaSecretKey = req.YooKassaSecretKey
+	set.YooKassaTest = req.YooKassaTest
+	set.CryptoBotEnabled = req.CryptoBotEnabled
+	set.CryptoBotToken = req.CryptoBotToken
+	set.CryptoBotTestnet = req.CryptoBotTestnet
+	if err := rt.mgr.SavePaymentSettings(set); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.setPaySecret(rt.mgr.PaymentWebhookSecret())
+	rt.getPayments(w, r)
+}
+
 func (rt *Router) saveTariffPlan(w http.ResponseWriter, r *http.Request) {
 	var p model.TariffPlan
 	if !decodeJSON(w, r, &p) {

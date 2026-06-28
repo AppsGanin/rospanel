@@ -4,11 +4,14 @@ import {
   confirmPaymentOrder,
   deleteTariffPlan,
   getBilling,
+  getPayments,
   listPaymentOrders,
   saveBilling,
+  savePayments,
   saveTariffPlan,
   type BillingInfo,
   type PaymentOrder,
+  type PaymentSettings,
   type TariffPlan,
 } from "./api";
 import { fmtBytes, gbToBytes } from "./format";
@@ -18,6 +21,7 @@ import {
   Badge,
   Button,
   CenterLoader,
+  Code,
   Modal,
   PasswordInput,
   SaveBar,
@@ -27,6 +31,145 @@ import {
   TextInput,
   useConfirm,
 } from "./ui";
+
+// PaymentIntegrations is a self-contained card for the YooKassa / CryptoBot
+// provider settings (independent of the tariff editor below).
+function PaymentIntegrations() {
+  const [info, setInfo] = useState<PaymentSettings | null>(null);
+  const [yooKey, setYooKey] = useState("");
+  const [cbToken, setCbToken] = useState("");
+  const { isBusy, run } = useAction();
+
+  useEffect(() => {
+    getPayments().then(setInfo).catch(() => {});
+  }, []);
+
+  const patch = (p: Partial<PaymentSettings>) =>
+    setInfo((s) => (s ? { ...s, ...p } : s));
+
+  const save = () =>
+    run(
+      async () => {
+        if (!info) return;
+        const next = await savePayments({
+          yookassa_enabled: info.yookassa_enabled,
+          yookassa_shop_id: info.yookassa_shop_id.trim(),
+          yookassa_secret_key: yooKey.trim(),
+          yookassa_test: info.yookassa_test,
+          cryptobot_enabled: info.cryptobot_enabled,
+          cryptobot_token: cbToken.trim(),
+          cryptobot_testnet: info.cryptobot_testnet,
+        });
+        setInfo(next);
+        setYooKey("");
+        setCbToken("");
+        notifySuccess("Настройки оплаты сохранены");
+      },
+      { key: "pay" },
+    );
+
+  if (!info) return null;
+
+  return (
+    <SettingCard
+      title="Приём платежей"
+      description="Автоматическая оплата тарифов в пользовательском боте. Тариф активируется сам после оплаты. Без провайдеров оплата идёт вручную (подтверждает админ)."
+    >
+      <div className="flex flex-col gap-5">
+        {/* YooKassa */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-ink">ЮКасса — карты, ₽</p>
+            <Switch
+              checked={info.yookassa_enabled}
+              onChange={(v) => patch({ yookassa_enabled: v })}
+            />
+          </div>
+          {info.yookassa_enabled && (
+            <div className="flex flex-col gap-2">
+              <TextInput
+                label="shopId"
+                value={info.yookassa_shop_id}
+                onChange={(v) => patch({ yookassa_shop_id: v })}
+              />
+              <TextInput
+                label={
+                  info.yookassa_key_set
+                    ? "Секретный ключ (задан — оставьте пустым, чтобы не менять)"
+                    : "Секретный ключ"
+                }
+                value={yooKey}
+                onChange={setYooKey}
+                placeholder={info.yookassa_key_set ? "••••••••" : "live_… или test_…"}
+              />
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <Switch
+                  checked={info.yookassa_test}
+                  onChange={(v) => patch({ yookassa_test: v })}
+                />
+                Тестовый режим (тестовый магазин)
+              </label>
+              {info.webhook_yookassa && (
+                <div>
+                  <p className="mb-1 text-xs text-ink-muted">
+                    URL для уведомлений в кабинете ЮКассы:
+                  </p>
+                  <Code block copy>{info.webhook_yookassa}</Code>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* CryptoBot */}
+        <div className="flex flex-col gap-3 border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-ink">CryptoBot — крипта (Telegram)</p>
+            <Switch
+              checked={info.cryptobot_enabled}
+              onChange={(v) => patch({ cryptobot_enabled: v })}
+            />
+          </div>
+          {info.cryptobot_enabled && (
+            <div className="flex flex-col gap-2">
+              <TextInput
+                label={
+                  info.cryptobot_token_set
+                    ? "API-токен (задан — оставьте пустым, чтобы не менять)"
+                    : "API-токен (@CryptoBot → Crypto Pay)"
+                }
+                value={cbToken}
+                onChange={setCbToken}
+                placeholder={info.cryptobot_token_set ? "••••••••" : "12345:AA…"}
+              />
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <Switch
+                  checked={info.cryptobot_testnet}
+                  onChange={(v) => patch({ cryptobot_testnet: v })}
+                />
+                Тестовый режим (testnet · @CryptoTestnetBot)
+              </label>
+              {info.webhook_cryptobot && (
+                <div>
+                  <p className="mb-1 text-xs text-ink-muted">
+                    URL для вебхука в настройках Crypto Pay:
+                  </p>
+                  <Code block copy>{info.webhook_cryptobot}</Code>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <Button loading={isBusy("pay")} onClick={save}>
+            Сохранить
+          </Button>
+        </div>
+      </div>
+    </SettingCard>
+  );
+}
 
 const EMPTY_PLAN = (): TariffPlan => ({
   id: 0,
@@ -366,6 +509,7 @@ export function BillingPanel() {
     <>
       {confirmNode}
       <div className="flex flex-col gap-4">
+        <PaymentIntegrations />
         <SettingCard
           title="Тарифные планы"
           description="Создавайте и настраивайте тарифы: лимиты, цена, срок. Бесплатный тариф — для пользователей после пробного периода."
@@ -573,6 +717,26 @@ export function BillingPanel() {
   );
 }
 
+const PROVIDER_META: Record<
+  string,
+  { label: string; color: "brand" | "teal" | "gray" }
+> = {
+  yookassa: { label: "ЮКасса · карта", color: "brand" },
+  cryptobot: { label: "CryptoBot · крипта", color: "teal" },
+  "": { label: "Вручную", color: "gray" },
+};
+
+function fmtDateTime(unix: number): string {
+  if (!unix) return "—";
+  return new Date(unix * 1000).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function OrderRow({
   order,
   busy,
@@ -584,26 +748,43 @@ function OrderRow({
   onConfirm: (id: number) => void;
   onCancel: (id: number) => void;
 }) {
+  const prov = PROVIDER_META[order.provider] ?? {
+    label: order.provider,
+    color: "gray" as const,
+  };
+  const auto = order.provider !== "";
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm">
-      <span>
-        <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-        {order.plan_name} · {order.amount_rub} ₽
-      </span>
-      <span className="flex gap-2">
-        <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
-          Подтвердить
-        </Button>
-        <Button
-          size="sm"
-          variant="subtle"
-          color="red"
-          onClick={() => onCancel(order.id)}
-          disabled={busy}
-        >
-          Отмена
-        </Button>
-      </span>
+    <li className="flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-ink">
+          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
+          {order.plan_name} · {order.amount_rub} ₽
+        </span>
+        <span className="flex gap-2">
+          <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
+            Подтвердить
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            color="red"
+            onClick={() => onCancel(order.id)}
+            disabled={busy}
+          >
+            Отмена
+          </Button>
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+        <Badge color={prov.color} size="xs">
+          {prov.label}
+        </Badge>
+        <span>· создан {fmtDateTime(order.created_at)}</span>
+        {auto && <span>· оплата подтвердится автоматически</span>}
+        {order.provider_id && (
+          <span className="font-mono">· id: {order.provider_id}</span>
+        )}
+      </div>
     </li>
   );
 }

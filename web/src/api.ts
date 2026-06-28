@@ -620,6 +620,9 @@ export interface PaymentOrder {
   plan_name?: string
   amount_rub: number
   status: string
+  provider: string // "" (manual) | yookassa | cryptobot
+  provider_id?: string // external payment/invoice id
+  pay_url?: string
   created_at: number
   paid_at: number
 }
@@ -634,6 +637,32 @@ export interface BillingInfo {
 }
 
 export const getBilling = () => api<BillingInfo>('api/billing')
+
+export interface PaymentSettings {
+  yookassa_enabled: boolean
+  yookassa_shop_id: string
+  yookassa_test: boolean
+  yookassa_key_set: boolean
+  cryptobot_enabled: boolean
+  cryptobot_testnet: boolean
+  cryptobot_token_set: boolean
+  webhook_yookassa: string
+  webhook_cryptobot: string
+}
+
+export interface PaymentSettingsInput {
+  yookassa_enabled: boolean
+  yookassa_shop_id: string
+  yookassa_secret_key: string // empty = keep current
+  yookassa_test: boolean
+  cryptobot_enabled: boolean
+  cryptobot_token: string // empty = keep current
+  cryptobot_testnet: boolean
+}
+
+export const getPayments = () => api<PaymentSettings>('api/payments')
+export const savePayments = (s: PaymentSettingsInput) =>
+  api<PaymentSettings>('api/payments', { method: 'POST', body: JSON.stringify(s) })
 
 export const saveBilling = (b: {
   enabled: boolean
