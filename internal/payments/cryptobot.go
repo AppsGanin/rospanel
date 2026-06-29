@@ -18,6 +18,7 @@ type CryptoBot struct {
 	token   string
 	testnet bool
 	http    *http.Client
+	baseURL string // overrides the endpoint in tests; empty → real Crypto Pay API
 }
 
 func NewCryptoBot(token string, testnet bool) *CryptoBot {
@@ -25,6 +26,9 @@ func NewCryptoBot(token string, testnet bool) *CryptoBot {
 }
 
 func (c *CryptoBot) base() string {
+	if c.baseURL != "" {
+		return c.baseURL
+	}
 	if c.testnet {
 		return "https://testnet-pay.crypt.bot/api"
 	}

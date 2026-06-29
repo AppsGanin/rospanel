@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppLogs } from "./AppLogs";
 import { getBackupInfo, resetPanel } from "./api";
+import { HealthPanel } from "./HealthPanel";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError } from "./notify";
 import {
@@ -24,6 +25,13 @@ function IconArchive() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
+    </svg>
+  );
+}
+function IconHealth() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12h4l2 5 4-12 2 7h6" />
     </svg>
   );
 }
@@ -102,6 +110,7 @@ const sqBtn =
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {
   const { data: info } = useFetch(getBackupInfo);
+  const [healthOpen, setHealthOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -141,6 +150,7 @@ export function ManagementCard() {
       <Card className="p-4">
         <h3 className="mb-2 font-bold text-ink">Управление</h3>
         <div className="flex flex-col items-stretch divide-y divide-gray-200 border-t border-gray-100 pt-1 sm:flex-row sm:divide-x sm:divide-y-0">
+          <ManageBtn icon={<IconHealth />} label="Диагностика" onClick={() => setHealthOpen(true)} />
           <ManageBtn icon={<IconList />} label="Логи" onClick={() => setLogsOpen(true)} />
           <ManageBtn
             icon={<IconArchive />}
@@ -150,6 +160,12 @@ export function ManagementCard() {
           <ManageBtn icon={<IconReset />} label="Сброс" danger onClick={() => setResetOpen(true)} />
         </div>
       </Card>
+
+      {/* Diagnostics — health report in a modal. HealthPanel mounts (and starts
+          its light auto-refresh) only while the modal is open. */}
+      <Modal open={healthOpen} onClose={() => setHealthOpen(false)} title="Диагностика" size="lg">
+        <HealthPanel />
+      </Modal>
 
       {logsOpen && <AppLogs onClose={() => setLogsOpen(false)} />}
 

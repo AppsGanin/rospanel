@@ -22,10 +22,11 @@ type YooKassa struct {
 	shopID    string
 	secretKey string
 	http      *http.Client
+	base      string // API base URL; overridable in tests (default yooKassaAPI)
 }
 
 func NewYooKassa(shopID, secretKey string) *YooKassa {
-	return &YooKassa{shopID: shopID, secretKey: secretKey, http: httpClient()}
+	return &YooKassa{shopID: shopID, secretKey: secretKey, http: httpClient(), base: yooKassaAPI}
 }
 
 func (y *YooKassa) auth() string {
@@ -43,7 +44,7 @@ func (y *YooKassa) CreatePayment(ctx context.Context, amountRub int, orderID int
 		"metadata":     map[string]string{"order_id": fmt.Sprintf("%d", orderID)},
 	}
 	raw, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, yooKassaAPI+"/payments", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, y.base+"/payments", bytes.NewReader(raw))
 	if err != nil {
 		return "", "", err
 	}
@@ -70,7 +71,7 @@ func (y *YooKassa) CreatePayment(ctx context.Context, amountRub int, orderID int
 
 // PaymentStatus returns the normalised status of a payment.
 func (y *YooKassa) PaymentStatus(ctx context.Context, paymentID string) (Status, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, yooKassaAPI+"/payments/"+paymentID, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, y.base+"/payments/"+paymentID, nil)
 	if err != nil {
 		return "", err
 	}
