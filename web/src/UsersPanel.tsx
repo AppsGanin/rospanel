@@ -212,6 +212,30 @@ export function UsersPanel() {
     }
   };
 
+  // renderBulkActions builds the five action buttons shared by both bar layouts.
+  // grid=true → full-width cells for the mobile 2-col grid; grid=false → inline
+  // shrink-0 buttons for the desktop row. Only the in-flight action spins.
+  const renderBulkActions = (grid: boolean) => {
+    const cls = grid ? "" : "shrink-0";
+    return [
+      <Button key="enable" size="sm" variant="light" fullWidth={grid} className={cls} loading={pending === "enable"} disabled={pending !== null} onClick={() => runBulk("enable")}>
+        Включить
+      </Button>,
+      <Button key="disable" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "disable"} disabled={pending !== null} onClick={() => runBulk("disable")}>
+        Выключить
+      </Button>,
+      <Button key="reset" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "reset"} disabled={pending !== null} onClick={() => runBulk("reset")}>
+        Сбросить трафик
+      </Button>,
+      <Button key="extend" size="sm" variant="light" fullWidth={grid} className={cls} disabled={pending !== null} onClick={() => setExtendOpen(true)}>
+        Продлить
+      </Button>,
+      <Button key="delete" size="sm" variant="light" color="red" fullWidth={grid} className={grid ? "col-span-2" : "shrink-0"} disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
+        Удалить
+      </Button>,
+    ];
+  };
+
   if (!loaded) return <UsersSkeleton />;
 
   if (users.length === 0) {
@@ -385,78 +409,52 @@ export function UsersPanel() {
           takes the bottom slot). */}
       {selected.size === 0 && <AddFab onClick={() => setAddOpen(true)} />}
 
+      {/* Reserve scroll space so the last cards aren't hidden behind the fixed
+          selection bar (taller on mobile, where it stacks into a grid). */}
+      {selected.size > 0 && <div aria-hidden className="h-44 sm:h-20" />}
+
       {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-          {/* One non-wrapping row: the label and "Отмена" are pinned, the actions
-              scroll horizontally if they don't fit — so the bar's height never
-              changes (e.g. when a button shows a spinner mid-action). */}
-          <div className="mx-auto flex max-w-3xl items-center gap-2">
-            <span className="shrink-0 text-sm font-medium text-ink">
-              Выбрано: {selected.size}
-            </span>
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
+          <div className="mx-auto max-w-3xl">
+            {/* Mobile: count + cancel on top, actions in a 2-col grid below — no
+                horizontal scroll, and a fixed grid means the height can't jump
+                when a button shows its spinner. */}
+            <div className="sm:hidden">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-ink">
+                  Выбрано: {selected.size}
+                </span>
+                <button
+                  onClick={clearSelection}
+                  disabled={pending !== null}
+                  className="text-sm font-medium text-ink-muted hover:text-ink disabled:opacity-60"
+                >
+                  Отмена
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">{renderBulkActions(true)}</div>
+            </div>
+
+            {/* Desktop: single row; actions scroll horizontally only if they don't
+                fit, the label and "Отмена" stay pinned. */}
+            <div className="hidden items-center gap-2 sm:flex">
+              <span className="shrink-0 text-sm font-medium text-ink">
+                Выбрано: {selected.size}
+              </span>
+              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
+                {renderBulkActions(false)}
+              </div>
               <Button
                 size="sm"
-                variant="light"
-                className="shrink-0"
-                loading={pending === "enable"}
-                disabled={pending !== null}
-                onClick={() => runBulk("enable")}
-              >
-                Включить
-              </Button>
-              <Button
-                size="sm"
-                variant="light"
+                variant="subtle"
                 color="gray"
                 className="shrink-0"
-                loading={pending === "disable"}
                 disabled={pending !== null}
-                onClick={() => runBulk("disable")}
+                onClick={clearSelection}
               >
-                Выключить
-              </Button>
-              <Button
-                size="sm"
-                variant="light"
-                color="gray"
-                className="shrink-0"
-                loading={pending === "reset"}
-                disabled={pending !== null}
-                onClick={() => runBulk("reset")}
-              >
-                Сбросить трафик
-              </Button>
-              <Button
-                size="sm"
-                variant="light"
-                className="shrink-0"
-                disabled={pending !== null}
-                onClick={() => setExtendOpen(true)}
-              >
-                Продлить
-              </Button>
-              <Button
-                size="sm"
-                variant="light"
-                color="red"
-                className="shrink-0"
-                disabled={pending !== null}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Удалить
+                Отмена
               </Button>
             </div>
-            <Button
-              size="sm"
-              variant="subtle"
-              color="gray"
-              className="shrink-0"
-              disabled={pending !== null}
-              onClick={clearSelection}
-            >
-              Отмена
-            </Button>
           </div>
         </div>
       )}
@@ -567,7 +565,7 @@ function SelectCheck({
       />
       <span
         className={cn(
-          "flex h-5 w-5 items-center justify-center rounded-md border transition",
+          "flex h-6 w-6 items-center justify-center rounded-md border transition",
           checked
             ? "border-brand-600 bg-brand-600 text-onaccent"
             : "border-gray-300 bg-white hover:border-gray-400",
