@@ -33,6 +33,7 @@ import {
   Skeleton,
   Switch,
   TextInput,
+  useConfirm,
   useCopy,
 } from "./ui";
 import { UserDetail } from "./UserDetail";
@@ -104,6 +105,7 @@ export function UsersPanel() {
   const [pending, setPending] = useState<BulkAction | null>(null);
   const [extendOpen, setExtendOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { confirm, confirmNode } = useConfirm();
 
   const refresh = useCallback(() => {
     listUsers()
@@ -212,19 +214,47 @@ export function UsersPanel() {
     }
   };
 
+  // confirmBulk asks for confirmation before an immediate bulk action (these hit
+  // many users at once and aren't trivially reversible), then runs it. "Продлить"
+  // and "Удалить" have their own dedicated dialogs.
+  const confirmBulk = async (action: "enable" | "disable" | "reset") => {
+    const n = selected.size;
+    const opts =
+      action === "enable"
+        ? {
+            title: "Включить пользователей",
+            body: `Включить выбранных пользователей (${n})?`,
+            confirmLabel: "Включить",
+          }
+        : action === "disable"
+          ? {
+              title: "Выключить пользователей",
+              body: `Выключить выбранных (${n})? Они потеряют доступ к VPN, пока вы не включите их обратно.`,
+              confirmLabel: "Выключить",
+              danger: true,
+            }
+          : {
+              title: "Сбросить трафик",
+              body: `Обнулить счётчики трафика у выбранных (${n})? Лимит начнёт считаться заново; действие необратимо.`,
+              confirmLabel: "Сбросить",
+              danger: true,
+            };
+    if (await confirm(opts)) runBulk(action);
+  };
+
   // renderBulkActions builds the five action buttons shared by both bar layouts.
   // grid=true → full-width cells for the mobile 2-col grid; grid=false → inline
   // shrink-0 buttons for the desktop row. Only the in-flight action spins.
   const renderBulkActions = (grid: boolean) => {
     const cls = grid ? "" : "shrink-0";
     return [
-      <Button key="enable" size="sm" variant="light" fullWidth={grid} className={cls} loading={pending === "enable"} disabled={pending !== null} onClick={() => runBulk("enable")}>
+      <Button key="enable" size="sm" variant="light" fullWidth={grid} className={cls} loading={pending === "enable"} disabled={pending !== null} onClick={() => confirmBulk("enable")}>
         Включить
       </Button>,
-      <Button key="disable" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "disable"} disabled={pending !== null} onClick={() => runBulk("disable")}>
+      <Button key="disable" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "disable"} disabled={pending !== null} onClick={() => confirmBulk("disable")}>
         Выключить
       </Button>,
-      <Button key="reset" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "reset"} disabled={pending !== null} onClick={() => runBulk("reset")}>
+      <Button key="reset" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "reset"} disabled={pending !== null} onClick={() => confirmBulk("reset")}>
         Сбросить трафик
       </Button>,
       <Button key="extend" size="sm" variant="light" fullWidth={grid} className={cls} disabled={pending !== null} onClick={() => setExtendOpen(true)}>
@@ -514,6 +544,8 @@ export function UsersPanel() {
           refresh();
         }}
       />
+
+      {confirmNode}
     </>
   );
 }

@@ -185,7 +185,6 @@ export function UserDetail({
   const [billingOn, setBillingOn] = useState(false)
   const [plans, setPlans] = useState<TariffPlan[]>([])
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
-  const sub = useCopy()
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
@@ -412,11 +411,8 @@ export function UserDetail({
               <QRCodeSVG value={user.sub_url} size={200} />
             </div>
           </div>
-          <Code block>{user.sub_url}</Code>
+          <Code block copy>{user.sub_url}</Code>
           <div className="flex flex-wrap gap-2">
-            <Button size="xs" color={sub.copied ? 'teal' : 'brand'} onClick={() => sub.copy(user.sub_url)}>
-              {sub.copied ? 'Скопировано' : 'Копировать подписку'}
-            </Button>
             <Button size="xs" variant="light" href={user.sub_url} target="_blank">
               Открыть подписку
             </Button>
