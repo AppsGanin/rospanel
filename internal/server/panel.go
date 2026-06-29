@@ -154,6 +154,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/connections", rt.applyConnections)
 	authed("GET /api/users", rt.listUsers)
 	authed("POST /api/users", rt.createUser)
+	authed("POST /api/users/bulk", rt.bulkUsers)
 	authedID("DELETE /api/users/{id}", rt.deleteUser)
 	authedID("POST /api/users/{id}/reset", rt.resetUserTraffic)
 	authedID("POST /api/users/{id}/limits", rt.setUserLimits)

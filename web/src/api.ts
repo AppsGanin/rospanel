@@ -574,6 +574,16 @@ export const createUser = (name: string, data_limit = 0, expire_at = 0) =>
     body: JSON.stringify({ name, data_limit, expire_at }),
   })
 
+export type BulkAction = 'enable' | 'disable' | 'reset' | 'extend' | 'delete'
+
+// bulkUsers applies one action to many users in a single server pass (one Xray
+// sync). `days` is only used by the "extend" action. Returns how many were changed.
+export const bulkUsers = (ids: number[], action: BulkAction, days = 0) =>
+  api<{ affected: number }>('api/users/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ ids, action, days }),
+  })
+
 export interface CertInfo {
   subject: string
   issuer: string

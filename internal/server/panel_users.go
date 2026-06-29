@@ -56,6 +56,25 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, makeUserView(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
 }
 
+// bulkUsers applies one action to a set of users in a single pass (one Xray sync),
+// for the multi-select toolbar. See core.BulkUserAction for the supported actions.
+func (rt *Router) bulkUsers(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs    []int64 `json:"ids"`
+		Action string  `json:"action"`
+		Days   int     `json:"days"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	affected, err := rt.mgr.BulkUserAction(req.IDs, req.Action, req.Days)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"affected": affected})
+}
+
 func (rt *Router) deleteUser(w http.ResponseWriter, _ *http.Request, id int64) {
 	if err := rt.mgr.DeleteUser(id); err != nil {
 		writeManagerErr(w, err)
