@@ -1,6 +1,8 @@
 import { QRCodeSVG } from "qrcode.react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  type BulkAction,
+  bulkUsers,
   createUser,
   listUsers,
   setResetPeriod,
@@ -17,13 +19,15 @@ import {
   RESET_PERIODS,
   statusInfo,
 } from "./format";
-import { errMessage, notifyError } from "./notify";
+import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
   Card,
+  cn,
   Code,
   DatePicker,
+  IconCheck,
   Modal,
   Select,
   Skeleton,
@@ -58,17 +62,60 @@ function UsersSkeleton() {
   );
 }
 
+// Status filter options for the toolbar (keys match User.status).
+const STATUS_FILTERS = [
+  { value: "all", label: "Все статусы" },
+  { value: "active", label: "Активные" },
+  { value: "disabled", label: "Выключенные" },
+  { value: "expired", label: "Истёкшие" },
+  { value: "limited", label: "Лимит трафика" },
+  { value: "device_limited", label: "Лимит устройств" },
+];
+
+const SORTS = [
+  { value: "new", label: "Сначала новые" },
+  { value: "name", label: "По имени" },
+  { value: "traffic", label: "По трафику" },
+  { value: "expiry", label: "По сроку" },
+  { value: "online", label: "По онлайну" },
+];
+
+const EXTEND_PRESETS = [7, 30, 90, 180];
+const PAGE_SIZE = 100;
+
+// expSortKey orders by soonest expiry; "never" (0) sorts last.
+const expSortKey = (u: User) => (u.expire_at > 0 ? u.expire_at : Infinity);
+
 export function UsersPanel() {
   const [users, setUsers] = useState<User[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
   const [loaded, setLoaded] = useState(false);
 
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sort, setSort] = useState("new");
+  const [page, setPage] = useState(1);
+
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  // pending is the bulk action currently in flight (null = none). Tracking the
+  // specific action lets only the clicked button show a spinner, and keeps the
+  // action bar from reflowing/jumping while one runs.
+  const [pending, setPending] = useState<BulkAction | null>(null);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const refresh = useCallback(() => {
     listUsers()
       .then((us) => {
         setUsers(us);
         setDetail((d) => (d ? (us.find((x) => x.id === d.id) ?? d) : d));
+        // Drop any selection that refers to users no longer present.
+        setSelected((prev) => {
+          const live = new Set(us.map((u) => u.id));
+          const kept = [...prev].filter((id) => live.has(id));
+          return kept.length === prev.size ? prev : new Set(kept);
+        });
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
@@ -78,21 +125,175 @@ export function UsersPanel() {
     refresh();
   }, [refresh]);
 
+  // Filtering / sorting / paging are client-side: the full list is already loaded
+  // and stays snappy well into the hundreds, so this avoids any API round-trips.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users.filter(
+      (u) =>
+        (statusFilter === "all" || u.status === statusFilter) &&
+        (q === "" ||
+          u.name.toLowerCase().includes(q) ||
+          String(u.id) === q),
+    );
+  }, [users, query, statusFilter]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    switch (sort) {
+      case "name":
+        arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        break;
+      case "traffic":
+        arr.sort(
+          (a, b) => b.used_up + b.used_down - (a.used_up + a.used_down),
+        );
+        break;
+      case "expiry":
+        arr.sort((a, b) => expSortKey(a) - expSortKey(b));
+        break;
+      case "online":
+        arr.sort((a, b) => b.last_seen - a.last_seen);
+        break;
+      default:
+        arr.sort((a, b) => b.id - a.id); // newest first
+    }
+    return arr;
+  }, [filtered, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const curPage = Math.min(page, pageCount);
+  const paged = sorted.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+
+  // Reset to the first page whenever the result set changes shape.
+  useEffect(() => {
+    setPage(1);
+  }, [query, statusFilter, sort]);
+
+  const filteredIds = useMemo(() => filtered.map((u) => u.id), [filtered]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+
+  const toggleOne = (id: number, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const toggleAllFiltered = () =>
+    setSelected((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filteredIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...filteredIds]);
+    });
+
+  const clearSelection = () => setSelected(new Set());
+
+  const runBulk = async (action: BulkAction, days = 0) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setPending(action);
+    try {
+      const { affected } = await bulkUsers(ids, action, days);
+      notifySuccess(`Готово — затронуто пользователей: ${affected}`);
+      clearSelection();
+      setExtendOpen(false);
+      setConfirmDelete(false);
+      refresh();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setPending(null);
+    }
+  };
+
   if (!loaded) return <UsersSkeleton />;
 
-  return (
-    <>
-      {users.length === 0 ? (
+  if (users.length === 0) {
+    return (
+      <>
         <p className="py-12 text-center text-ink-muted">
           Пока нет пользователей. Нажмите кнопку «+» внизу справа.
         </p>
+        <AddFab onClick={() => setAddOpen(true)} />
+        <AddUser
+          opened={addOpen}
+          onClose={() => {
+            setAddOpen(false);
+            refresh();
+          }}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Toolbar: search grows, the two selects keep a fixed width so they don't
+          crowd out the search box. */}
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="min-w-0 sm:flex-1">
+          <TextInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Поиск по имени или ID…"
+          />
+        </div>
+        <div className="sm:w-48 sm:shrink-0">
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            data={STATUS_FILTERS}
+          />
+        </div>
+        <div className="sm:w-48 sm:shrink-0">
+          <Select value={sort} onChange={setSort} data={SORTS} />
+        </div>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between gap-3 text-sm text-ink-muted">
+        <span>
+          {filtered.length === users.length
+            ? `Всего: ${users.length}`
+            : `Найдено: ${filtered.length} из ${users.length}`}
+        </span>
+        {filtered.length > 0 && (
+          <button
+            onClick={toggleAllFiltered}
+            className="font-medium text-accent hover:underline"
+          >
+            {allFilteredSelected
+              ? "Снять выделение"
+              : `Выбрать все (${filtered.length})`}
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="py-12 text-center text-ink-muted">
+          Ничего не найдено. Измените поиск или фильтр.
+        </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {users.map((u) => {
+          {paged.map((u) => {
             const st = statusInfo(u.status);
+            const checked = selected.has(u.id);
             return (
-              <Card key={u.id} className="p-4">
+              <Card
+                key={u.id}
+                className={`p-4 ${checked ? "ring-2 ring-accent" : ""}`}
+              >
                 <div className="mb-3 flex min-w-0 items-center gap-2">
+                  <SelectCheck
+                    checked={checked}
+                    onChange={(v) => toggleOne(u.id, v)}
+                    label={`Выбрать ${u.name}`}
+                  />
                   <Switch
                     checked={u.enabled}
                     onChange={(v) =>
@@ -154,25 +355,150 @@ export function UsersPanel() {
         </div>
       )}
 
-      {/* Floating action button to add a user. */}
-      <button
-        onClick={() => setAddOpen(true)}
-        aria-label="Добавить пользователя"
-        title="Добавить пользователя"
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700 hover:shadow-xl active:scale-95"
+      {pageCount > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <Button
+            size="sm"
+            variant="light"
+            color="gray"
+            disabled={curPage <= 1}
+            onClick={() => setPage(curPage - 1)}
+          >
+            Назад
+          </Button>
+          <span className="text-sm text-ink-muted">
+            {curPage} / {pageCount}
+          </span>
+          <Button
+            size="sm"
+            variant="light"
+            color="gray"
+            disabled={curPage >= pageCount}
+            onClick={() => setPage(curPage + 1)}
+          >
+            Вперёд
+          </Button>
+        </div>
+      )}
+
+      {/* The add-user FAB hides while a bulk selection is active (the bulk bar
+          takes the bottom slot). */}
+      {selected.size === 0 && <AddFab onClick={() => setAddOpen(true)} />}
+
+      {selected.size > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          {/* One non-wrapping row: the label and "Отмена" are pinned, the actions
+              scroll horizontally if they don't fit — so the bar's height never
+              changes (e.g. when a button shows a spinner mid-action). */}
+          <div className="mx-auto flex max-w-3xl items-center gap-2">
+            <span className="shrink-0 text-sm font-medium text-ink">
+              Выбрано: {selected.size}
+            </span>
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
+              <Button
+                size="sm"
+                variant="light"
+                className="shrink-0"
+                loading={pending === "enable"}
+                disabled={pending !== null}
+                onClick={() => runBulk("enable")}
+              >
+                Включить
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                color="gray"
+                className="shrink-0"
+                loading={pending === "disable"}
+                disabled={pending !== null}
+                onClick={() => runBulk("disable")}
+              >
+                Выключить
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                color="gray"
+                className="shrink-0"
+                loading={pending === "reset"}
+                disabled={pending !== null}
+                onClick={() => runBulk("reset")}
+              >
+                Сбросить трафик
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                className="shrink-0"
+                disabled={pending !== null}
+                onClick={() => setExtendOpen(true)}
+              >
+                Продлить
+              </Button>
+              <Button
+                size="sm"
+                variant="light"
+                color="red"
+                className="shrink-0"
+                disabled={pending !== null}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Удалить
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              variant="subtle"
+              color="gray"
+              className="shrink-0"
+              disabled={pending !== null}
+              onClick={clearSelection}
+            >
+              Отмена
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <ExtendModal
+        open={extendOpen}
+        count={selected.size}
+        busy={pending === "extend"}
+        onApply={(days) => runBulk("extend", days)}
+        onClose={() => setExtendOpen(false)}
+      />
+
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Удалить пользователей?"
       >
-        <svg
-          width="26"
-          height="26"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        >
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </button>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-ink-muted">
+            Будет удалено пользователей: {selected.size}. Действие необратимо —
+            их подписки и ссылки сразу перестанут работать.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              color="red"
+              fullWidth
+              loading={pending === "delete"}
+              onClick={() => runBulk("delete")}
+            >
+              Удалить {selected.size}
+            </Button>
+            <Button
+              variant="subtle"
+              color="gray"
+              fullWidth
+              onClick={() => setConfirmDelete(false)}
+            >
+              Отмена
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <AddUser
         opened={addOpen}
@@ -191,6 +517,126 @@ export function UsersPanel() {
         }}
       />
     </>
+  );
+}
+
+// AddFab is the floating "+" button to add a user.
+function AddFab({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Добавить пользователя"
+      title="Добавить пользователя"
+      className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700 hover:shadow-xl active:scale-95"
+    >
+      <svg
+        width="26"
+        height="26"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      >
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    </button>
+  );
+}
+
+// SelectCheck is a compact, theme-aware selection checkbox: a real (screen-reader
+// visible) input drives a custom box drawn with the same tokens as the rest of the
+// UI, so it follows the light/dark theme instead of the browser's white default.
+function SelectCheck({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex shrink-0 cursor-pointer items-center" title="Выбрать">
+      <input
+        type="checkbox"
+        className="sr-only"
+        checked={checked}
+        aria-label={label}
+        onChange={(e) => onChange(e.currentTarget.checked)}
+      />
+      <span
+        className={cn(
+          "flex h-5 w-5 items-center justify-center rounded-md border transition",
+          checked
+            ? "border-brand-600 bg-brand-600 text-onaccent"
+            : "border-gray-300 bg-white hover:border-gray-400",
+        )}
+      >
+        {checked && <IconCheck size={14} />}
+      </span>
+    </label>
+  );
+}
+
+// ExtendModal asks how many days to add to the selected users' expiry. Users with
+// no expiry are skipped server-side (extending "never" is meaningless).
+function ExtendModal({
+  open,
+  count,
+  busy,
+  onApply,
+  onClose,
+}: {
+  open: boolean;
+  count: number;
+  busy: boolean;
+  onApply: (days: number) => void;
+  onClose: () => void;
+}) {
+  const [days, setDays] = useState("30");
+  const n = Math.floor(Number(days) || 0);
+  return (
+    <Modal open={open} onClose={onClose} title="Продлить подписку">
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-ink-muted">
+          Срок будет продлён у выбранных пользователей ({count}). Те, у кого срок
+          не задан (бессрочные), не меняются.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {EXTEND_PRESETS.map((p) => (
+            <Button
+              key={p}
+              size="sm"
+              variant={n === p ? "filled" : "light"}
+              color="gray"
+              onClick={() => setDays(String(p))}
+            >
+              +{p} дн.
+            </Button>
+          ))}
+        </div>
+        <TextInput
+          label="Дней"
+          type="number"
+          value={days}
+          onChange={setDays}
+        />
+        <div className="flex gap-2">
+          <Button
+            fullWidth
+            loading={busy}
+            disabled={n <= 0}
+            onClick={() => onApply(n)}
+          >
+            Продлить на {n > 0 ? n : "—"} дн.
+          </Button>
+          <Button variant="subtle" color="gray" fullWidth onClick={onClose}>
+            Отмена
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

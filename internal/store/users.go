@@ -213,6 +213,49 @@ func (s *Store) DeleteUser(id int64) error {
 	return err
 }
 
+// SetUsersEnabled flips the manual enabled flag for many users in one statement,
+// returning how many rows changed. Empty ids is a no-op.
+func (s *Store) SetUsersEnabled(ids []int64, enabled bool) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, boolToInt(enabled))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := s.db.Exec(
+		`UPDATE users SET enabled = ? WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// DeleteUsers removes many users in one statement, returning how many were deleted.
+func (s *Store) DeleteUsers(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := s.db.Exec(`DELETE FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// placeholders returns "?,?,…" with n terms for an IN clause.
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
+}
+
 // deriveStatus computes the display status from the independent enabled flag and
 // the expiry/quota/device conditions. Order: disabled (manual) > expired >
 // limited (traffic) > device_limited > active.

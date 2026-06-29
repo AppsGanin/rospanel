@@ -96,6 +96,80 @@ func (m *Manager) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) 
 		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt, deviceLimit) })
 }
 
+// BulkUserAction applies one action to many users with a SINGLE config sync at the
+// end (instead of one per user), returning how many users were actually affected.
+// Actions: "enable", "disable", "delete", "reset" (traffic), "extend" (push expiry
+// by `days`). "extend" only touches users that already have an expiry — unlimited
+// users are left alone (extending "never" is meaningless) and not counted.
+func (m *Manager) BulkUserAction(ids []int64, action string, days int) (int, error) {
+	if len(ids) == 0 {
+		return 0, invalid("не выбрано ни одного пользователя")
+	}
+	var affected int64
+	var err error
+	switch action {
+	case "enable":
+		affected, err = m.store.SetUsersEnabled(ids, true)
+	case "disable":
+		affected, err = m.store.SetUsersEnabled(ids, false)
+	case "delete":
+		affected, err = m.store.DeleteUsers(ids)
+	case "reset":
+		affected = m.bulkResetTraffic(ids)
+	case "extend":
+		if days <= 0 {
+			return 0, invalid("укажите число дней для продления")
+		}
+		affected = m.bulkExtendExpiry(ids, days)
+	default:
+		return 0, invalid("неизвестное действие %q", action)
+	}
+	if err != nil {
+		logErr("bulk user action failed", "action", action, "count", len(ids), "err", err)
+		return 0, err
+	}
+	logInfo("bulk user action", "action", action, "selected", len(ids), "affected", affected)
+	m.TriggerUserSync()
+	return int(affected), nil
+}
+
+// bulkResetTraffic zeroes usage for many users, re-baselining each one's raw
+// counters to the live Xray value fetched once up front (see store.ResetTraffic).
+func (m *Manager) bulkResetTraffic(ids []int64) int64 {
+	stats, _ := m.sup.QueryStats(m.sup.APIAddr()) // nil map on error → (0,0) baselines
+	var n int64
+	for _, id := range ids {
+		t := stats[fmt.Sprintf("u%d", id)]
+		if err := m.store.ResetTraffic(id, t.Up, t.Down); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// bulkExtendExpiry pushes each selected user's expiry out by `days`, anchored at the
+// later of now and their current expiry so stacking adds time rather than resetting
+// it. Users with no expiry (0 = never) are skipped.
+func (m *Manager) bulkExtendExpiry(ids []int64, days int) int64 {
+	now := time.Now().Unix()
+	add := int64(days) * 86400
+	var n int64
+	for _, id := range ids {
+		u, err := m.store.GetUser(id)
+		if err != nil || u.ExpireAt == 0 {
+			continue
+		}
+		base := now
+		if u.ExpireAt > now {
+			base = u.ExpireAt
+		}
+		if err := m.store.SetUserLimits(id, u.DataLimit, base+add, u.DeviceLimit); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // RotateSubToken issues a new subscription URL token for a user. Protocol
 // credentials stay the same — only the public /<sub_path>/<token> link changes,
 // so the old URL stops working immediately. Triggers a user sync so any
