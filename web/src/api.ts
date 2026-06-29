@@ -574,6 +574,23 @@ export const createUser = (name: string, data_limit = 0, expire_at = 0) =>
     body: JSON.stringify({ name, data_limit, expire_at }),
   })
 
+export type HealthStatus = 'ok' | 'warn' | 'error' | 'info'
+
+export interface HealthCheck {
+  key: string
+  label: string
+  status: HealthStatus
+  detail: string
+  hint?: string
+}
+
+export interface HealthReport {
+  status: 'ok' | 'warn' | 'error'
+  checks: HealthCheck[]
+}
+
+export const getHealth = () => api<HealthReport>('api/health')
+
 export type BulkAction = 'enable' | 'disable' | 'reset' | 'extend' | 'delete'
 
 // bulkUsers applies one action to many users in a single server pass (one Xray
