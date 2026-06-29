@@ -58,6 +58,7 @@ type Supervisor struct {
 	lastApply time.Time  // when the last Apply() succeeded (zero if never)
 
 	onAccess func(email, ip string) // called per access-log connection line
+	onCrash  func(err error)        // called when Xray exits unexpectedly (crash)
 
 	verOnce sync.Once
 	version string
@@ -115,6 +116,10 @@ func (s *Supervisor) Version() string {
 // SetOnAccess registers a callback invoked for each Xray access-log line that
 // carries a user email + source IP (used to track online status / connections).
 func (s *Supervisor) SetOnAccess(fn func(email, ip string)) { s.onAccess = fn }
+
+// SetOnCrash registers a callback invoked when the Xray child exits unexpectedly
+// (a genuine crash, not an intentional Stop/Apply). Used to alert the operator.
+func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
 
 // NewSupervisor resolves binName (via PATH or as an absolute path) and targets
 // configPath for the generated config. assetDir holds the geo databases.
@@ -418,6 +423,9 @@ func (s *Supervisor) monitor(p *proc) {
 	s.mu.Unlock()
 
 	slog.Warn("xray: exited unexpectedly, supervising restart", "err", err)
+	if s.onCrash != nil {
+		go s.onCrash(err) // off the monitor path so a slow notifier can't delay restart
+	}
 	s.superviseRestart(quickCrash)
 }
 

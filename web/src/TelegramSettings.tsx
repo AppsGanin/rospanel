@@ -47,6 +47,36 @@ const WEEKDAYS = [
 
 type Preset = (typeof PRESETS)[number]["value"];
 
+// ADMIN_EVENTS are the admin-bot notification categories shown as toggles. Keys
+// must match model.AdminEventCatalog on the backend.
+const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
+  {
+    key: "registered",
+    label: "Новая регистрация",
+    desc: "Пользователь зарегистрировался в боте",
+  },
+  { key: "expired", label: "Подписка истекла" },
+  { key: "limited", label: "Исчерпан трафик" },
+  { key: "device_limited", label: "Превышен лимит устройств" },
+  {
+    key: "xray_down",
+    label: "Сбой Xray",
+    desc: "Прокси-процесс упал и был перезапущен",
+  },
+  {
+    key: "cert",
+    label: "Сертификат TLS",
+    desc: "Успешное продление или ошибка выпуска",
+  },
+  { key: "payment", label: "Платежи", desc: "Новые заказы и подтверждённые оплаты" },
+];
+
+type AdminEvents = Record<string, boolean>;
+
+// sameEvents compares two category maps over the known keys (order-independent).
+const sameEvents = (a: AdminEvents, b: AdminEvents) =>
+  ADMIN_EVENTS.every((e) => !!a[e.key] === !!b[e.key]);
+
 // detectPreset reverse-maps a stored cron back into the UI controls.
 function detectPreset(cron: string): {
   preset: Preset;
@@ -118,6 +148,7 @@ export function TelegramSettings() {
   const [userEnabled, setUserEnabled] = useState(false);
   const [userToken, setUserToken] = useState("");
   const [userRegEnabled, setUserRegEnabled] = useState(true);
+  const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [preset, setPreset] = useState<Preset>("off");
   const [time, setTime] = useState("03:00");
   const [weekday, setWeekday] = useState("1");
@@ -133,6 +164,7 @@ export function TelegramSettings() {
     userEnabled: false,
     userToken: "",
     userRegEnabled: true,
+    adminEvents: {} as AdminEvents,
   });
   const [linking, setLinking] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -145,6 +177,7 @@ export function TelegramSettings() {
         setUserEnabled(t.user_enabled);
         setUserToken(t.user_token);
         setUserRegEnabled(t.user_reg_enabled);
+        setAdminEvents(t.admin_events || {});
         setChats(t.chat_ids || []);
         setLinkCode(t.link_code || "");
         setBotUsername(t.bot_username || "");
@@ -161,6 +194,7 @@ export function TelegramSettings() {
           userEnabled: t.user_enabled,
           userToken: t.user_token,
           userRegEnabled: t.user_reg_enabled,
+          adminEvents: t.admin_events || {},
         });
       })
       .catch((e) => notifyError(errMessage(e)));
@@ -194,7 +228,8 @@ export function TelegramSettings() {
     cron !== saved.cron ||
     userEnabled !== saved.userEnabled ||
     userToken.trim() !== saved.userToken.trim() ||
-    userRegEnabled !== saved.userRegEnabled;
+    userRegEnabled !== saved.userRegEnabled ||
+    !sameEvents(adminEvents, saved.adminEvents);
 
   // Linking only makes sense once the bot is enabled and that state is saved (the
   // bot polls against the persisted config; a code is redeemed by the running bot).
@@ -212,6 +247,7 @@ export function TelegramSettings() {
         userEnabled,
         userToken.trim(),
         userRegEnabled,
+        adminEvents,
       );
       setSaved({
         enabled,
@@ -220,6 +256,7 @@ export function TelegramSettings() {
         userEnabled,
         userToken: userToken.trim(),
         userRegEnabled,
+        adminEvents,
       });
       notifySuccess("Настройки Telegram сохранены");
     } catch (e) {
@@ -235,6 +272,7 @@ export function TelegramSettings() {
     setUserEnabled(saved.userEnabled);
     setUserToken(saved.userToken);
     setUserRegEnabled(saved.userRegEnabled);
+    setAdminEvents(saved.adminEvents);
     const d = detectPreset(saved.cron);
     setPreset(d.preset);
     setTime(d.time);
@@ -412,6 +450,39 @@ export function TelegramSettings() {
               </div>
             )}
           </div>
+        </div>
+      </SettingCard>
+
+      <SettingCard
+        title="Уведомления админу"
+        description="Какие события админ-бот присылает в привязанные чаты."
+      >
+        <div className="flex flex-col gap-3">
+          {!enabled && (
+            <p className="text-sm text-ink-muted">
+              Включите админ-бота выше, чтобы получать уведомления.
+            </p>
+          )}
+          {ADMIN_EVENTS.map((e) => (
+            <div
+              key={e.key}
+              className="flex items-center justify-between gap-3"
+            >
+              <div>
+                <p className="text-sm font-medium text-ink">{e.label}</p>
+                {e.desc && (
+                  <p className="text-xs text-ink-muted">{e.desc}</p>
+                )}
+              </div>
+              <Switch
+                checked={!!adminEvents[e.key]}
+                onChange={(v) =>
+                  setAdminEvents((cur) => ({ ...cur, [e.key]: v }))
+                }
+                disabled={!enabled}
+              />
+            </div>
+          ))}
         </div>
       </SettingCard>
 

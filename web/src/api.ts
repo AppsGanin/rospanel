@@ -508,6 +508,7 @@ export interface TelegramInfo {
   user_token: string
   user_reg_enabled: boolean
   user_bot_username: string // user bot @username
+  admin_events: Record<string, boolean> // admin notification categories (key→on)
 }
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
@@ -519,6 +520,7 @@ export const saveTelegram = (
   user_enabled: boolean,
   user_token: string,
   user_reg_enabled: boolean,
+  admin_events: Record<string, boolean>,
 ) =>
   api<{ ok: boolean }>('api/telegram', {
     method: 'POST',
@@ -529,6 +531,7 @@ export const saveTelegram = (
       user_enabled,
       user_token,
       user_reg_enabled,
+      admin_events,
     }),
   })
 

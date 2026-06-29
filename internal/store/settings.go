@@ -46,7 +46,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       billing_enabled, billing_trial_days, billing_free_plan_id,
 		       billing_trial_plan_id, billing_payment_note,
 		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
-		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret
+		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
+		       tg_admin_events
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -75,6 +76,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
 		&yooEn, &st.YooKassaShopID, &st.YooKassaSecretKey, &yooTest,
 		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
+		&st.TGAdminEvents,
 	)
 	if err != nil {
 		return nil, err
@@ -138,6 +140,15 @@ func (s *Store) SetTelegramUserBot(enabled bool, token string, regEnabled bool) 
 		`UPDATE settings SET tg_user_bot_enabled = ?, tg_user_bot_token = ?,
 		        tg_user_reg_enabled = ?, updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), encField(token), boolToInt(regEnabled),
+	)
+	return err
+}
+
+// SetAdminEvents persists the admin notification bitmask (model.AdminEvent* flags).
+func (s *Store) SetAdminEvents(mask int64) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_admin_events = ?, updated_at = unixepoch() WHERE id = 1`,
+		mask,
 	)
 	return err
 }

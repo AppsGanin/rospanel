@@ -103,8 +103,22 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	return m.store.SetBillingSettings(st)
 }
 
-// CreateRegisteredUser creates a user from self-registration with trial or free plan.
+// CreateRegisteredUser creates a user from self-registration (trial/free/plain
+// per billing config) and alerts the admin chats about the new signup.
 func (m *Manager) CreateRegisteredUser(name string) (*model.User, error) {
+	u, err := m.createRegisteredUser(name)
+	if err == nil && u != nil {
+		msg := "🆕 <b>Новая регистрация</b>\nПользователь: " + escHTML(u.Name)
+		if plan := m.PlanName(u.PlanID); plan != "" {
+			msg += "\nТариф: " + escHTML(plan)
+		}
+		m.notifyAdminEvent(model.AdminEventRegistered, msg)
+	}
+	return u, err
+}
+
+// createRegisteredUser is the registration body: trial → free → plain user.
+func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 	set, err := m.Settings()
 	if err != nil {
 		return nil, err
@@ -267,7 +281,7 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
 	msg += fmt.Sprintf("\n\nВ комментарии к переводу укажите: заказ #%d", order.ID)
-	m.notifyAdmin(fmt.Sprintf(
+	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
 	return order, msg, nil
