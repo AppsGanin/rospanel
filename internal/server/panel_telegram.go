@@ -32,17 +32,19 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"user_token":        set.TGUserBotToken,
 		"user_reg_enabled":  set.TGUserRegEnabled,
 		"user_bot_username": botUsername(r.Context(), set.TGUserBotToken),
+		"admin_events":      rt.mgr.AdminEventPrefs(),
 	})
 }
 
 func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled        bool   `json:"enabled"`
-		Token          string `json:"token"`
-		BackupCron     string `json:"backup_cron"`
-		UserEnabled    bool   `json:"user_enabled"`
-		UserToken      string `json:"user_token"`
-		UserRegEnabled bool   `json:"user_reg_enabled"`
+		Enabled        bool            `json:"enabled"`
+		Token          string          `json:"token"`
+		BackupCron     string          `json:"backup_cron"`
+		UserEnabled    bool            `json:"user_enabled"`
+		UserToken      string          `json:"user_token"`
+		UserRegEnabled bool            `json:"user_reg_enabled"`
+		AdminEvents    map[string]bool `json:"admin_events"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -54,6 +56,12 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	if err := rt.mgr.SaveTelegramUserBot(req.UserEnabled, req.UserToken, req.UserRegEnabled); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.AdminEvents != nil {
+		if err := rt.mgr.SaveAdminEventPrefs(req.AdminEvents); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	writeOK(w)
 }

@@ -50,6 +50,8 @@ func (m *Manager) PollStats() error {
 		t := stats[fmt.Sprintf("u%d", id)]
 		return t.Up, t.Down
 	})
+	// Alert admins when a user crosses active → expired / out-of-quota / over-device.
+	m.notifyStatusTransitions(users)
 	// Reconcile if the working set changed since the last applied config — e.g. a
 	// user just crossed their data limit (traffic) or expiry (time).
 	working, err := m.store.WorkingUsers(time.Now().Unix())

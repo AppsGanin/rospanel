@@ -43,15 +43,6 @@ func (m *Manager) SetAdminNotifier(fn func(html string)) {
 	m.notifyMu.Unlock()
 }
 
-func (m *Manager) notifyAdmin(html string) {
-	m.notifyMu.Lock()
-	fn := m.adminNotify
-	m.notifyMu.Unlock()
-	if fn != nil {
-		fn(html)
-	}
-}
-
 // providerLabel is a human name for a payment provider key.
 func providerLabel(p string) string {
 	switch p {
@@ -194,7 +185,7 @@ func (m *Manager) StartPlanPayment(userID, planID int64, provider string) (*mode
 		return nil, err
 	}
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
-	m.notifyAdmin(fmt.Sprintf(
+	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Начата оплата</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, providerLabel(provider)))
 	return order, nil
@@ -220,7 +211,7 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 	if u, e := m.store.GetUser(order.UserID); e == nil {
 		m.notifyUser(u.TgChatID, fmt.Sprintf("✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
 	}
-	m.notifyAdmin(fmt.Sprintf(
+	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, providerLabel(provider)))
 	return nil

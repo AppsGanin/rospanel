@@ -269,6 +269,10 @@ type Settings struct {
 	TGUserBotToken   string `json:"-"`
 	TGUserRegEnabled bool   `json:"-"` // allow /start self-registration (creates a new VPN account)
 
+	// TGAdminEvents is a bitmask of the AdminEvent* categories the admin bot pushes
+	// to the authorized chats. Default -1 (all on); see AdminEventEnabled.
+	TGAdminEvents int64 `json:"-"`
+
 	// Billing (Settings → Оплата): plans, trial period, free-tier fallback.
 	BillingEnabled     bool   `json:"-"`
 	BillingTrialDays   int    `json:"-"`
@@ -325,6 +329,37 @@ func (s *Settings) TelegramAuthorized(id int64) bool {
 	}
 	return false
 }
+
+// Admin notification categories (bitmask flags stored in Settings.TGAdminEvents).
+// The admin bot only pushes an event whose flag is set. New flags must be appended
+// (never renumbered) so existing saved masks keep their meaning.
+const (
+	AdminEventRegistered    int64 = 1 << 0 // a new user self-registered via the user bot
+	AdminEventExpired       int64 = 1 << 1 // a user's subscription expired
+	AdminEventLimited       int64 = 1 << 2 // a user exhausted their traffic quota
+	AdminEventDeviceLimited int64 = 1 << 3 // a user exceeded their device limit
+	AdminEventXrayDown      int64 = 1 << 4 // Xray crashed and is being restarted
+	AdminEventCert          int64 = 1 << 5 // TLS certificate renewed or renewal failed
+	AdminEventPayment       int64 = 1 << 6 // payment lifecycle (order created / paid)
+)
+
+// AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
+// over. Order here is the display order in the panel.
+var AdminEventCatalog = []struct {
+	Key string
+	Bit int64
+}{
+	{"registered", AdminEventRegistered},
+	{"expired", AdminEventExpired},
+	{"limited", AdminEventLimited},
+	{"device_limited", AdminEventDeviceLimited},
+	{"xray_down", AdminEventXrayDown},
+	{"cert", AdminEventCert},
+	{"payment", AdminEventPayment},
+}
+
+// AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
+func (s *Settings) AdminEventEnabled(bit int64) bool { return s.TGAdminEvents&bit != 0 }
 
 // OperaCountries are the Opera VPN regions opera-proxy accepts.
 var OperaCountries = []string{"EU", "AS", "AM"}

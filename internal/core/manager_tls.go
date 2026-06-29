@@ -141,12 +141,18 @@ func (m *Manager) RenewTLSIfNeeded() (bool, error) {
 	}
 	before, _ := tlsutil.ReadCertInfo(m.tls.CertPath)
 	if err := tlsmgr.Ensure(set, m.tls.CertPath, m.tls.KeyPath, m.tls.ACMEDir, false); err != nil {
+		m.notifyCertError(set.Host, err)
 		return false, err
 	}
 	after, _ := tlsutil.ReadCertInfo(m.tls.CertPath)
 	changed := before == nil || after == nil || !before.NotAfter.Equal(after.NotAfter)
 	if changed {
 		logInfo("tls: certificate renewed", "host", set.Host)
+		daysLeft := 0
+		if after != nil {
+			daysLeft = after.DaysLeft
+		}
+		m.notifyCertRenewed(set.Host, daysLeft)
 	}
 	return changed, nil
 }
