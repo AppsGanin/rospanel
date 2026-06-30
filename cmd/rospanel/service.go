@@ -52,6 +52,11 @@ func runServer(dataDir string) {
 		log.Fatalf("create data dir: %v", err)
 	}
 
+	// Tune Argon2id cost to this host before any password is hashed/verified, so a
+	// small VPS isn't OOM-killed by concurrent logins (per-attempt memory is also
+	// bounded by an internal concurrency cap in the auth package).
+	auth.Configure()
+
 	// Apply a staged restore (if any) before opening the DB, so the restored
 	// database isn't clobbered by a stale WAL from the pre-restart process. A
 	// failure mid-restore leaves the data dir half-applied (e.g. new DB + old

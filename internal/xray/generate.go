@@ -473,6 +473,24 @@ func healthBalancer(tag, selector string) Balancer {
 // traffic falls through to the first real outbound (direct). warpTag is the
 // outbound the WARP lane egresses through; the proxy/Opera lanes go through
 // health-probed balancers (when active) that fall back to direct on failure.
+// privateEgressCIDRs are destination ranges a tunnelled client is never allowed to
+// reach: loopback, RFC1918 private space, link-local (covers the 169.254.169.254
+// cloud-metadata endpoint), CGNAT, and their IPv6 equivalents. Explicit CIDRs (not
+// geoip:private) so the rule needs no geo database to be present and can never
+// silently no-op if geoip.dat is missing at boot.
+var privateEgressCIDRs = []string{
+	"0.0.0.0/8",
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"::1/128",
+	"fc00::/7",
+	"fe80::/10",
+}
+
 func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyActive bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	// Pool of proxies / Opera behind health-probed balancers; leastPing (via the
@@ -489,6 +507,18 @@ func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyAc
 		InboundTag:  []string{"api"},
 		OutboundTag: "api",
 	})
+
+	// Security floor: a VPN client must not be able to address the server's own
+	// loopback (the Xray gRPC control API on 127.0.0.1:10085, the loopback panel),
+	// the private LAN/neighbours, or the cloud metadata endpoint (169.254.169.254 →
+	// IAM-credential theft) through the tunnel. The "direct" freedom outbound would
+	// otherwise dial any of these. This rule sits right after the api dispatch (so
+	// legitimate api traffic still reaches its handler) and ahead of every egress
+	// lane, so no operator rule can accidentally re-expose these ranges. It only
+	// blocks traffic a client explicitly addresses to these IPs — the VLESS→Trojan
+	// and VLESS→panel loopback fallbacks happen inside Xray, not via this path, so
+	// normal proxying to public sites is unaffected.
+	addIPRule(out, "block", privateEgressCIDRs)
 
 	// Block lane is always the highest priority.
 	if rc.BlockBittorrent {
