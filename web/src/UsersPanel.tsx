@@ -340,7 +340,7 @@ export function UsersPanel() {
             return (
               <Card
                 key={u.id}
-                className={`p-4 ${checked ? "ring-2 ring-accent" : ""}`}
+                className={`p-4 ${checked ? "ring-2 ring-brand-600" : ""}`}
               >
                 <div className="mb-3 flex min-w-0 items-center gap-2">
                   <SelectCheck
