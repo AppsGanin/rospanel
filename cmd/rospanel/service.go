@@ -19,6 +19,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/geo"
@@ -103,6 +104,28 @@ func runServer(dataDir string) {
 	// Best-effort host-NAT port hopping for Hysteria2 (no-op off Linux).
 	if err := hop.Ensure(set.HopStart, set.HopEnd, set.HysteriaPort); err != nil {
 		log.Printf("port-hopping setup failed (Hysteria2 hopping disabled): %v", err)
+	}
+
+	// Best-effort host-level per-IP connection guard on the public TCP ports: caps
+	// concurrent connections and the new-connection rate per source IP so a single
+	// client can't flood the proxy with TLS handshakes (a CPU/connection-exhaustion
+	// DoS the per-user quota/device model never sees, since it happens before auth).
+	// Tunable / disable-able at runtime via ROSPANEL_CONNLIMIT* (no redeploy needed
+	// if a busy CGNAT egress trips the defaults).
+	if strings.EqualFold(env("ROSPANEL_CONNLIMIT", "on"), "off") {
+		log.Printf("connguard: disabled via ROSPANEL_CONNLIMIT=off")
+		_ = connguard.Ensure(nil, connguard.DefaultLimits()) // tear down any stale table
+	} else {
+		ports := []int{set.VLESSPort}
+		if set.RealityEnabled {
+			ports = append(ports, set.RealityPort)
+		}
+		lim := connguard.DefaultLimits()
+		lim.MaxConnPerIP = envInt("ROSPANEL_CONNLIMIT_MAX", lim.MaxConnPerIP)
+		lim.NewConnRate = envInt("ROSPANEL_CONNLIMIT_RATE", lim.NewConnRate)
+		if err := connguard.Ensure(ports, lim); err != nil {
+			log.Printf("connguard setup failed (per-IP connection limits not active): %v", err)
+		}
 	}
 
 	// Best-effort: enable TCP BBR congestion control (better throughput on
