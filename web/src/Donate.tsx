@@ -23,6 +23,7 @@ const SECTIONS: { title: string; body: string }[] = [
   },
 ];
 
+const DONATIONALERTS_URL = "https://www.donationalerts.com/r/dmitryapp";
 const BOOSTY_URL = "https://boosty.to/githubapps";
 
 // Copyable donation details — all USDT, kept in sync with the README.
@@ -79,6 +80,21 @@ export function Donate({ onClose }: { onClose: () => void }) {
           {s.body}
         </InfoSection>
       ))}
+
+      <InfoSection title="DonationAlerts" bordered={false}>
+        <a
+          href={DONATIONALERTS_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-center gap-2 rounded-lg bg-[#f57d07] px-3 py-2.5 text-sm font-bold text-onaccent transition hover:bg-[#d96e06]"
+        >
+          <IconHeart size={18} />
+          Поддержать через DonationAlerts
+        </a>
+        <p className="text-center text-xs text-gray-500">
+          Разовая поддержка через DonationAlerts — картой РФ и другими способами.
+        </p>
+      </InfoSection>
 
       <InfoSection title="Boosty" bordered={false}>
         <a
