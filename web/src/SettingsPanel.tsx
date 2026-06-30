@@ -1,4 +1,5 @@
 import { BillingPanel } from "./BillingPanel";
+import { BrandingSettings } from "./BrandingSettings";
 import { ConnectionsPanel } from "./ConnectionsPanel";
 import { DnsSettings } from "./DnsSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -11,6 +12,7 @@ import { cn } from "./ui";
 
 const SUBTABS = [
   { value: "general", label: "Основное" },
+  { value: "branding", label: "Брендинг" },
   { value: "connections", label: "Подключения" },
   { value: "subscriptions", label: "Подписки" },
   { value: "routing", label: "Роутинг" },
@@ -51,6 +53,7 @@ export function SettingsPanel() {
 
       <div key={tab} className="animate-fade-in">
         {tab === "general" && <GeneralSettings />}
+        {tab === "branding" && <BrandingSettings />}
         {tab === "connections" && <ConnectionsPanel />}
         {tab === "subscriptions" && <SubscriptionsPanel />}
         {tab === "routing" && <RoutingPanel />}
