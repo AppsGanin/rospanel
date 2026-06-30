@@ -301,6 +301,17 @@ func (m *Manager) syncUsers() error {
 	if len(added) == 0 && len(removedEmails) == 0 {
 		return nil
 	}
+	// Xray's HandlerService (adu/rmu) cannot apply live user changes to the
+	// Hysteria2 (QUIC) inbound — its authenticator is fixed when the inbound starts,
+	// so a live-added user can't authenticate over Hysteria until the inbound is
+	// rebuilt by a full Xray restart. When Hysteria is enabled, do a full reconcile
+	// so the new user works on every protocol; the cheap live (no-restart) path is
+	// kept only when Hysteria is off. Without this, a freshly added user works on
+	// VLESS/Trojan but silently fails on Hysteria until some unrelated settings
+	// change happens to restart Xray (the "move the hop port and back" workaround).
+	if set.HysteriaEnabled {
+		return m.reconcileLocked()
+	}
 	logInfo("user sync (live, no restart)", "added", len(added), "removed", len(removedEmails))
 
 	apiAddr := m.sup.APIAddr()
