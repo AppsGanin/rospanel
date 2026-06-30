@@ -35,7 +35,7 @@ func newLoginLimiter() *loginLimiter {
 		ips:      make(map[string]*attemptRec),
 		accounts: make(map[string]*attemptRec),
 		maxFails: 10,
-		maxAcct:  30,
+		maxAcct:  20,
 		maxKeys:  4096,
 		window:   15 * time.Minute,
 	}

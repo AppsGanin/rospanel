@@ -251,7 +251,29 @@ func runInstall() {
 		"ExecStart=" + installBinPath + "\n" +
 		"Restart=always\n" +
 		"RestartSec=3\n" +
+		// The panel still runs as root (it execs Xray, runs iptables/nft for the
+		// brute-guard + Hysteria port-hopping, writes net.* sysctls for BBR, and
+		// self-updates its own binary in /usr/local/bin). Rather than drop the user,
+		// we shrink what that root can do: capabilities are pinned to exactly the two
+		// the service needs, NoNewPrivileges blocks any setuid escalation, and the
+		// filesystem/namespace is sandboxed so an RCE can't roam the host. The two
+		// ReadWritePaths cover self-update (binary) and re-install (unit); the data
+		// dir is writable via StateDirectory. Note: ProtectKernelTunables and
+		// ProtectKernelModules are deliberately NOT set — they would break the BBR
+		// sysctl write and nft/iptables module autoload respectively.
+		"CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN\n" +
 		"AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN\n" +
+		"NoNewPrivileges=yes\n" +
+		"ProtectSystem=strict\n" +
+		"ReadWritePaths=/usr/local/bin /etc/systemd/system\n" +
+		"ProtectHome=yes\n" +
+		"PrivateTmp=yes\n" +
+		"ProtectControlGroups=yes\n" +
+		"ProtectClock=yes\n" +
+		"RestrictSUIDSGID=yes\n" +
+		"RestrictRealtime=yes\n" +
+		"LockPersonality=yes\n" +
+		"RemoveIPC=yes\n" +
 		"StateDirectory=rospanel\n\n" +
 		"[Install]\n" +
 		"WantedBy=multi-user.target\n"
