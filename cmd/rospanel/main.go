@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
@@ -135,6 +136,16 @@ func (h *slogHandler) WithGroup(string) slog.Handler      { return h }
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+// envInt returns the integer value of an env var, or def when unset/unparseable.
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }
