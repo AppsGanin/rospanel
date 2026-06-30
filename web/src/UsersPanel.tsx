@@ -440,16 +440,17 @@ export function UsersPanel() {
       {selected.size === 0 && <AddFab onClick={() => setAddOpen(true)} />}
 
       {/* Reserve scroll space so the last cards aren't hidden behind the fixed
-          selection bar (taller on mobile, where it stacks into a grid). */}
-      {selected.size > 0 && <div aria-hidden className="h-44 sm:h-20" />}
+          selection bar (taller on mobile, where it stacks into a grid). The
+          mobile/desktop switch uses the md breakpoint to match the header nav. */}
+      {selected.size > 0 && <div aria-hidden className="h-44 md:h-20" />}
 
       {selected.size > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg backdrop-blur">
           <div className="mx-auto max-w-3xl">
             {/* Mobile: count + cancel on top, actions in a 2-col grid below — no
                 horizontal scroll, and a fixed grid means the height can't jump
-                when a button shows its spinner. */}
-            <div className="sm:hidden">
+                when a button shows its spinner. md breakpoint matches the header. */}
+            <div className="md:hidden">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-medium text-ink">
                   Выбрано: {selected.size}
@@ -466,8 +467,8 @@ export function UsersPanel() {
             </div>
 
             {/* Desktop: single row; actions scroll horizontally only if they don't
-                fit, the label and "Отмена" stay pinned. */}
-            <div className="hidden items-center gap-2 sm:flex">
+                fit, the label and "Отмена" stay pinned. md breakpoint matches the header. */}
+            <div className="hidden items-center gap-2 md:flex">
               <span className="shrink-0 text-sm font-medium text-ink">
                 Выбрано: {selected.size}
               </span>
