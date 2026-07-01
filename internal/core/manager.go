@@ -301,18 +301,7 @@ func (m *Manager) syncUsers() error {
 	if len(added) == 0 && len(removedEmails) == 0 {
 		return nil
 	}
-	// Xray's HandlerService (adu/rmu) cannot apply live user changes to the
-	// Hysteria2 (QUIC) inbound — its authenticator is fixed when the inbound starts,
-	// so a live-added user can't authenticate over Hysteria until the inbound is
-	// rebuilt by a full Xray restart. When Hysteria is enabled, do a full reconcile
-	// so the new user works on every protocol; the cheap live (no-restart) path is
-	// kept only when Hysteria is off. Without this, a freshly added user works on
-	// VLESS/Trojan but silently fails on Hysteria until some unrelated settings
-	// change happens to restart Xray (the "move the hop port and back" workaround).
-	if set.HysteriaEnabled {
-		return m.reconcileLocked()
-	}
-	logInfo("user sync (live, no restart)", "added", len(added), "removed", len(removedEmails))
+	logInfo("user sync (live)", "added", len(added), "removed", len(removedEmails))
 
 	apiAddr := m.sup.APIAddr()
 	if len(removedEmails) > 0 {
@@ -335,6 +324,18 @@ func (m *Manager) syncUsers() error {
 		return err
 	}
 	m.setApplied(users)
+	// Xray's HandlerService can't live-apply user changes to the Hysteria2 (QUIC)
+	// inbound — its authenticator is fixed when the inbound starts. The live adu/rmu
+	// above already made VLESS/Trojan/Reality reflect the change instantly; only
+	// Hysteria still needs a restart to pick it up. Defer that through the normal
+	// reconcile path instead of restarting inline: the reconcile debounce coalesces a
+	// burst of user changes into a SINGLE restart, and live traffic isn't dropped on
+	// every add when nothing but Hysteria membership needs the reload. Trade-off: a
+	// removed/disabled user keeps Hysteria access until this restart (~1 debounce
+	// cycle later) — acceptable, and VLESS/Trojan access was already revoked live.
+	if set.HysteriaEnabled {
+		m.TriggerReconcile()
+	}
 	return m.store.MarkConfigApplied()
 }
 
