@@ -51,11 +51,13 @@ func writeManagerErr(w http.ResponseWriter, err error) {
 // failure it writes a 4xx and returns false, so handlers can
 // `if !decodeJSON(w, r, &req) { return }`.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		if mt, _, _ := mime.ParseMediaType(ct); mt != "application/json" {
-			writeErr(w, http.StatusUnsupportedMediaType, "ожидается application/json")
-			return false
-		}
+	// Require application/json, INCLUDING when Content-Type is absent — the SPA's
+	// fetch wrapper always sets it, and a missing header would otherwise slip past
+	// this check and let the cross-site "<form enctype=text/plain>" trick smuggle a
+	// JSON-shaped body without a CORS preflight.
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+		writeErr(w, http.StatusUnsupportedMediaType, "ожидается application/json")
+		return false
 	}
 	// Bound a slow-trickle request body per-handler (these bodies are tiny). Done
 	// here rather than via a server-wide ReadTimeout, which would also kill the

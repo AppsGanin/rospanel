@@ -33,7 +33,10 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	}
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		// Never surface an internal error on the public subscription surface — a
+		// real static site wouldn't 500 with a JSON body, which would confirm the
+		// panel is here and leak the error text. Fall through to the decoy instead.
+		rt.decoy.ServeHTTP(w, r)
 		return
 	}
 	rt.applyTLSHints(set)
@@ -43,7 +46,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// A real browser (Accept: text/html) gets the human page; a proxy client
 		// gets the machine payload.
 		if isBrowser(r) {
-			servePage(w, *u, set)
+			if err := servePage(w, *u, set); err != nil {
+				rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on render errors
+			}
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
@@ -94,7 +99,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	case "qr.png":
 		png, err := qrcode.Encode(sub.URL(set, u.SubToken), qrcode.Medium, 512)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
+			rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on internal errors
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
@@ -112,16 +117,18 @@ func isBrowser(r *http.Request) bool {
 	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
 }
 
-// servePage renders the human-facing subscription page.
-func servePage(w http.ResponseWriter, u model.User, set *model.Settings) {
+// servePage renders the human-facing subscription page. It returns an error
+// (writing nothing) instead of a 500 so the caller can fall through to the decoy
+// and keep the masquerade intact.
+func servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
 	html, err := sub.Page(u, set)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
+		return err
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(html)
+	return nil
 }
 
 // telegramSupportURL is the Happ/INCY support-url (Telegram user bot deep link),

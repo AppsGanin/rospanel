@@ -201,10 +201,21 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 	if order.Status != "pending" {
 		return nil
 	}
-	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, true); err != nil {
+	// Atomically claim the pending→paid transition. A provider webhook and the
+	// polling fallback (or a re-delivered webhook) can reach here for the same order
+	// concurrently; only the caller that wins the CAS applies the plan, so one
+	// payment can't extend the user twice.
+	claimed, err := m.store.MarkPaymentOrderPaidIfPending(order.ID, time.Now().Unix())
+	if err != nil {
 		return err
 	}
-	if err := m.store.SetPaymentOrderStatus(order.ID, "paid", time.Now().Unix()); err != nil {
+	if !claimed {
+		return nil // another confirmer already handled this order
+	}
+	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, true); err != nil {
+		// Roll the claim back so the polling fallback retries rather than leaving a
+		// paid order whose plan was never applied.
+		_ = m.store.RevertPaymentOrderToPending(order.ID)
 		return err
 	}
 	logInfo("payment: order %d paid via %s, user %d plan %d", order.ID, provider, order.UserID, order.PlanID)
@@ -216,6 +227,11 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, providerLabel(provider)))
 	return nil
 }
+
+// paymentOrderMaxAge bounds how long a pending provider order is polled before
+// it's auto-cancelled as abandoned (the user opened a payment but never completed
+// it), so the fallback poll doesn't hit the provider API forever for dead orders.
+const paymentOrderMaxAge = 24 * time.Hour
 
 // PollPendingPayments is the fallback for missed webhooks: it queries each pending
 // provider order's status and confirms/cancels accordingly.
@@ -230,7 +246,15 @@ func (m *Manager) PollPendingPayments() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	staleBefore := time.Now().Add(-paymentOrderMaxAge).Unix()
 	for _, o := range orders {
+		// Abandoned orders (user never paid) would otherwise be polled forever — one
+		// live provider API call each, every cycle. Cancel anything older than the
+		// max age and stop polling it.
+		if o.CreatedAt > 0 && o.CreatedAt < staleBefore {
+			_ = m.store.SetPaymentOrderStatus(o.ID, "cancelled", 0)
+			continue
+		}
 		var status payments.Status
 		var perr error
 		switch o.Provider {

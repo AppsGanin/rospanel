@@ -23,8 +23,9 @@ type Supervisor struct {
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
-	running bool // child is currently alive (guarded; never read cmd.ProcessState, which cmd.Wait writes off-lock)
-	epoch   int  // bumped on every Start/Stop; stale monitor goroutines exit
+	done    chan struct{} // closed by the current child's monitor once cmd.Wait reaps it
+	running bool          // child is currently alive (guarded; never read cmd.ProcessState, which cmd.Wait writes off-lock)
+	epoch   int           // bumped on every Start/Stop; stale monitor goroutines exit
 	country string
 	port    int
 	active  bool // whether opera-proxy should be running (gates auto-restart)
@@ -60,12 +61,24 @@ func (s *Supervisor) Running() bool {
 	return s.running
 }
 
-// killLocked terminates the current child (if any). Caller holds s.mu.
+// killLocked terminates the current child (if any) and waits for it to be reaped
+// before returning, so the listen port is actually free for the next spawnLocked.
+// Without the wait, a new opera-proxy could rebind 127.0.0.1:port while the old
+// process still holds it and fail with "address already in use". Caller holds s.mu.
 func (s *Supervisor) killLocked() {
 	if s.cmd != nil && s.cmd.Process != nil {
 		_ = s.cmd.Process.Kill()
+		if s.done != nil {
+			// The monitor closes done right after cmd.Wait (before it re-takes s.mu),
+			// so waiting here can't deadlock. Bounded, in case Wait hangs.
+			select {
+			case <-s.done:
+			case <-time.After(2 * time.Second):
+			}
+		}
 	}
 	s.cmd = nil
+	s.done = nil
 	s.running = false
 }
 
@@ -81,19 +94,22 @@ func (s *Supervisor) spawnLocked() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start opera-proxy: %w", err)
 	}
+	done := make(chan struct{})
 	s.cmd = cmd
+	s.done = done
 	s.running = true
 	go logLines(stdout)
 	go logLines(stderr)
-	go s.monitor(cmd, epoch)
+	go s.monitor(cmd, epoch, done)
 	log.Printf("opera: started (pid %d, country %s, 127.0.0.1:%d)", cmd.Process.Pid, s.country, s.port)
 	return nil
 }
 
 // monitor waits for the child to exit and relaunches it after a delay, unless
 // it was superseded (newer epoch) or intentionally stopped.
-func (s *Supervisor) monitor(cmd *exec.Cmd, epoch int) {
+func (s *Supervisor) monitor(cmd *exec.Cmd, epoch int, done chan struct{}) {
 	err := cmd.Wait()
+	close(done) // signal killLocked (before re-taking s.mu) that the port is freed
 	s.mu.Lock()
 	if epoch != s.epoch {
 		s.mu.Unlock()

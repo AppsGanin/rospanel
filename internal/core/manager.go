@@ -85,6 +85,12 @@ type Manager struct {
 	lastCrashNotify   time.Time
 	lastCertErrNotify time.Time
 
+	// applyPlanMu serializes ApplyPlanToUser so the read-modify-write of expire_at
+	// (base = current expiry, expire = base + period) can't be raced by two
+	// concurrent confirmers — a webhook + the poll fallback, or two orders for the
+	// same user — which would otherwise lose or double a paid period.
+	applyPlanMu sync.Mutex
+
 	vpnMu       sync.Mutex
 	vpnUp       int64 // current VPN throughput (bytes/sec), from Xray stats deltas
 	vpnDown     int64

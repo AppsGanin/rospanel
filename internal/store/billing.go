@@ -175,6 +175,30 @@ func (s *Store) SetPaymentOrderStatus(id int64, status string, paidAt int64) err
 	return err
 }
 
+// MarkPaymentOrderPaidIfPending atomically transitions an order pending→paid and
+// reports whether THIS call performed the transition. Exactly one of several
+// concurrent confirmers (provider webhook + the poll fallback + a re-delivered
+// webhook) wins the CAS; a caller that gets false must not apply the plan, so a
+// single payment can never extend the user twice.
+func (s *Store) MarkPaymentOrderPaidIfPending(id, paidAt int64) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE payment_orders SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'`,
+		paidAt, id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// RevertPaymentOrderToPending puts a claimed order back to pending so the polling
+// fallback retries — used when applying the plan failed after the paid claim.
+func (s *Store) RevertPaymentOrderToPending(id int64) error {
+	_, err := s.db.Exec(`UPDATE payment_orders SET status = 'pending', paid_at = 0 WHERE id = ?`, id)
+	return err
+}
+
 // SetPaymentOrderProvider links an order to an external provider payment.
 func (s *Store) SetPaymentOrderProvider(id int64, provider, providerID, payURL string) error {
 	_, err := s.db.Exec(

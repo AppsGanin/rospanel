@@ -119,6 +119,12 @@ func (m *Manager) CreateRegisteredUser(name string) (*model.User, error) {
 
 // createRegisteredUser is the registration body: trial → free → plain user.
 func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
+	// Self-registration name comes from the Telegram display name — bound its length
+	// (truncate rather than reject) so it can't bloat the DB / config unboundedly.
+	name = truncateName(name)
+	if name == "" {
+		return nil, invalid("укажите имя")
+	}
 	set, err := m.Settings()
 	if err != nil {
 		return nil, err
@@ -189,6 +195,9 @@ func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt
 // ApplyPlanToUser assigns a tariff and updates limits. extendFromCurrent stacks paid time.
 // planID 0 switches to manual mode: clears plan link and resets limits to unlimited.
 func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent bool) error {
+	// Serialize the expire_at read-modify-write below against concurrent confirmers.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
 	u, err := m.store.GetUser(userID)
 	if err != nil {
 		return err

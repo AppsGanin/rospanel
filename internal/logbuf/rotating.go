@@ -61,21 +61,29 @@ func (w *RotatingFile) Write(p []byte) (int, error) {
 // rotate closes the active file, shifts the backups (path.N → path.N+1, dropping
 // the oldest), renames the active file to path.1, and opens a fresh active file.
 func (w *RotatingFile) rotate() error {
-	if err := w.f.Close(); err != nil {
-		return err
-	}
 	// Drop the oldest, then cascade: .(N-1)→.N, …, .1→.2.
 	_ = os.Remove(fmt.Sprintf("%s.%d", w.path, w.maxBackups))
 	for i := w.maxBackups - 1; i >= 1; i-- {
 		_ = os.Rename(fmt.Sprintf("%s.%d", w.path, i), fmt.Sprintf("%s.%d", w.path, i+1))
 	}
+	// Move the active file aside WITHOUT closing the handle first. The open fd keeps
+	// pointing at the same inode (now at path.1), so if opening the replacement below
+	// fails (disk full, perms) we undo the rename and keep logging to the existing
+	// handle — instead of leaving w.f on a closed fd, which would silently kill file
+	// logging for the whole process lifetime.
 	if w.maxBackups > 0 {
-		_ = os.Rename(w.path, w.path+".1")
+		if err := os.Rename(w.path, w.path+".1"); err != nil {
+			return err
+		}
 	}
 	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
+		if w.maxBackups > 0 {
+			_ = os.Rename(w.path+".1", w.path) // restore; the live fd follows the inode back
+		}
 		return err
 	}
+	_ = w.f.Close()
 	w.f = f
 	w.size = 0
 	return nil

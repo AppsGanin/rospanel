@@ -174,11 +174,21 @@ func (s *Store) GetUserByTelegramChatID(chatID int64) (*model.User, error) {
 // SetUserTelegramChat links a Telegram chat to a VPN user, first detaching the
 // chat from any other user (one chat ⇒ at most one account).
 func (s *Store) SetUserTelegramChat(userID, chatID int64) error {
-	if _, err := s.db.Exec(`UPDATE users SET tg_chat_id = 0 WHERE tg_chat_id = ?`, chatID); err != nil {
+	// One transaction so the detach + attach are atomic: without it, a failure (or
+	// crash) between the two statements would leave the chat unlinked from its old
+	// owner and never attached to the new one.
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`UPDATE users SET tg_chat_id = ? WHERE id = ?`, chatID, userID)
-	return err
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = 0 WHERE tg_chat_id = ?`, chatID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = ? WHERE id = ?`, chatID, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ClearUserTelegramChat unlinks a VPN user's Telegram chat.

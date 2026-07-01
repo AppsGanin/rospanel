@@ -31,6 +31,13 @@ func (m *Manager) ListUsers() ([]model.User, error) { return m.store.ListUsers()
 // CreateUser creates a user (one credential set for all protocols) with optional
 // data limit (bytes, 0=unlimited) and expiry (unix, 0=never), then reconciles.
 func (m *Manager) CreateUser(name string, dataLimit, expireAt int64) (*model.User, error) {
+	name, err := cleanUserName(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateUserLimits(dataLimit, expireAt, 0); err != nil {
+		return nil, err
+	}
 	password, err := auth.RandomPassword()
 	if err != nil {
 		return nil, err
@@ -59,6 +66,10 @@ func (m *Manager) SetUserEnabled(id int64, enabled bool) error {
 // RenameUser updates a user's display name. The name is cosmetic (Xray keys
 // users by "u<id>"), so no config reload is needed.
 func (m *Manager) RenameUser(id int64, name string) error {
+	name, err := cleanUserName(name)
+	if err != nil {
+		return err
+	}
 	return m.store.SetUserName(id, name)
 }
 
@@ -91,6 +102,9 @@ func (m *Manager) liveCounter(id int64) (up, down int64) {
 
 // SetUserLimits updates a user's quota/expiry/device cap and re-enables them.
 func (m *Manager) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
+	if err := validateUserLimits(dataLimit, expireAt, deviceLimit); err != nil {
+		return err
+	}
 	// store.SetUserLimits recomputes status from the new limit/expiry/devices.
 	return m.mutateUser(fmt.Sprintf("user %d limits updated: limit=%d expire=%d devices=%d", id, dataLimit, expireAt, deviceLimit),
 		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt, deviceLimit) })
@@ -119,6 +133,9 @@ func (m *Manager) BulkUserAction(ids []int64, action string, days int) (int, err
 	case "extend":
 		if days <= 0 {
 			return 0, invalid("укажите число дней для продления")
+		}
+		if days > maxExtendDays {
+			return 0, invalid("слишком большой срок продления (макс. %d дней)", maxExtendDays)
 		}
 		affected = m.bulkExtendExpiry(ids, days)
 	default:
