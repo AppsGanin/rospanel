@@ -8,26 +8,51 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
+func validDate(s string) bool {
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
+}
+
 // dateRange reads ?from=&to= (YYYY-MM-DD), defaulting to the last 30 days in the
-// operator's configured timezone.
-func (rt *Router) dateRange(r *http.Request) (from, to string) {
+// operator's configured timezone. Malformed or reversed ranges get a 400 (rather
+// than silently returning empty/garbage results); on error it returns ok=false
+// after writing the response.
+func (rt *Router) dateRange(w http.ResponseWriter, r *http.Request) (from, to string, ok bool) {
+	now := time.Now().In(rt.mgr.Location())
 	to = r.URL.Query().Get("to")
 	from = r.URL.Query().Get("from")
-	now := time.Now().In(rt.mgr.Location())
 	if to == "" {
 		to = now.Format("2006-01-02")
+	} else if !validDate(to) {
+		writeErr(w, http.StatusBadRequest, "неверный параметр to (ожидается YYYY-MM-DD)")
+		return "", "", false
 	}
 	if from == "" {
 		from = now.AddDate(0, 0, -29).Format("2006-01-02")
+	} else if !validDate(from) {
+		writeErr(w, http.StatusBadRequest, "неверный параметр from (ожидается YYYY-MM-DD)")
+		return "", "", false
 	}
-	return from, to
+	if from > to { // lexicographic ordering is correct for zero-padded YYYY-MM-DD
+		writeErr(w, http.StatusBadRequest, "from не может быть позже to")
+		return "", "", false
+	}
+	return from, to, true
 }
 
 func (rt *Router) statsSeries(w http.ResponseWriter, r *http.Request) {
-	from, to := rt.dateRange(r)
+	from, to, ok := rt.dateRange(w, r)
+	if !ok {
+		return
+	}
 	var userID int64
 	if v := r.URL.Query().Get("user_id"); v != "" {
-		userID, _ = strconv.ParseInt(v, 10, 64)
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 0 {
+			writeErr(w, http.StatusBadRequest, "неверный user_id")
+			return
+		}
+		userID = id
 	}
 	pts, err := rt.mgr.StatsSeries(userID, from, to)
 	if err != nil {
@@ -41,7 +66,10 @@ func (rt *Router) statsSeries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {
-	from, to := rt.dateRange(r)
+	from, to, ok := rt.dateRange(w, r)
+	if !ok {
+		return
+	}
 	totals, err := rt.mgr.StatsByUser(from, to)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

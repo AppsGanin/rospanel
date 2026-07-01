@@ -6,6 +6,54 @@ import (
 	"strings"
 )
 
+// User-input bounds. These guard the DB and the config/subscription/link
+// generators against negative, overflowing, or absurdly large values.
+const (
+	maxUserNameLen = 128
+	maxExtendDays  = 3650 // 10 years — past any real plan, and blocks days*86400 int64 overflow
+	// maxDataLimit caps a quota at 1 EiB so downstream byte math and header
+	// formatting can't overflow; 0 stays "unlimited".
+	maxDataLimit = int64(1) << 60
+	// maxExpireAt caps an absolute expiry timestamp far in the future (year ~6857).
+	maxExpireAt = int64(1) << 37
+)
+
+// validateUserLimits rejects out-of-range quota/expiry/device values before they
+// reach the store.
+func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
+	switch {
+	case dataLimit < 0 || dataLimit > maxDataLimit:
+		return invalid("некорректный лимит трафика")
+	case expireAt < 0 || expireAt > maxExpireAt:
+		return invalid("некорректная дата истечения")
+	case deviceLimit < 0:
+		return invalid("лимит устройств не может быть отрицательным")
+	}
+	return nil
+}
+
+// cleanUserName trims, non-empty-checks, and length-caps a display name.
+func cleanUserName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", invalid("укажите имя")
+	}
+	if len([]rune(name)) > maxUserNameLen {
+		return "", invalid("имя слишком длинное (макс. %d символов)", maxUserNameLen)
+	}
+	return name, nil
+}
+
+// truncateName trims and hard-caps a name without erroring — for self-registration,
+// where truncating a long Telegram display name beats rejecting the sign-up.
+func truncateName(name string) string {
+	name = strings.TrimSpace(name)
+	if r := []rune(name); len(r) > maxUserNameLen {
+		return string(r[:maxUserNameLen])
+	}
+	return name
+}
+
 // validEmail reports whether s is a single, well-formed e-mail address. It uses
 // net/mail (RFC 5322) and additionally requires a dotted domain part so inputs
 // like "a@localhost" are rejected — ACME CAs won't accept those.

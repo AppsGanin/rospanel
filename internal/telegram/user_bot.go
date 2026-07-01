@@ -24,7 +24,19 @@ type UserService struct {
 	clientToken string
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
+
+	regMu     sync.Mutex
+	regWindow time.Time // start of the current registration rate-limit window
+	regCount  int       // successful registrations in the current window
 }
+
+// Open-registration rate limit: the user bot is public, and each sign-up creates a
+// DB row + an Xray reconcile, so cap how many accounts can be minted per window
+// across ALL chats (the one-account-per-chat guard already bounds a single chat).
+const (
+	regWindow       = time.Minute
+	maxRegPerWindow = 20
+)
 
 // NewUser builds the public user bot. Call Run to start polling.
 func NewUser(panel Panel, st *store.Store) *UserService {
@@ -49,6 +61,23 @@ func (s *UserService) setPending(chatID int64, state string) {
 	s.mu.Lock()
 	s.pending[chatID] = state
 	s.mu.Unlock()
+}
+
+// allowRegistration rate-limits open sign-ups globally (fixed window) so a flood of
+// Telegram accounts can't mass-create VPN users. Returns false when the current
+// window is exhausted.
+func (s *UserService) allowRegistration(now time.Time) bool {
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	if now.Sub(s.regWindow) >= regWindow {
+		s.regWindow = now
+		s.regCount = 0
+	}
+	if s.regCount >= maxRegPerWindow {
+		return false
+	}
+	s.regCount++
+	return true
 }
 
 func (s *UserService) takePending(chatID int64) string {
@@ -236,6 +265,10 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	}
 	if !set.TGUserRegEnabled {
 		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
+		return
+	}
+	if !s.allowRegistration(time.Now()) {
+		s.send(ctx, client, chatID, "Сейчас слишком много регистраций. Попробуйте через минуту.")
 		return
 	}
 	// CreateRegisteredUser applies the trial/free plan when billing is on; falls
