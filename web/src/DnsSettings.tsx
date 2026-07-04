@@ -5,19 +5,44 @@ import { useDirtyForm } from "./hooks";
 import { notifyError, notifySuccess } from "./notify";
 import { Card, CenterLoader, Checkbox, SaveBar } from "./ui";
 
+// sel holds the KEYS of the ticked presets (not the server strings), so one tick
+// can contribute a primary+secondary pair.
 type DnsState = { sel: string[]; custom: string };
 
-// Popular Xray DNS resolvers offered as checkboxes.
-const POPULAR_DNS: { value: string; label: string }[] = [
-  { value: "1.1.1.1", label: "Cloudflare — 1.1.1.1" },
-  { value: "https://cloudflare-dns.com/dns-query", label: "Cloudflare DoH" },
-  { value: "8.8.8.8", label: "Google — 8.8.8.8" },
-  { value: "https://dns.google/dns-query", label: "Google DoH" },
-  { value: "9.9.9.9", label: "Quad9 — 9.9.9.9" },
-  { value: "94.140.14.14", label: "AdGuard — 94.140.14.14" },
-  { value: "77.88.8.8", label: "Яндекс — 77.88.8.8" },
+// Popular Xray DNS resolvers offered as checkboxes. Each preset contributes its
+// servers IN ORDER — primary first, then the secondary/fallback — so ticking one
+// gives redundancy in a single click. Xray queries them in the listed order.
+type DnsPreset = { key: string; label: string; servers: string[] };
+const POPULAR_DNS: DnsPreset[] = [
+  { key: "cloudflare", label: "Cloudflare — 1.1.1.1 / 1.0.0.1", servers: ["1.1.1.1", "1.0.0.1"] },
+  { key: "cloudflare-doh", label: "Cloudflare DoH", servers: ["https://cloudflare-dns.com/dns-query"] },
+  { key: "google", label: "Google — 8.8.8.8 / 8.8.4.4", servers: ["8.8.8.8", "8.8.4.4"] },
+  { key: "google-doh", label: "Google DoH", servers: ["https://dns.google/dns-query"] },
+  { key: "quad9", label: "Quad9 — 9.9.9.9 / 149.112.112.112", servers: ["9.9.9.9", "149.112.112.112"] },
+  { key: "adguard", label: "AdGuard — 94.140.14.14 / 94.140.15.15", servers: ["94.140.14.14", "94.140.15.15"] },
+  { key: "yandex", label: "Яндекс — 77.88.8.8 / 77.88.8.1", servers: ["77.88.8.8", "77.88.8.1"] },
+  { key: "xbox-doh", label: "Xbox DNS — DoH", servers: ["https://xbox-dns.ru/dns-query"] },
+  { key: "xbox", label: "Xbox DNS — 111.88.96.50 / 111.88.96.51", servers: ["111.88.96.50", "111.88.96.51"] },
+  { key: "geohide-doh", label: "GeoHide — DoH", servers: ["https://dns.geohide.ru:444/dns-query"] },
+  { key: "geohide", label: "GeoHide — 45.155.204.190 / 37.230.192.51", servers: ["45.155.204.190", "37.230.192.51"] },
 ];
-const POPULAR_DNS_SET = new Set(POPULAR_DNS.map((d) => d.value));
+
+// serversForKeys flattens the selected presets' servers in preset order, deduping
+// (a server can't appear twice in the Xray DNS list).
+function serversForKeys(keys: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of POPULAR_DNS) {
+    if (!keys.includes(p.key)) continue;
+    for (const s of p.servers) {
+      if (!seen.has(s)) {
+        seen.add(s);
+        out.push(s);
+      }
+    }
+  }
+  return out;
+}
 
 // isValidDns mirrors the backend check: "localhost", a scheme URL, a bare IP, or
 // IP:port.
@@ -56,10 +81,15 @@ export function DnsSettings() {
           .split(/[\n,]/)
           .map((x) => x.trim())
           .filter(Boolean);
-        const initSel = items.filter((x) => POPULAR_DNS_SET.has(x));
-        const initCustom = items
-          .filter((x) => !POPULAR_DNS_SET.has(x))
-          .join("\n");
+        const itemSet = new Set(items);
+        // A preset is selected when ALL of its servers are present.
+        const initSel = POPULAR_DNS.filter((p) =>
+          p.servers.every((srv) => itemSet.has(srv)),
+        ).map((p) => p.key);
+        // Anything not claimed by a selected preset goes to the custom box (so it's
+        // never lost — e.g. a lone server whose pair isn't fully present).
+        const claimed = new Set(serversForKeys(initSel));
+        const initCustom = items.filter((x) => !claimed.has(x)).join("\n");
         load({ sel: initSel, custom: initCustom });
       })
       .catch(() => {})
@@ -67,10 +97,12 @@ export function DnsSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const toggle = (v: string) =>
+  const toggle = (key: string) =>
     setDraft((cur) => ({
       ...cur,
-      sel: cur.sel.includes(v) ? cur.sel.filter((x) => x !== v) : [...cur.sel, v],
+      sel: cur.sel.includes(key)
+        ? cur.sel.filter((x) => x !== key)
+        : [...cur.sel, key],
     }));
 
   const norm = (a: string[]) => [...a].sort().join("|");
@@ -87,8 +119,11 @@ export function DnsSettings() {
       notifyError(`Неверный DNS-адрес: ${bad}`);
       return;
     }
+    // Preset servers first (primary→secondary), then custom; dedupe across both.
+    const all = [...serversForKeys(sel), ...customList];
+    const deduped = [...new Set(all)];
     apply(async () => {
-      await setXrayDNS([...sel, ...customList].join("\n"));
+      await setXrayDNS(deduped.join("\n"));
       commit();
       notifySuccess("DNS сохранён");
     });
@@ -101,15 +136,15 @@ export function DnsSettings() {
       <Card className="p-4">
         <h3 className="mb-1 font-bold text-ink">DNS Серверы</h3>
         <p className="mb-3 text-sm text-ink-muted">
-          Отметьте DNS-серверы, которые использует Xray. Пусто — DNS по
-          умолчанию.
+          Отметьте DNS-серверы, которые использует Xray. Один пункт добавляет
+          основной и резервный адрес. Пусто — DNS по умолчанию.
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {POPULAR_DNS.map((d) => (
             <Checkbox
-              key={d.value}
-              checked={sel.includes(d.value)}
-              onChange={() => toggle(d.value)}
+              key={d.key}
+              checked={sel.includes(d.key)}
+              onChange={() => toggle(d.key)}
               label={d.label}
             />
           ))}

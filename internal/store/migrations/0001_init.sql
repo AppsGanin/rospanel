@@ -68,8 +68,10 @@ CREATE TABLE settings (
     sub_routing_mihomo  TEXT    NOT NULL DEFAULT 'https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/MIHOMO/template_remnawave.yaml',
     sub_update_interval INTEGER NOT NULL DEFAULT 1,
 
-    -- Xray DNS servers (defaults to Cloudflare + Google, newline-separated).
-    xray_dns          TEXT    NOT NULL DEFAULT ('1.1.1.1' || char(10) || '8.8.8.8'),
+    -- Xray DNS servers (default = Cloudflare primary+secondary pair; newline-separated).
+    -- DBs created on the older Cloudflare+Google default are migrated forward by
+    -- 0012_dns_default.
+    xray_dns          TEXT    NOT NULL DEFAULT ('1.1.1.1' || char(10) || '1.0.0.1'),
 
     -- Cloudflare WARP outbound (WireGuard), provisioned on first enable.
     warp_enabled      INTEGER NOT NULL DEFAULT 0,
