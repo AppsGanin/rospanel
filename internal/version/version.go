@@ -4,4 +4,4 @@ package version
 // Version is the current release, kept in sync automatically by release-please
 // (via the extra-files entry in release-please-config.json). The trailing
 // annotation comment is the marker release-please rewrites on each release.
-const Version = "0.8.1" // x-release-please-version
+const Version = "0.9.0" // x-release-please-version
