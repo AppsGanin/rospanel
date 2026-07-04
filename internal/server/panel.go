@@ -353,6 +353,13 @@ var mustChangeAllowed = map[string]bool{
 	"/api/backup/info":         true,
 	"/api/backup/inspect":      true,
 	"/api/restore":             true,
+	// The first-run wizard reads TLS status on mount (before the password is
+	// changed, so must_change is still set) to show the correct address step —
+	// "already on domain <host>" vs "over IP". Without this it 403s, the wizard
+	// silently falls back to the IP wording and claims a self-signed cert even when
+	// a real domain cert is live. Read-only; the wizard's POST /api/tls (issue cert)
+	// runs later, after the password step has already cleared must_change.
+	"/api/tls": true,
 }
 
 // requireAuth rejects requests without a valid session. Because this only runs
