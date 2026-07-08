@@ -3,6 +3,7 @@ package model
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -116,6 +117,127 @@ type PaymentOrder struct {
 	PayURL     string `json:"pay_url,omitempty"`     // hosted payment URL for the user
 	CreatedAt  int64  `json:"created_at"`
 	PaidAt     int64  `json:"paid_at"`
+}
+
+// APIKey is a named credential for the external REST API. The raw key is only
+// ever returned once (at creation, in RawKey); the stored record keeps just its
+// HMAC hash and the clear Prefix so the operator can identify it in the UI.
+type APIKey struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Prefix     string `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
+	CreatedAt  int64  `json:"created_at"`        // unix seconds
+	LastUsedAt int64  `json:"last_used_at"`      // unix seconds, 0 = never used
+	RevokedAt  int64  `json:"revoked_at"`        // unix seconds, 0 = active
+	RawKey     string `json:"raw_key,omitempty"` // populated only on creation
+}
+
+// Active reports whether the key has not been revoked.
+func (k APIKey) Active() bool { return k.RevokedAt == 0 }
+
+// Webhook is an outbound HTTP endpoint the panel POSTs lifecycle events to. The
+// Secret is a symmetric key both sides hold: the panel signs each delivery with
+// HMAC-SHA256 and the receiver verifies it (so unlike an API key it stays
+// readable in the UI). Events is the subscribed set; empty ⇒ every event.
+type Webhook struct {
+	ID            int64    `json:"id"`
+	URL           string   `json:"url"`
+	Secret        string   `json:"secret"`
+	Events        []string `json:"events"`
+	Enabled       bool     `json:"enabled"`
+	CreatedAt     int64    `json:"created_at"`
+	LastStatus    int      `json:"last_status"`     // last HTTP status (0 = never/connection error)
+	LastAttemptAt int64    `json:"last_attempt_at"` // unix seconds, 0 = never delivered
+	LastError     string   `json:"last_error"`      // last failure reason ("" = ok/never)
+}
+
+// Subscribed reports whether this webhook wants the given event. An empty Events
+// set means "all events".
+func (h Webhook) Subscribed(event string) bool {
+	if len(h.Events) == 0 {
+		return true
+	}
+	for _, e := range h.Events {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
+// Webhook event keys. Stable strings sent in the payload's "event" field and the
+// X-RosPanel-Event header; never renumbered/renamed once shipped.
+const (
+	WebhookUserCreated      = "user.created"        // created via panel or API
+	WebhookUserDeleted      = "user.deleted"        //
+	WebhookUserRegistered   = "user.registered"     // self-registered via the user bot
+	WebhookUserExpired      = "user.expired"        // subscription lapsed
+	WebhookUserLimited      = "user.limited"        // traffic quota exhausted
+	WebhookUserDeviceLimit  = "user.device_limited" //
+	WebhookPaymentCreated   = "payment.created"     // order opened
+	WebhookPaymentPaid      = "payment.paid"        // order paid, plan applied
+	WebhookPaymentCancelled = "payment.cancelled"   //
+)
+
+// WebhookEventCatalog is the stable key→label list the settings UI iterates over
+// (display order). Adding an event appends here.
+var WebhookEventCatalog = []struct{ Key, Label string }{
+	{WebhookUserCreated, "Пользователь создан"},
+	{WebhookUserDeleted, "Пользователь удалён"},
+	{WebhookUserRegistered, "Саморегистрация"},
+	{WebhookUserExpired, "Подписка истекла"},
+	{WebhookUserLimited, "Исчерпан трафик"},
+	{WebhookUserDeviceLimit, "Превышен лимит устройств"},
+	{WebhookPaymentCreated, "Заказ создан"},
+	{WebhookPaymentPaid, "Оплачено"},
+	{WebhookPaymentCancelled, "Заказ отменён"},
+}
+
+// ValidWebhookEvent reports whether k is a known webhook event key.
+func ValidWebhookEvent(k string) bool {
+	for _, e := range WebhookEventCatalog {
+		if e.Key == k {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidWebhookURL checks a webhook target: an http or https URL with a host.
+// Unlike the SSRF-guarded fetch surfaces (proxy lists, routing templates, whose
+// URLs may come from less-trusted places), a webhook target is set by the
+// authenticated admin and only ever receives a blind POST, so private/localhost
+// hosts are allowed — the receiver is often the operator's own internal service.
+func ValidWebhookURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("неверный URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("URL должен начинаться с http:// или https://")
+	}
+	if u.Host == "" {
+		return fmt.Errorf("не указан хост")
+	}
+	return nil
+}
+
+// ProviderStat is paid-order revenue for one payment provider ("" = manual).
+type ProviderStat struct {
+	Provider string `json:"provider"`
+	Count    int    `json:"count"`
+	Sum      int    `json:"sum"` // rubles
+}
+
+// PaymentStats is the revenue dashboard shown on the Payments page.
+type PaymentStats struct {
+	TotalPaid    int            `json:"total_paid"`    // all-time paid revenue (₽)
+	PaidCount    int            `json:"paid_count"`    // number of paid orders
+	EarnedToday  int            `json:"earned_today"`  // paid revenue since local midnight
+	EarnedMonth  int            `json:"earned_month"`  // paid revenue since the 1st (local)
+	PendingCount int            `json:"pending_count"` // orders awaiting payment
+	PendingSum   int            `json:"pending_sum"`   // their total (₽)
+	ByProvider   []ProviderStat `json:"by_provider"`   // paid revenue split by provider
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
@@ -291,6 +413,12 @@ type Settings struct {
 	CryptoBotToken       string `json:"-"`
 	CryptoBotTestnet     bool   `json:"-"` // use the CryptoBot testnet endpoint
 	PaymentWebhookSecret string `json:"-"`
+
+	// External REST API: the stable, unguessable URL segment the API is mounted
+	// under (/<api_path>/v1/...). Empty ⇒ the API surface is disabled. Kept
+	// separate from PanelSecretPath so rotating the panel secret never breaks
+	// integrations. Keys themselves live in the api_keys table.
+	APIPath string `json:"-"`
 
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 

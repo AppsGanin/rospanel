@@ -62,6 +62,47 @@ func (s *Store) CountUsersOnPlan(planID int64) (int, error) {
 	return n, err
 }
 
+// PaidByProvider returns paid-order revenue grouped by provider ("" = manual),
+// highest-earning first. Queried against payment_orders directly (no user join) so
+// revenue from since-deleted users is still counted.
+func (s *Store) PaidByProvider() ([]model.ProviderStat, error) {
+	rows, err := s.db.Query(`
+		SELECT provider, count(*), COALESCE(sum(amount_rub), 0)
+		FROM payment_orders WHERE status = 'paid'
+		GROUP BY provider ORDER BY sum(amount_rub) DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ProviderStat
+	for rows.Next() {
+		var p model.ProviderStat
+		if err := rows.Scan(&p.Provider, &p.Count, &p.Sum); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// PaidSumSince returns the total paid revenue whose paid_at is at or after since.
+func (s *Store) PaidSumSince(since int64) (int, error) {
+	var v int
+	err := s.db.QueryRow(
+		`SELECT COALESCE(sum(amount_rub), 0) FROM payment_orders WHERE status = 'paid' AND paid_at >= ?`,
+		since,
+	).Scan(&v)
+	return v, err
+}
+
+// PendingTotals returns the count and rouble total of orders awaiting payment.
+func (s *Store) PendingTotals() (count, sum int, err error) {
+	err = s.db.QueryRow(
+		`SELECT count(*), COALESCE(sum(amount_rub), 0) FROM payment_orders WHERE status = 'pending'`,
+	).Scan(&count, &sum)
+	return count, sum, err
+}
+
 func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {

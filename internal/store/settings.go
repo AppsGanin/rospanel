@@ -47,7 +47,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       billing_trial_plan_id, billing_payment_note,
 		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
 		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
-		       tg_admin_events
+		       tg_admin_events, api_path
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -76,7 +76,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
 		&yooEn, &st.YooKassaShopID, &st.YooKassaSecretKey, &yooTest,
 		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
-		&st.TGAdminEvents,
+		&st.TGAdminEvents, &st.APIPath,
 	)
 	if err != nil {
 		return nil, err
@@ -311,6 +311,9 @@ func (s *Store) SetTLS(host, sni, mode, certPath, keyPath string) error {
 
 // SetSecretPath persists the hidden panel path segment.
 func (s *Store) SetSecretPath(p string) error { return s.setSetting("panel_secret_path", p) }
+
+// SetAPIPath persists the external-API URL segment (empty disables the surface).
+func (s *Store) SetAPIPath(p string) error { return s.setSetting("api_path", p) }
 
 // SetACMEProvider persists the ACME CA selection and (for ZeroSSL) the External
 // Account Binding credentials. An empty provider defaults to "letsencrypt".

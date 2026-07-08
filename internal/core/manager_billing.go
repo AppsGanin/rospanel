@@ -113,6 +113,7 @@ func (m *Manager) CreateRegisteredUser(name string) (*model.User, error) {
 			msg += "\nТариф: " + escHTML(plan)
 		}
 		m.notifyAdminEvent(model.AdminEventRegistered, msg)
+		m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
 	}
 	return u, err
 }
@@ -293,6 +294,7 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
+	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, msg, nil
 }
 
@@ -313,15 +315,65 @@ func (m *Manager) ConfirmPayment(orderID int64) error {
 		return err
 	}
 	logInfo("billing: order %d confirmed, user %d plan %d", orderID, order.UserID, order.PlanID)
+	order.Status, order.PaidAt = "paid", now
+	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return nil
 }
 
 func (m *Manager) CancelPayment(orderID int64) error {
-	return m.store.SetPaymentOrderStatus(orderID, "cancelled", 0)
+	if err := m.store.SetPaymentOrderStatus(orderID, "cancelled", 0); err != nil {
+		return err
+	}
+	// Best-effort payload enrichment: re-read the (now cancelled) order.
+	if order, err := m.store.GetPaymentOrder(orderID); err == nil {
+		m.EmitWebhook(model.WebhookPaymentCancelled, order)
+	} else {
+		m.EmitWebhook(model.WebhookPaymentCancelled, map[string]any{"id": orderID})
+	}
+	return nil
 }
 
 func (m *Manager) ListPaymentOrders(status string) ([]model.PaymentOrder, error) {
 	return m.store.ListPaymentOrders(status, 100)
+}
+
+// PaymentStats assembles the revenue dashboard: all-time and per-provider paid
+// totals, revenue since local midnight / the 1st of the month, and the pending
+// backlog. Day/month boundaries use the operator's configured timezone.
+func (m *Manager) PaymentStats() (*model.PaymentStats, error) {
+	byProvider, err := m.store.PaidByProvider()
+	if err != nil {
+		return nil, err
+	}
+	var total, count int
+	for _, p := range byProvider {
+		total += p.Sum
+		count += p.Count
+	}
+	now := time.Now().In(m.loc())
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, m.loc()).Unix()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, m.loc()).Unix()
+	today, err := m.store.PaidSumSince(dayStart)
+	if err != nil {
+		return nil, err
+	}
+	month, err := m.store.PaidSumSince(monthStart)
+	if err != nil {
+		return nil, err
+	}
+	pendingCount, pendingSum, err := m.store.PendingTotals()
+	if err != nil {
+		return nil, err
+	}
+	return &model.PaymentStats{
+		TotalPaid:    total,
+		PaidCount:    count,
+		EarnedToday:  today,
+		EarnedMonth:  month,
+		PendingCount: pendingCount,
+		PendingSum:   pendingSum,
+		ByProvider:   byProvider,
+	}, nil
 }
 
 // PurchasablePlans lists paid plans a user can buy (excludes free, excludes current if not expired).

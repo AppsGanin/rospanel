@@ -458,11 +458,6 @@ export function TelegramSettings() {
         description="Какие события админ-бот присылает в привязанные чаты."
       >
         <div className="flex flex-col gap-3">
-          {!enabled && (
-            <p className="text-sm text-ink-muted">
-              Включите админ-бота выше, чтобы получать уведомления.
-            </p>
-          )}
           {ADMIN_EVENTS.map((e) => (
             <div
               key={e.key}

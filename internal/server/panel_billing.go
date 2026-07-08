@@ -7,6 +7,19 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
+// paymentStats returns the revenue dashboard for the Payments page.
+func (rt *Router) paymentStats(w http.ResponseWriter, _ *http.Request) {
+	stats, err := rt.mgr.PaymentStats()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if stats.ByProvider == nil {
+		stats.ByProvider = []model.ProviderStat{}
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 	set, err := rt.mgr.Settings()
 	if err != nil {

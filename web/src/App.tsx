@@ -22,6 +22,7 @@ function AppInner() {
   const [state, setState] = useState<AuthState>('loading')
   const [username, setUsername] = useState('')
   const [version, setVersion] = useState('')
+  const [billingEnabled, setBillingEnabled] = useState(false)
   const [agreed, setAgreed] = useState(agreementAccepted)
   const [showAgreement, setShowAgreement] = useState(false)
   const [showDonate, setShowDonate] = useState(false)
@@ -31,6 +32,7 @@ function AppInner() {
       .then((m) => {
         setUsername(m.username)
         setVersion(m.version)
+        setBillingEnabled(!!m.billing_enabled)
         setState(m.setup_done ? 'in' : 'setup')
       })
       .catch(() => setState('out'))
@@ -71,6 +73,7 @@ function AppInner() {
       <Dashboard
         username={username}
         version={version}
+        billingEnabled={billingEnabled}
         onLogout={() => setState('out')}
         onShowAgreement={openAgreement}
         onShowDonate={openDonate}

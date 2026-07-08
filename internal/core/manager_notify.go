@@ -77,13 +77,16 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 		case model.StatusExpired:
 			m.notifyAdminEvent(model.AdminEventExpired, fmt.Sprintf(
 				"⌛ <b>Подписка истекла</b>\nПользователь: %s", escHTML(u.Name)))
+			m.EmitWebhook(model.WebhookUserExpired, userEventData(u))
 		case model.StatusLimited:
 			m.notifyAdminEvent(model.AdminEventLimited, fmt.Sprintf(
 				"📉 <b>Исчерпан трафик</b>\nПользователь: %s", escHTML(u.Name)))
+			m.EmitWebhook(model.WebhookUserLimited, userEventData(u))
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 				"📵 <b>Превышен лимит устройств</b>\nПользователь: %s\nАктивных устройств: %d из %d",
 				escHTML(u.Name), u.ActiveDevices, u.DeviceLimit))
+			m.EmitWebhook(model.WebhookUserDeviceLimit, userEventData(u))
 		}
 	}
 }

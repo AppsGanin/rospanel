@@ -18,6 +18,7 @@ import {
   Button,
   CenterLoader,
   Code,
+  SaveBar,
   Select,
   SettingCard,
   Switch,
@@ -48,17 +49,21 @@ const DECOY_LABELS: Record<string, string> = {
 };
 
 export function GeneralSettings() {
-  const [loaded, setLoaded] = useState(false);
-  const [timezone, setTimezone] = useState("");
-  const [settings, setSettings] = useState<SettingsInfo | null>(null);
-  const [decoy, setDecoyState] = useState("");
-  const [pm, setPm] = useState<ProxyMode>({
+  const EMPTY_PM: ProxyMode = {
     enabled: false,
     type: "socks",
     port: 1080,
     user: "",
     pass: "",
-  });
+  };
+  const [loaded, setLoaded] = useState(false);
+  const [timezone, setTimezone] = useState("");
+  const [savedTz, setSavedTz] = useState("");
+  const [settings, setSettings] = useState<SettingsInfo | null>(null);
+  const [decoy, setDecoyState] = useState("");
+  const [savedDecoy, setSavedDecoy] = useState("");
+  const [pm, setPm] = useState<ProxyMode>(EMPTY_PM);
+  const [savedPm, setSavedPm] = useState<ProxyMode>(EMPTY_PM);
   const [version, setVersion] = useState("");
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -74,34 +79,68 @@ export function GeneralSettings() {
     Promise.all([
       getMe()
         .then((m) => {
-          setTimezone(m.timezone || browserTimezone());
+          const tz = m.timezone || browserTimezone();
+          setTimezone(tz);
+          setSavedTz(tz);
           setVersion(m.version);
         })
-        .catch(() => setTimezone(browserTimezone())),
+        .catch(() => {
+          setTimezone(browserTimezone());
+          setSavedTz(browserTimezone());
+        }),
       getSettings()
         .then((s) => {
           setSettings(s);
-          setDecoyState(s.decoy_template || "coming-soon");
-          setPm({
+          const dec = s.decoy_template || "coming-soon";
+          setDecoyState(dec);
+          setSavedDecoy(dec);
+          const pmv: ProxyMode = {
             enabled: s.proxy_mode_enabled,
             type: s.proxy_mode_type || "socks",
             port: s.proxy_mode_port || 1080,
             user: s.proxy_mode_user || "",
             pass: s.proxy_mode_pass || "",
-          });
+          };
+          setPm(pmv);
+          setSavedPm(pmv);
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
   }, []);
 
-  const saveTimezone = () =>
+  const pmDirty = JSON.stringify(pm) !== JSON.stringify(savedPm);
+  const dirty = timezone !== savedTz || decoy !== savedDecoy || pmDirty;
+  // Proxy mode without credentials is an open proxy — block saving it.
+  const saveBlocked = pm.enabled && (!pm.user.trim() || !pm.pass);
+
+  // save persists whatever changed (timezone / decoy / proxy mode) behind the
+  // single bottom SaveBar. Update-check and secret regen stay immediate actions.
+  const save = () =>
     run(
       async () => {
-        await setupTimezone(timezone);
-        notifySuccess("Часовой пояс сохранён");
+        if (timezone !== savedTz) {
+          await setupTimezone(timezone);
+          setSavedTz(timezone);
+        }
+        if (decoy !== savedDecoy) {
+          await setDecoy(decoy);
+          setSettings((s) => (s ? { ...s, decoy_template: decoy } : s));
+          setSavedDecoy(decoy);
+        }
+        if (pmDirty) {
+          await setProxyMode(pm);
+          setSavedPm(pm);
+        }
+        notifySuccess("Настройки сохранены");
       },
-      { key: "tz" },
+      { key: "save" },
     );
+
+  const cancel = () => {
+    setTimezone(savedTz);
+    setDecoyState(savedDecoy);
+    setPm(savedPm);
+  };
 
   const doRegenSecret = async () => {
     const ok = await confirm({
@@ -119,25 +158,6 @@ export function GeneralSettings() {
       { key: "secret" },
     );
   };
-
-  const saveDecoy = () =>
-    run(
-      async () => {
-        await setDecoy(decoy);
-        setSettings((s) => (s ? { ...s, decoy_template: decoy } : s));
-        notifySuccess("Заглушка обновлена");
-      },
-      { key: "decoy" },
-    );
-
-  const savePM = () =>
-    run(
-      async () => {
-        await setProxyMode(pm);
-        notifySuccess(pm.enabled ? "Режим прокси включён" : "Режим прокси выключен");
-      },
-      { key: "pm" },
-    );
 
   const doCheckUpdate = () =>
     run(
@@ -232,40 +252,21 @@ export function GeneralSettings() {
         title="Часовой пояс"
         description="Граница суток в статистике трафика."
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="sm:flex-1">
-            <Select
-              data={tzList}
-              value={timezone}
-              onChange={setTimezone}
-              searchable
-            />
-          </div>
-          <Button loading={isBusy("tz")} onClick={saveTimezone}>
-            Сохранить
-          </Button>
-        </div>
+        <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
       </SettingCard>
 
       <SettingCard
         title="Сайт-заглушка"
         description="Что видят посторонние по любому адресу, кроме секретного пути панели."
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="sm:flex-1">
-            <Select
-              data={(settings?.decoy_templates ?? []).map((t) => ({
-                value: t,
-                label: DECOY_LABELS[t] ?? t,
-              }))}
-              value={decoy}
-              onChange={setDecoyState}
-            />
-          </div>
-          <Button loading={isBusy("decoy")} onClick={saveDecoy}>
-            Применить
-          </Button>
-        </div>
+        <Select
+          data={(settings?.decoy_templates ?? []).map((t) => ({
+            value: t,
+            label: DECOY_LABELS[t] ?? t,
+          }))}
+          value={decoy}
+          onChange={setDecoyState}
+        />
       </SettingCard>
 
       <SettingCard
@@ -328,15 +329,6 @@ export function GeneralSettings() {
         <p className="mt-2 text-xs text-ink-muted">
           Не забудь открыть порт {pm.port} в файрволе сервера.
         </p>
-        <div className="mt-3">
-          <Button
-            loading={isBusy("pm")}
-            disabled={pm.enabled && (!pm.user.trim() || !pm.pass)}
-            onClick={savePM}
-          >
-            Сохранить
-          </Button>
-        </div>
       </SettingCard>
 
       <SettingCard
@@ -355,6 +347,14 @@ export function GeneralSettings() {
           Перегенерировать
         </Button>
       </SettingCard>
+
+      <SaveBar
+        dirty={dirty}
+        busy={isBusy("save")}
+        saveDisabled={saveBlocked}
+        onSave={save}
+        onCancel={cancel}
+      />
       {confirmNode}
     </div>
   );

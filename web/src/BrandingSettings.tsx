@@ -8,7 +8,7 @@ import {
 import { useBrand } from "./brand";
 import { useAction } from "./hooks";
 import { notifySuccess } from "./notify";
-import { Button, SettingCard, TextInput } from "./ui";
+import { Button, SaveBar, SettingCard, TextInput } from "./ui";
 
 // Curated accent swatches; the accent also drives the whole brand-* ramp.
 const ACCENT_PRESETS = [
@@ -82,7 +82,9 @@ function ColorField({
 export function BrandingSettings() {
   const brand = useBrand();
   const [name, setName] = useState("");
+  const [savedName, setSavedName] = useState("");
   const [theme, setTheme] = useState<ThemeColors>(brand.default_theme);
+  const [savedTheme, setSavedTheme] = useState<ThemeColors>(brand.default_theme);
   const [init, setInit] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { isBusy, run } = useAction();
@@ -90,8 +92,11 @@ export function BrandingSettings() {
   // Seed local fields from the loaded branding once.
   useEffect(() => {
     if (brand.loaded && !init) {
-      setName(brand.panel_name === brand.default_name ? "" : brand.panel_name);
+      const nm = brand.panel_name === brand.default_name ? "" : brand.panel_name;
+      setName(nm);
+      setSavedName(nm);
       setTheme(brand.theme);
+      setSavedTheme(brand.theme);
       setInit(true);
     }
   }, [brand.loaded, brand.panel_name, brand.theme, brand.default_name, init]);
@@ -100,6 +105,14 @@ export function BrandingSettings() {
     setTheme((t) => ({ ...t, [key]: v }));
 
   const resetAll = () => setTheme(brand.default_theme);
+
+  const dirty =
+    name !== savedName || JSON.stringify(theme) !== JSON.stringify(savedTheme);
+
+  const cancel = () => {
+    setName(savedName);
+    setTheme(savedTheme);
+  };
 
   const save = () =>
     run(
@@ -115,6 +128,8 @@ export function BrandingSettings() {
         };
         await saveBranding(name.trim(), clean);
         await brand.refresh();
+        setSavedName(name.trim());
+        setSavedTheme(clean);
         notifySuccess("Брендинг сохранён");
       },
       { key: "brand" },
@@ -145,6 +160,7 @@ export function BrandingSettings() {
     );
 
   return (
+    <>
     <SettingCard
       title="Брендинг"
       description="Название, цвета и логотип панели. Применяется и на странице подписки."
@@ -243,12 +259,15 @@ export function BrandingSettings() {
           </p>
         </div>
 
-        <div>
-          <Button loading={isBusy("brand")} onClick={save}>
-            Сохранить
-          </Button>
-        </div>
       </div>
     </SettingCard>
+
+    <SaveBar
+      dirty={dirty}
+      busy={isBusy("brand")}
+      onSave={save}
+      onCancel={cancel}
+    />
+    </>
   );
 }
