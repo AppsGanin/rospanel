@@ -20,9 +20,12 @@ import (
 // identifier used to toggle the protocol; Enabled reports whether it currently
 // appears in user subscriptions.
 type ConnInfo struct {
-	Key       string `json:"key"`
-	Name      string `json:"name"`
-	Transport string `json:"transport"`
+	Key string `json:"key"`
+	// Name is the default protocol label (shown as the input placeholder).
+	Name string `json:"name"`
+	// DisplayName is the admin-configured custom node name (empty ⇒ use Name).
+	DisplayName string `json:"display_name"`
+	Transport   string `json:"transport"`
 	Security  string `json:"security"`
 	Port      string `json:"port"`
 	Note      string `json:"note"`
@@ -95,6 +98,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 			{
 				Key:         "vless",
 				Name:        model.ProtoVLESS,
+				DisplayName: set.VLESSName,
 				Transport:   "TCP (XTLS-Vision)",
 				Security:    "TLS",
 				Port:        strconv.Itoa(vlessPort),
@@ -105,6 +109,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 			{
 				Key:         "reality",
 				Name:        model.ProtoReality,
+				DisplayName: set.RealityName,
 				Transport:   "gRPC",
 				Security:    "REALITY",
 				Port:        strconv.Itoa(set.RealityPort),
@@ -115,6 +120,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 			{
 				Key:         "trojan",
 				Name:        model.ProtoTrojan,
+				DisplayName: set.TrojanName,
 				Transport:   "WebSocket",
 				Security:    "TLS",
 				Port:        strconv.Itoa(vlessPort),
@@ -123,13 +129,14 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 				Fingerprint: set.TrojanFP(),
 			},
 			{
-				Key:       "hysteria2",
-				Name:      model.ProtoHysteria,
-				Transport: "QUIC / UDP",
-				Security:  "TLS (ALPN h3)",
-				Port:      strconv.Itoa(set.HysteriaPort),
-				Note:      hyNote,
-				Enabled:   set.HysteriaEnabled,
+				Key:         "hysteria2",
+				Name:        model.ProtoHysteria,
+				DisplayName: set.HysteriaName,
+				Transport:   "QUIC / UDP",
+				Security:    "TLS (ALPN h3)",
+				Port:        strconv.Itoa(set.HysteriaPort),
+				Note:        hyNote,
+				Enabled:     set.HysteriaEnabled,
 			},
 		},
 	}, nil
@@ -167,12 +174,58 @@ var hopIntervalRe = regexp.MustCompile(`^\d+-\d+$`)
 // wsPathRe validates a WebSocket path: a leading slash, then URL-path-safe chars.
 var wsPathRe = regexp.MustCompile(`^/[A-Za-z0-9_\-./]{1,64}$`)
 
+// connNameRe validates a custom connection display name: Latin/Cyrillic letters,
+// digits, spaces and a few safe punctuation marks — no quotes/braces/colons that
+// could break the sing-box JSON or Clash YAML the name is embedded in.
+var connNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-]+$`)
+
+// connNameKeys pairs each protocol toggle key with its default label, so custom
+// names resolve (and collision-check) against the same defaults used at render.
+var connNameKeys = []struct{ key, proto string }{
+	{"vless", model.ProtoVLESS},
+	{"reality", model.ProtoReality},
+	{"trojan", model.ProtoTrojan},
+	{"hysteria2", model.ProtoHysteria},
+}
+
+// validateConnNames trims and checks the custom node names, returning them keyed
+// by protocol. The resolved display names (custom or default) must be distinct so
+// the sing-box/Clash selector tags they become don't collide.
+func validateConnNames(names map[string]string) (map[string]string, error) {
+	custom := map[string]string{}
+	seen := map[string]string{} // lowercased display name → protocol key
+	for _, nk := range connNameKeys {
+		raw := strings.TrimSpace(names[nk.key])
+		if len([]rune(raw)) > 32 {
+			return nil, invalid("название подключения не длиннее 32 символов")
+		}
+		if raw != "" && !connNameRe.MatchString(raw) {
+			return nil, invalid("недопустимое название подключения %q (буквы, цифры, пробел, . _ - ( ))", raw)
+		}
+		display := raw
+		if display == "" {
+			display = nk.proto
+		}
+		lower := strings.ToLower(display)
+		if lower == "auto" || lower == "direct" {
+			return nil, invalid("название %q зарезервировано — выберите другое", display)
+		}
+		if _, dup := seen[lower]; dup {
+			return nil, invalid("название подключения %q повторяется — сделайте их разными", display)
+		}
+		seen[lower] = nk.key
+		custom[nk.key] = raw
+	}
+	return custom, nil
+}
+
 // ConnectionsUpdate is the full client-facing connection configuration applied in
 // one shot: protocol toggles, link fingerprint, Trojan-WS path, and the Hysteria2
 // base port / hop range / rotation interval.
 type ConnectionsUpdate struct {
 	Protocols         map[string]bool   `json:"protocols"`    // key → enabled
 	Fingerprints      map[string]string `json:"fingerprints"` // key → uTLS fingerprint
+	Names             map[string]string `json:"names"`        // key → custom node name ("" = default)
 	WSPath            string            `json:"ws_path"`
 	HysteriaPort      int               `json:"hysteria_port"`
 	HopStart          int               `json:"hop_start"`
@@ -238,6 +291,10 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 			return invalid("неизвестный fingerprint %q", fp)
 		}
 	}
+	connNames, err := validateConnNames(u.Names)
+	if err != nil {
+		return err
+	}
 	// The user types the path without a leading slash; strip any they added and
 	// prepend exactly one canonical "/".
 	ws := "/" + strings.TrimLeft(strings.TrimSpace(u.WSPath), "/")
@@ -302,6 +359,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		}
 	}
 	if err := m.store.SetFingerprints(vlessFp, trojanFp, realityFp); err != nil {
+		return err
+	}
+	if err := m.store.SetProtocolNames(connNames["vless"], connNames["reality"], connNames["trojan"], connNames["hysteria2"]); err != nil {
 		return err
 	}
 	if err := m.store.SetWSPath(ws); err != nil {

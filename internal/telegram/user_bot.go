@@ -263,6 +263,12 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		s.sendUserMenu(ctx, client, chatID, set, u)
 		return
 	}
+	// If this chat previously unlinked an account, restore that exact account rather
+	// than minting a fresh trial user — otherwise unlink→register loops farm trials.
+	// Allowed even when open registration is closed: it's a restore, not a new signup.
+	if u := s.restoreDetachedUser(ctx, client, chatID, set); u != nil {
+		return
+	}
 	if !set.TGUserRegEnabled {
 		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
 		return
@@ -287,6 +293,28 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	s.sendMenu(ctx, client, chatID,
 		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, set, s.panel),
 		userMenuRows(set.BillingEnabled))
+}
+
+// restoreDetachedUser reattaches an account this chat previously unlinked (if any)
+// and shows its menu, returning the restored user. Returns nil when the chat has no
+// detached account to restore, so the caller falls through to normal registration.
+func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, chatID int64, set *model.Settings) *model.User {
+	u, err := s.store.GetDetachedUserByPrevChat(chatID)
+	if err != nil || u == nil {
+		return nil
+	}
+	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
+		s.send(ctx, client, chatID, "⚠️ Не удалось восстановить аккаунт: "+esc(err.Error()))
+		return u
+	}
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = &fresh
+	}
+	log.Printf("telegram user: restored user %d for chat %d (prev unlink)", u.ID, chatID)
+	s.sendMenu(ctx, client, chatID,
+		"♻️ С возвращением! Ваш прежний аккаунт восстановлен.\n\n"+userSelfCard(*u, set, s.panel),
+		userMenuRows(set.BillingEnabled))
+	return u
 }
 
 func (s *UserService) findLinkedUser(chatID int64) (model.User, bool) {
@@ -375,7 +403,7 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		s.showPlans(ctx, client, chatID, msgID, set, u)
 	case "vu:unlink":
 		s.edit(ctx, client, chatID, msgID,
-			"Отвязать этот Telegram от VPN-подписки?\nПосле отвязки можно зарегистрироваться снова или привязать другой аккаунт.",
+			"Отвязать этот Telegram от VPN-подписки?\nАккаунт сохранится: снова нажав «Зарегистрироваться», вы вернёте ту же подписку.",
 			[][]InlineButton{
 				{{Text: "🔓 Да, отвязать", CallbackData: "vu:unlinkyes"}},
 				{{Text: "⬅️ Отмена", CallbackData: "vu:menu"}},

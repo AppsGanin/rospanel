@@ -39,19 +39,19 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 	}
 	var out []clashProxy
 	if set.VLESSEnabled {
-		n := link.Label(model.ProtoVLESS)
+		n := link.Label(model.ProtoVLESS, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
 			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
 	}
 	if set.RealityEnabled {
-		n := link.Label(model.ProtoReality)
+		n := link.Label(model.ProtoReality, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: grpc, tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, grpc-opts: {grpc-service-name: %q}}",
 			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityServiceName)})
 	}
 	if set.TrojanEnabled {
-		n := link.Label(model.ProtoTrojan)
+		n := link.Label(model.ProtoTrojan, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: trojan, server: %q, port: %d, password: %q, network: ws, sni: %q, client-fingerprint: %s, skip-cert-verify: %s, ws-opts: {path: %q, headers: {Host: %q}}}",
 			n, set.Host, set.VLESSPort, u.Password, set.SNI, set.TrojanFP(), sv, set.WSPath, set.SNI)})
@@ -61,7 +61,7 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 		if set.HopEnd > set.HysteriaPort {
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", set.HysteriaPort, set.HopEnd))
 		}
-		n := link.Label(model.ProtoHysteria)
+		n := link.Label(model.ProtoHysteria, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop)})

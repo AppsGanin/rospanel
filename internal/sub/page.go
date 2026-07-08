@@ -83,16 +83,16 @@ func Page(u model.User, set *model.Settings) ([]byte, error) {
 	// Only protocols enabled in the Connections panel appear on the page.
 	var protoLinks []protoLink
 	if set.VLESSEnabled {
-		protoLinks = append(protoLinks, protoLink{model.ProtoVLESS, link.VLESS(u, set)})
+		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoVLESS), link.VLESS(u, set)})
 	}
 	if set.RealityEnabled {
-		protoLinks = append(protoLinks, protoLink{model.ProtoReality, link.Reality(u, set)})
+		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoReality), link.Reality(u, set)})
 	}
 	if set.TrojanEnabled {
-		protoLinks = append(protoLinks, protoLink{model.ProtoTrojan, link.Trojan(u, set)})
+		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoTrojan), link.Trojan(u, set)})
 	}
 	if set.HysteriaEnabled {
-		protoLinks = append(protoLinks, protoLink{model.ProtoHysteria, link.Hysteria2(u, set)})
+		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoHysteria), link.Hysteria2(u, set)})
 	}
 
 	statusLabel, statusClass := subStatus(u.Status)

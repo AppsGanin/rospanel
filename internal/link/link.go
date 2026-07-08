@@ -9,9 +9,11 @@ import (
 )
 
 // Label is the node name appended after '#' in share links / used as the
-// sing-box/Clash node tag (protocol display name only). The user name, when
-// requested, goes into the subscription title instead (see sub.SubTitle).
-func Label(proto string) string { return proto }
+// sing-box/Clash node tag. It's the admin-configured custom name for the
+// protocol, or the default protocol label when unset (see Settings.ProtoLabel).
+// The user name, when requested, goes into the subscription title instead (see
+// sub.SubTitle).
+func Label(proto string, set *model.Settings) string { return set.ProtoLabel(proto) }
 
 // assemble joins the share-link shape shared by every protocol:
 //
@@ -21,7 +23,7 @@ func Label(proto string) string { return proto }
 // url.QueryEscape(pw); UUID links pass the raw uuid). host is always set.Host.
 func assemble(scheme, cred string, port int, q url.Values, proto string, u model.User, set *model.Settings) string {
 	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, set.Host, port, q.Encode(), url.PathEscape(Label(proto)))
+		scheme, cred, set.Host, port, q.Encode(), url.PathEscape(Label(proto, set)))
 }
 
 // pinSelfSigned adds the cert-pin query param (pcs) when the active cert isn't
