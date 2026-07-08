@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  cancelPaymentOrder,
-  confirmPaymentOrder,
   deleteTariffPlan,
   getBilling,
   getPayments,
-  listPaymentOrders,
   saveBilling,
   savePayments,
   saveTariffPlan,
   type BillingInfo,
-  type PaymentOrder,
   type PaymentSettings,
   type TariffPlan,
 } from "./api";
@@ -23,7 +19,6 @@ import {
   CenterLoader,
   Code,
   Modal,
-  PasswordInput,
   SaveBar,
   Select,
   SettingCard,
@@ -32,42 +27,24 @@ import {
   useConfirm,
 } from "./ui";
 
-// PaymentIntegrations is a self-contained card for the YooKassa / CryptoBot
-// provider settings (independent of the tariff editor below).
-function PaymentIntegrations() {
-  const [info, setInfo] = useState<PaymentSettings | null>(null);
-  const [yooKey, setYooKey] = useState("");
-  const [cbToken, setCbToken] = useState("");
-  const { isBusy, run } = useAction();
-
-  useEffect(() => {
-    getPayments().then(setInfo).catch(() => {});
-  }, []);
-
-  const patch = (p: Partial<PaymentSettings>) =>
-    setInfo((s) => (s ? { ...s, ...p } : s));
-
-  const save = () =>
-    run(
-      async () => {
-        if (!info) return;
-        const next = await savePayments({
-          yookassa_enabled: info.yookassa_enabled,
-          yookassa_shop_id: info.yookassa_shop_id.trim(),
-          yookassa_secret_key: yooKey.trim(),
-          yookassa_test: info.yookassa_test,
-          cryptobot_enabled: info.cryptobot_enabled,
-          cryptobot_token: cbToken.trim(),
-          cryptobot_testnet: info.cryptobot_testnet,
-        });
-        setInfo(next);
-        setYooKey("");
-        setCbToken("");
-        notifySuccess("Настройки оплаты сохранены");
-      },
-      { key: "pay" },
-    );
-
+// PaymentIntegrations renders the YooKassa / CryptoBot provider settings. It is
+// controlled by BillingPanel: edits go through `patch`, and saving happens via the
+// shared bottom SaveBar (no local save button).
+function PaymentIntegrations({
+  info,
+  patch,
+  yooKey,
+  setYooKey,
+  cbToken,
+  setCbToken,
+}: {
+  info: PaymentSettings | null;
+  patch: (p: Partial<PaymentSettings>) => void;
+  yooKey: string;
+  setYooKey: (v: string) => void;
+  cbToken: string;
+  setCbToken: (v: string) => void;
+}) {
   if (!info) return null;
 
   return (
@@ -159,12 +136,6 @@ function PaymentIntegrations() {
               )}
             </div>
           )}
-        </div>
-
-        <div>
-          <Button loading={isBusy("pay")} onClick={save}>
-            Сохранить
-          </Button>
         </div>
       </div>
     </SettingCard>
@@ -335,20 +306,19 @@ export function BillingPanel() {
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
   const [plans, setPlans] = useState<TariffPlan[]>([]);
-  const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [editor, setEditor] = useState<TariffPlan | null>(null);
   const [loadErr, setLoadErr] = useState("");
-  const [confirmOrderId, setConfirmOrderId] = useState<number | null>(null);
-  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
-  const [confirmPassword, setConfirmPassword] = useState("");
+  // Payment-provider settings live here too so the whole tab shares one bottom
+  // SaveBar (pay = draft, paySaved = server truth; yooKey/cbToken are write-only).
+  const [pay, setPay] = useState<PaymentSettings | null>(null);
+  const [paySaved, setPaySaved] = useState<PaymentSettings | null>(null);
+  const [yooKey, setYooKey] = useState("");
+  const [cbToken, setCbToken] = useState("");
   const { busy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
 
-  const loadOrders = useCallback(() => {
-    listPaymentOrders("pending")
-      .then((rows) => setOrders(rows ?? []))
-      .catch(() => setOrders([]));
-  }, []);
+  const patchPay = (p: Partial<PaymentSettings>) =>
+    setPay((s) => (s ? { ...s, ...p } : s));
 
   const reload = useCallback(() => {
     getBilling()
@@ -389,8 +359,13 @@ export function BillingPanel() {
       })
       .catch((e) => setLoadErr(errMessage(e)))
       .finally(() => setLoaded(true));
-    loadOrders();
-  }, [loadOrders]);
+    getPayments()
+      .then((p) => {
+        setPay(p);
+        setPaySaved(p);
+      })
+      .catch(() => {});
+  }, []);
 
   if (!loaded) return <CenterLoader />;
 
@@ -415,24 +390,66 @@ export function BillingPanel() {
       label: p.name + (p.is_free ? " (бесплатный)" : ""),
     }));
 
-  const dirty =
+  const billingDirty =
     cfg.enabled !== saved.enabled ||
     cfg.trial_days !== saved.trial_days ||
     cfg.free_plan_id !== saved.free_plan_id ||
     cfg.trial_plan_id !== saved.trial_plan_id ||
     cfg.payment_note !== saved.payment_note;
 
+  const payDirty =
+    !!pay &&
+    !!paySaved &&
+    (pay.yookassa_enabled !== paySaved.yookassa_enabled ||
+      pay.yookassa_shop_id !== paySaved.yookassa_shop_id ||
+      pay.yookassa_test !== paySaved.yookassa_test ||
+      pay.cryptobot_enabled !== paySaved.cryptobot_enabled ||
+      pay.cryptobot_testnet !== paySaved.cryptobot_testnet ||
+      yooKey.trim() !== "" ||
+      cbToken.trim() !== "");
+
+  const dirty = billingDirty || payDirty;
+
+  const cancel = () => {
+    setCfg(saved);
+    if (paySaved) setPay(paySaved);
+    setYooKey("");
+    setCbToken("");
+  };
+
+  // saveSettings persists whatever is dirty — the tariff settings and/or the
+  // payment-provider settings — behind the single bottom SaveBar.
   const saveSettings = () =>
     run(async () => {
-      await saveBilling({
-        enabled: cfg.enabled,
-        trial_days: cfg.trial_days,
-        free_plan_id: cfg.free_plan_id,
-        trial_plan_id: cfg.trial_plan_id,
-        payment_note: cfg.payment_note,
-      });
-      setSaved({ ...cfg, plans: safePlans });
-      notifySuccess("Настройки тарификации сохранены");
+      if (billingDirty) {
+        await saveBilling({
+          enabled: cfg.enabled,
+          trial_days: cfg.trial_days,
+          free_plan_id: cfg.free_plan_id,
+          trial_plan_id: cfg.trial_plan_id,
+          payment_note: cfg.payment_note,
+        });
+        setSaved({ ...cfg, plans: safePlans });
+        // Tell the top nav to re-read billing_enabled so the "Оплата" menu item
+        // appears/disappears immediately (no page reload needed).
+        window.dispatchEvent(new Event("rospanel:billing-changed"));
+      }
+      if (payDirty && pay) {
+        const next = await savePayments({
+          yookassa_enabled: pay.yookassa_enabled,
+          yookassa_shop_id: pay.yookassa_shop_id.trim(),
+          yookassa_secret_key: yooKey.trim(),
+          yookassa_test: pay.yookassa_test,
+          cryptobot_enabled: pay.cryptobot_enabled,
+          cryptobot_token: cbToken.trim(),
+          cryptobot_testnet: pay.cryptobot_testnet,
+        });
+        setPay(next);
+        setPaySaved(next);
+        setYooKey("");
+        setCbToken("");
+      }
+      notifySuccess("Настройки сохранены");
     }).catch((e) => notifyError(errMessage(e)));
 
   const openCreate = () => {
@@ -469,47 +486,35 @@ export function BillingPanel() {
     }).catch((e) => notifyError(errMessage(e)));
   };
 
-  const confirmOrder = (id: number) => {
-    setConfirmPassword("");
-    setConfirmOrderId(id);
-  };
-
-  const submitConfirmOrder = () =>
-    run(async () => {
-      if (confirmOrderId === null) return;
-      if (!confirmPassword) {
-        notifyError("Введите текущий пароль администратора");
-        return;
-      }
-      await confirmPaymentOrder(confirmOrderId, confirmPassword);
-      setConfirmOrderId(null);
-      loadOrders();
-      notifySuccess("Оплата подтверждена, тариф применён");
-    }).catch((e) => notifyError(errMessage(e)));
-
-  const cancelOrder = (id: number) => {
-    setConfirmPassword("");
-    setCancelOrderId(id);
-  };
-
-  const submitCancelOrder = () =>
-    run(async () => {
-      if (cancelOrderId === null) return;
-      if (!confirmPassword) {
-        notifyError("Введите текущий пароль администратора");
-        return;
-      }
-      await cancelPaymentOrder(cancelOrderId, confirmPassword);
-      setCancelOrderId(null);
-      loadOrders();
-      notifySuccess("Заказ отменён");
-    }).catch((e) => notifyError(errMessage(e)));
 
   return (
     <>
       {confirmNode}
       <div className="flex flex-col gap-4">
-        <PaymentIntegrations />
+        <SettingCard
+          title="Оплата"
+          description="Глобальное включение приёма оплаты. При включении в главном меню появляется раздел «Оплата» со статистикой, ожидающими и историей."
+          action={
+            <Switch
+              checked={cfg.enabled}
+              onChange={(v) => setCfg({ ...cfg, enabled: v })}
+            />
+          }
+        >
+          <p className="text-sm text-ink-muted">
+            Существующие пользователи <b>не меняются</b> — у них остаются текущие
+            лимиты («тариф вручную»), пока вы не назначите тариф в карточке
+            пользователя или через admin-бот.
+          </p>
+        </SettingCard>
+        <PaymentIntegrations
+          info={pay}
+          patch={patchPay}
+          yooKey={yooKey}
+          setYooKey={setYooKey}
+          cbToken={cbToken}
+          setCbToken={setCbToken}
+        />
         <SettingCard
           title="Тарифные планы"
           description="Создавайте и настраивайте тарифы: лимиты, цена, срок. Бесплатный тариф — для пользователей после пробного периода."
@@ -571,127 +576,50 @@ export function BillingPanel() {
           )}
         </SettingCard>
 
-        <SettingCard title="Тарификация">
-          <p className="mb-3 text-sm text-ink-muted">
-            При включении существующие пользователи <b>не меняются</b> — у них остаются
-            текущие лимиты («тариф вручную»), пока вы не назначите тариф в карточке
-            пользователя или через admin-бот. Новые регистрации в user-боте получают
-            пробный период, затем бесплатный тариф.
-          </p>
-          <div className="flex flex-col gap-3">
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>Включить тарификацию</span>
-              <Switch
-                checked={cfg.enabled}
-                onChange={(v) => setCfg({ ...cfg, enabled: v })}
+        {cfg.enabled && (
+          <SettingCard
+            title="Тарификация"
+            description="Пробный период и тариф по умолчанию для новых регистраций в user-боте."
+          >
+            <div className="flex flex-col gap-3">
+              <TextInput
+                label="Пробный период, дней"
+                type="number"
+                value={String(cfg.trial_days)}
+                onChange={(v) =>
+                  setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
+                }
               />
-            </label>
-            {cfg.enabled && (
-              <>
-                <TextInput
-                  label="Пробный период, дней"
-                  type="number"
-                  value={String(cfg.trial_days)}
-                  onChange={(v) =>
-                    setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
-                  }
-                />
-                <Select
-                  label="Тариф после пробного / при истечении"
-                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                  value={String(cfg.free_plan_id)}
-                  onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
-                />
-                <Select
-                  label="Пробный тариф (лимиты на время пробы)"
-                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                  value={String(cfg.trial_plan_id)}
-                  onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
-                />
-                <TextInput
-                  label="Примечание к оплате"
-                  value={cfg.payment_note}
-                  onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-                  placeholder="Реквизиты, СБП, комментарий для пользователя"
-                />
-              </>
-            )}
-          </div>
-        </SettingCard>
+              <Select
+                label="Тариф после пробного / при истечении"
+                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                value={String(cfg.free_plan_id)}
+                onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
+              />
+              <Select
+                label="Пробный тариф (лимиты на время пробы)"
+                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                value={String(cfg.trial_plan_id)}
+                onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
+              />
+              <TextInput
+                label="Примечание к оплате"
+                value={cfg.payment_note}
+                onChange={(v) => setCfg({ ...cfg, payment_note: v })}
+                placeholder="Реквизиты, СБП, комментарий для пользователя"
+              />
+            </div>
+          </SettingCard>
+        )}
 
         <SaveBar
           dirty={dirty}
           busy={busy}
           onSave={saveSettings}
-          onCancel={() => setCfg(saved)}
+          onCancel={cancel}
         />
 
-        {cfg.enabled && (
-          <SettingCard title="Ожидают оплаты">
-            {orders.length === 0 ? (
-              <p className="text-sm text-ink-muted">Нет необработанных заказов.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {orders.map((o) => (
-                  <OrderRow
-                    key={o.id}
-                    order={o}
-                    busy={busy}
-                    onConfirm={confirmOrder}
-                    onCancel={cancelOrder}
-                  />
-                ))}
-              </ul>
-            )}
-          </SettingCard>
-        )}
       </div>
-
-      <Modal
-        open={confirmOrderId !== null}
-        onClose={() => setConfirmOrderId(null)}
-        title="Подтверждение оплаты"
-      >
-        <p className="mb-3 text-sm text-ink-muted">
-          Введите текущий пароль администратора, чтобы подтвердить заказ и применить тариф.
-        </p>
-        <PasswordInput
-          label="Текущий пароль"
-          value={confirmPassword}
-          onChange={setConfirmPassword}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="subtle" onClick={() => setConfirmOrderId(null)}>
-            Отмена
-          </Button>
-          <Button loading={busy} onClick={() => void submitConfirmOrder()}>
-            Подтвердить оплату
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={cancelOrderId !== null}
-        onClose={() => setCancelOrderId(null)}
-        title="Отмена заказа"
-      >
-        <p className="mb-3 text-sm text-ink-muted">
-          Введите текущий пароль администратора, чтобы отменить заказ.
-        </p>
-        <PasswordInput
-          label="Текущий пароль"
-          value={confirmPassword}
-          onChange={setConfirmPassword}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="subtle" onClick={() => setCancelOrderId(null)}>
-            Назад
-          </Button>
-          <Button loading={busy} color="red" onClick={() => void submitCancelOrder()}>
-            Отменить заказ
-          </Button>
-        </div>
-      </Modal>
 
       <Modal
         open={!!editor}
@@ -714,77 +642,5 @@ export function BillingPanel() {
         )}
       </Modal>
     </>
-  );
-}
-
-const PROVIDER_META: Record<
-  string,
-  { label: string; color: "brand" | "teal" | "gray" }
-> = {
-  yookassa: { label: "ЮКасса · карта", color: "brand" },
-  cryptobot: { label: "CryptoBot · крипта", color: "teal" },
-  "": { label: "Вручную", color: "gray" },
-};
-
-function fmtDateTime(unix: number): string {
-  if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function OrderRow({
-  order,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  order: PaymentOrder;
-  busy: boolean;
-  onConfirm: (id: number) => void;
-  onCancel: (id: number) => void;
-}) {
-  const prov = PROVIDER_META[order.provider] ?? {
-    label: order.provider,
-    color: "gray" as const,
-  };
-  const auto = order.provider !== "";
-  return (
-    <li className="flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-ink">
-          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-          {order.plan_name} · {order.amount_rub} ₽
-        </span>
-        <span className="flex gap-2">
-          <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
-            Подтвердить
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            color="red"
-            onClick={() => onCancel(order.id)}
-            disabled={busy}
-          >
-            Отмена
-          </Button>
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-        <Badge color={prov.color} size="xs">
-          {prov.label}
-        </Badge>
-        <span>· создан {fmtDateTime(order.created_at)}</span>
-        {auto && <span>· оплата подтвердится автоматически</span>}
-        {order.provider_id && (
-          <span className="font-mono">· id: {order.provider_id}</span>
-        )}
-      </div>
-    </li>
   );
 }

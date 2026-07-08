@@ -176,11 +176,21 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/billing/orders/{id}/cancel", rt.cancelPaymentOrder)
 	authed("GET /api/payments", rt.getPayments)
 	authed("POST /api/payments", rt.savePayments)
+	authed("GET /api/payments/stats", rt.paymentStats)
 	authed("GET /api/stats/series", rt.statsSeries)
 	authed("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)
 	authed("POST /api/tls", rt.setACME)
+	authed("GET /api/apikeys", rt.listAPIKeys)
+	authed("POST /api/apikeys", rt.createAPIKey)
+	authedID("DELETE /api/apikeys/{id}", rt.revokeAPIKey)
+	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
+	authed("GET /api/webhooks", rt.listWebhooks)
+	authed("POST /api/webhooks", rt.createWebhook)
+	authedID("POST /api/webhooks/{id}", rt.updateWebhook)
+	authedID("DELETE /api/webhooks/{id}", rt.deleteWebhook)
+	authedID("POST /api/webhooks/{id}/test", rt.testWebhook)
 	authed("GET /api/telegram", rt.getTelegram)
 	authed("POST /api/telegram", rt.saveTelegram)
 	authed("POST /api/telegram/link", rt.genTelegramLink)
@@ -288,6 +298,7 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 	if set, err := rt.mgr.Store().GetSettings(); err == nil {
 		resp["setup_done"] = set.SetupDone
 		resp["timezone"] = set.Timezone
+		resp["billing_enabled"] = set.BillingEnabled
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

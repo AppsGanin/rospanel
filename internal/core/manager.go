@@ -108,6 +108,11 @@ type Manager struct {
 
 	guard *bruteGuard
 
+	// webhookCh is the outbound-webhook delivery queue drained by a small worker
+	// pool (see webhooks.go). Buffered so an event emit never blocks the caller;
+	// a full queue drops the delivery with a log rather than stalling the panel.
+	webhookCh chan webhookJob
+
 	operaDir string            // dir holding the opera-proxy helper binary
 	operaSup *opera.Supervisor // runs/restarts the opera-proxy helper
 
@@ -130,6 +135,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		guard:       newBruteGuard(),
 		operaDir:    operaDir,
 		operaSup:    opera.New(filepath.Join(operaDir, "opera-proxy")),
+		webhookCh:   make(chan webhookJob, webhookQueueSize),
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
@@ -145,6 +151,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	go m.proxyLoop()
 	go m.bruteGuardLoop()
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
+	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
 	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
 	// NOTE: the initial proxy-pool load is done synchronously by main.go via

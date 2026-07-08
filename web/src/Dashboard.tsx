@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { logout } from "./api";
+import { useEffect, useState } from "react";
+import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
+import { PaymentsPage } from "./PaymentsPage";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import { StatsPanel } from "./StatsPanel";
@@ -19,18 +20,12 @@ import {
 } from "./ui";
 import { UsersPanel } from "./UsersPanel";
 
-const NAV = [
-  { value: "overview", label: "Дашборд" },
-  { value: "users", label: "Пользователи" },
-  { value: "stats", label: "Статистика" },
-  { value: "settings", label: "Настройки" },
-] as const;
-
-type Tab = (typeof NAV)[number]["value"];
+type Tab = "overview" | "users" | "stats" | "payments" | "settings";
 
 export function Dashboard({
   username,
   version,
+  billingEnabled,
   onLogout,
   onShowAgreement,
   onShowDonate,
@@ -38,15 +33,40 @@ export function Dashboard({
 }: {
   username: string;
   version: string;
+  billingEnabled: boolean;
   onLogout: () => void;
   onShowAgreement: () => void;
   onShowDonate: () => void;
   onAccountChanged: () => void;
 }) {
   const seg = useRoute();
-  const tab = (NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab;
   const [menuOpen, setMenuOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
+  // Keep the payments-enabled flag fresh so the "Оплата" item appears/vanishes
+  // without a full reload: re-read on every top-level tab change AND whenever the
+  // billing toggle is saved in Settings (which fires "rospanel:billing-changed").
+  const [billing, setBilling] = useState(billingEnabled);
+  const refreshBilling = () =>
+    getMe()
+      .then((m) => setBilling(!!m.billing_enabled))
+      .catch(() => {});
+  useEffect(() => {
+    refreshBilling();
+  }, [seg[0]]);
+  useEffect(() => {
+    const h = () => refreshBilling();
+    window.addEventListener("rospanel:billing-changed", h);
+    return () => window.removeEventListener("rospanel:billing-changed", h);
+  }, []);
+
+  const NAV: { value: Tab; label: string }[] = [
+    { value: "overview", label: "Дашборд" },
+    { value: "users", label: "Пользователи" },
+    { value: "stats", label: "Статистика" },
+    ...(billing ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
+    { value: "settings", label: "Настройки" },
+  ];
+  const tab = (NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab;
 
   const doLogout = async () => {
     setMenuOpen(false);
@@ -162,6 +182,7 @@ export function Dashboard({
           {tab === "overview" && <OverviewPanel />}
           {tab === "users" && <UsersPanel />}
           {tab === "stats" && <StatsPanel />}
+          {tab === "payments" && <PaymentsPage />}
           {tab === "settings" && <SettingsPanel />}
         </div>
       </main>

@@ -53,6 +53,7 @@ func (m *Manager) CreateUser(name string, dataLimit, expireAt int64) (*model.Use
 	}
 	logInfo("user created", "id", u.ID, "name", name, "limit", dataLimit, "expire", expireAt)
 	m.TriggerUserSync()
+	m.EmitWebhook(model.WebhookUserCreated, userEventData(*u))
 	return u, nil
 }
 
@@ -75,8 +76,19 @@ func (m *Manager) RenameUser(id int64, name string) error {
 
 // DeleteUser removes a user and reconciles.
 func (m *Manager) DeleteUser(id int64) error {
-	return m.mutateUser(fmt.Sprintf("user %d deleted", id),
+	// Capture the user before deletion so the webhook payload carries its details
+	// (best-effort: a missing row still emits the id).
+	u, _ := m.store.GetUser(id)
+	err := m.mutateUser(fmt.Sprintf("user %d deleted", id),
 		func() error { return m.store.DeleteUser(id) })
+	if err == nil {
+		data := map[string]any{"id": id}
+		if u != nil {
+			data = userEventData(*u)
+		}
+		m.EmitWebhook(model.WebhookUserDeleted, data)
+	}
+	return err
 }
 
 // ResetTraffic zeroes a user's usage and re-enables them. The raw counters are

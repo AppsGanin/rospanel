@@ -188,6 +188,7 @@ func (m *Manager) StartPlanPayment(userID, planID int64, provider string) (*mode
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Начата оплата</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, providerLabel(provider)))
+	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, nil
 }
 
@@ -225,6 +226,8 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, providerLabel(provider)))
+	order.Status = "paid"
+	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return nil
 }
 

@@ -303,6 +303,7 @@ export interface Me {
   timezone: string
   version: string
   must_change_password?: boolean
+  billing_enabled?: boolean
 }
 
 export const getMe = () => api<Me>('api/me')
@@ -718,6 +719,24 @@ export const deleteTariffPlan = (id: number) =>
 export const listPaymentOrders = (status?: string) =>
   api<PaymentOrder[]>(`api/billing/orders${status ? `?status=${status}` : ''}`)
 
+export interface ProviderStat {
+  provider: string
+  count: number
+  sum: number
+}
+
+export interface PaymentStats {
+  total_paid: number
+  paid_count: number
+  earned_today: number
+  earned_month: number
+  pending_count: number
+  pending_sum: number
+  by_provider: ProviderStat[]
+}
+
+export const getPaymentStats = () => api<PaymentStats>('api/payments/stats')
+
 export const confirmPaymentOrder = (id: number, current_password: string) =>
   api<{ ok: boolean }>(`api/billing/orders/${id}/confirm`, {
     method: 'POST',
@@ -735,3 +754,91 @@ export const setUserPlan = (id: number, plan_id: number) =>
     method: 'POST',
     body: JSON.stringify({ plan_id }),
   })
+
+// ---- External REST API (keys + surface) ----
+
+export interface ApiKey {
+  id: number
+  name: string
+  prefix: string
+  created_at: number
+  last_used_at: number
+  revoked_at: number
+  raw_key?: string // only present in the create response
+}
+
+export interface ApiKeysInfo {
+  enabled: boolean
+  api_path: string
+  base_url: string
+  keys: ApiKey[]
+}
+
+export const getApiKeys = () => api<ApiKeysInfo>('api/apikeys')
+
+export const createApiKey = (name: string) =>
+  api<{ key: ApiKey; base_url: string }>('api/apikeys', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+
+export const revokeApiKey = (id: number) =>
+  api<{ ok: boolean }>(`api/apikeys/${id}`, { method: 'DELETE' })
+
+export const setApiPath = (enabled: boolean, rotate = false) =>
+  api<{ enabled: boolean; api_path: string; base_url: string }>(
+    'api/settings/api-path',
+    { method: 'POST', body: JSON.stringify({ enabled, rotate }) },
+  )
+
+// ---- Webhooks ----
+
+export interface Webhook {
+  id: number
+  url: string
+  secret: string
+  events: string[]
+  enabled: boolean
+  created_at: number
+  last_status: number
+  last_attempt_at: number
+  last_error: string
+}
+
+export interface WebhookEventDef {
+  key: string
+  label: string
+}
+
+export interface WebhooksInfo {
+  webhooks: Webhook[]
+  events: WebhookEventDef[]
+}
+
+export const getWebhooks = () => api<WebhooksInfo>('api/webhooks')
+
+export const createWebhook = (url: string, events: string[]) =>
+  api<Webhook>('api/webhooks', {
+    method: 'POST',
+    body: JSON.stringify({ url, events }),
+  })
+
+export const updateWebhook = (
+  id: number,
+  url: string,
+  events: string[],
+  enabled: boolean,
+) =>
+  api<{ ok: boolean }>(`api/webhooks/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ url, events, enabled }),
+  })
+
+export const deleteWebhook = (id: number) =>
+  api<{ ok: boolean }>(`api/webhooks/${id}`, { method: 'DELETE' })
+
+export const testWebhook = (id: number) =>
+  api<{ status: number; ok: boolean; error?: string }>(
+    `api/webhooks/${id}/test`,
+    { method: 'POST' },
+  )

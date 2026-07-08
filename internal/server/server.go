@@ -36,16 +36,19 @@ type Router struct {
 	mgr        *core.Manager
 	dataDir    string
 	panel      http.Handler
+	api        http.Handler // external REST API mux (key-authenticated), mounted under apiPath
 	assets     http.Handler
 	indexRaw   []byte // index.html before <base href> injection
 	limiter    *loginLimiter
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
+	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
 	streams    *streamGate    // caps concurrent SSE streams
 
 	mu        sync.RWMutex
 	secret    string
 	subPath   string       // public subscription URL prefix (/<subPath>/<token>)
 	paySecret string       // random segment for the public payment-webhook path
+	apiPath   string       // external-API URL prefix (/<apiPath>/v1/...); "" = disabled
 	spaIndex  []byte       // index.html with <base href> injected for the secret
 	decoy     http.Handler // current decoy template handler
 }
@@ -66,12 +69,13 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	}
 
 	subPath := "sub"
-	var paySecret string
+	var paySecret, apiPath string
 	if set, err := mgr.Store().GetSettings(); err == nil {
 		if set.SubPath != "" {
 			subPath = set.SubPath
 		}
 		paySecret = set.PaymentWebhookSecret
+		apiPath = set.APIPath
 	}
 
 	rt := &Router{
@@ -81,13 +85,20 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		indexRaw:   indexRaw,
 		limiter:    newLoginLimiter(),
 		subLimiter: newIPRateLimiter(120, time.Minute),
+		apiLimiter: newIPRateLimiter(600, time.Minute),
 		streams:    newStreamGate(),
 		secret:     secret,
 		subPath:    subPath,
 		paySecret:  paySecret,
+		apiPath:    apiPath,
 		spaIndex:   injectBase(indexRaw, "/"+secret+"/"),
 		decoy:      d,
 	}
+	// The external API surface. The /v1 mux is wrapped with per-key
+	// authentication (no session cookie, not subject to the CSRF/same-origin guard
+	// that exists for the browser SPA); the OpenAPI spec + Swagger UI are served
+	// key-free so a browser can load the docs.
+	rt.api = rt.apiHandler()
 	// The panel mux is wrapped with the CSRF guard (state-changing requests must
 	// carry the SPA's custom header + same-origin) and security headers (CSP,
 	// nosniff, frame/clickjacking, referrer). The decoy and subscription surfaces
@@ -125,6 +136,13 @@ func (rt *Router) setPaySecret(s string) {
 	rt.paySecret = s
 }
 
+// setAPIPath swaps the live external-API URL segment ("" disables the surface).
+func (rt *Router) setAPIPath(s string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.apiPath = s
+}
+
 func (rt *Router) currentSecret() string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -153,8 +171,24 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	seg, rest := firstSegment(r.URL.Path)
 
 	rt.mu.RLock()
-	secret, decoy, subPath, paySecret := rt.secret, rt.decoy, rt.subPath, rt.paySecret
+	secret, decoy, subPath, paySecret, apiPath := rt.secret, rt.decoy, rt.subPath, rt.paySecret, rt.apiPath
 	rt.mu.RUnlock()
+
+	// External REST API, mounted under its own stable, unguessable segment (kept
+	// separate from the panel secret so rotating the secret never breaks
+	// integrations). Every request is authenticated by a bearer API key; a
+	// per-IP throttle blunts key-guessing and runaway clients. The segment itself
+	// is the obscurity layer — once it matches, the API answers with real REST
+	// status codes (401/403) so integrators can debug their credentials.
+	if apiPath != "" && seg == apiPath {
+		if !rt.apiLimiter.allow(clientIP(r)) {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		r.URL.Path = rest
+		rt.api.ServeHTTP(w, r)
+		return
+	}
 
 	// Public payment-webhook surface, mounted under a random unguessable segment so
 	// providers (YooKassa / CryptoBot) can POST to a fixed URL without revealing the

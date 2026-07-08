@@ -1,3 +1,4 @@
+import { ApiSettings } from "./ApiSettings";
 import { BillingPanel } from "./BillingPanel";
 import { BrandingSettings } from "./BrandingSettings";
 import { ConnectionsPanel } from "./ConnectionsPanel";
@@ -9,6 +10,7 @@ import { SubscriptionsPanel } from "./SubscriptionsPanel";
 import { TelegramSettings } from "./TelegramSettings";
 import { TLSPanel } from "./TLSPanel";
 import { cn } from "./ui";
+import { WebhooksSettings } from "./WebhooksSettings";
 
 const SUBTABS = [
   { value: "general", label: "Основное" },
@@ -19,6 +21,7 @@ const SUBTABS = [
   { value: "dns", label: "DNS" },
   { value: "telegram", label: "Telegram" },
   { value: "billing", label: "Оплата" },
+  { value: "api", label: "API" },
   { value: "domain", label: "Домен" },
 ] as const;
 
@@ -60,6 +63,12 @@ export function SettingsPanel() {
         {tab === "dns" && <DnsSettings />}
         {tab === "telegram" && <TelegramSettings />}
         {tab === "billing" && <BillingPanel />}
+        {tab === "api" && (
+          <div className="flex flex-col gap-4">
+            <ApiSettings />
+            <WebhooksSettings />
+          </div>
+        )}
         {tab === "domain" && <TLSPanel />}
       </div>
     </div>
