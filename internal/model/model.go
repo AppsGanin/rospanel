@@ -349,6 +349,14 @@ type Settings struct {
 	TrojanFp  string `json:"-"`
 	RealityFp string `json:"-"`
 
+	// Per-connection display names shown in VPN clients / on the subscription page
+	// (the node label after '#' and the sing-box/Clash node tag). Empty ⇒ the
+	// default protocol label (ProtoVLESS, ProtoReality, …). See Settings.ProtoLabel.
+	VLESSName    string `json:"-"`
+	RealityName  string `json:"-"`
+	TrojanName   string `json:"-"`
+	HysteriaName string `json:"-"`
+
 	// Anti-DPI / anti-censorship transport hardening (Settings → Подключения).
 	// TLSFragment / BlockQUIC shape the GENERATED client configs (sing-box only —
 	// no server change); TLSMin13 / RealityMaxTimeDiff / RealityDestPort change the
@@ -563,6 +571,31 @@ func fpOr(fp string) string {
 func (s *Settings) VLESSFP() string   { return fpOr(s.VLESSFp) }
 func (s *Settings) TrojanFP() string  { return fpOr(s.TrojanFp) }
 func (s *Settings) RealityFP() string { return fpOr(s.RealityFp) }
+
+// ProtoLabel returns the display name for a protocol constant (ProtoVLESS, …):
+// the admin-configured custom name when set, otherwise the constant itself. Used
+// for the share-link node label and the sing-box/Clash node tag. A nil receiver
+// falls back to the constant so link builders stay safe.
+func (s *Settings) ProtoLabel(proto string) string {
+	if s == nil {
+		return proto
+	}
+	var custom string
+	switch proto {
+	case ProtoVLESS:
+		custom = s.VLESSName
+	case ProtoReality:
+		custom = s.RealityName
+	case ProtoTrojan:
+		custom = s.TrojanName
+	case ProtoHysteria:
+		custom = s.HysteriaName
+	}
+	if custom = strings.TrimSpace(custom); custom != "" {
+		return custom
+	}
+	return proto
+}
 
 // Fingerprints are the uTLS ClientHello fingerprints offered in the UI.
 var Fingerprints = []string{

@@ -75,6 +75,7 @@ export function ConnectionsPanel() {
   // Local edits, committed only on Save.
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [fps, setFps] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
   const [hy, setHy] = useState<Hy>({
     port: 0,
     start: 0,
@@ -96,6 +97,7 @@ export function ConnectionsPanel() {
   const [saved, setSaved] = useState<{
     enabled: Record<string, boolean>;
     fps: Record<string, string>;
+    names: Record<string, string>;
     hy: Hy;
     wsPath: string;
     reality: Reality;
@@ -103,6 +105,7 @@ export function ConnectionsPanel() {
   }>({
     enabled: {},
     fps: {},
+    names: {},
     hy: { port: 0, start: 0, end: 0, interval: "5-10" },
     wsPath: "",
     reality: { port: 0, dests: [], antiReplay: false },
@@ -115,9 +118,11 @@ export function ConnectionsPanel() {
     setStatus(s);
     const en: Record<string, boolean> = {};
     const fp: Record<string, string> = {};
+    const nm: Record<string, string> = {};
     s.protocols.forEach((p) => {
       en[p.key] = p.enabled;
       if (p.fingerprint) fp[p.key] = p.fingerprint;
+      nm[p.key] = p.display_name || "";
     });
     const h: Hy = {
       port: s.hysteria_port,
@@ -140,12 +145,13 @@ export function ConnectionsPanel() {
     const ws = s.ws_path.replace(/^\/+/, "");
     setEnabled(en);
     setFps(fp);
+    setNames(nm);
     setHy(h);
     setWsPath(ws);
     setReality(r);
     setAnti(a);
     setRegenReality(false);
-    setSaved({ enabled: en, fps: fp, hy: h, wsPath: ws, reality: r, anti: a });
+    setSaved({ enabled: en, fps: fp, names: nm, hy: h, wsPath: ws, reality: r, anti: a });
   };
 
   useEffect(() => {
@@ -169,6 +175,10 @@ export function ConnectionsPanel() {
     reality.dests.join(",") !== saved.reality.dests.join(",") ||
     reality.antiReplay !== saved.reality.antiReplay;
   const fpsChanged = Object.keys(fps).some((k) => fps[k] !== saved.fps[k]);
+  // Node names only live in the share link / config node tag — no Xray restart.
+  const namesChanged = Object.keys(names).some(
+    (k) => names[k] !== saved.names[k],
+  );
   // min13 changes the server :443 inbound (restart); fragment/blockQuic only reshape
   // the generated client configs (no restart).
   const antiServerChanged = anti.min13 !== saved.anti.min13;
@@ -177,6 +187,7 @@ export function ConnectionsPanel() {
     anti.blockQuic !== saved.anti.blockQuic;
   const dirty =
     fpsChanged ||
+    namesChanged ||
     protocolsChanged ||
     hyChanged ||
     wsChanged ||
@@ -203,6 +214,7 @@ export function ConnectionsPanel() {
       const s = await applyConnections({
         protocols: enabled,
         fingerprints: fps,
+        names,
         ws_path: wsPath,
         hysteria_port: hy.port,
         hop_start: hy.start,
@@ -226,6 +238,7 @@ export function ConnectionsPanel() {
   const cancel = () => {
     setEnabled(saved.enabled);
     setFps(saved.fps);
+    setNames(saved.names);
     setHy(saved.hy);
     setWsPath(saved.wsPath);
     setReality(saved.reality);
@@ -272,7 +285,23 @@ export function ConnectionsPanel() {
 
               {isOpen && (
                 <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
-                  <div className="flex flex-col gap-1">
+                  {/* Custom node name shown in VPN clients / on the sub page. */}
+                  <div className="flex flex-col gap-2">
+                    <TextInput
+                      label="Название подключения"
+                      value={names[p.key] ?? ""}
+                      onChange={(v) =>
+                        setNames((n) => ({ ...n, [p.key]: v }))
+                      }
+                      placeholder={p.name}
+                    />
+                    <p className="text-xs text-ink-muted">
+                      Имя узла, которое видит клиент в списке подключений. Пусто —
+                      используется «{p.name}».
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
                     <Field label="Транспорт" value={p.transport} />
                     <Field label="Шифрование" value={p.security} />
                     {p.note && <Field label="Примечание" value={p.note} />}

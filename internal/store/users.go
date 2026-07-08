@@ -185,16 +185,50 @@ func (s *Store) SetUserTelegramChat(userID, chatID int64) error {
 	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = 0 WHERE tg_chat_id = ?`, chatID); err != nil {
 		return err
 	}
+	// This chat is now actively owned, so the self-reattach slot it may have left on
+	// a previously-unlinked account is consumed — drop any stale prev pointers to it
+	// (including on this user) so a later unlink resolves to exactly one account.
+	if _, err := tx.Exec(`UPDATE users SET tg_prev_chat_id = 0 WHERE tg_prev_chat_id = ?`, chatID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = ? WHERE id = ?`, chatID, userID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-// ClearUserTelegramChat unlinks a VPN user's Telegram chat.
+// ClearUserTelegramChat unlinks a VPN user's Telegram chat, remembering the chat
+// in tg_prev_chat_id so the same chat can restore this exact account (keeping its
+// plan and consumed trial) by registering again — instead of getting a brand-new
+// trial user. Only overwrites tg_prev_chat_id when actually detaching a chat, so a
+// redundant clear can't wipe a prior pointer.
 func (s *Store) ClearUserTelegramChat(userID int64) error {
-	_, err := s.db.Exec(`UPDATE users SET tg_chat_id = 0 WHERE id = ?`, userID)
+	_, err := s.db.Exec(
+		`UPDATE users SET tg_prev_chat_id = tg_chat_id, tg_chat_id = 0
+		 WHERE id = ? AND tg_chat_id <> 0`,
+		userID,
+	)
 	return err
+}
+
+// GetDetachedUserByPrevChat finds an account this chat was previously unlinked
+// from and that is still detached (no active chat), so registration can restore
+// it instead of creating a new trial user. Returns sql.ErrNoRows when none.
+func (s *Store) GetDetachedUserByPrevChat(chatID int64) (*model.User, error) {
+	if chatID == 0 {
+		return nil, sql.ErrNoRows
+	}
+	users, err := s.queryUsers(
+		`SELECT `+userCols+` FROM users
+		 WHERE tg_prev_chat_id = ? AND tg_chat_id = 0
+		 ORDER BY id DESC LIMIT 1`, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &users[0], nil
 }
 
 // ResetTraffic zeroes a user's usage (so a "limited" user works again) and

@@ -53,7 +53,8 @@ export const getUserConnections = (id: number) =>
 
 export interface ConnInfo {
   key: string
-  name: string
+  name: string // default protocol label (input placeholder)
+  display_name: string // custom node name ("" = use default)
   transport: string
   security: string
   port: string
@@ -86,6 +87,7 @@ export interface ConnectionsStatus {
 export interface ConnectionsUpdate {
   protocols: Record<string, boolean>
   fingerprints: Record<string, string>
+  names: Record<string, string>
   ws_path: string
   hysteria_port: number
   hop_start: number

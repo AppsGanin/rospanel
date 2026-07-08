@@ -47,7 +47,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       billing_trial_plan_id, billing_payment_note,
 		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
 		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
-		       tg_admin_events, api_path
+		       tg_admin_events, api_path,
+		       vless_name, reality_name, trojan_name, hysteria_name
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -77,6 +78,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&yooEn, &st.YooKassaShopID, &st.YooKassaSecretKey, &yooTest,
 		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
+		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
 	)
 	if err != nil {
 		return nil, err
@@ -192,6 +194,17 @@ func (s *Store) SetFingerprints(vless, trojan, reality string) error {
 		`UPDATE settings SET vless_fp = ?, trojan_fp = ?, reality_fp = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
 		vless, trojan, reality,
+	)
+	return err
+}
+
+// SetProtocolNames persists the custom per-connection display names (empty ⇒ the
+// default protocol label is used at render time).
+func (s *Store) SetProtocolNames(vless, reality, trojan, hysteria string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET vless_name = ?, reality_name = ?, trojan_name = ?,
+		        hysteria_name = ?, updated_at = unixepoch() WHERE id = 1`,
+		vless, reality, trojan, hysteria,
 	)
 	return err
 }
