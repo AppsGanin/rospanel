@@ -194,6 +194,12 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// providers (YooKassa / CryptoBot) can POST to a fixed URL without revealing the
 	// hidden panel. The webhook itself verifies the payload (signature / re-fetch).
 	if paySecret != "" && seg == paySecret {
+		// Throttle per-IP: the YooKassa branch has no signature and re-fetches from the
+		// provider, so an amplification/flood is possible if the secret ever leaks.
+		if !rt.subLimiter.allow(clientIP(r)) {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
 		leaf, _ := firstSegment(rest)
 		handlePaymentWebhook(rt, w, r, leaf)
 		return

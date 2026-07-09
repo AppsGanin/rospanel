@@ -11,6 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
         --brand: {{.Brand}};
@@ -174,6 +175,94 @@
       .btn.alt:hover {
         background: color-mix(in srgb, var(--brand) 20%, transparent);
       }
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .bill-cur {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding-bottom: 12px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid var(--line);
+      }
+      .bill-cur .v {
+        font-weight: 700;
+        font-size: 1.02rem;
+        overflow-wrap: anywhere;
+      }
+      .plan {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+      }
+      .plan + .plan {
+        border-top: 1px solid var(--line);
+      }
+      .plan-info {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .plan .pname {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .plan .pprice {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+      .plan .btn {
+        width: auto;
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 10px 16px;
+        white-space: nowrap;
+      }
+      .paylist {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .paylist .btn {
+        margin-top: 0;
+      }
+      .msgbody {
+        margin: 0;
+        white-space: pre-line;
+        font-size: 0.92rem;
+        line-height: 1.55;
+        color: var(--ink);
+      }
+      .paywatch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        margin-bottom: 12px;
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--brand) 10%, transparent);
+        color: var(--accent-fg);
+        font-size: 0.88rem;
+        font-weight: 600;
+      }
+      .spinner {
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        border: 2px solid color-mix(in srgb, var(--brand) 35%, transparent);
+        border-top-color: var(--brand);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
       .muted {
         color: var(--muted);
         font-size: 0.85rem;
@@ -306,6 +395,54 @@
       <div class="bar"><div style="width:{{.UsedPct}}%"></div></div>
       {{end}}
 
+      {{if .Billing.Show}}
+      <div class="card">
+        <div id="paywatch" class="paywatch" style="display: none">
+          <span class="spinner"></span>
+          <span
+            >Оплата обрабатывается… Подписка активируется автоматически после
+            подтверждения.</span
+          >
+        </div>
+        <div class="bill-cur">
+          <span class="muted">Текущий тариф</span>
+          <span class="v"
+            >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
+            .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
+          >
+        </div>
+        {{range .Billing.Plans}}
+        <div class="plan">
+          <div class="plan-info">
+            <div class="pname">{{.Name}}</div>
+            <div class="pprice">{{.Label}}</div>
+          </div>
+          <button class="btn" onclick="pay({{.ID}}, this)">{{if $.Billing.Locked}}Продлить{{else}}Оплатить{{end}}</button>
+        </div>
+        {{end}}
+        {{if .Billing.Cancelable}}
+        <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
+          Отменить подписку
+        </button>
+        <p class="muted" style="margin: 10px 0 0">
+          Сменить тариф можно только после отмены текущего. При отмене вы перейдёте на
+          бесплатный тариф.
+        </p>
+        {{else if .Billing.Manual}}
+        <p class="muted" style="margin: 12px 0 0">
+          После оплаты администратор подтвердит платёж.
+        </p>
+        {{else}}
+        <p class="muted" style="margin: 12px 0 0">
+          После оплаты подписка продлится автоматически.
+        </p>
+        {{end}}
+        {{if and .Billing.Manual .Billing.Note}}
+        <p class="muted" style="margin: 8px 0 0; white-space: pre-line">{{.Billing.Note}}</p>
+        {{end}}
+      </div>
+      {{end}}
+
       <div class="card">
         <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
         <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
@@ -315,8 +452,9 @@
           Скопировать ссылку подписки
         </button>
         <button
+          id="openapps-btn"
           class="btn alt"
-          onclick="document.getElementById('apps').classList.add('show')"
+          onclick="openApps()"
         >
           Открыть в приложении
         </button>
@@ -351,14 +489,101 @@
           </button>
         </div>
         <div class="apps">
-          {{range $i, $d := .DeepLinks}}<a class="app" href="{{$d.Href}}"
+          {{range $i, $d := .DeepLinks}}<a class="app" href="{{$d.Href}}" data-i="{{$i}}" onclick="return appClick(event)"
             ><span>{{$d.Label}}</span
             ><span class="plat">{{$d.Platform}}</span></a
           >{{end}}
         </div>
       </div>
     </div>
+
+    {{if and .Billing.Providers (gt (len .Billing.Providers) 1)}}
+    <div
+      id="paymodal"
+      class="modal"
+      onclick="if (event.target === this) this.classList.remove('show');"
+    >
+      <div class="modal-card">
+        <div class="modal-head">
+          <b>Способ оплаты</b>
+          <button
+            class="x"
+            onclick="document.getElementById('paymodal').classList.remove('show')"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="paylist">
+          {{range .Billing.Providers}}
+          <button class="btn" onclick="payWith('{{.Key}}', this)">{{.Label}}</button>
+          {{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+
+    {{if .Billing.Show}}
+    <div
+      id="msgmodal"
+      class="modal"
+      onclick="if (event.target === this) this.classList.remove('show');"
+    >
+      <div class="modal-card">
+        <div class="modal-head">
+          <b id="msgmodal-title">Оплата</b>
+          <button
+            class="x"
+            onclick="document.getElementById('msgmodal').classList.remove('show')"
+          >
+            ✕
+          </button>
+        </div>
+        <p id="msgmodal-body" class="msgbody"></p>
+      </div>
+    </div>
+    {{end}}
     <script>
+      var SUB_URL = "{{.SubURL}}";
+      // Telegram Mini App context: custom app schemes (happ://, v2rayng:// …) can't
+      // be launched from inside Telegram's webview, so we detect it and route links
+      // to the external browser via WebApp.openLink instead.
+      var TG = (window.Telegram && window.Telegram.WebApp) || null;
+      var INTG = !!(TG && TG.platform && TG.platform !== "unknown");
+      if (INTG) {
+        try {
+          TG.ready();
+          TG.expand();
+        } catch (e) {}
+      }
+      // Open a URL the right way: in Telegram use openLink/openTelegramLink (external
+      // browser); in a normal browser just navigate.
+      function openExternal(url) {
+        if (INTG) {
+          try {
+            if (url.indexOf("https://t.me/") === 0) TG.openTelegramLink(url);
+            else TG.openLink(url);
+            return;
+          } catch (e) {}
+        }
+        window.location = url;
+      }
+      // Always show the app-picker modal in place (works inside Telegram too).
+      function openApps() {
+        document.getElementById("apps").classList.add("show");
+      }
+      // App tapped. In a normal browser the href (custom scheme) launches the app
+      // directly. Inside Telegram, openLink refuses non-http(s) schemes, so we open a
+      // tiny /app/<i> https page in the external browser — it bounces to the scheme
+      // and launches the app.
+      function appClick(e) {
+        if (!INTG) return true;
+        e.preventDefault();
+        document.getElementById("apps").classList.remove("show");
+        try {
+          TG.openLink(SUB_URL + "/app/" + e.currentTarget.getAttribute("data-i"));
+        } catch (_) {}
+        return false;
+      }
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {
           var o = el.textContent;
@@ -367,6 +592,155 @@
             el.textContent = o;
           }, 1200);
         });
+      }
+      var PAY_PATH = "{{.Billing.PayPath}}";
+      var CANCEL_PATH = "{{.Billing.CancelPath}}";
+      var ORDER_PATH = "{{.Billing.OrderPath}}";
+      // Poll for an automatic payment still being processed (after the user returns
+      // from the provider). Show a spinner while pending; reload once it clears so the
+      // new plan/expiry appears.
+      var pmWatching = false,
+        pmEverPending = false;
+      function checkOrder() {
+        if (!ORDER_PATH) return;
+        fetch(ORDER_PATH)
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (j) {
+            var el = document.getElementById("paywatch");
+            if (j && j.pending) {
+              pmEverPending = true;
+              if (el) el.style.display = "flex";
+              setTimeout(checkOrder, 4000);
+            } else {
+              if (el) el.style.display = "none";
+              if (pmEverPending) {
+                pmEverPending = false;
+                location.reload();
+              } else {
+                pmWatching = false;
+              }
+            }
+          })
+          .catch(function () {
+            setTimeout(checkOrder, 8000);
+          });
+      }
+      function watchPayments() {
+        if (pmWatching) return;
+        pmWatching = true;
+        checkOrder();
+      }
+      watchPayments(); // covers returning to a page that already has a pending order
+      function cancelSub(el) {
+        if (
+          !confirm(
+            "Отменить текущую подписку? Вы перейдёте на бесплатный тариф, оставшееся оплаченное время сгорит.",
+          )
+        )
+          return;
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(CANCEL_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+          .then(function (r) {
+            if (r.ok) {
+              location.reload();
+            } else {
+              return r.json().then(function (j) {
+                alert(j.error || "Не удалось отменить");
+                el.textContent = old;
+                el.disabled = false;
+              });
+            }
+          })
+          .catch(function () {
+            alert("Ошибка сети, попробуйте ещё раз");
+            el.textContent = old;
+            el.disabled = false;
+          });
+      }
+      var PAY_PROVIDERS = [
+        {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
+      ];
+      var PAY_PLAN = 0;
+      function showPayMsg(text, title) {
+        var body = document.getElementById("msgmodal-body");
+        var head = document.getElementById("msgmodal-title");
+        var modal = document.getElementById("msgmodal");
+        if (body && modal) {
+          body.textContent = text;
+          if (head) head.textContent = title || "Оплата";
+          modal.classList.add("show");
+        } else {
+          alert(text);
+        }
+      }
+      // One provider → pay straight away; several → open the method-choice modal.
+      function pay(planId, el) {
+        if (PAY_PROVIDERS.length <= 1) {
+          startPay(planId, PAY_PROVIDERS[0] || "", el);
+        } else {
+          PAY_PLAN = planId;
+          document.getElementById("paymodal").classList.add("show");
+        }
+      }
+      function payWith(provider, el) {
+        document.getElementById("paymodal").classList.remove("show");
+        startPay(PAY_PLAN, provider, el);
+      }
+      function startPay(planId, provider, el) {
+        var old = el ? el.textContent : "";
+        if (el) {
+          el.textContent = "…";
+          el.disabled = true;
+        }
+        var reset = function () {
+          if (el) {
+            el.textContent = old;
+            el.disabled = false;
+          }
+        };
+        fetch(PAY_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plan_id: planId, provider: provider }),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              return { ok: r.ok, body: j };
+            });
+          })
+          .then(function (res) {
+            if (res.ok && res.body.pay_url) {
+              openExternal(res.body.pay_url);
+              reset();
+              watchPayments(); // show the processing state while the provider confirms
+            } else if (res.ok && res.body.manual) {
+              // Server reuses the pending order, so re-tapping is safe — just reopen
+              // the instructions modal.
+              reset();
+              showPayMsg(
+                res.body.message || "Заказ создан. Ожидайте подтверждения.",
+                "Оплата заказа",
+              );
+            } else {
+              reset();
+              showPayMsg(
+                res.body.error || "Не удалось создать платёж. Попробуйте позже.",
+                "Ошибка",
+              );
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg("Ошибка сети, попробуйте ещё раз.", "Ошибка");
+          });
       }
     </script>
   </body>

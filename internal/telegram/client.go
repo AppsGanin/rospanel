@@ -139,9 +139,17 @@ func (c *Client) GetMe(ctx context.Context) (*User, error) {
 
 // InlineButton is one inline-keyboard button (label + callback payload).
 type InlineButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"` // URL button (mutually exclusive with callback_data)
+	Text         string      `json:"text"`
+	CallbackData string      `json:"callback_data,omitempty"`
+	URL          string      `json:"url,omitempty"`     // URL button (mutually exclusive with callback_data)
+	WebApp       *WebAppInfo `json:"web_app,omitempty"` // opens a Mini App in-place (private chats only)
+}
+
+// WebAppInfo points a web_app button at an HTTPS page opened inside Telegram as a
+// Mini App. Inline web_app buttons need no @BotFather domain setup, but work only
+// in private chats and require an https:// URL.
+type WebAppInfo struct {
+	URL string `json:"url"`
 }
 
 // SendMessage sends a plain HTML-formatted message (no buttons). HTML parse mode

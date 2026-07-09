@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -46,7 +47,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// A real browser (Accept: text/html) gets the human page; a proxy client
 		// gets the machine payload.
 		if isBrowser(r) {
-			if err := servePage(w, *u, set); err != nil {
+			if err := rt.servePage(w, *u, set); err != nil {
 				rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on render errors
 			}
 			return
@@ -106,8 +107,217 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(png)
 
+	case "pay":
+		rt.handleSubPay(w, r, *u, set)
+
+	case "cancel":
+		rt.handleSubCancel(w, r, *u, set)
+
+	case "order":
+		rt.handleSubOrder(w, r, *u)
+
 	default:
+		// /app/<n> — deep-link hand-off page (opened in the external browser from the
+		// Telegram Mini App so the client scheme actually launches).
+		if idx, ok := strings.CutPrefix(leaf, "app/"); ok {
+			rt.handleSubApp(w, r, *u, set, idx)
+			return
+		}
 		rt.decoy.ServeHTTP(w, r)
+	}
+}
+
+// handleSubApp serves the redirect page for one client deep link, chosen by its
+// index in the DeepLinks list (kept in sync with the subscription page's modal).
+func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings, idxStr string) {
+	n, err := strconv.Atoi(idxStr)
+	if err != nil {
+		rt.decoy.ServeHTTP(w, r)
+		return
+	}
+	links := sub.DeepLinks(sub.URL(set, u.SubToken))
+	if n < 0 || n >= len(links) {
+		rt.decoy.ServeHTTP(w, r)
+		return
+	}
+	html, err := sub.AppRedirect(links[n].Href)
+	if err != nil {
+		rt.decoy.ServeHTTP(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(html)
+}
+
+// handleSubCancel cancels the user's active paid plan from the subscription page
+// (moves them to the free plan immediately). Only acts on an active paid plan, so
+// a stray POST on a free/expired account is a no-op success.
+func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if !set.BillingEnabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "недоступно"})
+		return
+	}
+	if rt.mgr.ActivePaidPlan(u) == nil {
+		writeOK(w) // nothing active to cancel
+		return
+	}
+	if err := rt.mgr.CancelUserPlan(u.ID); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// handleSubPay starts a plan payment from the subscription page and returns the
+// hosted pay URL as JSON, so the page can redirect the user to the provider. The
+// token already authenticated the user; the plan is applied later by the provider
+// webhook/poll (no Telegram needed). Errors return a plain JSON message instead of
+// the decoy — the caller is a verified token holder acting on their own account.
+func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if !set.BillingEnabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "оплата недоступна"})
+		return
+	}
+	var req struct {
+		PlanID   int64  `json:"plan_id"`
+		Provider string `json:"provider"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	// Same "no switching while active" rule as the manager guard, applied here so it
+	// also covers the manual branch below (and a hand-crafted request).
+	if req.PlanID != u.PlanID {
+		if active := rt.mgr.ActivePaidPlan(u); active != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "у вас активна подписка «" + active.Name + "» — сначала отмените её"})
+			return
+		}
+	}
+	// No automatic provider passed/configured ⇒ create a manual order and return the
+	// payment instructions for the page to show (admin confirms it later).
+	if req.Provider == "" && len(rt.mgr.PaymentMethods()) == 0 {
+		_, msg, err := rt.mgr.RequestPlanPayment(u.ID, req.PlanID)
+		if err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
+		return
+	}
+	order, err := rt.mgr.StartPlanPaymentReturn(u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"pay_url": order.PayURL})
+}
+
+// subPaymentWatchWindow caps how long the page shows "payment processing" for a
+// pending order. The server keeps polling and will still apply a late payment; the
+// banner just stops after this so it can't hang for hours on an abandoned checkout.
+const subPaymentWatchWindow = 30 * time.Minute
+
+// handleSubOrder reports whether the user has an automatic payment still being
+// processed (and recent), so the page can show a "payment in progress" state and
+// poll until the provider webhook/poll confirms it.
+func (rt *Router) handleSubOrder(w http.ResponseWriter, _ *http.Request, u model.User) {
+	order, err := rt.mgr.Store().LatestPendingProviderOrder(u.ID)
+	if err != nil || order == nil ||
+		(order.CreatedAt > 0 && time.Now().Unix()-order.CreatedAt > int64(subPaymentWatchWindow.Seconds())) {
+		writeJSON(w, http.StatusOK, map[string]any{"pending": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"pending":   true,
+		"order_id":  order.ID,
+		"plan_name": order.PlanName,
+		"amount":    order.AmountRub,
+	})
+}
+
+// buildBilling assembles the optional "renew / pay" block for the subscription
+// page: the active plan, its paid expiry, and the paid tariffs the user can buy or
+// extend. Returns a zero (hidden) block unless billing is on with at least one
+// enabled paid plan.
+func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
+	if !set.BillingEnabled {
+		return sub.Billing{}
+	}
+	plans, err := rt.mgr.ListTariffPlans(false)
+	if err != nil {
+		return sub.Billing{}
+	}
+	subURL := sub.URL(set, u.SubToken)
+	b := sub.Billing{
+		Show:        true,
+		CurrentPlan: rt.mgr.PlanName(u.PlanID),
+		PayPath:     subURL + "/pay",
+		CancelPath:  subURL + "/cancel",
+		OrderPath:   subURL + "/order",
+		Note:        strings.TrimSpace(set.BillingPaymentNote),
+	}
+	if u.ExpireAt > 0 {
+		b.ExpireText = "до " + time.Unix(u.ExpireAt, 0).Format("02.01.2006")
+	}
+	// While a paid plan is active, switching is blocked: offer only that plan
+	// (renewal) plus cancellation. Otherwise offer every paid plan to buy.
+	if active := rt.mgr.ActivePaidPlan(u); active != nil {
+		b.Locked = true
+		b.Cancelable = true
+		b.Plans = []sub.BillingPlan{{
+			ID: active.ID, Name: active.Name, Label: payPlanLabel(*active), Current: true,
+		}}
+	} else {
+		for _, p := range plans {
+			if p.IsFree || p.PriceRub <= 0 {
+				continue // paid plans only (no free/trial self-select)
+			}
+			b.Plans = append(b.Plans, sub.BillingPlan{
+				ID: p.ID, Name: p.Name, Label: payPlanLabel(p), Current: p.ID == u.PlanID,
+			})
+		}
+	}
+	for _, m := range rt.mgr.PaymentMethods() {
+		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: payProviderLabel(m)})
+	}
+	// No automatic provider ⇒ manual payment: the pay button still works, creating a
+	// pending order and showing instructions (admin confirms it).
+	b.Manual = len(b.Providers) == 0
+	// Hide only when there's truly nothing to do: no plans to buy/renew and no active
+	// plan to cancel.
+	if len(b.Plans) == 0 && !b.Cancelable {
+		return sub.Billing{}
+	}
+	return b
+}
+
+// payPlanLabel renders a paid plan's price/period, e.g. "199 ₽ / 30 дн.".
+func payPlanLabel(p model.TariffPlan) string {
+	if p.PeriodDays > 0 {
+		return fmt.Sprintf("%d ₽ / %d дн.", p.PriceRub, p.PeriodDays)
+	}
+	return fmt.Sprintf("%d ₽", p.PriceRub)
+}
+
+// payProviderLabel is the user-facing name of a payment method.
+func payProviderLabel(p string) string {
+	switch p {
+	case "yookassa":
+		return "Картой (ЮКасса)"
+	case "cryptobot":
+		return "Криптовалютой (CryptoBot)"
+	default:
+		return p
 	}
 }
 
@@ -120,8 +330,8 @@ func isBrowser(r *http.Request) bool {
 // servePage renders the human-facing subscription page. It returns an error
 // (writing nothing) instead of a 500 so the caller can fall through to the decoy
 // and keep the masquerade intact.
-func servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
-	html, err := sub.Page(u, set)
+func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
+	html, err := sub.Page(u, set, rt.buildBilling(u, set))
 	if err != nil {
 		return err
 	}

@@ -667,6 +667,7 @@ export interface BillingInfo {
   trial_plan_id: number
   payment_note: string
   plans: TariffPlan[]
+  plan_users?: Record<string, number> // plan id → number of users on it
 }
 
 export const getBilling = () => api<BillingInfo>('api/billing')
@@ -717,6 +718,12 @@ export const saveTariffPlan = (p: TariffPlan) =>
 
 export const deleteTariffPlan = (id: number) =>
   api<{ ok: boolean }>(`api/billing/plans/${id}`, { method: 'DELETE' })
+
+export const migratePlanUsers = (id: number, toPlanId: number) =>
+  api<{ migrated: number }>(`api/billing/plans/${id}/migrate`, {
+    method: 'POST',
+    body: JSON.stringify({ to_plan_id: toPlanId }),
+  })
 
 export const listPaymentOrders = (status?: string) =>
   api<PaymentOrder[]>(`api/billing/orders${status ? `?status=${status}` : ''}`)
