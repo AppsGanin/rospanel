@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -34,6 +35,14 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 	if plans == nil {
 		plans = []model.TariffPlan{}
 	}
+	// Per-plan user counts so the UI can show how many users are on each plan and
+	// offer to migrate them before a plan is disabled/deleted.
+	planUsers := map[string]int{}
+	for _, p := range plans {
+		if n, err := rt.mgr.Store().CountUsersOnPlan(p.ID); err == nil && n > 0 {
+			planUsers[strconv.FormatInt(p.ID, 10)] = n
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":       set.BillingEnabled,
 		"trial_days":    set.BillingTrialDays,
@@ -41,6 +50,7 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"trial_plan_id": set.BillingTrialPlanID,
 		"payment_note":  set.BillingPaymentNote,
 		"plans":         plans,
+		"plan_users":    planUsers,
 	})
 }
 
@@ -145,6 +155,23 @@ func (rt *Router) deleteTariffPlan(w http.ResponseWriter, _ *http.Request, id in
 		return
 	}
 	writeOK(w)
+}
+
+// migratePlanUsers moves all users on {id} to the plan in the body, so a retired
+// plan can be emptied before disabling/deleting it.
+func (rt *Router) migratePlanUsers(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		ToPlanID int64 `json:"to_plan_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	n, err := rt.mgr.MigratePlanUsers(id, req.ToPlanID)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"migrated": n})
 }
 
 func (rt *Router) listPaymentOrders(w http.ResponseWriter, r *http.Request) {

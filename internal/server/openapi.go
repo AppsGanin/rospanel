@@ -41,8 +41,15 @@ type oaRoute struct {
 // oaOrderResp / oaAffectedResp document the two non-model JSON responses so the
 // spec types them precisely (they mirror the maps the handlers write).
 type oaOrderResp struct {
-	Order  *model.PaymentOrder `json:"order"`
-	PayURL string              `json:"pay_url"`
+	Order   *model.PaymentOrder `json:"order"`
+	PayURL  string              `json:"pay_url,omitempty"` // hosted provider URL (when a provider is set)
+	Message string              `json:"message,omitempty"` // manual-payment instructions (no provider)
+}
+
+// oaProviderResp is one enabled payment method returned by GET /v1/billing/providers.
+type oaProviderResp struct {
+	Key   string `json:"key"`   // provider id usable as `provider` on create-order
+	Label string `json:"label"` // human-readable name
 }
 type oaAffectedResp struct {
 	Affected int `json:"affected"`
@@ -82,6 +89,8 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/users/{id}/connections", tag: "Users", summary: "List the user's source IPs",
 			resp: t(model.Connection{}), list: true},
 
+		{method: "GET", path: "/v1/billing/providers", tag: "Billing", summary: "List enabled payment providers",
+			resp: t(oaProviderResp{}), list: true},
 		{method: "GET", path: "/v1/billing/plans", tag: "Billing", summary: "List tariff plans",
 			query: []oaParam{{name: "include_disabled", typ: "boolean", desc: "include disabled plans"}},
 			resp:  t(model.TariffPlan{}), list: true},

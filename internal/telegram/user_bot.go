@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sub"
 )
 
 // UserService is the public VPN user bot: open registration, personal subscription
@@ -292,7 +292,7 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	u.TgChatID = chatID
 	s.sendMenu(ctx, client, chatID,
 		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, set, s.panel),
-		userMenuRows(set.BillingEnabled))
+		userMenuRows(set, *u))
 }
 
 // restoreDetachedUser reattaches an account this chat previously unlinked (if any)
@@ -313,7 +313,7 @@ func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, c
 	log.Printf("telegram user: restored user %d for chat %d (prev unlink)", u.ID, chatID)
 	s.sendMenu(ctx, client, chatID,
 		"♻️ С возвращением! Ваш прежний аккаунт восстановлен.\n\n"+userSelfCard(*u, set, s.panel),
-		userMenuRows(set.BillingEnabled))
+		userMenuRows(set, *u))
 	return u
 }
 
@@ -345,11 +345,15 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 	s.sendUserMenu(ctx, client, chatID, set, *u)
 }
 
-func userMenuRows(billingEnabled bool) [][]InlineButton {
-	rows := [][]InlineButton{
-		{{Text: "📲 Подписка", CallbackData: "vu:sub"}},
+func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
+	var rows [][]InlineButton
+	// A Mini App button opens the subscription page inside Telegram (QR, link,
+	// import buttons — all on one page). Needs an https:// URL, so it's skipped
+	// until the host is set.
+	if url := subWebAppURL(set, u); url != "" {
+		rows = append(rows, []InlineButton{{Text: "🌐 Моя подписка", WebApp: &WebAppInfo{URL: url}}})
 	}
-	if billingEnabled {
+	if set.BillingEnabled {
 		rows = append(rows, []InlineButton{{Text: "💳 Тарифы", CallbackData: "vu:plans"}})
 	}
 	rows = append(rows,
@@ -359,33 +363,129 @@ func userMenuRows(billingEnabled bool) [][]InlineButton {
 	return rows
 }
 
+// subWebAppURL is the https:// subscription-page URL for a web_app button, or ""
+// when the host isn't configured yet (Telegram rejects a non-https web_app URL).
+func subWebAppURL(set *model.Settings, u model.User) string {
+	if strings.TrimSpace(set.Host) == "" || strings.TrimSpace(u.SubToken) == "" {
+		return ""
+	}
+	url := sub.URL(set, u.SubToken)
+	if !strings.HasPrefix(url, "https://") {
+		return ""
+	}
+	return url
+}
+
+// userSelfCard is the friendly subscription card the user sees in the bot (no
+// internal id, emoji labels, human-readable expiry / last-seen).
 func userSelfCard(u model.User, set *model.Settings, panel Panel) string {
-	card := userCard(u, panel.Location())
+	loc := panel.Location()
+	now := time.Now().Unix()
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "👤 <b>%s</b> · <code>#%d</code>\n\n", esc(u.Name), u.ID)
+	fmt.Fprintf(&b, "%s\n", userStatusLine(u.Status))
+
+	// Plan (only when billing is in play).
 	if u.PlanID != 0 {
 		if name := panel.PlanName(u.PlanID); name != "" {
-			card += "\nТариф: " + esc(name)
+			fmt.Fprintf(&b, "💳 Тариф: <b>%s</b>\n", esc(name))
 		}
 	} else if set.BillingEnabled {
-		card += "\nТариф: вручную"
+		b.WriteString("💳 Тариф: вручную\n")
 	}
+
+	// Expiry + remaining time.
+	if u.ExpireAt > 0 {
+		exp := time.Unix(u.ExpireAt, 0).In(loc).Format("02.01.2006")
+		if u.ExpireAt > now {
+			fmt.Fprintf(&b, "📅 До %s · %s\n", exp, humanLeft(u.ExpireAt-now))
+		} else {
+			fmt.Fprintf(&b, "📅 Срок истёк %s\n", exp)
+		}
+	} else {
+		b.WriteString("📅 Бессрочно\n")
+	}
+
+	// Traffic.
+	used := formatBytes(u.UsedUp + u.UsedDown)
+	if u.DataLimit > 0 {
+		pct := int(min(100, (u.UsedUp+u.UsedDown)*100/u.DataLimit))
+		fmt.Fprintf(&b, "📊 %s из %s · %d%%\n", used, formatBytes(u.DataLimit), pct)
+	} else {
+		fmt.Fprintf(&b, "📊 %s · безлимит\n", used)
+	}
+
+	// Devices (only when limited).
 	if u.DeviceLimit > 0 {
-		card += fmt.Sprintf("\nУстройства: %d / %d", u.ActiveDevices, u.DeviceLimit)
+		fmt.Fprintf(&b, "📱 Устройства: %d из %d\n", u.ActiveDevices, u.DeviceLimit)
 	}
-	return card
+
+	b.WriteString(userOnlineLine(u, now, loc))
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// userStatusLine renders a friendly, emoji-led status for the user card.
+func userStatusLine(status string) string {
+	switch status {
+	case model.StatusActive:
+		return "🟢 <b>Активна</b>"
+	case model.StatusExpired:
+		return "🔴 <b>Срок истёк</b>"
+	case model.StatusLimited:
+		return "🟠 <b>Лимит трафика</b>"
+	case model.StatusDeviceLimited:
+		return "🟠 <b>Лишние устройства</b>"
+	case model.StatusDisabled:
+		return "⚪ <b>Отключена</b>"
+	default:
+		return "▫️ " + esc(status)
+	}
+}
+
+// humanLeft renders remaining time as "осталось N дн./ч./мин.".
+func humanLeft(sec int64) string {
+	if d := sec / 86400; d >= 1 {
+		return fmt.Sprintf("осталось %d дн.", d)
+	}
+	if h := sec / 3600; h >= 1 {
+		return fmt.Sprintf("осталось %d ч.", h)
+	}
+	return fmt.Sprintf("осталось %d мин.", sec/60)
+}
+
+// userOnlineLine renders the last-seen state in human terms.
+func userOnlineLine(u model.User, now int64, loc *time.Location) string {
+	if u.LastSeen == 0 {
+		return "🕐 Ещё не подключались"
+	}
+	diff := now - u.LastSeen
+	switch {
+	case diff < 120:
+		return "🟢 Сейчас в сети"
+	case diff < 3600:
+		return fmt.Sprintf("🕐 Был в сети %d мин назад", diff/60)
+	case diff < 86400:
+		return fmt.Sprintf("🕐 Был в сети %d ч назад", diff/3600)
+	case diff < 7*86400:
+		return fmt.Sprintf("🕐 Был в сети %d дн назад", diff/86400)
+	default:
+		return "🕐 Был в сети " + time.Unix(u.LastSeen, 0).In(loc).Format("02.01.2006")
+	}
 }
 
 func (s *UserService) sendUserMenu(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User) {
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel), userMenuRows(set.BillingEnabled))
+	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel), userMenuRows(set, u))
 }
 
 func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel), userMenuRows(set.BillingEnabled))
+	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel), userMenuRows(set, u))
 }
 
 func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb *CallbackQuery, set *model.Settings, u model.User) {
@@ -397,8 +497,6 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	switch cb.Data {
 	case "vu:menu":
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
-	case "vu:sub":
-		s.sendSubscription(ctx, client, chatID, set, u)
 	case "vu:plans":
 		s.showPlans(ctx, client, chatID, msgID, set, u)
 	case "vu:unlink":
@@ -412,11 +510,13 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		_ = s.store.ClearUserTelegramChat(u.ID)
 		s.edit(ctx, client, chatID, msgID, "Чат отвязан.", [][]InlineButton{})
 		s.sendWelcome(ctx, client, set, chatID)
+	case "vu:cancelplan":
+		s.confirmCancelPlan(ctx, client, chatID, msgID, u)
+	case "vu:cancelyes":
+		s.doCancelPlan(ctx, client, chatID, msgID, set, u)
 	default:
 		if planStr, ok := strings.CutPrefix(cb.Data, "vu:buy:"); ok {
 			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planStr)
-		} else if planStr, ok := strings.CutPrefix(cb.Data, "vu:pick:"); ok {
-			s.handlePickPlan(ctx, client, chatID, msgID, set, u, planStr)
 		} else if rest, ok := strings.CutPrefix(cb.Data, "vu:pay:"); ok {
 			// rest = "<provider>:<planID>"
 			if prov, planStr, found := strings.Cut(rest, ":"); found {
@@ -426,87 +526,61 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	}
 }
 
-// showPlans lists the tariffs a linked user can pick (free, applied instantly) or
-// buy (paid, creates a pending order for admin confirmation).
+// confirmCancelPlan asks the user to confirm cancelling their active paid plan.
+func (s *UserService) confirmCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, u model.User) {
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = fresh
+	}
+	active := s.panel.ActivePaidPlan(u)
+	if active == nil {
+		s.edit(ctx, client, chatID, msgID, "Активной подписки нет.",
+			[][]InlineButton{{{Text: "🏠 Меню", CallbackData: "vu:menu"}}})
+		return
+	}
+	s.edit(ctx, client, chatID, msgID,
+		"Отменить подписку «"+esc(active.Name)+"»?\nВы перейдёте на бесплатный тариф, оставшееся оплаченное время сгорит.",
+		[][]InlineButton{
+			{{Text: "🚫 Да, отменить", CallbackData: "vu:cancelyes"}},
+			{{Text: "⬅️ Отмена", CallbackData: "vu:plans"}},
+		})
+}
+
+// doCancelPlan cancels the active paid plan (→ free plan) and returns to the menu.
+func (s *UserService) doCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
+	if err := s.panel.CancelUserPlan(u.ID); err != nil {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+			[][]InlineButton{{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}}})
+		return
+	}
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = fresh
+	}
+	s.edit(ctx, client, chatID, msgID,
+		"✅ Подписка отменена — вы на бесплатном тарифе.\n\n"+userSelfCard(u, set, s.panel),
+		userMenuRows(set, u))
+}
+
+// showPlans presents the billing options. While a paid plan is active only renewal
+// and cancellation are offered (no switching); otherwise the paid tariffs are listed
+// for purchase. Free/trial plans are never self-selectable here.
 func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
 	if !set.BillingEnabled {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 		return
 	}
-	plans, err := s.panel.ListTariffPlans(false)
-	if err != nil || len(plans) == 0 {
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = fresh
+	}
+	// Active paid plan: renew the same plan or cancel it — switching is blocked.
+	if active := s.panel.ActivePaidPlan(u); active != nil {
 		s.edit(ctx, client, chatID, msgID,
-			"Сейчас нет доступных тарифов.",
-			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
-		return
-	}
-	// While a paid plan is active, switching to a free/cheaper plan would throw away
-	// the remaining paid time — so only extension (buying a paid plan) is offered.
-	locked := userOnActivePaid(u, plans)
-	var rows [][]InlineButton
-	var freeRows, paidRows int
-	for _, p := range plans {
-		if p.IsFree || p.PriceRub <= 0 {
-			if locked {
-				continue // no downgrade to free while a paid plan is active
-			}
-			rows = append(rows, []InlineButton{{
-				Text:         planButtonLabel(p),
-				CallbackData: fmt.Sprintf("vu:pick:%d", p.ID),
-			}})
-			freeRows++
-		} else {
-			rows = append(rows, []InlineButton{{
-				Text:         planButtonLabel(p),
-				CallbackData: fmt.Sprintf("vu:buy:%d", p.ID),
-			}})
-			paidRows++
-		}
-	}
-	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: "vu:menu"}})
-	msg := "💳 <b>Тарифы</b>\n\n"
-	if locked {
-		msg += "У вас активен платный тариф" + planActiveUntil(u, s.panel) + " — доступно только продление.\n"
-	}
-	if paidRows > 0 {
-		if len(s.panel.PaymentMethods()) > 0 {
-			msg += "Платные — оплата картой или криптой, тариф активируется автоматически.\n"
-		} else {
-			msg += "Платные — оплата и подтверждение админом.\n"
-		}
-	}
-	if freeRows > 0 {
-		msg += "Бесплатные — применяются сразу."
-	}
-	s.edit(ctx, client, chatID, msgID, msg, rows)
-}
-
-// userOnActivePaid reports whether the user has remaining paid time or is currently
-// on a paid plan (so they may only extend, never downgrade to free).
-func userOnActivePaid(u model.User, plans []model.TariffPlan) bool {
-	if u.ExpireAt > time.Now().Unix() {
-		return true
-	}
-	for i := range plans {
-		if plans[i].ID == u.PlanID && !plans[i].IsFree && plans[i].PriceRub > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// planActiveUntil renders " до DD.MM.YYYY" for a user's paid expiry (empty if none).
-func planActiveUntil(u model.User, panel Panel) string {
-	if u.ExpireAt <= 0 {
-		return ""
-	}
-	return " до " + time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006")
-}
-
-func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
-	var planID int64
-	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
-		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+			"💳 <b>Подписка</b>\n\nАктивен тариф «"+esc(active.Name)+"»"+planActiveUntil(u, s.panel)+
+				".\nМожно продлить его или отменить. Сменить тариф можно только после отмены.",
+			[][]InlineButton{
+				{{Text: "🔄 Продлить «" + active.Name + "»", CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}},
+				{{Text: "🚫 Отменить подписку", CallbackData: "vu:cancelplan"}},
+				{{Text: "⬅️ Назад", CallbackData: "vu:menu"}},
+			})
 		return
 	}
 	plans, err := s.panel.ListTariffPlans(false)
@@ -515,47 +589,37 @@ func (s *UserService) handlePickPlan(ctx context.Context, client *Client, chatID
 			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
 		return
 	}
-	var plan *model.TariffPlan
-	for i := range plans {
-		if plans[i].ID == planID {
-			plan = &plans[i]
-			break
+	var rows [][]InlineButton
+	for _, p := range plans {
+		if p.IsFree || p.PriceRub <= 0 {
+			continue // paid plans only
 		}
+		rows = append(rows, []InlineButton{{
+			Text:         planButtonLabel(p),
+			CallbackData: fmt.Sprintf("vu:buy:%d", p.ID),
+		}})
 	}
-	if plan == nil {
-		s.editUserMenu(ctx, client, chatID, msgID, set, u)
+	if len(rows) == 0 {
+		s.edit(ctx, client, chatID, msgID, "Сейчас нет доступных тарифов.",
+			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
 		return
 	}
-	if !plan.IsFree && plan.PriceRub > 0 {
-		s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planIDStr)
-		return
+	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: "vu:menu"}})
+	msg := "💳 <b>Тарифы</b>\n\n"
+	if len(s.panel.PaymentMethods()) > 0 {
+		msg += "Оплата картой или криптой — тариф активируется автоматически."
+	} else {
+		msg += "Оплата и подтверждение админом."
 	}
-	// Block downgrading to a free plan while a paid plan is still active — only
-	// extension is allowed (otherwise the remaining paid time would be lost).
-	if userOnActivePaid(u, plans) {
-		s.edit(ctx, client, chatID, msgID,
-			"❗ У вас активен платный тариф"+planActiveUntil(u, s.panel)+
-				".\nБесплатный станет доступен после его окончания — сейчас можно только продлить.",
-			[][]InlineButton{
-				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
-				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
-			})
-		return
+	s.edit(ctx, client, chatID, msgID, msg, rows)
+}
+
+// planActiveUntil renders " до DD.MM.YYYY" for a user's paid expiry (empty if none).
+func planActiveUntil(u model.User, panel Panel) string {
+	if u.ExpireAt <= 0 {
+		return ""
 	}
-	if err := s.panel.ApplyPlanToUser(u.ID, planID, false); err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
-			[][]InlineButton{
-				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
-				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
-			})
-		return
-	}
-	if fresh, ok := s.findLinkedUser(chatID); ok {
-		u = fresh
-	}
-	s.edit(ctx, client, chatID, msgID,
-		"✅ Тариф «"+esc(plan.Name)+"» применён.\n\n"+userSelfCard(u, set, s.panel),
-		userMenuRows(set.BillingEnabled))
+	return " до " + time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006")
 }
 
 // providerLabel is the button text for a payment method.
@@ -631,19 +695,6 @@ func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID,
 			{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
 			{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
 		})
-}
-
-func (s *UserService) sendSubscription(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User) {
-	caption := subCaption(u, set)
-	png, err := subQR(u, set)
-	if err != nil {
-		s.send(ctx, client, chatID, caption)
-		return
-	}
-	if perr := client.SendPhoto(ctx, chatID, "subscription.png", caption, bytes.NewReader(png)); perr != nil {
-		log.Printf("telegram user: sendPhoto to %d: %v", chatID, perr)
-		s.send(ctx, client, chatID, caption)
-	}
 }
 
 // UserDeepLink builds a t.me link that binds an existing panel user via a

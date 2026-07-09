@@ -34,6 +34,11 @@ type Panel interface {
 	PlanName(planID int64) string
 	RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error)
 	CreateRegisteredUser(name string) (*model.User, error)
+	// ActivePaidPlan reports the user's active paid plan (nil = none), and
+	// CancelUserPlan drops it to the free plan. Together they gate plan switching:
+	// while a paid plan is active only renewal or cancellation is allowed.
+	ActivePaidPlan(u model.User) *model.TariffPlan
+	CancelUserPlan(userID int64) error
 
 	// Automatic payment providers (no-op surface unless configured).
 	PaymentMethods() []string

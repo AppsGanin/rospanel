@@ -3,6 +3,7 @@ import {
   deleteTariffPlan,
   getBilling,
   getPayments,
+  migratePlanUsers,
   saveBilling,
   savePayments,
   saveTariffPlan,
@@ -23,6 +24,7 @@ import {
   Select,
   SettingCard,
   Switch,
+  Textarea,
   TextInput,
   useConfirm,
 } from "./ui";
@@ -306,7 +308,9 @@ export function BillingPanel() {
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
   const [plans, setPlans] = useState<TariffPlan[]>([]);
+  const [planUsers, setPlanUsers] = useState<Record<string, number>>({});
   const [editor, setEditor] = useState<TariffPlan | null>(null);
+  const [migrateTo, setMigrateTo] = useState(0);
   const [loadErr, setLoadErr] = useState("");
   // Payment-provider settings live here too so the whole tab shares one bottom
   // SaveBar (pay = draft, paySaved = server truth; yooKey/cbToken are write-only).
@@ -335,6 +339,7 @@ export function BillingPanel() {
         setCfg(nextCfg);
         setSaved(nextCfg);
         setPlans(nextPlans);
+        setPlanUsers(d.plan_users ?? {});
         setLoadErr("");
       })
       .catch((e) => setLoadErr(errMessage(e)));
@@ -355,6 +360,7 @@ export function BillingPanel() {
         setCfg(nextCfg);
         setSaved(nextCfg);
         setPlans(nextPlans);
+        setPlanUsers(d.plan_users ?? {});
         setLoadErr("");
       })
       .catch((e) => setLoadErr(errMessage(e)))
@@ -471,6 +477,16 @@ export function BillingPanel() {
     }).catch((e) => notifyError(errMessage(e)));
   };
 
+  const migratePlan = () => {
+    if (!editor?.id || !migrateTo) return;
+    run(async () => {
+      const r = await migratePlanUsers(editor.id, migrateTo);
+      setMigrateTo(0);
+      reload();
+      notifySuccess(`Переведено пользователей: ${r.migrated}`);
+    }).catch((e) => notifyError(errMessage(e)));
+  };
+
   const removePlan = async (p: TariffPlan) => {
     const ok = await confirm({
       title: "Удалить тариф?",
@@ -539,6 +555,11 @@ export function BillingPanel() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-ink">{p.name}</span>
                       {!p.enabled && <Badge color="gray">выключен</Badge>}
+                      {(planUsers[String(p.id)] ?? 0) > 0 && (
+                        <Badge color="gray">
+                          {planUsers[String(p.id)]} польз.
+                        </Badge>
+                      )}
                       {p.is_free && <Badge color="teal">бесплатный</Badge>}
                       {cfg.free_plan_id === p.id && (
                         <Badge color="brand">после пробного</Badge>
@@ -556,7 +577,10 @@ export function BillingPanel() {
                     <Button
                       size="sm"
                       variant="light"
-                      onClick={() => setEditor({ ...p })}
+                      onClick={() => {
+                        setEditor({ ...p });
+                        setMigrateTo(0);
+                      }}
                     >
                       Изменить
                     </Button>
@@ -579,34 +603,56 @@ export function BillingPanel() {
         {cfg.enabled && (
           <SettingCard
             title="Тарификация"
-            description="Пробный период и тариф по умолчанию для новых регистраций в user-боте."
+            description="Пробный период, тариф по умолчанию и реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
           >
-            <div className="flex flex-col gap-3">
-              <TextInput
-                label="Пробный период, дней"
-                type="number"
-                value={String(cfg.trial_days)}
-                onChange={(v) =>
-                  setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
-                }
-              />
-              <Select
-                label="Тариф после пробного / при истечении"
-                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                value={String(cfg.free_plan_id)}
-                onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
-              />
-              <Select
-                label="Пробный тариф (лимиты на время пробы)"
-                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                value={String(cfg.trial_plan_id)}
-                onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
-              />
-              <TextInput
-                label="Примечание к оплате"
+            <div className="flex flex-col gap-4">
+              <div>
+                <TextInput
+                  label="Пробный период, дней"
+                  type="number"
+                  value={String(cfg.trial_days)}
+                  onChange={(v) =>
+                    setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
+                  }
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Сколько дней действует пробный тариф после регистрации. 0 —
+                  без пробного периода.
+                </p>
+              </div>
+              <div>
+                <Select
+                  label="Тариф после пробного / при истечении"
+                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                  value={String(cfg.free_plan_id)}
+                  onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  На него пользователь переходит, когда закончился пробный или
+                  платный период, а также при отмене подписки.
+                </p>
+              </div>
+              <div>
+                <Select
+                  label="Пробный тариф (лимиты на время пробы)"
+                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                  value={String(cfg.trial_plan_id)}
+                  onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Лимиты (трафик, устройства), которые действуют во время
+                  пробного периода.
+                </p>
+              </div>
+              <Textarea
+                label="Реквизиты для ручной оплаты"
                 value={cfg.payment_note}
                 onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-                placeholder="Реквизиты, СБП, комментарий для пользователя"
+                placeholder={
+                  "Например:\nПеревод на карту 0000 0000 0000 0000\nили СБП по номеру +7 900 000-00-00\nПосле оплаты напишите @admin"
+                }
+                rows={4}
+                hint="Показывается пользователю, когда не подключён автоматический провайдер (ЮКасса/CryptoBot) — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
               />
             </div>
           </SettingCard>
@@ -630,6 +676,37 @@ export function BillingPanel() {
         {editor && (
           <div className="flex flex-col gap-4">
             <PlanForm plan={editor} onChange={setEditor} />
+            {editor.id > 0 && (planUsers[String(editor.id)] ?? 0) > 0 && (
+              <div className="accent-tint border-accent rounded-lg border p-3">
+                <p className="text-sm font-semibold text-accent">
+                  На тарифе {planUsers[String(editor.id)]} польз.
+                </p>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  Перед отключением или удалением тарифа переведите их на другой —
+                  они получат его лимиты и срок.
+                </p>
+                <Select
+                  className="mt-2"
+                  label="Перевести на другой тариф"
+                  data={[
+                    { value: "0", label: "— выберите тариф —" },
+                    ...safePlans
+                      .filter((p) => p.id !== editor.id)
+                      .map((p) => ({ value: String(p.id), label: p.name })),
+                  ]}
+                  value={String(migrateTo)}
+                  onChange={(v) => setMigrateTo(Number(v))}
+                />
+                <Button
+                  className="mt-2"
+                  onClick={migratePlan}
+                  disabled={!migrateTo || busy}
+                  loading={busy}
+                >
+                  Перевести {planUsers[String(editor.id)]} польз.
+                </Button>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="subtle" onClick={() => setEditor(null)}>
                 Отмена

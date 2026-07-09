@@ -56,6 +56,9 @@ type DeepLink struct {
 // popular first. Schemes drift across client releases — verify periodically.
 func DeepLinks(subURL string) []DeepLink {
 	enc := url.QueryEscape(subURL)
+	// Shadowrocket's sub:// URI carries the subscription URL base64-encoded (NOT
+	// percent-encoded) — feeding it a %-escaped URL makes it fail with "invalid URL".
+	subB64 := base64.StdEncoding.EncodeToString([]byte(subURL))
 	return []DeepLink{
 		{"Happ", "Все платформы · TV", template.URL("happ://add/" + subURL)},
 		{"INCY", "Все платформы · TV", template.URL("incy://import/" + subURL)},
@@ -67,6 +70,6 @@ func DeepLinks(subURL string) []DeepLink {
 		{"v2rayNG", "Android", template.URL("v2rayng://install-sub?url=" + enc)},
 		{"NekoBox", "Android", template.URL("sn://subscription?url=" + enc)},
 		{"Streisand", "iOS · macOS · tvOS", template.URL("streisand://import/" + subURL)},
-		{"Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + enc)},
+		{"Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + subB64)},
 	}
 }

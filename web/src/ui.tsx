@@ -459,6 +459,35 @@ export function TextInput({
   );
 }
 
+export function Textarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+  hint,
+}: {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+  hint?: string;
+}) {
+  return (
+    <Field label={label}>
+      <textarea
+        className={cn(inputCls, "resize-y")}
+        value={value}
+        rows={rows}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      />
+      {hint && <p className="mt-1 text-xs text-ink-muted">{hint}</p>}
+    </Field>
+  );
+}
+
 export function PasswordInput(
   props: Omit<Parameters<typeof TextInput>[0], "type" | "mono">,
 ) {

@@ -62,6 +62,25 @@ func (s *Store) CountUsersOnPlan(planID int64) (int, error) {
 	return n, err
 }
 
+// UserIDsOnPlan returns the ids of users currently assigned to a plan (used to
+// migrate them when a plan is retired).
+func (s *Store) UserIDsOnPlan(planID int64) ([]int64, error) {
+	rows, err := s.db.Query(`SELECT id FROM users WHERE plan_id = ?`, planID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // PaidByProvider returns paid-order revenue grouped by provider ("" = manual),
 // highest-earning first. Queried against payment_orders directly (no user join) so
 // revenue from since-deleted users is still counted.
@@ -176,6 +195,68 @@ func (s *Store) GetPaymentOrder(id int64) (*model.PaymentOrder, error) {
 	return &orders[0], nil
 }
 
+// LatestPendingManualOrder returns the newest still-pending manual order (no
+// provider set) for a user+plan, or sql.ErrNoRows. Lets callers reuse an order
+// instead of piling up duplicates when the user re-taps "Pay".
+func (s *Store) LatestPendingManualOrder(userID, planID int64) (*model.PaymentOrder, error) {
+	orders, err := s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN tariff_plans p ON p.id = o.plan_id
+		 WHERE o.user_id = ? AND o.plan_id = ? AND o.status = 'pending'
+		   AND (o.provider IS NULL OR o.provider = '')
+		 ORDER BY o.created_at DESC LIMIT 1`, userID, planID)
+	if err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &orders[0], nil
+}
+
+// LatestPendingProviderOrder returns the newest still-pending order that went
+// through an automatic provider for a user (or sql.ErrNoRows). Used by the
+// subscription page to show a "payment processing" state after the user returns
+// from the provider until the webhook/poll confirms it.
+func (s *Store) LatestPendingProviderOrder(userID int64) (*model.PaymentOrder, error) {
+	orders, err := s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN tariff_plans p ON p.id = o.plan_id
+		 WHERE o.user_id = ? AND o.status = 'pending' AND o.provider <> ''
+		 ORDER BY o.created_at DESC LIMIT 1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &orders[0], nil
+}
+
+// LatestPendingProviderOrderForPlan returns the newest pending order for a
+// user+plan+provider (or sql.ErrNoRows). Lets the pay flow reuse a fresh order
+// instead of creating duplicates on repeated taps.
+func (s *Store) LatestPendingProviderOrderForPlan(userID, planID int64, provider string) (*model.PaymentOrder, error) {
+	orders, err := s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o
+		 JOIN users u ON u.id = o.user_id
+		 JOIN tariff_plans p ON p.id = o.plan_id
+		 WHERE o.user_id = ? AND o.plan_id = ? AND o.provider = ? AND o.status = 'pending'
+		 ORDER BY o.created_at DESC LIMIT 1`, userID, planID, provider)
+	if err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &orders[0], nil
+}
+
 // GetPaymentOrderByProvider finds a pending-or-any order by its external id.
 func (s *Store) GetPaymentOrderByProvider(provider, providerID string) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
@@ -213,6 +294,15 @@ func (s *Store) ListPaymentOrders(status string, limit int) ([]model.PaymentOrde
 
 func (s *Store) SetPaymentOrderStatus(id int64, status string, paidAt int64) error {
 	_, err := s.db.Exec(`UPDATE payment_orders SET status = ?, paid_at = ? WHERE id = ?`, status, paidAt, id)
+	return err
+}
+
+// CancelPaymentOrderIfPending cancels an order only while it's still pending, so a
+// stale-order sweep or a provider "canceled" status can't clobber an order a
+// concurrent webhook just marked paid.
+func (s *Store) CancelPaymentOrderIfPending(id int64) error {
+	_, err := s.db.Exec(
+		`UPDATE payment_orders SET status = 'cancelled', paid_at = 0 WHERE id = ? AND status = 'pending'`, id)
 	return err
 }
 

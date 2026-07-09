@@ -96,6 +96,32 @@ func (m *Manager) DeleteTariffPlan(id int64) error {
 	return m.store.DeleteTariffPlan(id)
 }
 
+// MigratePlanUsers moves every user currently on fromPlanID to toPlanID (applying
+// the target plan's limits and period). Used when retiring a plan. Returns how many
+// users were moved.
+func (m *Manager) MigratePlanUsers(fromPlanID, toPlanID int64) (int, error) {
+	if fromPlanID == toPlanID {
+		return 0, invalid("выберите другой тариф для перевода")
+	}
+	if _, err := m.store.GetTariffPlan(toPlanID); err != nil {
+		return 0, invalid("целевой тариф не найден")
+	}
+	ids, err := m.store.UserIDsOnPlan(fromPlanID)
+	if err != nil {
+		return 0, err
+	}
+	migrated := 0
+	for _, id := range ids {
+		if err := m.ApplyPlanToUser(id, toPlanID, false); err != nil {
+			logErr("billing: migrate user %d from plan %d to %d: %v", id, fromPlanID, toPlanID, err)
+			continue
+		}
+		migrated++
+	}
+	logInfo("billing: migrated %d/%d users from plan %d to %d", migrated, len(ids), fromPlanID, toPlanID)
+	return migrated, nil
+}
+
 func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	if st.BillingTrialDays < 0 {
 		return invalid("пробный период не может быть отрицательным")
@@ -242,6 +268,68 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 	return nil
 }
 
+// isPlanRenewal reports whether applying planID to the user is a renewal of their
+// currently-active paid plan — the only case where paid time should extend from the
+// current expiry instead of starting from now (buying from trial/free/expired must
+// start fresh, not inherit the remaining time).
+func (m *Manager) isPlanRenewal(userID, planID int64) bool {
+	u, err := m.store.GetUser(userID)
+	if err != nil {
+		return false
+	}
+	ap := m.ActivePaidPlan(*u)
+	return ap != nil && ap.ID == planID
+}
+
+// ActivePaidPlan returns the user's current tariff when it's a paid plan that is
+// still active (expiry in the future), else nil. This is the "locked" state where
+// only renewal or cancellation is allowed — not switching to another plan. A trial
+// or free plan (price 0) never counts, so upgrading from those stays open.
+func (m *Manager) ActivePaidPlan(u model.User) *model.TariffPlan {
+	if u.PlanID == 0 || u.ExpireAt <= time.Now().Unix() {
+		return nil
+	}
+	plan, err := m.store.GetTariffPlan(u.PlanID)
+	if err != nil || plan == nil || plan.IsFree || plan.PriceRub <= 0 {
+		return nil
+	}
+	return plan
+}
+
+// CancelUserPlan cancels a paid subscription immediately: the user is moved to the
+// free plan right away (losing any remaining paid time), matching what EnforceBilling
+// does on expiry — but on demand. With no free plan configured, access is ended
+// instead (plan cleared, expired now). The consumed-trial flag is preserved so
+// cancelling can't reopen a fresh trial.
+func (m *Manager) CancelUserPlan(userID int64) error {
+	set, err := m.Settings()
+	if err != nil {
+		return err
+	}
+	if set.BillingFreePlanID != 0 {
+		if free, err := m.store.GetTariffPlan(set.BillingFreePlanID); err == nil && free != nil {
+			return m.ApplyPlanToUser(userID, free.ID, false)
+		}
+	}
+	// No free plan: end the subscription now — clear the plan and expire immediately.
+	u, err := m.store.GetUser(userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	if err := m.store.SetUserLimits(userID, u.DataLimit, now, u.DeviceLimit); err != nil {
+		return err
+	}
+	if err := m.store.SetResetPeriod(userID, "none", now); err != nil {
+		return err
+	}
+	if err := m.store.SetUserPlan(userID, 0, u.TrialUsed); err != nil {
+		return err
+	}
+	m.TriggerUserSync()
+	return nil
+}
+
 // EnforceBilling downgrades users whose paid/trial period ended to the free plan.
 func (m *Manager) EnforceBilling(now int64) error {
 	set, err := m.Settings()
@@ -269,20 +357,48 @@ func (m *Manager) EnforceBilling(now int64) error {
 	return nil
 }
 
-// RequestPlanPayment creates a pending order for a paid plan.
+// RequestPlanPayment opens a pending manual order for a paid plan and returns the
+// payment instructions. To keep a spammed "Pay" button from piling up duplicate
+// orders (and admin pings), it reuses the user's latest still-pending manual order
+// for the same plan instead of creating another.
 func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
-		return nil, "", err
+		return nil, "", invalid("тариф не найден")
 	}
 	if plan.IsFree || plan.PriceRub <= 0 {
 		return nil, "", invalid("этот тариф бесплатный")
+	}
+	// Same rules as the automatic path: block switching (and buying a disabled plan)
+	// while a paid one is active — but let an existing subscriber renew the plan
+	// they're already on, even if it's since been disabled (grandfathering).
+	if u, err := m.store.GetUser(userID); err == nil && u.PlanID != planID {
+		if !plan.Enabled {
+			return nil, "", invalid("тариф недоступен")
+		}
+		if cur := m.ActivePaidPlan(*u); cur != nil {
+			return nil, "", invalid("у вас активна подписка «%s» — сначала отмените её, чтобы сменить тариф", cur.Name)
+		}
+	}
+	set, _ := m.Settings()
+	if existing, err := m.store.LatestPendingManualOrder(userID, planID); err == nil && existing != nil {
+		return existing, manualOrderMessage(existing, plan, set), nil // reuse, no new order/notification
 	}
 	order, err := m.store.CreatePaymentOrder(userID, planID, plan.PriceRub)
 	if err != nil {
 		return nil, "", err
 	}
-	set, _ := m.Settings()
+	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
+		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
+		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
+	m.EmitWebhook(model.WebhookPaymentCreated, order)
+	return order, manualOrderMessage(order, plan, set), nil
+}
+
+// manualOrderMessage builds the user-facing manual-payment instructions for an
+// order: amount, optional per-plan pay link, the operator's payment note, and the
+// order number to quote in the transfer comment.
+func manualOrderMessage(order *model.PaymentOrder, plan *model.TariffPlan, set *model.Settings) string {
 	msg := fmt.Sprintf("Заказ #%d\nТариф: %s\nСумма: %d ₽", order.ID, plan.Name, plan.PriceRub)
 	if plan.PaymentURL != "" {
 		msg += "\n\nСсылка для оплаты:\n" + plan.PaymentURL
@@ -291,14 +407,13 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
 	msg += fmt.Sprintf("\n\nВ комментарии к переводу укажите: заказ #%d", order.ID)
-	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
-	m.EmitWebhook(model.WebhookPaymentCreated, order)
-	return order, msg, nil
+	msg += "\n\nПосле подтверждения платежа администратором услуга будет активирована."
+	return msg
 }
 
-// ConfirmPayment marks an order paid and applies the plan.
+// ConfirmPayment marks an order paid and applies the plan. Idempotent: the atomic
+// pending→paid claim means a double-submit / retry (or an overlap with the provider
+// webhook on a provider order) applies the plan at most once.
 func (m *Manager) ConfirmPayment(orderID int64) error {
 	order, err := m.store.GetPaymentOrder(orderID)
 	if err != nil {
@@ -308,10 +423,17 @@ func (m *Manager) ConfirmPayment(orderID int64) error {
 		return invalid("заказ уже обработан")
 	}
 	now := time.Now().Unix()
-	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, true); err != nil {
+	claimed, err := m.store.MarkPaymentOrderPaidIfPending(orderID, now)
+	if err != nil {
 		return err
 	}
-	if err := m.store.SetPaymentOrderStatus(orderID, "paid", now); err != nil {
+	if !claimed {
+		return invalid("заказ уже обработан")
+	}
+	// Extend from the current expiry only when this is a renewal of the active paid
+	// plan; otherwise start from now.
+	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID)); err != nil {
+		_ = m.store.RevertPaymentOrderToPending(orderID) // let a retry re-apply
 		return err
 	}
 	logInfo("billing: order %d confirmed, user %d plan %d", orderID, order.UserID, order.PlanID)
@@ -374,21 +496,6 @@ func (m *Manager) PaymentStats() (*model.PaymentStats, error) {
 		PendingSum:   pendingSum,
 		ByProvider:   byProvider,
 	}, nil
-}
-
-// PurchasablePlans lists paid plans a user can buy (excludes free, excludes current if not expired).
-func (m *Manager) PurchasablePlans() ([]model.TariffPlan, error) {
-	all, err := m.store.ListTariffPlans(false)
-	if err != nil {
-		return nil, err
-	}
-	var out []model.TariffPlan
-	for _, p := range all {
-		if !p.IsFree && p.PriceRub > 0 {
-			out = append(out, p)
-		}
-	}
-	return out, nil
 }
 
 func (m *Manager) PlanName(planID int64) string {

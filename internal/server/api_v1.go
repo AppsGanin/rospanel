@@ -54,6 +54,10 @@ type (
 	apiCreateOrderReq struct {
 		UserID int64 `json:"user_id"`
 		PlanID int64 `json:"plan_id"`
+		// Provider is the automatic payment method ("yookassa" | "cryptobot"). Empty
+		// ⇒ a manual order (admin confirms it); set ⇒ a hosted provider payment whose
+		// pay_url is returned.
+		Provider string `json:"provider,omitempty"`
 	}
 )
 
@@ -98,6 +102,7 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/plan", rt.apiApplyPlan)
 	id("GET /v1/users/{id}/connections", rt.apiUserConnections)
 
+	mux.HandleFunc("GET /v1/billing/providers", rt.apiListProviders)
 	mux.HandleFunc("GET /v1/billing/plans", rt.apiListPlans)
 	mux.HandleFunc("POST /v1/billing/plans", rt.apiSavePlan)
 	id("DELETE /v1/billing/plans/{id}", rt.apiDeletePlan)
@@ -511,20 +516,40 @@ func (rt *Router) apiDeletePlan(w http.ResponseWriter, _ *http.Request, id int64
 	writeAPIData(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
-// apiCreateOrder opens a payment order for a user+plan. When a payment provider
-// is configured the response carries the hosted pay URL the user should be sent
-// to; a manual order returns an empty pay_url and waits for confirmation.
+// apiCreateOrder opens a payment order for a user+plan. With no provider it's a
+// manual order (message carries the payment instructions, admin confirms it);
+// with a provider it's a hosted payment whose pay_url the user should be sent to.
 func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	var req apiCreateOrderReq
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	order, payURL, err := rt.mgr.RequestPlanPayment(req.UserID, req.PlanID)
+	if req.Provider == "" {
+		order, msg, err := rt.mgr.RequestPlanPayment(req.UserID, req.PlanID)
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
+		return
+	}
+	order, err := rt.mgr.StartPlanPayment(req.UserID, req.PlanID, req.Provider)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "pay_url": payURL})
+	writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "pay_url": order.PayURL})
+}
+
+// apiListProviders lists the enabled automatic payment methods (empty ⇒ only
+// manual orders are possible). Keys are usable as the `provider` on create-order.
+func (rt *Router) apiListProviders(w http.ResponseWriter, _ *http.Request) {
+	methods := rt.mgr.PaymentMethods()
+	out := make([]map[string]string, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, map[string]string{"key": m, "label": payProviderLabel(m)})
+	}
+	writeAPIData(w, http.StatusOK, out)
 }
 
 func (rt *Router) apiConfirmOrder(w http.ResponseWriter, _ *http.Request, id int64) {
