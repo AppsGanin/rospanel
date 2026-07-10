@@ -11,7 +11,7 @@ RUN npm run build
 
 # 2) Build the Go binary (embeds the SPA from /web/dist). CGO is off, so we
 #    cross-compile from the build platform to $TARGETARCH instead of emulating.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
