@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/AppsGanin/rospanel/compare/v0.10.0...v0.11.0) (2026-07-10)
+
+
+### Features
+
+* **billing:** add plan migration, cancellation, renewal and idempotent payments ([84b4ece](https://github.com/AppsGanin/rospanel/commit/84b4eceb08b76a40b752be65b26d228fadbb6c47))
+* **core,store,link:** add custom per-protocol node display names ([9fd6403](https://github.com/AppsGanin/rospanel/commit/9fd6403abbf7b1ea0aafae06fd2fd68fda7ad7ee))
+
+
+### Bug Fixes
+
+* **billing:** refactor free plan logic and upgrade Xray to v26.6.27 ([4d031a3](https://github.com/AppsGanin/rospanel/commit/4d031a3a633266d38870b117fae8f34e3d248132))
+
 ## [0.10.0](https://github.com/AppsGanin/rospanel/compare/v0.9.0...v0.10.0) (2026-07-08)
 
 
