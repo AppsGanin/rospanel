@@ -18,9 +18,11 @@ import {
   Button,
   CenterLoader,
   Code,
+  Modal,
   SaveBar,
   Select,
   SettingCard,
+  Spinner,
   Switch,
   TextInput,
   useConfirm,
@@ -69,6 +71,7 @@ export function GeneralSettings() {
   const [updating, setUpdating] = useState(false);
   const { isBusy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
+  const [newSecret, setNewSecret] = useState("");
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -153,7 +156,9 @@ export function GeneralSettings() {
     run(
       async () => {
         const { secret_path } = await regenSecret();
-        window.location.href = `${window.location.origin}/${secret_path}/`;
+        // Don't redirect straight away — this path is the only way back into the
+        // panel and can't be recovered, so show it and let the user save it first.
+        setNewSecret(secret_path);
       },
       { key: "secret" },
     );
@@ -179,6 +184,7 @@ export function GeneralSettings() {
       confirmLabel: "Обновить",
     });
     if (!ok) return;
+    const target = upd.latest.replace(/^v/, "");
     setUpdating(true);
     try {
       await applyUpdate();
@@ -187,23 +193,38 @@ export function GeneralSettings() {
       notifyError(errMessage(e));
       return;
     }
-    // The server restarts ~2s later; poll until it's back, then reload to pick up
-    // the new assets + version.
-    notifySuccess("Обновление пошло — ждём перезапуск…");
+    // Reload only once the panel actually serves the NEW version — not merely when
+    // it answers. The old process keeps replying for ~2s before it restarts, so a
+    // bare reachability check would reload prematurely against a server about to
+    // drop (the "reloaded but panel not up yet" bug). We watch two signals: the
+    // reported version reaching `target`, and a down→up transition (a failed poll
+    // proves the restart happened) as a fallback if versions are formatted oddly.
     let tries = 0;
+    let wentDown = false;
     const poll = () => {
       getMe()
-        .then(() => window.location.reload())
+        .then((m) => {
+          const running = (m.version || "").replace(/^v/, "");
+          if (running === target || wentDown) {
+            window.location.reload();
+          } else if (++tries > 60) {
+            setUpdating(false);
+            notifyError("Обновление затянулось — перезагрузите страницу вручную");
+          } else {
+            window.setTimeout(poll, 2000);
+          }
+        })
         .catch(() => {
-          if (++tries > 25) {
+          wentDown = true; // panel dropped ⇒ the restart is underway
+          if (++tries > 60) {
             setUpdating(false);
             notifyError("Панель не ответила — перезагрузите страницу вручную");
-            return;
+          } else {
+            window.setTimeout(poll, 2000);
           }
-          window.setTimeout(poll, 3000);
         });
     };
-    window.setTimeout(poll, 4000);
+    window.setTimeout(poll, 3000);
   };
 
   if (!loaded) return <CenterLoader />;
@@ -240,12 +261,21 @@ export function GeneralSettings() {
             </Button>
           )}
         </div>
-        {updating && (
-          <p className="mt-2 text-xs text-ink-muted">
-            Обновление… панель перезапускается, страница перезагрузится
-            автоматически.
-          </p>
-        )}
+        <Modal
+          open={updating}
+          onClose={() => {}}
+          dismissible={false}
+          title="Обновление панели"
+        >
+          <div className="flex items-start gap-3">
+            <Spinner size={22} className="mt-0.5 shrink-0" />
+            <p className="text-sm text-ink">
+              Панель скачивает новую версию и перезапускается. Не закрывайте эту
+              страницу — она перезагрузится автоматически, как только новая версия
+              запустится. Это может занять до минуты.
+            </p>
+          </div>
+        </Modal>
       </SettingCard>
 
       <SettingCard
@@ -356,6 +386,36 @@ export function GeneralSettings() {
         onCancel={cancel}
       />
       {confirmNode}
+
+      <Modal
+        open={!!newSecret}
+        onClose={() => {}}
+        dismissible={false}
+        title="Секретный путь изменён"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm leading-relaxed text-ink-muted">
+            Панель теперь открывается только по этому адресу. Сохраните его —
+            восстановить путь нельзя, а по старому адресу панель больше недоступна.
+          </p>
+          <Code block copy>
+            {`${window.location.origin}/${newSecret}/`}
+          </Code>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            Запишите адрес в надёжное место (менеджер паролей, заметки). Без него вы
+            потеряете доступ к панели.
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={() => {
+                window.location.href = `${window.location.origin}/${newSecret}/`;
+              }}
+            >
+              Я сохранил, перейти на новый адрес
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

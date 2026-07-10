@@ -117,7 +117,19 @@ echo
 if [ -n "$creds" ]; then
 	printf '%s\n' "$creds"
 else
-	warn "credentials not in the log yet — run:  journalctl -u rospanel | grep -A6 FIRST-RUN"
+	# No FIRST-RUN block after ~40s usually means the service didn't reach the
+	# "initializing panel" stage — it's still downloading Xray, stuck on ACME, or
+	# crash-looping. Surface the state + recent log right here so the reason is
+	# obvious instead of leaving the operator with an empty grep.
+	warn "first-run credentials not captured within ~40s"
+	state="$(systemctl is-active rospanel 2>/dev/null || true)"
+	info "service state: ${BLD}${state:-unknown}${RST}"
+	info "recent log (the last '${BLD}startup:${RST}' line shows where it stopped):"
+	journalctl -u rospanel --no-pager -n 15 2>/dev/null | sed 's/^/    /'
+	echo
+	info "re-check creds:  ${BLD}journalctl -u rospanel | grep -A6 FIRST-RUN${RST}"
+	info "full log:        ${BLD}journalctl -xeu rospanel${RST}"
+	info "service status:  ${BLD}systemctl status rospanel${RST}"
 fi
 echo
 info "${GRN}done${RST} — open ${BLD}https://<your-domain-or-IP>/<secret>/${RST} and log in"
