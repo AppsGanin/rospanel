@@ -332,6 +332,11 @@ func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password 
 
 // verifyAdminPassword checks the current admin password (step-up for sensitive
 // ops). On failure it writes the error response and returns false.
+//
+// A missing/expired session is 401 (the SPA treats that as "session gone" and
+// drops to the login screen). A WRONG step-up password, though, must NOT be 401:
+// the session is still valid, only this one action is refused — so it returns 403
+// and the SPA shows the error inline instead of logging the admin out.
 func (rt *Router) verifyAdminPassword(w http.ResponseWriter, r *http.Request, password string) bool {
 	id, ok := rt.adminID(r)
 	if !ok {
@@ -344,7 +349,7 @@ func (rt *Router) verifyAdminPassword(w http.ResponseWriter, r *http.Request, pa
 		return false
 	}
 	if !auth.VerifyPassword(hash, password) {
-		writeErr(w, http.StatusUnauthorized, "неверный пароль")
+		writeErr(w, http.StatusForbidden, "неверный пароль")
 		return false
 	}
 	return true
