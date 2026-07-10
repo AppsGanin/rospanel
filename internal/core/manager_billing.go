@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -29,20 +28,14 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if !slugRe.MatchString(p.Slug) {
 		return invalid("код тарифа: только латинские буквы, цифры и дефис")
 	}
-	if p.IsFree {
+	// Price defines the tier: 0 ⇒ free (never expires, quota refills every срок
+	// действия via PeriodDays); > 0 ⇒ paid (expires after PeriodDays). There is no
+	// separate "free" flag — see model.TariffPlan.IsFree.
+	if p.PriceRub < 0 {
 		p.PriceRub = 0
-		p.PeriodDays = 0
-	} else if !p.IsFree && p.PriceRub <= 0 && p.PeriodDays > 0 {
-		return invalid("укажите цену для платного тарифа")
 	}
 	if p.SortOrder < 0 {
 		p.SortOrder = 0
-	}
-	p.PaymentURL = strings.TrimSpace(p.PaymentURL)
-	if p.PaymentURL != "" {
-		if err := validateHTTPSURL(p.PaymentURL); err != nil {
-			return err
-		}
 	}
 	if err := m.store.SaveTariffPlan(p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -184,7 +177,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := m.applyPlanLimits(u.ID, plan, 0, plan.IsFree); err != nil {
+			if err := m.applyPlanLimits(u.ID, plan, 0, plan.IsFree()); err != nil {
 				return nil, err
 			}
 			_ = m.store.SetUserPlan(u.ID, plan.ID, false)
@@ -208,10 +201,13 @@ func (m *Manager) createBareUser(name string) (*model.User, error) {
 	return m.store.CreateUser(name, uuid.NewString(), password, subToken, 0, 0, 0)
 }
 
-func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt int64, monthlyReset bool) error {
+func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset bool) error {
 	period := "none"
-	if monthlyReset && plan.DataLimit > 0 {
-		period = "monthly"
+	if freeReset && plan.DataLimit > 0 && plan.PeriodDays > 0 {
+		// Free plan: refill the quota every срок действия (rolling N-day cycle),
+		// not on a fixed calendar month. A "бессрочно" free plan (PeriodDays 0)
+		// never resets — its quota is one-time.
+		period = fmt.Sprintf("days:%d", plan.PeriodDays)
 	}
 	if err := m.store.SetUserLimits(userID, plan.DataLimit, expireAt, plan.DeviceLimit); err != nil {
 		return err
@@ -247,9 +243,18 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 	if err != nil {
 		return err
 	}
+	set, err := m.Settings()
+	if err != nil {
+		return err
+	}
+	// The designated trial plan is a zero-price template that still EXPIRES when
+	// assigned (period-limited proba), so it is NOT treated as a free plan here
+	// even though its price is 0 — a manual assignment gives period_days of access,
+	// then EnforceBilling downgrades it to the free plan, same as the trial flow.
+	freePlan := plan.IsFree() && plan.ID != set.BillingTrialPlanID
 	now := time.Now().Unix()
 	var expire int64
-	if plan.IsFree {
+	if freePlan {
 		expire = 0
 	} else if plan.PeriodDays > 0 {
 		base := now
@@ -258,7 +263,7 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 		}
 		expire = base + int64(plan.PeriodDays)*86400
 	}
-	if err := m.applyPlanLimits(userID, plan, expire, plan.IsFree); err != nil {
+	if err := m.applyPlanLimits(userID, plan, expire, freePlan); err != nil {
 		return err
 	}
 	if err := m.store.SetUserPlan(userID, plan.ID, trial); err != nil {
@@ -290,7 +295,7 @@ func (m *Manager) ActivePaidPlan(u model.User) *model.TariffPlan {
 		return nil
 	}
 	plan, err := m.store.GetTariffPlan(u.PlanID)
-	if err != nil || plan == nil || plan.IsFree || plan.PriceRub <= 0 {
+	if err != nil || plan == nil || plan.IsFree() {
 		return nil
 	}
 	return plan
@@ -366,7 +371,7 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 	if err != nil {
 		return nil, "", invalid("тариф не найден")
 	}
-	if plan.IsFree || plan.PriceRub <= 0 {
+	if plan.IsFree() {
 		return nil, "", invalid("этот тариф бесплатный")
 	}
 	// Same rules as the automatic path: block switching (and buying a disabled plan)
@@ -396,13 +401,10 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 }
 
 // manualOrderMessage builds the user-facing manual-payment instructions for an
-// order: amount, optional per-plan pay link, the operator's payment note, and the
-// order number to quote in the transfer comment.
+// order: amount, the operator's payment note, and the order number to quote in the
+// transfer comment.
 func manualOrderMessage(order *model.PaymentOrder, plan *model.TariffPlan, set *model.Settings) string {
 	msg := fmt.Sprintf("Заказ #%d\nТариф: %s\nСумма: %d ₽", order.ID, plan.Name, plan.PriceRub)
-	if plan.PaymentURL != "" {
-		msg += "\n\nСсылка для оплаты:\n" + plan.PaymentURL
-	}
 	if set != nil && strings.TrimSpace(set.BillingPaymentNote) != "" {
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
@@ -507,15 +509,4 @@ func (m *Manager) PlanName(planID int64) string {
 		return ""
 	}
 	return p.Name
-}
-
-func validateHTTPSURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
-		return invalid("ссылка оплаты должна быть https://…")
-	}
-	if u.User != nil {
-		return invalid("учётные данные в ссылке оплаты не допускаются")
-	}
-	return nil
 }

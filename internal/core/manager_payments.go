@@ -155,7 +155,7 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 	if err != nil {
 		return nil, invalid("тариф не найден")
 	}
-	if plan.IsFree || plan.PriceRub <= 0 {
+	if plan.IsFree() {
 		return nil, invalid("этот тариф бесплатный")
 	}
 	// No switching between plans while a paid one is active: the user must cancel

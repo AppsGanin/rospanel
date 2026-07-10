@@ -65,7 +65,7 @@ function planSelectData(plans: TariffPlan[], user: User) {
       .filter((p) => p.enabled)
       .map((p) => ({
         value: String(p.id),
-        label: p.name + (p.is_free ? ' (бесплатный)' : ''),
+        label: p.name + (p.price_rub <= 0 ? ' (бесплатный)' : ''),
       })),
   ]
   if (user.plan_id && !data.some((o) => o.value === String(user.plan_id))) {

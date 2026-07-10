@@ -12,11 +12,16 @@ export function fmtBytes(n: number): string {
 
 const GB = 1024 * 1024 * 1024
 
-// Preset traffic-limit options (GB as string; "0" = unlimited) shared by the
-// create form and the user detail editor.
+// Preset traffic-limit options (GiB as string; "0" = unlimited) shared by the
+// create form, the user detail editor and the tariff-plan editor — one source of
+// truth so every place offers the same values. The two sub-GiB presets use exact
+// GiB fractions (100/1024, 500/1024) so gbToBytes round-trips to whole MiB.
 export const QUOTA_OPTIONS = [
-  { value: '0', label: 'Безлимит' },
+  { value: '0', label: 'Без лимита' },
+  { value: '0.09765625', label: '100 МБ' },
+  { value: '0.48828125', label: '500 МБ' },
   { value: '1', label: '1 ГБ' },
+  { value: '5', label: '5 ГБ' },
   { value: '10', label: '10 ГБ' },
   { value: '25', label: '25 ГБ' },
   { value: '50', label: '50 ГБ' },

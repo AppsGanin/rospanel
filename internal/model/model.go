@@ -97,11 +97,14 @@ type TariffPlan struct {
 	PeriodDays  int    `json:"period_days"`
 	DataLimit   int64  `json:"data_limit"`
 	DeviceLimit int    `json:"device_limit"`
-	IsFree      bool   `json:"is_free"`
-	PaymentURL  string `json:"payment_url"`
 	SortOrder   int    `json:"sort_order"`
 	Enabled     bool   `json:"enabled"`
 }
+
+// IsFree reports whether this is a free plan. A plan is free iff it has no price:
+// free plans never expire and refill their quota every срок действия, while paid
+// plans (price > 0) expire after their period and must be renewed.
+func (p TariffPlan) IsFree() bool { return p.PriceRub <= 0 }
 
 // PaymentOrder is a user payment request (manual or via a payment provider).
 type PaymentOrder struct {

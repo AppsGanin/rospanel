@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
@@ -282,6 +284,16 @@ func (m *Manager) applyResets(users []model.User, now int64, counter func(int64)
 func resetDue(period string, lastReset, now int64, loc *time.Location) bool {
 	if period == "" || period == "none" || lastReset == 0 {
 		return false
+	}
+	// Rolling N-day cycle ("days:N"), used by free plans to refill the quota
+	// every срок действия: due once N days have elapsed since the last reset,
+	// regardless of calendar boundaries.
+	if spec, ok := strings.CutPrefix(period, "days:"); ok {
+		n, err := strconv.Atoi(spec)
+		if err != nil || n <= 0 {
+			return false
+		}
+		return now-lastReset >= int64(n)*86400
 	}
 	// Compare in the operator timezone so the period rolls over at local midnight.
 	last := time.Unix(lastReset, 0).In(loc)

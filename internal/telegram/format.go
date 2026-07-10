@@ -176,7 +176,7 @@ func userCard(u model.User, loc *time.Location) string {
 
 // planButtonLabel is the inline-button text for a tariff plan.
 func planButtonLabel(p model.TariffPlan) string {
-	if p.IsFree {
+	if p.IsFree() {
 		return p.Name + " · бесплатно"
 	}
 	if p.PriceRub > 0 && p.PeriodDays > 0 {

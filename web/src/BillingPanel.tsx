@@ -11,7 +11,7 @@ import {
   type PaymentSettings,
   type TariffPlan,
 } from "./api";
-import { fmtBytes, gbToBytes } from "./format";
+import { fmtBytes, gbToBytes, QUOTA_OPTIONS } from "./format";
 import { useAction } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -152,20 +152,10 @@ const EMPTY_PLAN = (): TariffPlan => ({
   period_days: 30,
   data_limit: 0,
   device_limit: 0,
-  is_free: false,
-  payment_url: "",
   sort_order: 0,
   enabled: true,
 });
 
-const QUOTA_GB = [
-  { value: "0", label: "Без лимита" },
-  { value: "5", label: "5 ГБ" },
-  { value: "10", label: "10 ГБ" },
-  { value: "50", label: "50 ГБ" },
-  { value: "100", label: "100 ГБ" },
-  { value: "500", label: "500 ГБ" },
-];
 
 const DEVICES = [
   { value: "0", label: "Без лимита" },
@@ -178,33 +168,34 @@ const DEVICES = [
 
 const PERIODS = [
   { value: "0", label: "Бессрочно" },
+  { value: "1", label: "1 день" },
+  { value: "3", label: "3 дня" },
   { value: "7", label: "7 дней" },
+  { value: "14", label: "14 дней" },
   { value: "30", label: "30 дней" },
   { value: "90", label: "90 дней" },
+  { value: "180", label: "180 дней" },
   { value: "365", label: "365 дней" },
 ];
 
 function gbFromBytes(b: number): string {
   if (!b) return "0";
   const gb = b / (1024 * 1024 * 1024);
-  const hit = QUOTA_GB.find((o) => o.value === String(gb));
+  const hit = QUOTA_OPTIONS.find((o) => o.value === String(gb));
   return hit ? hit.value : String(gb);
 }
 
-function periodLabel(days: number, isFree: boolean): string {
-  if (isFree) return "бессрочно";
+function periodLabel(days: number): string {
   if (!days) return "бессрочно";
   return `${days} дн.`;
 }
 
 function planSummary(p: TariffPlan): string {
   const parts: string[] = [];
-  if (p.is_free) {
-    parts.push("бесплатный");
-  } else if (p.price_rub > 0) {
-    parts.push(`${p.price_rub} ₽ / ${periodLabel(p.period_days, false)}`);
+  if (p.price_rub > 0) {
+    parts.push(`${p.price_rub} ₽ / ${periodLabel(p.period_days)}`);
   } else {
-    parts.push(periodLabel(p.period_days, false));
+    parts.push(`бесплатный · ${periodLabel(p.period_days)}`);
   }
   parts.push(p.data_limit ? fmtBytes(p.data_limit) : "∞ трафик");
   parts.push(p.device_limit ? `${p.device_limit} устр.` : "∞ устр.");
@@ -214,9 +205,11 @@ function planSummary(p: TariffPlan): string {
 function PlanForm({
   plan,
   onChange,
+  isTrial,
 }: {
   plan: TariffPlan;
   onChange: (p: TariffPlan) => void;
+  isTrial: boolean;
 }) {
   const patch = (p: Partial<TariffPlan>) => onChange({ ...plan, ...p });
   const periodVal = PERIODS.some((o) => o.value === String(plan.period_days))
@@ -249,46 +242,31 @@ function PlanForm({
           Активен (виден пользователям)
         </label>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Switch
-          checked={plan.is_free}
-          onChange={(v) =>
-            patch({
-              is_free: v,
-              price_rub: v ? 0 : plan.price_rub,
-              period_days: v ? 0 : plan.period_days || 30,
-            })
-          }
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextInput
+          label="Цена, ₽ (0 = бесплатный)"
+          type="number"
+          value={String(plan.price_rub)}
+          onChange={(v) => patch({ price_rub: Math.max(0, Number(v) || 0) })}
         />
-        Бесплатный тариф (лимит трафика сбрасывается каждый месяц)
-      </label>
-      {!plan.is_free && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextInput
-            label="Цена, ₽"
-            type="number"
-            value={String(plan.price_rub)}
-            onChange={(v) => patch({ price_rub: Math.max(0, Number(v) || 0) })}
-          />
-          <Select
-            label="Срок действия"
-            data={PERIODS}
-            value={periodVal}
-            onChange={(v) => patch({ period_days: Number(v) })}
-          />
-          <TextInput
-            label="Ссылка на оплату"
-            value={plan.payment_url}
-            onChange={(v) => patch({ payment_url: v })}
-            placeholder="https://..."
-            className="sm:col-span-2"
-          />
-        </div>
-      )}
+        <Select
+          label="Срок действия"
+          data={PERIODS}
+          value={periodVal}
+          onChange={(v) => patch({ period_days: Number(v) })}
+        />
+      </div>
+      <p className="text-xs text-ink-muted">
+        {isTrial
+          ? "Пробный тариф: доступ истекает через срок действия (при выдаче пробного периода — через «Пробный период, дней»), затем — переход на бесплатный."
+          : plan.price_rub <= 0
+            ? "Бесплатный тариф: доступ не истекает, лимит трафика сбрасывается каждый срок действия."
+            : "Платный тариф: доступ истекает через срок действия, требуется продление."}
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Select
           label="Лимит трафика"
-          data={QUOTA_GB}
+          data={QUOTA_OPTIONS}
           value={gbFromBytes(plan.data_limit)}
           onChange={(v) => patch({ data_limit: gbToBytes(Number(v)) })}
         />
@@ -393,7 +371,7 @@ export function BillingPanel() {
     .filter((p) => p.enabled)
     .map((p) => ({
       value: String(p.id),
-      label: p.name + (p.is_free ? " (бесплатный)" : ""),
+      label: p.name + (p.price_rub <= 0 ? " (бесплатный)" : ""),
     }));
 
   const billingDirty =
@@ -560,7 +538,7 @@ export function BillingPanel() {
                           {planUsers[String(p.id)]} польз.
                         </Badge>
                       )}
-                      {p.is_free && <Badge color="teal">бесплатный</Badge>}
+                      {p.price_rub <= 0 && <Badge color="teal">бесплатный</Badge>}
                       {cfg.free_plan_id === p.id && (
                         <Badge color="brand">после пробного</Badge>
                       )}
@@ -675,7 +653,11 @@ export function BillingPanel() {
       >
         {editor && (
           <div className="flex flex-col gap-4">
-            <PlanForm plan={editor} onChange={setEditor} />
+            <PlanForm
+              plan={editor}
+              onChange={setEditor}
+              isTrial={editor.id > 0 && cfg.trial_plan_id === editor.id}
+            />
             {editor.id > 0 && (planUsers[String(editor.id)] ?? 0) > 0 && (
               <div className="accent-tint border-accent rounded-lg border p-3">
                 <p className="text-sm font-semibold text-accent">

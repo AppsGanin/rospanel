@@ -389,6 +389,7 @@
         <span class="badge brand"
           >Трафик: {{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</span
         >
+        {{if .HasReset}}<span class="badge gray">Трафик до {{.ResetText}}</span>{{end}}
         {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
       </div>
       {{if .HasLimit}}
@@ -431,10 +432,6 @@
         {{else if .Billing.Manual}}
         <p class="muted" style="margin: 12px 0 0">
           После оплаты администратор подтвердит платёж.
-        </p>
-        {{else}}
-        <p class="muted" style="margin: 12px 0 0">
-          После оплаты подписка продлится автоматически.
         </p>
         {{end}}
         {{if and .Billing.Manual .Billing.Note}}
