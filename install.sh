@@ -116,6 +116,8 @@ done
 echo
 if [ -n "$creds" ]; then
 	printf '%s\n' "$creds"
+	echo
+	info "${GRN}done${RST} — open the ${BLD}Full URL${RST} above and log in"
 else
 	# No FIRST-RUN block after ~40s usually means the service didn't reach the
 	# "initializing panel" stage — it's still downloading Xray, stuck on ACME, or
@@ -132,5 +134,4 @@ else
 	info "service status:  ${BLD}systemctl status rospanel${RST}"
 fi
 echo
-info "${GRN}done${RST} — open ${BLD}https://<your-domain-or-IP>/<secret>/${RST} and log in"
 info "manage: ${BLD}rospanel status|restart|stop|uninstall${RST}"

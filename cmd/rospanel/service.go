@@ -416,7 +416,7 @@ func printFirstRunBanner(host, secret, username, password string) {
 	bar := strings.Repeat("=", 64)
 	log.Printf("\n%s\n FIRST-RUN CREDENTIALS (shown only once — save them now)\n%s\n"+
 		" Panel path : /%s/\n"+
-		" If you have a domain: https://%s/%s/\n"+
+		" Full URL   : https://%s/%s/\n"+
 		" Username   : %s\n"+
 		" Password   : %s\n%s",
 		bar, bar, secret, host, secret, username, password, bar)
