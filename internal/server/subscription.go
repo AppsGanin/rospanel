@@ -279,7 +279,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 		}}
 	} else {
 		for _, p := range plans {
-			if p.IsFree || p.PriceRub <= 0 {
+			if p.IsFree() {
 				continue // paid plans only (no free/trial self-select)
 			}
 			b.Plans = append(b.Plans, sub.BillingPlan{

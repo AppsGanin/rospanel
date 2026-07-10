@@ -591,7 +591,7 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	}
 	var rows [][]InlineButton
 	for _, p := range plans {
-		if p.IsFree || p.PriceRub <= 0 {
+		if p.IsFree() {
 			continue // paid plans only
 		}
 		rows = append(rows, []InlineButton{{

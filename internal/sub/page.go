@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/branding"
@@ -71,6 +73,8 @@ type pageData struct {
 	Limit       string
 	HasLimit    bool
 	UsedPct     int
+	ResetText   string // date the traffic quota next refills, e.g. "07.08.2026"
+	HasReset    bool
 	Expire      string
 	HasExpire   bool
 	Online      bool
@@ -186,6 +190,10 @@ func Page(u model.User, set *model.Settings, billing Billing) ([]byte, error) {
 		data.HasLimit = true
 		data.Limit = fmtBytes(u.DataLimit)
 		data.UsedPct = min(100, int(used*100/u.DataLimit))
+		if next, ok := nextResetTime(u.ResetPeriod, u.LastResetAt); ok {
+			data.HasReset = true
+			data.ResetText = next.Format("02.01.2006")
+		}
 	}
 	if u.ExpireAt > 0 {
 		data.HasExpire = true
@@ -200,6 +208,39 @@ func Page(u model.User, set *model.Settings, billing Billing) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// nextResetTime returns when the automatic traffic-quota reset next fires, given
+// the user's reset period and last-reset anchor. Mirrors core.resetDue: "days:N"
+// is a rolling cycle (anchor + N days); the calendar periods return the next
+// boundary. Returns ok=false when no reset is scheduled.
+func nextResetTime(period string, lastReset int64) (time.Time, bool) {
+	if period == "" || period == "none" || lastReset == 0 {
+		return time.Time{}, false
+	}
+	last := time.Unix(lastReset, 0)
+	if spec, ok := strings.CutPrefix(period, "days:"); ok {
+		n, err := strconv.Atoi(spec)
+		if err != nil || n <= 0 {
+			return time.Time{}, false
+		}
+		return last.AddDate(0, 0, n), true
+	}
+	y, m, d := last.Date()
+	loc := last.Location()
+	switch period {
+	case "daily":
+		return time.Date(y, m, d+1, 0, 0, 0, 0, loc), true
+	case "weekly":
+		// Start of the ISO week (Monday) following the anchor's week.
+		offset := (int(last.Weekday()) + 6) % 7 // days since Monday
+		return time.Date(y, m, d-offset+7, 0, 0, 0, 0, loc), true
+	case "monthly":
+		return time.Date(y, m+1, 1, 0, 0, 0, 0, loc), true
+	case "yearly":
+		return time.Date(y+1, 1, 1, 0, 0, 0, 0, loc), true
+	}
+	return time.Time{}, false
 }
 
 func fmtBytes(n int64) string {

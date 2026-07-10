@@ -10,7 +10,7 @@ import (
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             is_free, payment_url, sort_order, enabled
+	             sort_order, enabled
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -21,7 +21,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		is_free, payment_url, sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
+		sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -35,17 +35,17 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.ID == 0 {
 		return s.db.QueryRow(
 			`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-			 is_free, payment_url, sort_order, enabled)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			 is_free, sort_order, enabled)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-			boolToInt(p.IsFree), p.PaymentURL, p.SortOrder, boolToInt(p.Enabled),
+			boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
 		).Scan(&p.ID)
 	}
 	_, err := s.db.Exec(
 		`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
-		 device_limit=?, is_free=?, payment_url=?, sort_order=?, enabled=? WHERE id=?`,
+		 device_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
 		p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-		boolToInt(p.IsFree), p.PaymentURL, p.SortOrder, boolToInt(p.Enabled), p.ID,
+		boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
 	)
 	return err
 }
@@ -131,14 +131,13 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 	var out []model.TariffPlan
 	for rows.Next() {
 		var p model.TariffPlan
-		var free, en int
+		var en int
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
-			&free, &p.PaymentURL, &p.SortOrder, &en,
+			&p.SortOrder, &en,
 		); err != nil {
 			return nil, err
 		}
-		p.IsFree = free != 0
 		p.Enabled = en != 0
 		out = append(out, p)
 	}

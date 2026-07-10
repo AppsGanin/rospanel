@@ -21,7 +21,7 @@ func TestCancelAndSwitchGuard(t *testing.T) {
 	defer st.Close()
 	m := &Manager{store: st}
 
-	free := &model.TariffPlan{Slug: "tc-free", Name: "Бесплатный-т", IsFree: true, Enabled: true}
+	free := &model.TariffPlan{Slug: "tc-free", Name: "Бесплатный-т", PriceRub: 0, Enabled: true}
 	std := &model.TariffPlan{Slug: "tc-std", Name: "Стандарт-т", PriceRub: 199, PeriodDays: 30, Enabled: true}
 	pro := &model.TariffPlan{Slug: "tc-pro", Name: "Про-т", PriceRub: 499, PeriodDays: 30, Enabled: true}
 	for _, p := range []*model.TariffPlan{free, std, pro} {

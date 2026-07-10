@@ -17,9 +17,10 @@ import (
 // PinnedVersion is the Xray-core release auto-installed when no binary is found.
 // Keep in sync with deploy/install-xray.sh and the Dockerfile ARG.
 //
-// Why pinned: Xray 26.3.27 shipped a broken Hysteria2 server-side auth handshake;
-// 26.6.1 fixes it. A floating "latest" can silently regress, so we pin.
-const PinnedVersion = "v26.6.1"
+// Why pinned: Xray 26.3.27 shipped a broken Hysteria2 server-side auth handshake
+// (26.6.x fixes it). A floating "latest" can silently regress, so we pin an exact
+// release and its checksums.
+const PinnedVersion = "v26.6.27"
 
 // pinnedSHA256 is the SHA-256 of each platform's Xray release zip for
 // PinnedVersion, taken from XTLS's published <asset>.dgst files. The downloaded
@@ -27,10 +28,10 @@ const PinnedVersion = "v26.6.1"
 // truncated, or substituted binary before it is extracted and run as root. Update
 // these together with PinnedVersion.
 var pinnedSHA256 = map[string]string{
-	"Xray-linux-64.zip":        "136e822e99e616692550723e8b607cd8858c62a390aea5704938bc27930904ba",
-	"Xray-linux-arm64-v8a.zip": "5c0f397b2605a853e5b308ae6485ad2ec395ca11ed7ae0fd023c480c7fdb279d",
-	"Xray-macos-64.zip":        "2636b49efed01ed4fae07d3988241819d89d880c46a353f6526a2e5195c14d06",
-	"Xray-macos-arm64-v8a.zip": "b0c13d8215eea03929c773056dce21e903fe6e7543348f46bb42184190fb5e50",
+	"Xray-linux-64.zip":        "b3e5902d06d6282fe53cfa2fc426058b9aeaa429b2c812e20887cd47f26d08bf",
+	"Xray-linux-arm64-v8a.zip": "13a251379bea366c2cf10363ad71e75734193d401f26f518bf0c25e5c8f8c931",
+	"Xray-macos-64.zip":        "e917da78383b631d2bc7f8d9412f619e648fc3cd73a5a0f62f031425e5330ff1",
+	"Xray-macos-arm64-v8a.zip": "5b63cf477b4281dc0d9d3af4d7b87391ab868a842b430e9ce8957ea0b60ecab7",
 }
 
 // releaseAsset returns the XTLS release zip name for the current platform.

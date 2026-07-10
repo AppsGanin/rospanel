@@ -639,8 +639,6 @@ export interface TariffPlan {
   period_days: number
   data_limit: number
   device_limit: number
-  is_free: boolean
-  payment_url: string
   sort_order: number
   enabled: boolean
 }
