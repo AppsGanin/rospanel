@@ -578,63 +578,61 @@ export function BillingPanel() {
           )}
         </SettingCard>
 
-        {cfg.enabled && (
-          <SettingCard
-            title="Тарификация"
-            description="Пробный период, тариф по умолчанию и реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
-          >
-            <div className="flex flex-col gap-4">
-              <div>
-                <TextInput
-                  label="Пробный период, дней"
-                  type="number"
-                  value={String(cfg.trial_days)}
-                  onChange={(v) =>
-                    setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
-                  }
-                />
-                <p className="mt-1 text-xs text-ink-muted">
-                  Сколько дней действует пробный тариф после регистрации. 0 —
-                  без пробного периода.
-                </p>
-              </div>
-              <div>
-                <Select
-                  label="Тариф после пробного / при истечении"
-                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                  value={String(cfg.free_plan_id)}
-                  onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
-                />
-                <p className="mt-1 text-xs text-ink-muted">
-                  На него пользователь переходит, когда закончился пробный или
-                  платный период, а также при отмене подписки.
-                </p>
-              </div>
-              <div>
-                <Select
-                  label="Пробный тариф (лимиты на время пробы)"
-                  data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
-                  value={String(cfg.trial_plan_id)}
-                  onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
-                />
-                <p className="mt-1 text-xs text-ink-muted">
-                  Лимиты (трафик, устройства), которые действуют во время
-                  пробного периода.
-                </p>
-              </div>
-              <Textarea
-                label="Реквизиты для ручной оплаты"
-                value={cfg.payment_note}
-                onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-                placeholder={
-                  "Например:\nПеревод на карту 0000 0000 0000 0000\nили СБП по номеру +7 900 000-00-00\nПосле оплаты напишите @admin"
+        <SettingCard
+          title="Тарификация"
+          description="Пробный период, тариф по умолчанию и реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <TextInput
+                label="Пробный период, дней"
+                type="number"
+                value={String(cfg.trial_days)}
+                onChange={(v) =>
+                  setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
                 }
-                rows={4}
-                hint="Показывается пользователю, когда не подключён автоматический провайдер (ЮКасса/CryptoBot) — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
               />
+              <p className="mt-1 text-xs text-ink-muted">
+                Сколько дней действует пробный тариф после регистрации. 0 —
+                без пробного периода.
+              </p>
             </div>
-          </SettingCard>
-        )}
+            <div>
+              <Select
+                label="Тариф после пробного / при истечении"
+                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                value={String(cfg.free_plan_id)}
+                onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                На него пользователь переходит, когда закончился пробный или
+                платный период, а также при отмене подписки.
+              </p>
+            </div>
+            <div>
+              <Select
+                label="Пробный тариф (лимиты на время пробы)"
+                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                value={String(cfg.trial_plan_id)}
+                onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                Лимиты (трафик, устройства), которые действуют во время
+                пробного периода.
+              </p>
+            </div>
+            <Textarea
+              label="Реквизиты для ручной оплаты"
+              value={cfg.payment_note}
+              onChange={(v) => setCfg({ ...cfg, payment_note: v })}
+              placeholder={
+                "Например:\nПеревод на карту 0000 0000 0000 0000\nили СБП по номеру +7 900 000-00-00\nПосле оплаты напишите @admin"
+              }
+              rows={4}
+              hint="Показывается пользователю, когда не подключён автоматический провайдер (ЮКасса/CryptoBot) — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
+            />
+          </div>
+        </SettingCard>
 
         <SaveBar
           dirty={dirty}
