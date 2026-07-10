@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/AppsGanin/rospanel/compare/v0.11.0...v0.12.0) (2026-07-10)
+
+
+### Features
+
+* add startup stage logging, improve UX for secret path and update flows ([fe8ceb3](https://github.com/AppsGanin/rospanel/commit/fe8ceb3bd847994ff48810ccd6a2e14d4437ff37))
+
+
+### Bug Fixes
+
+* return 403 instead of 401 for wrong step-up password ([e34a328](https://github.com/AppsGanin/rospanel/commit/e34a3280ac3e33e242d3ba29a74b09257e47273e))
+
 ## [0.11.0](https://github.com/AppsGanin/rospanel/compare/v0.10.0...v0.11.0) (2026-07-10)
 
 
