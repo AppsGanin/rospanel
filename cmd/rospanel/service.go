@@ -32,6 +32,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tuning"
+	"github.com/AppsGanin/rospanel/internal/version"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -39,7 +40,9 @@ import (
 // generate the Xray config, start the background loops and serve the admin API +
 // masquerade/subscription surface until a termination signal arrives.
 func runServer(dataDir string) {
+	log.Printf("startup: РосПанель %s booting (data dir %s)", version.Version, dataDir)
 	adminAddr := env("ROSPANEL_ADMIN_ADDR", "127.0.0.1:8080")
+	startupStage("resolving Xray binary")
 	xrayBin := resolveXrayBin(env("XRAY_BIN", "xray"), filepath.Join(dataDir, "bin"))
 
 	dbPath := filepath.Join(dataDir, "rospanel.db")
@@ -76,6 +79,7 @@ func runServer(dataDir string) {
 		log.Fatalf("secrets key: %v", err)
 	}
 
+	startupStage("opening database and applying migrations")
 	st, err := store.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open store: %v", err)
@@ -88,9 +92,11 @@ func runServer(dataDir string) {
 	// Obtain the ACME cert before Xray opens :443. Non-fatal: if ACME isn't
 	// reachable yet, a self-signed fallback is written so Xray still comes up, and
 	// tlsLoop keeps retrying ACME and swaps in the real cert once it succeeds.
+	startupStage("obtaining TLS certificate (ACME, or self-signed fallback)")
 	if err := bootstrapTLS(st, certPath, keyPath, acmeDir); err != nil {
 		log.Printf("TLS not ready yet: %v — will keep retrying; Xray starts once a cert is issued", err)
 	}
+	startupStage("initializing panel and admin account")
 	secret, err := bootstrapPanel(st)
 	if err != nil {
 		log.Fatalf("bootstrap panel: %v", err)
@@ -157,6 +163,7 @@ func runServer(dataDir string) {
 	// restarted moments later when the background fetch lands.
 	mgr.SeedProxies()
 
+	startupStage("generating Xray config and starting Xray")
 	if err := mgr.Reconcile(); err != nil {
 		log.Printf("initial reconcile failed (panel still starting): %v", err)
 	}
@@ -196,6 +203,7 @@ func runServer(dataDir string) {
 	// The panel sits behind Xray, which forwards the decrypted request over
 	// loopback with a PROXY-protocol header (xver=1) — the proxyproto listener
 	// recovers the real client IP from it (else everything reads as 127.0.0.1).
+	startupStage("starting admin API server")
 	ln, err := net.Listen("tcp", adminAddr)
 	if err != nil {
 		log.Fatalf("listen %s: %v", adminAddr, err)
@@ -208,6 +216,8 @@ func runServer(dataDir string) {
 			log.Fatalf("http server: %v", err)
 		}
 	}()
+
+	startupStage("ready — panel is up (see FIRST-RUN CREDENTIALS above on a fresh install)")
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -257,6 +267,15 @@ func bootstrapTLS(st *store.Store, certPath, keyPath, acmeDir string) error {
 		return err
 	}
 	return tlsmgr.Ensure(set, certPath, keyPath, acmeDir, false)
+}
+
+// startupStage logs the current boot phase so the journal reads as an ordered
+// checklist. If the process hangs, is OOM-killed, or systemd times it out, the
+// LAST "startup:" line points straight at the stalled step (DB migration, Xray
+// download, ACME, reconcile) instead of leaving an ambiguous silent gap — the
+// usual reason `journalctl | grep FIRST-RUN` comes back empty.
+func startupStage(format string, args ...any) {
+	log.Printf("startup: "+format, args...)
 }
 
 // safeTick runs fn, recovering from panics so a single bad iteration can't kill
@@ -427,12 +446,15 @@ func resolveXrayBin(bin, downloadDir string) string {
 	if fi, err := os.Stat(bin); err == nil && !fi.IsDir() {
 		return bin
 	}
-	log.Printf("xray: %q not found — fetching pinned release %s", bin, xray.PinnedVersion)
+	log.Printf("xray: %q not found — downloading pinned release %s from GitHub "+
+		"(~40 MB; can take a minute on a slow link)", bin, xray.PinnedVersion)
+	t0 := time.Now()
 	p, err := xray.EnsureBinary(downloadDir)
 	if err != nil {
-		log.Fatalf("xray: required binary not found and auto-install failed: %v "+
-			"(connect to the internet, install Xray, or set XRAY_BIN)", err)
+		log.Fatalf("xray: required binary not found and auto-install failed after %s: %v "+
+			"(check outbound access to github.com, install Xray manually, or point XRAY_BIN at an existing binary)",
+			time.Since(t0).Round(time.Second), err)
 	}
-	log.Printf("xray: using auto-installed binary %s", p)
+	log.Printf("xray: ready — %s (downloaded in %s)", p, time.Since(t0).Round(time.Second))
 	return p
 }

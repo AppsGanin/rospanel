@@ -76,6 +76,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
   const [provider, setProvider] = useState('letsencrypt')
   const [finalHost, setFinalHost] = useState('')
   const [pathMode, setPathMode] = useState<'generate' | 'keep'>('generate')
+  const [savedPath, setSavedPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [tls, setTls] = useState<TLSStatus | null>(null)
 
@@ -190,7 +191,11 @@ export function Wizard({ onDone }: { onDone: () => void }) {
     try {
       await finishSetup()
       const { secret_path } = await regenSecret()
-      redirect(secret_path)
+      // Don't redirect straight away — the new path is the only way back into
+      // the panel and can't be recovered, so show it and let the user save it
+      // before moving on.
+      setSavedPath(secret_path)
+      setBusy(false)
     } catch (e) {
       notifyError(errMessage(e))
       setBusy(false)
@@ -248,8 +253,26 @@ export function Wizard({ onDone }: { onDone: () => void }) {
           {/* Restore flow */}
           {mode === 'restore' && <RestoreFlow onBack={() => setMode('')} />}
 
+          {/* Save the freshly generated secret path before leaving the wizard */}
+          {mode === 'new' && savedPath && (
+            <div className="flex animate-fade-in flex-col gap-4">
+              <p className="text-sm text-ink-muted">
+                Панель теперь открывается только по этому адресу. Сохраните его — восстановить
+                путь нельзя, а по старому адресу панель больше недоступна.
+              </p>
+              <Code block copy>
+                {`https://${finalHost || window.location.hostname}/${savedPath}/`}
+              </Code>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                Запишите адрес в надёжное место (менеджер паролей, заметки). Без него вы потеряете
+                доступ к панели.
+              </div>
+              <Button onClick={() => redirect(savedPath)}>Я сохранил, перейти на новый адрес</Button>
+            </div>
+          )}
+
           {/* New server wizard */}
-          {mode === 'new' && (
+          {mode === 'new' && !savedPath && (
             <>
               {/* Stepper header */}
               <div className="flex items-center">
