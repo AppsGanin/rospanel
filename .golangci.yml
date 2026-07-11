@@ -1,0 +1,22 @@
+# golangci-lint v2 config. The CI job runs with only-new-issues, so the existing
+# baseline never blocks a PR — the gate only flags lint debt a change introduces.
+version: "2"
+
+linters:
+  # Default set (errcheck, govet, ineffassign, staticcheck, unused) plus a few
+  # cheap, high-signal additions.
+  default: standard
+  enable:
+    - bodyclose   # every HTTP response body must be closed (leak guard)
+    - misspell    # catches typos in comments/strings
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # User-facing error messages are Russian and intentionally start with a
+        # capital letter, so the "error strings should not be capitalized" check
+        # is a false positive across this codebase.
+        - -ST1005
+  exclusions:
+    presets:
+      - std-error-handling
