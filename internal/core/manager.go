@@ -105,6 +105,12 @@ type Manager struct {
 
 	guard *bruteGuard
 
+	// connGuardWanted records whether the operator asked for the per-IP connection
+	// guard (ROSPANEL_CONNLIMIT != off). Needed to tell "off on purpose" apart from
+	// "on, but nftables silently refused it" in the health report — the second is a
+	// problem, the first isn't. Set once at boot, before the panel serves.
+	connGuardWanted atomic.Bool
+
 	// webhookCh is the outbound-webhook delivery queue drained by a small worker
 	// pool (see webhooks.go). Buffered so an event emit never blocks the caller;
 	// a full queue drops the delivery with a log rather than stalling the panel.
