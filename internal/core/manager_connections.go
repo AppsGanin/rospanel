@@ -26,10 +26,10 @@ type ConnInfo struct {
 	// DisplayName is the admin-configured custom node name (empty ⇒ use Name).
 	DisplayName string `json:"display_name"`
 	Transport   string `json:"transport"`
-	Security  string `json:"security"`
-	Port      string `json:"port"`
-	Note      string `json:"note"`
-	Enabled   bool   `json:"enabled"`
+	Security    string `json:"security"`
+	Port        string `json:"port"`
+	Note        string `json:"note"`
+	Enabled     bool   `json:"enabled"`
 	// Fingerprint is the protocol's uTLS fingerprint (empty for Hysteria2, which
 	// has no uTLS — the UI then shows no fingerprint control for it).
 	Fingerprint string `json:"fingerprint"`
