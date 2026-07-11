@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.13.0](https://github.com/AppsGanin/rospanel/compare/v0.12.0...v0.13.0) (2026-07-11)
+
+
+### Features
+
+* **audit:** add comprehensive audit log for user and billing actions ([d75eb33](https://github.com/AppsGanin/rospanel/commit/d75eb334a0adb6ac24a445bf1449eacb5b7f5941))
+* **backup:** scheduled local backups, independent of Telegram ([c9293e1](https://github.com/AppsGanin/rospanel/commit/c9293e1c301bac9ea674e6db596c2980313a4948))
+* **core:** surface connguard and BBR status in the health report ([7a2693e](https://github.com/AppsGanin/rospanel/commit/7a2693e856b5590e64dadb6ec2359ba44927096b))
+* **log:** timestamp panel logs, in the operator's timezone ([64bb14d](https://github.com/AppsGanin/rospanel/commit/64bb14d60816f12a2dcae201cbab3937102381b6))
+* **server:** lock out repeated invalid API keys, add a key-free liveness probe ([94f84cb](https://github.com/AppsGanin/rospanel/commit/94f84cb47bc1563b2188a2e6dcf40e5fe2b9db46))
+* **xray:** add a Restart button to the Xray card ([82e8ad1](https://github.com/AppsGanin/rospanel/commit/82e8ad12628ba8e1e77254ab31b95365d097978e))
+* **xray:** run Xray in the operator's timezone so its log matches the panel's ([09e58f7](https://github.com/AppsGanin/rospanel/commit/09e58f7de040923397b65d32426e74afd0f3ee4d))
+
+
+### Bug Fixes
+
+* **billing:** always show tariff settings regardless of enabled state ([7cc5c32](https://github.com/AppsGanin/rospanel/commit/7cc5c32ce1dc39634abb674c215df1a805300b00))
+* **datasec:** correct error message about secrets.key recovery ([26abc24](https://github.com/AppsGanin/rospanel/commit/26abc248988755581634a690bed3af8f0d5661d8))
+* **lint:** name the UserEventRetentionDays doc comment after its const ([6b8c784](https://github.com/AppsGanin/rospanel/commit/6b8c784908d356f949e6ec912cec52bd49511636))
+* **log:** pass structured key/value args to the slog helpers ([33d87d4](https://github.com/AppsGanin/rospanel/commit/33d87d468cc5b93f93a42b80df6abbedbe17766e))
+* payment amount verification, login lockout hardening, and timezone-correct logs ([4169129](https://github.com/AppsGanin/rospanel/commit/416912958fece0101a58c9468ae87baf3077e0c3))
+* **payments:** verify the charged amount matches the order before granting a plan ([f585749](https://github.com/AppsGanin/rospanel/commit/f585749ec08eb0fbeac45d9d52158611037fbddb))
+* **security:** bump Go toolchain to 1.26.5 to patch stdlib CVEs ([f4c7b2f](https://github.com/AppsGanin/rospanel/commit/f4c7b2ffbda3041b4aacb3964678b7da154bf0a8))
+* **server:** keep login lockouts when shedding the rate-limiter map ([33e3774](https://github.com/AppsGanin/rospanel/commit/33e3774b982f6459699dc81dbd9c3ab23f1b23ca))
+* **sub:** hide the tariff and payment block for users with no plan ([94d2d19](https://github.com/AppsGanin/rospanel/commit/94d2d193119c91fc80ef67882bf891b714fe8d0b))
+* **ui:** stop the Xray card overflowing on mobile ([849fd65](https://github.com/AppsGanin/rospanel/commit/849fd65b5f5e1d32f0dfeab440beaaf57a2e8c0b))
+* unify first-run URL label to "Full URL" ([a6e8912](https://github.com/AppsGanin/rospanel/commit/a6e8912721a35466b70b99e754680fdec1ed1bae))
+
+
+### Performance Improvements
+
+* **store:** index and prune the connections table ([92e66e2](https://github.com/AppsGanin/rospanel/commit/92e66e26cebe14efe96c4a4dc0a5569dbade3c17))
+
 ## [0.12.0](https://github.com/AppsGanin/rospanel/compare/v0.11.0...v0.12.0) (2026-07-10)
 
 
