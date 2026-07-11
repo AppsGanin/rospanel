@@ -35,7 +35,8 @@ type oaRoute struct {
 	resp                       reflect.Type // response data type, nil ⇒ generic object
 	list                       bool
 	meta                       bool
-	status                     int // success status; 0 ⇒ 200
+	status                     int  // success status; 0 ⇒ 200
+	noAuth                     bool // key-free route; overrides the document-wide bearerAuth
 }
 
 // oaOrderResp / oaAffectedResp document the two non-model JSON responses so the
@@ -125,7 +126,17 @@ func apiSpecRoutes() []oaRoute {
 			resp: t(core.SystemStatus{})},
 		{method: "GET", path: "/v1/health/report", tag: "Monitoring", summary: "Self-diagnostics",
 			resp: t(core.HealthReport{})},
+		{method: "GET", path: "/v1/healthz", tag: "Monitoring", noAuth: true,
+			summary: "Liveness probe (no key; 503 when Xray is down)",
+			resp:    t(healthzResp{})},
 	}
+}
+
+// healthzResp types the key-free liveness payload for the spec.
+type healthzResp struct {
+	Status        string `json:"status"` // "ok" | "degraded"
+	Xray          string `json:"xray"`   // "running" | "down"
+	XrayStartedAt int64  `json:"xray_started_at"`
 }
 
 // buildOpenAPI assembles the full OpenAPI 3.0 document for the given server URL.
@@ -184,6 +195,11 @@ func buildOperation(r oaRoute, schemas map[string]any) map[string]any {
 	op := map[string]any{
 		"summary": r.summary,
 		"tags":    []any{r.tag},
+	}
+	// An empty security list opts this operation out of the document-wide bearerAuth,
+	// so Swagger UI doesn't demand a key for a route that never wanted one.
+	if r.noAuth {
+		op["security"] = []any{}
 	}
 
 	var params []any
