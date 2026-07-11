@@ -89,7 +89,12 @@ export function Dashboard({
       {/* White sticky top bar. */}
       <header className="sticky top-0 z-100 border-b border-brand-600/10 bg-white shadow-sm">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-3 sm:px-4">
-          <div className="flex gap-2 items-center">
+          {/* min-w-0 lets this box shrink so the row never overflows the viewport;
+              BrandLogo ellipses instead of spilling over the badge next to it. The
+              badge is decorative, so it's the first thing to go when space is tight —
+              below lg the nav needs every pixel, and hiding it keeps the panel name
+              whole instead of truncating it to make room. */}
+          <div className="flex min-w-0 gap-2 items-center">
             <button
               className="text-gray-600 md:hidden"
               onClick={() => setMenuOpen(true)}
@@ -99,15 +104,17 @@ export function Dashboard({
             </button>
             <BrandLogo size={26} />
             {version && (
-              <span className="rounded-full self-start accent-tint px-2 py-0.5 text-xs font-medium text-ink-muted sm:inline">
+              <span className="hidden shrink-0 whitespace-nowrap rounded-full self-start accent-tint px-2 py-0.5 text-xs font-medium text-ink-muted lg:inline">
                 v{version}
               </span>
             )}
           </div>
 
-          {/* Desktop nav + account. */}
-          <div className="hidden items-center gap-8 md:flex">
-            <nav className="no-scrollbar flex items-center gap-7 overflow-x-auto">
+          {/* Desktop nav + account. min-w-0 is what lets the nav actually shrink —
+              a flex item's default min-width:auto floors it at its content width, so
+              overflow-x-auto on the nav would never engage without it. */}
+          <div className="hidden min-w-0 items-center gap-8 md:flex">
+            <nav className="no-scrollbar flex min-w-0 items-center gap-7 overflow-x-auto">
               {NAV.map((n) => (
                 <button
                   key={n.value}
