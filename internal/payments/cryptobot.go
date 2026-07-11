@@ -68,30 +68,52 @@ func (c *CryptoBot) CreateInvoice(ctx context.Context, amountRub int, orderID in
 	return fmt.Sprintf("%d", out.Result.InvoiceID), url, nil
 }
 
-// InvoiceStatus returns the normalised status of an invoice.
-func (c *CryptoBot) InvoiceStatus(ctx context.Context, invoiceID string) (Status, error) {
+// InvoiceStatus returns the normalised status of an invoice plus the amount
+// CryptoBot recorded for it. Invoices are created as fiat (RUB), so "amount" is
+// the fiat amount (a decimal string) and "fiat" its currency — NOT paid_amount,
+// which is the crypto the payer actually sent.
+func (c *CryptoBot) InvoiceStatus(ctx context.Context, invoiceID string) (Result, error) {
 	body := map[string]any{"invoice_ids": invoiceID}
 	var out struct {
 		Result struct {
-			Items []struct {
-				Status string `json:"status"`
-			} `json:"items"`
+			Items []Invoice `json:"items"`
 		} `json:"result"`
 	}
 	if err := c.call(ctx, "getInvoices", body, &out); err != nil {
-		return "", err
+		return Result{}, err
 	}
 	if len(out.Result.Items) == 0 {
-		return StatusPending, nil
+		return Result{Status: StatusPending}, nil
 	}
-	switch out.Result.Items[0].Status {
+	return out.Result.Items[0].AsResult(), nil
+}
+
+// Invoice is the subset of CryptoBot's Invoice object we consume. It is returned
+// by getInvoices and is also the body of an invoice_paid webhook payload.
+type Invoice struct {
+	Status string `json:"status"`
+	Amount string `json:"amount"` // fiat amount for a currency_type=fiat invoice
+	Fiat   string `json:"fiat"`   // fiat currency code, e.g. "RUB"
+}
+
+// AsResult normalises an Invoice into a Result. Exported so a webhook payload
+// (which is itself an Invoice) can be verified by the caller.
+func (inv Invoice) AsResult() Result {
+	res := Result{Currency: inv.Fiat}
+	if k, ok := parseKopecks(inv.Amount); ok {
+		res.AmountKopecks = k
+	} else {
+		res.Currency = "" // unreadable amount → report "unknown", not a bogus 0
+	}
+	switch inv.Status {
 	case "paid":
-		return StatusPaid, nil
+		res.Status = StatusPaid
 	case "expired":
-		return StatusCanceled, nil
+		res.Status = StatusCanceled
 	default: // active
-		return StatusPending, nil
+		res.Status = StatusPending
 	}
+	return res
 }
 
 // VerifyWebhook checks the crypto-pay-api-signature header: HMAC-SHA256 of the raw
