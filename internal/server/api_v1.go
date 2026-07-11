@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"mime"
 	"net/http"
 	"strconv"
@@ -70,8 +71,32 @@ func (rt *Router) apiHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/openapi.json", rt.apiOpenAPI)
 	mux.HandleFunc("GET /v1/docs", rt.apiDocs)
+	mux.HandleFunc("GET /v1/healthz", rt.apiHealthz)
 	mux.Handle("/", rt.apiAuth(rt.apiMux()))
 	return mux
+}
+
+// apiHealthz is the liveness probe for an external uptime monitor or load balancer:
+// key-free, since a monitor shouldn't have to carry a credential that can delete
+// users, and since the check must still answer when the DB is unhappy.
+//
+// It deliberately lives under the API path rather than at the root. The whole point
+// of the masquerade is that an unknown path is indistinguishable from ordinary
+// hosting, and a root /healthz answering JSON would fingerprint the panel in one
+// request. Under the API segment the decoy still covers anyone who doesn't know it,
+// and the segment is stable across secret rotation — so the monitor's URL survives.
+//
+// Xray being down means the node carries no VPN traffic even though the panel is
+// fine, so that's a 503: an operator wants to be paged for it.
+func (rt *Router) apiHealthz(w http.ResponseWriter, _ *http.Request) {
+	running, startedAt := rt.mgr.XrayStatus()
+	body := healthzResp{Status: "ok", Xray: "running", XrayStartedAt: startedAt}
+	code := http.StatusOK
+	if !running {
+		body.Status, body.Xray = "degraded", "down"
+		code = http.StatusServiceUnavailable
+	}
+	writeAPIData(w, code, body)
 }
 
 // apiMux builds the /v1 route table for the external API. Auth is applied by the
@@ -131,10 +156,25 @@ func (rt *Router) apiMux() http.Handler {
 // as "Authorization: Bearer <key>" or the "X-API-Key: <key>" header. An
 // absent/invalid/revoked key gets a 401; the lookup is a constant-time hash match
 // in the store (the raw key never touches the DB).
+//
+// Wrong keys are also counted per source IP: the apiLimiter out front only caps
+// request rate, so without this a source could keep guessing at 600/min forever.
+// After enough failures the IP is locked out for the guard's window; presenting a
+// valid key clears its record immediately, so a misconfigured integration recovers
+// as soon as it's fixed.
 func (rt *Router) apiAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIP(r)
+		if rt.apiKeys.blocked(ip, "") {
+			slog.Warn("api: key attempts locked out", "ip", ip)
+			writeAPIErr(w, http.StatusTooManyRequests, "too_many_requests",
+				"too many invalid API keys, try again later")
+			return
+		}
 		key := apiKeyFromRequest(r)
 		if key == "" {
+			// No credential offered at all — a bare probe of the path, not a guess.
+			// Don't spend the IP's failure budget on it.
 			writeAPIErr(w, http.StatusUnauthorized, "unauthorized", "missing API key")
 			return
 		}
@@ -144,9 +184,12 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 			return
 		}
 		if ak == nil {
+			rt.apiKeys.fail(ip, "")
+			slog.Warn("api: invalid key", "ip", ip)
 			writeAPIErr(w, http.StatusUnauthorized, "unauthorized", "invalid or revoked API key")
 			return
 		}
+		rt.apiKeys.success(ip, "")
 		// The key's name is the actor in the audit log, so a mutation made over the
 		// external API is attributable to the integration that made it.
 		next.ServeHTTP(w, r.WithContext(actor.With(r.Context(), actor.APIKey(ak.Name))))

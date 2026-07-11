@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -44,6 +45,47 @@ func TestAPIKeyFromRequest(t *testing.T) {
 		}
 		if got := apiKeyFromRequest(r); got != c.want {
 			t.Errorf("auth=%q xkey=%q → %q, want %q", c.auth, c.xkey, got, c.want)
+		}
+	}
+}
+
+// An IP that keeps presenting invalid keys is locked out, and the lockout answers
+// 429 before the request ever reaches the store (so a nil manager is fine here).
+func TestAPIAuthLocksOutAfterRepeatedBadKeys(t *testing.T) {
+	rt := &Router{apiKeys: newAPIKeyGuard()}
+	h := rt.apiHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	ip := clientIP(req)
+	for range rt.apiKeys.maxFails {
+		rt.apiKeys.fail(ip, "")
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/users", nil))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("locked-out IP got %d, want 429", rec.Code)
+	}
+
+	// A valid key clears the record, so a fixed integration recovers at once.
+	rt.apiKeys.success(ip, "")
+	if rt.apiKeys.blocked(ip, "") {
+		t.Fatal("success() did not clear the lockout")
+	}
+}
+
+// A request with no credential at all is a bare probe, not a guess — it must not
+// spend the IP's failure budget, or an unauthenticated prober could lock out the
+// address a legitimate integration shares with it.
+func TestAPIAuthMissingKeyDoesNotCountAsFailure(t *testing.T) {
+	rt := &Router{apiKeys: newAPIKeyGuard()}
+	h := rt.apiHandler()
+
+	for i := range rt.apiKeys.maxFails * 2 {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/users", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("probe %d got %d, want 401 every time", i, rec.Code)
 		}
 	}
 }

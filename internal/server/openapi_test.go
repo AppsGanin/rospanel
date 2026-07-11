@@ -54,7 +54,7 @@ func TestBuildOpenAPI(t *testing.T) {
 // TestDocsUnauthenticated verifies the spec + Swagger UI are served without a key,
 // while an unknown /v1 path without a key is rejected by apiAuth.
 func TestDocsUnauthenticated(t *testing.T) {
-	rt := &Router{}
+	rt := &Router{apiKeys: newAPIKeyGuard()}
 	h := rt.apiHandler()
 
 	for _, path := range []string{"/v1/openapi.json", "/v1/docs"} {
