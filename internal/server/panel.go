@@ -144,6 +144,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/health", rt.health)
 	authed("GET /api/xray/config", rt.xrayConfig)
 	authed("GET /api/xray/status", rt.xrayStatus)
+	authed("POST /api/xray/restart", rt.xrayRestart)
 	authed("GET /api/xray/logs/stream", rt.xrayLogs)
 	authed("GET /api/logs/stream", rt.appLogs)
 	authed("GET /api/backup", rt.downloadBackup)

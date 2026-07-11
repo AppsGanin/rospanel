@@ -32,5 +32,9 @@ func (m *Manager) BackupManifest() backup.Manifest {
 	}
 }
 
+// RestartXray restarts the Xray child from the config already on disk. Operator-
+// initiated only: it drops every live VPN connection.
+func (m *Manager) RestartXray() error { return m.sup.Restart() }
+
 // SubscribeXrayLogs returns a channel of new Xray log lines and an unsubscribe.
 func (m *Manager) SubscribeXrayLogs() (<-chan string, func()) { return m.sup.SubscribeLogs() }
