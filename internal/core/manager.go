@@ -143,7 +143,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.
-			go m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr())
+			go func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) }()
 		}
 	}
 	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly

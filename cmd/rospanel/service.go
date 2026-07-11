@@ -14,9 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
-
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/connguard"
@@ -187,10 +184,15 @@ func runServer(dataDir string) {
 		log.Fatalf("build router: %v", err)
 	}
 	// Serve HTTP/2 cleartext too: Xray's VLESS inbound offers ALPN h2, so non-VPN
-	// traffic arrives as HTTP/2 over the plaintext fallback. h2c lets the loopback
-	// panel speak both HTTP/1.1 and HTTP/2.
+	// traffic arrives as HTTP/2 (prior-knowledge) over the plaintext fallback.
+	// UnencryptedHTTP2 lets the loopback panel speak both HTTP/1.1 and HTTP/2 —
+	// the net/http-native replacement for the deprecated x/net/http2/h2c wrapper.
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
-		Handler:           h2c.NewHandler(handler, &http2.Server{}),
+		Handler:           handler,
+		Protocols:         protocols,
 		ReadHeaderTimeout: 10 * time.Second,  // slowloris: bound how long request headers may dribble in
 		IdleTimeout:       120 * time.Second, // reap idle keep-alive connections so they can't be held open indefinitely
 		// ReadTimeout / WriteTimeout are intentionally unset: a server-wide read

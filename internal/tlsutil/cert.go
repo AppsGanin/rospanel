@@ -1,3 +1,6 @@
+// Package tlsutil handles low-level X.509 certificates: generating the
+// self-signed cert used as the internal pre-ACME fallback, reading certificate
+// metadata for display, computing SHA-256 pins, and writing key pairs to disk.
 package tlsutil
 
 import (
