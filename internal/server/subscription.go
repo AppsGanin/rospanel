@@ -253,6 +253,12 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 	if !set.BillingEnabled {
 		return sub.Billing{}
 	}
+	// No plan attached at all (an admin-provisioned user, not a billing customer):
+	// show neither tariffs nor a pay button. Billing may still be on for the users
+	// who registered through the bot and did get a plan.
+	if u.PlanID == 0 {
+		return sub.Billing{}
+	}
 	plans, err := rt.mgr.ListTariffPlans(false)
 	if err != nil {
 		return sub.Billing{}
