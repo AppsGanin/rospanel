@@ -96,7 +96,7 @@ func (rt *Router) setResetPeriod(w http.ResponseWriter, r *http.Request, id int6
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetResetPeriod(id, req.Period); err != nil {
+	if err := rt.mgr.SetResetPeriod(r.Context(), id, req.Period); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

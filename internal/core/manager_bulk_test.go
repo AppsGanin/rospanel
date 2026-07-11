@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestBulkEnableDisableDelete(t *testing.T) {
 	ids := []int64{a, b, c}
 
 	// Disable all three in one pass.
-	n, err := m.BulkUserAction(ids, "disable", 0)
+	n, err := m.BulkUserAction(context.Background(), ids, "disable", 0)
 	if err != nil || n != 3 {
 		t.Fatalf("bulk disable: n=%d err=%v", n, err)
 	}
@@ -51,7 +52,7 @@ func TestBulkEnableDisableDelete(t *testing.T) {
 	}
 
 	// Re-enable just two.
-	if n, err = m.BulkUserAction([]int64{a, b}, "enable", 0); err != nil || n != 2 {
+	if n, err = m.BulkUserAction(context.Background(), []int64{a, b}, "enable", 0); err != nil || n != 2 {
 		t.Fatalf("bulk enable: n=%d err=%v", n, err)
 	}
 	if u, _ := m.store.GetUser(a); !u.Enabled {
@@ -62,7 +63,7 @@ func TestBulkEnableDisableDelete(t *testing.T) {
 	}
 
 	// Delete all three.
-	if n, err = m.BulkUserAction(ids, "delete", 0); err != nil || n != 3 {
+	if n, err = m.BulkUserAction(context.Background(), ids, "delete", 0); err != nil || n != 3 {
 		t.Fatalf("bulk delete: n=%d err=%v", n, err)
 	}
 	all, _ := m.store.ListUsers()
@@ -77,7 +78,7 @@ func TestBulkExtendSkipsUnlimited(t *testing.T) {
 	limited := mkUser(t, m, "limited", now+10*86400) // has an expiry → extended
 	never := mkUser(t, m, "never", 0)                // no expiry → skipped
 
-	n, err := m.BulkUserAction([]int64{limited, never}, "extend", 5)
+	n, err := m.BulkUserAction(context.Background(), []int64{limited, never}, "extend", 5)
 	if err != nil {
 		t.Fatalf("bulk extend: %v", err)
 	}
@@ -95,14 +96,14 @@ func TestBulkExtendSkipsUnlimited(t *testing.T) {
 
 func TestBulkUserActionValidation(t *testing.T) {
 	m := bulkTestManager(t)
-	if _, err := m.BulkUserAction(nil, "enable", 0); err == nil {
+	if _, err := m.BulkUserAction(context.Background(), nil, "enable", 0); err == nil {
 		t.Fatal("expected error for empty selection")
 	}
 	id := mkUser(t, m, "x", 0)
-	if _, err := m.BulkUserAction([]int64{id}, "bogus", 0); err == nil {
+	if _, err := m.BulkUserAction(context.Background(), []int64{id}, "bogus", 0); err == nil {
 		t.Fatal("expected error for unknown action")
 	}
-	if _, err := m.BulkUserAction([]int64{id}, "extend", 0); err == nil {
+	if _, err := m.BulkUserAction(context.Background(), []int64{id}, "extend", 0); err == nil {
 		t.Fatal("expected error for extend with non-positive days")
 	}
 }

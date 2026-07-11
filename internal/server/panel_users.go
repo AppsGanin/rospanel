@@ -42,7 +42,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "укажите имя")
 		return
 	}
-	u, err := rt.mgr.CreateUser(req.Name, req.DataLimit, req.ExpireAt)
+	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -67,7 +67,7 @@ func (rt *Router) bulkUsers(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	affected, err := rt.mgr.BulkUserAction(req.IDs, req.Action, req.Days)
+	affected, err := rt.mgr.BulkUserAction(r.Context(), req.IDs, req.Action, req.Days)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -75,16 +75,16 @@ func (rt *Router) bulkUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"affected": affected})
 }
 
-func (rt *Router) deleteUser(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.DeleteUser(id); err != nil {
+func (rt *Router) deleteUser(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.DeleteUser(r.Context(), id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	writeOK(w)
 }
 
-func (rt *Router) resetUserTraffic(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.ResetTraffic(id); err != nil {
+func (rt *Router) resetUserTraffic(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.ResetTraffic(r.Context(), id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -104,7 +104,7 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 		writeErr(w, http.StatusBadRequest, "лимит устройств не может быть отрицательным")
 		return
 	}
-	if err := rt.mgr.SetUserLimits(id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
+	if err := rt.mgr.SetUserLimits(r.Context(), id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -114,7 +114,7 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 // rotateSubToken issues a new subscription URL for a user. The old link stops
 // working; protocol credentials are unchanged.
 func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int64) {
-	u, err := rt.mgr.RotateSubToken(id)
+	u, err := rt.mgr.RotateSubToken(r.Context(), id)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -129,8 +129,8 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int6
 }
 
 // unlinkUserTelegram detaches a VPN user's linked Telegram chat (admin action).
-func (rt *Router) unlinkUserTelegram(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.Store().ClearUserTelegramChat(id); err != nil {
+func (rt *Router) unlinkUserTelegram(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.UnlinkUserTelegram(r.Context(), id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -186,7 +186,7 @@ func (rt *Router) renameUser(w http.ResponseWriter, r *http.Request, id int64) {
 		writeErr(w, http.StatusBadRequest, "имя не может быть пустым")
 		return
 	}
-	if err := rt.mgr.RenameUser(id, name); err != nil {
+	if err := rt.mgr.RenameUser(r.Context(), id, name); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -200,7 +200,7 @@ func (rt *Router) setUserEnabled(w http.ResponseWriter, r *http.Request, id int6
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetUserEnabled(id, req.Enabled); err != nil {
+	if err := rt.mgr.SetUserEnabled(r.Context(), id, req.Enabled); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -19,32 +20,39 @@ import (
 // Panel is the slice of the core Manager the bot drives. Defining it here (rather
 // than importing core) keeps the dependency one-way — core never imports telegram —
 // and makes the bot trivially testable with a fake.
+// Every mutating method takes a context: it carries the actor for the audit log, so
+// a change made from a bot is attributed to the Telegram admin (or the VPN user)
+// who made it rather than to "system". See the actor package.
 type Panel interface {
 	ListUsers() ([]model.User, error)
-	CreateUser(name string, dataLimit, expireAt int64) (*model.User, error)
-	DeleteUser(id int64) error
-	SetUserEnabled(id int64, enabled bool) error
-	ResetTraffic(id int64) error
+	CreateUser(ctx context.Context, name string, dataLimit, expireAt int64) (*model.User, error)
+	DeleteUser(ctx context.Context, id int64) error
+	SetUserEnabled(ctx context.Context, id int64, enabled bool) error
+	ResetTraffic(ctx context.Context, id int64) error
 	BackupManifest() backup.Manifest
 	Location() *time.Location
 
 	// Billing (no-op surface unless tariffs are enabled).
 	ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error)
-	ApplyPlanToUser(userID, planID int64, extendFromCurrent bool) error
+	ApplyPlanToUser(ctx context.Context, userID, planID int64, extendFromCurrent bool) error
 	PlanName(planID int64) string
-	RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error)
-	CreateRegisteredUser(name string) (*model.User, error)
+	RequestPlanPayment(ctx context.Context, userID, planID int64) (*model.PaymentOrder, string, error)
+	CreateRegisteredUser(ctx context.Context, name string) (*model.User, error)
 	// ActivePaidPlan reports the user's active paid plan (nil = none), and
 	// CancelUserPlan drops it to the free plan. Together they gate plan switching:
 	// while a paid plan is active only renewal or cancellation is allowed.
 	ActivePaidPlan(u model.User) *model.TariffPlan
-	CancelUserPlan(userID int64) error
+	CancelUserPlan(ctx context.Context, userID int64) error
 
 	// Automatic payment providers (no-op surface unless configured).
 	PaymentMethods() []string
-	StartPlanPayment(userID, planID int64, provider string) (*model.PaymentOrder, error)
+	StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))
+
+	// Audit hooks for the actions the bots perform directly on the store.
+	UnlinkUserTelegram(ctx context.Context, id int64) error
+	AuditTelegramLinked(ctx context.Context, id int64, username string)
 }
 
 // pollTimeout is the long-poll window (seconds). A change to the bot token or
@@ -182,10 +190,32 @@ func (s *Service) handle(ctx context.Context, client *Client, u Update) {
 	}()
 	switch {
 	case u.Callback != nil:
-		s.handleCallback(ctx, client, u.Callback)
+		// Stamp the tapping admin onto the context once, here: every panel mutation
+		// made below records them as the actor in the audit log.
+		s.handleCallback(actorCtx(ctx, u.Callback.From), client, u.Callback)
 	case u.Message != nil && strings.TrimSpace(u.Message.Text) != "":
-		s.handleMessage(ctx, client, u.Message)
+		s.handleMessage(actorCtx(ctx, u.Message.From), client, u.Message)
 	}
+}
+
+// actorCtx marks the context as "this Telegram admin is acting".
+func actorCtx(ctx context.Context, from *User) context.Context {
+	return actor.With(ctx, actor.Telegram(actorName(from)))
+}
+
+// actorName is the most human identifier Telegram gave us for a person: their
+// @username, else their first name, else their numeric id.
+func actorName(u *User) string {
+	if u == nil {
+		return ""
+	}
+	if u.Username != "" {
+		return "@" + u.Username
+	}
+	if u.FirstName != "" {
+		return u.FirstName
+	}
+	return strconv.FormatInt(u.ID, 10)
 }
 
 func (s *Service) handleMessage(ctx context.Context, client *Client, m *Message) {
@@ -284,13 +314,13 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 			s.sendSubscription(ctx, client, chatID, set, u)
 		}
 	case "on":
-		_ = s.panel.SetUserEnabled(id, true)
+		_ = s.panel.SetUserEnabled(ctx, id, true)
 		s.showUserCard(ctx, client, chatID, msgID, set, id)
 	case "off":
-		_ = s.panel.SetUserEnabled(id, false)
+		_ = s.panel.SetUserEnabled(ctx, id, false)
 		s.showUserCard(ctx, client, chatID, msgID, set, id)
 	case "reset":
-		_ = s.panel.ResetTraffic(id)
+		_ = s.panel.ResetTraffic(ctx, id)
 		s.showUserCard(ctx, client, chatID, msgID, set, id)
 	case "plans":
 		s.showUserPlans(ctx, client, chatID, msgID, set, id)
@@ -307,7 +337,7 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 				{{Text: "⬅️ Отмена", CallbackData: fmt.Sprintf("u:%d", id)}},
 			})
 	case "delyes":
-		if derr := s.panel.DeleteUser(id); derr != nil {
+		if derr := s.panel.DeleteUser(ctx, id); derr != nil {
 			s.send(ctx, client, chatID, "⚠️ Ошибка: "+esc(derr.Error()))
 		}
 		s.showUsers(ctx, client, chatID, msgID, 0)
@@ -315,7 +345,7 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 		// "plan:<id>" — assign a tariff (planID 0 = manual, no limits).
 		if planStr, ok := strings.CutPrefix(action, "plan:"); ok {
 			planID, _ := strconv.ParseInt(planStr, 10, 64)
-			if perr := s.panel.ApplyPlanToUser(id, planID, false); perr != nil {
+			if perr := s.panel.ApplyPlanToUser(ctx, id, planID, false); perr != nil {
 				s.send(ctx, client, chatID, "⚠️ Не удалось сменить тариф: "+esc(perr.Error()))
 			}
 			s.showUserCard(ctx, client, chatID, msgID, set, id)
@@ -466,7 +496,7 @@ func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, set *
 			expireAt = time.Now().Add(time.Duration(days) * 24 * time.Hour).Unix()
 		}
 	}
-	u, err := s.panel.CreateUser(name, dataLimit, expireAt)
+	u, err := s.panel.CreateUser(ctx, name, dataLimit, expireAt)
 	if err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось создать: "+esc(err.Error()))
 		return

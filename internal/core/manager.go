@@ -76,10 +76,6 @@ type Manager struct {
 	userNotify  func(chatID int64, html string)
 	adminNotify func(html string)
 
-	// lastStatus is the previous poll's derived status per user, used by PollStats
-	// to detect active→expired/limited/device-limited transitions for admin alerts.
-	// Accessed only from the single stats-poll goroutine.
-	lastStatus map[int64]string
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.
 	throttleMu        sync.Mutex
