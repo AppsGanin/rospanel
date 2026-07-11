@@ -11,7 +11,7 @@ import (
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id,
-	plan_id, trial_used, tg_link_code, tg_link_code_at`
+	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -244,6 +244,13 @@ func (s *Store) ResetTraffic(id, lastUp, lastDown int64) error {
 	return err
 }
 
+// SetNotifiedStatus records the status a user was last alerted about, so the
+// transition detector's comparison survives a panel restart (see the 0020 migration).
+func (s *Store) SetNotifiedStatus(id int64, status string) error {
+	_, err := s.db.Exec(`UPDATE users SET notified_status = ? WHERE id = ?`, status, id)
+	return err
+}
+
 // SetUserEnabled sets the independent manual on/off flag. Expiry/quota are
 // separate and never change this.
 func (s *Store) SetUserEnabled(id int64, enabled bool) error {
@@ -335,7 +342,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.TgChatID,
-			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt,
+			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 		); err != nil {
 			return nil, err
 		}

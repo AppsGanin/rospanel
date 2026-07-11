@@ -6,11 +6,19 @@ import {
   getSettings,
   regenSecret,
   setDecoy,
+  setLocalBackup,
   setProxyMode,
   setupTimezone,
   type SettingsInfo,
   type UpdateInfo,
 } from "./api";
+import {
+  buildCron,
+  CronPicker,
+  detectPreset,
+  EMPTY_SCHEDULE,
+  type Schedule,
+} from "./CronPicker";
 import { useAction } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { browserTimezone, tzOptions } from "./tz";
@@ -35,6 +43,13 @@ type ProxyMode = {
   user: string;
   pass: string;
 };
+
+// LocalBackup is the scheduled on-disk backup: a schedule plus how many archives to
+// keep. Independent of the Telegram backup schedule — an operator with no bot still
+// wants automatic backups.
+type LocalBackup = { schedule: Schedule; keep: number };
+
+const EMPTY_BK: LocalBackup = { schedule: EMPTY_SCHEDULE, keep: 7 };
 
 const DECOY_LABELS: Record<string, string> = {
   "coming-soon": "Coming soon (скоро открытие)",
@@ -66,6 +81,8 @@ export function GeneralSettings() {
   const [savedDecoy, setSavedDecoy] = useState("");
   const [pm, setPm] = useState<ProxyMode>(EMPTY_PM);
   const [savedPm, setSavedPm] = useState<ProxyMode>(EMPTY_PM);
+  const [bk, setBk] = useState<LocalBackup>(EMPTY_BK);
+  const [savedBk, setSavedBk] = useState<LocalBackup>(EMPTY_BK);
   const [version, setVersion] = useState("");
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -106,13 +123,25 @@ export function GeneralSettings() {
           };
           setPm(pmv);
           setSavedPm(pmv);
+          const bkv: LocalBackup = {
+            schedule: detectPreset(s.local_backup_cron || ""),
+            keep: s.local_backup_keep ?? 7,
+          };
+          setBk(bkv);
+          setSavedBk(bkv);
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
   }, []);
 
   const pmDirty = JSON.stringify(pm) !== JSON.stringify(savedPm);
-  const dirty = timezone !== savedTz || decoy !== savedDecoy || pmDirty;
+  // Compare the built cron, not the picker state: "off" with a stale time/weekday in
+  // the inputs is the same schedule as "off" with the defaults, and shouldn't light
+  // up the save bar.
+  const bkCron = buildCron(bk.schedule);
+  const bkDirty =
+    bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
+  const dirty = timezone !== savedTz || decoy !== savedDecoy || pmDirty || bkDirty;
   // Proxy mode without credentials is an open proxy — block saving it.
   const saveBlocked = pm.enabled && (!pm.user.trim() || !pm.pass);
 
@@ -134,6 +163,10 @@ export function GeneralSettings() {
           await setProxyMode(pm);
           setSavedPm(pm);
         }
+        if (bkDirty) {
+          await setLocalBackup({ cron: bkCron, keep: bk.keep });
+          setSavedBk(bk);
+        }
         notifySuccess("Настройки сохранены");
       },
       { key: "save" },
@@ -143,6 +176,7 @@ export function GeneralSettings() {
     setTimezone(savedTz);
     setDecoyState(savedDecoy);
     setPm(savedPm);
+    setBk(savedBk);
   };
 
   const doRegenSecret = async () => {
@@ -358,6 +392,37 @@ export function GeneralSettings() {
         )}
         <p className="mt-2 text-xs text-ink-muted">
           Не забудь открыть порт {pm.port} в файрволе сервера.
+        </p>
+      </SettingCard>
+
+      <SettingCard
+        title="Автоматические бэкапы"
+        description="Резервные копии сохраняются на сам сервер, в каталог данных панели (backups/). Работает независимо от Telegram — бот для этого не нужен."
+      >
+        <CronPicker
+          value={bk.schedule}
+          onChange={(schedule) => setBk((b) => ({ ...b, schedule }))}
+          offLabel="Автоматические бэкапы выключены."
+        />
+        {bkCron && (
+          <div className="mt-3 max-w-xs">
+            <TextInput
+              label="Сколько копий хранить"
+              type="number"
+              value={String(bk.keep)}
+              onChange={(v) =>
+                setBk((b) => ({ ...b, keep: Number(v.replace(/\D/g, "")) || 0 }))
+              }
+            />
+            <p className="mt-1 text-xs text-ink-muted">
+              Лишние копии удаляются, остаются самые свежие. 0 — не удалять ничего.
+            </p>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-warning">
+          ⚠️ Копия лежит на том же диске, что и панель, и содержит ключ шифрования
+          секретов — от потери сервера она не спасёт. Скачивайте её к себе или
+          включите отправку в Telegram.
         </p>
       </SettingCard>
 

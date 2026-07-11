@@ -91,6 +91,20 @@ func Ruleset(tcpPorts []int, lim Limits) string {
 	return b.String()
 }
 
+// Active reports whether our nftables table is currently loaded — i.e. whether the
+// per-IP limits are really in force. Ensure is best-effort and degrades to a no-op
+// (no nft binary, not Linux, not root), so "we called Ensure at boot" is not
+// evidence that the guard exists; only asking nft is.
+func Active() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	if _, err := exec.LookPath("nft"); err != nil {
+		return false
+	}
+	return exec.Command("nft", "list", "table", "inet", tableName).Run() == nil
+}
+
 // Ensure (re)installs the connection-guard rules for the given TCP ports. Ports
 // ≤0 are ignored; with no valid ports the existing table is removed (a clean
 // disable). Best-effort: returns nil (after logging) when nft is unavailable or

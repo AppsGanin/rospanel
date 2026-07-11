@@ -298,11 +298,17 @@ func (s *Store) SetPaymentOrderStatus(id int64, status string, paidAt int64) err
 
 // CancelPaymentOrderIfPending cancels an order only while it's still pending, so a
 // stale-order sweep or a provider "canceled" status can't clobber an order a
-// concurrent webhook just marked paid.
-func (s *Store) CancelPaymentOrderIfPending(id int64) error {
-	_, err := s.db.Exec(
+// concurrent webhook just marked paid. It reports whether THIS call performed the
+// cancellation — a caller that logs or notifies must not do so for an order someone
+// else already resolved.
+func (s *Store) CancelPaymentOrderIfPending(id int64) (bool, error) {
+	res, err := s.db.Exec(
 		`UPDATE payment_orders SET status = 'cancelled', paid_at = 0 WHERE id = ? AND status = 'pending'`, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // MarkPaymentOrderPaidIfPending atomically transitions an order pending→paid and

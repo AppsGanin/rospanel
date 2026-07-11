@@ -76,10 +76,6 @@ type Manager struct {
 	userNotify  func(chatID int64, html string)
 	adminNotify func(html string)
 
-	// lastStatus is the previous poll's derived status per user, used by PollStats
-	// to detect active→expired/limited/device-limited transitions for admin alerts.
-	// Accessed only from the single stats-poll goroutine.
-	lastStatus map[int64]string
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.
 	throttleMu        sync.Mutex
@@ -108,6 +104,12 @@ type Manager struct {
 	proxies []model.ProxyEndpoint // current proxy-pool egress endpoints
 
 	guard *bruteGuard
+
+	// connGuardWanted records whether the operator asked for the per-IP connection
+	// guard (ROSPANEL_CONNLIMIT != off). Needed to tell "off on purpose" apart from
+	// "on, but nftables silently refused it" in the health report — the second is a
+	// problem, the first isn't. Set once at boot, before the panel serves.
+	connGuardWanted atomic.Bool
 
 	// webhookCh is the outbound-webhook delivery queue drained by a small worker
 	// pool (see webhooks.go). Buffered so an event emit never blocks the caller;

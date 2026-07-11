@@ -166,7 +166,7 @@ func (rt *Router) migratePlanUsers(w http.ResponseWriter, r *http.Request, id in
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	n, err := rt.mgr.MigratePlanUsers(id, req.ToPlanID)
+	n, err := rt.mgr.MigratePlanUsers(r.Context(), id, req.ToPlanID)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -197,7 +197,7 @@ func (rt *Router) confirmPaymentOrder(w http.ResponseWriter, r *http.Request, id
 	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
 		return
 	}
-	if err := rt.mgr.ConfirmPayment(id); err != nil {
+	if err := rt.mgr.ConfirmPayment(r.Context(), id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -214,7 +214,7 @@ func (rt *Router) cancelPaymentOrder(w http.ResponseWriter, r *http.Request, id 
 	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
 		return
 	}
-	if err := rt.mgr.CancelPayment(id); err != nil {
+	if err := rt.mgr.CancelPayment(r.Context(), id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -228,7 +228,7 @@ func (rt *Router) setUserPlan(w http.ResponseWriter, r *http.Request, userID int
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.ApplyPlanToUser(userID, req.PlanID, false); err != nil {
+	if err := rt.mgr.ApplyPlanToUser(r.Context(), userID, req.PlanID, false); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

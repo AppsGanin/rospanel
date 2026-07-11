@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -92,7 +93,7 @@ func (m *Manager) DeleteTariffPlan(id int64) error {
 // MigratePlanUsers moves every user currently on fromPlanID to toPlanID (applying
 // the target plan's limits and period). Used when retiring a plan. Returns how many
 // users were moved.
-func (m *Manager) MigratePlanUsers(fromPlanID, toPlanID int64) (int, error) {
+func (m *Manager) MigratePlanUsers(ctx context.Context, fromPlanID, toPlanID int64) (int, error) {
 	if fromPlanID == toPlanID {
 		return 0, invalid("выберите другой тариф для перевода")
 	}
@@ -105,7 +106,7 @@ func (m *Manager) MigratePlanUsers(fromPlanID, toPlanID int64) (int, error) {
 	}
 	migrated := 0
 	for _, id := range ids {
-		if err := m.ApplyPlanToUser(id, toPlanID, false); err != nil {
+		if err := m.ApplyPlanToUser(ctx, id, toPlanID, false); err != nil {
 			logErr("billing: plan migration failed", "user", id, "from_plan", fromPlanID, "to_plan", toPlanID, "err", err)
 			continue
 		}
@@ -124,14 +125,16 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 
 // CreateRegisteredUser creates a user from self-registration (trial/free/plain
 // per billing config) and alerts the admin chats about the new signup.
-func (m *Manager) CreateRegisteredUser(name string) (*model.User, error) {
+func (m *Manager) CreateRegisteredUser(ctx context.Context, name string) (*model.User, error) {
 	u, err := m.createRegisteredUser(name)
 	if err == nil && u != nil {
 		msg := "🆕 <b>Новая регистрация</b>\nПользователь: " + escHTML(u.Name)
-		if plan := m.PlanName(u.PlanID); plan != "" {
+		plan := m.PlanName(u.PlanID)
+		if plan != "" {
 			msg += "\nТариф: " + escHTML(plan)
 		}
 		m.notifyAdminEvent(model.AdminEventRegistered, msg)
+		m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan})
 		m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
 	}
 	return u, err
@@ -150,7 +153,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 		return nil, err
 	}
 	if !set.BillingEnabled {
-		return m.CreateUser(name, 0, 0)
+		return m.createUser(name, 0, 0)
 	}
 	now := time.Now().Unix()
 	if set.BillingTrialDays > 0 && set.BillingTrialPlanID > 0 {
@@ -186,7 +189,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 			return m.store.GetUser(u.ID)
 		}
 	}
-	return m.CreateUser(name, 0, 0)
+	return m.createUser(name, 0, 0)
 }
 
 func (m *Manager) createBareUser(name string) (*model.User, error) {
@@ -217,7 +220,15 @@ func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt
 
 // ApplyPlanToUser assigns a tariff and updates limits. extendFromCurrent stacks paid time.
 // planID 0 switches to manual mode: clears plan link and resets limits to unlimited.
-func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent bool) error {
+func (m *Manager) ApplyPlanToUser(ctx context.Context, userID int64, planID int64, extendFromCurrent bool) error {
+	return m.applyPlan(ctx, userID, planID, extendFromCurrent, model.EventPlanChanged)
+}
+
+// applyPlan is the body of ApplyPlanToUser, parameterized by the audit action to
+// record. Callers that own a more specific story about the change pass their own
+// action (an expiry downgrade) or "" to stay silent and log the event themselves
+// (a cancellation, which would otherwise read as a plain switch to the free plan).
+func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, extendFromCurrent bool, action string) error {
 	// Serialize the expire_at read-modify-write below against concurrent confirmers.
 	m.applyPlanMu.Lock()
 	defer m.applyPlanMu.Unlock()
@@ -225,6 +236,7 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 	if err != nil {
 		return err
 	}
+	prevPlan := m.PlanName(u.PlanID)
 	trial := u.TrialUsed
 	if planID == 0 {
 		if err := m.store.SetUserLimits(userID, 0, 0, 0); err != nil {
@@ -237,6 +249,7 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 			return err
 		}
 		m.TriggerUserSync()
+		m.auditPlan(ctx, userID, u.Name, action, prevPlan, "", 0)
 		return nil
 	}
 	plan, err := m.store.GetTariffPlan(planID)
@@ -270,7 +283,21 @@ func (m *Manager) ApplyPlanToUser(userID int64, planID int64, extendFromCurrent 
 		return err
 	}
 	m.TriggerUserSync()
+	m.auditPlan(ctx, userID, u.Name, action, prevPlan, plan.Name, expire)
 	return nil
+}
+
+// auditPlan records a plan change. An empty action means the caller logs its own
+// event instead (see applyPlan). The name is passed in because applyPlan already
+// read the user — re-reading it here would add a serialized DB round-trip while the
+// global applyPlanMu is held.
+func (m *Manager) auditPlan(ctx context.Context, userID int64, userName, action, prevPlan, newPlan string, expire int64) {
+	if action == "" {
+		return
+	}
+	m.auditNamed(ctx, userID, userName, action, map[string]any{
+		"plan": newPlan, "prev_plan": prevPlan, "expire_at": expire,
+	})
 }
 
 // isPlanRenewal reports whether applying planID to the user is a renewal of their
@@ -306,14 +333,26 @@ func (m *Manager) ActivePaidPlan(u model.User) *model.TariffPlan {
 // does on expiry — but on demand. With no free plan configured, access is ended
 // instead (plan cleared, expired now). The consumed-trial flag is preserved so
 // cancelling can't reopen a fresh trial.
-func (m *Manager) CancelUserPlan(userID int64) error {
+func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 	set, err := m.Settings()
 	if err != nil {
 		return err
 	}
+	// The plan being cancelled, captured before it's replaced.
+	cancelled := ""
+	if u, err := m.store.GetUser(userID); err == nil {
+		cancelled = m.PlanName(u.PlanID)
+	}
 	if set.BillingFreePlanID != 0 {
 		if free, err := m.store.GetTariffPlan(set.BillingFreePlanID); err == nil && free != nil {
-			return m.ApplyPlanToUser(userID, free.ID, false)
+			// Audited as a cancellation, not as the plan switch it's implemented as.
+			if err := m.applyPlan(ctx, userID, free.ID, false, ""); err != nil {
+				return err
+			}
+			m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{
+				"plan": cancelled, "moved_to": free.Name,
+			})
+			return nil
 		}
 	}
 	// No free plan: end the subscription now — clear the plan and expire immediately.
@@ -332,10 +371,12 @@ func (m *Manager) CancelUserPlan(userID int64) error {
 		return err
 	}
 	m.TriggerUserSync()
+	m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{"plan": cancelled})
 	return nil
 }
 
 // EnforceBilling downgrades users whose paid/trial period ended to the free plan.
+// It runs off the background poller, so its audit rows are attributed to the system.
 func (m *Manager) EnforceBilling(now int64) error {
 	set, err := m.Settings()
 	if err != nil || !set.BillingEnabled || set.BillingFreePlanID == 0 {
@@ -349,11 +390,12 @@ func (m *Manager) EnforceBilling(now int64) error {
 	if err != nil {
 		return err
 	}
+	ctx := context.Background()
 	for _, u := range users {
 		if u.PlanID == free.ID {
 			continue
 		}
-		if err := m.ApplyPlanToUser(u.ID, free.ID, false); err != nil {
+		if err := m.applyPlan(ctx, u.ID, free.ID, false, model.EventPlanDowngraded); err != nil {
 			logErr("billing: downgrade to free failed", "user", u.ID, "err", err)
 			continue
 		}
@@ -366,7 +408,7 @@ func (m *Manager) EnforceBilling(now int64) error {
 // payment instructions. To keep a spammed "Pay" button from piling up duplicate
 // orders (and admin pings), it reuses the user's latest still-pending manual order
 // for the same plan instead of creating another.
-func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder, string, error) {
+func (m *Manager) RequestPlanPayment(ctx context.Context, userID, planID int64) (*model.PaymentOrder, string, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
 		return nil, "", invalid("тариф не найден")
@@ -396,6 +438,9 @@ func (m *Manager) RequestPlanPayment(userID, planID int64) (*model.PaymentOrder,
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
+	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
+		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": "manual",
+	})
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, manualOrderMessage(order, plan, set), nil
 }
@@ -416,7 +461,7 @@ func manualOrderMessage(order *model.PaymentOrder, plan *model.TariffPlan, set *
 // ConfirmPayment marks an order paid and applies the plan. Idempotent: the atomic
 // pending→paid claim means a double-submit / retry (or an overlap with the provider
 // webhook on a provider order) applies the plan at most once.
-func (m *Manager) ConfirmPayment(orderID int64) error {
+func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 	order, err := m.store.GetPaymentOrder(orderID)
 	if err != nil {
 		return err
@@ -433,23 +478,30 @@ func (m *Manager) ConfirmPayment(orderID int64) error {
 		return invalid("заказ уже обработан")
 	}
 	// Extend from the current expiry only when this is a renewal of the active paid
-	// plan; otherwise start from now.
-	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID)); err != nil {
+	// plan; otherwise start from now. Audited as the payment below rather than as a
+	// bare plan switch — one purchase is one event, and payment.paid names the plan.
+	if err := m.applyPlan(ctx, order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID), ""); err != nil {
 		_ = m.store.RevertPaymentOrderToPending(orderID) // let a retry re-apply
 		return err
 	}
 	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
 	order.Status, order.PaidAt = "paid", now
+	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
+		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": "manual",
+	})
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return nil
 }
 
-func (m *Manager) CancelPayment(orderID int64) error {
+func (m *Manager) CancelPayment(ctx context.Context, orderID int64) error {
 	if err := m.store.SetPaymentOrderStatus(orderID, "cancelled", 0); err != nil {
 		return err
 	}
 	// Best-effort payload enrichment: re-read the (now cancelled) order.
 	if order, err := m.store.GetPaymentOrder(orderID); err == nil {
+		m.audit(ctx, order.UserID, model.EventPaymentCancelled, map[string]any{
+			"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub,
+		})
 		m.EmitWebhook(model.WebhookPaymentCancelled, order)
 	} else {
 		m.EmitWebhook(model.WebhookPaymentCancelled, map[string]any{"id": orderID})

@@ -36,6 +36,7 @@ import {
 import { useAction } from './hooks'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
+import { UserEventsModal } from './UserEventsModal'
 import {
   Badge,
   Button,
@@ -185,6 +186,7 @@ export function UserDetail({
   const [billingOn, setBillingOn] = useState(false)
   const [plans, setPlans] = useState<TariffPlan[]>([])
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
+  const [eventsOpen, setEventsOpen] = useState(false)
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
@@ -192,6 +194,7 @@ export function UserDetail({
     setLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
     setDeviceLimit(user ? String(user.device_limit ?? 0) : '0')
     setTgLink(null) // a one-time bind link is per-user; don't leak it across switches
+    setEventsOpen(false) // ditto for the journal — never show one user's trail over another
   }, [user])
 
   useEffect(() => {
@@ -367,6 +370,9 @@ export function UserDetail({
               </p>
             </>
           )}
+          <Button variant="light" onClick={() => setEventsOpen(true)}>
+            Журнал действий
+          </Button>
           <Button
             color="orange"
             variant="light"
@@ -547,6 +553,16 @@ export function UserDetail({
         </div>
       )}
     </Modal>
+    {/* Nested inside the detail modal on purpose: closing it (Esc / backdrop) returns
+        to the user card rather than dismissing both. */}
+    {user && (
+      <UserEventsModal
+        userID={user.id}
+        userName={user.name}
+        open={eventsOpen}
+        onClose={() => setEventsOpen(false)}
+      />
+    )}
     {confirmNode}
     </>
   )
