@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,21 @@ import (
 // has finished restarting Xray (started_at advances on each reload).
 func (rt *Router) xrayStatus(w http.ResponseWriter, _ *http.Request) {
 	running, startedAt := rt.mgr.XrayStatus()
+	writeJSON(w, http.StatusOK, map[string]any{"running": running, "started_at": startedAt})
+}
+
+// xrayRestart bounces the Xray child from the config on disk. It drops every live
+// VPN connection, so the UI confirms first. The response carries the new
+// started_at, which the dashboard already polls to tell a reload apart from a
+// no-op.
+func (rt *Router) xrayRestart(w http.ResponseWriter, _ *http.Request) {
+	if err := rt.mgr.RestartXray(); err != nil {
+		slog.Error("xray: restart requested by operator failed", "err", err)
+		writeErr(w, http.StatusInternalServerError, "не удалось перезапустить Xray")
+		return
+	}
+	running, startedAt := rt.mgr.XrayStatus()
+	slog.Info("xray: restarted by operator")
 	writeJSON(w, http.StatusOK, map[string]any{"running": running, "started_at": startedAt})
 }
 
