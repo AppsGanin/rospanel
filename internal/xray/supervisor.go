@@ -247,6 +247,19 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	return nil
 }
 
+// Restart stops the running Xray and starts a fresh one from the config already on
+// disk. Unlike Apply it neither regenerates nor re-validates the config — it is the
+// operator's "kick it" button for a wedged or misbehaving process, and it also
+// makes a process-level change (e.g. the TZ the child runs in) take effect without
+// waiting for the next config change.
+//
+// Every live VPN connection is dropped, so this is only ever operator-initiated.
+func (s *Supervisor) Restart() error {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	return s.restart()
+}
+
 // HasBackup reports whether a rollback config (config.json.bak) is available.
 func (s *Supervisor) HasBackup() bool {
 	_, err := os.Stat(s.configPath + ".bak")

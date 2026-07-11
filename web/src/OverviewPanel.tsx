@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { type SystemStatus } from "./api";
+import { restartXray, type SystemStatus } from "./api";
 import { cssVar } from "./charts";
 import { fmtBytes, fmtDuration, plural } from "./format";
-import { Badge, Button, Card, Skeleton } from "./ui";
+import { errMessage, notifyError, notifySuccess } from "./notify";
+import { Badge, Button, Card, Skeleton, useConfirm } from "./ui";
 import { XrayLogs } from "./XrayLogs";
 import { XrayConfigView } from "./XrayConfig";
 import { ManagementCard } from "./Management";
@@ -134,6 +135,30 @@ export function OverviewPanel() {
   const [loaded, setLoaded] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [cfgOpen, setCfgOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const { confirm, confirmNode } = useConfirm();
+
+  // Restarting Xray drops every live VPN connection, so it is confirmed first and
+  // never fired implicitly. The SSE stream refreshes the card on its own once the
+  // new process is up, so there's nothing to refetch here.
+  const doRestart = async () => {
+    const ok = await confirm({
+      title: "Перезапустить Xray?",
+      body: "Все активные VPN-подключения будут разорваны — клиенты переподключатся автоматически через несколько секунд. Конфигурация не изменится.",
+      confirmLabel: "Перезапустить",
+      danger: true,
+    });
+    if (!ok) return;
+    setRestarting(true);
+    try {
+      await restartXray();
+      notifySuccess("Xray перезапущен");
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setRestarting(false);
+    }
+  };
 
   useEffect(() => {
     // Live push via Server-Sent Events — the server streams updates every 2s and
@@ -207,6 +232,15 @@ export function OverviewPanel() {
               <Button size="xs" variant="light" color="gray" onClick={() => setLogsOpen(true)}>
                 Логи
               </Button>
+              <Button
+                size="xs"
+                variant="light"
+                color="red"
+                loading={restarting}
+                onClick={doRestart}
+              >
+                Рестарт
+              </Button>
             </div>
           </div>
         </InfoCard>
@@ -253,6 +287,7 @@ export function OverviewPanel() {
 
       {logsOpen && <XrayLogs onClose={() => setLogsOpen(false)} />}
       {cfgOpen && <XrayConfigView onClose={() => setCfgOpen(false)} />}
+      {confirmNode}
     </div>
   );
 }

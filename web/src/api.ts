@@ -155,6 +155,10 @@ export interface XrayStatus {
 
 export const getXrayStatus = () => api<XrayStatus>('api/xray/status')
 
+// Bounces the Xray process. Drops every live VPN connection — confirm first.
+export const restartXray = () =>
+  api<XrayStatus>('api/xray/restart', { method: 'POST' })
+
 export interface BackupManifest {
   domain: string
   secret_path: string
