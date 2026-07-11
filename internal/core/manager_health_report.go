@@ -5,9 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/AppsGanin/rospanel/internal/tuning"
 )
 
 // Health check severities. worstStatus ranks error > warn > ok; info is advisory
@@ -47,6 +49,8 @@ func (m *Manager) Health() *HealthReport {
 		checks = append(checks, diskHealth(s.DiskUsed, s.DiskTotal), memHealth(s.MemUsed, s.MemTotal))
 	}
 	checks = append(checks, m.geoHealth())
+
+	checks = append(checks, m.connGuardHealth(), bbrHealth())
 
 	if set != nil && set.OperaEnabled {
 		if m.OperaHealthy() {
@@ -133,6 +137,43 @@ func certWarnThreshold(lifeDays int) int {
 		t = 1
 	}
 	return t
+}
+
+// SetConnGuardWanted records whether the operator left the per-IP connection guard
+// enabled (ROSPANEL_CONNLIMIT != off). Called once at boot.
+func (m *Manager) SetConnGuardWanted(v bool) { m.connGuardWanted.Store(v) }
+
+// connGuardHealth reports whether the per-IP connection limits are actually in
+// force. connguard.Ensure degrades to a no-op when nft is missing or the panel
+// isn't root, and only logs — so an operator who believes they're protected can be
+// running with no guard at all and never know. That silent gap is the whole reason
+// this check exists.
+func (m *Manager) connGuardHealth() HealthCheck {
+	const label = "Защита от флуда (лимит соединений с одного IP)"
+	if !m.connGuardWanted.Load() {
+		return HealthCheck{Key: "connguard", Label: label, Status: healthInfo,
+			Detail: "выключена оператором (ROSPANEL_CONNLIMIT=off)"}
+	}
+	if connguard.Active() {
+		return HealthCheck{Key: "connguard", Label: label, Status: healthOK,
+			Detail: "правила nftables установлены"}
+	}
+	return HealthCheck{Key: "connguard", Label: label, Status: healthWarn,
+		Detail: "включена, но правила не установлены — сервер не защищён от флуда соединений",
+		Hint:   "Не найден nftables или не хватает прав. Установите пакет nftables и убедитесь, что панель работает от root."}
+}
+
+// bbrHealth reports the congestion-control algorithm. Informational, not a warning:
+// BBR is a throughput optimization, and plenty of healthy kernels (and every non-
+// Linux dev box) simply don't offer it — flagging that as a problem would be noise.
+func bbrHealth() HealthCheck {
+	const label = "TCP BBR (ускорение на потерях)"
+	if tuning.Active() {
+		return HealthCheck{Key: "bbr", Label: label, Status: healthOK, Detail: "включён"}
+	}
+	return HealthCheck{Key: "bbr", Label: label, Status: healthInfo,
+		Detail: "не активен — ядро без BBR или нет прав",
+		Hint:   "Не влияет на работоспособность, только на скорость на нестабильных каналах."}
 }
 
 func (m *Manager) geoHealth() HealthCheck {
