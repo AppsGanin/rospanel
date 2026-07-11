@@ -59,6 +59,14 @@ func EnsureBBR() (BBRState, error) {
 	return BBRUnchanged, werr
 }
 
+// Active reports whether BBR is the congestion-control algorithm in force right
+// now. It re-reads the kernel rather than trusting what EnsureBBR returned at boot,
+// so the health report reflects reality even if something changed the sysctl since.
+func Active() bool {
+	cur, err := readTrim(ccPath)
+	return err == nil && cur == "bbr"
+}
+
 func readTrim(p string) (string, error) {
 	b, err := os.ReadFile(p)
 	return strings.TrimSpace(string(b)), err

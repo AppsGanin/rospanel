@@ -1,5 +1,9 @@
 // Package datasec provides at-rest encryption for secrets stored in SQLite.
-// The key lives in dataDir/secrets.key (mode 0600) and is excluded from backups.
+//
+// The key lives in dataDir/secrets.key (mode 0600) and IS included in backup
+// archives — the encrypted DB is useless without it, so a backup that left it out
+// would not restore to a working panel on a fresh host. The trade-off is that a
+// backup archive is as sensitive as the key itself: treat it accordingly.
 package datasec
 
 import (
@@ -46,7 +50,7 @@ func Init(dataDir string) error {
 	} else if enc {
 		return fmt.Errorf(
 			"secrets.key отсутствует, но в %s уже есть зашифрованные секреты — "+
-				"восстановите secrets.key из резервной копии каталога данных (файл не входит в tar-бэкап)",
+				"восстановите secrets.key из резервной копии каталога данных",
 			dbPath,
 		)
 	}
@@ -90,9 +94,6 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 	}
 	return false, nil
 }
-
-// KeyFileName is the basename excluded from backup archives.
-func KeyFileName() string { return keyFile }
 
 // Encrypt returns s unchanged when empty; otherwise an enc:v1:… blob.
 func Encrypt(s string) (string, error) {

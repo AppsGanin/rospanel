@@ -51,6 +51,56 @@ export interface Connection {
 export const getUserConnections = (id: number) =>
   api<Connection[]>(`api/users/${id}/connections`)
 
+// ---- audit log ----
+
+// UserEvent is one audit-log row: what happened to a user, who did it, when.
+// `details` is a free-form object whose keys depend on the action (see the Go
+// model.Event* constants); the journal UI renders the keys it knows about.
+export interface UserEvent {
+  id: number
+  user_id: number
+  user_name: string
+  action: string
+  actor_kind: 'admin' | 'apikey' | 'telegram' | 'user' | 'system'
+  actor_name: string
+  details: Record<string, unknown> | null
+  created_at: number
+}
+
+// EventPage is one page of the trail. `next_before` is the cursor to pass as
+// `before` for the next (older) page; 0 means there is nothing older.
+export interface EventPage {
+  events: UserEvent[]
+  next_before: number
+}
+
+// EventFilter narrows the global journal. Omitted fields mean "no filter".
+export interface EventFilter {
+  action?: string
+  actor?: string
+  user_id?: number
+  before?: number
+  limit?: number
+}
+
+function eventQuery(f: EventFilter): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(f)) {
+    if (v !== undefined && v !== '' && v !== 0) q.set(k, String(v))
+  }
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
+export const getUserEvents = (id: number, before = 0) =>
+  api<EventPage>(`api/users/${id}/events${eventQuery({ before })}`)
+
+export const listEvents = (f: EventFilter = {}) =>
+  api<EventPage>(`api/events${eventQuery(f)}`)
+
+export const getEventCatalog = () =>
+  api<{ key: string; label: string }[]>('api/events/catalog')
+
 export interface ConnInfo {
   key: string
   name: string // default protocol label (input placeholder)
@@ -375,6 +425,8 @@ export interface SettingsInfo extends SubSettings {
   proxy_mode_port: number
   proxy_mode_user: string
   proxy_mode_pass: string
+  local_backup_cron: string
+  local_backup_keep: number
 }
 
 export interface ProxyModeConfig {
@@ -387,6 +439,17 @@ export interface ProxyModeConfig {
 
 export const setProxyMode = (c: ProxyModeConfig) =>
   api<{ ok: boolean }>('api/settings/proxy-mode', {
+    method: 'POST',
+    body: JSON.stringify(c),
+  })
+
+export interface LocalBackupConfig {
+  cron: string
+  keep: number
+}
+
+export const setLocalBackup = (c: LocalBackupConfig) =>
+  api<{ ok: boolean }>('api/settings/local-backup', {
     method: 'POST',
     body: JSON.stringify(c),
   })

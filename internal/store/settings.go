@@ -49,7 +49,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
 		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
 		       tg_admin_events, api_path,
-		       vless_name, reality_name, trojan_name, hysteria_name
+		       vless_name, reality_name, trojan_name, hysteria_name,
+		       local_backup_cron, local_backup_keep
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -80,6 +81,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
+		&st.LocalBackupCron, &st.LocalBackupKeep,
 	)
 	if err != nil {
 		return nil, err
@@ -132,6 +134,17 @@ func (s *Store) SetTelegramBot(enabled bool, token, cron string) error {
 		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), encField(token), cron,
+	)
+	return err
+}
+
+// SetLocalBackup persists the local backup schedule (a 5-field cron expression in
+// the operator timezone; empty disables it) and how many archives to retain.
+func (s *Store) SetLocalBackup(cron string, keep int) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET local_backup_cron = ?, local_backup_keep = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		cron, keep,
 	)
 	return err
 }

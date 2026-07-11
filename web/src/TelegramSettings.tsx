@@ -8,6 +8,13 @@ import {
   testTelegramBackup,
   unlinkTelegram,
 } from "./api";
+import {
+  buildCron,
+  CronPicker,
+  detectPreset,
+  EMPTY_SCHEDULE,
+  type Schedule,
+} from "./CronPicker";
 import { notifyError, notifySuccess, errMessage } from "./notify";
 import {
   Button,
@@ -17,35 +24,10 @@ import {
   IconClose,
   PasswordInput,
   SaveBar,
-  Select,
   SettingCard,
   Switch,
   TextInput,
 } from "./ui";
-
-// Schedule presets map a friendly choice to a cron expression. "daily"/"weekly"
-// build their cron from the time/weekday inputs; "custom" takes a raw expression.
-const PRESETS = [
-  { value: "off", label: "Выключено" },
-  { value: "hourly", label: "Каждый час" },
-  { value: "every6", label: "Каждые 6 часов" },
-  { value: "every12", label: "Каждые 12 часов" },
-  { value: "daily", label: "Ежедневно в…" },
-  { value: "weekly", label: "Еженедельно в…" },
-  { value: "custom", label: "Своё (cron)" },
-] as const;
-
-const WEEKDAYS = [
-  { value: "1", label: "Понедельник" },
-  { value: "2", label: "Вторник" },
-  { value: "3", label: "Среда" },
-  { value: "4", label: "Четверг" },
-  { value: "5", label: "Пятница" },
-  { value: "6", label: "Суббота" },
-  { value: "0", label: "Воскресенье" },
-];
-
-type Preset = (typeof PRESETS)[number]["value"];
 
 // ADMIN_EVENTS are the admin-bot notification categories shown as toggles. Keys
 // must match model.AdminEventCatalog on the backend.
@@ -77,69 +59,6 @@ type AdminEvents = Record<string, boolean>;
 const sameEvents = (a: AdminEvents, b: AdminEvents) =>
   ADMIN_EVENTS.every((e) => !!a[e.key] === !!b[e.key]);
 
-// detectPreset reverse-maps a stored cron back into the UI controls.
-function detectPreset(cron: string): {
-  preset: Preset;
-  time: string;
-  weekday: string;
-  custom: string;
-} {
-  const c = cron.trim();
-  if (c === "") return { preset: "off", time: "03:00", weekday: "1", custom: "" };
-  if (c === "0 * * * *")
-    return { preset: "hourly", time: "03:00", weekday: "1", custom: "" };
-  if (c === "0 */6 * * *")
-    return { preset: "every6", time: "03:00", weekday: "1", custom: "" };
-  if (c === "0 */12 * * *")
-    return { preset: "every12", time: "03:00", weekday: "1", custom: "" };
-  const daily = c.match(/^(\d{1,2}) (\d{1,2}) \* \* \*$/);
-  if (daily)
-    return {
-      preset: "daily",
-      time: hhmm(daily[2], daily[1]),
-      weekday: "1",
-      custom: "",
-    };
-  const weekly = c.match(/^(\d{1,2}) (\d{1,2}) \* \* ([0-6])$/);
-  if (weekly)
-    return {
-      preset: "weekly",
-      time: hhmm(weekly[2], weekly[1]),
-      weekday: weekly[3],
-      custom: "",
-    };
-  return { preset: "custom", time: "03:00", weekday: "1", custom: c };
-}
-
-const hhmm = (h: string, m: string) =>
-  `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
-
-// buildCron assembles the cron string from the current UI controls.
-function buildCron(
-  preset: Preset,
-  time: string,
-  weekday: string,
-  custom: string,
-): string {
-  const [h, m] = (time || "03:00").split(":").map((x) => parseInt(x, 10) || 0);
-  switch (preset) {
-    case "off":
-      return "";
-    case "hourly":
-      return "0 * * * *";
-    case "every6":
-      return "0 */6 * * *";
-    case "every12":
-      return "0 */12 * * *";
-    case "daily":
-      return `${m} ${h} * * *`;
-    case "weekly":
-      return `${m} ${h} * * ${weekday}`;
-    case "custom":
-      return custom.trim();
-  }
-}
-
 export function TelegramSettings() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -149,10 +68,7 @@ export function TelegramSettings() {
   const [userToken, setUserToken] = useState("");
   const [userRegEnabled, setUserRegEnabled] = useState(true);
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
-  const [preset, setPreset] = useState<Preset>("off");
-  const [time, setTime] = useState("03:00");
-  const [weekday, setWeekday] = useState("1");
-  const [custom, setCustom] = useState("");
+  const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
   const [chats, setChats] = useState<number[]>([]);
   const [linkCode, setLinkCode] = useState("");
   const [botUsername, setBotUsername] = useState("");
@@ -182,11 +98,7 @@ export function TelegramSettings() {
         setLinkCode(t.link_code || "");
         setBotUsername(t.bot_username || "");
         setUserBotUsername(t.user_bot_username || "");
-        const d = detectPreset(t.backup_cron || "");
-        setPreset(d.preset);
-        setTime(d.time);
-        setWeekday(d.weekday);
-        setCustom(d.custom);
+        setSchedule(detectPreset(t.backup_cron || ""));
         setSaved({
           enabled: t.enabled,
           token: t.token,
@@ -221,7 +133,7 @@ export function TelegramSettings() {
     return () => clearInterval(id);
   }, [enabled, linkCode]);
 
-  const cron = buildCron(preset, time, weekday, custom);
+  const cron = buildCron(schedule);
   const dirty =
     enabled !== saved.enabled ||
     token.trim() !== saved.token.trim() ||
@@ -273,11 +185,7 @@ export function TelegramSettings() {
     setUserToken(saved.userToken);
     setUserRegEnabled(saved.userRegEnabled);
     setAdminEvents(saved.adminEvents);
-    const d = detectPreset(saved.cron);
-    setPreset(d.preset);
-    setTime(d.time);
-    setWeekday(d.weekday);
-    setCustom(d.custom);
+    setSchedule(detectPreset(saved.cron));
   };
 
   const generate = async () => {
@@ -530,48 +438,11 @@ export function TelegramSettings() {
         description="Резервные копии отправляются во все привязанные чаты по расписанию (в часовом поясе панели)."
       >
         <div className="flex flex-col gap-3">
-          <Select
-            label="Расписание"
-            value={preset}
-            onChange={(v) => setPreset(v as Preset)}
-            data={PRESETS as unknown as { value: string; label: string }[]}
+          <CronPicker
+            value={schedule}
+            onChange={setSchedule}
+            offLabel="Автоматические бэкапы выключены."
           />
-          {(preset === "daily" || preset === "weekly") && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {preset === "weekly" && (
-                <Select
-                  label="День недели"
-                  value={weekday}
-                  onChange={setWeekday}
-                  data={WEEKDAYS}
-                />
-              )}
-              <TextInput
-                label="Время"
-                type="time"
-                value={time}
-                onChange={setTime}
-              />
-            </div>
-          )}
-          {preset === "custom" && (
-            <TextInput
-              label="Cron-выражение"
-              value={custom}
-              onChange={setCustom}
-              mono
-              placeholder="0 3 * * *"
-            />
-          )}
-          <p className="text-xs text-ink-muted">
-            {cron ? (
-              <>
-                Cron: <span className="font-mono">{cron}</span>
-              </>
-            ) : (
-              "Автоматические бэкапы выключены."
-            )}
-          </p>
           <div>
             <Button
               variant="light"

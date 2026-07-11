@@ -75,6 +75,24 @@ Base URL below is written as `$BASE` (e.g. `https://vpn.example.com/ab12cd34/v1`
 GET $BASE/health → { "data": { "status": "ok" } }
 ```
 
+#### Liveness probe (no API key)
+
+`GET $BASE/healthz` is the one endpoint that needs no key — point an uptime monitor
+or a load balancer at it. It answers **503** (not 200) when Xray isn't running: the
+panel may be fine, but the node is carrying no VPN traffic, which is what you want
+to be paged about.
+
+```
+GET $BASE/healthz
+200 → { "data": { "status": "ok",       "xray": "running", "xray_started_at": 1752230400 } }
+503 → { "data": { "status": "degraded", "xray": "down",    "xray_started_at": 0 } }
+```
+
+It lives under the API path rather than at the server root on purpose: an
+unauthenticated `/healthz` on the root would answer JSON to any scanner and give the
+panel away, defeating the decoy. The API path is stable across secret rotation, so a
+monitor pointed here keeps working.
+
 ### Users
 
 | Method | Path | Description |
@@ -137,6 +155,7 @@ required only for `extend`). Response: `{ "data": { "affected": 3 } }`.
 
 | Method | Path | Description |
 | --- | --- | --- |
+| `GET` | `/v1/billing/providers` | List the enabled payment methods (what a client can pay with). |
 | `GET` | `/v1/billing/plans?include_disabled=true` | List tariff plans. |
 | `POST` | `/v1/billing/plans` | Create (no `id`) or update (`id` set) a plan. |
 | `DELETE` | `/v1/billing/plans/{id}` | Delete a plan. |

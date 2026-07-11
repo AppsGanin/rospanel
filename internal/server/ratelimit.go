@@ -42,6 +42,26 @@ func newLoginLimiter() *loginLimiter {
 	}
 }
 
+// newAPIKeyGuard locks out an IP that keeps presenting invalid API keys. The
+// apiLimiter in front of /v1 is a flood guard — it caps request *rate* but never
+// looks at whether a request authenticated, so on its own it still hands an
+// attacker its full budget of guesses every minute, forever. This counts failures
+// instead, so a source that can't produce a valid key stops getting attempts.
+//
+// It reuses loginLimiter with the account dimension switched off: an invalid key
+// names no account, so there is nothing to spray *at* the way a username can be
+// sprayed. Every call therefore passes account "", and the accounts map stays empty.
+func newAPIKeyGuard() *loginLimiter {
+	return &loginLimiter{
+		ips:      make(map[string]*attemptRec),
+		accounts: make(map[string]*attemptRec),
+		maxFails: 10,
+		maxAcct:  1 << 30, // unused (account is always ""); kept absurd so it can never gate
+		maxKeys:  4096,
+		window:   15 * time.Minute,
+	}
+}
+
 // blocked reports whether this IP or this account is currently locked out.
 func (l *loginLimiter) blocked(ip, account string) bool {
 	l.mu.Lock()

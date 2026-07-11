@@ -106,9 +106,16 @@ func (s *Store) TouchLastSeen(userID, ts int64) error {
 
 // ActiveDeviceCounts returns how many distinct source IPs were seen per user
 // since the given unix timestamp (typically now - DeviceOnlineWindow).
+// INDEXED BY is deliberate. Left alone, SQLite picks the (user_id, ip) primary key
+// so GROUP BY needs no sort, and scans the whole table — which grows a row per
+// source IP per user. `since` is only DeviceOnlineWindow (120s) back, so the rows we
+// want are a tiny slice of that: seeking them on last_seen and sorting the slice
+// beats scanning everything, and the planner's row estimates (we never ANALYZE)
+// don't know it. The clause also fails loudly if a migration ever drops the index.
 func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
 	rows, err := s.db.Query(
-		`SELECT user_id, COUNT(DISTINCT ip) FROM connections WHERE last_seen > ? GROUP BY user_id`,
+		`SELECT user_id, COUNT(DISTINCT ip) FROM connections INDEXED BY idx_connections_last_seen
+		 WHERE last_seen > ? GROUP BY user_id`,
 		since,
 	)
 	if err != nil {
@@ -125,6 +132,28 @@ func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
 		out[id] = n
 	}
 	return out, rows.Err()
+}
+
+// PurgeConnections drops connection rows not seen since the cutoff (unix seconds),
+// returning how many were removed. Batched for the same reason PurgeUserEvents is:
+// the pool is a single connection, so one unbounded DELETE would stall every query
+// behind it. connections has no surrogate key, so this sweeps by rowid.
+func (s *Store) PurgeConnections(before int64) (int64, error) {
+	var total int64
+	for {
+		res, err := s.db.Exec(
+			`DELETE FROM connections WHERE rowid IN (
+				SELECT rowid FROM connections WHERE last_seen < ? LIMIT ?
+			)`, before, purgeBatch)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < purgeBatch {
+			return total, nil
+		}
+	}
 }
 
 // RecentConnections returns a user's source IPs, most recent first.

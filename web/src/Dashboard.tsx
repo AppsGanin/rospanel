@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
 import { BrandLogo } from "./Logo";
+import { EventsPanel } from "./EventsPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { PaymentsPage } from "./PaymentsPage";
 import { navigate, useRoute } from "./router";
@@ -20,7 +21,7 @@ import {
 } from "./ui";
 import { UsersPanel } from "./UsersPanel";
 
-type Tab = "overview" | "users" | "stats" | "payments" | "settings";
+type Tab = "overview" | "users" | "stats" | "payments" | "events" | "settings";
 
 export function Dashboard({
   username,
@@ -64,6 +65,7 @@ export function Dashboard({
     { value: "users", label: "Пользователи" },
     { value: "stats", label: "Статистика" },
     ...(billing ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
+    { value: "events", label: "Журнал" },
     { value: "settings", label: "Настройки" },
   ];
   const tab = (NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab;
@@ -183,6 +185,7 @@ export function Dashboard({
           {tab === "users" && <UsersPanel />}
           {tab === "stats" && <StatsPanel />}
           {tab === "payments" && <PaymentsPage />}
+          {tab === "events" && <EventsPanel />}
           {tab === "settings" && <SettingsPanel />}
         </div>
       </main>

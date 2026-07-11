@@ -9,12 +9,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	qrcode "github.com/skip2/go-qrcode"
 )
+
+// subActorCtx marks the request as the VPN user acting on their own account, so the
+// audit log distinguishes self-service (cancelling a plan, paying from the
+// subscription page) from an admin doing it for them. The sub token already
+// authenticated them.
+func subActorCtx(r *http.Request, u model.User) context.Context {
+	return actor.With(r.Context(), actor.UserSelf(u.Name))
+}
 
 // handleSub serves the public subscription surface at /sub/<token>[/page|/qr.png].
 // An invalid/unknown token falls through to the decoy — indistinguishable from a
@@ -166,7 +175,7 @@ func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u mode
 		writeOK(w) // nothing active to cancel
 		return
 	}
-	if err := rt.mgr.CancelUserPlan(u.ID); err != nil {
+	if err := rt.mgr.CancelUserPlan(subActorCtx(r, u), u.ID); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -206,7 +215,7 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 	// No automatic provider passed/configured ⇒ create a manual order and return the
 	// payment instructions for the page to show (admin confirms it later).
 	if req.Provider == "" && len(rt.mgr.PaymentMethods()) == 0 {
-		_, msg, err := rt.mgr.RequestPlanPayment(u.ID, req.PlanID)
+		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), u.ID, req.PlanID)
 		if err != nil {
 			writeManagerErr(w, err)
 			return
@@ -214,7 +223,7 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPaymentReturn(u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
+	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
 	if err != nil {
 		writeManagerErr(w, err)
 		return

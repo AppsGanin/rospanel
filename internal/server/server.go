@@ -42,6 +42,7 @@ type Router struct {
 	limiter    *loginLimiter
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
+	apiKeys    *loginLimiter  // per-IP lockout after repeated invalid API keys
 	streams    *streamGate    // caps concurrent SSE streams
 
 	mu        sync.RWMutex
@@ -86,6 +87,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		limiter:    newLoginLimiter(),
 		subLimiter: newIPRateLimiter(120, time.Minute),
 		apiLimiter: newIPRateLimiter(600, time.Minute),
+		apiKeys:    newAPIKeyGuard(),
 		streams:    newStreamGate(),
 		secret:     secret,
 		subPath:    subPath,
