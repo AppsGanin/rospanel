@@ -70,7 +70,26 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"proxy_mode_port":     set.ProxyModePort,
 		"proxy_mode_user":     set.ProxyModeUser,
 		"proxy_mode_pass":     set.ProxyModePass,
+		"local_backup_cron":   set.LocalBackupCron,
+		"local_backup_keep":   set.LocalBackupKeep,
 	})
+}
+
+// setLocalBackup configures the scheduled local backup (cron in the operator
+// timezone; empty disables it) and how many archives to retain.
+func (rt *Router) setLocalBackup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Cron string `json:"cron"`
+		Keep int    `json:"keep"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SaveLocalBackup(req.Cron, req.Keep); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
 }
 
 // setProxyMode toggles/configures the socks/http forward-proxy inbound.

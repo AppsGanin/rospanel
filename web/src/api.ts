@@ -425,6 +425,8 @@ export interface SettingsInfo extends SubSettings {
   proxy_mode_port: number
   proxy_mode_user: string
   proxy_mode_pass: string
+  local_backup_cron: string
+  local_backup_keep: number
 }
 
 export interface ProxyModeConfig {
@@ -437,6 +439,17 @@ export interface ProxyModeConfig {
 
 export const setProxyMode = (c: ProxyModeConfig) =>
   api<{ ok: boolean }>('api/settings/proxy-mode', {
+    method: 'POST',
+    body: JSON.stringify(c),
+  })
+
+export interface LocalBackupConfig {
+  cron: string
+  keep: number
+}
+
+export const setLocalBackup = (c: LocalBackupConfig) =>
+  api<{ ok: boolean }>('api/settings/local-backup', {
     method: 'POST',
     body: JSON.stringify(c),
   })
