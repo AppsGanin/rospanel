@@ -11,28 +11,24 @@ export function BrandLogo({ size = 30 }: { size?: number }) {
   const imgSize = `${(size + 6) / 16}rem`
   const src = brand.has_custom_logo ? brand.logoURL : logoUrl
 
+  // min-w-0 + truncate: in a cramped flex row (the desktop header) the wordmark must
+  // give way by ellipsing, not by overflowing its box — an overflowing wordmark used
+  // to render underneath the version badge sitting next to it. The mark itself never
+  // shrinks, so it can't be squashed out of proportion.
   return (
-    <span className="inline-flex items-center gap-2.5">
+    <span className="inline-flex min-w-0 items-center gap-2.5">
       <img
         src={src}
+        className="shrink-0"
         style={{ width: imgSize, height: imgSize, objectFit: 'contain' }}
         alt=""
       />
-      {isDefault ? (
-        <span
-          className="font-extrabold leading-none tracking-tight text-accent"
-          style={{ fontSize: `${(size * 0.72) / 16}rem` }}
-        >
-          РосПанель
-        </span>
-      ) : (
-        <span
-          className="font-extrabold leading-none tracking-tight text-accent"
-          style={{ fontSize: `${(size * 0.72) / 16}rem` }}
-        >
-          {brand.panel_name}
-        </span>
-      )}
+      <span
+        className="min-w-0 truncate font-extrabold leading-none tracking-tight text-accent"
+        style={{ fontSize: `${(size * 0.72) / 16}rem` }}
+      >
+        {isDefault ? 'РосПанель' : brand.panel_name}
+      </span>
     </span>
   )
 }
