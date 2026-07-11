@@ -46,7 +46,7 @@ func Init(dataDir string) error {
 	} else if enc {
 		return fmt.Errorf(
 			"secrets.key отсутствует, но в %s уже есть зашифрованные секреты — "+
-				"восстановите secrets.key из резервной копии каталога данных (файл не входит в tar-бэкап)",
+				"восстановите secrets.key из резервной копии каталога данных",
 			dbPath,
 		)
 	}
