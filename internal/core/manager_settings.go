@@ -12,6 +12,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
 	"github.com/AppsGanin/rospanel/internal/warp"
@@ -31,6 +32,7 @@ func (m *Manager) SetTimezone(name string) error {
 	}
 	m.tzMu.Lock()
 	m.tz = loadLocation(name)
+	logbuf.SetLocation(m.tz) // keep log timestamps on the operator's new zone too
 	m.tzMu.Unlock()
 	return nil
 }

@@ -106,12 +106,12 @@ func (m *Manager) MigratePlanUsers(fromPlanID, toPlanID int64) (int, error) {
 	migrated := 0
 	for _, id := range ids {
 		if err := m.ApplyPlanToUser(id, toPlanID, false); err != nil {
-			logErr("billing: migrate user %d from plan %d to %d: %v", id, fromPlanID, toPlanID, err)
+			logErr("billing: plan migration failed", "user", id, "from_plan", fromPlanID, "to_plan", toPlanID, "err", err)
 			continue
 		}
 		migrated++
 	}
-	logInfo("billing: migrated %d/%d users from plan %d to %d", migrated, len(ids), fromPlanID, toPlanID)
+	logInfo("billing: migrated users between plans", "migrated", migrated, "total", len(ids), "from_plan", fromPlanID, "to_plan", toPlanID)
 	return migrated, nil
 }
 
@@ -165,7 +165,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 				return nil, err
 			}
 			_ = m.store.SetUserPlan(u.ID, plan.ID, true)
-			logInfo("user %d registered with trial plan %q (%d days)", u.ID, plan.Name, set.BillingTrialDays)
+			logInfo("user registered with trial plan", "user", u.ID, "plan", plan.Name, "days", set.BillingTrialDays)
 			m.TriggerUserSync()
 			return m.store.GetUser(u.ID)
 		}
@@ -181,7 +181,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 				return nil, err
 			}
 			_ = m.store.SetUserPlan(u.ID, plan.ID, false)
-			logInfo("user %d registered with free plan %q", u.ID, plan.Name)
+			logInfo("user registered with free plan", "user", u.ID, "plan", plan.Name)
 			m.TriggerUserSync()
 			return m.store.GetUser(u.ID)
 		}
@@ -354,10 +354,10 @@ func (m *Manager) EnforceBilling(now int64) error {
 			continue
 		}
 		if err := m.ApplyPlanToUser(u.ID, free.ID, false); err != nil {
-			logErr("billing: downgrade user %d to free: %v", u.ID, err)
+			logErr("billing: downgrade to free failed", "user", u.ID, "err", err)
 			continue
 		}
-		logInfo("billing: user %d downgraded to free plan after expiry", u.ID)
+		logInfo("billing: user downgraded to free plan after expiry", "user", u.ID)
 	}
 	return nil
 }
@@ -438,7 +438,7 @@ func (m *Manager) ConfirmPayment(orderID int64) error {
 		_ = m.store.RevertPaymentOrderToPending(orderID) // let a retry re-apply
 		return err
 	}
-	logInfo("billing: order %d confirmed, user %d plan %d", orderID, order.UserID, order.PlanID)
+	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
 	order.Status, order.PaidAt = "paid", now
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return nil

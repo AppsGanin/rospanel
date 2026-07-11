@@ -9,6 +9,11 @@ linters:
   enable:
     - bodyclose   # every HTTP response body must be closed (leak guard)
     - misspell    # catches typos in comments/strings
+    # logInfo/logWarn/logErr wrap slog, so their variadic args are key/value pairs,
+    # NOT printf args. Calls written printf-style silently logged garbage
+    # ("!BADKEY=2 cryptobot=1") — and did so in the payment path, exactly where an
+    # operator needs to audit money. go vet can't see through the wrappers; this can.
+    - sloglint
   settings:
     staticcheck:
       checks:

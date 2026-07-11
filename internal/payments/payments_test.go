@@ -100,8 +100,8 @@ func TestCryptoBotInvoiceStatusMapping(t *testing.T) {
 		c := &CryptoBot{token: "tok", http: srv.Client(), baseURL: srv.URL}
 		got, err := c.InvoiceStatus(context.Background(), "1")
 		srv.Close()
-		if err != nil || got != tc.want {
-			t.Fatalf("status %q → %q, want %q (err=%v)", tc.api, got, tc.want, err)
+		if err != nil || got.Status != tc.want {
+			t.Fatalf("status %q → %q, want %q (err=%v)", tc.api, got.Status, tc.want, err)
 		}
 	}
 	// No items (unknown invoice) → pending, not an error.
@@ -110,8 +110,8 @@ func TestCryptoBotInvoiceStatusMapping(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := &CryptoBot{token: "tok", http: srv.Client(), baseURL: srv.URL}
-	if got, err := c.InvoiceStatus(context.Background(), "9"); err != nil || got != StatusPending {
-		t.Fatalf("empty items → %q (err=%v), want pending", got, err)
+	if got, err := c.InvoiceStatus(context.Background(), "9"); err != nil || got.Status != StatusPending {
+		t.Fatalf("empty items → %q (err=%v), want pending", got.Status, err)
 	}
 }
 
@@ -175,8 +175,8 @@ func TestYooKassaPaymentStatusMapping(t *testing.T) {
 		y := &YooKassa{shopID: "s", secretKey: "k", http: srv.Client(), base: srv.URL}
 		got, err := y.PaymentStatus(context.Background(), "pay_1")
 		srv.Close()
-		if err != nil || got != tc.want {
-			t.Fatalf("status %q → %q, want %q (err=%v)", tc.api, got, tc.want, err)
+		if err != nil || got.Status != tc.want {
+			t.Fatalf("status %q → %q, want %q (err=%v)", tc.api, got.Status, tc.want, err)
 		}
 	}
 }
@@ -190,5 +190,80 @@ func TestYooKassaHTTPError(t *testing.T) {
 	y := &YooKassa{shopID: "s", secretKey: "k", http: srv.Client(), base: srv.URL}
 	if _, err := y.PaymentStatus(context.Background(), "pay_1"); err == nil {
 		t.Fatal("expected error on HTTP 401")
+	}
+}
+
+// --- amount parsing / extraction ------------------------------------------
+
+func TestParseKopecks(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+		ok   bool
+	}{
+		{"100.00", 10000, true}, // YooKassa always sends 2 decimals
+		{"100", 10000, true},    // CryptoBot sends a bare float string
+		{"125.50", 12550, true},
+		{"0.99", 99, true},
+		{"100.5", 10050, true},   // 1 decimal digit → padded, not misread as 5 kopecks
+		{"100.004", 10000, true}, // sub-kopeck noise truncated
+		{" 250.00 ", 25000, true},
+		{"", 0, false},
+		{"abc", 0, false},
+		{"-5.00", 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := parseKopecks(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("parseKopecks(%q) = (%d, %v), want (%d, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// The amount must come from "amount" (what the payer was charged), never from
+// income_amount (net of commission) — else every payment would look short.
+func TestYooKassaPaymentStatusAmount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"succeeded","paid":true,` +
+			`"amount":{"value":"100.00","currency":"RUB"},` +
+			`"income_amount":{"value":"96.50","currency":"RUB"}}`))
+	}))
+	defer srv.Close()
+	y := &YooKassa{shopID: "s", secretKey: "k", http: srv.Client(), base: srv.URL}
+	got, err := y.PaymentStatus(context.Background(), "pay_1")
+	if err != nil {
+		t.Fatalf("PaymentStatus: %v", err)
+	}
+	if got.Status != StatusPaid || got.AmountKopecks != 10000 || got.Currency != "RUB" {
+		t.Fatalf("got %+v, want paid/10000/RUB", got)
+	}
+}
+
+// A fiat invoice reports the RUB amount in "amount"/"fiat"; paid_amount is the
+// crypto actually sent and must not be mistaken for the charge.
+func TestCryptoBotInvoiceStatusAmount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"items":[{"status":"paid",` +
+			`"currency_type":"fiat","fiat":"RUB","amount":"250",` +
+			`"paid_amount":"2.71","paid_asset":"USDT"}]}}`))
+	}))
+	defer srv.Close()
+	c := &CryptoBot{token: "tok", http: srv.Client(), baseURL: srv.URL}
+	got, err := c.InvoiceStatus(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("InvoiceStatus: %v", err)
+	}
+	if got.Status != StatusPaid || got.AmountKopecks != 25000 || got.Currency != "RUB" {
+		t.Fatalf("got %+v, want paid/25000/RUB", got)
+	}
+}
+
+// An unreadable amount must report "unknown" (0/"") rather than a bogus 0 RUB, so
+// the caller fails open instead of rejecting a real payment as a mismatch.
+func TestResultUnknownAmountOnUnparseable(t *testing.T) {
+	inv := Invoice{Status: "paid", Amount: "not-a-number", Fiat: "RUB"}
+	got := inv.AsResult()
+	if got.AmountKopecks != 0 || got.Currency != "" {
+		t.Fatalf("got %+v, want unknown amount (0, \"\")", got)
 	}
 }

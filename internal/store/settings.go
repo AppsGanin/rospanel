@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -410,3 +411,26 @@ func (s *Store) MarkConfigApplied() error {
 
 // SetConfigError records the last failed config-apply error.
 func (s *Store) SetConfigError(msg string) error { return s.setSetting("last_config_error", msg) }
+
+// PeekTimezone reads the operator's configured IANA timezone straight from the DB
+// file, without opening the full store (no migrations, no encryption key needed —
+// the zone isn't a secret). It exists so main() can stamp log lines in the
+// operator's zone from the very FIRST line: the real store isn't open that early,
+// and setting the zone later would leave the opening boot lines in the server's
+// system zone while everything after them used the operator's — timestamps jumping
+// an hour mid-boot.
+//
+// Returns "" for a fresh install (no DB / no row yet), which the caller reads as
+// "use server-local".
+func PeekTimezone(dbPath string) string {
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+	var tz string
+	if err := db.QueryRow(`SELECT timezone FROM settings WHERE id = 1`).Scan(&tz); err != nil {
+		return ""
+	}
+	return tz
+}

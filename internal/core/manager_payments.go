@@ -225,7 +225,7 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 		// The provider error can carry credentials/response internals (e.g. YooKassa
 		// 401 with the shopId hint) — log it for the operator, but return a clean,
 		// generic message to the end user.
-		logErr("payment: create %s payment for order %d failed: %v", provider, order.ID, err)
+		logErr("payment: create failed", "provider", provider, "order", order.ID, "err", err)
 		m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 			"⚠️ <b>Платёж не создан</b>\nЗаказ #%d · способ %s\nПроверьте настройки провайдера.",
 			order.ID, providerLabel(provider)))
@@ -242,9 +242,24 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 	return order, nil
 }
 
+// amountMatches reports whether the charge the provider recorded is the one this
+// order was created for. Amounts are fixed server-side at creation, so a mismatch
+// means a tampered/misrouted callback or a provider anomaly — never a normal
+// payment. Fails OPEN when the provider reported no readable amount: a format
+// change on their side must not block real payments, and the callback is already
+// authenticated (CryptoBot HMAC / YooKassa re-fetch over the API).
+func amountMatches(order *model.PaymentOrder, paid payments.Result) bool {
+	if paid.AmountKopecks <= 0 || paid.Currency == "" {
+		return true // amount unknown → nothing to contradict
+	}
+	return paid.Currency == "RUB" && paid.AmountKopecks == int64(order.AmountRub)*100
+}
+
 // confirmProviderOrder applies the plan and marks the order paid. Idempotent: a
 // re-delivered webhook or an overlapping poll is a no-op once the order is paid.
-func (m *Manager) confirmProviderOrder(provider, providerID string) error {
+// paid carries the provider's view of the charge; it is verified against the order
+// before any plan is granted.
+func (m *Manager) confirmProviderOrder(provider, providerID string, paid payments.Result) error {
 	order, err := m.store.GetPaymentOrderByProvider(provider, providerID)
 	if err != nil {
 		return err
@@ -259,6 +274,20 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 				order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub))
 		}
 		return nil
+	}
+	// The charge must be the one this order was created for. Refuse to grant a plan
+	// on a mismatch — the money situation then needs a human, so alert the operator
+	// rather than silently applying (or silently dropping) it.
+	if !amountMatches(order, paid) {
+		logErr("payment: amount mismatch — plan not granted",
+			"order", order.ID, "provider", provider,
+			"expected_rub", order.AmountRub,
+			"got", fmt.Sprintf("%d.%02d %s", paid.AmountKopecks/100, paid.AmountKopecks%100, paid.Currency))
+		m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
+			"⚠️ <b>Сумма оплаты не совпала</b>\nЗаказ #%d · %s\nОжидалось: %d ₽ · пришло: %d.%02d %s\nТариф НЕ выдан — проверьте платёж вручную.",
+			order.ID, escHTML(order.UserName), order.AmountRub,
+			paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
+		return fmt.Errorf("сумма оплаты не совпадает с заказом %d", order.ID)
 	}
 	// Atomically claim the pending→paid transition. A provider webhook and the
 	// polling fallback (or a re-delivered webhook) can reach here for the same order
@@ -279,7 +308,7 @@ func (m *Manager) confirmProviderOrder(provider, providerID string) error {
 		_ = m.store.RevertPaymentOrderToPending(order.ID)
 		return err
 	}
-	logInfo("payment: order %d paid via %s, user %d plan %d", order.ID, provider, order.UserID, order.PlanID)
+	logInfo("payment: order paid", "order", order.ID, "provider", provider, "user", order.UserID, "plan", order.PlanID)
 	if u, e := m.store.GetUser(order.UserID); e == nil {
 		m.notifyUser(u.TgChatID, fmt.Sprintf("✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
 	}
@@ -323,30 +352,30 @@ func (m *Manager) PollPendingPayments() {
 			_ = m.store.CancelPaymentOrderIfPending(o.ID)
 			continue
 		}
-		var status payments.Status
+		var res payments.Result
 		var perr error
 		switch o.Provider {
 		case payments.ProviderYooKassa:
 			if !set.YooKassaEnabled {
 				continue
 			}
-			status, perr = payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, o.ProviderID)
+			res, perr = payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, o.ProviderID)
 		case payments.ProviderCryptoBot:
 			if !set.CryptoBotEnabled {
 				continue
 			}
-			status, perr = payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet).InvoiceStatus(ctx, o.ProviderID)
+			res, perr = payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet).InvoiceStatus(ctx, o.ProviderID)
 		default:
 			continue
 		}
 		if perr != nil {
-			logErr("payment poll: order %d: %v", o.ID, perr)
+			logErr("payment poll failed", "order", o.ID, "err", perr)
 			continue
 		}
-		switch status {
+		switch res.Status {
 		case payments.StatusPaid:
-			if err := m.confirmProviderOrder(o.Provider, o.ProviderID); err != nil {
-				logErr("payment poll: confirm order %d: %v", o.ID, err)
+			if err := m.confirmProviderOrder(o.Provider, o.ProviderID, res); err != nil {
+				logErr("payment poll: confirm failed", "order", o.ID, "err", err)
 			}
 		case payments.StatusCanceled:
 			_ = m.store.CancelPaymentOrderIfPending(o.ID)
@@ -371,13 +400,13 @@ func (m *Manager) HandleYooKassaWebhook(body []byte) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	status, err := payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, n.Object.ID)
+	res, err := payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, n.Object.ID)
 	if err != nil {
 		return err
 	}
-	switch status {
+	switch res.Status {
 	case payments.StatusPaid:
-		return m.confirmProviderOrder(payments.ProviderYooKassa, n.Object.ID)
+		return m.confirmProviderOrder(payments.ProviderYooKassa, n.Object.ID, res)
 	case payments.StatusCanceled:
 		if o, e := m.store.GetPaymentOrderByProvider(payments.ProviderYooKassa, n.Object.ID); e == nil {
 			_ = m.store.CancelPaymentOrderIfPending(o.ID) // don't clobber an already-paid order
@@ -396,18 +425,22 @@ func (m *Manager) HandleCryptoBotWebhook(body []byte, signature string) error {
 	if !cb.VerifyWebhook(body, signature) {
 		return invalid("неверная подпись")
 	}
+	// The payload is a full Invoice object; the HMAC above proves CryptoBot sent it,
+	// so the amount it carries is trustworthy enough to verify the order against.
 	var upd struct {
 		UpdateType string `json:"update_type"`
 		Payload    struct {
-			InvoiceID int64  `json:"invoice_id"`
-			Status    string `json:"status"`
+			payments.Invoice
+			InvoiceID int64 `json:"invoice_id"`
 		} `json:"payload"`
 	}
 	if json.Unmarshal(body, &upd) != nil {
 		return invalid("некорректное уведомление")
 	}
 	if upd.UpdateType == "invoice_paid" || upd.Payload.Status == "paid" {
-		return m.confirmProviderOrder(payments.ProviderCryptoBot, fmt.Sprintf("%d", upd.Payload.InvoiceID))
+		res := upd.Payload.AsResult()
+		res.Status = payments.StatusPaid // the update itself is the paid signal
+		return m.confirmProviderOrder(payments.ProviderCryptoBot, fmt.Sprintf("%d", upd.Payload.InvoiceID), res)
 	}
 	return nil
 }

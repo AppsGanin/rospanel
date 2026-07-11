@@ -158,7 +158,34 @@ func (s *Supervisor) env() []string {
 	// runtime exceeds it rather than OOM-killing if the live heap genuinely needs
 	// more, so it can't break xray.
 	env = append(env, "GOMEMLIMIT=256MiB")
+	if tz := childTZ(); tz != "" {
+		env = append(env, "TZ="+tz)
+	}
 	return env
+}
+
+// childTZ is the zone to run Xray in, so the timestamps it stamps on its OWN log
+// lines match the panel's — otherwise one log interleaves two zones (Xray in the
+// server's system zone, the panel in the operator's).
+//
+// Returns "" — leaving Xray on the server default — unless the zone is BOTH
+// configured by the operator and present in the system zoneinfo. That second check
+// matters: xray is a stock Go binary that (unlike ours) may not embed tzdata, and
+// Go silently falls back to UTC for a TZ it can't load. Setting a zone blindly
+// could therefore push Xray further from the operator's clock, not closer.
+func childTZ() string {
+	loc := logbuf.Location()
+	if loc == nil || loc == time.Local || loc == time.UTC {
+		return ""
+	}
+	name := loc.String()
+	if name == "" || name == "Local" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join("/usr/share/zoneinfo", name)); err != nil {
+		return "" // host has no tzdata for it → don't risk Xray defaulting to UTC
+	}
+	return name
 }
 
 // Running reports whether the Xray child process is currently up. Reflects

@@ -69,28 +69,42 @@ func (y *YooKassa) CreatePayment(ctx context.Context, amountRub int, orderID int
 	return out.ID, out.Confirmation.ConfirmationURL, nil
 }
 
-// PaymentStatus returns the normalised status of a payment.
-func (y *YooKassa) PaymentStatus(ctx context.Context, paymentID string) (Status, error) {
+// PaymentStatus returns the normalised status of a payment plus the amount
+// YooKassa recorded for it. "amount" is what the payer was charged (a decimal
+// string like "100.00"); note this is deliberately NOT income_amount, which is the
+// net after commission and would never match the order.
+func (y *YooKassa) PaymentStatus(ctx context.Context, paymentID string) (Result, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, y.base+"/payments/"+paymentID, nil)
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	req.Header.Set("Authorization", y.auth())
 	var out struct {
 		Status string `json:"status"`
 		Paid   bool   `json:"paid"`
+		Amount struct {
+			Value    string `json:"value"`
+			Currency string `json:"currency"`
+		} `json:"amount"`
 	}
 	if err := y.do(req, &out); err != nil {
-		return "", err
+		return Result{}, err
+	}
+	res := Result{Currency: out.Amount.Currency}
+	if k, ok := parseKopecks(out.Amount.Value); ok {
+		res.AmountKopecks = k
+	} else {
+		res.Currency = "" // unreadable amount → report "unknown", not a bogus 0 RUB
 	}
 	switch out.Status {
 	case "succeeded":
-		return StatusPaid, nil
+		res.Status = StatusPaid
 	case "canceled":
-		return StatusCanceled, nil
+		res.Status = StatusCanceled
 	default: // pending, waiting_for_capture
-		return StatusPending, nil
+		res.Status = StatusPending
 	}
+	return res, nil
 }
 
 func (y *YooKassa) do(req *http.Request, out any) error {

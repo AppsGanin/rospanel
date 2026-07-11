@@ -17,9 +17,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -28,6 +30,17 @@ func main() {
 	log.SetPrefix("rospanel: ")
 
 	dataDir := resolveDataDir()
+
+	// Stamp log lines in the operator's timezone rather than the server's system one
+	// (a box in Europe/Berlin serving an operator on Europe/Moscow would otherwise
+	// log an hour off from every other date the panel shows). Done here, before the
+	// first line is logged, so the whole boot log is in one zone; core keeps it in
+	// sync afterwards when the operator changes the setting.
+	if tz := store.PeekTimezone(filepath.Join(dataDir, "rospanel.db")); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			logbuf.SetLocation(loc)
+		}
+	}
 
 	// Tee all log output to: stderr (journald), the in-memory ring (dashboard log
 	// viewer), and a size-rotated file under the data dir (10 MB × 5 backups). If
@@ -108,7 +121,21 @@ func (h *slogHandler) Handle(_ context.Context, r slog.Record) error {
 	case r.Level >= slog.LevelWarn:
 		tag = "[WARN]"
 	}
+	// Timestamp first, matching Xray's own log format (2006/01/02 15:04:05.000000)
+	// so panel and Xray lines read as one stream in the dashboard viewer. The level
+	// tag stays intact — the viewer classifies lines by searching for [INFO]/[WARN]/
+	// [ERROR] anywhere in them, not at the start.
+	//
+	// Rendered in the OPERATOR's configured timezone, not the server's system zone:
+	// a box in Europe/Berlin serving an operator on Europe/Moscow would otherwise
+	// stamp logs an hour off from every other date the panel shows.
+	ts := r.Time
+	if ts.IsZero() {
+		ts = time.Now()
+	}
 	var b strings.Builder
+	b.WriteString(ts.In(logbuf.Location()).Format("2006/01/02 15:04:05.000000"))
+	b.WriteByte(' ')
 	b.WriteString(tag)
 	b.WriteByte(' ')
 	b.WriteString(r.Message)
