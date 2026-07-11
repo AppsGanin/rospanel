@@ -1,0 +1,12 @@
+-- ActiveDeviceCounts filters connections by last_seen and runs on the hot path
+-- (every WorkingUsers read, which the access-log tap drives). The table's only
+-- index was the (user_id, ip) primary key, so that filter was a full scan over a
+-- table that grows a row per source IP forever.
+--
+-- The column order matters: a bare index on (last_seen) does NOT get used here.
+-- SQLite prefers the primary key's autoindex to satisfy GROUP BY user_id without a
+-- sort, and scans the whole table anyway. Leading with last_seen and carrying
+-- user_id and ip makes the index both range-searchable AND covering, so the query
+-- touches only rows inside the device window (it sorts that small set instead).
+-- Leading with last_seen also serves the retention sweep.
+CREATE INDEX idx_connections_last_seen ON connections(last_seen, user_id, ip);

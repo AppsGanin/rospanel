@@ -32,6 +32,12 @@ const (
 // Matches the panel's online indicator (stats poll ~60s + access-log writes).
 const DeviceOnlineWindow int64 = 120
 
+// ConnectionRetentionDays is how long a connections row outlives its last sighting.
+// Only DeviceOnlineWindow matters for the device limit; the rest of the history
+// exists purely for the per-user IP list in the UI, and a roaming mobile client
+// accrues a row per IP indefinitely without a sweep.
+const ConnectionRetentionDays = 30
+
 // User status values derived on read (not stored).
 const (
 	StatusActive        = "active"
@@ -278,10 +284,15 @@ type UserTotal struct {
 // Settings is the singleton (id=1) panel configuration. The DB is the source of
 // truth; the Xray config.json is always derived from it.
 type Settings struct {
-	ID              int64     `json:"-"`
-	Host            string    `json:"host"`     // public domain or IP used in share links
-	SNI             string    `json:"sni"`      // TLS server name (link + cert SAN)
-	TLSMode         string    `json:"tls_mode"` // always "acme"
+	ID   int64  `json:"-"`
+	Host string `json:"host"` // public domain or IP used in share links
+	SNI  string `json:"sni"`  // TLS server name (link + cert SAN)
+	// TLSMode is vestigial: self-signed and custom-upload were removed as operator
+	// choices, so ACME is the only mode and this is always TLSModeACME. It survives
+	// because the column is still written by every TLS path and read as a guard
+	// before renewal — and because it's the seam where a second mode would go back
+	// in. Don't branch new behaviour on it; treat ACME as given.
+	TLSMode         string    `json:"tls_mode"`
 	ACMEEmail       string    `json:"acme_email"`
 	ACMEProvider    string    `json:"acme_provider"` // "letsencrypt" | "zerossl"
 	ZeroSSLEABKID   string    `json:"-"`             // ZeroSSL External Account Binding KID
@@ -410,6 +421,12 @@ type Settings struct {
 	// TGAdminEvents is a bitmask of the AdminEvent* categories the admin bot pushes
 	// to the authorized chats. Default -1 (all on); see AdminEventEnabled.
 	TGAdminEvents int64 `json:"-"`
+
+	// Local scheduled backups, independent of Telegram: archives are written to
+	// <dataDir>/backups and the newest LocalBackupKeep are retained. Same 5-field
+	// cron dialect and operator timezone as TGBackupCron; empty = off.
+	LocalBackupCron string `json:"local_backup_cron"`
+	LocalBackupKeep int    `json:"local_backup_keep"`
 
 	// Billing (Settings → Оплата): plans, trial period, free-tier fallback.
 	BillingEnabled     bool   `json:"-"`
@@ -637,8 +654,10 @@ type RoutingConfig struct {
 	DirectIPs       []string `json:"direct_ips"`
 
 	// RoutingOrder is the precedence of the egress lanes (a permutation of
-	// "direct"/"proxy"/"warp"); first-match-wins. The LAST lane is the catch-all
-	// ("everything else") — its specific rules are subsumed by a final rule.
+	// "proxy"/"warp"/"opera"/"direct" — see xray.knownLanes); first-match-wins. The
+	// LAST lane is the catch-all ("everything else") — its specific rules are
+	// subsumed by a final rule. A config saved before a lane existed simply omits it;
+	// the generator back-fills any missing lane rather than dropping it.
 	RoutingOrder []string `json:"routing_order"`
 
 	// Outbound proxy pool: traffic matching ProxyDomains/ProxyIPs is load-balanced
