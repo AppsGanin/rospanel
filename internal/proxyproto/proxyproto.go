@@ -73,8 +73,8 @@ func (c *conn) parse() {
 		if !isLoopback(c.Conn.RemoteAddr()) {
 			return
 		}
-		_ = c.Conn.SetReadDeadline(time.Now().Add(headerTimeout))
-		defer func() { _ = c.Conn.SetReadDeadline(time.Time{}) }()
+		_ = c.SetReadDeadline(time.Now().Add(headerTimeout))
+		defer func() { _ = c.SetReadDeadline(time.Time{}) }()
 
 		sig, err := c.r.Peek(6)
 		if err != nil || !bytes.Equal(sig, []byte("PROXY ")) {

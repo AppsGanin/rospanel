@@ -265,7 +265,7 @@ var timeType = reflect.TypeOf(time.Time{})
 // registered as reusable components and returned as a $ref; everything else is
 // inlined.
 func schemaFor(rt reflect.Type, schemas map[string]any) map[string]any {
-	for rt.Kind() == reflect.Ptr {
+	for rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
 	}
 	if rt == timeType {
@@ -334,7 +334,7 @@ func collectFields(rt reflect.Type, props map[string]any, required *[]string, sc
 		// encoding/json flattens their fields into this object.
 		if f.Anonymous && name == "" {
 			ft := f.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct && ft != timeType {
@@ -350,7 +350,7 @@ func collectFields(rt reflect.Type, props map[string]any, required *[]string, sc
 		}
 		props[name] = schemaFor(f.Type, schemas)
 		// Required when the field is neither a pointer nor tagged omitempty.
-		if f.Type.Kind() != reflect.Ptr && !strings.Contains(opts, "omitempty") {
+		if f.Type.Kind() != reflect.Pointer && !strings.Contains(opts, "omitempty") {
 			*required = append(*required, name)
 		}
 	}

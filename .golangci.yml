@@ -17,6 +17,9 @@ linters:
         # capital letter, so the "error strings should not be capitalized" check
         # is a false positive across this codebase.
         - -ST1005
+        # De Morgan's law on a character-class test (a<=c<=z || ... ) reads worse
+        # inverted than as a negated allow-list; keep the explicit form.
+        - -QF1001
   exclusions:
     presets:
       - std-error-handling

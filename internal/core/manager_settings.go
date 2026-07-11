@@ -332,7 +332,7 @@ func (m *Manager) FetchRoutingTemplate(url string) (string, error) {
 	m.tmplMu.Unlock()
 	if ok {
 		if time.Since(e.at) >= routingTmplTTL {
-			go m.fetchRoutingTemplate(url) // refresh in the background; serve stale now
+			go func() { _, _ = m.fetchRoutingTemplate(url) }() // refresh in the background; serve stale now
 		}
 		return e.body, nil
 	}
