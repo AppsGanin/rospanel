@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/autobackup"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -115,7 +116,8 @@ func runServer(dataDir string) {
 	// DoS the per-user quota/device model never sees, since it happens before auth).
 	// Tunable / disable-able at runtime via ROSPANEL_CONNLIMIT* (no redeploy needed
 	// if a busy CGNAT egress trips the defaults).
-	if strings.EqualFold(env("ROSPANEL_CONNLIMIT", "on"), "off") {
+	connGuardWanted := !strings.EqualFold(env("ROSPANEL_CONNLIMIT", "on"), "off")
+	if !connGuardWanted {
 		log.Printf("connguard: disabled via ROSPANEL_CONNLIMIT=off")
 		_ = connguard.Ensure(nil, connguard.DefaultLimits()) // tear down any stale table
 	} else {
@@ -154,6 +156,8 @@ func runServer(dataDir string) {
 		filepath.Join(dataDir, "opera"))
 	sup.SetOnAccess(mgr.RecordAccess) // track online status + connection IPs
 	mgr.StartSysstat(dataDir)         // host metrics for the dashboard
+	// The health report needs to tell "off on purpose" from "on, but nft refused it".
+	mgr.SetConnGuardWanted(connGuardWanted)
 
 	// Load the proxy pool synchronously before the first reconcile so Xray starts
 	// once with the proxies already in place — instead of starting empty and being
@@ -172,8 +176,11 @@ func runServer(dataDir string) {
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
 	go paymentPollLoop(mgr)
-	// Audit-log retention: drops events older than the retention window.
-	go eventPurgeLoop(mgr)
+	// Audit-log + connection-row retention: drops rows past their windows.
+	go retentionLoop(mgr)
+	// Scheduled local backups. Independent of Telegram, so an operator with no bot
+	// still gets automatic backups; idles until a cron is set in Settings.
+	go autobackup.New(mgr, st, dataDir).Run(context.Background())
 	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
 	// enabled with a token in Settings → Telegram, re-reading config each cycle.
 	go telegram.New(mgr, st, dataDir).Run(context.Background())
@@ -316,14 +323,19 @@ func paymentPollLoop(mgr *core.Manager) {
 	}
 }
 
-// eventPurgeLoop drops audit rows past the retention window. The cutoff moves by the
-// day, so a slow cadence is plenty — this only keeps the table from growing forever.
-func eventPurgeLoop(mgr *core.Manager) {
-	mgr.PurgeOldEvents() // sweep once at boot, then on the timer
+// retentionLoop drops audit rows and stale connection rows past their retention
+// windows. Both cutoffs move by the day, so a slow cadence is plenty — this only
+// keeps the tables from growing forever.
+func retentionLoop(mgr *core.Manager) {
+	sweep := func() {
+		mgr.PurgeOldEvents()
+		mgr.PurgeOldConnections()
+	}
+	sweep() // sweep once at boot, then on the timer
 	t := time.NewTicker(6 * time.Hour)
 	defer t.Stop()
 	for range t.C {
-		safeTick("event purge", mgr.PurgeOldEvents)
+		safeTick("retention sweep", sweep)
 	}
 }
 

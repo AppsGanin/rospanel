@@ -92,3 +92,17 @@ func (m *Manager) PurgeOldEvents() {
 		logInfo("audit: old events purged", "count", n, "older_than_days", model.UserEventRetentionDays)
 	}
 }
+
+// PurgeOldConnections drops connection rows whose IP hasn't been seen inside the
+// retention window. Shares the audit sweep's slow timer; safe to call repeatedly.
+func (m *Manager) PurgeOldConnections() {
+	cutoff := time.Now().AddDate(0, 0, -model.ConnectionRetentionDays).Unix()
+	n, err := m.store.PurgeConnections(cutoff)
+	if err != nil {
+		logErr("connections: retention sweep failed", "err", err)
+		return
+	}
+	if n > 0 {
+		logInfo("connections: stale rows purged", "count", n, "older_than_days", model.ConnectionRetentionDays)
+	}
+}
