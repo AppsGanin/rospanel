@@ -216,7 +216,11 @@ export function OverviewPanel() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <InfoCard title="Xray">
-          <div className="flex items-center justify-between gap-2">
+          {/* Status and buttons stack, rather than sharing one line: with three
+              buttons the row overflowed the card on a phone. Side-by-side is no
+              safer at sm — the grid puts this card in a half-width column there, so
+              the row is just as tight. Stacking holds at every width. */}
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <Badge color={s.xray_running ? "green" : "red"}>
                 {s.xray_running ? "● Запущен" : "○ Остановлен"}
@@ -225,7 +229,7 @@ export function OverviewPanel() {
                 <span className="text-sm text-ink-muted">v{s.xray_version}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button size="xs" variant="light" color="gray" onClick={() => setCfgOpen(true)}>
                 Конфиг
               </Button>
