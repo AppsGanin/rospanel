@@ -66,10 +66,15 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// the opera-proxy helper in opera/ — all re-fetched on demand), transient
 		// restore staging, and logs/ (operational + actively appended, which would
 		// otherwise grow mid-archive and trip "write too long").
+		//
+		// LocalBackupDir is skipped for a sharper reason: it holds previous archives,
+		// so including it would nest every backup inside the next one and blow the
+		// size up geometrically.
 		if info.IsDir() && (path == filepath.Join(dataDir, "bin") ||
 			path == filepath.Join(dataDir, "geo") ||
 			path == filepath.Join(dataDir, "opera") ||
 			path == filepath.Join(dataDir, "logs") ||
+			path == filepath.Join(dataDir, LocalBackupDir) ||
 			path == filepath.Join(dataDir, stagingDir)) {
 			return filepath.SkipDir
 		}
@@ -80,8 +85,13 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		if strings.HasSuffix(path, ".db-wal") || strings.HasSuffix(path, ".db-shm") {
 			return nil
 		}
-		// Skip recovery artifacts (.bak, .bak-20060102-150405, .new).
-		if strings.HasSuffix(base, ".bak") || strings.Contains(base, ".bak-") || strings.HasSuffix(base, ".new") {
+		// Skip recovery artifacts: rospanel.db.bak, .bak-20060102-150405, .bak.20060102,
+		// config.json.new. These are copies of files already in the archive, so carrying
+		// them just bloats it — and a full DB copy is not small. Both separators matter:
+		// operators hand-roll these names, and a rule that only knew ".bak-" quietly let
+		// every ".bak.<date>" copy ride along in every backup.
+		if strings.HasSuffix(base, ".bak") || strings.Contains(base, ".bak-") ||
+			strings.Contains(base, ".bak.") || strings.HasSuffix(base, ".new") {
 			return nil
 		}
 		rel, err := filepath.Rel(dataDir, path)

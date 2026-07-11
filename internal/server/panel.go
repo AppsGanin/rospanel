@@ -136,6 +136,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/subscription", rt.saveSubSettings)
 	authed("POST /api/settings/dns", rt.setXrayDNS)
 	authed("POST /api/settings/proxy-mode", rt.setProxyMode)
+	authed("POST /api/settings/local-backup", rt.setLocalBackup)
 	authed("GET /api/geo/categories", rt.geoCategories)
 	authed("GET /api/geo", rt.geoStatus)
 	authed("POST /api/geo/update", rt.updateGeo)
