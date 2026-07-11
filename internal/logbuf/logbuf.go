@@ -8,10 +8,35 @@ package logbuf
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // bufferSize caps the in-memory ring shown to newly-opened viewers.
 const bufferSize = 1000
+
+// loc is the timezone log timestamps are rendered in. It lives here because the
+// log handler is installed in main() before the store exists, while the zone only
+// becomes known once settings load — so the handler reads it through this atomic
+// and core updates it on boot and whenever the operator changes the setting.
+// Without it, logs render in the SERVER's system zone while every other panel
+// surface uses the operator's, and the two disagree (e.g. Berlin vs Moscow).
+var loc atomic.Pointer[time.Location]
+
+// SetLocation sets the timezone used for log timestamps.
+func SetLocation(l *time.Location) {
+	if l != nil {
+		loc.Store(l)
+	}
+}
+
+// Location returns the log timezone, defaulting to server-local until one is set.
+func Location() *time.Location {
+	if l := loc.Load(); l != nil {
+		return l
+	}
+	return time.Local
+}
 
 // Hub keeps a ring of recent log lines and broadcasts new ones to subscribers.
 type Hub struct {
