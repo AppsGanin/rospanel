@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -84,12 +85,17 @@ func bumpAttempt(m map[string]*attemptRec, key string, window time.Duration) {
 	r.until = time.Now().Add(window)
 }
 
-// sweepLocked drops expired records (at most once a minute) and, if the IP map is
-// still over its cap afterwards, clears it wholesale — so a flood of unique live
-// keys can't grow the map without bound. Caller holds l.mu.
+// sweepLocked drops expired records (at most once a minute) and, when the IP map
+// reaches its cap, sheds entries so a flood of unique live keys can't grow it
+// without bound. Caller holds l.mu.
+//
+// Shedding runs down to a low-water mark rather than to the cap itself: trimming to
+// exactly maxKeys would leave the map saturated, so the very next failed login
+// would trigger another shed — turning a spray into a full sort per request (a CPU
+// DoS). Cutting to 3/4 buys ~maxKeys/4 inserts before the next one, amortising it.
 func (l *loginLimiter) sweepLocked() {
 	now := time.Now()
-	if now.Sub(l.swept) < time.Minute && len(l.ips) <= l.maxKeys {
+	if now.Sub(l.swept) < time.Minute && len(l.ips) < l.maxKeys {
 		return
 	}
 	l.swept = now
@@ -103,10 +109,41 @@ func (l *loginLimiter) sweepLocked() {
 			delete(l.accounts, k)
 		}
 	}
-	// Still over the cap after dropping expired entries → an active flood of live
-	// keys. Reset to protect memory; legit clients simply get a fresh budget.
-	if len(l.ips) > l.maxKeys {
-		l.ips = make(map[string]*attemptRec)
+	if len(l.ips) < l.maxKeys {
+		return
+	}
+	lowWater := l.maxKeys * 3 / 4
+
+	// At the cap even after dropping expired entries → an active flood of live keys.
+	// Shed the entries that are NOT currently locked out first: wiping the map
+	// wholesale (as this used to) would also clear the lockouts, so an attacker could
+	// spray from thousands of throwaway IPs purely to force a reset and hand their
+	// own locked-out IP a fresh attempt budget.
+	for k, r := range l.ips {
+		if len(l.ips) <= lowWater {
+			break
+		}
+		if !recBlocked(r, l.maxFails) {
+			delete(l.ips, k)
+		}
+	}
+	// Pathological case: the locked-out records ALONE still fill the map (an attacker
+	// burned maxFails attempts from thousands of throwaway IPs just to bloat it).
+	// Memory must stay bounded, so evict the lockouts closest to expiring — they have
+	// the least protection left to give. A lockout just issued is the last to go.
+	if len(l.ips) > lowWater {
+		type entry struct {
+			key   string
+			until time.Time
+		}
+		all := make([]entry, 0, len(l.ips))
+		for k, r := range l.ips {
+			all = append(all, entry{k, r.until})
+		}
+		slices.SortFunc(all, func(a, b entry) int { return a.until.Compare(b.until) })
+		for _, e := range all[:len(all)-lowWater] {
+			delete(l.ips, e.key)
+		}
 	}
 }
 
