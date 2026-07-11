@@ -7,7 +7,17 @@ name: ci
 on:
   push:
     branches: [main]
+  # release-please opens its PR as github-actions[bot], which GitHub treats as an
+  # outside contributor: the run lands in "action required" and waits for a manual
+  # click. Its PR only ever touches these three files, and that code already passed
+  # ci on the push to main, so skipping it here keeps releases hands-off without
+  # loosening the fork-PR approval policy that gates strangers. A PR touching any
+  # other file still runs the full gate.
   pull_request:
+    paths-ignore:
+      - .release-please-manifest.json
+      - CHANGELOG.md
+      - internal/version/version.go
 
 permissions:
   contents: read
