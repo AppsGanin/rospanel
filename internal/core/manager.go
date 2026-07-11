@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxypool"
@@ -139,6 +140,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
+		logbuf.SetLocation(m.tz)                             // stamp log lines in the operator's zone, not the server's
 		m.proxies = proxypool.Parse(set.Routing.ProxyManual) // manual seed (instant)
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
