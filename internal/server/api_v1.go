@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -146,7 +147,9 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 			writeAPIErr(w, http.StatusUnauthorized, "unauthorized", "invalid or revoked API key")
 			return
 		}
-		next.ServeHTTP(w, r)
+		// The key's name is the actor in the audit log, so a mutation made over the
+		// external API is attributable to the integration that made it.
+		next.ServeHTTP(w, r.WithContext(actor.With(r.Context(), actor.APIKey(ak.Name))))
 	})
 }
 
@@ -293,7 +296,7 @@ func (rt *Router) apiBulkUsers(w http.ResponseWriter, r *http.Request) {
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	affected, err := rt.mgr.BulkUserAction(req.IDs, req.Action, req.Days)
+	affected, err := rt.mgr.BulkUserAction(r.Context(), req.IDs, req.Action, req.Days)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -306,7 +309,7 @@ func (rt *Router) apiSetResetPeriod(w http.ResponseWriter, r *http.Request, id i
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetResetPeriod(id, req.Period); err != nil {
+	if err := rt.mgr.SetResetPeriod(r.Context(), id, req.Period); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
@@ -340,7 +343,7 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name is required")
 		return
 	}
-	u, err := rt.mgr.CreateUser(req.Name, req.DataLimit, req.ExpireAt)
+	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -381,7 +384,7 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 			writeAPIErr(w, http.StatusBadRequest, "bad_request", "name cannot be empty")
 			return
 		}
-		if err := rt.mgr.RenameUser(id, name); err != nil {
+		if err := rt.mgr.RenameUser(r.Context(), id, name); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
@@ -402,13 +405,13 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 			writeAPIErr(w, http.StatusBadRequest, "bad_request", "device_limit cannot be negative")
 			return
 		}
-		if err := rt.mgr.SetUserLimits(id, dataLimit, expireAt, deviceLimit); err != nil {
+		if err := rt.mgr.SetUserLimits(r.Context(), id, dataLimit, expireAt, deviceLimit); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
 	}
 	if req.Enabled != nil {
-		if err := rt.mgr.SetUserEnabled(id, *req.Enabled); err != nil {
+		if err := rt.mgr.SetUserEnabled(r.Context(), id, *req.Enabled); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
@@ -421,16 +424,16 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 	rt.apiUserView(w, *u)
 }
 
-func (rt *Router) apiDeleteUser(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.DeleteUser(id); err != nil {
+func (rt *Router) apiDeleteUser(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.DeleteUser(r.Context(), id); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
 	writeAPIData(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
-func (rt *Router) apiResetUser(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.ResetTraffic(id); err != nil {
+func (rt *Router) apiResetUser(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.ResetTraffic(r.Context(), id); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
@@ -442,8 +445,8 @@ func (rt *Router) apiResetUser(w http.ResponseWriter, _ *http.Request, id int64)
 	rt.apiUserView(w, *u)
 }
 
-func (rt *Router) apiRotateSub(w http.ResponseWriter, _ *http.Request, id int64) {
-	u, err := rt.mgr.RotateSubToken(id)
+func (rt *Router) apiRotateSub(w http.ResponseWriter, r *http.Request, id int64) {
+	u, err := rt.mgr.RotateSubToken(r.Context(), id)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -456,7 +459,7 @@ func (rt *Router) apiApplyPlan(w http.ResponseWriter, r *http.Request, id int64)
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.ApplyPlanToUser(id, req.PlanID, req.ExtendFromCurrent); err != nil {
+	if err := rt.mgr.ApplyPlanToUser(r.Context(), id, req.PlanID, req.ExtendFromCurrent); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
@@ -525,7 +528,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Provider == "" {
-		order, msg, err := rt.mgr.RequestPlanPayment(req.UserID, req.PlanID)
+		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), req.UserID, req.PlanID)
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -533,7 +536,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPayment(req.UserID, req.PlanID, req.Provider)
+	order, err := rt.mgr.StartPlanPayment(r.Context(), req.UserID, req.PlanID, req.Provider)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -552,16 +555,16 @@ func (rt *Router) apiListProviders(w http.ResponseWriter, _ *http.Request) {
 	writeAPIData(w, http.StatusOK, out)
 }
 
-func (rt *Router) apiConfirmOrder(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.ConfirmPayment(id); err != nil {
+func (rt *Router) apiConfirmOrder(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.ConfirmPayment(r.Context(), id); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
 	writeAPIData(w, http.StatusOK, map[string]any{"confirmed": true})
 }
 
-func (rt *Router) apiCancelOrder(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.CancelPayment(id); err != nil {
+func (rt *Router) apiCancelOrder(w http.ResponseWriter, r *http.Request, id int64) {
+	if err := rt.mgr.CancelPayment(r.Context(), id); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}

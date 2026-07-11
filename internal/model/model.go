@@ -74,6 +74,11 @@ type User struct {
 	PlanID    int64  `json:"plan_id"`             // active tariff (0 = manual limits)
 	TrialUsed bool   `json:"trial_used"`          // trial period already consumed
 	PlanName  string `json:"plan_name,omitempty"` // computed for API views (not stored)
+
+	// NotifiedStatus is the last Status the operator/user was ALERTED about (admin
+	// push, webhook, audit row). Persisted so a panel restart cannot lose a transition
+	// that happened while it was down. "" = never alerted about.
+	NotifiedStatus string `json:"-"`
 }
 
 // TelegramLinkCodeTTL is how long a one-time Telegram bind code stays valid.

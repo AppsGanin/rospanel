@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,7 +42,7 @@ func TestApplyPlanTrialVsFree(t *testing.T) {
 	}
 
 	// Manually assign the TRIAL plan → must expire, reset "none".
-	if err := m.ApplyPlanToUser(u.ID, trial.ID, false); err != nil {
+	if err := m.ApplyPlanToUser(context.Background(), u.ID, trial.ID, false); err != nil {
 		t.Fatalf("apply trial: %v", err)
 	}
 	cur, _ := st.GetUser(u.ID)
@@ -56,7 +57,7 @@ func TestApplyPlanTrialVsFree(t *testing.T) {
 	}
 
 	// Manually assign the FREE plan → never expires, rolling days:30 reset.
-	if err := m.ApplyPlanToUser(u.ID, free.ID, false); err != nil {
+	if err := m.ApplyPlanToUser(context.Background(), u.ID, free.ID, false); err != nil {
 		t.Fatalf("apply free: %v", err)
 	}
 	cur, _ = st.GetUser(u.ID)

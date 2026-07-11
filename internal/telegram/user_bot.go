@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -141,10 +142,17 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 	}()
 	switch {
 	case u.Callback != nil:
-		s.handleCallback(ctx, client, u.Callback)
+		// The VPN user is acting on their own account — stamp them as the actor so the
+		// audit log tells self-service apart from an admin doing it for them.
+		s.handleCallback(selfActorCtx(ctx, u.Callback.From), client, u.Callback)
 	case u.Message != nil && strings.TrimSpace(u.Message.Text) != "":
-		s.handleMessage(ctx, client, u.Message)
+		s.handleMessage(selfActorCtx(ctx, u.Message.From), client, u.Message)
 	}
+}
+
+// selfActorCtx marks the context as "this VPN user is acting on themself".
+func selfActorCtx(ctx context.Context, from *User) context.Context {
+	return actor.With(ctx, actor.UserSelf(actorName(from)))
 }
 
 func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Message) {
@@ -279,7 +287,7 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	}
 	// CreateRegisteredUser applies the trial/free plan when billing is on; falls
 	// back to a plain unlimited account otherwise.
-	u, err := s.panel.CreateRegisteredUser(name)
+	u, err := s.panel.CreateRegisteredUser(ctx, name)
 	if err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось создать аккаунт: "+esc(err.Error()))
 		return
@@ -289,6 +297,7 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		return
 	}
 	log.Printf("telegram user: registered user %d from chat %d", u.ID, chatID)
+	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	u.TgChatID = chatID
 	s.sendMenu(ctx, client, chatID,
 		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, set, s.panel),
@@ -311,6 +320,9 @@ func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, c
 		u = &fresh
 	}
 	log.Printf("telegram user: restored user %d for chat %d (prev unlink)", u.ID, chatID)
+	// The account is bound again — without this the trail would still claim it's
+	// unlinked, since the unlink WAS recorded.
+	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	s.sendMenu(ctx, client, chatID,
 		"♻️ С возвращением! Ваш прежний аккаунт восстановлен.\n\n"+userSelfCard(*u, set, s.panel),
 		userMenuRows(set, *u))
@@ -341,9 +353,14 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 	}
 	_ = s.store.ClearUserTgLinkCode(u.ID) // one-time: burn the code
 	log.Printf("telegram user: user %d linked to chat %d via link code", u.ID, chatID)
+	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	u.TgChatID = chatID
 	s.sendUserMenu(ctx, client, chatID, set, *u)
 }
+
+// actorFromCtxName is the Telegram identity stamped on ctx by selfActorCtx — the
+// @username the audit row records as the account that was bound.
+func actorFromCtxName(ctx context.Context) string { return actor.From(ctx).Name }
 
 func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
 	var rows [][]InlineButton
@@ -507,7 +524,7 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 				{{Text: "⬅️ Отмена", CallbackData: "vu:menu"}},
 			})
 	case "vu:unlinkyes":
-		_ = s.store.ClearUserTelegramChat(u.ID)
+		_ = s.panel.UnlinkUserTelegram(ctx, u.ID)
 		s.edit(ctx, client, chatID, msgID, "Чат отвязан.", [][]InlineButton{})
 		s.sendWelcome(ctx, client, set, chatID)
 	case "vu:cancelplan":
@@ -547,7 +564,7 @@ func (s *UserService) confirmCancelPlan(ctx context.Context, client *Client, cha
 
 // doCancelPlan cancels the active paid plan (→ free plan) and returns to the menu.
 func (s *UserService) doCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
-	if err := s.panel.CancelUserPlan(u.ID); err != nil {
+	if err := s.panel.CancelUserPlan(ctx, u.ID); err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}}})
 		return
@@ -663,7 +680,7 @@ func (s *UserService) startProviderPayment(ctx context.Context, client *Client, 
 	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
 		return
 	}
-	order, err := s.panel.StartPlanPayment(u.ID, planID, provider)
+	order, err := s.panel.StartPlanPayment(ctx, u.ID, planID, provider)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{
@@ -681,7 +698,7 @@ func (s *UserService) startProviderPayment(ctx context.Context, client *Client, 
 }
 
 func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64) {
-	_, msg, err := s.panel.RequestPlanPayment(u.ID, planID)
+	_, msg, err := s.panel.RequestPlanPayment(ctx, u.ID, planID)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{

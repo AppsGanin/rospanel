@@ -1,0 +1,11 @@
+-- The last status a user was ALERTED about (admin push + webhook + audit row), as
+-- opposed to users.status, which is derived fresh on every read.
+--
+-- The transition detector used to keep this in memory, so a restart lost it: the
+-- first poll after boot could only re-baseline, and any subscription that lapsed
+-- while the panel was down was never reported. Persisting it means the comparison
+-- survives a deploy.
+--
+-- '' means "never alerted about" — the row is baselined on the next poll without
+-- firing, so upgrading doesn't spam alerts for users who are already expired.
+ALTER TABLE users ADD COLUMN notified_status TEXT NOT NULL DEFAULT '';

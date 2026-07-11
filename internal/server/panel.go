@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -168,6 +169,9 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
 	authedID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authedID("POST /api/users/{id}/plan", rt.setUserPlan)
+	authedID("GET /api/users/{id}/events", rt.userEvents)
+	authed("GET /api/events", rt.events)
+	authed("GET /api/events/catalog", rt.eventCatalog)
 	authed("GET /api/billing", rt.getBilling)
 	authed("POST /api/billing", rt.saveBilling)
 	authed("POST /api/billing/plans", rt.saveTariffPlan)
@@ -391,7 +395,8 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "не авторизован")
 			return
 		}
-		if _, _, ok := rt.mgr.Store().LookupSession(c.Value); !ok {
+		_, username, ok := rt.mgr.Store().LookupSession(c.Value)
+		if !ok {
 			writeErr(w, http.StatusUnauthorized, "не авторизован")
 			return
 		}
@@ -399,6 +404,8 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusForbidden, "смените пароль администратора по умолчанию, прежде чем пользоваться панелью")
 			return
 		}
-		next(w, r)
+		// Stamp the acting admin onto the context so the audit log can attribute every
+		// mutation this request makes, without each handler re-reading the cookie.
+		next(w, r.WithContext(actor.With(r.Context(), actor.Admin(username))))
 	}
 }

@@ -138,19 +138,19 @@ func (m *Manager) PaymentWebhookURLs() (yookassa, cryptobot string) {
 // StartPlanPayment creates an order plus a provider payment and returns the order
 // with its hosted pay URL. provider may be "" when exactly one method is enabled.
 // The payer is returned to Telegram after paying (the bot flow).
-func (m *Manager) StartPlanPayment(userID, planID int64, provider string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(userID, planID, provider, "https://t.me/")
+func (m *Manager) StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, userID, planID, provider, "https://t.me/")
 }
 
 // StartPlanPaymentReturn is StartPlanPayment for the web subscription page: it
 // sends the payer back to returnURL (the sub page) after a card payment instead of
 // to Telegram. returnURL is used by hosted-form providers (YooKassa); CryptoBot
 // ignores it.
-func (m *Manager) StartPlanPaymentReturn(userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(userID, planID, provider, returnURL)
+func (m *Manager) StartPlanPaymentReturn(ctx context.Context, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, userID, planID, provider, returnURL)
 }
 
-func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
+func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
 		return nil, invalid("тариф не найден")
@@ -204,7 +204,9 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// A separate timeout context for the outbound provider call — ctx carries the
+	// actor for the audit row and must not be cancelled along with the HTTP request.
+	callCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	desc := fmt.Sprintf("Тариф «%s», заказ #%d", plan.Name, order.ID)
 
@@ -215,10 +217,10 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 	switch provider {
 	case payments.ProviderYooKassa:
 		yk := payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey)
-		providerID, payURL, err = yk.CreatePayment(ctx, plan.PriceRub, order.ID, desc, returnURL)
+		providerID, payURL, err = yk.CreatePayment(callCtx, plan.PriceRub, order.ID, desc, returnURL)
 	case payments.ProviderCryptoBot:
 		cb := payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet)
-		providerID, payURL, err = cb.CreateInvoice(ctx, plan.PriceRub, order.ID, desc)
+		providerID, payURL, err = cb.CreateInvoice(callCtx, plan.PriceRub, order.ID, desc)
 	}
 	if err != nil {
 		_ = m.store.SetPaymentOrderStatus(order.ID, "cancelled", 0)
@@ -238,6 +240,9 @@ func (m *Manager) startPlanPayment(userID, planID int64, provider, returnURL str
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Начата оплата</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, providerLabel(provider)))
+	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
+		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": provider,
+	})
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, nil
 }
@@ -300,9 +305,13 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	if !claimed {
 		return nil // another confirmer already handled this order
 	}
+	// The provider (or the polling fallback) confirmed this, not a person — so the
+	// plan change and the payment land in the audit log as system actions.
+	ctx := context.Background()
 	// Extend from the current expiry only for a renewal of the active paid plan;
-	// buying from trial/free/expired starts from now (no inherited time).
-	if err := m.ApplyPlanToUser(order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID)); err != nil {
+	// buying from trial/free/expired starts from now (no inherited time). Audited as
+	// the payment below, not as a bare plan switch — one purchase is one event.
+	if err := m.applyPlan(ctx, order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID), ""); err != nil {
 		// Roll the claim back so the polling fallback retries rather than leaving a
 		// paid order whose plan was never applied.
 		_ = m.store.RevertPaymentOrderToPending(order.ID)
@@ -316,6 +325,9 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
 		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, providerLabel(provider)))
 	order.Status = "paid"
+	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
+		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": provider,
+	})
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return nil
 }
@@ -349,7 +361,7 @@ func (m *Manager) PollPendingPayments() {
 		// live provider API call each, every cycle. Cancel anything older than the
 		// max age and stop polling it.
 		if o.CreatedAt > 0 && o.CreatedAt < staleBefore {
-			_ = m.store.CancelPaymentOrderIfPending(o.ID)
+			m.cancelPendingOrder(o, "abandoned")
 			continue
 		}
 		var res payments.Result
@@ -378,9 +390,22 @@ func (m *Manager) PollPendingPayments() {
 				logErr("payment poll: confirm failed", "order", o.ID, "err", err)
 			}
 		case payments.StatusCanceled:
-			_ = m.store.CancelPaymentOrderIfPending(o.ID)
+			m.cancelPendingOrder(o, "provider_cancelled")
 		}
 	}
+}
+
+// cancelPendingOrder cancels a still-pending order on the panel's own initiative
+// (the 24h abandoned sweep, or the provider reporting it cancelled) and records it.
+// A no-op — and no audit row — when someone else already resolved the order.
+func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
+	cancelled, err := m.store.CancelPaymentOrderIfPending(o.ID)
+	if err != nil || !cancelled {
+		return
+	}
+	m.audit(context.Background(), o.UserID, model.EventPaymentCancelled, map[string]any{
+		"order_id": o.ID, "plan": o.PlanName, "amount_rub": o.AmountRub, "reason": reason,
+	})
 }
 
 // HandleYooKassaWebhook processes a notification. The POST body is not trusted —
@@ -409,7 +434,7 @@ func (m *Manager) HandleYooKassaWebhook(body []byte) error {
 		return m.confirmProviderOrder(payments.ProviderYooKassa, n.Object.ID, res)
 	case payments.StatusCanceled:
 		if o, e := m.store.GetPaymentOrderByProvider(payments.ProviderYooKassa, n.Object.ID); e == nil {
-			_ = m.store.CancelPaymentOrderIfPending(o.ID) // don't clobber an already-paid order
+			m.cancelPendingOrder(*o, "provider_cancelled") // won't clobber an already-paid order
 		}
 	}
 	return nil

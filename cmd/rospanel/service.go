@@ -172,6 +172,8 @@ func runServer(dataDir string) {
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
 	go paymentPollLoop(mgr)
+	// Audit-log retention: drops events older than the retention window.
+	go eventPurgeLoop(mgr)
 	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
 	// enabled with a token in Settings → Telegram, re-reading config each cycle.
 	go telegram.New(mgr, st, dataDir).Run(context.Background())
@@ -311,6 +313,17 @@ func paymentPollLoop(mgr *core.Manager) {
 	defer t.Stop()
 	for range t.C {
 		safeTick("payment poll", mgr.PollPendingPayments)
+	}
+}
+
+// eventPurgeLoop drops audit rows past the retention window. The cutoff moves by the
+// day, so a slow cadence is plenty — this only keeps the table from growing forever.
+func eventPurgeLoop(mgr *core.Manager) {
+	mgr.PurgeOldEvents() // sweep once at boot, then on the timer
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for range t.C {
+		safeTick("event purge", mgr.PurgeOldEvents)
 	}
 }
 

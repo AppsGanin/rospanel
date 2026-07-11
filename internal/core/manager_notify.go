@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -60,32 +61,45 @@ func (m *Manager) SaveAdminEventPrefs(prefs map[string]bool) error {
 // Edge-triggered: it fires once per transition, never while the condition holds.
 // The first call only records the baseline so a panel restart doesn't re-alert.
 func (m *Manager) notifyStatusTransitions(users []model.User) {
-	prev := m.lastStatus
-	next := make(map[int64]string, len(users))
+	ctx := context.Background() // background poller ⇒ the system is the actor
 	for _, u := range users {
-		next[u.ID] = u.Status
-	}
-	m.lastStatus = next
-	if prev == nil {
-		return // first poll after start: baseline only
-	}
-	for _, u := range users {
-		if prev[u.ID] != model.StatusActive {
+		if u.NotifiedStatus == u.Status {
+			continue // nothing changed since the last alert
+		}
+		// Record the new status FIRST. If the alert below fails (or the panel dies
+		// mid-loop) we'd rather drop one notification than re-fire it every 60s.
+		if err := m.store.SetNotifiedStatus(u.ID, u.Status); err != nil {
+			logErr("notify: recording status failed", "user", u.ID, "err", err)
+			continue
+		}
+		// "" = never alerted about (a fresh user, or a row predating the 0020 migration):
+		// baseline it silently rather than alerting for a state that may be long-standing.
+		if u.NotifiedStatus == "" {
+			continue
+		}
+		if u.NotifiedStatus != model.StatusActive {
 			continue // only transitions away from active are interesting
 		}
 		switch u.Status {
 		case model.StatusExpired:
 			m.notifyAdminEvent(model.AdminEventExpired, fmt.Sprintf(
 				"⌛ <b>Подписка истекла</b>\nПользователь: %s", escHTML(u.Name)))
+			m.auditNamed(ctx, u.ID, u.Name, model.EventUserExpired, map[string]any{"expire_at": u.ExpireAt})
 			m.EmitWebhook(model.WebhookUserExpired, userEventData(u))
 		case model.StatusLimited:
 			m.notifyAdminEvent(model.AdminEventLimited, fmt.Sprintf(
 				"📉 <b>Исчерпан трафик</b>\nПользователь: %s", escHTML(u.Name)))
+			m.auditNamed(ctx, u.ID, u.Name, model.EventUserLimited, map[string]any{
+				"data_limit": u.DataLimit, "used": u.UsedUp + u.UsedDown,
+			})
 			m.EmitWebhook(model.WebhookUserLimited, userEventData(u))
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
 				"📵 <b>Превышен лимит устройств</b>\nПользователь: %s\nАктивных устройств: %d из %d",
 				escHTML(u.Name), u.ActiveDevices, u.DeviceLimit))
+			m.auditNamed(ctx, u.ID, u.Name, model.EventDeviceLimited, map[string]any{
+				"device_limit": u.DeviceLimit, "active_devices": u.ActiveDevices,
+			})
 			m.EmitWebhook(model.WebhookUserDeviceLimit, userEventData(u))
 		}
 	}
