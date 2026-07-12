@@ -27,6 +27,9 @@ const SUBTABS = [
 
 type SubTab = (typeof SUBTABS)[number]["value"];
 
+// The admin roster deliberately lives outside this panel — it's the owner's own
+// business, not a setting of the VPN — and hangs off the account menu instead.
+// See AdminsSettings, rendered by Dashboard on the "admins" route.
 export function SettingsPanel() {
   const seg = useRoute();
   const tab = (SUBTABS.find((t) => t.value === seg[1])?.value ??

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
 import { BrandLogo } from "./Logo";
 import { EventsPanel } from "./EventsPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { PaymentsPage } from "./PaymentsPage";
+import { useIsAdmin, useIsOwner } from "./role";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import { StatsPanel } from "./StatsPanel";
@@ -21,7 +23,17 @@ import {
 } from "./ui";
 import { UsersPanel } from "./UsersPanel";
 
-type Tab = "overview" | "users" | "stats" | "payments" | "events" | "settings";
+// "admins" is a page without a nav tab: the roster is reached from the account menu
+// (it's about who runs the panel, not about how the VPN is configured), so it never
+// appears in NAV — only in the route.
+type Tab =
+  | "overview"
+  | "users"
+  | "stats"
+  | "payments"
+  | "events"
+  | "settings"
+  | "admins";
 
 export function Dashboard({
   username,
@@ -41,6 +53,8 @@ export function Dashboard({
   onAccountChanged: () => void;
 }) {
   const seg = useRoute();
+  const isAdmin = useIsAdmin();
+  const isOwner = useIsOwner();
   const [menuOpen, setMenuOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
   // Keep the payments-enabled flag fresh so the "Оплата" item appears/vanishes
@@ -60,15 +74,25 @@ export function Dashboard({
     return () => window.removeEventListener("rospanel:billing-changed", h);
   }, []);
 
+  // An operator gets the tabs whose routes they can actually call: end users, stats
+  // and the journal. Settings and the payments desk are admin-and-up, so they're not
+  // rendered — and if an operator navigates to /settings by hand, `tab` falls back
+  // to the dashboard rather than showing a page whose every request would 403.
   const NAV: { value: Tab; label: string }[] = [
     { value: "overview", label: "Дашборд" },
     { value: "users", label: "Пользователи" },
     { value: "stats", label: "Статистика" },
-    ...(billing ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
+    ...(billing && isAdmin ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
     { value: "events", label: "Журнал" },
-    { value: "settings", label: "Настройки" },
+    ...(isAdmin ? [{ value: "settings" as Tab, label: "Настройки" }] : []),
   ];
-  const tab = (NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab;
+  // The roster isn't in NAV, so resolve it separately — and only for the owner, so
+  // hand-typing /admins as anyone else lands on the dashboard rather than on a page
+  // whose every request would 403.
+  const onAdmins = seg[0] === "admins" && isOwner;
+  const tab: Tab = onAdmins
+    ? "admins"
+    : ((NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab);
 
   const doLogout = async () => {
     setMenuOpen(false);
@@ -81,6 +105,11 @@ export function Dashboard({
 
   const go = (t: Tab) => {
     navigate(t === "overview" ? "" : t);
+    setMenuOpen(false);
+  };
+
+  const goAdmins = () => {
+    navigate("admins");
     setMenuOpen(false);
   };
 
@@ -146,6 +175,9 @@ export function Dashboard({
               <DropdownItem onClick={() => setCredsOpen(true)}>
                 Учётные данные
               </DropdownItem>
+              {isOwner && (
+                <DropdownItem onClick={goAdmins}>Администраторы</DropdownItem>
+              )}
               <DropdownItem color="red" onClick={doLogout}>
                 Выйти
               </DropdownItem>
@@ -176,6 +208,17 @@ export function Dashboard({
               {n.label}
             </button>
           ))}
+          {isOwner && (
+            <button
+              onClick={goAdmins}
+              className={cn(
+                "py-2 text-left text-lg font-medium transition",
+                onAdmins ? "text-brand-800" : "text-accent",
+              )}
+            >
+              Администраторы
+            </button>
+          )}
         </nav>
         <hr className="my-4 border-gray-200" />
         <button
@@ -194,6 +237,7 @@ export function Dashboard({
           {tab === "payments" && <PaymentsPage />}
           {tab === "events" && <EventsPanel />}
           {tab === "settings" && <SettingsPanel />}
+          {tab === "admins" && <AdminsSettings />}
         </div>
       </main>
 

@@ -353,8 +353,25 @@ async function apiText(path: string): Promise<string> {
   return text
 }
 
+// Role is the panel's permission ladder: an operator can do everything the panel
+// exposes for end users, an admin everything but the roster, the owner everything.
+export type Role = 'owner' | 'admin' | 'operator'
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: 'Владелец',
+  admin: 'Администратор',
+  operator: 'Оператор',
+}
+
+export const ROLE_HINTS: Record<Role, string> = {
+  owner: 'Полный доступ, включая управление администраторами',
+  admin: 'Всё, кроме управления администраторами',
+  operator: 'Пользователи, статистика и журнал — без настроек, бэкапов и API',
+}
+
 export interface Me {
   username: string
+  role: Role
   setup_done: boolean
   timezone: string
   version: string
@@ -363,6 +380,108 @@ export interface Me {
 }
 
 export const getMe = () => api<Me>('api/me')
+
+export interface Admin {
+  id: number
+  username: string
+  role: Role
+  must_change_password: boolean
+  created_at: number
+  last_login_at: number
+}
+
+export interface AdminList {
+  admins: Admin[]
+  me: number // which row is you — you can't delete or demote yourself
+}
+
+export const listAdmins = () => api<AdminList>('api/admins')
+
+export const createAdmin = (
+  username: string,
+  password: string,
+  role: Role,
+  currentPassword: string,
+) =>
+  api<Admin>('api/admins', {
+    method: 'POST',
+    body: JSON.stringify({
+      username,
+      password,
+      role,
+      current_password: currentPassword,
+    }),
+  })
+
+export const setAdminRole = (id: number, role: Role, currentPassword: string) =>
+  api<{ ok: boolean }>(`api/admins/${id}/role`, {
+    method: 'POST',
+    body: JSON.stringify({ role, current_password: currentPassword }),
+  })
+
+export const resetAdminPassword = (
+  id: number,
+  password: string,
+  currentPassword: string,
+) =>
+  api<{ ok: boolean }>(`api/admins/${id}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ password, current_password: currentPassword }),
+  })
+
+// The owner's password rides in a header: a DELETE body is the kind of thing
+// proxies and clients feel free to drop.
+export const deleteAdmin = (id: number, currentPassword: string) =>
+  api<{ ok: boolean }>(`api/admins/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-Current-Password': currentPassword },
+  })
+
+// The admin trail: what was done to the panel itself (the roster, the settings, TLS,
+// backups, sign-ins) and by whom, from where. Owner-only.
+export interface AdminAudit {
+  id: number
+  action: string
+  target: string
+  actor_kind: string
+  actor_name: string
+  ip: string
+  details?: Record<string, unknown> | null
+  created_at: number
+}
+
+export interface AdminAuditPage {
+  events: AdminAudit[]
+  next_before: number // 0 = no older rows
+}
+
+// The journal filters by category ("Настройки", "Администраторы", …) rather than by
+// each of the two dozen actions: the actions stay precise on the rows, the filter
+// stays short.
+export const listAdminAudit = (params: {
+  category?: string
+  action?: string
+  actor?: string
+  before?: number
+  limit?: number
+}) => {
+  const q = new URLSearchParams()
+  if (params.category) q.set('category', params.category)
+  if (params.action) q.set('action', params.action)
+  if (params.actor) q.set('actor', params.actor)
+  if (params.before) q.set('before', String(params.before))
+  if (params.limit) q.set('limit', String(params.limit))
+  const qs = q.toString()
+  return api<AdminAuditPage>(`api/admin-audit${qs ? `?${qs}` : ''}`)
+}
+
+export interface AdminAuditCatalog {
+  categories: { key: string; label: string }[]
+  actions: { key: string; label: string; category: string }[]
+}
+
+export const getAdminAuditCatalog = () =>
+  api<AdminAuditCatalog>('api/admin-audit/catalog')
 
 export interface UpdateInfo {
   current: string

@@ -329,6 +329,7 @@ func paymentPollLoop(mgr *core.Manager) {
 func retentionLoop(mgr *core.Manager) {
 	sweep := func() {
 		mgr.PurgeOldEvents()
+		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
 	}
 	sweep() // sweep once at boot, then on the timer
@@ -423,15 +424,15 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if _, err := st.CreateAdmin("admin", hash); err != nil {
-			return "", err
-		}
-		// Gate the whole authed API on a password change: until the default password
-		// is replaced, requireAuth lets through only the password-change/restore
-		// endpoints. This makes the change server-enforced, not just a wizard prompt
+		// Whoever installs the panel owns it: the bootstrap account is the one role
+		// that can manage the admin roster, and it cannot be deleted afterwards.
+		//
+		// It is created gated on a password change: until the default password is
+		// replaced, requireAuth lets through only the password-change/restore
+		// endpoints. That makes the change server-enforced, not just a wizard prompt
 		// the SPA happens to show, so a leaked secret path before first setup can't be
 		// driven with admin/admin.
-		if err := st.SetMustChangePassword(true); err != nil {
+		if _, err := st.CreateAdmin("admin", hash, model.RoleOwner, true); err != nil {
 			return "", err
 		}
 		printFirstRunBanner(set.Host, secret, "admin", password)

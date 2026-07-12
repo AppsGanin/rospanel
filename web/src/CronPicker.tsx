@@ -2,6 +2,7 @@
 // 5-field cron string (the dialect internal/cron parses, evaluated in the operator
 // timezone). Used by both backup schedules — the Telegram one and the local one —
 // so the two can't drift apart in what they accept or how they render it.
+import type { ReactNode } from "react";
 import { Select, TextInput } from "./ui";
 
 // Presets map a friendly choice to a cron expression. "daily"/"weekly" build their
@@ -92,49 +93,69 @@ export function CronPicker({
   value,
   onChange,
   offLabel = "Расписание выключено.",
+  extra,
 }: {
   value: Schedule;
   onChange: (s: Schedule) => void;
   offLabel?: string;
+  // A field that belongs on the same row as the schedule — "сколько копий хранить"
+  // for the local backups. It rides inside the picker's row rather than sitting in a
+  // block underneath, so the whole schedule reads as one line on a desktop.
+  extra?: ReactNode;
 }) {
   const set = (patch: Partial<Schedule>) => onChange({ ...value, ...patch });
   const cron = buildCron(value);
+  const timed = value.preset === "daily" || value.preset === "weekly";
 
   return (
     <div className="flex flex-col gap-3">
-      <Select
-        label="Расписание"
-        value={value.preset}
-        onChange={(v) => set({ preset: v as Preset })}
-        data={PRESETS as unknown as { value: string; label: string }[]}
-      />
-      {(value.preset === "daily" || value.preset === "weekly") && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {value.preset === "weekly" && (
+      {/* Wrapping flex, not a fixed grid: the field count changes with the preset
+          (weekly adds a weekday, the local backups add a retention box), and a
+          column count picked for one of those looks wrong for the others. Each field
+          keeps a floor width and shares what's left, so they sit on one row on a
+          desktop and stack on a phone. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+        <div className="min-w-45 flex-1">
+          <Select
+            label="Расписание"
+            value={value.preset}
+            onChange={(v) => set({ preset: v as Preset })}
+            data={PRESETS as unknown as { value: string; label: string }[]}
+          />
+        </div>
+        {value.preset === "weekly" && (
+          <div className="min-w-45 flex-1">
             <Select
               label="День недели"
               value={value.weekday}
               onChange={(v) => set({ weekday: v })}
               data={WEEKDAYS}
             />
-          )}
-          <TextInput
-            label="Время"
-            type="time"
-            value={value.time}
-            onChange={(v) => set({ time: v })}
-          />
-        </div>
-      )}
-      {value.preset === "custom" && (
-        <TextInput
-          label="Cron-выражение"
-          value={value.custom}
-          onChange={(v) => set({ custom: v })}
-          mono
-          placeholder="0 3 * * *"
-        />
-      )}
+          </div>
+        )}
+        {timed && (
+          <div className="min-w-45 flex-1">
+            <TextInput
+              label="Время"
+              type="time"
+              value={value.time}
+              onChange={(v) => set({ time: v })}
+            />
+          </div>
+        )}
+        {value.preset === "custom" && (
+          <div className="min-w-45 flex-1">
+            <TextInput
+              label="Cron-выражение"
+              value={value.custom}
+              onChange={(v) => set({ custom: v })}
+              mono
+              placeholder="0 3 * * *"
+            />
+          </div>
+        )}
+        {extra && <div className="min-w-45 flex-1">{extra}</div>}
+      </div>
       <p className="text-xs text-ink-muted">
         {cron ? (
           <>
