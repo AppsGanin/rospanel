@@ -5,6 +5,7 @@ import {
   getRouting,
   saveRouting,
   updateGeo,
+  type EgressLane,
   type GeoFile,
   type RoutingConfig,
 } from "./api";
@@ -22,6 +23,7 @@ import {
   Select,
   Switch,
   TagsInput,
+  TextInput,
   ToggleRow,
 } from "./ui";
 import { helperStatus } from "./EgressStatus";
@@ -58,18 +60,15 @@ const EMPTY: RoutingConfig = {
   opera_ips: [],
   direct_domains: [],
   direct_ips: [],
-  routing_order: ["proxy", "warp", "opera", "direct"],
-  proxy_urls: [],
-  proxy_manual: [],
-  proxy_domains: [],
-  proxy_ips: [],
+  routing_order: ["warp", "opera", "direct"],
+  lanes: [],
   proxy_refresh_minutes: 30,
 };
 
-// LANES are the reorderable egress lanes shown in the routing-order card.
-const LANES: Record<string, string> = {
+// BUILTIN_LANE_NAMES label the always-present lanes in the routing-order card.
+// A proxy lane is labelled by its own name instead.
+const BUILTIN_LANE_NAMES: Record<string, string> = {
   direct: "Напрямую",
-  proxy: "Прокси",
   warp: "WARP",
   opera: "Opera VPN",
 };
@@ -81,15 +80,20 @@ const OPERA_COUNTRIES = [
   { value: "AM", label: "Америка" },
 ];
 
-// KNOWN_LANES is the full egress-lane set in default precedence. Mirrors
-// knownLanes in internal/xray/generate.go.
-const KNOWN_LANES = ["proxy", "warp", "opera", "direct"];
+// BUILTIN_LANES are the lanes that always exist, in default precedence. Mirrors
+// model.BuiltinLanes in internal/model/model.go.
+const BUILTIN_LANES = ["warp", "opera", "direct"];
 
-// normalizeOrder returns a routing order containing every known lane exactly
-// once: it keeps the saved precedence and inserts any missing lane (e.g. "opera"
-// for configs saved before it existed) just before the catch-all last lane.
-function normalizeOrder(order?: string[]): string[] {
-  const valid = new Set(KNOWN_LANES);
+// MAX_LANES mirrors model.MaxEgressLanes.
+const MAX_LANES = 16;
+
+// normalizeOrder returns a routing order containing every existing lane exactly
+// once: the config's proxy lanes plus the built-ins. It keeps the saved
+// precedence, drops lanes that no longer exist, and inserts missing ones just
+// before the catch-all last lane. Mirrors normalizeOrder in xray/generate.go.
+function normalizeOrder(order: string[] | undefined, laneIDs: string[]): string[] {
+  const known = [...laneIDs, ...BUILTIN_LANES];
+  const valid = new Set(known);
   const seen = new Set<string>();
   const out: string[] = [];
   for (const l of order ?? []) {
@@ -98,11 +102,35 @@ function normalizeOrder(order?: string[]): string[] {
       out.push(l);
     }
   }
-  const missing = KNOWN_LANES.filter((l) => !seen.has(l));
+  const missing = known.filter((l) => !seen.has(l));
   if (missing.length === 0) return out;
   if (out.length === 0) return missing;
   const last = out[out.length - 1];
   return [...out.slice(0, -1), ...missing, last];
+}
+
+// newLaneID picks the lowest free "lN" slug. IDs must be lowercase alphanumerics
+// with NO dashes — an Xray balancer selects its members by tag prefix, and a dash
+// would let one lane's selector swallow another's proxies (see model.ValidLaneID).
+function newLaneID(lanes: EgressLane[]): string {
+  const taken = new Set(lanes.map((l) => l.id));
+  for (let i = 1; ; i++) {
+    const id = `l${i}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
+// LaneSource is which proxy source a lane is edited with. Only the selected one
+// is persisted (see effectiveCfg), so a lane never silently mixes both.
+type LaneSource = "urls" | "manual";
+
+// laneSources derives each lane's source mode from what it actually carries. A
+// lane with URLs is URL-sourced; anything else (incl. a brand-new empty lane) is
+// edited as a manual list — the common case for one's own socks5 servers.
+function laneSources(lanes: EgressLane[]): Record<string, LaneSource> {
+  const out: Record<string, LaneSource> = {};
+  for (const l of lanes) out[l.id] = l.urls.length > 0 ? "urls" : "manual";
+  return out;
 }
 
 export function RoutingPanel() {
@@ -122,8 +150,8 @@ export function RoutingPanel() {
   const [geosite, setGeosite] = useState<string[]>([]);
   const [geoip, setGeoip] = useState<string[]>([]);
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
-  const [proxyCount, setProxyCount] = useState(0);
-  const [proxyMode, setProxyMode] = useState<"urls" | "manual">("urls");
+  const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
+  const [laneSrc, setLaneSrc] = useState<Record<string, LaneSource>>({});
 
   const loadGeoCategories = () =>
     getGeoCategories()
@@ -152,6 +180,13 @@ export function RoutingPanel() {
       .then((r) => {
         // Go marshals empty slices as null, so coalesce every field to a list.
         const x = r.config ?? ({} as Partial<RoutingConfig>);
+        const lanes = (x.lanes ?? []).map((l) => ({
+          ...l,
+          urls: l.urls ?? [],
+          manual: l.manual ?? [],
+          domains: l.domains ?? [],
+          ips: l.ips ?? [],
+        }));
         const c: RoutingConfig = {
           block_bittorrent: !!x.block_bittorrent,
           block_ads: !!x.block_ads,
@@ -163,19 +198,15 @@ export function RoutingPanel() {
           opera_ips: x.opera_ips ?? [],
           direct_domains: x.direct_domains ?? [],
           direct_ips: x.direct_ips ?? [],
-          routing_order: normalizeOrder(x.routing_order),
-          proxy_urls: x.proxy_urls ?? [],
-          proxy_manual: x.proxy_manual ?? [],
-          proxy_domains: x.proxy_domains ?? [],
-          proxy_ips: x.proxy_ips ?? [],
+          lanes,
+          routing_order: normalizeOrder(
+            x.routing_order,
+            lanes.map((l) => l.id),
+          ),
           // 0 (absent / pre-feature default) shows as 30; -1 stays "never".
           proxy_refresh_minutes: x.proxy_refresh_minutes || 30,
         };
-        setProxyMode(
-          (c.proxy_manual.length ?? 0) > 0 && c.proxy_urls.length === 0
-            ? "manual"
-            : "urls",
-        );
+        setLaneSrc(laneSources(lanes));
         setCfg(c);
         setSaved(JSON.stringify(c));
         setWarpEnabled(r.warp_enabled);
@@ -187,21 +218,21 @@ export function RoutingPanel() {
         setSavedOperaCountry(r.opera_country || "EU");
         setOperaRunning(r.opera_running);
         setOperaAlive(r.opera_alive);
-        setProxyCount(r.proxy_count ?? 0);
+        setProxyCounts(r.proxy_counts ?? {});
       })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoaded(true));
   }, []);
 
   // refreshStatus re-fetches just the applied lane-status fields (running/alive/
-  // registered/count) without touching the editable config.
+  // registered/counts) without touching the editable config.
   const refreshStatus = () =>
     getRouting()
       .then((r) => {
         setWarpRegistered(r.warp_registered);
         setOperaRunning(r.opera_running);
         setOperaAlive(r.opera_alive);
-        setProxyCount(r.proxy_count ?? 0);
+        setProxyCounts(r.proxy_counts ?? {});
       })
       .catch(() => {});
 
@@ -214,14 +245,19 @@ export function RoutingPanel() {
 
   const set = (patch: Partial<RoutingConfig>) =>
     setCfg((c) => ({ ...c, ...patch }));
-  // Only the selected proxy source is persisted; the other list stays in local
-  // state so toggling the source back and forth doesn't wipe what was typed, but
-  // it's dropped from what we save and compare against.
+
+  // Only a lane's selected source is persisted; the other list stays in local
+  // state, so flipping the switch back and forth doesn't wipe what was typed —
+  // but it's dropped from what we save and compare against.
   const effectiveCfg: RoutingConfig = {
     ...cfg,
-    proxy_urls: proxyMode === "urls" ? cfg.proxy_urls : [],
-    proxy_manual: proxyMode === "manual" ? cfg.proxy_manual : [],
+    lanes: cfg.lanes.map((l) => ({
+      ...l,
+      urls: laneSrc[l.id] === "urls" ? l.urls : [],
+      manual: laneSrc[l.id] === "urls" ? [] : l.manual,
+    })),
   };
+
   const dirty =
     JSON.stringify(effectiveCfg) !== saved ||
     warpEnabled !== savedWarp ||
@@ -235,6 +271,44 @@ export function RoutingPanel() {
     [order[i], order[j]] = [order[j], order[i]];
     set({ routing_order: order });
   };
+
+  // laneLabel names a routing-order entry: a built-in lane by its fixed label, a
+  // proxy lane by the name the operator gave it.
+  const laneLabel = (id: string) =>
+    BUILTIN_LANE_NAMES[id] ??
+    cfg.lanes.find((l) => l.id === id)?.name?.trim() ??
+    id;
+
+  const patchLane = (id: string, patch: Partial<EgressLane>) =>
+    set({
+      lanes: cfg.lanes.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+    });
+
+  // A new lane goes into the order just above the catch-all, so it takes effect
+  // (specific rules are only emitted for non-catch-all lanes) without silently
+  // stealing the "everything else" slot from whatever holds it.
+  const addLane = () => {
+    const id = newLaneID(cfg.lanes);
+    const lane: EgressLane = {
+      id,
+      name: `Полоса ${cfg.lanes.length + 1}`,
+      enabled: true,
+      urls: [],
+      manual: [],
+      domains: [],
+      ips: [],
+    };
+    const order = [...cfg.routing_order];
+    order.splice(Math.max(order.length - 1, 0), 0, id);
+    setLaneSrc((s) => ({ ...s, [id]: "manual" }));
+    set({ lanes: [...cfg.lanes, lane], routing_order: order });
+  };
+
+  const removeLane = (id: string) =>
+    set({
+      lanes: cfg.lanes.filter((l) => l.id !== id),
+      routing_order: cfg.routing_order.filter((l) => l !== id),
+    });
 
   // Preset option lists from the geo databases. geosite categories feed the
   // domain fields, geoip the IP field. A value already chosen in another
@@ -260,10 +334,18 @@ export function RoutingPanel() {
       ? { label: "активен", color: "green" as const }
       : { label: "не зарегистрирован", color: "orange" as const };
   const operaStatus = helperStatus(savedOpera, operaRunning, operaAlive, "");
-  const proxyStatus =
-    proxyCount > 0
-      ? { label: `${proxyCount} живые`, color: "green" as const }
-      : { label: "нет прокси", color: "gray" as const };
+
+  // laneStatus counts the proxies the lane RESOLVED (manual entries + whatever its
+  // URL sources served). It is NOT a liveness signal: whether a proxy actually
+  // answers is decided by Xray's Observatory, which the panel doesn't query — a
+  // dead one just makes the balancer fall back to direct. Don't label this "живые".
+  const laneStatus = (lane: EgressLane) => {
+    if (!lane.enabled) return { label: "выключена", color: "gray" as const };
+    const n = proxyCounts[lane.id] ?? 0;
+    return n > 0
+      ? { label: `${n} прокси`, color: "green" as const }
+      : { label: "нет прокси", color: "orange" as const };
+  };
 
   const save = () =>
     apply(async () => {
@@ -330,7 +412,7 @@ export function RoutingPanel() {
                   {i + 1}
                 </span>
                 <span className="flex-1 text-sm font-medium text-ink">
-                  {LANES[lane] ?? lane}
+                  {laneLabel(lane)}
                   {last && (
                     <span className="ml-2 text-xs font-normal text-ink-muted">
                       · всё остальное
@@ -458,67 +540,129 @@ export function RoutingPanel() {
         />
       </Card>
 
-      {/* Proxy pool */}
-      <Card className="flex flex-col gap-4 p-4">
+      {/* Proxy lanes */}
+      <Card className="flex flex-col gap-3 p-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-bold text-ink">Прокси</p>
-            <Badge color={proxyStatus.color}>{proxyStatus.label}</Badge>
-          </div>
+          <p className="font-bold text-ink">Полосы прокси</p>
           <p className="mt-0.5 text-sm text-ink-muted">
-            Эти домены/IP идут через прокси.
+            У каждой полосы свои прокси и свои правила: например, .ru уходит
+            через один, а .com — через другой.
           </p>
         </div>
-        <div>
-          <span className="mb-1.5 block text-sm text-ink-muted">
-            Источник прокси
-          </span>
-          <SegmentedControl
-            value={proxyMode}
-            onChange={(v) => setProxyMode(v as "urls" | "manual")}
-            data={[
-              { value: "urls", label: "Файлы (URL)" },
-              { value: "manual", label: "Вручную" },
-            ]}
-          />
+
+        {cfg.lanes.length === 0 && (
+          <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-ink-muted">
+            Полос пока нет.
+          </p>
+        )}
+
+        {cfg.lanes.map((lane) => {
+          const status = laneStatus(lane);
+          return (
+            <div
+              key={lane.id}
+              className="flex flex-col gap-4 rounded-xl border border-gray-200 p-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <Badge color={status.color}>{status.label}</Badge>
+                  </div>
+                  <TextInput
+                    value={lane.name}
+                    onChange={(v) => patchLane(lane.id, { name: v })}
+                    placeholder="Название полосы, например «Зона .ru»"
+                  />
+                </div>
+                <Switch
+                  checked={lane.enabled}
+                  disabled={applying}
+                  onChange={(v) => patchLane(lane.id, { enabled: v })}
+                />
+              </div>
+
+              <div>
+                <span className="mb-1.5 block text-sm text-ink-muted">
+                  Источник прокси
+                </span>
+                <SegmentedControl
+                  value={laneSrc[lane.id] ?? "manual"}
+                  onChange={(v) =>
+                    setLaneSrc((s) => ({ ...s, [lane.id]: v as LaneSource }))
+                  }
+                  data={[
+                    { value: "manual", label: "Вручную" },
+                    { value: "urls", label: "Файлы (URL)" },
+                  ]}
+                />
+              </div>
+              {(laneSrc[lane.id] ?? "manual") === "manual" ? (
+                <TagsInput
+                  label="Прокси вручную"
+                  value={lane.manual}
+                  onChange={(v) => patchLane(lane.id, { manual: v })}
+                  placeholder="socks5://ip:port — добавить и Enter…"
+                />
+              ) : (
+                <TagsInput
+                  label="URL-списки прокси"
+                  value={lane.urls}
+                  onChange={(v) => patchLane(lane.id, { urls: v })}
+                  placeholder="https://example.com/proxy.txt — добавить и Enter…"
+                />
+              )}
+              <TagsInput
+                label="Домены полосы"
+                value={lane.domains}
+                onChange={(v) => patchLane(lane.id, { domains: v })}
+                options={without(geositeOpts, cfg.block_domains)}
+                placeholder="домен, regexp: или geosite:…"
+              />
+              <TagsInput
+                label="IP полосы"
+                value={lane.ips}
+                onChange={(v) => patchLane(lane.id, { ips: v })}
+                options={without(geoipOpts, cfg.block_ips)}
+                placeholder="CIDR или geoip:xx…"
+              />
+              <div className="flex justify-end">
+                <Button
+                  variant="light"
+                  size="sm"
+                  onClick={() => removeLane(lane.id)}
+                >
+                  Удалить полосу
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            variant="light"
+            size="sm"
+            disabled={cfg.lanes.length >= MAX_LANES}
+            onClick={addLane}
+          >
+            + Добавить полосу
+          </Button>
+          {cfg.lanes.length >= MAX_LANES && (
+            <span className="text-xs text-ink-muted">
+              максимум {MAX_LANES} полос
+            </span>
+          )}
         </div>
-        {proxyMode === "urls" ? (
-          <>
-            <TagsInput
-              label="URL-списки прокси"
-              value={cfg.proxy_urls}
-              onChange={(v) => set({ proxy_urls: v })}
-              placeholder="https://example.com/proxy.txt — добавить и Enter…"
-            />
-            <Select
-              label="Авто-обновление списков"
-              data={PROXY_REFRESH}
-              value={String(cfg.proxy_refresh_minutes)}
-              onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
-            />
-          </>
-        ) : (
-          <TagsInput
-            label="Прокси вручную"
-            value={cfg.proxy_manual}
-            onChange={(v) => set({ proxy_manual: v })}
-            placeholder="socks5://ip:port — добавить и Enter…"
+
+        {/* One cadence for every URL-sourced lane. */}
+        {cfg.lanes.some((l) => laneSrc[l.id] === "urls") && (
+          <Select
+            label="Авто-обновление URL-списков"
+            data={PROXY_REFRESH}
+            value={String(cfg.proxy_refresh_minutes)}
+            onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
           />
         )}
-        <TagsInput
-          label="Через прокси — Домены"
-          value={cfg.proxy_domains}
-          onChange={(v) => set({ proxy_domains: v })}
-          options={without(geositeOpts, cfg.block_domains)}
-          placeholder="домен, regexp: или geosite:…"
-        />
-        <TagsInput
-          label="Через прокси — IP"
-          value={cfg.proxy_ips}
-          onChange={(v) => set({ proxy_ips: v })}
-          options={without(geoipOpts, cfg.block_ips)}
-          placeholder="CIDR или geoip:xx…"
-        />
       </Card>
 
       {/* Geo databases */}
@@ -565,14 +709,10 @@ export function RoutingPanel() {
           // Opera/proxy-source edits stay applied and the SaveBar never clears.
           const c = JSON.parse(saved) as RoutingConfig;
           setCfg(c);
+          setLaneSrc(laneSources(c.lanes));
           setWarpEnabled(savedWarp);
           setOperaEnabled(savedOpera);
           setOperaCountry(savedOperaCountry);
-          setProxyMode(
-            (c.proxy_manual.length ?? 0) > 0 && c.proxy_urls.length === 0
-              ? "manual"
-              : "urls",
-          );
         }}
       />
       <ApplyingModal open={applying} />

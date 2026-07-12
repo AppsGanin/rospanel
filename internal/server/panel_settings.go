@@ -152,7 +152,8 @@ func (rt *Router) getRouting(w http.ResponseWriter, _ *http.Request) {
 		"opera_country":   set.OperaCountryOr(),
 		"opera_running":   rt.mgr.OperaRunning(),
 		"opera_alive":     rt.mgr.OperaHealthy(),
-		"proxy_count":     rt.mgr.ProxyCount(),
+		"proxy_count":     rt.mgr.ProxyCount(),  // total across all lanes
+		"proxy_counts":    rt.mgr.ProxyCounts(), // per lane ID
 	})
 }
 

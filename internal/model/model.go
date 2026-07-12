@@ -653,25 +653,145 @@ type RoutingConfig struct {
 	DirectDomains   []string `json:"direct_domains"`
 	DirectIPs       []string `json:"direct_ips"`
 
-	// RoutingOrder is the precedence of the egress lanes (a permutation of
-	// "proxy"/"warp"/"opera"/"direct" — see xray.knownLanes); first-match-wins. The
-	// LAST lane is the catch-all ("everything else") — its specific rules are
-	// subsumed by a final rule. A config saved before a lane existed simply omits it;
-	// the generator back-fills any missing lane rather than dropping it.
+	// RoutingOrder is the precedence of the egress lanes; first-match-wins. It is a
+	// permutation of the built-in lanes ("warp"/"opera"/"direct") plus the ID of
+	// every proxy lane in Lanes. The LAST lane is the catch-all ("everything else")
+	// — its specific rules are subsumed by a final rule. A config saved before a
+	// lane existed simply omits it; the generator back-fills any missing lane rather
+	// than dropping it, and drops IDs of lanes that no longer exist.
 	RoutingOrder []string `json:"routing_order"`
 
-	// Outbound proxy pool: traffic matching ProxyDomains/ProxyIPs is load-balanced
-	// across the proxies fetched from ProxyURLs (each a list, one proxy per line)
-	// plus the ProxyManual entries.
-	ProxyURLs    []string `json:"proxy_urls"`
-	ProxyManual  []string `json:"proxy_manual"`
-	ProxyDomains []string `json:"proxy_domains"`
-	ProxyIPs     []string `json:"proxy_ips"`
+	// Lanes are the operator-defined proxy egress lanes. Each has its own upstream
+	// proxies and its own match rules, so different destinations can leave through
+	// different proxies (e.g. a ".ru" lane and a ".com" lane).
+	Lanes []EgressLane `json:"lanes"`
 
-	// ProxyRefreshMinutes is how often the URL-sourced proxy list is re-fetched.
+	// ProxyRefreshMinutes is how often the URL-sourced proxy lists are re-fetched.
 	// 0 means the default (30 min) — kept so configs saved before this was
 	// selectable keep auto-refreshing; a negative value means "never".
 	ProxyRefreshMinutes int `json:"proxy_refresh_minutes"`
+
+	// Deprecated: the pre-lanes single proxy pool. Only read, never written —
+	// MigrateLanes folds these into a Lanes entry on load. Kept so a config saved
+	// by an older build still upgrades cleanly.
+	ProxyURLs    []string `json:"proxy_urls,omitempty"`
+	ProxyManual  []string `json:"proxy_manual,omitempty"`
+	ProxyDomains []string `json:"proxy_domains,omitempty"`
+	ProxyIPs     []string `json:"proxy_ips,omitempty"`
+}
+
+// EgressLane is one named proxy egress: a set of upstream proxies traffic is
+// load-balanced across, plus the destinations that should take it. Traffic
+// matching Domains/IPs leaves through this lane's proxies; a lane with no live
+// proxies is skipped entirely, so its traffic falls through to the next lane.
+type EgressLane struct {
+	// ID is the stable slug the routing order references and the Xray outbound /
+	// balancer tags are derived from. See ValidLaneID for the charset.
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`    // display name ("Зона .ru")
+	Enabled bool     `json:"enabled"` // off ⇒ the lane emits nothing at all
+	URLs    []string `json:"urls"`    // proxy-list sources, one proxy per line
+	Manual  []string `json:"manual"`  // "scheme://[user:pass@]host:port" entries
+	Domains []string `json:"domains"` // destinations routed through this lane
+	IPs     []string `json:"ips"`     // CIDRs or "geoip:xx"
+}
+
+// MaxEgressLanes caps how many lanes one config may define. Every active lane
+// costs an Xray balancer plus an Observatory probe subject, so the ceiling keeps
+// a hand-edited config from melting the box.
+const MaxEgressLanes = 16
+
+// LegacyProxyLaneID is the ID the pre-lanes proxy pool migrates into. It is
+// deliberately the literal "proxy" — the string a pre-lanes RoutingOrder already
+// uses for the pool — so a saved precedence keeps pointing at the same lane
+// across the upgrade with no rewriting.
+const LegacyProxyLaneID = "proxy"
+
+// builtinLanes are the egress lanes that always exist and are not proxy lanes.
+// Their names are reserved: a proxy lane may not take one as its ID.
+var builtinLanes = []string{"warp", "opera", "direct"}
+
+// BuiltinLanes returns the always-present egress lanes, in default precedence
+// (the last one, "direct", is the default catch-all).
+func BuiltinLanes() []string {
+	return append([]string(nil), builtinLanes...)
+}
+
+// ValidLaneID reports whether id is usable as a lane ID: 1–16 lowercase
+// alphanumerics, no dashes, and not a built-in lane name.
+//
+// The no-dash rule is load-bearing, not cosmetic. An Xray balancer selects its
+// members by TAG PREFIX, and a lane's members are tagged "proxy-<id>-<n>". Were
+// "-" allowed in an ID, lane "ru" (selector "proxy-ru-") would also select the
+// members of lane "ru-x" (tagged "proxy-ru-x-0") and silently steal its proxies.
+// Barring dashes from IDs makes the trailing "-" of the selector an unambiguous
+// terminator.
+func ValidLaneID(id string) bool {
+	if len(id) == 0 || len(id) > 16 {
+		return false
+	}
+	for _, b := range []byte(id) {
+		if (b < 'a' || b > 'z') && (b < '0' || b > '9') {
+			return false
+		}
+	}
+	for _, r := range builtinLanes {
+		if id == r {
+			return false
+		}
+	}
+	return true
+}
+
+// MigrateLanes upgrades a config saved before egress lanes existed: the single
+// proxy pool becomes one lane (ID "proxy"), so its proxies, rules and place in
+// the routing order all survive. It also clears the deprecated fields on a config
+// that already has lanes, so they are never written back.
+func (rc *RoutingConfig) MigrateLanes() {
+	legacy := len(rc.ProxyURLs) + len(rc.ProxyManual) + len(rc.ProxyDomains) + len(rc.ProxyIPs)
+	if len(rc.Lanes) == 0 && legacy > 0 {
+		rc.Lanes = []EgressLane{{
+			ID:      LegacyProxyLaneID,
+			Name:    "Прокси",
+			Enabled: true,
+			URLs:    rc.ProxyURLs,
+			Manual:  rc.ProxyManual,
+			Domains: rc.ProxyDomains,
+			IPs:     rc.ProxyIPs,
+		}}
+	}
+	rc.ProxyURLs, rc.ProxyManual, rc.ProxyDomains, rc.ProxyIPs = nil, nil, nil, nil
+}
+
+// ValidateLanes checks the operator-supplied lanes before they are persisted.
+// Messages are user-facing (shown in the panel).
+func (rc *RoutingConfig) ValidateLanes() error {
+	if len(rc.Lanes) > MaxEgressLanes {
+		return fmt.Errorf("слишком много полос: максимум %d", MaxEgressLanes)
+	}
+	seen := make(map[string]struct{}, len(rc.Lanes))
+	for _, l := range rc.Lanes {
+		if !ValidLaneID(l.ID) {
+			return fmt.Errorf("недопустимый идентификатор полосы %q: только латиница и цифры (до 16 символов), имена warp/opera/direct заняты", l.ID)
+		}
+		if _, dup := seen[l.ID]; dup {
+			return fmt.Errorf("дублирующийся идентификатор полосы %q", l.ID)
+		}
+		seen[l.ID] = struct{}{}
+		if strings.TrimSpace(l.Name) == "" {
+			return fmt.Errorf("у полосы %q не задано название", l.ID)
+		}
+	}
+	return nil
+}
+
+// LaneIDs returns the IDs of the configured proxy lanes, in config order.
+func (rc *RoutingConfig) LaneIDs() []string {
+	out := make([]string, 0, len(rc.Lanes))
+	for _, l := range rc.Lanes {
+		out = append(out, l.ID)
+	}
+	return out
 }
 
 // ProxyEndpoint is one outbound proxy in the pool (parsed from a "scheme://

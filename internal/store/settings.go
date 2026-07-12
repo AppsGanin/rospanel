@@ -88,6 +88,10 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	}
 	if routingCfg != "" {
 		_ = json.Unmarshal([]byte(routingCfg), &st.Routing)
+		// A config saved before egress lanes existed carries a single proxy pool in
+		// the deprecated Proxy* fields; fold it into a lane so the rest of the code
+		// only ever sees the lane model.
+		st.Routing.MigrateLanes()
 	} else {
 		// Never configured: ad-blocking is on by default.
 		st.Routing = model.RoutingConfig{BlockAds: true}

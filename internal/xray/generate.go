@@ -45,7 +45,9 @@ type Options struct {
 //   - Hysteria2 inbound on :<hysteria_port> (UDP), its own TLS; host nftables
 //     redirects the hop range to it.
 //   - One credential set per user (uuid for VLESS, password for Trojan/Hy2).
-func Generate(set *model.Settings, users []model.User, opts Options, proxies []model.ProxyEndpoint) (*Config, error) {
+//
+// proxies holds the live upstream proxies of each egress lane, keyed by lane ID.
+func Generate(set *model.Settings, users []model.User, opts Options, proxies map[string][]model.ProxyEndpoint) (*Config, error) {
 	if set.CertPath == "" || set.KeyPath == "" {
 		return nil, fmt.Errorf("tls cert/key not configured")
 	}
@@ -200,19 +202,34 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies []m
 	if set.OperaEnabled {
 		outbounds = append(outbounds, operaOutbound(set))
 	}
-	operaActive := set.OperaEnabled && (len(rc.OperaDomains) > 0 || len(rc.OperaIPs) > 0 || lastLane(rc.RoutingOrder) == "opera")
+	order := normalizeOrder(rc.RoutingOrder, rc.LaneIDs())
+	catchAll := order[len(order)-1]
+	operaActive := set.OperaEnabled && (len(rc.OperaDomains) > 0 || len(rc.OperaIPs) > 0 || catchAll == "opera")
 
-	// Proxy pool: one outbound per proxy (tag "proxy-N"); a balancer load-balances
-	// across the live ones. Only active when there are proxies AND rules pointing
-	// at the pool — otherwise the balancer would be empty and Xray would reject it.
-	outbounds = append(outbounds, proxyOutbounds(proxies)...)
-	proxyActive := len(proxies) > 0 && (len(rc.ProxyDomains) > 0 || len(rc.ProxyIPs) > 0 || lastLane(rc.RoutingOrder) == "proxy")
+	// Egress lanes: one outbound per upstream proxy (tag "proxy-<lane>-<n>"), one
+	// balancer per lane load-balancing across that lane's live proxies. A lane is
+	// only active when it's enabled, HAS proxies, and something routes to it —
+	// otherwise its balancer would be empty (Xray rejects that) or unused.
+	active := make(map[string]bool, len(rc.Lanes))
+	for _, lane := range rc.Lanes {
+		pool := proxies[lane.ID]
+		if !lane.Enabled || len(pool) == 0 {
+			continue
+		}
+		if len(lane.Domains) == 0 && len(lane.IPs) == 0 && catchAll != lane.ID {
+			continue
+		}
+		active[lane.ID] = true
+		outbounds = append(outbounds, proxyOutbounds(lane.ID, pool)...)
+	}
 
-	// One Observatory probes every health-checked egress (proxy pool + Opera) so
-	// their balancers can drop to "direct" on a failed probe and recover.
+	// One Observatory probes every health-checked egress (every active lane + Opera)
+	// so their balancers can drop to "direct" on a failed probe and recover.
 	var subjects []string
-	if proxyActive {
-		subjects = append(subjects, proxyTagPrefix)
+	for _, lane := range rc.Lanes {
+		if active[lane.ID] {
+			subjects = append(subjects, laneTagPrefix(lane.ID))
+		}
 	}
 	if operaActive {
 		subjects = append(subjects, "opera")
@@ -249,7 +266,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies []m
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(rc, warpTag, operaActive, proxyActive),
+		Routing:     compileRouting(rc, order, warpTag, operaActive, active),
 		Observatory: observatory,
 	}, nil
 }
@@ -282,20 +299,22 @@ func proxyModeInbound(set *model.Settings, sniff *Sniffing) Inbound {
 	}
 }
 
-// proxyTagPrefix tags every proxy-pool outbound; the balancer + observatory
-// select members by this prefix.
-const proxyTagPrefix = "proxy-"
+// laneTagPrefix is the outbound-tag prefix of one egress lane's proxies, and the
+// selector its balancer + the Observatory pick those members by. Lane IDs carry
+// no dashes (model.ValidLaneID), so the trailing "-" terminates the prefix
+// unambiguously: "proxy-ru-" can never match a member of another lane.
+func laneTagPrefix(laneID string) string { return "proxy-" + laneID + "-" }
 
-// proxyBalancerTag is the routing target for proxy-pool traffic.
-const proxyBalancerTag = "proxypool"
+// laneBalancerTag is the routing target for a lane's traffic.
+func laneBalancerTag(laneID string) string { return "pool-" + laneID }
 
 // operaBalancerTag is a single-member balancer wrapping the Opera outbound: an
 // Observatory health-probe lets it fall back to "direct" when the free VPN
 // upstream is unreachable, and recover when it's back.
 const operaBalancerTag = "opera-out"
 
-// proxyOutbounds builds one socks/http outbound per pool proxy.
-func proxyOutbounds(proxies []model.ProxyEndpoint) []Outbound {
+// proxyOutbounds builds one socks/http outbound per proxy of a lane.
+func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint) []Outbound {
 	out := make([]Outbound, 0, len(proxies))
 	for i, p := range proxies {
 		srv := ProxyServer{Address: p.Address, Port: p.Port}
@@ -303,7 +322,7 @@ func proxyOutbounds(proxies []model.ProxyEndpoint) []Outbound {
 			srv.Users = []ProxyUser{{User: p.User, Pass: p.Pass}}
 		}
 		out = append(out, Outbound{
-			Tag:      fmt.Sprintf("%s%d", proxyTagPrefix, i),
+			Tag:      fmt.Sprintf("%s%d", laneTagPrefix(laneID), i),
 			Protocol: p.Protocol,
 			Settings: ProxyOutboundSettings{Servers: []ProxyServer{srv}},
 		})
@@ -491,12 +510,14 @@ var privateEgressCIDRs = []string{
 	"fe80::/10",
 }
 
-func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyActive bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive bool, active map[string]bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
-	// Pool of proxies / Opera behind health-probed balancers; leastPing (via the
-	// Observatory) routes to a live member, else falls back to direct.
-	if proxyActive {
-		out.Balancers = append(out.Balancers, healthBalancer(proxyBalancerTag, proxyTagPrefix))
+	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
+	// the Observatory) routes to a live member, else falls back to direct.
+	for _, lane := range rc.Lanes {
+		if active[lane.ID] {
+			out.Balancers = append(out.Balancers, healthBalancer(laneBalancerTag(lane.ID), laneTagPrefix(lane.ID)))
+		}
 	}
 	if operaActive {
 		out.Balancers = append(out.Balancers, healthBalancer(operaBalancerTag, "opera"))
@@ -533,6 +554,10 @@ func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyAc
 	addIPRule(out, "block", rc.BlockIPs)
 
 	// Egress lanes in the configured precedence (first-match-wins).
+	byID := make(map[string]model.EgressLane, len(rc.Lanes))
+	for _, l := range rc.Lanes {
+		byID[l.ID] = l
+	}
 	emitLane := func(lane string) {
 		switch lane {
 		case "direct":
@@ -545,23 +570,18 @@ func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyAc
 			if operaActive {
 				addBalancerRule(out, operaBalancerTag, rc.OperaDomains, rc.OperaIPs)
 			}
-		case "proxy":
-			if proxyActive {
-				addBalancerRule(out, proxyBalancerTag, rc.ProxyDomains, rc.ProxyIPs)
+		default: // a proxy lane; an inactive one emits nothing and falls through
+			if l, ok := byID[lane]; ok && active[lane] {
+				addBalancerRule(out, laneBalancerTag(lane), l.Domains, l.IPs)
 			}
 		}
 	}
-	order := normalizeOrder(rc.RoutingOrder)
 	// Every lane but the last emits its specific rules; the last lane is the
 	// catch-all for "everything else".
 	for _, lane := range order[:len(order)-1] {
 		emitLane(lane)
 	}
-	switch order[len(order)-1] {
-	case "proxy":
-		if proxyActive {
-			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: proxyBalancerTag})
-		}
+	switch last := order[len(order)-1]; last {
 	case "warp":
 		if warpTag == "warp" {
 			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", OutboundTag: "warp"})
@@ -570,8 +590,14 @@ func compileRouting(rc model.RoutingConfig, warpTag string, operaActive, proxyAc
 		if operaActive {
 			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: operaBalancerTag})
 		}
-		// "direct" last lane (or an inactive proxy/warp/opera) is the natural
-		// fallthrough to the first outbound (direct), so it needs no explicit rule.
+	case "direct":
+		// The natural fallthrough to the first outbound (direct) — no rule needed.
+	default:
+		if active[last] {
+			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: laneBalancerTag(last)})
+		}
+		// An inactive catch-all lane (disabled / no live proxies) also falls through
+		// to direct, so its traffic keeps flowing instead of black-holing.
 	}
 	return out
 }
@@ -587,15 +613,22 @@ func addBalancerRule(out *Routing, balancerTag string, domains, ips []string) {
 	}
 }
 
-// knownLanes is the full set of egress lanes, in their default precedence.
-var knownLanes = []string{"proxy", "warp", "opera", "direct"}
-
-// normalizeOrder returns a routing order containing every known lane exactly
-// once. It preserves the operator's saved precedence and appends any lane the
-// saved order is missing (e.g. "opera" for configs saved before it existed)
-// just before the catch-all last lane, so the catch-all stays put.
-func normalizeOrder(order []string) []string {
-	valid := map[string]bool{"proxy": true, "warp": true, "opera": true, "direct": true}
+// normalizeOrder returns a routing order containing every existing lane exactly
+// once: the proxy lanes of the config (laneIDs) plus the built-in warp/opera/
+// direct. It preserves the operator's saved precedence, drops entries for lanes
+// that no longer exist, and inserts any lane the saved order is missing (a lane
+// added since it was saved, or "opera" for a config from before that lane
+// existed) just before the catch-all last lane, so the catch-all stays put.
+//
+// The result always has at least the built-in lanes, so callers may index its
+// last element without a length check.
+func normalizeOrder(order, laneIDs []string) []string {
+	// Default precedence: proxy lanes first, then warp → opera → direct.
+	known := append(append([]string(nil), laneIDs...), model.BuiltinLanes()...)
+	valid := make(map[string]bool, len(known))
+	for _, l := range known {
+		valid[l] = true
+	}
 	seen := map[string]bool{}
 	var out []string
 	for _, l := range order {
@@ -605,7 +638,7 @@ func normalizeOrder(order []string) []string {
 		}
 	}
 	var missing []string
-	for _, l := range knownLanes {
+	for _, l := range known {
 		if !seen[l] {
 			missing = append(missing, l)
 		}
@@ -614,7 +647,7 @@ func normalizeOrder(order []string) []string {
 		return out
 	}
 	if len(out) == 0 {
-		return missing // empty saved order → full default precedence
+		return missing // empty (or fully stale) saved order → default precedence
 	}
 	// Insert missing lanes before the catch-all (last) lane.
 	last := out[len(out)-1]
@@ -623,15 +656,6 @@ func normalizeOrder(order []string) []string {
 	res = append(res, missing...)
 	res = append(res, last)
 	return res
-}
-
-// lastLane returns the catch-all lane (the last in the routing order). An empty
-// order defaults to ["proxy","warp","direct"], whose last lane is "direct".
-func lastLane(order []string) string {
-	if len(order) == 0 {
-		return "direct"
-	}
-	return order[len(order)-1]
 }
 
 // trimList drops blank entries (after trimming) from a list.

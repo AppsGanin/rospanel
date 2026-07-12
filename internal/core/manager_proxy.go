@@ -37,44 +37,89 @@ func (m *Manager) currentProxyRefresh() time.Duration {
 	return proxyRefreshDuration(set.Routing.ProxyRefreshMinutes)
 }
 
-// buildProxies parses the manual proxy list and merges in whatever the source
-// URLs serve (best-effort per-URL fetch — failures are skipped).
-func (m *Manager) buildProxies(rc model.RoutingConfig) []model.ProxyEndpoint {
-	lines := append([]string{}, rc.ProxyManual...)
-	for _, url := range rc.ProxyURLs {
-		if url = strings.TrimSpace(url); url == "" {
+// buildProxies resolves the proxies of every enabled egress lane: its manual
+// entries merged with whatever its source URLs serve (best-effort per-URL fetch —
+// failures are skipped). Lanes with no usable proxies are left out of the map, so
+// the generator sees them as inactive.
+func (m *Manager) buildProxies(rc model.RoutingConfig) map[string][]model.ProxyEndpoint {
+	out := make(map[string][]model.ProxyEndpoint, len(rc.Lanes))
+	for _, lane := range rc.Lanes {
+		if !lane.Enabled {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		fetched, err := proxypool.Fetch(ctx, url)
-		cancel()
-		if err != nil {
-			logWarn("proxypool: fetch failed", "url", url, "err", err)
-			continue
+		lines := append([]string{}, lane.Manual...)
+		for _, url := range lane.URLs {
+			if url = strings.TrimSpace(url); url == "" {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			fetched, err := proxypool.Fetch(ctx, url)
+			cancel()
+			if err != nil {
+				logWarn("proxypool: fetch failed", "lane", lane.ID, "url", url, "err", err)
+				continue
+			}
+			lines = append(lines, fetched...)
 		}
-		lines = append(lines, fetched...)
+		if eps := proxypool.Parse(lines); len(eps) > 0 {
+			out[lane.ID] = eps
+		}
 	}
-	return proxypool.Parse(lines)
+	return out
 }
 
-func (m *Manager) getProxies() []model.ProxyEndpoint {
+// seedProxiesFromManual resolves only the manual entries of each enabled lane —
+// no network. Used at boot to have something in the pool instantly.
+func seedProxiesFromManual(rc model.RoutingConfig) map[string][]model.ProxyEndpoint {
+	out := make(map[string][]model.ProxyEndpoint, len(rc.Lanes))
+	for _, lane := range rc.Lanes {
+		if !lane.Enabled {
+			continue
+		}
+		if eps := proxypool.Parse(lane.Manual); len(eps) > 0 {
+			out[lane.ID] = eps
+		}
+	}
+	return out
+}
+
+func (m *Manager) getProxies() map[string][]model.ProxyEndpoint {
 	m.proxyMu.Lock()
 	defer m.proxyMu.Unlock()
-	return append([]model.ProxyEndpoint(nil), m.proxies...)
+	out := make(map[string][]model.ProxyEndpoint, len(m.proxies))
+	for id, eps := range m.proxies {
+		out[id] = append([]model.ProxyEndpoint(nil), eps...)
+	}
+	return out
 }
 
-func (m *Manager) setProxies(p []model.ProxyEndpoint) {
+func (m *Manager) setProxies(p map[string][]model.ProxyEndpoint) {
 	m.proxyMu.Lock()
 	m.proxies = p
 	m.proxyMu.Unlock()
 }
 
-// ProxyCount reports how many proxies are currently in the pool (parsed from the
-// URL + manual sources).
+// ProxyCount reports how many proxies are currently live across all lanes.
 func (m *Manager) ProxyCount() int {
 	m.proxyMu.Lock()
 	defer m.proxyMu.Unlock()
-	return len(m.proxies)
+	n := 0
+	for _, eps := range m.proxies {
+		n += len(eps)
+	}
+	return n
+}
+
+// ProxyCounts reports how many proxies each lane currently has, keyed by lane ID
+// (a lane with none is absent). Feeds the per-lane status badges in the panel.
+func (m *Manager) ProxyCounts() map[string]int {
+	m.proxyMu.Lock()
+	defer m.proxyMu.Unlock()
+	out := make(map[string]int, len(m.proxies))
+	for id, eps := range m.proxies {
+		out[id] = len(eps)
+	}
+	return out
 }
 
 // SeedProxies loads the proxy pool synchronously from current settings WITHOUT
@@ -122,11 +167,25 @@ func (m *Manager) proxyLoop() {
 	}
 }
 
-// proxiesEqual reports whether a and b are the same multiset of endpoints,
-// ignoring order: the pool is health-balanced (Observatory) so the order in the
-// config is irrelevant, and a source URL that returns the same proxies shuffled
-// must not trigger a needless Xray restart.
-func proxiesEqual(a, b []model.ProxyEndpoint) bool {
+// proxiesEqual reports whether a and b give every lane the same multiset of
+// endpoints, ignoring order: each lane is health-balanced (Observatory) so the
+// order in the config is irrelevant, and a source URL that returns the same
+// proxies shuffled must not trigger a needless Xray restart.
+func proxiesEqual(a, b map[string][]model.ProxyEndpoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id, pa := range a {
+		pb, ok := b[id]
+		if !ok || !endpointsEqual(pa, pb) {
+			return false
+		}
+	}
+	return true
+}
+
+// endpointsEqual compares one lane's endpoints as an unordered multiset.
+func endpointsEqual(a, b []model.ProxyEndpoint) bool {
 	if len(a) != len(b) {
 		return false
 	}
