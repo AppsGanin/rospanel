@@ -3,6 +3,7 @@ import { restartXray, type SystemStatus } from "./api";
 import { cssVar } from "./charts";
 import { fmtBytes, fmtDuration, plural } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useIsAdmin } from "./role";
 import { Badge, Button, Card, Skeleton, useConfirm } from "./ui";
 import { XrayLogs } from "./XrayLogs";
 import { XrayConfigView } from "./XrayConfig";
@@ -131,6 +132,7 @@ function OverviewSkeleton() {
 }
 
 export function OverviewPanel() {
+  const isAdmin = useIsAdmin();
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -226,23 +228,27 @@ export function OverviewPanel() {
                 <span className="text-sm text-ink-muted">v{s.xray_version}</span>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="xs" variant="light" color="gray" onClick={() => setCfgOpen(true)}>
-                Конфиг
-              </Button>
-              <Button size="xs" variant="light" color="gray" onClick={() => setLogsOpen(true)}>
-                Логи
-              </Button>
-              <Button
-                size="xs"
-                variant="light"
-                color="red"
-                loading={restarting}
-                onClick={doRestart}
-              >
-                Рестарт
-              </Button>
-            </div>
+            {/* Xray itself — its config, its logs, restarting it — is admin work.
+                An operator sees whether it's up, and nothing to press. */}
+            {isAdmin && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="xs" variant="light" color="gray" onClick={() => setCfgOpen(true)}>
+                  Конфиг
+                </Button>
+                <Button size="xs" variant="light" color="gray" onClick={() => setLogsOpen(true)}>
+                  Логи
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="red"
+                  loading={restarting}
+                  onClick={doRestart}
+                >
+                  Рестарт
+                </Button>
+              </div>
+            )}
           </div>
         </InfoCard>
 
@@ -282,9 +288,14 @@ export function OverviewPanel() {
         </InfoCard>
       </div>
 
-      <EgressStatus />
-
-      <ManagementCard />
+      {/* Egress lanes read the routing config, and Управление holds backup/restore
+          and the factory reset — both admin-only on the server. */}
+      {isAdmin && (
+        <>
+          <EgressStatus />
+          <ManagementCard />
+        </>
+      )}
 
       {logsOpen && <XrayLogs onClose={() => setLogsOpen(false)} />}
       {cfgOpen && <XrayConfigView onClose={() => setCfgOpen(false)} />}

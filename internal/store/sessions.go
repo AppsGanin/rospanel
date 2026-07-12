@@ -68,27 +68,40 @@ func (s *Store) CreateSession(adminID int64, ttl time.Duration) (string, error) 
 	return token, nil
 }
 
+// SessionAdmin is who a session belongs to — resolved fresh on every authenticated
+// request, so a role change or a raised password gate takes effect on the admin's
+// next request rather than on their next login.
+type SessionAdmin struct {
+	ID                 int64
+	Username           string
+	Role               string
+	MustChangePassword bool
+}
+
 // LookupSession resolves a raw session token to its admin. Expired sessions are
 // deleted and treated as invalid.
-func (s *Store) LookupSession(token string) (adminID int64, username string, ok bool) {
+func (s *Store) LookupSession(token string) (SessionAdmin, bool) {
 	hash, err := s.tokenHash(token)
 	if err != nil {
-		return 0, "", false
+		return SessionAdmin{}, false
 	}
+	var a SessionAdmin
+	var mustChange int
 	var expires int64
 	err = s.db.QueryRow(`
-		SELECT a.id, a.username, s.expires_at
+		SELECT a.id, a.username, a.role, a.must_change_password, s.expires_at
 		FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
 		WHERE s.token_hash = ?`, hash,
-	).Scan(&adminID, &username, &expires)
+	).Scan(&a.ID, &a.Username, &a.Role, &mustChange, &expires)
 	if err != nil {
-		return 0, "", false
+		return SessionAdmin{}, false
 	}
 	if time.Now().Unix() > expires {
 		_ = s.DeleteSession(token)
-		return 0, "", false
+		return SessionAdmin{}, false
 	}
-	return adminID, username, true
+	a.MustChangePassword = mustChange != 0
+	return a, true
 }
 
 // DeleteSession revokes a session by its raw token.

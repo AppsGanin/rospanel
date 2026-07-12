@@ -329,18 +329,29 @@ export function SettingCard({
   title,
   description,
   action,
+  stackAction,
   children,
   className,
 }: {
   title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
+  // stackAction drops the action below the text on phones instead of keeping it on
+  // the title row. Off by default: most actions here are a Switch, which stays put
+  // happily in a corner at any width. Turn it on for a real button, which a long
+  // description would otherwise squeeze into a sliver on a narrow screen.
+  stackAction?: boolean;
   children?: ReactNode;
   className?: string;
 }) {
   return (
     <Card className={cn("p-4", className)}>
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div
+        className={cn(
+          "mb-3 flex items-start justify-between gap-3",
+          stackAction && "flex-col sm:flex-row",
+        )}
+      >
         <div className="min-w-0">
           <h3 className="font-bold text-ink">{title}</h3>
           {description && (
@@ -1077,7 +1088,10 @@ export function Badge({
       className={cn(
         "inline-flex items-center rounded-md font-medium whitespace-nowrap",
         size === "xs" ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-sm",
-        BADGE[color],
+        // BADGE is a Record<string, string>, so `keyof` is just string and a colour
+        // that isn't in the palette type-checks fine — then renders as bare text with
+        // no background. Fall back to the accent instead of vanishing.
+        BADGE[color] ?? BADGE.brand,
       )}
     >
       {children}

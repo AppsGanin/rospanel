@@ -32,7 +32,7 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	// Single connection keeps writes serialized — correct and plenty for the
-	// panel's scale (one admin, hundreds of users).
+	// panel's scale (a handful of admins, hundreds of users).
 	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("open db: %w", err)

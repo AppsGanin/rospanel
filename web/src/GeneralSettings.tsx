@@ -403,21 +403,25 @@ export function GeneralSettings() {
           value={bk.schedule}
           onChange={(schedule) => setBk((b) => ({ ...b, schedule }))}
           offLabel="Автоматические бэкапы выключены."
+          // Retention only means something once a schedule exists, and it belongs
+          // beside it: "каждый день в 03:00, храним 7 копий" is one sentence.
+          extra={
+            bkCron ? (
+              <TextInput
+                label="Сколько копий хранить"
+                type="number"
+                value={String(bk.keep)}
+                onChange={(v) =>
+                  setBk((b) => ({ ...b, keep: Number(v.replace(/\D/g, "")) || 0 }))
+                }
+              />
+            ) : undefined
+          }
         />
         {bkCron && (
-          <div className="mt-3 max-w-xs">
-            <TextInput
-              label="Сколько копий хранить"
-              type="number"
-              value={String(bk.keep)}
-              onChange={(v) =>
-                setBk((b) => ({ ...b, keep: Number(v.replace(/\D/g, "")) || 0 }))
-              }
-            />
-            <p className="mt-1 text-xs text-ink-muted">
-              Лишние копии удаляются, остаются самые свежие. 0 — не удалять ничего.
-            </p>
-          </div>
+          <p className="mt-1 text-xs text-ink-muted">
+            Лишние копии удаляются, остаются самые свежие. 0 — не удалять ничего.
+          </p>
         )}
         <p className="mt-3 text-xs text-warning">
           ⚠️ Копия лежит на том же диске, что и панель, и содержит ключ шифрования
