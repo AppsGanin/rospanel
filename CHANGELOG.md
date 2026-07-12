@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/AppsGanin/rospanel/compare/v0.13.0...v0.14.0) (2026-07-12)
+
+
+### Features
+
+* **admins:** multiple admins with roles and an admin audit trail ([3ac3c84](https://github.com/AppsGanin/rospanel/commit/3ac3c8408e7308b0838cd99f9e2fd6556208d813))
+* **admins:** multiple admins with roles and an admin audit trail ([35c18ba](https://github.com/AppsGanin/rospanel/commit/35c18ba19a93fec532596514d830335b5a7c1277))
+
+
+### Bug Fixes
+
+* **ui:** stop the version badge overlapping the panel name in the header ([347710a](https://github.com/AppsGanin/rospanel/commit/347710acebdc06687fccc0bf59998a85dd4ece97))
+
 ## [0.13.0](https://github.com/AppsGanin/rospanel/compare/v0.12.0...v0.13.0) (2026-07-11)
 
 
