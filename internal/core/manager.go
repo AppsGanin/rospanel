@@ -13,7 +13,6 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/opera"
-	"github.com/AppsGanin/rospanel/internal/proxypool"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -101,7 +100,8 @@ type Manager struct {
 	geoIP   []string // cached geoip category codes
 
 	proxyMu sync.Mutex
-	proxies []model.ProxyEndpoint // current proxy-pool egress endpoints
+	// proxies holds the current egress proxies of each lane, keyed by lane ID.
+	proxies map[string][]model.ProxyEndpoint
 
 	guard *bruteGuard
 
@@ -142,8 +142,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
-		logbuf.SetLocation(m.tz)                             // stamp log lines in the operator's zone, not the server's
-		m.proxies = proxypool.Parse(set.Routing.ProxyManual) // manual seed (instant)
+		logbuf.SetLocation(m.tz)                       // stamp log lines in the operator's zone, not the server's
+		m.proxies = seedProxiesFromManual(set.Routing) // manual seed (instant)
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.

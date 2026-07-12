@@ -207,11 +207,17 @@ func (m *Manager) SetProxyMode(enabled bool, typ string, port int, user, pass st
 // later toggles reuse them. Enabling Opera downloads + launches the helper for
 // the chosen region.
 func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnabled bool, operaCountry string) error {
+	// Fold a legacy single-pool payload (an older panel build) into a lane, then
+	// validate — so what we persist is always in the lane model.
+	cfg.MigrateLanes()
+	if err := cfg.ValidateLanes(); err != nil {
+		return invalid("%s", err)
+	}
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return err
 	}
-	logInfo("routing: applying", "warp", warpEnabled, "opera", operaEnabled, "country", operaCountry)
+	logInfo("routing: applying", "warp", warpEnabled, "opera", operaEnabled, "country", operaCountry, "lanes", len(cfg.Lanes))
 	set.WarpEnabled = warpEnabled
 	if warpEnabled && !set.WarpRegistered() {
 		logInfo("warp: registering new Cloudflare WARP account")

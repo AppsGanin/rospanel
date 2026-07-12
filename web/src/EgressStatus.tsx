@@ -64,10 +64,17 @@ export function EgressStatus() {
     OPERA_REGION[r.opera_country] ?? r.opera_country,
   );
 
-  const proxy: LaneStatus =
-    r.proxy_count > 0
-      ? { label: `${r.proxy_count} живые`, color: "green" }
-      : { label: "нет прокси", color: "gray" };
+  // One row per proxy lane. The count is how many proxies the lane RESOLVED, not
+  // how many answer — liveness is Xray's Observatory's call, and the panel doesn't
+  // query it (a dead proxy just sends the lane's balancer to direct).
+  const lanes = r.config?.lanes ?? [];
+  const laneStatus = (id: string, enabled: boolean): LaneStatus => {
+    if (!enabled) return { label: "выключена", color: "gray" };
+    const n = r.proxy_counts?.[id] ?? 0;
+    return n > 0
+      ? { label: `${n} прокси`, color: "green" }
+      : { label: "нет прокси", color: "orange" };
+  };
 
   return (
     <Card className="p-4">
@@ -75,7 +82,13 @@ export function EgressStatus() {
       <div className="divide-y divide-gray-100">
         <Row name="Cloudflare WARP" status={warp} />
         <Row name="Opera VPN" status={opera} />
-        <Row name="Прокси" status={proxy} />
+        {lanes.map((l) => (
+          <Row
+            key={l.id}
+            name={l.name?.trim() || l.id}
+            status={laneStatus(l.id, l.enabled)}
+          />
+        ))}
       </div>
     </Card>
   );

@@ -455,6 +455,20 @@ export const setLocalBackup = (c: LocalBackupConfig) =>
   })
 
 
+// EgressLane is one named proxy egress: its own upstream proxies + its own match
+// rules, so e.g. ".ru" and ".com" can leave through different proxies. `id` is a
+// stable slug (lowercase alphanumerics, no dashes — see model.ValidLaneID) that
+// routing_order references.
+export interface EgressLane {
+  id: string
+  name: string
+  enabled: boolean
+  urls: string[]
+  manual: string[]
+  domains: string[]
+  ips: string[]
+}
+
 export interface RoutingConfig {
   block_bittorrent: boolean
   block_ads: boolean
@@ -467,10 +481,7 @@ export interface RoutingConfig {
   direct_domains: string[]
   direct_ips: string[]
   routing_order: string[]
-  proxy_urls: string[]
-  proxy_manual: string[]
-  proxy_domains: string[]
-  proxy_ips: string[]
+  lanes: EgressLane[]
   proxy_refresh_minutes: number
 }
 
@@ -482,7 +493,8 @@ export interface RoutingInfo {
   opera_country: string
   opera_running: boolean
   opera_alive: boolean
-  proxy_count: number
+  proxy_count: number // total live proxies across every lane
+  proxy_counts: Record<string, number> // live proxies per lane id
 }
 
 export interface GeoCategories {
