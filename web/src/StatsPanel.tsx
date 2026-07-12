@@ -8,6 +8,7 @@ import {
 } from './api'
 import { fmtBytes, localDay, RANGES } from './format'
 import { useAction } from './hooks'
+import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
@@ -17,6 +18,7 @@ const PALETTE = [
 ]
 
 export function StatsPanel() {
+  const isAdmin = useIsAdmin()
   const [range, setRange] = useState('30')
   const [series, setSeries] = useState<DailyPoint[]>([])
   const [totals, setTotals] = useState<UserTotal[]>([])
@@ -102,9 +104,12 @@ export function StatsPanel() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl value={range} onChange={setRange} data={RANGES} />
-        <Button color="red" variant="light" loading={busy} onClick={doReset}>
-          Сбросить статистику
-        </Button>
+        {/* Reading the numbers is the operator's job; wiping them is not. */}
+        {isAdmin && (
+          <Button color="red" variant="light" loading={busy} onClick={doReset}>
+            Сбросить статистику
+          </Button>
+        )}
       </div>
 
       <Card className="p-4">
