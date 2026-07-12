@@ -38,28 +38,17 @@ func (m *Manager) SetTimezone(name string) error {
 }
 
 // ChangeAdminPassword hashes and stores a new password for the given admin and
-// lifts the forced-password-change gate (a successful change is exactly what the
-// gate is waiting for).
+// lifts that admin's forced-password-change gate (a password the admin picked
+// themselves is exactly what the gate is waiting for).
 func (m *Manager) ChangeAdminPassword(adminID int64, newPassword string) error {
-	if len(newPassword) < 8 {
-		return invalid("пароль должен быть не короче 8 символов")
+	if len(newPassword) < minAdminPassword {
+		return invalid("пароль должен быть не короче %d символов", minAdminPassword)
 	}
 	hash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return err
 	}
-	if err := m.store.UpdateAdminPassword(adminID, hash); err != nil {
-		return err
-	}
-	return m.store.SetMustChangePassword(false)
-}
-
-// MustChangePassword reports whether the panel is gated on a forced default-password
-// change. A store error is treated as "not gated" so a transient read failure can't
-// lock the operator out of their own panel.
-func (m *Manager) MustChangePassword() bool {
-	must, err := m.store.MustChangePassword()
-	return err == nil && must
+	return m.store.UpdateAdminPassword(adminID, hash, false)
 }
 
 // FinishSetup marks the first-run wizard as completed.

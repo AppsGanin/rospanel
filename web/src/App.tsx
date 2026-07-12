@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getMe, setUnauthorizedHandler } from './api'
+import { getMe, type Role, setUnauthorizedHandler } from './api'
 import { Spinner } from './ui'
 import { Login } from './Login'
 import { Dashboard } from './Dashboard'
+import { ForcePassword } from './ForcePassword'
 import { Wizard } from './Wizard'
 import { Agreement, agreementAccepted } from './Agreement'
 import { Donate } from './Donate'
 import { BrandProvider } from './brand'
+import { RoleProvider } from './role'
 
-type AuthState = 'loading' | 'out' | 'setup' | 'in'
+// 'password' is where a colleague lands at their first sign-in, still holding the
+// temporary password the owner gave them: the server refuses everything else until
+// they replace it, so the SPA must not pretend the dashboard is reachable.
+type AuthState = 'loading' | 'out' | 'setup' | 'password' | 'in'
 
 export function App() {
   return (
@@ -21,6 +26,7 @@ export function App() {
 function AppInner() {
   const [state, setState] = useState<AuthState>('loading')
   const [username, setUsername] = useState('')
+  const [role, setRole] = useState<Role>('operator')
   const [version, setVersion] = useState('')
   const [billingEnabled, setBillingEnabled] = useState(false)
   const [agreed, setAgreed] = useState(agreementAccepted)
@@ -31,9 +37,14 @@ function AppInner() {
     getMe()
       .then((m) => {
         setUsername(m.username)
+        setRole(m.role)
         setVersion(m.version)
         setBillingEnabled(!!m.billing_enabled)
-        setState(m.setup_done ? 'in' : 'setup')
+        // The first-run wizard covers the owner's own password step, so it wins:
+        // an install that hasn't been set up yet goes there, not to the bare
+        // password screen. Everyone added later gets the password screen.
+        if (!m.setup_done) return setState('setup')
+        setState(m.must_change_password ? 'password' : 'in')
       })
       .catch(() => setState('out'))
   }, [])
@@ -68,17 +79,21 @@ function AppInner() {
     )
   } else if (state === 'setup') {
     content = <Wizard onDone={check} />
+  } else if (state === 'password') {
+    content = <ForcePassword username={username} onDone={check} />
   } else {
     content = (
-      <Dashboard
-        username={username}
-        version={version}
-        billingEnabled={billingEnabled}
-        onLogout={() => setState('out')}
-        onShowAgreement={openAgreement}
-        onShowDonate={openDonate}
-        onAccountChanged={check}
-      />
+      <RoleProvider role={role}>
+        <Dashboard
+          username={username}
+          version={version}
+          billingEnabled={billingEnabled}
+          onLogout={() => setState('out')}
+          onShowAgreement={openAgreement}
+          onShowDonate={openDonate}
+          onAccountChanged={check}
+        />
+      </RoleProvider>
     )
   }
 

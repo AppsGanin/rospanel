@@ -289,19 +289,11 @@ func (s *Store) SetTimezone(tz string) error { return s.setSetting("timezone", t
 // SetSetupDone marks the first-run wizard as completed.
 func (s *Store) SetSetupDone(done bool) error { return s.setSetting("setup_done", done) }
 
-// MustChangePassword reports whether the admin must replace the default password
-// before the rest of the panel unlocks (set at first-run bootstrap, cleared on the
-// first password change).
-func (s *Store) MustChangePassword() (bool, error) {
-	var v int
-	err := s.db.QueryRow(`SELECT must_change_password FROM settings WHERE id = 1`).Scan(&v)
-	return v != 0, err
-}
-
-// SetMustChangePassword sets or clears the forced-password-change gate.
-func (s *Store) SetMustChangePassword(must bool) error {
-	return s.setSetting("must_change_password", must)
-}
+// The forced-password-change gate used to live here, on the settings singleton.
+// It now lives per-admin (admins.must_change_password) — with several admins,
+// "this panel is gated" and "this admin is gated" are different questions, and only
+// the second one is answerable. Migration 0023 moved the value across; the settings
+// column is still there but nothing reads or writes it. See store/admins.go.
 
 // protocolColumn maps a public protocol name to its settings toggle column.
 var protocolColumn = map[string]string{

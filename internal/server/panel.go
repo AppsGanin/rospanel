@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	"github.com/AppsGanin/rospanel/internal/version"
@@ -99,20 +101,54 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 
 func (rt *Router) panelMux() http.Handler {
 	mux := http.NewServeMux()
-	// authed registers a route behind the session check — so a new sensitive route
-	// can't silently be added without auth.
-	authed := func(pattern string, h http.HandlerFunc) {
-		mux.HandleFunc(pattern, rt.requireAuth(h))
+	// Route tiers. Every helper below puts the route behind the session check — so a
+	// new sensitive route can't silently be added without auth — and additionally
+	// pins the minimum role that may call it.
+	//
+	// authed (admin and up) is the default on purpose: a route added later without a
+	// second thought lands closed to operators rather than open to them. Opening one
+	// up to operators is then a deliberate act — authedOp — visible in this list.
+	//
+	// Every one of them also routes the handler through rt.audited, which writes the
+	// admin trail (see audit.go). It sits INSIDE the auth check, so the row already
+	// knows who is acting; and it is applied here, once, rather than in each handler
+	// — that is what makes "no mutating route ships unaudited" a property of the
+	// router instead of a habit.
+	register := func(tier, pattern string, h http.HandlerFunc) {
+		rt.routes = append(rt.routes, pattern) // for the exhaustiveness test
+		mux.HandleFunc(pattern, rt.requireRole(tier, rt.audited(pattern, h)))
 	}
-	// authedID is authed for routes carrying an {id} segment: it parses (and
+	authedAny := func(pattern string, h http.HandlerFunc) { // any signed-in admin
+		rt.routes = append(rt.routes, pattern)
+		mux.HandleFunc(pattern, rt.requireAuth(rt.audited(pattern, h)))
+	}
+	authedOp := func(pattern string, h http.HandlerFunc) { // operator and up
+		register(model.RoleOperator, pattern, h)
+	}
+	authed := func(pattern string, h http.HandlerFunc) { // admin and up
+		register(model.RoleAdmin, pattern, h)
+	}
+	authedOwner := func(pattern string, h http.HandlerFunc) { // owner only
+		register(model.RoleOwner, pattern, h)
+	}
+	// withID adapts a handler for routes carrying an {id} segment: it parses (and
 	// validates) the id once, so the handler receives it directly instead of
 	// repeating the pathID/ok dance.
-	authedID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
-		authed(pattern, func(w http.ResponseWriter, r *http.Request) {
+	withID := func(h func(http.ResponseWriter, *http.Request, int64)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
 			if id, ok := pathID(w, r); ok {
 				h(w, r, id)
 			}
-		})
+		}
+	}
+	authedID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
+		authed(pattern, withID(h))
+	}
+	authedOpID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
+		authedOp(pattern, withID(h))
+	}
+	authedOwnerID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
+		authedOwner(pattern, withID(h))
 	}
 	mux.HandleFunc("POST /api/login", rt.login)
 	mux.HandleFunc("POST /api/logout", rt.logout)
@@ -123,13 +159,26 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/branding", rt.saveBranding)
 	authed("POST /api/settings/branding/logo", rt.uploadBrandingLogo)
 	authed("DELETE /api/settings/branding/logo", rt.deleteBrandingLogo)
-	authed("GET /api/me", rt.me)
+	// Your own account: every role reaches these, whatever their tier — including
+	// while gated on a forced password change (see mustChangeAllowed), which is the
+	// only way out of that state.
+	authedAny("GET /api/me", rt.me)
+	authedAny("POST /api/setup/password", rt.setupPassword)
+	authedAny("POST /api/account/credentials", rt.updateCredentials)
+	// The admin roster and its trail — owner only. Who signed in from where, who
+	// created or removed whom, who changed what setting: same tier as the roster
+	// itself.
+	authedOwner("GET /api/admin-audit", rt.adminAudit)
+	authedOwner("GET /api/admin-audit/catalog", rt.adminAuditCatalog)
+	authedOwner("GET /api/admins", rt.listAdmins)
+	authedOwner("POST /api/admins", rt.createAdmin)
+	authedOwnerID("POST /api/admins/{id}/role", rt.setAdminRole)
+	authedOwnerID("POST /api/admins/{id}/password", rt.resetAdminPassword)
+	authedOwnerID("DELETE /api/admins/{id}", rt.deleteAdmin)
 	authed("GET /api/update", rt.checkUpdate)
 	authed("POST /api/update", rt.applyUpdate)
-	authed("POST /api/setup/password", rt.setupPassword)
 	authed("POST /api/setup/timezone", rt.setupTimezone)
 	authed("POST /api/setup/finish", rt.setupFinish)
-	authed("POST /api/account/credentials", rt.updateCredentials)
 	authed("GET /api/settings", rt.getSettings)
 	authed("POST /api/settings/secret", rt.regenSecret)
 	authed("POST /api/settings/decoy", rt.setDecoyTemplate)
@@ -142,8 +191,8 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/geo/update", rt.updateGeo)
 	authed("GET /api/routing", rt.getRouting)
 	authed("POST /api/routing", rt.saveRouting)
-	authed("GET /api/system/stream", rt.systemStream)
-	authed("GET /api/health", rt.health)
+	authedOp("GET /api/system/stream", rt.systemStream)
+	authedOp("GET /api/health", rt.health)
 	authed("GET /api/xray/config", rt.xrayConfig)
 	authed("GET /api/xray/status", rt.xrayStatus)
 	authed("POST /api/xray/restart", rt.xrayRestart)
@@ -156,24 +205,28 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/reset", rt.factoryReset)
 	authed("GET /api/connections", rt.connections)
 	authed("POST /api/connections", rt.applyConnections)
-	authed("GET /api/users", rt.listUsers)
-	authed("POST /api/users", rt.createUser)
-	authed("POST /api/users/bulk", rt.bulkUsers)
-	authedID("DELETE /api/users/{id}", rt.deleteUser)
-	authedID("POST /api/users/{id}/reset", rt.resetUserTraffic)
-	authedID("POST /api/users/{id}/limits", rt.setUserLimits)
-	authedID("POST /api/users/{id}/enabled", rt.setUserEnabled)
-	authedID("POST /api/users/{id}/name", rt.renameUser)
-	authedID("GET /api/users/{id}/connections", rt.userConnections)
-	authedID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
-	authedID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
-	authedID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
-	authedID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
-	authedID("POST /api/users/{id}/plan", rt.setUserPlan)
-	authedID("GET /api/users/{id}/events", rt.userEvents)
-	authed("GET /api/events", rt.events)
-	authed("GET /api/events/catalog", rt.eventCatalog)
-	authed("GET /api/billing", rt.getBilling)
+	// End users, the journal and stats are the operator's job — everything below is
+	// open from RoleOperator up.
+	authedOp("GET /api/users", rt.listUsers)
+	authedOp("POST /api/users", rt.createUser)
+	authedOp("POST /api/users/bulk", rt.bulkUsers)
+	authedOpID("DELETE /api/users/{id}", rt.deleteUser)
+	authedOpID("POST /api/users/{id}/reset", rt.resetUserTraffic)
+	authedOpID("POST /api/users/{id}/limits", rt.setUserLimits)
+	authedOpID("POST /api/users/{id}/enabled", rt.setUserEnabled)
+	authedOpID("POST /api/users/{id}/name", rt.renameUser)
+	authedOpID("GET /api/users/{id}/connections", rt.userConnections)
+	authedOpID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
+	authedOpID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
+	authedOpID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
+	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
+	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
+	authedOpID("GET /api/users/{id}/events", rt.userEvents)
+	authedOp("GET /api/events", rt.events)
+	authedOp("GET /api/events/catalog", rt.eventCatalog)
+	// Read-only: the user card lists the plans it can assign. The billing *settings*
+	// (POST below) and the payment provider keys stay admin-only.
+	authedOp("GET /api/billing", rt.getBilling)
 	authed("POST /api/billing", rt.saveBilling)
 	authed("POST /api/billing/plans", rt.saveTariffPlan)
 	authedID("DELETE /api/billing/plans/{id}", rt.deleteTariffPlan)
@@ -184,8 +237,8 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/payments", rt.getPayments)
 	authed("POST /api/payments", rt.savePayments)
 	authed("GET /api/payments/stats", rt.paymentStats)
-	authed("GET /api/stats/series", rt.statsSeries)
-	authed("GET /api/stats/users", rt.statsByUser)
+	authedOp("GET /api/stats/series", rt.statsSeries)
+	authedOp("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)
 	authed("POST /api/tls", rt.setACME)
@@ -236,22 +289,37 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, hash, err := rt.mgr.Store().GetAdminAuth(username)
+	// Sign-ins are audited here rather than by the audit middleware: a failed one —
+	// the row actually worth having — never reaches a success path, and neither
+	// attempt has a session for the middleware to read an actor from. The attempted
+	// login is recorded as the target; it is not a secret, and "someone tried to sign
+	// in as owner from 1.2.3.4, twelve times" is the whole point of the row.
+	auditLogin := func(action string) {
+		rt.mgr.AddAdminAudit(model.AdminAudit{
+			Action: action, Target: username,
+			ActorKind: model.ActorAdmin, ActorName: username, IP: ip,
+		})
+	}
+
+	id, hash, role, err := rt.mgr.Store().GetAdminAuth(username)
 	if err != nil {
 		// Unknown user: equalize timing against the real verify path.
 		auth.DummyVerify()
 		rt.limiter.fail(ip, username)
 		slog.Warn("login: unknown user", "ip", ip)
+		auditLogin(model.AuditLoginFailed)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
 	if !auth.VerifyPassword(hash, req.Password) {
 		rt.limiter.fail(ip, username)
 		slog.Warn("login: bad password", "user", username, "ip", ip)
+		auditLogin(model.AuditLoginFailed)
 		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
 		return
 	}
 	rt.limiter.success(ip, username)
+	auditLogin(model.AuditLogin)
 
 	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second)
 	if err != nil {
@@ -259,7 +327,12 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "не удалось создать сессию")
 		return
 	}
-	slog.Info("login: authenticated", "user", req.Username, "ip", ip)
+	// Best-effort: the roster shows it, nothing depends on it, and a failed write
+	// must not cost an otherwise valid login.
+	if err := rt.mgr.Store().TouchAdminLogin(id); err != nil {
+		slog.Warn("login: could not record last-login", "user", username, "err", err)
+	}
+	slog.Info("login: authenticated", "user", req.Username, "role", role, "ip", ip)
 	rt.setSessionCookie(w, r, token, rt.cookiePath())
 	writeOK(w)
 }
@@ -283,6 +356,16 @@ func (rt *Router) setSessionCookie(w http.ResponseWriter, r *http.Request, token
 
 func (rt *Router) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		// Resolve who is leaving before the session is destroyed — afterwards there is
+		// nothing left to attribute the row to.
+		if a, ok := rt.mgr.Store().LookupSession(c.Value); ok {
+			rt.mgr.AddAdminAudit(model.AdminAudit{
+				Action:    model.AuditLogout,
+				ActorKind: model.ActorAdmin,
+				ActorName: a.Username,
+				IP:        clientIP(r),
+			})
+		}
 		_ = rt.mgr.Store().DeleteSession(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -293,14 +376,16 @@ func (rt *Router) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
-	c, _ := r.Cookie(sessionCookie)
-	_, username, _ := rt.mgr.Store().LookupSession(c.Value)
+	// requireAuth already resolved the session; reading it back off the context keeps
+	// this from being the one place that could disagree with what the gate saw.
+	a, _ := sessionAdminFrom(r.Context())
 	resp := map[string]any{
-		"username":             username,
+		"username":             a.Username,
+		"role":                 a.Role,
 		"setup_done":           true,
 		"timezone":             "",
 		"version":              version.Version,
-		"must_change_password": rt.mgr.MustChangePassword(),
+		"must_change_password": a.MustChangePassword,
 	}
 	if set, err := rt.mgr.Store().GetSettings(); err == nil {
 		resp["setup_done"] = set.SetupDone
@@ -310,14 +395,20 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// adminID returns the authenticated admin's id from the session cookie.
+// ctxKeyAdmin carries the resolved session admin down the request. requireAuth is
+// the only writer, so a handler that reads it is looking at the same account the
+// auth gate and the role check just approved.
+type ctxKeyAdmin struct{}
+
+func sessionAdminFrom(ctx context.Context) (store.SessionAdmin, bool) {
+	a, ok := ctx.Value(ctxKeyAdmin{}).(store.SessionAdmin)
+	return a, ok
+}
+
+// adminID returns the authenticated admin's id.
 func (rt *Router) adminID(r *http.Request) (int64, bool) {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return 0, false
-	}
-	id, _, ok := rt.mgr.Store().LookupSession(c.Value)
-	return id, ok
+	a, ok := sessionAdminFrom(r.Context())
+	return a.ID, ok
 }
 
 // verifyStepUp re-checks the admin password before a sensitive operation. It is
@@ -387,8 +478,12 @@ var mustChangeAllowed = map[string]bool{
 
 // requireAuth rejects requests without a valid session. Because this only runs
 // under the secret path, a 401 here never reveals the panel to outsiders. While the
-// default password is still in place it also blocks everything but the
-// password-change / restore endpoints (see mustChangeAllowed).
+// admin still carries a password someone else picked, it also blocks everything but
+// the password-change / restore endpoints (see mustChangeAllowed).
+//
+// The gate is per-account: a colleague who has not yet replaced the temporary
+// password the owner handed them is locked to the password screen, while everyone
+// else keeps working.
 func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
@@ -396,17 +491,37 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "не авторизован")
 			return
 		}
-		_, username, ok := rt.mgr.Store().LookupSession(c.Value)
+		a, ok := rt.mgr.Store().LookupSession(c.Value)
 		if !ok {
 			writeErr(w, http.StatusUnauthorized, "не авторизован")
 			return
 		}
-		if !mustChangeAllowed[r.URL.Path] && rt.mgr.MustChangePassword() {
-			writeErr(w, http.StatusForbidden, "смените пароль администратора по умолчанию, прежде чем пользоваться панелью")
+		if !mustChangeAllowed[r.URL.Path] && a.MustChangePassword {
+			writeErr(w, http.StatusForbidden, "смените пароль, прежде чем пользоваться панелью")
 			return
 		}
 		// Stamp the acting admin onto the context so the audit log can attribute every
-		// mutation this request makes, without each handler re-reading the cookie.
-		next(w, r.WithContext(actor.With(r.Context(), actor.Admin(username))))
+		// mutation this request makes, without each handler re-reading the cookie, and
+		// carry the resolved session for the role check and the handlers.
+		ctx := actor.With(r.Context(), actor.Admin(a.Username))
+		next(w, r.WithContext(context.WithValue(ctx, ctxKeyAdmin{}, a)))
 	}
+}
+
+// requireRole is requireAuth plus a floor on the caller's role. Roles are a ladder
+// (operator < admin < owner), so the check is a rank comparison — see model.RoleAtLeast.
+//
+// A caller below the tier gets 403, never 401: their session is perfectly valid, so
+// the SPA must show "недостаточно прав" rather than bounce them to the login screen.
+func (rt *Router) requireRole(tier string, next http.HandlerFunc) http.HandlerFunc {
+	return rt.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		a, ok := sessionAdminFrom(r.Context())
+		if !ok || !model.RoleAtLeast(a.Role, tier) {
+			slog.Warn("panel: role check failed",
+				"admin", a.Username, "role", a.Role, "need", tier, "path", r.URL.Path)
+			writeErr(w, http.StatusForbidden, "недостаточно прав")
+			return
+		}
+		next(w, r)
+	})
 }

@@ -44,6 +44,7 @@ type Router struct {
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
 	apiKeys    *loginLimiter  // per-IP lockout after repeated invalid API keys
 	streams    *streamGate    // caps concurrent SSE streams
+	routes     []string       // panel route patterns, in registration order (audit exhaustiveness test)
 
 	mu        sync.RWMutex
 	secret    string
