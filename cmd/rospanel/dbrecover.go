@@ -59,6 +59,13 @@ func ensureHealthyDB(dbPath, dataDir string) error {
 
 	newest := filepath.Join(dataDir, backup.LocalBackupDir, archives[0])
 	if rerr := backup.Restore(newest, dataDir); rerr != nil {
+		// Restore may have written nothing, leaving dbPath absent. If we returned now,
+		// the next boot's store.Check would read the missing file as a fresh install
+		// and start blank with admin/admin — silently masking the corruption. Move the
+		// quarantined file back so the next boot re-detects the damage and re-alerts.
+		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
+			_ = os.Rename(quarantine, dbPath)
+		}
 		return fmt.Errorf("database is corrupt and restoring %s failed: %w "+
 			"(the damaged database is preserved at %s)", archives[0], rerr, quarantine)
 	}
