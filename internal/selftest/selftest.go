@@ -26,6 +26,7 @@ import (
 	"golang.org/x/net/proxy"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/netinfo"
 )
 
 // Result is one protocol's verdict.
@@ -50,14 +51,30 @@ func Run(ctx context.Context, binPath string, set *model.Settings, u model.User)
 		return []Result{{OK: false, Detail: "бинарник Xray не найден — проверка недоступна"}}
 	}
 
+	// The server's own public IP, resolved once, is the baseline for "did traffic go
+	// out directly?". Prefer the configured host when it's already an IP (the bare-IP
+	// install) to avoid a network call; otherwise ask the network. Empty ⇒ we simply
+	// don't annotate the egress, rather than guess.
+	serverIP := serverPublicIP(set)
+
 	var results []Result
 	for _, p := range enabledProtocols(set) {
-		results = append(results, runOne(ctx, binPath, p, set, u))
+		results = append(results, runOne(ctx, binPath, p, set, u, serverIP))
 	}
 	if len(results) == 0 {
 		return []Result{{OK: false, Detail: "нет включённых протоколов для проверки"}}
 	}
 	return results
+}
+
+// serverPublicIP returns the address traffic egresses from when it goes out
+// directly, so the probe can tell a direct exit from one routed through a WARP/Opera
+// lane or a second interface.
+func serverPublicIP(set *model.Settings) string {
+	if net.ParseIP(strings.TrimSpace(set.Host)) != nil {
+		return strings.TrimSpace(set.Host)
+	}
+	return netinfo.PublicIP()
 }
 
 // protoSpec pairs a protocol key with the client-config builder that dials it.
@@ -85,7 +102,7 @@ func enabledProtocols(set *model.Settings) []protoSpec {
 	return specs
 }
 
-func runOne(ctx context.Context, binPath string, spec protoSpec, set *model.Settings, u model.User) Result {
+func runOne(ctx context.Context, binPath string, spec protoSpec, set *model.Settings, u model.User, serverIP string) Result {
 	label := set.ProtoLabel(spec.key)
 	res := Result{Proto: spec.key, Label: label}
 
@@ -124,12 +141,24 @@ func runOne(ctx context.Context, binPath string, spec protoSpec, set *model.Sett
 
 	res.OK = true
 	res.ExitIP = ip
-	if ip != "" {
-		res.Detail = "трафик проходит, выход через " + ip
-	} else {
-		res.Detail = "трафик проходит"
-	}
+	res.Detail = describeExit(ip, serverIP)
 	return res
+}
+
+// describeExit phrases the success line, noting when traffic left through something
+// other than the server's own address. A mismatch isn't a fault — it's exactly what
+// a WARP/Opera lane or a multi-IP host looks like — so the wording stays neutral and
+// just tells the operator what they're seeing.
+func describeExit(exitIP, serverIP string) string {
+	switch {
+	case exitIP == "":
+		return "трафик проходит"
+	case serverIP != "" && exitIP != serverIP:
+		return "трафик проходит, выход через " + exitIP +
+			" — не прямой адрес сервера (полоса WARP/Opera, прокси или второй IP)"
+	default:
+		return "трафик проходит, прямой выход (" + exitIP + ")"
+	}
 }
 
 // probeThrough dials the public internet through the local SOCKS proxy and returns

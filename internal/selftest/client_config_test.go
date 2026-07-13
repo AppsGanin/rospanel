@@ -190,6 +190,26 @@ func TestBuildRealityShape(t *testing.T) {
 	}
 }
 
+// describeExit must call out an egress that isn't the server's own IP (traffic went
+// through a lane) without treating it as a failure, and stay quiet when it can't
+// establish the baseline.
+func TestDescribeExit(t *testing.T) {
+	if got := describeExit("1.2.3.4", "1.2.3.4"); !strings.Contains(got, "прямой") {
+		t.Errorf("matching IPs should read as a direct exit, got %q", got)
+	}
+	viaLane := describeExit("9.9.9.9", "1.2.3.4")
+	if !strings.Contains(viaLane, "9.9.9.9") || !strings.Contains(viaLane, "не прямой") {
+		t.Errorf("mismatched IPs should flag a non-direct exit, got %q", viaLane)
+	}
+	// Unknown server IP: report success, don't guess at the egress.
+	if got := describeExit("9.9.9.9", ""); strings.Contains(got, "не прямой") {
+		t.Errorf("with no baseline, must not claim a lane, got %q", got)
+	}
+	if got := describeExit("", "1.2.3.4"); got != "трафик проходит" {
+		t.Errorf("no exit IP → plain success, got %q", got)
+	}
+}
+
 func TestRingBufferKeepsTail(t *testing.T) {
 	rb := newRingBuffer(8)
 	_, _ = rb.Write([]byte("abcdefghij")) // 10 bytes into an 8-byte buffer
