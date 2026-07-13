@@ -268,6 +268,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/nodes/{id}/regen-join", rt.regenNodeJoin)
 	authedID("POST /api/nodes/{id}/update", rt.updateNodeVersion)
 	authed("POST /api/nodes/update-all", rt.updateAllNodes)
+	authedID("POST /api/nodes/{id}/provision", rt.provisionNode)
 	authed("GET /api/webhooks", rt.listWebhooks)
 	authed("POST /api/webhooks", rt.createWebhook)
 	authedID("POST /api/webhooks/{id}", rt.updateWebhook)

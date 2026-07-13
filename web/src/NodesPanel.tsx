@@ -4,6 +4,7 @@ import {
   deleteNode,
   getSettings,
   listNodes,
+  provisionNode,
   regenNodeJoin,
   setNodeEnabled,
   updateAllNodes,
@@ -18,10 +19,13 @@ import {
   Button,
   Card,
   CenterLoader,
+  cn,
   Code,
   Modal,
+  PasswordInput,
   Select,
   Switch,
+  Textarea,
   TextInput,
   useConfirm,
 } from "./ui";
@@ -75,19 +79,33 @@ function InstallCommandModal({
   );
 }
 
-// AddNodeDialog collects a name + host and creates the node.
+// AddNodeDialog collects a name + host and creates the node, either handing back
+// the copy-paste install command or (auto mode) installing it over SSH.
 function AddNodeDialog({
   onClose,
   onCreated,
+  onDone,
 }: {
   onClose: () => void;
   onCreated: (command: string) => void;
+  onDone: () => void;
 }) {
+  const [mode, setMode] = useState<"command" | "ssh">("command");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const submit = async () => {
+  // SSH (auto) fields.
+  const [sshHost, setSshHost] = useState("");
+  const [sshPort, setSshPort] = useState("22");
+  const [sshUser, setSshUser] = useState("root");
+  const [sshAuth, setSshAuth] = useState<"password" | "key">("password");
+  const [sshPassword, setSshPassword] = useState("");
+  const [sshKey, setSshKey] = useState("");
+  const [log, setLog] = useState<string[]>([]);
+  const [installing, setInstalling] = useState(false);
+
+  const submitCommand = async () => {
     if (!name.trim() || !host.trim()) return;
     setBusy(true);
     try {
@@ -99,15 +117,59 @@ function AddNodeDialog({
     }
   };
 
+  const submitSSH = async () => {
+    if (!name.trim() || !host.trim() || !sshHost.trim()) return;
+    if (sshAuth === "password" && !sshPassword) return;
+    if (sshAuth === "key" && !sshKey.trim()) return;
+    setInstalling(true);
+    setLog(["Создаём ноду…"]);
+    try {
+      const res = await createNode(name.trim(), host.trim());
+      const outcome = await provisionNode(
+        res.id,
+        {
+          ssh_host: sshHost.trim(),
+          ssh_port: Number(sshPort) || 22,
+          ssh_user: sshUser.trim(),
+          ssh_password: sshAuth === "password" ? sshPassword : undefined,
+          ssh_key: sshAuth === "key" ? sshKey : undefined,
+        },
+        (line) => setLog((l) => [...l, line]),
+      );
+      if (outcome === "done") {
+        notifySuccess("Нода установлена по SSH");
+        onDone();
+      } else {
+        notifyError("Установка завершилась с ошибкой — см. лог");
+        setInstalling(false);
+      }
+    } catch (e) {
+      setLog((l) => [...l, "ОШИБКА: " + errMessage(e)]);
+      notifyError(errMessage(e));
+      setInstalling(false);
+    }
+  };
+
   return (
-    <Modal open onClose={onClose} title="Добавить ноду">
+    <Modal open onClose={onClose} title="Добавить ноду" size="lg">
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+        {(["command", "ssh"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            disabled={installing}
+            className={cn(
+              "rounded-md px-3 py-1 transition",
+              mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+            )}
+          >
+            {m === "command" ? "Команда установки" : "Установить по SSH"}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-3">
-        <TextInput
-          label="Название"
-          value={name}
-          onChange={setName}
-          placeholder="Нидерланды #1"
-        />
+        <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
         <TextInput
           label="Домен или IP ноды"
           value={host}
@@ -120,14 +182,76 @@ function AddNodeDialog({
           не отработал, нода временно на самоподписанном, и панель вшивает в
           ссылки его отпечаток, чтобы клиенты подключались сразу.
         </p>
+
+        {mode === "ssh" && (
+          <div className="space-y-3 border-t border-gray-100 pt-3">
+            <p className="text-xs text-ink-muted">
+              Панель зайдёт на сервер по SSH и установит ноду сама. Данные SSH
+              нигде не сохраняются — используются только на время установки.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+              </div>
+              <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
+            </div>
+            <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
+            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+              {(["password", "key"] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setSshAuth(a)}
+                  className={cn(
+                    "rounded-md px-3 py-1 transition",
+                    sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+                  )}
+                >
+                  {a === "password" ? "Пароль" : "Ключ"}
+                </button>
+              ))}
+            </div>
+            {sshAuth === "password" ? (
+              <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
+            ) : (
+              <Textarea
+                label="Приватный ключ (PEM)"
+                value={sshKey}
+                onChange={setSshKey}
+                rows={4}
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+              />
+            )}
+          </div>
+        )}
+
+        {log.length > 0 && (
+          <div className="max-h-56 overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs text-gray-100">
+            {log.map((l, i) => (
+              <div key={i} className={l.startsWith("ОШИБКА") ? "text-red-400" : ""}>
+                {l}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
       <div className="mt-5 flex justify-end gap-2">
-        <Button variant="light" color="gray" onClick={onClose}>
-          Отмена
+        <Button variant="light" color="gray" onClick={onClose} disabled={installing}>
+          {installing ? "Закрыть" : "Отмена"}
         </Button>
-        <Button onClick={submit} loading={busy} disabled={!name.trim() || !host.trim()}>
-          Создать
-        </Button>
+        {mode === "command" ? (
+          <Button onClick={submitCommand} loading={busy} disabled={!name.trim() || !host.trim()}>
+            Создать
+          </Button>
+        ) : (
+          <Button
+            onClick={submitSSH}
+            loading={installing}
+            disabled={!name.trim() || !host.trim() || !sshHost.trim()}
+          >
+            Установить
+          </Button>
+        )}
       </div>
     </Modal>
   );
@@ -452,6 +576,10 @@ export function NodesPanel() {
           onCreated={(cmd) => {
             setAdding(false);
             setInstallCmd(cmd);
+            load();
+          }}
+          onDone={() => {
+            setAdding(false);
             load();
           }}
         />

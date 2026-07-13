@@ -1156,3 +1156,58 @@ export const updateNodeVersion = (id: number) =>
 
 export const updateAllNodes = () =>
   api<{ nodes: number }>('api/nodes/update-all', { method: 'POST' })
+
+// ProvisionCreds are the throwaway SSH credentials used to install a node over SSH.
+export interface ProvisionCreds {
+  ssh_host: string
+  ssh_port: number
+  ssh_user: string
+  ssh_password?: string
+  ssh_key?: string
+  ssh_key_passphrase?: string
+}
+
+// provisionNode installs a created node onto a remote server over SSH, streaming
+// the install log line-by-line to onLine. Resolves "done" or "error" when the
+// stream ends. The response is an SSE stream over a POST (so credentials go in the
+// body, not the URL), read here with a stream reader rather than EventSource.
+export async function provisionNode(
+  id: number,
+  creds: ProvisionCreds,
+  onLine: (line: string) => void,
+): Promise<'done' | 'error'> {
+  const res = await fetch(`api/nodes/${id}/provision`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADER },
+    body: JSON.stringify(creds),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let outcome: 'done' | 'error' = 'error'
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    // SSE frames are separated by a blank line; each carries a "data: <text>" line.
+    const frames = buf.split('\n\n')
+    buf = frames.pop() ?? ''
+    for (const f of frames) {
+      const line = f.replace(/^data: ?/, '')
+      if (line === 'event:done') {
+        outcome = 'done'
+      } else if (line === 'event:error') {
+        outcome = 'error'
+      } else if (line) {
+        onLine(line)
+      }
+    }
+  }
+  return outcome
+}

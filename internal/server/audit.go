@@ -108,6 +108,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/{id}/regen-join": set("Нода · новый токен установки"),
 	"POST /api/nodes/{id}/update":     set("Нода · обновление"),
 	"POST /api/nodes/update-all":      set("Обновление всех нод"),
+	"POST /api/nodes/{id}/provision":  set("Нода · установка по SSH"),
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
