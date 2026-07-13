@@ -462,6 +462,12 @@ type Settings struct {
 	// integrations. Keys themselves live in the api_keys table.
 	APIPath string `json:"-"`
 
+	// NodeAPIPath is the unguessable URL segment the node sync API is mounted under
+	// (/<node_api_path>/v1/{join,sync}). Empty ⇒ no nodes exist yet and the surface
+	// falls through to the decoy. Kept separate from APIPath and the panel secret so
+	// rotating either never orphans a joined node.
+	NodeAPIPath string `json:"-"`
+
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 
 	// Computed per request (NOT stored). When the active cert isn't CA-trusted (a

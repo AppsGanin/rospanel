@@ -120,6 +120,14 @@ type Manager struct {
 	operaSup *opera.Supervisor // runs/restarts the opera-proxy helper
 
 	health laneHealth // liveness of the Opera lane (probed in healthLoop)
+
+	// nodes tracks per-node wake channels so a config change wakes any held node
+	// long-poll to re-pull desired state (see manager_nodes.go).
+	nodes *nodeRegistry
+	// nodePathCB live-swaps the node-API URL segment into the router when the first
+	// node is created (nil until the server registers it; nil-safe for CLI/tests).
+	nodePathMu sync.Mutex
+	nodePathCB func(string)
 }
 
 // New builds a Manager. opts carries non-DB generation parameters (e.g. the
@@ -139,6 +147,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		operaDir:    operaDir,
 		operaSup:    opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:   make(chan webhookJob, webhookQueueSize),
+		nodes:       newNodeRegistry(),
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
@@ -260,6 +269,9 @@ func (m *Manager) reconcileLoop() {
 		} else {
 			m.syncUsersOnce()
 		}
+		// The working set / config just changed locally — wake every connected node
+		// so it re-pulls its desired state (all nodes serve the same user set).
+		m.notifyNodes()
 	}
 }
 

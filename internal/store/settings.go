@@ -51,7 +51,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, trojan_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
-		       sub_announce, user_autodelete_days
+		       sub_announce, user_autodelete_days, node_api_path
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -83,7 +83,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
-		&st.SubAnnounce, &st.UserAutoDeleteDays,
+		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath,
 	)
 	if err != nil {
 		return nil, err
@@ -345,6 +345,9 @@ func (s *Store) SetSecretPath(p string) error { return s.setSetting("panel_secre
 
 // SetAPIPath persists the external-API URL segment (empty disables the surface).
 func (s *Store) SetAPIPath(p string) error { return s.setSetting("api_path", p) }
+
+// SetNodeAPIPath persists the node sync API URL segment (generated on first node).
+func (s *Store) SetNodeAPIPath(p string) error { return s.setSetting("node_api_path", p) }
 
 // SetACMEProvider persists the ACME CA selection and (for ZeroSSL) the External
 // Account Binding credentials. An empty provider defaults to "letsencrypt".
