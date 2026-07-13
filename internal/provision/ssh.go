@@ -47,8 +47,11 @@ func Install(ctx context.Context, c Credentials, installCmd string, onLine func(
 		User: strings.TrimSpace(c.User),
 		Auth: auth,
 		// Trust-on-first-use: the operator is installing onto their own fresh server
-		// and has no prior key to pin. Record the fingerprint so it can be shown in
-		// the UI (a MITM would still need the SSH credentials to do anything).
+		// and has no prior key to pin, so we accept the presented key and surface its
+		// fingerprint. NOTE: this offers no protection against a man-in-the-middle on
+		// the SSH path — with password auth the password is sent to whoever answers.
+		// It is intended for provisioning your own box over a trusted network; prefer
+		// key auth (the signature is session-bound and can't be replayed by a MITM).
 		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
 			fp = keyFingerprint(key)
 			return nil

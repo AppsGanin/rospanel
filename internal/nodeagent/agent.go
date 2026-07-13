@@ -3,16 +3,19 @@ package nodeagent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/connguard"
@@ -59,10 +62,12 @@ type Agent struct {
 	state   *persistState
 	stateMu sync.Mutex
 
-	// decoy server on the loopback fallback dest, and the template it's serving.
-	decoySrv  *http.Server
-	decoyTmpl string
-	decoyMu   sync.Mutex
+	// decoy server on the loopback fallback dest. The listener stays up for the
+	// agent's life; decoyHandler is swapped when the template changes.
+	decoySrv     *http.Server
+	decoyHandler atomic.Pointer[http.Handler]
+	decoyTmpl    string
+	decoyMu      sync.Mutex
 
 	// Traffic accounting. Deltas accumulate into `pending`; when a sync goes out and
 	// nothing is in flight, `pending` is promoted to `inflight` with a fresh id.
@@ -114,10 +119,14 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	}
 	bin := resolveNodeXrayBin(filepath.Join(dataDir, "bin"))
 	sup := xray.NewSupervisor(bin, filepath.Join(dataDir, "xray", "config.json"), filepath.Join(dataDir, "geo"))
+	client := &http.Client{Timeout: syncTimeout}
+	if ident.Insecure {
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // opt-in via --insecure
+	}
 	a := &Agent{
 		dataDir:      dataDir,
 		ident:        ident,
-		client:       &http.Client{Timeout: syncTimeout},
+		client:       client,
 		sup:          sup,
 		certPath:     filepath.Join(dataDir, "certs", "cert.pem"),
 		keyPath:      filepath.Join(dataDir, "certs", "key.pem"),
@@ -135,6 +144,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 // revocation. Backs off when the panel is unreachable; keeps serving throughout.
 func (a *Agent) syncLoop(ctx context.Context) {
 	backoff := backoffMin
+	applyBackoff := backoffMin
 	for {
 		if ctx.Err() != nil {
 			return
@@ -162,9 +172,13 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			continue
 		}
 		if resp.PanelURL != "" && resp.PanelURL != a.ident.PanelURL {
-			slog.Info("node: panel address changed", "new", resp.PanelURL)
-			a.ident.PanelURL = resp.PanelURL
-			_ = a.ident.Save(a.dataDir)
+			if validPanelURL(resp.PanelURL) {
+				slog.Info("node: panel address changed", "new", resp.PanelURL)
+				a.ident.PanelURL = resp.PanelURL
+				_ = a.ident.Save(a.dataDir)
+			} else {
+				slog.Warn("node: ignoring malformed panel_url broadcast", "url", resp.PanelURL)
+			}
 		}
 		// Ack BEFORE a possible self-update exit: the panel already ingested this
 		// batch (that's what AckReport means), so clearing it here avoids re-sending
@@ -177,12 +191,20 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		}
 		if resp.Changed && resp.State != nil {
 			if err := a.applyState(resp.State); err != nil {
-				slog.Error("node: applying pushed config failed", "err", err)
-				// Don't persist a config we couldn't apply; retry on the next sync.
-			} else {
-				a.setLastConfig(resp.State)
-				slog.Info("node: applied new config", "hash", short(resp.State.Hash))
+				// Don't persist a config we couldn't apply. The panel keeps returning
+				// Changed=true immediately (our hash still differs), so back off here —
+				// otherwise a config this node's Xray can't parse (e.g. version skew)
+				// spins geo/ACME/`xray -test` every few seconds on both sides forever.
+				slog.Error("node: applying pushed config failed — backing off", "err", err, "backoff", applyBackoff)
+				if !sleepCtx(ctx, applyBackoff) {
+					return
+				}
+				applyBackoff = min(applyBackoff*2, backoffMax)
+				continue
 			}
+			applyBackoff = backoffMin
+			a.setLastConfig(resp.State)
+			slog.Info("node: applied new config", "hash", short(resp.State.Hash))
 		}
 		// Immediately loop for the next long-poll (the panel holds it if nothing changed).
 	}
@@ -330,33 +352,42 @@ func substituteCertPaths(raw []byte, certPath, keyPath string) []byte {
 	return bytes.ReplaceAll(out, []byte(nodeapi.KeyPathSentinel), []byte(keyPath))
 }
 
-// ensureDecoy (re)starts the loopback decoy HTTP server if the dest or template
-// changed. The listener is wrapped with proxyproto so Xray's fallback PROXY header
-// (xver=1) is stripped before the decoy handler sees the request.
+// ensureDecoy starts the loopback decoy HTTP server (once) and updates the served
+// template. The listener stays up across template changes — only the handler is
+// swapped atomically — so the masquerade is never briefly down and there's no
+// same-port relisten race. The listener is wrapped with proxyproto so Xray's
+// fallback PROXY header (xver=1) is stripped before the decoy sees the request.
 func (a *Agent) ensureDecoy(dest, template string) error {
 	if dest == "" {
 		dest = "127.0.0.1:8080"
 	}
-	a.decoyMu.Lock()
-	defer a.decoyMu.Unlock()
-	if a.decoySrv != nil && a.decoyTmpl == template {
-		return nil // already serving the right template
-	}
-	h, err := decoy.New(template)
+	h, err := decoy.New(template) // validate the template before touching the server
 	if err != nil {
 		return err
 	}
+	a.decoyMu.Lock()
+	defer a.decoyMu.Unlock()
+	var hh http.Handler = h
+	a.decoyHandler.Store(&hh) // swap the live handler (nil-safe until first set)
+	a.decoyTmpl = template
 	if a.decoySrv != nil {
-		_ = a.decoySrv.Close()
-		a.decoySrv = nil
+		return nil // already listening; the handler swap above is enough
 	}
 	ln, err := net.Listen("tcp", dest)
 	if err != nil {
 		return err
 	}
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	// The server dispatches to whatever handler is currently stored, so a later
+	// template change is a pointer swap, not a listener restart.
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if hp := a.decoyHandler.Load(); hp != nil {
+				(*hp).ServeHTTP(w, r)
+			}
+		}),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	a.decoySrv = srv
-	a.decoyTmpl = template
 	go func() {
 		_ = srv.Serve(&proxyproto.Listener{Listener: ln})
 	}()
@@ -423,6 +454,13 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// validPanelURL guards against switching to a malformed/unsafe broadcast address:
+// it must be an absolute https URL with a host (the panel always sits behind TLS).
+func validPanelURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u.Scheme == "https" && u.Host != ""
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {

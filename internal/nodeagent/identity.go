@@ -30,6 +30,10 @@ type Identity struct {
 	NodeAPI  string `json:"node_api"`  // the panel's node-API path segment
 	NodeID   int64  `json:"node_id"`
 	Token    string `json:"token"`
+	// Insecure skips TLS verification of the panel cert, for a panel without a
+	// CA-valid cert (IP-only / self-signed). Set from `--join --insecure`; it must
+	// persist so the ongoing sync uses it too, not just the one join call.
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 func identityPath(dataDir string) string { return filepath.Join(dataDir, "node.json") }
@@ -110,7 +114,7 @@ func Join(dataDir, joinURL string, insecure bool) (*Identity, error) {
 	if nodeAPI == "" {
 		nodeAPI = pathSegment(base) // …/<seg>/v1/join → <seg>
 	}
-	id := &Identity{PanelURL: panelURL, NodeAPI: nodeAPI, NodeID: jr.NodeID, Token: jr.Token}
+	id := &Identity{PanelURL: panelURL, NodeAPI: nodeAPI, NodeID: jr.NodeID, Token: jr.Token, Insecure: insecure}
 	if err := id.Save(dataDir); err != nil {
 		return nil, fmt.Errorf("save node.json: %w", err)
 	}

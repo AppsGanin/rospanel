@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/provision"
@@ -86,7 +87,15 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		PrivateKey: req.SSHKey,
 		Passphrase: req.SSHKeyPass,
 	}
-	emit := func(line string) { sseSend(w, flusher, line) }
+	// The install streams stdout and stderr from two goroutines; serialize the SSE
+	// writes so the two never touch the ResponseWriter concurrently (it isn't safe
+	// for concurrent use).
+	var emitMu sync.Mutex
+	emit := func(line string) {
+		emitMu.Lock()
+		sseSend(w, flusher, line)
+		emitMu.Unlock()
+	}
 
 	_, err = provision.Install(ctx, creds, installCmd, emit)
 	if err != nil {

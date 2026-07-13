@@ -154,14 +154,19 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID i
 
 // canonicalPanelURL returns the panel's configured public URL when the node
 // reached us at a different host than the one configured — i.e. the panel's
-// address changed and this node is still using the old one. Returns "" when the
-// node is already on the canonical host (the common case) or the configured host
-// isn't a usable public address. This auto-heals a panel move while both the old
-// and new addresses still resolve; `rospanel node set-panel` is the manual
-// fallback when they don't.
+// address changed and this node is still using the old one. This auto-heals a
+// panel move while both the old and new addresses still resolve; `rospanel node
+// set-panel` is the manual fallback when they don't.
+//
+// It only ever broadcasts a bare-domain host on the standard :443. Broadcasting an
+// IP (the panel cert may lack an IP SAN → the node's verifying sync client would
+// then fail every sync), an IPv6 literal (bracketing/URL-encoding hazards), a
+// non-standard port, or localhost would risk switching a node to an address it
+// can't reach — a one-way brick recoverable only by hand. In all those cases it
+// returns "" and the operator uses `node set-panel`.
 func (rt *Router) canonicalPanelURL(r *http.Request) string {
 	set, err := rt.mgr.Store().GetSettings()
-	if err != nil || set.Host == "" || set.Host == "127.0.0.1" {
+	if err != nil || !isBroadcastableHost(set.Host) {
 		return ""
 	}
 	reqHost := r.Host
@@ -172,6 +177,23 @@ func (rt *Router) canonicalPanelURL(r *http.Request) string {
 		return "" // already on the canonical host
 	}
 	return "https://" + set.Host
+}
+
+// isBroadcastableHost reports whether host is safe to auto-broadcast to nodes: a
+// real domain name (not an IP, not localhost/loopback, no port).
+func isBroadcastableHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return false
+	}
+	if strings.ContainsAny(host, ":/") { // port, path, or IPv6 literal
+		return false
+	}
+	if net.ParseIP(host) != nil { // an IPv4 address, not a domain
+		return false
+	}
+	// Must look like a dotted domain (has a TLD label).
+	return strings.Contains(host, ".")
 }
 
 // panelPublicURL reconstructs the panel's public base URL (scheme://host) from the

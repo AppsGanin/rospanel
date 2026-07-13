@@ -30,7 +30,9 @@ JOIN_URL=""
 JOIN_INSECURE=""
 while [ $# -gt 0 ]; do
 	case "$1" in
-		--join)      JOIN_URL="${2:-}"; shift 2 ;;
+		--join)
+			[ $# -ge 2 ] || die "--join requires a URL (from the panel's Add-node dialog)"
+			JOIN_URL="$2"; shift 2 ;;
 		--join=*)    JOIN_URL="${1#--join=}"; shift ;;
 		--insecure)  JOIN_INSECURE="--insecure"; shift ;;
 		*)           shift ;;

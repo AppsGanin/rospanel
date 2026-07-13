@@ -144,6 +144,19 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	}, nil
 }
 
+// NodeNameTaken reports whether a live node other than excludeID already uses the
+// given name (case-insensitively). Node names must be unique because they become
+// Clash proxy names / sing-box outbound tags in multi-node subscriptions, which a
+// client rejects if duplicated.
+func (s *Store) NodeNameTaken(name string, excludeID int64) (bool, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM nodes WHERE deleted_at = 0 AND id != ? AND lower(name) = lower(?)`,
+		excludeID, strings.TrimSpace(name),
+	).Scan(&n)
+	return n > 0, err
+}
+
 // ListNodes returns all live (non-tombstoned) nodes, oldest first. RawJoinToken is
 // never populated here.
 func (s *Store) ListNodes() ([]model.Node, error) {

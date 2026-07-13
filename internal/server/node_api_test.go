@@ -165,6 +165,27 @@ func TestNodeSyncRevokedAfterDelete(t *testing.T) {
 	}
 }
 
+func TestIsBroadcastableHost(t *testing.T) {
+	for _, c := range []struct {
+		host string
+		ok   bool
+	}{
+		{"panel.example.com", true},
+		{"vpn.example.co.uk", true},
+		{"", false},
+		{"localhost", false},
+		{"127.0.0.1", false},
+		{"203.0.113.7", false},            // IPv4 — cert may lack an IP SAN
+		{"2001:db8::1", false},            // IPv6 literal
+		{"panel.example.com:8443", false}, // carries a port
+		{"panel", false},                  // no TLD
+	} {
+		if got := isBroadcastableHost(c.host); got != c.ok {
+			t.Errorf("isBroadcastableHost(%q) = %v, want %v", c.host, got, c.ok)
+		}
+	}
+}
+
 func TestNodeJoinBadTokenIsDecoy(t *testing.T) {
 	h, mgr, st := nodeAPITestServer(t)
 	if _, err := mgr.CreateNode("n1", "nl1.example.com"); err != nil {

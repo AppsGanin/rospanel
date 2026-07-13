@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -319,13 +320,22 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		return nil, err
 	}
 	var out []*model.Settings
+	seen := map[string]int{}
 	for i := range nodes {
 		n := &nodes[i]
 		if !n.Enabled || n.LastSeen == 0 {
 			continue // disabled, or never installed → don't hand clients a dead link
 		}
 		ns := nodeSettings(set, n)
-		ns.NodeLabel = n.Name
+		// Uniqueness is enforced on create/edit, but defend the subscription anyway:
+		// a duplicate label would collide Clash proxy names / sing-box tags and make a
+		// client reject the whole config. Disambiguate any collision with the node id.
+		label := n.Name
+		if seen[label] > 0 {
+			label = fmt.Sprintf("%s #%d", n.Name, n.ID)
+		}
+		seen[n.Name]++
+		ns.NodeLabel = label
 		out = append(out, ns)
 	}
 	return out, nil
@@ -341,7 +351,13 @@ func (m *Manager) GetNode(id int64) (*model.Node, error) { return m.store.GetNod
 
 // CreateNode registers a node with a random decoy and a one-time join token,
 // ensuring the node-API surface exists. The returned node carries RawJoinToken.
+// The name must be unique (it becomes a subscription proxy name/tag).
 func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
+	if taken, err := m.store.NodeNameTaken(name, 0); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+	}
 	if err := m.EnsureNodeAPIPath(); err != nil {
 		return nil, err
 	}
@@ -354,6 +370,11 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 
 // UpdateNode edits a node and wakes it so config/link changes apply promptly.
 func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
+	if taken, err := m.store.NodeNameTaken(e.Name, id); err != nil {
+		return err
+	} else if taken {
+		return &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+	}
 	if e.Routing != nil {
 		if err := e.Routing.ValidateLanes(); err != nil {
 			return &ValidationError{Msg: err.Error()}

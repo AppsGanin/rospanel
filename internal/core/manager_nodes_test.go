@@ -164,6 +164,27 @@ func TestIngestNodeSyncIdempotent(t *testing.T) {
 	}
 }
 
+func TestNodeNameUniqueness(t *testing.T) {
+	m := nodeTestManager(t)
+	if _, err := m.CreateNode("US-1", "a.example.com"); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	// A second node with the same name (any case) is rejected — duplicate names would
+	// collide Clash/sing-box tags and break the whole subscription.
+	if _, err := m.CreateNode("us-1", "b.example.com"); err == nil {
+		t.Fatal("duplicate node name should be rejected")
+	}
+	// A distinct name is fine.
+	n2, err := m.CreateNode("US-2", "b.example.com")
+	if err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	// Renaming n2 to collide is also rejected.
+	if err := m.UpdateNode(n2.ID, store.NodeEdit{Name: "US-1", Host: "b.example.com"}); err == nil {
+		t.Fatal("renaming to a duplicate should be rejected")
+	}
+}
+
 func TestNodeWakeRegistry(t *testing.T) {
 	r := newNodeRegistry()
 	ch := r.wakeChan(1)

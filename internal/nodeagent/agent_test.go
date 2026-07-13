@@ -152,6 +152,24 @@ func TestSubstituteCertPaths(t *testing.T) {
 	}
 }
 
+func TestValidPanelURL(t *testing.T) {
+	for _, c := range []struct {
+		in string
+		ok bool
+	}{
+		{"https://panel.example.com", true},
+		{"https://panel.example.com/", true},
+		{"http://panel.example.com", false}, // must be https
+		{"https://", false},                 // no host
+		{"not a url", false},
+		{"", false},
+	} {
+		if got := validPanelURL(c.in); got != c.ok {
+			t.Errorf("validPanelURL(%q) = %v, want %v", c.in, got, c.ok)
+		}
+	}
+}
+
 func TestUserIDFromEmail(t *testing.T) {
 	for _, c := range []struct {
 		email string
