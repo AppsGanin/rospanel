@@ -396,6 +396,53 @@ func (m *Manager) DeleteNode(id int64) error {
 // RegenJoinToken issues a fresh install token for an existing node.
 func (m *Manager) RegenJoinToken(id int64) (string, error) { return m.store.RegenJoinToken(id) }
 
+// RequestNodeUpdate flags a node to self-update on its next sync, and wakes it so
+// it happens promptly. Returns an error if the node doesn't exist.
+func (m *Manager) RequestNodeUpdate(id int64) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	m.nodeUpdateMu.Lock()
+	m.nodeUpdateWanted[id] = true
+	m.nodeUpdateMu.Unlock()
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// RequestAllNodesUpdate flags every enabled, connected node to self-update.
+func (m *Manager) RequestAllNodesUpdate() (int, error) {
+	nodes, err := m.store.ListNodes()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	m.nodeUpdateMu.Lock()
+	for i := range nodes {
+		if nodes[i].Enabled && nodes[i].LastSeen > 0 {
+			m.nodeUpdateWanted[nodes[i].ID] = true
+			n++
+		}
+	}
+	m.nodeUpdateMu.Unlock()
+	m.notifyNodes()
+	return n, nil
+}
+
+// TakeNodeUpdate consumes (and clears) a node's pending self-update flag.
+func (m *Manager) TakeNodeUpdate(id int64) bool {
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	if m.nodeUpdateWanted[id] {
+		delete(m.nodeUpdateWanted, id)
+		return true
+	}
+	return false
+}
+
 // nodeTombstoneGrace is how long a deleted node's row is kept so it can still be
 // told Revoked on a late reconnect before the row is purged.
 const nodeTombstoneGrace = 7 * 24 * time.Hour

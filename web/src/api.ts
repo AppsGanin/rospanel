@@ -1150,3 +1150,9 @@ export const regenNodeJoin = (id: number) =>
   api<{ install_command: string }>(`api/nodes/${id}/regen-join`, {
     method: 'POST',
   })
+
+export const updateNodeVersion = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/update`, { method: 'POST' })
+
+export const updateAllNodes = () =>
+  api<{ nodes: number }>('api/nodes/update-all', { method: 'POST' })

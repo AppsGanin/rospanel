@@ -131,6 +131,10 @@ type Manager struct {
 	// nodeEnsureMu serializes first-time node-API path generation so concurrent
 	// node creates converge on one segment.
 	nodeEnsureMu sync.Mutex
+	// nodeUpdateWanted holds node IDs the operator asked to self-update; the flag is
+	// consumed (sent once) on the node's next sync.
+	nodeUpdateMu     sync.Mutex
+	nodeUpdateWanted map[int64]bool
 }
 
 // New builds a Manager. opts carries non-DB generation parameters (e.g. the
@@ -138,19 +142,20 @@ type Manager struct {
 // is where the opera-proxy helper binary is downloaded/run from.
 func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths, operaDir string) *Manager {
 	m := &Manager{
-		store:       st,
-		sup:         sup,
-		opts:        opts,
-		tls:         tls,
-		reconcileCh: make(chan struct{}, 1),
-		accLast:     make(map[string]int64),
-		applied:     make(map[int64]struct{}),
-		tz:          time.Local,
-		guard:       newBruteGuard(),
-		operaDir:    operaDir,
-		operaSup:    opera.New(filepath.Join(operaDir, "opera-proxy")),
-		webhookCh:   make(chan webhookJob, webhookQueueSize),
-		nodes:       newNodeRegistry(),
+		store:            st,
+		sup:              sup,
+		opts:             opts,
+		tls:              tls,
+		reconcileCh:      make(chan struct{}, 1),
+		accLast:          make(map[string]int64),
+		applied:          make(map[int64]struct{}),
+		tz:               time.Local,
+		guard:            newBruteGuard(),
+		operaDir:         operaDir,
+		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
+		webhookCh:        make(chan webhookJob, webhookQueueSize),
+		nodes:            newNodeRegistry(),
+		nodeUpdateWanted: map[int64]bool{},
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)

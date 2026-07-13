@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
+	"github.com/AppsGanin/rospanel/internal/updater"
 	"github.com/AppsGanin/rospanel/internal/version"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -163,6 +165,11 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			slog.Info("node: panel address changed", "new", resp.PanelURL)
 			a.ident.PanelURL = resp.PanelURL
 			_ = a.ident.Save(a.dataDir)
+		}
+		if resp.Update {
+			if a.selfUpdate() {
+				return // binary swapped; exit so systemd restarts the new one
+			}
 		}
 		a.ackReport(resp.AckReport)
 		if resp.Changed && resp.State != nil {
@@ -360,6 +367,36 @@ func (a *Agent) shutdown() {
 		_ = a.decoySrv.Close()
 	}
 	a.decoyMu.Unlock()
+}
+
+// selfUpdate downloads + verifies the latest release and swaps the node binary,
+// then stops Xray and returns true so Run exits — systemd (Restart=always) starts
+// the new binary, which re-applies the saved config. Returns false (and keeps
+// running the current version) if there's nothing newer or the update fails.
+func (a *Agent) selfUpdate() bool {
+	repo := updater.Repo
+	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
+		repo = r
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	rel, err := updater.Latest(ctx, repo)
+	if err != nil {
+		slog.Warn("node self-update: check failed", "err", err)
+		return false
+	}
+	if !updater.IsNewer(rel.Version, version.Version) {
+		slog.Info("node self-update: already on the latest version", "version", version.Version)
+		return false
+	}
+	slog.Info("node self-update: installing", "from", version.Version, "to", rel.Version)
+	if err := updater.Apply(ctx, rel, nil); err != nil {
+		slog.Error("node self-update: failed", "err", err)
+		return false
+	}
+	slog.Info("node self-update: binary updated — restarting", "version", rel.Version)
+	a.sup.Stop()
+	return true
 }
 
 // resolveNodeXrayBin finds or downloads the Xray binary, like the panel's resolver

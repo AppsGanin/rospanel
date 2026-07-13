@@ -143,7 +143,16 @@ func apiSpecRoutes() []oaRoute {
 			req: t(apiSetNodeEnabledReq{}), resp: t(oaOKResp{})},
 		{method: "POST", path: "/v1/nodes/{id}/regen-join", tag: "Nodes", summary: "Issue a fresh install command",
 			resp: t(oaNodeCreateResp{})},
+		{method: "POST", path: "/v1/nodes/{id}/update", tag: "Nodes", summary: "Ask a node to self-update to the latest release",
+			resp: t(oaOKResp{})},
+		{method: "POST", path: "/v1/nodes/update-all", tag: "Nodes", summary: "Ask every connected node to self-update",
+			resp: t(oaNodeCountResp{})},
 	}
+}
+
+// oaNodeCountResp types the update-all response.
+type oaNodeCountResp struct {
+	Nodes int `json:"nodes"`
 }
 
 // oaNodeCreateResp / oaOKResp type the node responses for the spec.

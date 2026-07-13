@@ -151,6 +151,25 @@ func (rt *Router) deleteNode(w http.ResponseWriter, _ *http.Request, id int64) {
 	writeOK(w)
 }
 
+// updateNodeVersion flags one node to self-update to the latest release.
+func (rt *Router) updateNodeVersion(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeUpdate(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// updateAllNodes flags every connected node to self-update.
+func (rt *Router) updateAllNodes(w http.ResponseWriter, _ *http.Request) {
+	n, err := rt.mgr.RequestAllNodesUpdate()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": n})
+}
+
 // regenNodeJoin issues a fresh install command for an existing node (e.g. to
 // re-install it), invalidating the node's current permanent token.
 func (rt *Router) regenNodeJoin(w http.ResponseWriter, r *http.Request, id int64) {

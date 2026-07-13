@@ -169,6 +169,23 @@ func (rt *Router) apiSetNodeEnabled(w http.ResponseWriter, r *http.Request, id i
 	writeAPIData(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (rt *Router) apiUpdateNode(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeUpdate(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (rt *Router) apiUpdateAllNodes(w http.ResponseWriter, _ *http.Request) {
+	n, err := rt.mgr.RequestAllNodesUpdate()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, map[string]any{"nodes": n})
+}
+
 func (rt *Router) apiRegenNodeJoin(w http.ResponseWriter, r *http.Request, id int64) {
 	token, err := rt.mgr.RegenJoinToken(id)
 	if err != nil {

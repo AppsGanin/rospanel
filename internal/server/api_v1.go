@@ -151,6 +151,8 @@ func (rt *Router) apiMux() http.Handler {
 	id("DELETE /v1/nodes/{id}", rt.apiDeleteNode)
 	id("POST /v1/nodes/{id}/enabled", rt.apiSetNodeEnabled)
 	id("POST /v1/nodes/{id}/regen-join", rt.apiRegenNodeJoin)
+	id("POST /v1/nodes/{id}/update", rt.apiUpdateNode)
+	mux.HandleFunc("POST /v1/nodes/update-all", rt.apiUpdateAllNodes)
 
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.

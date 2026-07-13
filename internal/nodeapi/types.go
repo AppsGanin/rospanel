@@ -83,6 +83,10 @@ type SyncResponse struct {
 
 	// PanelURL, when set, tells the agent the panel moved — persist and switch to it.
 	PanelURL string `json:"panel_url,omitempty"`
+
+	// Update ⇒ the operator asked this node to self-update to the latest release.
+	// The agent downloads + verifies the new binary and restarts itself.
+	Update bool `json:"update,omitempty"`
 }
 
 // NodeState is the full desired state for a node. XrayConfig is generated panel-

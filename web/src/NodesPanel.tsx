@@ -6,7 +6,9 @@ import {
   listNodes,
   regenNodeJoin,
   setNodeEnabled,
+  updateAllNodes,
   updateNode,
+  updateNodeVersion,
   type NodeView,
 } from "./api";
 import { fmtBytes } from "./format";
@@ -254,6 +256,15 @@ function NodeCard({
     }
   };
 
+  const doUpdate = async () => {
+    try {
+      await updateNodeVersion(node.id);
+      notifySuccess("Нода обновляется — Xray кратко перезапустится");
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+
   const hasOverrides =
     node.overrides.vless ||
     node.overrides.trojan ||
@@ -327,6 +338,11 @@ function NodeCard({
             />
           </div>
           <div className="flex flex-wrap gap-2">
+            {node.version_skew && node.online && (
+              <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
+                Обновить
+              </Button>
+            )}
             {hasOverrides && (
               <Button size="sm" variant="light" color="gray" onClick={resetOverrides}>
                 Сбросить протоколы
@@ -386,6 +402,16 @@ export function NodesPanel() {
   if (nodes === null) return <CenterLoader />;
 
   const remoteCount = nodes.filter((n) => !n.is_local).length;
+  const anyStale = nodes.some((n) => !n.is_local && n.version_skew && n.online);
+
+  const updateAll = async () => {
+    try {
+      const r = await updateAllNodes();
+      notifySuccess(`Обновление запущено на нодах: ${r.nodes}`);
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -398,7 +424,14 @@ export function NodesPanel() {
               : `Пользователи синхронизируются на все включённые ноды (${remoteCount}).`}
           </p>
         </div>
-        <Button onClick={() => setAdding(true)}>Добавить ноду</Button>
+        <div className="flex flex-wrap gap-2">
+          {anyStale && (
+            <Button variant="light" color="gray" onClick={updateAll}>
+              Обновить все ноды
+            </Button>
+          )}
+          <Button onClick={() => setAdding(true)}>Добавить ноду</Button>
+        </div>
       </div>
 
       <div className="space-y-3">

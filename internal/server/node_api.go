@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +96,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	}
 	// A change (or a revocation) is delivered right away.
 	if resp.Changed || resp.Revoked {
-		writeJSON(w, http.StatusOK, resp)
+		rt.writeNodeSync(w, r, node.ID, resp)
 		return
 	}
 	// Otherwise hold the request until the node is woken or the hold elapses, then
@@ -113,7 +114,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// Recompute after waking: the desired state may now differ.
 	fresh, err := rt.mgr.GetNode(node.ID)
 	if err != nil {
-		writeJSON(w, http.StatusOK, resp) // transient store error; let it re-sync
+		rt.writeNodeSync(w, r, node.ID, resp) // transient store error; let it re-sync
 		return
 	}
 	if fresh == nil {
@@ -133,7 +134,44 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		out.Changed = true
 		out.State = state
 	}
-	writeJSON(w, http.StatusOK, out)
+	rt.writeNodeSync(w, r, node.ID, out)
+}
+
+// writeNodeSync stamps the per-request extras (a pending self-update flag, and a
+// panel-address broadcast if the node reached us at a stale host) onto the response
+// and writes it. A revoked response carries no extras (the node is going away).
+func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID int64, resp *nodeapi.SyncResponse) {
+	if !resp.Revoked {
+		if rt.mgr.TakeNodeUpdate(nodeID) {
+			resp.Update = true
+		}
+		if canonical := rt.canonicalPanelURL(r); canonical != "" {
+			resp.PanelURL = canonical
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// canonicalPanelURL returns the panel's configured public URL when the node
+// reached us at a different host than the one configured — i.e. the panel's
+// address changed and this node is still using the old one. Returns "" when the
+// node is already on the canonical host (the common case) or the configured host
+// isn't a usable public address. This auto-heals a panel move while both the old
+// and new addresses still resolve; `rospanel node set-panel` is the manual
+// fallback when they don't.
+func (rt *Router) canonicalPanelURL(r *http.Request) string {
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil || set.Host == "" || set.Host == "127.0.0.1" {
+		return ""
+	}
+	reqHost := r.Host
+	if h, _, e := net.SplitHostPort(reqHost); e == nil {
+		reqHost = h
+	}
+	if strings.EqualFold(reqHost, set.Host) {
+		return "" // already on the canonical host
+	}
+	return "https://" + set.Host
 }
 
 // panelPublicURL reconstructs the panel's public base URL (scheme://host) from the
