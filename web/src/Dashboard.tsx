@@ -3,13 +3,11 @@ import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
 import { BrandLogo } from "./Logo";
-import { EventsPanel } from "./EventsPanel";
 import { OverviewPanel } from "./OverviewPanel";
 import { PaymentsPage } from "./PaymentsPage";
 import { useIsAdmin, useIsOwner } from "./role";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
-import { StatsPanel } from "./StatsPanel";
 import {
   cn,
   Drawer,
@@ -21,19 +19,14 @@ import {
   IconChevron,
   IconGithub,
 } from "./ui";
-import { UsersPanel } from "./UsersPanel";
+import { UsersPage } from "./UsersPage";
 
 // "admins" is a page without a nav tab: the roster is reached from the account menu
 // (it's about who runs the panel, not about how the VPN is configured), so it never
 // appears in NAV — only in the route.
-type Tab =
-  | "overview"
-  | "users"
-  | "stats"
-  | "payments"
-  | "events"
-  | "settings"
-  | "admins";
+// Statistics and the journal aren't tabs either: they're sub-tabs of "users"
+// (see UsersPage), because both only ever describe end users.
+type Tab = "overview" | "users" | "payments" | "settings" | "admins";
 
 export function Dashboard({
   username,
@@ -74,16 +67,15 @@ export function Dashboard({
     return () => window.removeEventListener("rospanel:billing-changed", h);
   }, []);
 
-  // An operator gets the tabs whose routes they can actually call: end users, stats
-  // and the journal. Settings and the payments desk are admin-and-up, so they're not
-  // rendered — and if an operator navigates to /settings by hand, `tab` falls back
-  // to the dashboard rather than showing a page whose every request would 403.
+  // An operator gets the tabs whose routes they can actually call: the dashboard and
+  // the users section (list, stats, journal). Settings and the payments desk are
+  // admin-and-up, so they're not rendered — and if an operator navigates to /settings
+  // by hand, `tab` falls back to the dashboard rather than showing a page whose every
+  // request would 403.
   const NAV: { value: Tab; label: string }[] = [
     { value: "overview", label: "Дашборд" },
     { value: "users", label: "Пользователи" },
-    { value: "stats", label: "Статистика" },
     ...(billing && isAdmin ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
-    { value: "events", label: "Журнал" },
     ...(isAdmin ? [{ value: "settings" as Tab, label: "Настройки" }] : []),
   ];
   // The roster isn't in NAV, so resolve it separately — and only for the owner, so
@@ -232,10 +224,8 @@ export function Dashboard({
       <main className="mx-auto w-full max-w-6xl flex-1 px-3 py-6 sm:px-4">
         <div key={tab} className="animate-fade-in">
           {tab === "overview" && <OverviewPanel />}
-          {tab === "users" && <UsersPanel />}
-          {tab === "stats" && <StatsPanel />}
+          {tab === "users" && <UsersPage />}
           {tab === "payments" && <PaymentsPage />}
-          {tab === "events" && <EventsPanel />}
           {tab === "settings" && <SettingsPanel />}
           {tab === "admins" && <AdminsSettings />}
         </div>
