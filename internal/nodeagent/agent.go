@@ -166,12 +166,15 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			a.ident.PanelURL = resp.PanelURL
 			_ = a.ident.Save(a.dataDir)
 		}
+		// Ack BEFORE a possible self-update exit: the panel already ingested this
+		// batch (that's what AckReport means), so clearing it here avoids re-sending
+		// it and losing nothing if the process restarts for an update.
+		a.ackReport(resp.AckReport)
 		if resp.Update {
 			if a.selfUpdate() {
 				return // binary swapped; exit so systemd restarts the new one
 			}
 		}
-		a.ackReport(resp.AckReport)
 		if resp.Changed && resp.State != nil {
 			if err := a.applyState(resp.State); err != nil {
 				slog.Error("node: applying pushed config failed", "err", err)

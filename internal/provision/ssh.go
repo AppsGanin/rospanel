@@ -33,6 +33,11 @@ type Credentials struct {
 // line to onLine. It returns the discovered host-key fingerprint and any error.
 // The command must be self-contained; nothing is uploaded.
 func Install(ctx context.Context, c Credentials, installCmd string, onLine func(string)) (hostKeyFP string, err error) {
+	// Derive a cancelable child so the session-killer goroutine below always exits
+	// when Install returns, even if the caller's context outlives this call.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	auth, err := authMethods(c)
 	if err != nil {
 		return "", err
