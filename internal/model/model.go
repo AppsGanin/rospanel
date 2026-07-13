@@ -359,6 +359,15 @@ type Settings struct {
 	SubRoutingIncy    string `json:"-"` // INCY routing config URL
 	SubRoutingMihomo  string `json:"-"` // Mihomo (Clash Meta) routing config URL
 	SubUpdateInterval int    `json:"-"` // subscription auto-update interval (hours)
+	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
+	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
+	// Clients only render the first 200 characters; the panel enforces that limit.
+	SubAnnounce string `json:"-"`
+
+	// UserAutoDeleteDays deletes an expired user this many days after their expiry
+	// date. 0 ⇒ never (default): expired users pile up but nothing is ever destroyed
+	// behind the operator's back.
+	UserAutoDeleteDays int `json:"-"`
 
 	XrayDNS string `json:"-"` // upstream DNS servers for Xray (newline/comma separated)
 

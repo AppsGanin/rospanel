@@ -37,6 +37,20 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
 
+// ExpiredUsersBefore returns users whose expiry date is older than cutoff (unix
+// seconds) — the candidates for the auto-delete sweep.
+//
+// It keys off expire_at rather than the `status` column on purpose. status is a
+// derived value that a reset or a plan change can flip back to active, and a user
+// who is active again must never be deleted because they were expired last week.
+// expire_at is the fact: a date in the past that nobody extended. Users with no
+// expiry (expire_at = 0) are excluded — there is nothing for them to be past.
+func (s *Store) ExpiredUsersBefore(cutoff int64) ([]model.User, error) {
+	return s.queryUsers(`SELECT `+userCols+` FROM users
+		WHERE expire_at > 0 AND expire_at <= ?
+		ORDER BY id ASC`, cutoff)
+}
+
 // WorkingUsers returns users that should be in the proxy config right now:
 // manually enabled AND not expired AND within their data limit AND within their
 // device limit. enabled is an independent manual flag — expiry/quota/devices

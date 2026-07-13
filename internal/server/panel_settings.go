@@ -49,29 +49,31 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 	}
 	templates, _ := decoy.Available()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"secret_path":         set.PanelSecretPath,
-		"ws_path":             set.WSPath,
-		"decoy_template":      set.DecoyTemplate,
-		"decoy_templates":     templates,
-		"sub_path":            set.SubPathOr(),
-		"sub_base64":          set.SubBase64,
-		"sub_name_in_title":   set.SubNameInTitle,
-		"sub_title":           set.SubTitle,
-		"sub_routing":         set.SubRouting,
-		"sub_routing_happ":    set.SubRoutingHapp,
-		"sub_routing_incy":    set.SubRoutingIncy,
-		"sub_routing_mihomo":  set.SubRoutingMihomo,
-		"sub_update_interval": set.SubUpdateInterval,
-		"xray_dns":            set.XrayDNS,
-		"warp_enabled":        set.WarpEnabled,
-		"warp_registered":     set.WarpRegistered(),
-		"proxy_mode_enabled":  set.ProxyModeEnabled,
-		"proxy_mode_type":     set.ProxyModeType,
-		"proxy_mode_port":     set.ProxyModePort,
-		"proxy_mode_user":     set.ProxyModeUser,
-		"proxy_mode_pass":     set.ProxyModePass,
-		"local_backup_cron":   set.LocalBackupCron,
-		"local_backup_keep":   set.LocalBackupKeep,
+		"secret_path":          set.PanelSecretPath,
+		"ws_path":              set.WSPath,
+		"decoy_template":       set.DecoyTemplate,
+		"decoy_templates":      templates,
+		"sub_path":             set.SubPathOr(),
+		"sub_base64":           set.SubBase64,
+		"sub_name_in_title":    set.SubNameInTitle,
+		"sub_title":            set.SubTitle,
+		"sub_routing":          set.SubRouting,
+		"sub_routing_happ":     set.SubRoutingHapp,
+		"sub_routing_incy":     set.SubRoutingIncy,
+		"sub_routing_mihomo":   set.SubRoutingMihomo,
+		"sub_update_interval":  set.SubUpdateInterval,
+		"sub_announce":         set.SubAnnounce,
+		"user_autodelete_days": set.UserAutoDeleteDays,
+		"xray_dns":             set.XrayDNS,
+		"warp_enabled":         set.WarpEnabled,
+		"warp_registered":      set.WarpRegistered(),
+		"proxy_mode_enabled":   set.ProxyModeEnabled,
+		"proxy_mode_type":      set.ProxyModeType,
+		"proxy_mode_port":      set.ProxyModePort,
+		"proxy_mode_user":      set.ProxyModeUser,
+		"proxy_mode_pass":      set.ProxyModePass,
+		"local_backup_cron":    set.LocalBackupCron,
+		"local_backup_keep":    set.LocalBackupKeep,
 	})
 }
 
@@ -209,6 +211,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		RoutingIncy    string `json:"sub_routing_incy"`
 		RoutingMihomo  string `json:"sub_routing_mihomo"`
 		UpdateInterval int    `json:"sub_update_interval"`
+		Announce       string `json:"sub_announce"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -227,12 +230,30 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubRoutingIncy:    strings.TrimSpace(req.RoutingIncy),
 		SubRoutingMihomo:  strings.TrimSpace(req.RoutingMihomo),
 		SubUpdateInterval: req.UpdateInterval,
+		SubAnnounce:       req.Announce,
 	})
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	rt.setSubPath(path) // swap the live /<path>/ route immediately
+	writeOK(w)
+}
+
+// setUserAutoDelete configures the grace period after which an expired user is
+// deleted (0 = never).
+func (rt *Router) setUserAutoDelete(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Days int `json:"user_autodelete_days"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetUserAutoDelete(req.Days); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"days": req.Days})
 	writeOK(w)
 }
 

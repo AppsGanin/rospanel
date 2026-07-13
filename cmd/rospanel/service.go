@@ -70,6 +70,14 @@ func runServer(dataDir string) {
 		log.Print("restore: staged backup applied")
 	}
 
+	// Gate the boot on a readable database, recovering from a corrupt one before any
+	// secret or cert is loaded — a recovery swaps in the backup's secrets.key too, so
+	// it has to happen before datasec.Init pins a key in memory.
+	startupStage("checking database integrity")
+	if err := ensureHealthyDB(dbPath, dataDir); err != nil {
+		log.Fatalf("database: %v", err)
+	}
+
 	// After any staged restore has put the real secrets.key in place, load it —
 	// doing this before ApplyPending would pin a freshly-generated key in memory
 	// that the restore then overwrites on disk, breaking decryption.
@@ -331,6 +339,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
+		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
 	}
 	sweep() // sweep once at boot, then on the timer
 	t := time.NewTicker(6 * time.Hour)

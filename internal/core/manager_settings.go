@@ -264,6 +264,12 @@ func joinInts(xs []int) string {
 // subPathRe validates the public subscription path prefix: URL-path-safe, 1–32 chars.
 var subPathRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
+// announceMaxRunes is the cap VPN clients themselves impose on the announcement
+// they display (Happ documents 200; Remnawave validates the same number). Anything
+// past it is cut off client-side, so the panel refuses it rather than let an
+// operator send half a sentence.
+const announceMaxRunes = 200
+
 // reservedSubPaths are first-segment names the subscription prefix must not use:
 // they belong to the panel/system surface (the panel mux serves these under the
 // secret, and "well-known" is conventionally reserved for ACME), so allowing a
@@ -286,6 +292,14 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	st.SubPath = strings.TrimSpace(st.SubPath)
 	if !subPathRe.MatchString(st.SubPath) {
 		return invalid("путь подписки: латиница, цифры, «-» и «_», 1–32 символа")
+	}
+	st.SubAnnounce = strings.TrimSpace(st.SubAnnounce)
+	// Clients render at most 200 characters of the announcement and silently cut the
+	// rest, so a longer text is a message the operator thinks they sent and nobody
+	// ever read. Reject it here instead. Runes, not bytes: the text is Cyrillic.
+	if n := utf8.RuneCountInString(st.SubAnnounce); n > announceMaxRunes {
+		return invalid("объявление: не длиннее %d символов (сейчас %d) — клиенты обрежут остальное",
+			announceMaxRunes, n)
 	}
 	if reservedSubPaths[strings.ToLower(st.SubPath)] {
 		return invalid("путь подписки «%s» зарезервирован панелью — выберите другой", st.SubPath)
