@@ -38,6 +38,14 @@ type Node struct {
 
 	DecoyTemplate string `json:"decoy_template"`
 
+	// Routing is the node's own routing override: nil ⇒ inherit the panel's routing.
+	// Egress lanes (proxy pools, WARP, Opera) are dropped when the config is applied
+	// to a node — a node has no such backends — so those rules degrade to direct.
+	Routing *RoutingConfig `json:"routing,omitempty"`
+
+	// XrayDNS is the node's own upstream DNS override: nil ⇒ inherit the panel's DNS.
+	XrayDNS *string `json:"xray_dns,omitempty"`
+
 	// Reported by the node on each sync.
 	LastSeen       int64  `json:"last_seen"`
 	NodeVersion    string `json:"node_version"`

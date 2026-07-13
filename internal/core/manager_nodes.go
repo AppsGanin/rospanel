@@ -11,6 +11,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -46,10 +47,21 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.TLSPinSHA256 = n.CertSHA256
 	}
 
-	// Direct egress on nodes (see doc comment).
-	ns.Routing = model.RoutingConfig{}
+	// Routing: the node's own override, or the panel's routing inherited. Either way
+	// the egress-lane parts are stripped — a node has no proxy pool / WARP / Opera,
+	// so those rules degrade to direct. WARP/Opera outbounds are force-disabled.
+	routing := set.Routing
+	if n.Routing != nil {
+		routing = *n.Routing
+	}
+	ns.Routing = routing.WithoutEgressLanes()
 	ns.WarpEnabled = false
 	ns.OperaEnabled = false
+
+	// DNS: the node's own override, or the panel's inherited.
+	if n.XrayDNS != nil {
+		ns.XrayDNS = *n.XrayDNS
+	}
 	return &ns
 }
 
@@ -297,8 +309,13 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 }
 
 // UpdateNode edits a node and wakes it so config/link changes apply promptly.
-func (m *Manager) UpdateNode(id int64, name, host, decoy string, vless, trojan, hysteria, reality *bool) error {
-	if err := m.store.UpdateNode(id, name, host, decoy, vless, trojan, hysteria, reality); err != nil {
+func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
+	if e.Routing != nil {
+		if err := e.Routing.ValidateLanes(); err != nil {
+			return &ValidationError{Msg: err.Error()}
+		}
+	}
+	if err := m.store.UpdateNode(id, e); err != nil {
 		return err
 	}
 	m.nodes.wakeOne(id)

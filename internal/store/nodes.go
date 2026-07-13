@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -20,7 +21,8 @@ const joinTokenTTL = 24 * time.Hour
 const nodeColumns = `id, name, host, enabled,
 	reality_private_key, reality_public_key, reality_short_id, reality_service_name,
 	vless_enabled, trojan_enabled, hysteria_enabled, reality_enabled,
-	decoy_template, last_seen, node_version, xray_version, xray_running,
+	decoy_template, routing_config, xray_dns,
+	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
 	join_expires_at`
 
@@ -39,11 +41,14 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
 	var enabled, xrayRunning, certSelfSigned int
 	var vlessEn, trojanEn, hysteriaEn, realityEn sql.NullBool
+	var routingJSON string
+	var xrayDNS sql.NullString
 	if err := sc.Scan(
 		&n.ID, &n.Name, &n.Host, &enabled,
 		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName,
 		&vlessEn, &trojanEn, &hysteriaEn, &realityEn,
-		&n.DecoyTemplate, &n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
+		&n.DecoyTemplate, &routingJSON, &xrayDNS,
+		&n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
 		&n.JoinExpiresAt,
 	); err != nil {
@@ -57,6 +62,16 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.TrojanEnabled = nullBoolPtr(trojanEn)
 	n.HysteriaEnabled = nullBoolPtr(hysteriaEn)
 	n.RealityEnabled = nullBoolPtr(realityEn)
+	if routingJSON != "" {
+		var rc model.RoutingConfig
+		if err := json.Unmarshal([]byte(routingJSON), &rc); err == nil {
+			n.Routing = &rc
+		}
+	}
+	if xrayDNS.Valid {
+		v := xrayDNS.String
+		n.XrayDNS = &v
+	}
 	return &n, nil
 }
 
@@ -252,15 +267,43 @@ func (s *Store) RegenJoinToken(id int64) (string, error) {
 	return joinToken, nil
 }
 
-// UpdateNode persists the operator-editable fields (name, host, protocol
-// overrides, decoy). Identity, tokens and reported status are untouched.
-func (s *Store) UpdateNode(id int64, name, host, decoyTemplate string, vless, trojan, hysteria, reality *bool) error {
+// NodeEdit carries the operator-editable fields of a node. Pointer fields left nil
+// mean "inherit the global setting" for protocol/DNS toggles and routing.
+type NodeEdit struct {
+	Name          string
+	Host          string
+	DecoyTemplate string
+	VLESS         *bool
+	Trojan        *bool
+	Hysteria      *bool
+	Reality       *bool
+	Routing       *model.RoutingConfig // nil ⇒ inherit global routing
+	XrayDNS       *string              // nil ⇒ inherit global DNS
+}
+
+// UpdateNode persists the operator-editable fields. Identity, tokens and reported
+// status are untouched.
+func (s *Store) UpdateNode(id int64, e NodeEdit) error {
+	routingJSON := ""
+	if e.Routing != nil {
+		b, err := json.Marshal(e.Routing)
+		if err != nil {
+			return err
+		}
+		routingJSON = string(b)
+	}
+	var dns sql.NullString
+	if e.XrayDNS != nil {
+		dns = sql.NullString{String: *e.XrayDNS, Valid: true}
+	}
 	_, err := s.db.Exec(`
 		UPDATE nodes SET name = ?, host = ?, decoy_template = ?,
-			vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?, reality_enabled = ?
+			vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
+			routing_config = ?, xray_dns = ?
 		WHERE id = ?`,
-		name, host, decoyTemplate,
-		boolToNull(vless), boolToNull(trojan), boolToNull(hysteria), boolToNull(reality),
+		e.Name, e.Host, e.DecoyTemplate,
+		boolToNull(e.VLESS), boolToNull(e.Trojan), boolToNull(e.Hysteria), boolToNull(e.Reality),
+		routingJSON, dns,
 		id,
 	)
 	return err

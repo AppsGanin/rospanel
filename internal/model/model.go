@@ -695,6 +695,21 @@ type RoutingConfig struct {
 	ProxyIPs     []string `json:"proxy_ips,omitempty"`
 }
 
+// WithoutEgressLanes returns a copy of the routing config with every egress-lane
+// construct removed: proxy lanes, and the WARP/Opera rule sets. What remains is
+// the block/direct/DNS routing that needs no upstream backend. Nodes egress
+// direct, so applying a routing config to a node runs it through this first —
+// rules that pointed at a lane fall through to direct rather than to nothing.
+func (rc RoutingConfig) WithoutEgressLanes() RoutingConfig {
+	out := rc
+	out.Lanes = nil
+	out.RoutingOrder = nil
+	out.WarpDomains, out.WarpIPs = nil, nil
+	out.OperaDomains, out.OperaIPs = nil, nil
+	out.ProxyURLs, out.ProxyManual, out.ProxyDomains, out.ProxyIPs = nil, nil, nil, nil
+	return out
+}
+
 // EgressLane is one named proxy egress: a set of upstream proxies traffic is
 // load-balanced across, plus the destinations that should take it. Traffic
 // matching Domains/IPs leaves through this lane's proxies; a lane with no live

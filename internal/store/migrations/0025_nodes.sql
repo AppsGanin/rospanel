@@ -37,6 +37,14 @@ CREATE TABLE nodes (
     -- nodes don't all share the panel's fingerprint.
     decoy_template TEXT NOT NULL DEFAULT '',
 
+    -- Per-node overrides that fall back to the global settings when unset:
+    --   routing_config: '' ⇒ inherit the panel's routing; a JSON RoutingConfig ⇒
+    --     this node's own rules (egress lanes/WARP/Opera are dropped on nodes, which
+    --     have no such backends, so those rules degrade to direct).
+    --   xray_dns: NULL ⇒ inherit the panel's DNS; any value (incl. '') ⇒ this node's.
+    routing_config TEXT NOT NULL DEFAULT '',
+    xray_dns       TEXT,
+
     -- Reported by the node on every sync.
     last_seen        INTEGER NOT NULL DEFAULT 0,
     node_version     TEXT    NOT NULL DEFAULT '',
