@@ -118,7 +118,7 @@ func runOne(ctx context.Context, binPath string, spec protoSpec, set *model.Sett
 
 	ip, err := probeThrough(pctx, socksPort)
 	if err != nil {
-		res.Detail = explainFailure(err, stderr.text())
+		res.Detail = explainFailure(spec.key, err, stderr.text())
 		return res
 	}
 
@@ -230,15 +230,34 @@ func waitForPort(ctx context.Context, port int) error {
 
 // explainFailure turns a raw probe error into an operator-facing sentence, folding
 // in Xray's own stderr when it points at the real cause (bad auth, TLS mismatch).
-func explainFailure(probeErr error, xrayLog string) string {
+func explainFailure(proto string, probeErr error, xrayLog string) string {
 	if x := firstXrayError(xrayLog); x != "" {
 		return "трафик не проходит: " + x
+	}
+	// REALITY fails in a way that leaves no keyword-matched error line: the client
+	// just gets EOF because the donor handshake never completes (wrong/unreachable
+	// dest, or a donor cert too big for this Xray — issue #6402). A bare timeout on
+	// REALITY almost always means the dest, so name it instead of the generic hint.
+	if proto == model.ProtoReality && isHandshakeFailure(probeErr, xrayLog) {
+		return "трафик не проходит: REALITY-хендшейк не завершился — проверьте, что донор (dest) " +
+			"доступен, отдаёт TLS 1.3 и его сертификат не слишком большой (issue #6402)"
 	}
 	if strings.Contains(probeErr.Error(), context.DeadlineExceeded.Error()) ||
 		strings.Contains(probeErr.Error(), "timeout") {
 		return "трафик не проходит: истекло время ожидания ответа (порт закрыт снаружи, брандмауэр или неверные параметры)"
 	}
 	return "трафик не проходит: " + probeErr.Error()
+}
+
+// isHandshakeFailure reports whether the failure looks like a stalled TLS/REALITY
+// handshake — an EOF or a plain timeout with nothing else to go on — rather than a
+// clean error Xray already named.
+func isHandshakeFailure(probeErr error, xrayLog string) bool {
+	e := strings.ToLower(probeErr.Error())
+	if strings.Contains(e, "eof") || strings.Contains(strings.ToLower(xrayLog), "eof") {
+		return true
+	}
+	return strings.Contains(e, context.DeadlineExceeded.Error()) || strings.Contains(e, "timeout")
 }
 
 // firstXrayError extracts the first line of Xray output that reads like a failure,

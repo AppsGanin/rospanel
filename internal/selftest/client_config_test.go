@@ -1,6 +1,7 @@
 package selftest
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -194,6 +195,23 @@ func TestRingBufferKeepsTail(t *testing.T) {
 	_, _ = rb.Write([]byte("abcdefghij")) // 10 bytes into an 8-byte buffer
 	if got := rb.String(); got != "cdefghij" {
 		t.Errorf("ring buffer tail = %q, want %q", got, "cdefghij")
+	}
+}
+
+// A REALITY probe that dies with a bare EOF (donor handshake never completed) must
+// get the REALITY-specific hint about the dest, not the generic firewall line —
+// that's the difference between an operator fixing the donor and staring at "порт
+// закрыт".
+func TestExplainFailureRealityHint(t *testing.T) {
+	err := context.DeadlineExceeded
+	msg := explainFailure(model.ProtoReality, err, "some log with EOF here")
+	if !strings.Contains(msg, "REALITY") || !strings.Contains(msg, "донор") {
+		t.Errorf("REALITY EOF failure should name the donor/dest, got %q", msg)
+	}
+	// The same bare timeout on VLESS is a firewall/port problem, not a donor one.
+	vmsg := explainFailure(model.ProtoVLESS, err, "")
+	if strings.Contains(vmsg, "REALITY") {
+		t.Errorf("VLESS failure must not mention REALITY, got %q", vmsg)
 	}
 }
 
