@@ -48,7 +48,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	no := false
 	dns := "1.1.1.1"
 	n := &model.Node{
-		Host: "nl1.example.com",
+		Host:              "nl1.example.com",
 		RealityPrivateKey: "node-priv", RealityPublicKey: "node-pub",
 		HysteriaEnabled: &no, // override: off on this node
 		CertSelfSigned:  true,

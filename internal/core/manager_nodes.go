@@ -65,7 +65,6 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	return &ns
 }
 
-
 // NodeDesiredState builds the full desired state for a node: its Xray config
 // (generated panel-side from nodeSettings + the working user set), the host-level
 // meta the agent needs, and a hash over both so the sync handler can skip no-ops.
@@ -302,6 +301,34 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		views = append(views, v)
 	}
 	return views, nil
+}
+
+// NodeLinkSettings returns per-node settings clones for share-link/subscription
+// generation: one for each enabled node that has connected at least once (so links
+// point at a live server with a known cert), each carrying its NodeLabel and TLS
+// hints. The local server is NOT included — the caller prepends it (with its own
+// TLS hints applied by the server layer). Returns nil when there are no such nodes,
+// so a single-server install produces byte-identical output.
+func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := m.store.ListNodes()
+	if err != nil {
+		return nil, err
+	}
+	var out []*model.Settings
+	for i := range nodes {
+		n := &nodes[i]
+		if !n.Enabled || n.LastSeen == 0 {
+			continue // disabled, or never installed → don't hand clients a dead link
+		}
+		ns := nodeSettings(set, n)
+		ns.NodeLabel = n.Name
+		out = append(out, ns)
+	}
+	return out, nil
 }
 
 // --- node CRUD (thin wrappers that wake the node registry) --------------------

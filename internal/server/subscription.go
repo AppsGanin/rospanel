@@ -62,6 +62,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
+		// allSets spans the local server plus each enabled, connected node, so the
+		// payload carries one entry per protocol × server (single-server = local only).
+		allSets := rt.subSettings(set)
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -69,20 +72,20 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
-			body := sub.ClashYAML(*u, set)
+			body := sub.ClashYAMLMulti(*u, allSets)
 			if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
-					body = sub.ClashWithTemplate(*u, set, tpl)
+					body = sub.ClashWithTemplateMulti(*u, allSets, tpl)
 				}
 			}
 			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 			_, _ = w.Write([]byte(body))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(sub.SingBoxJSON(*u, set)))
+			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allSets)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := sub.ShareLinks(*u, set)
+			links := sub.ShareLinksAll(*u, allSets)
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)

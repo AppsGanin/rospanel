@@ -99,6 +99,18 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 	set.TLSPinSHA256 = rt.mgr.CertPinSHA256()
 }
 
+// subSettings returns the list of servers a subscription spans: the local server
+// (with its TLS hints already applied by the caller) first, then each enabled,
+// connected node. With no nodes it returns just the local set, so single-server
+// output is unchanged. `local` must already have applyTLSHints called on it.
+func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
+	sets := []*model.Settings{local}
+	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
+		sets = append(sets, nodes...)
+	}
+	return sets
+}
+
 func (rt *Router) panelMux() http.Handler {
 	mux := http.NewServeMux()
 	// Route tiers. Every helper below puts the route behind the session check — so a

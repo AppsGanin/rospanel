@@ -476,6 +476,11 @@ type Settings struct {
 	// then trust this exact cert. sing-box/clash use TLSInsecure (skip verify).
 	TLSInsecure  bool   `json:"-"`
 	TLSPinSHA256 string `json:"-"`
+
+	// NodeLabel is computed per request for multi-node subscriptions: when set, it's
+	// appended to every protocol label ("VLESS · Нидерланды") so a client shows which
+	// node each entry belongs to. Empty for the local server / single-node installs.
+	NodeLabel string `json:"-"`
 }
 
 // WarpRegistered reports whether a WARP account has been provisioned.
@@ -631,10 +636,15 @@ func (s *Settings) ProtoLabel(proto string) string {
 	case ProtoHysteria:
 		custom = s.HysteriaName
 	}
+	label := proto
 	if custom = strings.TrimSpace(custom); custom != "" {
-		return custom
+		label = custom
 	}
-	return proto
+	// Multi-node: disambiguate which server this entry is for.
+	if s.NodeLabel != "" {
+		label += " · " + s.NodeLabel
+	}
+	return label
 }
 
 // Fingerprints are the uTLS ClientHello fingerprints offered in the UI.
