@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net"
@@ -264,10 +265,36 @@ func validateRealityDestLive(host string) error {
 		return invalid("донор %q недоступен по TLS 1.3 на :443 (%v)", host, err)
 	}
 	defer conn.Close()
-	if conn.(*tls.Conn).ConnectionState().NegotiatedProtocol != "h2" {
+	state := conn.(*tls.Conn).ConnectionState()
+	if state.NegotiatedProtocol != "h2" {
 		return invalid("донор %q не поддерживает HTTP/2 — выбери другой сайт", host)
 	}
+	if size := certRecordSize(state.PeerCertificates); size > realityCertLimit {
+		return invalid("сертификат донора %q слишком большой (%d Б) — REALITY-хендшейк не "+
+			"завершается на этой версии Xray, если запись сертификата больше %d Б (issue #6402). "+
+			"Выбери сайт с меньшим сертификатом, например www.cloudflare.com, www.apple.com или dl.google.com",
+			host, size, realityCertLimit)
+	}
 	return nil
+}
+
+// realityCertLimit is the TLS Certificate-record size above which REALITY's
+// handshake silently fails to complete on current Xray (XTLS/Xray-core #6402).
+// Big-CDN donors like www.microsoft.com (~8.3 KB chain) trip it; the panel would
+// otherwise accept the dest, bring REALITY up, and leave every client unable to
+// connect with nothing in the logs to explain why.
+const realityCertLimit = 8192
+
+// certRecordSize estimates the bytes of the donor's TLS Certificate handshake
+// message — the quantity #6402 caps. It's the sum of each cert's DER length plus
+// the per-entry framing (3-byte length prefix), close enough to the real record to
+// judge the limit without parsing raw handshake bytes.
+func certRecordSize(chain []*x509.Certificate) int {
+	total := 4 // certificate_request_context (1) + certificate_list length (3)
+	for _, c := range chain {
+		total += 3 + len(c.Raw) + 2 // cert length prefix + DER + empty extensions
+	}
+	return total
 }
 
 // ApplyConnections validates and persists the whole connection surface, then does
