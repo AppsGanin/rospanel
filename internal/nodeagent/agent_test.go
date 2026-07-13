@@ -138,6 +138,20 @@ func TestBuildSyncRequestAssignsReportID(t *testing.T) {
 	}
 }
 
+func TestSubstituteCertPaths(t *testing.T) {
+	raw := []byte(`{"certificateFile":"` + nodeapi.CertPathSentinel +
+		`","keyFile":"` + nodeapi.KeyPathSentinel + `"}`)
+	out := substituteCertPaths(raw, "/var/lib/rospanel-node/certs/cert.pem", "/var/lib/rospanel-node/certs/key.pem")
+	s := string(out)
+	if strings.Contains(s, nodeapi.CertPathSentinel) || strings.Contains(s, nodeapi.KeyPathSentinel) {
+		t.Fatalf("sentinels not fully substituted: %s", s)
+	}
+	if !strings.Contains(s, "/var/lib/rospanel-node/certs/cert.pem") ||
+		!strings.Contains(s, "/var/lib/rospanel-node/certs/key.pem") {
+		t.Fatalf("absolute paths missing: %s", s)
+	}
+}
+
 func TestUserIDFromEmail(t *testing.T) {
 	for _, c := range []struct {
 		email string

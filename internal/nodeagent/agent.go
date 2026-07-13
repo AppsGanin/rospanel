@@ -307,12 +307,17 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	}
 
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
-	raw := bytes.ReplaceAll(st.XrayConfig, []byte(nodeapi.CertPathSentinel), []byte(a.certPath))
-	raw = bytes.ReplaceAll(raw, []byte(nodeapi.KeyPathSentinel), []byte(a.keyPath))
-	if err := a.sup.ApplyRaw(raw); err != nil {
+	if err := a.sup.ApplyRaw(substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath)); err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
 	return nil
+}
+
+// substituteCertPaths replaces the panel's cert-path sentinels in a generated Xray
+// config with the node's own absolute cert/key paths.
+func substituteCertPaths(raw []byte, certPath, keyPath string) []byte {
+	out := bytes.ReplaceAll(raw, []byte(nodeapi.CertPathSentinel), []byte(certPath))
+	return bytes.ReplaceAll(out, []byte(nodeapi.KeyPathSentinel), []byte(keyPath))
 }
 
 // ensureDecoy (re)starts the loopback decoy HTTP server if the dest or template
