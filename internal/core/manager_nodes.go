@@ -332,6 +332,15 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 }
 
 // DeleteNode removes a node and wakes any held poll so it learns it's revoked.
+//
+// A node that is CONNECTED when deleted is almost always parked in its held poll,
+// so wakeOne makes it return, find its row gone, and be told revoked (see
+// handleNodeSync). A node that is OFFLINE at delete time and reconnects later
+// gets only the decoy (its token row is gone), which the agent reads as "panel
+// unreachable" and keeps serving the last config. Closing that residual window
+// needs a tombstone (keep the token briefly, answer revoked) — deferred to the
+// node-agent PR, where it first becomes reachable. Until then, disabling a node
+// (which keeps the token and answers revoked) is the reliable "stop now" control.
 func (m *Manager) DeleteNode(id int64) error {
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
@@ -372,25 +381,25 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		ConfigHash:     req.ConfigHash,
 	})
 
-	// Idempotent traffic ingest: only apply a report newer than the stored
-	// watermark. A report_id at-or-below it is a retry of an already-counted batch
-	// (lost response), or a restarted agent replaying from a reset counter.
-	if req.ReportID > n.LastReportID && len(req.Traffic) > 0 {
-		today := now.In(m.loc()).Format("2006-01-02")
-		snapshot, _ := m.store.ListUsers()
-		for _, d := range req.Traffic {
-			up, down := nonNeg(d.Up), nonNeg(d.Down)
-			if up == 0 && down == 0 {
-				continue
+	// Idempotent traffic ingest: atomically claim the report id. A report at-or-
+	// below the stored watermark is a retry of an already-counted batch (lost
+	// response) or a restarted agent replaying a reset counter; the conditional
+	// claim also stops two concurrent syncs from both counting the same batch.
+	if req.ReportID > 0 {
+		if claimed, _ := m.store.ClaimNodeReport(n.ID, req.ReportID); claimed && len(req.Traffic) > 0 {
+			today := now.In(m.loc()).Format("2006-01-02")
+			snapshot, _ := m.store.ListUsers()
+			for _, d := range req.Traffic {
+				up, down := nonNeg(d.Up), nonNeg(d.Down)
+				if up == 0 && down == 0 {
+					continue
+				}
+				_ = m.store.AddUsedTraffic(d.UserID, up, down)
+				_ = m.store.AddDailyTrafficNode(d.UserID, n.ID, today, up, down)
+				_ = m.store.TouchLastSeen(d.UserID, now.Unix())
 			}
-			_ = m.store.AddUsedTraffic(d.UserID, up, down)
-			_ = m.store.AddDailyTrafficNode(d.UserID, n.ID, today, up, down)
-			_ = m.store.TouchLastSeen(d.UserID, now.Unix())
+			_ = m.enforceAfterTraffic(snapshot)
 		}
-		_ = m.store.SetNodeReportWatermark(n.ID, req.ReportID)
-		_ = m.enforceAfterTraffic(snapshot)
-	} else if req.ReportID > n.LastReportID {
-		_ = m.store.SetNodeReportWatermark(n.ID, req.ReportID)
 	}
 
 	resp := &nodeapi.SyncResponse{AckReport: req.ReportID}

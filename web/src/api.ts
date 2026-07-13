@@ -1118,8 +1118,9 @@ export const createNode = (name: string, host: string) =>
     body: JSON.stringify({ name, host }),
   })
 
-// NodePatch carries an edit. Protocol/DNS fields are null to inherit the global
-// setting, or a concrete value to override it. routing null inherits the panel's.
+// NodePatch carries a node edit. Protocol fields are null to inherit the global
+// setting, or a concrete value to override it. (Per-node routing/DNS have their
+// own editor and aren't touched here, so a protocol toggle never wipes them.)
 export interface NodePatch {
   name: string
   host: string
@@ -1128,8 +1129,6 @@ export interface NodePatch {
   trojan_enabled: boolean | null
   hysteria_enabled: boolean | null
   reality_enabled: boolean | null
-  routing: unknown | null
-  xray_dns: string | null
 }
 
 export const updateNode = (id: number, patch: NodePatch) =>

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/core"
-	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/updater"
@@ -73,18 +72,18 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// nodePatchReq edits a node. Protocol/DNS fields use pointers with an explicit
-// "inherit" flag so the UI can distinguish "set to false" from "inherit global".
+// nodePatchReq edits a node's name/host, protocol overrides and decoy. Protocol
+// pointers use nil ⇒ "inherit global". Routing and DNS overrides are NOT edited
+// here — they get a dedicated editor later; a protocol/decoy toggle must never
+// silently wipe a node's routing override, so this handler preserves them.
 type nodePatchReq struct {
-	Name          string               `json:"name"`
-	Host          string               `json:"host"`
-	DecoyTemplate string               `json:"decoy_template"`
-	VLESS         *bool                `json:"vless_enabled"`
-	Trojan        *bool                `json:"trojan_enabled"`
-	Hysteria      *bool                `json:"hysteria_enabled"`
-	Reality       *bool                `json:"reality_enabled"`
-	Routing       *model.RoutingConfig `json:"routing"`  // null ⇒ inherit global
-	XrayDNS       *string              `json:"xray_dns"` // null ⇒ inherit global
+	Name          string `json:"name"`
+	Host          string `json:"host"`
+	DecoyTemplate string `json:"decoy_template"`
+	VLESS         *bool  `json:"vless_enabled"`
+	Trojan        *bool  `json:"trojan_enabled"`
+	Hysteria      *bool  `json:"hysteria_enabled"`
+	Reality       *bool  `json:"reality_enabled"`
 }
 
 // updateNode applies an edit and wakes the node so the change propagates.
@@ -116,8 +115,10 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		Trojan:        req.Trojan,
 		Hysteria:      req.Hysteria,
 		Reality:       req.Reality,
-		Routing:       req.Routing,
-		XrayDNS:       req.XrayDNS,
+		// Preserve the node's existing routing/DNS overrides — this endpoint doesn't
+		// edit them, and sending nil would clear them.
+		Routing: node.Routing,
+		XrayDNS: node.XrayDNS,
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)

@@ -167,8 +167,6 @@ function NodeCard({
         hysteria_enabled:
           field === "hysteria_enabled" ? value : overrideVal(node, "hysteria"),
         reality_enabled: field === "reality_enabled" ? value : overrideVal(node, "reality"),
-        routing: null,
-        xray_dns: null,
       });
       onChanged();
     } catch (e) {
@@ -186,8 +184,6 @@ function NodeCard({
         trojan_enabled: null,
         hysteria_enabled: null,
         reality_enabled: null,
-        routing: null,
-        xray_dns: null,
       });
       notifySuccess("Протоколы сброшены к глобальным");
       onChanged();
@@ -206,8 +202,6 @@ function NodeCard({
         trojan_enabled: overrideVal(node, "trojan"),
         hysteria_enabled: overrideVal(node, "hysteria"),
         reality_enabled: overrideVal(node, "reality"),
-        routing: null,
-        xray_dns: null,
       });
       onChanged();
     } catch (e) {

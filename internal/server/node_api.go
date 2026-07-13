@@ -113,8 +113,14 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	}
 	// Recompute after waking: the desired state may now differ.
 	fresh, err := rt.mgr.GetNode(node.ID)
-	if err != nil || fresh == nil {
-		writeJSON(w, http.StatusOK, resp) // node vanished mid-hold; let it re-sync
+	if err != nil {
+		writeJSON(w, http.StatusOK, resp) // transient store error; let it re-sync
+		return
+	}
+	if fresh == nil {
+		// The node was deleted while its poll was held. Tell it to stop serving —
+		// otherwise it keeps running the last config with credentials we've revoked.
+		writeJSON(w, http.StatusOK, &nodeapi.SyncResponse{AckReport: resp.AckReport, Revoked: true})
 		return
 	}
 	out := &nodeapi.SyncResponse{AckReport: resp.AckReport}

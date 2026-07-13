@@ -327,10 +327,21 @@ func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
 	return err
 }
 
-// SetNodeReportWatermark advances a node's traffic-ingest idempotency watermark.
-func (s *Store) SetNodeReportWatermark(id, reportID int64) error {
-	_, err := s.db.Exec(`UPDATE nodes SET last_report_id = ? WHERE id = ?`, reportID, id)
-	return err
+// ClaimNodeReport atomically advances a node's traffic-ingest watermark to
+// reportID, but only if reportID is strictly greater than the stored one. It
+// returns true iff this call won the claim — so two concurrent (or replayed)
+// syncs carrying the same report can't both count their traffic. The caller
+// applies the traffic deltas only when this returns true.
+func (s *Store) ClaimNodeReport(id, reportID int64) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE nodes SET last_report_id = ? WHERE id = ? AND last_report_id < ?`,
+		reportID, id, reportID,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // DeleteNode removes a node. Its traffic history in traffic_daily is kept (rows
