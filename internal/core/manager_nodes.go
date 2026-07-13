@@ -148,15 +148,29 @@ func (r *nodeRegistry) wakeChan(nodeID int64) chan struct{} {
 	return ch
 }
 
-// wakeOne closes and replaces one node's wake channel (waiters return; the next
-// poll parks on the fresh channel).
+// wakeOne closes and replaces one node's wake channel (any parked poll returns and
+// re-parks on the fresh channel). It only acts on an existing entry: a poll always
+// registers its channel via wakeChan before computing desired state, so there is
+// nothing to wake until then — and not creating entries here keeps the map from
+// accumulating channels for nodes that never poll.
 func (r *nodeRegistry) wakeOne(nodeID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if ch, ok := r.waits[nodeID]; ok {
 		close(ch)
+		r.waits[nodeID] = make(chan struct{})
 	}
-	r.waits[nodeID] = make(chan struct{})
+}
+
+// dropWaiter wakes and removes a node's entry (used on delete, so a tombstoned
+// node's channel isn't retained forever).
+func (r *nodeRegistry) dropWaiter(nodeID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if ch, ok := r.waits[nodeID]; ok {
+		close(ch)
+		delete(r.waits, nodeID)
+	}
 }
 
 // wakeAll wakes every parked node — used after a user-set change that fans out to
@@ -345,12 +359,26 @@ func (m *Manager) DeleteNode(id int64) error {
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
 	}
-	m.nodes.wakeOne(id)
+	m.nodes.dropWaiter(id)
 	return nil
 }
 
 // RegenJoinToken issues a fresh install token for an existing node.
 func (m *Manager) RegenJoinToken(id int64) (string, error) { return m.store.RegenJoinToken(id) }
+
+// nodeTombstoneGrace is how long a deleted node's row is kept so it can still be
+// told Revoked on a late reconnect before the row is purged.
+const nodeTombstoneGrace = 7 * 24 * time.Hour
+
+// PurgeDeletedNodes reclaims tombstoned node rows past the grace window.
+func (m *Manager) PurgeDeletedNodes() {
+	cutoff := time.Now().Add(-nodeTombstoneGrace).Unix()
+	if n, err := m.store.PurgeDeletedNodes(cutoff); err != nil {
+		logWarn("purge deleted nodes", "err", err)
+	} else if n > 0 {
+		logInfo("purged tombstoned nodes", "count", n)
+	}
+}
 
 // randomDecoy picks a bundled decoy template at random so nodes don't all share
 // the panel's masquerade fingerprint. Falls back to "" (agent default) on error.

@@ -57,6 +57,12 @@ CREATE TABLE nodes (
     config_hash      TEXT    NOT NULL DEFAULT '', -- desired-state hash the node confirmed applied
     last_report_id   INTEGER NOT NULL DEFAULT 0,  -- traffic-ingest idempotency watermark
 
+    -- Soft-delete tombstone. A deleted node keeps its row (and token) but is hidden
+    -- from the operator; its next sync is answered Revoked=true so it stops serving,
+    -- instead of silently running the last config forever. A retention sweep purges
+    -- tombstones after a grace window.
+    deleted_at INTEGER NOT NULL DEFAULT 0,
+
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

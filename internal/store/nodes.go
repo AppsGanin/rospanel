@@ -24,7 +24,7 @@ const nodeColumns = `id, name, host, enabled,
 	decoy_template, routing_config, xray_dns,
 	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
-	join_expires_at`
+	join_expires_at, deleted_at`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -50,7 +50,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.DecoyTemplate, &routingJSON, &xrayDNS,
 		&n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
-		&n.JoinExpiresAt,
+		&n.JoinExpiresAt, &n.DeletedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -144,9 +144,10 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	}, nil
 }
 
-// ListNodes returns all nodes, newest first. RawJoinToken is never populated here.
+// ListNodes returns all live (non-tombstoned) nodes, oldest first. RawJoinToken is
+// never populated here.
 func (s *Store) ListNodes() ([]model.Node, error) {
-	rows, err := s.db.Query(`SELECT ` + nodeColumns + ` FROM nodes ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + nodeColumns + ` FROM nodes WHERE deleted_at = 0 ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -162,9 +163,12 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 	return out, rows.Err()
 }
 
-// GetNode returns one node by id, or (nil, nil) if it doesn't exist.
+// GetNode returns one live node by id, or (nil, nil) if it doesn't exist or was
+// deleted. (A tombstoned node is invisible to the operator; only the token lookup
+// still finds it, so its next sync can be answered Revoked.)
 func (s *Store) GetNode(id int64) (*model.Node, error) {
-	n, err := scanNode(s.db.QueryRow(`SELECT `+nodeColumns+` FROM nodes WHERE id = ?`, id))
+	n, err := scanNode(s.db.QueryRow(
+		`SELECT `+nodeColumns+` FROM nodes WHERE id = ? AND deleted_at = 0`, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -344,9 +348,25 @@ func (s *Store) ClaimNodeReport(id, reportID int64) (bool, error) {
 	return n > 0, nil
 }
 
-// DeleteNode removes a node. Its traffic history in traffic_daily is kept (rows
-// carry the numeric node_id, so past usage still totals correctly).
+// DeleteNode soft-deletes a node: it tombstones the row (keeping the token) and
+// disables it, so the node's next sync is answered Revoked=true and it stops
+// serving — a hard delete would drop the token and leave the node running its last
+// config with live user credentials (it would read the resulting decoy response as
+// "panel unreachable" and keep serving). PurgeDeletedNodes reclaims the row later.
+// Traffic history in traffic_daily is kept (rows carry the numeric node_id).
 func (s *Store) DeleteNode(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
+	_, err := s.db.Exec(
+		`UPDATE nodes SET deleted_at = unixepoch(), enabled = 0 WHERE id = ? AND deleted_at = 0`, id)
 	return err
+}
+
+// PurgeDeletedNodes hard-deletes tombstoned nodes whose deletion is older than the
+// cutoff, once a decommissioned node has had ample time to receive its revocation.
+func (s *Store) PurgeDeletedNodes(before int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM nodes WHERE deleted_at != 0 AND deleted_at < ?`, before)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }

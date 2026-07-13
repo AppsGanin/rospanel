@@ -128,6 +128,43 @@ func TestNodeSyncRevokedAfterDisable(t *testing.T) {
 	}
 }
 
+func TestNodeSyncRevokedAfterDelete(t *testing.T) {
+	h, mgr, st := nodeAPITestServer(t)
+	node, _ := mgr.CreateNode("n1", "nl1.example.com")
+	set, _ := st.GetSettings()
+	base := "/" + set.NodeAPIPath + "/" + nodeapi.PathPrefix
+
+	rec := postJSON(t, h, base+"/join", "", nodeapi.JoinRequest{JoinToken: node.RawJoinToken})
+	var jr nodeapi.JoinResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &jr); err != nil {
+		t.Fatalf("join decode: %v (code %d)", err, rec.Code)
+	}
+
+	// Deleting a node must revoke it on the next sync — NOT leave it silently
+	// serving. The token survives as a tombstone precisely so this revoke lands.
+	if err := mgr.DeleteNode(node.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	rec = postJSON(t, h, base+"/sync", jr.Token, nodeapi.SyncRequest{ConfigHash: "whatever"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sync status = %d", rec.Code)
+	}
+	var sr nodeapi.SyncResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &sr); err != nil {
+		t.Fatalf("sync decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if !sr.Revoked {
+		t.Fatalf("deleted node must be told revoked, got %+v", sr)
+	}
+	// The node is gone from the operator's list.
+	views, _ := mgr.NodeViews()
+	for _, v := range views {
+		if v.ID == node.ID {
+			t.Fatal("deleted node still appears in NodeViews")
+		}
+	}
+}
+
 func TestNodeJoinBadTokenIsDecoy(t *testing.T) {
 	h, mgr, st := nodeAPITestServer(t)
 	if _, err := mgr.CreateNode("n1", "nl1.example.com"); err != nil {

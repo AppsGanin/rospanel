@@ -45,12 +45,10 @@ func (rt *Router) handleNodeJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	node, token, err := rt.mgr.Store().ConsumeJoinToken(req.JoinToken)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
-		return
-	}
-	if node == nil {
-		// Unknown or expired join token — indistinguishable from an unknown path.
+	if err != nil || node == nil {
+		// Unknown/expired token — or a transient store error (a JSON 500 here would
+		// fingerprint the endpoint to a prober who already knows the segment). Either
+		// way, look like an ordinary site; a legitimate node just retries.
 		rt.decoy.ServeHTTP(w, r)
 		return
 	}
@@ -72,12 +70,9 @@ func (rt *Router) handleNodeJoin(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	token := apiKeyFromRequest(r)
 	node, err := rt.mgr.Store().LookupNodeByToken(token)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
-		return
-	}
-	if node == nil {
-		// No valid token → look like an ordinary site.
+	if err != nil || node == nil {
+		// No valid token (or a transient store error) → look like an ordinary site,
+		// so an unauthenticated prober can't distinguish this from unknown hosting.
 		rt.decoy.ServeHTTP(w, r)
 		return
 	}
@@ -104,10 +99,14 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Otherwise hold the request until the node is woken or the hold elapses, then
-	// return no-change so the agent loops.
+	// return no-change so the agent loops. The timer is stopped explicitly so an
+	// early wake (the common case — any user change wakes every node) doesn't leave
+	// a 45s timer alive.
+	timer := time.NewTimer(nodeSyncHoldSec * time.Second)
+	defer timer.Stop()
 	select {
 	case <-wake:
-	case <-time.After(nodeSyncHoldSec * time.Second):
+	case <-timer.C:
 	case <-r.Context().Done():
 		return // client hung up
 	}

@@ -57,6 +57,9 @@ type Node struct {
 	LastReportID   int64  `json:"-"`
 
 	CreatedAt int64 `json:"created_at"`
+	// DeletedAt is the tombstone timestamp: non-zero ⇒ the node was deleted and is
+	// kept only so its next sync can be answered Revoked before the row is purged.
+	DeletedAt int64 `json:"-"`
 
 	// JoinExpiresAt is when the pending one-time join token lapses (0 ⇒ the node has
 	// already joined, or its token expired and was cleared).
