@@ -153,7 +153,11 @@ func describeExit(exitIP, serverIP string) string {
 	switch {
 	case exitIP == "":
 		return "трафик проходит"
-	case serverIP != "" && exitIP != serverIP:
+	case serverIP == "":
+		// Couldn't establish the server's own IP, so we can't tell a direct exit from
+		// a lane — report success without claiming either.
+		return "трафик проходит"
+	case exitIP != serverIP:
 		return "трафик проходит, выход через " + exitIP +
 			" — не прямой адрес сервера (полоса WARP/Opera, прокси или второй IP)"
 	default:

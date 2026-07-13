@@ -20,6 +20,16 @@ func (m *Manager) SelfTest(ctx context.Context) ([]selftest.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Populate the same per-request TLS hints the subscription path fills in (see
+	// server.applyTLSHints): on a self-signed / not-yet-CA-trusted cert, real links
+	// carry the cert pin (pcs → pinnedPeerCertSha256) so clients trust it. Without
+	// this the probe would do full verification and fail the TLS handshake on a
+	// self-signed fallback — reporting a working server as broken, exactly on the
+	// fresh/IP installs where the self-test matters most.
+	if !m.HasValidCert() {
+		set.TLSInsecure = true
+		set.TLSPinSHA256 = m.CertPinSHA256()
+	}
 	if !m.sup.Running() {
 		return []selftest.Result{{OK: false,
 			Detail: "Xray не запущен — сначала устраните ошибку в разделе диагностики"}}, nil
