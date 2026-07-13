@@ -14,6 +14,16 @@ import "encoding/json"
 // the full URL is /<node_api_path>/<PathPrefix>/{join,sync}.
 const PathPrefix = "v1"
 
+// Cert-path sentinels. The panel generates a node's Xray config with these literal
+// placeholders where the TLS cert/key file paths go, because it doesn't know the
+// node's data directory. The agent substitutes them with its own absolute paths
+// before applying. They are part of the hashed desired state, so the hash is
+// stable regardless of where the node stores its certs.
+const (
+	CertPathSentinel = "__ROSPANEL_NODE_CERT__"
+	KeyPathSentinel  = "__ROSPANEL_NODE_KEY__"
+)
+
 // JoinRequest is sent once, with the one-time join token, to exchange it for a
 // permanent bearer token.
 type JoinRequest struct {
@@ -99,6 +109,14 @@ type NodeMeta struct {
 	HysteriaPort    int  `json:"hysteria_port"`
 	HopStart        int  `json:"hop_start"`
 	HopEnd          int  `json:"hop_end"`
+
+	// ConnGuardPorts are the public TCP ports the per-IP connection guard should
+	// protect (VLESS, and REALITY when enabled).
+	ConnGuardPorts []int `json:"connguard_ports,omitempty"`
+
+	// LoopbackDest is where the node's Xray fallback forwards non-VPN traffic — the
+	// agent runs its decoy server there (matches the panel's own layout).
+	LoopbackDest string `json:"loopback_dest"`
 
 	DecoyTemplate string `json:"decoy_template"`
 

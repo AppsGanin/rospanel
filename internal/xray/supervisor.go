@@ -251,6 +251,48 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	return nil
 }
 
+// ApplyRaw is Apply for a config that is already marshaled JSON — used by the node
+// agent, which receives the exact config the panel generated and applies it
+// verbatim (after substituting its own cert paths) rather than round-tripping it
+// through the Config struct. Same validate → atomic swap → restart, with the same
+// rollback backup, so a config the node's Xray can't parse never kills it.
+func (s *Supervisor) ApplyRaw(data []byte) error {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
+		return err
+	}
+	tmp := s.configPath + ".new"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if s.bin != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), validateTimeout)
+		cmd := exec.CommandContext(ctx, s.bin, "run", "-test", "-format", "json", "-c", tmp)
+		cmd.Env = s.env()
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("xray config validation failed: %w\n%s", err, out)
+		}
+	}
+	if cur, err := os.ReadFile(s.configPath); err == nil {
+		_ = os.WriteFile(s.configPath+".bak", cur, 0o600)
+	}
+	if err := os.Rename(tmp, s.configPath); err != nil {
+		return err
+	}
+	if err := s.restart(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.lastApply = time.Now()
+	s.mu.Unlock()
+	return nil
+}
+
 // Restart stops the running Xray and starts a fresh one from the config already on
 // disk. Unlike Apply it neither regenerates nor re-validates the config — it is the
 // operator's "kick it" button for a wedged or misbehaving process, and it also

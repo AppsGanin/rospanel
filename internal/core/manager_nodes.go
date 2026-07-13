@@ -65,12 +65,6 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	return &ns
 }
 
-// nodeCertPaths are the fixed on-disk cert locations the agent manages for its own
-// domain, referenced by the Xray config the panel generates.
-const (
-	nodeCertPath = "certs/cert.pem"
-	nodeKeyPath  = "certs/key.pem"
-)
 
 // NodeDesiredState builds the full desired state for a node: its Xray config
 // (generated panel-side from nodeSettings + the working user set), the host-level
@@ -85,8 +79,11 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		return nil, err
 	}
 	ns := nodeSettings(set, n)
-	ns.CertPath = nodeCertPath
-	ns.KeyPath = nodeKeyPath
+	// Cert paths are sentinels the agent rewrites to its own absolute paths (the
+	// panel doesn't know the node's data dir); keeping them symbolic makes the hash
+	// independent of where the node stores its certs.
+	ns.CertPath = nodeapi.CertPathSentinel
+	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
 	// panel's own layout.
 	cfg, err := xray.Generate(ns, users, m.opts, nil)
@@ -96,6 +93,10 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, err
+	}
+	connGuardPorts := []int{ns.VLESSPort}
+	if ns.RealityEnabled {
+		connGuardPorts = append(connGuardPorts, ns.RealityPort)
 	}
 	meta := nodeapi.NodeMeta{
 		Host:              n.Host,
@@ -108,6 +109,8 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		HysteriaPort:      set.HysteriaPort,
 		HopStart:          set.HopStart,
 		HopEnd:            set.HopEnd,
+		ConnGuardPorts:    connGuardPorts,
+		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
 		XrayPinnedVersion: xray.PinnedVersion,
 	}

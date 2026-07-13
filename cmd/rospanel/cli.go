@@ -39,6 +39,8 @@ func printUsage(w io.Writer) {
   restart            Перезапустить сервис (systemctl restart).
   status             Показать статус сервиса (systemctl status).
   update [-y]        Обновиться до последнего релиза с GitHub и перезапуститься.
+  node <под>         Режим ноды: install --join '<url>', run, set-panel, status,
+                     uninstall (см. rospanel node help).
   backup [файл]      Создать бэкап .tar.gz (БД + сертификаты + конфиг Xray).
                      Без аргумента имя файла — с текущей датой/временем.
   restore [-y] <файл>
