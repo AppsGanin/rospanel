@@ -419,8 +419,12 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 }
 
 // EnsureNodeAPIPath generates the node-API URL segment the first time a node is
-// created, then swaps it live into the router via the registered callback.
+// created, then swaps it live into the router via the registered callback. It is
+// serialized so two nodes created concurrently can't each mint a different path
+// (which would leave the router and the DB disagreeing on the segment).
 func (m *Manager) EnsureNodeAPIPath() error {
+	m.nodeEnsureMu.Lock()
+	defer m.nodeEnsureMu.Unlock()
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return err

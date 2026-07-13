@@ -128,6 +128,9 @@ type Manager struct {
 	// node is created (nil until the server registers it; nil-safe for CLI/tests).
 	nodePathMu sync.Mutex
 	nodePathCB func(string)
+	// nodeEnsureMu serializes first-time node-API path generation so concurrent
+	// node creates converge on one segment.
+	nodeEnsureMu sync.Mutex
 }
 
 // New builds a Manager. opts carries non-DB generation parameters (e.g. the
