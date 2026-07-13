@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/AppsGanin/rospanel/compare/v0.14.0...v0.15.0) (2026-07-13)
+
+
+### Features
+
+* **health:** connection self-test that verifies traffic actually flows ([8fd1a4e](https://github.com/AppsGanin/rospanel/commit/8fd1a4ef2cca739754b65450ce2e0edff98f8f18))
+* **health:** self-test flags egress that isn't the server's own IP ([04dc816](https://github.com/AppsGanin/rospanel/commit/04dc816dd084774da0192d6baf5b684fc0ddb622))
+* subscription announce, expired-user auto-delete, DB integrity recovery ([346f174](https://github.com/AppsGanin/rospanel/commit/346f17423dd922dae12d395f45b7178527962bc6))
+
+
+### Bug Fixes
+
+* **reality:** reject donors with oversized certs ([#6402](https://github.com/AppsGanin/rospanel/issues/6402)) + name the cause in self-test ([8dbcb26](https://github.com/AppsGanin/rospanel/commit/8dbcb26ce4694491ed1aed1809b602c483dd4820))
+* self-test TLS pin on self-signed, DB recovery blank-boot, egress wording ([639559e](https://github.com/AppsGanin/rospanel/commit/639559e99b9a0034d8ec115c4f0e154560b5b006))
+
 ## [0.14.0](https://github.com/AppsGanin/rospanel/compare/v0.13.0...v0.14.0) (2026-07-12)
 
 
