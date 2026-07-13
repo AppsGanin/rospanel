@@ -144,6 +144,14 @@ func (rt *Router) apiMux() http.Handler {
 	mux.HandleFunc("GET /v1/system", rt.apiSystem)
 	mux.HandleFunc("GET /v1/health/report", rt.apiHealthReport)
 
+	mux.HandleFunc("GET /v1/nodes", rt.apiListNodes)
+	mux.HandleFunc("POST /v1/nodes", rt.apiCreateNode)
+	id("GET /v1/nodes/{id}", rt.apiGetNode)
+	id("PATCH /v1/nodes/{id}", rt.apiPatchNode)
+	id("DELETE /v1/nodes/{id}", rt.apiDeleteNode)
+	id("POST /v1/nodes/{id}/enabled", rt.apiSetNodeEnabled)
+	id("POST /v1/nodes/{id}/regen-join", rt.apiRegenNodeJoin)
+
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {

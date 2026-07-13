@@ -99,6 +99,14 @@ var auditActions = map[string]auditRoute{
 	"DELETE /api/webhooks/{id}":    act(model.AuditWebhookDeleted),
 	"POST /api/webhooks/{id}/test": skip, // a test delivery changes nothing
 
+	// Nodes: each is a managed server with its own lifecycle. One section-style
+	// action; the node is the target. regen-join mints a fresh install credential.
+	"POST /api/nodes":                 set("Нода добавлена"),
+	"PATCH /api/nodes/{id}":           set("Нода изменена"),
+	"DELETE /api/nodes/{id}":          set("Нода удалена"),
+	"POST /api/nodes/{id}/enabled":    set("Нода вкл/выкл"),
+	"POST /api/nodes/{id}/regen-join": set("Нода · новый токен установки"),
+
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
 	"GET /api/backup":           act(model.AuditBackupTaken),

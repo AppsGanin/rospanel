@@ -129,7 +129,31 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/healthz", tag: "Monitoring", noAuth: true,
 			summary: "Liveness probe (no key; 503 when Xray is down)",
 			resp:    t(healthzResp{})},
+
+		{method: "GET", path: "/v1/nodes", tag: "Nodes", summary: "List nodes (local server is node 0)",
+			resp: t(core.NodeView{}), list: true},
+		{method: "POST", path: "/v1/nodes", tag: "Nodes", summary: "Register a node (returns the install command)",
+			req: t(apiCreateNodeReq{}), resp: t(oaNodeCreateResp{}), status: 201},
+		{method: "GET", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Get a node",
+			resp: t(model.Node{})},
+		{method: "PATCH", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Edit a node (name, host, protocol/routing/DNS overrides)",
+			req: t(apiPatchNodeReq{}), resp: t(oaOKResp{})},
+		{method: "DELETE", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Delete a node"},
+		{method: "POST", path: "/v1/nodes/{id}/enabled", tag: "Nodes", summary: "Enable or disable a node",
+			req: t(apiSetNodeEnabledReq{}), resp: t(oaOKResp{})},
+		{method: "POST", path: "/v1/nodes/{id}/regen-join", tag: "Nodes", summary: "Issue a fresh install command",
+			resp: t(oaNodeCreateResp{})},
 	}
+}
+
+// oaNodeCreateResp / oaOKResp type the node responses for the spec.
+type oaNodeCreateResp struct {
+	ID             int64  `json:"id"`
+	JoinToken      string `json:"join_token"`
+	InstallCommand string `json:"install_command"`
+}
+type oaOKResp struct {
+	OK bool `json:"ok"`
 }
 
 // healthzResp types the key-free liveness payload for the spec.
@@ -177,6 +201,7 @@ func buildOpenAPI(serverURL string) map[string]any {
 			map[string]any{"name": "Billing"},
 			map[string]any{"name": "Stats"},
 			map[string]any{"name": "Monitoring"},
+			map[string]any{"name": "Nodes"},
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
