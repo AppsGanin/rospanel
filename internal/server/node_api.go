@@ -19,13 +19,13 @@ const nodeSyncHoldSec = 45
 // node-API segment. Only two routes exist; anything else falls through to the
 // decoy (the segment itself is the obscurity layer, same as apiPath).
 func (rt *Router) handleNodeAPI(w http.ResponseWriter, r *http.Request, rest string) {
-	leaf, _ := firstSegment(rest) // rest is "/v1/join" → "v1"
+	leaf, afterLeaf := firstSegment(rest) // rest "/v1/join" → leaf "v1", afterLeaf "/join"
 	if leaf != nodeapi.PathPrefix || r.Method != http.MethodPost {
 		rt.decoy.ServeHTTP(w, r)
 		return
 	}
-	_, action := firstSegment(rest[len("/")+len(nodeapi.PathPrefix):])
-	switch strings.TrimPrefix(action, "/") {
+	action, _ := firstSegment(afterLeaf) // "/join" → "join"
+	switch action {
 	case "join":
 		rt.handleNodeJoin(w, r)
 	case "sync":
