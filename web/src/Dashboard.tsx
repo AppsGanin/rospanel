@@ -6,6 +6,7 @@ import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
 import { PaymentsPage } from "./PaymentsPage";
 import { useIsAdmin, useIsOwner } from "./role";
+import { NodesPanel } from "./NodesPanel";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import {
@@ -26,7 +27,7 @@ import { UsersPage } from "./UsersPage";
 // appears in NAV — only in the route.
 // Statistics and the journal aren't tabs either: they're sub-tabs of "users"
 // (see UsersPage), because both only ever describe end users.
-type Tab = "overview" | "users" | "payments" | "settings" | "admins";
+type Tab = "overview" | "users" | "nodes" | "payments" | "settings" | "admins";
 
 export function Dashboard({
   username,
@@ -75,6 +76,7 @@ export function Dashboard({
   const NAV: { value: Tab; label: string }[] = [
     { value: "overview", label: "Дашборд" },
     { value: "users", label: "Пользователи" },
+    ...(isAdmin ? [{ value: "nodes" as Tab, label: "Ноды" }] : []),
     ...(billing && isAdmin ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
     ...(isAdmin ? [{ value: "settings" as Tab, label: "Настройки" }] : []),
   ];
@@ -225,6 +227,7 @@ export function Dashboard({
         <div key={tab} className="animate-fade-in">
           {tab === "overview" && <OverviewPanel />}
           {tab === "users" && <UsersPage />}
+          {tab === "nodes" && <NodesPanel />}
           {tab === "payments" && <PaymentsPage />}
           {tab === "settings" && <SettingsPanel />}
           {tab === "admins" && <AdminsSettings />}

@@ -1074,3 +1074,80 @@ export const testWebhook = (id: number) =>
     `api/webhooks/${id}/test`,
     { method: 'POST' },
   )
+
+// --- Nodes (multi-node) -----------------------------------------------------
+
+// NodeProtoOverrides marks which protocol toggles a node overrides (true) vs
+// inherits from the global settings (false).
+export interface NodeProtoOverrides {
+  vless: boolean
+  trojan: boolean
+  hysteria: boolean
+  reality: boolean
+}
+
+// NodeView is one row of the Nodes page. The local server is node 0 (is_local).
+export interface NodeView {
+  id: number
+  name: string
+  host: string
+  enabled: boolean
+  is_local: boolean
+  online: boolean
+  joined: boolean
+  last_seen: number
+  node_version: string
+  xray_version: string
+  xray_running: boolean
+  version_skew: boolean
+  vless_enabled: boolean
+  trojan_enabled: boolean
+  hysteria_enabled: boolean
+  reality_enabled: boolean
+  decoy_template: string
+  traffic_up: number
+  traffic_down: number
+  overrides: NodeProtoOverrides
+}
+
+export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
+
+export const createNode = (name: string, host: string) =>
+  api<{ id: number; install_command: string }>('api/nodes', {
+    method: 'POST',
+    body: JSON.stringify({ name, host }),
+  })
+
+// NodePatch carries an edit. Protocol/DNS fields are null to inherit the global
+// setting, or a concrete value to override it. routing null inherits the panel's.
+export interface NodePatch {
+  name: string
+  host: string
+  decoy_template: string
+  vless_enabled: boolean | null
+  trojan_enabled: boolean | null
+  hysteria_enabled: boolean | null
+  reality_enabled: boolean | null
+  routing: unknown | null
+  xray_dns: string | null
+}
+
+export const updateNode = (id: number, patch: NodePatch) =>
+  api<{ ok: boolean }>(`api/nodes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const setNodeEnabled = (id: number, enabled: boolean) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/enabled`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export const deleteNode = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}`, { method: 'DELETE' })
+
+export const regenNodeJoin = (id: number) =>
+  api<{ install_command: string }>(`api/nodes/${id}/regen-join`, {
+    method: 'POST',
+  })
