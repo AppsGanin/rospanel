@@ -1,0 +1,298 @@
+package store
+
+import (
+	"database/sql"
+	"strings"
+	"time"
+
+	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/model"
+)
+
+// nodeTokenPrefix marks a raw node bearer/join token, so a leaked one is
+// recognizably a RosPanel node credential (and greppable in logs).
+const nodeTokenPrefix = "rpn_"
+
+// joinTokenTTL is how long a freshly-issued install command stays valid.
+const joinTokenTTL = 24 * time.Hour
+
+// nodeColumns is the SELECT list every node read shares, in Node-field order.
+const nodeColumns = `id, name, host, enabled,
+	reality_private_key, reality_public_key, reality_short_id, reality_service_name,
+	vless_enabled, trojan_enabled, hysteria_enabled, reality_enabled,
+	decoy_template, last_seen, node_version, xray_version, xray_running,
+	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
+	join_expires_at`
+
+// generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
+func generateNodeToken() (string, error) {
+	body, err := auth.RandomToken()
+	if err != nil {
+		return "", err
+	}
+	return nodeTokenPrefix + body, nil
+}
+
+// scanNode reads one node row in nodeColumns order, decrypting the private key
+// and mapping the nullable protocol overrides to *bool.
+func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
+	var n model.Node
+	var enabled, xrayRunning, certSelfSigned int
+	var vlessEn, trojanEn, hysteriaEn, realityEn sql.NullBool
+	if err := sc.Scan(
+		&n.ID, &n.Name, &n.Host, &enabled,
+		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName,
+		&vlessEn, &trojanEn, &hysteriaEn, &realityEn,
+		&n.DecoyTemplate, &n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
+		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
+		&n.JoinExpiresAt,
+	); err != nil {
+		return nil, err
+	}
+	n.Enabled = enabled != 0
+	n.XrayRunning = xrayRunning != 0
+	n.CertSelfSigned = certSelfSigned != 0
+	n.RealityPrivateKey = decField(n.RealityPrivateKey)
+	n.VLESSEnabled = nullBoolPtr(vlessEn)
+	n.TrojanEnabled = nullBoolPtr(trojanEn)
+	n.HysteriaEnabled = nullBoolPtr(hysteriaEn)
+	n.RealityEnabled = nullBoolPtr(realityEn)
+	return &n, nil
+}
+
+func nullBoolPtr(v sql.NullBool) *bool {
+	if !v.Valid {
+		return nil
+	}
+	b := v.Bool
+	return &b
+}
+
+func boolToNull(p *bool) sql.NullBool {
+	if p == nil {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{Bool: *p, Valid: true}
+}
+
+// CreateNode inserts a node with a fresh REALITY identity, a random decoy, and a
+// one-time join token. The returned Node has RawJoinToken populated (shown to the
+// operator exactly once, inside the install command); only its hash is stored.
+func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error) {
+	priv, pub, err := auth.GenerateRealityKeys()
+	if err != nil {
+		return nil, err
+	}
+	shortID, err := auth.RandomShortIDs()
+	if err != nil {
+		return nil, err
+	}
+	serviceName, err := auth.RandomServiceName()
+	if err != nil {
+		return nil, err
+	}
+	joinToken, err := generateNodeToken()
+	if err != nil {
+		return nil, err
+	}
+	joinHash, err := s.tokenHash(joinToken)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	exp := now.Add(joinTokenTTL).Unix()
+	res, err := s.db.Exec(`
+		INSERT INTO nodes (name, host, enabled,
+			reality_private_key, reality_public_key, reality_short_id, reality_service_name,
+			decoy_template, join_token_hash, join_expires_at, created_at)
+		VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, host, encField(priv), pub, shortID, serviceName,
+		decoyTemplate, joinHash, exp, now.Unix(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &model.Node{
+		ID:                 id,
+		Name:               name,
+		Host:               host,
+		Enabled:            true,
+		RealityPrivateKey:  priv,
+		RealityPublicKey:   pub,
+		RealityShortID:     shortID,
+		RealityServiceName: serviceName,
+		DecoyTemplate:      decoyTemplate,
+		CreatedAt:          now.Unix(),
+		JoinExpiresAt:      exp,
+		RawJoinToken:       joinToken,
+	}, nil
+}
+
+// ListNodes returns all nodes, newest first. RawJoinToken is never populated here.
+func (s *Store) ListNodes() ([]model.Node, error) {
+	rows, err := s.db.Query(`SELECT ` + nodeColumns + ` FROM nodes ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Node
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *n)
+	}
+	return out, rows.Err()
+}
+
+// GetNode returns one node by id, or (nil, nil) if it doesn't exist.
+func (s *Store) GetNode(id int64) (*model.Node, error) {
+	n, err := scanNode(s.db.QueryRow(`SELECT `+nodeColumns+` FROM nodes WHERE id = ?`, id))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return n, err
+}
+
+// LookupNodeByToken resolves a raw permanent token to its (enabled or disabled)
+// node, by HMAC hash. Returns (nil, nil) when nothing matches. The caller decides
+// what a disabled node means (it is told to stop serving, not deauthenticated).
+func (s *Store) LookupNodeByToken(raw string) (*model.Node, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !strings.HasPrefix(raw, nodeTokenPrefix) {
+		return nil, nil
+	}
+	hash, err := s.tokenHash(raw)
+	if err != nil {
+		return nil, err
+	}
+	n, err := scanNode(s.db.QueryRow(
+		`SELECT `+nodeColumns+` FROM nodes WHERE token_hash = ? AND token_hash != ''`, hash))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return n, err
+}
+
+// ConsumeJoinToken exchanges a valid, unexpired one-time join token for a fresh
+// permanent bearer token: the join token is cleared (single use) and the permanent
+// token's hash is stored. The raw permanent token is returned exactly once.
+// Returns (nil, "", nil) when the token is unknown or expired.
+func (s *Store) ConsumeJoinToken(raw string) (*model.Node, string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !strings.HasPrefix(raw, nodeTokenPrefix) {
+		return nil, "", nil
+	}
+	hash, err := s.tokenHash(raw)
+	if err != nil {
+		return nil, "", err
+	}
+	var id, exp int64
+	err = s.db.QueryRow(
+		`SELECT id, join_expires_at FROM nodes WHERE join_token_hash = ? AND join_token_hash != ''`,
+		hash,
+	).Scan(&id, &exp)
+	if err == sql.ErrNoRows {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if exp != 0 && time.Now().Unix() > exp {
+		return nil, "", nil // expired; leave the row for a fresh regen
+	}
+	perm, err := generateNodeToken()
+	if err != nil {
+		return nil, "", err
+	}
+	permHash, err := s.tokenHash(perm)
+	if err != nil {
+		return nil, "", err
+	}
+	// Single-use: clear the join token as we set the permanent one.
+	if _, err := s.db.Exec(
+		`UPDATE nodes SET token_hash = ?, join_token_hash = '', join_expires_at = 0 WHERE id = ?`,
+		permHash, id,
+	); err != nil {
+		return nil, "", err
+	}
+	n, err := s.GetNode(id)
+	if err != nil {
+		return nil, "", err
+	}
+	return n, perm, nil
+}
+
+// RegenJoinToken issues a new one-time join token for a node (e.g. to re-install
+// it) and revokes its current permanent token so the old install can't keep
+// syncing. The raw join token is returned once.
+func (s *Store) RegenJoinToken(id int64) (string, error) {
+	joinToken, err := generateNodeToken()
+	if err != nil {
+		return "", err
+	}
+	joinHash, err := s.tokenHash(joinToken)
+	if err != nil {
+		return "", err
+	}
+	exp := time.Now().Add(joinTokenTTL).Unix()
+	res, err := s.db.Exec(
+		`UPDATE nodes SET join_token_hash = ?, join_expires_at = ?, token_hash = '',
+			config_hash = '', last_seen = 0 WHERE id = ?`,
+		joinHash, exp, id,
+	)
+	if err != nil {
+		return "", err
+	}
+	if aff, _ := res.RowsAffected(); aff == 0 {
+		return "", sql.ErrNoRows
+	}
+	return joinToken, nil
+}
+
+// UpdateNode persists the operator-editable fields (name, host, protocol
+// overrides, decoy). Identity, tokens and reported status are untouched.
+func (s *Store) UpdateNode(id int64, name, host, decoyTemplate string, vless, trojan, hysteria, reality *bool) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET name = ?, host = ?, decoy_template = ?,
+			vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?, reality_enabled = ?
+		WHERE id = ?`,
+		name, host, decoyTemplate,
+		boolToNull(vless), boolToNull(trojan), boolToNull(hysteria), boolToNull(reality),
+		id,
+	)
+	return err
+}
+
+// SetNodeEnabled toggles whether a node serves traffic and appears in links.
+func (s *Store) SetNodeEnabled(id int64, enabled bool) error {
+	_, err := s.db.Exec(`UPDATE nodes SET enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// UpdateNodeStatus records what a node reported on a sync: liveness, versions,
+// live cert fingerprint, and the desired-state hash it has applied.
+func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET last_seen = ?, node_version = ?, xray_version = ?, xray_running = ?,
+			cert_sha256 = ?, cert_self_signed = ?, config_hash = ? WHERE id = ?`,
+		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
+		st.CertSHA256, boolToInt(st.CertSelfSigned), st.ConfigHash, id,
+	)
+	return err
+}
+
+// SetNodeReportWatermark advances a node's traffic-ingest idempotency watermark.
+func (s *Store) SetNodeReportWatermark(id, reportID int64) error {
+	_, err := s.db.Exec(`UPDATE nodes SET last_report_id = ? WHERE id = ?`, reportID, id)
+	return err
+}
+
+// DeleteNode removes a node. Its traffic history in traffic_daily is kept (rows
+// carry the numeric node_id, so past usage still totals correctly).
+func (s *Store) DeleteNode(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
+	return err
+}
