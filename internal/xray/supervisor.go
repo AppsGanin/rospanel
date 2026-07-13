@@ -144,6 +144,10 @@ func (s *Supervisor) ConfigBytes() ([]byte, error) { return os.ReadFile(s.config
 // AssetDir returns the directory holding the geoip.dat / geosite.dat databases.
 func (s *Supervisor) AssetDir() string { return s.assetDir }
 
+// BinPath returns the resolved Xray binary, or "" if none was found. The self-test
+// spawns a throwaway Xray client from the same binary, so it needs this.
+func (s *Supervisor) BinPath() string { return s.bin }
+
 // APIAddr is the loopback address of Xray's gRPC API (StatsService + live user
 // add/remove). The wiring lives here so callers don't rebuild it ad hoc.
 func (s *Supervisor) APIAddr() string { return fmt.Sprintf("127.0.0.1:%d", APIPort) }
