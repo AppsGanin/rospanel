@@ -9,6 +9,7 @@ import {
   setLocalBackup,
   setProxyMode,
   setupTimezone,
+  setUserAutoDelete,
   type SettingsInfo,
   type UpdateInfo,
 } from "./api";
@@ -51,6 +52,18 @@ type LocalBackup = { schedule: Schedule; keep: number };
 
 const EMPTY_BK: LocalBackup = { schedule: EMPTY_SCHEDULE, keep: 7 };
 
+// Grace period between a user's expiry date and their deletion. "Никогда" is the
+// default and is deliberately first: deleting paying customers because a dropdown
+// defaulted to something is not a mistake anyone should be able to make by accident.
+const AUTODELETE_OPTIONS = [
+  { value: "0", label: "Никогда" },
+  { value: "7", label: "7 дней после истечения" },
+  { value: "30", label: "30 дней после истечения" },
+  { value: "90", label: "90 дней после истечения" },
+  { value: "180", label: "180 дней после истечения" },
+  { value: "365", label: "365 дней после истечения" },
+];
+
 const DECOY_LABELS: Record<string, string> = {
   "coming-soon": "Coming soon (скоро открытие)",
   nginx: "Nginx (страница по умолчанию)",
@@ -83,6 +96,8 @@ export function GeneralSettings() {
   const [savedPm, setSavedPm] = useState<ProxyMode>(EMPTY_PM);
   const [bk, setBk] = useState<LocalBackup>(EMPTY_BK);
   const [savedBk, setSavedBk] = useState<LocalBackup>(EMPTY_BK);
+  const [autoDel, setAutoDel] = useState(0);
+  const [savedAutoDel, setSavedAutoDel] = useState(0);
   const [version, setVersion] = useState("");
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -129,6 +144,9 @@ export function GeneralSettings() {
           };
           setBk(bkv);
           setSavedBk(bkv);
+          const ad = s.user_autodelete_days ?? 0;
+          setAutoDel(ad);
+          setSavedAutoDel(ad);
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
@@ -141,7 +159,13 @@ export function GeneralSettings() {
   const bkCron = buildCron(bk.schedule);
   const bkDirty =
     bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
-  const dirty = timezone !== savedTz || decoy !== savedDecoy || pmDirty || bkDirty;
+  const adDirty = autoDel !== savedAutoDel;
+  const dirty =
+    timezone !== savedTz ||
+    decoy !== savedDecoy ||
+    pmDirty ||
+    bkDirty ||
+    adDirty;
   // Proxy mode without credentials is an open proxy — block saving it.
   const saveBlocked = pm.enabled && (!pm.user.trim() || !pm.pass);
 
@@ -167,6 +191,10 @@ export function GeneralSettings() {
           await setLocalBackup({ cron: bkCron, keep: bk.keep });
           setSavedBk(bk);
         }
+        if (adDirty) {
+          await setUserAutoDelete(autoDel);
+          setSavedAutoDel(autoDel);
+        }
         notifySuccess("Настройки сохранены");
       },
       { key: "save" },
@@ -177,6 +205,7 @@ export function GeneralSettings() {
     setDecoyState(savedDecoy);
     setPm(savedPm);
     setBk(savedBk);
+    setAutoDel(savedAutoDel);
   };
 
   const doRegenSecret = async () => {
@@ -427,6 +456,23 @@ export function GeneralSettings() {
           ⚠️ Копия лежит на том же диске, что и панель, и содержит ключ шифрования
           секретов — от потери сервера она не спасёт. Скачивайте её к себе или
           включите отправку в Telegram.
+        </p>
+      </SettingCard>
+
+      <SettingCard
+        title="Автоудаление истёкших пользователей"
+        description="Пользователь с истёкшим сроком удаляется через указанное время после даты окончания. Записи в журнале остаются — видно, кого и когда удалили."
+      >
+        <Select
+          label="Удалять через"
+          data={AUTODELETE_OPTIONS}
+          value={String(autoDel)}
+          onChange={(v) => setAutoDel(Number(v))}
+        />
+        <p className="mt-2 text-xs text-ink-muted">
+          {autoDel === 0
+            ? "Никто не удаляется — истёкшие копятся в списке."
+            : "Удаление необратимо. Не затрагивает пользователей без срока и тех, кому срок продлили."}
         </p>
       </SettingCard>
 

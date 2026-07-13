@@ -519,6 +519,11 @@ export const updateCredentials = (
     body: JSON.stringify({ username, password, current_password: currentPassword }),
   })
 
+// ANNOUNCE_MAX is the announcement length clients actually render (Happ cuts at
+// 200); the server rejects anything longer, so the form counts down to the same
+// number instead of letting the operator write a message that arrives truncated.
+export const ANNOUNCE_MAX = 200
+
 export interface SubSettings {
   sub_path: string
   sub_base64: boolean
@@ -529,6 +534,7 @@ export interface SubSettings {
   sub_routing_incy: string
   sub_routing_mihomo: string
   sub_update_interval: number
+  sub_announce: string
 }
 
 export interface SettingsInfo extends SubSettings {
@@ -546,7 +552,14 @@ export interface SettingsInfo extends SubSettings {
   proxy_mode_pass: string
   local_backup_cron: string
   local_backup_keep: number
+  user_autodelete_days: number
 }
+
+export const setUserAutoDelete = (days: number) =>
+  api<{ ok: boolean }>('api/settings/autodelete', {
+    method: 'POST',
+    body: JSON.stringify({ user_autodelete_days: days }),
+  })
 
 export interface ProxyModeConfig {
   enabled: boolean
@@ -791,6 +804,20 @@ export interface HealthReport {
 }
 
 export const getHealth = () => api<HealthReport>('api/health')
+
+export interface SelfTestResult {
+  proto: string
+  label: string
+  ok: boolean
+  detail: string
+  exit_ip?: string
+}
+
+// runSelfTest connects to each enabled protocol as a real client and reports
+// whether traffic flows end-to-end. Slow (spawns a client per protocol), so the
+// caller shows a spinner; the request itself is bounded server-side.
+export const runSelfTest = () =>
+  api<{ results: SelfTestResult[] }>('api/health/selftest', { method: 'POST' })
 
 export type BulkAction = 'enable' | 'disable' | 'reset' | 'extend' | 'delete'
 

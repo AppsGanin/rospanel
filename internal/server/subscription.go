@@ -400,6 +400,14 @@ func setSubHeaders(w http.ResponseWriter, u model.User, set *model.Settings, sup
 		// the TG icon. Points the client at the public user bot.
 		w.Header().Set("support-url", supportURL)
 	}
+	// The operator's announcement, rendered as a line inside the client itself (Happ,
+	// v2RayTun). base64 is not optional: HTTP header values are ASCII, and the text is
+	// Cyrillic — raw UTF-8 bytes survive Go but get mangled by a proxy in front. Every
+	// panel that ships this header base64s it unconditionally, and clients expect the
+	// "base64:" prefix.
+	if a := strings.TrimSpace(set.SubAnnounce); a != "" {
+		w.Header().Set("Announce", "base64:"+base64.StdEncoding.EncodeToString([]byte(a)))
+	}
 	w.Header().Set("Cache-Control", "no-store")
 }
 

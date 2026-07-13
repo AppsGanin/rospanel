@@ -5,7 +5,9 @@ package store
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -15,13 +17,20 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// ErrCorrupt reports a database file that exists but SQLite cannot use: a torn
+// page, a truncated header ("file is not a database"), or a failed integrity
+// check. It is the one failure a caller can act on — the file is unusable, so the
+// only way back is a restore. Everything else from Open is a plain error.
+var ErrCorrupt = errors.New("database is corrupt")
+
 // Store wraps the SQLite connection pool.
 type Store struct {
 	db *sql.DB
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies pragmas,
-// and runs pending migrations.
+// verifies the file's integrity, and runs pending migrations. A file SQLite can't
+// read, or one that fails the integrity check, comes back wrapped in ErrCorrupt.
 func Open(path string) (*Store, error) {
 	dsn := fmt.Sprintf(
 		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)",
@@ -35,14 +44,87 @@ func Open(path string) (*Store, error) {
 	// panel's scale (a handful of admins, hundreds of users).
 	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("open db: %w", err)
+		_ = db.Close()
+		return nil, corruptOr("open db", err)
+	}
+	if err := quickCheck(db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("migrate: %w", err)
+		return nil, corruptOr("migrate", err)
 	}
 	return s, nil
+}
+
+// Check reports whether the database file at path is usable, without opening the
+// panel's full Store (no migrations, no writes). A missing file is fine — that's a
+// fresh install — so it returns nil. A damaged one returns ErrCorrupt.
+//
+// This runs at boot before anything touches the data dir, because the alternative
+// is a panel that crash-loops on a corrupt file with no idea it should restore.
+func Check(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil // fresh install: Open will create it
+		}
+		return err
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(2000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := db.Ping(); err != nil {
+		return corruptOr("open db", err)
+	}
+	return quickCheck(db)
+}
+
+// quickCheck runs SQLite's quick_check pragma — the cheap sibling of
+// integrity_check: it verifies page structure and skips the (slow) index-content
+// cross-check, which is the right trade for a boot-time gate. A healthy database
+// answers with the single row "ok".
+func quickCheck(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA quick_check(1)`)
+	if err != nil {
+		return corruptOr("integrity check", err)
+	}
+	defer rows.Close()
+	var result string
+	if rows.Next() {
+		if err := rows.Scan(&result); err != nil {
+			return corruptOr("integrity check", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return corruptOr("integrity check", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(result), "ok") {
+		return fmt.Errorf("%w: %s", ErrCorrupt, result)
+	}
+	return nil
+}
+
+// corruptOr tags an error as ErrCorrupt when SQLite is telling us the file itself
+// is damaged, and leaves every other failure (locked, permissions, disk full) as a
+// plain error — those must NOT trigger a restore.
+func corruptOr(stage string, err error) error {
+	msg := strings.ToLower(err.Error())
+	for _, sig := range []string{
+		"file is not a database",
+		"database disk image is malformed",
+		"malformed database schema",
+		"database corrupt",
+		"file is encrypted",
+	} {
+		if strings.Contains(msg, sig) {
+			return fmt.Errorf("%w: %s: %v", ErrCorrupt, stage, err)
+		}
+	}
+	return fmt.Errorf("%s: %w", stage, err)
 }
 
 // Close releases the database.

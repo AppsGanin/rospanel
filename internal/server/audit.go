@@ -65,6 +65,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/dns":             set("DNS"),
 	"POST /api/settings/proxy-mode":      set("Режим прокси"),
 	"POST /api/settings/local-backup":    set("Локальные бэкапы"),
+	"POST /api/settings/autodelete":      set("Автоудаление истёкших"),
 	"POST /api/settings/api-path":        set("Адрес API"),
 	"POST /api/setup/timezone":           set("Часовой пояс"),
 	"POST /api/setup/finish":             set("Первичная настройка"),
@@ -100,13 +101,14 @@ var auditActions = map[string]auditRoute{
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
-	"GET /api/backup":          act(model.AuditBackupTaken),
-	"POST /api/backup/inspect": skip, // read-only: inspects an uploaded file, changes nothing
-	"POST /api/restore":        act(model.AuditRestored),
-	"POST /api/reset":          act(model.AuditFactoryReset),
-	"POST /api/update":         act(model.AuditUpdated),
-	"POST /api/xray/restart":   act(model.AuditXrayRestarted),
-	"POST /api/stats/reset":    act(model.AuditStatsReset),
+	"GET /api/backup":           act(model.AuditBackupTaken),
+	"POST /api/backup/inspect":  skip, // read-only: inspects an uploaded file, changes nothing
+	"POST /api/restore":         act(model.AuditRestored),
+	"POST /api/reset":           act(model.AuditFactoryReset),
+	"POST /api/update":          act(model.AuditUpdated),
+	"POST /api/xray/restart":    act(model.AuditXrayRestarted),
+	"POST /api/stats/reset":     act(model.AuditStatsReset),
+	"POST /api/health/selftest": skip, // a read-only probe: spawns a throwaway client, changes nothing
 
 	// End users: audited in the user journal instead, per user, with details this
 	// trail could not carry. Listed explicitly so the exhaustiveness test sees a

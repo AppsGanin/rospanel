@@ -1,14 +1,21 @@
 import { useEffect, useState } from "react";
-import { getSettings, saveSubSettings, type SubSettings } from "./api";
+import {
+  ANNOUNCE_MAX,
+  getSettings,
+  saveSubSettings,
+  type SubSettings,
+} from "./api";
 import { useAction, useDirtyForm } from "./hooks";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
   Card,
   CenterLoader,
+  cn,
   SaveBar,
   Select,
   Switch,
+  Textarea,
   TextInput,
   ToggleRow,
 } from "./ui";
@@ -25,6 +32,7 @@ const EMPTY_SUB: SubSettings = {
   sub_routing_incy: "",
   sub_routing_mihomo: "",
   sub_update_interval: 1,
+  sub_announce: "",
 };
 
 // Subscription auto-update cadence (hours; "0" = never).
@@ -57,6 +65,7 @@ export function SubscriptionsPanel() {
           sub_routing_incy: d.sub_routing_incy,
           sub_routing_mihomo: d.sub_routing_mihomo,
           sub_update_interval: d.sub_update_interval,
+          sub_announce: d.sub_announce,
         };
         load(init);
         setSecret(d.secret_path);
@@ -67,6 +76,10 @@ export function SubscriptionsPanel() {
 
   const patch = (p: Partial<SubSettings>) => setS((cur) => ({ ...cur, ...p }));
   const pathErr = subPathError(s.sub_path, secret);
+  // Count runes the way the server does, not UTF-16 code units: an emoji is one
+  // character to the client that renders it, and two to String.length.
+  const announceLen = [...s.sub_announce.trim()].length;
+  const announceErr = announceLen > ANNOUNCE_MAX;
 
   const save = () =>
     run(async () => {
@@ -124,6 +137,23 @@ export function SubscriptionsPanel() {
             value={String(s.sub_update_interval)}
             onChange={(v) => patch({ sub_update_interval: Number(v) })}
           />
+          <div>
+            <Textarea
+              label="Объявление в клиенте"
+              placeholder="Например: сервер переезжает 3 августа, ссылка не меняется"
+              rows={2}
+              value={s.sub_announce}
+              onChange={(v) => patch({ sub_announce: v })}
+            />
+            <p
+              className={cn(
+                "mt-1 text-xs",
+                announceErr ? "text-danger" : "text-ink-muted",
+              )}
+            >
+              Показывается строкой внутри VPN-клиента (Happ, v2RayTun). Пусто — объявления нет. {announceLen}/{ANNOUNCE_MAX}
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -187,7 +217,7 @@ export function SubscriptionsPanel() {
       <SaveBar
         dirty={dirty}
         busy={busy}
-        saveDisabled={!!pathErr}
+        saveDisabled={!!pathErr || announceErr}
         onSave={save}
         onCancel={reset}
       />

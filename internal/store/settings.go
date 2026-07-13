@@ -50,7 +50,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, trojan_name, hysteria_name,
-		       local_backup_cron, local_backup_keep
+		       local_backup_cron, local_backup_keep,
+		       sub_announce, user_autodelete_days
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -82,6 +83,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
+		&st.SubAnnounce, &st.UserAutoDeleteDays,
 	)
 	if err != nil {
 		return nil, err
@@ -272,15 +274,21 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_path = ?,
 			sub_base64 = ?, sub_email_in_name = ?, sub_title = ?, sub_routing = ?,
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
-			sub_update_interval = ?,
+			sub_update_interval = ?, sub_announce = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
 		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
-		st.SubUpdateInterval,
+		st.SubUpdateInterval, st.SubAnnounce,
 	)
 	return err
+}
+
+// SetUserAutoDeleteDays persists the grace period (in days, past a user's expiry
+// date) after which the retention sweep deletes them. 0 disables deletion.
+func (s *Store) SetUserAutoDeleteDays(days int) error {
+	return s.setSetting("user_autodelete_days", days)
 }
 
 // SetTimezone persists the operator's IANA timezone (e.g. "Europe/Moscow").
