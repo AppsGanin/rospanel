@@ -888,7 +888,7 @@ export function NodesPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Ноды</h1>
+          <h1 className="text-xl font-semibold text-ink">Сервера</h1>
           <p className="text-sm text-ink-muted">
             {remoteCount === 0
               ? "Все пользователи обслуживаются этим сервером. Добавьте ноду, чтобы раздать нагрузку и локации."

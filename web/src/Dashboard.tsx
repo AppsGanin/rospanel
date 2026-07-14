@@ -76,7 +76,7 @@ export function Dashboard({
   const NAV: { value: Tab; label: string }[] = [
     { value: "overview", label: "Дашборд" },
     { value: "users", label: "Пользователи" },
-    ...(isAdmin ? [{ value: "nodes" as Tab, label: "Ноды" }] : []),
+    ...(isAdmin ? [{ value: "nodes" as Tab, label: "Сервера" }] : []),
     ...(billing && isAdmin ? [{ value: "payments" as Tab, label: "Оплата" }] : []),
     ...(isAdmin ? [{ value: "settings" as Tab, label: "Настройки" }] : []),
   ];
