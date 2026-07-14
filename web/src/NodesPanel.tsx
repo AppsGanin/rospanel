@@ -372,9 +372,9 @@ function AddNodeDialog({
         )}
 
         {log.length > 0 && (
-          <div className="max-h-56 overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs text-gray-100">
+          <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
             {log.map((l, i) => (
-              <div key={i} className={l.startsWith("ОШИБКА") ? "text-red-400" : ""}>
+              <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
                 {l}
               </div>
             ))}
@@ -497,9 +497,9 @@ function ReconnectDialog({
           />
         )}
         {log.length > 0 && (
-          <div className="max-h-56 overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs text-gray-100">
+          <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
             {log.map((l, i) => (
-              <div key={i} className={l.startsWith("ОШИБКА") ? "text-red-400" : ""}>
+              <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
                 {l}
               </div>
             ))}
@@ -1304,12 +1304,13 @@ function classifyNodeLog(l: string): string {
   return "other";
 }
 
-// Bright on the dark log surface.
+// Theme-aware level colours matching the dashboard's Xray log viewer (they adapt to
+// the surface luminance, so they read on the light-on-dark `bg-gray-50` surface).
 const NODE_LOG_COLORS: Record<string, string> = {
-  error: "text-red-400",
-  warning: "text-amber-400",
-  access: "text-green-400",
-  info: "text-sky-300",
+  error: "text-danger",
+  warning: "text-warning",
+  access: "text-success",
+  info: "text-brand-600",
 };
 
 const NODE_LOG_FILTERS = [
@@ -1364,7 +1365,7 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
           минуты) — подождите.
         </p>
       ) : (
-        <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs leading-relaxed text-gray-100">
+        <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs leading-relaxed">
           {shown.length === 0 ? (
             <p className="text-gray-400">Нет строк выбранного уровня</p>
           ) : (
@@ -1437,11 +1438,6 @@ export function NodesPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-ink">Сервера</h1>
-          <p className="text-sm text-ink-muted">
-            {remoteCount === 0
-              ? "Все пользователи обслуживаются этим сервером. Добавьте ноду, чтобы раздать нагрузку и локации."
-              : `Пользователи синхронизируются на все включённые ноды (${remoteCount}).`}
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {remoteCount > 0 && (

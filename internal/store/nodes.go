@@ -28,6 +28,11 @@ const nodeTokenPrefix = "rpn_"
 // joinTokenTTL is how long a freshly-issued install command stays valid.
 const joinTokenTTL = 24 * time.Hour
 
+// defaultGeoRefreshHours is the geo auto-refresh cadence a new node starts with
+// (weekly). Set explicitly on insert so it holds even on installs whose nodes table
+// predates the weekly default.
+const defaultGeoRefreshHours = 168
+
 // nodeColumns is the SELECT list every node read shares, in Node-field order.
 const nodeColumns = `id, name, host, enabled,
 	reality_private_key, reality_public_key, reality_short_id, reality_service_name, reality_dest,
@@ -150,10 +155,10 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	res, err := s.db.Exec(`
 		INSERT INTO nodes (name, host, enabled,
 			reality_private_key, reality_public_key, reality_short_id, reality_service_name,
-			decoy_template, join_token_hash, join_expires_at, created_at)
-		VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			decoy_template, join_token_hash, join_expires_at, created_at, geo_refresh_hours)
+		VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		name, host, encField(priv), pub, shortID, serviceName,
-		decoyTemplate, joinHash, exp, now.Unix(),
+		decoyTemplate, joinHash, exp, now.Unix(), defaultGeoRefreshHours,
 	)
 	if err != nil {
 		if isNameConflict(err) {
