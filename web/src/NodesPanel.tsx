@@ -170,14 +170,22 @@ function statusDot(node: NodeView): string {
   return "bg-gray-400";
 }
 
-// StatusChip is the small state label next to a server's name. Online is left to the
-// green dot (no chip) to keep the row quiet; the states that need words get an xs badge.
+// StatusChip is the small state label next to a server's name. The master needs no
+// chip (its name already reads "Мастер" when unnamed); online is left to the green dot
+// to keep the row quiet; the states that need words get an xs badge.
 function StatusChip({ node }: { node: NodeView }) {
-  if (node.is_local) return <Badge color="brand" size="xs">мастер</Badge>;
+  if (node.is_local) return null;
   if (!node.enabled) return <Badge color="gray" size="xs">выключена</Badge>;
   if (!node.joined) return <Badge color="gray" size="xs">не подключена</Badge>;
   if (!node.online) return <Badge color="red" size="xs">офлайн</Badge>;
   return null; // online → the green dot already says so
+}
+
+// serverName is what leads the row: the master shows its configured config-label, or
+// "Мастер" when none is set; a node shows its own name.
+function serverName(node: NodeView): string {
+  if (node.is_local) return node.master_label?.trim() || "Мастер";
+  return node.name;
 }
 
 // Sep is the muted middot between inline meta values.
@@ -1193,7 +1201,7 @@ function NodeCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDot(node))} />
-            <span className="truncate font-semibold text-ink">{node.name}</span>
+            <span className="truncate font-semibold text-ink">{serverName(node)}</span>
             <StatusChip node={node} />
             <span className="truncate font-mono text-sm text-ink-muted">{node.host}</span>
           </div>
