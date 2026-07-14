@@ -251,6 +251,120 @@ function AddNodeDialog({
   );
 }
 
+// ReconnectDialog re-installs a node that isn't connected — it SSHes back into the
+// server and re-runs the install with a fresh token, streaming the log (which also
+// surfaces why the previous attempt didn't connect). SSH creds aren't stored.
+function ReconnectDialog({
+  node,
+  onClose,
+  onDone,
+}: {
+  node: NodeView;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [sshHost, setSshHost] = useState(node.host);
+  const [sshPort, setSshPort] = useState("22");
+  const [sshUser, setSshUser] = useState("root");
+  const [sshAuth, setSshAuth] = useState<"password" | "key">("password");
+  const [sshPassword, setSshPassword] = useState("");
+  const [sshKey, setSshKey] = useState("");
+  const [log, setLog] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    if (!sshHost.trim()) return;
+    if (sshAuth === "password" && !sshPassword) return;
+    if (sshAuth === "key" && !sshKey.trim()) return;
+    setRunning(true);
+    setLog(["Переустанавливаем ноду…"]);
+    try {
+      const outcome = await provisionNode(
+        node.id,
+        {
+          ssh_host: sshHost.trim(),
+          ssh_port: Number(sshPort) || 22,
+          ssh_user: sshUser.trim(),
+          ssh_password: sshAuth === "password" ? sshPassword : undefined,
+          ssh_key: sshAuth === "key" ? sshKey : undefined,
+        },
+        (line) => setLog((l) => [...l, line]),
+      );
+      if (outcome === "done") {
+        notifySuccess("Нода переустановлена — подключится в течение минуты");
+        onDone();
+      } else {
+        notifyError("Не удалось — см. лог");
+        setRunning(false);
+      }
+    } catch (e) {
+      setLog((l) => [...l, "ОШИБКА: " + errMessage(e)]);
+      notifyError(errMessage(e));
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Переподключить «${node.name}»`} size="lg">
+      <div className="space-y-3">
+        <p className="text-xs text-ink-muted">
+          Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
+          Данные SSH нигде не сохраняются.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="col-span-2">
+            <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+          </div>
+          <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
+        </div>
+        <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
+        <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+          {(["password", "key"] as const).map((a) => (
+            <button
+              key={a}
+              onClick={() => setSshAuth(a)}
+              className={cn(
+                "rounded-md px-3 py-1 transition",
+                sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+              )}
+            >
+              {a === "password" ? "Пароль" : "Ключ"}
+            </button>
+          ))}
+        </div>
+        {sshAuth === "password" ? (
+          <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
+        ) : (
+          <Textarea
+            label="Приватный ключ (PEM)"
+            value={sshKey}
+            onChange={setSshKey}
+            rows={4}
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+          />
+        )}
+        {log.length > 0 && (
+          <div className="max-h-56 overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs text-gray-100">
+            {log.map((l, i) => (
+              <div key={i} className={l.startsWith("ОШИБКА") ? "text-red-400" : ""}>
+                {l}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="light" color="gray" onClick={onClose} disabled={running}>
+          {running ? "Закрыть" : "Отмена"}
+        </Button>
+        <Button onClick={run} loading={running} disabled={!sshHost.trim()}>
+          Переустановить
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 // protoDefs drives the four protocol toggles on a node card.
 const protoDefs = [
   { key: "vless", label: "VLESS", enabledField: "vless_enabled" },
@@ -272,6 +386,7 @@ function NodeCard({
   onRegen: (command: string) => void;
 }) {
   const { confirm, confirmNode } = useConfirm();
+  const [reconnecting, setReconnecting] = useState(false);
 
   // A protocol toggle sets an explicit override on this node (never touches the
   // global setting). The local server's protocols are edited in Settings, so its
@@ -428,7 +543,7 @@ function NodeCard({
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
         {protoDefs.map((p) => {
           const enabled = node[p.enabledField] as boolean;
-          const overridden = node.overrides[p.key];
+          // const overridden = node.overrides[p.key];
           return (
             <label key={p.key} className="flex items-center gap-2 text-sm">
               <Switch
@@ -437,9 +552,6 @@ function NodeCard({
                 onChange={(v) => patchProto(p.enabledField, v)}
               />
               <span className="text-ink">{p.label}</span>
-              {!node.is_local && !overridden && (
-                <span className="text-xs text-ink-muted">насл.</span>
-              )}
             </label>
           );
         })}
@@ -456,6 +568,11 @@ function NodeCard({
             />
           </div>
           <div className="flex flex-wrap gap-2">
+            {!node.online && (
+              <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
+                Переподключить
+              </Button>
+            )}
             {node.version_skew && node.online && (
               <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
                 Обновить
@@ -474,6 +591,16 @@ function NodeCard({
             </Button>
           </div>
         </div>
+      )}
+      {reconnecting && (
+        <ReconnectDialog
+          node={node}
+          onClose={() => setReconnecting(false)}
+          onDone={() => {
+            setReconnecting(false);
+            onChanged();
+          }}
+        />
       )}
     </Card>
   );
