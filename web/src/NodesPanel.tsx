@@ -395,15 +395,19 @@ function emptyNodeRouting(): RoutingConfig {
 // inherit the panel's setting or be a per-node override. Only the block/direct rules
 // apply on a node (proxy lanes / WARP / Opera egress don't exist there), so only
 // those are exposed.
-function NodeRoutingDialog({
+function NodeSettingsDialog({
   node,
+  decoys,
   onClose,
   onSaved,
 }: {
   node: NodeView;
+  decoys: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [name, setName] = useState(node.name);
+  const [decoy, setDecoy] = useState(node.decoy_template);
   const [routingOwn, setRoutingOwn] = useState(node.routing != null);
   const [cfg, setCfg] = useState<RoutingConfig>(node.routing ?? emptyNodeRouting());
   const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
@@ -413,14 +417,21 @@ function NodeRoutingDialog({
   const set = (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch }));
 
   const save = async () => {
+    if (!name.trim()) return;
     setSaving(true);
     try {
-      await setNodeRouting(
-        node.id,
-        routingOwn ? cfg : null,
-        dnsOwn ? dns : null,
-      );
-      notifySuccess("Роутинг и DNS ноды сохранены");
+      // Name + decoy (protocol overrides preserved); then routing + DNS.
+      await updateNode(node.id, {
+        name: name.trim(),
+        host: node.host,
+        decoy_template: decoy,
+        vless_enabled: overrideVal(node, "vless"),
+        trojan_enabled: overrideVal(node, "trojan"),
+        hysteria_enabled: overrideVal(node, "hysteria"),
+        reality_enabled: overrideVal(node, "reality"),
+      });
+      await setNodeRouting(node.id, routingOwn ? cfg : null, dnsOwn ? dns : null);
+      notifySuccess("Настройки ноды сохранены");
       onSaved();
     } catch (e) {
       notifyError(errMessage(e));
@@ -429,8 +440,18 @@ function NodeRoutingDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Блокировки и DNS — «${node.name}»`} size="lg">
+    <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="lg">
       <div className="space-y-4">
+        <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
+        <div className="w-60 max-w-full">
+          <Select
+            label="Заглушка"
+            value={decoy}
+            onChange={setDecoy}
+            data={decoys.map((d) => ({ value: d, label: d }))}
+          />
+        </div>
+
         {/* Routing */}
         <ToggleRow
           label="Свои блокировки ноды"
@@ -581,23 +602,6 @@ function NodeCard({
     }
   };
 
-  const patchDecoy = async (decoy: string) => {
-    try {
-      await updateNode(node.id, {
-        name: node.name,
-        host: node.host,
-        decoy_template: decoy,
-        vless_enabled: overrideVal(node, "vless"),
-        trojan_enabled: overrideVal(node, "trojan"),
-        hysteria_enabled: overrideVal(node, "hysteria"),
-        reality_enabled: overrideVal(node, "reality"),
-      });
-      onChanged();
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-  };
-
   const toggleEnabled = async (enabled: boolean) => {
     try {
       await setNodeEnabled(node.id, enabled);
@@ -710,37 +714,27 @@ function NodeCard({
       )}
 
       {!node.is_local && (
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-          <div className="w-52 max-w-full">
-            <Select
-              label="Заглушка"
-              value={node.decoy_template}
-              onChange={patchDecoy}
-              data={decoys.map((d) => ({ value: d, label: d }))}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
-              Переустановить
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
+            Настройки
+          </Button>
+          <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
+            Переустановить
+          </Button>
+          <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
+            Логи
+          </Button>
+          {node.version_skew && node.online && (
+            <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
+              Обновить
             </Button>
-            <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
-              Логи
-            </Button>
-            {node.version_skew && node.online && (
-              <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
-                Обновить
-              </Button>
-            )}
-            <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
-              Блокировки и DNS
-            </Button>
-            <Button size="sm" variant="light" color="gray" onClick={regen}>
-              Новый токен
-            </Button>
-            <Button size="sm" variant="light" color="red" onClick={remove}>
-              Удалить
-            </Button>
-          </div>
+          )}
+          <Button size="sm" variant="light" color="gray" onClick={regen}>
+            Новый токен
+          </Button>
+          <Button size="sm" variant="light" color="red" onClick={remove}>
+            Удалить
+          </Button>
         </div>
       )}
       {reconnecting && (
@@ -754,8 +748,9 @@ function NodeCard({
         />
       )}
       {editingRouting && (
-        <NodeRoutingDialog
+        <NodeSettingsDialog
           node={node}
+          decoys={decoys}
           onClose={() => setEditingRouting(false)}
           onSaved={() => {
             setEditingRouting(false);
