@@ -220,6 +220,35 @@ func (rt *Router) setMasterReality(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// nodeConnections returns a node's effective connection status for its editor.
+func (rt *Router) nodeConnections(w http.ResponseWriter, _ *http.Request, id int64) {
+	c, err := rt.mgr.NodeConnectionsInfo(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+// applyNodeConnections applies a full connections update to a node (its own transport,
+// protocols, REALITY donor/keys).
+func (rt *Router) applyNodeConnections(w http.ResponseWriter, r *http.Request, id int64) {
+	var req core.ConnectionsUpdate
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.ApplyNodeConnections(id, req); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	c, err := rt.mgr.NodeConnectionsInfo(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
 // nodeGeoRefresh asks a node to re-download its geo databases now.
 func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int64) {
 	if err := rt.mgr.RequestNodeGeoRefresh(id); err != nil {

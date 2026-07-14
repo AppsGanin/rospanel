@@ -24,6 +24,7 @@ const nodeColumns = `id, name, host, enabled,
 	decoy_template, routing_config, xray_dns,
 	warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
 	warp_address_v4, warp_address_v6, warp_reserved, opera_enabled, opera_country,
+	connections_config,
 	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
 	join_expires_at, deleted_at`
@@ -43,7 +44,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
 	var vlessEn, trojanEn, hysteriaEn, realityEn sql.NullBool
-	var routingJSON string
+	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
 	if err := sc.Scan(
 		&n.ID, &n.Name, &n.Host, &enabled,
@@ -52,6 +53,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.DecoyTemplate, &routingJSON, &xrayDNS,
 		&warpEn, &n.WarpPrivateKey, &n.WarpPublicKey, &n.WarpEndpoint,
 		&n.WarpAddressV4, &n.WarpAddressV6, &n.WarpReserved, &operaEn, &n.OperaCountry,
+		&connectionsJSON,
 		&n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
 		&n.JoinExpiresAt, &n.DeletedAt,
@@ -78,6 +80,12 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	if xrayDNS.Valid {
 		v := xrayDNS.String
 		n.XrayDNS = &v
+	}
+	if connectionsJSON != "" {
+		var c model.NodeConnections
+		if err := json.Unmarshal([]byte(connectionsJSON), &c); err == nil {
+			n.Connections = &c
+		}
 	}
 	return &n, nil
 }
@@ -366,6 +374,32 @@ func (s *Store) SaveNodeReality(id int64, priv, pub, shortID, service string) er
 			reality_short_id = ?, reality_service_name = ? WHERE id = ?`,
 		encField(priv), pub, shortID, service, id,
 	)
+	return err
+}
+
+// SetNodeProtocols sets a node's protocol on/off flags explicitly (the node's own —
+// no inheritance).
+func (s *Store) SetNodeProtocols(id int64, vless, trojan, hysteria, reality bool) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?,
+			reality_enabled = ? WHERE id = ?`,
+		boolToInt(vless), boolToInt(trojan), boolToInt(hysteria), boolToInt(reality), id,
+	)
+	return err
+}
+
+// SetNodeConnections persists a node's own transport config (JSON blob). A nil config
+// clears it (the node reverts to inheriting the master's transport).
+func (s *Store) SetNodeConnections(id int64, c *model.NodeConnections) error {
+	blob := ""
+	if c != nil {
+		b, err := json.Marshal(c)
+		if err != nil {
+			return err
+		}
+		blob = string(b)
+	}
+	_, err := s.db.Exec(`UPDATE nodes SET connections_config = ? WHERE id = ?`, blob, id)
 	return err
 }
 

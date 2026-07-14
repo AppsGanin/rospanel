@@ -63,6 +63,9 @@ type Node struct {
 	OperaEnabled   bool   `json:"opera_enabled"`
 	OperaCountry   string `json:"opera_country"`
 
+	// Connections is the node's own transport override (nil ⇒ inherit the master's).
+	Connections *NodeConnections `json:"-"`
+
 	// Reported by the node on each sync.
 	LastSeen       int64  `json:"last_seen"`
 	NodeVersion    string `json:"node_version"`
@@ -86,6 +89,30 @@ type Node struct {
 	// operator exactly once (it is the credential in the install command). It is
 	// never stored in clear and never read back.
 	RawJoinToken string `json:"join_token,omitempty"`
+}
+
+// NodeConnections is a node's own connection transport, overriding the master's when
+// present (nil ⇒ inherit the master's). Protocol on/off and the REALITY donor/keys
+// are separate per-node fields; this holds the ports, port-hopping, WS path, REALITY
+// port + anti-replay, uTLS fingerprints, connection display names, and anti-DPI.
+type NodeConnections struct {
+	WSPath             string `json:"ws_path"`
+	HysteriaPort       int    `json:"hysteria_port"`
+	HopStart           int    `json:"hop_start"`
+	HopEnd             int    `json:"hop_end"`
+	HopInterval        string `json:"hop_interval"`
+	RealityPort        int    `json:"reality_port"`
+	RealityMaxTimeDiff int    `json:"reality_max_time_diff"` // >0 ⇒ anti-replay on
+	TLSFragment        bool   `json:"tls_fragment"`
+	TLSMin13           bool   `json:"tls_min13"`
+	BlockQUIC          bool   `json:"block_quic"`
+	VLESSFp            string `json:"vless_fp"`
+	TrojanFp           string `json:"trojan_fp"`
+	RealityFp          string `json:"reality_fp"`
+	VLESSName          string `json:"vless_name"`
+	TrojanName         string `json:"trojan_name"`
+	RealityName        string `json:"reality_name"`
+	HysteriaName       string `json:"hysteria_name"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent

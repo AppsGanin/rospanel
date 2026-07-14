@@ -81,6 +81,28 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	} else {
 		ns.XrayDNS = ""
 	}
+
+	// Connection transport: the node's own if configured, otherwise inherit the
+	// master's (ns already carries the master's values from the shallow copy).
+	if c := n.Connections; c != nil {
+		ns.WSPath = c.WSPath
+		ns.HysteriaPort = c.HysteriaPort
+		ns.HopStart = c.HopStart
+		ns.HopEnd = c.HopEnd
+		ns.HopInterval = c.HopInterval
+		ns.RealityPort = c.RealityPort
+		ns.RealityMaxTimeDiff = c.RealityMaxTimeDiff
+		ns.TLSFragment = c.TLSFragment
+		ns.TLSMin13 = c.TLSMin13
+		ns.BlockQUIC = c.BlockQUIC
+		ns.VLESSFp = c.VLESSFp
+		ns.TrojanFp = c.TrojanFp
+		ns.RealityFp = c.RealityFp
+		ns.VLESSName = c.VLESSName
+		ns.TrojanName = c.TrojanName
+		ns.RealityName = c.RealityName
+		ns.HysteriaName = c.HysteriaName
+	}
 	return &ns
 }
 
@@ -128,9 +150,9 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		ZeroSSLEABKID:     set.ZeroSSLEABKID,
 		ZeroSSLEABHMAC:    set.ZeroSSLEABHMAC,
 		HysteriaEnabled:   ns.HysteriaEnabled,
-		HysteriaPort:      set.HysteriaPort,
-		HopStart:          set.HopStart,
-		HopEnd:            set.HopEnd,
+		HysteriaPort:      ns.HysteriaPort,
+		HopStart:          ns.HopStart,
+		HopEnd:            ns.HopEnd,
 		ConnGuardPorts:    connGuardPorts,
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
@@ -557,6 +579,139 @@ func (m *Manager) SetMasterReality(dest string, regen bool) error {
 		}
 	}
 	m.TriggerReconcile()
+	return nil
+}
+
+// NodeConnectionsInfo reports a node's effective connection status (its own transport
+// where set, else the master's), for the per-node connections editor.
+func (m *Manager) NodeConnectionsInfo(id int64) (*ConnectionsStatus, error) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, &ValidationError{Msg: "нода не найдена"}
+	}
+	return buildConnectionsStatus(nodeSettings(set, n)), nil
+}
+
+// ApplyNodeConnections applies a full connections update to a node: its protocols,
+// REALITY donor/keys, and transport (ports, hop, WS, anti-replay, fingerprints,
+// names, anti-DPI) — all the node's OWN. Validation is syntactic; the node's local
+// `xray -test` is the backstop, and port-free / donor-live checks need the node's own
+// host, which the panel can't reach.
+func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+
+	fpOf := func(key string) string {
+		if v := u.Fingerprints[key]; v != "" {
+			return v
+		}
+		return "firefox"
+	}
+	vlessFp, trojanFp, realityFp := fpOf("vless"), fpOf("trojan"), fpOf("reality")
+	for _, fp := range []string{vlessFp, trojanFp, realityFp} {
+		if !model.ValidFingerprint(fp) {
+			return invalid("неизвестный fingerprint %q", fp)
+		}
+	}
+	connNames, err := validateConnNames(u.Names)
+	if err != nil {
+		return err
+	}
+	ws := "/" + strings.TrimLeft(strings.TrimSpace(u.WSPath), "/")
+	if !wsPathRe.MatchString(ws) {
+		return invalid("неверный путь WebSocket (начинается с «/», допустимы латиница, цифры, - _ . /)")
+	}
+	if u.HysteriaPort < 1 || u.HysteriaPort > 65535 {
+		return invalid("порт вне диапазона 1–65535")
+	}
+	if u.HopStart < 1 || u.HopEnd > 65535 || u.HopStart > u.HopEnd {
+		return invalid("неверный диапазон хопа")
+	}
+	interval := strings.TrimSpace(u.HopInterval)
+	if interval == "" {
+		interval = "5-10"
+	}
+	if !hopIntervalRe.MatchString(interval) {
+		return invalid("неверный интервал (нужно «N-M», напр. 5-10)")
+	}
+	if u.RealityPort < 1 || u.RealityPort > 65535 {
+		return invalid("порт REALITY вне диапазона 1–65535")
+	}
+	realityDest := strings.TrimSpace(u.RealityDest)
+	if realityDest != "" {
+		norm, derr := validateRealityDests(realityDest)
+		if derr != nil {
+			return derr
+		}
+		realityDest = norm
+	}
+	maxTimeDiff := 0
+	if u.RealityAntiReplay {
+		maxTimeDiff = realityAntiReplayWindowMs
+	}
+
+	// Protocols (the node's own explicit on/off).
+	if err := m.store.SetNodeProtocols(id,
+		u.Protocols["vless"], u.Protocols["trojan"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
+		return err
+	}
+	// REALITY donor + optional key regeneration.
+	if err := m.store.SetNodeRealityDest(id, realityDest); err != nil {
+		return err
+	}
+	if u.RegenRealityKeys {
+		priv, pub, kerr := auth.GenerateRealityKeys()
+		if kerr != nil {
+			return kerr
+		}
+		shortID, kerr := auth.RandomShortIDs()
+		if kerr != nil {
+			return kerr
+		}
+		svc, kerr := auth.RandomServiceName()
+		if kerr != nil {
+			return kerr
+		}
+		if err := m.store.SaveNodeReality(id, priv, pub, shortID, svc); err != nil {
+			return err
+		}
+	}
+	// Transport blob.
+	blob := &model.NodeConnections{
+		WSPath:             ws,
+		HysteriaPort:       u.HysteriaPort,
+		HopStart:           u.HopStart,
+		HopEnd:             u.HopEnd,
+		HopInterval:        interval,
+		RealityPort:        u.RealityPort,
+		RealityMaxTimeDiff: maxTimeDiff,
+		TLSFragment:        u.TLSFragment,
+		TLSMin13:           u.TLSMin13,
+		BlockQUIC:          u.BlockQUIC,
+		VLESSFp:            vlessFp,
+		TrojanFp:           trojanFp,
+		RealityFp:          realityFp,
+		VLESSName:          connNames["vless"],
+		TrojanName:         connNames["trojan"],
+		RealityName:        connNames["reality"],
+		HysteriaName:       connNames["hysteria2"],
+	}
+	if err := m.store.SetNodeConnections(id, blob); err != nil {
+		return err
+	}
+	m.nodes.wakeOne(id)
 	return nil
 }
 

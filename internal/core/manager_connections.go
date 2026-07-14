@@ -63,13 +63,20 @@ type ConnectionsStatus struct {
 	BlockQUIC   bool `json:"block_quic"`   // drop untunneled browser QUIC in client configs
 }
 
-// ConnectionsInfo reports the enabled protocols and their connection parameters,
-// derived from settings.
+// ConnectionsInfo reports the master's enabled protocols and their connection
+// parameters, derived from settings.
 func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return nil, err
 	}
+	return buildConnectionsStatus(set), nil
+}
+
+// buildConnectionsStatus derives the connection status from an effective settings
+// value — the master's own, or a node's (via nodeSettings) — so the same editor
+// drives both.
+func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 	vlessPort := set.VLESSPort
 	if vlessPort == 0 {
 		vlessPort = 443
@@ -140,7 +147,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 				Enabled:     set.HysteriaEnabled,
 			},
 		},
-	}, nil
+	}
 }
 
 // realityAntiReplayWindowMs is the REALITY maxTimeDiff applied when anti-replay is
