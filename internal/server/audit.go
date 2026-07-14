@@ -102,6 +102,7 @@ var auditActions = map[string]auditRoute{
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.
 	"POST /api/nodes":                 set("Нода добавлена"),
+	"POST /api/nodes/master-name":     set("Имя мастера в конфигах"),
 	"PATCH /api/nodes/{id}":           set("Нода изменена"),
 	"POST /api/nodes/{id}/routing":    set("Нода · роутинг и DNS"),
 	"DELETE /api/nodes/{id}":          set("Нода удалена"),

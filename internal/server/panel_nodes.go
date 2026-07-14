@@ -178,6 +178,21 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 	writeOK(w)
 }
 
+// setMasterName sets the panel server's display name shown in config labels.
+func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterLabel(req.Name); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 // setNodeEnabled toggles whether a node serves traffic and appears in links.
 func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

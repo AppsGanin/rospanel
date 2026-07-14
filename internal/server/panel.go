@@ -104,6 +104,9 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 // connected node. With no nodes it returns just the local set, so single-server
 // output is unchanged. `local` must already have applyTLSHints called on it.
 func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
+	// The master server's config labels get its display name too (multi-node), so a
+	// client can tell the master's entries from the nodes'.
+	local.NodeLabel = local.MasterLabel
 	sets := []*model.Settings{local}
 	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
 		sets = append(sets, nodes...)
@@ -261,6 +264,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("DELETE /api/apikeys/{id}", rt.revokeAPIKey)
 	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
 	authed("GET /api/nodes", rt.listNodes)
+	authed("POST /api/nodes/master-name", rt.setMasterName)
 	authed("POST /api/nodes", rt.createNode)
 	authedID("PATCH /api/nodes/{id}", rt.updateNode)
 	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)

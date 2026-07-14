@@ -6,6 +6,7 @@ import {
   listNodes,
   provisionNode,
   regenNodeJoin,
+  setMasterName,
   setNodeEnabled,
   setNodeRouting,
   updateAllNodes,
@@ -493,6 +494,46 @@ function NodeRoutingDialog({
   );
 }
 
+// MasterNameEditor lets the operator name the master server for config labels
+// (shown as "<имя> · VLESS…" in clients). Empty = no prefix.
+function MasterNameEditor({
+  current,
+  onSaved,
+}: {
+  current: string;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(current);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await setMasterName(name.trim());
+      notifySuccess("Имя мастера сохранено");
+      onSaved();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="mt-4 flex flex-wrap items-end gap-2">
+      <div className="w-64 max-w-full">
+        <TextInput
+          label="Имя в конфигах"
+          value={name}
+          onChange={setName}
+          placeholder="напр. Мастер (пусто — без префикса)"
+        />
+      </div>
+      <Button size="sm" variant="light" color="gray" onClick={save} loading={saving} disabled={name.trim() === current.trim()}>
+        Сохранить
+      </Button>
+    </div>
+  );
+}
+
 // protoDefs drives the four protocol toggles on a node card.
 const protoDefs = [
   { key: "vless", label: "VLESS", enabledField: "vless_enabled" },
@@ -661,6 +702,10 @@ function NodeCard({
           );
         })}
       </div>
+
+      {node.is_local && (
+        <MasterNameEditor current={node.master_label ?? ""} onSaved={onChanged} />
+      )}
 
       {!node.is_local && (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">

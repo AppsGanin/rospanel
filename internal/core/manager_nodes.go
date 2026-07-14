@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -225,6 +226,9 @@ type NodeView struct {
 	Routing   *model.RoutingConfig `json:"routing"`
 	XrayDNS   *string              `json:"xray_dns"`
 	JoinToken string               `json:"join_token,omitempty"` // only right after create/regen
+	// MasterLabel is the master server's config-label name (local node only), so the
+	// UI can edit it. Empty for remote nodes (they use their own Name).
+	MasterLabel string `json:"master_label,omitempty"`
 }
 
 // NodeProtoOverrides marks which protocol toggles a node overrides (true) vs
@@ -268,6 +272,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		HysteriaEnabled: set.HysteriaEnabled,
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
+		MasterLabel:     set.MasterLabel,
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -422,6 +427,11 @@ func (m *Manager) DeleteNode(id int64) error {
 
 // RegenJoinToken issues a fresh install token for an existing node.
 func (m *Manager) RegenJoinToken(id int64) (string, error) { return m.store.RegenJoinToken(id) }
+
+// SetMasterLabel sets the panel server's display name used in config labels.
+func (m *Manager) SetMasterLabel(label string) error {
+	return m.store.SetMasterLabel(strings.TrimSpace(label))
+}
 
 // RequestNodeUpdate flags a node to self-update on its next sync, and wakes it so
 // it happens promptly. Returns an error if the node doesn't exist.

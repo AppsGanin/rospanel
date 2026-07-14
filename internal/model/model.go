@@ -468,6 +468,10 @@ type Settings struct {
 	// rotating either never orphans a joined node.
 	NodeAPIPath string `json:"-"`
 
+	// MasterLabel is the panel server's display name in share-link / subscription
+	// config labels (multi-node: "<master> · VLESS"). Empty ⇒ no prefix.
+	MasterLabel string `json:"-"`
+
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 
 	// Computed per request (NOT stored). When the active cert isn't CA-trusted (a
@@ -640,9 +644,10 @@ func (s *Settings) ProtoLabel(proto string) string {
 	if custom = strings.TrimSpace(custom); custom != "" {
 		label = custom
 	}
-	// Multi-node: disambiguate which server this entry is for.
+	// Multi-node: prefix with the server name so a client shows "Нидерланды · VLESS"
+	// — server first, then protocol.
 	if s.NodeLabel != "" {
-		label += " · " + s.NodeLabel
+		return s.NodeLabel + " · " + label
 	}
 	return label
 }

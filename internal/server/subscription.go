@@ -349,7 +349,9 @@ func isBrowser(r *http.Request) bool {
 // (writing nothing) instead of a 500 so the caller can fall through to the decoy
 // and keep the masquerade intact.
 func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
-	html, err := sub.Page(u, set, rt.buildBilling(u, set))
+	// Span the local server + each enabled node so the page's individual-config list
+	// covers every server (single-server ⇒ just the local set).
+	html, err := sub.Page(u, rt.subSettings(set), rt.buildBilling(u, set))
 	if err != nil {
 		return err
 	}

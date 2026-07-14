@@ -79,23 +79,6 @@ function unixToDate(unix: number): string {
   return unix ? new Date(unix * 1000).toISOString().slice(0, 10) : ''
 }
 
-function LinkRow({ name, url }: { name: string; url: string }) {
-  const { copied, copy } = useCopy()
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-xs font-medium leading-tight">{name}</span>
-      <Code className="block min-w-0 flex-1 overflow-x-auto whitespace-nowrap">{url}</Code>
-      <IconButton
-        color={copied ? 'teal' : 'brand'}
-        onClick={() => copy(url)}
-        title={copied ? 'Скопировано' : 'Копировать'}
-      >
-        {copied ? <IconCheck /> : <IconCopy />}
-      </IconButton>
-    </div>
-  )
-}
-
 // EditableName renders the user's name with a pencil; clicking it swaps to an
 // inline input with save/cancel. Used as the modal title.
 function EditableName({ user, onChanged }: { user: User; onChanged: () => void }) {
@@ -248,15 +231,6 @@ export function UserDetail({
 
   const chart = series.map((p) => ({ day: p.day.slice(5), up: p.up, down: p.down }))
   const fail = (e: unknown) => notifyError(errMessage(e))
-
-  const links: Array<[string, string]> = user
-    ? [
-        ['VLESS-TCP-TLS', user.vless],
-        ['VLESS-GRPC-REALITY', user.reality],
-        ['TROJAN-WS', user.trojan],
-        ['HYSTERIA-UDP', user.hysteria2],
-      ]
-    : []
 
   const quotaData = user
     ? QUOTA_OPTIONS.some((o) => o.value === limitGb)
@@ -502,15 +476,6 @@ export function UserDetail({
               Включите пользовательского бота в настройках Telegram.
             </p>
           )}
-
-          <Divider label="Ссылки подключения" />
-          <div className="flex flex-col gap-2">
-            {links
-              .filter(([, url]) => url)
-              .map(([name, url]) => (
-                <LinkRow key={name} name={name} url={url} />
-              ))}
-          </div>
 
           <Divider label="Устройства (IP)" />
           <p className="text-sm text-ink-muted">

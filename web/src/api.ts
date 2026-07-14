@@ -1110,9 +1110,17 @@ export interface NodeView {
   overrides: NodeProtoOverrides
   routing: RoutingConfig | null // node's routing override, null = inherit panel's
   xray_dns: string | null // node's DNS override, null = inherit panel's
+  master_label?: string // config-label name of the master (local node only)
 }
 
 export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
+
+// setMasterName sets the panel server's display name shown in config labels.
+export const setMasterName = (name: string) =>
+  api<{ ok: boolean }>('api/nodes/master-name', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
 
 export const createNode = (name: string, host: string) =>
   api<{ id: number; install_command: string }>('api/nodes', {
