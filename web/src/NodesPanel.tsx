@@ -619,6 +619,7 @@ function NodeSettingsDialog({
           { value: "general", label: "Основное" },
           { value: "connections", label: "Подключения" },
           { value: "routing", label: "Роутинг" },
+          { value: "dns", label: "DNS" },
           { value: "geo", label: "Geo" },
           { value: "domain", label: "Домен" },
         ]}
@@ -668,10 +669,13 @@ function NodeSettingsDialog({
             applying={saving}
             liveStatus={false}
           />
-          <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
-            <DnsEditor value={dns} onChange={setDns} />
-          </Section>
         </div>
+      )}
+
+      {tab === "dns" && (
+        <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
+          <DnsEditor value={dns} onChange={setDns} />
+        </Section>
       )}
 
       {tab === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
@@ -687,7 +691,7 @@ function NodeSettingsDialog({
 
       {/* The footer Save persists name/decoy (Основное) and routing/DNS (Роутинг).
           The other tabs have their own save action, so it's hidden there. */}
-      {(tab === "general" || tab === "routing") && (
+      {(tab === "general" || tab === "routing" || tab === "dns") && (
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
             Отмена
@@ -820,6 +824,7 @@ function MasterSettingsDialog({
               { value: "general", label: "Основное" },
               { value: "connections", label: "Подключения" },
               { value: "routing", label: "Роутинг" },
+              { value: "dns", label: "DNS" },
               { value: "geo", label: "Geo" },
               { value: "domain", label: "Домен" },
             ]}
@@ -873,10 +878,13 @@ function MasterSettingsDialog({
                 geoip={geo.geoip}
                 applying={applying}
               />
-              <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
-                <DnsEditor value={dns} onChange={setDns} />
-              </Section>
             </div>
+          )}
+
+          {tab === "dns" && (
+            <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
+              <DnsEditor value={dns} onChange={setDns} />
+            </Section>
           )}
 
           {tab === "geo" && (
@@ -895,7 +903,7 @@ function MasterSettingsDialog({
 
           {/* Footer Save persists name/decoy (Основное) and routing/DNS (Роутинг);
               the other tabs have their own save, so it's hidden there. */}
-          {(tab === "general" || tab === "routing") && (
+          {(tab === "general" || tab === "routing" || tab === "dns") && (
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
                 Отмена
