@@ -80,7 +80,7 @@ func (rt *Router) apiCreateNode(w http.ResponseWriter, r *http.Request) {
 	writeAPIData(w, http.StatusCreated, map[string]any{
 		"id":              node.ID,
 		"join_token":      node.RawJoinToken,
-		"install_command": nodeInstallCommand(r, nodePath, node.RawJoinToken),
+		"install_command": rt.nodeInstallCommand(r, nodePath, node.RawJoinToken),
 	})
 }
 
@@ -199,6 +199,6 @@ func (rt *Router) apiRegenNodeJoin(w http.ResponseWriter, r *http.Request, id in
 	}
 	writeAPIData(w, http.StatusOK, map[string]any{
 		"join_token":      token,
-		"install_command": nodeInstallCommand(r, nodePath, token),
+		"install_command": rt.nodeInstallCommand(r, nodePath, token),
 	})
 }

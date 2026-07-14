@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -162,6 +163,20 @@ func TestNodeSyncRevokedAfterDelete(t *testing.T) {
 		if v.ID == node.ID {
 			t.Fatal("deleted node still appears in NodeViews")
 		}
+	}
+}
+
+func TestInstallCommandInsecureForSelfSignedPanel(t *testing.T) {
+	h, _, _ := nodeAPITestServer(t)
+	// The test panel has no CA cert (TLSPaths{} → HasValidCert false), so the install
+	// command must carry --insecure — otherwise a node can't verify the panel's TLS
+	// on join and never connects.
+	rt := h.(*Router)
+	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	req.Host = "144.31.159.81"
+	cmd := rt.nodeInstallCommand(req, "seg", "rpn_tok")
+	if !strings.HasSuffix(cmd, "--insecure") {
+		t.Fatalf("self-signed panel install command must end with --insecure, got: %s", cmd)
 	}
 }
 

@@ -61,7 +61,7 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 	if set != nil {
 		nodePath = set.NodeAPIPath
 	}
-	installCmd := nodeInstallCommand(r, nodePath, token)
+	installCmd := rt.nodeInstallCommand(r, nodePath, token)
 
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
