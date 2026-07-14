@@ -1120,6 +1120,12 @@ export interface NodeView {
   warp_registered: boolean
   opera_enabled: boolean
   opera_country: string
+  // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
+  // donor. The public key / short id / gRPC service are shown; private key is hidden.
+  reality_dest: string
+  reality_public_key: string
+  reality_short_id: string
+  reality_service_name: string
   master_label?: string // config-label name of the master (local node only)
 }
 
@@ -1143,6 +1149,20 @@ export const setMasterProtocols = (p: {
   api<{ ok: boolean }>('api/nodes/master-protocols', {
     method: 'POST',
     body: JSON.stringify(p),
+  })
+
+// setMasterReality / setNodeReality set a server's REALITY donor (masquerade SNI) and,
+// when regen is true, regenerate its REALITY keys (invalidates that server's links).
+export const setMasterReality = (dest: string, regen: boolean) =>
+  api<{ ok: boolean }>('api/nodes/master-reality', {
+    method: 'POST',
+    body: JSON.stringify({ dest, regen }),
+  })
+
+export const setNodeReality = (id: number, dest: string, regen: boolean) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/reality`, {
+    method: 'POST',
+    body: JSON.stringify({ dest, regen }),
   })
 
 export const createNode = (name: string, host: string) =>

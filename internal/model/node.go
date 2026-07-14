@@ -25,11 +25,13 @@ type Node struct {
 	Enabled bool   `json:"enabled"`
 
 	// Per-node REALITY identity. RealityPrivateKey is encrypted at rest and never
-	// serialized to any client.
+	// serialized to any client. RealityDest is the node's own masquerade donor SNI
+	// (empty ⇒ inherit the panel's donor).
 	RealityPrivateKey  string `json:"-"`
 	RealityPublicKey   string `json:"-"`
 	RealityShortID     string `json:"-"`
 	RealityServiceName string `json:"-"`
+	RealityDest        string `json:"-"`
 
 	// Per-node protocols (the node's OWN — no inheritance from the master). A stored
 	// nil is treated as off; every write sets an explicit value.

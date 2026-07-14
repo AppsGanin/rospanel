@@ -423,6 +423,24 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	return nil
 }
 
+// validateRealityDests parses a comma-separated donor list, syntactically checks
+// each, and returns the normalized "d1,d2" form (first is primary, used in links).
+func validateRealityDests(dest string) (string, error) {
+	var out []string
+	for _, d := range strings.Split(dest, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			if !realityHostRe.MatchString(d) {
+				return "", invalid("домен маскировки REALITY %q не похож на настоящий", d)
+			}
+			out = append(out, d)
+		}
+	}
+	if len(out) == 0 {
+		return "", invalid("укажи хотя бы один домен маскировки REALITY")
+	}
+	return strings.Join(out, ","), nil
+}
+
 // SetMasterProtocols toggles the panel's own (master) protocols on/off. The
 // connection DETAILS (ports, transport, REALITY donor, anti-DPI) stay global and are
 // edited in the Подключения settings; only the on/off lives on the master server

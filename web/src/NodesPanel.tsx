@@ -15,7 +15,9 @@ import {
   setGeoCadence as saveGeoCadence,
   setMasterName,
   setMasterProtocols,
+  setMasterReality,
   setNodeEnabled,
+  setNodeReality,
   setNodeRouting,
   setXrayDNS,
   updateAllNodes,
@@ -61,6 +63,7 @@ import {
   SegmentedControl,
   Select,
   Switch,
+  TagsInput,
   Textarea,
   TextInput,
   useConfirm,
@@ -554,6 +557,104 @@ function NodeDomainCard({
   );
 }
 
+// KeyLine shows one read-only REALITY key value (public key / short id / service).
+function KeyLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-ink-muted">{label}</span>
+      <span className="break-all font-mono text-ink">{value || "—"}</span>
+    </div>
+  );
+}
+
+// RealitySection edits a server's REALITY identity: its masquerade donor (SNI) and a
+// regenerate-keys action. Used by both the master and node cards. Keys are per-server
+// (a node's own from creation); the donor is per-server too, and on a node an empty
+// donor inherits the master's. Regeneration invalidates that server's client links.
+function RealitySection({
+  node,
+  isMaster,
+  save,
+  onChanged,
+}: {
+  node: NodeView;
+  isMaster: boolean;
+  save: (dest: string, regen: boolean) => Promise<unknown>;
+  onChanged: () => void;
+}) {
+  const { confirm, confirmNode } = useConfirm();
+  const parse = (s: string) =>
+    s ? s.split(",").map((d) => d.trim()).filter(Boolean) : [];
+  const [dests, setDests] = useState<string[]>(parse(node.reality_dest));
+  const [busy, setBusy] = useState(false);
+  const dirty = dests.join(",") !== parse(node.reality_dest).join(",");
+
+  const doSave = async (regen: boolean) => {
+    if (isMaster && dests.length === 0) {
+      notifyError("Укажите хотя бы один домен маскировки");
+      return;
+    }
+    setBusy(true);
+    try {
+      await save(dests.join(","), regen);
+      notifySuccess(
+        regen ? "Ключи REALITY перегенерированы" : "Донор REALITY сохранён",
+      );
+      onChanged();
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+    setBusy(false);
+  };
+
+  const regen = async () => {
+    if (
+      !(await confirm({
+        title: "Перегенерировать ключи REALITY?",
+        body: `Существующие ссылки ${
+          isMaster ? "мастера" : `«${node.name}»`
+        } перестанут работать — клиентам нужно будет обновить конфиг из подписки.`,
+        confirmLabel: "Перегенерировать",
+        danger: true,
+      }))
+    )
+      return;
+    doSave(true);
+  };
+
+  return (
+    <Section
+      title="REALITY"
+      desc={
+        isMaster
+          ? "Домен-донор маскировки и ключи мастера. Ключи можно перегенерировать."
+          : "Домен-донор и ключи этой ноды (свои). Пусто — донор берётся у мастера."
+      }
+    >
+      {confirmNode}
+      <TagsInput
+        label="Домены маскировки (SNI)"
+        value={dests}
+        onChange={setDests}
+        placeholder={isMaster ? "max.ru — добавить и Enter…" : "пусто — как у мастера"}
+      />
+      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white/60 p-3 text-xs">
+        <KeyLine label="Public key" value={node.reality_public_key} />
+        <KeyLine label="Short ID" value={node.reality_short_id} />
+        <KeyLine label="gRPC service" value={node.reality_service_name} />
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="light" color="red" size="sm" onClick={regen} loading={busy}>
+          Перегенерировать ключи
+        </Button>
+        <Button size="sm" onClick={() => doSave(false)} loading={busy} disabled={!dirty}>
+          Сохранить донор
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
 // NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
 // protocol overrides, its OWN routing + egress (the same editor as the master), and
 // its DNS. Routing/egress and DNS each either inherit the panel's or are the node's
@@ -676,6 +777,13 @@ function NodeSettingsDialog({
               ))}
             </div>
           </Section>
+
+          <RealitySection
+            node={node}
+            isMaster={false}
+            save={(d, r) => setNodeReality(node.id, d, r)}
+            onChanged={onRefresh}
+          />
         </div>
       )}
 
@@ -732,12 +840,14 @@ function MasterSettingsDialog({
   geo,
   onClose,
   onSaved,
+  onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
   onClose: () => void;
   onSaved: () => void;
+  onRefresh: () => void;
 }) {
   const { applying, apply } = useXrayApply();
   const [loaded, setLoaded] = useState(false);
@@ -894,6 +1004,13 @@ function MasterSettingsDialog({
                   ))}
                 </div>
               </Section>
+
+              <RealitySection
+                node={node}
+                isMaster
+                save={(d, r) => setMasterReality(d, r)}
+                onChanged={onRefresh}
+              />
             </div>
           )}
 
@@ -1123,6 +1240,7 @@ function NodeCard({
               setEditingRouting(false);
               onChanged();
             }}
+            onRefresh={onChanged}
           />
         ) : (
           <NodeSettingsDialog

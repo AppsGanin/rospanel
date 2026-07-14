@@ -36,6 +36,11 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.RealityPublicKey = n.RealityPublicKey
 	ns.RealityShortID = n.RealityShortID
 	ns.RealityServiceName = n.RealityServiceName
+	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
+	// needs some donor for REALITY to work).
+	if n.RealityDest != "" {
+		ns.RealityDest = n.RealityDest
+	}
 
 	// A node's protocols are its OWN — no inheritance from the master. Unset ⇒ off.
 	ns.VLESSEnabled = derefBool(n.VLESSEnabled)
@@ -256,7 +261,14 @@ type NodeView struct {
 	WarpRegistered bool   `json:"warp_registered"`
 	OperaEnabled   bool   `json:"opera_enabled"`
 	OperaCountry   string `json:"opera_country"`
-	JoinToken      string `json:"join_token,omitempty"` // only right after create/regen
+	// REALITY identity (per-server). RealityDest is this server's own donor ("" on a
+	// node ⇒ inherits the panel's); the public key/shortId/service are shown so the
+	// operator can see them and regenerate. The private key is never exposed.
+	RealityDest        string `json:"reality_dest"`
+	RealityPublicKey   string `json:"reality_public_key"`
+	RealityShortID     string `json:"reality_short_id"`
+	RealityServiceName string `json:"reality_service_name"`
+	JoinToken          string `json:"join_token,omitempty"` // only right after create/regen
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
@@ -303,6 +315,11 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		WarpRegistered: set.WarpRegistered(),
 		OperaEnabled:   set.OperaEnabled,
 		OperaCountry:   set.OperaCountryOr(),
+		// The master's own REALITY identity.
+		RealityDest:        set.RealityDest,
+		RealityPublicKey:   set.RealityPublicKey,
+		RealityShortID:     set.RealityShortID,
+		RealityServiceName: set.RealityServiceName,
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -335,6 +352,11 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			WarpRegistered: n.WarpRegistered(),
 			OperaEnabled:   n.OperaEnabled,
 			OperaCountry:   n.OperaCountry,
+			// The node's own REALITY identity (dest "" ⇒ inherits the panel's donor).
+			RealityDest:        n.RealityDest,
+			RealityPublicKey:   n.RealityPublicKey,
+			RealityShortID:     n.RealityShortID,
+			RealityServiceName: n.RealityServiceName,
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
@@ -462,6 +484,80 @@ func (m *Manager) ensureNodeWarp(id int64) error {
 	}
 	return m.store.SaveNodeWarp(id, acc.PrivateKey, acc.PeerPublicKey, acc.Endpoint,
 		acc.AddressV4, acc.AddressV6, joinInts(acc.Reserved))
+}
+
+// SetNodeReality sets a node's own REALITY donor (empty ⇒ inherit the panel's) and,
+// when regen is set, regenerates the node's REALITY keypair. Wakes the node so the
+// new identity (and its share links) propagate.
+func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	dest = strings.TrimSpace(dest)
+	if dest != "" {
+		norm, err := validateRealityDests(dest)
+		if err != nil {
+			return err
+		}
+		dest = norm
+	}
+	if err := m.store.SetNodeRealityDest(id, dest); err != nil {
+		return err
+	}
+	if regen {
+		priv, pub, err := auth.GenerateRealityKeys()
+		if err != nil {
+			return err
+		}
+		shortID, err := auth.RandomShortIDs()
+		if err != nil {
+			return err
+		}
+		svc, err := auth.RandomServiceName()
+		if err != nil {
+			return err
+		}
+		if err := m.store.SaveNodeReality(id, priv, pub, shortID, svc); err != nil {
+			return err
+		}
+	}
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// SetMasterReality sets the panel's own REALITY donor and optionally regenerates its
+// keys, then reloads Xray. The donor is live-probed when it changes while REALITY is
+// on (mirrors ApplyConnections).
+func (m *Manager) SetMasterReality(dest string, regen bool) error {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	norm, err := validateRealityDests(dest)
+	if err != nil {
+		return err
+	}
+	if set.RealityEnabled && norm != set.RealityDest {
+		for _, d := range strings.Split(norm, ",") {
+			if err := validateRealityDestLive(d); err != nil {
+				return err
+			}
+		}
+	}
+	if err := m.store.SetRealityPorts(set.RealityPort, norm); err != nil {
+		return err
+	}
+	if regen {
+		if err := m.regenRealityKeys(); err != nil {
+			return err
+		}
+	}
+	m.TriggerReconcile()
+	return nil
 }
 
 // SetNodeEnabled toggles a node and wakes it (a disabled node is told to stop).

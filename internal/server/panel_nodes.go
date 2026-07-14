@@ -204,6 +204,38 @@ func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// setMasterReality sets the master's REALITY donor and optionally regenerates keys.
+func (rt *Router) setMasterReality(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dest  string `json:"dest"`
+		Regen bool   `json:"regen"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterReality(req.Dest, req.Regen); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setNodeReality sets a node's own REALITY donor and optionally regenerates its keys.
+func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Dest  string `json:"dest"`
+		Regen bool   `json:"regen"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeReality(id, req.Dest, req.Regen); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 // setMasterProtocols toggles the panel's own protocols on/off from the master server
 // card (the connection details stay in the global Подключения settings).
 func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {

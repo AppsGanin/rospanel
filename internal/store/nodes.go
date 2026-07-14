@@ -19,7 +19,7 @@ const joinTokenTTL = 24 * time.Hour
 
 // nodeColumns is the SELECT list every node read shares, in Node-field order.
 const nodeColumns = `id, name, host, enabled,
-	reality_private_key, reality_public_key, reality_short_id, reality_service_name,
+	reality_private_key, reality_public_key, reality_short_id, reality_service_name, reality_dest,
 	vless_enabled, trojan_enabled, hysteria_enabled, reality_enabled,
 	decoy_template, routing_config, xray_dns,
 	warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
@@ -47,7 +47,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var xrayDNS sql.NullString
 	if err := sc.Scan(
 		&n.ID, &n.Name, &n.Host, &enabled,
-		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName,
+		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName, &n.RealityDest,
 		&vlessEn, &trojanEn, &hysteriaEn, &realityEn,
 		&n.DecoyTemplate, &routingJSON, &xrayDNS,
 		&warpEn, &n.WarpPrivateKey, &n.WarpPublicKey, &n.WarpEndpoint,
@@ -347,6 +347,24 @@ func (s *Store) SaveNodeWarp(id int64, priv, pub, endpoint, v4, v6, reserved str
 		UPDATE nodes SET warp_private_key = ?, warp_public_key = ?, warp_endpoint = ?,
 			warp_address_v4 = ?, warp_address_v6 = ?, warp_reserved = ? WHERE id = ?`,
 		encField(priv), pub, endpoint, v4, v6, reserved, id,
+	)
+	return err
+}
+
+// SetNodeRealityDest persists a node's own REALITY masquerade donor (empty ⇒ inherit
+// the panel's).
+func (s *Store) SetNodeRealityDest(id int64, dest string) error {
+	_, err := s.db.Exec(`UPDATE nodes SET reality_dest = ? WHERE id = ?`, dest, id)
+	return err
+}
+
+// SaveNodeReality replaces a node's REALITY keypair/shortId/service (regeneration).
+// The private key is encrypted at rest.
+func (s *Store) SaveNodeReality(id int64, priv, pub, shortID, service string) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET reality_private_key = ?, reality_public_key = ?,
+			reality_short_id = ?, reality_service_name = ? WHERE id = ?`,
+		encField(priv), pub, shortID, service, id,
 	)
 	return err
 }
