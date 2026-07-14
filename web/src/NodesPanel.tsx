@@ -50,7 +50,7 @@ function fmtSeen(unix: number): string {
 // "this server"; a remote node is online/offline by its last sync, or "not joined"
 // until the install command has run.
 function StatusBadge({ node }: { node: NodeView }) {
-  if (node.is_local) return <Badge color="brand">этот сервер</Badge>;
+  if (node.is_local) return <Badge color="brand">мастер</Badge>;
   if (!node.joined) return <Badge color="gray">не подключена</Badge>;
   if (node.online) return <Badge color="green">онлайн</Badge>;
   return <Badge color="red">офлайн</Badge>;
