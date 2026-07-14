@@ -45,6 +45,11 @@ const (
 	revokedPoll = 60 * time.Second
 	// statsInterval is how often the agent samples Xray traffic counters.
 	statsInterval = 60 * time.Second
+	// certRetryFast is how often the agent retries ACME while it has no CA cert yet
+	// (still on the self-signed fallback); certRenewSlow is the cadence once a real
+	// cert is in place (renewal is driven off the cert's own lifetime inside tlsmgr).
+	certRetryFast = 3 * time.Minute
+	certRenewSlow = 6 * time.Hour
 )
 
 // Agent is the running node: it owns the local Xray supervisor and the decoy
@@ -58,6 +63,7 @@ type Agent struct {
 	keyPath  string
 	acmeDir  string
 	geoDir   string
+	certMu   sync.Mutex // serializes cert-file writes (applyState vs certLoop)
 
 	state   *persistState
 	stateMu sync.Mutex
@@ -108,6 +114,7 @@ func Run(ctx context.Context, dataDir string) error {
 	}
 
 	go a.statsLoop(ctx)
+	go a.certLoop(ctx) // retry ACME + reload Xray when the real cert lands
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -305,20 +312,10 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 		slog.Warn("node: geo databases", "err", err)
 	}
 
-	// Obtain (or renew) the TLS cert for this node's host. Non-fatal: a self-signed
-	// fallback is written so Xray still comes up, and the panel pins it via the
-	// fingerprint we report.
-	settings := &model.Settings{
-		Host:           m.Host,
-		SNI:            m.SNI,
-		ACMEEmail:      m.ACMEEmail,
-		ACMEProvider:   m.ACMEProvider,
-		ZeroSSLEABKID:  m.ZeroSSLEABKID,
-		ZeroSSLEABHMAC: m.ZeroSSLEABHMAC,
-	}
-	if err := tlsmgr.Ensure(settings, a.certPath, a.keyPath, a.acmeDir, false); err != nil {
-		slog.Warn("node: TLS not ready yet (self-signed for now)", "err", err)
-	}
+	// Obtain the TLS cert for this node's host. Non-fatal: a self-signed fallback is
+	// written so Xray still comes up, the panel pins it via the fingerprint we report,
+	// and certLoop keeps retrying ACME and swaps in the real cert once it succeeds.
+	a.ensureCert(m)
 
 	// Port-hopping for Hysteria2 (best-effort; no-op off Linux / without nft).
 	if m.HysteriaEnabled {
@@ -343,6 +340,71 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
 	return nil
+}
+
+// ensureCert obtains (or renews) the node's TLS cert for the given host meta,
+// falling back to self-signed if ACME is unavailable. Serialized so applyState and
+// certLoop don't write the cert files concurrently.
+func (a *Agent) ensureCert(m nodeapi.NodeMeta) {
+	a.certMu.Lock()
+	defer a.certMu.Unlock()
+	settings := &model.Settings{
+		Host:           m.Host,
+		SNI:            m.SNI,
+		ACMEEmail:      m.ACMEEmail,
+		ACMEProvider:   m.ACMEProvider,
+		ZeroSSLEABKID:  m.ZeroSSLEABKID,
+		ZeroSSLEABHMAC: m.ZeroSSLEABHMAC,
+	}
+	if err := tlsmgr.Ensure(settings, a.certPath, a.keyPath, a.acmeDir, false); err != nil {
+		slog.Warn("node: TLS not ready yet (self-signed for now)", "err", err)
+	}
+}
+
+// certLoop keeps the node's TLS cert current: it retries ACME (fast while the node
+// is still on a self-signed fallback, slowly once a CA cert is in place), and when
+// the cert actually changes — self-signed → real ACME cert, or a renewal — it
+// reloads Xray so the new cert is served immediately. The next sync auto-reports
+// the fresh fingerprint, so the panel drops the pin from this node's links once
+// it's CA-trusted. Mirrors the panel's own tlsLoop.
+func (a *Agent) certLoop(ctx context.Context) {
+	for {
+		meta, ok := a.currentMeta()
+		if !ok {
+			// No config yet → nothing to get a cert for. Check back soon.
+			if !sleepCtx(ctx, certRetryFast) {
+				return
+			}
+			continue
+		}
+		beforeSHA, _ := a.certStatus()
+		a.ensureCert(meta)
+		afterSHA, selfSigned := a.certStatus()
+		if afterSHA != "" && afterSHA != beforeSHA {
+			slog.Info("node: TLS cert changed — reloading Xray", "self_signed", selfSigned)
+			if err := a.sup.Restart(); err != nil {
+				slog.Warn("node: reload after cert change failed", "err", err)
+			}
+		}
+		wait := certRenewSlow
+		if selfSigned || afterSHA == "" {
+			wait = certRetryFast // keep trying to get a real cert
+		}
+		if !sleepCtx(ctx, wait) {
+			return
+		}
+	}
+}
+
+// currentMeta returns the host meta of the last applied config (for the cert loop),
+// or ok=false when nothing has been applied yet.
+func (a *Agent) currentMeta() (nodeapi.NodeMeta, bool) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	if a.state.LastConfig == nil {
+		return nodeapi.NodeMeta{}, false
+	}
+	return a.state.LastConfig.Meta, true
 }
 
 // substituteCertPaths replaces the panel's cert-path sentinels in a generated Xray
