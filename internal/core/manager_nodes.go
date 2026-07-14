@@ -475,6 +475,11 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 	if err := m.store.SetNodeEnabled(id, enabled); err != nil {
 		return err
 	}
+	// Resolve (on enable) or drop (on disable) this node's lane proxies in the
+	// background: a node enabled after boot was skipped by seedNodeProxies, so without
+	// this its lanes would egress direct until the next cadence tick (or forever when
+	// auto-refresh is "never"). RefreshNodeProxies also wakes the node on any change.
+	go m.RefreshNodeProxies()
 	m.nodes.wakeOne(id)
 	return nil
 }

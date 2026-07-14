@@ -181,6 +181,11 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		logbuf.SetLocation(m.tz)                       // stamp log lines in the operator's zone, not the server's
 		m.proxies = seedProxiesFromManual(set.Routing) // manual seed (instant)
 		m.seedNodeProxies()                            // per-node manual seed (instant)
+		// Resolve each node's URL-sourced lane proxies in the background (mirrors the
+		// master's SeedProxies, which service.go runs unconditionally at boot). Without
+		// this, a node's URL lanes would stay empty until the first proxyLoop tick — and
+		// forever when auto-refresh is "never", since the loop is cadence-gated.
+		go m.RefreshNodeProxies()
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.

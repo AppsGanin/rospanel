@@ -518,9 +518,10 @@ func (a *Agent) shutdown() {
 
 // syncOpera reconciles the opera-proxy helper to the desired state, restarting it
 // only when the enable flag / region / port actually changed — so a repeated apply
-// (every config push) doesn't churn the helper and drop the "opera" lane. Enabling
-// downloads the binary if missing; readiness is observed off the apply path and the
-// lane falls back to direct until the helper is up. Best-effort: failures are logged.
+// (every config push) doesn't churn the helper and drop the "opera" lane. On the
+// first enable the binary download + start run inline (one-time); the "opera" lane's
+// Xray balancer falls back to direct until the helper is up. Failures are logged and
+// swallowed — Opera egress is best-effort, never fatal to applying the config.
 func (a *Agent) syncOpera(enabled bool, country string, port int) {
 	a.operaMu.Lock()
 	defer a.operaMu.Unlock()
