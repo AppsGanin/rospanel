@@ -309,7 +309,7 @@ function ReconnectDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Переподключить «${node.name}»`} size="lg">
+    <Modal open onClose={onClose} title={`Переустановить «${node.name}»`} size="lg">
       <div className="space-y-3">
         <p className="text-xs text-ink-muted">
           Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
@@ -673,11 +673,9 @@ function NodeCard({
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {!node.online && (
-              <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
-                Переподключить
-              </Button>
-            )}
+            <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
+              Переустановить
+            </Button>
             {node.version_skew && node.online && (
               <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
                 Обновить
