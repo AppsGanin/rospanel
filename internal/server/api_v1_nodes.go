@@ -29,6 +29,9 @@ type (
 		Reality       *bool                `json:"reality_enabled,omitempty"`
 		Routing       *model.RoutingConfig `json:"routing,omitempty"`
 		XrayDNS       *string              `json:"xray_dns,omitempty"`
+		WarpEnabled   *bool                `json:"warp_enabled,omitempty"`
+		OperaEnabled  *bool                `json:"opera_enabled,omitempty"`
+		OperaCountry  *string              `json:"opera_country,omitempty"`
 	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
@@ -110,6 +113,9 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 		Reality:       node.RealityEnabled,
 		Routing:       node.Routing,
 		XrayDNS:       node.XrayDNS,
+		WarpEnabled:   node.WarpEnabled,
+		OperaEnabled:  node.OperaEnabled,
+		OperaCountry:  node.OperaCountry,
 	}
 	if req.Name != nil {
 		edit.Name = strings.TrimSpace(*req.Name)
@@ -137,6 +143,15 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.XrayDNS != nil {
 		edit.XrayDNS = req.XrayDNS
+	}
+	if req.WarpEnabled != nil {
+		edit.WarpEnabled = *req.WarpEnabled
+	}
+	if req.OperaEnabled != nil {
+		edit.OperaEnabled = *req.OperaEnabled
+	}
+	if req.OperaCountry != nil {
+		edit.OperaCountry = strings.TrimSpace(*req.OperaCountry)
 	}
 	if edit.Name == "" || edit.Host == "" {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name and host must not be empty")

@@ -136,7 +136,7 @@ func apiSpecRoutes() []oaRoute {
 			req: t(apiCreateNodeReq{}), resp: t(oaNodeCreateResp{}), status: 201},
 		{method: "GET", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Get a node",
 			resp: t(model.Node{})},
-		{method: "PATCH", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Edit a node (name, host, protocol/routing/DNS overrides)",
+		{method: "PATCH", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Edit a node (name, host, protocol/routing/DNS overrides, WARP/Opera egress)",
 			req: t(apiPatchNodeReq{}), resp: t(oaOKResp{})},
 		{method: "DELETE", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Delete a node"},
 		{method: "POST", path: "/v1/nodes/{id}/enabled", tag: "Nodes", summary: "Enable or disable a node",

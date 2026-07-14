@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/warp"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -23,9 +25,9 @@ import (
 // inherits from global, so xray.Generate, the link builders and tlsmgr all work
 // for a remote node without changes.
 //
-// Egress routing (proxy lanes, WARP, Opera) is stripped: v1 nodes egress direct.
-// A remote node has no access to the panel's proxy pool or WARP registration, and
-// pushing panel-only lanes would just produce a config it can't honor.
+// Egress (proxy lanes, WARP, Opera) is the node's OWN and independent of the master:
+// each server has its own proxy pool, its own WARP registration and its own Opera
+// helper. All egress is off by default, so a node with no config egresses direct.
 func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns := *set // shallow copy; we only overwrite value fields below
 	ns.Host = n.Host
@@ -49,16 +51,24 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.TLSPinSHA256 = n.CertSHA256
 	}
 
-	// Routing: the node's own override, or the panel's routing inherited. Either way
-	// the egress-lane parts are stripped — a node has no proxy pool / WARP / Opera,
-	// so those rules degrade to direct. WARP/Opera outbounds are force-disabled.
-	routing := set.Routing
+	// Routing + egress are the node's OWN (each server is independent — a node does
+	// not borrow the master's lanes/WARP/Opera, which point at the master's backends).
+	// Nil routing ⇒ empty (direct). All egress is off by default, so a node with no
+	// config produces the same "direct" output as before.
 	if n.Routing != nil {
-		routing = *n.Routing
+		ns.Routing = *n.Routing
+	} else {
+		ns.Routing = model.RoutingConfig{}
 	}
-	ns.Routing = routing.WithoutEgressLanes()
-	ns.WarpEnabled = false
-	ns.OperaEnabled = false
+	ns.WarpEnabled = n.WarpEnabled
+	ns.WarpPrivateKey = n.WarpPrivateKey
+	ns.WarpPublicKey = n.WarpPublicKey
+	ns.WarpEndpoint = n.WarpEndpoint
+	ns.WarpAddressV4 = n.WarpAddressV4
+	ns.WarpAddressV6 = n.WarpAddressV6
+	ns.WarpReserved = n.WarpReserved
+	ns.OperaEnabled = n.OperaEnabled
+	ns.OperaCountry = n.OperaCountry
 
 	// DNS: the node's own override, or the panel's inherited.
 	if n.XrayDNS != nil {
@@ -86,8 +96,8 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	ns.CertPath = nodeapi.CertPathSentinel
 	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
-	// panel's own layout.
-	cfg, err := xray.Generate(ns, users, m.opts, nil)
+	// panel's own layout. Egress lanes resolve against the node's OWN proxy pool.
+	cfg, err := xray.Generate(ns, users, m.opts, m.getNodeProxies(n.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +124,11 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
 		XrayPinnedVersion: xray.PinnedVersion,
+	}
+	if ns.OperaEnabled {
+		meta.OperaEnabled = true
+		meta.OperaCountry = ns.OperaCountryOr()
+		meta.OperaPort = ns.OperaPortOr()
 	}
 	metaRaw, err := json.Marshal(meta)
 	if err != nil {
@@ -222,10 +237,18 @@ type NodeView struct {
 	// inherited, so the UI can show an "inherited" state.
 	Overrides NodeProtoOverrides `json:"overrides"`
 	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
-	// so the per-node routing+DNS editor can prefill and show inherit vs custom.
-	Routing   *model.RoutingConfig `json:"routing"`
-	XrayDNS   *string              `json:"xray_dns"`
-	JoinToken string               `json:"join_token,omitempty"` // only right after create/regen
+	// so the per-node routing+DNS editor can prefill and show inherit vs custom. For
+	// the local server (node 0) these carry the master's own routing/DNS so the same
+	// editor edits the master.
+	Routing *model.RoutingConfig `json:"routing"`
+	XrayDNS *string              `json:"xray_dns"`
+	// Egress backends (node's own, independent of the master; all off by default).
+	// WARP is native to Xray once registered; Opera runs a helper on the node.
+	WarpEnabled    bool   `json:"warp_enabled"`
+	WarpRegistered bool   `json:"warp_registered"`
+	OperaEnabled   bool   `json:"opera_enabled"`
+	OperaCountry   string `json:"opera_country"`
+	JoinToken      string `json:"join_token,omitempty"` // only right after create/regen
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
@@ -273,6 +296,14 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
 		MasterLabel:     set.MasterLabel,
+		// The master's own routing/DNS/egress, so the relocated per-server editor edits
+		// the master through the same controls as a node.
+		Routing:        &set.Routing,
+		XrayDNS:        &set.XrayDNS,
+		WarpEnabled:    set.WarpEnabled,
+		WarpRegistered: set.WarpRegistered(),
+		OperaEnabled:   set.OperaEnabled,
+		OperaCountry:   set.OperaCountryOr(),
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -304,8 +335,12 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 				Hysteria: n.HysteriaEnabled != nil,
 				Reality:  n.RealityEnabled != nil,
 			},
-			Routing: n.Routing,
-			XrayDNS: n.XrayDNS,
+			Routing:        n.Routing,
+			XrayDNS:        n.XrayDNS,
+			WarpEnabled:    n.WarpEnabled,
+			WarpRegistered: n.WarpRegistered(),
+			OperaEnabled:   n.OperaEnabled,
+			OperaCountry:   n.OperaCountry,
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
@@ -391,11 +426,48 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 			return &ValidationError{Msg: err.Error()}
 		}
 	}
+	// WARP is a per-node Cloudflare registration: provision one BEFORE persisting the
+	// edit the first time WARP is enabled on this node, so a failed registration
+	// leaves nothing half-applied (mirrors the master's ApplyRouting).
+	if e.WarpEnabled {
+		if err := m.ensureNodeWarp(id); err != nil {
+			return err
+		}
+	}
 	if err := m.store.UpdateNode(id, e); err != nil {
 		return err
 	}
+	// Re-resolve this node's own lane proxies now (mirrors the master's
+	// setProxies-on-save) so a lane edit applies on the node's next pull.
+	if n, err := m.store.GetNode(id); err == nil && n != nil {
+		m.resolveNodeProxies(n)
+	}
 	m.nodes.wakeOne(id)
 	return nil
+}
+
+// ensureNodeWarp provisions a Cloudflare WARP account for a node the first time WARP
+// is enabled on it. Each node needs its OWN registration — a shared WireGuard
+// identity across servers is unsafe — so this never reuses the master's account.
+// No-op if the node is already registered.
+func (m *Manager) ensureNodeWarp(id int64) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil || n.WarpRegistered() {
+		return nil
+	}
+	logInfo("warp: registering Cloudflare WARP account for node", "node", id)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	acc, err := warp.Register(ctx)
+	if err != nil {
+		logErr("warp: node registration failed", "node", id, "err", err)
+		return &ValidationError{Msg: fmt.Sprintf("регистрация WARP для ноды не удалась: %v", err)}
+	}
+	return m.store.SaveNodeWarp(id, acc.PrivateKey, acc.PeerPublicKey, acc.Endpoint,
+		acc.AddressV4, acc.AddressV6, joinInts(acc.Reserved))
 }
 
 // SetNodeEnabled toggles a node and wakes it (a disabled node is told to stop).

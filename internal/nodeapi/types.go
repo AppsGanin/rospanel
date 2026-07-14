@@ -133,6 +133,14 @@ type NodeMeta struct {
 
 	DecoyTemplate string `json:"decoy_template"`
 
+	// Opera egress: when enabled, the agent runs the opera-proxy helper locally on
+	// OperaPort in the given country. The generated Xray config's "opera" outbound
+	// already points at 127.0.0.1:OperaPort, so the agent only has to keep the helper
+	// alive. WARP needs no helper — it's a native WireGuard outbound in the config.
+	OperaEnabled bool   `json:"opera_enabled,omitempty"`
+	OperaCountry string `json:"opera_country,omitempty"`
+	OperaPort    int    `json:"opera_port,omitempty"`
+
 	// XrayPinnedVersion is the release the panel expects; the UI flags a node whose
 	// running Xray differs so version skew is visible.
 	XrayPinnedVersion string `json:"xray_pinned_version,omitempty"`

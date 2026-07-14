@@ -100,8 +100,13 @@ type Manager struct {
 	geoIP   []string // cached geoip category codes
 
 	proxyMu sync.Mutex
-	// proxies holds the current egress proxies of each lane, keyed by lane ID.
+	// proxies holds the local server's current egress proxies of each lane, keyed by
+	// lane ID.
 	proxies map[string][]model.ProxyEndpoint
+	// nodeProxies holds each remote node's own resolved lane proxies, keyed by node
+	// ID then lane ID. A node egresses through its OWN proxy pool (independent of the
+	// master), so its lanes are resolved separately. Refreshed on the same cadence.
+	nodeProxies map[int64]map[string][]model.ProxyEndpoint
 
 	guard *bruteGuard
 
@@ -175,6 +180,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		m.tz = loadLocation(set.Timezone)
 		logbuf.SetLocation(m.tz)                       // stamp log lines in the operator's zone, not the server's
 		m.proxies = seedProxiesFromManual(set.Routing) // manual seed (instant)
+		m.seedNodeProxies()                            // per-node manual seed (instant)
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.

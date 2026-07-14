@@ -25,6 +25,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
@@ -68,6 +69,16 @@ type Agent struct {
 
 	state   *persistState
 	stateMu sync.Mutex
+
+	// Opera VPN egress helper (opera-proxy). Off unless the panel enables it for this
+	// node. operaCountry/operaPort track the last-applied config so a repeated apply
+	// with the same settings doesn't needlessly restart the helper.
+	operaSup     *opera.Supervisor
+	operaDir     string
+	operaMu      sync.Mutex
+	operaOn      bool
+	operaCountry string
+	operaPort    int
 
 	// decoy server on the loopback fallback dest. The listener stays up for the
 	// agent's life; decoyHandler is swapped when the template changes.
@@ -133,6 +144,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	if ident.Insecure {
 		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // opt-in via --insecure
 	}
+	operaDir := filepath.Join(dataDir, "opera")
 	a := &Agent{
 		dataDir:      dataDir,
 		ident:        ident,
@@ -142,6 +154,8 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		keyPath:      filepath.Join(dataDir, "certs", "key.pem"),
 		acmeDir:      filepath.Join(dataDir, "acme"),
 		geoDir:       filepath.Join(dataDir, "geo"),
+		operaSup:     opera.New(filepath.Join(operaDir, "opera-proxy")),
+		operaDir:     operaDir,
 		state:        loadState(dataDir),
 		lastCounters: map[string]xray.Traffic{},
 		pending:      map[int64]*nodeapi.TrafficDelta{},
@@ -358,6 +372,10 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 		slog.Warn("node: decoy server", "err", err)
 	}
 
+	// Opera VPN egress helper: bring it up/down to match the desired state. The
+	// generated config's "opera" outbound already points at 127.0.0.1:OperaPort.
+	a.syncOpera(m.OperaEnabled, m.OperaCountry, m.OperaPort)
+
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
 	if err := a.sup.ApplyRaw(substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath)); err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
@@ -490,11 +508,43 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 
 func (a *Agent) shutdown() {
 	a.sup.Stop()
+	a.operaSup.Stop()
 	a.decoyMu.Lock()
 	if a.decoySrv != nil {
 		_ = a.decoySrv.Close()
 	}
 	a.decoyMu.Unlock()
+}
+
+// syncOpera reconciles the opera-proxy helper to the desired state, restarting it
+// only when the enable flag / region / port actually changed — so a repeated apply
+// (every config push) doesn't churn the helper and drop the "opera" lane. Enabling
+// downloads the binary if missing; readiness is observed off the apply path and the
+// lane falls back to direct until the helper is up. Best-effort: failures are logged.
+func (a *Agent) syncOpera(enabled bool, country string, port int) {
+	a.operaMu.Lock()
+	defer a.operaMu.Unlock()
+	if !enabled {
+		if a.operaOn {
+			slog.Info("node: disabling Opera egress")
+			a.operaSup.Stop()
+			a.operaOn, a.operaCountry, a.operaPort = false, "", 0
+		}
+		return
+	}
+	if a.operaOn && a.operaCountry == country && a.operaPort == port {
+		return // already running with these settings — don't restart
+	}
+	if _, err := opera.EnsureBinary(a.operaDir); err != nil {
+		slog.Warn("node: opera-proxy download failed", "err", err)
+		return
+	}
+	if err := a.operaSup.Start(country, port); err != nil {
+		slog.Warn("node: opera-proxy start failed", "err", err)
+		return
+	}
+	a.operaOn, a.operaCountry, a.operaPort = true, country, port
+	slog.Info("node: Opera egress started", "country", country, "port", port)
 }
 
 // selfUpdate downloads + verifies the latest release and swaps the node binary,

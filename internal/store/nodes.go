@@ -22,6 +22,8 @@ const nodeColumns = `id, name, host, enabled,
 	reality_private_key, reality_public_key, reality_short_id, reality_service_name,
 	vless_enabled, trojan_enabled, hysteria_enabled, reality_enabled,
 	decoy_template, routing_config, xray_dns,
+	warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
+	warp_address_v4, warp_address_v6, warp_reserved, opera_enabled, opera_country,
 	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
 	join_expires_at, deleted_at`
@@ -39,7 +41,7 @@ func generateNodeToken() (string, error) {
 // and mapping the nullable protocol overrides to *bool.
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
-	var enabled, xrayRunning, certSelfSigned int
+	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
 	var vlessEn, trojanEn, hysteriaEn, realityEn sql.NullBool
 	var routingJSON string
 	var xrayDNS sql.NullString
@@ -48,6 +50,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName,
 		&vlessEn, &trojanEn, &hysteriaEn, &realityEn,
 		&n.DecoyTemplate, &routingJSON, &xrayDNS,
+		&warpEn, &n.WarpPrivateKey, &n.WarpPublicKey, &n.WarpEndpoint,
+		&n.WarpAddressV4, &n.WarpAddressV6, &n.WarpReserved, &operaEn, &n.OperaCountry,
 		&n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
 		&n.JoinExpiresAt, &n.DeletedAt,
@@ -57,6 +61,9 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.Enabled = enabled != 0
 	n.XrayRunning = xrayRunning != 0
 	n.CertSelfSigned = certSelfSigned != 0
+	n.WarpEnabled = warpEn != 0
+	n.OperaEnabled = operaEn != 0
+	n.WarpPrivateKey = decField(n.WarpPrivateKey)
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
 	n.VLESSEnabled = nullBoolPtr(vlessEn)
 	n.TrojanEnabled = nullBoolPtr(trojanEn)
@@ -296,6 +303,11 @@ type NodeEdit struct {
 	Reality       *bool
 	Routing       *model.RoutingConfig // nil ⇒ inherit global routing
 	XrayDNS       *string              // nil ⇒ inherit global DNS
+	// Per-node egress toggles (independent of the master). WARP keys are provisioned
+	// separately (SaveNodeWarp) when WarpEnabled flips on.
+	WarpEnabled  bool
+	OperaEnabled bool
+	OperaCountry string
 }
 
 // UpdateNode persists the operator-editable fields. Identity, tokens and reported
@@ -316,12 +328,25 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 	_, err := s.db.Exec(`
 		UPDATE nodes SET name = ?, host = ?, decoy_template = ?,
 			vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
-			routing_config = ?, xray_dns = ?
+			routing_config = ?, xray_dns = ?,
+			warp_enabled = ?, opera_enabled = ?, opera_country = ?
 		WHERE id = ?`,
 		e.Name, e.Host, e.DecoyTemplate,
 		boolToNull(e.VLESS), boolToNull(e.Trojan), boolToNull(e.Hysteria), boolToNull(e.Reality),
 		routingJSON, dns,
+		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
 		id,
+	)
+	return err
+}
+
+// SaveNodeWarp stores a node's WARP registration (WireGuard identity). The private
+// key is encrypted at rest.
+func (s *Store) SaveNodeWarp(id int64, priv, pub, endpoint, v4, v6, reserved string) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET warp_private_key = ?, warp_public_key = ?, warp_endpoint = ?,
+			warp_address_v4 = ?, warp_address_v6 = ?, warp_reserved = ? WHERE id = ?`,
+		encField(priv), pub, endpoint, v4, v6, reserved, id,
 	)
 	return err
 }

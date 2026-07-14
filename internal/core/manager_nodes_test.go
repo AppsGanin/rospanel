@@ -70,15 +70,27 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	if ns.HysteriaEnabled {
 		t.Fatal("hysteria override (off) not applied")
 	}
-	// Egress lanes / WARP stripped; block rules kept.
-	if len(ns.Routing.Lanes) != 0 || len(ns.Routing.WarpDomains) != 0 || len(ns.Routing.RoutingOrder) != 0 {
-		t.Fatalf("egress lanes not stripped: %+v", ns.Routing)
+	// Routing is the node's OWN (independent of the master): with no node routing,
+	// it's empty — the master's rules are NOT inherited.
+	if ns.Routing.BlockAds || len(ns.Routing.Lanes) != 0 {
+		t.Fatalf("node routing should be empty (not inherited from master): %+v", ns.Routing)
 	}
-	if !ns.Routing.BlockAds {
-		t.Fatal("block rules should survive lane stripping")
-	}
+	// Egress is off by default for a node with no config.
 	if ns.WarpEnabled || ns.OperaEnabled {
-		t.Fatal("warp/opera must be force-disabled on nodes")
+		t.Fatal("egress must be off by default on a node")
+	}
+
+	// A node WITH its own routing keeps its lanes (not stripped) and egress.
+	rc := model.RoutingConfig{BlockAds: true, Lanes: []model.EgressLane{{ID: "ru", Enabled: true}}}
+	n.Routing = &rc
+	n.WarpEnabled = true
+	n.OperaEnabled = true
+	ns2 := nodeSettings(set, n)
+	if !ns2.Routing.BlockAds || len(ns2.Routing.Lanes) != 1 {
+		t.Fatalf("node's own routing not applied (lanes must survive): %+v", ns2.Routing)
+	}
+	if !ns2.WarpEnabled || !ns2.OperaEnabled {
+		t.Fatal("node's own egress toggles not applied")
 	}
 	// TLS pin from the node's reported self-signed cert.
 	if !ns.TLSInsecure || ns.TLSPinSHA256 != "deadbeef" {

@@ -46,6 +46,19 @@ type Node struct {
 	// XrayDNS is the node's own upstream DNS override: nil ⇒ inherit the panel's DNS.
 	XrayDNS *string `json:"xray_dns,omitempty"`
 
+	// Per-node egress backends (independent of the master; all off by default).
+	// WARP is a per-node Cloudflare registration (WireGuard); Opera runs a local
+	// helper on the node. Proxy lanes live in Routing.Lanes.
+	WarpEnabled    bool   `json:"warp_enabled"`
+	WarpPrivateKey string `json:"-"` // encrypted at rest
+	WarpPublicKey  string `json:"-"`
+	WarpEndpoint   string `json:"-"`
+	WarpAddressV4  string `json:"-"`
+	WarpAddressV6  string `json:"-"`
+	WarpReserved   string `json:"-"`
+	OperaEnabled   bool   `json:"opera_enabled"`
+	OperaCountry   string `json:"opera_country"`
+
 	// Reported by the node on each sync.
 	LastSeen       int64  `json:"last_seen"`
 	NodeVersion    string `json:"node_version"`
@@ -79,6 +92,9 @@ func (n *Node) Joined() bool { return n.ConfigHash != "" || n.LastSeen > 0 }
 func (n *Node) Online(now int64) bool {
 	return n.LastSeen > 0 && now-n.LastSeen < NodeOnlineWindow
 }
+
+// WarpRegistered reports whether the node has a WARP account provisioned.
+func (n *Node) WarpRegistered() bool { return n.WarpPrivateKey != "" }
 
 // NodeStatusUpdate is what a node reports on each sync, persisted by
 // Store.UpdateNodeStatus.
