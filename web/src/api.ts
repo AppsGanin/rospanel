@@ -247,6 +247,16 @@ export const resetPanel = () =>
   api<{ url: string }>('api/reset', { method: 'POST' })
 
 export const getConnections = () => api<ConnectionsStatus>('api/connections')
+
+// Per-node connections: a node's own transport/protocols/REALITY. Same shape as the
+// master's, so the same editor drives both.
+export const getNodeConnections = (id: number) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections`)
+export const applyNodeConnections = (id: number, u: ConnectionsUpdate) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections`, {
+    method: 'POST',
+    body: JSON.stringify(u),
+  })
 export const deleteUser = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}`, { method: 'DELETE' })
 export const resetUserTraffic = (id: number) =>

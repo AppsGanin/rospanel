@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  applyConnections,
+  applyNodeConnections,
   createNode,
   deleteNode,
+  getConnections,
   getGeoCategories,
+  getNodeConnections,
   getGeoStatus,
   getNodeLogs,
   getRouting,
@@ -15,10 +19,7 @@ import {
   setDecoy as saveDecoy,
   setGeoCadence as saveGeoCadence,
   setMasterName,
-  setMasterProtocols,
-  setMasterReality,
   setNodeEnabled,
-  setNodeReality,
   setNodeRouting,
   setXrayDNS,
   updateAllNodes,
@@ -31,6 +32,7 @@ import {
   type RoutingConfig,
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
+import { ConnectionsEditor } from "./ConnectionsEditor";
 import { DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./EgressStatus";
 import { fmtBytes } from "./format";
@@ -591,104 +593,6 @@ function NodeGeoCard({ node }: { node: NodeView }) {
   );
 }
 
-// KeyLine shows one read-only REALITY key value (public key / short id / service).
-function KeyLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-ink-muted">{label}</span>
-      <span className="break-all font-mono text-ink">{value || "—"}</span>
-    </div>
-  );
-}
-
-// RealitySection edits a server's REALITY identity: its masquerade donor (SNI) and a
-// regenerate-keys action. Used by both the master and node cards. Keys are per-server
-// (a node's own from creation); the donor is per-server too, and on a node an empty
-// donor inherits the master's. Regeneration invalidates that server's client links.
-function RealitySection({
-  node,
-  isMaster,
-  save,
-  onChanged,
-}: {
-  node: NodeView;
-  isMaster: boolean;
-  save: (dest: string, regen: boolean) => Promise<unknown>;
-  onChanged: () => void;
-}) {
-  const { confirm, confirmNode } = useConfirm();
-  const parse = (s: string) =>
-    s ? s.split(",").map((d) => d.trim()).filter(Boolean) : [];
-  const [dests, setDests] = useState<string[]>(parse(node.reality_dest));
-  const [busy, setBusy] = useState(false);
-  const dirty = dests.join(",") !== parse(node.reality_dest).join(",");
-
-  const doSave = async (regen: boolean) => {
-    if (isMaster && dests.length === 0) {
-      notifyError("Укажите хотя бы один домен маскировки");
-      return;
-    }
-    setBusy(true);
-    try {
-      await save(dests.join(","), regen);
-      notifySuccess(
-        regen ? "Ключи REALITY перегенерированы" : "Донор REALITY сохранён",
-      );
-      onChanged();
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-    setBusy(false);
-  };
-
-  const regen = async () => {
-    if (
-      !(await confirm({
-        title: "Перегенерировать ключи REALITY?",
-        body: `Существующие ссылки ${
-          isMaster ? "мастера" : `«${node.name}»`
-        } перестанут работать — клиентам нужно будет обновить конфиг из подписки.`,
-        confirmLabel: "Перегенерировать",
-        danger: true,
-      }))
-    )
-      return;
-    doSave(true);
-  };
-
-  return (
-    <Section
-      title="REALITY"
-      desc={
-        isMaster
-          ? "Домен-донор маскировки и ключи мастера. Ключи можно перегенерировать."
-          : "Домен-донор и ключи этой ноды (свои). Пусто — донор берётся у мастера."
-      }
-    >
-      {confirmNode}
-      <TagsInput
-        label="Домены маскировки (SNI)"
-        value={dests}
-        onChange={setDests}
-        placeholder={isMaster ? "max.ru — добавить и Enter…" : "пусто — как у мастера"}
-      />
-      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white/60 p-3 text-xs">
-        <KeyLine label="Public key" value={node.reality_public_key} />
-        <KeyLine label="Short ID" value={node.reality_short_id} />
-        <KeyLine label="gRPC service" value={node.reality_service_name} />
-      </div>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="light" color="red" size="sm" onClick={regen} loading={busy}>
-          Перегенерировать ключи
-        </Button>
-        <Button size="sm" onClick={() => doSave(false)} loading={busy} disabled={!dirty}>
-          Сохранить донор
-        </Button>
-      </div>
-    </Section>
-  );
-}
-
 // NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
 // protocol overrides, its OWN routing + egress (the same editor as the master), and
 // its DNS. Routing/egress and DNS each either inherit the panel's or are the node's
@@ -711,14 +615,6 @@ function NodeSettingsDialog({
 }) {
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
-  // Each node's protocols are its OWN (no inheritance from the master). A fresh node
-  // starts with everything off; the operator turns on what this node should serve.
-  const [proto, setProto] = useState({
-    vless: node.vless_enabled,
-    trojan: node.trojan_enabled,
-    hysteria: node.hysteria_enabled,
-    reality: node.reality_enabled,
-  });
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
     warp: node.warp_enabled,
@@ -728,9 +624,6 @@ function NodeSettingsDialog({
   const [dns, setDns] = useState(node.xray_dns ?? "");
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
-
-  const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) =>
-    setProto((p) => ({ ...p, [k]: v }));
 
   // Status badges: WARP registration is known from the node's report; Opera runs
   // remotely, so the panel only shows enabled/disabled.
@@ -749,12 +642,13 @@ function NodeSettingsDialog({
     try {
       await updateNode(node.id, {
         name: name.trim(),
-        host: node.host, // the domain is changed from the Домен tab, not here
+        host: node.host, // domain is changed from the Домен tab
         decoy_template: decoy,
-        vless_enabled: proto.vless,
-        trojan_enabled: proto.trojan,
-        hysteria_enabled: proto.hysteria,
-        reality_enabled: proto.reality,
+        // Protocols are edited in the Подключения tab — preserve them here.
+        vless_enabled: node.vless_enabled,
+        trojan_enabled: node.trojan_enabled,
+        hysteria_enabled: node.hysteria_enabled,
+        reality_enabled: node.reality_enabled,
       });
       // Routing + egress in one call — always the node's OWN (no inherit toggle).
       // An empty routing config just means "mostly direct"; empty DNS ⇒ default resolver.
@@ -781,6 +675,7 @@ function NodeSettingsDialog({
         onChange={setTab}
         tabs={[
           { value: "general", label: "Основное" },
+          { value: "connections", label: "Подключения" },
           { value: "routing", label: "Роутинг" },
           { value: "geo", label: "Geo" },
           { value: "domain", label: "Домен" },
@@ -798,28 +693,15 @@ function NodeSettingsDialog({
               data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
             />
           </Section>
-
-          <Section
-            title="Протоколы"
-            desc="Какие протоколы обслуживает эта нода. Порты и транспорт — во вкладке «Подключения» в настройках."
-          >
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              {protoDefs.map((p) => (
-                <label key={p.key} className="flex items-center gap-2 text-sm">
-                  <Switch checked={proto[p.key]} onChange={(v) => toggleProto(p.key, v)} />
-                  <span className="text-ink">{p.label}</span>
-                </label>
-              ))}
-            </div>
-          </Section>
-
-          <RealitySection
-            node={node}
-            isMaster={false}
-            save={(d, r) => setNodeReality(node.id, d, r)}
-            onChanged={onRefresh}
-          />
         </div>
+      )}
+
+      {tab === "connections" && (
+        <ConnectionsEditor
+          load={() => getNodeConnections(node.id)}
+          save={(u) => applyNodeConnections(node.id, u)}
+          restartsPanel={false}
+        />
       )}
 
       {tab === "routing" && (
@@ -891,14 +773,6 @@ function MasterSettingsDialog({
   const [name, setName] = useState(node.master_label ?? "");
   const [decoy, setDecoy] = useState(node.decoy_template);
   const [dns, setDns] = useState(node.xray_dns ?? "");
-  // The master's protocols on/off (like a node). Connection details stay in the
-  // global Подключения settings; only the toggle lives here.
-  const [proto, setProto] = useState({
-    vless: node.vless_enabled,
-    trojan: node.trojan_enabled,
-    hysteria: node.hysteria_enabled,
-    reality: node.reality_enabled,
-  });
   // Live egress status for the badges (master's egress runs locally, so the panel
   // knows the real state — unlike a node).
   const [warpRegistered, setWarpRegistered] = useState(node.warp_registered);
@@ -972,12 +846,6 @@ function MasterSettingsDialog({
   const save = () =>
     apply(async () => {
       await setMasterName(name.trim());
-      await setMasterProtocols({
-        vless_enabled: proto.vless,
-        trojan_enabled: proto.trojan,
-        hysteria_enabled: proto.hysteria,
-        reality_enabled: proto.reality,
-      });
       await saveDecoy(decoy);
       await setXrayDNS(dns);
       // Routing + WARP/Opera together (one reconcile).
@@ -997,6 +865,7 @@ function MasterSettingsDialog({
             onChange={setTab}
             tabs={[
               { value: "general", label: "Основное" },
+              { value: "connections", label: "Подключения" },
               { value: "routing", label: "Роутинг" },
               { value: "geo", label: "Geo" },
               { value: "domain", label: "Домен" },
@@ -1024,31 +893,11 @@ function MasterSettingsDialog({
                   data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
                 />
               </Section>
-
-              <Section
-                title="Протоколы"
-                desc="Какие протоколы обслуживает мастер. Порты и транспорт — во вкладке «Подключения» в настройках."
-              >
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                  {protoDefs.map((p) => (
-                    <label key={p.key} className="flex items-center gap-2 text-sm">
-                      <Switch
-                        checked={proto[p.key]}
-                        onChange={(v) => setProto((s) => ({ ...s, [p.key]: v }))}
-                      />
-                      <span className="text-ink">{p.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </Section>
-
-              <RealitySection
-                node={node}
-                isMaster
-                save={(d, r) => setMasterReality(d, r)}
-                onChanged={onRefresh}
-              />
             </div>
+          )}
+
+          {tab === "connections" && (
+            <ConnectionsEditor load={getConnections} save={applyConnections} restartsPanel />
           )}
 
           {tab === "routing" && (
@@ -1105,14 +954,6 @@ function MasterSettingsDialog({
     </Modal>
   );
 }
-
-// protoDefs drives the four protocol toggles on a node card.
-const protoDefs = [
-  { key: "vless", label: "VLESS", enabledField: "vless_enabled" },
-  { key: "trojan", label: "Trojan", enabledField: "trojan_enabled" },
-  { key: "hysteria", label: "Hysteria2", enabledField: "hysteria_enabled" },
-  { key: "reality", label: "REALITY", enabledField: "reality_enabled" },
-] as const;
 
 // NodeCard renders one node with its status, traffic, protocol toggles and decoy.
 function NodeCard({

@@ -1,7 +1,6 @@
 import { ApiSettings } from "./ApiSettings";
 import { BillingPanel } from "./BillingPanel";
 import { BrandingSettings } from "./BrandingSettings";
-import { ConnectionsPanel } from "./ConnectionsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { navigate, useRoute } from "./router";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
@@ -9,13 +8,12 @@ import { TelegramSettings } from "./TelegramSettings";
 import { cn } from "./ui";
 import { WebhooksSettings } from "./WebhooksSettings";
 
-// The server's domain, routing, DNS and site decoy moved to the per-server settings
-// on the "Сервера" page: each server (the master included) owns its own address and
-// routing/DNS/egress, edited from its server card rather than as global tabs here.
+// Everything server-specific (connections/protocols, domain, routing, DNS, decoy)
+// moved to the per-server cards on the "Сервера" page: each server (the master
+// included) owns its own, edited from its card rather than as global tabs here.
 const SUBTABS = [
   { value: "general", label: "Основное" },
   { value: "branding", label: "Брендинг" },
-  { value: "connections", label: "Подключения" },
   { value: "subscriptions", label: "Подписки" },
   { value: "telegram", label: "Telegram" },
   { value: "billing", label: "Оплата" },
@@ -57,7 +55,6 @@ export function SettingsPanel() {
       <div key={tab} className="animate-fade-in">
         {tab === "general" && <GeneralSettings />}
         {tab === "branding" && <BrandingSettings />}
-        {tab === "connections" && <ConnectionsPanel />}
         {tab === "subscriptions" && <SubscriptionsPanel />}
         {tab === "telegram" && <TelegramSettings />}
         {tab === "billing" && <BillingPanel />}
