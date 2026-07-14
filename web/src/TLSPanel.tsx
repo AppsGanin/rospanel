@@ -99,10 +99,10 @@ export function TLSPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="min-w-0">
             <p className="text-sm text-ink-muted">Текущий адрес</p>
-            <p className="text-lg font-bold text-ink">
+            <p className="break-all text-lg font-bold text-ink">
               {status?.domain || "—"}
             </p>
             {cert && (
@@ -111,7 +111,11 @@ export function TLSPanel({
               </p>
             )}
           </div>
-          {cert && <Badge color={valid ? "teal" : "orange"}>{certLabel}</Badge>}
+          {cert && (
+            <Badge color={valid ? "teal" : "orange"} className="self-start sm:self-auto">
+              {certLabel}
+            </Badge>
+          )}
         </div>
       </div>
 

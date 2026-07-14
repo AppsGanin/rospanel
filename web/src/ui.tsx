@@ -1078,10 +1078,12 @@ export function Badge({
   children,
   color = "brand",
   size = "sm",
+  className,
 }: {
   children: ReactNode;
   color?: keyof typeof BADGE;
   size?: "xs" | "sm";
+  className?: string;
 }) {
   return (
     <span
@@ -1092,6 +1094,7 @@ export function Badge({
         // that isn't in the palette type-checks fine — then renders as bare text with
         // no background. Fall back to the accent instead of vanishing.
         BADGE[color] ?? BADGE.brand,
+        className,
       )}
     >
       {children}
