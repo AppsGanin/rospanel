@@ -57,6 +57,39 @@ import {
   useConfirm,
 } from "./ui";
 
+// DialogTabs is the in-modal tab strip used by the server settings dialogs, so a
+// server's many sections (domain / routing / DNS / …) don't stack into one long
+// scroll. All tabs' state lives in the parent, so switching never loses edits and
+// the single footer Save persists everything regardless of the active tab.
+function DialogTabs({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-gray-200">
+      {tabs.map((t) => (
+        <button
+          key={t.value}
+          onClick={() => onChange(t.value)}
+          className={cn(
+            "whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition",
+            value === t.value
+              ? "border-brand-600 text-brand-800"
+              : "border-transparent text-ink-muted hover:text-ink",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function fmtSeen(unix: number): string {
   if (!unix) return "ещё не подключалась";
   const ago = Math.floor(Date.now() / 1000) - unix;
@@ -477,6 +510,7 @@ function NodeSettingsDialog({
   const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
   const [dns, setDns] = useState(node.xray_dns ?? "");
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState("general");
 
   const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) => {
     setProto((p) => ({ ...p, [k]: v }));
@@ -532,42 +566,56 @@ function NodeSettingsDialog({
 
   return (
     <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="xl">
-      <div className="space-y-4">
-        <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
-        <Select
-          label="Заглушка"
-          value={decoy}
-          onChange={setDecoy}
-          data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
-        />
+      <DialogTabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: "general", label: "Основное" },
+          { value: "routing", label: "Роутинг и выходы" },
+          { value: "dns", label: "DNS" },
+        ]}
+      />
 
-        {/* Protocols (per-node override; nil = inherit the master) */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-ink">Протоколы</p>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            {protoDefs.map((p) => {
-              const val = proto[p.key];
-              const inherited = !protoTouched[p.key] && !node.overrides[p.key];
-              return (
-                <label key={p.key} className="flex items-center gap-2 text-sm">
-                  <Switch checked={val} onChange={(v) => toggleProto(p.key, v)} />
-                  <span className="text-ink">{p.label}</span>
-                  {inherited && <span className="text-xs text-ink-muted">насл.</span>}
-                </label>
-              );
-            })}
+      {tab === "general" && (
+        <div className="space-y-4">
+          <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
+          <Select
+            label="Заглушка"
+            value={decoy}
+            onChange={setDecoy}
+            data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+          />
+
+          {/* Protocols (per-node override; nil = inherit the master) */}
+          <div>
+            <p className="mb-2 text-sm font-medium text-ink">Протоколы</p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              {protoDefs.map((p) => {
+                const val = proto[p.key];
+                const inherited = !protoTouched[p.key] && !node.overrides[p.key];
+                return (
+                  <label key={p.key} className="flex items-center gap-2 text-sm">
+                    <Switch checked={val} onChange={(v) => toggleProto(p.key, v)} />
+                    <span className="text-ink">{p.label}</span>
+                    {inherited && <span className="text-xs text-ink-muted">насл.</span>}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Routing + egress (node's own — same editor as the master) */}
-        <ToggleRow
-          label="Свой роутинг и выходы ноды"
-          hint="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
-          checked={routingOwn}
-          onChange={setRoutingOwn}
-        />
-        {routingOwn && (
-          <div className="rounded-lg border border-gray-100 p-3">
+      {tab === "routing" && (
+        <div className="space-y-4">
+          {/* Routing + egress (node's own — same editor as the master) */}
+          <ToggleRow
+            label="Свой роутинг и выходы ноды"
+            hint="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
+            checked={routingOwn}
+            onChange={setRoutingOwn}
+          />
+          {routingOwn && (
             <RoutingEditor
               cfg={r.cfg}
               onCfg={r.onCfg}
@@ -587,27 +635,31 @@ function NodeSettingsDialog({
               applying={saving}
               liveStatus={false}
             />
-          </div>
-        )}
+          )}
+        </div>
+      )}
 
-        {/* DNS */}
-        <ToggleRow
-          label="Свой DNS ноды"
-          hint="Выключено — нода использует DNS панели."
-          checked={dnsOwn}
-          onChange={setDnsOwn}
-        />
-        {dnsOwn && (
-          <Textarea
-            label="DNS-серверы"
-            value={dns}
-            onChange={setDns}
-            rows={3}
-            placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
-            hint="По одному на строку (или через запятую): DoH URL или IP."
+      {tab === "dns" && (
+        <div className="space-y-4">
+          <ToggleRow
+            label="Свой DNS ноды"
+            hint="Выключено — нода использует DNS панели."
+            checked={dnsOwn}
+            onChange={setDnsOwn}
           />
-        )}
-      </div>
+          {dnsOwn && (
+            <Textarea
+              label="DNS-серверы"
+              value={dns}
+              onChange={setDns}
+              rows={3}
+              placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
+              hint="По одному на строку (или через запятую): DoH URL или IP."
+            />
+          )}
+        </div>
+      )}
+
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
           Отмена
@@ -650,6 +702,7 @@ function MasterSettingsDialog({
   const [operaAlive, setOperaAlive] = useState(false);
   const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
+  const [tab, setTab] = useState("domain");
   const r = useServerRouting({
     cfg: EMPTY,
     warp: node.warp_enabled,
@@ -713,57 +766,66 @@ function MasterSettingsDialog({
         <CenterLoader />
       ) : (
         <>
-          <div className="space-y-4">
-            {/* Domain / TLS — its own load + "сменить домен" button (page redirects
-                on success), independent of this dialog's Save. */}
-            <div>
-              <p className="mb-2 text-sm font-medium text-ink">Домен</p>
-              <TLSPanel />
-            </div>
+          <DialogTabs
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { value: "domain", label: "Домен" },
+              { value: "general", label: "Основное" },
+              { value: "routing", label: "Роутинг и выходы" },
+              { value: "dns", label: "DNS" },
+            ]}
+          />
 
-            <div>
-              <TextInput
-                label="Имя в конфигах"
-                value={name}
-                onChange={setName}
-                placeholder="напр. Мастер (пусто — без префикса)"
+          {/* Domain / TLS — its own load + "сменить домен" button (page redirects
+              on success), independent of this dialog's Save. */}
+          {tab === "domain" && <TLSPanel />}
+
+          {tab === "general" && (
+            <div className="space-y-4">
+              <div>
+                <TextInput
+                  label="Имя в конфигах"
+                  value={name}
+                  onChange={setName}
+                  placeholder="напр. Мастер (пусто — без префикса)"
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
+                </p>
+              </div>
+              <Select
+                label="Заглушка"
+                value={decoy}
+                onChange={setDecoy}
+                data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
               />
-              <p className="mt-1 text-xs text-ink-muted">
-                Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
-              </p>
             </div>
-            <Select
-              label="Заглушка"
-              value={decoy}
-              onChange={setDecoy}
-              data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+          )}
+
+          {tab === "routing" && (
+            <RoutingEditor
+              cfg={r.cfg}
+              onCfg={r.onCfg}
+              laneSrc={r.laneSrc}
+              setLaneSrc={r.setLaneSrc}
+              warpEnabled={r.warpEnabled}
+              setWarpEnabled={r.setWarpEnabled}
+              warpBadge={warpBadge}
+              operaEnabled={r.operaEnabled}
+              setOperaEnabled={r.setOperaEnabled}
+              operaCountry={r.operaCountry}
+              setOperaCountry={r.setOperaCountry}
+              operaBadge={operaBadge}
+              proxyCounts={proxyCounts}
+              geosite={geo.geosite}
+              geoip={geo.geoip}
+              applying={applying}
+              geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
             />
+          )}
 
-            {/* Routing + egress (same editor as a node) */}
-            <div>
-              <p className="mb-2 text-sm font-medium text-ink">Роутинг и выходы</p>
-              <RoutingEditor
-                cfg={r.cfg}
-                onCfg={r.onCfg}
-                laneSrc={r.laneSrc}
-                setLaneSrc={r.setLaneSrc}
-                warpEnabled={r.warpEnabled}
-                setWarpEnabled={r.setWarpEnabled}
-                warpBadge={warpBadge}
-                operaEnabled={r.operaEnabled}
-                setOperaEnabled={r.setOperaEnabled}
-                operaCountry={r.operaCountry}
-                setOperaCountry={r.setOperaCountry}
-                operaBadge={operaBadge}
-                proxyCounts={proxyCounts}
-                geosite={geo.geosite}
-                geoip={geo.geoip}
-                applying={applying}
-                geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
-              />
-            </div>
-
-            {/* DNS */}
+          {tab === "dns" && (
             <Textarea
               label="DNS-серверы"
               value={dns}
@@ -772,7 +834,8 @@ function MasterSettingsDialog({
               placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
               hint="По одному на строку (или через запятую): DoH URL или IP. Пусто — DNS по умолчанию."
             />
-          </div>
+          )}
+
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
               Отмена

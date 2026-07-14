@@ -40,11 +40,25 @@ CREATE TABLE nodes (
     -- Per-node overrides that fall back to the global settings when unset:
     --   routing_config: '' ⇒ inherit the panel's routing; a JSON RoutingConfig ⇒
     --     this node's own rules. Egress lanes live in Routing.Lanes and resolve
-    --     against the node's own proxy pool (WARP/Opera are separate columns, added
-    --     in 0028_node_egress); every server's egress is its own.
+    --     against the node's own proxy pool; every server's egress is its own.
     --   xray_dns: NULL ⇒ inherit the panel's DNS; any value (incl. '') ⇒ this node's.
     routing_config TEXT NOT NULL DEFAULT '',
     xray_dns       TEXT,
+
+    -- Per-node egress backends, independent of the master, all off by default.
+    -- WARP is this node's OWN Cloudflare registration (a shared WireGuard identity
+    -- across servers is unsafe), so the keys/endpoint/addresses live per node; the
+    -- private key is encrypted at rest. Opera runs the opera-proxy helper on the
+    -- node's agent; only the country is stored (the port is the panel default).
+    warp_enabled     INTEGER NOT NULL DEFAULT 0,
+    warp_private_key TEXT    NOT NULL DEFAULT '',
+    warp_public_key  TEXT    NOT NULL DEFAULT '',
+    warp_endpoint    TEXT    NOT NULL DEFAULT '',
+    warp_address_v4  TEXT    NOT NULL DEFAULT '',
+    warp_address_v6  TEXT    NOT NULL DEFAULT '',
+    warp_reserved    TEXT    NOT NULL DEFAULT '',
+    opera_enabled    INTEGER NOT NULL DEFAULT 0,
+    opera_country    TEXT    NOT NULL DEFAULT '',
 
     -- Reported by the node on every sync.
     last_seen        INTEGER NOT NULL DEFAULT 0,
