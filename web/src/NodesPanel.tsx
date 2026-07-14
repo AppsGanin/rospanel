@@ -30,6 +30,7 @@ import { helperStatus } from "./EgressStatus";
 import { fmtBytes } from "./format";
 import { DECOY_LABELS } from "./GeneralSettings";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { TLSPanel } from "./TLSPanel";
 import {
   effectiveCfg,
   EMPTY,
@@ -713,6 +714,13 @@ function MasterSettingsDialog({
       ) : (
         <>
           <div className="space-y-4">
+            {/* Domain / TLS — its own load + "сменить домен" button (page redirects
+                on success), independent of this dialog's Save. */}
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink">Домен</p>
+              <TLSPanel />
+            </div>
+
             <div>
               <TextInput
                 label="Имя в конфигах"

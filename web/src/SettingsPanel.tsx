@@ -6,13 +6,12 @@ import { GeneralSettings } from "./GeneralSettings";
 import { navigate, useRoute } from "./router";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
 import { TelegramSettings } from "./TelegramSettings";
-import { TLSPanel } from "./TLSPanel";
 import { cn } from "./ui";
 import { WebhooksSettings } from "./WebhooksSettings";
 
-// Routing, DNS and the site decoy moved to the per-server settings on the "Сервера"
-// page: each server (the master included) owns its own routing/DNS/egress, so they're
-// edited from the server card rather than as global tabs here.
+// The server's domain, routing, DNS and site decoy moved to the per-server settings
+// on the "Сервера" page: each server (the master included) owns its own address and
+// routing/DNS/egress, edited from its server card rather than as global tabs here.
 const SUBTABS = [
   { value: "general", label: "Основное" },
   { value: "branding", label: "Брендинг" },
@@ -21,7 +20,6 @@ const SUBTABS = [
   { value: "telegram", label: "Telegram" },
   { value: "billing", label: "Оплата" },
   { value: "api", label: "API" },
-  { value: "domain", label: "Домен" },
 ] as const;
 
 type SubTab = (typeof SUBTABS)[number]["value"];
@@ -69,7 +67,6 @@ export function SettingsPanel() {
             <WebhooksSettings />
           </div>
         )}
-        {tab === "domain" && <TLSPanel />}
       </div>
     </div>
   );
