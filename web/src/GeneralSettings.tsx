@@ -5,7 +5,6 @@ import {
   getMe,
   getSettings,
   regenSecret,
-  setDecoy,
   setLocalBackup,
   setupTimezone,
   setUserAutoDelete,
@@ -55,7 +54,9 @@ const AUTODELETE_OPTIONS = [
   { value: "365", label: "365 дней после истечения" },
 ];
 
-const DECOY_LABELS: Record<string, string> = {
+// DECOY_LABELS maps decoy slugs to friendly names. Exported so the master/node
+// settings dialogs (where the decoy is now chosen) show the same labels.
+export const DECOY_LABELS: Record<string, string> = {
   "coming-soon": "Coming soon (скоро открытие)",
   nginx: "Nginx (страница по умолчанию)",
   maintenance: "Технические работы",
@@ -74,8 +75,6 @@ export function GeneralSettings() {
   const [timezone, setTimezone] = useState("");
   const [savedTz, setSavedTz] = useState("");
   const [settings, setSettings] = useState<SettingsInfo | null>(null);
-  const [decoy, setDecoyState] = useState("");
-  const [savedDecoy, setSavedDecoy] = useState("");
   const [bk, setBk] = useState<LocalBackup>(EMPTY_BK);
   const [savedBk, setSavedBk] = useState<LocalBackup>(EMPTY_BK);
   const [autoDel, setAutoDel] = useState(0);
@@ -108,9 +107,6 @@ export function GeneralSettings() {
       getSettings()
         .then((s) => {
           setSettings(s);
-          const dec = s.decoy_template || "coming-soon";
-          setDecoyState(dec);
-          setSavedDecoy(dec);
           const bkv: LocalBackup = {
             schedule: detectPreset(s.local_backup_cron || ""),
             keep: s.local_backup_keep ?? 7,
@@ -132,26 +128,17 @@ export function GeneralSettings() {
   const bkDirty =
     bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
   const adDirty = autoDel !== savedAutoDel;
-  const dirty =
-    timezone !== savedTz ||
-    decoy !== savedDecoy ||
-    bkDirty ||
-    adDirty;
+  const dirty = timezone !== savedTz || bkDirty || adDirty;
   const saveBlocked = false;
 
-  // save persists whatever changed (timezone / decoy) behind the single bottom
-  // SaveBar. Update-check and secret regen stay immediate actions.
+  // save persists whatever changed (timezone / backups / auto-delete) behind the
+  // single bottom SaveBar. Update-check and secret regen stay immediate actions.
   const save = () =>
     run(
       async () => {
         if (timezone !== savedTz) {
           await setupTimezone(timezone);
           setSavedTz(timezone);
-        }
-        if (decoy !== savedDecoy) {
-          await setDecoy(decoy);
-          setSettings((s) => (s ? { ...s, decoy_template: decoy } : s));
-          setSavedDecoy(decoy);
         }
         if (bkDirty) {
           await setLocalBackup({ cron: bkCron, keep: bk.keep });
@@ -168,7 +155,6 @@ export function GeneralSettings() {
 
   const cancel = () => {
     setTimezone(savedTz);
-    setDecoyState(savedDecoy);
     setBk(savedBk);
     setAutoDel(savedAutoDel);
   };
@@ -311,20 +297,6 @@ export function GeneralSettings() {
         description="Граница суток в статистике трафика."
       >
         <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
-      </SettingCard>
-
-      <SettingCard
-        title="Сайт-заглушка"
-        description="Что видят посторонние по любому адресу, кроме секретного пути панели."
-      >
-        <Select
-          data={(settings?.decoy_templates ?? []).map((t) => ({
-            value: t,
-            label: DECOY_LABELS[t] ?? t,
-          }))}
-          value={decoy}
-          onChange={setDecoyState}
-        />
       </SettingCard>
 
       <SettingCard

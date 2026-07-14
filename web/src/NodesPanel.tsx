@@ -2,22 +2,43 @@ import { useEffect, useState } from "react";
 import {
   createNode,
   deleteNode,
+  getGeoCategories,
+  getGeoStatus,
   getNodeLogs,
+  getRouting,
   getSettings,
   listNodes,
   provisionNode,
   regenNodeJoin,
+  saveRouting,
+  setDecoy as saveDecoy,
   setMasterName,
   setNodeEnabled,
   setNodeRouting,
+  setXrayDNS,
   updateAllNodes,
+  updateGeo,
   updateNode,
   updateNodeVersion,
+  type GeoCategories,
+  type GeoFile,
   type NodeView,
   type RoutingConfig,
 } from "./api";
+import { ApplyingModal, useXrayApply } from "./apply";
+import { helperStatus } from "./EgressStatus";
 import { fmtBytes } from "./format";
+import { DECOY_LABELS } from "./GeneralSettings";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import {
+  effectiveCfg,
+  EMPTY,
+  hydrateRouting,
+  laneSources,
+  RoutingEditor,
+  type LaneSource,
+  type StatusBadge,
+} from "./RoutingEditor";
 import {
   Badge,
   Button,
@@ -29,7 +50,6 @@ import {
   PasswordInput,
   Select,
   Switch,
-  TagsInput,
   Textarea,
   TextInput,
   ToggleRow,
@@ -371,38 +391,67 @@ function ReconnectDialog({
   );
 }
 
-// emptyNodeRouting is a blank routing override (only the fields that work on a node
-// — egress lanes/WARP/Opera are stripped server-side, so they're not editable here).
-function emptyNodeRouting(): RoutingConfig {
+// nodeDefaultRouting is a fresh node routing override: the full editor's default
+// (block/direct/lanes/WARP/Opera), with ad-blocking on — the operator just enabled
+// "own routing", so give them a sensible starting point.
+function nodeDefaultRouting(): RoutingConfig {
+  return { ...hydrateRouting(null), block_ads: true };
+}
+
+// useServerRouting holds the editable routing + egress state shared by the node and
+// master settings dialogs, so both drive the same RoutingEditor. The container owns
+// saving; this only manages the in-progress edit (and lane-source flip state).
+function useServerRouting(init: {
+  cfg: RoutingConfig;
+  warp: boolean;
+  opera: boolean;
+  country: string;
+}) {
+  const [cfg, setCfg] = useState<RoutingConfig>(init.cfg);
+  const [laneSrc, setLaneSrc] = useState<Record<string, LaneSource>>(() =>
+    laneSources(init.cfg.lanes),
+  );
+  const [warpEnabled, setWarpEnabled] = useState(init.warp);
+  const [operaEnabled, setOperaEnabled] = useState(init.opera);
+  const [operaCountry, setOperaCountry] = useState(init.country || "EU");
   return {
-    block_bittorrent: false,
-    block_ads: true,
-    block_ips: [],
-    block_domains: [],
-    warp_domains: [],
-    warp_ips: [],
-    opera_domains: [],
-    opera_ips: [],
-    direct_domains: [],
-    direct_ips: [],
-    routing_order: [],
-    lanes: [],
-    proxy_refresh_minutes: 0,
+    cfg,
+    onCfg: (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch })),
+    laneSrc,
+    setLaneSrc,
+    warpEnabled,
+    setWarpEnabled,
+    operaEnabled,
+    setOperaEnabled,
+    operaCountry,
+    setOperaCountry,
+    effective: () => effectiveCfg(cfg, laneSrc),
+    // reset re-seeds every field (used by the master dialog after its async load).
+    reset: (c: RoutingConfig, w: boolean, o: boolean, cc: string) => {
+      setCfg(c);
+      setLaneSrc(laneSources(c.lanes));
+      setWarpEnabled(w);
+      setOperaEnabled(o);
+      setOperaCountry(cc || "EU");
+    },
   };
 }
 
-// NodeRoutingDialog edits a node's routing + DNS overrides. Each section can either
-// inherit the panel's setting or be a per-node override. Only the block/direct rules
-// apply on a node (proxy lanes / WARP / Opera egress don't exist there), so only
-// those are exposed.
+// NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
+// protocol overrides, its OWN routing + egress (the same editor as the master), and
+// its DNS. Routing/egress and DNS each either inherit the panel's or are the node's
+// own override. Egress (proxy lanes / WARP / Opera) is independent of the master and
+// only meaningful with own routing, so it lives inside the routing editor.
 function NodeSettingsDialog({
   node,
   decoys,
+  geo,
   onClose,
   onSaved,
 }: {
   node: NodeView;
   decoys: string[];
+  geo: GeoCategories;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -418,12 +467,16 @@ function NodeSettingsDialog({
   });
   const [protoTouched, setProtoTouched] = useState<Record<string, boolean>>({});
   const [routingOwn, setRoutingOwn] = useState(node.routing != null);
-  const [cfg, setCfg] = useState<RoutingConfig>(node.routing ?? emptyNodeRouting());
+  const r = useServerRouting({
+    cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
+    warp: node.warp_enabled,
+    opera: node.opera_enabled,
+    country: node.opera_country,
+  });
   const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
   const [dns, setDns] = useState(node.xray_dns ?? "");
   const [saving, setSaving] = useState(false);
 
-  const set = (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch }));
   const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) => {
     setProto((p) => ({ ...p, [k]: v }));
     setProtoTouched((t) => ({ ...t, [k]: true }));
@@ -432,6 +485,17 @@ function NodeSettingsDialog({
   // current override state (null = inherit the master).
   const protoValue = (k: "vless" | "trojan" | "hysteria" | "reality") =>
     protoTouched[k] ? proto[k] : overrideVal(node, k);
+
+  // Status badges: WARP registration is known from the node's report; Opera runs
+  // remotely, so the panel only shows enabled/disabled.
+  const warpBadge: StatusBadge = !r.warpEnabled
+    ? { label: "выключен", color: "gray" }
+    : node.warp_registered
+      ? { label: "активен", color: "green" }
+      : { label: "будет зарегистрирован", color: "orange" };
+  const operaBadge: StatusBadge = r.operaEnabled
+    ? { label: "включён", color: "green" }
+    : { label: "выключен", color: "gray" };
 
   const save = async () => {
     if (!name.trim()) return;
@@ -446,7 +510,17 @@ function NodeSettingsDialog({
         hysteria_enabled: protoValue("hysteria"),
         reality_enabled: protoValue("reality"),
       });
-      await setNodeRouting(node.id, routingOwn ? cfg : null, dnsOwn ? dns : null);
+      // Routing + egress go in one call. When the node inherits the panel's routing,
+      // egress is forced off too (lanes/WARP/Opera need the node's own rules to route
+      // anything to them).
+      await setNodeRouting(
+        node.id,
+        routingOwn ? r.effective() : null,
+        dnsOwn ? dns : null,
+        routingOwn && r.warpEnabled,
+        routingOwn && r.operaEnabled,
+        r.operaCountry,
+      );
       notifySuccess("Настройки ноды сохранены");
       onSaved();
     } catch (e) {
@@ -456,14 +530,14 @@ function NodeSettingsDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="lg">
+    <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="xl">
       <div className="space-y-4">
         <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
         <Select
           label="Заглушка"
           value={decoy}
           onChange={setDecoy}
-          data={decoys.map((d) => ({ value: d, label: d }))}
+          data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
         />
 
         {/* Protocols (per-node override; nil = inherit the master) */}
@@ -484,36 +558,33 @@ function NodeSettingsDialog({
           </div>
         </div>
 
-        {/* Routing */}
+        {/* Routing + egress (node's own — same editor as the master) */}
         <ToggleRow
-          label="Свои блокировки ноды"
-          hint="Выключено — нода использует роутинг панели. Весь трафик ноды идёт напрямую (прокси-полосы/WARP/Opera на нодах не работают), поэтому здесь только блокировки."
+          label="Свой роутинг и выходы ноды"
+          hint="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
           checked={routingOwn}
           onChange={setRoutingOwn}
         />
         {routingOwn && (
-          <div className="space-y-3 rounded-lg border border-gray-100 p-3">
-            <ToggleRow
-              label="Блокировать рекламу"
-              checked={cfg.block_ads}
-              onChange={(v) => set({ block_ads: v })}
-            />
-            <ToggleRow
-              label="Блокировать BitTorrent"
-              checked={cfg.block_bittorrent}
-              onChange={(v) => set({ block_bittorrent: v })}
-            />
-            <TagsInput
-              label="Блокировать домены"
-              value={cfg.block_domains}
-              onChange={(v) => set({ block_domains: v })}
-              placeholder="example.com, geosite:category-ads…"
-            />
-            <TagsInput
-              label="Блокировать IP / CIDR"
-              value={cfg.block_ips}
-              onChange={(v) => set({ block_ips: v })}
-              placeholder="1.2.3.0/24, geoip:cn…"
+          <div className="rounded-lg border border-gray-100 p-3">
+            <RoutingEditor
+              cfg={r.cfg}
+              onCfg={r.onCfg}
+              laneSrc={r.laneSrc}
+              setLaneSrc={r.setLaneSrc}
+              warpEnabled={r.warpEnabled}
+              setWarpEnabled={r.setWarpEnabled}
+              warpBadge={warpBadge}
+              operaEnabled={r.operaEnabled}
+              setOperaEnabled={r.setOperaEnabled}
+              operaCountry={r.operaCountry}
+              setOperaCountry={r.setOperaCountry}
+              operaBadge={operaBadge}
+              proxyCounts={{}}
+              geosite={geo.geosite}
+              geoip={geo.geoip}
+              applying={saving}
+              liveStatus={false}
             />
           </div>
         )}
@@ -555,49 +626,156 @@ function NodeSettingsDialog({
 // own tabs), so here we only set its config-label name and point at the rest.
 function MasterSettingsDialog({
   node,
+  decoys,
+  geo,
   onClose,
   onSaved,
 }: {
   node: NodeView;
+  decoys: string[];
+  geo: GeoCategories;
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { applying, apply } = useXrayApply();
+  const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState(node.master_label ?? "");
-  const [saving, setSaving] = useState(false);
-  const save = async () => {
-    setSaving(true);
-    try {
+  const [decoy, setDecoy] = useState(node.decoy_template);
+  const [dns, setDns] = useState(node.xray_dns ?? "");
+  // Live egress status for the badges (master's egress runs locally, so the panel
+  // knows the real state — unlike a node).
+  const [warpRegistered, setWarpRegistered] = useState(node.warp_registered);
+  const [operaRunning, setOperaRunning] = useState(false);
+  const [operaAlive, setOperaAlive] = useState(false);
+  const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
+  const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
+  const r = useServerRouting({
+    cfg: EMPTY,
+    warp: node.warp_enabled,
+    opera: node.opera_enabled,
+    country: node.opera_country,
+  });
+  const reset = r.reset;
+
+  useEffect(() => {
+    getGeoStatus().then(setGeoStatus).catch(() => {});
+    getRouting()
+      .then((info) => {
+        reset(
+          hydrateRouting(info.config),
+          info.warp_enabled,
+          info.opera_enabled,
+          info.opera_country || "EU",
+        );
+        setWarpRegistered(info.warp_registered);
+        setOperaRunning(info.opera_running);
+        setOperaAlive(info.opera_alive);
+        setProxyCounts(info.proxy_counts ?? {});
+      })
+      .catch((e) => notifyError(errMessage(e)))
+      .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refreshGeo = () =>
+    apply(async () => {
+      setGeoStatus(await updateGeo());
+      notifySuccess("Geo-базы обновлены");
+    });
+
+  const warpBadge: StatusBadge = !r.warpEnabled
+    ? { label: "выключен", color: "gray" }
+    : warpRegistered
+      ? { label: "активен", color: "green" }
+      : { label: "не зарегистрирован", color: "orange" };
+  const operaBadge = helperStatus(
+    r.operaEnabled,
+    operaRunning,
+    operaAlive,
+    "",
+  ) as StatusBadge;
+
+  const save = () =>
+    apply(async () => {
       await setMasterName(name.trim());
+      await saveDecoy(decoy);
+      await setXrayDNS(dns);
+      // Routing + WARP/Opera together (one reconcile).
+      await saveRouting(r.effective(), r.warpEnabled, r.operaEnabled, r.operaCountry);
       notifySuccess("Настройки мастера сохранены");
       onSaved();
-    } catch (e) {
-      notifyError(errMessage(e));
-      setSaving(false);
-    }
-  };
+    });
+
   return (
-    <Modal open onClose={onClose} title="Настройки — мастер" size="lg">
-      <div className="space-y-3">
-        <TextInput
-          label="Имя в конфигах"
-          value={name}
-          onChange={setName}
-          placeholder="напр. Мастер (пусто — без префикса)"
-        />
-        <p className="text-xs text-ink-muted">
-          Протоколы, заглушка, роутинг и DNS мастера — это глобальные настройки
-          панели: они меняются во вкладках «Подключения», «Настройки» и «Роутинг» и
-          применяются ко всем нодам, у которых нет своих переопределений.
-        </p>
-      </div>
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
-          Отмена
-        </Button>
-        <Button onClick={save} loading={saving}>
-          Сохранить
-        </Button>
-      </div>
+    <Modal open onClose={onClose} title="Настройки — мастер" size="xl">
+      {!loaded ? (
+        <CenterLoader />
+      ) : (
+        <>
+          <div className="space-y-4">
+            <div>
+              <TextInput
+                label="Имя в конфигах"
+                value={name}
+                onChange={setName}
+                placeholder="напр. Мастер (пусто — без префикса)"
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
+              </p>
+            </div>
+            <Select
+              label="Заглушка"
+              value={decoy}
+              onChange={setDecoy}
+              data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+            />
+
+            {/* Routing + egress (same editor as a node) */}
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink">Роутинг и выходы</p>
+              <RoutingEditor
+                cfg={r.cfg}
+                onCfg={r.onCfg}
+                laneSrc={r.laneSrc}
+                setLaneSrc={r.setLaneSrc}
+                warpEnabled={r.warpEnabled}
+                setWarpEnabled={r.setWarpEnabled}
+                warpBadge={warpBadge}
+                operaEnabled={r.operaEnabled}
+                setOperaEnabled={r.setOperaEnabled}
+                operaCountry={r.operaCountry}
+                setOperaCountry={r.setOperaCountry}
+                operaBadge={operaBadge}
+                proxyCounts={proxyCounts}
+                geosite={geo.geosite}
+                geoip={geo.geoip}
+                applying={applying}
+                geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
+              />
+            </div>
+
+            {/* DNS */}
+            <Textarea
+              label="DNS-серверы"
+              value={dns}
+              onChange={setDns}
+              rows={3}
+              placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
+              hint="По одному на строку (или через запятую): DoH URL или IP. Пусто — DNS по умолчанию."
+            />
+          </div>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
+              Отмена
+            </Button>
+            <Button onClick={save} loading={applying}>
+              Сохранить
+            </Button>
+          </div>
+        </>
+      )}
+      <ApplyingModal open={applying} />
     </Modal>
   );
 }
@@ -614,11 +792,13 @@ const protoDefs = [
 function NodeCard({
   node,
   decoys,
+  geo,
   onChanged,
   onRegen,
 }: {
   node: NodeView;
   decoys: string[];
+  geo: GeoCategories;
   onChanged: () => void;
   onRegen: (command: string) => void;
 }) {
@@ -756,6 +936,8 @@ function NodeCard({
         (node.is_local ? (
           <MasterSettingsDialog
             node={node}
+            decoys={decoys}
+            geo={geo}
             onClose={() => setEditingRouting(false)}
             onSaved={() => {
               setEditingRouting(false);
@@ -766,6 +948,7 @@ function NodeCard({
           <NodeSettingsDialog
             node={node}
             decoys={decoys}
+            geo={geo}
             onClose={() => setEditingRouting(false)}
             onSaved={() => {
               setEditingRouting(false);
@@ -852,6 +1035,9 @@ function overrideVal(node: NodeView, key: "vless" | "trojan" | "hysteria" | "rea
 export function NodesPanel() {
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
   const [decoys, setDecoys] = useState<string[]>([]);
+  // Geo categories feed the routing editor's domain/IP suggestions (same list for
+  // the master and every node — one panel-side geosite/geoip).
+  const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [] });
   const [adding, setAdding] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
 
@@ -864,6 +1050,9 @@ export function NodesPanel() {
     load();
     getSettings()
       .then((s) => setDecoys(s.decoy_templates || []))
+      .catch(() => {});
+    getGeoCategories()
+      .then((g) => setGeo({ geosite: g.geosite ?? [], geoip: g.geoip ?? [] }))
       .catch(() => {});
     // Refresh liveness periodically so online/offline badges stay current.
     const t = setInterval(load, 15000);
@@ -911,6 +1100,7 @@ export function NodesPanel() {
             key={n.id}
             node={n}
             decoys={decoys}
+            geo={geo}
             onChanged={load}
             onRegen={setInstallCmd}
           />
