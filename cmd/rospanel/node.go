@@ -129,6 +129,15 @@ func installNodeSystemd(dataDir string) {
 	if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
 		self = resolved
 	}
+
+	// A box can't run both the panel and a node — they'd fight over :443. If a panel
+	// service is present here (e.g. a mistaken `rospanel install` on this server),
+	// stop and disable it so the node's Xray can bind the port. Best-effort.
+	if out, _ := exec.Command("systemctl", "is-enabled", "rospanel").Output(); len(out) > 0 {
+		log.Print("node install: found a rospanel PANEL service on this box — disabling it (a node can't also be a panel)")
+		_ = exec.Command("systemctl", "disable", "--now", "rospanel").Run()
+	}
+
 	if self != installBinPath {
 		if err := copyFile(self, installBinPath, 0o755); err != nil {
 			log.Fatalf("node install: copy binary to %s: %v", installBinPath, err)

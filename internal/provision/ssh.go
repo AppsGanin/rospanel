@@ -1,46 +1,79 @@
 // Package provision installs a RosPanel node on a remote server over SSH, so the
 // operator can add a node from the panel UI without touching a terminal. The SSH
 // credentials are used only for the duration of the install and are never stored.
+//
+// The panel uploads its OWN binary to the target and runs `rospanel node install`
+// with it, rather than having the target download a release from GitHub. That makes
+// the node run the exact same build as the panel (no version skew, no dependency on
+// a published release or on the main-branch install.sh), which is also the only way
+// this works for an unreleased/dev build.
 package provision
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
+// remoteInstaller is where the panel binary is uploaded on the target before it
+// self-installs. It sits in an exec-friendly dir (a hardened /tmp is often noexec)
+// and is removed after the install runs.
+const remoteInstaller = "/usr/local/bin/rospanel.installer"
+
 // Credentials describe how to reach and authenticate to the target server. Exactly
 // one of Password / PrivateKey must be set.
 type Credentials struct {
 	Host       string // IP or hostname of the target server
 	Port       int    // SSH port (0 ⇒ 22)
-	User       string // SSH user (must be root or able to sudo -n)
+	User       string // SSH user (must be root)
 	Password   string // password auth (mutually exclusive with PrivateKey)
 	PrivateKey string // PEM private key (mutually exclusive with Password)
 	Passphrase string // optional passphrase for an encrypted PrivateKey
 }
 
-// Install connects to the target server and runs the given install command
-// (the panel's `curl … | bash -s -- --join …` one-liner), streaming every output
-// line to onLine. It returns the discovered host-key fingerprint and any error.
-// The command must be self-contained; nothing is uploaded.
-func Install(ctx context.Context, c Credentials, installCmd string, onLine func(string)) (hostKeyFP string, err error) {
-	// Derive a cancelable child so the session-killer goroutine below always exits
-	// when Install returns, even if the caller's context outlives this call.
+// Install connects to the target, uploads localBinary, and runs it as
+// `rospanel node <installArgs...>` (join + systemd setup), streaming every output
+// line to onLine. Returns the discovered host-key fingerprint and any error.
+func Install(ctx context.Context, c Credentials, localBinary string, installArgs []string, onLine func(string)) (hostKeyFP string, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	client, fp, err := dial(ctx, c, onLine)
+	if err != nil {
+		return fp, err
+	}
+	defer client.Close()
+
+	onLine("Загрузка агента на сервер…")
+	if err := uploadBinary(ctx, client, localBinary); err != nil {
+		return fp, fmt.Errorf("upload agent binary: %w", err)
+	}
+
+	onLine("Запуск установки…")
+	// Run the installer, then remove it whatever the outcome, preserving its exit code.
+	cmd := shellQuote(remoteInstaller) + " node " + shellJoin(installArgs) +
+		"; rc=$?; rm -f " + shellQuote(remoteInstaller) + "; exit $rc"
+	if err := runStreaming(ctx, client, cmd, onLine); err != nil {
+		return fp, fmt.Errorf("install command failed: %w", err)
+	}
+	return fp, nil
+}
+
+// dial opens the SSH connection and returns the client + host-key fingerprint.
+func dial(ctx context.Context, c Credentials, onLine func(string)) (*ssh.Client, string, error) {
 	auth, err := authMethods(c)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	var fp string
 	cfg := &ssh.ClientConfig{
@@ -63,57 +96,92 @@ func Install(ctx context.Context, c Credentials, installCmd string, onLine func(
 		port = 22
 	}
 	addr := net.JoinHostPort(strings.TrimSpace(c.Host), fmt.Sprint(port))
-
-	// Dial with the context deadline honored.
 	d := net.Dialer{Timeout: cfg.Timeout}
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return "", fmt.Errorf("connect to %s: %w", addr, err)
+		return nil, "", fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		_ = conn.Close()
-		return fp, fmt.Errorf("ssh handshake: %w", err)
+		return nil, fp, fmt.Errorf("ssh handshake: %w", err)
 	}
 	client := ssh.NewClient(sshConn, chans, reqs)
-	defer client.Close()
 	onLine("Подключено к " + addr + " (отпечаток ключа " + fp + ")")
+	return client, fp, nil
+}
 
-	session, err := client.NewSession()
+// uploadBinary streams localBinary (gzip-compressed on the wire) to the target and
+// writes it to remoteInstaller, chmod +x.
+func uploadBinary(ctx context.Context, client *ssh.Client, localBinary string) error {
+	f, err := os.Open(localBinary)
 	if err != nil {
-		return fp, fmt.Errorf("open session: %w", err)
+		return err
 	}
-	defer session.Close()
+	defer f.Close()
 
-	stdout, err := session.StdoutPipe()
+	sess, err := client.NewSession()
 	if err != nil {
-		return fp, err
+		return err
 	}
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		return fp, err
-	}
+	defer sess.Close()
+	go func() {
+		<-ctx.Done()
+		_ = sess.Close()
+	}()
 
-	// Stream both streams line by line to the caller.
+	stdin, err := sess.StdinPipe()
+	if err != nil {
+		return err
+	}
+	remote := shellQuote(remoteInstaller)
+	if err := sess.Start("gunzip -c > " + remote + " && chmod 0755 " + remote); err != nil {
+		return err
+	}
+	gz := gzip.NewWriter(stdin)
+	if _, err := io.Copy(gz, f); err != nil {
+		_ = stdin.Close()
+		return err
+	}
+	if err := gz.Close(); err != nil {
+		_ = stdin.Close()
+		return err
+	}
+	if err := stdin.Close(); err != nil {
+		return err
+	}
+	return sess.Wait()
+}
+
+// runStreaming runs cmd and streams stdout+stderr line by line to onLine.
+func runStreaming(ctx context.Context, client *ssh.Client, cmd string, onLine func(string)) error {
+	sess, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := sess.StderrPipe()
+	if err != nil {
+		return err
+	}
 	done := make(chan struct{}, 2)
 	go streamLines(stdout, onLine, done)
 	go streamLines(stderr, onLine, done)
-
-	// Kill the session if the context is cancelled (operator closed the UI).
 	go func() {
 		<-ctx.Done()
-		_ = session.Signal(ssh.SIGKILL)
-		_ = session.Close()
+		_ = sess.Signal(ssh.SIGKILL)
+		_ = sess.Close()
 	}()
 
-	onLine("Запуск установки…")
-	runErr := session.Run(installCmd)
+	runErr := sess.Run(cmd)
 	<-done
 	<-done
-	if runErr != nil {
-		return fp, fmt.Errorf("install command failed: %w", runErr)
-	}
-	return fp, nil
+	return runErr
 }
 
 func authMethods(c Credentials) ([]ssh.AuthMethod, error) {
@@ -133,7 +201,6 @@ func authMethods(c Credentials) ([]ssh.AuthMethod, error) {
 	case c.Password != "":
 		return []ssh.AuthMethod{
 			ssh.Password(c.Password),
-			// Some servers offer keyboard-interactive for password auth.
 			ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
 				ans := make([]string, len(questions))
 				for i := range ans {
@@ -160,4 +227,18 @@ func streamLines(r io.Reader, onLine func(string), done chan<- struct{}) {
 func keyFingerprint(key ssh.PublicKey) string {
 	sum := sha256.Sum256(key.Marshal())
 	return "SHA256:" + strings.TrimRight(base64.StdEncoding.EncodeToString(sum[:]), "=")
+}
+
+// shellQuote single-quotes a string for safe use in a POSIX shell command.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin single-quotes and space-joins args for a remote shell command line.
+func shellJoin(args []string) string {
+	q := make([]string, len(args))
+	for i, a := range args {
+		q[i] = shellQuote(a)
+	}
+	return strings.Join(q, " ")
 }

@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/provision"
 )
 
@@ -50,7 +52,16 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 
-	// Fresh install token + command for this run.
+	// The panel installs the node with its OWN binary (uploaded over SSH), not a
+	// GitHub download — so the node runs the exact same build, which is the only way
+	// this works for an unreleased build and avoids version skew.
+	self, err := os.Executable()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "не удалось определить путь к бинарю панели")
+		return
+	}
+
+	// Fresh install token for this run.
 	token, err := rt.mgr.RegenJoinToken(id)
 	if err != nil {
 		writeManagerErr(w, err)
@@ -61,7 +72,11 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 	if set != nil {
 		nodePath = set.NodeAPIPath
 	}
-	installCmd := rt.nodeInstallCommand(r, nodePath, token)
+	joinURL := panelPublicURL(r) + "/" + nodePath + "/" + nodeapi.PathPrefix + "/join#" + token
+	installArgs := []string{"install", "--join", joinURL}
+	if !rt.mgr.HasValidCert() {
+		installArgs = append(installArgs, "--insecure") // panel cert isn't CA-valid
+	}
 
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
@@ -74,8 +89,8 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 
-	// The install (curl + node install + ACME) can take a couple of minutes; give it
-	// room, but bail if the operator closes the page (request context cancels).
+	// The install (binary upload + node install + ACME) can take a couple of minutes;
+	// give it room, but bail if the operator closes the page (request context cancels).
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Minute)
 	defer cancel()
 
@@ -97,7 +112,7 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		emitMu.Unlock()
 	}
 
-	_, err = provision.Install(ctx, creds, installCmd, emit)
+	_, err = provision.Install(ctx, creds, self, installArgs, emit)
 	if err != nil {
 		emit("ОШИБКА: " + err.Error())
 		emit("event:error")
