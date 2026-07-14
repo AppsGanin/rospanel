@@ -427,12 +427,12 @@ function NodeRoutingDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Роутинг и DNS — «${node.name}»`} size="lg">
+    <Modal open onClose={onClose} title={`Блокировки и DNS — «${node.name}»`} size="lg">
       <div className="space-y-4">
         {/* Routing */}
         <ToggleRow
-          label="Свой роутинг ноды"
-          hint="Выключено — нода использует роутинг панели. Прокси-полосы, WARP и Opera на нодах не работают, поэтому здесь только блокировки и прямые правила."
+          label="Свои блокировки ноды"
+          hint="Выключено — нода использует роутинг панели. Весь трафик ноды идёт напрямую (прокси-полосы/WARP/Opera на нодах не работают), поэтому здесь только блокировки."
           checked={routingOwn}
           onChange={setRoutingOwn}
         />
@@ -459,18 +459,6 @@ function NodeRoutingDialog({
               value={cfg.block_ips}
               onChange={(v) => set({ block_ips: v })}
               placeholder="1.2.3.0/24, geoip:cn…"
-            />
-            <TagsInput
-              label="Напрямую (домены)"
-              value={cfg.direct_domains}
-              onChange={(v) => set({ direct_domains: v })}
-              placeholder="local.example…"
-            />
-            <TagsInput
-              label="Напрямую (IP / CIDR)"
-              value={cfg.direct_ips}
-              onChange={(v) => set({ direct_ips: v })}
-              placeholder="10.0.0.0/8…"
             />
           </div>
         )}
@@ -696,7 +684,7 @@ function NodeCard({
               </Button>
             )}
             <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
-              Роутинг и DNS
+              Блокировки и DNS
             </Button>
             <Button size="sm" variant="light" color="gray" onClick={regen}>
               Новый токен
