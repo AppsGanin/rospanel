@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Checkbox } from "./ui";
 
 // DnsPreset contributes its servers IN ORDER — primary first, then the secondary —
@@ -76,6 +76,14 @@ export function DnsEditor({
   onChange: (v: string) => void;
 }) {
   const [st, setSt] = useState(() => parseDns(value));
+
+  // Re-derive from `value` when the container changes it out from under us (e.g. the
+  // "Отменить" reset restores the last-saved DNS) — but not for our own edits, whose
+  // recombined string already equals `value`, so the parse is skipped.
+  useEffect(() => {
+    if (value !== combineDns(st.sel, st.custom)) setSt(parseDns(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   const emit = (sel: string[], custom: string) => {
     setSt({ sel, custom });

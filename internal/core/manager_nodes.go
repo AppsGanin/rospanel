@@ -283,9 +283,9 @@ type NodeView struct {
 	CertIssuer     string `json:"cert_issuer"`     // ≈ ACME provider (empty for the local node)
 	CertExpiresAt  int64  `json:"cert_expires_at"` // unix; 0 ⇒ unknown
 	// GeoRefreshHours is this server's own geo auto-refresh cadence (hours; 0 ⇒ never).
-	GeoRefreshHours int `json:"geo_refresh_hours"`
-	TrafficUp       int64  `json:"traffic_up"`   // today, this node
-	TrafficDown     int64  `json:"traffic_down"` // today, this node
+	GeoRefreshHours int   `json:"geo_refresh_hours"`
+	TrafficUp       int64 `json:"traffic_up"`   // today, this node
+	TrafficDown     int64 `json:"traffic_down"` // today, this node
 	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
 	// so the per-node routing+DNS editor can prefill and show inherit vs custom. For
 	// the local server (node 0) these carry the master's own routing/DNS so the same
@@ -387,12 +387,12 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			CertIssuer:      n.CertIssuer,
 			CertExpiresAt:   n.CertExpiresAt,
 			GeoRefreshHours: n.GeoRefreshHours,
-			Routing:        n.Routing,
-			XrayDNS:        n.XrayDNS,
-			WarpEnabled:    n.WarpEnabled,
-			WarpRegistered: n.WarpRegistered(),
-			OperaEnabled:   n.OperaEnabled,
-			OperaCountry:   n.OperaCountry,
+			Routing:         n.Routing,
+			XrayDNS:         n.XrayDNS,
+			WarpEnabled:     n.WarpEnabled,
+			WarpRegistered:  n.WarpRegistered(),
+			OperaEnabled:    n.OperaEnabled,
+			OperaCountry:    n.OperaCountry,
 			// The node's own REALITY identity (dest "" ⇒ inherits the panel's donor).
 			RealityDest:        n.RealityDest,
 			RealityPublicKey:   n.RealityPublicKey,
@@ -498,6 +498,17 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 	// setProxies-on-save) so a lane edit applies on the node's next pull.
 	if n, err := m.store.GetNode(id); err == nil && n != nil {
 		m.resolveNodeProxies(n)
+	}
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// SetNodeDNS saves a node's own DNS override (nil ⇒ inherit the panel's) without
+// touching routing/egress, and wakes the node so it pulls the new config. The DNS tab
+// saves through here, independent of the routing tab.
+func (m *Manager) SetNodeDNS(id int64, dns *string) error {
+	if err := m.store.SetNodeDNS(id, dns); err != nil {
+		return err
 	}
 	m.nodes.wakeOne(id)
 	return nil

@@ -271,6 +271,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/nodes", rt.createNode)
 	authedID("PATCH /api/nodes/{id}", rt.updateNode)
 	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)
+	authedID("POST /api/nodes/{id}/dns", rt.setNodeDNS)
 	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)

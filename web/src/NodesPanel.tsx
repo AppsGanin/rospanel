@@ -23,6 +23,7 @@ import {
   setDecoy as saveDecoy,
   setGeoCadence as saveGeoCadence,
   setMasterName,
+  setNodeDNS,
   setNodeEnabled,
   setNodeRouting,
   setXrayDNS,
@@ -112,16 +113,35 @@ function DialogTabs({
 
 // TabSaveBar is the inline save row for the "form" tabs (Основное / Роутинг / DNS)
 // of the server dialogs, so each tab commits on its own — exactly like the
-// Подключения / Geo / Домен tabs already do, staying open after save. The note spells
-// out that edits are staged: nothing applies until this button is pressed.
-function TabSaveBar({ onSave, busy }: { onSave: () => void; busy: boolean }) {
+// Подключения / Geo / Домен tabs already do, staying open after save. "Отменить"
+// reverts unsaved edits to the last-saved state; both buttons disable when there's
+// nothing to save. The note spells out that edits are staged and per-section.
+function TabSaveBar({
+  onSave,
+  onReset,
+  dirty,
+  busy,
+}: {
+  onSave: () => void;
+  onReset: () => void;
+  dirty: boolean;
+  busy: boolean;
+}) {
   return (
     <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs text-ink-muted">
-        Без сохранения изменения не применятся.
+        У каждого раздела своё сохранение. Без сохранения изменения не применятся.
       </p>
-      <div className="flex justify-end">
-        <Button onClick={onSave} loading={busy}>
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="light"
+          color="gray"
+          onClick={onReset}
+          disabled={!dirty || busy}
+        >
+          Отменить
+        </Button>
+        <Button onClick={onSave} loading={busy} disabled={!dirty}>
           Сохранить
         </Button>
       </div>
@@ -487,6 +507,20 @@ function useServerRouting(init: {
   const [warpEnabled, setWarpEnabled] = useState(init.warp);
   const [operaEnabled, setOperaEnabled] = useState(init.opera);
   const [operaCountry, setOperaCountry] = useState(init.country || "EU");
+  // base is the last-saved snapshot, for dirty-tracking and "Отменить" (revert).
+  // Seeded from init, re-seeded on reset (master's async load), refreshed on commit
+  // (after a successful save).
+  const [base, setBase] = useState({
+    cfg: init.cfg,
+    warp: init.warp,
+    opera: init.opera,
+    country: init.country || "EU",
+  });
+  const snap = (c: RoutingConfig, w: boolean, o: boolean, cc: string) =>
+    JSON.stringify({ c: effectiveCfg(c, laneSources(c.lanes)), w, o, cc });
+  const dirty =
+    JSON.stringify({ c: effectiveCfg(cfg, laneSrc), w: warpEnabled, o: operaEnabled, cc: operaCountry }) !==
+    snap(base.cfg, base.warp, base.opera, base.country);
   return {
     cfg,
     onCfg: (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch })),
@@ -499,13 +533,32 @@ function useServerRouting(init: {
     operaCountry,
     setOperaCountry,
     effective: () => effectiveCfg(cfg, laneSrc),
-    // reset re-seeds every field (used by the master dialog after its async load).
+    dirty,
+    // revert restores the editor to the last-saved snapshot.
+    revert: () => {
+      setCfg(base.cfg);
+      setLaneSrc(laneSources(base.cfg.lanes));
+      setWarpEnabled(base.warp);
+      setOperaEnabled(base.opera);
+      setOperaCountry(base.country);
+    },
+    // commit marks the current state as saved (call after a successful save).
+    commit: () =>
+      setBase({
+        cfg: effectiveCfg(cfg, laneSrc),
+        warp: warpEnabled,
+        opera: operaEnabled,
+        country: operaCountry,
+      }),
+    // reset re-seeds every field AND the baseline (used by the master dialog after its
+    // async load, so a freshly-loaded editor is not "dirty").
     reset: (c: RoutingConfig, w: boolean, o: boolean, cc: string) => {
       setCfg(c);
       setLaneSrc(laneSources(c.lanes));
       setWarpEnabled(w);
       setOperaEnabled(o);
       setOperaCountry(cc || "EU");
+      setBase({ cfg: c, warp: w, opera: o, country: cc || "EU" });
     },
   };
 }
@@ -574,6 +627,9 @@ function NodeSettingsDialog({
 }) {
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
+  // genBase / dnsBase are the last-saved snapshots powering dirty-tracking + revert on
+  // the Основное and DNS tabs (routing carries its own inside useServerRouting).
+  const [genBase, setGenBase] = useState({ name: node.name, decoy: node.decoy_template });
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
     warp: node.warp_enabled,
@@ -581,8 +637,11 @@ function NodeSettingsDialog({
     country: node.opera_country,
   });
   const [dns, setDns] = useState(node.xray_dns ?? "");
+  const [dnsBase, setDnsBase] = useState(node.xray_dns ?? "");
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
+  const genDirty = name !== genBase.name || decoy !== genBase.decoy;
+  const dnsDirty = dns !== dnsBase;
 
   // Status badges: WARP registration is known from the node's report; Opera runs
   // remotely, so the panel only shows enabled/disabled.
@@ -596,9 +655,8 @@ function NodeSettingsDialog({
     : { label: "выключен", color: "gray" };
 
   // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
-  // updates the background list. The "Основное" tab persists name/decoy; the node's
-  // routing endpoint carries routing + egress + DNS together, so the Роутинг and DNS
-  // tabs share one save that commits the current state of both.
+  // updates the background list. Основное persists name/decoy, Роутинг the routing +
+  // egress, DNS its own endpoint — three independent saves.
   const saveGeneral = async () => {
     if (!name.trim()) return;
     setSaving(true);
@@ -613,6 +671,7 @@ function NodeSettingsDialog({
         hysteria_enabled: node.hysteria_enabled,
         reality_enabled: node.reality_enabled,
       });
+      setGenBase({ name, decoy });
       notifySuccess("Основное сохранено");
       onRefresh();
     } catch (e) {
@@ -622,20 +681,35 @@ function NodeSettingsDialog({
     }
   };
 
-  const saveRoutingDns = async () => {
+  const saveRouting = async () => {
     setSaving(true);
     try {
-      // Routing + egress + DNS in one call — always the node's OWN (no inherit toggle).
-      // An empty routing config just means "mostly direct"; empty DNS ⇒ default resolver.
+      // Routing + egress — always the node's OWN (no inherit toggle). An empty routing
+      // config just means "mostly direct". DNS is saved separately.
       await setNodeRouting(
         node.id,
         r.effective(),
-        dns.trim() ? dns : null,
         r.warpEnabled,
         r.operaEnabled,
         r.operaCountry,
       );
-      notifySuccess("Сохранено");
+      r.commit();
+      notifySuccess("Роутинг сохранён");
+      onRefresh();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDns = async () => {
+    setSaving(true);
+    try {
+      // Empty ⇒ inherit the panel's default resolver.
+      await setNodeDNS(node.id, dns.trim() ? dns : null);
+      setDnsBase(dns);
+      notifySuccess("DNS сохранён");
       onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -670,7 +744,15 @@ function NodeSettingsDialog({
               data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
             />
           </Section>
-          <TabSaveBar onSave={saveGeneral} busy={saving} />
+          <TabSaveBar
+            onSave={saveGeneral}
+            onReset={() => {
+              setName(genBase.name);
+              setDecoy(genBase.decoy);
+            }}
+            dirty={genDirty}
+            busy={saving}
+          />
         </div>
       )}
 
@@ -704,7 +786,7 @@ function NodeSettingsDialog({
             applying={saving}
             liveStatus={false}
           />
-          <TabSaveBar onSave={saveRoutingDns} busy={saving} />
+          <TabSaveBar onSave={saveRouting} onReset={r.revert} dirty={r.dirty} busy={saving} />
         </div>
       )}
 
@@ -713,7 +795,12 @@ function NodeSettingsDialog({
           <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
             <DnsEditor value={dns} onChange={setDns} />
           </Section>
-          <TabSaveBar onSave={saveRoutingDns} busy={saving} />
+          <TabSaveBar
+            onSave={saveDns}
+            onReset={() => setDns(dnsBase)}
+            dirty={dnsDirty}
+            busy={saving}
+          />
         </div>
       )}
 
@@ -753,7 +840,14 @@ function MasterSettingsDialog({
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState(node.master_label ?? "");
   const [decoy, setDecoy] = useState(node.decoy_template);
+  const [genBase, setGenBase] = useState({
+    name: node.master_label ?? "",
+    decoy: node.decoy_template,
+  });
   const [dns, setDns] = useState(node.xray_dns ?? "");
+  const [dnsBase, setDnsBase] = useState(node.xray_dns ?? "");
+  const genDirty = name !== genBase.name || decoy !== genBase.decoy;
+  const dnsDirty = dns !== dnsBase;
   // Live egress status for the badges (master's egress runs locally, so the panel
   // knows the real state — unlike a node).
   const [warpRegistered, setWarpRegistered] = useState(node.warp_registered);
@@ -831,6 +925,7 @@ function MasterSettingsDialog({
     apply(async () => {
       await setMasterName(name.trim());
       await saveDecoy(decoy);
+      setGenBase({ name, decoy });
       notifySuccess("Основное сохранено");
       onRefresh();
     });
@@ -839,6 +934,7 @@ function MasterSettingsDialog({
     apply(async () => {
       // Routing + WARP/Opera together (one reconcile).
       await saveRouting(r.effective(), r.warpEnabled, r.operaEnabled, r.operaCountry);
+      r.commit();
       notifySuccess("Роутинг сохранён");
       onRefresh();
     });
@@ -846,6 +942,7 @@ function MasterSettingsDialog({
   const saveDnsTab = () =>
     apply(async () => {
       await setXrayDNS(dns);
+      setDnsBase(dns);
       notifySuccess("DNS сохранён");
       onRefresh();
     });
@@ -890,7 +987,15 @@ function MasterSettingsDialog({
                   data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
                 />
               </Section>
-              <TabSaveBar onSave={saveGeneral} busy={applying} />
+              <TabSaveBar
+                onSave={saveGeneral}
+                onReset={() => {
+                  setName(genBase.name);
+                  setDecoy(genBase.decoy);
+                }}
+                dirty={genDirty}
+                busy={applying}
+              />
             </div>
           )}
 
@@ -918,7 +1023,12 @@ function MasterSettingsDialog({
                 geoip={geo.geoip}
                 applying={applying}
               />
-              <TabSaveBar onSave={saveRoutingTab} busy={applying} />
+              <TabSaveBar
+                onSave={saveRoutingTab}
+                onReset={r.revert}
+                dirty={r.dirty}
+                busy={applying}
+              />
             </div>
           )}
 
@@ -927,7 +1037,12 @@ function MasterSettingsDialog({
               <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
                 <DnsEditor value={dns} onChange={setDns} />
               </Section>
-              <TabSaveBar onSave={saveDnsTab} busy={applying} />
+              <TabSaveBar
+                onSave={saveDnsTab}
+                onReset={() => setDns(dnsBase)}
+                dirty={dnsDirty}
+                busy={applying}
+              />
             </div>
           )}
 

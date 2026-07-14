@@ -1255,13 +1255,12 @@ export const updateAllNodes = () =>
 export const getNodeLogs = (id: number) =>
   api<{ lines: string[]; at: number }>(`api/nodes/${id}/logs`)
 
-// setNodeRouting saves a node's routing + DNS + egress override. A null routing/DNS
-// means "inherit the panel's"; egress (WARP/Opera) is the node's own. Mirrors the
-// master's saveRouting shape.
+// setNodeRouting saves a node's routing + egress override. A null routing means
+// "inherit the panel's"; egress (WARP/Opera) is the node's own. DNS has its own
+// endpoint (setNodeDNS). Mirrors the master's saveRouting shape.
 export const setNodeRouting = (
   id: number,
   routing: RoutingConfig | null,
-  xray_dns: string | null,
   warpEnabled: boolean,
   operaEnabled: boolean,
   operaCountry: string,
@@ -1270,11 +1269,18 @@ export const setNodeRouting = (
     method: 'POST',
     body: JSON.stringify({
       routing,
-      xray_dns,
       warp_enabled: warpEnabled,
       opera_enabled: operaEnabled,
       opera_country: operaCountry,
     }),
+  })
+
+// setNodeDNS saves a node's own DNS override (null ⇒ inherit the panel's), independent
+// of routing.
+export const setNodeDNS = (id: number, xray_dns: string | null) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/dns`, {
+    method: 'POST',
+    body: JSON.stringify({ xray_dns }),
   })
 
 // ProvisionCreds are the throwaway SSH credentials used to install a node over SSH.

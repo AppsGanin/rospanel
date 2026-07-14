@@ -364,6 +364,18 @@ func (s *Store) SaveNodeWarp(id int64, priv, pub, endpoint, v4, v6, reserved str
 	return err
 }
 
+// SetNodeDNS persists a node's own DNS override, touching only the xray_dns column
+// (nil ⇒ inherit the panel's). Kept separate from UpdateNode so the DNS tab saves
+// without rewriting routing/egress.
+func (s *Store) SetNodeDNS(id int64, dns *string) error {
+	var v sql.NullString
+	if dns != nil {
+		v = sql.NullString{String: *dns, Valid: true}
+	}
+	_, err := s.db.Exec(`UPDATE nodes SET xray_dns = ? WHERE id = ?`, v, id)
+	return err
+}
+
 // SetNodeRealityDest persists a node's own REALITY masquerade donor (empty ⇒ inherit
 // the panel's).
 func (s *Store) SetNodeRealityDest(id int64, dest string) error {

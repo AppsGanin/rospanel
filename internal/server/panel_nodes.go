@@ -140,20 +140,20 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 	writeOK(w)
 }
 
-// nodeRoutingReq sets a node's routing + DNS + egress overrides. A null routing/DNS
-// field means "inherit the panel's"; egress (WARP/Opera) is the node's own and off
-// by default. The node card's full routing editor is the only place these are set,
-// so it always sends every field — no risk of a protocol toggle wiping them. Mirrors
-// the master's ApplyRouting(cfg, warp, opera, country) shape.
+// nodeRoutingReq sets a node's routing + egress overrides. A null routing field means
+// "inherit the panel's"; egress (WARP/Opera) is the node's own and off by default. DNS
+// is saved separately (setNodeDNS), so the Роутинг tab never touches it. The node
+// card's full routing editor always sends every field — no risk of a protocol toggle
+// wiping them. Mirrors the master's ApplyRouting(cfg, warp, opera, country) shape.
 type nodeRoutingReq struct {
-	Routing      *model.RoutingConfig `json:"routing"`  // null ⇒ inherit global routing
-	XrayDNS      *string              `json:"xray_dns"` // null ⇒ inherit global DNS
+	Routing      *model.RoutingConfig `json:"routing"` // null ⇒ inherit global routing
 	WarpEnabled  bool                 `json:"warp_enabled"`
 	OperaEnabled bool                 `json:"opera_enabled"`
 	OperaCountry string               `json:"opera_country"`
 }
 
-// setNodeRouting saves a node's per-node routing + DNS + egress override.
+// setNodeRouting saves a node's per-node routing + egress override. DNS is left
+// untouched (the node's current value is preserved) — it has its own endpoint.
 func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int64) {
 	var req nodeRoutingReq
 	if !decodeJSON(w, r, &req) {
@@ -176,13 +176,29 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		Trojan:        node.TrojanEnabled,
 		Hysteria:      node.HysteriaEnabled,
 		Reality:       node.RealityEnabled,
-		Routing:       req.Routing, // may be nil ⇒ inherit
-		XrayDNS:       req.XrayDNS,
+		Routing:       req.Routing,  // may be nil ⇒ inherit
+		XrayDNS:       node.XrayDNS, // preserve — DNS is edited on its own tab
 		WarpEnabled:   req.WarpEnabled,
 		OperaEnabled:  req.OperaEnabled,
 		OperaCountry:  req.OperaCountry,
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setNodeDNS saves a node's own DNS override (null ⇒ inherit the panel's), touching
+// nothing else. Its own endpoint so the DNS tab saves independently of routing.
+func (rt *Router) setNodeDNS(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		XrayDNS *string `json:"xray_dns"` // null ⇒ inherit global DNS
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeDNS(id, req.XrayDNS); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
