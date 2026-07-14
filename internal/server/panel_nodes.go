@@ -82,10 +82,10 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// nodePatchReq edits a node's name/host, protocol overrides and decoy. Protocol
-// pointers use nil ⇒ "inherit global". Routing and DNS overrides are NOT edited
-// here — they get a dedicated editor later; a protocol/decoy toggle must never
-// silently wipe a node's routing override, so this handler preserves them.
+// nodePatchReq edits a node's name/host and decoy. Protocols are edited on the
+// Подключения tab, so a nil protocol pointer here means "leave it as it is" — the
+// handler preserves the node's current value. Routing/DNS/egress are likewise
+// preserved: a name/decoy edit must never silently wipe a protocol or routing override.
 type nodePatchReq struct {
 	Name          string `json:"name"`
 	Host          string `json:"host"`
@@ -94,6 +94,15 @@ type nodePatchReq struct {
 	Trojan        *bool  `json:"trojan_enabled"`
 	Hysteria      *bool  `json:"hysteria_enabled"`
 	Reality       *bool  `json:"reality_enabled"`
+}
+
+// orBool returns a when set, else b — used to preserve a node's current protocol
+// value when a name/decoy edit omits it.
+func orBool(a, b *bool) *bool {
+	if a != nil {
+		return a
+	}
+	return b
 }
 
 // updateNode applies an edit and wakes the node so the change propagates.
@@ -121,10 +130,12 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		Name:          req.Name,
 		Host:          req.Host,
 		DecoyTemplate: req.DecoyTemplate,
-		VLESS:         req.VLESS,
-		Trojan:        req.Trojan,
-		Hysteria:      req.Hysteria,
-		Reality:       req.Reality,
+		// Preserve protocols (edited on the Подключения tab) when omitted — otherwise a
+		// name/decoy save racing a just-made protocol change could revert it.
+		VLESS:    orBool(req.VLESS, node.VLESSEnabled),
+		Trojan:   orBool(req.Trojan, node.TrojanEnabled),
+		Hysteria: orBool(req.Hysteria, node.HysteriaEnabled),
+		Reality:  orBool(req.Reality, node.RealityEnabled),
 		// Preserve the node's existing routing/DNS/egress config — this endpoint doesn't
 		// edit them, and sending zero values would clear them.
 		Routing:      node.Routing,
@@ -425,6 +436,13 @@ func (rt *Router) updateAllNodes(w http.ResponseWriter, _ *http.Request) {
 // regenNodeJoin issues a fresh install command for an existing node (e.g. to
 // re-install it), invalidating the node's current permanent token.
 func (rt *Router) regenNodeJoin(w http.ResponseWriter, r *http.Request, id int64) {
+	if node, err := rt.mgr.GetNode(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	} else if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
 	token, err := rt.mgr.RegenJoinToken(id)
 	if err != nil {
 		writeManagerErr(w, err)

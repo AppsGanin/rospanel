@@ -263,12 +263,20 @@ func (s *Store) ConsumeJoinToken(raw string) (*model.Node, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	// Single-use: clear the join token as we set the permanent one.
-	if _, err := s.db.Exec(
-		`UPDATE nodes SET token_hash = ?, join_token_hash = '', join_expires_at = 0 WHERE id = ?`,
-		permHash, id,
-	); err != nil {
+	// Single-use, atomically: the UPDATE re-asserts the exact join-token hash it read,
+	// so a concurrent second consume (or a RegenJoinToken that rotated the token in
+	// between) affects zero rows and is treated as "not consumed" — no double-mint and
+	// no clobbering a freshly-regenerated token.
+	res, err := s.db.Exec(
+		`UPDATE nodes SET token_hash = ?, join_token_hash = '', join_expires_at = 0
+			WHERE id = ? AND join_token_hash = ? AND join_token_hash != ''`,
+		permHash, id, hash,
+	)
+	if err != nil {
 		return nil, "", err
+	}
+	if aff, _ := res.RowsAffected(); aff == 0 {
+		return nil, "", nil // lost the race / token rotated — not consumed
 	}
 	n, err := s.GetNode(id)
 	if err != nil {
@@ -281,6 +289,18 @@ func (s *Store) ConsumeJoinToken(raw string) (*model.Node, string, error) {
 // it) and revokes its current permanent token so the old install can't keep
 // syncing. The raw join token is returned once.
 func (s *Store) RegenJoinToken(id int64) (string, error) {
+	return s.issueJoinToken(id, true)
+}
+
+// IssueJoinToken issues a fresh one-time join token WITHOUT revoking the node's
+// current permanent token. Used for SSH re-provisioning: if the install fails the
+// live node keeps working on its old token, and a successful re-join replaces the
+// token via ConsumeJoinToken. The raw join token is returned once.
+func (s *Store) IssueJoinToken(id int64) (string, error) {
+	return s.issueJoinToken(id, false)
+}
+
+func (s *Store) issueJoinToken(id int64, revoke bool) (string, error) {
 	joinToken, err := generateNodeToken()
 	if err != nil {
 		return "", err
@@ -290,11 +310,14 @@ func (s *Store) RegenJoinToken(id int64) (string, error) {
 		return "", err
 	}
 	exp := time.Now().Add(joinTokenTTL).Unix()
-	res, err := s.db.Exec(
-		`UPDATE nodes SET join_token_hash = ?, join_expires_at = ?, token_hash = '',
-			config_hash = '', last_seen = 0 WHERE id = ?`,
-		joinHash, exp, id,
-	)
+	// revoke=true also kills the current permanent token + resets status (manual
+	// regen); revoke=false leaves them so a failed re-provision doesn't down the node.
+	q := `UPDATE nodes SET join_token_hash = ?, join_expires_at = ? WHERE id = ?`
+	if revoke {
+		q = `UPDATE nodes SET join_token_hash = ?, join_expires_at = ?, token_hash = '',
+			config_hash = '', last_seen = 0 WHERE id = ?`
+	}
+	res, err := s.db.Exec(q, joinHash, exp, id)
 	if err != nil {
 		return "", err
 	}

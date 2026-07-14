@@ -209,6 +209,9 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
 		conns:        map[string]nodeapi.ConnSample{},
 	}
+	// Resume report ids where the last run left off so the panel's forward-only
+	// watermark keeps accepting this node's traffic after a restart.
+	a.reportSeq = a.state.LastReportID
 	// Tap Xray's access log so the panel can count this node's devices (mirrors the
 	// master's sup.SetOnAccess(RecordAccess)).
 	a.sup.SetOnAccess(a.recordConn)
@@ -299,7 +302,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			}
 		}
 		if resp.Update {
-			if a.selfUpdate() {
+			if a.selfUpdate(ctx) {
 				return // binary swapped; exit so systemd restarts the new one
 			}
 		}
@@ -368,11 +371,13 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	a.statsMu.Lock()
 	// Nothing in flight and new traffic waiting → promote it to a fresh batch. An
 	// unacked in-flight batch is resent unchanged (same id) instead.
+	promoted := false
 	if len(a.inflight) == 0 && len(a.pending) > 0 {
 		a.reportSeq++
 		a.inflightID = a.reportSeq
 		a.inflight = a.pending
 		a.pending = map[int64]*nodeapi.TrafficDelta{}
+		promoted = true
 	}
 	var traffic []nodeapi.TrafficDelta
 	for _, d := range a.inflight {
@@ -380,6 +385,11 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 	rid := a.inflightID
 	a.statsMu.Unlock()
+
+	// Persist the watermark (outside statsMu) so a restart can't regress the report id.
+	if promoted {
+		a.noteReportID(rid)
+	}
 
 	var logs []string
 	if a.logsWanted.Swap(false) {
@@ -653,12 +663,14 @@ func (a *Agent) syncOpera(enabled bool, country string, port int) {
 // then stops Xray and returns true so Run exits — systemd (Restart=always) starts
 // the new binary, which re-applies the saved config. Returns false (and keeps
 // running the current version) if there's nothing newer or the update fails.
-func (a *Agent) selfUpdate() bool {
+func (a *Agent) selfUpdate(parent context.Context) bool {
 	repo := updater.Repo
 	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
 		repo = r
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Derived from the agent context so a shutdown cancels an in-flight download
+	// promptly instead of blocking up to the full timeout.
+	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
 	rel, err := updater.Latest(ctx, repo)
 	if err != nil {

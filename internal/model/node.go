@@ -84,9 +84,9 @@ type Node struct {
 
 	// GeoRefreshHours is the node's OWN geo auto-refresh cadence (hours; 0 ⇒ never —
 	// its own, not inherited from the master).
-	GeoRefreshHours int `json:"-"`
-	ConfigHash     string `json:"-"`
-	LastReportID   int64  `json:"-"`
+	GeoRefreshHours int    `json:"-"`
+	ConfigHash      string `json:"-"`
+	LastReportID    int64  `json:"-"`
 
 	CreatedAt int64 `json:"created_at"`
 	// DeletedAt is the tombstone timestamp: non-zero ⇒ the node was deleted and is

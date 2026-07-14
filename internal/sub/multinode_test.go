@@ -12,8 +12,8 @@ func testSet(host string) *model.Settings {
 		Host: host, SNI: host, WSPath: "/ws",
 		VLESSPort: 443, RealityPort: 8443, HysteriaPort: 443,
 		VLESSEnabled: true, TrojanEnabled: true, HysteriaEnabled: true,
-		RealityEnabled:     true,
-		RealityPublicKey:   "pub", RealityShortID: "aa", RealityServiceName: "svc",
+		RealityEnabled:   true,
+		RealityPublicKey: "pub", RealityShortID: "aa", RealityServiceName: "svc",
 	}
 }
 

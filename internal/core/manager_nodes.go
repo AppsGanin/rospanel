@@ -77,6 +77,16 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.OperaEnabled = n.OperaEnabled
 	ns.OperaCountry = n.OperaCountry
 
+	// Proxy mode is a master-ONLY local forward proxy: its inbound (and the master's
+	// credentials) must never be generated into a node's config — that would open a
+	// chainable proxy on the node's port and leak the master's proxy password onto
+	// every node's disk. Nodes never run it.
+	ns.ProxyModeEnabled = false
+	ns.ProxyModeType = ""
+	ns.ProxyModePort = 0
+	ns.ProxyModeUser = ""
+	ns.ProxyModePass = ""
+
 	// DNS: the node's OWN (no inheritance). Unset ⇒ Xray's default resolver.
 	if n.XrayDNS != nil {
 		ns.XrayDNS = *n.XrayDNS
@@ -424,10 +434,23 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 	}
 	var out []*model.Settings
 	seen := map[string]int{}
+	// The master occupies its label first, so a node whose name collides with the
+	// master's config label gets disambiguated rather than silently overwriting the
+	// master's Clash proxy name / sing-box tag (a client would drop one server).
+	if set.MasterLabel != "" {
+		seen[set.MasterLabel]++
+	}
 	for i := range nodes {
 		n := &nodes[i]
 		if !n.Enabled || n.LastSeen == 0 {
 			continue // disabled, or never installed → don't hand clients a dead link
+		}
+		// A self-signed node that hasn't reported its cert fingerprint yet can't be
+		// pinned, so its VLESS/Trojan/Hysteria links would fail silently in a modern
+		// client (no allowInsecure). Skip it until it reports a fingerprint (or gets a
+		// CA cert) — better no link than a broken one.
+		if n.CertSelfSigned && n.CertSHA256 == "" {
+			continue
 		}
 		ns := nodeSettings(set, n)
 		// Uniqueness is enforced on create/edit, but defend the subscription anyway:
@@ -780,6 +803,10 @@ func (m *Manager) DeleteNode(id int64) error {
 // RegenJoinToken issues a fresh install token for an existing node.
 func (m *Manager) RegenJoinToken(id int64) (string, error) { return m.store.RegenJoinToken(id) }
 
+// IssueJoinToken issues a fresh install token WITHOUT revoking the node's current
+// permanent token — for SSH re-provisioning, so a failed install can't down a live node.
+func (m *Manager) IssueJoinToken(id int64) (string, error) { return m.store.IssueJoinToken(id) }
+
 // SetMasterLabel sets the panel server's display name used in config labels.
 func (m *Manager) SetMasterLabel(label string) error {
 	return m.store.SetMasterLabel(strings.TrimSpace(label))
@@ -1050,6 +1077,12 @@ func (m *Manager) randomDecoy() (string, error) {
 // matches desired state). It does NOT block for the long-poll — the handler owns
 // the hold; this is the pure state transition.
 func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodeapi.SyncResponse, error) {
+	// A disabled (or soft-deleted-but-unpurged) node's token still authenticates so we
+	// can tell it to stop — but it is untrusted (being disabled is often WHY), so we
+	// must NOT apply its reported traffic/devices/status. Revoke before any ingest.
+	if !n.Enabled {
+		return &nodeapi.SyncResponse{Revoked: true, AckReport: req.ReportID}, nil
+	}
 	now := time.Now()
 	if len(req.Logs) > 0 {
 		m.storeNodeLogs(n.ID, req.Logs)
@@ -1071,12 +1104,19 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		ConfigHash:     req.ConfigHash,
 	})
 
-	// Idempotent traffic ingest: atomically claim the report id. A report at-or-
-	// below the stored watermark is a retry of an already-counted batch (lost
-	// response) or a restarted agent replaying a reset counter; the conditional
-	// claim also stops two concurrent syncs from both counting the same batch.
+	// Idempotent traffic ingest: atomically claim the report id. A report at-or-below
+	// the stored watermark is a retry of an already-counted batch (lost response); the
+	// conditional claim also stops two concurrent syncs from both counting the same
+	// batch. The agent persists its report id, so a restart no longer regresses it.
+	ack := req.ReportID
 	if req.ReportID > 0 {
-		if claimed, _ := m.store.ClaimNodeReport(n.ID, req.ReportID); claimed && len(req.Traffic) > 0 {
+		claimed, err := m.store.ClaimNodeReport(n.ID, req.ReportID)
+		switch {
+		case err != nil:
+			// Couldn't record the watermark (e.g. DB busy): do NOT ack, so the node keeps
+			// the batch and resends it — acking now would silently drop the traffic.
+			ack = 0
+		case claimed && len(req.Traffic) > 0:
 			today := now.In(m.loc()).Format("2006-01-02")
 			snapshot, _ := m.store.ListUsers()
 			for _, d := range req.Traffic {
@@ -1090,6 +1130,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 			}
 			_ = m.enforceAfterTraffic(snapshot)
 		}
+		// claimed==false with err==nil ⇒ already-counted duplicate ⇒ ack it (a no-op).
 	}
 
 	// Device counting across the fleet: feed each reported (email, ip) through the
@@ -1102,11 +1143,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		m.RecordAccess(c.Email, c.IP)
 	}
 
-	resp := &nodeapi.SyncResponse{AckReport: req.ReportID}
-	if !n.Enabled {
-		resp.Revoked = true
-		return resp, nil
-	}
+	resp := &nodeapi.SyncResponse{AckReport: ack}
 	state, err := m.NodeDesiredState(n)
 	if err != nil {
 		return nil, err

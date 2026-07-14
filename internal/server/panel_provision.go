@@ -61,8 +61,10 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 
-	// Fresh install token for this run.
-	token, err := rt.mgr.RegenJoinToken(id)
+	// Fresh install token for this run, WITHOUT revoking the node's current permanent
+	// token: if this SSH install fails, a live node keeps working on its old token; a
+	// successful re-join replaces it via ConsumeJoinToken.
+	token, err := rt.mgr.IssueJoinToken(id)
 	if err != nil {
 		writeManagerErr(w, err)
 		return

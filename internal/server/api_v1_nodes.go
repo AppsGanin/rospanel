@@ -202,6 +202,13 @@ func (rt *Router) apiUpdateAllNodes(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (rt *Router) apiRegenNodeJoin(w http.ResponseWriter, r *http.Request, id int64) {
+	if node, err := rt.mgr.GetNode(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	} else if node == nil {
+		writeAPIErr(w, http.StatusNotFound, "not_found", "no such node")
+		return
+	}
 	token, err := rt.mgr.RegenJoinToken(id)
 	if err != nil {
 		writeAPIManagerErr(w, err)

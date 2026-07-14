@@ -40,6 +40,10 @@ func (rt *Router) handleNodeAPI(w http.ResponseWriter, r *http.Request, rest str
 // unknown/expired token gets a decoy response (404-equivalent) so a prober can't
 // tell a wrong token from a wrong path.
 func (rt *Router) handleNodeJoin(w http.ResponseWriter, r *http.Request) {
+	// Bound a slow-trickle body: /v1/join is unauthenticated (segment-gated only), so
+	// without a read deadline a dribbled body pins a goroutine indefinitely. The server
+	// has no global ReadTimeout (it would kill the SSE/long-poll streams), so set it here.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Second))
 	var req nodeapi.JoinRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		rt.decoy.ServeHTTP(w, r)
@@ -78,11 +82,16 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bound the body read with a deadline, then clear it before the long-poll hold
+	// (the hold does no reads, and a leftover deadline would disturb connection reuse).
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
 	var req nodeapi.SyncRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
 		return
 	}
+	_ = rc.SetReadDeadline(time.Time{})
 
 	// Capture the wake channel BEFORE computing desired state, so a config change
 	// that lands between the hash check and the park below still fires the select

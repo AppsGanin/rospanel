@@ -1211,17 +1211,17 @@ export const createNode = (name: string, host: string) =>
     body: JSON.stringify({ name, host }),
   })
 
-// NodePatch carries a node edit. A node's protocols are its OWN (no inheritance from
-// the master), so these are plain booleans. (Per-node routing/DNS/egress have their
-// own editor and aren't touched here, so a protocol toggle never wipes them.)
+// NodePatch carries a node edit (name/host/decoy). Protocols are edited on the
+// Подключения tab and are OPTIONAL here: omitting them tells the panel to preserve the
+// node's current values, so a name/decoy save can't revert a just-made protocol change.
 export interface NodePatch {
   name: string
   host: string
   decoy_template: string
-  vless_enabled: boolean
-  trojan_enabled: boolean
-  hysteria_enabled: boolean
-  reality_enabled: boolean
+  vless_enabled?: boolean
+  trojan_enabled?: boolean
+  hysteria_enabled?: boolean
+  reality_enabled?: boolean
 }
 
 export const updateNode = (id: number, patch: NodePatch) =>
@@ -1317,6 +1317,12 @@ export async function provisionNode(
   const dec = new TextDecoder()
   let buf = ''
   let outcome: 'done' | 'error' = 'error'
+  const handle = (frame: string) => {
+    const line = frame.replace(/^data: ?/, '').trim()
+    if (line === 'event:done') outcome = 'done'
+    else if (line === 'event:error') outcome = 'error'
+    else if (line) onLine(line)
+  }
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -1324,16 +1330,10 @@ export async function provisionNode(
     // SSE frames are separated by a blank line; each carries a "data: <text>" line.
     const frames = buf.split('\n\n')
     buf = frames.pop() ?? ''
-    for (const f of frames) {
-      const line = f.replace(/^data: ?/, '')
-      if (line === 'event:done') {
-        outcome = 'done'
-      } else if (line === 'event:error') {
-        outcome = 'error'
-      } else if (line) {
-        onLine(line)
-      }
-    }
+    for (const f of frames) handle(f)
   }
+  // Flush a trailing frame if the stream ended without a final blank line, so a
+  // terminal "event:done"/"event:error" isn't dropped (false 'error' on success).
+  if (buf.trim()) handle(buf)
   return outcome
 }

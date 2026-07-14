@@ -64,6 +64,15 @@ function combineDns(sel: string[], custom: string): string {
   return [...new Set(all)].join("\n");
 }
 
+// canonicalDns normalizes a stored DNS string to exactly what this editor emits
+// (deduped, newline-joined, presets first). Callers seed their dirty-tracking baseline
+// through it so a non-canonical stored value (e.g. comma-separated) doesn't read as
+// "changed" the moment the editor round-trips it.
+export const canonicalDns = (value: string): string => {
+  const { sel, custom } = parseDns(value);
+  return combineDns(sel, custom);
+};
+
 // DnsEditor is a controlled DNS picker: preset checkboxes + a free-form custom box.
 // It holds the derived sel/custom locally (seeded once from `value`) and emits the
 // recombined DNS string on every change — so the container just stores a string and

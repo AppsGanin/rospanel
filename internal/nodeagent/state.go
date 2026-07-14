@@ -20,6 +20,12 @@ import (
 // identity (node.json) so credentials and volatile state don't share a file.
 type persistState struct {
 	LastConfig *nodeapi.NodeState `json:"last_config,omitempty"`
+	// LastReportID is the highest traffic-report id this node has sent. The panel's
+	// per-node watermark is forward-only, so a report id that regressed after a
+	// restart (self-update, reboot, crash) would be dropped as a stale duplicate and
+	// the node's traffic would silently stop counting. Persisting it keeps report ids
+	// monotonic across restarts, honouring the wire contract in nodeapi.SyncRequest.
+	LastReportID int64 `json:"last_report_id,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "state.json") }
@@ -36,10 +42,9 @@ func loadState(dataDir string) *persistState {
 	return &s
 }
 
-// setLastConfig records the applied desired state and persists it atomically.
-func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
+// writeState persists the current durable state atomically (write-temp + rename).
+func (a *Agent) writeState() {
 	a.stateMu.Lock()
-	a.state.LastConfig = st
 	snapshot := *a.state
 	a.stateMu.Unlock()
 
@@ -53,6 +58,28 @@ func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
 		return
 	}
 	_ = os.Rename(tmp, statePath(a.dataDir))
+}
+
+// setLastConfig records the applied desired state and persists it atomically.
+func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
+	a.stateMu.Lock()
+	a.state.LastConfig = st
+	a.stateMu.Unlock()
+	a.writeState()
+}
+
+// noteReportID persists the newest traffic-report id so it survives a restart. Called
+// (outside statsMu) whenever a fresh batch is promoted, keeping ids monotonic across
+// process restarts — otherwise the panel drops the post-restart batch as a duplicate.
+func (a *Agent) noteReportID(rid int64) {
+	a.stateMu.Lock()
+	if rid <= a.state.LastReportID {
+		a.stateMu.Unlock()
+		return
+	}
+	a.state.LastReportID = rid
+	a.stateMu.Unlock()
+	a.writeState()
 }
 
 // ackReport clears the in-flight batch once the panel confirms it ingested it
@@ -124,6 +151,13 @@ func (a *Agent) sampleStats() {
 		}
 		if addDown > 0 {
 			d.Down += addDown
+		}
+	}
+	// Prune counters for users no longer in Xray's output so the map can't grow
+	// unbounded across user churn on a long-lived node.
+	for email := range a.lastCounters {
+		if _, ok := stats[email]; !ok {
+			delete(a.lastCounters, email)
 		}
 	}
 }

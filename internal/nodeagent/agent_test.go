@@ -106,6 +106,7 @@ func TestBuildSyncRequestAssignsReportID(t *testing.T) {
 	dir := t.TempDir()
 	sup := xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
 	a := &Agent{
+		dataDir:      dir,
 		sup:          sup,
 		certPath:     filepath.Join(dir, "cert.pem"),
 		state:        &persistState{},
@@ -135,6 +136,48 @@ func TestBuildSyncRequestAssignsReportID(t *testing.T) {
 	req3 := a.buildSyncRequest()
 	if len(req3.Traffic) != 0 {
 		t.Fatalf("acked batch should be gone, got %+v", req3.Traffic)
+	}
+}
+
+// TestReportIDPersistsAcrossRestart locks in the fix for the silent-traffic-loss bug:
+// a promoted report id is persisted to state.json and resumed on the next process, so
+// the panel's forward-only watermark keeps accepting the node's traffic after a restart.
+func TestReportIDPersistsAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(st *persistState, pending map[int64]*nodeapi.TrafficDelta) *Agent {
+		return &Agent{
+			dataDir:      dir,
+			sup:          xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir),
+			certPath:     filepath.Join(dir, "cert.pem"),
+			state:        st,
+			pending:      pending,
+			inflight:     map[int64]*nodeapi.TrafficDelta{},
+			lastCounters: map[string]xray.Traffic{},
+		}
+	}
+	// First run: send some batches so the report id climbs, then ack them.
+	a := mk(&persistState{}, map[int64]*nodeapi.TrafficDelta{7: {UserID: 7, Up: 10}})
+	r1 := a.buildSyncRequest()
+	a.ackReport(r1.ReportID)
+	a.pending[8] = &nodeapi.TrafficDelta{UserID: 8, Up: 20}
+	r2 := a.buildSyncRequest()
+	a.ackReport(r2.ReportID)
+	if r2.ReportID <= r1.ReportID {
+		t.Fatalf("report id should climb: %d then %d", r1.ReportID, r2.ReportID)
+	}
+
+	// Simulate a restart: reload state from disk and seed reportSeq exactly as newAgent
+	// does, then send fresh traffic. Its id must exceed the pre-restart watermark.
+	reloaded := loadState(dir)
+	if reloaded.LastReportID != r2.ReportID {
+		t.Fatalf("persisted watermark = %d, want %d", reloaded.LastReportID, r2.ReportID)
+	}
+	b := mk(reloaded, map[int64]*nodeapi.TrafficDelta{9: {UserID: 9, Up: 30}})
+	b.reportSeq = b.state.LastReportID
+	r3 := b.buildSyncRequest()
+	if r3.ReportID <= r2.ReportID {
+		t.Fatalf("post-restart report id %d must exceed pre-restart watermark %d — "+
+			"the panel would drop it as a duplicate", r3.ReportID, r2.ReportID)
 	}
 }
 

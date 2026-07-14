@@ -58,6 +58,37 @@ func TestNodeCreateAndJoin(t *testing.T) {
 	}
 }
 
+// TestIssueJoinTokenKeepsPermanent locks in the SSH re-provision fix: issuing a fresh
+// join token WITHOUT revoke leaves the live node's permanent token working (so a failed
+// install can't down it), while RegenJoinToken revokes it.
+func TestIssueJoinTokenKeepsPermanent(t *testing.T) {
+	st := openNodeStore(t)
+	n, err := st.CreateNode("NL", "nl.example.com", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, perm, err := st.ConsumeJoinToken(n.RawJoinToken)
+	if err != nil || perm == "" {
+		t.Fatalf("consume: %v %q", err, perm)
+	}
+
+	// IssueJoinToken (provision) must NOT revoke the permanent token.
+	if _, err := st.IssueJoinToken(n.ID); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if got, _ := st.LookupNodeByToken(perm); got == nil {
+		t.Fatal("IssueJoinToken revoked the permanent token — a failed re-provision would down the node")
+	}
+
+	// RegenJoinToken (manual/security) MUST revoke it.
+	if _, err := st.RegenJoinToken(n.ID); err != nil {
+		t.Fatalf("regen: %v", err)
+	}
+	if got, _ := st.LookupNodeByToken(perm); got != nil {
+		t.Fatal("RegenJoinToken should have revoked the old permanent token")
+	}
+}
+
 func TestNodeJoinTokenExpiry(t *testing.T) {
 	st := openNodeStore(t)
 	n, err := st.CreateNode("expiring", "e.example.com", "")

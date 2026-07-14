@@ -39,7 +39,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { ConnectionsEditor } from "./ConnectionsEditor";
-import { DnsEditor } from "./DnsEditor";
+import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./EgressStatus";
 import { fmtBytes } from "./format";
 import { DECOY_LABELS } from "./GeneralSettings";
@@ -223,6 +223,9 @@ function AddNodeDialog({
   const [sshKey, setSshKey] = useState("");
   const [log, setLog] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
+  // The node is created once; a retry after a failed SSH install reuses this id
+  // instead of creating a second orphan node.
+  const [createdId, setCreatedId] = useState<number | null>(null);
 
   const submitCommand = async () => {
     if (!name.trim() || !host.trim()) return;
@@ -241,11 +244,20 @@ function AddNodeDialog({
     if (sshAuth === "password" && !sshPassword) return;
     if (sshAuth === "key" && !sshKey.trim()) return;
     setInstalling(true);
-    setLog(["Создаём ноду…"]);
     try {
-      const res = await createNode(name.trim(), host.trim());
+      // Create the node once; on a retry reuse the existing id so a failed install
+      // doesn't leave a trail of orphan "не подключена" nodes.
+      let nodeId = createdId;
+      if (nodeId == null) {
+        setLog(["Создаём ноду…"]);
+        const res = await createNode(name.trim(), host.trim());
+        nodeId = res.id;
+        setCreatedId(res.id);
+      } else {
+        setLog(["Повторная установка…"]);
+      }
       const outcome = await provisionNode(
-        res.id,
+        nodeId,
         {
           ssh_host: sshHost.trim(),
           ssh_port: Number(sshPort) || 22,
@@ -270,7 +282,7 @@ function AddNodeDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title="Добавить ноду" size="lg">
+    <Modal open onClose={onClose} title="Добавить ноду" size="lg" dismissible={!installing}>
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
@@ -350,7 +362,7 @@ function AddNodeDialog({
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={installing}>
-          {installing ? "Закрыть" : "Отмена"}
+          Отмена
         </Button>
         {mode === "command" ? (
           <Button onClick={submitCommand} loading={busy} disabled={!name.trim() || !host.trim()}>
@@ -424,7 +436,7 @@ function ReconnectDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Переустановить «${node.name}»`} size="lg">
+    <Modal open onClose={onClose} title={`Переустановить «${node.name}»`} size="lg" dismissible={!running}>
       <div className="space-y-3">
         <p className="text-xs text-ink-muted">
           Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
@@ -474,7 +486,7 @@ function ReconnectDialog({
       </div>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={running}>
-          {running ? "Закрыть" : "Отмена"}
+          Отмена
         </Button>
         <Button onClick={run} loading={running} disabled={!sshHost.trim()}>
           Переустановить
@@ -586,12 +598,15 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
   };
 
   const changeCadence = async (hours: number) => {
+    const prev = info?.refresh_hours ?? node.geo_refresh_hours;
     setInfo((i) => (i ? { ...i, refresh_hours: hours } : i));
     try {
       await setNodeGeoCadence(node.id, hours);
       notifySuccess("Автообновление geo сохранено");
       onChanged();
     } catch (e) {
+      // Roll the optimistic update back so the dropdown doesn't misreport the cadence.
+      setInfo((i) => (i ? { ...i, refresh_hours: prev } : i));
       notifyError(errMessage(e));
     }
   };
@@ -636,8 +651,8 @@ function NodeSettingsDialog({
     opera: node.opera_enabled,
     country: node.opera_country,
   });
-  const [dns, setDns] = useState(node.xray_dns ?? "");
-  const [dnsBase, setDnsBase] = useState(node.xray_dns ?? "");
+  const [dns, setDns] = useState(canonicalDns(node.xray_dns ?? ""));
+  const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
   const genDirty = name !== genBase.name || decoy !== genBase.decoy;
@@ -665,11 +680,8 @@ function NodeSettingsDialog({
         name: name.trim(),
         host: node.host, // domain is changed from the Домен tab
         decoy_template: decoy,
-        // Protocols are edited in the Подключения tab — preserve them here.
-        vless_enabled: node.vless_enabled,
-        trojan_enabled: node.trojan_enabled,
-        hysteria_enabled: node.hysteria_enabled,
-        reality_enabled: node.reality_enabled,
+        // Protocols are edited on the Подключения tab; omitting them here tells the
+        // panel to preserve the current values (never revert a just-made change).
       });
       setGenBase({ name, decoy });
       notifySuccess("Основное сохранено");
@@ -844,8 +856,8 @@ function MasterSettingsDialog({
     name: node.master_label ?? "",
     decoy: node.decoy_template,
   });
-  const [dns, setDns] = useState(node.xray_dns ?? "");
-  const [dnsBase, setDnsBase] = useState(node.xray_dns ?? "");
+  const [dns, setDns] = useState(canonicalDns(node.xray_dns ?? ""));
+  const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const genDirty = name !== genBase.name || decoy !== genBase.decoy;
   const dnsDirty = dns !== dnsBase;
   // Live egress status for the badges (master's egress runs locally, so the panel
@@ -885,7 +897,18 @@ function MasterSettingsDialog({
         setOperaAlive(info.opera_alive);
         setProxyCounts(info.proxy_counts ?? {});
       })
-      .catch((e) => notifyError(errMessage(e)))
+      .catch((e) => {
+        // If the live routing fetch fails, fall back to the config the node list
+        // already carries (the master's own routing), so the tab shows the REAL rules
+        // rather than an empty form a save would then persist over the real ones.
+        reset(
+          hydrateRouting(node.routing),
+          node.warp_enabled,
+          node.opera_enabled,
+          node.opera_country || "EU",
+        );
+        notifyError(errMessage(e));
+      })
       .finally(() => setLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

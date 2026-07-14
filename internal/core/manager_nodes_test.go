@@ -38,6 +38,9 @@ func TestNodeSettingsOverrides(t *testing.T) {
 		VLESSEnabled: true, TrojanEnabled: true, HysteriaEnabled: true, RealityEnabled: true,
 		RealityPrivateKey: "panel-priv", RealityPublicKey: "panel-pub",
 		XrayDNS: "8.8.8.8",
+		// Master-only local proxy: must NEVER leak into a node's config.
+		ProxyModeEnabled: true, ProxyModeType: "socks", ProxyModePort: 1080,
+		ProxyModeUser: "master-user", ProxyModePass: "master-pass",
 		Routing: model.RoutingConfig{
 			BlockAds:     true,
 			WarpDomains:  []string{"warp.example"},
@@ -91,6 +94,11 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	// Egress is off by default for a node with no config.
 	if ns.WarpEnabled || ns.OperaEnabled {
 		t.Fatal("egress must be off by default on a node")
+	}
+	// Proxy mode is master-only: the inbound and the master's credentials must never
+	// reach a node's config.
+	if ns.ProxyModeEnabled || ns.ProxyModePort != 0 || ns.ProxyModeUser != "" || ns.ProxyModePass != "" {
+		t.Fatalf("master proxy mode leaked into node config: %+v", ns)
 	}
 
 	// A node WITH its own routing keeps its lanes (not stripped) and egress.
