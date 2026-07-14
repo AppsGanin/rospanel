@@ -439,6 +439,14 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 	if err != nil {
 		return err
 	}
+	// Serve HTTP/2 cleartext too: Xray's :443 VLESS inbound offers ALPN h2, so a
+	// browser hitting the node negotiates HTTP/2 and Xray forwards it (prior-knowledge
+	// h2c) over the plaintext fallback to this decoy. Without UnencryptedHTTP2 the
+	// decoy can't parse the h2 frames → the browser gets ERR_HTTP2_PROTOCOL_ERROR and
+	// no masquerade. Mirrors the panel's own server (cmd/rospanel/service.go).
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 	// The server dispatches to whatever handler is currently stored, so a later
 	// template change is a pointer swap, not a listener restart.
 	srv := &http.Server{
@@ -447,6 +455,7 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 				(*hp).ServeHTTP(w, r)
 			}
 		}),
+		Protocols:         protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	a.decoySrv = srv
