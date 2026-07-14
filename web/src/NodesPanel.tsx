@@ -408,6 +408,15 @@ function NodeSettingsDialog({
 }) {
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
+  // Protocol toggles show the effective value; toggling one sets an explicit
+  // override, untouched ones keep inheriting the master (see save).
+  const [proto, setProto] = useState({
+    vless: node.vless_enabled,
+    trojan: node.trojan_enabled,
+    hysteria: node.hysteria_enabled,
+    reality: node.reality_enabled,
+  });
+  const [protoTouched, setProtoTouched] = useState<Record<string, boolean>>({});
   const [routingOwn, setRoutingOwn] = useState(node.routing != null);
   const [cfg, setCfg] = useState<RoutingConfig>(node.routing ?? emptyNodeRouting());
   const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
@@ -415,20 +424,27 @@ function NodeSettingsDialog({
   const [saving, setSaving] = useState(false);
 
   const set = (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch }));
+  const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) => {
+    setProto((p) => ({ ...p, [k]: v }));
+    setProtoTouched((t) => ({ ...t, [k]: true }));
+  };
+  // A touched protocol becomes an explicit override; an untouched one keeps its
+  // current override state (null = inherit the master).
+  const protoValue = (k: "vless" | "trojan" | "hysteria" | "reality") =>
+    protoTouched[k] ? proto[k] : overrideVal(node, k);
 
   const save = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      // Name + decoy (protocol overrides preserved); then routing + DNS.
       await updateNode(node.id, {
         name: name.trim(),
         host: node.host,
         decoy_template: decoy,
-        vless_enabled: overrideVal(node, "vless"),
-        trojan_enabled: overrideVal(node, "trojan"),
-        hysteria_enabled: overrideVal(node, "hysteria"),
-        reality_enabled: overrideVal(node, "reality"),
+        vless_enabled: protoValue("vless"),
+        trojan_enabled: protoValue("trojan"),
+        hysteria_enabled: protoValue("hysteria"),
+        reality_enabled: protoValue("reality"),
       });
       await setNodeRouting(node.id, routingOwn ? cfg : null, dnsOwn ? dns : null);
       notifySuccess("Настройки ноды сохранены");
@@ -443,13 +459,29 @@ function NodeSettingsDialog({
     <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="lg">
       <div className="space-y-4">
         <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
-        <div className="w-60 max-w-full">
-          <Select
-            label="Заглушка"
-            value={decoy}
-            onChange={setDecoy}
-            data={decoys.map((d) => ({ value: d, label: d }))}
-          />
+        <Select
+          label="Заглушка"
+          value={decoy}
+          onChange={setDecoy}
+          data={decoys.map((d) => ({ value: d, label: d }))}
+        />
+
+        {/* Protocols (per-node override; nil = inherit the master) */}
+        <div>
+          <p className="mb-2 text-sm font-medium text-ink">Протоколы</p>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            {protoDefs.map((p) => {
+              const val = proto[p.key];
+              const inherited = !protoTouched[p.key] && !node.overrides[p.key];
+              return (
+                <label key={p.key} className="flex items-center gap-2 text-sm">
+                  <Switch checked={val} onChange={(v) => toggleProto(p.key, v)} />
+                  <span className="text-ink">{p.label}</span>
+                  {inherited && <span className="text-xs text-ink-muted">насл.</span>}
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         {/* Routing */}
@@ -518,41 +550,55 @@ function NodeSettingsDialog({
 
 // MasterNameEditor lets the operator name the master server for config labels
 // (shown as "<имя> · VLESS…" in clients). Empty = no prefix.
-function MasterNameEditor({
-  current,
+// MasterSettingsDialog holds the master server's per-server settings. The master's
+// protocols, decoy, routing and DNS are the panel's GLOBAL settings (edited in their
+// own tabs), so here we only set its config-label name and point at the rest.
+function MasterSettingsDialog({
+  node,
+  onClose,
   onSaved,
 }: {
-  current: string;
+  node: NodeView;
+  onClose: () => void;
   onSaved: () => void;
 }) {
-  const [name, setName] = useState(current);
+  const [name, setName] = useState(node.master_label ?? "");
   const [saving, setSaving] = useState(false);
   const save = async () => {
     setSaving(true);
     try {
       await setMasterName(name.trim());
-      notifySuccess("Имя мастера сохранено");
+      notifySuccess("Настройки мастера сохранены");
       onSaved();
     } catch (e) {
       notifyError(errMessage(e));
-    } finally {
       setSaving(false);
     }
   };
   return (
-    <div className="mt-4 flex flex-wrap items-end gap-2">
-      <div className="w-64 max-w-full">
+    <Modal open onClose={onClose} title="Настройки — мастер" size="lg">
+      <div className="space-y-3">
         <TextInput
           label="Имя в конфигах"
           value={name}
           onChange={setName}
           placeholder="напр. Мастер (пусто — без префикса)"
         />
+        <p className="text-xs text-ink-muted">
+          Протоколы, заглушка, роутинг и DNS мастера — это глобальные настройки
+          панели: они меняются во вкладках «Подключения», «Настройки» и «Роутинг» и
+          применяются ко всем нодам, у которых нет своих переопределений.
+        </p>
       </div>
-      <Button size="sm" variant="light" color="gray" onClick={save} loading={saving} disabled={name.trim() === current.trim()}>
-        Сохранить
-      </Button>
-    </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
+          Отмена
+        </Button>
+        <Button onClick={save} loading={saving}>
+          Сохранить
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -580,27 +626,6 @@ function NodeCard({
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
   const [showingLogs, setShowingLogs] = useState(false);
-
-  // A protocol toggle sets an explicit override on this node (never touches the
-  // global setting). The local server's protocols are edited in Settings, so its
-  // toggles are read-only here.
-  const patchProto = async (field: string, value: boolean) => {
-    try {
-      await updateNode(node.id, {
-        name: node.name,
-        host: node.host,
-        decoy_template: node.decoy_template,
-        vless_enabled: field === "vless_enabled" ? value : overrideVal(node, "vless"),
-        trojan_enabled: field === "trojan_enabled" ? value : overrideVal(node, "trojan"),
-        hysteria_enabled:
-          field === "hysteria_enabled" ? value : overrideVal(node, "hysteria"),
-        reality_enabled: field === "reality_enabled" ? value : overrideVal(node, "reality"),
-      });
-      onChanged();
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-  };
 
   const toggleEnabled = async (enabled: boolean) => {
     try {
@@ -691,52 +716,32 @@ function NodeCard({
         {!node.is_local && <Meta label="Агент" value={node.node_version || "—"} />}
       </div>
 
-      {/* Protocol toggles. On the local server they mirror Settings (read-only). */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {protoDefs.map((p) => {
-          const enabled = node[p.enabledField] as boolean;
-          // const overridden = node.overrides[p.key];
-          return (
-            <label key={p.key} className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={enabled}
-                disabled={node.is_local}
-                onChange={(v) => patchProto(p.enabledField, v)}
-              />
-              <span className="text-ink">{p.label}</span>
-            </label>
-          );
-        })}
-      </div>
-
-      {node.is_local && (
-        <MasterNameEditor current={node.master_label ?? ""} onSaved={onChanged} />
-      )}
-
-      {!node.is_local && (
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
-            Настройки
-          </Button>
-          <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
-            Переустановить
-          </Button>
-          <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
-            Логи
-          </Button>
-          {node.version_skew && node.online && (
-            <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
-              Обновить
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
+          Настройки
+        </Button>
+        {!node.is_local && (
+          <>
+            <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
+              Переустановить
             </Button>
-          )}
-          <Button size="sm" variant="light" color="gray" onClick={regen}>
-            Новый токен
-          </Button>
-          <Button size="sm" variant="light" color="red" onClick={remove}>
-            Удалить
-          </Button>
-        </div>
-      )}
+            <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
+              Логи
+            </Button>
+            {node.version_skew && node.online && (
+              <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
+                Обновить
+              </Button>
+            )}
+            <Button size="sm" variant="light" color="gray" onClick={regen}>
+              Новый токен
+            </Button>
+            <Button size="sm" variant="light" color="red" onClick={remove}>
+              Удалить
+            </Button>
+          </>
+        )}
+      </div>
       {reconnecting && (
         <ReconnectDialog
           node={node}
@@ -747,17 +752,27 @@ function NodeCard({
           }}
         />
       )}
-      {editingRouting && (
-        <NodeSettingsDialog
-          node={node}
-          decoys={decoys}
-          onClose={() => setEditingRouting(false)}
-          onSaved={() => {
-            setEditingRouting(false);
-            onChanged();
-          }}
-        />
-      )}
+      {editingRouting &&
+        (node.is_local ? (
+          <MasterSettingsDialog
+            node={node}
+            onClose={() => setEditingRouting(false)}
+            onSaved={() => {
+              setEditingRouting(false);
+              onChanged();
+            }}
+          />
+        ) : (
+          <NodeSettingsDialog
+            node={node}
+            decoys={decoys}
+            onClose={() => setEditingRouting(false)}
+            onSaved={() => {
+              setEditingRouting(false);
+              onChanged();
+            }}
+          />
+        ))}
       {showingLogs && (
         <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
       )}
