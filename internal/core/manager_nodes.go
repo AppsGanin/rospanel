@@ -653,6 +653,16 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		}
 	}
 
+	// Device counting across the fleet: feed each reported (email, ip) through the
+	// same path as the master's access log. RecordAccess resolves the user, throttles,
+	// upserts the connection, and triggers a user-sync if a new device pushed someone
+	// over their cap — so the device limit counts unique IPs on every server, not just
+	// the master. Not gated on ReportID: connection samples are idempotent (upsert by
+	// user+ip) and independent of the traffic batch.
+	for _, c := range req.Conns {
+		m.RecordAccess(c.Email, c.IP)
+	}
+
 	resp := &nodeapi.SyncResponse{AckReport: req.ReportID}
 	if !n.Enabled {
 		resp.Revoked = true

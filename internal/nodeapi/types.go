@@ -60,6 +60,12 @@ type SyncRequest struct {
 	ReportID int64          `json:"report_id"`
 	Traffic  []TrafficDelta `json:"traffic,omitempty"`
 
+	// Conns are distinct (user-email, source-IP) samples seen in this node's Xray
+	// access log since the last sync. The panel feeds them through the same device-
+	// counting pipeline as the master (RecordAccess → AddConnection), so a user's
+	// device cap counts unique IPs across the WHOLE fleet, not just the master.
+	Conns []ConnSample `json:"conns,omitempty"`
+
 	// Logs is the node's recent log tail (agent + Xray), sent only when the panel
 	// asked for it via SyncResponse.WantLogs — so a viewing operator sees fresh logs
 	// without every sync carrying the payload.
@@ -71,6 +77,13 @@ type TrafficDelta struct {
 	UserID int64 `json:"user_id"`
 	Up     int64 `json:"up"`
 	Down   int64 `json:"down"`
+}
+
+// ConnSample is one (user-email, source-IP) pair the node observed. Email is the
+// Xray "uN" tag; the panel resolves it to a user id. Deduped per node per sync.
+type ConnSample struct {
+	Email string `json:"e"`
+	IP    string `json:"ip"`
 }
 
 // SyncResponse is returned immediately when the desired state differs from what

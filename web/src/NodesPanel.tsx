@@ -57,6 +57,7 @@ import {
   IconChevron,
   Modal,
   PasswordInput,
+  SegmentedControl,
   Select,
   Switch,
   Textarea,
@@ -1124,12 +1125,40 @@ function NodeCard({
   );
 }
 
+// classifyNodeLog buckets a node log line by level. Node logs mix the agent's slog
+// output ([INFO]/[WARN]/[ERROR]) with the Xray tail ([error]/[warning]/accepted),
+// so this recognises both (case-insensitive).
+function classifyNodeLog(l: string): string {
+  if (/\[error\]|\bpanic\b|\bfatal\b|failed|rejected/i.test(l)) return "error";
+  if (/\[warn(ing)?\]/i.test(l)) return "warning";
+  if (/accepted/i.test(l)) return "access";
+  if (/\[info\]/i.test(l)) return "info";
+  return "other";
+}
+
+// Bright on the dark log surface.
+const NODE_LOG_COLORS: Record<string, string> = {
+  error: "text-red-400",
+  warning: "text-amber-400",
+  access: "text-green-400",
+  info: "text-sky-300",
+};
+
+const NODE_LOG_FILTERS = [
+  { value: "all", label: "Все" },
+  { value: "access", label: "Доступ" },
+  { value: "info", label: "Инфо" },
+  { value: "warning", label: "Предупр." },
+  { value: "error", label: "Ошибки" },
+];
+
 // NodeLogsDialog streams a node's recent logs. It polls the panel, which asks the
 // node to include its log tail on its next sync (agent + Xray), so the view stays
-// fresh while open (with up to one sync interval of latency).
+// fresh while open (with up to one sync interval of latency). Tabs filter by level.
 function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void }) {
   const [lines, setLines] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [level, setLevel] = useState("all");
 
   useEffect(() => {
     let alive = true;
@@ -1149,8 +1178,16 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
     };
   }, [node.id]);
 
+  const shown =
+    level === "all"
+      ? lines
+      : lines.filter((l) => classifyNodeLog(l) === level);
+
   return (
     <Modal open onClose={onClose} title={`Логи — «${node.name}»`} size="xl">
+      <div className="mb-3 overflow-x-auto">
+        <SegmentedControl data={NODE_LOG_FILTERS} value={level} onChange={setLevel} />
+      </div>
       {!loaded ? (
         <p className="text-sm text-ink-muted">Запрашиваем логи у ноды…</p>
       ) : lines.length === 0 ? (
@@ -1160,11 +1197,21 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
         </p>
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs leading-relaxed text-gray-100">
-          {lines.map((l, i) => (
-            <div key={i} className="whitespace-pre-wrap break-all">
-              {l}
-            </div>
-          ))}
+          {shown.length === 0 ? (
+            <p className="text-gray-400">Нет строк выбранного уровня</p>
+          ) : (
+            shown.map((l, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "whitespace-pre-wrap break-all",
+                  NODE_LOG_COLORS[classifyNodeLog(l)],
+                )}
+              >
+                {l}
+              </div>
+            ))
+          )}
         </div>
       )}
       <div className="mt-4 flex justify-end">

@@ -99,6 +99,13 @@ type Agent struct {
 	inflightID   int64                           // report id of inflight (0 = none)
 	reportSeq    int64                           // monotonic report-id source
 
+	// Connection samples for fleet-wide device counting: distinct (email, ip) pairs
+	// tapped from Xray's access log since the last sync. Snapshotted-and-cleared on
+	// each sync; a lost send just re-samples on the next connection (the panel upserts
+	// idempotently), so no ack/inflight machinery is needed.
+	connMu sync.Mutex
+	conns  map[string]nodeapi.ConnSample
+
 	logsWanted atomic.Bool // panel asked for the log tail on the next sync
 }
 
@@ -160,8 +167,41 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		lastCounters: map[string]xray.Traffic{},
 		pending:      map[int64]*nodeapi.TrafficDelta{},
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
+		conns:        map[string]nodeapi.ConnSample{},
 	}
+	// Tap Xray's access log so the panel can count this node's devices (mirrors the
+	// master's sup.SetOnAccess(RecordAccess)).
+	a.sup.SetOnAccess(a.recordConn)
 	return a, nil
+}
+
+// recordConn buffers one access-log connection (a "uN" email + source IP) for the
+// next sync. Deduped per (email, ip); the buffer is bounded so a flood can't grow it
+// without limit.
+func (a *Agent) recordConn(email, ip string) {
+	if !strings.HasPrefix(email, "u") || ip == "" {
+		return
+	}
+	a.connMu.Lock()
+	if len(a.conns) < 8192 {
+		a.conns[email+"\x00"+ip] = nodeapi.ConnSample{Email: email, IP: ip}
+	}
+	a.connMu.Unlock()
+}
+
+// takeConns snapshots and clears the buffered connection samples.
+func (a *Agent) takeConns() []nodeapi.ConnSample {
+	a.connMu.Lock()
+	defer a.connMu.Unlock()
+	if len(a.conns) == 0 {
+		return nil
+	}
+	out := make([]nodeapi.ConnSample, 0, len(a.conns))
+	for _, c := range a.conns {
+		out = append(out, c)
+	}
+	a.conns = map[string]nodeapi.ConnSample{}
+	return out
 }
 
 // syncLoop holds the long-poll to the panel, applying pushed config and handling
@@ -308,6 +348,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		CertSelfSigned: selfSigned,
 		ReportID:       rid,
 		Traffic:        traffic,
+		Conns:          a.takeConns(),
 		Logs:           logs,
 	}
 }
