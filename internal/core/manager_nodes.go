@@ -15,6 +15,8 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/tlsmgr"
+	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/warp"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -142,13 +144,22 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	if ns.RealityEnabled {
 		connGuardPorts = append(connGuardPorts, ns.RealityPort)
 	}
+	// ACME: the node's own provider/email/EAB when set, otherwise the panel's.
+	acmeEmail := set.ACMEEmail
+	if n.ACMEEmail != "" {
+		acmeEmail = n.ACMEEmail
+	}
+	acmeProvider, eabKID, eabHMAC := set.ACMEProvider, set.ZeroSSLEABKID, set.ZeroSSLEABHMAC
+	if n.ACMEProvider != "" {
+		acmeProvider, eabKID, eabHMAC = n.ACMEProvider, n.ZeroSSLEABKID, n.ZeroSSLEABHMAC
+	}
 	meta := nodeapi.NodeMeta{
 		Host:              n.Host,
 		SNI:               n.Host,
-		ACMEEmail:         set.ACMEEmail,
-		ACMEProvider:      set.ACMEProvider,
-		ZeroSSLEABKID:     set.ZeroSSLEABKID,
-		ZeroSSLEABHMAC:    set.ZeroSSLEABHMAC,
+		ACMEEmail:         acmeEmail,
+		ACMEProvider:      acmeProvider,
+		ZeroSSLEABKID:     eabKID,
+		ZeroSSLEABHMAC:    eabHMAC,
 		HysteriaEnabled:   ns.HysteriaEnabled,
 		HysteriaPort:      ns.HysteriaPort,
 		HopStart:          ns.HopStart,
@@ -863,6 +874,111 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 	return nil
 }
 
+// NodeTLSStatus reports a node's effective TLS/ACME status for its Домен tab: its
+// address, its own (or inherited) ACME provider/email, and its cert metadata (built
+// from what the node last reported). Mirrors the master's TLSStatus.
+func (m *Manager) NodeTLSStatus(id int64) (*TLSStatus, error) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, &ValidationError{Msg: "нода не найдена"}
+	}
+	provider := n.ACMEProvider
+	if provider == "" {
+		provider = set.ACMEProvider
+	}
+	if provider == "" {
+		provider = model.ACMEProviderLE
+	}
+	email := n.ACMEEmail
+	if email == "" {
+		email = set.ACMEEmail
+	}
+	var cert *tlsutil.CertInfo
+	if n.CertExpiresAt > 0 || n.CertIssuer != "" {
+		exp := time.Unix(n.CertExpiresAt, 0)
+		cert = &tlsutil.CertInfo{
+			Issuer:   n.CertIssuer, // "" when self-signed → UI shows "временный"
+			NotAfter: exp,
+			DaysLeft: int(time.Until(exp).Hours() / 24),
+		}
+	}
+	return &TLSStatus{
+		Mode:         model.TLSModeACME,
+		Domain:       n.Host,
+		SNI:          n.Host,
+		ACMEEmail:    email,
+		ACMEProvider: provider,
+		Cert:         cert,
+	}, nil
+}
+
+// SetNodeACME sets a node's own domain (ACME target), e-mail and CA provider, then
+// wakes the node so its agent re-issues the cert. The panel can't issue a remote
+// node's cert — the node does that — so this only persists the config and (for
+// ZeroSSL) fetches the EAB the node's agent needs.
+func (m *Manager) SetNodeACME(id int64, target, email, provider string) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	target = NormalizeACMEHost(target)
+	email = strings.TrimSpace(email)
+	if target == "" {
+		return invalid("укажите домен или IP-адрес")
+	}
+	if provider != model.ACMEProviderZeroSSL {
+		provider = model.ACMEProviderLE
+	}
+	if !validACMETarget(target, provider) {
+		if provider == model.ACMEProviderZeroSSL {
+			return invalid("ZeroSSL поддерживает только домены (не IP): %q — это не похоже на домен", target)
+		}
+		return invalid("%q — это не похоже на домен или IP-адрес", target)
+	}
+	if email != "" && !validEmail(email) {
+		return invalid("%q — это не похоже на e-mail адрес", email)
+	}
+	if provider == model.ACMEProviderZeroSSL && email == "" {
+		return invalid("ZeroSSL требует e-mail адрес")
+	}
+	// ZeroSSL: reuse the node's stored EAB, else fetch a fresh one for its e-mail.
+	eabKID, eabHMAC := "", ""
+	if provider == model.ACMEProviderZeroSSL {
+		if n.ZeroSSLEABKID != "" {
+			eabKID, eabHMAC = n.ZeroSSLEABKID, n.ZeroSSLEABHMAC
+		} else {
+			kid, hmac, err := tlsmgr.FetchZeroSSLEAB(email)
+			if err != nil {
+				return fmt.Errorf("получение EAB от ZeroSSL: %w", err)
+			}
+			eabKID, eabHMAC = kid, hmac
+		}
+	}
+	if err := m.store.SetNodeACME(id, target, email, provider, eabKID, eabHMAC); err != nil {
+		return err
+	}
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// NodeGeoFiles returns a node's last-reported geo database status (nil if it hasn't
+// reported yet).
+func (m *Manager) NodeGeoFiles(id int64) []nodeapi.GeoFile {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	return m.nodeGeoFiles[id]
+}
+
 // SetNodeGeoRefresh sets a node's own geo auto-refresh cadence (hours; 0 ⇒ never) and
 // wakes it so the new cadence reaches its agent (via NodeMeta) promptly.
 func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
@@ -926,6 +1042,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	now := time.Now()
 	if len(req.Logs) > 0 {
 		m.storeNodeLogs(n.ID, req.Logs)
+	}
+	if len(req.GeoFiles) > 0 {
+		m.nodeGeoMu.Lock()
+		m.nodeGeoFiles[n.ID] = req.GeoFiles
+		m.nodeGeoMu.Unlock()
 	}
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
 		LastSeen:       now.Unix(),

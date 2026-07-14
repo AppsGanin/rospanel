@@ -73,6 +73,18 @@ type SyncRequest struct {
 	// asked for it via SyncResponse.WantLogs — so a viewing operator sees fresh logs
 	// without every sync carrying the payload.
 	Logs []string `json:"logs,omitempty"`
+
+	// GeoFiles is the on-disk status of the node's geo databases (name/size/mtime),
+	// so its Домен/Geo tab can show them like the master's. Small — sent every sync.
+	GeoFiles []GeoFile `json:"geo_files,omitempty"`
+}
+
+// GeoFile mirrors geo.FileInfo for reporting a node's geo database status.
+type GeoFile struct {
+	Name       string `json:"name"`
+	Present    bool   `json:"present"`
+	Size       int64  `json:"size"`
+	ModifiedAt int64  `json:"modified_at"`
 }
 
 // TrafficDelta is one user's up/down bytes on this node since the last ack.

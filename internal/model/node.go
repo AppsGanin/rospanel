@@ -66,6 +66,12 @@ type Node struct {
 	// Connections is the node's own transport override (nil ⇒ inherit the master's).
 	Connections *NodeConnections `json:"-"`
 
+	// Per-node ACME (empty ⇒ inherit the panel's). ZeroSSLEABHMAC is encrypted at rest.
+	ACMEEmail      string `json:"-"`
+	ACMEProvider   string `json:"-"`
+	ZeroSSLEABKID  string `json:"-"`
+	ZeroSSLEABHMAC string `json:"-"`
+
 	// Reported by the node on each sync.
 	LastSeen       int64  `json:"last_seen"`
 	NodeVersion    string `json:"node_version"`

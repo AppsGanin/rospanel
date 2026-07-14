@@ -1,16 +1,38 @@
 import { useEffect, useState } from "react";
-import { getTLS, setACME } from "./api";
-import { useFetch } from "./hooks";
+import { getTLS, setACME, type TLSStatus } from "./api";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { Badge, Button, Select, Skeleton, TextInput } from "./ui";
 import { isValidACMETarget, isValidEmail } from "./validate";
 
-export function TLSPanel() {
-  const { data: status, loaded, setData: setStatus } = useFetch(getTLS);
+// TLSPanel is the domain/TLS editor. By default it edits the panel's own domain
+// (getTLS/setACME) and redirects to the new address on success. Passing load/save
+// (and redirectOnSuccess={false}) reuses the exact same UI for a node's domain — the
+// node re-issues its own cert and there's no panel redirect.
+export function TLSPanel({
+  load = getTLS,
+  save = setACME,
+  redirectOnSuccess = true,
+  onChanged,
+}: {
+  load?: () => Promise<TLSStatus>;
+  save?: (target: string, email: string, provider: string) => Promise<TLSStatus>;
+  redirectOnSuccess?: boolean;
+  onChanged?: () => void;
+} = {}) {
+  const [status, setStatus] = useState<TLSStatus | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [target, setTarget] = useState("");
   const [email, setEmail] = useState("");
   const [provider, setProvider] = useState("letsencrypt");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    load()
+      .then(setStatus)
+      .catch((e) => notifyError(errMessage(e)))
+      .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (status) {
@@ -24,12 +46,18 @@ export function TLSPanel() {
     const t = target.trim();
     setBusy(true);
     try {
-      const s = await setACME(t, email.trim(), provider);
+      const s = await save(t, email.trim(), provider);
       setStatus(s);
-      notifySuccess("Домен изменён — переходим на новый адрес…");
-      setTimeout(() => {
-        window.location.href = `https://${t}${window.location.pathname}${window.location.hash}`;
-      }, 2500);
+      if (redirectOnSuccess) {
+        notifySuccess("Домен изменён — переходим на новый адрес…");
+        setTimeout(() => {
+          window.location.href = `https://${t}${window.location.pathname}${window.location.hash}`;
+        }, 2500);
+      } else {
+        notifySuccess("Домен изменён — сертификат перевыпустится на новом адресе");
+        setBusy(false);
+        onChanged?.();
+      }
     } catch (e) {
       notifyError(errMessage(e));
       setBusy(false);
@@ -93,7 +121,8 @@ export function TLSPanel() {
           <p className="text-sm text-ink-muted">
             Укажи <b>домен</b>, направленный на этот сервер,{" "}
             <b>или IP сервера</b>. Должен быть открыт порт <b>80</b>. После
-            смены панель и подписки начнут использовать новый адрес.
+            смены {redirectOnSuccess ? "панель и подписки" : "нода и её ссылки"}{" "}
+            начнут использовать новый адрес.
           </p>
           <div>
             <TextInput

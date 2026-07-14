@@ -386,6 +386,13 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		logs = a.logTail()
 	}
 
+	var geoFiles []nodeapi.GeoFile
+	for _, f := range geo.Status(a.geoDir) {
+		geoFiles = append(geoFiles, nodeapi.GeoFile{
+			Name: f.Name, Present: f.Present, Size: f.Size, ModifiedAt: f.ModifiedAt,
+		})
+	}
+
 	return nodeapi.SyncRequest{
 		ConfigHash:     hash,
 		NodeVersion:    version.Version,
@@ -399,6 +406,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Traffic:        traffic,
 		Conns:          a.takeConns(),
 		Logs:           logs,
+		GeoFiles:       geoFiles,
 	}
 }
 

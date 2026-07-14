@@ -28,7 +28,8 @@ const nodeColumns = `id, name, host, enabled,
 	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
 	join_expires_at, deleted_at,
-	cert_issuer, cert_expires_at, geo_refresh_hours`
+	cert_issuer, cert_expires_at, geo_refresh_hours,
+	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -59,6 +60,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
 		&n.JoinExpiresAt, &n.DeletedAt,
 		&n.CertIssuer, &n.CertExpiresAt, &n.GeoRefreshHours,
+		&n.ACMEEmail, &n.ACMEProvider, &n.ZeroSSLEABKID, &n.ZeroSSLEABHMAC,
 	); err != nil {
 		return nil, err
 	}
@@ -69,6 +71,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.OperaEnabled = operaEn != 0
 	n.WarpPrivateKey = decField(n.WarpPrivateKey)
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
+	n.ZeroSSLEABHMAC = decField(n.ZeroSSLEABHMAC)
 	n.VLESSEnabled = nullBoolPtr(vlessEn)
 	n.TrojanEnabled = nullBoolPtr(trojanEn)
 	n.HysteriaEnabled = nullBoolPtr(hysteriaEn)
@@ -421,6 +424,17 @@ func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
 		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
 		st.CertSHA256, boolToInt(st.CertSelfSigned), st.CertIssuer, st.CertExpiresAt,
 		st.ConfigHash, id,
+	)
+	return err
+}
+
+// SetNodeACME persists a node's own ACME config: host (target), e-mail, provider and
+// ZeroSSL EAB. The HMAC is encrypted at rest.
+func (s *Store) SetNodeACME(id int64, host, email, provider, eabKID, eabHMAC string) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET host = ?, acme_email = ?, acme_provider = ?,
+			zerossl_eab_kid = ?, zerossl_eab_hmac = ? WHERE id = ?`,
+		host, email, provider, eabKID, encField(eabHMAC), id,
 	)
 	return err
 }

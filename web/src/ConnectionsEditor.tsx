@@ -409,16 +409,19 @@ export function ConnectionsEditor({
         </div>
       </div>
 
-      {dirty && (
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="light" color="gray" onClick={cancel} disabled={busy || applying}>
-            Отменить
-          </Button>
-          <Button onClick={doSave} loading={busy || applying}>
-            Сохранить
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
+        <Button
+          variant="light"
+          color="gray"
+          onClick={cancel}
+          disabled={!dirty || busy || applying}
+        >
+          Отменить
+        </Button>
+        <Button onClick={doSave} loading={busy || applying} disabled={!dirty}>
+          Сохранить
+        </Button>
+      </div>
       <ApplyingModal open={applying} />
     </div>
   );

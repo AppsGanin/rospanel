@@ -249,6 +249,51 @@ func (rt *Router) applyNodeConnections(w http.ResponseWriter, r *http.Request, i
 	writeJSON(w, http.StatusOK, c)
 }
 
+// nodeTLS returns a node's TLS/ACME status (mirrors the master's GET /api/tls).
+func (rt *Router) nodeTLS(w http.ResponseWriter, _ *http.Request, id int64) {
+	s, err := rt.mgr.NodeTLSStatus(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+// setNodeACME sets a node's domain + ACME provider/email (mirrors POST /api/tls).
+func (rt *Router) setNodeACME(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Target   string `json:"target"`
+		Email    string `json:"email"`
+		Provider string `json:"provider"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeACME(id, req.Target, req.Email, req.Provider); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.nodeTLS(w, r, id)
+}
+
+// nodeGeoInfo returns a node's geo database status + its auto-refresh cadence, for
+// its Geo tab (mirrors the master's).
+func (rt *Router) nodeGeoInfo(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files":         rt.mgr.NodeGeoFiles(id),
+		"refresh_hours": node.GeoRefreshHours,
+	})
+}
+
 // nodeGeoRefresh asks a node to re-download its geo databases now.
 func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int64) {
 	if err := rt.mgr.RequestNodeGeoRefresh(id); err != nil {

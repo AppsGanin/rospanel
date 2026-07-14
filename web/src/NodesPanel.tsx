@@ -7,6 +7,8 @@ import {
   getConnections,
   getGeoCategories,
   getNodeConnections,
+  getNodeGeo,
+  getNodeTLS,
   getGeoStatus,
   getNodeLogs,
   getRouting,
@@ -16,6 +18,7 @@ import {
   refreshNodeGeo,
   regenNodeJoin,
   saveRouting,
+  setNodeACME,
   setNodeGeoCadence,
   setDecoy as saveDecoy,
   setGeoCadence as saveGeoCadence,
@@ -29,6 +32,7 @@ import {
   updateNodeVersion,
   type GeoCategories,
   type GeoFile,
+  type GeoInfo,
   type NodeView,
   type RoutingConfig,
 } from "./api";
@@ -43,7 +47,6 @@ import { TLSPanel } from "./TLSPanel";
 import {
   effectiveCfg,
   EMPTY,
-  GEO_CADENCE,
   GeoSection,
   hydrateRouting,
   laneSources,
@@ -488,93 +491,16 @@ function useServerRouting(init: {
   };
 }
 
-// NodeDomainCard is the node's Домен tab, mirroring the master's TLSPanel: a
-// current-address card with the cert status, plus a "сменить домен" action. The node
-// gets its cert itself (ACME on the node, using the panel's ACME settings), so unlike
-// the master there's no email/CA field here and no page redirect — changing the host
-// just re-points the node and it re-issues the cert.
-function NodeDomainCard({
-  node,
-  onChanged,
-}: {
-  node: NodeView;
-  onChanged: () => void;
-}) {
-  const [host, setHost] = useState(node.host);
-  const [busy, setBusy] = useState(false);
-  const t = host.trim();
-  const dirty = t !== "" && t !== node.host;
-
-  const change = async () => {
-    if (!dirty) return;
-    setBusy(true);
-    try {
-      // Change only the host; carry the node's other current fields so the patch
-      // doesn't touch them.
-      await updateNode(node.id, {
-        name: node.name,
-        host: t,
-        decoy_template: node.decoy_template,
-        vless_enabled: node.vless_enabled,
-        trojan_enabled: node.trojan_enabled,
-        hysteria_enabled: node.hysteria_enabled,
-        reality_enabled: node.reality_enabled,
-      });
-      notifySuccess("Домен ноды изменён — нода перевыпустит сертификат для нового адреса");
-      onChanged();
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-    setBusy(false);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Section>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm text-ink-muted">Текущий адрес</p>
-            <p className="truncate text-lg font-bold text-ink">{node.host}</p>
-            {!node.cert_self_signed && (node.cert_issuer || node.cert_expires_at > 0) && (
-              <p className="mt-1 text-sm text-ink-muted">
-                сертификат: {node.cert_issuer || "—"}
-                {node.cert_expires_at > 0
-                  ? ` · ещё ${Math.max(0, Math.floor((node.cert_expires_at * 1000 - Date.now()) / 86400000))} дн.`
-                  : ""}
-              </p>
-            )}
-          </div>
-          <Badge color={node.cert_self_signed ? "orange" : "green"}>
-            {node.cert_self_signed ? "временный" : "валидный"}
-          </Badge>
-        </div>
-      </Section>
-
-      <Section
-        title="Сменить домен"
-        desc="Укажите домен, направленный на этот сервер, или его IP. Нужен открытый порт 80. Нода сама перевыпустит сертификат (по настройкам ACME панели). Адрес меняется и в ссылках подписки."
-      >
-        <TextInput
-          label="Новый домен или IP"
-          value={host}
-          onChange={setHost}
-          placeholder="nl1.example.com"
-        />
-        <div className="flex justify-end">
-          <Button loading={busy} disabled={!dirty} onClick={change}>
-            Сменить домен
-          </Button>
-        </div>
-      </Section>
-    </div>
-  );
-}
-
-// NodeGeoCard is the node's Geo tab: the node's agent keeps geo up to date on the
-// node's OWN cadence (separate from the master), plus a force-refresh-now action.
+// NodeGeoCard is the node's Geo tab — the same GeoSection as the master (geo file
+// status + auto-refresh cadence), but scoped to the node: files come from the node's
+// report, "Обновить" queues a refresh on the node, and the cadence is the node's own.
 function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => void }) {
+  const [info, setInfo] = useState<GeoInfo | null>(null);
   const [busy, setBusy] = useState(false);
-  const [cadence, setCadence] = useState(node.geo_refresh_hours);
+
+  useEffect(() => {
+    getNodeGeo(node.id).then(setInfo).catch(() => {});
+  }, [node.id]);
 
   const refresh = async () => {
     setBusy(true);
@@ -588,7 +514,7 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
   };
 
   const changeCadence = async (hours: number) => {
-    setCadence(hours);
+    setInfo((i) => (i ? { ...i, refresh_hours: hours } : i));
     try {
       await setNodeGeoCadence(node.id, hours);
       notifySuccess("Автообновление geo сохранено");
@@ -599,27 +525,13 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
   };
 
   return (
-    <Section
-      title="Geo-базы ноды"
-      desc="Нода сама скачивает и обновляет geosite/geoip локально. Автообновление — своё расписание у этой ноды."
-      action={
-        <Button variant="light" size="sm" loading={busy} onClick={refresh}>
-          Обновить сейчас
-        </Button>
-      }
-    >
-      <Select
-        label="Автообновление"
-        data={GEO_CADENCE}
-        value={String(cadence)}
-        onChange={(v) => changeCadence(Number(v))}
-      />
-      {!node.online && (
-        <p className="text-xs text-ink-muted">
-          Нода офлайн — «обновить сейчас» применится, когда она снова подключится.
-        </p>
-      )}
-    </Section>
+    <GeoSection
+      status={info?.files ?? []}
+      onRefresh={refresh}
+      refreshing={busy}
+      cadence={info?.refresh_hours ?? node.geo_refresh_hours}
+      onCadence={changeCadence}
+    />
   );
 }
 
@@ -764,7 +676,14 @@ function NodeSettingsDialog({
 
       {tab === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
 
-      {tab === "domain" && <NodeDomainCard node={node} onChanged={onRefresh} />}
+      {tab === "domain" && (
+        <TLSPanel
+          load={() => getNodeTLS(node.id)}
+          save={(t, e, p) => setNodeACME(node.id, t, e, p)}
+          redirectOnSuccess={false}
+          onChanged={onRefresh}
+        />
+      )}
 
       {/* The footer Save persists name/decoy (Основное) and routing/DNS (Роутинг).
           The other tabs have their own save action, so it's hidden there. */}

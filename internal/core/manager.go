@@ -12,6 +12,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
@@ -148,6 +149,10 @@ type Manager struct {
 	nodeLogsMu     sync.Mutex
 	nodeLogs       map[int64]nodeLogEntry
 	nodeLogsWanted map[int64]int64 // node id → unix time the operator last asked
+
+	// nodeGeoFiles holds each node's last-reported geo database status.
+	nodeGeoMu    sync.Mutex
+	nodeGeoFiles map[int64][]nodeapi.GeoFile
 }
 
 // nodeLogEntry is a node's last-reported log tail.
@@ -177,6 +182,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeUpdateWanted: map[int64]bool{},
 		nodeGeoWanted:    map[int64]bool{},
 		nodeLogs:         map[int64]nodeLogEntry{},
+		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
 		nodeLogsWanted:   map[int64]int64{},
 	}
 	if set, err := st.GetSettings(); err == nil {

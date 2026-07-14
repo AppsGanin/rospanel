@@ -110,6 +110,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/{id}/routing":     set("Нода · роутинг и DNS"),
 	"POST /api/nodes/{id}/reality":     set("Нода · REALITY"),
 	"POST /api/nodes/{id}/connections": set("Нода · подключения"),
+	"POST /api/nodes/{id}/tls":         set("Нода · домен/TLS"),
 	"POST /api/nodes/{id}/geo-refresh": set("Нода · обновление geo"),
 	"POST /api/nodes/{id}/geo-cadence": set("Нода · автообновление geo"),
 	"DELETE /api/nodes/{id}":           set("Нода удалена"),

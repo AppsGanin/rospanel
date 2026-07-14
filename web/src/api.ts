@@ -1189,6 +1189,22 @@ export const setNodeGeoCadence = (id: number, refresh_hours: number) =>
     body: JSON.stringify({ refresh_hours }),
   })
 
+// getNodeGeo returns a node's geo file status + its cadence, for the node Geo tab.
+export const getNodeGeo = (id: number) => api<GeoInfo>(`api/nodes/${id}/geo`)
+
+// Node TLS/ACME — same shape/UI as the master's domain page.
+export const getNodeTLS = (id: number) => api<TLSStatus>(`api/nodes/${id}/tls`)
+export const setNodeACME = (
+  id: number,
+  target: string,
+  email: string,
+  provider: string,
+) =>
+  api<TLSStatus>(`api/nodes/${id}/tls`, {
+    method: 'POST',
+    body: JSON.stringify({ target, email, provider }),
+  })
+
 export const createNode = (name: string, host: string) =>
   api<{ id: number; install_command: string }>('api/nodes', {
     method: 'POST',
