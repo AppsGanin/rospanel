@@ -39,8 +39,9 @@ CREATE TABLE nodes (
 
     -- Per-node overrides that fall back to the global settings when unset:
     --   routing_config: '' ⇒ inherit the panel's routing; a JSON RoutingConfig ⇒
-    --     this node's own rules (egress lanes/WARP/Opera are dropped on nodes, which
-    --     have no such backends, so those rules degrade to direct).
+    --     this node's own rules. Egress lanes live in Routing.Lanes and resolve
+    --     against the node's own proxy pool (WARP/Opera are separate columns, added
+    --     in 0028_node_egress); every server's egress is its own.
     --   xray_dns: NULL ⇒ inherit the panel's DNS; any value (incl. '') ⇒ this node's.
     routing_config TEXT NOT NULL DEFAULT '',
     xray_dns       TEXT,

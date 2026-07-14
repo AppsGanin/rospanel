@@ -15,8 +15,9 @@ const NodeOnlineWindow int64 = 120
 // Xray config the panel generates for it, and reports traffic back.
 //
 // A node inherits every setting from the global settings row except the fields
-// below — its own address, its own TLS/REALITY identity, and its protocol
-// overrides. See core.nodeSettings, which materializes exactly that.
+// below — its own address, TLS/REALITY identity, protocol overrides, and its OWN
+// routing/DNS/egress (proxy lanes, WARP, Opera), independent of the master. See
+// core.nodeSettings, which materializes exactly that.
 type Node struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
@@ -39,8 +40,8 @@ type Node struct {
 	DecoyTemplate string `json:"decoy_template"`
 
 	// Routing is the node's own routing override: nil ⇒ inherit the panel's routing.
-	// Egress lanes (proxy pools, WARP, Opera) are dropped when the config is applied
-	// to a node — a node has no such backends — so those rules degrade to direct.
+	// A node's egress lanes (proxy pools) live in Routing.Lanes and resolve against
+	// the node's OWN proxy pool; WARP/Opera below are the node's own too.
 	Routing *RoutingConfig `json:"routing,omitempty"`
 
 	// XrayDNS is the node's own upstream DNS override: nil ⇒ inherit the panel's DNS.
