@@ -22,6 +22,14 @@ import (
 // release and its checksums.
 const PinnedVersion = "v26.6.27"
 
+// VersionMatchesPinned reports whether a reported Xray version is the pinned
+// release, tolerating a leading "v": PinnedVersion carries it, but `xray version`
+// output does not (Supervisor.Version parses "26.6.27"), so a plain string compare
+// would spuriously flag every node as version-skewed.
+func VersionMatchesPinned(v string) bool {
+	return strings.TrimPrefix(v, "v") == strings.TrimPrefix(PinnedVersion, "v")
+}
+
 // pinnedSHA256 is the SHA-256 of each platform's Xray release zip for
 // PinnedVersion, taken from XTLS's published <asset>.dgst files. The downloaded
 // archive is rejected if it doesn't match — this defends against a corrupted,

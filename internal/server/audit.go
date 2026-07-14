@@ -103,6 +103,7 @@ var auditActions = map[string]auditRoute{
 	// action; the node is the target. regen-join mints a fresh install credential.
 	"POST /api/nodes":                 set("Нода добавлена"),
 	"PATCH /api/nodes/{id}":           set("Нода изменена"),
+	"POST /api/nodes/{id}/routing":    set("Нода · роутинг и DNS"),
 	"DELETE /api/nodes/{id}":          set("Нода удалена"),
 	"POST /api/nodes/{id}/enabled":    set("Нода вкл/выкл"),
 	"POST /api/nodes/{id}/regen-join": set("Нода · новый токен установки"),

@@ -7,10 +7,12 @@ import {
   provisionNode,
   regenNodeJoin,
   setNodeEnabled,
+  setNodeRouting,
   updateAllNodes,
   updateNode,
   updateNodeVersion,
   type NodeView,
+  type RoutingConfig,
 } from "./api";
 import { fmtBytes } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -25,8 +27,10 @@ import {
   PasswordInput,
   Select,
   Switch,
+  TagsInput,
   Textarea,
   TextInput,
+  ToggleRow,
   useConfirm,
 } from "./ui";
 
@@ -64,8 +68,8 @@ function InstallCommandModal({
   return (
     <Modal open onClose={onClose} title="Команда установки ноды" size="lg">
       <p className="text-sm text-ink-muted">
-        Выполните на новом сервере (Ubuntu, от root). Нода подключится к панели и
-        появится в списке. Токен показывается один раз — сохраните команду.
+        Выполните на сервере ноды (Ubuntu, от root). Через минуту нода станет
+        онлайн в списке. Токен показывается один раз — сохраните команду.
       </p>
       <div className="mt-3">
         <Code block copy>
@@ -365,6 +369,142 @@ function ReconnectDialog({
   );
 }
 
+// emptyNodeRouting is a blank routing override (only the fields that work on a node
+// — egress lanes/WARP/Opera are stripped server-side, so they're not editable here).
+function emptyNodeRouting(): RoutingConfig {
+  return {
+    block_bittorrent: false,
+    block_ads: true,
+    block_ips: [],
+    block_domains: [],
+    warp_domains: [],
+    warp_ips: [],
+    opera_domains: [],
+    opera_ips: [],
+    direct_domains: [],
+    direct_ips: [],
+    routing_order: [],
+    lanes: [],
+    proxy_refresh_minutes: 0,
+  };
+}
+
+// NodeRoutingDialog edits a node's routing + DNS overrides. Each section can either
+// inherit the panel's setting or be a per-node override. Only the block/direct rules
+// apply on a node (proxy lanes / WARP / Opera egress don't exist there), so only
+// those are exposed.
+function NodeRoutingDialog({
+  node,
+  onClose,
+  onSaved,
+}: {
+  node: NodeView;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [routingOwn, setRoutingOwn] = useState(node.routing != null);
+  const [cfg, setCfg] = useState<RoutingConfig>(node.routing ?? emptyNodeRouting());
+  const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
+  const [dns, setDns] = useState(node.xray_dns ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const set = (patch: Partial<RoutingConfig>) => setCfg((c) => ({ ...c, ...patch }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await setNodeRouting(
+        node.id,
+        routingOwn ? cfg : null,
+        dnsOwn ? dns : null,
+      );
+      notifySuccess("Роутинг и DNS ноды сохранены");
+      onSaved();
+    } catch (e) {
+      notifyError(errMessage(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Роутинг и DNS — «${node.name}»`} size="lg">
+      <div className="space-y-4">
+        {/* Routing */}
+        <ToggleRow
+          label="Свой роутинг ноды"
+          hint="Выключено — нода использует роутинг панели. Прокси-полосы, WARP и Opera на нодах не работают, поэтому здесь только блокировки и прямые правила."
+          checked={routingOwn}
+          onChange={setRoutingOwn}
+        />
+        {routingOwn && (
+          <div className="space-y-3 rounded-lg border border-gray-100 p-3">
+            <ToggleRow
+              label="Блокировать рекламу"
+              checked={cfg.block_ads}
+              onChange={(v) => set({ block_ads: v })}
+            />
+            <ToggleRow
+              label="Блокировать BitTorrent"
+              checked={cfg.block_bittorrent}
+              onChange={(v) => set({ block_bittorrent: v })}
+            />
+            <TagsInput
+              label="Блокировать домены"
+              value={cfg.block_domains}
+              onChange={(v) => set({ block_domains: v })}
+              placeholder="example.com, geosite:category-ads…"
+            />
+            <TagsInput
+              label="Блокировать IP / CIDR"
+              value={cfg.block_ips}
+              onChange={(v) => set({ block_ips: v })}
+              placeholder="1.2.3.0/24, geoip:cn…"
+            />
+            <TagsInput
+              label="Напрямую (домены)"
+              value={cfg.direct_domains}
+              onChange={(v) => set({ direct_domains: v })}
+              placeholder="local.example…"
+            />
+            <TagsInput
+              label="Напрямую (IP / CIDR)"
+              value={cfg.direct_ips}
+              onChange={(v) => set({ direct_ips: v })}
+              placeholder="10.0.0.0/8…"
+            />
+          </div>
+        )}
+
+        {/* DNS */}
+        <ToggleRow
+          label="Свой DNS ноды"
+          hint="Выключено — нода использует DNS панели."
+          checked={dnsOwn}
+          onChange={setDnsOwn}
+        />
+        {dnsOwn && (
+          <Textarea
+            label="DNS-серверы"
+            value={dns}
+            onChange={setDns}
+            rows={3}
+            placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
+            hint="По одному на строку (или через запятую): DoH URL или IP."
+          />
+        )}
+      </div>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
+          Отмена
+        </Button>
+        <Button onClick={save} loading={saving}>
+          Сохранить
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 // protoDefs drives the four protocol toggles on a node card.
 const protoDefs = [
   { key: "vless", label: "VLESS", enabledField: "vless_enabled" },
@@ -387,6 +527,7 @@ function NodeCard({
 }) {
   const { confirm, confirmNode } = useConfirm();
   const [reconnecting, setReconnecting] = useState(false);
+  const [editingRouting, setEditingRouting] = useState(false);
 
   // A protocol toggle sets an explicit override on this node (never touches the
   // global setting). The local server's protocols are edited in Settings, so its
@@ -403,24 +544,6 @@ function NodeCard({
           field === "hysteria_enabled" ? value : overrideVal(node, "hysteria"),
         reality_enabled: field === "reality_enabled" ? value : overrideVal(node, "reality"),
       });
-      onChanged();
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-  };
-
-  const resetOverrides = async () => {
-    try {
-      await updateNode(node.id, {
-        name: node.name,
-        host: node.host,
-        decoy_template: node.decoy_template,
-        vless_enabled: null,
-        trojan_enabled: null,
-        hysteria_enabled: null,
-        reality_enabled: null,
-      });
-      notifySuccess("Протоколы сброшены к глобальным");
       onChanged();
     } catch (e) {
       notifyError(errMessage(e));
@@ -492,17 +615,11 @@ function NodeCard({
   const doUpdate = async () => {
     try {
       await updateNodeVersion(node.id);
-      notifySuccess("Нода обновляется — Xray кратко перезапустится");
+      notifySuccess("Нода обновляется — Xray перезапустится");
     } catch (e) {
       notifyError(errMessage(e));
     }
   };
-
-  const hasOverrides =
-    node.overrides.vless ||
-    node.overrides.trojan ||
-    node.overrides.hysteria ||
-    node.overrides.reality;
 
   return (
     <Card className="p-4">
@@ -578,11 +695,9 @@ function NodeCard({
                 Обновить
               </Button>
             )}
-            {hasOverrides && (
-              <Button size="sm" variant="light" color="gray" onClick={resetOverrides}>
-                Сбросить протоколы
-              </Button>
-            )}
+            <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
+              Роутинг и DNS
+            </Button>
             <Button size="sm" variant="light" color="gray" onClick={regen}>
               Новый токен
             </Button>
@@ -598,6 +713,16 @@ function NodeCard({
           onClose={() => setReconnecting(false)}
           onDone={() => {
             setReconnecting(false);
+            onChanged();
+          }}
+        />
+      )}
+      {editingRouting && (
+        <NodeRoutingDialog
+          node={node}
+          onClose={() => setEditingRouting(false)}
+          onSaved={() => {
+            setEditingRouting(false);
             onChanged();
           }}
         />

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/updater"
@@ -128,6 +129,47 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		// edit them, and sending nil would clear them.
 		Routing: node.Routing,
 		XrayDNS: node.XrayDNS,
+	}
+	if err := rt.mgr.UpdateNode(id, edit); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeRoutingReq sets a node's routing + DNS overrides. A null field means "inherit
+// the panel's" (the node card's routing/DNS editor is the only place these are set,
+// so it always sends both — no risk of a protocol toggle wiping them).
+type nodeRoutingReq struct {
+	Routing *model.RoutingConfig `json:"routing"`  // null ⇒ inherit global routing
+	XrayDNS *string              `json:"xray_dns"` // null ⇒ inherit global DNS
+}
+
+// setNodeRouting saves a node's per-node routing + DNS override.
+func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int64) {
+	var req nodeRoutingReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	edit := store.NodeEdit{
+		Name:          node.Name,
+		Host:          node.Host,
+		DecoyTemplate: node.DecoyTemplate,
+		VLESS:         node.VLESSEnabled,
+		Trojan:        node.TrojanEnabled,
+		Hysteria:      node.HysteriaEnabled,
+		Reality:       node.RealityEnabled,
+		Routing:       req.Routing, // may be nil ⇒ inherit
+		XrayDNS:       req.XrayDNS,
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)

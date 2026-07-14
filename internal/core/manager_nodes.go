@@ -220,7 +220,11 @@ type NodeView struct {
 	// Overrides expose which protocol toggles are node-specific (non-nil) vs
 	// inherited, so the UI can show an "inherited" state.
 	Overrides NodeProtoOverrides `json:"overrides"`
-	JoinToken string             `json:"join_token,omitempty"` // only right after create/regen
+	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
+	// so the per-node routing+DNS editor can prefill and show inherit vs custom.
+	Routing   *model.RoutingConfig `json:"routing"`
+	XrayDNS   *string              `json:"xray_dns"`
+	JoinToken string               `json:"join_token,omitempty"` // only right after create/regen
 }
 
 // NodeProtoOverrides marks which protocol toggles a node overrides (true) vs
@@ -283,7 +287,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			NodeVersion:     n.NodeVersion,
 			XrayVersion:     n.XrayVersion,
 			XrayRunning:     n.XrayRunning,
-			VersionSkew:     n.XrayVersion != "" && n.XrayVersion != xray.PinnedVersion,
+			VersionSkew:     n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
 			VLESSEnabled:    model.NodeProtoEnabled(n.VLESSEnabled, set.VLESSEnabled),
 			TrojanEnabled:   model.NodeProtoEnabled(n.TrojanEnabled, set.TrojanEnabled),
 			HysteriaEnabled: model.NodeProtoEnabled(n.HysteriaEnabled, set.HysteriaEnabled),
@@ -295,6 +299,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 				Hysteria: n.HysteriaEnabled != nil,
 				Reality:  n.RealityEnabled != nil,
 			},
+			Routing: n.Routing,
+			XrayDNS: n.XrayDNS,
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]

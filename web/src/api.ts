@@ -1108,6 +1108,8 @@ export interface NodeView {
   traffic_up: number
   traffic_down: number
   overrides: NodeProtoOverrides
+  routing: RoutingConfig | null // node's routing override, null = inherit panel's
+  xray_dns: string | null // node's DNS override, null = inherit panel's
 }
 
 export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
@@ -1156,6 +1158,17 @@ export const updateNodeVersion = (id: number) =>
 
 export const updateAllNodes = () =>
   api<{ nodes: number }>('api/nodes/update-all', { method: 'POST' })
+
+// setNodeRouting saves a node's routing + DNS override. null = inherit the panel's.
+export const setNodeRouting = (
+  id: number,
+  routing: RoutingConfig | null,
+  xray_dns: string | null,
+) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/routing`, {
+    method: 'POST',
+    body: JSON.stringify({ routing, xray_dns }),
+  })
 
 // ProvisionCreds are the throwaway SSH credentials used to install a node over SSH.
 export interface ProvisionCreds {
