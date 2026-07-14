@@ -476,6 +476,80 @@ function useServerRouting(init: {
   };
 }
 
+// NodeDomainCard is the node's Домен tab, mirroring the master's TLSPanel: a
+// current-address card with the cert status, plus a "сменить домен" action. The node
+// gets its cert itself (ACME on the node, using the panel's ACME settings), so unlike
+// the master there's no email/CA field here and no page redirect — changing the host
+// just re-points the node and it re-issues the cert.
+function NodeDomainCard({
+  node,
+  onChanged,
+}: {
+  node: NodeView;
+  onChanged: () => void;
+}) {
+  const [host, setHost] = useState(node.host);
+  const [busy, setBusy] = useState(false);
+  const t = host.trim();
+  const dirty = t !== "" && t !== node.host;
+
+  const change = async () => {
+    if (!dirty) return;
+    setBusy(true);
+    try {
+      // Change only the host; carry the node's other current fields so the patch
+      // doesn't touch them.
+      await updateNode(node.id, {
+        name: node.name,
+        host: t,
+        decoy_template: node.decoy_template,
+        vless_enabled: node.vless_enabled,
+        trojan_enabled: node.trojan_enabled,
+        hysteria_enabled: node.hysteria_enabled,
+        reality_enabled: node.reality_enabled,
+      });
+      notifySuccess("Домен ноды изменён — нода перевыпустит сертификат для нового адреса");
+      onChanged();
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-ink-muted">Текущий адрес</p>
+            <p className="truncate text-lg font-bold text-ink">{node.host}</p>
+          </div>
+          <Badge color={node.cert_self_signed ? "orange" : "green"}>
+            {node.cert_self_signed ? "временный сертификат" : "валидный сертификат"}
+          </Badge>
+        </div>
+      </Section>
+
+      <Section
+        title="Сменить домен"
+        desc="Укажите домен, направленный на этот сервер, или его IP. Нужен открытый порт 80. Нода сама перевыпустит сертификат (по настройкам ACME панели). Адрес меняется и в ссылках подписки."
+      >
+        <TextInput
+          label="Новый домен или IP"
+          value={host}
+          onChange={setHost}
+          placeholder="nl1.example.com"
+        />
+        <div className="flex justify-end">
+          <Button loading={busy} disabled={!dirty} onClick={change}>
+            Сменить домен
+          </Button>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 // NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
 // protocol overrides, its OWN routing + egress (the same editor as the master), and
 // its DNS. Routing/egress and DNS each either inherit the panel's or are the node's
@@ -487,15 +561,16 @@ function NodeSettingsDialog({
   geo,
   onClose,
   onSaved,
+  onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
   onClose: () => void;
   onSaved: () => void;
+  onRefresh: () => void;
 }) {
   const [name, setName] = useState(node.name);
-  const [host, setHost] = useState(node.host);
   const [decoy, setDecoy] = useState(node.decoy_template);
   // Each node's protocols are its OWN (no inheritance from the master). A fresh node
   // starts with everything off; the operator turns on what this node should serve.
@@ -532,12 +607,12 @@ function NodeSettingsDialog({
     : { label: "выключен", color: "gray" };
 
   const save = async () => {
-    if (!name.trim() || !host.trim()) return;
+    if (!name.trim()) return;
     setSaving(true);
     try {
       await updateNode(node.id, {
         name: name.trim(),
-        host: host.trim(),
+        host: node.host, // the domain is changed from the Домен tab, not here
         decoy_template: decoy,
         vless_enabled: proto.vless,
         trojan_enabled: proto.trojan,
@@ -608,7 +683,7 @@ function NodeSettingsDialog({
           {/* Routing + egress (node's own — same editor as the master) */}
           <Section
             title="Свой роутинг и выходы ноды"
-            desc="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
+            desc="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera для этой ноды."
             action={<Switch checked={routingOwn} onChange={setRoutingOwn} />}
           />
           {routingOwn && (
@@ -643,26 +718,7 @@ function NodeSettingsDialog({
         </div>
       )}
 
-      {tab === "domain" && (
-        <div className="flex flex-col gap-4">
-          <Section
-            title="Домен ноды"
-            desc="Домен или IP этого сервера — это цель ACME и адрес в ссылках. Сертификат нода получает сама (по настройкам ACME панели); смена домена перевыпустит его."
-            action={
-              <Badge color={node.cert_self_signed ? "orange" : "green"}>
-                {node.cert_self_signed ? "временный сертификат" : "валидный сертификат"}
-              </Badge>
-            }
-          >
-            <TextInput
-              label="Домен или IP"
-              value={host}
-              onChange={setHost}
-              placeholder="nl1.example.com"
-            />
-          </Section>
-        </div>
-      )}
+      {tab === "domain" && <NodeDomainCard node={node} onChanged={onRefresh} />}
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
@@ -1032,6 +1088,7 @@ function NodeCard({
               setEditingRouting(false);
               onChanged();
             }}
+            onRefresh={onChanged}
           />
         ))}
       {showingLogs && (
