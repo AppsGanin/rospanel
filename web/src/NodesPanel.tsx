@@ -1025,10 +1025,10 @@ function MasterSettingsDialog({
             <div className="flex flex-col gap-4">
               <Section title="Сервер">
                 <TextInput
-                  label="Имя в конфигах"
+                  label="Название"
                   value={name}
                   onChange={setName}
-                  placeholder="напр. Мастер (пусто — без префикса)"
+                  placeholder="напр. Main (пусто — без префикса)"
                 />
                 <Select
                   label="Заглушка"
