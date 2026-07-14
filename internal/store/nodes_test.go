@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -55,6 +56,36 @@ func TestNodeCreateAndJoin(t *testing.T) {
 	byTok, err := st.LookupNodeByToken(perm)
 	if err != nil || byTok == nil || byTok.ID != n.ID {
 		t.Fatalf("lookup by perm token = (%v, %v), want node %d", byTok, err, n.ID)
+	}
+}
+
+// TestNodeNameUniqueIndex locks in the DB-level unique-name backstop (migration 0035):
+// a case-insensitive duplicate is rejected even if the app-level check is bypassed, and
+// a name is free to reuse once its node is deleted.
+func TestNodeNameUniqueIndex(t *testing.T) {
+	st := openNodeStore(t)
+	n1, err := st.CreateNode("Dup", "a.example.com", "")
+	if err != nil {
+		t.Fatalf("create 1: %v", err)
+	}
+	// A case-insensitive duplicate create is rejected at the DB level.
+	if _, err := st.CreateNode("dup", "b.example.com", ""); !errors.Is(err, ErrNodeNameTaken) {
+		t.Fatalf("duplicate create should return ErrNodeNameTaken, got %v", err)
+	}
+	// Renaming a different node onto the taken name is rejected too.
+	n2, err := st.CreateNode("Other", "o.example.com", "")
+	if err != nil {
+		t.Fatalf("create 2: %v", err)
+	}
+	if err := st.UpdateNode(n2.ID, NodeEdit{Name: "DUP", Host: "o.example.com"}); !errors.Is(err, ErrNodeNameTaken) {
+		t.Fatalf("rename collision should return ErrNodeNameTaken, got %v", err)
+	}
+	// After deleting the original, the name is free again (partial index over live rows).
+	if err := st.DeleteNode(n1.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := st.CreateNode("Dup", "a2.example.com", ""); err != nil {
+		t.Fatalf("name should be reusable after delete: %v", err)
 	}
 }
 

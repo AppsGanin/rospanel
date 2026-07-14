@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -29,6 +31,70 @@ func nodeTestManager(t *testing.T) *Manager {
 		opts:    xray.Options{PanelDest: "127.0.0.1:8080"},
 		tz:      time.Local,
 		applied: map[int64]struct{}{},
+	}
+}
+
+// TestRoutingPropagatesMasterAndNode is the end-to-end routing check: the master's
+// routing goes into the master's Xray config, a node's OWN routing goes into the exact
+// JSON the panel pushes to that node (NodeDesiredState), and neither inherits the
+// other's rule. This is the "прокидывает роут на мастере и нодах" guarantee.
+func TestRoutingPropagatesMasterAndNode(t *testing.T) {
+	m := nodeTestManager(t)
+	const masterMark = "master-route-marker.example"
+	const nodeMark = "node-route-marker.example"
+
+	// Master routing: block masterMark. Persist it as the panel's global routing.
+	if err := m.store.SetRoutingConfig(model.RoutingConfig{BlockDomains: []string{masterMark}}); err != nil {
+		t.Fatalf("set master routing: %v", err)
+	}
+
+	// A node with its OWN, different routing: block nodeMark.
+	n, err := m.store.CreateNode("route-node", "nl.example.com", "")
+	if err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	yes := true
+	nodeRC := model.RoutingConfig{BlockDomains: []string{nodeMark}}
+	if err := m.store.UpdateNode(n.ID, store.NodeEdit{
+		Name: n.Name, Host: n.Host, VLESS: &yes, Routing: &nodeRC,
+	}); err != nil {
+		t.Fatalf("set node routing: %v", err)
+	}
+	n2, _ := m.store.GetNode(n.ID)
+
+	set, _ := m.store.GetSettings()
+	// The bare test store has no cert on disk; the master generator needs cert paths
+	// set (the node path uses sentinels internally). Only the paths matter here.
+	set.CertPath, set.KeyPath = "/tmp/cert.pem", "/tmp/key.pem"
+	users, _ := m.store.WorkingUsers(time.Now().Unix())
+
+	// Master config = what the panel's own Xray runs.
+	masterCfg, err := xray.Generate(set, users, m.opts, nil)
+	if err != nil {
+		t.Fatalf("generate master config: %v", err)
+	}
+	mj, _ := json.Marshal(masterCfg)
+
+	// Node config = exactly the JSON the panel pushes to that node.
+	state, err := m.NodeDesiredState(n2)
+	if err != nil {
+		t.Fatalf("node desired state: %v", err)
+	}
+	nj := state.XrayConfig
+
+	// Master carries its OWN route and NOT the node's.
+	if !bytes.Contains(mj, []byte(masterMark)) {
+		t.Fatal("master routing rule missing from the master's config")
+	}
+	if bytes.Contains(mj, []byte(nodeMark)) {
+		t.Fatal("a node's route leaked into the master config")
+	}
+	// Node carries its OWN route and does NOT inherit the master's.
+	if !bytes.Contains(nj, []byte(nodeMark)) {
+		t.Fatal("node routing rule missing from the config the panel pushes to the node")
+	}
+	if bytes.Contains(nj, []byte(masterMark)) {
+		t.Fatal("the master's route leaked into the node config (a node must not inherit master routing)")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -491,7 +492,11 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.store.CreateNode(name, host, decoyTemplate)
+	n, err := m.store.CreateNode(name, host, decoyTemplate)
+	if errors.Is(err, store.ErrNodeNameTaken) {
+		return nil, &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+	}
+	return n, err
 }
 
 // UpdateNode edits a node and wakes it so config/link changes apply promptly.
@@ -515,6 +520,9 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 		}
 	}
 	if err := m.store.UpdateNode(id, e); err != nil {
+		if errors.Is(err, store.ErrNodeNameTaken) {
+			return &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+		}
 		return err
 	}
 	// Re-resolve this node's own lane proxies now (mirrors the master's

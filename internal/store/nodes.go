@@ -3,12 +3,23 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
+
+// ErrNodeNameTaken is returned when a node write violates the live-node name unique
+// index (the app-level NodeNameTaken check lost a race). The manager maps it to a
+// user-facing validation error.
+var ErrNodeNameTaken = errors.New("node name already in use")
+
+// isNameConflict reports whether err is the unique-name index violation (0035).
+func isNameConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "idx_nodes_name_live")
+}
 
 // nodeTokenPrefix marks a raw node bearer/join token, so a leaked one is
 // recognizably a RosPanel node credential (and greppable in logs).
@@ -145,6 +156,9 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 		decoyTemplate, joinHash, exp, now.Unix(),
 	)
 	if err != nil {
+		if isNameConflict(err) {
+			return nil, ErrNodeNameTaken
+		}
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
@@ -373,6 +387,9 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
 		id,
 	)
+	if isNameConflict(err) {
+		return ErrNodeNameTaken
+	}
 	return err
 }
 
