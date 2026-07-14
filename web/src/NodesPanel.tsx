@@ -161,14 +161,28 @@ function fmtSeen(unix: number): string {
   });
 }
 
-// StatusBadge shows a node's connectivity. The local server (node 0) is always
-// "this server"; a remote node is online/offline by its last sync, or "not joined"
-// until the install command has run.
-function StatusBadge({ node }: { node: NodeView }) {
-  if (node.is_local) return <Badge color="brand">мастер</Badge>;
-  if (!node.joined) return <Badge color="gray">не подключена</Badge>;
-  if (node.online) return <Badge color="green">онлайн</Badge>;
-  return <Badge color="red">офлайн</Badge>;
+// statusDot is the colour of the small connectivity dot that leads each server row:
+// green when up, red when a joined+enabled node is offline, grey when disabled or not
+// yet joined.
+function statusDot(node: NodeView): string {
+  if (node.is_local || (node.enabled && node.online)) return "bg-emerald-500";
+  if (!node.is_local && node.enabled && node.joined && !node.online) return "bg-red-500";
+  return "bg-gray-400";
+}
+
+// StatusChip is the small state label next to a server's name. Online is left to the
+// green dot (no chip) to keep the row quiet; the states that need words get an xs badge.
+function StatusChip({ node }: { node: NodeView }) {
+  if (node.is_local) return <Badge color="brand" size="xs">мастер</Badge>;
+  if (!node.enabled) return <Badge color="gray" size="xs">выключена</Badge>;
+  if (!node.joined) return <Badge color="gray" size="xs">не подключена</Badge>;
+  if (!node.online) return <Badge color="red" size="xs">офлайн</Badge>;
+  return null; // online → the green dot already says so
+}
+
+// Sep is the muted middot between inline meta values.
+function Sep() {
+  return <span className="text-gray-300">·</span>;
 }
 
 // InstallCommandModal shows the one-line install command exactly once after a node
@@ -1163,73 +1177,73 @@ function NodeCard({
   };
 
   return (
-    <Card className="p-4">
+    <div className={cn("px-4 py-3.5", !node.enabled && !node.is_local && "opacity-55")}>
       {confirmNode}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDot(node))} />
             <span className="truncate font-semibold text-ink">{node.name}</span>
-            <StatusBadge node={node} />
-            {!node.enabled && !node.is_local && <Badge color="gray">выключена</Badge>}
+            <StatusChip node={node} />
+            <span className="truncate font-mono text-sm text-ink-muted">{node.host}</span>
           </div>
-          <div className="mt-0.5 truncate text-sm text-ink-muted">{node.host}</div>
-        </div>
-        {!node.is_local && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-ink-muted">включена</span>
-            <Switch checked={node.enabled} onChange={toggleEnabled} />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-        <Meta label="Трафик сегодня" value={fmtBytes(node.traffic_up + node.traffic_down)} />
-        {!node.is_local && <Meta label="Последний контакт" value={fmtSeen(node.last_seen)} />}
-        <Meta
-          label="Xray"
-          value={
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
+            <span>{fmtBytes(node.traffic_up + node.traffic_down)} сегодня</span>
+            {!node.is_local && (
+              <>
+                <Sep />
+                <span>{fmtSeen(node.last_seen)}</span>
+              </>
+            )}
+            <Sep />
             <span className={node.version_skew ? "text-amber-600" : undefined}>
-              {node.xray_version || "—"}
+              Xray {node.xray_version || "—"}
               {node.version_skew ? " ⚠" : ""}
             </span>
-          }
-        />
-        {!node.is_local && <Meta label="Агент" value={node.node_version || "—"} />}
-      </div>
+            {!node.is_local && (
+              <>
+                <Sep />
+                <span>агент {node.node_version || "—"}</span>
+              </>
+            )}
+          </div>
+        </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
-          Настройки
-        </Button>
-        {!node.is_local && (
-          <>
-            <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
-              Логи
-            </Button>
-            <Dropdown
-              align="end"
-              width={210}
-              trigger={
-                <span className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-gray-50">
-                  Управление
-                  <IconChevron className="h-3.5 w-3.5" />
-                </span>
-              }
-            >
-              <DropdownItem onClick={doUpdate}>
-                Обновить{node.version_skew ? " (новая версия)" : ""}
-              </DropdownItem>
-              <DropdownItem onClick={() => setReconnecting(true)}>
-                Переустановить
-              </DropdownItem>
-              <DropdownItem onClick={regen}>Новый токен</DropdownItem>
-              <DropdownDivider />
-              <DropdownItem color="red" onClick={remove}>
-                Удалить
-              </DropdownItem>
-            </Dropdown>
-          </>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {!node.is_local && <Switch checked={node.enabled} onChange={toggleEnabled} />}
+          <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
+            Настройки
+          </Button>
+          {!node.is_local && (
+            <>
+              <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
+                Логи
+              </Button>
+              <Dropdown
+                align="end"
+                width={210}
+                trigger={
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-gray-50">
+                    Управление
+                    <IconChevron className="h-3.5 w-3.5" />
+                  </span>
+                }
+              >
+                <DropdownItem onClick={doUpdate}>
+                  Обновить{node.version_skew ? " (новая версия)" : ""}
+                </DropdownItem>
+                <DropdownItem onClick={() => setReconnecting(true)}>
+                  Переустановить
+                </DropdownItem>
+                <DropdownItem onClick={regen}>Новый токен</DropdownItem>
+                <DropdownDivider />
+                <DropdownItem color="red" onClick={remove}>
+                  Удалить
+                </DropdownItem>
+              </Dropdown>
+            </>
+          )}
+        </div>
       </div>
       {reconnecting && (
         <ReconnectDialog
@@ -1262,7 +1276,7 @@ function NodeCard({
       {showingLogs && (
         <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -1364,15 +1378,6 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
   );
 }
 
-function Meta({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-xs text-ink-muted">{label}</div>
-      <div className="truncate text-ink">{value}</div>
-    </div>
-  );
-}
-
 export function NodesPanel() {
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
   const [decoys, setDecoys] = useState<string[]>([]);
@@ -1426,16 +1431,16 @@ export function NodesPanel() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {anyStale && (
+          {remoteCount > 0 && (
             <Button variant="light" color="gray" onClick={updateAll}>
-              Обновить все ноды
+              Обновить все ноды{anyStale ? " ⚠" : ""}
             </Button>
           )}
           <Button onClick={() => setAdding(true)}>Добавить ноду</Button>
         </div>
       </div>
 
-      <div className="space-y-3">
+      <Card className="divide-y divide-gray-100">
         {nodes.map((n) => (
           <NodeCard
             key={n.id}
@@ -1446,7 +1451,7 @@ export function NodesPanel() {
             onRegen={setInstallCmd}
           />
         ))}
-      </div>
+      </Card>
 
       {adding && (
         <AddNodeDialog
