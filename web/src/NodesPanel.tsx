@@ -863,6 +863,10 @@ function MasterSettingsDialog({
   onRefresh: () => void;
 }) {
   const { applying, apply } = useXrayApply();
+  // "Основное" (name + decoy) doesn't touch the Xray config, so it saves without the
+  // xray-restart wait that `apply` blocks on — otherwise it hangs polling for a
+  // restart that never comes.
+  const [savingGeneral, setSavingGeneral] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState(node.master_label ?? "");
   const [decoy, setDecoy] = useState(node.decoy_template);
@@ -958,14 +962,20 @@ function MasterSettingsDialog({
   // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
   // updates the background list. These map to the panel's global settings behind the
   // master's card, so they stay as separate endpoints.
-  const saveGeneral = () =>
-    apply(async () => {
+  const saveGeneral = async () => {
+    setSavingGeneral(true);
+    try {
       await setMasterName(name.trim());
       await saveDecoy(decoy);
       setGenBase({ name, decoy });
       notifySuccess("Основное сохранено");
       onRefresh();
-    });
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSavingGeneral(false);
+    }
+  };
 
   const saveRoutingTab = () =>
     apply(async () => {
@@ -1031,7 +1041,7 @@ function MasterSettingsDialog({
                   setDecoy(genBase.decoy);
                 }}
                 dirty={genDirty}
-                busy={applying}
+                busy={savingGeneral}
               />
             </div>
           )}
