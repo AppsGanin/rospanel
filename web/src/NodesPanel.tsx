@@ -1023,18 +1023,13 @@ function MasterSettingsDialog({
 
           {tab === "general" && (
             <div className="flex flex-col gap-4">
-              <Section title="Сервер" desc="Имя в конфигах и сайт-заглушка мастера.">
-                <div>
-                  <TextInput
-                    label="Имя в конфигах"
-                    value={name}
-                    onChange={setName}
-                    placeholder="напр. Мастер (пусто — без префикса)"
-                  />
-                  <p className="mt-1 text-xs text-ink-muted">
-                    Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
-                  </p>
-                </div>
+              <Section title="Сервер">
+                <TextInput
+                  label="Имя в конфигах"
+                  value={name}
+                  onChange={setName}
+                  placeholder="напр. Мастер (пусто — без префикса)"
+                />
                 <Select
                   label="Заглушка"
                   value={decoy}
