@@ -110,6 +110,25 @@ function DialogTabs({
   );
 }
 
+// TabSaveBar is the inline save row for the "form" tabs (Основное / Роутинг / DNS)
+// of the server dialogs, so each tab commits on its own — exactly like the
+// Подключения / Geo / Домен tabs already do, staying open after save. The note spells
+// out that edits are staged: nothing applies until this button is pressed.
+function TabSaveBar({ onSave, busy }: { onSave: () => void; busy: boolean }) {
+  return (
+    <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-ink-muted">
+        Без сохранения изменения не применятся.
+      </p>
+      <div className="flex justify-end">
+        <Button onClick={onSave} loading={busy}>
+          Сохранить
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function fmtSeen(unix: number): string {
   if (!unix) return "ещё не подключалась";
   const ago = Math.floor(Date.now() / 1000) - unix;
@@ -545,14 +564,12 @@ function NodeSettingsDialog({
   decoys,
   geo,
   onClose,
-  onSaved,
   onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
   onClose: () => void;
-  onSaved: () => void;
   onRefresh: () => void;
 }) {
   const [name, setName] = useState(node.name);
@@ -578,7 +595,11 @@ function NodeSettingsDialog({
     ? { label: "включён", color: "green" }
     : { label: "выключен", color: "gray" };
 
-  const save = async () => {
+  // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
+  // updates the background list. The "Основное" tab persists name/decoy; the node's
+  // routing endpoint carries routing + egress + DNS together, so the Роутинг and DNS
+  // tabs share one save that commits the current state of both.
+  const saveGeneral = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
@@ -592,7 +613,19 @@ function NodeSettingsDialog({
         hysteria_enabled: node.hysteria_enabled,
         reality_enabled: node.reality_enabled,
       });
-      // Routing + egress in one call — always the node's OWN (no inherit toggle).
+      notifySuccess("Основное сохранено");
+      onRefresh();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveRoutingDns = async () => {
+    setSaving(true);
+    try {
+      // Routing + egress + DNS in one call — always the node's OWN (no inherit toggle).
       // An empty routing config just means "mostly direct"; empty DNS ⇒ default resolver.
       await setNodeRouting(
         node.id,
@@ -602,10 +635,11 @@ function NodeSettingsDialog({
         r.operaEnabled,
         r.operaCountry,
       );
-      notifySuccess("Настройки ноды сохранены");
-      onSaved();
+      notifySuccess("Сохранено");
+      onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
+    } finally {
       setSaving(false);
     }
   };
@@ -636,6 +670,7 @@ function NodeSettingsDialog({
               data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
             />
           </Section>
+          <TabSaveBar onSave={saveGeneral} busy={saving} />
         </div>
       )}
 
@@ -669,13 +704,17 @@ function NodeSettingsDialog({
             applying={saving}
             liveStatus={false}
           />
+          <TabSaveBar onSave={saveRoutingDns} busy={saving} />
         </div>
       )}
 
       {tab === "dns" && (
-        <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
-          <DnsEditor value={dns} onChange={setDns} />
-        </Section>
+        <div className="flex flex-col gap-4">
+          <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
+            <DnsEditor value={dns} onChange={setDns} />
+          </Section>
+          <TabSaveBar onSave={saveRoutingDns} busy={saving} />
+        </div>
       )}
 
       {tab === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
@@ -687,19 +726,6 @@ function NodeSettingsDialog({
           redirectOnSuccess={false}
           onChanged={onRefresh}
         />
-      )}
-
-      {/* The footer Save persists name/decoy (Основное) and routing/DNS (Роутинг).
-          The other tabs have their own save action, so it's hidden there. */}
-      {(tab === "general" || tab === "routing" || tab === "dns") && (
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
-            Отмена
-          </Button>
-          <Button onClick={save} loading={saving}>
-            Сохранить
-          </Button>
-        </div>
       )}
     </Modal>
   );
@@ -715,14 +741,12 @@ function MasterSettingsDialog({
   decoys,
   geo,
   onClose,
-  onSaved,
   onRefresh,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
   onClose: () => void;
-  onSaved: () => void;
   onRefresh: () => void;
 }) {
   const { applying, apply } = useXrayApply();
@@ -800,15 +824,30 @@ function MasterSettingsDialog({
     "",
   ) as StatusBadge;
 
-  const save = () =>
+  // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
+  // updates the background list. These map to the panel's global settings behind the
+  // master's card, so they stay as separate endpoints.
+  const saveGeneral = () =>
     apply(async () => {
       await setMasterName(name.trim());
       await saveDecoy(decoy);
-      await setXrayDNS(dns);
+      notifySuccess("Основное сохранено");
+      onRefresh();
+    });
+
+  const saveRoutingTab = () =>
+    apply(async () => {
       // Routing + WARP/Opera together (one reconcile).
       await saveRouting(r.effective(), r.warpEnabled, r.operaEnabled, r.operaCountry);
-      notifySuccess("Настройки мастера сохранены");
-      onSaved();
+      notifySuccess("Роутинг сохранён");
+      onRefresh();
+    });
+
+  const saveDnsTab = () =>
+    apply(async () => {
+      await setXrayDNS(dns);
+      notifySuccess("DNS сохранён");
+      onRefresh();
     });
 
   return (
@@ -851,6 +890,7 @@ function MasterSettingsDialog({
                   data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
                 />
               </Section>
+              <TabSaveBar onSave={saveGeneral} busy={applying} />
             </div>
           )}
 
@@ -878,13 +918,17 @@ function MasterSettingsDialog({
                 geoip={geo.geoip}
                 applying={applying}
               />
+              <TabSaveBar onSave={saveRoutingTab} busy={applying} />
             </div>
           )}
 
           {tab === "dns" && (
-            <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
-              <DnsEditor value={dns} onChange={setDns} />
-            </Section>
+            <div className="flex flex-col gap-4">
+              <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
+                <DnsEditor value={dns} onChange={setDns} />
+              </Section>
+              <TabSaveBar onSave={saveDnsTab} busy={applying} />
+            </div>
           )}
 
           {tab === "geo" && (
@@ -900,19 +944,6 @@ function MasterSettingsDialog({
           {/* Domain / TLS — its own load + "сменить домен" button (page redirects
               on success), independent of this dialog's Save. */}
           {tab === "domain" && <TLSPanel />}
-
-          {/* Footer Save persists name/decoy (Основное) and routing/DNS (Роутинг);
-              the other tabs have their own save, so it's hidden there. */}
-          {(tab === "general" || tab === "routing" || tab === "dns") && (
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
-                Отмена
-              </Button>
-              <Button onClick={save} loading={applying}>
-                Сохранить
-              </Button>
-            </div>
-          )}
         </>
       )}
       <ApplyingModal open={applying} />
@@ -1079,10 +1110,6 @@ function NodeCard({
             decoys={decoys}
             geo={geo}
             onClose={() => setEditingRouting(false)}
-            onSaved={() => {
-              setEditingRouting(false);
-              onChanged();
-            }}
             onRefresh={onChanged}
           />
         ) : (
@@ -1091,10 +1118,6 @@ function NodeCard({
             decoys={decoys}
             geo={geo}
             onClose={() => setEditingRouting(false)}
-            onSaved={() => {
-              setEditingRouting(false);
-              onChanged();
-            }}
             onRefresh={onChanged}
           />
         ))}
