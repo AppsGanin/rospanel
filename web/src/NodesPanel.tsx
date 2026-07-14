@@ -26,6 +26,7 @@ import {
   type RoutingConfig,
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
+import { DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./EgressStatus";
 import { fmtBytes } from "./format";
 import { DECOY_LABELS } from "./GeneralSettings";
@@ -37,6 +38,7 @@ import {
   hydrateRouting,
   laneSources,
   RoutingEditor,
+  Section,
   type LaneSource,
   type StatusBadge,
 } from "./RoutingEditor";
@@ -47,13 +49,16 @@ import {
   CenterLoader,
   cn,
   Code,
+  Dropdown,
+  DropdownDivider,
+  DropdownItem,
+  IconChevron,
   Modal,
   PasswordInput,
   Select,
   Switch,
   Textarea,
   TextInput,
-  ToggleRow,
   useConfirm,
 } from "./ui";
 
@@ -490,16 +495,16 @@ function NodeSettingsDialog({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(node.name);
+  const [host, setHost] = useState(node.host);
   const [decoy, setDecoy] = useState(node.decoy_template);
-  // Protocol toggles show the effective value; toggling one sets an explicit
-  // override, untouched ones keep inheriting the master (see save).
+  // Each node's protocols are its OWN (no inheritance from the master). A fresh node
+  // starts with everything off; the operator turns on what this node should serve.
   const [proto, setProto] = useState({
     vless: node.vless_enabled,
     trojan: node.trojan_enabled,
     hysteria: node.hysteria_enabled,
     reality: node.reality_enabled,
   });
-  const [protoTouched, setProtoTouched] = useState<Record<string, boolean>>({});
   const [routingOwn, setRoutingOwn] = useState(node.routing != null);
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
@@ -512,14 +517,8 @@ function NodeSettingsDialog({
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
 
-  const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) => {
+  const toggleProto = (k: "vless" | "trojan" | "hysteria" | "reality", v: boolean) =>
     setProto((p) => ({ ...p, [k]: v }));
-    setProtoTouched((t) => ({ ...t, [k]: true }));
-  };
-  // A touched protocol becomes an explicit override; an untouched one keeps its
-  // current override state (null = inherit the master).
-  const protoValue = (k: "vless" | "trojan" | "hysteria" | "reality") =>
-    protoTouched[k] ? proto[k] : overrideVal(node, k);
 
   // Status badges: WARP registration is known from the node's report; Opera runs
   // remotely, so the panel only shows enabled/disabled.
@@ -533,17 +532,17 @@ function NodeSettingsDialog({
     : { label: "выключен", color: "gray" };
 
   const save = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !host.trim()) return;
     setSaving(true);
     try {
       await updateNode(node.id, {
         name: name.trim(),
-        host: node.host,
+        host: host.trim(),
         decoy_template: decoy,
-        vless_enabled: protoValue("vless"),
-        trojan_enabled: protoValue("trojan"),
-        hysteria_enabled: protoValue("hysteria"),
-        reality_enabled: protoValue("reality"),
+        vless_enabled: proto.vless,
+        trojan_enabled: proto.trojan,
+        hysteria_enabled: proto.hysteria,
+        reality_enabled: proto.reality,
       });
       // Routing + egress go in one call. When the node inherits the panel's routing,
       // egress is forced off too (lanes/WARP/Opera need the node's own rules to route
@@ -571,49 +570,46 @@ function NodeSettingsDialog({
         onChange={setTab}
         tabs={[
           { value: "general", label: "Основное" },
-          { value: "routing", label: "Роутинг и выходы" },
-          { value: "dns", label: "DNS" },
+          { value: "routing", label: "Роутинг" },
+          { value: "domain", label: "Домен" },
         ]}
       />
 
       {tab === "general" && (
-        <div className="space-y-4">
-          <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
-          <Select
-            label="Заглушка"
-            value={decoy}
-            onChange={setDecoy}
-            data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
-          />
+        <div className="flex flex-col gap-4">
+          <Section title="Сервер">
+            <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
+            <Select
+              label="Заглушка"
+              value={decoy}
+              onChange={setDecoy}
+              data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+            />
+          </Section>
 
-          {/* Protocols (per-node override; nil = inherit the master) */}
-          <div>
-            <p className="mb-2 text-sm font-medium text-ink">Протоколы</p>
+          <Section
+            title="Протоколы"
+            desc="Какие протоколы обслуживает эта нода. По умолчанию наследуются от мастера."
+          >
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              {protoDefs.map((p) => {
-                const val = proto[p.key];
-                const inherited = !protoTouched[p.key] && !node.overrides[p.key];
-                return (
-                  <label key={p.key} className="flex items-center gap-2 text-sm">
-                    <Switch checked={val} onChange={(v) => toggleProto(p.key, v)} />
-                    <span className="text-ink">{p.label}</span>
-                    {inherited && <span className="text-xs text-ink-muted">насл.</span>}
-                  </label>
-                );
-              })}
+              {protoDefs.map((p) => (
+                <label key={p.key} className="flex items-center gap-2 text-sm">
+                  <Switch checked={proto[p.key]} onChange={(v) => toggleProto(p.key, v)} />
+                  <span className="text-ink">{p.label}</span>
+                </label>
+              ))}
             </div>
-          </div>
+          </Section>
         </div>
       )}
 
       {tab === "routing" && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {/* Routing + egress (node's own — same editor as the master) */}
-          <ToggleRow
-            label="Свой роутинг и выходы ноды"
-            hint="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
-            checked={routingOwn}
-            onChange={setRoutingOwn}
+          <Section
+            title="Свой роутинг и выходы ноды"
+            desc="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera именно для этой ноды (независимо от мастера)."
+            action={<Switch checked={routingOwn} onChange={setRoutingOwn} />}
           />
           {routingOwn && (
             <RoutingEditor
@@ -636,27 +632,35 @@ function NodeSettingsDialog({
               liveStatus={false}
             />
           )}
+
+          <Section
+            title="Свой DNS ноды"
+            desc="Выключено — нода использует DNS панели."
+            action={<Switch checked={dnsOwn} onChange={setDnsOwn} />}
+          >
+            {dnsOwn ? <DnsEditor value={dns} onChange={setDns} /> : undefined}
+          </Section>
         </div>
       )}
 
-      {tab === "dns" && (
-        <div className="space-y-4">
-          <ToggleRow
-            label="Свой DNS ноды"
-            hint="Выключено — нода использует DNS панели."
-            checked={dnsOwn}
-            onChange={setDnsOwn}
-          />
-          {dnsOwn && (
-            <Textarea
-              label="DNS-серверы"
-              value={dns}
-              onChange={setDns}
-              rows={3}
-              placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
-              hint="По одному на строку (или через запятую): DoH URL или IP."
+      {tab === "domain" && (
+        <div className="flex flex-col gap-4">
+          <Section
+            title="Домен ноды"
+            desc="Домен или IP этого сервера — это цель ACME и адрес в ссылках. Сертификат нода получает сама (по настройкам ACME панели); смена домена перевыпустит его."
+            action={
+              <Badge color={node.cert_self_signed ? "orange" : "green"}>
+                {node.cert_self_signed ? "временный сертификат" : "валидный сертификат"}
+              </Badge>
+            }
+          >
+            <TextInput
+              label="Домен или IP"
+              value={host}
+              onChange={setHost}
+              placeholder="nl1.example.com"
             />
-          )}
+          </Section>
         </div>
       )}
 
@@ -702,7 +706,7 @@ function MasterSettingsDialog({
   const [operaAlive, setOperaAlive] = useState(false);
   const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
-  const [tab, setTab] = useState("domain");
+  const [tab, setTab] = useState("general");
   const r = useServerRouting({
     cfg: EMPTY,
     warp: node.warp_enabled,
@@ -770,71 +774,66 @@ function MasterSettingsDialog({
             value={tab}
             onChange={setTab}
             tabs={[
-              { value: "domain", label: "Домен" },
               { value: "general", label: "Основное" },
-              { value: "routing", label: "Роутинг и выходы" },
-              { value: "dns", label: "DNS" },
+              { value: "routing", label: "Роутинг" },
+              { value: "domain", label: "Домен" },
             ]}
           />
 
-          {/* Domain / TLS — its own load + "сменить домен" button (page redirects
-              on success), independent of this dialog's Save. */}
-          {tab === "domain" && <TLSPanel />}
-
           {tab === "general" && (
-            <div className="space-y-4">
-              <div>
-                <TextInput
-                  label="Имя в конфигах"
-                  value={name}
-                  onChange={setName}
-                  placeholder="напр. Мастер (пусто — без префикса)"
+            <div className="flex flex-col gap-4">
+              <Section title="Сервер" desc="Имя в конфигах и сайт-заглушка мастера.">
+                <div>
+                  <TextInput
+                    label="Имя в конфигах"
+                    value={name}
+                    onChange={setName}
+                    placeholder="напр. Мастер (пусто — без префикса)"
+                  />
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
+                  </p>
+                </div>
+                <Select
+                  label="Заглушка"
+                  value={decoy}
+                  onChange={setDecoy}
+                  data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
                 />
-                <p className="mt-1 text-xs text-ink-muted">
-                  Показывается в клиенте как «‹имя› · VLESS…». Пусто — без префикса.
-                </p>
-              </div>
-              <Select
-                label="Заглушка"
-                value={decoy}
-                onChange={setDecoy}
-                data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
-              />
+              </Section>
             </div>
           )}
 
           {tab === "routing" && (
-            <RoutingEditor
-              cfg={r.cfg}
-              onCfg={r.onCfg}
-              laneSrc={r.laneSrc}
-              setLaneSrc={r.setLaneSrc}
-              warpEnabled={r.warpEnabled}
-              setWarpEnabled={r.setWarpEnabled}
-              warpBadge={warpBadge}
-              operaEnabled={r.operaEnabled}
-              setOperaEnabled={r.setOperaEnabled}
-              operaCountry={r.operaCountry}
-              setOperaCountry={r.setOperaCountry}
-              operaBadge={operaBadge}
-              proxyCounts={proxyCounts}
-              geosite={geo.geosite}
-              geoip={geo.geoip}
-              applying={applying}
-              geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
-            />
+            <div className="flex flex-col gap-4">
+              <RoutingEditor
+                cfg={r.cfg}
+                onCfg={r.onCfg}
+                laneSrc={r.laneSrc}
+                setLaneSrc={r.setLaneSrc}
+                warpEnabled={r.warpEnabled}
+                setWarpEnabled={r.setWarpEnabled}
+                warpBadge={warpBadge}
+                operaEnabled={r.operaEnabled}
+                setOperaEnabled={r.setOperaEnabled}
+                operaCountry={r.operaCountry}
+                setOperaCountry={r.setOperaCountry}
+                operaBadge={operaBadge}
+                proxyCounts={proxyCounts}
+                geosite={geo.geosite}
+                geoip={geo.geoip}
+                applying={applying}
+                geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
+              />
+              <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
+                <DnsEditor value={dns} onChange={setDns} />
+              </Section>
+            </div>
           )}
 
-          {tab === "dns" && (
-            <Textarea
-              label="DNS-серверы"
-              value={dns}
-              onChange={setDns}
-              rows={3}
-              placeholder={"https://1.1.1.1/dns-query\n8.8.8.8"}
-              hint="По одному на строку (или через запятую): DoH URL или IP. Пусто — DNS по умолчанию."
-            />
-          )}
+          {/* Domain / TLS — its own load + "сменить домен" button (page redirects
+              on success), independent of this dialog's Save. */}
+          {tab === "domain" && <TLSPanel />}
 
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
@@ -967,29 +966,37 @@ function NodeCard({
         {!node.is_local && <Meta label="Агент" value={node.node_version || "—"} />}
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
         <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
           Настройки
         </Button>
         {!node.is_local && (
           <>
-            <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
-              Переустановить
-            </Button>
             <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
               Логи
             </Button>
-            {node.version_skew && node.online && (
-              <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
-                Обновить
-              </Button>
-            )}
-            <Button size="sm" variant="light" color="gray" onClick={regen}>
-              Новый токен
-            </Button>
-            <Button size="sm" variant="light" color="red" onClick={remove}>
-              Удалить
-            </Button>
+            <Dropdown
+              align="end"
+              width={210}
+              trigger={
+                <span className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-gray-50">
+                  Управление
+                  <IconChevron className="h-3.5 w-3.5" />
+                </span>
+              }
+            >
+              <DropdownItem onClick={doUpdate}>
+                Обновить{node.version_skew ? " (новая версия)" : ""}
+              </DropdownItem>
+              <DropdownItem onClick={() => setReconnecting(true)}>
+                Переустановить
+              </DropdownItem>
+              <DropdownItem onClick={regen}>Новый токен</DropdownItem>
+              <DropdownDivider />
+              <DropdownItem color="red" onClick={remove}>
+                Удалить
+              </DropdownItem>
+            </Dropdown>
           </>
         )}
       </div>
@@ -1093,14 +1100,6 @@ function Meta({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="truncate text-ink">{value}</div>
     </div>
   );
-}
-
-// overrideVal returns the node's current override for a protocol (null when it
-// inherits the global setting), so a patch that changes one field preserves the
-// override state of the others.
-function overrideVal(node: NodeView, key: "vless" | "trojan" | "hysteria" | "reality") {
-  if (!node.overrides[key]) return null;
-  return node[`${key}_enabled` as const] as boolean;
 }
 
 export function NodesPanel() {

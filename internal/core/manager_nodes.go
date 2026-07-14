@@ -37,11 +37,11 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.RealityShortID = n.RealityShortID
 	ns.RealityServiceName = n.RealityServiceName
 
-	// Per-node protocol overrides (nil ⇒ inherit global).
-	ns.VLESSEnabled = model.NodeProtoEnabled(n.VLESSEnabled, set.VLESSEnabled)
-	ns.TrojanEnabled = model.NodeProtoEnabled(n.TrojanEnabled, set.TrojanEnabled)
-	ns.HysteriaEnabled = model.NodeProtoEnabled(n.HysteriaEnabled, set.HysteriaEnabled)
-	ns.RealityEnabled = model.NodeProtoEnabled(n.RealityEnabled, set.RealityEnabled)
+	// A node's protocols are its OWN — no inheritance from the master. Unset ⇒ off.
+	ns.VLESSEnabled = derefBool(n.VLESSEnabled)
+	ns.TrojanEnabled = derefBool(n.TrojanEnabled)
+	ns.HysteriaEnabled = derefBool(n.HysteriaEnabled)
+	ns.RealityEnabled = derefBool(n.RealityEnabled)
 
 	// TLS hints for this node's share links come from what the node reported about
 	// its live cert — the panel can't read the remote node's disk.
@@ -70,12 +70,18 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.OperaEnabled = n.OperaEnabled
 	ns.OperaCountry = n.OperaCountry
 
-	// DNS: the node's own override, or the panel's inherited.
+	// DNS: the node's OWN (no inheritance). Unset ⇒ Xray's default resolver.
 	if n.XrayDNS != nil {
 		ns.XrayDNS = *n.XrayDNS
+	} else {
+		ns.XrayDNS = ""
 	}
 	return &ns
 }
+
+// derefBool resolves an optional per-node bool to its value, treating unset as false
+// (a node's toggles are its own — nothing is inherited from the master).
+func derefBool(b *bool) bool { return b != nil && *b }
 
 // NodeDesiredState builds the full desired state for a node: its Xray config
 // (generated panel-side from nodeSettings + the working user set), the host-level
@@ -231,11 +237,12 @@ type NodeView struct {
 	HysteriaEnabled bool   `json:"hysteria_enabled"`
 	RealityEnabled  bool   `json:"reality_enabled"`
 	DecoyTemplate   string `json:"decoy_template"`
+	// CertSelfSigned is what the node last reported about its live TLS cert: true ⇒
+	// still on the self-signed fallback (ACME not obtained yet), false ⇒ a CA cert is
+	// in place. Lets the node's Домен tab show the cert status like the master's.
+	CertSelfSigned bool `json:"cert_self_signed"`
 	TrafficUp       int64  `json:"traffic_up"`   // today, this node
 	TrafficDown     int64  `json:"traffic_down"` // today, this node
-	// Overrides expose which protocol toggles are node-specific (non-nil) vs
-	// inherited, so the UI can show an "inherited" state.
-	Overrides NodeProtoOverrides `json:"overrides"`
 	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
 	// so the per-node routing+DNS editor can prefill and show inherit vs custom. For
 	// the local server (node 0) these carry the master's own routing/DNS so the same
@@ -252,15 +259,6 @@ type NodeView struct {
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
-}
-
-// NodeProtoOverrides marks which protocol toggles a node overrides (true) vs
-// inherits from global (false).
-type NodeProtoOverrides struct {
-	VLESS    bool `json:"vless"`
-	Trojan   bool `json:"trojan"`
-	Hysteria bool `json:"hysteria"`
-	Reality  bool `json:"reality"`
 }
 
 // NodeViews returns the local server (node 0) followed by every remote node, each
@@ -324,17 +322,12 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			XrayVersion:     n.XrayVersion,
 			XrayRunning:     n.XrayRunning,
 			VersionSkew:     n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
-			VLESSEnabled:    model.NodeProtoEnabled(n.VLESSEnabled, set.VLESSEnabled),
-			TrojanEnabled:   model.NodeProtoEnabled(n.TrojanEnabled, set.TrojanEnabled),
-			HysteriaEnabled: model.NodeProtoEnabled(n.HysteriaEnabled, set.HysteriaEnabled),
-			RealityEnabled:  model.NodeProtoEnabled(n.RealityEnabled, set.RealityEnabled),
+			VLESSEnabled:    derefBool(n.VLESSEnabled),
+			TrojanEnabled:   derefBool(n.TrojanEnabled),
+			HysteriaEnabled: derefBool(n.HysteriaEnabled),
+			RealityEnabled:  derefBool(n.RealityEnabled),
 			DecoyTemplate:   n.DecoyTemplate,
-			Overrides: NodeProtoOverrides{
-				VLESS:    n.VLESSEnabled != nil,
-				Trojan:   n.TrojanEnabled != nil,
-				Hysteria: n.HysteriaEnabled != nil,
-				Reality:  n.RealityEnabled != nil,
-			},
+			CertSelfSigned:  n.CertSelfSigned,
 			Routing:        n.Routing,
 			XrayDNS:        n.XrayDNS,
 			WarpEnabled:    n.WarpEnabled,

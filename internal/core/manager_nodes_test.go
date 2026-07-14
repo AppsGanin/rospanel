@@ -45,12 +45,15 @@ func TestNodeSettingsOverrides(t *testing.T) {
 			RoutingOrder: []string{"ru", "direct"},
 		},
 	}
+	yes := true
 	no := false
 	dns := "1.1.1.1"
 	n := &model.Node{
 		Host:              "nl1.example.com",
 		RealityPrivateKey: "node-priv", RealityPublicKey: "node-pub",
-		HysteriaEnabled: &no, // override: off on this node
+		// A node's protocols are its OWN (no inheritance): explicit on/off per node.
+		VLESSEnabled: &yes, TrojanEnabled: &yes, RealityEnabled: &yes,
+		HysteriaEnabled: &no,
 		CertSelfSigned:  true,
 		CertSHA256:      "deadbeef",
 		XrayDNS:         &dns,
@@ -63,12 +66,22 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	if ns.RealityPrivateKey != "node-priv" || ns.RealityPublicKey != "node-pub" {
 		t.Fatal("REALITY identity not overridden")
 	}
-	// Inherited protocol stays on; overridden one goes off.
+	// Protocols are the node's own: its enabled ones on, its disabled one off.
 	if !ns.VLESSEnabled || !ns.TrojanEnabled || !ns.RealityEnabled {
-		t.Fatal("inherited protocols should stay enabled")
+		t.Fatal("node's own enabled protocols should be on")
 	}
 	if ns.HysteriaEnabled {
-		t.Fatal("hysteria override (off) not applied")
+		t.Fatal("node's own disabled protocol should be off")
+	}
+	// No inheritance: an unset protocol is OFF even though the master has it on.
+	bare := &model.Node{Host: "n2.example.com"}
+	nsBare := nodeSettings(set, bare)
+	if nsBare.VLESSEnabled || nsBare.TrojanEnabled || nsBare.HysteriaEnabled || nsBare.RealityEnabled {
+		t.Fatal("a node with unset protocols must be all-off (no inheritance from master)")
+	}
+	// No DNS inheritance either: unset ⇒ empty, not the master's "8.8.8.8".
+	if nsBare.XrayDNS != "" {
+		t.Fatalf("unset node DNS must be empty (no inheritance), got %q", nsBare.XrayDNS)
 	}
 	// Routing is the node's OWN (independent of the master): with no node routing,
 	// it's empty — the master's rules are NOT inherited.
@@ -112,6 +125,10 @@ func TestNodeDesiredStateHashStable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create node: %v", err)
 	}
+	// A node's protocols are its own and default off; enable one so working users
+	// actually land in its config (else adding a user changes nothing).
+	yes := true
+	n.VLESSEnabled = &yes
 
 	s1, err := m.NodeDesiredState(n)
 	if err != nil {

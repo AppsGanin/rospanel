@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import {
   Badge,
   Button,
-  Card,
+  cn,
   IconChevron,
   Select,
   SegmentedControl,
@@ -13,6 +13,52 @@ import {
   TextInput,
   ToggleRow,
 } from "./ui";
+
+// Section is the flat settings block used across the server settings dialogs: a
+// subtly-tinted bordered panel with an optional header (title + description) and a
+// right-aligned action slot (a toggle, a badge, a button). Replaces the heavier
+// shadowed Card so the blocks read as one calm settings surface inside the modal.
+export function Section({
+  title,
+  desc,
+  action,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  desc?: string;
+  action?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const hasHeader = !!(title || action);
+  return (
+    <section
+      className={cn(
+        "rounded-xl border border-gray-200/80 bg-gray-50/60 p-4",
+        className,
+      )}
+    >
+      {hasHeader && (
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3",
+            children != null && "mb-4",
+          )}
+        >
+          <div className="min-w-0">
+            {title && <p className="font-semibold text-ink">{title}</p>}
+            {desc && <p className="mt-0.5 text-sm text-ink-muted">{desc}</p>}
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
+        </div>
+      )}
+      {children != null && (
+        <div className="flex flex-col gap-4">{children}</div>
+      )}
+    </section>
+  );
+}
 
 // A small colour union shared by the status badges the parent computes.
 export type BadgeColor = "gray" | "green" | "orange" | "red";
@@ -302,7 +348,7 @@ export function RoutingEditor({
   return (
     <div className="flex flex-col gap-4">
       {/* Block */}
-      <Card className="flex flex-col gap-4 p-4">
+      <Section title="Блокировки">
         <ToggleRow
           label="Заблокировать рекламу"
           checked={cfg.block_ads}
@@ -327,18 +373,13 @@ export function RoutingEditor({
           options={without(geositeOpts, cfg.warp_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
-      </Card>
+      </Section>
 
       {/* Routing order */}
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Порядок маршрутизации</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Правила проверяются сверху вниз (блокировки — всегда первыми).
-            Последний пункт — «всё остальное»: туда уходит весь несовпавший
-            трафик.
-          </p>
-        </div>
+      <Section
+        title="Порядок маршрутизации"
+        desc="Правила проверяются сверху вниз (блокировки — всегда первыми). Последний пункт — «всё остальное»: туда уходит весь несовпавший трафик."
+      >
         <div className="flex flex-col gap-1.5">
           {cfg.routing_order.map((lane, i) => {
             const last = i === cfg.routing_order.length - 1;
@@ -378,16 +419,10 @@ export function RoutingEditor({
             );
           })}
         </div>
-      </Card>
+      </Section>
 
       {/* Direct */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Напрямую</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Эти домены/IP идут напрямую с этого сервера.
-          </p>
-        </div>
+      <Section title="Напрямую" desc="Эти домены/IP идут напрямую с этого сервера.">
         <TagsInput
           label="Домены"
           value={cfg.direct_domains}
@@ -402,26 +437,25 @@ export function RoutingEditor({
           options={geoipOpts}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* WARP */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-bold text-ink">Cloudflare WARP</p>
-              <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
-            </div>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              Включите, чтобы работали категории «Правила WARP» ниже.
-            </p>
-          </div>
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            Cloudflare WARP
+            <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
+          </span>
+        }
+        desc="Включите, чтобы работали категории «Правила WARP» ниже."
+        action={
           <Switch
             checked={warpEnabled}
             disabled={applying}
             onChange={setWarpEnabled}
           />
-        </div>
+        }
+      >
         <TagsInput
           label="Правила WARP - Домены"
           value={cfg.warp_domains}
@@ -436,27 +470,25 @@ export function RoutingEditor({
           options={without(geoipOpts, cfg.block_ips)}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* Opera VPN */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-bold text-ink">Opera VPN</p>
-              <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
-            </div>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали
-              категории «Правила Opera» ниже.
-            </p>
-          </div>
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            Opera VPN
+            <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
+          </span>
+        }
+        desc="Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали категории «Правила Opera» ниже."
+        action={
           <Switch
             checked={operaEnabled}
             disabled={applying}
             onChange={setOperaEnabled}
           />
-        </div>
+        }
+      >
         <Select
           label="Регион"
           data={OPERA_COUNTRIES}
@@ -477,18 +509,13 @@ export function RoutingEditor({
           options={without(geoipOpts, cfg.block_ips)}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* Proxy lanes */}
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Полосы прокси</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            У каждой полосы свои прокси и свои правила: например, .ru уходит
-            через один, а .com — через другой.
-          </p>
-        </div>
-
+      <Section
+        title="Полосы прокси"
+        desc="У каждой полосы свои прокси и свои правила: например, .ru уходит через один, а .com — через другой."
+      >
         {cfg.lanes.length === 0 && (
           <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-ink-muted">
             Полос пока нет.
@@ -602,18 +629,14 @@ export function RoutingEditor({
             onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
           />
         )}
-      </Card>
+      </Section>
 
       {/* Geo databases — only the master manages the panel's geo files. */}
       {geo && (
-        <Card className="flex flex-col gap-3 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-bold text-ink">Geo-базы</p>
-              <p className="mt-0.5 text-sm text-ink-muted">
-                geosite.dat / geoip.dat — категории доменов и IP для правил выше.
-              </p>
-            </div>
+        <Section
+          title="Geo-базы"
+          desc="geosite.dat / geoip.dat — категории доменов и IP для правил выше."
+          action={
             <Button
               variant="light"
               size="sm"
@@ -622,7 +645,8 @@ export function RoutingEditor({
             >
               Обновить
             </Button>
-          </div>
+          }
+        >
           <div className="flex flex-col gap-1 text-sm">
             {geo.status.map((f) => (
               <div
@@ -638,7 +662,7 @@ export function RoutingEditor({
               </div>
             ))}
           </div>
-        </Card>
+        </Section>
       )}
     </div>
   );

@@ -31,7 +31,8 @@ type Node struct {
 	RealityShortID     string `json:"-"`
 	RealityServiceName string `json:"-"`
 
-	// Protocol overrides: nil ⇒ inherit the global toggle. See NodeProtoEnabled.
+	// Per-node protocols (the node's OWN — no inheritance from the master). A stored
+	// nil is treated as off; every write sets an explicit value.
 	VLESSEnabled    *bool `json:"vless_enabled"`
 	TrojanEnabled   *bool `json:"trojan_enabled"`
 	HysteriaEnabled *bool `json:"hysteria_enabled"`
@@ -107,14 +108,4 @@ type NodeStatusUpdate struct {
 	CertSHA256     string
 	CertSelfSigned bool
 	ConfigHash     string
-}
-
-// NodeProtoEnabled resolves a per-node protocol override against the global
-// toggle: an unset override (nil) inherits, so a node added today automatically
-// picks up whatever protocols the panel serves.
-func NodeProtoEnabled(override *bool, global bool) bool {
-	if override == nil {
-		return global
-	}
-	return *override
 }

@@ -1077,15 +1077,6 @@ export const testWebhook = (id: number) =>
 
 // --- Nodes (multi-node) -----------------------------------------------------
 
-// NodeProtoOverrides marks which protocol toggles a node overrides (true) vs
-// inherits from the global settings (false).
-export interface NodeProtoOverrides {
-  vless: boolean
-  trojan: boolean
-  hysteria: boolean
-  reality: boolean
-}
-
 // NodeView is one row of the Nodes page. The local server is node 0 (is_local).
 export interface NodeView {
   id: number
@@ -1105,11 +1096,11 @@ export interface NodeView {
   hysteria_enabled: boolean
   reality_enabled: boolean
   decoy_template: string
+  cert_self_signed: boolean // true = still on the self-signed fallback (no CA cert yet)
   traffic_up: number
   traffic_down: number
-  overrides: NodeProtoOverrides
-  routing: RoutingConfig | null // node's routing override, null = inherit panel's
-  xray_dns: string | null // node's DNS override, null = inherit panel's
+  routing: RoutingConfig | null // node's own routing, null = not configured (direct)
+  xray_dns: string | null // node's own DNS, null = not configured (default resolver)
   // Per-node egress (independent of the master; all off by default). For the local
   // node (master) these carry the panel's own settings.
   warp_enabled: boolean
@@ -1134,17 +1125,17 @@ export const createNode = (name: string, host: string) =>
     body: JSON.stringify({ name, host }),
   })
 
-// NodePatch carries a node edit. Protocol fields are null to inherit the global
-// setting, or a concrete value to override it. (Per-node routing/DNS have their
+// NodePatch carries a node edit. A node's protocols are its OWN (no inheritance from
+// the master), so these are plain booleans. (Per-node routing/DNS/egress have their
 // own editor and aren't touched here, so a protocol toggle never wipes them.)
 export interface NodePatch {
   name: string
   host: string
   decoy_template: string
-  vless_enabled: boolean | null
-  trojan_enabled: boolean | null
-  hysteria_enabled: boolean | null
-  reality_enabled: boolean | null
+  vless_enabled: boolean
+  trojan_enabled: boolean
+  hysteria_enabled: boolean
+  reality_enabled: boolean
 }
 
 export const updateNode = (id: number, patch: NodePatch) =>
