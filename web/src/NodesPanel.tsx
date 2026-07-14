@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   createNode,
   deleteNode,
+  getNodeLogs,
   getSettings,
   listNodes,
   provisionNode,
@@ -557,6 +558,7 @@ function NodeCard({
   const { confirm, confirmNode } = useConfirm();
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
+  const [showingLogs, setShowingLogs] = useState(false);
 
   // A protocol toggle sets an explicit override on this node (never touches the
   // global setting). The local server's protocols are edited in Settings, so its
@@ -721,6 +723,9 @@ function NodeCard({
             <Button size="sm" variant="light" color="brand" onClick={() => setReconnecting(true)}>
               Переустановить
             </Button>
+            <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
+              Логи
+            </Button>
             {node.version_skew && node.online && (
               <Button size="sm" variant="light" color="brand" onClick={doUpdate}>
                 Обновить
@@ -758,7 +763,62 @@ function NodeCard({
           }}
         />
       )}
+      {showingLogs && (
+        <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
+      )}
     </Card>
+  );
+}
+
+// NodeLogsDialog streams a node's recent logs. It polls the panel, which asks the
+// node to include its log tail on its next sync (agent + Xray), so the view stays
+// fresh while open (with up to one sync interval of latency).
+function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void }) {
+  const [lines, setLines] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const poll = () =>
+      getNodeLogs(node.id)
+        .then((r) => {
+          if (!alive) return;
+          setLines(r.lines);
+          setLoaded(true);
+        })
+        .catch(() => {});
+    poll();
+    const t = setInterval(poll, 3000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [node.id]);
+
+  return (
+    <Modal open onClose={onClose} title={`Логи — «${node.name}»`} size="xl">
+      {!loaded ? (
+        <p className="text-sm text-ink-muted">Запрашиваем логи у ноды…</p>
+      ) : lines.length === 0 ? (
+        <p className="text-sm text-ink-muted">
+          Логи пока не получены. Нода пришлёт их при следующей синхронизации (в течение
+          минуты) — подождите.
+        </p>
+      ) : (
+        <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-900 p-3 font-mono text-xs leading-relaxed text-gray-100">
+          {lines.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all">
+              {l}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 flex justify-end">
+        <Button variant="light" color="gray" onClick={onClose}>
+          Закрыть
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

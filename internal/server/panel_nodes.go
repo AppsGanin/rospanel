@@ -193,6 +193,16 @@ func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// nodeLogs returns a node's recent log tail. Requesting it also asks the node to
+// send fresh logs on its next sync, so a UI polling this endpoint keeps refreshing.
+func (rt *Router) nodeLogs(w http.ResponseWriter, _ *http.Request, id int64) {
+	lines, at := rt.mgr.RequestNodeLogs(id)
+	if lines == nil {
+		lines = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "at": at})
+}
+
 // setNodeEnabled toggles whether a node serves traffic and appears in links.
 func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

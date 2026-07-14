@@ -268,6 +268,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/nodes", rt.createNode)
 	authedID("PATCH /api/nodes/{id}", rt.updateNode)
 	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)
+	authedID("GET /api/nodes/{id}/logs", rt.nodeLogs)
 	authedID("DELETE /api/nodes/{id}", rt.deleteNode)
 	authedID("POST /api/nodes/{id}/enabled", rt.setNodeEnabled)
 	authedID("POST /api/nodes/{id}/regen-join", rt.regenNodeJoin)

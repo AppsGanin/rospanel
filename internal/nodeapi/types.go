@@ -59,6 +59,11 @@ type SyncRequest struct {
 	// double-counting (the panel dedupes against its stored watermark).
 	ReportID int64          `json:"report_id"`
 	Traffic  []TrafficDelta `json:"traffic,omitempty"`
+
+	// Logs is the node's recent log tail (agent + Xray), sent only when the panel
+	// asked for it via SyncResponse.WantLogs — so a viewing operator sees fresh logs
+	// without every sync carrying the payload.
+	Logs []string `json:"logs,omitempty"`
 }
 
 // TrafficDelta is one user's up/down bytes on this node since the last ack.
@@ -87,6 +92,10 @@ type SyncResponse struct {
 	// Update ⇒ the operator asked this node to self-update to the latest release.
 	// The agent downloads + verifies the new binary and restarts itself.
 	Update bool `json:"update,omitempty"`
+
+	// WantLogs ⇒ an operator is viewing this node's logs; include the log tail in the
+	// next sync request.
+	WantLogs bool `json:"want_logs,omitempty"`
 }
 
 // NodeState is the full desired state for a node. XrayConfig is generated panel-

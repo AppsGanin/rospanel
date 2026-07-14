@@ -145,6 +145,9 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID i
 		if rt.mgr.TakeNodeUpdate(nodeID) {
 			resp.Update = true
 		}
+		if rt.mgr.WantNodeLogs(nodeID) {
+			resp.WantLogs = true
+		}
 		if canonical := rt.canonicalPanelURL(r); canonical != "" {
 			resp.PanelURL = canonical
 		}

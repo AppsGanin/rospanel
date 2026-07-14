@@ -469,6 +469,42 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 	return n, nil
 }
 
+// nodeLogsWantWindow is how long after an operator opens a node's logs the panel
+// keeps asking that node to include its log tail (so viewing keeps refreshing, then
+// stops on its own when the operator navigates away).
+const nodeLogsWantWindow = 30 * time.Second
+
+// RequestNodeLogs marks that an operator is viewing a node's logs and wakes it, so
+// the node includes its log tail on the next sync. Returns the currently-stored
+// tail (may be from a previous fetch) for an immediate render.
+func (m *Manager) RequestNodeLogs(id int64) ([]string, int64) {
+	m.nodeLogsMu.Lock()
+	m.nodeLogsWanted[id] = time.Now().Unix()
+	e := m.nodeLogs[id]
+	m.nodeLogsMu.Unlock()
+	m.nodes.wakeOne(id) // return the held poll promptly so the tail comes back fast
+	return e.lines, e.at
+}
+
+// WantNodeLogs reports (and is used by the sync handler to set WantLogs) whether an
+// operator is currently viewing this node's logs.
+func (m *Manager) WantNodeLogs(id int64) bool {
+	m.nodeLogsMu.Lock()
+	defer m.nodeLogsMu.Unlock()
+	last, ok := m.nodeLogsWanted[id]
+	return ok && time.Now().Unix()-last < int64(nodeLogsWantWindow/time.Second)
+}
+
+// storeNodeLogs records a node's reported log tail.
+func (m *Manager) storeNodeLogs(id int64, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	m.nodeLogsMu.Lock()
+	m.nodeLogs[id] = nodeLogEntry{lines: lines, at: time.Now().Unix()}
+	m.nodeLogsMu.Unlock()
+}
+
 // TakeNodeUpdate consumes (and clears) a node's pending self-update flag.
 func (m *Manager) TakeNodeUpdate(id int64) bool {
 	m.nodeUpdateMu.Lock()
@@ -513,6 +549,9 @@ func (m *Manager) randomDecoy() (string, error) {
 // the hold; this is the pure state transition.
 func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodeapi.SyncResponse, error) {
 	now := time.Now()
+	if len(req.Logs) > 0 {
+		m.storeNodeLogs(n.ID, req.Logs)
+	}
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
 		LastSeen:       now.Unix(),
 		NodeVersion:    req.NodeVersion,

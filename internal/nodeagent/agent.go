@@ -22,6 +22,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/hop"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
@@ -86,6 +87,8 @@ type Agent struct {
 	inflight     map[int64]*nodeapi.TrafficDelta // sent, awaiting ack
 	inflightID   int64                           // report id of inflight (0 = none)
 	reportSeq    int64                           // monotonic report-id source
+
+	logsWanted atomic.Bool // panel asked for the log tail on the next sync
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -191,6 +194,9 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		// batch (that's what AckReport means), so clearing it here avoids re-sending
 		// it and losing nothing if the process restarts for an update.
 		a.ackReport(resp.AckReport)
+		if resp.WantLogs {
+			a.logsWanted.Store(true) // include the log tail in the next sync request
+		}
 		if resp.Update {
 			if a.selfUpdate() {
 				return // binary swapped; exit so systemd restarts the new one
@@ -274,6 +280,11 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	rid := a.inflightID
 	a.statsMu.Unlock()
 
+	var logs []string
+	if a.logsWanted.Swap(false) {
+		logs = a.logTail()
+	}
+
 	return nodeapi.SyncRequest{
 		ConfigHash:     hash,
 		NodeVersion:    version.Version,
@@ -283,7 +294,19 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		CertSelfSigned: selfSigned,
 		ReportID:       rid,
 		Traffic:        traffic,
+		Logs:           logs,
 	}
+}
+
+// logTail returns the node's recent log lines: the agent's own log ring (its slog
+// output is teed into logbuf.Default by main) plus the Xray process log tail.
+func (a *Agent) logTail() []string {
+	out := append([]string(nil), logbuf.Default.Tail()...)
+	if xl := a.sup.LogTail(); len(xl) > 0 {
+		out = append(out, "--- Xray ---")
+		out = append(out, xl...)
+	}
+	return out
 }
 
 // certStatus returns the current cert's SHA-256 fingerprint and whether it is

@@ -1167,6 +1167,11 @@ export const updateNodeVersion = (id: number) =>
 export const updateAllNodes = () =>
   api<{ nodes: number }>('api/nodes/update-all', { method: 'POST' })
 
+// getNodeLogs returns a node's recent log tail; polling it also asks the node to
+// send fresh logs on its next sync.
+export const getNodeLogs = (id: number) =>
+  api<{ lines: string[]; at: number }>(`api/nodes/${id}/logs`)
+
 // setNodeRouting saves a node's routing + DNS override. null = inherit the panel's.
 export const setNodeRouting = (
   id: number,

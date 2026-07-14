@@ -135,6 +135,18 @@ type Manager struct {
 	// consumed (sent once) on the node's next sync.
 	nodeUpdateMu     sync.Mutex
 	nodeUpdateWanted map[int64]bool
+
+	// nodeLogs holds the most recent log tail reported by each node, plus which
+	// nodes an operator is currently viewing (so the panel asks them for logs).
+	nodeLogsMu     sync.Mutex
+	nodeLogs       map[int64]nodeLogEntry
+	nodeLogsWanted map[int64]int64 // node id → unix time the operator last asked
+}
+
+// nodeLogEntry is a node's last-reported log tail.
+type nodeLogEntry struct {
+	lines []string
+	at    int64
 }
 
 // New builds a Manager. opts carries non-DB generation parameters (e.g. the
@@ -156,6 +168,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		webhookCh:        make(chan webhookJob, webhookQueueSize),
 		nodes:            newNodeRegistry(),
 		nodeUpdateWanted: map[int64]bool{},
+		nodeLogs:         map[int64]nodeLogEntry{},
+		nodeLogsWanted:   map[int64]int64{},
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
