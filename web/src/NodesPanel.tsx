@@ -1361,8 +1361,7 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
         <p className="text-sm text-ink-muted">Запрашиваем логи у ноды…</p>
       ) : lines.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          Логи пока не получены. Нода пришлёт их при следующей синхронизации (в течение
-          минуты) — подождите.
+          Логи пока не получены. Нода пришлёт их при следующей синхронизации.
         </p>
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs leading-relaxed">
