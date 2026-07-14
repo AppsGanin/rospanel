@@ -109,6 +109,7 @@ var auditActions = map[string]auditRoute{
 	"PATCH /api/nodes/{id}":            set("Нода изменена"),
 	"POST /api/nodes/{id}/routing":     set("Нода · роутинг и DNS"),
 	"POST /api/nodes/{id}/reality":     set("Нода · REALITY"),
+	"POST /api/nodes/{id}/geo-refresh": set("Нода · обновление geo"),
 	"DELETE /api/nodes/{id}":           set("Нода удалена"),
 	"POST /api/nodes/{id}/enabled":     set("Нода вкл/выкл"),
 	"POST /api/nodes/{id}/regen-join":  set("Нода · новый токен установки"),

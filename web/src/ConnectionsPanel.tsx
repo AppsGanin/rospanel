@@ -30,18 +30,6 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-// LongField stacks the label over a wrapping monospace value — for long
-// read-only values (keys, shortIds) that would overflow a single row on mobile.
-function LongField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <code className="block break-all rounded bg-gray-50 px-2 py-1 font-mono text-xs text-ink">
-        {value}
-      </code>
-    </div>
-  );
-}
 
 const FP_OPTIONS = FINGERPRINTS.map((f) => ({
   value: f,
@@ -93,7 +81,6 @@ export function ConnectionsPanel() {
     min13: false,
     blockQuic: false,
   });
-  const [regenReality, setRegenReality] = useState(false);
   const [saved, setSaved] = useState<{
     enabled: Record<string, boolean>;
     fps: Record<string, string>;
@@ -150,7 +137,6 @@ export function ConnectionsPanel() {
     setWsPath(ws);
     setReality(r);
     setAnti(a);
-    setRegenReality(false);
     setSaved({ enabled: en, fps: fp, names: nm, hy: h, wsPath: ws, reality: r, anti: a });
   };
 
@@ -192,7 +178,6 @@ export function ConnectionsPanel() {
     hyChanged ||
     wsChanged ||
     realityChanged ||
-    regenReality ||
     antiServerChanged ||
     antiClientChanged;
   // Anything that lives in the Xray config (protocol toggles, WS path, ports,
@@ -203,7 +188,6 @@ export function ConnectionsPanel() {
     portsChanged ||
     wsChanged ||
     realityChanged ||
-    regenReality ||
     antiServerChanged;
 
   const setHyNum = (key: "port" | "start" | "end") => (v: string) =>
@@ -223,7 +207,7 @@ export function ConnectionsPanel() {
         reality_port: reality.port,
         reality_dest: reality.dests.join(","),
         reality_anti_replay: reality.antiReplay,
-        regen_reality_keys: regenReality,
+        regen_reality_keys: false,
         tls_fragment: anti.fragment,
         tls_min13: anti.min13,
         block_quic: anti.blockQuic,
@@ -243,7 +227,6 @@ export function ConnectionsPanel() {
     setWsPath(saved.wsPath);
     setReality(saved.reality);
     setAnti(saved.anti);
-    setRegenReality(false);
   };
 
   if (!loaded) return <CenterLoader />;
@@ -385,14 +368,6 @@ export function ConnectionsPanel() {
                             }))
                           }
                         />
-                        <TagsInput
-                          label="Маскировка (SNI)"
-                          value={reality.dests}
-                          onChange={(v) =>
-                            setReality((r) => ({ ...r, dests: v }))
-                          }
-                          placeholder="max.ru — добавить и Enter…"
-                        />
                         <label className="flex items-center justify-between gap-3">
                           <span className="text-sm">
                             Анти-replay
@@ -408,36 +383,10 @@ export function ConnectionsPanel() {
                             }
                           />
                         </label>
-                        <LongField
-                          label="Public key"
-                          value={status.reality_public_key}
-                        />
-                        <LongField
-                          label="Short IDs"
-                          value={status.reality_short_id}
-                        />
-                        <LongField
-                          label="gRPC service"
-                          value={status.reality_service_name}
-                        />
-                        <div>
-                          <Button
-                            size="sm"
-                            variant="light"
-                            color={regenReality ? "orange" : "gray"}
-                            onClick={() => setRegenReality((v) => !v)}
-                          >
-                            {regenReality
-                              ? "Ключи будут перегенерированы ✓"
-                              : "Перегенерировать ключи"}
-                          </Button>
-                        </div>
                         <p className="text-xs text-ink-muted">
-                          REALITY заимствует TLS реального сайта (TLS 1.3 + H2,
-                          проверяется при сохранении). Можно указать несколько
-                          SNI — первый основной (идёт в ссылки),
-                          сервер принимает все; альтернативные должны делить
-                          сертификат основного донора (быть его SAN).
+                          Домен-донор маскировки (SNI) и ключи REALITY теперь у
+                          каждого сервера свои — они на странице «Сервера», в
+                          настройках мастера и нод (там же перегенерация ключей).
                         </p>
                       </div>
                     )}

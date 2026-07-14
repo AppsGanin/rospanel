@@ -136,10 +136,12 @@ type Manager struct {
 	// nodeEnsureMu serializes first-time node-API path generation so concurrent
 	// node creates converge on one segment.
 	nodeEnsureMu sync.Mutex
-	// nodeUpdateWanted holds node IDs the operator asked to self-update; the flag is
-	// consumed (sent once) on the node's next sync.
+	// nodeUpdateWanted holds node IDs the operator asked to self-update; nodeGeoWanted
+	// holds ones asked to refresh geo now. Both are consumed (sent once) on the node's
+	// next sync, under nodeUpdateMu.
 	nodeUpdateMu     sync.Mutex
 	nodeUpdateWanted map[int64]bool
+	nodeGeoWanted    map[int64]bool
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
@@ -173,6 +175,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		webhookCh:        make(chan webhookJob, webhookQueueSize),
 		nodes:            newNodeRegistry(),
 		nodeUpdateWanted: map[int64]bool{},
+		nodeGeoWanted:    map[int64]bool{},
 		nodeLogs:         map[int64]nodeLogEntry{},
 		nodeLogsWanted:   map[int64]int64{},
 	}

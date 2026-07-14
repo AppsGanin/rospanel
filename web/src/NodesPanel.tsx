@@ -9,6 +9,7 @@ import {
   getSettings,
   listNodes,
   provisionNode,
+  refreshNodeGeo,
   regenNodeJoin,
   saveRouting,
   setDecoy as saveDecoy,
@@ -557,6 +558,39 @@ function NodeDomainCard({
   );
 }
 
+// NodeGeoCard is the node's Geo tab: the node's agent keeps geo up to date on the
+// fleet cadence (set at the master), and this lets the operator force a refresh now.
+function NodeGeoCard({ node }: { node: NodeView }) {
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      await refreshNodeGeo(node.id);
+      notifySuccess("Нода обновит geo при следующей синхронизации");
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+    setBusy(false);
+  };
+  return (
+    <Section
+      title="Geo-базы ноды"
+      desc="Нода сама скачивает и обновляет geosite/geoip локально — автоматически, по общему расписанию (настраивается у мастера, вкладка «Geo»). Здесь можно обновить сейчас."
+      action={
+        <Button variant="light" size="sm" loading={busy} onClick={refresh}>
+          Обновить сейчас
+        </Button>
+      }
+    >
+      {!node.online && (
+        <p className="text-xs text-ink-muted">
+          Нода офлайн — обновление применится, когда она снова подключится.
+        </p>
+      )}
+    </Section>
+  );
+}
+
 // KeyLine shows one read-only REALITY key value (public key / short id / service).
 function KeyLine({ label, value }: { label: string; value: string }) {
   return (
@@ -748,6 +782,7 @@ function NodeSettingsDialog({
         tabs={[
           { value: "general", label: "Основное" },
           { value: "routing", label: "Роутинг" },
+          { value: "geo", label: "Geo" },
           { value: "domain", label: "Домен" },
         ]}
       />
@@ -814,6 +849,8 @@ function NodeSettingsDialog({
           </Section>
         </div>
       )}
+
+      {tab === "geo" && <NodeGeoCard node={node} />}
 
       {tab === "domain" && <NodeDomainCard node={node} onChanged={onRefresh} />}
 

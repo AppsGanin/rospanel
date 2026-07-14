@@ -220,6 +220,15 @@ func (rt *Router) setMasterReality(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// nodeGeoRefresh asks a node to re-download its geo databases now.
+func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeGeoRefresh(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 // setNodeReality sets a node's own REALITY donor and optionally regenerates its keys.
 func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

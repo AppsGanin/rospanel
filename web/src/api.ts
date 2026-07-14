@@ -1165,6 +1165,10 @@ export const setNodeReality = (id: number, dest: string, regen: boolean) =>
     body: JSON.stringify({ dest, regen }),
   })
 
+// refreshNodeGeo asks a node to re-download its geo databases now.
+export const refreshNodeGeo = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/geo-refresh`, { method: 'POST' })
+
 export const createNode = (name: string, host: string) =>
   api<{ id: number; install_command: string }>('api/nodes', {
     method: 'POST',

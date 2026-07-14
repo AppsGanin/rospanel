@@ -291,6 +291,13 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		if resp.WantLogs {
 			a.logsWanted.Store(true) // include the log tail in the next sync request
 		}
+		if resp.RefreshGeo {
+			if err := geo.Refresh(a.geoDir); err != nil {
+				slog.Warn("node: geo refresh (on request) failed", "err", err)
+			} else if err := a.sup.Restart(); err != nil {
+				slog.Warn("node: xray restart after geo refresh failed", "err", err)
+			}
+		}
 		if resp.Update {
 			if a.selfUpdate() {
 				return // binary swapped; exit so systemd restarts the new one

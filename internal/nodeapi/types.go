@@ -102,6 +102,10 @@ type SyncResponse struct {
 	// PanelURL, when set, tells the agent the panel moved — persist and switch to it.
 	PanelURL string `json:"panel_url,omitempty"`
 
+	// RefreshGeo ⇒ the operator asked this node to re-download its geo databases now
+	// (and reload Xray to pick them up).
+	RefreshGeo bool `json:"refresh_geo,omitempty"`
+
 	// Update ⇒ the operator asked this node to self-update to the latest release.
 	// The agent downloads + verifies the new binary and restarts itself.
 	Update bool `json:"update,omitempty"`

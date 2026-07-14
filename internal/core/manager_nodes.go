@@ -683,6 +683,34 @@ func (m *Manager) TakeNodeUpdate(id int64) bool {
 	return false
 }
 
+// RequestNodeGeoRefresh flags a node to re-download its geo databases on its next
+// sync and wakes it so it happens promptly.
+func (m *Manager) RequestNodeGeoRefresh(id int64) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	m.nodeUpdateMu.Lock()
+	m.nodeGeoWanted[id] = true
+	m.nodeUpdateMu.Unlock()
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// TakeNodeGeoRefresh consumes (and clears) a node's pending geo-refresh flag.
+func (m *Manager) TakeNodeGeoRefresh(id int64) bool {
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	if m.nodeGeoWanted[id] {
+		delete(m.nodeGeoWanted, id)
+		return true
+	}
+	return false
+}
+
 // nodeTombstoneGrace is how long a deleted node's row is kept so it can still be
 // told Revoked on a late reconnect before the row is purged.
 const nodeTombstoneGrace = 7 * 24 * time.Hour
