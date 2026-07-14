@@ -10,7 +10,6 @@ import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
-  Card,
   CenterLoader,
   IconChevron,
   Select,
@@ -34,7 +33,7 @@ function LongField({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="text-sm text-ink-muted">{label}</span>
-      <code className="block break-all rounded bg-gray-50 px-2 py-1 font-mono text-xs text-ink">
+      <code className="block break-all rounded border border-gray-200 bg-white/60 px-2 py-1 font-mono text-xs text-ink">
         {value}
       </code>
     </div>
@@ -212,7 +211,10 @@ export function ConnectionsEditor({
           const isOpen = !!open[p.key];
           const on = !!enabled[p.key];
           return (
-            <Card key={p.key} className="p-0" style={{ opacity: on ? 1 : 0.6 }}>
+            <div
+              key={p.key}
+              className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60"
+            >
               <button
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
@@ -222,8 +224,9 @@ export function ConnectionsEditor({
                   <IconChevron
                     className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
                   />
-                  <span className="font-medium">{p.name}</span>
+                  <span className="font-medium text-ink">{p.name}</span>
                   <Badge color="gray">{p.port}</Badge>
+                  {!on && <Badge color="gray">выключен</Badge>}
                 </div>
                 <span onClick={(e) => e.stopPropagation()} className="flex items-center">
                   <Switch checked={on} onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))} />
@@ -361,12 +364,12 @@ export function ConnectionsEditor({
                     ))}
                 </div>
               )}
-            </Card>
+            </div>
           );
         })}
       </div>
 
-      <Card className="p-4">
+      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <h3 className="mb-1 font-bold text-ink">Анти-DPI</h3>
         <p className="mb-3 text-sm text-ink-muted">
           Меры против обнаружения и блокировки (ТСПУ). Фрагментация и блок QUIC
@@ -404,7 +407,7 @@ export function ConnectionsEditor({
             <Switch checked={anti.min13} onChange={(v) => setAnti((a) => ({ ...a, min13: v }))} />
           </label>
         </div>
-      </Card>
+      </div>
 
       {dirty && (
         <div className="flex items-center justify-end gap-2">

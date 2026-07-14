@@ -53,6 +53,9 @@ type SyncRequest struct {
 	// share links without ever seeing the node's disk. Empty sha ⇒ no cert yet.
 	CertSHA256     string `json:"cert_sha256"`
 	CertSelfSigned bool   `json:"cert_self_signed"`
+	// Cert details for the node's Домен tab: the issuer (≈ ACME provider) and expiry.
+	CertIssuer    string `json:"cert_issuer,omitempty"`
+	CertExpiresAt int64  `json:"cert_expires_at,omitempty"` // unix; 0 ⇒ unknown/no cert
 
 	// Traffic deltas accumulated since the last acked report. ReportID is monotonic
 	// per node and persisted by the agent, so a lost response is retried without

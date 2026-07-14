@@ -73,6 +73,12 @@ type Node struct {
 	XrayRunning    bool   `json:"xray_running"`
 	CertSHA256     string `json:"-"`
 	CertSelfSigned bool   `json:"-"`
+	CertIssuer     string `json:"-"` // ≈ ACME provider that signed the node's cert
+	CertExpiresAt  int64  `json:"-"` // unix; 0 ⇒ unknown
+
+	// GeoRefreshHours is the node's OWN geo auto-refresh cadence (hours; 0 ⇒ never —
+	// its own, not inherited from the master).
+	GeoRefreshHours int `json:"-"`
 	ConfigHash     string `json:"-"`
 	LastReportID   int64  `json:"-"`
 
@@ -136,5 +142,7 @@ type NodeStatusUpdate struct {
 	XrayRunning    bool
 	CertSHA256     string
 	CertSelfSigned bool
+	CertIssuer     string
+	CertExpiresAt  int64
 	ConfigHash     string
 }

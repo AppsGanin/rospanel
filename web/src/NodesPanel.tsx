@@ -16,6 +16,7 @@ import {
   refreshNodeGeo,
   regenNodeJoin,
   saveRouting,
+  setNodeGeoCadence,
   setDecoy as saveDecoy,
   setGeoCadence as saveGeoCadence,
   setMasterName,
@@ -42,6 +43,7 @@ import { TLSPanel } from "./TLSPanel";
 import {
   effectiveCfg,
   EMPTY,
+  GEO_CADENCE,
   GeoSection,
   hydrateRouting,
   laneSources,
@@ -533,9 +535,17 @@ function NodeDomainCard({
           <div className="min-w-0">
             <p className="text-sm text-ink-muted">Текущий адрес</p>
             <p className="truncate text-lg font-bold text-ink">{node.host}</p>
+            {!node.cert_self_signed && (node.cert_issuer || node.cert_expires_at > 0) && (
+              <p className="mt-1 text-sm text-ink-muted">
+                сертификат: {node.cert_issuer || "—"}
+                {node.cert_expires_at > 0
+                  ? ` · ещё ${Math.max(0, Math.floor((node.cert_expires_at * 1000 - Date.now()) / 86400000))} дн.`
+                  : ""}
+              </p>
+            )}
           </div>
           <Badge color={node.cert_self_signed ? "orange" : "green"}>
-            {node.cert_self_signed ? "временный сертификат" : "валидный сертификат"}
+            {node.cert_self_signed ? "временный" : "валидный"}
           </Badge>
         </div>
       </Section>
@@ -561,9 +571,11 @@ function NodeDomainCard({
 }
 
 // NodeGeoCard is the node's Geo tab: the node's agent keeps geo up to date on the
-// fleet cadence (set at the master), and this lets the operator force a refresh now.
-function NodeGeoCard({ node }: { node: NodeView }) {
+// node's OWN cadence (separate from the master), plus a force-refresh-now action.
+function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [cadence, setCadence] = useState(node.geo_refresh_hours);
+
   const refresh = async () => {
     setBusy(true);
     try {
@@ -574,19 +586,37 @@ function NodeGeoCard({ node }: { node: NodeView }) {
     }
     setBusy(false);
   };
+
+  const changeCadence = async (hours: number) => {
+    setCadence(hours);
+    try {
+      await setNodeGeoCadence(node.id, hours);
+      notifySuccess("Автообновление geo сохранено");
+      onChanged();
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+
   return (
     <Section
       title="Geo-базы ноды"
-      desc="Нода сама скачивает и обновляет geosite/geoip локально — автоматически, по общему расписанию (настраивается у мастера, вкладка «Geo»). Здесь можно обновить сейчас."
+      desc="Нода сама скачивает и обновляет geosite/geoip локально. Автообновление — своё расписание у этой ноды."
       action={
         <Button variant="light" size="sm" loading={busy} onClick={refresh}>
           Обновить сейчас
         </Button>
       }
     >
+      <Select
+        label="Автообновление"
+        data={GEO_CADENCE}
+        value={String(cadence)}
+        onChange={(v) => changeCadence(Number(v))}
+      />
       {!node.online && (
         <p className="text-xs text-ink-muted">
-          Нода офлайн — обновление применится, когда она снова подключится.
+          Нода офлайн — «обновить сейчас» применится, когда она снова подключится.
         </p>
       )}
     </Section>
@@ -732,18 +762,22 @@ function NodeSettingsDialog({
         </div>
       )}
 
-      {tab === "geo" && <NodeGeoCard node={node} />}
+      {tab === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
 
       {tab === "domain" && <NodeDomainCard node={node} onChanged={onRefresh} />}
 
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
-          Отмена
-        </Button>
-        <Button onClick={save} loading={saving}>
-          Сохранить
-        </Button>
-      </div>
+      {/* The footer Save persists name/decoy (Основное) and routing/DNS (Роутинг).
+          The other tabs have their own save action, so it's hidden there. */}
+      {(tab === "general" || tab === "routing") && (
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="light" color="gray" onClick={onClose} disabled={saving}>
+            Отмена
+          </Button>
+          <Button onClick={save} loading={saving}>
+            Сохранить
+          </Button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -940,14 +974,18 @@ function MasterSettingsDialog({
               on success), independent of this dialog's Save. */}
           {tab === "domain" && <TLSPanel />}
 
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
-              Отмена
-            </Button>
-            <Button onClick={save} loading={applying}>
-              Сохранить
-            </Button>
-          </div>
+          {/* Footer Save persists name/decoy (Основное) and routing/DNS (Роутинг);
+              the other tabs have their own save, so it's hidden there. */}
+          {(tab === "general" || tab === "routing") && (
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="light" color="gray" onClick={onClose} disabled={applying}>
+                Отмена
+              </Button>
+              <Button onClick={save} loading={applying}>
+                Сохранить
+              </Button>
+            </div>
+          )}
         </>
       )}
       <ApplyingModal open={applying} />

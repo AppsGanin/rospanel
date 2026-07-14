@@ -275,6 +275,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
 	authedID("POST /api/nodes/{id}/geo-refresh", rt.nodeGeoRefresh)
+	authedID("POST /api/nodes/{id}/geo-cadence", rt.nodeGeoCadence)
 	authedID("GET /api/nodes/{id}/logs", rt.nodeLogs)
 	authedID("DELETE /api/nodes/{id}", rt.deleteNode)
 	authedID("POST /api/nodes/{id}/enabled", rt.setNodeEnabled)

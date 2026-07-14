@@ -1120,6 +1120,9 @@ export interface NodeView {
   reality_enabled: boolean
   decoy_template: string
   cert_self_signed: boolean // true = still on the self-signed fallback (no CA cert yet)
+  cert_issuer: string // ≈ ACME provider that signed the cert (empty for the master)
+  cert_expires_at: number // unix; 0 = unknown
+  geo_refresh_hours: number // this server's own geo auto-refresh cadence (0 = never)
   traffic_up: number
   traffic_down: number
   routing: RoutingConfig | null // node's own routing, null = not configured (direct)
@@ -1178,6 +1181,13 @@ export const setNodeReality = (id: number, dest: string, regen: boolean) =>
 // refreshNodeGeo asks a node to re-download its geo databases now.
 export const refreshNodeGeo = (id: number) =>
   api<{ ok: boolean }>(`api/nodes/${id}/geo-refresh`, { method: 'POST' })
+
+// setNodeGeoCadence sets a node's own geo auto-refresh cadence (hours; 0 = never).
+export const setNodeGeoCadence = (id: number, refresh_hours: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/geo-cadence`, {
+    method: 'POST',
+    body: JSON.stringify({ refresh_hours }),
+  })
 
 export const createNode = (name: string, host: string) =>
   api<{ id: number; install_command: string }>('api/nodes', {

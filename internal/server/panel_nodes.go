@@ -258,6 +258,21 @@ func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int6
 	writeOK(w)
 }
 
+// nodeGeoCadence sets a node's own geo auto-refresh cadence (hours; 0 = never).
+func (rt *Router) nodeGeoCadence(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		RefreshHours int `json:"refresh_hours"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeGeoRefresh(id, req.RefreshHours); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 // setNodeReality sets a node's own REALITY donor and optionally regenerates its keys.
 func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

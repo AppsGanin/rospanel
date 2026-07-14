@@ -111,6 +111,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/{id}/reality":     set("Нода · REALITY"),
 	"POST /api/nodes/{id}/connections": set("Нода · подключения"),
 	"POST /api/nodes/{id}/geo-refresh": set("Нода · обновление geo"),
+	"POST /api/nodes/{id}/geo-cadence": set("Нода · автообновление geo"),
 	"DELETE /api/nodes/{id}":           set("Нода удалена"),
 	"POST /api/nodes/{id}/enabled":     set("Нода вкл/выкл"),
 	"POST /api/nodes/{id}/regen-join":  set("Нода · новый токен установки"),

@@ -156,7 +156,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		ConnGuardPorts:    connGuardPorts,
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
-		GeoRefreshHours:   set.GeoRefreshHours,
+		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence
 		XrayPinnedVersion: xray.PinnedVersion,
 	}
 	if ns.OperaEnabled {
@@ -268,7 +268,11 @@ type NodeView struct {
 	// CertSelfSigned is what the node last reported about its live TLS cert: true ⇒
 	// still on the self-signed fallback (ACME not obtained yet), false ⇒ a CA cert is
 	// in place. Lets the node's Домен tab show the cert status like the master's.
-	CertSelfSigned bool `json:"cert_self_signed"`
+	CertSelfSigned bool   `json:"cert_self_signed"`
+	CertIssuer     string `json:"cert_issuer"`     // ≈ ACME provider (empty for the local node)
+	CertExpiresAt  int64  `json:"cert_expires_at"` // unix; 0 ⇒ unknown
+	// GeoRefreshHours is this server's own geo auto-refresh cadence (hours; 0 ⇒ never).
+	GeoRefreshHours int `json:"geo_refresh_hours"`
 	TrafficUp       int64  `json:"traffic_up"`   // today, this node
 	TrafficDown     int64  `json:"traffic_down"` // today, this node
 	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
@@ -342,6 +346,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityPublicKey:   set.RealityPublicKey,
 		RealityShortID:     set.RealityShortID,
 		RealityServiceName: set.RealityServiceName,
+		GeoRefreshHours:    set.GeoRefreshHours,
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -368,6 +373,9 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			RealityEnabled:  derefBool(n.RealityEnabled),
 			DecoyTemplate:   n.DecoyTemplate,
 			CertSelfSigned:  n.CertSelfSigned,
+			CertIssuer:      n.CertIssuer,
+			CertExpiresAt:   n.CertExpiresAt,
+			GeoRefreshHours: n.GeoRefreshHours,
 			Routing:        n.Routing,
 			XrayDNS:        n.XrayDNS,
 			WarpEnabled:    n.WarpEnabled,
@@ -855,6 +863,23 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 	return nil
 }
 
+// SetNodeGeoRefresh sets a node's own geo auto-refresh cadence (hours; 0 ⇒ never) and
+// wakes it so the new cadence reaches its agent (via NodeMeta) promptly.
+func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	if err := m.store.SetNodeGeoRefresh(id, hours); err != nil {
+		return err
+	}
+	m.nodes.wakeOne(id)
+	return nil
+}
+
 // TakeNodeGeoRefresh consumes (and clears) a node's pending geo-refresh flag.
 func (m *Manager) TakeNodeGeoRefresh(id int64) bool {
 	m.nodeUpdateMu.Lock()
@@ -909,6 +934,8 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		XrayRunning:    req.XrayRunning,
 		CertSHA256:     req.CertSHA256,
 		CertSelfSigned: req.CertSelfSigned,
+		CertIssuer:     req.CertIssuer,
+		CertExpiresAt:  req.CertExpiresAt,
 		ConfigHash:     req.ConfigHash,
 	})
 

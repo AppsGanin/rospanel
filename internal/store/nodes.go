@@ -27,7 +27,8 @@ const nodeColumns = `id, name, host, enabled,
 	connections_config,
 	last_seen, node_version, xray_version, xray_running,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
-	join_expires_at, deleted_at`
+	join_expires_at, deleted_at,
+	cert_issuer, cert_expires_at, geo_refresh_hours`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -57,6 +58,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.LastSeen, &n.NodeVersion, &n.XrayVersion, &xrayRunning,
 		&n.CertSHA256, &certSelfSigned, &n.ConfigHash, &n.LastReportID, &n.CreatedAt,
 		&n.JoinExpiresAt, &n.DeletedAt,
+		&n.CertIssuer, &n.CertExpiresAt, &n.GeoRefreshHours,
 	); err != nil {
 		return nil, err
 	}
@@ -414,10 +416,21 @@ func (s *Store) SetNodeEnabled(id int64, enabled bool) error {
 func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
 	_, err := s.db.Exec(`
 		UPDATE nodes SET last_seen = ?, node_version = ?, xray_version = ?, xray_running = ?,
-			cert_sha256 = ?, cert_self_signed = ?, config_hash = ? WHERE id = ?`,
+			cert_sha256 = ?, cert_self_signed = ?, cert_issuer = ?, cert_expires_at = ?,
+			config_hash = ? WHERE id = ?`,
 		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
-		st.CertSHA256, boolToInt(st.CertSelfSigned), st.ConfigHash, id,
+		st.CertSHA256, boolToInt(st.CertSelfSigned), st.CertIssuer, st.CertExpiresAt,
+		st.ConfigHash, id,
 	)
+	return err
+}
+
+// SetNodeGeoRefresh persists a node's own geo auto-refresh cadence (hours; 0 ⇒ never).
+func (s *Store) SetNodeGeoRefresh(id int64, hours int) error {
+	if hours < 0 {
+		hours = 0
+	}
+	_, err := s.db.Exec(`UPDATE nodes SET geo_refresh_hours = ? WHERE id = ?`, hours, id)
 	return err
 }
 

@@ -235,7 +235,7 @@ export function GeoSection({
   return (
     <Section
       title="Geo-базы"
-      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга. Общие для всех серверов (панель раздаёт их нодам)."
+      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга."
       action={
         <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
           Обновить
@@ -262,7 +262,7 @@ export function GeoSection({
           onChange={(v) => onCadence(Number(v))}
         />
         <p className="mt-1 text-xs text-ink-muted">
-          Панель сама перекачивает geo по расписанию — и на мастере, и на нодах.
+          Панель сама перекачивает geo по расписанию.
         </p>
       </div>
     </Section>

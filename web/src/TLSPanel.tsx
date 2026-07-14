@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getTLS, setACME } from "./api";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Badge, Button, Card, Select, Skeleton, TextInput } from "./ui";
+import { Badge, Button, Select, Skeleton, TextInput } from "./ui";
 import { isValidACMETarget, isValidEmail } from "./validate";
 
 export function TLSPanel() {
@@ -38,7 +38,7 @@ export function TLSPanel() {
 
   if (!loaded) return (
     <div className="flex flex-col gap-3">
-      <Card className="p-4">
+      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <div className="flex items-center justify-between gap-3 mb-4">
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-6 w-20 rounded-full" />
@@ -48,7 +48,7 @@ export function TLSPanel() {
           <Skeleton className="h-10 w-full rounded-lg" />
           <Skeleton className="h-9 w-32 rounded-lg" />
         </div>
-      </Card>
+      </div>
     </div>
   );
 
@@ -70,7 +70,7 @@ export function TLSPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Card className="p-4">
+      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm text-ink-muted">Текущий адрес</p>
@@ -85,9 +85,9 @@ export function TLSPanel() {
           </div>
           {cert && <Badge color={valid ? "teal" : "orange"}>{certLabel}</Badge>}
         </div>
-      </Card>
+      </div>
 
-      <Card className="p-4">
+      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <div className="flex flex-col gap-3">
           <p className="font-semibold">Сменить домен</p>
           <p className="text-sm text-ink-muted">
@@ -159,7 +159,7 @@ export function TLSPanel() {
             Занимает 10–30 секунд (проверка через порт 80).
           </p>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

@@ -363,7 +363,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 	a.stateMu.Unlock()
 
-	sha, selfSigned := a.certStatus()
+	sha, selfSigned, certIssuer, certExpiresAt := a.certStatus()
 
 	a.statsMu.Lock()
 	// Nothing in flight and new traffic waiting → promote it to a fresh batch. An
@@ -393,6 +393,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		XrayRunning:    a.sup.Running(),
 		CertSHA256:     sha,
 		CertSelfSigned: selfSigned,
+		CertIssuer:     certIssuer,
+		CertExpiresAt:  certExpiresAt,
 		ReportID:       rid,
 		Traffic:        traffic,
 		Conns:          a.takeConns(),
@@ -413,17 +415,20 @@ func (a *Agent) logTail() []string {
 
 // certStatus returns the current cert's SHA-256 fingerprint and whether it is
 // self-signed (Issuer == Subject), so the panel can pin links correctly.
-func (a *Agent) certStatus() (sha string, selfSigned bool) {
+func (a *Agent) certStatus() (sha string, selfSigned bool, issuer string, expiresAt int64) {
 	sha, err := tlsutil.CertPinSHA256(a.certPath)
 	if err != nil {
-		return "", true // no cert yet → treat as untrusted
+		return "", true, "", 0 // no cert yet → treat as untrusted
 	}
 	info, err := tlsutil.ReadCertInfo(a.certPath)
 	if err != nil {
-		return sha, true
+		return sha, true, "", 0
 	}
 	selfSigned = info.Issuer == "" || info.Issuer == info.Subject
-	return sha, selfSigned
+	if !selfSigned {
+		issuer = info.Issuer
+	}
+	return sha, selfSigned, issuer, info.NotAfter.Unix()
 }
 
 // applyState brings the node's host + Xray in line with the desired state: obtain
@@ -506,9 +511,9 @@ func (a *Agent) certLoop(ctx context.Context) {
 			}
 			continue
 		}
-		beforeSHA, _ := a.certStatus()
+		beforeSHA, _, _, _ := a.certStatus()
 		a.ensureCert(meta)
-		afterSHA, selfSigned := a.certStatus()
+		afterSHA, selfSigned, _, _ := a.certStatus()
 		if afterSHA != "" && afterSHA != beforeSHA {
 			slog.Info("node: TLS cert changed — reloading Xray", "self_signed", selfSigned)
 			if err := a.sup.Restart(); err != nil {
