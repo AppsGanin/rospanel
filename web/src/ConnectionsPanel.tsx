@@ -256,8 +256,9 @@ export function ConnectionsPanel() {
           const isOpen = !!open[p.key];
           const on = !!enabled[p.key];
           return (
-            <Card key={p.key} className="p-0" style={{ opacity: on ? 1 : 0.6 }}>
-              {/* Header — click to expand; the switch toggles independently. */}
+            <Card key={p.key} className="p-0">
+              {/* Header — click to expand. Enabling/disabling a protocol moved to the
+                  server cards (мастер/ноды); here we only edit its details. */}
               <button
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
@@ -271,16 +272,8 @@ export function ConnectionsPanel() {
                   />
                   <span className="font-medium">{p.name}</span>
                   <Badge color="gray">{p.port}</Badge>
+                  {!on && <Badge color="gray">выключен</Badge>}
                 </div>
-                <span
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center"
-                >
-                  <Switch
-                    checked={on}
-                    onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))}
-                  />
-                </span>
               </button>
 
               {isOpen && (
@@ -341,8 +334,7 @@ export function ConnectionsPanel() {
                   )}
 
                   {/* Hysteria2 port/hop/interval settings live here. */}
-                  {p.key === "hysteria2" &&
-                    (on ? (
+                  {p.key === "hysteria2" && (
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                         <div className="grid grid-cols-3 gap-2">
                           <TextInput
@@ -377,15 +369,10 @@ export function ConnectionsPanel() {
                           nftables сводит его на базовый порт.
                         </p>
                       </div>
-                    ) : (
-                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        Включите HYSTERIA-UDP, чтобы настроить порты и интервал.
-                      </p>
-                    ))}
+                    )}
 
                   {/* VLESS + gRPC + REALITY settings. */}
-                  {p.key === "reality" &&
-                    (on ? (
+                  {p.key === "reality" && (
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                         <TextInput
                           label="Порт"
@@ -453,12 +440,7 @@ export function ConnectionsPanel() {
                           сертификат основного донора (быть его SAN).
                         </p>
                       </div>
-                    ) : (
-                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        Включите VLESS-GRPC-REALITY, чтобы настроить порт и
-                        маскировку.
-                      </p>
-                    ))}
+                    )}
                 </div>
               )}
             </Card>

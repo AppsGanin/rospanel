@@ -13,6 +13,7 @@ import {
   saveRouting,
   setDecoy as saveDecoy,
   setMasterName,
+  setMasterProtocols,
   setNodeEnabled,
   setNodeRouting,
   setXrayDNS,
@@ -580,14 +581,12 @@ function NodeSettingsDialog({
     hysteria: node.hysteria_enabled,
     reality: node.reality_enabled,
   });
-  const [routingOwn, setRoutingOwn] = useState(node.routing != null);
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
     warp: node.warp_enabled,
     opera: node.opera_enabled,
     country: node.opera_country,
   });
-  const [dnsOwn, setDnsOwn] = useState(node.xray_dns != null);
   const [dns, setDns] = useState(node.xray_dns ?? "");
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
@@ -619,15 +618,14 @@ function NodeSettingsDialog({
         hysteria_enabled: proto.hysteria,
         reality_enabled: proto.reality,
       });
-      // Routing + egress go in one call. When the node inherits the panel's routing,
-      // egress is forced off too (lanes/WARP/Opera need the node's own rules to route
-      // anything to them).
+      // Routing + egress in one call — always the node's OWN (no inherit toggle).
+      // An empty routing config just means "mostly direct"; empty DNS ⇒ default resolver.
       await setNodeRouting(
         node.id,
-        routingOwn ? r.effective() : null,
-        dnsOwn ? dns : null,
-        routingOwn && r.warpEnabled,
-        routingOwn && r.operaEnabled,
+        r.effective(),
+        dns.trim() ? dns : null,
+        r.warpEnabled,
+        r.operaEnabled,
         r.operaCountry,
       );
       notifySuccess("Настройки ноды сохранены");
@@ -664,7 +662,7 @@ function NodeSettingsDialog({
 
           <Section
             title="Протоколы"
-            desc="Какие протоколы обслуживает эта нода. По умолчанию наследуются от мастера."
+            desc="Какие протоколы обслуживает эта нода."
           >
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {protoDefs.map((p) => (
@@ -680,40 +678,28 @@ function NodeSettingsDialog({
 
       {tab === "routing" && (
         <div className="flex flex-col gap-4">
-          {/* Routing + egress (node's own — same editor as the master) */}
-          <Section
-            title="Свой роутинг и выходы ноды"
-            desc="Выключено — нода наследует роутинг панели и выходит напрямую. Включите, чтобы задать блокировки, полосы прокси, WARP и Opera для этой ноды."
-            action={<Switch checked={routingOwn} onChange={setRoutingOwn} />}
+          {/* Routing + egress — always the node's own (independent of the master). */}
+          <RoutingEditor
+            cfg={r.cfg}
+            onCfg={r.onCfg}
+            laneSrc={r.laneSrc}
+            setLaneSrc={r.setLaneSrc}
+            warpEnabled={r.warpEnabled}
+            setWarpEnabled={r.setWarpEnabled}
+            warpBadge={warpBadge}
+            operaEnabled={r.operaEnabled}
+            setOperaEnabled={r.setOperaEnabled}
+            operaCountry={r.operaCountry}
+            setOperaCountry={r.setOperaCountry}
+            operaBadge={operaBadge}
+            proxyCounts={{}}
+            geosite={geo.geosite}
+            geoip={geo.geoip}
+            applying={saving}
+            liveStatus={false}
           />
-          {routingOwn && (
-            <RoutingEditor
-              cfg={r.cfg}
-              onCfg={r.onCfg}
-              laneSrc={r.laneSrc}
-              setLaneSrc={r.setLaneSrc}
-              warpEnabled={r.warpEnabled}
-              setWarpEnabled={r.setWarpEnabled}
-              warpBadge={warpBadge}
-              operaEnabled={r.operaEnabled}
-              setOperaEnabled={r.setOperaEnabled}
-              operaCountry={r.operaCountry}
-              setOperaCountry={r.setOperaCountry}
-              operaBadge={operaBadge}
-              proxyCounts={{}}
-              geosite={geo.geosite}
-              geoip={geo.geoip}
-              applying={saving}
-              liveStatus={false}
-            />
-          )}
-
-          <Section
-            title="Свой DNS ноды"
-            desc="Выключено — нода использует DNS панели."
-            action={<Switch checked={dnsOwn} onChange={setDnsOwn} />}
-          >
-            {dnsOwn ? <DnsEditor value={dns} onChange={setDns} /> : undefined}
+          <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
+            <DnsEditor value={dns} onChange={setDns} />
           </Section>
         </div>
       )}
@@ -755,6 +741,14 @@ function MasterSettingsDialog({
   const [name, setName] = useState(node.master_label ?? "");
   const [decoy, setDecoy] = useState(node.decoy_template);
   const [dns, setDns] = useState(node.xray_dns ?? "");
+  // The master's protocols on/off (like a node). Connection details stay in the
+  // global Подключения settings; only the toggle lives here.
+  const [proto, setProto] = useState({
+    vless: node.vless_enabled,
+    trojan: node.trojan_enabled,
+    hysteria: node.hysteria_enabled,
+    reality: node.reality_enabled,
+  });
   // Live egress status for the badges (master's egress runs locally, so the panel
   // knows the real state — unlike a node).
   const [warpRegistered, setWarpRegistered] = useState(node.warp_registered);
@@ -812,6 +806,12 @@ function MasterSettingsDialog({
   const save = () =>
     apply(async () => {
       await setMasterName(name.trim());
+      await setMasterProtocols({
+        vless_enabled: proto.vless,
+        trojan_enabled: proto.trojan,
+        hysteria_enabled: proto.hysteria,
+        reality_enabled: proto.reality,
+      });
       await saveDecoy(decoy);
       await setXrayDNS(dns);
       // Routing + WARP/Opera together (one reconcile).
@@ -856,6 +856,23 @@ function MasterSettingsDialog({
                   onChange={setDecoy}
                   data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
                 />
+              </Section>
+
+              <Section
+                title="Протоколы"
+                desc="Какие протоколы обслуживает мастер. Порты и транспорт — во вкладке «Подключения» в настройках."
+              >
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  {protoDefs.map((p) => (
+                    <label key={p.key} className="flex items-center gap-2 text-sm">
+                      <Switch
+                        checked={proto[p.key]}
+                        onChange={(v) => setProto((s) => ({ ...s, [p.key]: v }))}
+                      />
+                      <span className="text-ink">{p.label}</span>
+                    </label>
+                  ))}
+                </div>
               </Section>
             </div>
           )}

@@ -101,16 +101,17 @@ var auditActions = map[string]auditRoute{
 
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.
-	"POST /api/nodes":                 set("Нода добавлена"),
-	"POST /api/nodes/master-name":     set("Имя мастера в конфигах"),
-	"PATCH /api/nodes/{id}":           set("Нода изменена"),
-	"POST /api/nodes/{id}/routing":    set("Нода · роутинг и DNS"),
-	"DELETE /api/nodes/{id}":          set("Нода удалена"),
-	"POST /api/nodes/{id}/enabled":    set("Нода вкл/выкл"),
-	"POST /api/nodes/{id}/regen-join": set("Нода · новый токен установки"),
-	"POST /api/nodes/{id}/update":     set("Нода · обновление"),
-	"POST /api/nodes/update-all":      set("Обновление всех нод"),
-	"POST /api/nodes/{id}/provision":  set("Нода · установка по SSH"),
+	"POST /api/nodes":                  set("Нода добавлена"),
+	"POST /api/nodes/master-name":      set("Имя мастера в конфигах"),
+	"POST /api/nodes/master-protocols": set("Протоколы мастера"),
+	"PATCH /api/nodes/{id}":            set("Нода изменена"),
+	"POST /api/nodes/{id}/routing":     set("Нода · роутинг и DNS"),
+	"DELETE /api/nodes/{id}":           set("Нода удалена"),
+	"POST /api/nodes/{id}/enabled":     set("Нода вкл/выкл"),
+	"POST /api/nodes/{id}/regen-join":  set("Нода · новый токен установки"),
+	"POST /api/nodes/{id}/update":      set("Нода · обновление"),
+	"POST /api/nodes/update-all":       set("Обновление всех нод"),
+	"POST /api/nodes/{id}/provision":   set("Нода · установка по SSH"),
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.

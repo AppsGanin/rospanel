@@ -265,6 +265,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
 	authed("GET /api/nodes", rt.listNodes)
 	authed("POST /api/nodes/master-name", rt.setMasterName)
+	authed("POST /api/nodes/master-protocols", rt.setMasterProtocols)
 	authed("POST /api/nodes", rt.createNode)
 	authedID("PATCH /api/nodes/{id}", rt.updateNode)
 	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)

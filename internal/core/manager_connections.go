@@ -423,6 +423,39 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	return nil
 }
 
+// SetMasterProtocols toggles the panel's own (master) protocols on/off. The
+// connection DETAILS (ports, transport, REALITY donor, anti-DPI) stay global and are
+// edited in the Подключения settings; only the on/off lives on the master server
+// card, so the master toggles its protocols the same way a node does.
+func (m *Manager) SetMasterProtocols(vless, trojan, hysteria, reality bool) error {
+	if reality {
+		set, err := m.store.GetSettings()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(set.RealityDest) == "" {
+			return invalid("сначала задайте домен маскировки REALITY во вкладке «Подключения»")
+		}
+	}
+	for name, en := range map[string]bool{
+		"vless": vless, "trojan": trojan, "hysteria2": hysteria, "reality": reality,
+	} {
+		if err := m.store.SetProtocolEnabled(name, en); err != nil {
+			return err
+		}
+	}
+	// Enabling REALITY for the first time needs key material (mirrors ApplyConnections).
+	if reality {
+		if set, err := m.store.GetSettings(); err == nil && set.RealityPrivateKey == "" {
+			if err := m.regenRealityKeys(); err != nil {
+				return err
+			}
+		}
+	}
+	m.TriggerReconcile()
+	return nil
+}
+
 // regenRealityKeys generates and persists a fresh REALITY keypair, shortId, and
 // gRPC service name. Existing clients must re-import their links afterwards.
 func (m *Manager) regenRealityKeys() error {

@@ -204,6 +204,25 @@ func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// setMasterProtocols toggles the panel's own protocols on/off from the master server
+// card (the connection details stay in the global Подключения settings).
+func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		VLESS    bool `json:"vless_enabled"`
+		Trojan   bool `json:"trojan_enabled"`
+		Hysteria bool `json:"hysteria_enabled"`
+		Reality  bool `json:"reality_enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterProtocols(req.VLESS, req.Trojan, req.Hysteria, req.Reality); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 // nodeLogs returns a node's recent log tail. Requesting it also asks the node to
 // send fresh logs on its next sync, so a UI polling this endpoint keeps refreshing.
 func (rt *Router) nodeLogs(w http.ResponseWriter, _ *http.Request, id int64) {

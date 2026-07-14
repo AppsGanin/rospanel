@@ -1119,6 +1119,19 @@ export const setMasterName = (name: string) =>
     body: JSON.stringify({ name }),
   })
 
+// setMasterProtocols toggles the panel's own protocols on/off (the master card).
+// Connection details stay in the global Подключения settings.
+export const setMasterProtocols = (p: {
+  vless_enabled: boolean
+  trojan_enabled: boolean
+  hysteria_enabled: boolean
+  reality_enabled: boolean
+}) =>
+  api<{ ok: boolean }>('api/nodes/master-protocols', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
+
 export const createNode = (name: string, host: string) =>
   api<{ id: number; install_command: string }>('api/nodes', {
     method: 'POST',
