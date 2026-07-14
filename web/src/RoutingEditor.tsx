@@ -207,6 +207,44 @@ export function hydrateRouting(
   };
 }
 
+// GeoSection is the geosite/geoip status + refresh block. It's the panel's own geo
+// files (used by every server's routing rules), so it lives in its own tab on the
+// master card rather than inline in the routing editor.
+export function GeoSection({
+  status,
+  onRefresh,
+  refreshing,
+}: {
+  status: GeoFile[];
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <Section
+      title="Geo-базы"
+      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга. Общие для всех серверов."
+      action={
+        <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
+          Обновить
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-1 text-sm">
+        {status.map((f) => (
+          <div key={f.name} className="flex items-center justify-between gap-2">
+            <span className="font-mono text-ink text-xs">{f.name}</span>
+            <span className="text-ink-muted text-xs">
+              {f.present
+                ? `${fmtBytes(f.size)} · обновлено ${fmtWhen(f.modified_at)}`
+                : "нет файла"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 // effectiveCfg drops each lane's non-selected source list, so what's saved and
 // compared for "dirty" never carries a stale URL/manual list the operator toggled
 // away from. Both the master and node containers call this before saving.
@@ -248,7 +286,6 @@ export function RoutingEditor({
   geoip,
   applying,
   liveStatus = true,
-  geo,
 }: {
   cfg: RoutingConfig;
   onCfg: (patch: Partial<RoutingConfig>) => void;
@@ -267,7 +304,6 @@ export function RoutingEditor({
   geoip: string[];
   applying: boolean;
   liveStatus?: boolean;
-  geo?: { status: GeoFile[]; onRefresh: () => void; refreshing: boolean };
 }) {
   const set = onCfg;
 
@@ -630,40 +666,6 @@ export function RoutingEditor({
           />
         )}
       </Section>
-
-      {/* Geo databases — only the master manages the panel's geo files. */}
-      {geo && (
-        <Section
-          title="Geo-базы"
-          desc="geosite.dat / geoip.dat — категории доменов и IP для правил выше."
-          action={
-            <Button
-              variant="light"
-              size="sm"
-              loading={geo.refreshing}
-              onClick={geo.onRefresh}
-            >
-              Обновить
-            </Button>
-          }
-        >
-          <div className="flex flex-col gap-1 text-sm">
-            {geo.status.map((f) => (
-              <div
-                key={f.name}
-                className="flex items-center justify-between gap-2"
-              >
-                <span className="font-mono text-ink text-xs">{f.name}</span>
-                <span className="text-ink-muted text-xs">
-                  {f.present
-                    ? `${fmtBytes(f.size)} · обновлено ${fmtWhen(f.modified_at)}`
-                    : "нет файла"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
     </div>
   );
 }

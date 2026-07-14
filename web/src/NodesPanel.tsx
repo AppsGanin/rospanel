@@ -36,6 +36,7 @@ import { TLSPanel } from "./TLSPanel";
 import {
   effectiveCfg,
   EMPTY,
+  GeoSection,
   hydrateRouting,
   laneSources,
   RoutingEditor,
@@ -662,7 +663,7 @@ function NodeSettingsDialog({
 
           <Section
             title="Протоколы"
-            desc="Какие протоколы обслуживает эта нода."
+            desc="Какие протоколы обслуживает эта нода. Порты и транспорт — во вкладке «Подключения» в настройках."
           >
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {protoDefs.map((p) => (
@@ -832,6 +833,7 @@ function MasterSettingsDialog({
             tabs={[
               { value: "general", label: "Основное" },
               { value: "routing", label: "Роутинг" },
+              { value: "geo", label: "Geo" },
               { value: "domain", label: "Домен" },
             ]}
           />
@@ -896,12 +898,19 @@ function MasterSettingsDialog({
                 geosite={geo.geosite}
                 geoip={geo.geoip}
                 applying={applying}
-                geo={{ status: geoStatus, onRefresh: refreshGeo, refreshing: applying }}
               />
               <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
                 <DnsEditor value={dns} onChange={setDns} />
               </Section>
             </div>
+          )}
+
+          {tab === "geo" && (
+            <GeoSection
+              status={geoStatus}
+              onRefresh={refreshGeo}
+              refreshing={applying}
+            />
           )}
 
           {/* Domain / TLS — its own load + "сменить домен" button (page redirects
