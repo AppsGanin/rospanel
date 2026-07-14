@@ -195,6 +195,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly
 	go m.reconcileLoop()
 	go m.proxyLoop()
+	go m.geoLoop() // auto-refresh geo databases on the operator's cadence
 	go m.bruteGuardLoop()
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue

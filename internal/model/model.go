@@ -472,6 +472,10 @@ type Settings struct {
 	// config labels (multi-node: "<master> · VLESS"). Empty ⇒ no prefix.
 	MasterLabel string `json:"-"`
 
+	// GeoRefreshHours is how often to auto-refresh the geo databases (hours; 0 ⇒
+	// never — manual only). Applies to the master and is pushed to nodes.
+	GeoRefreshHours int `json:"-"`
+
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 
 	// Computed per request (NOT stored). When the active cert isn't CA-trusted (a

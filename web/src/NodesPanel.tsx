@@ -12,6 +12,7 @@ import {
   regenNodeJoin,
   saveRouting,
   setDecoy as saveDecoy,
+  setGeoCadence as saveGeoCadence,
   setMasterName,
   setMasterProtocols,
   setNodeEnabled,
@@ -758,6 +759,7 @@ function MasterSettingsDialog({
   const [operaAlive, setOperaAlive] = useState(false);
   const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
+  const [geoCadence, setGeoCadence] = useState(0);
   const [tab, setTab] = useState("general");
   const r = useServerRouting({
     cfg: EMPTY,
@@ -768,7 +770,12 @@ function MasterSettingsDialog({
   const reset = r.reset;
 
   useEffect(() => {
-    getGeoStatus().then(setGeoStatus).catch(() => {});
+    getGeoStatus()
+      .then((g) => {
+        setGeoStatus(g.files);
+        setGeoCadence(g.refresh_hours);
+      })
+      .catch(() => {});
     getRouting()
       .then((info) => {
         reset(
@@ -789,9 +796,19 @@ function MasterSettingsDialog({
 
   const refreshGeo = () =>
     apply(async () => {
-      setGeoStatus(await updateGeo());
+      setGeoStatus((await updateGeo()).files);
       notifySuccess("Geo-базы обновлены");
     });
+
+  const changeGeoCadence = async (hours: number) => {
+    setGeoCadence(hours);
+    try {
+      await saveGeoCadence(hours);
+      notifySuccess("Автообновление geo сохранено");
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
 
   const warpBadge: StatusBadge = !r.warpEnabled
     ? { label: "выключен", color: "gray" }
@@ -911,6 +928,8 @@ function MasterSettingsDialog({
               status={geoStatus}
               onRefresh={refreshGeo}
               refreshing={applying}
+              cadence={geoCadence}
+              onCadence={changeGeoCadence}
             />
           )}
 

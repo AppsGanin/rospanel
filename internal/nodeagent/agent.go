@@ -136,9 +136,49 @@ func Run(ctx context.Context, dataDir string) error {
 
 	go a.statsLoop(ctx)
 	go a.certLoop(ctx) // retry ACME + reload Xray when the real cert lands
+	go a.geoLoop(ctx)  // auto-refresh geo databases on the panel-pushed cadence
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
+}
+
+// geoLoop auto-refreshes the node's geo databases on the cadence the panel pushes
+// (meta.GeoRefreshHours; 0 ⇒ off), then reloads Xray so routing rules pick up the
+// new data. Sleeps first — the agent already ensured geo exists at apply time.
+func (a *Agent) geoLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Hour):
+		}
+		meta, ok := a.currentMeta()
+		if !ok || meta.GeoRefreshHours <= 0 {
+			continue
+		}
+		if !geoStale(a.geoDir, time.Duration(meta.GeoRefreshHours)*time.Hour) {
+			continue
+		}
+		if err := geo.Refresh(a.geoDir); err != nil {
+			slog.Warn("node: geo auto-refresh failed", "err", err)
+			continue
+		}
+		slog.Info("node: geo auto-refreshed", "cadence_hours", meta.GeoRefreshHours)
+		if err := a.sup.Restart(); err != nil {
+			slog.Warn("node: xray restart after geo refresh failed", "err", err)
+		}
+	}
+}
+
+// geoStale reports whether any geo database in dir is missing or older than maxAge.
+func geoStale(dir string, maxAge time.Duration) bool {
+	cutoff := time.Now().Add(-maxAge).Unix()
+	for _, f := range geo.Status(dir) {
+		if !f.Present || f.ModifiedAt < cutoff {
+			return true
+		}
+	}
+	return false
 }
 
 func newAgent(dataDir string, ident *Identity) (*Agent, error) {

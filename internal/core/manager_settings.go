@@ -171,6 +171,74 @@ func (m *Manager) RefreshGeo() ([]geo.FileInfo, error) {
 	return geo.Status(dir), nil
 }
 
+// GeoRefreshHours returns the configured geo auto-refresh cadence (hours; 0 ⇒ off).
+func (m *Manager) GeoRefreshHours() int {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return 0
+	}
+	return set.GeoRefreshHours
+}
+
+// currentGeoRefresh reads the geo auto-refresh cadence as a duration (0 ⇒ off).
+func (m *Manager) currentGeoRefresh() time.Duration {
+	set, err := m.store.GetSettings()
+	if err != nil || set.GeoRefreshHours <= 0 {
+		return 0
+	}
+	return time.Duration(set.GeoRefreshHours) * time.Hour
+}
+
+// geoStale reports whether any geo database is missing or older than maxAge.
+func (m *Manager) geoStale(maxAge time.Duration) bool {
+	cutoff := time.Now().Add(-maxAge).Unix()
+	for _, f := range geo.Status(m.sup.AssetDir()) {
+		if !f.Present || f.ModifiedAt < cutoff {
+			return true
+		}
+	}
+	return false
+}
+
+// geoLoop auto-refreshes the geo databases when they go stale, on the operator's
+// cadence (0 ⇒ off). It re-checks hourly so a cadence change takes effect without a
+// restart and a reboot doesn't reset a long timer. Sleeps first so boot stays quiet;
+// enabling the cadence refreshes promptly via SetGeoRefresh.
+func (m *Manager) geoLoop() {
+	for {
+		time.Sleep(time.Hour)
+		d := m.currentGeoRefresh()
+		if d <= 0 || !m.geoStale(d) {
+			continue
+		}
+		if _, err := m.RefreshGeo(); err != nil {
+			logWarn("geo: auto-refresh failed", "err", err)
+		} else {
+			logInfo("geo: auto-refreshed", "cadence_hours", int(d/time.Hour))
+		}
+	}
+}
+
+// SetGeoRefresh persists the geo auto-refresh cadence (hours; 0 ⇒ never) and, if
+// enabling with geo already stale, refreshes right away instead of waiting for the
+// loop's next tick.
+func (m *Manager) SetGeoRefresh(hours int) error {
+	if hours < 0 {
+		hours = 0
+	}
+	if err := m.store.SetGeoRefresh(hours); err != nil {
+		return err
+	}
+	if d := time.Duration(hours) * time.Hour; d > 0 && m.geoStale(d) {
+		go func() {
+			if _, err := m.RefreshGeo(); err != nil {
+				logWarn("geo: refresh on enable failed", "err", err)
+			}
+		}()
+	}
+	return nil
+}
+
 // SetProxyMode persists the forward-proxy inbound (proxy mode) and reloads Xray.
 func (m *Manager) SetProxyMode(enabled bool, typ string, port int, user, pass string) error {
 	if typ != "socks" && typ != "http" {

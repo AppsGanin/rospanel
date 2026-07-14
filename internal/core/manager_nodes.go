@@ -129,6 +129,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		ConnGuardPorts:    connGuardPorts,
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
+		GeoRefreshHours:   set.GeoRefreshHours,
 		XrayPinnedVersion: xray.PinnedVersion,
 	}
 	if ns.OperaEnabled {

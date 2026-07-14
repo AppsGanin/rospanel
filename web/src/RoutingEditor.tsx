@@ -207,22 +207,35 @@ export function hydrateRouting(
   };
 }
 
-// GeoSection is the geosite/geoip status + refresh block. It's the panel's own geo
-// files (used by every server's routing rules), so it lives in its own tab on the
-// master card rather than inline in the routing editor.
+// GEO_CADENCE are the geo auto-refresh options (hours; 0 = never).
+export const GEO_CADENCE: Opt[] = [
+  { value: "0", label: "Никогда (только вручную)" },
+  { value: "24", label: "Раз в день" },
+  { value: "72", label: "Раз в 3 дня" },
+  { value: "168", label: "Раз в неделю" },
+];
+
+// GeoSection is the geosite/geoip status + manual refresh + auto-refresh cadence.
+// It's the panel's own geo files (used by every server's routing rules, and pushed to
+// nodes), so it lives in its own tab on the master card. The cadence applies to the
+// master AND every node.
 export function GeoSection({
   status,
   onRefresh,
   refreshing,
+  cadence,
+  onCadence,
 }: {
   status: GeoFile[];
   onRefresh: () => void;
   refreshing: boolean;
+  cadence: number;
+  onCadence: (hours: number) => void;
 }) {
   return (
     <Section
       title="Geo-базы"
-      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга. Общие для всех серверов."
+      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга. Общие для всех серверов (панель раздаёт их нодам)."
       action={
         <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
           Обновить
@@ -240,6 +253,17 @@ export function GeoSection({
             </span>
           </div>
         ))}
+      </div>
+      <div>
+        <Select
+          label="Автообновление"
+          data={GEO_CADENCE}
+          value={String(cadence)}
+          onChange={(v) => onCadence(Number(v))}
+        />
+        <p className="mt-1 text-xs text-ink-muted">
+          Панель сама перекачивает geo по расписанию — и на мастере, и на нодах.
+        </p>
       </div>
     </Section>
   );

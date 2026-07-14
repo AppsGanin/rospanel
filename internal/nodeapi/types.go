@@ -154,6 +154,10 @@ type NodeMeta struct {
 	OperaCountry string `json:"opera_country,omitempty"`
 	OperaPort    int    `json:"opera_port,omitempty"`
 
+	// GeoRefreshHours is how often the node should auto-refresh its geo databases
+	// (hours; 0 ⇒ never). Pushed from the panel so the fleet shares one cadence.
+	GeoRefreshHours int `json:"geo_refresh_hours,omitempty"`
+
 	// XrayPinnedVersion is the release the panel expects; the UI flags a node whose
 	// running Xray differs so version skew is visible.
 	XrayPinnedVersion string `json:"xray_pinned_version,omitempty"`

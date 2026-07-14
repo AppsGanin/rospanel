@@ -643,8 +643,21 @@ export interface GeoFile {
   modified_at: number
 }
 
-export const getGeoStatus = () => api<GeoFile[]>('api/geo')
-export const updateGeo = () => api<GeoFile[]>('api/geo/update', { method: 'POST' })
+// GeoInfo is the geo databases' status plus the auto-refresh cadence (hours; 0 = off).
+export interface GeoInfo {
+  files: GeoFile[]
+  refresh_hours: number
+}
+
+export const getGeoStatus = () => api<GeoInfo>('api/geo')
+export const updateGeo = () => api<GeoInfo>('api/geo/update', { method: 'POST' })
+
+// setGeoCadence sets how often the geo databases auto-refresh (hours; 0 = never).
+export const setGeoCadence = (refresh_hours: number) =>
+  api<{ ok: boolean }>('api/geo/cadence', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_hours }),
+  })
 
 export const getRouting = () => api<RoutingInfo>('api/routing')
 export const saveRouting = (
