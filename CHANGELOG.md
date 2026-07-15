@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/AppsGanin/rospanel/compare/v0.15.0...v1.0.0) (2026-07-15)
+
+
+### Features
+
+* multi-node fleet, payment provider registry, flexible self-registration ([6aa1b45](https://github.com/AppsGanin/rospanel/commit/6aa1b450cab5fafdabeb42717b0d117e2c8c7f77))
+
 ## [0.15.0](https://github.com/AppsGanin/rospanel/compare/v0.14.0...v0.15.0) (2026-07-13)
 
 
