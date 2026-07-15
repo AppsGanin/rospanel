@@ -339,12 +339,12 @@ func TestPlategaCreateAndWebhookRefetch(t *testing.T) {
 		if r.Header.Get("X-MerchantId") != "m" || r.Header.Get("X-Secret") != "s" {
 			t.Errorf("missing auth headers")
 		}
-		switch {
-		case r.URL.Path == "/v2/transaction/process": // no method ⇒ picker page
+		switch r.URL.Path {
+		case "/v2/transaction/process": // no method ⇒ picker page
 			_, _ = w.Write([]byte(`{"transactionId":"tx-1","url":"https://pay.platega/tx-1","status":"PENDING"}`))
-		case r.URL.Path == "/transaction/process": // method-specific
+		case "/transaction/process": // method-specific
 			_, _ = w.Write([]byte(`{"transactionId":"tx-1","redirect":"https://platega/tx-1","status":"PENDING"}`))
-		case r.URL.Path == "/transaction/tx-1":
+		case "/transaction/tx-1":
 			_, _ = w.Write([]byte(`{"status":"CONFIRMED","amount":150,"currency":"RUB"}`))
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
