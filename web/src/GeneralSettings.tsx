@@ -294,7 +294,7 @@ export function GeneralSettings() {
 
       <SettingCard
         title="Часовой пояс"
-        description="Граница суток в статистике трафика."
+        description="Граница суток в статистике/логах."
       >
         <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
       </SettingCard>
