@@ -240,6 +240,10 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
 	authedOpID("GET /api/users/{id}/events", rt.userEvents)
+	// Moderated self-registration queue (empty unless the user bot's mode is moderation).
+	authedOp("GET /api/registrations", rt.listRegistrations)
+	authedOpID("POST /api/registrations/{id}/approve", rt.approveRegistration)
+	authedOpID("POST /api/registrations/{id}/reject", rt.rejectRegistration)
 	authedOp("GET /api/events", rt.events)
 	authedOp("GET /api/events/catalog", rt.eventCatalog)
 	// Read-only: the user card lists the plans it can assign. The billing *settings*

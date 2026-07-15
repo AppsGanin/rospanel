@@ -4,6 +4,7 @@ import {
   genTelegramLink,
   getTelegram,
   getTelegramLinkStatus,
+  type RegMode,
   saveTelegram,
   testTelegramBackup,
   unlinkTelegram,
@@ -24,6 +25,7 @@ import {
   IconClose,
   PasswordInput,
   SaveBar,
+  Select,
   SettingCard,
   Switch,
   TextInput,
@@ -66,7 +68,8 @@ export function TelegramSettings() {
   const [token, setToken] = useState("");
   const [userEnabled, setUserEnabled] = useState(false);
   const [userToken, setUserToken] = useState("");
-  const [userRegEnabled, setUserRegEnabled] = useState(true);
+  const [userRegMode, setUserRegMode] = useState<RegMode>("open");
+  const [userRegCode, setUserRegCode] = useState("");
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
   const [chats, setChats] = useState<number[]>([]);
@@ -79,7 +82,8 @@ export function TelegramSettings() {
     cron: "",
     userEnabled: false,
     userToken: "",
-    userRegEnabled: true,
+    userRegMode: "open" as RegMode,
+    userRegCode: "",
     adminEvents: {} as AdminEvents,
   });
   const [linking, setLinking] = useState(false);
@@ -92,7 +96,8 @@ export function TelegramSettings() {
         setToken(t.token);
         setUserEnabled(t.user_enabled);
         setUserToken(t.user_token);
-        setUserRegEnabled(t.user_reg_enabled);
+        setUserRegMode(t.user_reg_mode || "open");
+        setUserRegCode(t.user_reg_code || "");
         setAdminEvents(t.admin_events || {});
         setChats(t.chat_ids || []);
         setLinkCode(t.link_code || "");
@@ -105,7 +110,8 @@ export function TelegramSettings() {
           cron: t.backup_cron || "",
           userEnabled: t.user_enabled,
           userToken: t.user_token,
-          userRegEnabled: t.user_reg_enabled,
+          userRegMode: t.user_reg_mode || "open",
+          userRegCode: t.user_reg_code || "",
           adminEvents: t.admin_events || {},
         });
       })
@@ -140,7 +146,8 @@ export function TelegramSettings() {
     cron !== saved.cron ||
     userEnabled !== saved.userEnabled ||
     userToken.trim() !== saved.userToken.trim() ||
-    userRegEnabled !== saved.userRegEnabled ||
+    userRegMode !== saved.userRegMode ||
+    userRegCode.trim() !== saved.userRegCode.trim() ||
     !sameEvents(adminEvents, saved.adminEvents);
 
   // Linking only makes sense once the bot is enabled and that state is saved (the
@@ -158,7 +165,8 @@ export function TelegramSettings() {
         cron,
         userEnabled,
         userToken.trim(),
-        userRegEnabled,
+        userRegMode,
+        userRegCode.trim(),
         adminEvents,
       );
       setSaved({
@@ -167,7 +175,8 @@ export function TelegramSettings() {
         cron,
         userEnabled,
         userToken: userToken.trim(),
-        userRegEnabled,
+        userRegMode,
+        userRegCode: userRegCode.trim(),
         adminEvents,
       });
       notifySuccess("Настройки Telegram сохранены");
@@ -183,7 +192,8 @@ export function TelegramSettings() {
     setToken(saved.token);
     setUserEnabled(saved.userEnabled);
     setUserToken(saved.userToken);
-    setUserRegEnabled(saved.userRegEnabled);
+    setUserRegMode(saved.userRegMode);
+    setUserRegCode(saved.userRegCode);
     setAdminEvents(saved.adminEvents);
     setSchedule(detectPreset(saved.cron));
   };
@@ -414,21 +424,43 @@ export function TelegramSettings() {
               </a>
             </p>
           )}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-2">
             <div>
               <p className="text-sm font-medium text-ink">
                 Самостоятельная регистрация
               </p>
               <p className="text-xs text-ink-muted">
-                Новые пользователи нажимают «Зарегистрироваться» в боте и получают
-                аккаунт.
+                Как новые пользователи получают аккаунт по кнопке
+                «Зарегистрироваться». Привязка существующего аккаунта по коду из
+                карточки пользователя работает при любом режиме.
               </p>
             </div>
-            <Switch
-              checked={userRegEnabled}
-              onChange={setUserRegEnabled}
-              disabled={!userEnabled}
+            <Select
+              data={[
+                { value: "off", label: "Закрыта" },
+                { value: "open", label: "Открыта — сразу активен" },
+                { value: "moderation", label: "С модерацией (одобряет админ)" },
+                { value: "invite", label: "По коду-приглашению" },
+              ]}
+              value={userRegMode}
+              onChange={(v) => setUserRegMode(v as RegMode)}
             />
+            {userRegMode === "moderation" && (
+              <p className="text-xs text-ink-muted">
+                Аккаунт создаётся выключенным. Админу приходит заявка с кнопками
+                «Одобрить / Отклонить» (в админ-боте), либо включите пользователя
+                вручную в списке.
+              </p>
+            )}
+            {userRegMode === "invite" && (
+              <TextInput
+                label="Код-приглашение"
+                value={userRegCode}
+                onChange={setUserRegCode}
+                placeholder="например, VPN2026"
+                disabled={!userEnabled}
+              />
+            )}
           </div>
         </div>
       </SettingCard>

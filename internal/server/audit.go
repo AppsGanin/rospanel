@@ -91,6 +91,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/billing/orders/{id}/confirm": skip,
 	"POST /api/billing/orders/{id}/cancel":  skip,
 
+	// Moderated registration: approval audits the created user inside the manager
+	// (EventUserRegistered); rejection deletes only a pending request (no user yet).
+	"POST /api/registrations/{id}/approve": skip,
+	"POST /api/registrations/{id}/reject":  skip,
+
 	// API keys and webhooks: credentials and outbound endpoints, each with its own
 	// lifecycle — worth their own rows, not folded into "настройки".
 	"POST /api/apikeys":            act(model.AuditAPIKeyCreated),

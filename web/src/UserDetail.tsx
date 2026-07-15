@@ -425,6 +425,11 @@ export function UserDetail({
           {user.telegram_linked ? (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-success">Бот привязан к чату пользователя</p>
+              {!!user.tg_chat_id && (
+                <p className="text-xs text-ink-muted">
+                  Telegram ID: <Code copy>{String(user.tg_chat_id)}</Code>
+                </p>
+              )}
               <Button
                 size="xs"
                 variant="light"

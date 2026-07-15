@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -123,21 +125,98 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	return m.store.SetBillingSettings(st)
 }
 
-// CreateRegisteredUser creates a user from self-registration (trial/free/plain
-// per billing config) and alerts the admin chats about the new signup.
+// CreateRegisteredUser creates an active user from self-registration (trial/free/
+// plain per billing config), links nothing itself, and alerts the admin chats. Used
+// by the open and invite modes; moderation instead goes through RequestRegistration.
 func (m *Manager) CreateRegisteredUser(ctx context.Context, name string) (*model.User, error) {
 	u, err := m.createRegisteredUser(name)
-	if err == nil && u != nil {
-		msg := "🆕 <b>Новая регистрация</b>\nПользователь: " + escHTML(u.Name)
-		plan := m.PlanName(u.PlanID)
-		if plan != "" {
-			msg += "\nТариф: " + escHTML(plan)
-		}
-		m.notifyAdminEvent(model.AdminEventRegistered, msg)
-		m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan})
-		m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
+	if err != nil || u == nil {
+		return u, err
 	}
-	return u, err
+	plan := m.PlanName(u.PlanID)
+	m.notifyAdminEvent(model.AdminEventRegistered, "🆕 <b>Новая регистрация</b>\nПользователь: "+escHTML(u.Name)+planLine(plan))
+	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan})
+	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
+	return u, nil
+}
+
+func planLine(plan string) string {
+	if plan == "" {
+		return ""
+	}
+	return "\nТариф: " + escHTML(plan)
+}
+
+// RequestRegistration records a moderated signup: no user is created — the request
+// is held for an admin decision. Returns ok=false when the chat already has a pending
+// request (the caller then tells the applicant it's still under review). The admin is
+// prompted with approve/reject buttons (or a plain alert when the admin bot is off).
+func (m *Manager) RequestRegistration(ctx context.Context, chatID int64, name string) (ok bool, err error) {
+	name = truncateName(strings.TrimSpace(name))
+	if name == "" {
+		name = fmt.Sprintf("tg-%d", chatID)
+	}
+	req, err := m.store.CreateRegistrationRequest(chatID, name, time.Now().Unix())
+	if errors.Is(err, store.ErrRegistrationPending) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !m.notifyModeration(req.ID, req.Name, "") {
+		m.notifyAdminEvent(model.AdminEventRegistered,
+			"🕒 <b>Заявка на регистрацию</b>\nПользователь: "+escHTML(req.Name)+
+				"\nОдобрите её в панели («Заявки на регистрацию»).")
+	}
+	return true, nil
+}
+
+// RegistrationPending reports whether a chat has a signup awaiting a decision.
+func (m *Manager) RegistrationPending(chatID int64) bool {
+	r, err := m.store.GetRegistrationRequestByChat(chatID)
+	return err == nil && r != nil
+}
+
+// ListRegistrationRequests returns the pending moderated signups (for the panel).
+func (m *Manager) ListRegistrationRequests() ([]model.RegistrationRequest, error) {
+	return m.store.ListRegistrationRequests()
+}
+
+// ApproveRegistrationRequest turns a pending request into a real (active) user: it
+// creates the account, links the applicant's chat, drops the request and notifies
+// them. A no-op error is returned if the request is already gone.
+func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) error {
+	req, err := m.store.GetRegistrationRequest(reqID)
+	if err != nil {
+		return invalid("заявка не найдена")
+	}
+	u, err := m.createRegisteredUser(req.Name)
+	if err != nil {
+		return err
+	}
+	if err := m.store.SetUserTelegramChat(u.ID, req.ChatID); err != nil {
+		return err
+	}
+	_ = m.store.DeleteRegistrationRequest(reqID)
+	plan := m.PlanName(u.PlanID)
+	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan, "moderation": true})
+	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
+	m.notifyUser(req.ChatID, "✅ Ваш аккаунт одобрен — доступ открыт. Откройте меню в боте, чтобы получить подписку.")
+	return nil
+}
+
+// RejectRegistrationRequest declines a pending request: it's dropped and the
+// applicant is told. No user was ever created.
+func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) error {
+	req, err := m.store.GetRegistrationRequest(reqID)
+	if err != nil {
+		return invalid("заявка не найдена")
+	}
+	if err := m.store.DeleteRegistrationRequest(reqID); err != nil {
+		return err
+	}
+	m.notifyUser(req.ChatID, "🚫 Заявка на регистрацию отклонена. Обратитесь к администратору.")
+	return nil
 }
 
 // createRegisteredUser is the registration body: trial → free → plain user.
