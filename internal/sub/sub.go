@@ -31,6 +31,19 @@ func ShareLinks(u model.User, set *model.Settings) []string {
 	return links
 }
 
+// ShareLinksAll concatenates the protocol links for a user across every server —
+// the local one plus each enabled node — so a subscription carries one entry per
+// protocol × server. Each settings clone carries its own host/ports/keys and a
+// NodeLabel that disambiguates the links. With a single (local) server the output
+// is identical to ShareLinks.
+func ShareLinksAll(u model.User, sets []*model.Settings) []string {
+	var links []string
+	for _, set := range sets {
+		links = append(links, ShareLinks(u, set)...)
+	}
+	return links
+}
+
 // Base64Payload is the universal v2ray-style subscription body: the links joined
 // by newlines, base64-encoded. Consumed by v2rayNG, Hiddify, Streisand, NekoBox,
 // Shadowrocket, etc.

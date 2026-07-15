@@ -24,6 +24,14 @@ const PROVIDER_META: Record<
 > = {
   yookassa: { label: "ЮКасса · карта", color: "brand" },
   cryptobot: { label: "CryptoBot · крипта", color: "teal" },
+  pal24: { label: "PayPalych · карта/СБП", color: "brand" },
+  riopay: { label: "RioPay · карта/СБП", color: "brand" },
+  rollypay: { label: "RollyPay · карта/СБП", color: "brand" },
+  severpay: { label: "SeverPay · карта/СБП", color: "brand" },
+  platega: { label: "Platega · карта/СБП", color: "brand" },
+  paypear: { label: "PayPear · карта/СБП", color: "brand" },
+  aurapay: { label: "AuraPay · карта/СБП", color: "brand" },
+  heleket: { label: "Heleket · крипта", color: "teal" },
   "": { label: "Вручную", color: "gray" },
 };
 

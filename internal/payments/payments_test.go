@@ -211,6 +211,7 @@ func TestParseKopecks(t *testing.T) {
 		{"", 0, false},
 		{"abc", 0, false},
 		{"-5.00", 0, false},
+		{"100000000000000000.00", 0, false}, // fits int64 but *100 overflows → rejected, not fail-open
 	}
 	for _, tc := range cases {
 		got, ok := parseKopecks(tc.in)

@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -43,61 +44,136 @@ func (m *Manager) SetAdminNotifier(fn func(html string)) {
 	m.notifyMu.Unlock()
 }
 
-// providerLabel is a human name for a payment provider key.
-func providerLabel(p string) string {
-	switch p {
-	case payments.ProviderYooKassa:
-		return "ЮКасса (карта)"
-	case payments.ProviderCryptoBot:
-		return "CryptoBot (крипта)"
-	default:
-		return "вручную"
+// SetAdminModerationNotifier registers a callback (the admin bot) that posts a
+// signup awaiting moderation, with approve/reject buttons. Passing nil clears it.
+func (m *Manager) SetAdminModerationNotifier(fn func(reqID int64, name, plan string)) {
+	m.notifyMu.Lock()
+	m.adminModerate = fn
+	m.notifyMu.Unlock()
+}
+
+// notifyModeration best-effort pings the admin bot about a pending request. It's not
+// a delivery guarantee — the panel queue is the authoritative surface.
+func (m *Manager) notifyModeration(reqID int64, name, plan string) {
+	m.notifyMu.Lock()
+	fn := m.adminModerate
+	m.notifyMu.Unlock()
+	if fn != nil {
+		fn(reqID, name, plan)
 	}
 }
 
-// PaymentMethods returns the enabled, fully-configured provider keys.
+// ProviderLabel is the pay-button label for a provider key: the operator's custom
+// name if they set one, otherwise the provider's default. "" ⇒ a manual order.
+func (m *Manager) ProviderLabel(key string) string {
+	d, ok := payments.Get(key)
+	if !ok {
+		return payments.Label(key)
+	}
+	p, err := m.store.GetPaymentProvider(key)
+	if err != nil {
+		return d.Label
+	}
+	return d.DisplayName(p.Config)
+}
+
+// PaymentMethods returns the enabled, fully-configured provider keys, in registry
+// order (which is the order the bot and the subscription page offer them in).
 func (m *Manager) PaymentMethods() []string {
-	set, err := m.Settings()
+	saved, err := m.store.ListPaymentProviders()
 	if err != nil {
 		return nil
 	}
 	var out []string
-	if set.YooKassaEnabled && set.YooKassaShopID != "" && set.YooKassaSecretKey != "" {
-		out = append(out, payments.ProviderYooKassa)
-	}
-	if set.CryptoBotEnabled && set.CryptoBotToken != "" {
-		out = append(out, payments.ProviderCryptoBot)
+	for _, d := range payments.All() {
+		p, ok := saved[d.Key]
+		if ok && p.Enabled && d.Configured(p.Config) {
+			out = append(out, d.Key)
+		}
 	}
 	return out
 }
 
-// SavePaymentSettings validates and persists provider config. An empty secret /
-// token is treated as "keep current" so toggling doesn't wipe stored credentials.
-// The webhook secret is generated on first save.
-func (m *Manager) SavePaymentSettings(st *model.Settings) error {
-	cur, err := m.Settings()
+// PaymentProviders returns every provider in the registry paired with its saved
+// setup (a provider the operator never configured comes back with an empty config).
+func (m *Manager) PaymentProviders() ([]payments.Descriptor, map[string]model.PaymentProvider, error) {
+	saved, err := m.store.ListPaymentProviders()
+	if err != nil {
+		return nil, nil, err
+	}
+	return payments.All(), saved, nil
+}
+
+// SavePaymentProvider validates and persists one provider's setup. A secret field
+// left empty means "keep the stored value", so toggling a provider or editing its
+// shop id never wipes its API key. Enabling a provider with a required field still
+// missing is refused — a half-configured provider would just fail at checkout.
+func (m *Manager) SavePaymentProvider(key string, enabled bool, cfg map[string]string) error {
+	d, ok := payments.Get(key)
+	if !ok {
+		return invalid("неизвестный способ оплаты")
+	}
+	cur, err := m.store.GetPaymentProvider(key)
 	if err != nil {
 		return err
 	}
-	st.YooKassaShopID = strings.TrimSpace(st.YooKassaShopID)
-	st.YooKassaSecretKey = strings.TrimSpace(st.YooKassaSecretKey)
-	st.CryptoBotToken = strings.TrimSpace(st.CryptoBotToken)
-	if st.YooKassaSecretKey == "" {
-		st.YooKassaSecretKey = cur.YooKassaSecretKey
+	next := map[string]string{}
+	for _, f := range d.Fields {
+		v := strings.TrimSpace(cfg[f.Key])
+		if f.Kind == payments.FieldSecret && v == "" {
+			v = cur.Config[f.Key] // empty secret = keep current
+		}
+		if f.Kind == payments.FieldBool {
+			v = boolValue(cfg[f.Key])
+		}
+		next[f.Key] = v
 	}
-	if st.CryptoBotToken == "" {
-		st.CryptoBotToken = cur.CryptoBotToken
+	// The custom pay-button name is a universal optional field, not a credential;
+	// keep it when provided, drop it when cleared (falls back to the default label).
+	if dn := strings.TrimSpace(cfg[payments.DisplayNameKey]); dn != "" {
+		next[payments.DisplayNameKey] = dn
 	}
-	if st.YooKassaEnabled && (st.YooKassaShopID == "" || st.YooKassaSecretKey == "") {
-		return invalid("укажите shopId и секретный ключ ЮКассы")
+	if enabled {
+		for _, f := range d.Fields {
+			if f.Optional || f.Kind == payments.FieldBool || next[f.Key] != "" {
+				continue
+			}
+			return invalid("%s: заполните «%s»", d.Label, f.Label)
+		}
 	}
-	if st.CryptoBotEnabled && st.CryptoBotToken == "" {
-		return invalid("укажите токен CryptoBot")
-	}
-	if err := m.store.SetPaymentSettings(st); err != nil {
+	if err := m.store.SavePaymentProvider(model.PaymentProvider{Key: key, Enabled: enabled, Config: next}); err != nil {
 		return err
 	}
 	return m.ensureWebhookSecret()
+}
+
+// boolValue normalises the several ways a toggle arrives over JSON.
+func boolValue(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "on", "yes":
+		return "1"
+	default:
+		return ""
+	}
+}
+
+// providerClient builds the API client for an enabled, configured provider.
+func (m *Manager) providerClient(key string) (payments.Client, error) {
+	d, ok := payments.Get(key)
+	if !ok {
+		return nil, invalid("неизвестный способ оплаты")
+	}
+	p, err := m.store.GetPaymentProvider(key)
+	if err != nil {
+		return nil, err
+	}
+	if !p.Enabled {
+		return nil, invalid("%s: способ оплаты выключен", d.Label)
+	}
+	if !d.Configured(p.Config) {
+		return nil, invalid("%s: не заполнены настройки", d.Label)
+	}
+	return d.New(p.Config), nil
 }
 
 func (m *Manager) ensureWebhookSecret() error {
@@ -124,15 +200,15 @@ func (m *Manager) PaymentWebhookSecret() string {
 	return set.PaymentWebhookSecret
 }
 
-// PaymentWebhookURLs returns the public webhook URLs to paste into the provider
-// dashboards. Empty when the host or secret isn't known yet.
-func (m *Manager) PaymentWebhookURLs() (yookassa, cryptobot string) {
+// PaymentWebhookURL is the public callback URL to paste into a provider's
+// dashboard: /<random secret>/<provider key>. Empty when the panel doesn't know
+// its own host yet, or before the secret has been generated.
+func (m *Manager) PaymentWebhookURL(key string) string {
 	set, _ := m.Settings()
 	if set == nil || set.PaymentWebhookSecret == "" || set.Host == "" {
-		return "", ""
+		return ""
 	}
-	base := "https://" + set.Host + "/" + set.PaymentWebhookSecret
-	return base + "/yookassa", base + "/cryptobot"
+	return "https://" + set.Host + "/" + set.PaymentWebhookSecret + "/" + key
 }
 
 // StartPlanPayment creates an order plus a provider payment and returns the order
@@ -176,10 +252,6 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 			return nil, invalid("у вас активна подписка «%s» — сначала отмените её, чтобы сменить тариф", cur.Name)
 		}
 	}
-	set, err := m.Settings()
-	if err != nil {
-		return nil, err
-	}
 	methods := m.PaymentMethods()
 	if len(methods) == 0 {
 		return nil, invalid("автоматическая оплата не настроена")
@@ -200,6 +272,10 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 		return existing, nil
 	}
 
+	client, err := m.providerClient(provider)
+	if err != nil {
+		return nil, err
+	}
 	order, err := m.store.CreatePaymentOrder(userID, planID, plan.PriceRub)
 	if err != nil {
 		return nil, err
@@ -208,20 +284,16 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 	// actor for the audit row and must not be cancelled along with the HTTP request.
 	callCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	desc := fmt.Sprintf("Тариф «%s», заказ #%d", plan.Name, order.ID)
-
 	if strings.TrimSpace(returnURL) == "" {
 		returnURL = "https://t.me/"
 	}
-	var providerID, payURL string
-	switch provider {
-	case payments.ProviderYooKassa:
-		yk := payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey)
-		providerID, payURL, err = yk.CreatePayment(callCtx, plan.PriceRub, order.ID, desc, returnURL)
-	case payments.ProviderCryptoBot:
-		cb := payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet)
-		providerID, payURL, err = cb.CreateInvoice(callCtx, plan.PriceRub, order.ID, desc)
-	}
+	providerID, payURL, err := client.Create(callCtx, payments.CreateReq{
+		AmountRub:   plan.PriceRub,
+		OrderID:     order.ID,
+		Description: fmt.Sprintf("Тариф «%s», заказ #%d", plan.Name, order.ID),
+		ReturnURL:   returnURL,
+		WebhookURL:  m.PaymentWebhookURL(provider),
+	})
 	if err != nil {
 		_ = m.store.SetPaymentOrderStatus(order.ID, "cancelled", 0)
 		// The provider error can carry credentials/response internals (e.g. YooKassa
@@ -230,7 +302,7 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 		logErr("payment: create failed", "provider", provider, "order", order.ID, "err", err)
 		m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 			"⚠️ <b>Платёж не создан</b>\nЗаказ #%d · способ %s\nПроверьте настройки провайдера.",
-			order.ID, providerLabel(provider)))
+			order.ID, payments.Label(provider)))
 		return nil, invalid("не удалось создать платёж — попробуйте другой способ или позже")
 	}
 	if err := m.store.SetPaymentOrderProvider(order.ID, provider, providerID, payURL); err != nil {
@@ -239,7 +311,7 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"🛒 <b>Начата оплата</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, providerLabel(provider)))
+		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, payments.Label(provider)))
 	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
 		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": provider,
 	})
@@ -323,7 +395,7 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	}
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
-		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, providerLabel(provider)))
+		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, payments.Label(provider)))
 	order.Status = "paid"
 	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
 		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": provider,
@@ -343,19 +415,20 @@ const paymentOrderMaxAge = 24 * time.Hour
 const providerOrderReuseWindow = 5 * time.Minute
 
 // PollPendingPayments is the fallback for missed webhooks: it queries each pending
-// provider order's status and confirms/cancels accordingly.
+// provider order's status and confirms/cancels accordingly. Providers with no
+// status endpoint (ErrNoStatusAPI) are left to their webhook — for those, a missed
+// callback is only ever resolved by the abandoned sweep or by hand.
 func (m *Manager) PollPendingPayments() {
 	orders, err := m.store.PendingProviderOrders(100)
 	if err != nil || len(orders) == 0 {
 		return
 	}
-	set, err := m.Settings()
-	if err != nil {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	staleBefore := time.Now().Add(-paymentOrderMaxAge).Unix()
+	// One client per provider for the whole sweep, so N pending orders on the same
+	// provider don't rebuild (and re-read the config for) it N times.
+	clients := map[string]payments.Client{}
 	for _, o := range orders {
 		// Abandoned orders (user never paid) would otherwise be polled forever — one
 		// live provider API call each, every cycle. Cancel anything older than the
@@ -364,24 +437,21 @@ func (m *Manager) PollPendingPayments() {
 			m.cancelPendingOrder(o, "abandoned")
 			continue
 		}
-		var res payments.Result
-		var perr error
-		switch o.Provider {
-		case payments.ProviderYooKassa:
-			if !set.YooKassaEnabled {
-				continue
-			}
-			res, perr = payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, o.ProviderID)
-		case payments.ProviderCryptoBot:
-			if !set.CryptoBotEnabled {
-				continue
-			}
-			res, perr = payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet).InvoiceStatus(ctx, o.ProviderID)
-		default:
+		client, ok := clients[o.Provider]
+		if !ok {
+			// A provider that's since been switched off or unconfigured has no client —
+			// remember that (nil) so we don't retry building it for every order.
+			client, _ = m.providerClient(o.Provider)
+			clients[o.Provider] = client
+		}
+		if client == nil {
 			continue
 		}
-		if perr != nil {
-			logErr("payment poll failed", "order", o.ID, "err", perr)
+		res, err := client.Status(ctx, o.ProviderID)
+		if err != nil {
+			if !errors.Is(err, payments.ErrNoStatusAPI) {
+				logErr("payment poll failed", "order", o.ID, "provider", o.Provider, "err", err)
+			}
 			continue
 		}
 		switch res.Status {
@@ -408,64 +478,32 @@ func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
 	})
 }
 
-// HandleYooKassaWebhook processes a notification. The POST body is not trusted —
-// the payment is re-fetched via the API before the order is confirmed.
-func (m *Manager) HandleYooKassaWebhook(body []byte) error {
-	set, err := m.Settings()
-	if err != nil || !set.YooKassaEnabled {
-		return invalid("ЮКасса выключена")
-	}
-	var n struct {
-		Object struct {
-			ID string `json:"id"`
-		} `json:"object"`
-	}
-	if json.Unmarshal(body, &n) != nil || n.Object.ID == "" {
-		return invalid("некорректное уведомление")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	res, err := payments.NewYooKassa(set.YooKassaShopID, set.YooKassaSecretKey).PaymentStatus(ctx, n.Object.ID)
+// HandleProviderWebhook processes a callback from provider key. The provider's
+// client authenticates it (signature, or a re-fetch over the API for providers that
+// sign nothing) and reports what it says about the payment; nothing here trusts the
+// POST body. A callback for a provider that is off or unconfigured is refused —
+// otherwise a stale/forged callback could still move an order.
+func (m *Manager) HandleProviderWebhook(key string, body []byte, h http.Header) error {
+	client, err := m.providerClient(key)
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	providerID, res, err := client.Webhook(ctx, body, h)
+	if err != nil {
+		return err
+	}
+	if providerID == "" {
+		return invalid("%s: в уведомлении нет идентификатора платежа", payments.Label(key))
+	}
 	switch res.Status {
 	case payments.StatusPaid:
-		return m.confirmProviderOrder(payments.ProviderYooKassa, n.Object.ID, res)
+		return m.confirmProviderOrder(key, providerID, res)
 	case payments.StatusCanceled:
-		if o, e := m.store.GetPaymentOrderByProvider(payments.ProviderYooKassa, n.Object.ID); e == nil {
+		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
 			m.cancelPendingOrder(*o, "provider_cancelled") // won't clobber an already-paid order
 		}
-	}
-	return nil
-}
-
-// HandleCryptoBotWebhook verifies the signature and confirms a paid invoice.
-func (m *Manager) HandleCryptoBotWebhook(body []byte, signature string) error {
-	set, err := m.Settings()
-	if err != nil || !set.CryptoBotEnabled {
-		return invalid("CryptoBot выключен")
-	}
-	cb := payments.NewCryptoBot(set.CryptoBotToken, set.CryptoBotTestnet)
-	if !cb.VerifyWebhook(body, signature) {
-		return invalid("неверная подпись")
-	}
-	// The payload is a full Invoice object; the HMAC above proves CryptoBot sent it,
-	// so the amount it carries is trustworthy enough to verify the order against.
-	var upd struct {
-		UpdateType string `json:"update_type"`
-		Payload    struct {
-			payments.Invoice
-			InvoiceID int64 `json:"invoice_id"`
-		} `json:"payload"`
-	}
-	if json.Unmarshal(body, &upd) != nil {
-		return invalid("некорректное уведомление")
-	}
-	if upd.UpdateType == "invoice_paid" || upd.Payload.Status == "paid" {
-		res := upd.Payload.AsResult()
-		res.Status = payments.StatusPaid // the update itself is the paid signal
-		return m.confirmProviderOrder(payments.ProviderCryptoBot, fmt.Sprintf("%d", upd.Payload.InvoiceID), res)
 	}
 	return nil
 }

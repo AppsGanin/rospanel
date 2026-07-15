@@ -69,10 +69,29 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 	return out
 }
 
-// ClashYAML renders a minimal self-contained Clash-Meta (Mihomo) configuration:
-// the user's proxies plus a single select group and a catch-all rule.
+// clashProxiesAll concatenates a user's proxy entries across every server (local +
+// each node). Names are unique because Settings.ProtoLabel appends the node label.
+func clashProxiesAll(u model.User, sets []*model.Settings) []clashProxy {
+	var out []clashProxy
+	for _, set := range sets {
+		out = append(out, clashProxies(u, set)...)
+	}
+	return out
+}
+
+// ClashYAML renders a minimal self-contained Clash-Meta config for one server.
 func ClashYAML(u model.User, set *model.Settings) string {
-	proxies := clashProxies(u, set)
+	return ClashYAMLMulti(u, []*model.Settings{set})
+}
+
+// ClashYAMLMulti renders a Clash-Meta (Mihomo) config spanning every server: all
+// proxies under one select group. sets[0] is the local server (group title + rules).
+func ClashYAMLMulti(u model.User, sets []*model.Settings) string {
+	if len(sets) == 0 {
+		return ""
+	}
+	local := sets[0]
+	proxies := clashProxiesAll(u, sets)
 	var b strings.Builder
 	// Encrypted DNS (DoH) to defeat DNS poisoning/blocking on plaintext UDP/53.
 	b.WriteString("dns:\n" +
@@ -85,12 +104,12 @@ func ClashYAML(u model.User, set *model.Settings) string {
 		b.WriteString(p.line + "\n")
 		quoted[i] = fmt.Sprintf("%q", p.name)
 	}
-	group := SubTitle(u, set)
+	group := SubTitle(u, local)
 	fmt.Fprintf(&b,
 		"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
 		group, strings.Join(quoted, ", "))
 	b.WriteString("rules:\n")
-	if set.BlockQUIC {
+	if local.BlockQUIC {
 		// Drop untunneled browser QUIC (UDP/443) so it can't bypass the obfuscated
 		// TCP lanes; the browser falls back to TCP+H2 inside the tunnel.
 		b.WriteString("  - AND,((NETWORK,udp),(DST-PORT,443)),REJECT\n")
@@ -105,9 +124,14 @@ func ClashYAML(u model.User, set *model.Settings) string {
 // group (proxy node names). Falls back to the plain config if the template has
 // no proxies marker.
 func ClashWithTemplate(u model.User, set *model.Settings, template string) string {
-	proxies := clashProxies(u, set)
+	return ClashWithTemplateMulti(u, []*model.Settings{set}, template)
+}
+
+// ClashWithTemplateMulti is ClashWithTemplate across every server.
+func ClashWithTemplateMulti(u model.User, sets []*model.Settings, template string) string {
+	proxies := clashProxiesAll(u, sets)
 	if len(proxies) == 0 || !strings.Contains(template, "proxies: # LEAVE THIS LINE!") {
-		return ClashYAML(u, set)
+		return ClashYAMLMulti(u, sets)
 	}
 
 	defs := make([]string, len(proxies))

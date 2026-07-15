@@ -375,19 +375,6 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 	return err
 }
 
-// SetPaymentSettings persists the payment-provider config (secrets encrypted).
-func (s *Store) SetPaymentSettings(st *model.Settings) error {
-	_, err := s.db.Exec(
-		`UPDATE settings SET yookassa_enabled = ?, yookassa_shop_id = ?, yookassa_secret_key = ?,
-		 yookassa_test = ?, cryptobot_enabled = ?, cryptobot_token = ?, cryptobot_testnet = ?,
-		 updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(st.YooKassaEnabled), st.YooKassaShopID, encField(st.YooKassaSecretKey),
-		boolToInt(st.YooKassaTest), boolToInt(st.CryptoBotEnabled), encField(st.CryptoBotToken),
-		boolToInt(st.CryptoBotTestnet),
-	)
-	return err
-}
-
 // SetPaymentWebhookSecret stores the random webhook URL segment.
 func (s *Store) SetPaymentWebhookSecret(secret string) error {
 	return s.setSetting("payment_webhook_secret", secret)

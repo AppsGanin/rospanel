@@ -340,6 +340,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
 		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
+		mgr.PurgeDeletedNodes() // reclaim node tombstones past their grace window
 	}
 	sweep() // sweep once at boot, then on the timer
 	t := time.NewTicker(6 * time.Hour)

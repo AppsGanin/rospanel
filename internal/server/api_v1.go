@@ -144,6 +144,33 @@ func (rt *Router) apiMux() http.Handler {
 	mux.HandleFunc("GET /v1/system", rt.apiSystem)
 	mux.HandleFunc("GET /v1/health/report", rt.apiHealthReport)
 
+	// Node mutations over the external API must land in the admin audit trail too —
+	// the panel's audited-middleware wraps only the panel mux, not this one. idFn adds
+	// {id} parsing so an audited node route can still take an int64 handler.
+	idFn := func(h func(http.ResponseWriter, *http.Request, int64)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			v, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+			if err != nil {
+				writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+				return
+			}
+			h(w, r, v)
+		}
+	}
+	nodeAudit := func(pattern, section string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, rt.apiAudited(section, h))
+	}
+
+	mux.HandleFunc("GET /v1/nodes", rt.apiListNodes)
+	nodeAudit("POST /v1/nodes", "API · нода добавлена", rt.apiCreateNode)
+	id("GET /v1/nodes/{id}", rt.apiGetNode)
+	nodeAudit("PATCH /v1/nodes/{id}", "API · нода изменена", idFn(rt.apiPatchNode))
+	nodeAudit("DELETE /v1/nodes/{id}", "API · нода удалена", idFn(rt.apiDeleteNode))
+	nodeAudit("POST /v1/nodes/{id}/enabled", "API · нода вкл/выкл", idFn(rt.apiSetNodeEnabled))
+	nodeAudit("POST /v1/nodes/{id}/regen-join", "API · нода · новый токен установки", idFn(rt.apiRegenNodeJoin))
+	nodeAudit("POST /v1/nodes/{id}/update", "API · нода · обновление", idFn(rt.apiUpdateNode))
+	nodeAudit("POST /v1/nodes/update-all", "API · обновление всех нод", rt.apiUpdateAllNodes)
+
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
@@ -194,6 +221,27 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 		// external API is attributable to the integration that made it.
 		next.ServeHTTP(w, r.WithContext(actor.With(r.Context(), actor.APIKey(ak.Name))))
 	})
+}
+
+// apiAudited wraps a mutating /v1 node handler so a successful request lands in the
+// admin audit trail, attributed to the API key's name — the panel's audited middleware
+// doesn't cover this mux. Nothing is recorded on a 4xx/5xx (it didn't happen).
+func (rt *Router) apiAudited(section string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sw := &auditStatus{ResponseWriter: w, code: http.StatusOK}
+		h(sw, r)
+		if sw.code >= http.StatusBadRequest {
+			return
+		}
+		a := actor.From(r.Context())
+		rt.mgr.AddAdminAudit(model.AdminAudit{
+			Action:    model.AuditSettings,
+			Target:    section,
+			ActorKind: a.Kind,
+			ActorName: a.Name,
+			IP:        clientIP(r),
+		})
+	}
 }
 
 // apiKeyFromRequest extracts the raw key from the Authorization bearer header or
@@ -593,7 +641,7 @@ func (rt *Router) apiListProviders(w http.ResponseWriter, _ *http.Request) {
 	methods := rt.mgr.PaymentMethods()
 	out := make([]map[string]string, 0, len(methods))
 	for _, m := range methods {
-		out = append(out, map[string]string{"key": m, "label": payProviderLabel(m)})
+		out = append(out, map[string]string{"key": m, "label": rt.mgr.ProviderLabel(m)})
 	}
 	writeAPIData(w, http.StatusOK, out)
 }

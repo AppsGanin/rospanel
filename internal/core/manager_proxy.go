@@ -99,6 +99,101 @@ func (m *Manager) setProxies(p map[string][]model.ProxyEndpoint) {
 	m.proxyMu.Unlock()
 }
 
+// getNodeProxies returns a deep copy of one node's cached lane proxies (empty map
+// if the node has none), so NodeDesiredState resolves lanes against the node's own
+// pool without a network round-trip on the sync path.
+func (m *Manager) getNodeProxies(nodeID int64) map[string][]model.ProxyEndpoint {
+	m.proxyMu.Lock()
+	defer m.proxyMu.Unlock()
+	src := m.nodeProxies[nodeID]
+	out := make(map[string][]model.ProxyEndpoint, len(src))
+	for id, eps := range src {
+		out[id] = append([]model.ProxyEndpoint(nil), eps...)
+	}
+	return out
+}
+
+// setNodeProxies stores a node's resolved lane proxies, dropping the entry entirely
+// when empty so ProxyCount-style scans and the cache stay tidy.
+func (m *Manager) setNodeProxies(nodeID int64, p map[string][]model.ProxyEndpoint) {
+	m.proxyMu.Lock()
+	defer m.proxyMu.Unlock()
+	if len(p) == 0 {
+		delete(m.nodeProxies, nodeID)
+		return
+	}
+	if m.nodeProxies == nil {
+		m.nodeProxies = map[int64]map[string][]model.ProxyEndpoint{}
+	}
+	m.nodeProxies[nodeID] = p
+}
+
+// resolveNodeProxies re-resolves one node's own lane proxies from its routing
+// (best-effort network fetch), caching the result. A node with no enabled lanes has
+// its cache cleared. Returns true if the resolved pool differs from the cache.
+func (m *Manager) resolveNodeProxies(n *model.Node) bool {
+	var next map[string][]model.ProxyEndpoint
+	if n.Enabled && n.Routing != nil && len(n.Routing.Lanes) > 0 {
+		next = m.buildProxies(*n.Routing)
+	}
+	if proxiesEqual(next, m.getNodeProxies(n.ID)) {
+		return false
+	}
+	m.setNodeProxies(n.ID, next)
+	return true
+}
+
+// seedNodeProxies loads every enabled node's MANUAL lane proxies synchronously at
+// boot (no network), mirroring SeedProxies for the local server: nodes come up with
+// their manual proxies immediately; URL-sourced ones fill in on the first refresh.
+func (m *Manager) seedNodeProxies() {
+	nodes, err := m.store.ListNodes()
+	if err != nil {
+		return
+	}
+	for i := range nodes {
+		n := &nodes[i]
+		if !n.Enabled || n.Routing == nil || len(n.Routing.Lanes) == 0 {
+			continue
+		}
+		m.setNodeProxies(n.ID, seedProxiesFromManual(*n.Routing))
+	}
+}
+
+// RefreshNodeProxies re-resolves every enabled node's own lane proxies and wakes any
+// node whose pool changed so it re-pulls a config with the fresh endpoints. Runs on
+// the same timer as RefreshProxies. Nodes with no lanes (disabled, or lanes removed)
+// have their cache dropped and are woken so their config loses the stale endpoints.
+func (m *Manager) RefreshNodeProxies() {
+	nodes, err := m.store.ListNodes()
+	if err != nil {
+		return
+	}
+	live := map[int64]bool{}
+	for i := range nodes {
+		n := &nodes[i]
+		if !n.Enabled || n.Routing == nil || len(n.Routing.Lanes) == 0 {
+			continue
+		}
+		live[n.ID] = true
+		if m.resolveNodeProxies(n) {
+			m.nodes.wakeOne(n.ID)
+		}
+	}
+	m.proxyMu.Lock()
+	var dropped []int64
+	for id := range m.nodeProxies {
+		if !live[id] {
+			delete(m.nodeProxies, id)
+			dropped = append(dropped, id)
+		}
+	}
+	m.proxyMu.Unlock()
+	for _, id := range dropped {
+		m.nodes.wakeOne(id)
+	}
+}
+
 // ProxyCount reports how many proxies are currently live across all lanes.
 func (m *Manager) ProxyCount() int {
 	m.proxyMu.Lock()
@@ -163,6 +258,7 @@ func (m *Manager) proxyLoop() {
 		time.Sleep(d)
 		if m.currentProxyRefresh() > 0 {
 			m.RefreshProxies()
+			m.RefreshNodeProxies()
 		}
 	}
 }

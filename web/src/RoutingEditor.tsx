@@ -1,35 +1,72 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  getGeoCategories,
-  getGeoStatus,
-  getRouting,
-  saveRouting,
-  updateGeo,
-  type EgressLane,
-  type GeoFile,
-  type RoutingConfig,
-} from "./api";
-import { ApplyingModal, useXrayApply } from "./apply";
+import { useMemo, type ReactNode } from "react";
+import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
-import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
-  Card,
-  CenterLoader,
+  cn,
   IconChevron,
-  SaveBar,
-  SegmentedControl,
   Select,
+  SegmentedControl,
   Switch,
   TagsInput,
   TextInput,
   ToggleRow,
 } from "./ui";
-import { helperStatus } from "./EgressStatus";
+
+// Section is the flat settings block used across the server settings dialogs: a
+// subtly-tinted bordered panel with an optional header (title + description) and a
+// right-aligned action slot (a toggle, a badge, a button). Replaces the heavier
+// shadowed Card so the blocks read as one calm settings surface inside the modal.
+export function Section({
+  title,
+  desc,
+  action,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  desc?: string;
+  action?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const hasHeader = !!(title || action);
+  return (
+    <section
+      className={cn(
+        "rounded-xl border border-gray-200/80 bg-gray-50/60 p-4",
+        className,
+      )}
+    >
+      {hasHeader && (
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3",
+            children != null && "mb-4",
+          )}
+        >
+          <div className="min-w-0">
+            {title && <p className="font-semibold text-ink">{title}</p>}
+            {desc && <p className="mt-0.5 text-sm text-ink-muted">{desc}</p>}
+          </div>
+          {action && <div className="shrink-0">{action}</div>}
+        </div>
+      )}
+      {children != null && (
+        <div className="flex flex-col gap-4">{children}</div>
+      )}
+    </section>
+  );
+}
+
+// A small colour union shared by the status badges the parent computes.
+export type BadgeColor = "gray" | "green" | "orange" | "red";
+export type StatusBadge = { label: string; color: BadgeColor };
+export type Opt = { value: string; label: string };
 
 // PROXY_REFRESH are the URL auto-refresh cadence options (minutes; -1 = never).
-const PROXY_REFRESH: Opt[] = [
+export const PROXY_REFRESH: Opt[] = [
   { value: "30", label: "Каждые 30 минут" },
   { value: "60", label: "Каждый 1 час" },
   { value: "180", label: "Каждые 3 часа" },
@@ -38,18 +75,8 @@ const PROXY_REFRESH: Opt[] = [
   { value: "-1", label: "Никогда" },
 ];
 
-type Opt = { value: string; label: string };
-
-// fmtWhen renders a unix timestamp as a local date+time, or a dash when unset.
-const fmtWhen = (unix: number) =>
-  unix
-    ? new Date(unix * 1000).toLocaleString("ru-RU", {
-        dateStyle: "short",
-        timeStyle: "short",
-      })
-    : "—";
-
-const EMPTY: RoutingConfig = {
+// EMPTY is a blank routing config with sane defaults (built-in lanes in precedence).
+export const EMPTY: RoutingConfig = {
   block_bittorrent: false,
   block_ads: false,
   block_ips: [],
@@ -74,7 +101,7 @@ const BUILTIN_LANE_NAMES: Record<string, string> = {
 };
 
 // Opera VPN regions opera-proxy supports.
-const OPERA_COUNTRIES = [
+export const OPERA_COUNTRIES = [
   { value: "EU", label: "Европа" },
   { value: "AS", label: "Азия" },
   { value: "AM", label: "Америка" },
@@ -87,11 +114,23 @@ const BUILTIN_LANES = ["warp", "opera", "direct"];
 // MAX_LANES mirrors model.MaxEgressLanes.
 const MAX_LANES = 16;
 
+// fmtWhen renders a unix timestamp as a local date+time, or a dash when unset.
+const fmtWhen = (unix: number) =>
+  unix
+    ? new Date(unix * 1000).toLocaleString("ru-RU", {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    : "—";
+
 // normalizeOrder returns a routing order containing every existing lane exactly
 // once: the config's proxy lanes plus the built-ins. It keeps the saved
 // precedence, drops lanes that no longer exist, and inserts missing ones just
 // before the catch-all last lane. Mirrors normalizeOrder in xray/generate.go.
-function normalizeOrder(order: string[] | undefined, laneIDs: string[]): string[] {
+export function normalizeOrder(
+  order: string[] | undefined,
+  laneIDs: string[],
+): string[] {
   const known = [...laneIDs, ...BUILTIN_LANES];
   const valid = new Set(known);
   const seen = new Set<string>();
@@ -122,134 +161,122 @@ function newLaneID(lanes: EgressLane[]): string {
 
 // LaneSource is which proxy source a lane is edited with. Only the selected one
 // is persisted (see effectiveCfg), so a lane never silently mixes both.
-type LaneSource = "urls" | "manual";
+export type LaneSource = "urls" | "manual";
 
 // laneSources derives each lane's source mode from what it actually carries. A
 // lane with URLs is URL-sourced; anything else (incl. a brand-new empty lane) is
 // edited as a manual list — the common case for one's own socks5 servers.
-function laneSources(lanes: EgressLane[]): Record<string, LaneSource> {
+export function laneSources(lanes: EgressLane[]): Record<string, LaneSource> {
   const out: Record<string, LaneSource> = {};
   for (const l of lanes) out[l.id] = l.urls.length > 0 ? "urls" : "manual";
   return out;
 }
 
-export function RoutingPanel() {
-  const [cfg, setCfg] = useState<RoutingConfig>(EMPTY);
-  const [saved, setSaved] = useState<string>("");
-  const [loaded, setLoaded] = useState(false);
-  const { applying, apply } = useXrayApply();
-  const [warpEnabled, setWarpEnabled] = useState(false);
-  const [savedWarp, setSavedWarp] = useState(false);
-  const [warpRegistered, setWarpRegistered] = useState(false);
-  const [operaEnabled, setOperaEnabled] = useState(false);
-  const [savedOpera, setSavedOpera] = useState(false);
-  const [operaCountry, setOperaCountry] = useState("EU");
-  const [savedOperaCountry, setSavedOperaCountry] = useState("EU");
-  const [operaRunning, setOperaRunning] = useState(false);
-  const [operaAlive, setOperaAlive] = useState(false);
-  const [geosite, setGeosite] = useState<string[]>([]);
-  const [geoip, setGeoip] = useState<string[]>([]);
-  const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
-  const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
-  const [laneSrc, setLaneSrc] = useState<Record<string, LaneSource>>({});
+// hydrateRouting normalizes a routing config from the API (Go marshals empty slices
+// as null) into one with every list present and a normalized routing order — safe to
+// hand straight to the editor. Used by both the master panel and the node dialog.
+export function hydrateRouting(
+  x: Partial<RoutingConfig> | null | undefined,
+): RoutingConfig {
+  const src = x ?? {};
+  const lanes = (src.lanes ?? []).map((l) => ({
+    ...l,
+    urls: l.urls ?? [],
+    manual: l.manual ?? [],
+    domains: l.domains ?? [],
+    ips: l.ips ?? [],
+  }));
+  return {
+    block_bittorrent: !!src.block_bittorrent,
+    block_ads: !!src.block_ads,
+    block_ips: src.block_ips ?? [],
+    block_domains: src.block_domains ?? [],
+    warp_domains: src.warp_domains ?? [],
+    warp_ips: src.warp_ips ?? [],
+    opera_domains: src.opera_domains ?? [],
+    opera_ips: src.opera_ips ?? [],
+    direct_domains: src.direct_domains ?? [],
+    direct_ips: src.direct_ips ?? [],
+    lanes,
+    routing_order: normalizeOrder(
+      src.routing_order,
+      lanes.map((l) => l.id),
+    ),
+    // 0 (absent / pre-feature default) shows as 30; -1 stays "never".
+    proxy_refresh_minutes: src.proxy_refresh_minutes || 30,
+  };
+}
 
-  const loadGeoCategories = () =>
-    getGeoCategories()
-      .then((g) => {
-        setGeosite(g.geosite ?? []);
-        setGeoip(g.geoip ?? []);
-      })
-      .catch(() => {});
+// GEO_CADENCE are the geo auto-refresh options (hours; 0 = never).
+export const GEO_CADENCE: Opt[] = [
+  { value: "0", label: "Никогда (только вручную)" },
+  { value: "24", label: "Раз в день" },
+  { value: "72", label: "Раз в 3 дня" },
+  { value: "168", label: "Раз в неделю" },
+];
 
-  useEffect(() => {
-    loadGeoCategories();
-    getGeoStatus()
-      .then(setGeoStatus)
-      .catch(() => {});
-  }, []);
+// GeoSection is the geosite/geoip status + manual refresh + auto-refresh cadence.
+// It's the panel's own geo files (used by every server's routing rules, and pushed to
+// nodes), so it lives in its own tab on the master card. The cadence applies to the
+// master AND every node.
+export function GeoSection({
+  status,
+  onRefresh,
+  refreshing,
+  cadence,
+  onCadence,
+}: {
+  status: GeoFile[];
+  onRefresh: () => void;
+  refreshing: boolean;
+  cadence: number;
+  onCadence: (hours: number) => void;
+}) {
+  return (
+    <Section
+      title="Geo-базы"
+      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга."
+      action={
+        <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
+          Обновить
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-1 text-sm">
+        {status.map((f) => (
+          <div key={f.name} className="flex items-center justify-between gap-2">
+            <span className="font-mono text-ink text-xs">{f.name}</span>
+            <span className="text-ink-muted text-xs">
+              {f.present
+                ? `${fmtBytes(f.size)} · обновлено ${fmtWhen(f.modified_at)}`
+                : "нет файла"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div>
+        <Select
+          label="Автообновление"
+          data={GEO_CADENCE}
+          value={String(cadence)}
+          onChange={(v) => onCadence(Number(v))}
+        />
+        <p className="mt-1 text-xs text-ink-muted">
+          Панель сама перекачивает geo по расписанию.
+        </p>
+      </div>
+    </Section>
+  );
+}
 
-  const refreshGeo = () =>
-    apply(async () => {
-      setGeoStatus(await updateGeo());
-      await loadGeoCategories(); // categories may have changed
-      notifySuccess("Geo-базы обновлены");
-    });
-
-  useEffect(() => {
-    getRouting()
-      .then((r) => {
-        // Go marshals empty slices as null, so coalesce every field to a list.
-        const x = r.config ?? ({} as Partial<RoutingConfig>);
-        const lanes = (x.lanes ?? []).map((l) => ({
-          ...l,
-          urls: l.urls ?? [],
-          manual: l.manual ?? [],
-          domains: l.domains ?? [],
-          ips: l.ips ?? [],
-        }));
-        const c: RoutingConfig = {
-          block_bittorrent: !!x.block_bittorrent,
-          block_ads: !!x.block_ads,
-          block_ips: x.block_ips ?? [],
-          block_domains: x.block_domains ?? [],
-          warp_domains: x.warp_domains ?? [],
-          warp_ips: x.warp_ips ?? [],
-          opera_domains: x.opera_domains ?? [],
-          opera_ips: x.opera_ips ?? [],
-          direct_domains: x.direct_domains ?? [],
-          direct_ips: x.direct_ips ?? [],
-          lanes,
-          routing_order: normalizeOrder(
-            x.routing_order,
-            lanes.map((l) => l.id),
-          ),
-          // 0 (absent / pre-feature default) shows as 30; -1 stays "never".
-          proxy_refresh_minutes: x.proxy_refresh_minutes || 30,
-        };
-        setLaneSrc(laneSources(lanes));
-        setCfg(c);
-        setSaved(JSON.stringify(c));
-        setWarpEnabled(r.warp_enabled);
-        setSavedWarp(r.warp_enabled);
-        setWarpRegistered(r.warp_registered);
-        setOperaEnabled(r.opera_enabled);
-        setSavedOpera(r.opera_enabled);
-        setOperaCountry(r.opera_country || "EU");
-        setSavedOperaCountry(r.opera_country || "EU");
-        setOperaRunning(r.opera_running);
-        setOperaAlive(r.opera_alive);
-        setProxyCounts(r.proxy_counts ?? {});
-      })
-      .catch((e) => notifyError(errMessage(e)))
-      .finally(() => setLoaded(true));
-  }, []);
-
-  // refreshStatus re-fetches just the applied lane-status fields (running/alive/
-  // registered/counts) without touching the editable config.
-  const refreshStatus = () =>
-    getRouting()
-      .then((r) => {
-        setWarpRegistered(r.warp_registered);
-        setOperaRunning(r.opera_running);
-        setOperaAlive(r.opera_alive);
-        setProxyCounts(r.proxy_counts ?? {});
-      })
-      .catch(() => {});
-
-  // Keep the lane status badges live with a 15s poll.
-  useEffect(() => {
-    const id = setInterval(refreshStatus, 15000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const set = (patch: Partial<RoutingConfig>) =>
-    setCfg((c) => ({ ...c, ...patch }));
-
-  // Only a lane's selected source is persisted; the other list stays in local
-  // state, so flipping the switch back and forth doesn't wipe what was typed —
-  // but it's dropped from what we save and compare against.
-  const effectiveCfg: RoutingConfig = {
+// effectiveCfg drops each lane's non-selected source list, so what's saved and
+// compared for "dirty" never carries a stale URL/manual list the operator toggled
+// away from. Both the master and node containers call this before saving.
+export function effectiveCfg(
+  cfg: RoutingConfig,
+  laneSrc: Record<string, LaneSource>,
+): RoutingConfig {
+  return {
     ...cfg,
     lanes: cfg.lanes.map((l) => ({
       ...l,
@@ -257,12 +284,52 @@ export function RoutingPanel() {
       manual: laneSrc[l.id] === "urls" ? [] : l.manual,
     })),
   };
+}
 
-  const dirty =
-    JSON.stringify(effectiveCfg) !== saved ||
-    warpEnabled !== savedWarp ||
-    operaEnabled !== savedOpera ||
-    operaCountry !== savedOperaCountry;
+// RoutingEditor is the controlled, container-agnostic routing/egress editor shared
+// by the master's routing tab and every node's settings dialog. It owns NO state:
+// the parent holds cfg/laneSrc/WARP/Opera and drives saving (the master via a
+// SaveBar, a node via its dialog footer). Live lane/helper status is passed in via
+// the *Badge props and proxyCounts; a node (whose egress runs remotely) passes
+// liveStatus={false} so lane badges don't claim a proxy count the panel can't see.
+export function RoutingEditor({
+  cfg,
+  onCfg,
+  laneSrc,
+  setLaneSrc,
+  warpEnabled,
+  setWarpEnabled,
+  warpBadge,
+  operaEnabled,
+  setOperaEnabled,
+  operaCountry,
+  setOperaCountry,
+  operaBadge,
+  proxyCounts,
+  geosite,
+  geoip,
+  applying,
+  liveStatus = true,
+}: {
+  cfg: RoutingConfig;
+  onCfg: (patch: Partial<RoutingConfig>) => void;
+  laneSrc: Record<string, LaneSource>;
+  setLaneSrc: React.Dispatch<React.SetStateAction<Record<string, LaneSource>>>;
+  warpEnabled: boolean;
+  setWarpEnabled: (v: boolean) => void;
+  warpBadge: StatusBadge;
+  operaEnabled: boolean;
+  setOperaEnabled: (v: boolean) => void;
+  operaCountry: string;
+  setOperaCountry: (v: string) => void;
+  operaBadge: StatusBadge;
+  proxyCounts: Record<string, number>;
+  geosite: string[];
+  geoip: string[];
+  applying: boolean;
+  liveStatus?: boolean;
+}) {
+  const set = onCfg;
 
   const moveLane = (i: number, dir: -1 | 1) => {
     const order = [...cfg.routing_order];
@@ -322,48 +389,26 @@ export function RoutingPanel() {
     [geoip],
   );
   const without = (opts: Opt[], used: string[]) => {
-    const set = new Set(used);
-    return opts.filter((o) => !set.has(o.value));
+    const u = new Set(used);
+    return opts.filter((o) => !u.has(o.value));
   };
-
-  // Applied-state status badges per lane (reflect what's actually running, not
-  // the pending toggle).
-  const warpStatus = !savedWarp
-    ? { label: "выключен", color: "gray" as const }
-    : warpRegistered
-      ? { label: "активен", color: "green" as const }
-      : { label: "не зарегистрирован", color: "orange" as const };
-  const operaStatus = helperStatus(savedOpera, operaRunning, operaAlive, "");
 
   // laneStatus counts the proxies the lane RESOLVED (manual entries + whatever its
-  // URL sources served). It is NOT a liveness signal: whether a proxy actually
-  // answers is decided by Xray's Observatory, which the panel doesn't query — a
-  // dead one just makes the balancer fall back to direct. Don't label this "живые".
-  const laneStatus = (lane: EgressLane) => {
-    if (!lane.enabled) return { label: "выключена", color: "gray" as const };
+  // URL sources served). It is NOT a liveness signal. On a node the panel can't see
+  // the remote count, so we only show enabled/disabled there (liveStatus=false).
+  const laneStatus = (lane: EgressLane): StatusBadge => {
+    if (!lane.enabled) return { label: "выключена", color: "gray" };
+    if (!liveStatus) return { label: "включена", color: "green" };
     const n = proxyCounts[lane.id] ?? 0;
     return n > 0
-      ? { label: `${n} прокси`, color: "green" as const }
-      : { label: "нет прокси", color: "orange" as const };
+      ? { label: `${n} прокси`, color: "green" }
+      : { label: "нет прокси", color: "orange" };
   };
 
-  const save = () =>
-    apply(async () => {
-      // Routing rules + WARP/Opera on/off go in one request → one reconcile.
-      await saveRouting(effectiveCfg, warpEnabled, operaEnabled, operaCountry);
-      setSaved(JSON.stringify(effectiveCfg));
-      setSavedWarp(warpEnabled);
-      setSavedOpera(operaEnabled);
-      setSavedOperaCountry(operaCountry);
-      notifySuccess("Маршрутизация сохранена");
-    }).then(refreshStatus); // re-fetch lane statuses AFTER Xray has restarted
-
-  if (!loaded) return <CenterLoader />;
-
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       {/* Block */}
-      <Card className="flex flex-col gap-4 p-4">
+      <Section title="Блокировки">
         <ToggleRow
           label="Заблокировать рекламу"
           checked={cfg.block_ads}
@@ -388,18 +433,13 @@ export function RoutingPanel() {
           options={without(geositeOpts, cfg.warp_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
-      </Card>
+      </Section>
 
       {/* Routing order */}
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Порядок маршрутизации</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Правила проверяются сверху вниз (блокировки — всегда первыми).
-            Последний пункт — «всё остальное»: туда уходит весь несовпавший
-            трафик.
-          </p>
-        </div>
+      <Section
+        title="Порядок маршрутизации"
+        desc="Правила проверяются сверху вниз (блокировки — всегда первыми). Последний пункт — «всё остальное»: туда уходит весь несовпавший трафик."
+      >
         <div className="flex flex-col gap-1.5">
           {cfg.routing_order.map((lane, i) => {
             const last = i === cfg.routing_order.length - 1;
@@ -439,16 +479,10 @@ export function RoutingPanel() {
             );
           })}
         </div>
-      </Card>
+      </Section>
 
       {/* Direct */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Напрямую</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Эти домены/IP идут напрямую с этого сервера.
-          </p>
-        </div>
+      <Section title="Напрямую" desc="Эти домены/IP идут напрямую с этого сервера.">
         <TagsInput
           label="Домены"
           value={cfg.direct_domains}
@@ -463,26 +497,25 @@ export function RoutingPanel() {
           options={geoipOpts}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* WARP */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-bold text-ink">Cloudflare WARP</p>
-              <Badge color={warpStatus.color}>{warpStatus.label}</Badge>
-            </div>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              Включите, чтобы работали категории «Правила WARP» ниже.
-            </p>
-          </div>
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            Cloudflare WARP
+            <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
+          </span>
+        }
+        desc="Включите, чтобы работали категории «Правила WARP» ниже."
+        action={
           <Switch
             checked={warpEnabled}
             disabled={applying}
             onChange={setWarpEnabled}
           />
-        </div>
+        }
+      >
         <TagsInput
           label="Правила WARP - Домены"
           value={cfg.warp_domains}
@@ -497,27 +530,25 @@ export function RoutingPanel() {
           options={without(geoipOpts, cfg.block_ips)}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* Opera VPN */}
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="font-bold text-ink">Opera VPN</p>
-              <Badge color={operaStatus.color}>{operaStatus.label}</Badge>
-            </div>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали
-              категории «Правила Opera» ниже.
-            </p>
-          </div>
+      <Section
+        title={
+          <span className="flex items-center gap-2">
+            Opera VPN
+            <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
+          </span>
+        }
+        desc="Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали категории «Правила Opera» ниже."
+        action={
           <Switch
             checked={operaEnabled}
             disabled={applying}
             onChange={setOperaEnabled}
           />
-        </div>
+        }
+      >
         <Select
           label="Регион"
           data={OPERA_COUNTRIES}
@@ -538,18 +569,13 @@ export function RoutingPanel() {
           options={without(geoipOpts, cfg.block_ips)}
           placeholder="CIDR или geoip:xx…"
         />
-      </Card>
+      </Section>
 
       {/* Proxy lanes */}
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="min-w-0">
-          <p className="font-bold text-ink">Полосы прокси</p>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            У каждой полосы свои прокси и свои правила: например, .ru уходит
-            через один, а .com — через другой.
-          </p>
-        </div>
-
+      <Section
+        title="Полосы прокси"
+        desc="У каждой полосы свои прокси и свои правила: например, .ru уходит через один, а .com — через другой."
+      >
         {cfg.lanes.length === 0 && (
           <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-ink-muted">
             Полос пока нет.
@@ -663,59 +689,7 @@ export function RoutingPanel() {
             onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
           />
         )}
-      </Card>
-
-      {/* Geo databases */}
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-bold text-ink">Geo-базы</p>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              geosite.dat / geoip.dat — категории доменов и IP для правил выше.
-            </p>
-          </div>
-          <Button
-            variant="light"
-            size="sm"
-            loading={applying}
-            onClick={refreshGeo}
-          >
-            Обновить
-          </Button>
-        </div>
-        <div className="flex flex-col gap-1 text-sm">
-          {geoStatus.map((f) => (
-            <div
-              key={f.name}
-              className="flex items-center justify-between gap-2"
-            >
-              <span className="font-mono text-ink text-xs">{f.name}</span>
-              <span className="text-ink-muted text-xs">
-                {f.present
-                  ? `${fmtBytes(f.size)} · обновлено ${fmtWhen(f.modified_at)}`
-                  : "нет файла"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <SaveBar
-        dirty={dirty}
-        busy={applying}
-        onSave={save}
-        onCancel={() => {
-          // Restore EVERY field that feeds `dirty`, not just cfg/warp — otherwise
-          // Opera/proxy-source edits stay applied and the SaveBar never clears.
-          const c = JSON.parse(saved) as RoutingConfig;
-          setCfg(c);
-          setLaneSrc(laneSources(c.lanes));
-          setWarpEnabled(savedWarp);
-          setOperaEnabled(savedOpera);
-          setOperaCountry(savedOperaCountry);
-        }}
-      />
-      <ApplyingModal open={applying} />
+      </Section>
     </div>
   );
 }

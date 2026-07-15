@@ -62,6 +62,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
+		// allSets spans the local server plus each enabled, connected node, so the
+		// payload carries one entry per protocol × server (single-server = local only).
+		allSets := rt.subSettings(set)
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -69,20 +72,20 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
-			body := sub.ClashYAML(*u, set)
+			body := sub.ClashYAMLMulti(*u, allSets)
 			if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
-					body = sub.ClashWithTemplate(*u, set, tpl)
+					body = sub.ClashWithTemplateMulti(*u, allSets, tpl)
 				}
 			}
 			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 			_, _ = w.Write([]byte(body))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(sub.SingBoxJSON(*u, set)))
+			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allSets)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := sub.ShareLinks(*u, set)
+			links := sub.ShareLinksAll(*u, allSets)
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -303,7 +306,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 		}
 	}
 	for _, m := range rt.mgr.PaymentMethods() {
-		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: payProviderLabel(m)})
+		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: rt.mgr.ProviderLabel(m)})
 	}
 	// No automatic provider ⇒ manual payment: the pay button still works, creating a
 	// pending order and showing instructions (admin confirms it).
@@ -324,18 +327,6 @@ func payPlanLabel(p model.TariffPlan) string {
 	return fmt.Sprintf("%d ₽", p.PriceRub)
 }
 
-// payProviderLabel is the user-facing name of a payment method.
-func payProviderLabel(p string) string {
-	switch p {
-	case "yookassa":
-		return "Картой (ЮКасса)"
-	case "cryptobot":
-		return "Криптовалютой (CryptoBot)"
-	default:
-		return p
-	}
-}
-
 // isBrowser reports whether the request looks like a web browser (so we serve
 // the human page instead of the machine subscription payload).
 func isBrowser(r *http.Request) bool {
@@ -346,7 +337,9 @@ func isBrowser(r *http.Request) bool {
 // (writing nothing) instead of a 500 so the caller can fall through to the decoy
 // and keep the masquerade intact.
 func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
-	html, err := sub.Page(u, set, rt.buildBilling(u, set))
+	// Span the local server + each enabled node so the page's individual-config list
+	// covers every server (single-server ⇒ just the local set).
+	html, err := sub.Page(u, rt.subSettings(set), rt.buildBilling(u, set))
 	if err != nil {
 		return err
 	}

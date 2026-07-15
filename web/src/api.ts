@@ -21,6 +21,7 @@ export interface User {
   telegram_linked?: boolean
   telegram_link?: string
   telegram_deep_link?: string
+  tg_chat_id?: number // linked Telegram chat/user id (0 = not linked)
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
   vless: string
@@ -247,6 +248,16 @@ export const resetPanel = () =>
   api<{ url: string }>('api/reset', { method: 'POST' })
 
 export const getConnections = () => api<ConnectionsStatus>('api/connections')
+
+// Per-node connections: a node's own transport/protocols/REALITY. Same shape as the
+// master's, so the same editor drives both.
+export const getNodeConnections = (id: number) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections`)
+export const applyNodeConnections = (id: number, u: ConnectionsUpdate) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections`, {
+    method: 'POST',
+    body: JSON.stringify(u),
+  })
 export const deleteUser = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}`, { method: 'DELETE' })
 export const resetUserTraffic = (id: number) =>
@@ -643,8 +654,21 @@ export interface GeoFile {
   modified_at: number
 }
 
-export const getGeoStatus = () => api<GeoFile[]>('api/geo')
-export const updateGeo = () => api<GeoFile[]>('api/geo/update', { method: 'POST' })
+// GeoInfo is the geo databases' status plus the auto-refresh cadence (hours; 0 = off).
+export interface GeoInfo {
+  files: GeoFile[]
+  refresh_hours: number
+}
+
+export const getGeoStatus = () => api<GeoInfo>('api/geo')
+export const updateGeo = () => api<GeoInfo>('api/geo/update', { method: 'POST' })
+
+// setGeoCadence sets how often the geo databases auto-refresh (hours; 0 = never).
+export const setGeoCadence = (refresh_hours: number) =>
+  api<{ ok: boolean }>('api/geo/cadence', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_hours }),
+  })
 
 export const getRouting = () => api<RoutingInfo>('api/routing')
 export const saveRouting = (
@@ -721,9 +745,14 @@ export interface TelegramInfo {
   user_enabled: boolean
   user_token: string
   user_reg_enabled: boolean
+  user_reg_mode: RegMode // off | open | moderation | invite
+  user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   admin_events: Record<string, boolean> // admin notification categories (key→on)
 }
+
+// Self-registration modes for the public user bot.
+export type RegMode = 'off' | 'open' | 'moderation' | 'invite'
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
 
@@ -733,7 +762,8 @@ export const saveTelegram = (
   backup_cron: string,
   user_enabled: boolean,
   user_token: string,
-  user_reg_enabled: boolean,
+  user_reg_mode: RegMode,
+  user_reg_code: string,
   admin_events: Record<string, boolean>,
 ) =>
   api<{ ok: boolean }>('api/telegram', {
@@ -744,7 +774,8 @@ export const saveTelegram = (
       backup_cron,
       user_enabled,
       user_token,
-      user_reg_enabled,
+      user_reg_mode,
+      user_reg_code,
       admin_events,
     }),
   })
@@ -771,6 +802,26 @@ export const unlinkTelegram = (chat_id: number) =>
 
 export const testTelegramBackup = () =>
   api<{ ok: boolean }>('api/telegram/test-backup', { method: 'POST' })
+
+// Moderated self-registration queue: signups awaiting an admin decision. No user
+// exists until a request is approved.
+export interface RegistrationRequest {
+  id: number
+  chat_id: number
+  name: string
+  created_at: number
+}
+
+export const getRegistrations = () =>
+  api<{ moderation: boolean; requests: RegistrationRequest[] }>(
+    'api/registrations',
+  )
+
+export const approveRegistration = (id: number) =>
+  api<{ ok: boolean }>(`api/registrations/${id}/approve`, { method: 'POST' })
+
+export const rejectRegistration = (id: number) =>
+  api<{ ok: boolean }>(`api/registrations/${id}/reject`, { method: 'POST' })
 
 export const login = (username: string, password: string) =>
   api<{ ok: boolean }>('api/login', {
@@ -895,31 +946,45 @@ export interface BillingInfo {
 
 export const getBilling = () => api<BillingInfo>('api/billing')
 
-export interface PaymentSettings {
-  yookassa_enabled: boolean
-  yookassa_shop_id: string
-  yookassa_test: boolean
-  yookassa_key_set: boolean
-  cryptobot_enabled: boolean
-  cryptobot_testnet: boolean
-  cryptobot_token_set: boolean
-  webhook_yookassa: string
-  webhook_cryptobot: string
+// A payment provider's settings form is described by the server (internal/payments
+// registry), so adding a provider needs no frontend change — the form renders from
+// these fields. Secret fields never carry their value: only `is_set` says whether
+// one is stored; sending an empty secret keeps the current one.
+export type PaymentFieldKind = 'text' | 'secret' | 'bool' | 'select'
+
+export interface PaymentField {
+  key: string
+  label: string
+  kind: PaymentFieldKind
+  placeholder?: string
+  help?: string
+  optional?: boolean
+  value?: string | boolean // text/select → string, bool → boolean; absent for secrets
+  is_set?: boolean // secrets only: whether a value is stored
+  options?: { value: string; label: string }[] // select only
 }
 
-export interface PaymentSettingsInput {
-  yookassa_enabled: boolean
-  yookassa_shop_id: string
-  yookassa_secret_key: string // empty = keep current
-  yookassa_test: boolean
-  cryptobot_enabled: boolean
-  cryptobot_token: string // empty = keep current
-  cryptobot_testnet: boolean
+export interface PaymentProvider {
+  key: string
+  label: string
+  note: string
+  enabled: boolean
+  fields: PaymentField[]
+  webhook_url: string
 }
 
-export const getPayments = () => api<PaymentSettings>('api/payments')
-export const savePayments = (s: PaymentSettingsInput) =>
-  api<PaymentSettings>('api/payments', { method: 'POST', body: JSON.stringify(s) })
+export const getPayments = () =>
+  api<{ providers: PaymentProvider[] }>('api/payments')
+
+export const savePaymentProvider = (p: {
+  key: string
+  enabled: boolean
+  config: Record<string, string> // secrets: empty = keep current; bools: '1' | ''
+}) =>
+  api<{ providers: PaymentProvider[] }>('api/payments', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
 
 export const saveBilling = (b: {
   enabled: boolean
@@ -1074,3 +1139,243 @@ export const testWebhook = (id: number) =>
     `api/webhooks/${id}/test`,
     { method: 'POST' },
   )
+
+// --- Nodes (multi-node) -----------------------------------------------------
+
+// NodeView is one row of the Nodes page. The local server is node 0 (is_local).
+export interface NodeView {
+  id: number
+  name: string
+  host: string
+  enabled: boolean
+  is_local: boolean
+  online: boolean
+  joined: boolean
+  last_seen: number
+  node_version: string
+  xray_version: string
+  xray_running: boolean
+  version_skew: boolean
+  vless_enabled: boolean
+  trojan_enabled: boolean
+  hysteria_enabled: boolean
+  reality_enabled: boolean
+  decoy_template: string
+  cert_self_signed: boolean // true = still on the self-signed fallback (no CA cert yet)
+  cert_issuer: string // ≈ ACME provider that signed the cert (empty for the master)
+  cert_expires_at: number // unix; 0 = unknown
+  geo_refresh_hours: number // this server's own geo auto-refresh cadence (0 = never)
+  traffic_up: number
+  traffic_down: number
+  routing: RoutingConfig | null // node's own routing, null = not configured (direct)
+  xray_dns: string | null // node's own DNS, null = not configured (default resolver)
+  // Per-node egress (independent of the master; all off by default). For the local
+  // node (master) these carry the panel's own settings.
+  warp_enabled: boolean
+  warp_registered: boolean
+  opera_enabled: boolean
+  opera_country: string
+  // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
+  // donor. The public key / short id / gRPC service are shown; private key is hidden.
+  reality_dest: string
+  reality_public_key: string
+  reality_short_id: string
+  reality_service_name: string
+  master_label?: string // config-label name of the master (local node only)
+}
+
+export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
+
+// setMasterName sets the panel server's display name shown in config labels.
+export const setMasterName = (name: string) =>
+  api<{ ok: boolean }>('api/nodes/master-name', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+
+// setMasterProtocols toggles the panel's own protocols on/off (the master card).
+// Connection details stay in the global Подключения settings.
+export const setMasterProtocols = (p: {
+  vless_enabled: boolean
+  trojan_enabled: boolean
+  hysteria_enabled: boolean
+  reality_enabled: boolean
+}) =>
+  api<{ ok: boolean }>('api/nodes/master-protocols', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
+
+// setMasterReality / setNodeReality set a server's REALITY donor (masquerade SNI) and,
+// when regen is true, regenerate its REALITY keys (invalidates that server's links).
+export const setMasterReality = (dest: string, regen: boolean) =>
+  api<{ ok: boolean }>('api/nodes/master-reality', {
+    method: 'POST',
+    body: JSON.stringify({ dest, regen }),
+  })
+
+export const setNodeReality = (id: number, dest: string, regen: boolean) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/reality`, {
+    method: 'POST',
+    body: JSON.stringify({ dest, regen }),
+  })
+
+// refreshNodeGeo asks a node to re-download its geo databases now.
+export const refreshNodeGeo = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/geo-refresh`, { method: 'POST' })
+
+// setNodeGeoCadence sets a node's own geo auto-refresh cadence (hours; 0 = never).
+export const setNodeGeoCadence = (id: number, refresh_hours: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/geo-cadence`, {
+    method: 'POST',
+    body: JSON.stringify({ refresh_hours }),
+  })
+
+// getNodeGeo returns a node's geo file status + its cadence, for the node Geo tab.
+export const getNodeGeo = (id: number) => api<GeoInfo>(`api/nodes/${id}/geo`)
+
+// Node TLS/ACME — same shape/UI as the master's domain page.
+export const getNodeTLS = (id: number) => api<TLSStatus>(`api/nodes/${id}/tls`)
+export const setNodeACME = (
+  id: number,
+  target: string,
+  email: string,
+  provider: string,
+) =>
+  api<TLSStatus>(`api/nodes/${id}/tls`, {
+    method: 'POST',
+    body: JSON.stringify({ target, email, provider }),
+  })
+
+export const createNode = (name: string, host: string) =>
+  api<{ id: number; install_command: string }>('api/nodes', {
+    method: 'POST',
+    body: JSON.stringify({ name, host }),
+  })
+
+// NodePatch carries a node edit (name/host/decoy). Protocols are edited on the
+// Подключения tab and are OPTIONAL here: omitting them tells the panel to preserve the
+// node's current values, so a name/decoy save can't revert a just-made protocol change.
+export interface NodePatch {
+  name: string
+  host: string
+  decoy_template: string
+  vless_enabled?: boolean
+  trojan_enabled?: boolean
+  hysteria_enabled?: boolean
+  reality_enabled?: boolean
+}
+
+export const updateNode = (id: number, patch: NodePatch) =>
+  api<{ ok: boolean }>(`api/nodes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+
+export const setNodeEnabled = (id: number, enabled: boolean) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/enabled`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export const deleteNode = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}`, { method: 'DELETE' })
+
+export const regenNodeJoin = (id: number) =>
+  api<{ install_command: string }>(`api/nodes/${id}/regen-join`, {
+    method: 'POST',
+  })
+
+export const updateNodeVersion = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/update`, { method: 'POST' })
+
+export const updateAllNodes = () =>
+  api<{ nodes: number }>('api/nodes/update-all', { method: 'POST' })
+
+// getNodeLogs returns a node's recent log tail; polling it also asks the node to
+// send fresh logs on its next sync.
+export const getNodeLogs = (id: number) =>
+  api<{ lines: string[]; at: number }>(`api/nodes/${id}/logs`)
+
+// setNodeRouting saves a node's routing + egress override. A null routing means
+// "inherit the panel's"; egress (WARP/Opera) is the node's own. DNS has its own
+// endpoint (setNodeDNS). Mirrors the master's saveRouting shape.
+export const setNodeRouting = (
+  id: number,
+  routing: RoutingConfig | null,
+  warpEnabled: boolean,
+  operaEnabled: boolean,
+  operaCountry: string,
+) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/routing`, {
+    method: 'POST',
+    body: JSON.stringify({
+      routing,
+      warp_enabled: warpEnabled,
+      opera_enabled: operaEnabled,
+      opera_country: operaCountry,
+    }),
+  })
+
+// setNodeDNS saves a node's own DNS override (null ⇒ inherit the panel's), independent
+// of routing.
+export const setNodeDNS = (id: number, xray_dns: string | null) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/dns`, {
+    method: 'POST',
+    body: JSON.stringify({ xray_dns }),
+  })
+
+// ProvisionCreds are the throwaway SSH credentials used to install a node over SSH.
+export interface ProvisionCreds {
+  ssh_host: string
+  ssh_port: number
+  ssh_user: string
+  ssh_password?: string
+  ssh_key?: string
+  ssh_key_passphrase?: string
+}
+
+// provisionNode installs a created node onto a remote server over SSH, streaming
+// the install log line-by-line to onLine. Resolves "done" or "error" when the
+// stream ends. The response is an SSE stream over a POST (so credentials go in the
+// body, not the URL), read here with a stream reader rather than EventSource.
+export async function provisionNode(
+  id: number,
+  creds: ProvisionCreds,
+  onLine: (line: string) => void,
+): Promise<'done' | 'error'> {
+  const res = await fetch(`api/nodes/${id}/provision`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADER },
+    body: JSON.stringify(creds),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let outcome: 'done' | 'error' = 'error'
+  const handle = (frame: string) => {
+    const line = frame.replace(/^data: ?/, '').trim()
+    if (line === 'event:done') outcome = 'done'
+    else if (line === 'event:error') outcome = 'error'
+    else if (line) onLine(line)
+  }
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    // SSE frames are separated by a blank line; each carries a "data: <text>" line.
+    const frames = buf.split('\n\n')
+    buf = frames.pop() ?? ''
+    for (const f of frames) handle(f)
+  }
+  // Flush a trailing frame if the stream ended without a final blank line, so a
+  // terminal "event:done"/"event:error" isn't dropped (false 'error' on success).
+  if (buf.trim()) handle(buf)
+  return outcome
+}

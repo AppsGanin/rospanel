@@ -2,17 +2,85 @@ package store
 
 import "github.com/AppsGanin/rospanel/internal/model"
 
-// AddDailyTraffic adds up/down deltas to a user's row for the given UTC day.
+// AddDailyTraffic adds up/down deltas to a user's row on the local server (node 0)
+// for the given day.
 func (s *Store) AddDailyTraffic(userID int64, day string, up, down int64) error {
+	return s.AddDailyTrafficNode(userID, model.LocalNodeID, day, up, down)
+}
+
+// AddDailyTrafficNode adds up/down deltas attributed to a specific node.
+func (s *Store) AddDailyTrafficNode(userID, nodeID int64, day string, up, down int64) error {
 	if up == 0 && down == 0 {
 		return nil
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO traffic_daily (user_id, day, up, down) VALUES (?, ?, ?, ?)
-		ON CONFLICT(user_id, day) DO UPDATE SET up = up + excluded.up, down = down + excluded.down`,
-		userID, day, up, down,
+		INSERT INTO traffic_daily (user_id, node_id, day, up, down) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(user_id, node_id, day) DO UPDATE SET up = up + excluded.up, down = down + excluded.down`,
+		userID, nodeID, day, up, down,
 	)
 	return err
+}
+
+// AddUsedTraffic bumps a user's lifetime totals WITHOUT touching last_up/last_down
+// (the raw Xray counter baseline for the local poller). Remote-node traffic ingest
+// uses this: the node already computed the delta, so the panel just accumulates.
+func (s *Store) AddUsedTraffic(userID, up, down int64) error {
+	if up == 0 && down == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`UPDATE users SET used_up = used_up + ?, used_down = used_down + ? WHERE id = ?`,
+		up, down, userID,
+	)
+	return err
+}
+
+// StatsSeriesNode returns per-day totals for a single node (nodeID, including 0
+// for the local server) between from and to. userID 0 aggregates across users.
+func (s *Store) StatsSeriesNode(userID, nodeID int64, from, to string) ([]model.DailyPoint, error) {
+	query := `SELECT day, SUM(up), SUM(down) FROM traffic_daily WHERE node_id = ? AND day BETWEEN ? AND ?`
+	args := []any{nodeID, from, to}
+	if userID > 0 {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+	query += ` GROUP BY day ORDER BY day`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.DailyPoint
+	for rows.Next() {
+		var p model.DailyPoint
+		if err := rows.Scan(&p.Day, &p.Up, &p.Down); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// NodeTrafficTotals returns each node's total up+down over the period, keyed by
+// node_id (0 = local server). Used by the Nodes UI.
+func (s *Store) NodeTrafficTotals(from, to string) (map[int64][2]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ? GROUP BY node_id`,
+		from, to,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64][2]int64)
+	for rows.Next() {
+		var nodeID, up, down int64
+		if err := rows.Scan(&nodeID, &up, &down); err != nil {
+			return nil, err
+		}
+		out[nodeID] = [2]int64{up, down}
+	}
+	return out, rows.Err()
 }
 
 // StatsSeries returns per-day totals between from and to (inclusive, YYYY-MM-DD).

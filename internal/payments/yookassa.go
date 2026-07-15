@@ -17,6 +17,52 @@ import (
 // which is what the "test" toggle in the panel documents.
 const yooKassaAPI = "https://api.yookassa.ru/v3"
 
+const keyYooKassa = "yookassa"
+
+func yooKassaDescriptor() Descriptor {
+	return Descriptor{
+		Key:   keyYooKassa,
+		Label: "ЮКасса",
+		Note:  "Карты, СБП · ₽",
+		Fields: []Field{
+			{Key: "shop_id", Label: "shopId", Kind: FieldText},
+			{Key: "secret_key", Label: "Секретный ключ", Kind: FieldSecret, Placeholder: "live_… или test_…"},
+			{Key: "test", Label: "Тестовый магазин", Kind: FieldBool,
+				Help: "У ЮКассы нет отдельного адреса песочницы — тестовый режим включается тестовыми ключами."},
+		},
+		New: func(cfg Config) Client { return NewYooKassa(cfg.Get("shop_id"), cfg.Get("secret_key")) },
+	}
+}
+
+// Create implements Client.
+func (y *YooKassa) Create(ctx context.Context, req CreateReq) (string, string, error) {
+	return y.CreatePayment(ctx, req.AmountRub, req.OrderID, req.Description, req.ReturnURL)
+}
+
+// Status implements Client.
+func (y *YooKassa) Status(ctx context.Context, providerID string) (Result, error) {
+	return y.PaymentStatus(ctx, providerID)
+}
+
+// Webhook implements Client. YooKassa signs nothing, so the POST body is not
+// trusted for anything but the payment id: the payment is re-fetched over the
+// authenticated API and that answer is what gets reported.
+func (y *YooKassa) Webhook(ctx context.Context, body []byte, _ http.Header) (string, Result, error) {
+	var n struct {
+		Object struct {
+			ID string `json:"id"`
+		} `json:"object"`
+	}
+	if json.Unmarshal(body, &n) != nil || n.Object.ID == "" {
+		return "", Result{}, fmt.Errorf("ЮКасса: некорректное уведомление")
+	}
+	res, err := y.PaymentStatus(ctx, n.Object.ID)
+	if err != nil {
+		return "", Result{}, err
+	}
+	return n.Object.ID, res, nil
+}
+
 // YooKassa is a minimal Checkout API client (create payment + status).
 type YooKassa struct {
 	shopID    string

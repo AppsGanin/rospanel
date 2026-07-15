@@ -50,6 +50,14 @@ func (m *Manager) PollStats() error {
 		t := stats[fmt.Sprintf("u%d", id)]
 		return t.Up, t.Down
 	})
+	return m.enforceAfterTraffic(users)
+}
+
+// enforceAfterTraffic runs the post-accounting tail shared by the local poll
+// (PollStats) and remote-node traffic ingest (IngestNodeSync): alert on status
+// transitions, sync users if someone crossed a limit/expiry, and apply billing
+// downgrades. `users` is the pre-enforcement snapshot used for transition alerts.
+func (m *Manager) enforceAfterTraffic(users []model.User) error {
 	// Alert admins when a user crosses active → expired / out-of-quota / over-device.
 	m.notifyStatusTransitions(users)
 	// Reconcile if the working set changed since the last applied config — e.g. a

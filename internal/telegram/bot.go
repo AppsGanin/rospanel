@@ -37,7 +37,14 @@ type Panel interface {
 	ApplyPlanToUser(ctx context.Context, userID, planID int64, extendFromCurrent bool) error
 	PlanName(planID int64) string
 	RequestPlanPayment(ctx context.Context, userID, planID int64) (*model.PaymentOrder, string, error)
+	// CreateRegisteredUser signs a new user up (active, for the open/invite modes).
 	CreateRegisteredUser(ctx context.Context, name string) (*model.User, error)
+	// RequestRegistration records a moderated signup (no user yet); ApproveRegistration
+	// Request creates the user, RejectRegistrationRequest drops it.
+	RequestRegistration(ctx context.Context, chatID int64, name string) (bool, error)
+	RegistrationPending(chatID int64) bool
+	ApproveRegistrationRequest(ctx context.Context, reqID int64) error
+	RejectRegistrationRequest(ctx context.Context, reqID int64) error
 	// ActivePaidPlan reports the user's active paid plan (nil = none), and
 	// CancelUserPlan drops it to the free plan. Together they gate plan switching:
 	// while a paid plan is active only renewal or cancellation is allowed.
@@ -46,9 +53,11 @@ type Panel interface {
 
 	// Automatic payment providers (no-op surface unless configured).
 	PaymentMethods() []string
+	ProviderLabel(key string) string
 	StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))
+	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
 
 	// Audit hooks for the actions the bots perform directly on the store.
 	UnlinkUserTelegram(ctx context.Context, id int64) error
@@ -139,6 +148,26 @@ func (s *Service) Run(ctx context.Context) {
 		c := NewClient(strings.TrimSpace(set.TGBotToken))
 		for _, id := range set.TelegramChatIDs() {
 			_ = c.SendMessage(context.Background(), id, html)
+		}
+	})
+	// A signup awaiting moderation: post it with approve/reject buttons.
+	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
+		set, err := s.store.GetSettings()
+		if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
+			return
+		}
+		msg := "🕒 <b>Заявка на регистрацию</b>\nПользователь: " + esc(name)
+		if plan != "" {
+			msg += "\nТариф: " + esc(plan)
+		}
+		msg += "\n\nОдобрить доступ?"
+		rows := [][]InlineButton{{
+			{Text: "✅ Одобрить", CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
+			{Text: "🚫 Отклонить", CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
+		}}
+		c := NewClient(strings.TrimSpace(set.TGBotToken))
+		for _, id := range set.TelegramChatIDs() {
+			_ = c.SendMenu(context.Background(), id, msg, rows)
 		}
 	})
 	for {
@@ -290,10 +319,36 @@ func (s *Service) handleCallback(ctx context.Context, client *Client, cb *Callba
 		s.showUsers(ctx, client, chatID, msgID, atoiOr(strings.TrimPrefix(data, "users:"), 0))
 	case strings.HasPrefix(data, "u:"):
 		s.handleUserAction(ctx, client, chatID, msgID, set, strings.TrimPrefix(data, "u:"))
+	case strings.HasPrefix(data, "reg:"):
+		s.handleModeration(ctx, client, chatID, msgID, strings.TrimPrefix(data, "reg:"))
 	case data == "add":
 		s.promptAdd(ctx, client, chatID, msgID)
 	case data == "backup":
 		s.cmdBackup(ctx, client, chatID, set)
+	}
+}
+
+// handleModeration approves or rejects a signup awaiting moderation. payload is
+// "<id>:ok" | "<id>:no". The prompt message is edited in place to the outcome.
+func (s *Service) handleModeration(ctx context.Context, client *Client, chatID, msgID int64, payload string) {
+	idStr, action, _ := strings.Cut(payload, ":")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return
+	}
+	switch action {
+	case "ok":
+		if err := s.panel.ApproveRegistrationRequest(ctx, id); err != nil {
+			s.edit(ctx, client, chatID, msgID, "⚠️ Не удалось одобрить: "+esc(err.Error()), nil)
+			return
+		}
+		s.edit(ctx, client, chatID, msgID, "✅ Заявка одобрена — аккаунт создан, доступ открыт.", nil)
+	case "no":
+		if err := s.panel.RejectRegistrationRequest(ctx, id); err != nil {
+			s.edit(ctx, client, chatID, msgID, "⚠️ Не удалось отклонить: "+esc(err.Error()), nil)
+			return
+		}
+		s.edit(ctx, client, chatID, msgID, "🚫 Заявка отклонена.", nil)
 	}
 }
 

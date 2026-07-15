@@ -10,6 +10,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
+	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
 // Health check severities. worstStatus ranks error > warn > ok; info is advisory
@@ -52,6 +53,10 @@ func (m *Manager) Health() *HealthReport {
 
 	checks = append(checks, m.connGuardHealth(), bbrHealth())
 
+	if nc := m.nodesHealth(); nc != nil {
+		checks = append(checks, *nc)
+	}
+
 	if set != nil && set.OperaEnabled {
 		if m.OperaHealthy() {
 			checks = append(checks, HealthCheck{Key: "opera", Label: "Выход Opera VPN", Status: healthOK, Detail: "канал активен"})
@@ -61,6 +66,48 @@ func (m *Manager) Health() *HealthReport {
 		}
 	}
 	return &HealthReport{Status: worstStatus(checks), Checks: checks}
+}
+
+// nodesHealth summarizes the remote nodes: how many are online, and a warning
+// when some enabled node is offline or on a stale Xray version. Returns nil when
+// no nodes are configured (single-server install), so the check doesn't appear.
+func (m *Manager) nodesHealth() *HealthCheck {
+	nodes, err := m.store.ListNodes()
+	if err != nil || len(nodes) == 0 {
+		return nil
+	}
+	now := time.Now().Unix()
+	var online, offline, stale int
+	for i := range nodes {
+		n := &nodes[i]
+		if !n.Enabled {
+			continue
+		}
+		if n.Online(now) {
+			online++
+		} else if n.Joined() {
+			offline++
+		}
+		if n.XrayVersion != "" && n.XrayVersion != xray.PinnedVersion {
+			stale++
+		}
+	}
+	total := online + offline
+	switch {
+	case offline > 0:
+		return &HealthCheck{Key: "nodes", Label: "Ноды", Status: healthWarn,
+			Detail: fmt.Sprintf("%d из %d онлайн, %d офлайн", online, total, offline),
+			Hint:   "Офлайн-нода не обслуживает пользователей — проверьте её через journalctl -u rospanel-node."}
+	case stale > 0:
+		return &HealthCheck{Key: "nodes", Label: "Ноды", Status: healthWarn,
+			Detail: fmt.Sprintf("%d онлайн, у %d устаревшая версия Xray", online, stale),
+			Hint:   "Обновите ноды кнопкой «Обновить» на вкладке Ноды."}
+	case total == 0:
+		return nil // only disabled nodes → nothing to report
+	default:
+		return &HealthCheck{Key: "nodes", Label: "Ноды", Status: healthOK,
+			Detail: fmt.Sprintf("все %d онлайн", online)}
+	}
 }
 
 func (m *Manager) xrayHealth() HealthCheck {

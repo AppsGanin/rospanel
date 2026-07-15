@@ -63,13 +63,20 @@ type ConnectionsStatus struct {
 	BlockQUIC   bool `json:"block_quic"`   // drop untunneled browser QUIC in client configs
 }
 
-// ConnectionsInfo reports the enabled protocols and their connection parameters,
-// derived from settings.
+// ConnectionsInfo reports the master's enabled protocols and their connection
+// parameters, derived from settings.
 func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return nil, err
 	}
+	return buildConnectionsStatus(set), nil
+}
+
+// buildConnectionsStatus derives the connection status from an effective settings
+// value — the master's own, or a node's (via nodeSettings) — so the same editor
+// drives both.
+func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 	vlessPort := set.VLESSPort
 	if vlessPort == 0 {
 		vlessPort = 443
@@ -140,7 +147,7 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 				Enabled:     set.HysteriaEnabled,
 			},
 		},
-	}, nil
+	}
 }
 
 // realityAntiReplayWindowMs is the REALITY maxTimeDiff applied when anti-replay is
@@ -418,6 +425,57 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	// first). The host firewall must allow the UDP range.
 	if err := hop.Ensure(u.HopStart, u.HopEnd, u.HysteriaPort); err != nil {
 		slog.Error("hop: re-apply failed", "err", err)
+	}
+	m.TriggerReconcile()
+	return nil
+}
+
+// validateRealityDests parses a comma-separated donor list, syntactically checks
+// each, and returns the normalized "d1,d2" form (first is primary, used in links).
+func validateRealityDests(dest string) (string, error) {
+	var out []string
+	for _, d := range strings.Split(dest, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			if !realityHostRe.MatchString(d) {
+				return "", invalid("домен маскировки REALITY %q не похож на настоящий", d)
+			}
+			out = append(out, d)
+		}
+	}
+	if len(out) == 0 {
+		return "", invalid("укажи хотя бы один домен маскировки REALITY")
+	}
+	return strings.Join(out, ","), nil
+}
+
+// SetMasterProtocols toggles the panel's own (master) protocols on/off. The
+// connection DETAILS (ports, transport, REALITY donor, anti-DPI) stay global and are
+// edited in the Подключения settings; only the on/off lives on the master server
+// card, so the master toggles its protocols the same way a node does.
+func (m *Manager) SetMasterProtocols(vless, trojan, hysteria, reality bool) error {
+	if reality {
+		set, err := m.store.GetSettings()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(set.RealityDest) == "" {
+			return invalid("сначала задайте домен маскировки REALITY во вкладке «Подключения»")
+		}
+	}
+	for name, en := range map[string]bool{
+		"vless": vless, "trojan": trojan, "hysteria2": hysteria, "reality": reality,
+	} {
+		if err := m.store.SetProtocolEnabled(name, en); err != nil {
+			return err
+		}
+	}
+	// Enabling REALITY for the first time needs key material (mirrors ApplyConnections).
+	if reality {
+		if set, err := m.store.GetSettings(); err == nil && set.RealityPrivateKey == "" {
+			if err := m.regenRealityKeys(); err != nil {
+				return err
+			}
+		}
 	}
 	m.TriggerReconcile()
 	return nil

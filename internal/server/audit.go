@@ -72,6 +72,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/routing":                  set("Маршрутизация"),
 	"POST /api/connections":              set("Подключения"),
 	"POST /api/geo/update":               set("Geo-базы"),
+	"POST /api/geo/cadence":              set("Geo-базы · автообновление"),
 	"POST /api/tls":                      set("TLS-сертификат"),
 	"POST /api/telegram":                 set("Telegram"),
 	"POST /api/telegram/link":            set("Telegram · привязка"),
@@ -90,6 +91,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/billing/orders/{id}/confirm": skip,
 	"POST /api/billing/orders/{id}/cancel":  skip,
 
+	// Moderated registration: approval audits the created user inside the manager
+	// (EventUserRegistered); rejection deletes only a pending request (no user yet).
+	"POST /api/registrations/{id}/approve": skip,
+	"POST /api/registrations/{id}/reject":  skip,
+
 	// API keys and webhooks: credentials and outbound endpoints, each with its own
 	// lifecycle — worth their own rows, not folded into "настройки".
 	"POST /api/apikeys":            act(model.AuditAPIKeyCreated),
@@ -98,6 +104,27 @@ var auditActions = map[string]auditRoute{
 	"POST /api/webhooks/{id}":      act(model.AuditWebhookUpdated),
 	"DELETE /api/webhooks/{id}":    act(model.AuditWebhookDeleted),
 	"POST /api/webhooks/{id}/test": skip, // a test delivery changes nothing
+
+	// Nodes: each is a managed server with its own lifecycle. One section-style
+	// action; the node is the target. regen-join mints a fresh install credential.
+	"POST /api/nodes":                  set("Нода добавлена"),
+	"POST /api/nodes/master-name":      set("Имя мастера в конфигах"),
+	"POST /api/nodes/master-protocols": set("Протоколы мастера"),
+	"POST /api/nodes/master-reality":   set("REALITY мастера"),
+	"PATCH /api/nodes/{id}":            set("Нода изменена"),
+	"POST /api/nodes/{id}/routing":     set("Нода · роутинг"),
+	"POST /api/nodes/{id}/dns":         set("Нода · DNS"),
+	"POST /api/nodes/{id}/reality":     set("Нода · REALITY"),
+	"POST /api/nodes/{id}/connections": set("Нода · подключения"),
+	"POST /api/nodes/{id}/tls":         set("Нода · домен/TLS"),
+	"POST /api/nodes/{id}/geo-refresh": set("Нода · обновление geo"),
+	"POST /api/nodes/{id}/geo-cadence": set("Нода · автообновление geo"),
+	"DELETE /api/nodes/{id}":           set("Нода удалена"),
+	"POST /api/nodes/{id}/enabled":     set("Нода вкл/выкл"),
+	"POST /api/nodes/{id}/regen-join":  set("Нода · новый токен установки"),
+	"POST /api/nodes/{id}/update":      set("Нода · обновление"),
+	"POST /api/nodes/update-all":       set("Обновление всех нод"),
+	"POST /api/nodes/{id}/provision":   set("Нода · установка по SSH"),
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.

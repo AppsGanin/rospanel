@@ -1,28 +1,23 @@
 import { ApiSettings } from "./ApiSettings";
 import { BillingPanel } from "./BillingPanel";
 import { BrandingSettings } from "./BrandingSettings";
-import { ConnectionsPanel } from "./ConnectionsPanel";
-import { DnsSettings } from "./DnsSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { navigate, useRoute } from "./router";
-import { RoutingPanel } from "./RoutingPanel";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
 import { TelegramSettings } from "./TelegramSettings";
-import { TLSPanel } from "./TLSPanel";
 import { cn } from "./ui";
 import { WebhooksSettings } from "./WebhooksSettings";
 
+// Everything server-specific (connections/protocols, domain, routing, DNS, decoy)
+// moved to the per-server cards on the "Сервера" page: each server (the master
+// included) owns its own, edited from its card rather than as global tabs here.
 const SUBTABS = [
   { value: "general", label: "Основное" },
   { value: "branding", label: "Брендинг" },
-  { value: "connections", label: "Подключения" },
   { value: "subscriptions", label: "Подписки" },
-  { value: "routing", label: "Роутинг" },
-  { value: "dns", label: "DNS" },
   { value: "telegram", label: "Telegram" },
   { value: "billing", label: "Оплата" },
   { value: "api", label: "API" },
-  { value: "domain", label: "Домен" },
 ] as const;
 
 type SubTab = (typeof SUBTABS)[number]["value"];
@@ -60,10 +55,7 @@ export function SettingsPanel() {
       <div key={tab} className="animate-fade-in">
         {tab === "general" && <GeneralSettings />}
         {tab === "branding" && <BrandingSettings />}
-        {tab === "connections" && <ConnectionsPanel />}
         {tab === "subscriptions" && <SubscriptionsPanel />}
-        {tab === "routing" && <RoutingPanel />}
-        {tab === "dns" && <DnsSettings />}
         {tab === "telegram" && <TelegramSettings />}
         {tab === "billing" && <BillingPanel />}
         {tab === "api" && (
@@ -72,7 +64,6 @@ export function SettingsPanel() {
             <WebhooksSettings />
           </div>
         )}
-        {tab === "domain" && <TLSPanel />}
       </div>
     </div>
   );

@@ -197,7 +197,8 @@ export function RestoreWaiting({
         </div>
         {crossDomain && (
           <p className="text-center text-sm text-warning">
-            Домен изменился. После входа проверьте раздел Настройки → Домен.
+            Домен изменился. После входа проверьте его в «Сервера» → карточка
+            мастера → Домен.
           </p>
         )}
       </div>

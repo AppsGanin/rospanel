@@ -1,0 +1,459 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/updater"
+)
+
+// nodeInstallCommand builds the one-line command an operator runs on a fresh
+// server to join it as a node. The join token lives in the URL fragment so it
+// never lands in an HTTP access log if the path is mistyped; the CLI parses it out.
+//
+// When the panel itself isn't on a CA-valid cert (e.g. served over a bare IP with a
+// self-signed cert), the node can't verify the panel's TLS on join/sync, so the
+// command gets --insecure automatically — otherwise the join fails with an x509
+// error and the node never connects. A panel on a real domain omits it.
+func (rt *Router) nodeInstallCommand(r *http.Request, nodePath, joinToken string) string {
+	joinURL := panelPublicURL(r) + "/" + nodePath + "/" + nodeapi.PathPrefix + "/join#" + joinToken
+	cmd := "curl -Ls https://raw.githubusercontent.com/" + updater.Repo +
+		"/main/install.sh | sudo bash -s -- --join '" + joinURL + "'"
+	if !rt.mgr.HasValidCert() {
+		cmd += " --insecure"
+	}
+	return cmd
+}
+
+// listNodes returns the local server (node 0) plus every remote node, with status
+// and today's traffic, for the Nodes UI.
+func (rt *Router) listNodes(w http.ResponseWriter, _ *http.Request) {
+	views, err := rt.mgr.NodeViews()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if views == nil {
+		views = []core.NodeView{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": views})
+}
+
+// nodeCreateReq is the add-node dialog payload.
+type nodeCreateReq struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+}
+
+// createNode registers a node and returns its view plus the one-time install
+// command (join token shown exactly once).
+func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
+	var req nodeCreateReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Host = strings.TrimSpace(req.Host)
+	if req.Name == "" {
+		writeErr(w, http.StatusBadRequest, "укажите название ноды")
+		return
+	}
+	if req.Host == "" {
+		writeErr(w, http.StatusBadRequest, "укажите домен или IP ноды")
+		return
+	}
+	node, err := rt.mgr.CreateNode(req.Name, req.Host)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, _ := rt.mgr.Store().GetSettings()
+	nodePath := ""
+	if set != nil {
+		nodePath = set.NodeAPIPath
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":              node.ID,
+		"install_command": rt.nodeInstallCommand(r, nodePath, node.RawJoinToken),
+	})
+}
+
+// nodePatchReq edits a node's name/host and decoy. Protocols are edited on the
+// Подключения tab, so a nil protocol pointer here means "leave it as it is" — the
+// handler preserves the node's current value. Routing/DNS/egress are likewise
+// preserved: a name/decoy edit must never silently wipe a protocol or routing override.
+type nodePatchReq struct {
+	Name          string `json:"name"`
+	Host          string `json:"host"`
+	DecoyTemplate string `json:"decoy_template"`
+	VLESS         *bool  `json:"vless_enabled"`
+	Trojan        *bool  `json:"trojan_enabled"`
+	Hysteria      *bool  `json:"hysteria_enabled"`
+	Reality       *bool  `json:"reality_enabled"`
+}
+
+// orBool returns a when set, else b — used to preserve a node's current protocol
+// value when a name/decoy edit omits it.
+func orBool(a, b *bool) *bool {
+	if a != nil {
+		return a
+	}
+	return b
+}
+
+// updateNode applies an edit and wakes the node so the change propagates.
+func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
+	var req nodePatchReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Host = strings.TrimSpace(req.Host)
+	if req.Name == "" || req.Host == "" {
+		writeErr(w, http.StatusBadRequest, "название и домен обязательны")
+		return
+	}
+	edit := store.NodeEdit{
+		Name:          req.Name,
+		Host:          req.Host,
+		DecoyTemplate: req.DecoyTemplate,
+		// Preserve protocols (edited on the Подключения tab) when omitted — otherwise a
+		// name/decoy save racing a just-made protocol change could revert it.
+		VLESS:    orBool(req.VLESS, node.VLESSEnabled),
+		Trojan:   orBool(req.Trojan, node.TrojanEnabled),
+		Hysteria: orBool(req.Hysteria, node.HysteriaEnabled),
+		Reality:  orBool(req.Reality, node.RealityEnabled),
+		// Preserve the node's existing routing/DNS/egress config — this endpoint doesn't
+		// edit them, and sending zero values would clear them.
+		Routing:      node.Routing,
+		XrayDNS:      node.XrayDNS,
+		WarpEnabled:  node.WarpEnabled,
+		OperaEnabled: node.OperaEnabled,
+		OperaCountry: node.OperaCountry,
+	}
+	if err := rt.mgr.UpdateNode(id, edit); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeRoutingReq sets a node's routing + egress overrides. A null routing field means
+// "inherit the panel's"; egress (WARP/Opera) is the node's own and off by default. DNS
+// is saved separately (setNodeDNS), so the Роутинг tab never touches it. The node
+// card's full routing editor always sends every field — no risk of a protocol toggle
+// wiping them. Mirrors the master's ApplyRouting(cfg, warp, opera, country) shape.
+type nodeRoutingReq struct {
+	Routing      *model.RoutingConfig `json:"routing"` // null ⇒ inherit global routing
+	WarpEnabled  bool                 `json:"warp_enabled"`
+	OperaEnabled bool                 `json:"opera_enabled"`
+	OperaCountry string               `json:"opera_country"`
+}
+
+// setNodeRouting saves a node's per-node routing + egress override. DNS is left
+// untouched (the node's current value is preserved) — it has its own endpoint.
+func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int64) {
+	var req nodeRoutingReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	edit := store.NodeEdit{
+		Name:          node.Name,
+		Host:          node.Host,
+		DecoyTemplate: node.DecoyTemplate,
+		VLESS:         node.VLESSEnabled,
+		Trojan:        node.TrojanEnabled,
+		Hysteria:      node.HysteriaEnabled,
+		Reality:       node.RealityEnabled,
+		Routing:       req.Routing,  // may be nil ⇒ inherit
+		XrayDNS:       node.XrayDNS, // preserve — DNS is edited on its own tab
+		WarpEnabled:   req.WarpEnabled,
+		OperaEnabled:  req.OperaEnabled,
+		OperaCountry:  req.OperaCountry,
+	}
+	if err := rt.mgr.UpdateNode(id, edit); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setNodeDNS saves a node's own DNS override (null ⇒ inherit the panel's), touching
+// nothing else. Its own endpoint so the DNS tab saves independently of routing.
+func (rt *Router) setNodeDNS(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		XrayDNS *string `json:"xray_dns"` // null ⇒ inherit global DNS
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeDNS(id, req.XrayDNS); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setMasterName sets the panel server's display name shown in config labels.
+func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterLabel(req.Name); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setMasterReality sets the master's REALITY donor and optionally regenerates keys.
+func (rt *Router) setMasterReality(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Dest  string `json:"dest"`
+		Regen bool   `json:"regen"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterReality(req.Dest, req.Regen); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeConnections returns a node's effective connection status for its editor.
+func (rt *Router) nodeConnections(w http.ResponseWriter, _ *http.Request, id int64) {
+	c, err := rt.mgr.NodeConnectionsInfo(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+// applyNodeConnections applies a full connections update to a node (its own transport,
+// protocols, REALITY donor/keys).
+func (rt *Router) applyNodeConnections(w http.ResponseWriter, r *http.Request, id int64) {
+	var req core.ConnectionsUpdate
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.ApplyNodeConnections(id, req); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	c, err := rt.mgr.NodeConnectionsInfo(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+// nodeTLS returns a node's TLS/ACME status (mirrors the master's GET /api/tls).
+func (rt *Router) nodeTLS(w http.ResponseWriter, _ *http.Request, id int64) {
+	s, err := rt.mgr.NodeTLSStatus(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+// setNodeACME sets a node's domain + ACME provider/email (mirrors POST /api/tls).
+func (rt *Router) setNodeACME(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Target   string `json:"target"`
+		Email    string `json:"email"`
+		Provider string `json:"provider"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeACME(id, req.Target, req.Email, req.Provider); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.nodeTLS(w, r, id)
+}
+
+// nodeGeoInfo returns a node's geo database status + its auto-refresh cadence, for
+// its Geo tab (mirrors the master's).
+func (rt *Router) nodeGeoInfo(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files":         rt.mgr.NodeGeoFiles(id),
+		"refresh_hours": node.GeoRefreshHours,
+	})
+}
+
+// nodeGeoRefresh asks a node to re-download its geo databases now.
+func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeGeoRefresh(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeGeoCadence sets a node's own geo auto-refresh cadence (hours; 0 = never).
+func (rt *Router) nodeGeoCadence(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		RefreshHours int `json:"refresh_hours"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeGeoRefresh(id, req.RefreshHours); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setNodeReality sets a node's own REALITY donor and optionally regenerates its keys.
+func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Dest  string `json:"dest"`
+		Regen bool   `json:"regen"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeReality(id, req.Dest, req.Regen); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setMasterProtocols toggles the panel's own protocols on/off from the master server
+// card (the connection details stay in the global Подключения settings).
+func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		VLESS    bool `json:"vless_enabled"`
+		Trojan   bool `json:"trojan_enabled"`
+		Hysteria bool `json:"hysteria_enabled"`
+		Reality  bool `json:"reality_enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterProtocols(req.VLESS, req.Trojan, req.Hysteria, req.Reality); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeLogs returns a node's recent log tail. Requesting it also asks the node to
+// send fresh logs on its next sync, so a UI polling this endpoint keeps refreshing.
+func (rt *Router) nodeLogs(w http.ResponseWriter, _ *http.Request, id int64) {
+	lines, at := rt.mgr.RequestNodeLogs(id)
+	if lines == nil {
+		lines = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "at": at})
+}
+
+// setNodeEnabled toggles whether a node serves traffic and appears in links.
+func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetNodeEnabled(id, req.Enabled); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// deleteNode removes a node; its held poll learns it's revoked and stops serving.
+func (rt *Router) deleteNode(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.DeleteNode(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// updateNodeVersion flags one node to self-update to the latest release.
+func (rt *Router) updateNodeVersion(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeUpdate(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// updateAllNodes flags every connected node to self-update.
+func (rt *Router) updateAllNodes(w http.ResponseWriter, _ *http.Request) {
+	n, err := rt.mgr.RequestAllNodesUpdate()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"nodes": n})
+}
+
+// regenNodeJoin issues a fresh install command for an existing node (e.g. to
+// re-install it), invalidating the node's current permanent token.
+func (rt *Router) regenNodeJoin(w http.ResponseWriter, r *http.Request, id int64) {
+	if node, err := rt.mgr.GetNode(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	} else if node == nil {
+		writeErr(w, http.StatusNotFound, "нода не найдена")
+		return
+	}
+	token, err := rt.mgr.RegenJoinToken(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, _ := rt.mgr.Store().GetSettings()
+	nodePath := ""
+	if set != nil {
+		nodePath = set.NodeAPIPath
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"install_command": rt.nodeInstallCommand(r, nodePath, token),
+	})
+}

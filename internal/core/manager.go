@@ -12,6 +12,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
@@ -70,10 +71,12 @@ type Manager struct {
 
 	// userNotify pushes a message to a VPN user's Telegram chat (set by the user
 	// bot; nil when off); adminNotify broadcasts to the admin chats (set by the
-	// admin bot). Used e.g. to report payment start/completion.
-	notifyMu    sync.Mutex
-	userNotify  func(chatID int64, html string)
-	adminNotify func(html string)
+	// admin bot). Used e.g. to report payment start/completion. adminModerate asks
+	// the admin bot to post a signup awaiting moderation with approve/reject buttons.
+	notifyMu      sync.Mutex
+	userNotify    func(chatID int64, html string)
+	adminNotify   func(html string)
+	adminModerate func(reqID int64, name, plan string)
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.
@@ -100,8 +103,13 @@ type Manager struct {
 	geoIP   []string // cached geoip category codes
 
 	proxyMu sync.Mutex
-	// proxies holds the current egress proxies of each lane, keyed by lane ID.
+	// proxies holds the local server's current egress proxies of each lane, keyed by
+	// lane ID.
 	proxies map[string][]model.ProxyEndpoint
+	// nodeProxies holds each remote node's own resolved lane proxies, keyed by node
+	// ID then lane ID. A node egresses through its OWN proxy pool (independent of the
+	// master), so its lanes are resolved separately. Refreshed on the same cadence.
+	nodeProxies map[int64]map[string][]model.ProxyEndpoint
 
 	guard *bruteGuard
 
@@ -120,6 +128,39 @@ type Manager struct {
 	operaSup *opera.Supervisor // runs/restarts the opera-proxy helper
 
 	health laneHealth // liveness of the Opera lane (probed in healthLoop)
+
+	// nodes tracks per-node wake channels so a config change wakes any held node
+	// long-poll to re-pull desired state (see manager_nodes.go).
+	nodes *nodeRegistry
+	// nodePathCB live-swaps the node-API URL segment into the router when the first
+	// node is created (nil until the server registers it; nil-safe for CLI/tests).
+	nodePathMu sync.Mutex
+	nodePathCB func(string)
+	// nodeEnsureMu serializes first-time node-API path generation so concurrent
+	// node creates converge on one segment.
+	nodeEnsureMu sync.Mutex
+	// nodeUpdateWanted holds node IDs the operator asked to self-update; nodeGeoWanted
+	// holds ones asked to refresh geo now. Both are consumed (sent once) on the node's
+	// next sync, under nodeUpdateMu.
+	nodeUpdateMu     sync.Mutex
+	nodeUpdateWanted map[int64]bool
+	nodeGeoWanted    map[int64]bool
+
+	// nodeLogs holds the most recent log tail reported by each node, plus which
+	// nodes an operator is currently viewing (so the panel asks them for logs).
+	nodeLogsMu     sync.Mutex
+	nodeLogs       map[int64]nodeLogEntry
+	nodeLogsWanted map[int64]int64 // node id → unix time the operator last asked
+
+	// nodeGeoFiles holds each node's last-reported geo database status.
+	nodeGeoMu    sync.Mutex
+	nodeGeoFiles map[int64][]nodeapi.GeoFile
+}
+
+// nodeLogEntry is a node's last-reported log tail.
+type nodeLogEntry struct {
+	lines []string
+	at    int64
 }
 
 // New builds a Manager. opts carries non-DB generation parameters (e.g. the
@@ -127,23 +168,35 @@ type Manager struct {
 // is where the opera-proxy helper binary is downloaded/run from.
 func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths, operaDir string) *Manager {
 	m := &Manager{
-		store:       st,
-		sup:         sup,
-		opts:        opts,
-		tls:         tls,
-		reconcileCh: make(chan struct{}, 1),
-		accLast:     make(map[string]int64),
-		applied:     make(map[int64]struct{}),
-		tz:          time.Local,
-		guard:       newBruteGuard(),
-		operaDir:    operaDir,
-		operaSup:    opera.New(filepath.Join(operaDir, "opera-proxy")),
-		webhookCh:   make(chan webhookJob, webhookQueueSize),
+		store:            st,
+		sup:              sup,
+		opts:             opts,
+		tls:              tls,
+		reconcileCh:      make(chan struct{}, 1),
+		accLast:          make(map[string]int64),
+		applied:          make(map[int64]struct{}),
+		tz:               time.Local,
+		guard:            newBruteGuard(),
+		operaDir:         operaDir,
+		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
+		webhookCh:        make(chan webhookJob, webhookQueueSize),
+		nodes:            newNodeRegistry(),
+		nodeUpdateWanted: map[int64]bool{},
+		nodeGeoWanted:    map[int64]bool{},
+		nodeLogs:         map[int64]nodeLogEntry{},
+		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
+		nodeLogsWanted:   map[int64]int64{},
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
 		logbuf.SetLocation(m.tz)                       // stamp log lines in the operator's zone, not the server's
 		m.proxies = seedProxiesFromManual(set.Routing) // manual seed (instant)
+		m.seedNodeProxies()                            // per-node manual seed (instant)
+		// Resolve each node's URL-sourced lane proxies in the background (mirrors the
+		// master's SeedProxies, which service.go runs unconditionally at boot). Without
+		// this, a node's URL lanes would stay empty until the first proxyLoop tick — and
+		// forever when auto-refresh is "never", since the loop is cadence-gated.
+		go m.RefreshNodeProxies()
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.
@@ -153,6 +206,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly
 	go m.reconcileLoop()
 	go m.proxyLoop()
+	go m.geoLoop() // auto-refresh geo databases on the operator's cadence
 	go m.bruteGuardLoop()
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
@@ -260,6 +314,9 @@ func (m *Manager) reconcileLoop() {
 		} else {
 			m.syncUsersOnce()
 		}
+		// The working set / config just changed locally — wake every connected node
+		// so it re-pulls its desired state (all nodes serve the same user set).
+		m.notifyNodes()
 	}
 }
 
