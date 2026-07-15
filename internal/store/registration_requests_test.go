@@ -3,7 +3,27 @@ package store
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
+
+// TestFreshInstallRegistrationClosed pins the 1.0.0 default: a brand-new database
+// has self-registration closed (mode 'off'), so enabling the user bot never opens
+// signups by accident.
+func TestFreshInstallRegistrationClosed(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "fresh.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	set, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if set.RegMode() != model.RegOff {
+		t.Fatalf("fresh install RegMode = %q, want %q", set.RegMode(), model.RegOff)
+	}
+}
 
 // TestClaimRegistrationRequest is the atomic gate behind moderation approval: only
 // one of several concurrent claims (double-click, two admins) may win.

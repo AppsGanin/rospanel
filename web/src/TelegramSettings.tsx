@@ -68,7 +68,7 @@ export function TelegramSettings() {
   const [token, setToken] = useState("");
   const [userEnabled, setUserEnabled] = useState(false);
   const [userToken, setUserToken] = useState("");
-  const [userRegMode, setUserRegMode] = useState<RegMode>("open");
+  const [userRegMode, setUserRegMode] = useState<RegMode>("off");
   const [userRegCode, setUserRegCode] = useState("");
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
@@ -82,7 +82,7 @@ export function TelegramSettings() {
     cron: "",
     userEnabled: false,
     userToken: "",
-    userRegMode: "open" as RegMode,
+    userRegMode: "off" as RegMode,
     userRegCode: "",
     adminEvents: {} as AdminEvents,
   });
@@ -96,7 +96,7 @@ export function TelegramSettings() {
         setToken(t.token);
         setUserEnabled(t.user_enabled);
         setUserToken(t.user_token);
-        setUserRegMode(t.user_reg_mode || "open");
+        setUserRegMode(t.user_reg_mode || "off");
         setUserRegCode(t.user_reg_code || "");
         setAdminEvents(t.admin_events || {});
         setChats(t.chat_ids || []);
@@ -110,7 +110,7 @@ export function TelegramSettings() {
           cron: t.backup_cron || "",
           userEnabled: t.user_enabled,
           userToken: t.user_token,
-          userRegMode: t.user_reg_mode || "open",
+          userRegMode: t.user_reg_mode || "off",
           userRegCode: t.user_reg_code || "",
           adminEvents: t.admin_events || {},
         });
