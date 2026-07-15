@@ -51,6 +51,7 @@ type Router struct {
 	subPath   string       // public subscription URL prefix (/<subPath>/<token>)
 	paySecret string       // random segment for the public payment-webhook path
 	apiPath   string       // external-API URL prefix (/<apiPath>/v1/...); "" = disabled
+	nodePath  string       // node sync API URL prefix (/<nodePath>/v1/{join,sync}); "" = no nodes
 	spaIndex  []byte       // index.html with <base href> injected for the secret
 	decoy     http.Handler // current decoy template handler
 }
@@ -71,13 +72,14 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	}
 
 	subPath := "sub"
-	var paySecret, apiPath string
+	var paySecret, apiPath, nodePath string
 	if set, err := mgr.Store().GetSettings(); err == nil {
 		if set.SubPath != "" {
 			subPath = set.SubPath
 		}
 		paySecret = set.PaymentWebhookSecret
 		apiPath = set.APIPath
+		nodePath = set.NodeAPIPath
 	}
 
 	rt := &Router{
@@ -94,9 +96,12 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		subPath:    subPath,
 		paySecret:  paySecret,
 		apiPath:    apiPath,
+		nodePath:   nodePath,
 		spaIndex:   injectBase(indexRaw, "/"+secret+"/"),
 		decoy:      d,
 	}
+	// The router live-swaps the node-API segment in when the first node is created.
+	mgr.SetNodeAPIPathCallback(rt.setNodePath)
 	// The external API surface. The /v1 mux is wrapped with per-key
 	// authentication (no session cookie, not subject to the CSRF/same-origin guard
 	// that exists for the browser SPA); the OpenAPI spec + Swagger UI are served
@@ -146,6 +151,14 @@ func (rt *Router) setAPIPath(s string) {
 	rt.apiPath = s
 }
 
+// setNodePath swaps the live node sync API URL segment. Called when the first node
+// is created (the segment is generated then).
+func (rt *Router) setNodePath(s string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.nodePath = s
+}
+
 func (rt *Router) currentSecret() string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -174,7 +187,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	seg, rest := firstSegment(r.URL.Path)
 
 	rt.mu.RLock()
-	secret, decoy, subPath, paySecret, apiPath := rt.secret, rt.decoy, rt.subPath, rt.paySecret, rt.apiPath
+	secret, decoy, subPath, paySecret, apiPath, nodePath := rt.secret, rt.decoy, rt.subPath, rt.paySecret, rt.apiPath, rt.nodePath
 	rt.mu.RUnlock()
 
 	// External REST API, mounted under its own stable, unguessable segment (kept
@@ -193,12 +206,27 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Public payment-webhook surface, mounted under a random unguessable segment so
-	// providers (YooKassa / CryptoBot) can POST to a fixed URL without revealing the
-	// hidden panel. The webhook itself verifies the payload (signature / re-fetch).
+	// Node sync surface, mounted under its own random unguessable segment (kept
+	// separate from the panel secret and the external API so rotating either never
+	// orphans a joined node). Authentication is per-node bearer token inside the
+	// handler; an unmatched sub-path or a bad/absent token falls through to the
+	// decoy, so the surface is invisible to anyone without the segment + a token.
+	if nodePath != "" && seg == nodePath {
+		if !rt.apiLimiter.allow(clientIP(r)) {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		rt.handleNodeAPI(w, r, rest)
+		return
+	}
+
+	// Public payment-webhook surface, mounted at /<paySecret>/<provider key> under a
+	// random unguessable segment so providers can POST to a fixed URL without
+	// revealing the hidden panel. The webhook itself verifies the payload (signature
+	// / re-fetch); an unknown provider leaf falls through to the decoy.
 	if paySecret != "" && seg == paySecret {
-		// Throttle per-IP: the YooKassa branch has no signature and re-fetches from the
-		// provider, so an amplification/flood is possible if the secret ever leaks.
+		// Throttle per-IP: signature-less providers (e.g. YooKassa) re-fetch from the
+		// provider on callback, so an amplification/flood is possible if the secret leaks.
 		if !rt.subLimiter.allow(clientIP(r)) {
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return

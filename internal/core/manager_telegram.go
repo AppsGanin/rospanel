@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/cron"
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable
@@ -49,10 +50,19 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 }
 
 // SaveTelegramUserBot validates and persists the public user bot configuration:
-// the enable flag, its (separate) bot token, and whether open self-registration
-// is allowed. The token must differ from the admin bot's.
-func (m *Manager) SaveTelegramUserBot(enabled bool, token string, regEnabled bool) error {
+// the enable flag, its (separate) bot token, the self-registration mode and (for
+// the invite mode) the invite code. The token must differ from the admin bot's.
+func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode string) error {
 	token = strings.TrimSpace(token)
+	regCode = strings.TrimSpace(regCode)
+	switch regMode {
+	case model.RegOff, model.RegOpen, model.RegModeration, model.RegInvite:
+	default:
+		return invalid("неизвестный режим регистрации")
+	}
+	if regMode == model.RegInvite && regCode == "" {
+		return invalid("для регистрации по коду укажите код-приглашение")
+	}
 	if enabled && token == "" {
 		return invalid("укажите токен пользовательского бота")
 	}
@@ -68,7 +78,7 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token string, regEnabled boo
 			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
 		}
 	}
-	return m.store.SetTelegramUserBot(enabled, token, regEnabled)
+	return m.store.SetTelegramUserBot(enabled, token, regMode, regCode)
 }
 
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).

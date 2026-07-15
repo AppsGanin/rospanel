@@ -83,7 +83,10 @@ func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // sseStart sets the Server-Sent Events headers and returns the flusher. If the
 // ResponseWriter can't stream, it writes a 500 and returns false.
 func sseStart(w http.ResponseWriter) (http.Flusher, bool) {
-	flusher, ok := w.(http.Flusher)
+	// Walk the Unwrap chain: a mutating route (e.g. the SSH-provision POST) is wrapped
+	// by the audit middleware's auditStatus, which forwards Flush only via Unwrap, so
+	// a direct w.(http.Flusher) on it fails.
+	flusher, ok := unwrapFlusher(w)
 	if !ok {
 		writeErr(w, http.StatusInternalServerError, "стриминг не поддерживается")
 		return nil, false
@@ -93,6 +96,21 @@ func sseStart(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering
 	return flusher, true
+}
+
+// unwrapFlusher finds the http.Flusher through any middleware wrappers that expose
+// Unwrap() http.ResponseWriter (the pattern http.NewResponseController relies on).
+func unwrapFlusher(w http.ResponseWriter) (http.Flusher, bool) {
+	for {
+		if f, ok := w.(http.Flusher); ok {
+			return f, true
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return nil, false
+		}
+		w = u.Unwrap()
+	}
 }
 
 // sseSend writes one SSE data frame and flushes it. Returns false if the client

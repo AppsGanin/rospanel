@@ -9,11 +9,15 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// SingBoxJSON renders an importable sing-box configuration (current 1.11+ schema)
-// with a tun inbound, the enabled protocol outbounds, an auto urltest + manual
-// selector, and a minimal route. Targeted at official SFA/SFI/SFM clients; other
-// sing-box-based clients (Hiddify, NekoBox) consume the base64 list instead.
+// SingBoxJSON renders an importable sing-box configuration for a single server.
 func SingBoxJSON(u model.User, set *model.Settings) string {
+	return SingBoxJSONMulti(u, []*model.Settings{set})
+}
+
+// singboxProxies builds the protocol outbounds + their tags for one server. Tags
+// carry the node label (see Settings.ProtoLabel) so multi-node configs stay
+// unambiguous.
+func singboxProxies(u model.User, set *model.Settings) (proxies []any, tags []string) {
 	nV := link.Label(model.ProtoVLESS, set)
 	nR := link.Label(model.ProtoReality, set)
 	nT := link.Label(model.ProtoTrojan, set)
@@ -84,8 +88,6 @@ func SingBoxJSON(u model.User, set *model.Settings) string {
 
 	// Only the protocols enabled in the Connections panel become outbounds; tags
 	// list collects them in the same order for the selector/urltest groups.
-	var proxies []any
-	var tags []string
 	if set.VLESSEnabled {
 		proxies = append(proxies, vless)
 		tags = append(tags, nV)
@@ -102,8 +104,28 @@ func SingBoxJSON(u model.User, set *model.Settings) string {
 		proxies = append(proxies, hy2)
 		tags = append(tags, nH)
 	}
+	return proxies, tags
+}
 
-	group := SubTitle(u, set)
+// SingBoxJSONMulti renders a sing-box config spanning every server (local + each
+// node): one outbound per protocol × server, all gathered under the selector/
+// urltest groups. sets[0] is the local server, used for the group title + DNS
+// bootstrap anchor.
+func SingBoxJSONMulti(u model.User, sets []*model.Settings) string {
+	if len(sets) == 0 {
+		return "{}"
+	}
+	local := sets[0]
+
+	var proxies []any
+	var tags []string
+	for _, set := range sets {
+		p, t := singboxProxies(u, set)
+		proxies = append(proxies, p...)
+		tags = append(tags, t...)
+	}
+
+	group := SubTitle(u, local)
 	outbounds := []any{
 		map[string]any{"type": "selector", "tag": group, "outbounds": append([]string{"auto"}, tags...), "default": "auto"},
 		map[string]any{"type": "urltest", "tag": "auto", "outbounds": tags,
@@ -113,23 +135,30 @@ func SingBoxJSON(u model.User, set *model.Settings) string {
 	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": "direct"})
 
 	// Encrypted DNS (DoH) routed through the tunnel — defeats DNS poisoning/blocking
-	// the censor does on plaintext UDP/53. A domain server-host is resolved directly
-	// (bootstrap) so the first tunnel connect doesn't deadlock on DNS.
+	// the censor does on plaintext UDP/53. Every server host that is a domain is
+	// resolved directly (bootstrap) so the first tunnel connect doesn't deadlock on
+	// DNS — across all nodes, not just the local server.
 	dnsServers := []any{
 		map[string]any{"tag": "remote", "address": "https://1.1.1.1/dns-query", "detour": group},
 	}
 	dns := map[string]any{"servers": dnsServers, "final": "remote", "strategy": "prefer_ipv4"}
-	if net.ParseIP(set.Host) == nil {
+	var bootstrapHosts []string
+	for _, set := range sets {
+		if net.ParseIP(set.Host) == nil {
+			bootstrapHosts = append(bootstrapHosts, set.Host)
+		}
+	}
+	if len(bootstrapHosts) > 0 {
 		dns["servers"] = append(dnsServers,
 			map[string]any{"tag": "bootstrap", "address": "https://223.5.5.5/dns-query", "detour": "direct"})
-		dns["rules"] = []any{map[string]any{"domain": []string{set.Host}, "server": "bootstrap"}}
+		dns["rules"] = []any{map[string]any{"domain": bootstrapHosts, "server": "bootstrap"}}
 	}
 
 	routeRules := []any{
 		map[string]any{"action": "sniff"},
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 	}
-	if set.BlockQUIC {
+	if local.BlockQUIC {
 		// Drop untunneled browser QUIC (UDP/443) so it can't slip past the obfuscated
 		// TCP lanes under the censor's QUIC classifiers — the browser falls back to
 		// TCP+H2 inside the tunnel.

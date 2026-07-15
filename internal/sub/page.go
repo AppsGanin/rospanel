@@ -140,23 +140,36 @@ func subStatus(s string) (label, class string) {
 
 // Page renders the human-facing subscription page (usage stats, QR of the sub
 // URL, copy button, per-client import buttons, and the raw links).
-func Page(u model.User, set *model.Settings, billing Billing) ([]byte, error) {
+// Page renders the human-facing subscription page. sets spans every server the
+// user is on — the local one plus each enabled node — so the "individual configs"
+// list shows one labelled entry per protocol × server (with a single server it's
+// unchanged). sets[0] is the local server, used for the sub URL, branding and
+// billing.
+func Page(u model.User, sets []*model.Settings, billing Billing) ([]byte, error) {
+	if len(sets) == 0 {
+		return nil, fmt.Errorf("no settings for subscription page")
+	}
+	set := sets[0]
 	subURL := URL(set, u.SubToken)
 	used := u.UsedUp + u.UsedDown
 
-	// Only protocols enabled in the Connections panel appear on the page.
+	// Only protocols enabled in the Connections panel appear on the page, across
+	// every server. The label carries the node name (Settings.ProtoLabel), so a
+	// multi-node user can tell the entries apart.
 	var protoLinks []protoLink
-	if set.VLESSEnabled {
-		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoVLESS), link.VLESS(u, set)})
-	}
-	if set.RealityEnabled {
-		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoReality), link.Reality(u, set)})
-	}
-	if set.TrojanEnabled {
-		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoTrojan), link.Trojan(u, set)})
-	}
-	if set.HysteriaEnabled {
-		protoLinks = append(protoLinks, protoLink{set.ProtoLabel(model.ProtoHysteria), link.Hysteria2(u, set)})
+	for _, s := range sets {
+		if s.VLESSEnabled {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoVLESS), link.VLESS(u, s)})
+		}
+		if s.RealityEnabled {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoReality), link.Reality(u, s)})
+		}
+		if s.TrojanEnabled {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoTrojan), link.Trojan(u, s)})
+		}
+		if s.HysteriaEnabled {
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoHysteria), link.Hysteria2(u, s)})
+		}
 	}
 
 	statusLabel, statusClass := subStatus(u.Status)

@@ -99,6 +99,21 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 	set.TLSPinSHA256 = rt.mgr.CertPinSHA256()
 }
 
+// subSettings returns the list of servers a subscription spans: the local server
+// (with its TLS hints already applied by the caller) first, then each enabled,
+// connected node. With no nodes it returns just the local set, so single-server
+// output is unchanged. `local` must already have applyTLSHints called on it.
+func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
+	// The master server's config labels get its display name too (multi-node), so a
+	// client can tell the master's entries from the nodes'.
+	local.NodeLabel = local.MasterLabel
+	sets := []*model.Settings{local}
+	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
+		sets = append(sets, nodes...)
+	}
+	return sets
+}
+
 func (rt *Router) panelMux() http.Handler {
 	mux := http.NewServeMux()
 	// Route tiers. Every helper below puts the route behind the session check — so a
@@ -190,6 +205,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/geo/categories", rt.geoCategories)
 	authed("GET /api/geo", rt.geoStatus)
 	authed("POST /api/geo/update", rt.updateGeo)
+	authed("POST /api/geo/cadence", rt.setGeoCadence)
 	authed("GET /api/routing", rt.getRouting)
 	authed("POST /api/routing", rt.saveRouting)
 	authedOp("GET /api/system/stream", rt.systemStream)
@@ -224,6 +240,10 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
 	authedOpID("GET /api/users/{id}/events", rt.userEvents)
+	// Moderated self-registration queue (empty unless the user bot's mode is moderation).
+	authedOp("GET /api/registrations", rt.listRegistrations)
+	authedOpID("POST /api/registrations/{id}/approve", rt.approveRegistration)
+	authedOpID("POST /api/registrations/{id}/reject", rt.rejectRegistration)
 	authedOp("GET /api/events", rt.events)
 	authedOp("GET /api/events/catalog", rt.eventCatalog)
 	// Read-only: the user card lists the plans it can assign. The billing *settings*
@@ -248,6 +268,29 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/apikeys", rt.createAPIKey)
 	authedID("DELETE /api/apikeys/{id}", rt.revokeAPIKey)
 	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
+	authed("GET /api/nodes", rt.listNodes)
+	authed("POST /api/nodes/master-name", rt.setMasterName)
+	authed("POST /api/nodes/master-protocols", rt.setMasterProtocols)
+	authed("POST /api/nodes/master-reality", rt.setMasterReality)
+	authed("POST /api/nodes", rt.createNode)
+	authedID("PATCH /api/nodes/{id}", rt.updateNode)
+	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)
+	authedID("POST /api/nodes/{id}/dns", rt.setNodeDNS)
+	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
+	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
+	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
+	authedID("GET /api/nodes/{id}/tls", rt.nodeTLS)
+	authedID("POST /api/nodes/{id}/tls", rt.setNodeACME)
+	authedID("GET /api/nodes/{id}/geo", rt.nodeGeoInfo)
+	authedID("POST /api/nodes/{id}/geo-refresh", rt.nodeGeoRefresh)
+	authedID("POST /api/nodes/{id}/geo-cadence", rt.nodeGeoCadence)
+	authedID("GET /api/nodes/{id}/logs", rt.nodeLogs)
+	authedID("DELETE /api/nodes/{id}", rt.deleteNode)
+	authedID("POST /api/nodes/{id}/enabled", rt.setNodeEnabled)
+	authedID("POST /api/nodes/{id}/regen-join", rt.regenNodeJoin)
+	authedID("POST /api/nodes/{id}/update", rt.updateNodeVersion)
+	authed("POST /api/nodes/update-all", rt.updateAllNodes)
+	authedID("POST /api/nodes/{id}/provision", rt.provisionNode)
 	authed("GET /api/webhooks", rt.listWebhooks)
 	authed("POST /api/webhooks", rt.createWebhook)
 	authedID("POST /api/webhooks/{id}", rt.updateWebhook)

@@ -123,9 +123,13 @@ func (rt *Router) geoCategories(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"geosite": geosite, "geoip": geoip})
 }
 
-// geoStatus reports the geo databases' presence + last-download time.
+// geoStatus reports the geo databases' presence + last-download time and the
+// auto-refresh cadence.
 func (rt *Router) geoStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, rt.mgr.GeoStatus())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files":         rt.mgr.GeoStatus(),
+		"refresh_hours": rt.mgr.GeoRefreshHours(),
+	})
 }
 
 // updateGeo re-downloads the geo databases to the latest version and reloads Xray.
@@ -135,7 +139,25 @@ func (rt *Router) updateGeo(w http.ResponseWriter, _ *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, info)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"files":         info,
+		"refresh_hours": rt.mgr.GeoRefreshHours(),
+	})
+}
+
+// setGeoCadence persists how often the geo databases auto-refresh (hours; 0 = never).
+func (rt *Router) setGeoCadence(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RefreshHours int `json:"refresh_hours"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetGeoRefresh(req.RefreshHours); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
 }
 
 // getRouting returns the structured routing config plus WARP availability so the

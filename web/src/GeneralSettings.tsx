@@ -5,9 +5,7 @@ import {
   getMe,
   getSettings,
   regenSecret,
-  setDecoy,
   setLocalBackup,
-  setProxyMode,
   setupTimezone,
   setUserAutoDelete,
   type SettingsInfo,
@@ -37,14 +35,6 @@ import {
   useConfirm,
 } from "./ui";
 
-type ProxyMode = {
-  enabled: boolean;
-  type: string;
-  port: number;
-  user: string;
-  pass: string;
-};
-
 // LocalBackup is the scheduled on-disk backup: a schedule plus how many archives to
 // keep. Independent of the Telegram backup schedule — an operator with no bot still
 // wants automatic backups.
@@ -64,7 +54,9 @@ const AUTODELETE_OPTIONS = [
   { value: "365", label: "365 дней после истечения" },
 ];
 
-const DECOY_LABELS: Record<string, string> = {
+// DECOY_LABELS maps decoy slugs to friendly names. Exported so the master/node
+// settings dialogs (where the decoy is now chosen) show the same labels.
+export const DECOY_LABELS: Record<string, string> = {
   "coming-soon": "Coming soon (скоро открытие)",
   nginx: "Nginx (страница по умолчанию)",
   maintenance: "Технические работы",
@@ -79,21 +71,10 @@ const DECOY_LABELS: Record<string, string> = {
 };
 
 export function GeneralSettings() {
-  const EMPTY_PM: ProxyMode = {
-    enabled: false,
-    type: "socks",
-    port: 1080,
-    user: "",
-    pass: "",
-  };
   const [loaded, setLoaded] = useState(false);
   const [timezone, setTimezone] = useState("");
   const [savedTz, setSavedTz] = useState("");
   const [settings, setSettings] = useState<SettingsInfo | null>(null);
-  const [decoy, setDecoyState] = useState("");
-  const [savedDecoy, setSavedDecoy] = useState("");
-  const [pm, setPm] = useState<ProxyMode>(EMPTY_PM);
-  const [savedPm, setSavedPm] = useState<ProxyMode>(EMPTY_PM);
   const [bk, setBk] = useState<LocalBackup>(EMPTY_BK);
   const [savedBk, setSavedBk] = useState<LocalBackup>(EMPTY_BK);
   const [autoDel, setAutoDel] = useState(0);
@@ -126,18 +107,6 @@ export function GeneralSettings() {
       getSettings()
         .then((s) => {
           setSettings(s);
-          const dec = s.decoy_template || "coming-soon";
-          setDecoyState(dec);
-          setSavedDecoy(dec);
-          const pmv: ProxyMode = {
-            enabled: s.proxy_mode_enabled,
-            type: s.proxy_mode_type || "socks",
-            port: s.proxy_mode_port || 1080,
-            user: s.proxy_mode_user || "",
-            pass: s.proxy_mode_pass || "",
-          };
-          setPm(pmv);
-          setSavedPm(pmv);
           const bkv: LocalBackup = {
             schedule: detectPreset(s.local_backup_cron || ""),
             keep: s.local_backup_keep ?? 7,
@@ -152,7 +121,6 @@ export function GeneralSettings() {
     ]).finally(() => setLoaded(true));
   }, []);
 
-  const pmDirty = JSON.stringify(pm) !== JSON.stringify(savedPm);
   // Compare the built cron, not the picker state: "off" with a stale time/weekday in
   // the inputs is the same schedule as "off" with the defaults, and shouldn't light
   // up the save bar.
@@ -160,16 +128,10 @@ export function GeneralSettings() {
   const bkDirty =
     bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
   const adDirty = autoDel !== savedAutoDel;
-  const dirty =
-    timezone !== savedTz ||
-    decoy !== savedDecoy ||
-    pmDirty ||
-    bkDirty ||
-    adDirty;
-  // Proxy mode without credentials is an open proxy — block saving it.
-  const saveBlocked = pm.enabled && (!pm.user.trim() || !pm.pass);
+  const dirty = timezone !== savedTz || bkDirty || adDirty;
+  const saveBlocked = false;
 
-  // save persists whatever changed (timezone / decoy / proxy mode) behind the
+  // save persists whatever changed (timezone / backups / auto-delete) behind the
   // single bottom SaveBar. Update-check and secret regen stay immediate actions.
   const save = () =>
     run(
@@ -177,15 +139,6 @@ export function GeneralSettings() {
         if (timezone !== savedTz) {
           await setupTimezone(timezone);
           setSavedTz(timezone);
-        }
-        if (decoy !== savedDecoy) {
-          await setDecoy(decoy);
-          setSettings((s) => (s ? { ...s, decoy_template: decoy } : s));
-          setSavedDecoy(decoy);
-        }
-        if (pmDirty) {
-          await setProxyMode(pm);
-          setSavedPm(pm);
         }
         if (bkDirty) {
           await setLocalBackup({ cron: bkCron, keep: bk.keep });
@@ -202,8 +155,6 @@ export function GeneralSettings() {
 
   const cancel = () => {
     setTimezone(savedTz);
-    setDecoyState(savedDecoy);
-    setPm(savedPm);
     setBk(savedBk);
     setAutoDel(savedAutoDel);
   };
@@ -346,82 +297,6 @@ export function GeneralSettings() {
         description="Граница суток в статистике трафика."
       >
         <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
-      </SettingCard>
-
-      <SettingCard
-        title="Сайт-заглушка"
-        description="Что видят посторонние по любому адресу, кроме секретного пути панели."
-      >
-        <Select
-          data={(settings?.decoy_templates ?? []).map((t) => ({
-            value: t,
-            label: DECOY_LABELS[t] ?? t,
-          }))}
-          value={decoy}
-          onChange={setDecoyState}
-        />
-      </SettingCard>
-
-      <SettingCard
-        title="Режим прокси"
-        description="Поднимает socks/http прокси-инбаунд, чтобы другой RosPanel мог ходить через этот сервер (указать его в прокси в Роутинге)."
-        action={
-          <Switch
-            checked={pm.enabled}
-            onChange={(v) => setPm((p) => ({ ...p, enabled: v }))}
-          />
-        }
-      >
-        <div className="grid grid-cols-2 gap-2">
-          <Select
-            label="Тип"
-            data={[
-              { value: "socks", label: "SOCKS5" },
-              { value: "http", label: "HTTP" },
-            ]}
-            value={pm.type}
-            onChange={(v) => setPm((p) => ({ ...p, type: v }))}
-          />
-          <TextInput
-            label="Порт"
-            type="number"
-            value={String(pm.port)}
-            onChange={(v) =>
-              setPm((p) => ({ ...p, port: Number(v.replace(/\D/g, "")) || 0 }))
-            }
-          />
-          <TextInput
-            label="Логин"
-            value={pm.user}
-            onChange={(v) => setPm((p) => ({ ...p, user: v }))}
-          />
-          <TextInput
-            label="Пароль"
-            value={pm.pass}
-            onChange={(v) => setPm((p) => ({ ...p, pass: v }))}
-          />
-        </div>
-        {pm.enabled && (
-          <>
-            <p className="mt-3 mb-1 text-sm text-ink-muted">
-              Строка для пула на другом сервере:
-            </p>
-            <Code block>
-              {`${pm.type === "http" ? "http" : "socks5"}://${
-                pm.user ? `${pm.user}:${pm.pass}@` : ""
-              }${window.location.hostname}:${pm.port}`}
-            </Code>
-          </>
-        )}
-        {pm.enabled && (!pm.user.trim() || !pm.pass) && (
-          <p className="mt-2 text-xs text-warning">
-            ⚠️ Логин и пароль обязательны — иначе это открытый прокси, через
-            который сможет ходить любой.
-          </p>
-        )}
-        <p className="mt-2 text-xs text-ink-muted">
-          Не забудь открыть порт {pm.port} в файрволе сервера.
-        </p>
       </SettingCard>
 
       <SettingCard

@@ -19,7 +19,6 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
 	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
-	var yooEn, cryptoEn, yooTest, cryptoTest int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -44,14 +43,15 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       opera_enabled, opera_country, opera_port,
 		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron,
 		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled,
+		       tg_user_reg_mode, tg_user_reg_code,
 		       billing_enabled, billing_trial_days, billing_free_plan_id,
 		       billing_trial_plan_id, billing_payment_note,
-		       yookassa_enabled, yookassa_shop_id, yookassa_secret_key, yookassa_test,
-		       cryptobot_enabled, cryptobot_token, cryptobot_testnet, payment_webhook_secret,
+		       payment_webhook_secret,
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, trojan_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
-		       sub_announce, user_autodelete_days
+		       sub_announce, user_autodelete_days, node_api_path, master_label,
+		       geo_refresh_hours
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -76,14 +76,15 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&operaEn, &st.OperaCountry, &st.OperaPort,
 		&tgBotEn, &st.TGBotToken, &st.TGChatIDs, &st.TGLinkCode, &st.TGBackupCron,
 		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
+		&st.TGUserRegMode, &st.TGUserRegCode,
 		&billingEn, &st.BillingTrialDays, &st.BillingFreePlanID,
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
-		&yooEn, &st.YooKassaShopID, &st.YooKassaSecretKey, &yooTest,
-		&cryptoEn, &st.CryptoBotToken, &cryptoTest, &st.PaymentWebhookSecret,
+		&st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
-		&st.SubAnnounce, &st.UserAutoDeleteDays,
+		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
+		&st.GeoRefreshHours,
 	)
 	if err != nil {
 		return nil, err
@@ -117,10 +118,6 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGUserBotEnabled = tgUserBotEn != 0
 	st.TGUserRegEnabled = tgUserRegEn != 0
 	st.BillingEnabled = billingEn != 0
-	st.YooKassaEnabled = yooEn != 0
-	st.YooKassaTest = yooTest != 0
-	st.CryptoBotEnabled = cryptoEn != 0
-	st.CryptoBotTestnet = cryptoTest != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
@@ -128,8 +125,6 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.RealityPrivateKey = decField(st.RealityPrivateKey)
 	st.ProxyModePass = decField(st.ProxyModePass)
 	st.ZeroSSLEABHMAC = decField(st.ZeroSSLEABHMAC)
-	st.YooKassaSecretKey = decField(st.YooKassaSecretKey)
-	st.CryptoBotToken = decField(st.CryptoBotToken)
 	return &st, nil
 }
 
@@ -156,12 +151,15 @@ func (s *Store) SetLocalBackup(cron string, keep int) error {
 }
 
 // SetTelegramUserBot persists the public user bot's enable flag, token, and the
-// self-registration toggle.
-func (s *Store) SetTelegramUserBot(enabled bool, token string, regEnabled bool) error {
+// self-registration mode + invite code. tg_user_reg_enabled is kept as a derived
+// mirror (mode != off) for any legacy reader.
+func (s *Store) SetTelegramUserBot(enabled bool, token, regMode, regCode string) error {
+	regOpen := regMode != model.RegOff
 	_, err := s.db.Exec(
 		`UPDATE settings SET tg_user_bot_enabled = ?, tg_user_bot_token = ?,
-		        tg_user_reg_enabled = ?, updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(enabled), encField(token), boolToInt(regEnabled),
+		        tg_user_reg_enabled = ?, tg_user_reg_mode = ?, tg_user_reg_code = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(enabled), encField(token), boolToInt(regOpen), regMode, regCode,
 	)
 	return err
 }
@@ -345,6 +343,15 @@ func (s *Store) SetSecretPath(p string) error { return s.setSetting("panel_secre
 
 // SetAPIPath persists the external-API URL segment (empty disables the surface).
 func (s *Store) SetAPIPath(p string) error { return s.setSetting("api_path", p) }
+
+// SetNodeAPIPath persists the node sync API URL segment (generated on first node).
+func (s *Store) SetNodeAPIPath(p string) error { return s.setSetting("node_api_path", p) }
+
+// SetMasterLabel persists the panel server's display name used in config labels.
+func (s *Store) SetMasterLabel(label string) error { return s.setSetting("master_label", label) }
+
+// SetGeoRefresh persists the geo auto-refresh cadence in hours (0 ⇒ never).
+func (s *Store) SetGeoRefresh(hours int) error { return s.setSetting("geo_refresh_hours", hours) }
 
 // SetACMEProvider persists the ACME CA selection and (for ZeroSSL) the External
 // Account Binding credentials. An empty provider defaults to "letsencrypt".

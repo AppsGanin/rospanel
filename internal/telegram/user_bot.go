@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"strings"
@@ -168,19 +169,38 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 		s.handleStart(ctx, client, set, chatID, args)
 		return
 	}
+	pending := s.takePending(chatID)
 	if u, ok := s.findLinkedUser(chatID); ok {
-		if s.takePending(chatID) == "reg" {
+		if pending == "reg" {
 			s.doRegister(ctx, client, chatID, set, text)
 			return
 		}
 		s.sendUserMenu(ctx, client, chatID, set, u)
 		return
 	}
-	if s.takePending(chatID) == "reg" {
+	switch pending {
+	case "reg":
 		s.doRegister(ctx, client, chatID, set, text)
+	case "regcode":
+		s.handleRegCode(ctx, client, chatID, set, text, tgDisplayName(m.From, chatID))
+	default:
+		s.sendWelcome(ctx, client, set, chatID)
+	}
+}
+
+// handleRegCode checks an entered invite code and, on a match, registers the user.
+func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID int64, set *model.Settings, code, name string) {
+	want := strings.TrimSpace(set.TGUserRegCode)
+	if !set.RegistrationOpen() || set.RegMode() != model.RegInvite || want == "" {
+		s.sendWelcome(ctx, client, set, chatID)
 		return
 	}
-	s.sendWelcome(ctx, client, set, chatID)
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(want)) != 1 {
+		s.send(ctx, client, chatID, "⚠️ Неверный код-приглашение. Попробуйте ещё раз или обратитесь к администратору.")
+		s.setPending(chatID, "regcode")
+		return
+	}
+	s.doRegister(ctx, client, chatID, set, name)
 }
 
 func (s *UserService) handleStart(ctx context.Context, client *Client, set *model.Settings, chatID int64, args []string) {
@@ -198,14 +218,19 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 }
 
 func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *model.Settings, chatID int64) {
-	if !set.TGUserRegEnabled {
+	if !set.RegistrationOpen() {
 		s.send(ctx, client, chatID,
 			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.")
 		return
 	}
-	s.sendMenu(ctx, client, chatID,
-		"👋 <b>Добро пожаловать!</b>\n\nНажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически.",
-		welcomeRows())
+	hint := "Нажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически."
+	switch set.RegMode() {
+	case model.RegModeration:
+		hint = "Нажмите «Зарегистрироваться» — заявку рассмотрит администратор, и мы откроем доступ."
+	case model.RegInvite:
+		hint = "Нажмите «Зарегистрироваться» и введите код-приглашение от администратора."
+	}
+	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows())
 }
 
 func welcomeRows() [][]InlineButton {
@@ -246,9 +271,16 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 
 	switch cb.Data {
 	case "vu:reg":
-		if !set.TGUserRegEnabled {
+		if !set.RegistrationOpen() {
 			s.edit(ctx, client, chatID, msgID,
 				"Регистрация закрыта. Обратитесь к администратору.", [][]InlineButton{})
+			return
+		}
+		// Invite mode: ask for the code first; the account is created only once it matches.
+		if set.RegMode() == model.RegInvite {
+			s.setPending(chatID, "regcode")
+			s.edit(ctx, client, chatID, msgID, "🔑 Введите код-приглашение:",
+				[][]InlineButton{{{Text: "⬅️ Отмена", CallbackData: "vu:cancel"}}})
 			return
 		}
 		// Name is taken automatically from the Telegram profile (first name, or the
@@ -256,6 +288,7 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 		s.edit(ctx, client, chatID, msgID, "✨ Создаю аккаунт…", [][]InlineButton{})
 		s.doRegister(ctx, client, chatID, set, tgDisplayName(cb.From, chatID))
 	case "vu:cancel":
+		s.clearPending(chatID)
 		s.sendWelcome(ctx, client, set, chatID)
 	}
 }
@@ -277,16 +310,38 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	if u := s.restoreDetachedUser(ctx, client, chatID, set); u != nil {
 		return
 	}
-	if !set.TGUserRegEnabled {
+	if !set.RegistrationOpen() {
 		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
+		return
+	}
+	// A chat that already has a pending moderated request must not re-tap its way
+	// through the global rate limit (or spam admins) — short-circuit before both.
+	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {
+		s.send(ctx, client, chatID, "⏳ Ваша заявка уже на рассмотрении. Дождитесь ответа администратора.")
 		return
 	}
 	if !s.allowRegistration(time.Now()) {
 		s.send(ctx, client, chatID, "Сейчас слишком много регистраций. Попробуйте через минуту.")
 		return
 	}
-	// CreateRegisteredUser applies the trial/free plan when billing is on; falls
-	// back to a plain unlimited account otherwise.
+	// Moderation: don't create an account — file a request an admin must approve. No
+	// bot access is granted until then.
+	if set.RegMode() == model.RegModeration {
+		ok, err := s.panel.RequestRegistration(ctx, chatID, name)
+		if err != nil {
+			s.send(ctx, client, chatID, "⚠️ Не удалось отправить заявку: "+esc(err.Error()))
+			return
+		}
+		if !ok {
+			s.send(ctx, client, chatID, "⏳ Ваша заявка уже на рассмотрении. Дождитесь ответа администратора.")
+			return
+		}
+		s.send(ctx, client, chatID,
+			"✅ <b>Заявка отправлена!</b>\n\nОжидает одобрения администратора — мы сообщим, как только доступ откроют.")
+		return
+	}
+	// Open / invite: create the account and show its menu right away. CreateRegistered
+	// User applies the trial/free plan when billing is on, else a plain account.
 	u, err := s.panel.CreateRegisteredUser(ctx, name)
 	if err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось создать аккаунт: "+esc(err.Error()))
@@ -639,16 +694,10 @@ func planActiveUntil(u model.User, panel Panel) string {
 	return " до " + time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006")
 }
 
-// providerLabel is the button text for a payment method.
-func providerLabel(p string) string {
-	switch p {
-	case "yookassa":
-		return "💳 Картой (ЮКасса)"
-	case "cryptobot":
-		return "🪙 Криптой (CryptoBot)"
-	default:
-		return p
-	}
+// providerButton is the pay-method button text: a wallet icon plus the provider's
+// registry label (so a new provider needs no change here).
+func (s *UserService) providerButton(key string) string {
+	return "💳 " + s.panel.ProviderLabel(key)
 }
 
 func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
@@ -666,7 +715,7 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 	default:
 		var rows [][]InlineButton
 		for _, p := range methods {
-			rows = append(rows, []InlineButton{{Text: providerLabel(p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
+			rows = append(rows, []InlineButton{{Text: s.providerButton(p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
 		}
 		rows = append(rows, []InlineButton{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}})
 		s.edit(ctx, client, chatID, msgID, "Выберите способ оплаты:", rows)

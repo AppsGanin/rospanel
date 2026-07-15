@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/payments"
 )
 
 // paymentStats returns the revenue dashboard for the Payments page.
@@ -82,54 +83,81 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
-// getPayments returns the payment-provider config. Secrets are never returned —
-// only whether they're set — plus the webhook URLs to paste into provider panels.
-func (rt *Router) getPayments(w http.ResponseWriter, r *http.Request) {
-	set, err := rt.mgr.Settings()
+// getPayments returns every provider in the registry with its settings form
+// (fields), whether it's enabled, its current non-secret values, which secrets are
+// set, and the webhook URL to paste into the provider's dashboard. Secret values
+// themselves are never returned — only whether they hold a value.
+func (rt *Router) getPayments(w http.ResponseWriter, _ *http.Request) {
+	descs, saved, err := rt.mgr.PaymentProviders()
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	yooURL, cryptoURL := rt.mgr.PaymentWebhookURLs()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"yookassa_enabled":    set.YooKassaEnabled,
-		"yookassa_shop_id":    set.YooKassaShopID,
-		"yookassa_test":       set.YooKassaTest,
-		"yookassa_key_set":    set.YooKassaSecretKey != "",
-		"cryptobot_enabled":   set.CryptoBotEnabled,
-		"cryptobot_testnet":   set.CryptoBotTestnet,
-		"cryptobot_token_set": set.CryptoBotToken != "",
-		"webhook_yookassa":    yooURL,
-		"webhook_cryptobot":   cryptoURL,
-	})
+	out := make([]map[string]any, 0, len(descs))
+	for _, d := range descs {
+		p := saved[d.Key]
+		fields := make([]map[string]any, 0, len(d.Fields)+1)
+		// Universal, injected for every provider: the custom pay-button name shown to
+		// users. Optional — empty falls back to the provider's default label.
+		fields = append(fields, map[string]any{
+			"key":         payments.DisplayNameKey,
+			"label":       "Название для кнопки оплаты",
+			"kind":        string(payments.FieldText),
+			"placeholder": d.Label,
+			"help":        "Показывается пользователю в боте и на странице подписки. Пусто — «" + d.Label + "».",
+			"optional":    true,
+			"value":       p.Config[payments.DisplayNameKey],
+		})
+		for _, f := range d.Fields {
+			fj := map[string]any{
+				"key":         f.Key,
+				"label":       f.Label,
+				"kind":        string(f.Kind),
+				"placeholder": f.Placeholder,
+				"help":        f.Help,
+				"optional":    f.Optional,
+			}
+			// Secrets report only whether a value is stored; everything else round-trips
+			// its value so the form can show what's set.
+			switch f.Kind {
+			case payments.FieldSecret:
+				fj["is_set"] = p.Config[f.Key] != ""
+			case payments.FieldBool:
+				fj["value"] = p.Config[f.Key] == "1"
+			default: // text, select
+				fj["value"] = p.Config[f.Key]
+			}
+			if len(f.Options) > 0 {
+				opts := make([]map[string]string, 0, len(f.Options))
+				for _, o := range f.Options {
+					opts = append(opts, map[string]string{"value": o.Value, "label": o.Label})
+				}
+				fj["options"] = opts
+			}
+			fields = append(fields, fj)
+		}
+		out = append(out, map[string]any{
+			"key":         d.Key,
+			"label":       d.Label,
+			"note":        d.Note,
+			"enabled":     p.Enabled,
+			"fields":      fields,
+			"webhook_url": rt.mgr.PaymentWebhookURL(d.Key),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
 }
 
 func (rt *Router) savePayments(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		YooKassaEnabled   bool   `json:"yookassa_enabled"`
-		YooKassaShopID    string `json:"yookassa_shop_id"`
-		YooKassaSecretKey string `json:"yookassa_secret_key"` // empty = keep current
-		YooKassaTest      bool   `json:"yookassa_test"`
-		CryptoBotEnabled  bool   `json:"cryptobot_enabled"`
-		CryptoBotToken    string `json:"cryptobot_token"` // empty = keep current
-		CryptoBotTestnet  bool   `json:"cryptobot_testnet"`
+		Key     string            `json:"key"`
+		Enabled bool              `json:"enabled"`
+		Config  map[string]string `json:"config"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	set, err := rt.mgr.Settings()
-	if err != nil {
-		writeManagerErr(w, err)
-		return
-	}
-	set.YooKassaEnabled = req.YooKassaEnabled
-	set.YooKassaShopID = req.YooKassaShopID
-	set.YooKassaSecretKey = req.YooKassaSecretKey
-	set.YooKassaTest = req.YooKassaTest
-	set.CryptoBotEnabled = req.CryptoBotEnabled
-	set.CryptoBotToken = req.CryptoBotToken
-	set.CryptoBotTestnet = req.CryptoBotTestnet
-	if err := rt.mgr.SavePaymentSettings(set); err != nil {
+	if err := rt.mgr.SavePaymentProvider(req.Key, req.Enabled, req.Config); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

@@ -1078,10 +1078,12 @@ export function Badge({
   children,
   color = "brand",
   size = "sm",
+  className,
 }: {
   children: ReactNode;
   color?: keyof typeof BADGE;
   size?: "xs" | "sm";
+  className?: string;
 }) {
   return (
     <span
@@ -1092,6 +1094,7 @@ export function Badge({
         // that isn't in the palette type-checks fine — then renders as bare text with
         // no background. Fall back to the accent instead of vanishing.
         BADGE[color] ?? BADGE.brand,
+        className,
       )}
     >
       {children}
@@ -1407,7 +1410,9 @@ export function Dropdown({
         <div
           style={{ width }}
           className={cn(
-            "absolute z-50 mt-2 animate-scale-in overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-lg",
+            // border-gray-300 (not -100) + shadow-xl so the menu reads as a distinct
+            // panel even when it overlays a same-coloured card surface on a dark theme.
+            "absolute z-50 mt-2 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
             align === "end"
               ? "right-0 origin-top-right"
               : "left-0 origin-top-left",

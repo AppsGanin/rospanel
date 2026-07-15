@@ -8,6 +8,11 @@
 # `rospanel install`, and prints the one-time first-run credentials. Xray,
 # geo-bases and the TLS certificate are fetched by the panel itself on first run.
 #
+# Node mode: pass --join '<url>' (from the panel's Add-node dialog) to install this
+# server as a panel-managed VPN node instead of a standalone panel:
+#
+#   curl -Ls .../install.sh | sudo bash -s -- --join 'https://panel/…/v1/join#<token>'
+#
 # Optional environment variables (all honoured by `rospanel install`):
 #   ROSPANEL_HOST=vpn.example.com     bind a domain (enables ACME TLS)
 #   ROSPANEL_ACME_EMAIL=you@mail.com  contact e-mail for Let's Encrypt
@@ -19,6 +24,20 @@ REPO="AppsGanin/rospanel"
 IMAGE="ghcr.io/appsganin/rospanel"   # GHCR image name is always lowercase
 VERSION="${ROSPANEL_VERSION:-latest}"
 ASSET=""   # resolved from the host architecture in the preflight checks below
+
+# --- parse args: --join <url> [--insecure] switches to node mode --------------
+JOIN_URL=""
+JOIN_INSECURE=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--join)
+			[ $# -ge 2 ] || die "--join requires a URL (from the panel's Add-node dialog)"
+			JOIN_URL="$2"; shift 2 ;;
+		--join=*)    JOIN_URL="${1#--join=}"; shift ;;
+		--insecure)  JOIN_INSECURE="--insecure"; shift ;;
+		*)           shift ;;
+	esac
+done
 
 # --- pretty output ----------------------------------------------------------
 if [ -t 1 ]; then
@@ -57,7 +76,8 @@ fi
 # already occupies stdin — read the prompts from the controlling terminal
 # (/dev/tty) instead. Opening fd 3 on /dev/tty fails when there is no terminal
 # (cron, CI, non-interactive SSH); in that case we skip and serve over IP.
-if [ -z "${ROSPANEL_HOST:-}" ] && { exec 3</dev/tty; } 2>/dev/null; then
+# Node mode needs no domain prompt (the panel assigns the node its host).
+if [ -z "$JOIN_URL" ] && [ -z "${ROSPANEL_HOST:-}" ] && { exec 3</dev/tty; } 2>/dev/null; then
 	printf '%sDomain for the panel%s (leave empty to serve over IP): ' "$BLD" "$RST" >&2
 	read -r answer <&3 || answer=""
 	ROSPANEL_HOST="$(printf '%s' "$answer" | tr -d '[:space:]')"
@@ -84,6 +104,17 @@ info "downloading ${BLD}${ASSET}${RST} (${VERSION})"
 fetch "$tmp/rospanel" "$url" || die "download failed: $url"
 [ -s "$tmp/rospanel" ] || die "downloaded file is empty — check the version tag"
 chmod +x "$tmp/rospanel"
+
+# --- node mode: join the panel and install the node service, then stop --------
+if [ -n "$JOIN_URL" ]; then
+	info "installing as a ${BLD}panel-managed node${RST}"
+	"$tmp/rospanel" node install --join "$JOIN_URL" $JOIN_INSECURE \
+		|| die "node install failed"
+	echo
+	info "${GRN}done${RST} — the node will appear online in the panel shortly"
+	info "logs: ${BLD}journalctl -u rospanel-node -f${RST}"
+	exit 0
+fi
 
 # --- install (copies binary → /usr/local/bin, writes unit, enables+starts) --
 info "installing systemd service"

@@ -52,7 +52,6 @@ func (s *Store) ReencryptSensitiveFields() error {
 	for _, c := range []col{
 		{"tg_bot_token"}, {"tg_user_bot_token"}, {"warp_private_key"},
 		{"reality_private_key"}, {"proxy_mode_pass"}, {"zerossl_eab_hmac"},
-		{"yookassa_secret_key"}, {"cryptobot_token"},
 	} {
 		var val string
 		if err := s.db.QueryRow(`SELECT ` + c.name + ` FROM settings WHERE id = 1`).Scan(&val); err != nil {
@@ -67,6 +66,46 @@ func (s *Store) ReencryptSensitiveFields() error {
 			continue
 		}
 		if _, err := s.db.Exec(`UPDATE settings SET `+c.name+` = ? WHERE id = 1`, enc); err != nil {
+			return err
+		}
+	}
+	return s.reencryptPaymentProviders()
+}
+
+// reencryptPaymentProviders wraps any provider config still stored as plaintext
+// JSON (a row written before the field was encrypted, or restored from an old
+// backup) in the at-rest envelope.
+func (s *Store) reencryptPaymentProviders() error {
+	type row struct{ key, config string }
+	var rows []row
+	res, err := s.db.Query(`SELECT key, config FROM payment_providers`)
+	if err != nil {
+		return err
+	}
+	for res.Next() {
+		var r row
+		if err := res.Scan(&r.key, &r.config); err != nil {
+			res.Close()
+			return err
+		}
+		rows = append(rows, r)
+	}
+	if err := res.Close(); err != nil {
+		return err
+	}
+	if err := res.Err(); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if r.config == "" || strings.HasPrefix(r.config, "enc:v1:") {
+			continue
+		}
+		enc := encField(r.config)
+		if !secretRoundtripOK(enc) {
+			log.Printf("[ERROR] reencrypt: payment_providers.%s roundtrip failed — leaving plaintext", r.key)
+			continue
+		}
+		if _, err := s.db.Exec(`UPDATE payment_providers SET config = ? WHERE key = ?`, enc, r.key); err != nil {
 			return err
 		}
 	}
