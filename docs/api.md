@@ -174,6 +174,44 @@ user to:
 
 A manual order returns an empty `pay_url` and waits for `/confirm`.
 
+`GET /v1/billing/providers` is dynamic — it returns whatever payment methods you've
+enabled in the panel (cards, SBP, crypto, …), each with a `key`. That `key` is what you
+pass as `provider` when opening an order; omit it for a manual order.
+
+### Nodes
+
+Manage the server fleet. The local panel server is node `0`; the rest are remote
+**nodes** that hold an outbound long-poll to the panel. Users and limits sync to every
+enabled node automatically, and each server can be edited independently.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/nodes` | List servers (the local panel is node `0`) with status and today's traffic. |
+| `POST` | `/v1/nodes` | Register a node — returns the one-line install command (join token shown once). |
+| `GET` | `/v1/nodes/{id}` | Get one node. |
+| `PATCH` | `/v1/nodes/{id}` | Edit name / host / protocol / routing / DNS overrides and WARP-Opera egress. |
+| `DELETE` | `/v1/nodes/{id}` | Delete a node (it stops serving users). |
+| `POST` | `/v1/nodes/{id}/enabled` | Enable or disable a node. |
+| `POST` | `/v1/nodes/{id}/regen-join` | Issue a fresh install command (revokes the node's current token). |
+| `POST` | `/v1/nodes/{id}/update` | Ask a node to self-update to the latest release. |
+| `POST` | `/v1/nodes/update-all` | Ask every connected node to self-update (sequentially). |
+
+**Register a node** — body `{ "name": "NL #1", "host": "nl1.example.com" }`. The
+response carries the node id, the one-time join token and the ready-to-run install
+command for a fresh Ubuntu server:
+
+```json
+{
+  "data": {
+    "id": 3,
+    "join_token": "rpn_…",
+    "install_command": "curl -Ls https://.../install.sh | sudo bash -s -- --join '…#rpn_…'"
+  }
+}
+```
+
+The join token is embedded once and expires in 24h; `/regen-join` issues a new one.
+
 ### Stats
 
 ```
