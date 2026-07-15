@@ -47,6 +47,14 @@ const (
 	StatusDeviceLimited = "device_limited" // too many concurrent devices
 )
 
+// Self-registration modes (Settings.TGUserRegMode).
+const (
+	RegOff        = "off"        // registration closed
+	RegOpen       = "open"       // account created and active immediately
+	RegModeration = "moderation" // account created disabled; an admin approves it
+	RegInvite     = "invite"     // an invite code is required, then active
+)
+
 // User is a VPN user. In v1 one user = one credential set applied across all
 // enabled protocols (M1 only wires VLESS).
 type User struct {
@@ -126,11 +134,31 @@ type PaymentOrder struct {
 	PlanName   string `json:"plan_name,omitempty"`
 	AmountRub  int    `json:"amount_rub"`
 	Status     string `json:"status"`                // pending | paid | cancelled
-	Provider   string `json:"provider"`              // "" (manual) | yookassa | cryptobot
+	Provider   string `json:"provider"`              // "" (manual) or a payments registry key
 	ProviderID string `json:"provider_id,omitempty"` // external payment/invoice id (admin-only view)
 	PayURL     string `json:"pay_url,omitempty"`     // hosted payment URL for the user
 	CreatedAt  int64  `json:"created_at"`
 	PaidAt     int64  `json:"paid_at"`
+}
+
+// RegistrationRequest is a moderated self-registration awaiting an admin decision.
+// No user exists yet — approval creates one and links ChatID; rejection just drops
+// the request.
+type RegistrationRequest struct {
+	ID        int64  `json:"id"`
+	ChatID    int64  `json:"chat_id"`
+	Name      string `json:"name"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+// PaymentProvider is one payment provider's saved setup: whether it's on, plus the
+// credentials for the fields its registry entry declares (internal/payments). The
+// config holds API keys, so it never leaves the server — the panel is told only
+// which fields are set, never their values.
+type PaymentProvider struct {
+	Key     string
+	Enabled bool
+	Config  map[string]string
 }
 
 // APIKey is a named credential for the external REST API. The raw key is only
@@ -425,7 +453,11 @@ type Settings struct {
 	// self-serve their subscription. Must use a different token than the admin bot.
 	TGUserBotEnabled bool   `json:"-"`
 	TGUserBotToken   string `json:"-"`
-	TGUserRegEnabled bool   `json:"-"` // allow /start self-registration (creates a new VPN account)
+	TGUserRegEnabled bool   `json:"-"` // derived mirror of RegMode != off (kept for old readers)
+	// TGUserRegMode is how self-registration behaves: RegOff | RegOpen | RegModeration
+	// | RegInvite. TGUserRegCode is the invite code required in RegInvite mode.
+	TGUserRegMode string `json:"-"`
+	TGUserRegCode string `json:"-"`
 
 	// TGAdminEvents is a bitmask of the AdminEvent* categories the admin bot pushes
 	// to the authorized chats. Default -1 (all on); see AdminEventEnabled.
@@ -444,16 +476,11 @@ type Settings struct {
 	BillingTrialPlanID int64  `json:"-"`
 	BillingPaymentNote string `json:"-"`
 
-	// Payment providers (Settings → Оплата). Secret key / token are stored
-	// encrypted at rest. PaymentWebhookSecret is a random URL segment for the
-	// provider webhook path so it's unguessable yet fixed.
-	YooKassaEnabled      bool   `json:"-"`
-	YooKassaShopID       string `json:"-"`
-	YooKassaSecretKey    string `json:"-"`
-	YooKassaTest         bool   `json:"-"` // using a YooKassa test shop
-	CryptoBotEnabled     bool   `json:"-"`
-	CryptoBotToken       string `json:"-"`
-	CryptoBotTestnet     bool   `json:"-"` // use the CryptoBot testnet endpoint
+	// PaymentWebhookSecret is the random URL segment the provider webhooks are
+	// mounted under (/<secret>/<provider>), so the callback path is fixed yet
+	// unguessable and doesn't reveal the hidden panel. Provider credentials
+	// themselves live in the payment_providers table, one row per provider — see
+	// PaymentProvider and internal/payments.
 	PaymentWebhookSecret string `json:"-"`
 
 	// External REST API: the stable, unguessable URL segment the API is mounted
@@ -549,6 +576,29 @@ var AdminEventCatalog = []struct {
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
 func (s *Settings) AdminEventEnabled(bit int64) bool { return s.TGAdminEvents&bit != 0 }
+
+// RegMode is the normalised self-registration mode. It falls back to the legacy
+// TGUserRegEnabled bool for rows written before the mode column existed.
+func (s *Settings) RegMode() string {
+	switch s.TGUserRegMode {
+	case RegOpen, RegModeration, RegInvite, RegOff:
+		return s.TGUserRegMode
+	default:
+		if s.TGUserRegEnabled {
+			return RegOpen
+		}
+		return RegOff
+	}
+}
+
+// RegistrationOpen reports whether new signups are accepted at all (any mode but
+// off). RegistrationActivates reports whether a successful signup is active at once
+// (open/invite) rather than held for moderation.
+func (s *Settings) RegistrationOpen() bool { return s.RegMode() != RegOff }
+func (s *Settings) RegistrationActivates() bool {
+	m := s.RegMode()
+	return m == RegOpen || m == RegInvite
+}
 
 // OperaCountries are the Opera VPN regions opera-proxy accepts.
 var OperaCountries = []string{"EU", "AS", "AM"}

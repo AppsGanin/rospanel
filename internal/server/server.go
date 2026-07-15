@@ -220,12 +220,13 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Public payment-webhook surface, mounted under a random unguessable segment so
-	// providers (YooKassa / CryptoBot) can POST to a fixed URL without revealing the
-	// hidden panel. The webhook itself verifies the payload (signature / re-fetch).
+	// Public payment-webhook surface, mounted at /<paySecret>/<provider key> under a
+	// random unguessable segment so providers can POST to a fixed URL without
+	// revealing the hidden panel. The webhook itself verifies the payload (signature
+	// / re-fetch); an unknown provider leaf falls through to the decoy.
 	if paySecret != "" && seg == paySecret {
-		// Throttle per-IP: the YooKassa branch has no signature and re-fetches from the
-		// provider, so an amplification/flood is possible if the secret ever leaks.
+		// Throttle per-IP: signature-less providers (e.g. YooKassa) re-fetch from the
+		// provider on callback, so an amplification/flood is possible if the secret leaks.
 		if !rt.subLimiter.allow(clientIP(r)) {
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return

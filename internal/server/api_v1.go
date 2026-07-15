@@ -641,7 +641,7 @@ func (rt *Router) apiListProviders(w http.ResponseWriter, _ *http.Request) {
 	methods := rt.mgr.PaymentMethods()
 	out := make([]map[string]string, 0, len(methods))
 	for _, m := range methods {
-		out = append(out, map[string]string{"key": m, "label": payProviderLabel(m)})
+		out = append(out, map[string]string{"key": m, "label": rt.mgr.ProviderLabel(m)})
 	}
 	writeAPIData(w, http.StatusOK, out)
 }

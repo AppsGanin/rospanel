@@ -306,7 +306,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 		}
 	}
 	for _, m := range rt.mgr.PaymentMethods() {
-		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: payProviderLabel(m)})
+		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: rt.mgr.ProviderLabel(m)})
 	}
 	// No automatic provider ⇒ manual payment: the pay button still works, creating a
 	// pending order and showing instructions (admin confirms it).
@@ -325,18 +325,6 @@ func payPlanLabel(p model.TariffPlan) string {
 		return fmt.Sprintf("%d ₽ / %d дн.", p.PriceRub, p.PeriodDays)
 	}
 	return fmt.Sprintf("%d ₽", p.PriceRub)
-}
-
-// payProviderLabel is the user-facing name of a payment method.
-func payProviderLabel(p string) string {
-	switch p {
-	case "yookassa":
-		return "Картой (ЮКасса)"
-	case "cryptobot":
-		return "Криптовалютой (CryptoBot)"
-	default:
-		return p
-	}
 }
 
 // isBrowser reports whether the request looks like a web browser (so we serve

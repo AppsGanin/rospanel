@@ -5,10 +5,10 @@ import {
   getPayments,
   migratePlanUsers,
   saveBilling,
-  savePayments,
+  savePaymentProvider,
   saveTariffPlan,
   type BillingInfo,
-  type PaymentSettings,
+  type PaymentProvider,
   type TariffPlan,
 } from "./api";
 import { fmtBytes, gbToBytes, QUOTA_OPTIONS } from "./format";
@@ -18,6 +18,7 @@ import {
   Badge,
   Button,
   CenterLoader,
+  cn,
   Code,
   Modal,
   SaveBar,
@@ -29,117 +30,206 @@ import {
   useConfirm,
 } from "./ui";
 
-// PaymentIntegrations renders the YooKassa / CryptoBot provider settings. It is
-// controlled by BillingPanel: edits go through `patch`, and saving happens via the
-// shared bottom SaveBar (no local save button).
-function PaymentIntegrations({
-  info,
-  patch,
-  yooKey,
-  setYooKey,
-  cbToken,
-  setCbToken,
-}: {
-  info: PaymentSettings | null;
-  patch: (p: Partial<PaymentSettings>) => void;
-  yooKey: string;
-  setYooKey: (v: string) => void;
-  cbToken: string;
-  setCbToken: (v: string) => void;
-}) {
-  if (!info) return null;
+// ProviderDraft is one provider's editable state (mirrors PaymentField kinds:
+// secrets/text as strings, bools as "1"/"").
+type ProviderDraft = { enabled: boolean; config: Record<string, string> };
 
+// draftFromProvider seeds a provider's editable form from the server's view: field
+// values for text/bool, and empty strings for secrets (which are write-only — the
+// server only tells us whether one is set, never its value).
+function draftFromProvider(p: PaymentProvider): ProviderDraft {
+  const config: Record<string, string> = {};
+  for (const f of p.fields) {
+    if (f.kind === "secret") config[f.key] = "";
+    else if (f.kind === "bool") config[f.key] = f.value === true ? "1" : "";
+    else config[f.key] = typeof f.value === "string" ? f.value : "";
+  }
+  return { enabled: p.enabled, config };
+}
+
+// providerDirty reports whether a draft differs from the server's saved view.
+function providerDirty(p: PaymentProvider, draft: ProviderDraft): boolean {
+  if (draft.enabled !== p.enabled) return true;
+  return p.fields.some((f) => {
+    if (f.kind === "secret") return draft.config[f.key] !== "";
+    if (f.kind === "bool")
+      return draft.config[f.key] !== (f.value === true ? "1" : "");
+    return draft.config[f.key] !== (typeof f.value === "string" ? f.value : "");
+  });
+}
+
+// ProviderCard is one provider's settings form, rendered entirely from the schema
+// the server sends. It's controlled — edits bubble up via onChange and are saved by
+// the page's shared bottom SaveBar, not here.
+function ProviderCard({
+  provider,
+  draft,
+  onChange,
+}: {
+  provider: PaymentProvider;
+  draft: ProviderDraft;
+  onChange: (d: ProviderDraft) => void;
+}) {
+  const setField = (key: string, value: string) =>
+    onChange({ ...draft, config: { ...draft.config, [key]: value } });
+
+  // A provider is "configured" when every required field has a value: text fields
+  // non-empty, secrets either already stored or being entered now.
+  const configured = provider.fields.every((f) => {
+    if (f.optional || f.kind === "bool") return true;
+    if (f.kind === "secret") return f.is_set || draft.config[f.key] !== "";
+    return (draft.config[f.key] ?? "") !== "";
+  });
+
+  const status = !draft.enabled
+    ? { label: "Выключен", color: "gray" as const }
+    : configured
+      ? { label: "Подключён", color: "green" as const }
+      : { label: "Не настроен", color: "orange" as const };
+
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border transition-colors",
+        draft.enabled ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50/50",
+      )}
+    >
+      {/* Header: monogram, name + note, status, toggle. */}
+      <div className="flex items-center gap-3 p-3.5">
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-base font-bold",
+            draft.enabled ? "accent-tint text-accent" : "bg-gray-100 text-ink-muted",
+          )}
+        >
+          {provider.label.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-ink">{provider.label}</span>
+            <Badge color={status.color} size="xs">
+              {status.label}
+            </Badge>
+          </div>
+          <p className="truncate text-xs text-ink-muted">{provider.note}</p>
+        </div>
+        <Switch
+          checked={draft.enabled}
+          onChange={(v) => onChange({ ...draft, enabled: v })}
+        />
+      </div>
+
+      {/* Credentials form, revealed when the provider is on. */}
+      {draft.enabled && (
+        <div className="flex flex-col gap-3 border-t border-gray-100 px-3.5 py-3.5">
+          {provider.fields.map((f) => {
+            if (f.kind === "bool") {
+              return (
+                <label
+                  key={f.key}
+                  className="flex items-center gap-2 text-sm text-ink"
+                >
+                  <Switch
+                    checked={draft.config[f.key] === "1"}
+                    onChange={(v) => setField(f.key, v ? "1" : "")}
+                  />
+                  {f.label}
+                  {f.help && (
+                    <span className="text-xs text-ink-muted">— {f.help}</span>
+                  )}
+                </label>
+              );
+            }
+            if (f.kind === "select") {
+              const opts = f.options ?? [];
+              return (
+                <div key={f.key}>
+                  <Select
+                    label={f.label}
+                    data={opts}
+                    value={draft.config[f.key] || opts[0]?.value || ""}
+                    onChange={(v) => setField(f.key, v)}
+                  />
+                  {f.help && (
+                    <p className="mt-1 text-xs text-ink-muted">{f.help}</p>
+                  )}
+                </div>
+              );
+            }
+            const isSecret = f.kind === "secret";
+            const label =
+              isSecret && f.is_set
+                ? `${f.label} (задан — оставьте пустым, чтобы не менять)`
+                : f.optional
+                  ? `${f.label}`
+                  : f.label;
+            return (
+              <div key={f.key}>
+                <TextInput
+                  label={label}
+                  value={draft.config[f.key] ?? ""}
+                  onChange={(v) => setField(f.key, v)}
+                  placeholder={isSecret && f.is_set ? "••••••••" : f.placeholder}
+                />
+                {f.help && !isSecret && (
+                  <p className="mt-1 text-xs text-ink-muted">{f.help}</p>
+                )}
+              </div>
+            );
+          })}
+
+          {provider.webhook_url && (
+            <div>
+              <p className="mb-1 text-xs text-ink-muted">
+                URL для вебхука в кабинете провайдера:
+              </p>
+              <Code block copy>
+                {provider.webhook_url}
+              </Code>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// PaymentIntegrations lists every payment provider the panel knows about and its
+// settings form. It's controlled by BillingPanel so edits ride the page's single
+// bottom SaveBar. Providers, fields and validation all come from the server, so a
+// newly added provider shows up here with no frontend change.
+function PaymentIntegrations({
+  providers,
+  drafts,
+  err,
+  onChange,
+}: {
+  providers: PaymentProvider[] | null;
+  drafts: Record<string, ProviderDraft>;
+  err: string;
+  onChange: (key: string, d: ProviderDraft) => void;
+}) {
   return (
     <SettingCard
       title="Приём платежей"
       description="Автоматическая оплата тарифов в пользовательском боте. Тариф активируется сам после оплаты. Без провайдеров оплата идёт вручную (подтверждает админ)."
     >
-      <div className="flex flex-col gap-5">
-        {/* YooKassa */}
+      {err ? (
+        <p className="text-sm text-danger">{err}</p>
+      ) : !providers ? (
+        <CenterLoader />
+      ) : (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-ink">ЮКасса — карты, ₽</p>
-            <Switch
-              checked={info.yookassa_enabled}
-              onChange={(v) => patch({ yookassa_enabled: v })}
+          {providers.map((p) => (
+            <ProviderCard
+              key={p.key}
+              provider={p}
+              draft={drafts[p.key] ?? draftFromProvider(p)}
+              onChange={(d) => onChange(p.key, d)}
             />
-          </div>
-          {info.yookassa_enabled && (
-            <div className="flex flex-col gap-2">
-              <TextInput
-                label="shopId"
-                value={info.yookassa_shop_id}
-                onChange={(v) => patch({ yookassa_shop_id: v })}
-              />
-              <TextInput
-                label={
-                  info.yookassa_key_set
-                    ? "Секретный ключ (задан — оставьте пустым, чтобы не менять)"
-                    : "Секретный ключ"
-                }
-                value={yooKey}
-                onChange={setYooKey}
-                placeholder={info.yookassa_key_set ? "••••••••" : "live_… или test_…"}
-              />
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <Switch
-                  checked={info.yookassa_test}
-                  onChange={(v) => patch({ yookassa_test: v })}
-                />
-                Тестовый режим (тестовый магазин)
-              </label>
-              {info.webhook_yookassa && (
-                <div>
-                  <p className="mb-1 text-xs text-ink-muted">
-                    URL для уведомлений в кабинете ЮКассы:
-                  </p>
-                  <Code block copy>{info.webhook_yookassa}</Code>
-                </div>
-              )}
-            </div>
-          )}
+          ))}
         </div>
-
-        {/* CryptoBot */}
-        <div className="flex flex-col gap-3 border-t border-gray-200 pt-4">
-          <div className="flex items-center justify-between">
-            <p className="font-semibold text-ink">CryptoBot — крипта (Telegram)</p>
-            <Switch
-              checked={info.cryptobot_enabled}
-              onChange={(v) => patch({ cryptobot_enabled: v })}
-            />
-          </div>
-          {info.cryptobot_enabled && (
-            <div className="flex flex-col gap-2">
-              <TextInput
-                label={
-                  info.cryptobot_token_set
-                    ? "API-токен (задан — оставьте пустым, чтобы не менять)"
-                    : "API-токен (@CryptoBot → Crypto Pay)"
-                }
-                value={cbToken}
-                onChange={setCbToken}
-                placeholder={info.cryptobot_token_set ? "••••••••" : "12345:AA…"}
-              />
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <Switch
-                  checked={info.cryptobot_testnet}
-                  onChange={(v) => patch({ cryptobot_testnet: v })}
-                />
-                Тестовый режим (testnet · @CryptoTestnetBot)
-              </label>
-              {info.webhook_cryptobot && (
-                <div>
-                  <p className="mb-1 text-xs text-ink-muted">
-                    URL для вебхука в настройках Crypto Pay:
-                  </p>
-                  <Code block copy>{info.webhook_cryptobot}</Code>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </SettingCard>
   );
 }
@@ -290,17 +380,31 @@ export function BillingPanel() {
   const [editor, setEditor] = useState<TariffPlan | null>(null);
   const [migrateTo, setMigrateTo] = useState(0);
   const [loadErr, setLoadErr] = useState("");
-  // Payment-provider settings live here too so the whole tab shares one bottom
-  // SaveBar (pay = draft, paySaved = server truth; yooKey/cbToken are write-only).
-  const [pay, setPay] = useState<PaymentSettings | null>(null);
-  const [paySaved, setPaySaved] = useState<PaymentSettings | null>(null);
-  const [yooKey, setYooKey] = useState("");
-  const [cbToken, setCbToken] = useState("");
+  // Payment providers: `providers` is the server's saved view; `payDrafts` the
+  // per-provider edits. Both the tariff settings and the provider edits ride the one
+  // shared bottom SaveBar (saveSettings persists whatever is dirty).
+  const [providers, setProviders] = useState<PaymentProvider[] | null>(null);
+  const [payDrafts, setPayDrafts] = useState<Record<string, ProviderDraft>>({});
+  const [payErr, setPayErr] = useState("");
   const { busy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
 
-  const patchPay = (p: Partial<PaymentSettings>) =>
-    setPay((s) => (s ? { ...s, ...p } : s));
+  // seedProviders replaces the server view and resets all drafts to match it.
+  const seedProviders = useCallback((list: PaymentProvider[]) => {
+    setProviders(list);
+    setPayDrafts(
+      Object.fromEntries(list.map((p) => [p.key, draftFromProvider(p)])),
+    );
+  }, []);
+
+  useEffect(() => {
+    getPayments()
+      .then((d) => seedProviders(d.providers ?? []))
+      .catch((e) => setPayErr(errMessage(e)));
+  }, [seedProviders]);
+
+  const patchProvider = (key: string, d: ProviderDraft) =>
+    setPayDrafts((s) => ({ ...s, [key]: d }));
 
   const reload = useCallback(() => {
     getBilling()
@@ -343,12 +447,6 @@ export function BillingPanel() {
       })
       .catch((e) => setLoadErr(errMessage(e)))
       .finally(() => setLoaded(true));
-    getPayments()
-      .then((p) => {
-        setPay(p);
-        setPaySaved(p);
-      })
-      .catch(() => {});
   }, []);
 
   if (!loaded) return <CenterLoader />;
@@ -381,28 +479,21 @@ export function BillingPanel() {
     cfg.trial_plan_id !== saved.trial_plan_id ||
     cfg.payment_note !== saved.payment_note;
 
-  const payDirty =
-    !!pay &&
-    !!paySaved &&
-    (pay.yookassa_enabled !== paySaved.yookassa_enabled ||
-      pay.yookassa_shop_id !== paySaved.yookassa_shop_id ||
-      pay.yookassa_test !== paySaved.yookassa_test ||
-      pay.cryptobot_enabled !== paySaved.cryptobot_enabled ||
-      pay.cryptobot_testnet !== paySaved.cryptobot_testnet ||
-      yooKey.trim() !== "" ||
-      cbToken.trim() !== "");
+  // Which providers have unsaved edits (skip any whose server view we don't have).
+  const dirtyProviders = (providers ?? []).filter(
+    (p) => payDrafts[p.key] && providerDirty(p, payDrafts[p.key]),
+  );
 
-  const dirty = billingDirty || payDirty;
+  const dirty = billingDirty || dirtyProviders.length > 0;
 
   const cancel = () => {
     setCfg(saved);
-    if (paySaved) setPay(paySaved);
-    setYooKey("");
-    setCbToken("");
+    if (providers) seedProviders(providers);
   };
 
-  // saveSettings persists whatever is dirty — the tariff settings and/or the
-  // payment-provider settings — behind the single bottom SaveBar.
+  // saveSettings persists whatever is dirty behind the single bottom SaveBar: the
+  // tariff settings and every changed provider (each provider is its own API call;
+  // the last response carries the refreshed provider list).
   const saveSettings = () =>
     run(async () => {
       if (billingDirty) {
@@ -418,21 +509,17 @@ export function BillingPanel() {
         // appears/disappears immediately (no page reload needed).
         window.dispatchEvent(new Event("rospanel:billing-changed"));
       }
-      if (payDirty && pay) {
-        const next = await savePayments({
-          yookassa_enabled: pay.yookassa_enabled,
-          yookassa_shop_id: pay.yookassa_shop_id.trim(),
-          yookassa_secret_key: yooKey.trim(),
-          yookassa_test: pay.yookassa_test,
-          cryptobot_enabled: pay.cryptobot_enabled,
-          cryptobot_token: cbToken.trim(),
-          cryptobot_testnet: pay.cryptobot_testnet,
+      let latest: PaymentProvider[] | null = null;
+      for (const p of dirtyProviders) {
+        const draft = payDrafts[p.key];
+        const { providers: list } = await savePaymentProvider({
+          key: p.key,
+          enabled: draft.enabled,
+          config: draft.config,
         });
-        setPay(next);
-        setPaySaved(next);
-        setYooKey("");
-        setCbToken("");
+        latest = list;
       }
+      if (latest) seedProviders(latest);
       notifySuccess("Настройки сохранены");
     }).catch((e) => notifyError(errMessage(e)));
 
@@ -502,12 +589,10 @@ export function BillingPanel() {
           </p>
         </SettingCard>
         <PaymentIntegrations
-          info={pay}
-          patch={patchPay}
-          yooKey={yooKey}
-          setYooKey={setYooKey}
-          cbToken={cbToken}
-          setCbToken={setCbToken}
+          providers={providers}
+          drafts={payDrafts}
+          err={payErr}
+          onChange={patchProvider}
         />
         <SettingCard
           title="Тарифные планы"
@@ -629,7 +714,7 @@ export function BillingPanel() {
                 "Например:\nПеревод на карту 0000 0000 0000 0000\nили СБП по номеру +7 900 000-00-00\nПосле оплаты напишите @admin"
               }
               rows={4}
-              hint="Показывается пользователю, когда не подключён автоматический провайдер (ЮКасса/CryptoBot) — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
+              hint="Показывается пользователю, когда не подключён автоматический провайдер — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
             />
           </div>
         </SettingCard>

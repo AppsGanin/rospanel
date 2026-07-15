@@ -12,6 +12,55 @@ import (
 	"net/http"
 )
 
+const keyCryptoBot = "cryptobot"
+
+func cryptoBotDescriptor() Descriptor {
+	return Descriptor{
+		Key:   keyCryptoBot,
+		Label: "CryptoBot",
+		Note:  "Крипта: USDT, TON, BTC · счёт в ₽",
+		Fields: []Field{
+			{Key: "token", Label: "API-токен", Kind: FieldSecret, Placeholder: "12345:AA…",
+				Help: "@CryptoBot → Crypto Pay → Create App."},
+			{Key: "testnet", Label: "Testnet (@CryptoTestnetBot)", Kind: FieldBool},
+		},
+		New: func(cfg Config) Client { return NewCryptoBot(cfg.Get("token"), cfg.Bool("testnet")) },
+	}
+}
+
+// Create implements Client.
+func (c *CryptoBot) Create(ctx context.Context, req CreateReq) (string, string, error) {
+	return c.CreateInvoice(ctx, req.AmountRub, req.OrderID, req.Description)
+}
+
+// Status implements Client.
+func (c *CryptoBot) Status(ctx context.Context, providerID string) (Result, error) {
+	return c.InvoiceStatus(ctx, providerID)
+}
+
+// Webhook implements Client. The HMAC proves CryptoBot sent the body, so the
+// invoice it carries (including its amount) can be trusted as-is.
+func (c *CryptoBot) Webhook(_ context.Context, body []byte, h http.Header) (string, Result, error) {
+	if !c.VerifyWebhook(body, h.Get("crypto-pay-api-signature")) {
+		return "", Result{}, fmt.Errorf("CryptoBot: неверная подпись")
+	}
+	var upd struct {
+		UpdateType string `json:"update_type"`
+		Payload    struct {
+			Invoice
+			InvoiceID int64 `json:"invoice_id"`
+		} `json:"payload"`
+	}
+	if json.Unmarshal(body, &upd) != nil || upd.Payload.InvoiceID == 0 {
+		return "", Result{}, fmt.Errorf("CryptoBot: некорректное уведомление")
+	}
+	res := upd.Payload.AsResult()
+	if upd.UpdateType == "invoice_paid" {
+		res.Status = StatusPaid // the update itself is the paid signal
+	}
+	return fmt.Sprintf("%d", upd.Payload.InvoiceID), res, nil
+}
+
 // CryptoBot is a minimal Crypto Pay API client. testnet switches to the
 // @CryptoTestnetBot sandbox endpoint (use a testnet app token).
 type CryptoBot struct {

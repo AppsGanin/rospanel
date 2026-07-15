@@ -21,6 +21,7 @@ export interface User {
   telegram_linked?: boolean
   telegram_link?: string
   telegram_deep_link?: string
+  tg_chat_id?: number // linked Telegram chat/user id (0 = not linked)
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
   vless: string
@@ -744,9 +745,14 @@ export interface TelegramInfo {
   user_enabled: boolean
   user_token: string
   user_reg_enabled: boolean
+  user_reg_mode: RegMode // off | open | moderation | invite
+  user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   admin_events: Record<string, boolean> // admin notification categories (key→on)
 }
+
+// Self-registration modes for the public user bot.
+export type RegMode = 'off' | 'open' | 'moderation' | 'invite'
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
 
@@ -756,7 +762,8 @@ export const saveTelegram = (
   backup_cron: string,
   user_enabled: boolean,
   user_token: string,
-  user_reg_enabled: boolean,
+  user_reg_mode: RegMode,
+  user_reg_code: string,
   admin_events: Record<string, boolean>,
 ) =>
   api<{ ok: boolean }>('api/telegram', {
@@ -767,7 +774,8 @@ export const saveTelegram = (
       backup_cron,
       user_enabled,
       user_token,
-      user_reg_enabled,
+      user_reg_mode,
+      user_reg_code,
       admin_events,
     }),
   })
@@ -794,6 +802,26 @@ export const unlinkTelegram = (chat_id: number) =>
 
 export const testTelegramBackup = () =>
   api<{ ok: boolean }>('api/telegram/test-backup', { method: 'POST' })
+
+// Moderated self-registration queue: signups awaiting an admin decision. No user
+// exists until a request is approved.
+export interface RegistrationRequest {
+  id: number
+  chat_id: number
+  name: string
+  created_at: number
+}
+
+export const getRegistrations = () =>
+  api<{ moderation: boolean; requests: RegistrationRequest[] }>(
+    'api/registrations',
+  )
+
+export const approveRegistration = (id: number) =>
+  api<{ ok: boolean }>(`api/registrations/${id}/approve`, { method: 'POST' })
+
+export const rejectRegistration = (id: number) =>
+  api<{ ok: boolean }>(`api/registrations/${id}/reject`, { method: 'POST' })
 
 export const login = (username: string, password: string) =>
   api<{ ok: boolean }>('api/login', {
@@ -918,31 +946,45 @@ export interface BillingInfo {
 
 export const getBilling = () => api<BillingInfo>('api/billing')
 
-export interface PaymentSettings {
-  yookassa_enabled: boolean
-  yookassa_shop_id: string
-  yookassa_test: boolean
-  yookassa_key_set: boolean
-  cryptobot_enabled: boolean
-  cryptobot_testnet: boolean
-  cryptobot_token_set: boolean
-  webhook_yookassa: string
-  webhook_cryptobot: string
+// A payment provider's settings form is described by the server (internal/payments
+// registry), so adding a provider needs no frontend change — the form renders from
+// these fields. Secret fields never carry their value: only `is_set` says whether
+// one is stored; sending an empty secret keeps the current one.
+export type PaymentFieldKind = 'text' | 'secret' | 'bool' | 'select'
+
+export interface PaymentField {
+  key: string
+  label: string
+  kind: PaymentFieldKind
+  placeholder?: string
+  help?: string
+  optional?: boolean
+  value?: string | boolean // text/select → string, bool → boolean; absent for secrets
+  is_set?: boolean // secrets only: whether a value is stored
+  options?: { value: string; label: string }[] // select only
 }
 
-export interface PaymentSettingsInput {
-  yookassa_enabled: boolean
-  yookassa_shop_id: string
-  yookassa_secret_key: string // empty = keep current
-  yookassa_test: boolean
-  cryptobot_enabled: boolean
-  cryptobot_token: string // empty = keep current
-  cryptobot_testnet: boolean
+export interface PaymentProvider {
+  key: string
+  label: string
+  note: string
+  enabled: boolean
+  fields: PaymentField[]
+  webhook_url: string
 }
 
-export const getPayments = () => api<PaymentSettings>('api/payments')
-export const savePayments = (s: PaymentSettingsInput) =>
-  api<PaymentSettings>('api/payments', { method: 'POST', body: JSON.stringify(s) })
+export const getPayments = () =>
+  api<{ providers: PaymentProvider[] }>('api/payments')
+
+export const savePaymentProvider = (p: {
+  key: string
+  enabled: boolean
+  config: Record<string, string> // secrets: empty = keep current; bools: '1' | ''
+}) =>
+  api<{ providers: PaymentProvider[] }>('api/payments', {
+    method: 'POST',
+    body: JSON.stringify(p),
+  })
 
 export const saveBilling = (b: {
   enabled: boolean
