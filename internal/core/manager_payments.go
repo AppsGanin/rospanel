@@ -46,21 +46,21 @@ func (m *Manager) SetAdminNotifier(fn func(html string)) {
 
 // SetAdminModerationNotifier registers a callback (the admin bot) that posts a
 // signup awaiting moderation, with approve/reject buttons. Passing nil clears it.
-func (m *Manager) SetAdminModerationNotifier(fn func(userID int64, name, plan string)) {
+func (m *Manager) SetAdminModerationNotifier(fn func(reqID int64, name, plan string)) {
 	m.notifyMu.Lock()
 	m.adminModerate = fn
 	m.notifyMu.Unlock()
 }
 
-func (m *Manager) notifyModeration(userID int64, name, plan string) bool {
+// notifyModeration best-effort pings the admin bot about a pending request. It's not
+// a delivery guarantee — the panel queue is the authoritative surface.
+func (m *Manager) notifyModeration(reqID int64, name, plan string) {
 	m.notifyMu.Lock()
 	fn := m.adminModerate
 	m.notifyMu.Unlock()
-	if fn == nil {
-		return false
+	if fn != nil {
+		fn(reqID, name, plan)
 	}
-	fn(userID, name, plan)
-	return true
 }
 
 // ProviderLabel is the pay-button label for a provider key: the operator's custom

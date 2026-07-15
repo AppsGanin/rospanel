@@ -53,6 +53,13 @@ func TestModerationRegistrationFlow(t *testing.T) {
 	if len(userMsgs) != 1 {
 		t.Fatalf("applicant notified %d times on approve, want 1", len(userMsgs))
 	}
+	// A re-fired approval for the same (now-gone) request must not create a second
+	// account — the request is claimed atomically, so the double-click / two-admin
+	// race resolves to one winner (store-level guard covered by TestClaimRegistration).
+	_ = m.ApproveRegistrationRequest(ctx, moderated[0])
+	if users, _ := m.store.ListUsers(); len(users) != 1 {
+		t.Fatalf("re-approve created a duplicate: %d users", len(users))
+	}
 
 	// A fresh request can be rejected → dropped, no user, applicant told.
 	ok, err = m.RequestRegistration(ctx, 777, "Вова")

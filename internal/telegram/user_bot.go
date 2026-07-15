@@ -190,11 +190,12 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 
 // handleRegCode checks an entered invite code and, on a match, registers the user.
 func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID int64, set *model.Settings, code, name string) {
-	if !set.RegistrationOpen() || set.RegMode() != model.RegInvite {
+	want := strings.TrimSpace(set.TGUserRegCode)
+	if !set.RegistrationOpen() || set.RegMode() != model.RegInvite || want == "" {
 		s.sendWelcome(ctx, client, set, chatID)
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(set.TGUserRegCode)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(want)) != 1 {
 		s.send(ctx, client, chatID, "⚠️ Неверный код-приглашение. Попробуйте ещё раз или обратитесь к администратору.")
 		s.setPending(chatID, "regcode")
 		return
@@ -311,6 +312,12 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	}
 	if !set.RegistrationOpen() {
 		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
+		return
+	}
+	// A chat that already has a pending moderated request must not re-tap its way
+	// through the global rate limit (or spam admins) — short-circuit before both.
+	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {
+		s.send(ctx, client, chatID, "⏳ Ваша заявка уже на рассмотрении. Дождитесь ответа администратора.")
 		return
 	}
 	if !s.allowRegistration(time.Now()) {

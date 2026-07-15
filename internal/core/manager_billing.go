@@ -163,11 +163,10 @@ func (m *Manager) RequestRegistration(ctx context.Context, chatID int64, name st
 	if err != nil {
 		return false, err
 	}
-	if !m.notifyModeration(req.ID, req.Name, "") {
-		m.notifyAdminEvent(model.AdminEventRegistered,
-			"🕒 <b>Заявка на регистрацию</b>\nПользователь: "+escHTML(req.Name)+
-				"\nОдобрите её в панели («Заявки на регистрацию»).")
-	}
+	// Best-effort admin-bot ping with approve/reject buttons. The panel's "Заявки на
+	// регистрацию" tab is the authoritative surface regardless (and the only one when
+	// the admin bot is off or its registration notifications are disabled).
+	m.notifyModeration(req.ID, req.Name, "")
 	return true, nil
 }
 
@@ -184,20 +183,40 @@ func (m *Manager) ListRegistrationRequests() ([]model.RegistrationRequest, error
 
 // ApproveRegistrationRequest turns a pending request into a real (active) user: it
 // creates the account, links the applicant's chat, drops the request and notifies
-// them. A no-op error is returned if the request is already gone.
+// them. The request is claimed atomically first, so concurrent approvals (or an
+// approve racing a reject) resolve to a single winner — no duplicate account.
 func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) error {
 	req, err := m.store.GetRegistrationRequest(reqID)
 	if err != nil {
 		return invalid("заявка не найдена")
 	}
-	u, err := m.createRegisteredUser(req.Name)
+	claimed, err := m.store.ClaimRegistrationRequest(reqID)
 	if err != nil {
 		return err
 	}
-	if err := m.store.SetUserTelegramChat(u.ID, req.ChatID); err != nil {
+	if !claimed {
+		return nil // another admin already decided this request
+	}
+	// If the chat got linked to an account in the meantime (e.g. via a panel link
+	// code), don't mint a duplicate — just let the applicant know they're set.
+	if existing, _ := m.store.GetUserByTelegramChatID(req.ChatID); existing != nil {
+		m.notifyUser(req.ChatID, "✅ Ваш аккаунт уже подключён — откройте меню в боте.")
+		return nil
+	}
+	u, err := m.createRegisteredUser(req.Name)
+	if err != nil {
+		// Creation failed after the request was claimed — put the request back so it's
+		// retryable instead of vanishing (the applicant keeps waiting otherwise).
+		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
 		return err
 	}
-	_ = m.store.DeleteRegistrationRequest(reqID)
+	if err := m.store.SetUserTelegramChat(u.ID, req.ChatID); err != nil {
+		// Account created but the chat couldn't be linked: drop the orphan and restore
+		// the request rather than leave an unreachable active account behind.
+		_ = m.store.DeleteUser(u.ID)
+		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
+		return err
+	}
 	plan := m.PlanName(u.PlanID)
 	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan, "moderation": true})
 	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
@@ -206,14 +225,19 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 }
 
 // RejectRegistrationRequest declines a pending request: it's dropped and the
-// applicant is told. No user was ever created.
+// applicant is told. No user was ever created. Claimed atomically so it can't race
+// an approval into a contradictory outcome.
 func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) error {
 	req, err := m.store.GetRegistrationRequest(reqID)
 	if err != nil {
 		return invalid("заявка не найдена")
 	}
-	if err := m.store.DeleteRegistrationRequest(reqID); err != nil {
+	claimed, err := m.store.ClaimRegistrationRequest(reqID)
+	if err != nil {
 		return err
+	}
+	if !claimed {
+		return nil // another admin already decided this request
 	}
 	m.notifyUser(req.ChatID, "🚫 Заявка на регистрацию отклонена. Обратитесь к администратору.")
 	return nil

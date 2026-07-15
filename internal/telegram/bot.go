@@ -57,7 +57,7 @@ type Panel interface {
 	StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))
-	SetAdminModerationNotifier(fn func(userID int64, name, plan string))
+	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
 
 	// Audit hooks for the actions the bots perform directly on the store.
 	UnlinkUserTelegram(ctx context.Context, id int64) error
@@ -151,7 +151,7 @@ func (s *Service) Run(ctx context.Context) {
 		}
 	})
 	// A signup awaiting moderation: post it with approve/reject buttons.
-	s.panel.SetAdminModerationNotifier(func(userID int64, name, plan string) {
+	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
 		set, err := s.store.GetSettings()
 		if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
 			return
@@ -162,8 +162,8 @@ func (s *Service) Run(ctx context.Context) {
 		}
 		msg += "\n\nОдобрить доступ?"
 		rows := [][]InlineButton{{
-			{Text: "✅ Одобрить", CallbackData: fmt.Sprintf("reg:%d:ok", userID)},
-			{Text: "🚫 Отклонить", CallbackData: fmt.Sprintf("reg:%d:no", userID)},
+			{Text: "✅ Одобрить", CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
+			{Text: "🚫 Отклонить", CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
 		}}
 		c := NewClient(strings.TrimSpace(set.TGBotToken))
 		for _, id := range set.TelegramChatIDs() {

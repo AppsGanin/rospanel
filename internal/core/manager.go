@@ -76,7 +76,7 @@ type Manager struct {
 	notifyMu      sync.Mutex
 	userNotify    func(chatID int64, html string)
 	adminNotify   func(html string)
-	adminModerate func(userID int64, name, plan string)
+	adminModerate func(reqID int64, name, plan string)
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.

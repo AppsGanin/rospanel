@@ -77,3 +77,16 @@ func (s *Store) DeleteRegistrationRequest(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM registration_requests WHERE id = ?`, id)
 	return err
 }
+
+// ClaimRegistrationRequest atomically deletes a request and reports whether THIS
+// call removed it. With MaxOpenConns(1) serialising writes, exactly one of several
+// concurrent approvers/rejecters wins — so a double-click (or two admins) can't
+// create the account twice or send contradictory notifications.
+func (s *Store) ClaimRegistrationRequest(id int64) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM registration_requests WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
