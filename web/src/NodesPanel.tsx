@@ -29,6 +29,8 @@ import {
   setXrayDNS,
   updateAllNodes,
   updateGeo,
+  updateIPLists,
+  setIPListCadence as saveIPListCadence,
   updateNode,
   updateNodeVersion,
   type GeoCategories,
@@ -49,6 +51,7 @@ import {
   effectiveCfg,
   EMPTY,
   GeoSection,
+  IPListSection,
   hydrateRouting,
   laneSources,
   RoutingEditor,
@@ -817,6 +820,7 @@ function NodeSettingsDialog({
             proxyCounts={{}}
             geosite={geo.geosite}
             geoip={geo.geoip}
+            iplist={geo.iplist}
             applying={saving}
             liveStatus={false}
           />
@@ -893,7 +897,9 @@ function MasterSettingsDialog({
   const [operaAlive, setOperaAlive] = useState(false);
   const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
+  const [ipListStatus, setIPListStatus] = useState<GeoFile[]>([]);
   const [geoCadence, setGeoCadence] = useState(0);
+  const [ipListCadence, setIPListCadence] = useState(0);
   const [tab, setTab] = useState("general");
   const r = useServerRouting({
     cfg: EMPTY,
@@ -907,7 +913,9 @@ function MasterSettingsDialog({
     getGeoStatus()
       .then((g) => {
         setGeoStatus(g.files);
+        setIPListStatus(g.iplist_files ?? []);
         setGeoCadence(g.refresh_hours);
+        setIPListCadence(g.iplist_refresh_hours ?? 0);
       })
       .catch(() => {});
     getRouting()
@@ -944,6 +952,26 @@ function MasterSettingsDialog({
       setGeoStatus((await updateGeo()).files);
       notifySuccess("Geo-базы обновлены");
     });
+
+  const refreshIPLists = () =>
+    apply(async () => {
+      setIPListStatus((await updateIPLists()).iplist_files ?? []);
+      notifySuccess("Списки iplist обновлены");
+    });
+
+  // Mirrors changeGeoCadence: optimistic, rolled back on failure so the dropdown
+  // never misreports the saved schedule.
+  const changeIPListCadence = async (hours: number) => {
+    const prev = ipListCadence;
+    setIPListCadence(hours);
+    try {
+      await saveIPListCadence(hours);
+      notifySuccess("Автообновление списков сохранено");
+    } catch (e) {
+      setIPListCadence(prev);
+      notifyError(errMessage(e));
+    }
+  };
 
   const changeGeoCadence = async (hours: number) => {
     setGeoCadence(hours);
@@ -1017,6 +1045,7 @@ function MasterSettingsDialog({
               { value: "routing", label: "Роутинг" },
               { value: "dns", label: "DNS" },
               { value: "geo", label: "Geo" },
+              { value: "iplist", label: "Списки" },
               { value: "domain", label: "Домен" },
             ]}
           />
@@ -1071,6 +1100,7 @@ function MasterSettingsDialog({
                 proxyCounts={proxyCounts}
                 geosite={geo.geosite}
                 geoip={geo.geoip}
+                iplist={geo.iplist}
                 applying={applying}
               />
               <TabSaveBar
@@ -1103,6 +1133,16 @@ function MasterSettingsDialog({
               refreshing={applying}
               cadence={geoCadence}
               onCadence={changeGeoCadence}
+            />
+          )}
+
+          {tab === "iplist" && (
+            <IPListSection
+              status={ipListStatus}
+              onRefresh={refreshIPLists}
+              refreshing={applying}
+              cadence={ipListCadence}
+              onCadence={changeIPListCadence}
             />
           )}
 
@@ -1396,7 +1436,7 @@ export function NodesPanel() {
   const [decoys, setDecoys] = useState<string[]>([]);
   // Geo categories feed the routing editor's domain/IP suggestions (same list for
   // the master and every node — one panel-side geosite/geoip).
-  const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [] });
+  const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [], iplist: [] });
   const [adding, setAdding] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
 
@@ -1411,7 +1451,13 @@ export function NodesPanel() {
       .then((s) => setDecoys(s.decoy_templates || []))
       .catch(() => {});
     getGeoCategories()
-      .then((g) => setGeo({ geosite: g.geosite ?? [], geoip: g.geoip ?? [] }))
+      .then((g) =>
+        setGeo({
+          geosite: g.geosite ?? [],
+          geoip: g.geoip ?? [],
+          iplist: g.iplist ?? [],
+        }),
+      )
       .catch(() => {});
     // Refresh liveness periodically so online/offline badges stay current.
     const t = setInterval(load, 15000);

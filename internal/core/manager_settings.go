@@ -16,6 +16,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
 	"github.com/AppsGanin/rospanel/internal/warp"
+	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
 // SetTimezone validates and persists the operator's IANA timezone, then updates
@@ -137,6 +138,17 @@ func (m *Manager) SetXrayDNS(dns string) error {
 // Settings returns the current settings row (read-only handlers).
 func (m *Manager) Settings() (*model.Settings, error) { return m.store.GetSettings() }
 
+// assetDir is the directory holding the geo + iplist databases, or "" when the
+// Manager has no supervisor (unit tests build a bare Manager). The geo readers
+// treat "" as "no databases present" and error rather than panicking, so every
+// caller degrades to "no categories / no groups" instead of taking the panel down.
+func (m *Manager) assetDir() string {
+	if m.sup == nil {
+		return ""
+	}
+	return m.sup.AssetDir()
+}
+
 // GeoCategories returns the geosite + geoip category codes from the on-disk
 // databases, parsed once and cached (the .dat files only change on refresh).
 func (m *Manager) GeoCategories() (geosite, geoip []string, err error) {
@@ -145,7 +157,7 @@ func (m *Manager) GeoCategories() (geosite, geoip []string, err error) {
 	if m.geoSite != nil || m.geoIP != nil {
 		return m.geoSite, m.geoIP, nil
 	}
-	gs, gi, err := geo.Categories(m.sup.AssetDir())
+	gs, gi, err := geo.Categories(m.assetDir())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,22 +165,74 @@ func (m *Manager) GeoCategories() (geosite, geoip []string, err error) {
 	return gs, gi, nil
 }
 
-// GeoStatus reports the on-disk state of the geoip/geosite databases (presence,
-// size, last-download time) for the settings UI.
-func (m *Manager) GeoStatus() []geo.FileInfo { return geo.Status(m.sup.AssetDir()) }
-
-// RefreshGeo re-downloads the geo databases to their latest version, drops the
-// parsed-category cache, and reloads Xray so routing rules pick up the new data.
-func (m *Manager) RefreshGeo() ([]geo.FileInfo, error) {
-	dir := m.sup.AssetDir()
-	if err := geo.Refresh(dir); err != nil {
-		return geo.Status(dir), err
-	}
+// GeoGroups returns the iplist groups parsed from the on-disk databases, cached
+// like GeoCategories (they only change on a refresh). Callers must not mutate
+// the returned set.
+func (m *Manager) GeoGroups() (geo.GroupSet, error) {
 	m.geoMu.Lock()
-	m.geoSite, m.geoIP = nil, nil // force re-parse on next GeoCategories
+	defer m.geoMu.Unlock()
+	if m.geoGroups != nil {
+		return m.geoGroups, nil
+	}
+	g, err := geo.Groups(m.assetDir())
+	if err != nil {
+		return nil, err
+	}
+	m.geoGroups = g
+	return g, nil
+}
+
+// genOpts returns the generation options with the iplist groups resolved, so
+// "iplist:" routing entries compile to real matchers. A parse failure (databases
+// not downloaded yet) degrades to no groups rather than blocking generation —
+// those rules are skipped and their traffic falls through to the next lane.
+func (m *Manager) genOpts() xray.Options {
+	opts := m.opts
+	if g, err := m.GeoGroups(); err == nil {
+		opts.Groups = g
+	}
+	return opts
+}
+
+// GeoStatus reports the on-disk state of the Xray geo databases (presence, size,
+// last-download time) for the settings UI.
+func (m *Manager) GeoStatus() []geo.FileInfo { return geo.Status(m.assetDir()) }
+
+// IPListStatus reports the on-disk state of the iplist databases. Separate from
+// GeoStatus because they are a separate concern with their own panel tab: Xray
+// reads the geo .dat files, while the iplist lists are the panel's own source for
+// "iplist:" rules.
+func (m *Manager) IPListStatus() []geo.FileInfo { return geo.StatusLists(m.assetDir()) }
+
+// dropGeoCache forces a re-parse of the categories and groups on next use. Called
+// after every refresh — including a partial failure, since each file is written
+// atomically and independently, so whatever did land must be picked up.
+func (m *Manager) dropGeoCache() {
+	m.geoMu.Lock()
+	m.geoSite, m.geoIP, m.geoGroups = nil, nil, nil
 	m.geoMu.Unlock()
-	m.TriggerReconcile() // reload Xray with the refreshed databases
-	return geo.Status(dir), nil
+}
+
+// RefreshGeo re-downloads the Xray geo databases to their latest version, drops
+// the parsed caches, and reloads Xray so routing rules pick up the new data.
+func (m *Manager) RefreshGeo() ([]geo.FileInfo, error) {
+	if err := geo.Refresh(m.assetDir()); err != nil {
+		return m.GeoStatus(), err
+	}
+	m.dropGeoCache()
+	m.TriggerReconcile()
+	return m.GeoStatus(), nil
+}
+
+// RefreshIPLists re-downloads the iplist databases, drops the parsed caches and
+// reloads Xray, so a changed group takes effect at once.
+func (m *Manager) RefreshIPLists() ([]geo.FileInfo, error) {
+	if err := geo.RefreshLists(m.assetDir()); err != nil {
+		return m.IPListStatus(), err
+	}
+	m.dropGeoCache()
+	m.TriggerReconcile()
+	return m.IPListStatus(), nil
 }
 
 // GeoRefreshHours returns the configured geo auto-refresh cadence (hours; 0 ⇒ off).
@@ -189,10 +253,29 @@ func (m *Manager) currentGeoRefresh() time.Duration {
 	return time.Duration(set.GeoRefreshHours) * time.Hour
 }
 
-// geoStale reports whether any geo database is missing or older than maxAge.
-func (m *Manager) geoStale(maxAge time.Duration) bool {
+// IPListRefreshHours returns the configured iplist auto-refresh cadence (hours;
+// 0 ⇒ off).
+func (m *Manager) IPListRefreshHours() int {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return 0
+	}
+	return set.IPListRefreshHours
+}
+
+// currentIPListRefresh reads the iplist auto-refresh cadence as a duration (0 ⇒ off).
+func (m *Manager) currentIPListRefresh() time.Duration {
+	set, err := m.store.GetSettings()
+	if err != nil || set.IPListRefreshHours <= 0 {
+		return 0
+	}
+	return time.Duration(set.IPListRefreshHours) * time.Hour
+}
+
+// stale reports whether any file in the set is missing or older than maxAge.
+func stale(files []geo.FileInfo, maxAge time.Duration) bool {
 	cutoff := time.Now().Add(-maxAge).Unix()
-	for _, f := range geo.Status(m.sup.AssetDir()) {
+	for _, f := range files {
 		if !f.Present || f.ModifiedAt < cutoff {
 			return true
 		}
@@ -200,21 +283,46 @@ func (m *Manager) geoStale(maxAge time.Duration) bool {
 	return false
 }
 
+// geoStale reports whether any geo database is missing or older than maxAge.
+func (m *Manager) geoStale(maxAge time.Duration) bool { return stale(m.GeoStatus(), maxAge) }
+
+// ipListStale reports whether any iplist database is missing or older than maxAge.
+func (m *Manager) ipListStale(maxAge time.Duration) bool { return stale(m.IPListStatus(), maxAge) }
+
 // geoLoop auto-refreshes the geo databases when they go stale, on the operator's
 // cadence (0 ⇒ off). It re-checks hourly so a cadence change takes effect without a
 // restart and a reboot doesn't reset a long timer. Sleeps first so boot stays quiet;
 // enabling the cadence refreshes promptly via SetGeoRefresh.
 func (m *Manager) geoLoop() {
+	refreshLoop("geo", m.currentGeoRefresh, m.geoStale, func() error {
+		_, err := m.RefreshGeo()
+		return err
+	})
+}
+
+// ipListLoop is geoLoop's twin for the iplist databases, on their OWN cadence —
+// they follow a different upstream clock (~12h) and are panel-only, so tying them
+// to the geo schedule would either poll the lists too rarely or drag ~28 MB of
+// .dat files down far too often.
+func (m *Manager) ipListLoop() {
+	refreshLoop("iplist", m.currentIPListRefresh, m.ipListStale, func() error {
+		_, err := m.RefreshIPLists()
+		return err
+	})
+}
+
+// refreshLoop is the shared hourly staleness poll behind geoLoop/ipListLoop.
+func refreshLoop(what string, cadence func() time.Duration, isStale func(time.Duration) bool, refresh func() error) {
 	for {
 		time.Sleep(time.Hour)
-		d := m.currentGeoRefresh()
-		if d <= 0 || !m.geoStale(d) {
+		d := cadence()
+		if d <= 0 || !isStale(d) {
 			continue
 		}
-		if _, err := m.RefreshGeo(); err != nil {
-			logWarn("geo: auto-refresh failed", "err", err)
+		if err := refresh(); err != nil {
+			logWarn(what+": auto-refresh failed", "err", err)
 		} else {
-			logInfo("geo: auto-refreshed", "cadence_hours", int(d/time.Hour))
+			logInfo(what+": auto-refreshed", "cadence_hours", int(d/time.Hour))
 		}
 	}
 }
@@ -233,6 +341,25 @@ func (m *Manager) SetGeoRefresh(hours int) error {
 		go func() {
 			if _, err := m.RefreshGeo(); err != nil {
 				logWarn("geo: refresh on enable failed", "err", err)
+			}
+		}()
+	}
+	return nil
+}
+
+// SetIPListRefresh persists the iplist auto-refresh cadence (hours; 0 ⇒ never),
+// refreshing at once if enabling with the lists already stale.
+func (m *Manager) SetIPListRefresh(hours int) error {
+	if hours < 0 {
+		hours = 0
+	}
+	if err := m.store.SetIPListRefresh(hours); err != nil {
+		return err
+	}
+	if d := time.Duration(hours) * time.Hour; d > 0 && m.ipListStale(d) {
+		go func() {
+			if _, err := m.RefreshIPLists(); err != nil {
+				logWarn("iplist: refresh on enable failed", "err", err)
 			}
 		}()
 	}

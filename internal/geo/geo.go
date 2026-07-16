@@ -18,21 +18,60 @@ import (
 	"time"
 )
 
-// Mirrors for the rule databases, tried in order (GitHub raw is sometimes
-// DPI-degraded in RU, so jsDelivr is a fallback).
-var sources = map[string][]string{
-	"geoip.dat": {
-		"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat",
-		"https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat",
-	},
-	"geosite.dat": {
-		"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
-		"https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat",
-	},
+// source is one downloadable database: its mirrors (tried in order) and whether
+// the bytes must be checksum-verified before being written.
+type source struct {
+	urls []string
+	// verify demands a companion "<url>.sha256sum" from the same host and refuses
+	// the download on mismatch. The iplist services publish no checksum, so their
+	// lists are taken on trust — see downloadPlain.
+	verify bool
 }
 
-// dbNames lists the geo databases in a stable display order.
+// Mirrors for the rule databases, tried in order (GitHub raw is sometimes
+// DPI-degraded in RU, so jsDelivr is a fallback).
+var sources = map[string]source{
+	"geoip.dat": {verify: true, urls: []string{
+		"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat",
+		"https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat",
+	}},
+	"geosite.dat": {verify: true, urls: []string{
+		"https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
+		"https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat",
+	}},
+	// The iplist services (github.com/rekryt/iplist) group hosts by service —
+	// "ai", "youtube", "russia", "vk" … — and resolve each to live addresses. We
+	// fetch the unfiltered JSON on purpose: the "?data=" filter drops the "group"
+	// field, and one request per host yields the group names, their domains and
+	// their pre-aggregated CIDRs in a single pass.
+	ipListGlobal: {urls: []string{"https://iplist.my-handbook.ru/?format=json"}},
+	ipListRussia: {urls: []string{"https://russia.iplist.opencck.org/?format=json"}},
+}
+
+const (
+	ipListGlobal = "iplist-global.json"
+	ipListRussia = "iplist-russia.json"
+)
+
+// ipListFiles maps the name a routing rule references ("iplist:<src>/<group>")
+// to the cache file it is served from.
+var ipListFiles = map[string]string{
+	"global": ipListGlobal,
+	"russia": ipListRussia,
+}
+
+// dbNames lists the Xray asset databases in a stable display order. Xray itself
+// reads these at runtime to resolve geosite:/geoip: rules, so every box running
+// Xray — panel and nodes alike — needs them on disk.
 var dbNames = []string{"geoip.dat", "geosite.dat"}
+
+// ipListNames lists the iplist databases, in display order. Unlike the .dat
+// files these are never read by Xray: the PANEL compiles "iplist:" rules into
+// plain domain/IP matchers and pushes the resolved config to the nodes, so only
+// the panel needs them. Hence the separate *Lists functions — a node calling
+// Refresh/Ensure/Status stays on the .dat files alone and does not pull ~2.7 MB
+// of JSON it would never read.
+var ipListNames = []string{ipListGlobal, ipListRussia}
 
 // FileInfo is the on-disk state of one geo database (for the settings UI).
 type FileInfo struct {
@@ -42,11 +81,17 @@ type FileInfo struct {
 	ModifiedAt int64  `json:"modified_at"` // unix seconds ≈ last successful download
 }
 
-// Status returns metadata for the geo databases in dir. The file mtime doubles
-// as the "last downloaded" timestamp (download writes atomically via rename).
-func Status(dir string) []FileInfo {
-	out := make([]FileInfo, 0, len(dbNames))
-	for _, name := range dbNames {
+// Status returns metadata for the Xray asset databases in dir. The file mtime
+// doubles as the "last downloaded" timestamp (download writes atomically via
+// rename).
+func Status(dir string) []FileInfo { return status(dir, dbNames) }
+
+// StatusLists returns metadata for the iplist databases (panel only).
+func StatusLists(dir string) []FileInfo { return status(dir, ipListNames) }
+
+func status(dir string, names []string) []FileInfo {
+	out := make([]FileInfo, 0, len(names))
+	for _, name := range names {
 		fi := FileInfo{Name: name}
 		if st, err := os.Stat(filepath.Join(dir, name)); err == nil && !st.IsDir() {
 			fi.Present = true
@@ -58,16 +103,21 @@ func Status(dir string) []FileInfo {
 	return out
 }
 
-// Refresh re-downloads every database into dir regardless of whether it already
-// exists, pulling the latest published version. It attempts all files and returns
-// the first error encountered.
-func Refresh(dir string) error {
+// Refresh re-downloads every Xray asset database into dir regardless of whether
+// it already exists, pulling the latest published version. It attempts all files
+// and returns the first error encountered.
+func Refresh(dir string) error { return refresh(dir, dbNames) }
+
+// RefreshLists re-downloads the iplist databases (panel only).
+func RefreshLists(dir string) error { return refresh(dir, ipListNames) }
+
+func refresh(dir string, names []string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	var firstErr error
-	for _, name := range dbNames {
-		if err := download(name, sources[name], filepath.Join(dir, name)); err != nil {
+	for _, name := range names {
+		if err := download(sources[name], filepath.Join(dir, name)); err != nil {
 			log.Printf("geo: refresh %s failed: %v", name, err)
 			if firstErr == nil {
 				firstErr = err
@@ -79,19 +129,24 @@ func Refresh(dir string) error {
 	return firstErr
 }
 
-// Ensure downloads any missing database into dir (best-effort). Existing files
-// are left as-is; refresh is handled separately.
-func Ensure(dir string) error {
+// Ensure downloads any missing Xray asset database into dir (best-effort).
+// Existing files are left as-is; refresh is handled separately.
+func Ensure(dir string) error { return ensure(dir, dbNames) }
+
+// EnsureLists downloads any missing iplist database (panel only, best-effort).
+func EnsureLists(dir string) error { return ensure(dir, ipListNames) }
+
+func ensure(dir string, names []string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	for name, urls := range sources {
+	for _, name := range names {
 		path := filepath.Join(dir, name)
 		if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
 			continue
 		}
-		if err := download(name, urls, path); err != nil {
-			log.Printf("geo: could not fetch %s: %v (geosite/geoip rules need it — retry later)", name, err)
+		if err := download(sources[name], path); err != nil {
+			log.Printf("geo: could not fetch %s: %v (routing rules need it — retry later)", name, err)
 		} else {
 			log.Printf("geo: downloaded %s", name)
 		}
@@ -157,17 +212,52 @@ func firstStringField(msg []byte) string {
 	return string(msg[n : n+int(l)])
 }
 
-func download(name string, urls []string, dest string) error {
+func download(src source, dest string) error {
 	var lastErr error
 	client := &http.Client{Timeout: 90 * time.Second}
-	for _, url := range urls {
-		if err := downloadVerified(client, url, dest); err != nil {
+	for _, url := range src.urls {
+		fetch := downloadPlain
+		if src.verify {
+			fetch = downloadVerified
+		}
+		if err := fetch(client, url, dest); err != nil {
 			lastErr = err
 			continue
 		}
 		return nil
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no source configured for %s", dest)
+	}
 	return lastErr
+}
+
+// downloadPlain fetches url to dest atomically, without a checksum — for sources
+// that publish none. TLS still authenticates the host, so this stops transit
+// tampering, but a compromised or hijacked upstream would be trusted. The write
+// is staged in "<dest>.new" and renamed, so a failed or truncated transfer leaves
+// the previous good copy in place rather than a half-written file.
+func downloadPlain(client *http.Client, url, dest string) error {
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
+	}
+	tmp := dest + ".new"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, resp.Body)
+	f.Close()
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dest)
 }
 
 // downloadVerified fetches url to dest atomically, but only after verifying its

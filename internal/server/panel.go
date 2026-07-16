@@ -205,6 +205,8 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/geo/categories", rt.geoCategories)
 	authed("GET /api/geo", rt.geoStatus)
 	authed("POST /api/geo/update", rt.updateGeo)
+	authed("POST /api/geo/lists/update", rt.updateIPLists)
+	authed("POST /api/geo/lists/cadence", rt.setIPListCadence)
 	authed("POST /api/geo/cadence", rt.setGeoCadence)
 	authed("GET /api/routing", rt.getRouting)
 	authed("POST /api/routing", rt.saveRouting)

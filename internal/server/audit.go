@@ -72,6 +72,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/routing":                  set("Маршрутизация"),
 	"POST /api/connections":              set("Подключения"),
 	"POST /api/geo/update":               set("Geo-базы"),
+	"POST /api/geo/lists/update":         set("Списки iplist"),
+	"POST /api/geo/lists/cadence":        set("Списки iplist · автообновление"),
 	"POST /api/geo/cadence":              set("Geo-базы · автообновление"),
 	"POST /api/tls":                      set("TLS-сертификат"),
 	"POST /api/telegram":                 set("Telegram"),

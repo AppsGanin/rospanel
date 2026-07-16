@@ -51,7 +51,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       vless_name, reality_name, trojan_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
-		       geo_refresh_hours
+		       geo_refresh_hours, iplist_refresh_hours
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -84,7 +84,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
 		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
-		&st.GeoRefreshHours,
+		&st.GeoRefreshHours, &st.IPListRefreshHours,
 	)
 	if err != nil {
 		return nil, err
@@ -352,6 +352,11 @@ func (s *Store) SetMasterLabel(label string) error { return s.setSetting("master
 
 // SetGeoRefresh persists the geo auto-refresh cadence in hours (0 ⇒ never).
 func (s *Store) SetGeoRefresh(hours int) error { return s.setSetting("geo_refresh_hours", hours) }
+
+// SetIPListRefresh persists the iplist auto-refresh cadence (hours; 0 ⇒ never).
+func (s *Store) SetIPListRefresh(hours int) error {
+	return s.setSetting("iplist_refresh_hours", hours)
+}
 
 // SetACMEProvider persists the ACME CA selection and (for ZeroSSL) the External
 // Account Binding credentials. An empty provider defaults to "letsencrypt".

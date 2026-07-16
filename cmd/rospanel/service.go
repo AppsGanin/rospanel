@@ -157,6 +157,9 @@ func runServer(dataDir string) {
 	if err := geo.Ensure(geoDir); err != nil {
 		log.Printf("geo: %v", err)
 	}
+	// The iplist databases are fetched separately, below: Xray never reads them
+	// (the panel compiles "iplist:" rules into plain matchers itself), so they must
+	// not hold up its start.
 
 	sup := xray.NewSupervisor(xrayBin, xrayConfig, geoDir)
 	mgr := core.New(st, sup, xray.Options{PanelDest: panelDest(adminAddr)},
@@ -176,6 +179,25 @@ func runServer(dataDir string) {
 	if err := mgr.Reconcile(); err != nil {
 		log.Printf("initial reconcile failed (panel still starting): %v", err)
 	}
+
+	// Fetch the iplist databases if this box has never had them (~2.7 MB), then
+	// reconcile so a config already referencing a group picks it up now rather than
+	// routing without those rules until the next refresh tick. Backgrounded: Xray is
+	// already serving and does not depend on these.
+	go func() {
+		missing := false
+		for _, f := range geo.StatusLists(geoDir) {
+			missing = missing || !f.Present
+		}
+		if !missing {
+			return
+		}
+		if err := geo.EnsureLists(geoDir); err != nil {
+			log.Printf("geo: %v", err)
+			return
+		}
+		mgr.TriggerReconcile()
+	}()
 
 	// Daily TLS check: renews ACME certs near expiry and reloads Xray on change.
 	go tlsLoop(mgr)
