@@ -113,22 +113,46 @@ func (rt *Router) setProxyMode(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
-// geoCategories returns the geosite + geoip category codes for routing presets.
+// geoCategories returns the geosite + geoip category codes and the iplist group
+// names for routing presets.
 func (rt *Router) geoCategories(w http.ResponseWriter, _ *http.Request) {
 	geosite, geoip, err := rt.mgr.GeoCategories()
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"geosite": geosite, "geoip": geoip})
+	// The iplist groups are an independent, optional source — if those databases
+	// are missing the geosite/geoip presets must still load, just without groups.
+	var iplist []string
+	if g, err := rt.mgr.GeoGroups(); err == nil {
+		iplist = g.GroupNames()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"geosite": geosite, "geoip": geoip, "iplist": iplist})
 }
 
-// geoStatus reports the geo databases' presence + last-download time and the
-// auto-refresh cadence.
+// geoStatus reports both database sets' presence + last-download time and each
+// set's own auto-refresh cadence. They are reported separately because they are
+// separate concerns with separate tabs and separate schedules.
 func (rt *Router) geoStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"files":         rt.mgr.GeoStatus(),
-		"refresh_hours": rt.mgr.GeoRefreshHours(),
+		"files":                rt.mgr.GeoStatus(),
+		"iplist_files":         rt.mgr.IPListStatus(),
+		"refresh_hours":        rt.mgr.GeoRefreshHours(),
+		"iplist_refresh_hours": rt.mgr.IPListRefreshHours(),
+	})
+}
+
+// updateIPLists re-downloads the iplist databases and reloads Xray, so changed
+// groups take effect without waiting for the auto-refresh tick.
+func (rt *Router) updateIPLists(w http.ResponseWriter, _ *http.Request) {
+	info, err := rt.mgr.RefreshIPLists()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"iplist_files":         info,
+		"iplist_refresh_hours": rt.mgr.IPListRefreshHours(),
 	})
 }
 
@@ -154,6 +178,22 @@ func (rt *Router) setGeoCadence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.mgr.SetGeoRefresh(req.RefreshHours); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setIPListCadence persists the iplist auto-refresh cadence — its own schedule,
+// independent of the geo one.
+func (rt *Router) setIPListCadence(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RefreshHours int `json:"refresh_hours"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetIPListRefresh(req.RefreshHours); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

@@ -215,6 +215,87 @@ export const GEO_CADENCE: Opt[] = [
   { value: "168", label: "Раз в неделю" },
 ];
 
+// IPLIST_CADENCE are the iplist auto-refresh options. They get their own list —
+// and a 12-hour step the geo one has no use for — because the iplist services
+// re-resolve their addresses about every 12 hours, so polling them daily already
+// lags a full cycle behind.
+export const IPLIST_CADENCE: Opt[] = [
+  { value: "0", label: "Никогда (только вручную)" },
+  { value: "12", label: "Раз в 12 часов" },
+  { value: "24", label: "Раз в день" },
+  { value: "72", label: "Раз в 3 дня" },
+  { value: "168", label: "Раз в неделю" },
+];
+
+// FileRow reports one database's on-disk state, with an optional note beneath it.
+//
+// `label` overrides what leads the row. The Geo tab leaves it alone — there the
+// file IS the thing, "geoip.dat" is what Xray loads. The iplist tab passes the
+// source name instead ("global"), because the cache filename is an implementation
+// detail the operator never types: what they write in a rule is iplist:global/….
+//
+// It stacks below sm: the label plus its size and date do not fit on one
+// phone-width line, and side-by-side the flex row squeezed the name until it
+// broke mid-word. Above sm they sit on one line, name left, meta right.
+function FileRow({
+  file,
+  label,
+  note,
+}: {
+  file: GeoFile;
+  label?: string;
+  note?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
+        <span className="break-all font-mono text-xs text-ink">
+          {label ?? file.name}
+        </span>
+        <span className="text-xs text-ink-muted sm:shrink-0">
+          {file.present
+            ? `${fmtBytes(file.size)} · обновлено ${fmtWhen(file.modified_at)}`
+            : "нет файла"}
+        </span>
+      </div>
+      {note}
+    </div>
+  );
+}
+
+// GeoFileRows reports one database set's on-disk state. Shared by the Geo and
+// iplist tabs so both read identically.
+function GeoFileRows({ status }: { status: GeoFile[] }) {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      {status.map((f) => (
+        <FileRow key={f.name} file={f} />
+      ))}
+    </div>
+  );
+}
+
+// CadenceSelect is one database set's auto-refresh schedule. Each set has its own
+// (see IPLIST_CADENCE), so the option list is passed in rather than assumed.
+function CadenceSelect({
+  cadence,
+  onCadence,
+  options,
+}: {
+  cadence: number;
+  onCadence: (hours: number) => void;
+  options: Opt[];
+}) {
+  return (
+    <Select
+      label="Автообновление"
+      data={options}
+      value={String(cadence)}
+      onChange={(v) => onCadence(Number(v))}
+    />
+  );
+}
+
 // GeoSection is the geosite/geoip status + manual refresh + auto-refresh cadence.
 // It's the panel's own geo files (used by every server's routing rules, and pushed to
 // nodes), so it lives in its own tab on the master card. The cadence applies to the
@@ -233,38 +314,138 @@ export function GeoSection({
   onCadence: (hours: number) => void;
 }) {
   return (
+    // The description goes in the BODY, not Section's `desc` slot: that slot sits
+    // beside the action button, which on a phone leaves it ~180px and wraps a plain
+    // sentence into a four-line column. As a child it gets the full width.
     <Section
       title="Geo-базы"
-      desc="geosite.dat / geoip.dat — категории доменов и IP для правил роутинга."
       action={
         <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
           Обновить
         </Button>
       }
     >
-      <div className="flex flex-col gap-1 text-sm">
-        {status.map((f) => (
-          <div key={f.name} className="flex items-center justify-between gap-2">
-            <span className="font-mono text-ink text-xs">{f.name}</span>
-            <span className="text-ink-muted text-xs">
-              {f.present
-                ? `${fmtBytes(f.size)} · обновлено ${fmtWhen(f.modified_at)}`
-                : "нет файла"}
-            </span>
-          </div>
-        ))}
+      <p className="text-sm text-ink-muted">
+        geosite.dat / geoip.dat — категории доменов и IP для правил роутинга.
+      </p>
+      <GeoFileRows status={status} />
+      <CadenceSelect cadence={cadence} onCadence={onCadence} options={GEO_CADENCE} />
+    </Section>
+  );
+}
+
+// IPLIST_SOURCES ties each cached file to the source it came from: the name used
+// in rules ("global"), the service serving it, and what it holds. Mirrors the
+// `sources` and `ipListFiles` maps in internal/geo/geo.go — keep in step.
+const IPLIST_SOURCES: {
+  file: string;
+  source: string; // the name a rule references: iplist:<source>/<group>
+  host: string;
+  url: string;
+  about: string;
+}[] = [
+  {
+    file: "iplist-global.json",
+    source: "global",
+    host: "iplist.my-handbook.ru",
+    url: "https://iplist.my-handbook.ru",
+    about: "21 группа: ai, youtube, games, messengers, socials, torrent, news…",
+  },
+  {
+    file: "iplist-russia.json",
+    source: "russia",
+    host: "russia.iplist.opencck.org",
+    url: "https://russia.iplist.opencck.org",
+    about: "3 группы: russia, vk, yandex — российские сервисы",
+  },
+];
+
+// IPListSection is the iplist tab: what the lists are, where they come from, their
+// on-disk state, a manual refresh and the (shared) cadence. Deliberately a sibling
+// of GeoSection rather than part of it — the two sets look alike but are different
+// things: Xray reads the .dat files at runtime, whereas the panel resolves
+// "iplist:" rules itself at config-generation time and ships the result.
+export function IPListSection({
+  status,
+  onRefresh,
+  refreshing,
+  cadence,
+  onCadence,
+}: {
+  status: GeoFile[];
+  onRefresh: () => void;
+  refreshing: boolean;
+  cadence: number;
+  onCadence: (hours: number) => void;
+}) {
+  const byFile = (name: string) => IPLIST_SOURCES.find((s) => s.file === name);
+  return (
+    // Description in the body rather than Section's `desc` slot — see GeoSection.
+    <Section
+      title="Списки iplist"
+      action={
+        <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
+          Обновить
+        </Button>
+      }
+    >
+      <p className="text-sm text-ink-muted">
+        Списки доменов и адресов, сгруппированные по сервисам.
+      </p>
+
+      <div className="flex flex-col gap-3">
+        {status.map((f) => {
+          const src = byFile(f.name);
+          return (
+            <FileRow
+              key={f.name}
+              file={f}
+              label={src?.source}
+              note={
+                src && (
+                  <p className="text-xs text-ink-muted">
+                    <a
+                      href={src.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                    >
+                      {src.host}
+                    </a>{" "}
+                    · {src.about}
+                  </p>
+                )
+              }
+            />
+          );
+        })}
       </div>
-      <div>
-        <Select
-          label="Автообновление"
-          data={GEO_CADENCE}
-          value={String(cadence)}
-          onChange={(v) => onCadence(Number(v))}
-        />
-        <p className="mt-1 text-xs text-ink-muted">
-          Панель сама перекачивает geo по расписанию.
+
+      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-xs text-ink-muted">
+        <p>
+          В правилах роутинга выбираются из выпадающего списка как{" "}
+          <span className="font-mono">iplist:источник/группа</span>. Одна и та же
+          группа означает разное в зависимости от поля: в «Доменах» подставятся
+          домены сервиса, в «IP» — его подсети.
+        </p>
+        <p>
+          Оба источника — публичные сервисы на движке{" "}
+          <a
+            href="https://github.com/rekryt/iplist"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline decoration-dotted underline-offset-2 hover:text-ink"
+          >
+            rekryt/iplist
+          </a>
+          , они сами перепроверяют адреса примерно раз в 12 часов. Списки нужны
+          только панели: она разворачивает группы в конкретные домены и подсети
+          при сборке конфига, поэтому на ноды уходит уже готовый результат и
+          качать их туда не нужно.
         </p>
       </div>
+
+      <CadenceSelect cadence={cadence} onCadence={onCadence} options={IPLIST_CADENCE} />
     </Section>
   );
 }
@@ -308,6 +489,7 @@ export function RoutingEditor({
   proxyCounts,
   geosite,
   geoip,
+  iplist,
   applying,
   liveStatus = true,
 }: {
@@ -326,6 +508,7 @@ export function RoutingEditor({
   proxyCounts: Record<string, number>;
   geosite: string[];
   geoip: string[];
+  iplist: string[];
   applying: boolean;
   liveStatus?: boolean;
 }) {
@@ -380,18 +563,73 @@ export function RoutingEditor({
   // Preset option lists from the geo databases. geosite categories feed the
   // domain fields, geoip the IP field. A value already chosen in another
   // category is hidden here so the same rule isn't added twice.
+  //
+  // The iplist groups ("iplist:russia/vk") are offered in BOTH: the same ref
+  // resolves to the group's domains in a domain field and to its CIDRs in an IP
+  // field, so pick it in both to route a service by name and by address.
+  const iplistOpts = useMemo<Opt[]>(
+    () => iplist.map((g) => ({ value: `iplist:${g}`, label: `iplist: ${g}` })),
+    [iplist],
+  );
   const geositeOpts = useMemo<Opt[]>(
-    () => geosite.map((c) => ({ value: `geosite:${c}`, label: c })),
-    [geosite],
+    () => [...geosite.map((c) => ({ value: `geosite:${c}`, label: c })), ...iplistOpts],
+    [geosite, iplistOpts],
   );
   const geoipOpts = useMemo<Opt[]>(
-    () => geoip.map((c) => ({ value: `geoip:${c}`, label: c })),
-    [geoip],
+    () => [...geoip.map((c) => ({ value: `geoip:${c}`, label: c })), ...iplistOpts],
+    [geoip, iplistOpts],
   );
-  const without = (opts: Opt[], used: string[]) => {
-    const u = new Set(used);
-    return opts.filter((o) => !u.has(o.value));
+  // Routing is first-match-wins, so the same matcher claimed by two categories
+  // leaves the loser dead — offer each preset only where it is still free. These
+  // are every value currently spoken for, across every category of that kind.
+  const usedDomains = useMemo(
+    () =>
+      new Set([
+        ...cfg.block_domains,
+        ...cfg.warp_domains,
+        ...cfg.opera_domains,
+        ...cfg.direct_domains,
+        ...cfg.lanes.flatMap((l) => l.domains),
+      ]),
+    [cfg],
+  );
+  const usedIPs = useMemo(
+    () =>
+      new Set([
+        ...cfg.block_ips,
+        ...cfg.warp_ips,
+        ...cfg.opera_ips,
+        ...cfg.direct_ips,
+        ...cfg.lanes.flatMap((l) => l.ips),
+      ]),
+    [cfg],
+  );
+
+  // free hides what ANOTHER category took, keeping `own`'s values: TagsInput
+  // already drops selected values from the dropdown, and it reads `options` for
+  // their labels — filtering them out would strip a chip's friendly name.
+  const free = (opts: Opt[], used: Set<string>, own: string[]) => {
+    const mine = new Set(own);
+    return opts.filter((o) => !used.has(o.value) || mine.has(o.value));
   };
+  const domainOpts = (own: string[]) => free(geositeOpts, usedDomains, own);
+  const ipOpts = (own: string[]) => free(geoipOpts, usedIPs, own);
+
+  // The last lane in the routing order is the catch-all: everything unmatched
+  // already goes there, so the generator deliberately emits no rules of its own
+  // for it (see compileRouting in xray/generate.go). Say so next to the inputs —
+  // rules that are silently discarded are how an operator concludes the panel is
+  // broken. "direct" is last by DEFAULT, so this is the common case, not an edge.
+  //
+  // The note must also say what to DO. The trap isn't the redundancy (listing a
+  // domain in the catch-all changes nothing, harmlessly) — it's that a lane ABOVE
+  // claiming that domain wins, and no rule added here can take it back. Only
+  // moving this lane up the order can.
+  const catchAll = cfg.routing_order[cfg.routing_order.length - 1];
+  const CATCH_ALL_NOTE =
+    "Сейчас эта полоса последняя в порядке маршрутизации: в неё и так уходит весь трафик, не совпавший с правилами выше, — поэтому её собственные правила ни на что не влияют. Чтобы забрать трафик у полосы выше, поднимите эту полосу в списке.";
+  const withCatchAllNote = (desc: string, lane: string) =>
+    lane === catchAll ? `${desc} ${CATCH_ALL_NOTE}` : desc;
 
   // laneStatus counts the proxies the lane RESOLVED (manual entries + whatever its
   // URL sources served). It is NOT a liveness signal. On a node the panel can't see
@@ -423,14 +661,14 @@ export function RoutingEditor({
           label="Заблокированные IP-адреса"
           value={cfg.block_ips}
           onChange={(v) => set({ block_ips: v })}
-          options={without(geoipOpts, cfg.warp_ips)}
+          options={ipOpts(cfg.block_ips)}
           placeholder="CIDR или geoip:xx…"
         />
         <TagsInput
           label="Заблокированные домены"
           value={cfg.block_domains}
           onChange={(v) => set({ block_domains: v })}
-          options={without(geositeOpts, cfg.warp_domains)}
+          options={domainOpts(cfg.block_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
       </Section>
@@ -482,19 +720,19 @@ export function RoutingEditor({
       </Section>
 
       {/* Direct */}
-      <Section title="Напрямую" desc="Эти домены/IP идут напрямую с этого сервера.">
+      <Section title="Напрямую" desc={withCatchAllNote("Эти домены/IP идут напрямую с этого сервера.", "direct")}>
         <TagsInput
           label="Домены"
           value={cfg.direct_domains}
           onChange={(v) => set({ direct_domains: v })}
-          options={geositeOpts}
+          options={domainOpts(cfg.direct_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
         <TagsInput
           label="IP"
           value={cfg.direct_ips}
           onChange={(v) => set({ direct_ips: v })}
-          options={geoipOpts}
+          options={ipOpts(cfg.direct_ips)}
           placeholder="CIDR или geoip:xx…"
         />
       </Section>
@@ -507,7 +745,7 @@ export function RoutingEditor({
             <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
           </span>
         }
-        desc="Включите, чтобы работали категории «Правила WARP» ниже."
+        desc={withCatchAllNote("Включите, чтобы работали категории «Правила WARP» ниже.", "warp")}
         action={
           <Switch
             checked={warpEnabled}
@@ -520,14 +758,14 @@ export function RoutingEditor({
           label="Правила WARP - Домены"
           value={cfg.warp_domains}
           onChange={(v) => set({ warp_domains: v })}
-          options={without(geositeOpts, cfg.block_domains)}
+          options={domainOpts(cfg.warp_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
         <TagsInput
           label="Правила WARP — IP"
           value={cfg.warp_ips}
           onChange={(v) => set({ warp_ips: v })}
-          options={without(geoipOpts, cfg.block_ips)}
+          options={ipOpts(cfg.warp_ips)}
           placeholder="CIDR или geoip:xx…"
         />
       </Section>
@@ -540,7 +778,7 @@ export function RoutingEditor({
             <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
           </span>
         }
-        desc="Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали категории «Правила Opera» ниже."
+        desc={withCatchAllNote("Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали категории «Правила Opera» ниже.", "opera")}
         action={
           <Switch
             checked={operaEnabled}
@@ -559,14 +797,14 @@ export function RoutingEditor({
           label="Правила Opera — Домены"
           value={cfg.opera_domains}
           onChange={(v) => set({ opera_domains: v })}
-          options={without(geositeOpts, cfg.block_domains)}
+          options={domainOpts(cfg.opera_domains)}
           placeholder="домен, regexp: или geosite:…"
         />
         <TagsInput
           label="Правила Opera — IP"
           value={cfg.opera_ips}
           onChange={(v) => set({ opera_ips: v })}
-          options={without(geoipOpts, cfg.block_ips)}
+          options={ipOpts(cfg.opera_ips)}
           placeholder="CIDR или geoip:xx…"
         />
       </Section>
@@ -637,18 +875,23 @@ export function RoutingEditor({
                   placeholder="https://example.com/proxy.txt — добавить и Enter…"
                 />
               )}
+              {lane.id === catchAll && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {CATCH_ALL_NOTE}
+                </p>
+              )}
               <TagsInput
                 label="Домены полосы"
                 value={lane.domains}
                 onChange={(v) => patchLane(lane.id, { domains: v })}
-                options={without(geositeOpts, cfg.block_domains)}
+                options={domainOpts(lane.domains)}
                 placeholder="домен, regexp: или geosite:…"
               />
               <TagsInput
                 label="IP полосы"
                 value={lane.ips}
                 onChange={(v) => patchLane(lane.id, { ips: v })}
-                options={without(geoipOpts, cfg.block_ips)}
+                options={ipOpts(lane.ips)}
                 placeholder="CIDR или geoip:xx…"
               />
               <div className="flex justify-end">

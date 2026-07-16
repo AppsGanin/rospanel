@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -98,9 +99,10 @@ type Manager struct {
 	lastVPNT    time.Time
 	vpnViewers  atomic.Int32 // active dashboard-stream subscribers; gates vpnSpeedLoop
 
-	geoMu   sync.Mutex
-	geoSite []string // cached geosite category codes
-	geoIP   []string // cached geoip category codes
+	geoMu     sync.Mutex
+	geoSite   []string     // cached geosite category codes
+	geoIP     []string     // cached geoip category codes
+	geoGroups geo.GroupSet // cached iplist groups ("<source>/<group>" → rules)
 
 	proxyMu sync.Mutex
 	// proxies holds the local server's current egress proxies of each lane, keyed by
@@ -206,7 +208,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly
 	go m.reconcileLoop()
 	go m.proxyLoop()
-	go m.geoLoop() // auto-refresh geo databases on the operator's cadence
+	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence
+	go m.ipListLoop() // ...and the iplist lists on their own, separate cadence
 	go m.bruteGuardLoop()
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
@@ -390,7 +393,7 @@ func (m *Manager) syncUsers() error {
 	}
 	// Keep config.json current (no restart) so the monitor's crash-restart loads
 	// the right user set.
-	cfg, err := xray.Generate(set, users, m.opts, m.getProxies())
+	cfg, err := xray.Generate(set, users, m.genOpts(), m.getProxies())
 	if err != nil {
 		return err
 	}
@@ -459,7 +462,7 @@ func (m *Manager) reconcileLocked() error {
 	if err != nil {
 		return err
 	}
-	cfg, err := xray.Generate(set, users, m.opts, m.getProxies())
+	cfg, err := xray.Generate(set, users, m.genOpts(), m.getProxies())
 	if err != nil {
 		logErr("reconcile: config generation failed", "err", err)
 		_ = m.store.SetConfigError(err.Error())

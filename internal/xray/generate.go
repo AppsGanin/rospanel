@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -33,6 +34,12 @@ type Options struct {
 	// PanelDest is where the VLESS default fallback forwards non-proxy traffic
 	// (the Go panel's loopback HTTP address, e.g. "127.0.0.1:8080").
 	PanelDest string
+
+	// Groups resolves the "iplist:<source>/<group>" routing entries to their
+	// domains/CIDRs. Parsed from the on-disk iplist databases and cached by the
+	// caller (they only change on a geo refresh). Nil or missing groups simply
+	// drop those rules — see expandGroups.
+	Groups geo.GroupSet
 }
 
 // Generate builds the full Xray config from settings + enabled users.
@@ -266,7 +273,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(rc, order, warpTag, operaActive, active),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, active),
 		Observatory: observatory,
 	}, nil
 }

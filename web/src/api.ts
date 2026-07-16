@@ -643,6 +643,9 @@ export interface RoutingInfo {
 export interface GeoCategories {
   geosite: string[]
   geoip: string[]
+  // iplist group names ("russia/vk", "global/youtube"), referenced in routing
+  // rules as "iplist:<name>". Empty when the iplist databases aren't downloaded.
+  iplist: string[]
 }
 
 export const getGeoCategories = () => api<GeoCategories>('api/geo/categories')
@@ -654,14 +657,26 @@ export interface GeoFile {
   modified_at: number
 }
 
-// GeoInfo is the geo databases' status plus the auto-refresh cadence (hours; 0 = off).
+// GeoInfo is the databases' status plus each set's own auto-refresh cadence
+// (hours; 0 = off). The iplist fields are panel-only — a node reports just the geo
+// .dat files it actually reads, so they are absent there.
 export interface GeoInfo {
   files: GeoFile[]
+  iplist_files?: GeoFile[]
   refresh_hours: number
+  iplist_refresh_hours?: number
 }
 
 export const getGeoStatus = () => api<GeoInfo>('api/geo')
 export const updateGeo = () => api<GeoInfo>('api/geo/update', { method: 'POST' })
+export const updateIPLists = () => api<GeoInfo>('api/geo/lists/update', { method: 'POST' })
+
+// setIPListCadence sets how often the iplist lists auto-refresh (hours; 0 = never).
+export const setIPListCadence = (refresh_hours: number) =>
+  api<{ ok: boolean }>('api/geo/lists/cadence', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_hours }),
+  })
 
 // setGeoCadence sets how often the geo databases auto-refresh (hours; 0 = never).
 export const setGeoCadence = (refresh_hours: number) =>

@@ -503,6 +503,12 @@ type Settings struct {
 	// never — manual only). Applies to the master and is pushed to nodes.
 	GeoRefreshHours int `json:"-"`
 
+	// IPListRefreshHours is how often to auto-refresh the iplist databases (hours;
+	// 0 ⇒ never — manual only). Its own cadence, not the geo one: the lists sit on a
+	// different clock (their services re-resolve every ~12h) and, unlike the .dat
+	// files, they are read only by the panel and never pushed to nodes.
+	IPListRefreshHours int `json:"-"`
+
 	Routing RoutingConfig `json:"-"` // structured routing config (Settings → Роутинг)
 
 	// Computed per request (NOT stored). When the active cert isn't CA-trusted (a

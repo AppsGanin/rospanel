@@ -143,7 +143,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
 	// panel's own layout. Egress lanes resolve against the node's OWN proxy pool.
-	cfg, err := xray.Generate(ns, users, m.opts, m.getNodeProxies(n.ID))
+	cfg, err := xray.Generate(ns, users, m.genOpts(), m.getNodeProxies(n.ID))
 	if err != nil {
 		return nil, err
 	}
