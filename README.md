@@ -13,10 +13,6 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-<br>
-
-<img src="docs/img/hero.png" alt="РосПанель — личный VPN-сервер под вашим контролем" width="100%">
-
 </div>
 
 ---
