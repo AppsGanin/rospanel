@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/AppsGanin/rospanel/compare/v1.0.0...v1.1.0) (2026-07-16)
+
+
+### Features
+
+* **iplist:** add iplist database support with independent refresh cadence ([33042a5](https://github.com/AppsGanin/rospanel/commit/33042a524c3d8768f01c04773bbbf27e94bfd5cf))
+
 ## [1.0.0](https://github.com/AppsGanin/rospanel/compare/v0.15.0...v1.0.0) (2026-07-15)
 
 
