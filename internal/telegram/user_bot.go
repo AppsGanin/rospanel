@@ -24,6 +24,7 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	commandsFor string           // token whose command menu was already published
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
 
@@ -117,7 +118,9 @@ func (s *UserService) Run(ctx context.Context) {
 			}
 			continue
 		}
-		client := s.clientFor(strings.TrimSpace(set.TGUserBotToken))
+		token := strings.TrimSpace(set.TGUserBotToken)
+		client := s.clientFor(token)
+		s.publishCommands(ctx, client, token)
 		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -143,11 +146,34 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 	}()
 	switch {
 	case u.Callback != nil:
+		if u.Callback.Message != nil {
+			s.trackSubscriber(u.Callback.From, u.Callback.Message.Chat.ID)
+		}
 		// The VPN user is acting on their own account — stamp them as the actor so the
 		// audit log tells self-service apart from an admin doing it for them.
 		s.handleCallback(selfActorCtx(ctx, u.Callback.From), client, u.Callback)
 	case u.Message != nil && strings.TrimSpace(u.Message.Text) != "":
+		s.trackSubscriber(u.Message.From, u.Message.Chat.ID)
 		s.handleMessage(selfActorCtx(ctx, u.Message.From), client, u.Message)
+	}
+}
+
+// trackSubscriber records the chat in the broadcast audience registry. It runs on
+// every interaction, not just registration, so the roster also covers the people a
+// broadcast most needs to reach and the user roster cannot name: someone waiting on
+// moderation, someone who mistyped an invite code, someone whose account was deleted
+// but who is still sitting in the bot.
+func (s *UserService) trackSubscriber(from *User, chatID int64) {
+	var userID int64
+	if u, ok := s.findLinkedUser(chatID); ok {
+		userID = u.ID
+	}
+	var username, firstName, lang string
+	if from != nil {
+		username, firstName, lang = from.Username, from.FirstName, from.LangCode
+	}
+	if err := s.store.UpsertSubscriber(chatID, userID, username, firstName, lang, time.Now().Unix()); err != nil {
+		log.Printf("telegram user: track subscriber %d: %v", chatID, err)
 	}
 }
 
@@ -167,6 +193,20 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 
 	if cmd == "/start" {
 		s.handleStart(ctx, client, set, chatID, args)
+		return
+	}
+	// Broadcast subscription is handled before the pending-state machine so an
+	// explicit command always wins: someone half-way through registration must still
+	// be able to opt out, and doing so must not eat the step they were on.
+	switch cmd {
+	case "/mailing":
+		s.showMailing(ctx, client, chatID, 0)
+		return
+	case "/mailing_on":
+		s.setMailingByCommand(ctx, client, chatID, true)
+		return
+	case "/mailing_off":
+		s.setMailingByCommand(ctx, client, chatID, false)
 		return
 	}
 	pending := s.takePending(chatID)
@@ -275,6 +315,13 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 	msgID := cb.Message.MessageID
 	set, err := s.store.GetSettings()
 	if err != nil {
+		return
+	}
+	// Before the linked-user split and before pending is cleared: the mailing toggle
+	// belongs to everyone in the audience, registered or not, and tapping it must not
+	// drop a registration step in progress.
+	if on, ok := strings.CutPrefix(cb.Data, "vu:mail:"); ok {
+		s.setMailing(ctx, client, chatID, msgID, on == "on")
 		return
 	}
 	s.clearPending(chatID)
@@ -811,6 +858,98 @@ func userStartLinkCode(arg string) string {
 		return code
 	}
 	return ""
+}
+
+// Broadcast opt-out. Kept as its own command rather than a button under every
+// broadcast: the alternative to a findable opt-out isn't a captive audience, it's
+// people blocking the bot — and a block is irreversible and silently kills payment
+// confirmations and support replies along with the newsletter.
+
+// mailingCard renders the current state and the button that flips it.
+func mailingCard(optOut bool) (string, [][]InlineButton) {
+	if optOut {
+		return "📣 <b>Рассылка</b>\n\nСейчас: <b>выключена</b>\n\n" +
+				"Служебные уведомления — оплата и ответы поддержки — приходят в любом случае.",
+			[][]InlineButton{{{Text: "🔔 Подписаться", CallbackData: "vu:mail:on"}}}
+	}
+	return "📣 <b>Рассылка</b>\n\nСейчас: <b>включена</b>\n\nНовости сервиса и важные объявления.",
+		[][]InlineButton{{{Text: "🔕 Отписаться", CallbackData: "vu:mail:off"}}}
+}
+
+// showMailing displays the toggle. msgID 0 sends a new message; otherwise the card
+// is edited in place, like the rest of the bot's screens.
+func (s *UserService) showMailing(ctx context.Context, client *Client, chatID, msgID int64) {
+	optOut := false
+	if sub, err := s.store.SubscriberByChat(chatID); err != nil {
+		log.Printf("telegram user: mailing state for %d: %v", chatID, err)
+	} else if sub != nil {
+		optOut = sub.OptOut
+	}
+	text, rows := mailingCard(optOut)
+	if msgID == 0 {
+		s.sendMenu(ctx, client, chatID, text, rows)
+		return
+	}
+	s.edit(ctx, client, chatID, msgID, text, rows)
+}
+
+func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, msgID int64, on bool) {
+	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
+		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
+		return
+	}
+	s.showMailing(ctx, client, chatID, msgID)
+}
+
+// setMailingByCommand applies an explicit /mailing_on or /mailing_off and answers
+// with a fresh message rather than editing one, since the command may arrive with no
+// card on screen to edit.
+//
+// Unsubscribing states what was NOT switched off. Without that line the next thing a
+// person does is block the bot to be sure — and a block is irreversible and takes
+// payment confirmations and support replies with it.
+func (s *UserService) setMailingByCommand(ctx context.Context, client *Client, chatID int64, on bool) {
+	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
+		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
+		return
+	}
+	if on {
+		s.sendMenu(ctx, client, chatID,
+			"🔔 Вы подписаны на рассылку — новости сервиса и важные объявления.",
+			[][]InlineButton{{{Text: "🔕 Отписаться", CallbackData: "vu:mail:off"}}})
+		return
+	}
+	s.sendMenu(ctx, client, chatID,
+		"🔕 Вы отписаны от рассылки.\n\nСлужебные уведомления — оплата и ответы поддержки — продолжат приходить.",
+		[][]InlineButton{{{Text: "🔔 Подписаться обратно", CallbackData: "vu:mail:on"}}})
+}
+
+// userBotCommands is the command menu published to Telegram. An opt-out nobody can
+// find is not an opt-out, so both directions are named explicitly instead of hiding
+// behind one toggle; /mailing answers "am I subscribed right now?".
+var userBotCommands = []BotCommand{
+	{Command: "start", Description: "Моя подписка"},
+	{Command: "mailing", Description: "Рассылка: текущее состояние"},
+	{Command: "mailing_on", Description: "Подписаться на рассылку"},
+	{Command: "mailing_off", Description: "Отписаться от рассылки"},
+}
+
+// publishCommands pushes the command menu once per token. Re-publishing on every
+// poll would spend an API call a cycle to send Telegram what it already has.
+func (s *UserService) publishCommands(ctx context.Context, client *Client, token string) {
+	s.mu.Lock()
+	done := s.commandsFor == token
+	s.mu.Unlock()
+	if done {
+		return
+	}
+	if err := client.SetMyCommands(ctx, userBotCommands); err != nil {
+		log.Printf("telegram user: publish commands: %v", err)
+		return // not latched: retried next cycle
+	}
+	s.mu.Lock()
+	s.commandsFor = token
+	s.mu.Unlock()
 }
 
 func (s *UserService) send(ctx context.Context, client *Client, chatID int64, html string) {

@@ -46,11 +46,45 @@ type Update struct {
 // the forum topic a group message belongs to — the support relay keys on it to tell
 // which user's thread an admin is answering in.
 type Message struct {
-	MessageID       int64  `json:"message_id"`
-	From            *User  `json:"from"`
-	Chat            Chat   `json:"chat"`
-	Text            string `json:"text"`
-	MessageThreadID int64  `json:"message_thread_id"`
+	MessageID       int64       `json:"message_id"`
+	From            *User       `json:"from"`
+	Chat            Chat        `json:"chat"`
+	Text            string      `json:"text"`
+	MessageThreadID int64       `json:"message_thread_id"`
+	Photo           []PhotoSize `json:"photo"`
+	Document        *Document   `json:"document"`
+}
+
+// PhotoSize / Document carry the file_id Telegram assigns to an uploaded file.
+// Re-sending by that id costs no upload, which is the difference between one
+// transfer and one per recipient when the same image goes out to a whole audience.
+type PhotoSize struct {
+	FileID string `json:"file_id"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+type Document struct {
+	FileID string `json:"file_id"`
+}
+
+// MediaFileID returns the id of the file this message carries, or "" when it has
+// none. For photos Telegram sends every rendition it made; the largest is the one
+// worth re-sending, and the order it arrives in is documented only loosely, so the
+// biggest is picked rather than the last.
+func (m *Message) MediaFileID() string {
+	if m == nil {
+		return ""
+	}
+	if m.Document != nil && m.Document.FileID != "" {
+		return m.Document.FileID
+	}
+	best, bestPx := "", 0
+	for _, p := range m.Photo {
+		if px := p.Width * p.Height; px >= bestPx {
+			best, bestPx = p.FileID, px
+		}
+	}
+	return best
 }
 
 // CallbackQuery is an inline-button tap (used for the delete confirmation).
@@ -66,6 +100,10 @@ type User struct {
 	ID        int64  `json:"id"`
 	Username  string `json:"username"`
 	FirstName string `json:"first_name"`
+	// LangCode is the IETF tag of the client's interface language. Nothing reads it
+	// yet — the panel has no i18n — but it is recorded per subscriber so the data
+	// exists if broadcasts ever need to be segmented by language.
+	LangCode string `json:"language_code"`
 }
 type Chat struct {
 	ID      int64  `json:"id"`
@@ -364,18 +402,79 @@ func (c *Client) GetChatMember(ctx context.Context, chatID, userID int64) (*Chat
 
 // SendDocument uploads a file to a chat as a document, with an optional caption.
 func (c *Client) SendDocument(ctx context.Context, chatID int64, filename, caption string, r io.Reader) error {
-	return c.upload(ctx, "sendDocument", "document", chatID, filename, caption, r)
+	_, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, r)
+	return err
 }
 
 // SendPhoto uploads an image to a chat (shown inline), with an optional HTML
 // caption. Used to deliver the subscription QR code.
 func (c *Client) SendPhoto(ctx context.Context, chatID int64, filename, caption string, r io.Reader) error {
-	return c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, r)
+	_, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, r)
+	return err
+}
+
+// UploadPhoto / UploadDocument send a file and return the file_id Telegram assigned
+// it, so the same file can be re-sent to everyone else with SendPhotoID /
+// SendDocumentID instead of being uploaded again per recipient.
+func (c *Client) UploadPhoto(ctx context.Context, chatID int64, filename, caption string, r io.Reader) (string, error) {
+	m, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, r)
+	if err != nil {
+		return "", err
+	}
+	return m.MediaFileID(), nil
+}
+
+func (c *Client) UploadDocument(ctx context.Context, chatID int64, filename, caption string, r io.Reader) (string, error) {
+	m, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, r)
+	if err != nil {
+		return "", err
+	}
+	return m.MediaFileID(), nil
+}
+
+// SendPhotoID / SendDocumentID send an already-uploaded file by its file_id, with an
+// optional HTML caption and inline keyboard.
+func (c *Client) SendPhotoID(ctx context.Context, chatID int64, fileID, caption string, rows [][]InlineButton) error {
+	return c.sendMedia(ctx, "sendPhoto", "photo", chatID, fileID, caption, rows)
+}
+
+func (c *Client) SendDocumentID(ctx context.Context, chatID int64, fileID, caption string, rows [][]InlineButton) error {
+	return c.sendMedia(ctx, "sendDocument", "document", chatID, fileID, caption, rows)
+}
+
+func (c *Client) sendMedia(ctx context.Context, method, field string, chatID int64, fileID, caption string, rows [][]InlineButton) error {
+	payload := map[string]any{
+		"chat_id": chatID,
+		field:     fileID,
+	}
+	if caption != "" {
+		payload["caption"] = caption
+		payload["parse_mode"] = "HTML"
+	}
+	if len(rows) > 0 {
+		payload["reply_markup"] = map[string]any{"inline_keyboard": rows}
+	}
+	return c.send(ctx, method, chatID, payload)
+}
+
+// BotCommand is one entry of the bot's command menu.
+type BotCommand struct {
+	Command     string `json:"command"`     // without the leading slash
+	Description string `json:"description"` // shown next to it in the menu
+}
+
+// SetMyCommands publishes the bot's command menu. Without it a command nobody was
+// told about is a command nobody uses — which matters for an opt-out that has to be
+// findable to count as one.
+func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand) error {
+	return c.call(ctx, "setMyCommands", map[string]any{"commands": cmds}, nil)
 }
 
 // upload streams r as a multipart file for sendDocument/sendPhoto (field is
 // "document" or "photo"). HTML parse mode is set so captions can be formatted.
-func (c *Client) upload(ctx context.Context, method, field string, chatID int64, filename, caption string, r io.Reader) error {
+// It returns the resulting message so callers can pick up the file_id Telegram
+// assigned (see MediaFileID).
+func (c *Client) upload(ctx context.Context, method, field string, chatID int64, filename, caption string, r io.Reader) (*Message, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("chat_id", strconv.FormatInt(chatID, 10))
@@ -385,14 +484,15 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 	}
 	fw, err := mw.CreateFormFile(field, filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := io.Copy(fw, r); err != nil {
-		return err
+		return nil, err
 	}
 	if err := mw.Close(); err != nil {
-		return err
+		return nil, err
 	}
+	var sent Message
 	// The body is fully buffered, so a throttled upload can be replayed verbatim
 	// from the same bytes — same one-retry rule as send.
 	post := func() error {
@@ -401,19 +501,25 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 			return err
 		}
 		req.Header.Set("Content-Type", mw.FormDataContentType())
-		return c.do(req, nil)
+		return c.do(req, &sent)
 	}
 	if err := waitSlot(ctx, chatID); err != nil {
-		return err
+		return nil, err
 	}
 	err = post()
 	d, throttled := RetryAfter(err)
 	if !throttled {
-		return err
+		if err != nil {
+			return nil, err
+		}
+		return &sent, nil
 	}
 	backOff(chatID, d)
 	if werr := waitSlot(ctx, chatID); werr != nil {
-		return err
+		return nil, err
 	}
-	return post()
+	if err := post(); err != nil {
+		return nil, err
+	}
+	return &sent, nil
 }

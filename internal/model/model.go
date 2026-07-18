@@ -151,6 +151,27 @@ type RegistrationRequest struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// Subscriber is a chat that has opened the user bot — the audience a broadcast is
+// addressed to. Wider than the user roster on purpose: it also holds people who
+// never completed registration and people whose account was deleted, both of whom a
+// broadcast may still need to reach. UserID is nil-able in SQL and 0 here when the
+// chat isn't tied to an account.
+//
+// Active and OptOut mean different things and must not be conflated: Active=false is
+// Telegram refusing delivery (blocked or deactivated), OptOut=true is the person
+// choosing not to receive broadcasts while still getting service messages.
+type Subscriber struct {
+	ChatID    int64  `json:"chat_id"`
+	UserID    int64  `json:"user_id"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	Lang      string `json:"lang"`
+	Active    bool   `json:"active"`
+	OptOut    bool   `json:"opt_out"`
+	BlockedAt int64  `json:"blocked_at"`
+	StartedAt int64  `json:"started_at"`
+}
+
 // PaymentProvider is one payment provider's saved setup: whether it's on, plus the
 // credentials for the fields its registry entry declares (internal/payments). The
 // config holds API keys, so it never leaves the server — the panel is told only
