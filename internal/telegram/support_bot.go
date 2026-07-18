@@ -46,6 +46,12 @@ const (
 	rateGCThreshold = 1024
 )
 
+// rightsRecheckEvery debounces the per-group rights lookup.
+const rightsRecheckEvery = 10 * time.Minute
+
+// supportGroupTTL is how long an unseen candidate stays in the picker.
+const supportGroupTTL = 30 * 24 * time.Hour
+
 // topicNameMax is Telegram's limit for a forum topic name.
 const topicNameMax = 128
 
@@ -128,6 +134,9 @@ func (s *SupportService) Run(ctx context.Context) {
 		}
 		set, err := s.store.GetSettings()
 		if err != nil || strings.TrimSpace(set.TGSupportBotToken) == "" {
+			if err := s.store.PruneSupportGroups(time.Now().Add(-supportGroupTTL).Unix()); err != nil {
+				log.Printf("telegram support: prune groups: %v", err)
+			}
 			if !sleep(ctx, 10*time.Second) {
 				return
 			}
@@ -205,9 +214,26 @@ func (s *SupportService) botIdentity(ctx context.Context, client *Client) int64 
 // setting that was never wrong. Only reached for groups that aren't the configured
 // one, so the extra call is rare.
 func (s *SupportService) rememberGroupFromMessage(ctx context.Context, client *Client, chat Chat) {
-	// Recorded first, on what the message itself proves. A failed rights lookup
-	// then costs an accurate label, not the candidate.
-	s.rememberGroup(chat, false)
+	seen, err := s.store.SupportGroupSeenAt(chat.ID)
+	if err != nil {
+		log.Printf("telegram support: group %d: %v", chat.ID, err)
+		return
+	}
+	now := time.Now()
+	// Recorded first, on what the message itself proves — but WITHOUT touching the
+	// rights flag, so a lookup that fails below cannot overwrite a verified "admin"
+	// with a guess and send the operator to grant a permission the bot already has.
+	if err := s.store.SeeSupportGroup(chat.ID, chat.Title, chat.IsForum, now.Unix()); err != nil {
+		log.Printf("telegram support: see group %d: %v", chat.ID, err)
+		return
+	}
+	// The rights lookup is debounced per group. The bot is reachable by @username, so
+	// anyone may add it to a busy chat; without this, every message there would cost a
+	// synchronous round trip inside the single poll loop, queueing real support
+	// traffic behind it.
+	if seen != 0 && now.Sub(time.Unix(seen, 0)) < rightsRecheckEvery {
+		return
+	}
 	id := s.botIdentity(ctx, client)
 	if id == 0 {
 		return
@@ -217,9 +243,7 @@ func (s *SupportService) rememberGroupFromMessage(ctx context.Context, client *C
 		log.Printf("telegram support: rights in %d: %v", chat.ID, err)
 		return
 	}
-	if member.Status == "administrator" || member.Status == "creator" {
-		s.rememberGroup(chat, true)
-	}
+	s.rememberGroup(chat, member.Status == "administrator" || member.Status == "creator")
 }
 
 // trackGroup records or forgets a group from a membership change.
@@ -296,7 +320,7 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 	case isThreadGone(err):
 		// The admins deleted the topic. Re-open one and retry once, otherwise this
 		// user's conversation would be dead forever.
-		if err = s.store.DeleteSupportTopic(chatID); err == nil {
+		if err = s.store.DeleteSupportTopic(set.TGSupportGroupID, chatID); err == nil {
 			if topicID, created, err = s.ensureTopic(ctx, client, set, m); err == nil {
 				err = client.ForwardMessage(ctx, set.TGSupportGroupID, topicID, chatID, m.MessageID)
 			}
@@ -327,10 +351,10 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 	}
 	// Body(), not Text: a note written as a photo caption is still a note, and the
 	// escape hatch admins are told to trust must not be text-only.
-	if strings.HasPrefix(strings.TrimSpace(m.Body()), internalNotePrefix) {
+	if hasInternalNote(m.Body()) {
 		return
 	}
-	chatID, err := s.store.SupportChatByTopic(m.MessageThreadID)
+	chatID, err := s.store.SupportChatByTopic(set.TGSupportGroupID, m.MessageThreadID)
 	if err != nil {
 		log.Printf("telegram support: topic %d lookup: %v", m.MessageThreadID, err)
 		return
@@ -355,14 +379,20 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 // first contact. created reports whether this call opened it.
 func (s *SupportService) ensureTopic(ctx context.Context, client *Client, set *model.Settings, m *Message) (topicID int64, created bool, err error) {
 	chatID := m.Chat.ID
-	if topicID, err = s.store.SupportTopicByChat(chatID); err != nil || topicID != 0 {
+	if topicID, err = s.store.SupportTopicByChat(set.TGSupportGroupID, chatID); err != nil || topicID != 0 {
 		return topicID, false, err
 	}
 	u, linked := s.findUser(chatID)
 	if topicID, err = client.CreateForumTopic(ctx, set.TGSupportGroupID, topicTitle(u, linked, m)); err != nil {
 		return 0, false, err
 	}
-	if err = s.store.SetSupportTopic(chatID, topicID, time.Now().Unix()); err != nil {
+	if err = s.store.SetSupportTopic(set.TGSupportGroupID, chatID, topicID, time.Now().Unix()); err != nil {
+		// The topic exists in Telegram but nothing can address it, and the next
+		// message would open another. Take it back down rather than leave one
+		// unreachable thread per message behind.
+		if derr := client.DeleteForumTopic(ctx, set.TGSupportGroupID, topicID); derr != nil {
+			log.Printf("telegram support: remove unrecorded topic %d: %v", topicID, derr)
+		}
 		return 0, false, err
 	}
 	// Logged because a duplicate topic for one user is otherwise untraceable after
@@ -435,6 +465,20 @@ func isThreadGone(err error) bool {
 	var ae *APIError
 	return errors.As(err, &ae) && ae.Code == 400 &&
 		strings.Contains(strings.ToLower(ae.Description), "thread not found")
+}
+
+// hasInternalNote reports whether ANY line is a note between admins. The pinned card
+// promises exactly that ("строка, начинающаяся с //"), and checking only the first
+// line meant an admin who answered the customer and then added a line about them
+// below delivered both — the escape hatch failing in the precise shape it was
+// documented in, silently.
+func hasInternalNote(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), internalNotePrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // isTopicClosed reports whether the topic still exists but is closed to new posts.

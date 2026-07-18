@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -221,7 +222,7 @@ func (c *Client) call(ctx context.Context, method string, payload any, out any) 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+c.token+"/"+method, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return c.redact(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return c.do(req, out)
@@ -252,11 +253,27 @@ func (c *Client) sendResult(ctx context.Context, method string, chatID int64, pa
 	return c.call(ctx, method, payload, out)
 }
 
+// redact removes the bot token from an error message. The token lives in the request
+// path, and Go puts the whole URL into every transport error — so an unredacted
+// timeout or DNS failure carries full control of the bot into the panel's log file,
+// into an operator's browser, and (for the support relay) into the very group whose
+// members the UI warns may not all be trusted.
+func (c *Client) redact(err error) error {
+	if err == nil || c.token == "" {
+		return err
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, c.token) {
+		return err
+	}
+	return errors.New(strings.ReplaceAll(msg, c.token, "<токен скрыт>"))
+}
+
 // do executes req, decodes the envelope, and surfaces a non-OK API error.
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return c.redact(err)
 	}
 	defer resp.Body.Close()
 	var env apiResponse
@@ -299,7 +316,7 @@ func (c *Client) GetUpdatesFor(ctx context.Context, offset int64, timeout int, a
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		c.base+c.token+"/getUpdates?"+q.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, c.redact(err)
 	}
 	var updates []Update
 	if err := c.do(req, &updates); err != nil {
@@ -402,6 +419,16 @@ func (c *Client) CreateForumTopic(ctx context.Context, chatID int64, name string
 // reopen, that user's support would be dead from then on.
 func (c *Client) ReopenForumTopic(ctx context.Context, chatID, threadID int64) error {
 	return c.call(ctx, "reopenForumTopic", map[string]any{
+		"chat_id":           chatID,
+		"message_thread_id": threadID,
+	}, nil)
+}
+
+// DeleteForumTopic removes a topic. Used to clean up after opening one that could
+// not be recorded: an unrecorded topic is unreachable forever, and Telegram offers no
+// way to list a bot's topics to find it later.
+func (c *Client) DeleteForumTopic(ctx context.Context, chatID, threadID int64) error {
+	return c.call(ctx, "deleteForumTopic", map[string]any{
 		"chat_id":           chatID,
 		"message_thread_id": threadID,
 	}, nil)
@@ -592,7 +619,7 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 	post := func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+c.token+"/"+method, bytes.NewReader(buf.Bytes()))
 		if err != nil {
-			return err
+			return c.redact(err)
 		}
 		req.Header.Set("Content-Type", mw.FormDataContentType())
 		return c.do(req, &sent)

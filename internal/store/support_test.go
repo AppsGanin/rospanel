@@ -7,6 +7,8 @@ import (
 
 // TestSupportTopicMapping exercises the 0031 migration and both lookup directions:
 // user → topic when they write, topic → user when an admin answers.
+const grp int64 = -100777
+
 func TestSupportTopicMapping(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "support.db"))
 	if err != nil {
@@ -16,66 +18,94 @@ func TestSupportTopicMapping(t *testing.T) {
 
 	// An unknown chat reports 0 rather than an error — that's the signal to open a
 	// topic, so it must not look like a failure.
-	topicID, err := st.SupportTopicByChat(555)
+	topicID, err := st.SupportTopicByChat(grp, 555)
 	if err != nil || topicID != 0 {
 		t.Fatalf("SupportTopicByChat on empty = %d, %v; want 0, nil", topicID, err)
 	}
-	chatID, err := st.SupportChatByTopic(7)
+	chatID, err := st.SupportChatByTopic(grp, 7)
 	if err != nil || chatID != 0 {
 		t.Fatalf("SupportChatByTopic on empty = %d, %v; want 0, nil", chatID, err)
 	}
 
-	if err := st.SetSupportTopic(555, 7, 1700000000); err != nil {
+	if err := st.SetSupportTopic(grp, 555, 7, 1700000000); err != nil {
 		t.Fatalf("SetSupportTopic: %v", err)
 	}
-	if topicID, err = st.SupportTopicByChat(555); err != nil || topicID != 7 {
+	if topicID, err = st.SupportTopicByChat(grp, 555); err != nil || topicID != 7 {
 		t.Fatalf("SupportTopicByChat = %d, %v; want 7, nil", topicID, err)
 	}
-	if chatID, err = st.SupportChatByTopic(7); err != nil || chatID != 555 {
+	if chatID, err = st.SupportChatByTopic(grp, 7); err != nil || chatID != 555 {
 		t.Fatalf("SupportChatByTopic = %d, %v; want 555, nil", chatID, err)
 	}
 
 	// Re-pointing after the admins deleted a topic must move the mapping, not add a
 	// second row — otherwise the reverse lookup would resolve to a dead thread.
-	if err := st.SetSupportTopic(555, 9, 1700000100); err != nil {
+	if err := st.SetSupportTopic(grp, 555, 9, 1700000100); err != nil {
 		t.Fatalf("SetSupportTopic re-point: %v", err)
 	}
-	if topicID, err = st.SupportTopicByChat(555); err != nil || topicID != 9 {
+	if topicID, err = st.SupportTopicByChat(grp, 555); err != nil || topicID != 9 {
 		t.Fatalf("after re-point SupportTopicByChat = %d, %v; want 9, nil", topicID, err)
 	}
-	if chatID, err = st.SupportChatByTopic(7); err != nil || chatID != 0 {
+	if chatID, err = st.SupportChatByTopic(grp, 7); err != nil || chatID != 0 {
 		t.Fatalf("stale topic still resolves to %d; want 0", chatID)
 	}
 
-	if err := st.DeleteSupportTopic(555); err != nil {
+	if err := st.DeleteSupportTopic(grp, 555); err != nil {
 		t.Fatalf("DeleteSupportTopic: %v", err)
 	}
-	if topicID, err = st.SupportTopicByChat(555); err != nil || topicID != 0 {
+	if topicID, err = st.SupportTopicByChat(grp, 555); err != nil || topicID != 0 {
 		t.Fatalf("after delete SupportTopicByChat = %d, %v; want 0, nil", topicID, err)
 	}
 }
 
-// TestResetSupportTopics covers the group switch: thread ids belong to the group
-// that issued them, so pointing support elsewhere must drop every mapping.
-func TestResetSupportTopics(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "support-reset.db"))
+// Mappings belong to the group that issued them. Thread ids are message ids, unique
+// only within a chat, so a mapping must not answer for a different group — otherwise
+// an admin replying in the new group's topic 7 reaches whoever owned topic 7 in the
+// old one, and that user's next message lands in a stranger's thread.
+func TestSupportTopicsAreScopedToTheirGroup(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "support-scope.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	defer st.Close()
 
-	for i := int64(1); i <= 3; i++ {
-		if err := st.SetSupportTopic(100+i, i, 1700000000); err != nil {
-			t.Fatalf("SetSupportTopic %d: %v", i, err)
-		}
+	const groupA, groupB int64 = -100111, -100222
+	if err := st.SetSupportTopic(groupA, 555, 7, 1700000000); err != nil {
+		t.Fatalf("SetSupportTopic: %v", err)
 	}
-	if err := st.ResetSupportTopics(); err != nil {
-		t.Fatalf("ResetSupportTopics: %v", err)
+
+	if id, err := st.SupportChatByTopic(groupB, 7); err != nil || id != 0 {
+		t.Fatalf("group B resolved A's topic 7 to chat %d — a reply would reach the wrong user", id)
 	}
-	for i := int64(1); i <= 3; i++ {
-		if topicID, err := st.SupportTopicByChat(100 + i); err != nil || topicID != 0 {
-			t.Fatalf("chat %d still mapped to %d", 100+i, topicID)
-		}
+	if id, err := st.SupportTopicByChat(groupB, 555); err != nil || id != 0 {
+		t.Fatalf("group B reused A's topic %d — the message would land in a stranger's thread", id)
+	}
+	// The original group is unaffected, so re-pointing support back at it resumes
+	// the existing conversations instead of orphaning them.
+	if id, err := st.SupportChatByTopic(groupA, 7); err != nil || id != 555 {
+		t.Fatalf("group A lost its own mapping: %d, %v", id, err)
+	}
+
+	// The same thread id may legitimately exist in both groups.
+	if err := st.SetSupportTopic(groupB, 888, 7, 1700000100); err != nil {
+		t.Fatalf("same thread id in another group rejected: %v", err)
+	}
+	if id, _ := st.SupportChatByTopic(groupB, 7); id != 888 {
+		t.Fatalf("group B topic 7 = chat %d, want 888", id)
+	}
+	if id, _ := st.SupportChatByTopic(groupA, 7); id != 555 {
+		t.Fatalf("group A topic 7 = chat %d, want 555", id)
+	}
+
+	// A stale row holding the thread id a new user was just issued must give way,
+	// not wedge that user out of support via the unique index.
+	if err := st.SetSupportTopic(groupA, 999, 7, 1700000200); err != nil {
+		t.Fatalf("stale row blocked a new mapping: %v", err)
+	}
+	if id, _ := st.SupportChatByTopic(groupA, 7); id != 999 {
+		t.Fatalf("group A topic 7 = chat %d, want 999", id)
+	}
+	if id, _ := st.SupportTopicByChat(groupA, 555); id != 0 {
+		t.Fatalf("displaced chat still mapped to %d", id)
 	}
 }
 

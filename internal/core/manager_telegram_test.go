@@ -23,13 +23,14 @@ func TestNormalizeGroupID(t *testing.T) {
 	}
 }
 
-// Re-selecting the same group after the field was cleared must NOT wipe the topic
-// mappings. Telegram offers no way to list a bot's topics, so an orphaned thread is
-// unrecoverable: the next message from that user opens a SECOND topic with the same
-// title, and the operator is left with two.
-func TestGroupSaveKeepsTopicsUnlessGroupReallyChanges(t *testing.T) {
+// Topic mappings carry the group that issued them, so no save — of the same group,
+// of a cleared field, or of a different group — can make one group's mapping answer
+// for another. Both reviewers of this feature independently found the reset-on-change
+// approach leaking messages across customers through the 0 state; this is the
+// invariant that replaced it.
+func TestTopicMappingsSurviveSavesAndStayScoped(t *testing.T) {
 	m := bcManager(t)
-	const group int64 = -1001111111111
+	const groupA, groupB int64 = -1001111111111, -1002222222222
 
 	save := func(g int64) {
 		t.Helper()
@@ -37,37 +38,37 @@ func TestGroupSaveKeepsTopicsUnlessGroupReallyChanges(t *testing.T) {
 			t.Fatalf("save %d: %v", g, err)
 		}
 	}
-	mapped := func() bool {
+	mappedIn := func(g int64) bool {
 		t.Helper()
-		id, err := m.store.SupportTopicByChat(42)
+		id, err := m.store.SupportTopicByChat(g, 42)
 		if err != nil {
 			t.Fatalf("SupportTopicByChat: %v", err)
 		}
 		return id != 0
 	}
 
-	save(group)
-	if err := m.store.SetSupportTopic(42, 7, 1700000000); err != nil {
+	save(groupA)
+	if err := m.store.SetSupportTopic(groupA, 42, 7, 1700000000); err != nil {
 		t.Fatalf("SetSupportTopic: %v", err)
 	}
 
-	save(group) // saving the same group again
-	if !mapped() {
-		t.Fatal("re-saving the same group dropped the mapping")
+	// Saving the form repeatedly — the same group, a cleared field, the same group
+	// again — must never cost a live conversation.
+	save(groupA)
+	save(0)
+	save(groupA)
+	if !mappedIn(groupA) {
+		t.Fatal("a save dropped a still-valid mapping — the conversation is unrecoverable")
 	}
 
-	save(0) // operator clears the field
-	if !mapped() {
-		t.Fatal("clearing the field dropped the mapping")
+	// And the path that used to leak: A → 0 → B. The mapping still exists, but it
+	// cannot answer for B, so nobody else's thread reaches this user.
+	save(0)
+	save(groupB)
+	if mappedIn(groupB) {
+		t.Fatal("group A's mapping answered for group B — replies would reach the wrong user")
 	}
-
-	save(group) // ...and picks the same group again
-	if !mapped() {
-		t.Fatal("re-selecting the same group dropped a still-valid mapping")
-	}
-
-	save(-1002222222222) // a genuinely different group
-	if mapped() {
-		t.Fatal("mapping survived a move to another group — replies would reach the wrong user")
+	if !mappedIn(groupA) {
+		t.Fatal("group A's own mapping was lost")
 	}
 }

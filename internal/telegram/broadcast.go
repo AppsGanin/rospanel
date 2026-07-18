@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -31,6 +32,7 @@ type BroadcastService struct {
 	client      *Client
 	clientToken string
 	warnedAt    time.Time // last "stalled, bot is off" warning
+	sweptAt     time.Time // last attachment sweep
 }
 
 const (
@@ -46,6 +48,9 @@ const (
 	// stalledWarnEvery throttles the "running but the bot is off" complaint so it
 	// doesn't fill the log every poll for as long as the condition holds.
 	stalledWarnEvery = 10 * time.Minute
+	// mediaSweepEvery bounds how often finished runs are re-examined for leftover
+	// attachments. Nothing is urgent about it — the files are already unreachable.
+	mediaSweepEvery = 15 * time.Minute
 )
 
 // BroadcastMediaDir is where the panel stores an uploaded attachment until the first
@@ -80,7 +85,7 @@ func (s *BroadcastService) Run(ctx context.Context) {
 		}
 		worked := s.step(ctx)
 		if !worked {
-			s.sweepMedia()
+			s.sweepMediaOccasionally()
 			if !sleep(ctx, broadcastIdle) {
 				return
 			}
@@ -135,12 +140,23 @@ func (s *BroadcastService) step(ctx context.Context) bool {
 // the run still being 'running': an operator's cancel landing in the meantime must
 // win, not be overwritten with 'done'.
 func (s *BroadcastService) finish(b *model.Broadcast) {
+	// Anyone still 'pending' here unsubscribed after the audience was frozen and was
+	// skipped over on purpose. Closing them out keeps the progress bar able to reach
+	// its total instead of stalling one short of it forever.
+	if err := s.store.SkipRemainingTargets(b.ID); err != nil {
+		log.Printf("telegram broadcast %d: close out skipped: %v", b.ID, err)
+	}
 	ok, err := s.store.SetBroadcastStatusIf(b.ID, model.BroadcastRunning, model.BroadcastDone, time.Now().Unix())
 	if err != nil {
 		log.Printf("telegram broadcast %d: finish: %v", b.ID, err)
 		return
 	}
-	s.removeMedia(b.ID)
+	// Only once there is a cached file_id. Deleting it after a run where every
+	// upload failed would leave "повторить неудачные" with nothing to send, and the
+	// only recovery would be composing the whole broadcast again.
+	if b.MediaFileID != "" {
+		s.removeMedia(b.ID)
+	}
 	if ok {
 		log.Printf("telegram broadcast %d: finished", b.ID)
 	}
@@ -208,12 +224,30 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 		fileID, err = client.UploadDocument(ctx, chatID, name, b.Text, rows, f)
 	}
 	if err != nil {
-		s.record(b.ID, chatID, err)
-		// Not fatal to the run: this one recipient may be blocked. The next pass
-		// tries to prime on somebody else.
+		if isBlockedByUser(err) {
+			// This recipient is unreachable, but the file may be fine. Consume them
+			// and let the next pass prime on somebody else.
+			if rerr := s.record(b.ID, chatID, err); rerr != nil {
+				s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+			}
+			return false
+		}
+		// Anything else is about the FILE, not this recipient — an oversized photo,
+		// an unsupported type, a corrupt upload. Treating it as one bad recipient
+		// would walk the entire audience one person per pass, re-uploading the whole
+		// file every time and failing all of them: on a 10k audience that is hundreds
+		// of gigabytes of uploads to deliver nothing.
+		log.Printf("telegram broadcast %d: upload: %v", b.ID, err)
+		s.pause(b.ID, "вложение не принято Telegram: "+err.Error())
 		return false
 	}
-	s.record(b.ID, chatID, nil)
+	if err := s.record(b.ID, chatID, nil); err != nil {
+		// The upload landed but the outcome is unrecorded, so this recipient is still
+		// 'pending' and would be primed again — another full upload, to someone who
+		// already has the message. Stop rather than repeat it.
+		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+		return false
+	}
 	if fileID == "" {
 		// Delivered, but Telegram returned no id to reuse — every later recipient
 		// would re-upload. Pause rather than quietly burn the bandwidth.
@@ -240,12 +274,15 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 	}
 	ch := make(chan int64)
 	var wg sync.WaitGroup
+	var lostTrack atomic.Bool
 	for range min(broadcastWorkers, len(targets)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for chatID := range ch {
-				s.record(b.ID, chatID, s.sendOne(ctx, client, b, chatID))
+				if err := s.record(b.ID, chatID, s.sendOne(ctx, client, b, chatID)); err != nil {
+					lostTrack.Store(true)
+				}
 			}
 		}()
 	}
@@ -260,6 +297,14 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 	}
 	close(ch)
 	wg.Wait()
+	if lostTrack.Load() {
+		// The message went out but the outcome could not be written down. Selecting
+		// pending rows is not claiming them, so the very same people would be picked
+		// up as the next batch and messaged again — every pass, forever, with nothing
+		// ever advancing. Stop instead: a paused run is recoverable, a resend loop
+		// against thousands of chats is not.
+		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+	}
 }
 
 func (s *BroadcastService) sendOne(ctx context.Context, client *Client, b *model.Broadcast, chatID int64) error {
@@ -277,7 +322,7 @@ func (s *BroadcastService) sendOne(ctx context.Context, client *Client, b *model
 // record writes one delivery outcome. A permanent refusal is stored as "blocked" and
 // the subscriber is deactivated, so every later broadcast stops spending a send slot
 // on a chat that can never receive again.
-func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) {
+func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) error {
 	now := time.Now().Unix()
 	state, msg := model.TargetSent, ""
 	switch {
@@ -292,13 +337,30 @@ func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) {
 	}
 	if err := s.store.MarkTarget(broadcastID, chatID, state, msg, now); err != nil {
 		log.Printf("telegram broadcast %d: mark %d: %v", broadcastID, chatID, err)
+		return err
 	}
+	return nil
 }
 
 // sweepMedia deletes attachments belonging to runs that will never send again.
 // Cleaning up only on the "done" path leaks a file for every other ending —
 // cancelled, paused for good, or a create that failed before the run started — and
 // those files sit in the data dir that gets backed up.
+// sweepMediaOccasionally rate-limits the sweep. Running it on every idle poll took
+// the panel's single DB connection every 5 seconds to re-examine runs that were
+// already cleaned up on the first pass.
+func (s *BroadcastService) sweepMediaOccasionally() {
+	s.mu.Lock()
+	due := time.Since(s.sweptAt) >= mediaSweepEvery
+	if due {
+		s.sweptAt = time.Now()
+	}
+	s.mu.Unlock()
+	if due {
+		s.sweepMedia()
+	}
+}
+
 func (s *BroadcastService) sweepMedia() {
 	ids, err := s.store.FinishedBroadcastIDs()
 	if err != nil {

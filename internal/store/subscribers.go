@@ -49,7 +49,7 @@ func (s *Store) SetSubscriberBlocked(chatID, at int64) error {
 	return err
 }
 
-// SetSubscriberOptOut records the /stop or /mailing choice. It inserts when the chat
+// SetSubscriberOptOut records the /mailing choice. It inserts when the chat
 // isn't known yet, so an opt-out is never lost to a missing row.
 func (s *Store) SetSubscriberOptOut(chatID int64, out bool, now int64) error {
 	_, err := s.db.Exec(

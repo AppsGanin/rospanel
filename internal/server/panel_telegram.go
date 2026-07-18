@@ -46,40 +46,64 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// or returns the field the client sent, or the value already stored when it sent
+// nothing. Absent must not read as empty: this endpoint rewrites all three bots at
+// once, so a body from a stale browser tab that predates a field would otherwise wipe
+// a bot token or the whole support relay and report success.
+func or[T any](sent *T, current T) T {
+	if sent != nil {
+		return *sent
+	}
+	return current
+}
+
 func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled     bool            `json:"enabled"`
-		Token       string          `json:"token"`
-		BackupCron  string          `json:"backup_cron"`
-		UserEnabled bool            `json:"user_enabled"`
-		UserToken   string          `json:"user_token"`
-		UserRegMode string          `json:"user_reg_mode"`
-		UserRegCode string          `json:"user_reg_code"`
+		Enabled     *bool           `json:"enabled"`
+		Token       *string         `json:"token"`
+		BackupCron  *string         `json:"backup_cron"`
+		UserEnabled *bool           `json:"user_enabled"`
+		UserToken   *string         `json:"user_token"`
+		UserRegMode *string         `json:"user_reg_mode"`
+		UserRegCode *string         `json:"user_reg_code"`
 		AdminEvents map[string]bool `json:"admin_events"`
 
-		SupportEnabled  bool   `json:"support_enabled"`
-		SupportToken    string `json:"support_token"`
-		SupportGroupID  int64  `json:"support_group_id"`
-		SupportGreeting string `json:"support_greeting"`
+		SupportEnabled  *bool   `json:"support_enabled"`
+		SupportToken    *string `json:"support_token"`
+		SupportGroupID  *int64  `json:"support_group_id"`
+		SupportGreeting *string `json:"support_greeting"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SaveTelegram(req.Enabled, req.Token, req.BackupCron); err != nil {
+	cur, err := rt.mgr.Settings()
+	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	if err := rt.mgr.SaveTelegramUserBot(req.UserEnabled, req.UserToken, req.UserRegMode, req.UserRegCode); err != nil {
+	if err := rt.mgr.SaveTelegram(or(req.Enabled, cur.TGBotEnabled), or(req.Token, cur.TGBotToken),
+		or(req.BackupCron, cur.TGBackupCron)); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	// The support bot's @username is resolved here, not in the manager: core never
-	// talks to Telegram. An empty result means getMe didn't accept the token, and
-	// SaveTelegramSupport refuses to enable on it rather than storing a blank that
-	// would silently hide the support button.
-	supportUser := botUsername(r.Context(), req.SupportToken)
-	if err := rt.mgr.SaveTelegramSupport(req.SupportEnabled, req.SupportToken, supportUser,
-		req.SupportGroupID, req.SupportGreeting); err != nil {
+	if err := rt.mgr.SaveTelegramUserBot(or(req.UserEnabled, cur.TGUserBotEnabled),
+		or(req.UserToken, cur.TGUserBotToken), or(req.UserRegMode, cur.RegMode()),
+		or(req.UserRegCode, cur.TGUserRegCode)); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	supportToken := or(req.SupportToken, cur.TGSupportBotToken)
+	// getMe only when there is something new to check. Re-resolving an unchanged
+	// token made every save depend on Telegram being reachable: during an outage the
+	// lookup returned "", SaveTelegramSupport refused it, and the two bots already
+	// written above stayed written — with the request reported as failed.
+	supportUser := cur.TGSupportBotUsername
+	if supportToken != cur.TGSupportBotToken || supportUser == "" {
+		supportUser = botUsername(r.Context(), supportToken)
+	}
+	if err := rt.mgr.SaveTelegramSupport(or(req.SupportEnabled, cur.TGSupportEnabled), supportToken,
+		supportUser, or(req.SupportGroupID, cur.TGSupportGroupID),
+		or(req.SupportGreeting, cur.TGSupportGreeting)); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

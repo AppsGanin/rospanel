@@ -14,7 +14,7 @@ CREATE TABLE tg_subscribers (
     first_name TEXT    NOT NULL DEFAULT '',
     lang       TEXT    NOT NULL DEFAULT '',   -- IETF tag from language_code; unused for now
     active     INTEGER NOT NULL DEFAULT 1,    -- 0 = blocked the bot / deactivated account
-    opt_out    INTEGER NOT NULL DEFAULT 0,    -- unsubscribed from broadcasts via /stop
+    opt_out    INTEGER NOT NULL DEFAULT 0,    -- unsubscribed from broadcasts (/mailing)
     blocked_at INTEGER NOT NULL DEFAULT 0,
     started_at INTEGER NOT NULL
 );

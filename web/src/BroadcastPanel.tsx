@@ -49,8 +49,10 @@ const TEXT_MAX = 4096;
 const CAPTION_MAX = 1024;
 const BUTTONS_MAX = 8;
 
-// A run is polled while it is moving; done and cancelled never change again.
-const isLive = (b: Broadcast) => b.status === "running" || b.status === "paused";
+// Polled only while it is actually moving. A paused run changes nothing on its own,
+// and treating it as live left the tab polling every 1.5s forever against a progress
+// bar that never moves — on a panel whose store has a single connection.
+const isLive = (b: Broadcast) => b.status === "running";
 
 function fmtTime(unix: number): string {
   if (!unix) return "—";

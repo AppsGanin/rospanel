@@ -34,8 +34,11 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 		if err != nil {
 			return err
 		}
-		if set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) == token {
+		if strings.TrimSpace(set.TGUserBotToken) == token {
 			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+		if strings.TrimSpace(set.TGSupportBotToken) == token {
+			return invalid("у админ-бота и бота поддержки должны быть разные токены")
 		}
 	}
 	if err := m.store.SetTelegramBot(enabled, token, backupCron); err != nil {
@@ -74,8 +77,11 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 		if err != nil {
 			return err
 		}
-		if set.TGBotEnabled && strings.TrimSpace(set.TGBotToken) == token {
+		if strings.TrimSpace(set.TGBotToken) == token {
 			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+		if strings.TrimSpace(set.TGSupportBotToken) == token {
+			return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
 		}
 	}
 	return m.store.SetTelegramUserBot(enabled, token, regMode, regCode)
@@ -124,26 +130,12 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 			return invalid("у бота поддержки и пользовательского бота должны быть разные токены")
 		}
 	}
-	// Thread ids are scoped to the group that issued them, so pointing support at a
-	// different group must drop them — otherwise a reply in the new group's topic 7
-	// is delivered to whoever owned topic 7 in the old one.
-	//
-	// Both sides must be a real, different group. Firing on 0 → X as well meant that
-	// re-selecting a group after the field had been cleared wiped mappings that were
-	// still perfectly valid for it — and since Telegram offers no way to list a
-	// bot's topics, the orphaned threads can never be found again: the next message
-	// from that user opens a SECOND topic with the same title, and the operator is
-	// left with two.
-	//
-	// Cleared BEFORE the settings write. Done after, a failure here would leave the
-	// new group id stored with stale mappings and no path that ever retries: the
-	// "did the group change?" test would compare the new id against itself and never
-	// fire again.
-	if groupID != 0 && set.TGSupportGroupID != 0 && set.TGSupportGroupID != groupID {
-		if err := m.store.ResetSupportTopics(); err != nil {
-			return err
-		}
-	}
+	// No mapping reset here. Topic rows carry the group that issued them, so a
+	// mapping from another group simply never matches — which is what makes every
+	// transition (A→B, A→0→B, re-picking A after clearing the field) safe by
+	// construction. A reset had to be exactly right on all of them, and each way of
+	// getting it wrong either delivered one customer's messages into another's thread
+	// or orphaned live conversations Telegram gives no way to find again.
 	return m.store.SetTelegramSupport(enabled, token, username, groupID, greeting)
 }
 

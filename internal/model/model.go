@@ -199,6 +199,11 @@ const (
 	TargetSent    = "sent"
 	TargetFailed  = "failed"
 	TargetBlocked = "blocked"
+	// TargetSkipped is someone who unsubscribed after the audience was frozen. The
+	// snapshot is what keeps the total steady, but honouring an opt-out only until
+	// the run starts would deliver marketing to a person the bot has just told they
+	// are unsubscribed — which is what makes people block it outright.
+	TargetSkipped = "skipped"
 )
 
 // Broadcast audiences, resolved to a chat list once at launch.
@@ -238,10 +243,13 @@ type Broadcast struct {
 	Sent    int `json:"sent"`
 	Failed  int `json:"failed"`
 	Blocked int `json:"blocked"`
+	Skipped int `json:"skipped"`
 }
 
 // Pending reports how many recipients are still waiting.
-func (b *Broadcast) Pending() int { return b.Total - b.Sent - b.Failed - b.Blocked }
+func (b *Broadcast) Pending() int {
+	return b.Total - b.Sent - b.Failed - b.Blocked - b.Skipped
+}
 
 // PaymentProvider is one payment provider's saved setup: whether it's on, plus the
 // credentials for the fields its registry entry declares (internal/payments). The

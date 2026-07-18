@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/url"
 	"strings"
 	"time"
@@ -173,9 +175,28 @@ func (m *Manager) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 	return m.store.ListBroadcasts(limit)
 }
 
+// ErrBroadcastNotFound lets the API answer 404 instead of leaking a raw SQL error
+// as a 500.
+var ErrBroadcastNotFound = errors.New("рассылка не найдена")
+
 // GetBroadcast returns one broadcast with its progress.
 func (m *Manager) GetBroadcast(id int64) (*model.Broadcast, error) {
-	return m.store.GetBroadcast(id)
+	b, err := m.store.GetBroadcast(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrBroadcastNotFound
+	}
+	return b, err
+}
+
+// ValidateBroadcast checks a composed message without storing it — used by the test
+// send, so a preview is refused for the same reasons the real run would be rather
+// than failing later with a raw Telegram error.
+func (m *Manager) ValidateBroadcast(b *model.Broadcast) error {
+	b.Text = strings.TrimSpace(b.Text)
+	if strings.TrimSpace(b.Audience) == "" {
+		b.Audience = model.AudienceAll
+	}
+	return validateBroadcast(b)
 }
 
 // SetBroadcastStatus applies an operator control (pause / resume / cancel). Terminal

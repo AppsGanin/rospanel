@@ -29,7 +29,7 @@ func supportService(t *testing.T) *SupportService {
 func TestAdminReplyRouting(t *testing.T) {
 	s := supportService(t)
 	set := &model.Settings{TGSupportGroupID: -100999}
-	if err := s.store.SetSupportTopic(555, 7, time.Now().Unix()); err != nil {
+	if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
 		t.Fatalf("SetSupportTopic: %v", err)
 	}
 	group := Chat{ID: -100999, Type: "supergroup", IsForum: true}
@@ -117,7 +117,7 @@ func TestClosedTopicIsDistinctFromDeleted(t *testing.T) {
 func TestInternalNoteCoversCaptions(t *testing.T) {
 	s := supportService(t)
 	set := &model.Settings{TGSupportGroupID: -100999}
-	if err := s.store.SetSupportTopic(555, 7, time.Now().Unix()); err != nil {
+	if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
 		t.Fatalf("SetSupportTopic: %v", err)
 	}
 	group := Chat{ID: -100999, Type: "supergroup", IsForum: true}

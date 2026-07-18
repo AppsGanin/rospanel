@@ -70,11 +70,17 @@ func (s *Store) AddBroadcastTargets(broadcastID int64, chatIDs []int64) error {
 	return tx.Commit()
 }
 
-// NextPendingTargets returns up to limit recipients still awaiting delivery.
+// NextPendingTargets returns up to limit recipients still awaiting delivery,
+// excluding anyone who has unsubscribed or blocked the bot since the audience was
+// frozen. The snapshot fixes WHO was in scope; it must not override a decision the
+// person made afterwards — least of all one the bot confirmed to them.
 func (s *Store) NextPendingTargets(broadcastID int64, limit int) ([]int64, error) {
 	rows, err := s.db.Query(
-		`SELECT chat_id FROM broadcast_targets
-		 WHERE broadcast_id = ? AND state = ? ORDER BY chat_id LIMIT ?`,
+		`SELECT t.chat_id FROM broadcast_targets t
+		 LEFT JOIN tg_subscribers s ON s.chat_id = t.chat_id
+		 WHERE t.broadcast_id = ? AND t.state = ?
+		   AND COALESCE(s.opt_out, 0) = 0 AND COALESCE(s.active, 1) = 1
+		 ORDER BY t.chat_id LIMIT ?`,
 		broadcastID, model.TargetPending, limit)
 	if err != nil {
 		return nil, err
@@ -119,6 +125,12 @@ func (s *Store) SetBroadcastStatus(id int64, status string, at int64) error {
 			`UPDATE broadcasts SET status = ?,
 			        started_at = CASE WHEN started_at = 0 THEN ? ELSE started_at END
 			 WHERE id = ?`, status, at, id)
+		return err
+	}
+	// Only a terminal state carries an end time. Stamping one on a pause left a
+	// resumed broadcast reporting status=running with a finished_at in the past.
+	if status == model.BroadcastPaused {
+		_, err := s.db.Exec(`UPDATE broadcasts SET status = ? WHERE id = ?`, status, id)
 		return err
 	}
 	_, err := s.db.Exec(
@@ -185,13 +197,28 @@ func (s *Store) RetryFailedBroadcast(id, now int64) (int, error) {
 	return int(n), tx.Commit()
 }
 
+// SkipRemainingTargets closes out the recipients a finished run never reached
+// because they unsubscribed mid-flight. Without it they would sit 'pending' forever
+// against a completed run, and the progress bar would never reach its total.
+func (s *Store) SkipRemainingTargets(broadcastID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE broadcast_targets SET state = ?
+		 WHERE broadcast_id = ? AND state = ?`,
+		model.TargetSkipped, broadcastID, model.TargetPending)
+	return err
+}
+
 // FinishedBroadcastIDs lists runs that will never send again. The worker uses it to
 // drop their attachments: removeMedia on the "done" path alone leaks a file for every
 // run that was cancelled, paused for good, or died between creation and start.
 func (s *Store) FinishedBroadcastIDs() ([]int64, error) {
+	// media_file_id must be set: a run where every upload failed still needs its
+	// file on disk, or "повторить неудачные" would have nothing left to send.
 	rows, err := s.db.Query(
-		`SELECT id FROM broadcasts WHERE status IN (?, ?) AND media_kind <> ''`,
-		model.BroadcastDone, model.BroadcastCancelled)
+		`SELECT id FROM broadcasts
+		 WHERE status IN (?, ?) AND media_kind <> ''
+		   AND (media_file_id <> '' OR status = ?)`,
+		model.BroadcastDone, model.BroadcastCancelled, model.BroadcastCancelled)
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +326,8 @@ func (s *Store) fillCounts(b *model.Broadcast) error {
 			b.Failed = n
 		case model.TargetBlocked:
 			b.Blocked = n
+		case model.TargetSkipped:
+			b.Skipped = n
 		}
 	}
 	return rows.Err()

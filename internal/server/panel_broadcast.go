@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -89,6 +91,10 @@ func (rt *Router) listBroadcasts(w http.ResponseWriter, r *http.Request) {
 
 func (rt *Router) getBroadcast(w http.ResponseWriter, r *http.Request, id int64) {
 	b, err := rt.mgr.GetBroadcast(id)
+	if errors.Is(err, core.ErrBroadcastNotFound) {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -207,6 +213,13 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 	if file != nil {
 		defer file.Close()
+	}
+	// Validated like the real thing: a preview that Telegram rejects for a 5000-char
+	// text or a javascript: button teaches the operator nothing about the message
+	// they were about to send to everyone.
+	if err := rt.mgr.ValidateBroadcast(b); err != nil {
+		writeManagerErr(w, err)
+		return
 	}
 	set, err := rt.mgr.Settings()
 	if err != nil {
