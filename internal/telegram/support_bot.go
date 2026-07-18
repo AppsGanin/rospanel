@@ -365,6 +365,10 @@ func (s *SupportService) ensureTopic(ctx context.Context, client *Client, set *m
 	if err = s.store.SetSupportTopic(chatID, topicID, time.Now().Unix()); err != nil {
 		return 0, false, err
 	}
+	// Logged because a duplicate topic for one user is otherwise untraceable after
+	// the fact: Telegram has no way to list a bot's topics, so the only record that
+	// one was opened — and when — is this line.
+	log.Printf("telegram support: opened topic %d for chat %d", topicID, chatID)
 	// Best-effort context for whoever answers: the subscription card if we know who
 	// this is. A failure here must not cost the user their message.
 	if msgID, err := client.SendTopic(ctx, set.TGSupportGroupID, topicID, topicCard(u, linked, m, set, s.panel)); err != nil {

@@ -128,11 +128,18 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 	// different group must drop them — otherwise a reply in the new group's topic 7
 	// is delivered to whoever owned topic 7 in the old one.
 	//
-	// Cleared BEFORE the settings write, and only when moving to a real group. Done
-	// after, a failure here would leave the new group id stored with stale mappings
-	// and no path that ever retries: the "did the group change?" test would compare
-	// the new id against itself and never fire again.
-	if groupID != 0 && set.TGSupportGroupID != groupID {
+	// Both sides must be a real, different group. Firing on 0 → X as well meant that
+	// re-selecting a group after the field had been cleared wiped mappings that were
+	// still perfectly valid for it — and since Telegram offers no way to list a
+	// bot's topics, the orphaned threads can never be found again: the next message
+	// from that user opens a SECOND topic with the same title, and the operator is
+	// left with two.
+	//
+	// Cleared BEFORE the settings write. Done after, a failure here would leave the
+	// new group id stored with stale mappings and no path that ever retries: the
+	// "did the group change?" test would compare the new id against itself and never
+	// fire again.
+	if groupID != 0 && set.TGSupportGroupID != 0 && set.TGSupportGroupID != groupID {
 		if err := m.store.ResetSupportTopics(); err != nil {
 			return err
 		}
