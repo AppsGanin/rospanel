@@ -764,6 +764,14 @@ export interface TelegramInfo {
   user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   admin_events: Record<string, boolean> // admin notification categories (key→on)
+
+  // Support relay: a third bot that carries messages between a user's chat and a
+  // per-user topic in support_group_id (a forum supergroup the admins answer in).
+  support_enabled: boolean
+  support_token: string
+  support_group_id: number // 0 = not configured
+  support_greeting: string // shown on /start; empty = built-in text
+  support_bot_username: string // resolved on save; empty ⇒ entry point stays hidden
 }
 
 // Self-registration modes for the public user bot.
@@ -771,29 +779,35 @@ export type RegMode = 'off' | 'open' | 'moderation' | 'invite'
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
 
-export const saveTelegram = (
-  enabled: boolean,
-  token: string,
-  backup_cron: string,
-  user_enabled: boolean,
-  user_token: string,
-  user_reg_mode: RegMode,
-  user_reg_code: string,
-  admin_events: Record<string, boolean>,
-) =>
+// Takes an object rather than a positional list: the three bots contribute a dozen
+// fields, half of them same-typed, and a swapped token argument would fail silently.
+export const saveTelegram = (t: {
+  enabled: boolean
+  token: string
+  backup_cron: string
+  user_enabled: boolean
+  user_token: string
+  user_reg_mode: RegMode
+  user_reg_code: string
+  admin_events: Record<string, boolean>
+  support_enabled: boolean
+  support_token: string
+  support_group_id: number
+  support_greeting: string
+}) =>
   api<{ ok: boolean }>('api/telegram', {
     method: 'POST',
-    body: JSON.stringify({
-      enabled,
-      token,
-      backup_cron,
-      user_enabled,
-      user_token,
-      user_reg_mode,
-      user_reg_code,
-      admin_events,
-    }),
+    body: JSON.stringify(t),
   })
+
+// checkTelegramSupport validates the support group end to end (reachable, a forum,
+// bot is an admin able to manage topics) — the privacy-mode failure it catches is
+// otherwise invisible: the bot receives users' messages but never the admins' replies.
+export const checkTelegramSupport = () =>
+  api<{ ok: boolean; bot_username: string; group_title: string }>(
+    'api/telegram/support/check',
+    { method: 'POST' },
+  )
 
 export const genTelegramLink = () =>
   api<{ code: string; bot_username: string }>('api/telegram/link', {

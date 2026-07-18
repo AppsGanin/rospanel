@@ -81,6 +81,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/telegram/link/cancel":     set("Telegram · привязка отменена"),
 	"POST /api/telegram/unlink":          set("Telegram · отвязка"),
 	"POST /api/telegram/test-backup":     set("Telegram · тестовый бэкап"),
+	"POST /api/telegram/support/check":   set("Telegram · проверка группы поддержки"),
 	"POST /api/billing":                  set("Биллинг"),
 	"POST /api/payments":                 set("Приём платежей"),
 

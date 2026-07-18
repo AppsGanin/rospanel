@@ -81,6 +81,56 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 	return m.store.SetTelegramUserBot(enabled, token, regMode, regCode)
 }
 
+// SaveTelegramSupport validates and persists the support relay: its own bot token,
+// the forum supergroup admins answer in, and the /start greeting. username is the
+// bot's resolved @username — the caller looks it up (core deliberately doesn't talk
+// to Telegram) and enabling without one is refused, because the user bot renders its
+// support button only for a non-empty username and the operator would be left with
+// support switched on and no visible way in.
+func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, groupID int64, greeting string) error {
+	token = strings.TrimSpace(token)
+	username = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(username), "@"))
+	greeting = strings.TrimSpace(greeting)
+	// Shape first: a token with an obvious typo gets the message that says what a
+	// token looks like, not the generic "couldn't verify" it would otherwise hit —
+	// getMe rejects a malformed token exactly like an unknown one.
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+	}
+	if enabled {
+		switch {
+		case token == "":
+			return invalid("укажите токен бота поддержки")
+		case groupID == 0:
+			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+		case username == "":
+			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+		}
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	if enabled && token != "" {
+		if set.TGBotEnabled && strings.TrimSpace(set.TGBotToken) == token {
+			return invalid("у бота поддержки и админ-бота должны быть разные токены")
+		}
+		if set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) == token {
+			return invalid("у бота поддержки и пользовательского бота должны быть разные токены")
+		}
+	}
+	if err := m.store.SetTelegramSupport(enabled, token, username, groupID, greeting); err != nil {
+		return err
+	}
+	// Thread ids are scoped to the group that issued them. Pointing support at a
+	// different group must drop them, or replies would address threads that don't
+	// exist there — or, worse, unrelated threads that happen to share an id.
+	if set.TGSupportGroupID != groupID {
+		return m.store.ResetSupportTopics()
+	}
+	return nil
+}
+
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).
 func (m *Manager) CancelTelegramLink() error {
 	return m.store.SetTelegramLinkCode("")

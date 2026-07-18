@@ -463,6 +463,17 @@ type Settings struct {
 	// to the authorized chats. Default -1 (all on); see AdminEventEnabled.
 	TGAdminEvents int64 `json:"-"`
 
+	// Support relay (Settings → Telegram → Поддержка): a third bot whose only job is
+	// to carry messages between a user and a per-user topic in TGSupportGroupID, a
+	// forum supergroup the operator's admins answer in. It is separate from the user
+	// bot precisely so that everything sent to it is unambiguously a support request.
+	// TGSupportBotUsername is the cached @username the user bot links to.
+	TGSupportEnabled     bool   `json:"-"`
+	TGSupportBotToken    string `json:"-"`
+	TGSupportBotUsername string `json:"-"`
+	TGSupportGroupID     int64  `json:"-"`
+	TGSupportGreeting    string `json:"-"`
+
 	// Local scheduled backups, independent of Telegram: archives are written to
 	// <dataDir>/backups and the newest LocalBackupKeep are retained. Same 5-field
 	// cron dialect and operator timezone as TGBackupCron; empty = off.
@@ -582,6 +593,17 @@ var AdminEventCatalog = []struct {
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
 func (s *Settings) AdminEventEnabled(bit int64) bool { return s.TGAdminEvents&bit != 0 }
+
+// SupportLink is the t.me URL of the support bot, or "" when support is off or the
+// bot's @username was never resolved. Callers render the entry point only for a
+// non-empty result, so a half-configured relay shows no dead button — the same
+// contract subWebAppURL has for the subscription Mini App.
+func (s *Settings) SupportLink() string {
+	if !s.TGSupportEnabled || s.TGSupportBotUsername == "" {
+		return ""
+	}
+	return "https://t.me/" + s.TGSupportBotUsername
+}
 
 // RegMode is the normalised self-registration mode. It falls back to the legacy
 // TGUserRegEnabled bool for rows written before the mode column existed.

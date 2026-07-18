@@ -219,8 +219,9 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 
 func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *model.Settings, chatID int64) {
 	if !set.RegistrationOpen() {
-		s.send(ctx, client, chatID,
-			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.")
+		s.sendMenu(ctx, client, chatID,
+			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.",
+			supportOnlyRows(set))
 		return
 	}
 	hint := "Нажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически."
@@ -230,11 +231,25 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 	case model.RegInvite:
 		hint = "Нажмите «Зарегистрироваться» и введите код-приглашение от администратора."
 	}
-	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows())
+	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows(set))
 }
 
-func welcomeRows() [][]InlineButton {
-	return [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
+// welcomeRows is the pre-registration keyboard. Support is offered here too: someone
+// who can't get past registration — wrong invite code, waiting on moderation — is
+// exactly the person who needs to reach a human, and they have no menu to reach it
+// from.
+func welcomeRows(set *model.Settings) [][]InlineButton {
+	rows := [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
+	return append(rows, supportOnlyRows(set)...)
+}
+
+// supportOnlyRows is the support link on its own, or no rows at all when support
+// isn't configured.
+func supportOnlyRows(set *model.Settings) [][]InlineButton {
+	if link := set.SupportLink(); link != "" {
+		return [][]InlineButton{{{Text: "💬 Поддержка", URL: link}}}
+	}
+	return nil
 }
 
 // tgDisplayName derives a user's panel name from their Telegram profile: the
@@ -427,6 +442,11 @@ func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
 	}
 	if set.BillingEnabled {
 		rows = append(rows, []InlineButton{{Text: "💳 Тарифы", CallbackData: "vu:plans"}})
+	}
+	// Support lives in its own bot, so this is a plain link out. Empty when support is
+	// off or its @username never resolved — a dead button is worse than none.
+	if link := set.SupportLink(); link != "" {
+		rows = append(rows, []InlineButton{{Text: "💬 Поддержка", URL: link}})
 	}
 	rows = append(rows,
 		[]InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}},

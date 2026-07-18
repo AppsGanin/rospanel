@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   cancelTelegramLink,
+  checkTelegramSupport,
   genTelegramLink,
   getTelegram,
   getTelegramLinkStatus,
@@ -28,6 +29,7 @@ import {
   Select,
   SettingCard,
   Switch,
+  Textarea,
   TextInput,
 } from "./ui";
 
@@ -76,6 +78,11 @@ export function TelegramSettings() {
   const [linkCode, setLinkCode] = useState("");
   const [botUsername, setBotUsername] = useState("");
   const [userBotUsername, setUserBotUsername] = useState("");
+  const [supportEnabled, setSupportEnabled] = useState(false);
+  const [supportToken, setSupportToken] = useState("");
+  const [supportGroupID, setSupportGroupID] = useState("");
+  const [supportGreeting, setSupportGreeting] = useState("");
+  const [supportBotUsername, setSupportBotUsername] = useState("");
   const [saved, setSaved] = useState({
     enabled: false,
     token: "",
@@ -85,9 +92,14 @@ export function TelegramSettings() {
     userRegMode: "off" as RegMode,
     userRegCode: "",
     adminEvents: {} as AdminEvents,
+    supportEnabled: false,
+    supportToken: "",
+    supportGroupID: "",
+    supportGreeting: "",
   });
   const [linking, setLinking] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   const load = () =>
     getTelegram()
@@ -104,6 +116,12 @@ export function TelegramSettings() {
         setBotUsername(t.bot_username || "");
         setUserBotUsername(t.user_bot_username || "");
         setSchedule(detectPreset(t.backup_cron || ""));
+        const groupID = t.support_group_id ? String(t.support_group_id) : "";
+        setSupportEnabled(t.support_enabled);
+        setSupportToken(t.support_token || "");
+        setSupportGroupID(groupID);
+        setSupportGreeting(t.support_greeting || "");
+        setSupportBotUsername(t.support_bot_username || "");
         setSaved({
           enabled: t.enabled,
           token: t.token,
@@ -113,6 +131,10 @@ export function TelegramSettings() {
           userRegMode: t.user_reg_mode || "off",
           userRegCode: t.user_reg_code || "",
           adminEvents: t.admin_events || {},
+          supportEnabled: t.support_enabled,
+          supportToken: t.support_token || "",
+          supportGroupID: groupID,
+          supportGreeting: t.support_greeting || "",
         });
       })
       .catch((e) => notifyError(errMessage(e)));
@@ -148,7 +170,11 @@ export function TelegramSettings() {
     userToken.trim() !== saved.userToken.trim() ||
     userRegMode !== saved.userRegMode ||
     userRegCode.trim() !== saved.userRegCode.trim() ||
-    !sameEvents(adminEvents, saved.adminEvents);
+    !sameEvents(adminEvents, saved.adminEvents) ||
+    supportEnabled !== saved.supportEnabled ||
+    supportToken.trim() !== saved.supportToken.trim() ||
+    supportGroupID.trim() !== saved.supportGroupID.trim() ||
+    supportGreeting.trim() !== saved.supportGreeting.trim();
 
   // Linking only makes sense once the bot is enabled and that state is saved (the
   // bot polls against the persisted config; a code is redeemed by the running bot).
@@ -159,16 +185,20 @@ export function TelegramSettings() {
   const save = async () => {
     setBusy(true);
     try {
-      await saveTelegram(
+      await saveTelegram({
         enabled,
-        token.trim(),
-        cron,
-        userEnabled,
-        userToken.trim(),
-        userRegMode,
-        userRegCode.trim(),
-        adminEvents,
-      );
+        token: token.trim(),
+        backup_cron: cron,
+        user_enabled: userEnabled,
+        user_token: userToken.trim(),
+        user_reg_mode: userRegMode,
+        user_reg_code: userRegCode.trim(),
+        admin_events: adminEvents,
+        support_enabled: supportEnabled,
+        support_token: supportToken.trim(),
+        support_group_id: Number(supportGroupID.trim()) || 0,
+        support_greeting: supportGreeting.trim(),
+      });
       setSaved({
         enabled,
         token: token.trim(),
@@ -178,7 +208,14 @@ export function TelegramSettings() {
         userRegMode,
         userRegCode: userRegCode.trim(),
         adminEvents,
+        supportEnabled,
+        supportToken: supportToken.trim(),
+        supportGroupID: supportGroupID.trim(),
+        supportGreeting: supportGreeting.trim(),
       });
+      // The support bot's @username is resolved server-side during the save, so pull
+      // the fresh value back rather than leaving a stale one on screen.
+      await load();
       notifySuccess("Настройки Telegram сохранены");
     } catch (e) {
       notifyError(errMessage(e));
@@ -196,6 +233,10 @@ export function TelegramSettings() {
     setUserRegCode(saved.userRegCode);
     setAdminEvents(saved.adminEvents);
     setSchedule(detectPreset(saved.cron));
+    setSupportEnabled(saved.supportEnabled);
+    setSupportToken(saved.supportToken);
+    setSupportGroupID(saved.supportGroupID);
+    setSupportGreeting(saved.supportGreeting);
   };
 
   const generate = async () => {
@@ -251,6 +292,29 @@ export function TelegramSettings() {
       notifyError(errMessage(e));
     } finally {
       setTesting(false);
+    }
+  };
+
+  // Checking runs against the SAVED config, so an unsaved edit would be checked in
+  // its old state — refuse rather than report a misleading result.
+  const supportConfigDirty =
+    supportToken.trim() !== saved.supportToken.trim() ||
+    supportGroupID.trim() !== saved.supportGroupID.trim();
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const r = await checkTelegramSupport();
+      setSupportBotUsername(r.bot_username || supportBotUsername);
+      notifySuccess(
+        r.group_title
+          ? `Всё готово: @${r.bot_username} — администратор группы «${r.group_title}»`
+          : "Проверка прошла успешно",
+      );
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -466,6 +530,73 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
+        title="Поддержка"
+        description="Отдельный бот для обращений: пользователь пишет ему, сообщение попадает в отдельную тему группы, ответ в теме уходит обратно пользователю."
+        action={<Switch checked={supportEnabled} onChange={setSupportEnabled} />}
+      >
+        <div className="flex flex-col gap-3">
+          <PasswordInput
+            label="Токен бота поддержки (от @BotFather)"
+            value={supportToken}
+            onChange={setSupportToken}
+            placeholder="555555555:CC..."
+          />
+          {supportBotUsername && (
+            <p className="text-sm text-ink-muted">
+              Бот:{" "}
+              <a
+                href={`https://t.me/${supportBotUsername}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-accent hover:underline"
+              >
+                @{supportBotUsername}
+              </a>
+            </p>
+          )}
+          <TextInput
+            label="ID группы поддержки"
+            value={supportGroupID}
+            onChange={setSupportGroupID}
+            placeholder="-1001234567890"
+          />
+          <p className="text-xs text-ink-muted">
+            Создайте супергруппу, включите в её настройках «Темы» и добавьте бота
+            поддержки администратором с правом управления темами. Без прав
+            администратора бот не увидит ответы — Telegram скрывает от него
+            сообщения в группе.
+          </p>
+          <Textarea
+            label="Приветствие в боте поддержки"
+            value={supportGreeting}
+            onChange={setSupportGreeting}
+            rows={2}
+            placeholder="Опишите проблему — ответим в течение дня."
+            hint="Пустое поле — текст по умолчанию, без обещаний о сроках ответа."
+          />
+          <div>
+            <Button
+              variant="light"
+              loading={checking}
+              onClick={runCheck}
+              disabled={
+                !supportToken.trim() ||
+                !supportGroupID.trim() ||
+                supportConfigDirty
+              }
+            >
+              Проверить
+            </Button>
+            <p className="mt-1 text-xs text-ink-muted">
+              {supportConfigDirty
+                ? "Сохраните настройки, затем запускайте проверку."
+                : "Проверит доступность группы, включённые темы и права бота."}
+            </p>
+          </div>
+        </div>
+      </SettingCard>
+
+      <SettingCard
         title="Бэкапы по расписанию"
         description="Резервные копии отправляются во все привязанные чаты по расписанию (в часовом поясе панели)."
       >
@@ -498,7 +629,11 @@ export function TelegramSettings() {
         busy={busy}
         onSave={save}
         onCancel={cancel}
-        saveDisabled={(enabled && !token.trim()) || (userEnabled && !userToken.trim())}
+        saveDisabled={
+          (enabled && !token.trim()) ||
+          (userEnabled && !userToken.trim()) ||
+          (supportEnabled && (!supportToken.trim() || !supportGroupID.trim()))
+        }
       />
     </div>
   );

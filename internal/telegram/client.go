@@ -42,12 +42,15 @@ type Update struct {
 	Callback *CallbackQuery `json:"callback_query"`
 }
 
-// Message is the subset of a Telegram message the bot acts on.
+// Message is the subset of a Telegram message the bot acts on. MessageThreadID is
+// the forum topic a group message belongs to — the support relay keys on it to tell
+// which user's thread an admin is answering in.
 type Message struct {
-	MessageID int64  `json:"message_id"`
-	From      *User  `json:"from"`
-	Chat      Chat   `json:"chat"`
-	Text      string `json:"text"`
+	MessageID       int64  `json:"message_id"`
+	From            *User  `json:"from"`
+	Chat            Chat   `json:"chat"`
+	Text            string `json:"text"`
+	MessageThreadID int64  `json:"message_thread_id"`
 }
 
 // CallbackQuery is an inline-button tap (used for the delete confirmation).
@@ -65,7 +68,17 @@ type User struct {
 	FirstName string `json:"first_name"`
 }
 type Chat struct {
-	ID int64 `json:"id"`
+	ID      int64  `json:"id"`
+	Type    string `json:"type"`     // "private" | "group" | "supergroup" | "channel"
+	Title   string `json:"title"`    // group name (empty for private chats)
+	IsForum bool   `json:"is_forum"` // supergroup with Topics enabled
+}
+
+// ChatMember is the subset of a member record the support-group check reads: the
+// bot must be an administrator with CanManageTopics to open a thread per user.
+type ChatMember struct {
+	Status          string `json:"status"` // "creator" | "administrator" | "member" | ...
+	CanManageTopics bool   `json:"can_manage_topics"`
 }
 
 // apiResponse is the envelope every Bot API method returns.
@@ -120,10 +133,15 @@ func (c *Client) call(ctx context.Context, method string, payload any, out any) 
 // asked for and tries once more. One retry is enough — the wait it names clears
 // the burst, and a second failure means something other than pacing is wrong.
 func (c *Client) send(ctx context.Context, method string, chatID int64, payload any) error {
+	return c.sendResult(ctx, method, chatID, payload, nil)
+}
+
+// sendResult is send for the calls whose reply the caller needs (out may be nil).
+func (c *Client) sendResult(ctx context.Context, method string, chatID int64, payload, out any) error {
 	if err := waitSlot(ctx, chatID); err != nil {
 		return err
 	}
-	err := c.call(ctx, method, payload, nil)
+	err := c.call(ctx, method, payload, out)
 	d, throttled := RetryAfter(err)
 	if !throttled {
 		return err
@@ -132,7 +150,7 @@ func (c *Client) send(ctx context.Context, method string, chatID int64, payload 
 	if werr := waitSlot(ctx, chatID); werr != nil {
 		return err // ctx ended mid-cooloff: report the 429, not the cancellation
 	}
-	return c.call(ctx, method, payload, nil)
+	return c.call(ctx, method, payload, out)
 }
 
 // do executes req, decodes the envelope, and surfaces a non-OK API error.
@@ -245,6 +263,103 @@ func (c *Client) AnswerCallback(ctx context.Context, id, text string) error {
 		"callback_query_id": id,
 		"text":              text,
 	}, nil)
+}
+
+// Forum / relay methods. These back the support bot: it opens one topic per user in
+// the operator's supergroup, forwards what the user writes into that topic, and
+// copies the admin's reply back. Relaying works on message IDs alone, so any media
+// type passes through without the bot parsing it.
+
+// CreateForumTopic opens a new topic in a forum supergroup and returns its
+// message_thread_id.
+func (c *Client) CreateForumTopic(ctx context.Context, chatID int64, name string) (int64, error) {
+	var topic struct {
+		MessageThreadID int64 `json:"message_thread_id"`
+	}
+	if err := c.sendResult(ctx, "createForumTopic", chatID, map[string]any{
+		"chat_id": chatID,
+		"name":    name,
+	}, &topic); err != nil {
+		return 0, err
+	}
+	return topic.MessageThreadID, nil
+}
+
+// ForwardMessage forwards a message into a chat, optionally into a forum topic
+// (threadID 0 = the General thread). Forwarding keeps the "from" attribution.
+func (c *Client) ForwardMessage(ctx context.Context, toChatID, threadID, fromChatID, messageID int64) error {
+	payload := map[string]any{
+		"chat_id":      toChatID,
+		"from_chat_id": fromChatID,
+		"message_id":   messageID,
+	}
+	if threadID != 0 {
+		payload["message_thread_id"] = threadID
+	}
+	return c.send(ctx, "forwardMessage", toChatID, payload)
+}
+
+// CopyMessage sends a copy of a message with no "forwarded from" header — used for
+// the admin's reply, so the user sees it as coming from the bot rather than from a
+// group they can't see.
+func (c *Client) CopyMessage(ctx context.Context, toChatID, fromChatID, messageID int64) error {
+	return c.send(ctx, "copyMessage", toChatID, map[string]any{
+		"chat_id":      toChatID,
+		"from_chat_id": fromChatID,
+		"message_id":   messageID,
+	})
+}
+
+// SendTopic posts an HTML message into a forum topic and returns its message ID (so
+// the caller can pin it). threadID 0 posts to the General thread.
+func (c *Client) SendTopic(ctx context.Context, chatID, threadID int64, html string) (int64, error) {
+	payload := map[string]any{
+		"chat_id":                  chatID,
+		"text":                     html,
+		"parse_mode":               "HTML",
+		"disable_web_page_preview": true,
+	}
+	if threadID != 0 {
+		payload["message_thread_id"] = threadID
+	}
+	var m Message
+	if err := c.sendResult(ctx, "sendMessage", chatID, payload, &m); err != nil {
+		return 0, err
+	}
+	return m.MessageID, nil
+}
+
+// PinChatMessage pins a message (the user card at the top of their topic). Pinned
+// silently — the admins are already notified by the forwarded message itself.
+func (c *Client) PinChatMessage(ctx context.Context, chatID, messageID int64) error {
+	return c.call(ctx, "pinChatMessage", map[string]any{
+		"chat_id":              chatID,
+		"message_id":           messageID,
+		"disable_notification": true,
+	}, nil)
+}
+
+// GetChat returns a chat's record — the support-group check reads Type and IsForum
+// from it.
+func (c *Client) GetChat(ctx context.Context, chatID int64) (*Chat, error) {
+	var ch Chat
+	if err := c.call(ctx, "getChat", map[string]any{"chat_id": chatID}, &ch); err != nil {
+		return nil, err
+	}
+	return &ch, nil
+}
+
+// GetChatMember returns one member's record — used to confirm the bot itself is an
+// administrator of the support group.
+func (c *Client) GetChatMember(ctx context.Context, chatID, userID int64) (*ChatMember, error) {
+	var m ChatMember
+	if err := c.call(ctx, "getChatMember", map[string]any{
+		"chat_id": chatID,
+		"user_id": userID,
+	}, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // SendDocument uploads a file to a chat as a document, with an optional caption.

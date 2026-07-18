@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -35,6 +36,12 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"user_reg_code":     set.TGUserRegCode,
 		"user_bot_username": botUsername(r.Context(), set.TGUserBotToken),
 		"admin_events":      rt.mgr.AdminEventPrefs(),
+
+		"support_enabled":      set.TGSupportEnabled,
+		"support_token":        set.TGSupportBotToken,
+		"support_group_id":     set.TGSupportGroupID,
+		"support_greeting":     set.TGSupportGreeting,
+		"support_bot_username": set.TGSupportBotUsername,
 	})
 }
 
@@ -48,6 +55,11 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		UserRegMode string          `json:"user_reg_mode"`
 		UserRegCode string          `json:"user_reg_code"`
 		AdminEvents map[string]bool `json:"admin_events"`
+
+		SupportEnabled  bool   `json:"support_enabled"`
+		SupportToken    string `json:"support_token"`
+		SupportGroupID  int64  `json:"support_group_id"`
+		SupportGreeting string `json:"support_greeting"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -60,6 +72,16 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
+	// The support bot's @username is resolved here, not in the manager: core never
+	// talks to Telegram. An empty result means getMe didn't accept the token, and
+	// SaveTelegramSupport refuses to enable on it rather than storing a blank that
+	// would silently hide the support button.
+	supportUser := botUsername(r.Context(), req.SupportToken)
+	if err := rt.mgr.SaveTelegramSupport(req.SupportEnabled, req.SupportToken, supportUser,
+		req.SupportGroupID, req.SupportGreeting); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
 	if req.AdminEvents != nil {
 		if err := rt.mgr.SaveAdminEventPrefs(req.AdminEvents); err != nil {
 			writeManagerErr(w, err)
@@ -67,6 +89,73 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeOK(w)
+}
+
+// checkTelegramSupport verifies the support group end to end before the operator
+// relies on it. The failure it exists for is silent: a bot added as a plain member
+// still receives what users write, but Telegram's group privacy mode hides the
+// admins' replies from it, so the relay half-works with no symptom anyone can see
+// from outside.
+func (rt *Router) checkTelegramSupport(w http.ResponseWriter, r *http.Request) {
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	token := strings.TrimSpace(set.TGSupportBotToken)
+	if token == "" {
+		writeErr(w, http.StatusBadRequest, "сначала укажите токен бота поддержки и сохраните настройки")
+		return
+	}
+	if set.TGSupportGroupID == 0 {
+		writeErr(w, http.StatusBadRequest, "сначала укажите ID группы поддержки и сохраните настройки")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	client := telegram.NewClient(token)
+
+	me, err := client.GetMe(ctx)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "токен бота поддержки не принят: "+err.Error())
+		return
+	}
+	chat, err := client.GetChat(ctx, set.TGSupportGroupID)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway,
+			"группа недоступна: "+err.Error()+" — добавьте @"+me.Username+" в группу и проверьте её ID")
+		return
+	}
+	if chat.Type != "supergroup" {
+		writeErr(w, http.StatusBadRequest,
+			"указанный чат не является супергруппой — создайте группу и включите в ней «Темы»")
+		return
+	}
+	if !chat.IsForum {
+		writeErr(w, http.StatusBadRequest,
+			"в группе не включены «Темы» — включите их в настройках группы, иначе диалоги не разделить")
+		return
+	}
+	member, err := client.GetChatMember(ctx, set.TGSupportGroupID, me.ID)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "не удалось проверить права бота: "+err.Error())
+		return
+	}
+	if member.Status != "administrator" && member.Status != "creator" {
+		writeErr(w, http.StatusBadRequest,
+			"бот должен быть администратором группы — иначе он не увидит ответы админов")
+		return
+	}
+	if member.Status == "administrator" && !member.CanManageTopics {
+		writeErr(w, http.StatusBadRequest,
+			"у бота нет права «Управление темами» — без него он не сможет завести тему на пользователя")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"bot_username": me.Username,
+		"group_title":  chat.Title,
+	})
 }
 
 // genTelegramLink issues a fresh one-time linking code and returns it together

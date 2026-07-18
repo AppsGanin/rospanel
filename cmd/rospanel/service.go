@@ -217,6 +217,10 @@ func runServer(dataDir string) {
 	// Telegram user bot: public self-service for VPN clients (registration,
 	// subscription, stats). Idles until enabled with its own token in Settings.
 	go telegram.NewUser(mgr, st).Run(context.Background())
+	// Telegram support bot: relays messages between a user's private chat and a
+	// per-user topic in the operator's forum supergroup. Idles until enabled with its
+	// own token and a group in Settings → Telegram.
+	go telegram.NewSupport(mgr, st).Run(context.Background())
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {

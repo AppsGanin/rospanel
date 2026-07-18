@@ -1,0 +1,328 @@
+package telegram
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
+)
+
+// SupportService is the support relay: a third bot that carries messages between a
+// user's private chat and a per-user topic in the operator's forum supergroup.
+//
+// It is deliberately a separate bot from the user bot. Inside the user bot every
+// incoming message would need a "support request, or just tapping around the menu?"
+// decision; here there is no menu, no plans and no registration, so everything sent
+// is unambiguously a request and nothing has to be guessed. Relaying by message id
+// also means screenshots, documents and voice notes pass through without the bot
+// parsing a single attachment.
+type SupportService struct {
+	panel Panel
+	store *store.Store
+
+	mu          sync.Mutex
+	client      *Client
+	clientToken string
+	offset      int64
+
+	rateMu sync.Mutex
+	rate   map[int64]*rateWindow
+}
+
+// Per-chat flood limit. The support bot is public and everything it receives lands
+// in the operator's admin group, so one chat must not be able to bury it.
+const (
+	supportRateWindow   = time.Minute
+	maxSupportPerWindow = 20
+	// rateGCThreshold caps the tracking map; stale windows are pruned past it so a
+	// long-lived process doesn't accumulate an entry per chat that ever wrote.
+	rateGCThreshold = 1024
+)
+
+// topicNameMax is Telegram's limit for a forum topic name.
+const topicNameMax = 128
+
+// internalNotePrefix marks an admin message in a topic as a note between admins —
+// it is not relayed to the user. Without an escape like this, thinking out loud in
+// the thread would be delivered to the person you're talking about.
+const internalNotePrefix = "//"
+
+// defaultSupportGreeting is used when the operator hasn't written one. It promises
+// nothing about response time — that promise is the operator's to make.
+const defaultSupportGreeting = "💬 <b>Поддержка</b>\n\nОпишите проблему сообщением в этот чат — можно приложить скриншот. Ответим здесь же."
+
+type rateWindow struct {
+	start time.Time
+	count int
+}
+
+// NewSupport builds the support relay bot. Call Run to start polling.
+func NewSupport(panel Panel, st *store.Store) *SupportService {
+	return &SupportService{panel: panel, store: st, rate: map[int64]*rateWindow{}}
+}
+
+func (s *SupportService) clientFor(token string) *Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client == nil || s.clientToken != token {
+		s.client = NewClient(token)
+		s.clientToken = token
+	}
+	return s.client
+}
+
+// allow rate-limits one chat (fixed window). Returns false when the window is spent.
+func (s *SupportService) allow(chatID int64, now time.Time) bool {
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+	if len(s.rate) > rateGCThreshold {
+		for id, w := range s.rate {
+			if now.Sub(w.start) >= supportRateWindow {
+				delete(s.rate, id)
+			}
+		}
+	}
+	w := s.rate[chatID]
+	if w == nil || now.Sub(w.start) >= supportRateWindow {
+		s.rate[chatID] = &rateWindow{start: now, count: 1}
+		return true
+	}
+	if w.count >= maxSupportPerWindow {
+		return false
+	}
+	w.count++
+	return true
+}
+
+// Run long-polls the support bot until ctx is cancelled. Settings are re-read every
+// cycle, so enabling/disabling or rotating the token takes effect without a restart.
+func (s *SupportService) Run(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		set, err := s.store.GetSettings()
+		if err != nil || !set.TGSupportEnabled ||
+			strings.TrimSpace(set.TGSupportBotToken) == "" || set.TGSupportGroupID == 0 {
+			if !sleep(ctx, 10*time.Second) {
+				return
+			}
+			continue
+		}
+		client := s.clientFor(strings.TrimSpace(set.TGSupportBotToken))
+		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if !sleep(ctx, pollBackoff(err)) {
+				return
+			}
+			continue
+		}
+		for _, u := range updates {
+			s.offset = u.UpdateID + 1
+			s.handle(ctx, client, set, u)
+		}
+	}
+}
+
+func (s *SupportService) handle(ctx context.Context, client *Client, set *model.Settings, u Update) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("telegram support: handler panic recovered: %v", r)
+		}
+	}()
+	if u.Message == nil {
+		return
+	}
+	m := u.Message
+	switch {
+	case m.Chat.Type == "private":
+		s.handleUserMessage(ctx, client, set, m)
+	case m.Chat.ID == set.TGSupportGroupID:
+		s.handleAdminReply(ctx, client, set, m)
+	}
+	// Anything else — a group the bot was added to that isn't the support group — is
+	// ignored on purpose: relaying it would leak one operator's users into another's
+	// chat.
+}
+
+// handleUserMessage relays what a user wrote into their topic, opening one on first
+// contact.
+func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, set *model.Settings, m *Message) {
+	chatID := m.Chat.ID
+	if cmd, _ := splitCmd(m.Text); cmd == "/start" {
+		greeting := strings.TrimSpace(set.TGSupportGreeting)
+		if greeting == "" {
+			greeting = defaultSupportGreeting
+		}
+		if err := client.SendMessage(ctx, chatID, greeting); err != nil {
+			log.Printf("telegram support: greeting to %d: %v", chatID, err)
+		}
+		return
+	}
+	if !s.allow(chatID, time.Now()) {
+		s.reply(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+		return
+	}
+
+	topicID, created, err := s.ensureTopic(ctx, client, set, m)
+	if err != nil {
+		log.Printf("telegram support: ensure topic for %d: %v", chatID, err)
+		s.reply(ctx, client, chatID, "⚠️ Не удалось передать сообщение. Попробуйте позже.")
+		return
+	}
+
+	err = client.ForwardMessage(ctx, set.TGSupportGroupID, topicID, chatID, m.MessageID)
+	if isThreadGone(err) {
+		// The admins deleted the topic. Re-open one and retry once, otherwise this
+		// user's conversation would be dead forever.
+		if err = s.store.DeleteSupportTopic(chatID); err == nil {
+			if topicID, created, err = s.ensureTopic(ctx, client, set, m); err == nil {
+				err = client.ForwardMessage(ctx, set.TGSupportGroupID, topicID, chatID, m.MessageID)
+			}
+		}
+	}
+	if err != nil {
+		// The bot was thrown out of the group, lost its rights, or the group is gone.
+		// Never confirm in this case: a "✅ delivered" the operator will never see is
+		// worse than an honest failure, because the user then waits for an answer.
+		log.Printf("telegram support: forward from %d: %v", chatID, err)
+		s.reply(ctx, client, chatID, "⚠️ Не удалось передать сообщение. Попробуйте позже.")
+		return
+	}
+	if created {
+		s.reply(ctx, client, chatID, "✅ Отправлено. Ответим здесь же — уведомление придёт в этот чат.")
+	}
+}
+
+// handleAdminReply copies an admin's message in a topic back to its owner.
+func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, set *model.Settings, m *Message) {
+	if m.MessageThreadID == 0 {
+		return // the General thread — not anybody's conversation
+	}
+	if strings.HasPrefix(strings.TrimSpace(m.Text), internalNotePrefix) {
+		return // note between admins
+	}
+	chatID, err := s.store.SupportChatByTopic(m.MessageThreadID)
+	if err != nil {
+		log.Printf("telegram support: topic %d lookup: %v", m.MessageThreadID, err)
+		return
+	}
+	if chatID == 0 {
+		return // a topic the operator opened by hand
+	}
+	if err := client.CopyMessage(ctx, chatID, set.TGSupportGroupID, m.MessageID); err != nil {
+		// Report into the thread rather than the log: the admin is standing right
+		// there waiting, and silence reads as "delivered".
+		note := "⚠️ Не доставлено: " + esc(err.Error())
+		if isBlockedByUser(err) {
+			note = "🚫 Пользователь заблокировал бота — ответ не доставлен."
+		}
+		if _, err := client.SendTopic(ctx, set.TGSupportGroupID, m.MessageThreadID, note); err != nil {
+			log.Printf("telegram support: notice to topic %d: %v", m.MessageThreadID, err)
+		}
+	}
+}
+
+// ensureTopic returns the chat's topic, opening one (with a pinned user card) on
+// first contact. created reports whether this call opened it.
+func (s *SupportService) ensureTopic(ctx context.Context, client *Client, set *model.Settings, m *Message) (topicID int64, created bool, err error) {
+	chatID := m.Chat.ID
+	if topicID, err = s.store.SupportTopicByChat(chatID); err != nil || topicID != 0 {
+		return topicID, false, err
+	}
+	u, linked := s.findUser(chatID)
+	if topicID, err = client.CreateForumTopic(ctx, set.TGSupportGroupID, topicTitle(u, linked, m)); err != nil {
+		return 0, false, err
+	}
+	if err = s.store.SetSupportTopic(chatID, topicID, time.Now().Unix()); err != nil {
+		return 0, false, err
+	}
+	// Best-effort context for whoever answers: the subscription card if we know who
+	// this is. A failure here must not cost the user their message.
+	if msgID, err := client.SendTopic(ctx, set.TGSupportGroupID, topicID, topicCard(u, linked, m, set, s.panel)); err != nil {
+		log.Printf("telegram support: card for %d: %v", chatID, err)
+	} else if err := client.PinChatMessage(ctx, set.TGSupportGroupID, msgID); err != nil {
+		log.Printf("telegram support: pin card for %d: %v", chatID, err)
+	}
+	return topicID, true, nil
+}
+
+func (s *SupportService) findUser(chatID int64) (model.User, bool) {
+	u, err := s.store.GetUserByTelegramChatID(chatID)
+	if err != nil || u == nil {
+		return model.User{}, false
+	}
+	return *u, true
+}
+
+// topicTitle names the thread so the admin list is scannable: the panel user and id
+// when we know them, otherwise the Telegram profile.
+func topicTitle(u model.User, linked bool, m *Message) string {
+	title := tgDisplayName(m.From, m.Chat.ID)
+	if linked {
+		title = fmt.Sprintf("%s · #%d", u.Name, u.ID)
+	} else if m.From != nil && m.From.Username != "" {
+		title = "@" + m.From.Username
+	}
+	if len(title) > topicNameMax {
+		title = title[:topicNameMax]
+	}
+	return title
+}
+
+// topicCard is the pinned first post of a topic: who this is, and how the thread
+// behaves.
+func topicCard(u model.User, linked bool, m *Message, set *model.Settings, panel Panel) string {
+	var b strings.Builder
+	if linked {
+		b.WriteString(userSelfCard(u, set, panel))
+	} else {
+		b.WriteString("👤 <b>Не зарегистрирован</b>\n")
+		if m.From != nil && m.From.Username != "" {
+			fmt.Fprintf(&b, "Telegram: @%s\n", esc(m.From.Username))
+		}
+		fmt.Fprintf(&b, "Chat ID: <code>%d</code>", m.Chat.ID)
+	}
+	b.WriteString("\n\n<i>Ответьте в этой теме — сообщение уйдёт пользователю. Строка, начинающаяся с " +
+		internalNotePrefix + ", остаётся между админами.</i>")
+	return b.String()
+}
+
+func (s *SupportService) reply(ctx context.Context, client *Client, chatID int64, html string) {
+	if err := client.SendMessage(ctx, chatID, html); err != nil {
+		log.Printf("telegram support: reply to %d: %v", chatID, err)
+	}
+}
+
+// isThreadGone reports whether the API refused because the topic no longer exists —
+// the admins deleted it, and the mapping has to be re-pointed at a fresh one.
+func isThreadGone(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Code == 400 &&
+		strings.Contains(strings.ToLower(ae.Description), "thread not found")
+}
+
+// isBlockedByUser reports whether the user can no longer be written to at all, as
+// opposed to a transient failure worth retrying. Telegram has no machine-readable
+// code for these, so the description is matched — but only within the status codes
+// that can actually carry them, so a 500 whose text happens to mention a chat is
+// never mistaken for a permanent block.
+func isBlockedByUser(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) || (ae.Code != 403 && ae.Code != 400) {
+		return false
+	}
+	d := strings.ToLower(ae.Description)
+	return strings.Contains(d, "bot was blocked") ||
+		strings.Contains(d, "user is deactivated") ||
+		strings.Contains(d, "chat not found")
+}
