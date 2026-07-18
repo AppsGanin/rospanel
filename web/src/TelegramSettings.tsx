@@ -612,7 +612,9 @@ export function TelegramSettings() {
                   { value: "", label: "— выберите группу —" },
                   ...supportGroups.map((g) => ({
                     value: String(g.chat_id),
-                    label: `${g.title || g.chat_id}${groupIssue(g)}`,
+                    // The id is shown alongside the name because names repeat and
+                    // are renamed, and it is the id that actually gets saved.
+                    label: `${g.title || "Без названия"} · ${g.chat_id}${groupIssue(g)}`,
                   })),
                 ]}
                 value={supportGroupID}
@@ -639,10 +641,28 @@ export function TelegramSettings() {
                 /* No spinner: nothing is loading — the panel is waiting on the
                    operator, and an animation that never resolves would promise
                    progress that isn't happening. */
-                <p className="text-sm text-ink-muted">
-                  Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
-                  супергруппу — она появится здесь.
-                </p>
+                <>
+                  <p className="text-sm text-ink-muted">
+                    Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
+                    супергруппу администратором — она появится здесь сама, даже пока
+                    поддержка выключена. Список обновляется сам, перезагружать
+                    страницу не нужно.
+                  </p>
+                  {/* The case an empty list strands, and the common one: the bot is
+                      normally already in the group by the time anyone opens these
+                      settings. Telegram gives a bot no way to list the groups it
+                      belongs to and never replays the "you were added" event, so a
+                      group joined earlier stays invisible until something happens in
+                      it. Neither recovery is guessable, so both are spelled out. */}
+                  <p className="mt-2 text-sm text-ink-muted">
+                    <b>Уже добавили, а группы нет?</b> Напишите в ней любое сообщение —
+                    хоть «привет». Telegram не даёт боту списка его групп, поэтому о
+                    добавлении, случившемся раньше, он узнаёт только из сообщения.
+                  </p>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Не помогло — уберите бота из группы и добавьте заново.
+                  </p>
+                </>
               ) : (
                 <p className="text-sm text-ink-muted">
                   Сначала укажите токен выше и сохраните — после этого бот сможет

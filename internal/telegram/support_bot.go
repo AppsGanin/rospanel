@@ -29,6 +29,7 @@ type SupportService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	botID       int64 // getMe result for the current token, resolved once
 	offset      int64
 
 	rateMu sync.Mutex
@@ -77,6 +78,7 @@ func (s *SupportService) clientFor(token string) *Client {
 		// offset over would ACK away the new bot's whole backlog and swallow every
 		// message until its counter caught up — silently, with nothing logged.
 		s.offset = 0
+		s.botID = 0
 	}
 	return s.client
 }
@@ -173,7 +175,50 @@ func (s *SupportService) handle(ctx context.Context, client *Client, set *model.
 		// operator's conversations into another's chat — but it is remembered as a
 		// candidate, which also picks up groups the bot joined before this existed
 		// and so never produced a my_chat_member event we saw.
-		s.rememberGroup(m.Chat, false)
+		s.rememberGroupFromMessage(ctx, client, m.Chat)
+	}
+}
+
+// botIdentity returns the bot's own user id, asking Telegram once per token. It is
+// needed to look the bot up in a group's member list.
+func (s *SupportService) botIdentity(ctx context.Context, client *Client) int64 {
+	s.mu.Lock()
+	id := s.botID
+	s.mu.Unlock()
+	if id != 0 {
+		return id
+	}
+	me, err := client.GetMe(ctx)
+	if err != nil || me == nil {
+		log.Printf("telegram support: getMe: %v", err)
+		return 0
+	}
+	s.mu.Lock()
+	s.botID = me.ID
+	s.mu.Unlock()
+	return me.ID
+}
+
+// rememberGroupFromMessage records a group seen through a message. A message says
+// nothing about the bot's own rights, so they are looked up rather than assumed:
+// recording "not an admin" for a bot that IS one sends the operator off to fix a
+// setting that was never wrong. Only reached for groups that aren't the configured
+// one, so the extra call is rare.
+func (s *SupportService) rememberGroupFromMessage(ctx context.Context, client *Client, chat Chat) {
+	// Recorded first, on what the message itself proves. A failed rights lookup
+	// then costs an accurate label, not the candidate.
+	s.rememberGroup(chat, false)
+	id := s.botIdentity(ctx, client)
+	if id == 0 {
+		return
+	}
+	member, err := client.GetChatMember(ctx, chat.ID, id)
+	if err != nil {
+		log.Printf("telegram support: rights in %d: %v", chat.ID, err)
+		return
+	}
+	if member.Status == "administrator" || member.Status == "creator" {
+		s.rememberGroup(chat, true)
 	}
 }
 

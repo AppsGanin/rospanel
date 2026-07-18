@@ -27,12 +27,20 @@ const apiBase = "https://api.telegram.org/bot"
 type Client struct {
 	token string
 	http  *http.Client
+	// base is the API root. Overridable so the paths that talk to Telegram can be
+	// exercised against a stub instead of being untestable or hitting the network.
+	base string
 }
 
 // NewClient builds a client for the given bot token. The HTTP timeout comfortably
 // exceeds the long-poll window so GetUpdates isn't cut off mid-wait.
 func NewClient(token string) *Client {
-	return &Client{token: token, http: &http.Client{Timeout: 60 * time.Second}}
+	return &Client{token: token, base: apiBase, http: &http.Client{Timeout: 60 * time.Second}}
+}
+
+// newTestClient builds a client pointed at a stub server.
+func newTestClient(base, token string) *Client {
+	return &Client{token: token, base: base, http: &http.Client{Timeout: 5 * time.Second}}
 }
 
 // Update is one polled event: a message or a callback-query (inline button tap).
@@ -211,7 +219,7 @@ func (c *Client) call(ctx context.Context, method string, payload any, out any) 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+c.token+"/"+method, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+c.token+"/"+method, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -289,7 +297,7 @@ func (c *Client) GetUpdatesFor(ctx context.Context, offset int64, timeout int, a
 	q.Set("timeout", strconv.Itoa(timeout))
 	q.Set("allowed_updates", string(kinds))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		apiBase+c.token+"/getUpdates?"+q.Encode(), nil)
+		c.base+c.token+"/getUpdates?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +590,7 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 	// The body is fully buffered, so a throttled upload can be replayed verbatim
 	// from the same bytes — same one-retry rule as send.
 	post := func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+c.token+"/"+method, bytes.NewReader(buf.Bytes()))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+c.token+"/"+method, bytes.NewReader(buf.Bytes()))
 		if err != nil {
 			return err
 		}
