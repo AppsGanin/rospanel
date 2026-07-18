@@ -832,6 +832,86 @@ export const unlinkTelegram = (chat_id: number) =>
 export const testTelegramBackup = () =>
   api<{ ok: boolean }>('api/telegram/test-backup', { method: 'POST' })
 
+// Mass broadcasts through the user bot. The audience is snapshotted when a broadcast
+// starts, so total never moves once it is running.
+export type BroadcastStatus = 'running' | 'paused' | 'done' | 'cancelled'
+export type BroadcastAudience =
+  | 'all'
+  | 'linked'
+  | 'unlinked'
+  | 'active'
+  | 'expired'
+
+export interface BroadcastButton {
+  text: string
+  url: string
+}
+
+export interface Broadcast {
+  id: number
+  created_by: string
+  text: string
+  media_kind: '' | 'photo' | 'document'
+  media_name: string
+  buttons: BroadcastButton[] | null
+  audience: BroadcastAudience
+  status: BroadcastStatus
+  created_at: number
+  started_at: number
+  finished_at: number
+  total: number
+  sent: number
+  failed: number
+  blocked: number
+}
+
+export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
+
+export const getBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}`)
+
+// broadcastAudience previews how many recipients a filter resolves to right now.
+export const broadcastAudience = (audience: BroadcastAudience) =>
+  api<{ count: number }>(
+    `api/broadcasts/audience?audience=${encodeURIComponent(audience)}`,
+  )
+
+// broadcastForm packs the composed message the way both create and test expect: a
+// JSON "payload" part plus an optional file, since an attachment can't ride in JSON.
+const broadcastForm = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => {
+  const fd = new FormData()
+  fd.append('payload', JSON.stringify(b))
+  if (media) fd.append('media', media)
+  return fd
+}
+
+export const createBroadcast = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => apiForm<Broadcast>('api/broadcasts', broadcastForm(b, media))
+
+// testBroadcast delivers the composed message to the linked admin chats first.
+// Broken markup seen by the whole audience can only be fixed by another broadcast.
+export const testBroadcast = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => apiForm<{ ok: boolean }>('api/broadcasts/test', broadcastForm(b, media))
+
+export const pauseBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/pause`, { method: 'POST' })
+
+export const resumeBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/resume`, { method: 'POST' })
+
+export const cancelBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/cancel`, { method: 'POST' })
+
+export const retryBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/retry`, { method: 'POST' })
+
 // Moderated self-registration queue: signups awaiting an admin decision. No user
 // exists until a request is approved.
 export interface RegistrationRequest {

@@ -172,6 +172,67 @@ type Subscriber struct {
 	StartedAt int64  `json:"started_at"`
 }
 
+// Broadcast statuses. There is no "draft": a broadcast row exists only once it has
+// been launched, so nothing half-composed can be mistaken for something queued.
+const (
+	BroadcastRunning   = "running"
+	BroadcastPaused    = "paused"
+	BroadcastDone      = "done"
+	BroadcastCancelled = "cancelled"
+)
+
+// Per-recipient delivery states. "blocked" is kept apart from "failed" because it is
+// permanent and not the operator's problem to retry — it means Telegram will never
+// accept a message for that chat again.
+const (
+	TargetPending = "pending"
+	TargetSent    = "sent"
+	TargetFailed  = "failed"
+	TargetBlocked = "blocked"
+)
+
+// Broadcast audiences, resolved to a chat list once at launch.
+const (
+	AudienceAll      = "all"
+	AudienceLinked   = "linked"   // has a panel account
+	AudienceUnlinked = "unlinked" // never registered, or the account was deleted
+	AudienceActive   = "active"   // account in the active state
+	AudienceExpired  = "expired"  // subscription ran out
+)
+
+// BroadcastButton is one URL button under a broadcast. Only URL buttons are offered:
+// a callback button would need a handler in the bot, and one attached to a message
+// sent months ago outlives whatever it was meant to do.
+type BroadcastButton struct {
+	Text string `json:"text"`
+	URL  string `json:"url"`
+}
+
+// Broadcast is one mass message and its progress. The counters are derived from the
+// per-recipient rows on read rather than stored, so they cannot drift from reality.
+type Broadcast struct {
+	ID          int64             `json:"id"`
+	CreatedBy   string            `json:"created_by"`
+	Text        string            `json:"text"`
+	MediaKind   string            `json:"media_kind"` // "" | "photo" | "document"
+	MediaFileID string            `json:"-"`
+	MediaName   string            `json:"media_name"`
+	Buttons     []BroadcastButton `json:"buttons"`
+	Audience    string            `json:"audience"`
+	Status      string            `json:"status"`
+	CreatedAt   int64             `json:"created_at"`
+	StartedAt   int64             `json:"started_at"`
+	FinishedAt  int64             `json:"finished_at"`
+
+	Total   int `json:"total"`
+	Sent    int `json:"sent"`
+	Failed  int `json:"failed"`
+	Blocked int `json:"blocked"`
+}
+
+// Pending reports how many recipients are still waiting.
+func (b *Broadcast) Pending() int { return b.Total - b.Sent - b.Failed - b.Blocked }
+
 // PaymentProvider is one payment provider's saved setup: whether it's on, plus the
 // credentials for the fields its registry entry declares (internal/payments). The
 // config holds API keys, so it never leaves the server — the panel is told only

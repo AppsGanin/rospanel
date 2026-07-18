@@ -221,6 +221,9 @@ func runServer(dataDir string) {
 	// per-user topic in the operator's forum supergroup. Idles until enabled with its
 	// own token and a group in Settings → Telegram.
 	go telegram.NewSupport(mgr, st).Run(context.Background())
+	// Broadcast delivery. Polls the store rather than holding a queue, so a restart
+	// mid-run resumes from the remaining recipients instead of losing or repeating.
+	go telegram.NewBroadcast(st, dataDir).Run(context.Background())
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {

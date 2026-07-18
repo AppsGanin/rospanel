@@ -77,6 +77,31 @@ func (s *Store) SubscriberByChat(chatID int64) (*model.Subscriber, error) {
 	return &sub, nil
 }
 
+// ListReachableSubscribers returns every chat a broadcast may address: not blocked,
+// not opted out. Audience narrowing beyond that happens in the manager, because the
+// user statuses it filters on are derived on read and don't exist as columns.
+func (s *Store) ListReachableSubscribers() ([]model.Subscriber, error) {
+	rows, err := s.db.Query(
+		`SELECT chat_id, user_id FROM tg_subscribers
+		 WHERE active = 1 AND opt_out = 0 ORDER BY chat_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Subscriber
+	for rows.Next() {
+		var sub model.Subscriber
+		var userID sql.NullInt64
+		if err := rows.Scan(&sub.ChatID, &userID); err != nil {
+			return nil, err
+		}
+		sub.UserID = userID.Int64
+		sub.Active = true
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
 // CountSubscribers reports how many chats are known in total and how many a
 // broadcast would currently reach (neither blocked nor opted out).
 func (s *Store) CountSubscribers() (total, reachable int, err error) {

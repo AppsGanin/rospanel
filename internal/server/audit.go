@@ -82,6 +82,13 @@ var auditActions = map[string]auditRoute{
 	"POST /api/telegram/unlink":          set("Telegram · отвязка"),
 	"POST /api/telegram/test-backup":     set("Telegram · тестовый бэкап"),
 	"POST /api/telegram/support/check":   set("Telegram · проверка группы поддержки"),
+
+	"POST /api/broadcasts":             act(model.AuditBroadcastStarted),
+	"POST /api/broadcasts/test":        act(model.AuditBroadcastTest),
+	"POST /api/broadcasts/{id}/pause":  act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/resume": act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/cancel": act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/retry":  act(model.AuditBroadcastChanged),
 	"POST /api/billing":                  set("Биллинг"),
 	"POST /api/payments":                 set("Приём платежей"),
 
