@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -73,6 +74,31 @@ type apiResponse struct {
 	Result      json.RawMessage `json:"result"`
 	Description string          `json:"description"`
 	ErrorCode   int             `json:"error_code"`
+	Parameters  struct {
+		RetryAfter int `json:"retry_after"` // seconds to wait, set on 429
+	} `json:"parameters"`
+}
+
+// APIError is a non-OK Bot API reply. RetryAfter is the cool-off Telegram asks
+// for on a 429; callers use it to back off for exactly as long as told rather
+// than guessing.
+type APIError struct {
+	Code        int
+	Description string
+	RetryAfter  time.Duration
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("telegram api %d: %s", e.Code, e.Description)
+}
+
+// RetryAfter reports the cool-off Telegram requested, if err is a 429.
+func RetryAfter(err error) (time.Duration, bool) {
+	var ae *APIError
+	if errors.As(err, &ae) && ae.RetryAfter > 0 {
+		return ae.RetryAfter, true
+	}
+	return 0, false
 }
 
 // call POSTs a JSON method and unmarshals result into out (out may be nil).
@@ -89,6 +115,26 @@ func (c *Client) call(ctx context.Context, method string, payload any, out any) 
 	return c.do(req, out)
 }
 
+// send is call for the chat-directed methods: it waits for chatID's rate-limit
+// slot first, and if Telegram still answers 429 it honours the retry_after it
+// asked for and tries once more. One retry is enough — the wait it names clears
+// the burst, and a second failure means something other than pacing is wrong.
+func (c *Client) send(ctx context.Context, method string, chatID int64, payload any) error {
+	if err := waitSlot(ctx, chatID); err != nil {
+		return err
+	}
+	err := c.call(ctx, method, payload, nil)
+	d, throttled := RetryAfter(err)
+	if !throttled {
+		return err
+	}
+	backOff(chatID, d)
+	if werr := waitSlot(ctx, chatID); werr != nil {
+		return err // ctx ended mid-cooloff: report the 429, not the cancellation
+	}
+	return c.call(ctx, method, payload, nil)
+}
+
 // do executes req, decodes the envelope, and surfaces a non-OK API error.
 func (c *Client) do(req *http.Request, out any) error {
 	resp, err := c.http.Do(req)
@@ -101,7 +147,11 @@ func (c *Client) do(req *http.Request, out any) error {
 		return err
 	}
 	if !env.OK {
-		return fmt.Errorf("telegram api %d: %s", env.ErrorCode, env.Description)
+		return &APIError{
+			Code:        env.ErrorCode,
+			Description: env.Description,
+			RetryAfter:  time.Duration(env.Parameters.RetryAfter) * time.Second,
+		}
 	}
 	if out != nil && len(env.Result) > 0 {
 		return json.Unmarshal(env.Result, out)
@@ -170,7 +220,7 @@ func (c *Client) SendMenu(ctx context.Context, chatID int64, html string, rows [
 	if len(rows) > 0 {
 		payload["reply_markup"] = map[string]any{"inline_keyboard": rows}
 	}
-	return c.call(ctx, "sendMessage", payload, nil)
+	return c.send(ctx, "sendMessage", chatID, payload)
 }
 
 // EditMenu replaces the text + inline keyboard of an existing message, so the bot's
@@ -186,7 +236,7 @@ func (c *Client) EditMenu(ctx context.Context, chatID, messageID int64, html str
 	if len(rows) > 0 {
 		payload["reply_markup"] = map[string]any{"inline_keyboard": rows}
 	}
-	return c.call(ctx, "editMessageText", payload, nil)
+	return c.send(ctx, "editMessageText", chatID, payload)
 }
 
 // AnswerCallback acknowledges a button tap so Telegram stops the spinner.
@@ -228,10 +278,27 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 	if err := mw.Close(); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+c.token+"/"+method, &buf)
-	if err != nil {
+	// The body is fully buffered, so a throttled upload can be replayed verbatim
+	// from the same bytes — same one-retry rule as send.
+	post := func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase+c.token+"/"+method, bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		return c.do(req, nil)
+	}
+	if err := waitSlot(ctx, chatID); err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	return c.do(req, nil)
+	err = post()
+	d, throttled := RetryAfter(err)
+	if !throttled {
+		return err
+	}
+	backOff(chatID, d)
+	if werr := waitSlot(ctx, chatID); werr != nil {
+		return err
+	}
+	return post()
 }

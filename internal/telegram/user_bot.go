@@ -123,7 +123,7 @@ func (s *UserService) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			if !sleep(ctx, 15*time.Second) {
+			if !sleep(ctx, pollBackoff(err)) {
 				return
 			}
 			continue

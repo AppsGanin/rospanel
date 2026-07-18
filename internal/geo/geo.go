@@ -106,24 +106,27 @@ func status(dir string, names []string) []FileInfo {
 // Refresh re-downloads every Xray asset database into dir regardless of whether
 // it already exists, pulling the latest published version. It attempts all files
 // and returns the first error encountered.
-func Refresh(dir string) error { return refresh(dir, dbNames) }
+func Refresh(dir string) error { return refresh(dir, dbNames, "geo") }
 
 // RefreshLists re-downloads the iplist databases (panel only).
-func RefreshLists(dir string) error { return refresh(dir, ipListNames) }
+func RefreshLists(dir string) error { return refresh(dir, ipListNames, "iplist") }
 
-func refresh(dir string, names []string) error {
+// refresh downloads names into dir, logging under tag ("geo" / "iplist") so the
+// panel log tells the two independent databases — and their separate refresh
+// cadences — apart.
+func refresh(dir string, names []string, tag string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	var firstErr error
 	for _, name := range names {
 		if err := download(sources[name], filepath.Join(dir, name)); err != nil {
-			log.Printf("geo: refresh %s failed: %v", name, err)
+			log.Printf("%s: refresh %s failed: %v", tag, name, err)
 			if firstErr == nil {
 				firstErr = err
 			}
 		} else {
-			log.Printf("geo: refreshed %s", name)
+			log.Printf("%s: refreshed %s", tag, name)
 		}
 	}
 	return firstErr
@@ -131,12 +134,12 @@ func refresh(dir string, names []string) error {
 
 // Ensure downloads any missing Xray asset database into dir (best-effort).
 // Existing files are left as-is; refresh is handled separately.
-func Ensure(dir string) error { return ensure(dir, dbNames) }
+func Ensure(dir string) error { return ensure(dir, dbNames, "geo") }
 
 // EnsureLists downloads any missing iplist database (panel only, best-effort).
-func EnsureLists(dir string) error { return ensure(dir, ipListNames) }
+func EnsureLists(dir string) error { return ensure(dir, ipListNames, "iplist") }
 
-func ensure(dir string, names []string) error {
+func ensure(dir string, names []string, tag string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -146,9 +149,9 @@ func ensure(dir string, names []string) error {
 			continue
 		}
 		if err := download(sources[name], path); err != nil {
-			log.Printf("geo: could not fetch %s: %v (routing rules need it — retry later)", name, err)
+			log.Printf("%s: could not fetch %s: %v (routing rules need it — retry later)", tag, name, err)
 		} else {
-			log.Printf("geo: downloaded %s", name)
+			log.Printf("%s: downloaded %s", tag, name)
 		}
 	}
 	return nil

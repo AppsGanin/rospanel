@@ -193,7 +193,7 @@ func (s *Service) Run(ctx context.Context) {
 				log.Printf("telegram: getUpdates: %v", err)
 				s.lastPollErr = msg
 			}
-			if !sleep(ctx, 15*time.Second) {
+			if !sleep(ctx, pollBackoff(err)) {
 				return
 			}
 			continue
