@@ -30,6 +30,7 @@ import {
   SaveBar,
   Select,
   SettingCard,
+  Spinner,
   Switch,
   Textarea,
   TextInput,
@@ -584,7 +585,27 @@ export function TelegramSettings() {
               </a>
             </p>
           )}
-          {supportGroups.length > 0 && !manualGroup ? (
+          {manualGroup ? (
+            <>
+              <TextInput
+                label="ID группы поддержки"
+                value={supportGroupID}
+                onChange={setSupportGroupID}
+                placeholder="-1001234567890"
+              />
+              <p className="text-xs text-ink-muted">
+                ID супергруппы начинается с -100 — если вставить его без префикса,
+                панель допишет сама.{" "}
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => setManualGroup(false)}
+                >
+                  Выбрать из списка
+                </button>
+              </p>
+            </>
+          ) : supportGroups.length > 0 ? (
             <>
               <Select
                 label="Группа поддержки"
@@ -599,7 +620,7 @@ export function TelegramSettings() {
                 onChange={setSupportGroupID}
               />
               <p className="text-xs text-ink-muted">
-                Список групп, в которые добавлен бот.{" "}
+                Группы, в которые добавлен бот.{" "}
                 <button
                   type="button"
                   className="text-accent hover:underline"
@@ -610,31 +631,42 @@ export function TelegramSettings() {
               </p>
             </>
           ) : (
-            <>
-              <TextInput
-                label="ID группы поддержки"
-                value={supportGroupID}
-                onChange={setSupportGroupID}
-                placeholder="-1001234567890"
-              />
-              <p className="text-xs text-ink-muted">
-                {supportToken.trim() && supportGroups.length === 0
-                  ? "Добавьте бота в группу — она появится здесь списком, ID вводить не придётся."
-                  : "ID супергруппы начинается с -100."}
-                {supportGroups.length > 0 && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      className="text-accent hover:underline"
-                      onClick={() => setManualGroup(false)}
-                    >
-                      Выбрать из списка
-                    </button>
-                  </>
-                )}
-              </p>
-            </>
+            /* No candidates yet. Showing a bare ID field here would contradict the
+               very promise printed next to it — so the empty state says what the
+               panel is waiting for instead, and manual entry stays one click away. */
+            <div className="rounded-lg border border-dashed border-gray-300 p-3">
+              <p className="mb-1 text-sm font-medium text-ink">Группа поддержки</p>
+              {saved.supportToken.trim() ? (
+                <p className="flex items-center gap-2 text-sm text-ink-muted">
+                  <Spinner size={14} />
+                  Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
+                  супергруппу — она появится здесь сама.
+                </p>
+              ) : (
+                <p className="text-sm text-ink-muted">
+                  Сначала укажите токен выше и сохраните — после этого бот сможет
+                  показать свои группы.
+                </p>
+              )}
+              <button
+                type="button"
+                className="mt-2 text-xs text-accent hover:underline"
+                onClick={() => setManualGroup(true)}
+              >
+                Ввести ID вручную
+              </button>
+            </div>
+          )}
+          {supportEnabled && !supportGroupID.trim() && (
+            /* Says why the save will be refused, instead of leaving the operator to
+               discover it from an error toast — and names the way out, which is not
+               obvious: the bot starts polling on a token alone, so saving with the
+               switch OFF is what makes the group list appear. */
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
+              Поддержку не включить без группы — иначе кнопка в боте вела бы в никуда.
+              Выключите тумблер и сохраните: бот заработает с одним токеном и покажет
+              свои группы здесь, после чего останется выбрать одну и включить.
+            </p>
           )}
           <p className="text-xs text-ink-muted">
             Создайте супергруппу, включите в её настройках «Темы» и добавьте бота
@@ -711,10 +743,15 @@ export function TelegramSettings() {
         busy={busy}
         onSave={save}
         onCancel={cancel}
+        // Only a missing TOKEN disables saving — that is the one thing no bot can be
+        // enabled without. A missing support group deliberately does NOT: this bar
+        // saves every Telegram section at once, so gating it on one half-filled
+        // section would freeze the admin bot, the user bot and the backup schedule
+        // behind a field the operator may not be ready to fill.
         saveDisabled={
           (enabled && !token.trim()) ||
           (userEnabled && !userToken.trim()) ||
-          (supportEnabled && (!supportToken.trim() || !supportGroupID.trim()))
+          (supportEnabled && !supportToken.trim())
         }
       />
     </div>

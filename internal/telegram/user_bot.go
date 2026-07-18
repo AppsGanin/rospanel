@@ -198,18 +198,11 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 		s.handleStart(ctx, client, set, chatID, args)
 		return
 	}
-	// Broadcast subscription is handled before the pending-state machine so an
-	// explicit command always wins: someone half-way through registration must still
-	// be able to opt out, and doing so must not eat the step they were on.
-	switch cmd {
-	case "/mailing":
+	// Handled before the pending-state machine so an explicit command always wins:
+	// someone half-way through registration must still be able to open this, and
+	// doing so must not eat the step they were on.
+	if cmd == "/mailing" {
 		s.showMailing(ctx, client, chatID, 0)
-		return
-	case "/mailing_on":
-		s.setMailingByCommand(ctx, client, chatID, true)
-		return
-	case "/mailing_off":
-		s.setMailingByCommand(ctx, client, chatID, false)
 		return
 	}
 	pending := s.takePending(chatID)
@@ -897,37 +890,13 @@ func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, ms
 	s.showMailing(ctx, client, chatID, msgID)
 }
 
-// setMailingByCommand applies an explicit /mailing_on or /mailing_off and answers
-// with a fresh message rather than editing one, since the command may arrive with no
-// card on screen to edit.
-//
-// Unsubscribing states what was NOT switched off. Without that line the next thing a
-// person does is block the bot to be sure — and a block is irreversible and takes
-// payment confirmations and support replies with it.
-func (s *UserService) setMailingByCommand(ctx context.Context, client *Client, chatID int64, on bool) {
-	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
-		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
-		return
-	}
-	if on {
-		s.sendMenu(ctx, client, chatID,
-			"🔔 Вы подписаны на рассылку — новости сервиса и важные объявления.",
-			[][]InlineButton{{{Text: "🔕 Отписаться", CallbackData: "vu:mail:off"}}})
-		return
-	}
-	s.sendMenu(ctx, client, chatID,
-		"🔕 Вы отписаны от рассылки.\n\nСлужебные уведомления — оплата и ответы поддержки — продолжат приходить.",
-		[][]InlineButton{{{Text: "🔔 Подписаться обратно", CallbackData: "vu:mail:on"}}})
-}
-
-// userBotCommands is the command menu published to Telegram. An opt-out nobody can
-// find is not an opt-out, so both directions are named explicitly instead of hiding
-// behind one toggle; /mailing answers "am I subscribed right now?".
+// userBotCommands is the command menu published to Telegram. One entry, not three:
+// the card it opens shows the current state and the single button that flips it, so
+// naming each direction as its own command only made the menu longer without telling
+// anyone anything the card doesn't.
 var userBotCommands = []BotCommand{
 	{Command: "start", Description: "Моя подписка"},
-	{Command: "mailing", Description: "Рассылка: текущее состояние"},
-	{Command: "mailing_on", Description: "Подписаться на рассылку"},
-	{Command: "mailing_off", Description: "Отписаться от рассылки"},
+	{Command: "mailing", Description: "Рассылка: подписка и отписка"},
 }
 
 // publishCommands pushes the command menu once per token. Re-publishing on every
