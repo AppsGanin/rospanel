@@ -139,6 +139,10 @@ func (rt *Router) createBroadcast(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := rt.mgr.StartBroadcast(created.ID); err != nil {
+		// Same reasoning as the save-media failure above: a row left paused with an
+		// attachment on disk is never swept (the sweep only looks at finished runs),
+		// so an abandoned create would leak up to 20 MB into the backed-up data dir.
+		_ = rt.mgr.SetBroadcastStatus(created.ID, model.BroadcastCancelled)
 		writeManagerErr(w, err)
 		return
 	}

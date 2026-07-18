@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -81,29 +82,35 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
-	if err := rt.mgr.SaveTelegram(or(req.Enabled, cur.TGBotEnabled), or(req.Token, cur.TGBotToken),
-		or(req.BackupCron, cur.TGBackupCron)); err != nil {
-		writeManagerErr(w, err)
-		return
-	}
-	if err := rt.mgr.SaveTelegramUserBot(or(req.UserEnabled, cur.TGUserBotEnabled),
-		or(req.UserToken, cur.TGUserBotToken), or(req.UserRegMode, cur.RegMode()),
-		or(req.UserRegCode, cur.TGUserRegCode)); err != nil {
-		writeManagerErr(w, err)
-		return
-	}
 	supportToken := or(req.SupportToken, cur.TGSupportBotToken)
 	// getMe only when there is something new to check. Re-resolving an unchanged
-	// token made every save depend on Telegram being reachable: during an outage the
-	// lookup returned "", SaveTelegramSupport refused it, and the two bots already
-	// written above stayed written — with the request reported as failed.
+	// token made every save depend on Telegram being reachable.
 	supportUser := cur.TGSupportBotUsername
 	if supportToken != cur.TGSupportBotToken || supportUser == "" {
 		supportUser = botUsername(r.Context(), supportToken)
 	}
-	if err := rt.mgr.SaveTelegramSupport(or(req.SupportEnabled, cur.TGSupportEnabled), supportToken,
-		supportUser, or(req.SupportGroupID, cur.TGSupportGroupID),
-		or(req.SupportGreeting, cur.TGSupportGreeting)); err != nil {
+
+	cfg := core.TelegramConfig{
+		Enabled:     or(req.Enabled, cur.TGBotEnabled),
+		Token:       or(req.Token, cur.TGBotToken),
+		BackupCron:  or(req.BackupCron, cur.TGBackupCron),
+		UserEnabled: or(req.UserEnabled, cur.TGUserBotEnabled),
+		UserToken:   or(req.UserToken, cur.TGUserBotToken),
+		UserRegMode: or(req.UserRegMode, cur.RegMode()),
+		UserRegCode: or(req.UserRegCode, cur.TGUserRegCode),
+
+		SupportEnabled:  or(req.SupportEnabled, cur.TGSupportEnabled),
+		SupportToken:    supportToken,
+		SupportUsername: supportUser,
+		SupportGroupID:  or(req.SupportGroupID, cur.TGSupportGroupID),
+		SupportGreeting: or(req.SupportGreeting, cur.TGSupportGreeting),
+	}
+	// One call, because all three bots are checked before any of them is written.
+	// Saving them in sequence meant a failure on the third — a support token that
+	// couldn't be verified while Telegram was unreachable, say — left the first two
+	// committed while the request reported failure, and the audit trail recorded
+	// nothing at all.
+	if err := rt.mgr.SaveTelegramConfig(cfg); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -191,6 +198,16 @@ func (rt *Router) checkTelegramSupport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest,
 			"у бота нет права «Управление темами» — без него он не сможет завести тему на пользователя")
 		return
+	}
+	// Persist the freshly resolved @username. It is otherwise cached forever, so
+	// renaming the bot in BotFather left the user bot pointing at a dead t.me link
+	// with no way to refresh short of changing the token.
+	if me.Username != set.TGSupportBotUsername {
+		if err := rt.mgr.SaveTelegramSupport(set.TGSupportEnabled, set.TGSupportBotToken,
+			me.Username, set.TGSupportGroupID, set.TGSupportGreeting); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":           true,

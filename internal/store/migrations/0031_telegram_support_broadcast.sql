@@ -49,7 +49,12 @@ CREATE TABLE tg_support_groups (
     title    TEXT    NOT NULL DEFAULT '',
     is_forum INTEGER NOT NULL DEFAULT 0, -- topics enabled (required to be usable)
     is_admin INTEGER NOT NULL DEFAULT 0, -- bot is an admin (required to see replies)
-    seen_at  INTEGER NOT NULL
+    seen_at  INTEGER NOT NULL,
+    -- When the bot's rights were last actually checked. Kept apart from seen_at,
+    -- which moves on every message: debouncing the check against "last seen" meant a
+    -- busy group was never re-checked at all (always recent) while a quiet one was
+    -- checked on every single message (never recent).
+    rights_at INTEGER NOT NULL DEFAULT 0
 );
 
 -- The support bot is a THIRD bot with its own token: it has no menu, no plans and no

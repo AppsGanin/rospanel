@@ -322,7 +322,10 @@ function BroadcastRow({
   b: Broadcast;
   onControl: (fn: () => Promise<Broadcast>) => void;
 }) {
-  const done = b.sent + b.failed + b.blocked;
+  // Every terminal state, skipped included — it is part of total, and omitting it
+  // froze the bar below 100% on a finished run with no way to correct itself
+  // (polling stops once the run is done).
+  const done = b.sent + b.failed + b.blocked + b.skipped;
   const pct = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
   const st = STATUS[b.status];
 
@@ -353,6 +356,7 @@ function BroadcastRow({
         {done} из {b.total} · доставлено {b.sent}
         {b.failed > 0 && ` · ошибок ${b.failed}`}
         {b.blocked > 0 && ` · заблокировали бота ${b.blocked}`}
+        {b.skipped > 0 && ` · отписались ${b.skipped}`}
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">

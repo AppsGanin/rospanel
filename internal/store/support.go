@@ -85,14 +85,15 @@ func (s *Store) DeleteSupportTopic(groupID, chatID int64) error {
 // it (the operator may enable topics or grant admin after adding the bot).
 func (s *Store) UpsertSupportGroup(chatID int64, title string, isForum, isAdmin bool, now int64) error {
 	_, err := s.db.Exec(
-		`INSERT INTO tg_support_groups (chat_id, title, is_forum, is_admin, seen_at)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO tg_support_groups (chat_id, title, is_forum, is_admin, seen_at, rights_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(chat_id) DO UPDATE SET
-		     title    = excluded.title,
-		     is_forum = excluded.is_forum,
-		     is_admin = excluded.is_admin,
-		     seen_at  = excluded.seen_at`,
-		chatID, title, boolToInt(isForum), boolToInt(isAdmin), now)
+		     title     = excluded.title,
+		     is_forum  = excluded.is_forum,
+		     is_admin  = excluded.is_admin,
+		     seen_at   = excluded.seen_at,
+		     rights_at = excluded.rights_at`,
+		chatID, title, boolToInt(isForum), boolToInt(isAdmin), now, now)
 	return err
 }
 
@@ -119,16 +120,18 @@ func (s *Store) SeeSupportGroup(chatID int64, title string, isForum bool, now in
 	return err
 }
 
-// SupportGroupSeenAt reports when a group was last recorded (0 = never). Used to
-// debounce the rights lookup so a busy group can't cost an API call per message.
-func (s *Store) SupportGroupSeenAt(chatID int64) (int64, error) {
-	var seen int64
+// SupportGroupRightsAt reports when the bot's rights in a group were last checked
+// (0 = never). Debouncing against this rather than against last-seen is what keeps a
+// busy group from being checked once and never again, and a quiet one from being
+// checked on every message.
+func (s *Store) SupportGroupRightsAt(chatID int64) (int64, error) {
+	var at int64
 	err := s.db.QueryRow(
-		`SELECT seen_at FROM tg_support_groups WHERE chat_id = ?`, chatID).Scan(&seen)
+		`SELECT rights_at FROM tg_support_groups WHERE chat_id = ?`, chatID).Scan(&at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
-	return seen, err
+	return at, err
 }
 
 // DeleteSupportGroup drops a group the bot was removed from, so the picker doesn't
@@ -143,11 +146,18 @@ func (s *Store) DeleteSupportGroup(chatID int64) error {
 // the operator's real group in a dropdown.
 const supportGroupsMax = 30
 
-// ListSupportGroups returns the known candidates, most recently seen first.
+// ListSupportGroups returns the known candidates: usable ones first, then most
+// recently seen.
+//
+// Usable-first is not cosmetic. The bot is public, so anyone can add it to groups
+// and every such row carries a fresh seen_at; ordering by recency alone let seeded
+// junk evict the operator's own group past the cap — the exact confusion the cap was
+// meant to prevent.
 func (s *Store) ListSupportGroups() ([]model.SupportGroup, error) {
 	rows, err := s.db.Query(
 		`SELECT chat_id, title, is_forum, is_admin FROM tg_support_groups
-		 ORDER BY seen_at DESC LIMIT ?`, supportGroupsMax)
+		 ORDER BY (is_admin = 1 AND is_forum = 1) DESC, seen_at DESC LIMIT ?`,
+		supportGroupsMax)
 	if err != nil {
 		return nil, err
 	}

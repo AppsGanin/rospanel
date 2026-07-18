@@ -166,3 +166,76 @@ func TestSupportCheckRefusesUnconfigured(t *testing.T) {
 		t.Errorf("message = %s", body)
 	}
 }
+
+// A save that fails must change nothing. Persisting the three bots in sequence meant
+// a failure on the last one left the first two written while the request reported an
+// error — and the audit middleware skips failed requests, so nothing recorded it.
+func TestFailedSaveLeavesEverythingUnchanged(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+
+	code, body := postPanelJSON(t, h, "/api/telegram", saveBody(
+		`"support_enabled": false, "support_token": "555:CCC", "support_group_id": -100123`), admin)
+	if code != http.StatusOK {
+		t.Fatalf("setup save = %d: %s", code, body)
+	}
+
+	// Now a request whose LAST section is invalid: the support token is malformed.
+	// The first two sections carry values that must not survive the refusal.
+	code, body = postPanelJSON(t, h, "/api/telegram", `{
+		"enabled": false, "token": "999:ZZZ", "backup_cron": "",
+		"user_enabled": false, "user_token": "888:YYY", "user_reg_mode": "off",
+		"user_reg_code": "", "support_token": "сломанный-токен"
+	}`, admin)
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", code, body)
+	}
+
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if set.TGBotToken == "999:ZZZ" {
+		t.Error("the admin bot token was written despite the request failing")
+	}
+	if set.TGUserBotToken == "888:YYY" {
+		t.Error("the user bot token was written despite the request failing")
+	}
+	if set.TGSupportBotToken != "555:CCC" {
+		t.Errorf("support token = %q, want the previously saved one", set.TGSupportBotToken)
+	}
+}
+
+// Absent fields mean "unchanged", not "empty". A browser tab loaded before a field
+// existed would otherwise wipe a bot token and get a 200 for it.
+func TestPartialSaveKeepsUntouchedSections(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+
+	code, body := postPanelJSON(t, h, "/api/telegram", saveBody(
+		`"support_enabled": false, "support_token": "555:CCC",
+		 "support_group_id": -100123, "support_greeting": "Опишите проблему"`), admin)
+	if code != http.StatusOK {
+		t.Fatalf("setup save = %d: %s", code, body)
+	}
+
+	// A body from an older client: it knows nothing about the support section.
+	code, body = postPanelJSON(t, h, "/api/telegram", `{
+		"enabled": false, "token": "", "backup_cron": "",
+		"user_enabled": false, "user_token": "", "user_reg_mode": "off", "user_reg_code": ""
+	}`, admin)
+	if code != http.StatusOK {
+		t.Fatalf("partial save = %d: %s", code, body)
+	}
+
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if set.TGSupportBotToken != "555:CCC" || set.TGSupportGroupID != -100123 ||
+		set.TGSupportGreeting != "Опишите проблему" {
+		t.Fatalf("an omitted section was wiped: %+v", set)
+	}
+}

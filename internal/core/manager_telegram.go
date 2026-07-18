@@ -164,6 +164,118 @@ func (m *Manager) ListSupportGroups() ([]model.SupportGroup, error) {
 	return m.store.ListSupportGroups()
 }
 
+// TelegramConfig is every Telegram bot's settings in one value, so they can be
+// checked together and written together.
+type TelegramConfig struct {
+	Enabled     bool
+	Token       string
+	BackupCron  string
+	UserEnabled bool
+	UserToken   string
+	UserRegMode string
+	UserRegCode string
+
+	SupportEnabled  bool
+	SupportToken    string
+	SupportUsername string
+	SupportGroupID  int64
+	SupportGreeting string
+}
+
+// SaveTelegramConfig validates all three bots BEFORE persisting any of them.
+//
+// Saved one after another, a failure on the third left the first two committed while
+// the caller reported failure — so the operator saw an error, the panel had changed,
+// and (because the audit middleware skips a failed request) nothing recorded it. The
+// third is the one that can fail for reasons outside anyone's control: it needs the
+// support bot's @username, which comes from Telegram.
+func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
+	if err := m.checkTelegram(c.Enabled, c.Token, c.BackupCron); err != nil {
+		return err
+	}
+	if err := m.checkTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
+		return err
+	}
+	if err := m.checkTelegramSupportCfg(c); err != nil {
+		return err
+	}
+	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron); err != nil {
+		return err
+	}
+	if err := m.SaveTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
+		return err
+	}
+	return m.SaveTelegramSupport(c.SupportEnabled, c.SupportToken, c.SupportUsername,
+		c.SupportGroupID, c.SupportGreeting)
+}
+
+// The check* helpers below are the validation halves of the Save* methods, reusable
+// without writing. Cross-token comparisons are made against the INCOMING values, not
+// the stored ones: one request may legitimately move a token from one bot to another.
+func (m *Manager) checkTelegram(enabled bool, token, backupCron string) error {
+	token = strings.TrimSpace(token)
+	if enabled && token == "" {
+		return invalid("укажите токен бота (получите его у @BotFather)")
+	}
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота выглядит неверно (формат «123456:ABC...»)")
+	}
+	if strings.TrimSpace(backupCron) != "" {
+		if _, err := cron.Parse(strings.TrimSpace(backupCron)); err != nil {
+			return invalid("неверное расписание (cron): %v", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) checkTelegramUserBot(enabled bool, token, regMode, regCode string) error {
+	switch regMode {
+	case model.RegOff, model.RegOpen, model.RegModeration, model.RegInvite:
+	default:
+		return invalid("неизвестный режим регистрации")
+	}
+	if regMode == model.RegInvite && strings.TrimSpace(regCode) == "" {
+		return invalid("для регистрации по коду укажите код-приглашение")
+	}
+	token = strings.TrimSpace(token)
+	if enabled && token == "" {
+		return invalid("укажите токен пользовательского бота")
+	}
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
+	}
+	return nil
+}
+
+func (m *Manager) checkTelegramSupportCfg(c TelegramConfig) error {
+	token := strings.TrimSpace(c.SupportToken)
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+	}
+	if c.SupportEnabled {
+		switch {
+		case token == "":
+			return invalid("укажите токен бота поддержки")
+		case normalizeGroupID(c.SupportGroupID) == 0:
+			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+		case strings.TrimSpace(c.SupportUsername) == "":
+			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+		}
+	}
+	// Three distinct bots need three distinct tokens: two poll loops sharing one
+	// would each steal half the other's updates.
+	admin, user := strings.TrimSpace(c.Token), strings.TrimSpace(c.UserToken)
+	switch {
+	case admin != "" && admin == user:
+		return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+	case admin != "" && admin == token:
+		return invalid("у админ-бота и бота поддержки должны быть разные токены")
+	case user != "" && user == token:
+		return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
+	}
+	return nil
+}
+
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).
 func (m *Manager) CancelTelegramLink() error {
 	return m.store.SetTelegramLinkCode("")

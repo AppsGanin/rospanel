@@ -3,8 +3,11 @@ package telegram
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -23,33 +26,121 @@ func supportService(t *testing.T) *SupportService {
 	return NewSupport(nil, st)
 }
 
+// stubAPI records which Bot API methods were called, so a test can assert what did
+// NOT happen — the point of these guards is that nothing reaches the customer.
+type stubAPI struct {
+	mu     sync.Mutex
+	calls  map[string]int
+	server *httptest.Server
+}
+
+func newStubAPI(t *testing.T) *stubAPI {
+	t.Helper()
+	st := &stubAPI{calls: map[string]int{}}
+	st.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(r.URL.Path, "/")
+		st.mu.Lock()
+		st.calls[parts[len(parts)-1]]++
+		st.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
+	}))
+	t.Cleanup(st.server.Close)
+	return st
+}
+
+func (s *stubAPI) client() *Client { return newTestClient(s.server.URL+"/bot", "111:AAA") }
+
+func (s *stubAPI) count(method string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls[method]
+}
+
 // TestAdminReplyRouting covers the guards that decide whether a group message is
-// somebody's support answer. Each case must return before touching Telegram, which
-// a nil client asserts: reaching the API would panic.
+// somebody's support answer. What matters in every case is that copyMessage — the
+// only call that reaches a customer — never fires.
 func TestAdminReplyRouting(t *testing.T) {
-	s := supportService(t)
 	set := &model.Settings{TGSupportGroupID: -100999}
-	if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
-		t.Fatalf("SetSupportTopic: %v", err)
-	}
 	group := Chat{ID: -100999, Type: "supergroup", IsForum: true}
 
 	cases := []struct {
-		name string
-		msg  *Message
+		name       string
+		msg        *Message
+		wantNotice bool // the thread is told why nothing was sent
 	}{
-		{"general thread is nobody's conversation",
-			&Message{Chat: group, MessageID: 1, Text: "объявление"}},
-		{"unknown topic was opened by hand",
-			&Message{Chat: group, MessageID: 2, MessageThreadID: 42, Text: "заметка"}},
-		{"internal note stays between admins",
-			&Message{Chat: group, MessageID: 3, MessageThreadID: 7,
-				Text: internalNotePrefix + " он писал на прошлой неделе"}},
+		{
+			name: "general thread is nobody's conversation",
+			msg:  &Message{Chat: group, MessageID: 1, Text: "объявление"},
+		},
+		{
+			name: "topic housekeeping is not a reply",
+			msg: &Message{Chat: group, MessageID: 2, MessageThreadID: 7,
+				ForumTopicEdited: &struct{}{}},
+		},
+		{
+			// Silence here is what makes a dead thread indistinguishable from a
+			// delivered answer, so this one must speak up.
+			name:       "topic belongs to nobody",
+			msg:        &Message{Chat: group, MessageID: 3, MessageThreadID: 42, Text: "заметка"},
+			wantNotice: true,
+		},
+		{
+			name: "internal note stays between admins",
+			msg: &Message{Chat: group, MessageID: 4, MessageThreadID: 7,
+				Text: internalNotePrefix + " он писал на прошлой неделе"},
+			wantNotice: true,
+		},
+		{
+			// The whole message is internal, not just the marked line — copyMessage
+			// cannot edit — so the admin has to be told, or their answer vanishes.
+			name: "note below an answer withholds the whole message",
+			msg: &Message{Chat: group, MessageID: 5, MessageThreadID: 7,
+				Text: "Здравствуйте, ключ обновлён\n" + internalNotePrefix + " напомнить про оплату"},
+			wantNotice: true,
+		},
+		{
+			name: "note in a caption counts too",
+			msg: &Message{Chat: group, MessageID: 6, MessageThreadID: 7,
+				Caption: internalNotePrefix + " клиент врёт",
+				Photo:   []PhotoSize{{FileID: "x", Width: 90, Height: 90}}},
+			wantNotice: true,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s.handleAdminReply(context.Background(), nil, set, c.msg)
+			s := supportService(t)
+			if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
+				t.Fatalf("SetSupportTopic: %v", err)
+			}
+			api := newStubAPI(t)
+			s.handleAdminReply(context.Background(), api.client(), set, c.msg)
+
+			if n := api.count("copyMessage"); n != 0 {
+				t.Fatalf("%d message(s) reached the customer", n)
+			}
+			if got := api.count("sendMessage") > 0; got != c.wantNotice {
+				t.Fatalf("notice posted = %v, want %v", got, c.wantNotice)
+			}
 		})
+	}
+}
+
+// An answer with no internal note must actually be delivered — the guards above must
+// not have made the normal path unreachable.
+func TestAdminReplyIsDelivered(t *testing.T) {
+	s := supportService(t)
+	if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
+		t.Fatalf("SetSupportTopic: %v", err)
+	}
+	api := newStubAPI(t)
+	s.handleAdminReply(context.Background(), api.client(),
+		&model.Settings{TGSupportGroupID: -100999},
+		&Message{Chat: Chat{ID: -100999, Type: "supergroup", IsForum: true},
+			MessageID: 9, MessageThreadID: 7, Text: "Здравствуйте, ключ обновлён"})
+
+	if n := api.count("copyMessage"); n != 1 {
+		t.Fatalf("copyMessage called %d times, want 1", n)
 	}
 }
 
@@ -110,29 +201,6 @@ func TestClosedTopicIsDistinctFromDeleted(t *testing.T) {
 	if isTopicClosed(gone) {
 		t.Error("a deleted topic misread as merely closed — reopen would keep failing")
 	}
-}
-
-// The "//" escape must cover captions. An admin pasting a screenshot with a note in
-// the caption is exactly the case it exists for.
-func TestInternalNoteCoversCaptions(t *testing.T) {
-	s := supportService(t)
-	set := &model.Settings{TGSupportGroupID: -100999}
-	if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
-		t.Fatalf("SetSupportTopic: %v", err)
-	}
-	group := Chat{ID: -100999, Type: "supergroup", IsForum: true}
-	// A nil client asserts nothing is relayed: reaching Telegram would panic.
-	s.handleAdminReply(context.Background(), nil, set, &Message{
-		Chat: group, MessageID: 1, MessageThreadID: 7,
-		Caption: internalNotePrefix + " клиент врёт",
-		Photo:   []PhotoSize{{FileID: "x", Width: 90, Height: 90}},
-	})
-	// Topic housekeeping is not a reply either — relaying it would fail and post an
-	// alarming "не доставлено" notice for a rename.
-	s.handleAdminReply(context.Background(), nil, set, &Message{
-		Chat: group, MessageID: 2, MessageThreadID: 7,
-		ForumTopicEdited: &struct{}{},
-	})
 }
 
 // Update ids are per-bot. Carrying an offset across a token swap ACKs away the new

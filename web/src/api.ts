@@ -877,6 +877,10 @@ export interface Broadcast {
   sent: number
   failed: number
   blocked: number
+  // Unsubscribed after the audience was frozen and skipped over on purpose. Counts
+  // toward total, so leaving it out of the progress arithmetic strands the bar
+  // short of 100% on any run where somebody opted out mid-flight.
+  skipped: number
 }
 
 export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
