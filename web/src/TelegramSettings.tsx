@@ -30,7 +30,6 @@ import {
   SaveBar,
   Select,
   SettingCard,
-  Spinner,
   Switch,
   Textarea,
   TextInput,
@@ -637,10 +636,13 @@ export function TelegramSettings() {
             <div className="rounded-lg border border-dashed border-gray-300 p-3">
               <p className="mb-1 text-sm font-medium text-ink">Группа поддержки</p>
               {saved.supportToken.trim() ? (
-                <p className="flex items-center gap-2 text-sm text-ink-muted">
-                  <Spinner size={14} />
+                /* No spinner: nothing is loading — the panel is waiting on the
+                   operator, and an animation that never resolves would promise
+                   progress that isn't happening. */
+                <p className="text-sm text-ink-muted">
                   Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
-                  супергруппу — она появится здесь сама.
+                  супергруппу — она появится здесь сама, даже пока поддержка
+                  выключена.
                 </p>
               ) : (
                 <p className="text-sm text-ink-muted">
