@@ -106,23 +106,33 @@ func (s *SupportService) allow(chatID int64, now time.Time) (allowed, first bool
 	return true, false
 }
 
+// supportAllowedUpdates adds my_chat_member on top of the default set: it is what
+// lets the bot report which groups it is in, so the operator picks one from a list
+// instead of digging a numeric chat id out of a Telegram Web URL.
+var supportAllowedUpdates = []string{"message", "callback_query", "my_chat_member"}
+
 // Run long-polls the support bot until ctx is cancelled. Settings are re-read every
 // cycle, so enabling/disabling or rotating the token takes effect without a restart.
+//
+// Polling starts as soon as a TOKEN exists — before support is enabled and before a
+// group is chosen. That ordering is the whole point: the bot has to be listening to
+// notice which groups it was added to, and requiring the group first made the one
+// piece of information the operator was missing impossible for the bot to supply.
+// Relaying still waits until support is fully configured.
 func (s *SupportService) Run(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		set, err := s.store.GetSettings()
-		if err != nil || !set.TGSupportEnabled ||
-			strings.TrimSpace(set.TGSupportBotToken) == "" || set.TGSupportGroupID == 0 {
+		if err != nil || strings.TrimSpace(set.TGSupportBotToken) == "" {
 			if !sleep(ctx, 10*time.Second) {
 				return
 			}
 			continue
 		}
 		client := s.clientFor(strings.TrimSpace(set.TGSupportBotToken))
-		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
+		updates, err := client.GetUpdatesFor(ctx, s.offset, pollTimeout, supportAllowedUpdates)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -145,6 +155,10 @@ func (s *SupportService) handle(ctx context.Context, client *Client, set *model.
 			log.Printf("telegram support: handler panic recovered: %v", r)
 		}
 	}()
+	if u.MyChatMember != nil {
+		s.trackGroup(u.MyChatMember)
+		return
+	}
 	if u.Message == nil {
 		return
 	}
@@ -154,10 +168,37 @@ func (s *SupportService) handle(ctx context.Context, client *Client, set *model.
 		s.handleUserMessage(ctx, client, set, m)
 	case m.Chat.ID == set.TGSupportGroupID:
 		s.handleAdminReply(ctx, client, set, m)
+	case m.Chat.Type == "supergroup" || m.Chat.Type == "group":
+		// Some other group. Nothing is relayed either way — that would leak one
+		// operator's conversations into another's chat — but it is remembered as a
+		// candidate, which also picks up groups the bot joined before this existed
+		// and so never produced a my_chat_member event we saw.
+		s.rememberGroup(m.Chat, false)
 	}
-	// Anything else — a group the bot was added to that isn't the support group — is
-	// ignored on purpose: relaying it would leak one operator's users into another's
-	// chat.
+}
+
+// trackGroup records or forgets a group from a membership change.
+func (s *SupportService) trackGroup(ev *ChatMemberUpdated) {
+	if !ev.InChat() {
+		if err := s.store.DeleteSupportGroup(ev.Chat.ID); err != nil {
+			log.Printf("telegram support: forget group %d: %v", ev.Chat.ID, err)
+		}
+		return
+	}
+	s.rememberGroup(ev.Chat, ev.IsAdmin())
+}
+
+// rememberGroup stores a group as a PICKER OPTION — never as the configured one. The
+// bot is reachable by @username, so anyone may add it to a group and land here;
+// applying that automatically would let a stranger redirect every support
+// conversation to a chat they control. The choice stays with whoever holds the panel.
+func (s *SupportService) rememberGroup(chat Chat, isAdmin bool) {
+	if chat.ID == 0 {
+		return
+	}
+	if err := s.store.UpsertSupportGroup(chat.ID, chat.Title, chat.IsForum, isAdmin, time.Now().Unix()); err != nil {
+		log.Printf("telegram support: remember group %d: %v", chat.ID, err)
+	}
 }
 
 // handleUserMessage relays what a user wrote into their topic, opening one on first
@@ -173,6 +214,13 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 		s.reply(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
 		return
 	case !allowed:
+		return
+	}
+	// The loop now runs on a bare token, so a user can reach the bot while the
+	// operator is still setting it up. Say so — silently eating the message would
+	// leave them waiting for an answer nobody will ever see.
+	if !set.TGSupportEnabled || set.TGSupportGroupID == 0 {
+		s.reply(ctx, client, chatID, "⚙️ Поддержка ещё не настроена. Загляните позже.")
 		return
 	}
 	if cmd, _ := splitCmd(m.Text); cmd == "/start" {

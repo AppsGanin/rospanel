@@ -5,7 +5,9 @@ import {
   genTelegramLink,
   getTelegram,
   getTelegramLinkStatus,
+  listSupportGroups,
   type RegMode,
+  type SupportGroup,
   saveTelegram,
   testTelegramBackup,
   unlinkTelegram,
@@ -59,6 +61,14 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
 
 type AdminEvents = Record<string, boolean>;
 
+// groupIssue labels a candidate that cannot work yet, so the reason is visible at
+// the moment of choosing rather than after clicking "Проверить".
+function groupIssue(g: SupportGroup): string {
+  if (!g.is_forum) return " — нет тем";
+  if (!g.is_admin) return " — бот не админ";
+  return "";
+}
+
 // sameEvents compares two category maps over the known keys (order-independent).
 const sameEvents = (a: AdminEvents, b: AdminEvents) =>
   ADMIN_EVENTS.every((e) => !!a[e.key] === !!b[e.key]);
@@ -83,6 +93,8 @@ export function TelegramSettings() {
   const [supportGroupID, setSupportGroupID] = useState("");
   const [supportGreeting, setSupportGreeting] = useState("");
   const [supportBotUsername, setSupportBotUsername] = useState("");
+  const [supportGroups, setSupportGroups] = useState<SupportGroup[]>([]);
+  const [manualGroup, setManualGroup] = useState(false);
   const [saved, setSaved] = useState({
     enabled: false,
     token: "",
@@ -139,10 +151,28 @@ export function TelegramSettings() {
       })
       .catch((e) => notifyError(errMessage(e)));
 
+  const loadGroups = () =>
+    listSupportGroups()
+      .then(setSupportGroups)
+      .catch(() => {
+        /* transient — the poll below retries */
+      });
+
   useEffect(() => {
     load().finally(() => setLoaded(true));
+    loadGroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // While the operator is setting support up, they are alt-tabbing to Telegram to
+  // add the bot to a group. Poll so it appears in the picker on its own instead of
+  // needing a page reload to show up.
+  useEffect(() => {
+    if (!supportToken.trim() || supportGroupID) return;
+    const id = setInterval(loadGroups, 4000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportToken, supportGroupID]);
 
   // While a link code is pending (and the bot is enabled), poll the lightweight
   // status endpoint so a chat linked via the bot shows up — and the code box
@@ -554,12 +584,58 @@ export function TelegramSettings() {
               </a>
             </p>
           )}
-          <TextInput
-            label="ID группы поддержки"
-            value={supportGroupID}
-            onChange={setSupportGroupID}
-            placeholder="-1001234567890"
-          />
+          {supportGroups.length > 0 && !manualGroup ? (
+            <>
+              <Select
+                label="Группа поддержки"
+                data={[
+                  { value: "", label: "— выберите группу —" },
+                  ...supportGroups.map((g) => ({
+                    value: String(g.chat_id),
+                    label: `${g.title || g.chat_id}${groupIssue(g)}`,
+                  })),
+                ]}
+                value={supportGroupID}
+                onChange={setSupportGroupID}
+              />
+              <p className="text-xs text-ink-muted">
+                Список групп, в которые добавлен бот.{" "}
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => setManualGroup(true)}
+                >
+                  Ввести ID вручную
+                </button>
+              </p>
+            </>
+          ) : (
+            <>
+              <TextInput
+                label="ID группы поддержки"
+                value={supportGroupID}
+                onChange={setSupportGroupID}
+                placeholder="-1001234567890"
+              />
+              <p className="text-xs text-ink-muted">
+                {supportToken.trim() && supportGroups.length === 0
+                  ? "Добавьте бота в группу — она появится здесь списком, ID вводить не придётся."
+                  : "ID супергруппы начинается с -100."}
+                {supportGroups.length > 0 && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="text-accent hover:underline"
+                      onClick={() => setManualGroup(false)}
+                    >
+                      Выбрать из списка
+                    </button>
+                  </>
+                )}
+              </p>
+            </>
+          )}
           <p className="text-xs text-ink-muted">
             Создайте супергруппу, включите в её настройках «Темы» и добавьте бота
             поддержки администратором с правом управления темами. Без прав

@@ -800,6 +800,20 @@ export const saveTelegram = (t: {
     body: JSON.stringify(t),
   })
 
+// SupportGroup is a group the support bot has been added to — an option for the
+// picker, never applied on its own (anyone can add a public bot to a group).
+export interface SupportGroup {
+  chat_id: number
+  title: string
+  is_forum: boolean
+  is_admin: boolean
+}
+
+// listSupportGroups powers the group picker, so nobody has to dig a chat id out of
+// a Telegram Web URL and remember to prefix it with -100.
+export const listSupportGroups = () =>
+  api<SupportGroup[]>('api/telegram/support/groups')
+
 // checkTelegramSupport validates the support group end to end (reachable, a forum,
 // bot is an admin able to manage topics) — the privacy-mode failure it catches is
 // otherwise invisible: the bot receives users' messages but never the admins' replies.

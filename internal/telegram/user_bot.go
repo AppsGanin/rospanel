@@ -498,10 +498,11 @@ func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
 	if link := set.SupportLink(); link != "" {
 		rows = append(rows, []InlineButton{{Text: "💬 Поддержка", URL: link}})
 	}
-	rows = append(rows,
-		[]InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}},
-		[]InlineButton{{Text: "🔓 Отвязать", CallbackData: "vu:unlink"}},
-	)
+	// No self-service unlink. It only ever cost the person their access — the
+	// account survives, but they land back on the welcome screen and write to
+	// support to get it back — while an operator who genuinely needs to detach a
+	// chat already has the button in the user's card in the panel.
+	rows = append(rows, []InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}})
 	return rows
 }
 
@@ -641,17 +642,9 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 	case "vu:plans":
 		s.showPlans(ctx, client, chatID, msgID, set, u)
-	case "vu:unlink":
-		s.edit(ctx, client, chatID, msgID,
-			"Отвязать этот Telegram от VPN-подписки?\nАккаунт сохранится: снова нажав «Зарегистрироваться», вы вернёте ту же подписку.",
-			[][]InlineButton{
-				{{Text: "🔓 Да, отвязать", CallbackData: "vu:unlinkyes"}},
-				{{Text: "⬅️ Отмена", CallbackData: "vu:menu"}},
-			})
-	case "vu:unlinkyes":
-		_ = s.panel.UnlinkUserTelegram(ctx, u.ID)
-		s.edit(ctx, client, chatID, msgID, "Чат отвязан.", [][]InlineButton{})
-		s.sendWelcome(ctx, client, set, chatID)
+	// "vu:unlink"/"vu:unlinkyes" are gone. Old menus still carrying those buttons
+	// fall through to the default branch and do nothing, which is the intended
+	// outcome — the alternative is honouring a detach the panel no longer offers.
 	case "vu:cancelplan":
 		s.confirmCancelPlan(ctx, client, chatID, msgID, u)
 	case "vu:cancelyes":

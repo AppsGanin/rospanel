@@ -88,6 +88,7 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 // support button only for a non-empty username and the operator would be left with
 // support switched on and no visible way in.
 func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, groupID int64, greeting string) error {
+	groupID = normalizeGroupID(groupID)
 	token = strings.TrimSpace(token)
 	username = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(username), "@"))
 	greeting = strings.TrimSpace(greeting)
@@ -137,6 +138,31 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 		}
 	}
 	return m.store.SetTelegramSupport(enabled, token, username, groupID, greeting)
+}
+
+// normalizeGroupID repairs the one mistake everyone makes when typing a supergroup
+// id by hand. Telegram shows the bare internal id (in a web URL, or via an id-printing
+// bot), while the API wants it prefixed with -100 — so a pasted "1234567890" has to
+// become "-1001234567890" or every call reports the group as unreachable.
+//
+// Only a positive number is repaired. A negative one is already in some -prefixed
+// form, and guessing which would risk pointing support at a different chat entirely.
+func normalizeGroupID(id int64) int64 {
+	if id <= 0 {
+		return id
+	}
+	full, err := strconv.ParseInt("-100"+strconv.FormatInt(id, 10), 10, 64)
+	if err != nil {
+		return id // absurdly long: leave it and let validation complain
+	}
+	return full
+}
+
+// ListSupportGroups returns the groups the support bot has been added to, for the
+// settings picker. They are options only — see the store for why none is ever
+// applied on its own.
+func (m *Manager) ListSupportGroups() ([]model.SupportGroup, error) {
+	return m.store.ListSupportGroups()
 }
 
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).

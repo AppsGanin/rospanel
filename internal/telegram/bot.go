@@ -60,7 +60,8 @@ type Panel interface {
 	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
 
 	// Audit hooks for the actions the bots perform directly on the store.
-	UnlinkUserTelegram(ctx context.Context, id int64) error
+	// (Unlinking is deliberately absent: it is an operator action in the panel, not
+	// something a user can do to themselves from the bot.)
 	AuditTelegramLinked(ctx context.Context, id int64, username string)
 }
 

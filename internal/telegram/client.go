@@ -40,6 +40,31 @@ type Update struct {
 	UpdateID int64          `json:"update_id"`
 	Message  *Message       `json:"message"`
 	Callback *CallbackQuery `json:"callback_query"`
+	// MyChatMember fires when the bot itself is added to, promoted in, or removed
+	// from a chat. It is how the support bot learns a group's id without anyone
+	// having to look one up by hand. Delivered only when asked for explicitly.
+	MyChatMember *ChatMemberUpdated `json:"my_chat_member"`
+}
+
+// ChatMemberUpdated is a change to somebody's membership of a chat.
+type ChatMemberUpdated struct {
+	Chat          Chat       `json:"chat"`
+	NewChatMember ChatMember `json:"new_chat_member"`
+}
+
+// InChat reports whether the subject is still a member after this change.
+func (u *ChatMemberUpdated) InChat() bool {
+	switch u.NewChatMember.Status {
+	case "creator", "administrator", "member", "restricted":
+		return true
+	default: // "left", "kicked"
+		return false
+	}
+}
+
+// IsAdmin reports whether the subject can act as an administrator.
+func (u *ChatMemberUpdated) IsAdmin() bool {
+	return u.NewChatMember.Status == "creator" || u.NewChatMember.Status == "administrator"
 }
 
 // Message is the subset of a Telegram message the bot acts on. MessageThreadID is
@@ -243,13 +268,26 @@ func (c *Client) do(req *http.Request, out any) error {
 	return nil
 }
 
-// GetUpdates long-polls for new updates past offset, blocking up to timeout
-// seconds. Only messages and callback queries are requested.
+// defaultAllowedUpdates is what a bot receives unless it asks for more. Telegram
+// withholds my_chat_member unless it is listed, so a bot that doesn't need to know
+// about its own group memberships isn't billed an update for them.
+var defaultAllowedUpdates = []string{"message", "callback_query"}
+
+// GetUpdates long-polls for messages and callback queries past offset.
 func (c *Client) GetUpdates(ctx context.Context, offset int64, timeout int) ([]Update, error) {
+	return c.GetUpdatesFor(ctx, offset, timeout, defaultAllowedUpdates)
+}
+
+// GetUpdatesFor is GetUpdates for a bot that needs a different update set.
+func (c *Client) GetUpdatesFor(ctx context.Context, offset int64, timeout int, allowed []string) ([]Update, error) {
+	kinds, err := json.Marshal(allowed)
+	if err != nil {
+		return nil, err
+	}
 	q := url.Values{}
 	q.Set("offset", strconv.FormatInt(offset, 10))
 	q.Set("timeout", strconv.Itoa(timeout))
-	q.Set("allowed_updates", `["message","callback_query"]`)
+	q.Set("allowed_updates", string(kinds))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		apiBase+c.token+"/getUpdates?"+q.Encode(), nil)
 	if err != nil {

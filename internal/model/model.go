@@ -151,6 +151,16 @@ type RegistrationRequest struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// SupportGroup is a group the support bot has been added to — an option in the
+// settings picker, never applied on its own. IsForum and IsAdmin are shown so the
+// operator can see at a glance which candidate is actually usable.
+type SupportGroup struct {
+	ChatID  int64  `json:"chat_id"`
+	Title   string `json:"title"`
+	IsForum bool   `json:"is_forum"`
+	IsAdmin bool   `json:"is_admin"`
+}
+
 // Subscriber is a chat that has opened the user bot — the audience a broadcast is
 // addressed to. Wider than the user roster on purpose: it also holds people who
 // never completed registration and people whose account was deleted, both of whom a

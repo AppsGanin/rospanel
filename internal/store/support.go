@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"errors"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // Support relay topic mapping: one forum topic per writer, both directions. The
@@ -49,6 +51,53 @@ func (s *Store) SetSupportTopic(chatID, topicID, now int64) error {
 func (s *Store) DeleteSupportTopic(chatID int64) error {
 	_, err := s.db.Exec(`DELETE FROM tg_support_topics WHERE chat_id = ?`, chatID)
 	return err
+}
+
+// Discovered groups — see migrations/0034_tg_support_groups.sql for why these are
+// only ever candidates.
+
+// UpsertSupportGroup records a group the bot is in, refreshing what is known about
+// it (the operator may enable topics or grant admin after adding the bot).
+func (s *Store) UpsertSupportGroup(chatID int64, title string, isForum, isAdmin bool, now int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO tg_support_groups (chat_id, title, is_forum, is_admin, seen_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(chat_id) DO UPDATE SET
+		     title    = excluded.title,
+		     is_forum = excluded.is_forum,
+		     is_admin = excluded.is_admin,
+		     seen_at  = excluded.seen_at`,
+		chatID, title, boolToInt(isForum), boolToInt(isAdmin), now)
+	return err
+}
+
+// DeleteSupportGroup drops a group the bot was removed from, so the picker doesn't
+// keep offering somewhere it can no longer post.
+func (s *Store) DeleteSupportGroup(chatID int64) error {
+	_, err := s.db.Exec(`DELETE FROM tg_support_groups WHERE chat_id = ?`, chatID)
+	return err
+}
+
+// ListSupportGroups returns the known candidates, most recently seen first.
+func (s *Store) ListSupportGroups() ([]model.SupportGroup, error) {
+	rows, err := s.db.Query(
+		`SELECT chat_id, title, is_forum, is_admin FROM tg_support_groups
+		 ORDER BY seen_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.SupportGroup
+	for rows.Next() {
+		var g model.SupportGroup
+		var isForum, isAdmin int
+		if err := rows.Scan(&g.ChatID, &g.Title, &isForum, &isAdmin); err != nil {
+			return nil, err
+		}
+		g.IsForum, g.IsAdmin = isForum != 0, isAdmin != 0
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }
 
 // ResetSupportTopics clears every mapping. Called when the operator points support at

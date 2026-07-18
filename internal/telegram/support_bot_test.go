@@ -152,6 +152,74 @@ func TestTokenSwapResetsOffset(t *testing.T) {
 	}
 }
 
+// Discovery: the bot records groups it is in so the operator picks from a list.
+// These are candidates only — the bot is reachable by @username, so anyone can add
+// it to a group and land here; auto-applying would let a stranger redirect every
+// support conversation to a chat they control.
+func TestGroupDiscovery(t *testing.T) {
+	s := supportService(t)
+
+	s.trackGroup(&ChatMemberUpdated{
+		Chat:          Chat{ID: -100777, Type: "supergroup", Title: "Поддержка", IsForum: true},
+		NewChatMember: ChatMember{Status: "administrator", CanManageTopics: true},
+	})
+	groups, err := s.store.ListSupportGroups()
+	if err != nil {
+		t.Fatalf("ListSupportGroups: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("groups = %+v, want one", groups)
+	}
+	g := groups[0]
+	if g.ChatID != -100777 || g.Title != "Поддержка" || !g.IsForum || !g.IsAdmin {
+		t.Fatalf("group recorded wrong: %+v", g)
+	}
+
+	// Being added as a plain member is still worth offering, but must be labelled
+	// as unusable rather than silently promising to work.
+	s.trackGroup(&ChatMemberUpdated{
+		Chat:          Chat{ID: -100777, Type: "supergroup", Title: "Поддержка", IsForum: true},
+		NewChatMember: ChatMember{Status: "member"},
+	})
+	if groups, _ = s.store.ListSupportGroups(); len(groups) != 1 || groups[0].IsAdmin {
+		t.Fatalf("demotion not recorded: %+v", groups)
+	}
+
+	// Removed from the group → stop offering somewhere it can no longer post.
+	s.trackGroup(&ChatMemberUpdated{
+		Chat:          Chat{ID: -100777},
+		NewChatMember: ChatMember{Status: "kicked"},
+	})
+	if groups, _ = s.store.ListSupportGroups(); len(groups) != 0 {
+		t.Fatalf("group survived removal: %+v", groups)
+	}
+}
+
+// A message in some other group is not relayed either way, but it is remembered —
+// that covers groups the bot joined before discovery existed, whose my_chat_member
+// event nobody was listening for.
+func TestForeignGroupBecomesCandidate(t *testing.T) {
+	s := supportService(t)
+	set := &model.Settings{TGSupportGroupID: -100999}
+	s.handle(context.Background(), nil, set, Update{Message: &Message{
+		Chat:            Chat{ID: -100111, Type: "supergroup", Title: "Другая", IsForum: true},
+		MessageID:       1,
+		MessageThreadID: 7,
+		Text:            "привет",
+	}})
+	groups, err := s.store.ListSupportGroups()
+	if err != nil {
+		t.Fatalf("ListSupportGroups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].ChatID != -100111 {
+		t.Fatalf("groups = %+v, want the foreign group as a candidate", groups)
+	}
+	// And it must NOT have become the configured one.
+	if set.TGSupportGroupID != -100999 {
+		t.Fatal("a foreign group changed the configured one")
+	}
+}
+
 func TestTopicTitleIsRuneSafe(t *testing.T) {
 	// Telegram counts characters and rejects malformed UTF-8, so a byte-wise cut
 	// through a multi-byte name would 400 on every message that user ever sends.

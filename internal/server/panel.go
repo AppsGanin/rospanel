@@ -305,6 +305,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/telegram/link/cancel", rt.cancelTelegramLink)
 	authed("POST /api/telegram/unlink", rt.unlinkTelegram)
 	authed("POST /api/telegram/test-backup", rt.testTelegramBackup)
+	authed("GET /api/telegram/support/groups", rt.listSupportGroups)
 	authed("POST /api/telegram/support/check", rt.checkTelegramSupport)
 	// Mass broadcasts through the user bot (admin tier: it reaches every subscriber).
 	authed("GET /api/broadcasts", rt.listBroadcasts)

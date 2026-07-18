@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
@@ -89,6 +90,22 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeOK(w)
+}
+
+// listSupportGroups returns the groups the support bot is in, so the settings page
+// can offer a picker instead of asking for a numeric chat id — which otherwise means
+// reading one out of a Telegram Web URL (and remembering the -100 prefix) or letting
+// a stranger's id-printing bot into the group where customer conversations will live.
+func (rt *Router) listSupportGroups(w http.ResponseWriter, _ *http.Request) {
+	groups, err := rt.mgr.ListSupportGroups()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if groups == nil {
+		groups = []model.SupportGroup{}
+	}
+	writeJSON(w, http.StatusOK, groups)
 }
 
 // checkTelegramSupport verifies the support group end to end before the operator
