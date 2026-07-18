@@ -193,7 +193,7 @@ func runServer(dataDir string) {
 			return
 		}
 		if err := geo.EnsureLists(geoDir); err != nil {
-			log.Printf("geo: %v", err)
+			log.Printf("iplist: %v", err)
 			return
 		}
 		mgr.TriggerReconcile()
