@@ -89,8 +89,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/broadcasts/{id}/resume": act(model.AuditBroadcastChanged),
 	"POST /api/broadcasts/{id}/cancel": act(model.AuditBroadcastChanged),
 	"POST /api/broadcasts/{id}/retry":  act(model.AuditBroadcastChanged),
-	"POST /api/billing":                  set("Биллинг"),
-	"POST /api/payments":                 set("Приём платежей"),
+	"POST /api/billing":                set("Биллинг"),
+	"POST /api/payments":               set("Приём платежей"),
 
 	// Tariff plans keep their own actions: they are objects with a lifecycle, not a
 	// settings form — "тариф удалён" is a different question from "кто трогал настройки".

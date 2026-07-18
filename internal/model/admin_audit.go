@@ -86,10 +86,10 @@ const (
 // dropdown would throw away the only thing the row is for. So the filter is unified,
 // not the events: pick an area, read the exact action on each row.
 const (
-	AuditCatSession  = "session"
-	AuditCatAdmins   = "admins"
-	AuditCatSettings = "settings"
-	AuditCatPlans    = "plans"
+	AuditCatSession   = "session"
+	AuditCatAdmins    = "admins"
+	AuditCatSettings  = "settings"
+	AuditCatPlans     = "plans"
 	AuditCatAPI       = "api"
 	AuditCatBroadcast = "broadcast"
 	AuditCatPanel     = "panel"
