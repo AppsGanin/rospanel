@@ -26,7 +26,11 @@ func (s *Store) UpsertSubscriber(chatID, userID int64, username, firstName, lang
 		`INSERT INTO tg_subscribers (chat_id, user_id, username, first_name, lang, started_at)
 		 VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(chat_id) DO UPDATE SET
-		     user_id    = excluded.user_id,
+		     -- Never clear a known link with a NULL. The caller resolves user_id by
+		     -- a lookup that returns "not found" for a transient DB error too, and
+		     -- overwriting on that would drop the person out of every audience that
+		     -- filters on having an account until they happened to write again.
+		     user_id    = COALESCE(excluded.user_id, tg_subscribers.user_id),
 		     username   = excluded.username,
 		     first_name = excluded.first_name,
 		     lang       = excluded.lang,

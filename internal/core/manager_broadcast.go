@@ -199,7 +199,19 @@ func (m *Manager) SetBroadcastStatus(id int64, status string) error {
 
 // RetryBroadcast re-queues the recipients that failed for a transient reason.
 // Blocked chats are left alone — Telegram will refuse them again identically.
+//
+// A cancelled run is refused outright. Cancelling does not clear the recipients that
+// were still queued, so resuming one would not send "the failures again" — it would
+// send the whole remainder of a message the operator has already stopped, from a
+// button labelled as a retry of a handful.
 func (m *Manager) RetryBroadcast(id int64) (int, error) {
+	b, err := m.store.GetBroadcast(id)
+	if err != nil {
+		return 0, err
+	}
+	if b.Status != model.BroadcastDone {
+		return 0, invalid("повторить можно только завершённую рассылку")
+	}
 	n, err := m.store.RetryFailedBroadcast(id, time.Now().Unix())
 	if err != nil {
 		return 0, err

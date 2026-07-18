@@ -382,7 +382,10 @@ function BroadcastRow({
             Отменить
           </Button>
         )}
-        {b.failed > 0 && b.status !== "running" && (
+        {/* Only a finished run. Cancelling leaves the untouched recipients queued,
+            so retrying a cancelled one would deliver the whole remainder the
+            operator just stopped — from a button labelled as a retry of a few. */}
+        {b.failed > 0 && b.status === "done" && (
           <Button
             variant="subtle"
             size="sm"

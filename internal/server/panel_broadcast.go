@@ -236,10 +236,12 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 				sendErr = err
 				break
 			}
+			// Same keyboard the real run sends: a preview without the buttons would
+			// not be a preview of what the audience gets.
 			if b.MediaKind == "photo" {
-				_, sendErr = client.UploadPhoto(ctx, chatID, b.MediaName, b.Text, file)
+				_, sendErr = client.UploadPhoto(ctx, chatID, b.MediaName, b.Text, rows, file)
 			} else {
-				_, sendErr = client.UploadDocument(ctx, chatID, b.MediaName, b.Text, file)
+				_, sendErr = client.UploadDocument(ctx, chatID, b.MediaName, b.Text, rows, file)
 			}
 		} else {
 			sendErr = client.SendMenu(ctx, chatID, b.Text, rows)

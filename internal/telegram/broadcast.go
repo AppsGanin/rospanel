@@ -30,6 +30,7 @@ type BroadcastService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	warnedAt    time.Time // last "stalled, bot is off" warning
 }
 
 const (
@@ -42,6 +43,9 @@ const (
 	broadcastWorkers = 8
 	// broadcastIdle is the pause between polls when nothing is running.
 	broadcastIdle = 5 * time.Second
+	// stalledWarnEvery throttles the "running but the bot is off" complaint so it
+	// doesn't fill the log every poll for as long as the condition holds.
+	stalledWarnEvery = 10 * time.Minute
 )
 
 // BroadcastMediaDir is where the panel stores an uploaded attachment until the first
@@ -75,8 +79,11 @@ func (s *BroadcastService) Run(ctx context.Context) {
 			return
 		}
 		worked := s.step(ctx)
-		if !worked && !sleep(ctx, broadcastIdle) {
-			return
+		if !worked {
+			s.sweepMedia()
+			if !sleep(ctx, broadcastIdle) {
+				return
+			}
 		}
 	}
 }
@@ -91,6 +98,7 @@ func (s *BroadcastService) step(ctx context.Context) bool {
 
 	set, err := s.store.GetSettings()
 	if err != nil || !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+		s.warnStalled()
 		return false
 	}
 	b, err := s.store.NextRunningBroadcast()
@@ -123,14 +131,52 @@ func (s *BroadcastService) step(ctx context.Context) bool {
 	return true
 }
 
-// finish marks a drained broadcast done and drops its uploaded file.
+// finish marks a drained broadcast done and drops its uploaded file. Conditional on
+// the run still being 'running': an operator's cancel landing in the meantime must
+// win, not be overwritten with 'done'.
 func (s *BroadcastService) finish(b *model.Broadcast) {
-	if err := s.store.SetBroadcastStatus(b.ID, model.BroadcastDone, time.Now().Unix()); err != nil {
+	ok, err := s.store.SetBroadcastStatusIf(b.ID, model.BroadcastRunning, model.BroadcastDone, time.Now().Unix())
+	if err != nil {
 		log.Printf("telegram broadcast %d: finish: %v", b.ID, err)
 		return
 	}
 	s.removeMedia(b.ID)
-	log.Printf("telegram broadcast %d: finished", b.ID)
+	if ok {
+		log.Printf("telegram broadcast %d: finished", b.ID)
+	}
+}
+
+// warnStalled complains when a broadcast is still marked running but the user bot it
+// would be sent through has been switched off. Without this the run simply sits at
+// its current percentage forever: the panel keeps polling it as live, the bar never
+// moves, and nothing anywhere says why.
+func (s *BroadcastService) warnStalled() {
+	b, err := s.store.NextRunningBroadcast()
+	if err != nil || b == nil {
+		return
+	}
+	s.mu.Lock()
+	quiet := time.Since(s.warnedAt) < stalledWarnEvery
+	if !quiet {
+		s.warnedAt = time.Now()
+	}
+	s.mu.Unlock()
+	if !quiet {
+		log.Printf("telegram broadcast %d: stalled at %d/%d — the user bot is disabled or has no token",
+			b.ID, b.Sent+b.Failed+b.Blocked, b.Total)
+	}
+}
+
+// pause stops the run without overriding an operator decision made in the meantime.
+func (s *BroadcastService) pause(id int64, reason string) {
+	ok, err := s.store.SetBroadcastStatusIf(id, model.BroadcastRunning, model.BroadcastPaused, 0)
+	if err != nil {
+		log.Printf("telegram broadcast %d: pause: %v", id, err)
+		return
+	}
+	if ok {
+		log.Printf("telegram broadcast %d: paused — %s", id, reason)
+	}
 }
 
 // primeMedia sends the attachment to the first recipient and caches the file_id it
@@ -142,9 +188,7 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 		// without it). Sending the text alone would silently drop what the operator
 		// attached, so stop and say so rather than deliver something else.
 		log.Printf("telegram broadcast %d: media missing: %v", b.ID, err)
-		if err := s.store.SetBroadcastStatus(b.ID, model.BroadcastPaused, 0); err != nil {
-			log.Printf("telegram broadcast %d: pause: %v", b.ID, err)
-		}
+		s.pause(b.ID, "вложение не найдено на диске")
 		return false
 	}
 	defer f.Close()
@@ -153,11 +197,15 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 	if name == "" {
 		name = "file"
 	}
+	// The buttons go on this send too. It is a real delivery to a real recipient —
+	// without them the first person in the audience gets the message with no call to
+	// action while everyone else gets one, and nothing surfaces the difference.
+	rows := broadcastRows(b.Buttons)
 	var fileID string
 	if b.MediaKind == "photo" {
-		fileID, err = client.UploadPhoto(ctx, chatID, name, b.Text, f)
+		fileID, err = client.UploadPhoto(ctx, chatID, name, b.Text, rows, f)
 	} else {
-		fileID, err = client.UploadDocument(ctx, chatID, name, b.Text, f)
+		fileID, err = client.UploadDocument(ctx, chatID, name, b.Text, rows, f)
 	}
 	if err != nil {
 		s.record(b.ID, chatID, err)
@@ -169,14 +217,15 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 	if fileID == "" {
 		// Delivered, but Telegram returned no id to reuse — every later recipient
 		// would re-upload. Pause rather than quietly burn the bandwidth.
-		log.Printf("telegram broadcast %d: no file_id returned; pausing", b.ID)
-		if err := s.store.SetBroadcastStatus(b.ID, model.BroadcastPaused, 0); err != nil {
-			log.Printf("telegram broadcast %d: pause: %v", b.ID, err)
-		}
+		s.pause(b.ID, "Telegram не вернул file_id — иначе файл грузился бы заново каждому")
 		return false
 	}
 	if err := s.store.SetBroadcastMediaFileID(b.ID, fileID); err != nil {
+		// Without the cached id every later pass re-uploads the whole file to one
+		// more recipient, forever. Stop rather than quietly burn the bandwidth the
+		// file_id design exists to save.
 		log.Printf("telegram broadcast %d: cache file_id: %v", b.ID, err)
+		s.pause(b.ID, "не удалось сохранить file_id вложения")
 		return false
 	}
 	b.MediaFileID = fileID
@@ -243,6 +292,23 @@ func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) {
 	}
 	if err := s.store.MarkTarget(broadcastID, chatID, state, msg, now); err != nil {
 		log.Printf("telegram broadcast %d: mark %d: %v", broadcastID, chatID, err)
+	}
+}
+
+// sweepMedia deletes attachments belonging to runs that will never send again.
+// Cleaning up only on the "done" path leaks a file for every other ending —
+// cancelled, paused for good, or a create that failed before the run started — and
+// those files sit in the data dir that gets backed up.
+func (s *BroadcastService) sweepMedia() {
+	ids, err := s.store.FinishedBroadcastIDs()
+	if err != nil {
+		log.Printf("telegram broadcast: sweep: %v", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := os.Stat(BroadcastMediaPath(s.dataDir, id)); err == nil {
+			s.removeMedia(id)
+		}
 	}
 }
 

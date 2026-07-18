@@ -111,24 +111,32 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 	if err != nil {
 		return err
 	}
-	if enabled && token != "" {
-		if set.TGBotEnabled && strings.TrimSpace(set.TGBotToken) == token {
+	// Compared regardless of whether the other bot is currently enabled: sharing a
+	// token with a disabled bot saves fine today and breaks the day it is switched
+	// on, when two poll loops race for one update stream and each steals half the
+	// other's messages.
+	if token != "" {
+		if strings.TrimSpace(set.TGBotToken) == token {
 			return invalid("у бота поддержки и админ-бота должны быть разные токены")
 		}
-		if set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) == token {
+		if strings.TrimSpace(set.TGUserBotToken) == token {
 			return invalid("у бота поддержки и пользовательского бота должны быть разные токены")
 		}
 	}
-	if err := m.store.SetTelegramSupport(enabled, token, username, groupID, greeting); err != nil {
-		return err
+	// Thread ids are scoped to the group that issued them, so pointing support at a
+	// different group must drop them — otherwise a reply in the new group's topic 7
+	// is delivered to whoever owned topic 7 in the old one.
+	//
+	// Cleared BEFORE the settings write, and only when moving to a real group. Done
+	// after, a failure here would leave the new group id stored with stale mappings
+	// and no path that ever retries: the "did the group change?" test would compare
+	// the new id against itself and never fire again.
+	if groupID != 0 && set.TGSupportGroupID != groupID {
+		if err := m.store.ResetSupportTopics(); err != nil {
+			return err
+		}
 	}
-	// Thread ids are scoped to the group that issued them. Pointing support at a
-	// different group must drop them, or replies would address threads that don't
-	// exist there — or, worse, unrelated threads that happen to share an id.
-	if set.TGSupportGroupID != groupID {
-		return m.store.ResetSupportTopics()
-	}
-	return nil
+	return m.store.SetTelegramSupport(enabled, token, username, groupID, greeting)
 }
 
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).

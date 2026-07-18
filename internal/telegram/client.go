@@ -51,8 +51,36 @@ type Message struct {
 	Chat            Chat        `json:"chat"`
 	Text            string      `json:"text"`
 	MessageThreadID int64       `json:"message_thread_id"`
+	Caption         string      `json:"caption"`
 	Photo           []PhotoSize `json:"photo"`
 	Document        *Document   `json:"document"`
+
+	// Forum service messages. Telegram emits one of these when an admin creates,
+	// renames, closes or reopens a topic; they carry a real sender and the topic's
+	// thread id, so without them housekeeping looks exactly like a reply to relay.
+	ForumTopicCreated  *struct{} `json:"forum_topic_created"`
+	ForumTopicEdited   *struct{} `json:"forum_topic_edited"`
+	ForumTopicClosed   *struct{} `json:"forum_topic_closed"`
+	ForumTopicReopened *struct{} `json:"forum_topic_reopened"`
+}
+
+// IsForumService reports whether this is topic housekeeping rather than something a
+// person wrote.
+func (m *Message) IsForumService() bool {
+	return m != nil && (m.ForumTopicCreated != nil || m.ForumTopicEdited != nil ||
+		m.ForumTopicClosed != nil || m.ForumTopicReopened != nil)
+}
+
+// Body is the text a message carries, wherever it lives — plain text for a text
+// message, the caption for one carrying media.
+func (m *Message) Body() string {
+	if m == nil {
+		return ""
+	}
+	if m.Text != "" {
+		return m.Text
+	}
+	return m.Caption
 }
 
 // PhotoSize / Document carry the file_id Telegram assigns to an uploaded file.
@@ -323,6 +351,16 @@ func (c *Client) CreateForumTopic(ctx context.Context, chatID int64, name string
 	return topic.MessageThreadID, nil
 }
 
+// ReopenForumTopic re-opens a closed topic. Admins close a thread as the natural
+// "handled" gesture, and the relay keeps one thread per user forever — without a
+// reopen, that user's support would be dead from then on.
+func (c *Client) ReopenForumTopic(ctx context.Context, chatID, threadID int64) error {
+	return c.call(ctx, "reopenForumTopic", map[string]any{
+		"chat_id":           chatID,
+		"message_thread_id": threadID,
+	}, nil)
+}
+
 // ForwardMessage forwards a message into a chat, optionally into a forum topic
 // (threadID 0 = the General thread). Forwarding keeps the "from" attribution.
 func (c *Client) ForwardMessage(ctx context.Context, toChatID, threadID, fromChatID, messageID int64) error {
@@ -402,30 +440,30 @@ func (c *Client) GetChatMember(ctx context.Context, chatID, userID int64) (*Chat
 
 // SendDocument uploads a file to a chat as a document, with an optional caption.
 func (c *Client) SendDocument(ctx context.Context, chatID int64, filename, caption string, r io.Reader) error {
-	_, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, r)
+	_, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, nil, r)
 	return err
 }
 
 // SendPhoto uploads an image to a chat (shown inline), with an optional HTML
 // caption. Used to deliver the subscription QR code.
 func (c *Client) SendPhoto(ctx context.Context, chatID int64, filename, caption string, r io.Reader) error {
-	_, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, r)
+	_, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, nil, r)
 	return err
 }
 
 // UploadPhoto / UploadDocument send a file and return the file_id Telegram assigned
 // it, so the same file can be re-sent to everyone else with SendPhotoID /
 // SendDocumentID instead of being uploaded again per recipient.
-func (c *Client) UploadPhoto(ctx context.Context, chatID int64, filename, caption string, r io.Reader) (string, error) {
-	m, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, r)
+func (c *Client) UploadPhoto(ctx context.Context, chatID int64, filename, caption string, rows [][]InlineButton, r io.Reader) (string, error) {
+	m, err := c.upload(ctx, "sendPhoto", "photo", chatID, filename, caption, rows, r)
 	if err != nil {
 		return "", err
 	}
 	return m.MediaFileID(), nil
 }
 
-func (c *Client) UploadDocument(ctx context.Context, chatID int64, filename, caption string, r io.Reader) (string, error) {
-	m, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, r)
+func (c *Client) UploadDocument(ctx context.Context, chatID int64, filename, caption string, rows [][]InlineButton, r io.Reader) (string, error) {
+	m, err := c.upload(ctx, "sendDocument", "document", chatID, filename, caption, rows, r)
 	if err != nil {
 		return "", err
 	}
@@ -474,13 +512,23 @@ func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand) error {
 // "document" or "photo"). HTML parse mode is set so captions can be formatted.
 // It returns the resulting message so callers can pick up the file_id Telegram
 // assigned (see MediaFileID).
-func (c *Client) upload(ctx context.Context, method, field string, chatID int64, filename, caption string, r io.Reader) (*Message, error) {
+func (c *Client) upload(ctx context.Context, method, field string, chatID int64, filename, caption string, rows [][]InlineButton, r io.Reader) (*Message, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("chat_id", strconv.FormatInt(chatID, 10))
 	if caption != "" {
 		_ = mw.WriteField("caption", caption)
 		_ = mw.WriteField("parse_mode", "HTML")
+	}
+	// An uploaded message is a real delivery like any other: it carries the same
+	// keyboard the by-file_id sends do, or the first recipient of a broadcast would
+	// be the only one without buttons.
+	if len(rows) > 0 {
+		markup, err := json.Marshal(map[string]any{"inline_keyboard": rows})
+		if err != nil {
+			return nil, err
+		}
+		_ = mw.WriteField("reply_markup", string(markup))
 	}
 	fw, err := mw.CreateFormFile(field, filename)
 	if err != nil {

@@ -56,6 +56,9 @@ func (s *UserService) clientFor(token string) *Client {
 	if s.client == nil || s.clientToken != token {
 		s.client = NewClient(token)
 		s.clientToken = token
+		// Per-bot update ids: keeping the old offset across a token swap would ACK
+		// away the new bot's backlog and drop messages until it caught up.
+		s.offset = 0
 	}
 	return s.client
 }

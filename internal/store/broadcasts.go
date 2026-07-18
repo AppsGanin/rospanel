@@ -126,10 +126,36 @@ func (s *Store) SetBroadcastStatus(id int64, status string, at int64) error {
 	return err
 }
 
+// SetBroadcastStatusIf moves a broadcast only if it is still in the state the caller
+// last saw, and reports whether it applied. The worker uses it for every status write
+// it makes: between deciding to write and writing, the operator may have paused or
+// cancelled, and an unconditional UPDATE would silently revert that decision — with
+// the run then resumable through the normal controls.
+func (s *Store) SetBroadcastStatusIf(id int64, from, to string, at int64) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE broadcasts SET status = ?, finished_at = ? WHERE id = ? AND status = ?`,
+		to, at, id, from)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // RetryFailedBroadcast puts failed recipients back in the queue and resumes the run.
 // 'blocked' rows are left alone: Telegram will refuse them again for the same reason.
+// Both statements run in one transaction, and the re-open is conditional on the run
+// still being 'done'. Split across two writes, a crash in between would leave a
+// 'done' broadcast holding pending rows — a state no API can move, because the
+// controls refuse a finished run and a second retry finds nothing failed.
 func (s *Store) RetryFailedBroadcast(id, now int64) (int, error) {
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+
+	res, err := tx.Exec(
 		`UPDATE broadcast_targets SET state = ?, error = ''
 		 WHERE broadcast_id = ? AND state = ?`,
 		model.TargetPending, id, model.TargetFailed)
@@ -140,17 +166,45 @@ func (s *Store) RetryFailedBroadcast(id, now int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if n > 0 {
-		// Re-open a run that had already finished, and clear its end stamp: it is
-		// finished again only once the retried recipients drain.
-		if err := s.SetBroadcastStatus(id, model.BroadcastRunning, now); err != nil {
-			return 0, err
-		}
-		if _, err := s.db.Exec(`UPDATE broadcasts SET finished_at = 0 WHERE id = ?`, id); err != nil {
-			return 0, err
-		}
+	if n == 0 {
+		return 0, tx.Commit()
 	}
-	return int(n), nil
+	// Only a finished run re-opens. A cancelled one keeps its untouched pending
+	// recipients, and resuming it would deliver the remainder the operator stopped.
+	res, err = tx.Exec(
+		`UPDATE broadcasts SET status = ?, finished_at = 0 WHERE id = ? AND status = ?`,
+		model.BroadcastRunning, id, model.BroadcastDone)
+	if err != nil {
+		return 0, err
+	}
+	if moved, err := res.RowsAffected(); err != nil {
+		return 0, err
+	} else if moved == 0 {
+		return 0, nil // rolled back by the deferred call: the run wasn't 'done'
+	}
+	return int(n), tx.Commit()
+}
+
+// FinishedBroadcastIDs lists runs that will never send again. The worker uses it to
+// drop their attachments: removeMedia on the "done" path alone leaks a file for every
+// run that was cancelled, paused for good, or died between creation and start.
+func (s *Store) FinishedBroadcastIDs() ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT id FROM broadcasts WHERE status IN (?, ?) AND media_kind <> ''`,
+		model.BroadcastDone, model.BroadcastCancelled)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // NextRunningBroadcast returns the oldest broadcast still being delivered, or nil.

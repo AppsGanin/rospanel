@@ -73,12 +73,18 @@ func (s *SupportService) clientFor(token string) *Client {
 	if s.client == nil || s.clientToken != token {
 		s.client = NewClient(token)
 		s.clientToken = token
+		// Update ids are per-bot and a new bot starts from scratch. Carrying the old
+		// offset over would ACK away the new bot's whole backlog and swallow every
+		// message until its counter caught up — silently, with nothing logged.
+		s.offset = 0
 	}
 	return s.client
 }
 
-// allow rate-limits one chat (fixed window). Returns false when the window is spent.
-func (s *SupportService) allow(chatID int64, now time.Time) bool {
+// allow rate-limits one chat (fixed window). allowed is false once the window is
+// spent; first marks the single message that crossed the line, so the sender can be
+// told exactly once instead of on every one of a hundred.
+func (s *SupportService) allow(chatID int64, now time.Time) (allowed, first bool) {
 	s.rateMu.Lock()
 	defer s.rateMu.Unlock()
 	if len(s.rate) > rateGCThreshold {
@@ -91,13 +97,13 @@ func (s *SupportService) allow(chatID int64, now time.Time) bool {
 	w := s.rate[chatID]
 	if w == nil || now.Sub(w.start) >= supportRateWindow {
 		s.rate[chatID] = &rateWindow{start: now, count: 1}
-		return true
-	}
-	if w.count >= maxSupportPerWindow {
-		return false
+		return true, false
 	}
 	w.count++
-	return true
+	if w.count > maxSupportPerWindow {
+		return false, w.count == maxSupportPerWindow+1
+	}
+	return true, false
 }
 
 // Run long-polls the support bot until ctx is cancelled. Settings are re-read every
@@ -158,6 +164,17 @@ func (s *SupportService) handle(ctx context.Context, client *Client, set *model.
 // contact.
 func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, set *model.Settings, m *Message) {
 	chatID := m.Chat.ID
+	// Counted before the /start branch: it is the one command every user sends
+	// first, and leaving it outside the limit leaves the limit trivially bypassable.
+	switch allowed, first := s.allow(chatID, time.Now()); {
+	case !allowed && first:
+		// Told once per window. Answering every rejected message would make a flood
+		// produce MORE outbound traffic than it did inbound.
+		s.reply(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+		return
+	case !allowed:
+		return
+	}
 	if cmd, _ := splitCmd(m.Text); cmd == "/start" {
 		greeting := strings.TrimSpace(set.TGSupportGreeting)
 		if greeting == "" {
@@ -168,11 +185,6 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 		}
 		return
 	}
-	if !s.allow(chatID, time.Now()) {
-		s.reply(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
-		return
-	}
-
 	topicID, created, err := s.ensureTopic(ctx, client, set, m)
 	if err != nil {
 		log.Printf("telegram support: ensure topic for %d: %v", chatID, err)
@@ -181,7 +193,14 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 	}
 
 	err = client.ForwardMessage(ctx, set.TGSupportGroupID, topicID, chatID, m.MessageID)
-	if isThreadGone(err) {
+	switch {
+	case isTopicClosed(err):
+		// Closing a thread is how an admin marks an issue handled — it is not a
+		// decision to stop talking to that person forever. Re-open and deliver.
+		if err = client.ReopenForumTopic(ctx, set.TGSupportGroupID, topicID); err == nil {
+			err = client.ForwardMessage(ctx, set.TGSupportGroupID, topicID, chatID, m.MessageID)
+		}
+	case isThreadGone(err):
 		// The admins deleted the topic. Re-open one and retry once, otherwise this
 		// user's conversation would be dead forever.
 		if err = s.store.DeleteSupportTopic(chatID); err == nil {
@@ -208,8 +227,15 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 	if m.MessageThreadID == 0 {
 		return // the General thread — not anybody's conversation
 	}
-	if strings.HasPrefix(strings.TrimSpace(m.Text), internalNotePrefix) {
-		return // note between admins
+	if m.IsForumService() {
+		// Renaming or closing a topic is not a reply. Relaying it would fail and post
+		// an alarming "не доставлено" notice for routine housekeeping.
+		return
+	}
+	// Body(), not Text: a note written as a photo caption is still a note, and the
+	// escape hatch admins are told to trust must not be text-only.
+	if strings.HasPrefix(strings.TrimSpace(m.Body()), internalNotePrefix) {
+		return
 	}
 	chatID, err := s.store.SupportChatByTopic(m.MessageThreadID)
 	if err != nil {
@@ -273,8 +299,11 @@ func topicTitle(u model.User, linked bool, m *Message) string {
 	} else if m.From != nil && m.From.Username != "" {
 		title = "@" + m.From.Username
 	}
-	if len(title) > topicNameMax {
-		title = title[:topicNameMax]
+	// Telegram counts characters, not bytes, and rejects malformed UTF-8 outright.
+	// A byte slice through a multi-byte name would 400 every time, permanently
+	// breaking support for whoever picked that name.
+	if r := []rune(title); len(r) > topicNameMax {
+		title = string(r[:topicNameMax])
 	}
 	return title
 }
@@ -309,6 +338,15 @@ func isThreadGone(err error) bool {
 	var ae *APIError
 	return errors.As(err, &ae) && ae.Code == 400 &&
 		strings.Contains(strings.ToLower(ae.Description), "thread not found")
+}
+
+// isTopicClosed reports whether the topic still exists but is closed to new posts.
+// Distinct from isThreadGone: this one is repaired by reopening, not by recreating —
+// recreating would strand the conversation history the admins just filed away.
+func isTopicClosed(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Code == 400 &&
+		strings.Contains(strings.ToUpper(ae.Description), "TOPIC_CLOSED")
 }
 
 // isBlockedByUser reports whether the user can no longer be written to at all, as
