@@ -641,8 +641,7 @@ export function TelegramSettings() {
                    progress that isn't happening. */
                 <p className="text-sm text-ink-muted">
                   Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
-                  супергруппу — она появится здесь сама, даже пока поддержка
-                  выключена.
+                  супергруппу — она появится здесь.
                 </p>
               ) : (
                 <p className="text-sm text-ink-muted">
