@@ -87,7 +87,7 @@ func TestUpsertKeepsOptOut(t *testing.T) {
 	}
 }
 
-// TestOptOutWithoutRow: /stop must stick even for a chat nothing has recorded yet,
+// TestOptOutWithoutRow: an opt-out must stick even for a chat nothing has recorded yet,
 // or the unsubscribe is lost and the next broadcast contradicts it.
 func TestOptOutWithoutRow(t *testing.T) {
 	st := subStore(t)
@@ -125,7 +125,7 @@ func TestSetSubscriberBlocked(t *testing.T) {
 	}
 }
 
-// TestSubscriberBackfill covers the 0032 backfill on a database that already has
+// TestSubscriberBackfill covers the backfill on a database that already has
 // linked users. Without it the first broadcast after an upgrade reaches only the
 // people who happened to write to the bot since — which reads as a broken feature,
 // not an empty table.
@@ -137,7 +137,7 @@ func TestSubscriberBackfill(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	// Simulate a pre-0032 install: users linked to chats, no subscriber rows.
+	// Simulate a pre-feature install: users linked to chats, no subscriber rows.
 	if _, err := st.db.Exec(`DELETE FROM tg_subscribers`); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
@@ -151,15 +151,31 @@ func TestSubscriberBackfill(t *testing.T) {
 	if _, err := st.CreateUser("unlinked", "uuid-2", "pw", "tok-2", 0, 0, 0); err != nil {
 		t.Fatalf("create unlinked: %v", err)
 	}
-	if _, err := st.db.Exec(`DELETE FROM schema_migrations WHERE version LIKE '0032%'`); err != nil {
+	if _, err := st.db.Exec(
+		`DELETE FROM schema_migrations WHERE version LIKE '0031_telegram%'`); err != nil {
 		t.Fatalf("rewind migration: %v", err)
 	}
-	if _, err := st.db.Exec(`DROP TABLE tg_subscribers`); err != nil {
-		t.Fatalf("drop: %v", err)
+	// The whole feature is one migration now, so replaying it means undoing
+	// everything it creates — every table and every settings column.
+	for _, tbl := range []string{
+		"tg_subscribers", "tg_support_topics", "tg_support_groups",
+		"broadcast_targets", "broadcasts",
+	} {
+		if _, err := st.db.Exec(`DROP TABLE ` + tbl); err != nil {
+			t.Fatalf("drop %s: %v", tbl, err)
+		}
+	}
+	for _, col := range []string{
+		"tg_support_enabled", "tg_support_bot_token", "tg_support_bot_username",
+		"tg_support_group_id", "tg_support_greeting",
+	} {
+		if _, err := st.db.Exec(`ALTER TABLE settings DROP COLUMN ` + col); err != nil {
+			t.Fatalf("drop settings.%s: %v", col, err)
+		}
 	}
 	st.Close()
 
-	// Re-opening replays 0032 against the populated database.
+	// Re-opening replays the migration against the populated database.
 	st, err = Open(path)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)

@@ -9,7 +9,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// Broadcast persistence. See migrations/0033_broadcasts.sql for why the recipient
+// Broadcast persistence. See migrations/0031_telegram_support_broadcast.sql for why the recipient
 // list lives on disk and the counters do not.
 
 // targetBatch caps how many recipients one INSERT statement carries. SQLite's

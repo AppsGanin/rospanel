@@ -78,7 +78,7 @@ func (s *Store) DeleteSupportTopic(groupID, chatID int64) error {
 	return err
 }
 
-// Discovered groups — see migrations/0034_tg_support_groups.sql for why these are
+// Discovered groups — see migrations/0031_telegram_support_broadcast.sql for why these are
 // only ever candidates.
 
 // UpsertSupportGroup records a group the bot is in, refreshing what is known about

@@ -7,7 +7,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// The bot's audience registry — see migrations/0032_tg_subscribers.sql for why it is
+// The bot's audience registry — see migrations/0031_telegram_support_broadcast.sql for why it is
 // kept apart from the user roster.
 
 // UpsertSubscriber records a chat that just interacted with the bot, refreshing the
