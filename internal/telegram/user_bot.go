@@ -24,7 +24,7 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
-	commandsFor string           // token whose command menu was already published
+	commandsFor string // token whose command menu was already published
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
 
