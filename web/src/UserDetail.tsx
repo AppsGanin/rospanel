@@ -600,10 +600,6 @@ export function UserDetail({
             </Button>
           )}
         </div>
-        <p className="mt-2 text-xs text-ink-muted">
-          Уйдёт от пользовательского бота — в тот же диалог, где человек уже
-          общается с сервисом.
-        </p>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={() => setMsgOpen(false)}>
             Отмена

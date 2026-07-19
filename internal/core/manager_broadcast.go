@@ -78,10 +78,7 @@ func (m *Manager) StartBroadcast(id int64) error {
 }
 
 func validateBroadcast(b *model.Broadcast) error {
-	switch b.Audience {
-	case model.AudienceAll, model.AudienceLinked, model.AudienceUnlinked,
-		model.AudienceActive, model.AudienceExpired:
-	default:
+	if !model.ValidAudience(b.Audience) {
 		return invalid("неизвестная аудитория")
 	}
 	switch b.MediaKind {
@@ -124,31 +121,45 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	var byID map[int64]model.User
-	if audience == model.AudienceActive || audience == model.AudienceExpired {
-		users, err := m.store.ListUsers()
-		if err != nil {
-			return nil, err
-		}
-		byID = make(map[int64]model.User, len(users))
-		for _, u := range users {
-			byID[u.ID] = u
-		}
+	// Every filter except the two membership ones needs the account behind the chat,
+	// so it is cheaper to load the roster once than to branch on which ones do.
+	users, err := m.store.ListUsers()
+	if err != nil {
+		return nil, err
 	}
+	byID := make(map[int64]model.User, len(users))
+	for _, u := range users {
+		byID[u.ID] = u
+	}
+
+	now := time.Now().Unix()
 	out := make([]int64, 0, len(subs))
 	for _, s := range subs {
+		u, linked := byID[s.UserID], s.UserID != 0
 		keep := false
 		switch audience {
 		case model.AudienceAll:
 			keep = true
 		case model.AudienceLinked:
-			keep = s.UserID != 0
+			keep = linked
 		case model.AudienceUnlinked:
-			keep = s.UserID == 0
+			keep = !linked
 		case model.AudienceActive:
-			keep = byID[s.UserID].Status == model.StatusActive
+			keep = linked && u.Status == model.StatusActive
 		case model.AudienceExpired:
-			keep = byID[s.UserID].Status == model.StatusExpired
+			keep = linked && u.Status == model.StatusExpired
+		case model.AudienceNever:
+			keep = linked && u.LastSeen == 0
+		default:
+			if n, ok := model.AudienceDays(audience, model.AudienceSeenPrefix); ok {
+				keep = linked && u.LastSeen > 0 && now-u.LastSeen <= int64(n)*86400
+			} else if n, ok := model.AudienceDays(audience, model.AudienceUnseenPrefix); ok {
+				// "Never connected" counts as not seen: someone who never arrived is
+				// the clearest case of the thing this filter is looking for.
+				keep = linked && (u.LastSeen == 0 || now-u.LastSeen > int64(n)*86400)
+			} else if n, ok := model.AudienceDays(audience, model.AudienceExpiringPrefix); ok {
+				keep = linked && u.ExpireAt > now && u.ExpireAt-now <= int64(n)*86400
+			}
 		}
 		if keep {
 			out = append(out, s.ChatID)

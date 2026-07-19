@@ -27,13 +27,24 @@ import {
   useConfirm,
 } from "./ui";
 
-const AUDIENCES: { value: BroadcastAudience; label: string }[] = [
+// The audience picker. `days` marks the filters that take a horizon, which travels
+// inside the value the server stores ("seen:7").
+const AUDIENCES: { value: string; label: string; days?: boolean }[] = [
   { value: "all", label: "Все, кто открывал бота" },
   { value: "linked", label: "Только с аккаунтом в панели" },
   { value: "unlinked", label: "Без аккаунта (не завершили регистрацию)" },
   { value: "active", label: "С активной подпиской" },
   { value: "expired", label: "С истёкшей подпиской" },
+  { value: "expiring", label: "Подписка скоро закончится", days: true },
+  { value: "seen", label: "Были в сети за последние…", days: true },
+  { value: "unseen", label: "Не заходили дольше…", days: true },
+  { value: "never", label: "Ни разу не подключались" },
 ];
+
+const DAY_CHOICES = [1, 3, 7, 14, 30, 90].map((d) => ({
+  value: String(d),
+  label: `${d} ${d === 1 ? "день" : d < 5 ? "дня" : "дней"}`,
+}));
 
 const STATUS: Record<Broadcast["status"], { label: string; color: string }> = {
   running: { label: "Идёт", color: "blue" },
@@ -68,7 +79,13 @@ export function BroadcastPanel() {
   const [loaded, setLoaded] = useState(false);
   const [list, setList] = useState<Broadcast[]>([]);
   const [text, setText] = useState("");
-  const [audience, setAudience] = useState<BroadcastAudience>("all");
+  const [audienceKind, setAudienceKind] = useState("all");
+  const [audienceDays, setAudienceDays] = useState("7");
+  const needsDays = !!AUDIENCES.find((a) => a.value === audienceKind)?.days;
+  // What the server stores and resolves: the horizon rides inside the value.
+  const audience: BroadcastAudience = needsDays
+    ? `${audienceKind}:${audienceDays}`
+    : audienceKind;
   const [buttons, setButtons] = useState<BroadcastButton[]>([]);
   const [media, setMedia] = useState<File | null>(null);
   const [reach, setReach] = useState<number | null>(null);
@@ -178,12 +195,25 @@ export function BroadcastPanel() {
         description="Сообщение уйдёт через пользовательского бота всем, кто не отписался и не заблокировал его."
       >
         <div className="flex flex-col gap-3">
-          <Select
-            label="Кому"
-            data={AUDIENCES}
-            value={audience}
-            onChange={(v) => setAudience(v as BroadcastAudience)}
-          />
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[16rem] flex-1">
+              <Select
+                label="Кому"
+                data={AUDIENCES.map((a) => ({ value: a.value, label: a.label }))}
+                value={audienceKind}
+                onChange={setAudienceKind}
+              />
+            </div>
+            {needsDays && (
+              <div className="w-40">
+                <Select
+                  data={DAY_CHOICES}
+                  value={audienceDays}
+                  onChange={setAudienceDays}
+                />
+              </div>
+            )}
+          </div>
           <p className="text-xs text-ink-muted">
             {reach === null
               ? "Считаем получателей…"

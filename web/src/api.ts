@@ -765,6 +765,10 @@ export interface TelegramInfo {
   user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   admin_events: Record<string, boolean> // admin notification categories (key→on)
+  // What the USER bot tells the person themselves, and how many days ahead the
+  // expiry warning goes out.
+  user_events: Record<string, boolean>
+  user_expiring_days: number
 
   // Support relay: a third bot that carries messages between a user's chat and a
   // per-user topic in support_group_id (a forum supergroup the admins answer in).
@@ -791,6 +795,8 @@ export const saveTelegram = (t: {
   user_reg_mode: RegMode
   user_reg_code: string
   admin_events: Record<string, boolean>
+  user_events: Record<string, boolean>
+  user_expiring_days: number
   support_enabled: boolean
   support_token: string
   support_group_id: number
@@ -850,12 +856,10 @@ export const testTelegramBackup = () =>
 // Mass broadcasts through the user bot. The audience is snapshotted when a broadcast
 // starts, so total never moves once it is running.
 export type BroadcastStatus = 'running' | 'paused' | 'done' | 'cancelled'
-export type BroadcastAudience =
-  | 'all'
-  | 'linked'
-  | 'unlinked'
-  | 'active'
-  | 'expired'
+// A plain key ("all", "expired") or a parameterised one carrying its horizon
+// ("seen:7"). The string is what gets stored and displayed, so the parameter travels
+// with it rather than in a second field that would have to be kept in sync.
+export type BroadcastAudience = string
 
 export interface BroadcastButton {
   text: string

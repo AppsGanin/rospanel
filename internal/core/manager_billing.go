@@ -220,7 +220,10 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	plan := m.PlanName(u.PlanID)
 	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan, "moderation": true})
 	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
-	m.notifyUser(req.ChatID, "✅ Ваш аккаунт одобрен — доступ открыт. Откройте меню в боте, чтобы получить подписку.")
+	// Gated with the other user-facing notices: an operator who switched them all off
+	// should not still have the bot writing to people.
+	m.notifyRegistrationDecision(req.ChatID,
+		"✅ Ваш аккаунт одобрен — доступ открыт. Откройте меню в боте, чтобы получить подписку.")
 	return nil
 }
 
@@ -239,7 +242,8 @@ func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) er
 	if !claimed {
 		return nil // another admin already decided this request
 	}
-	m.notifyUser(req.ChatID, "🚫 Заявка на регистрацию отклонена. Обратитесь к администратору.")
+	m.notifyRegistrationDecision(req.ChatID,
+		"🚫 Заявка на регистрацию отклонена. Обратитесь к администратору.")
 	return nil
 }
 

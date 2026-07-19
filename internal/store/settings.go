@@ -54,7 +54,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
 		       geo_refresh_hours, iplist_refresh_hours,
 		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
-		       tg_support_group_id, tg_support_greeting
+		       tg_support_group_id, tg_support_greeting,
+		       tg_user_events, tg_user_expiring_days
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -90,6 +91,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
 		&tgSupportEn, &st.TGSupportBotToken, &st.TGSupportBotUsername,
 		&st.TGSupportGroupID, &st.TGSupportGreeting,
+		&st.TGUserEvents, &st.TGUserExpiringDays,
 	)
 	if err != nil {
 		return nil, err
@@ -182,6 +184,16 @@ func (s *Store) SetTelegramSupport(enabled bool, token, username string, groupID
 		        tg_support_greeting = ?, updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), encField(token), username, groupID, greeting,
 	)
+	return err
+}
+
+// SetUserEvents persists the user-facing notification bitmask (model.UserEvent*
+// flags) and how many days ahead the expiry warning goes out.
+func (s *Store) SetUserEvents(mask int64, expiringDays int) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_user_events = ?, tg_user_expiring_days = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		mask, expiringDays)
 	return err
 }
 

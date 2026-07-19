@@ -391,7 +391,12 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	}
 	logInfo("payment: order paid", "order", order.ID, "provider", provider, "user", order.UserID, "plan", order.PlanID)
 	if u, e := m.store.GetUser(order.UserID); e == nil {
-		m.notifyUser(u.TgChatID, fmt.Sprintf("✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
+		// Gated like the other user-facing notices, so an operator who turns them all
+		// off does not still have the bot writing to people.
+		if set, err := m.store.GetSettings(); err == nil {
+			m.notifyUserEvent(set, *u, model.UserNotifyPayment, fmt.Sprintf(
+				"✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
+		}
 	}
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",

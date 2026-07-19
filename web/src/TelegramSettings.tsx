@@ -59,6 +59,44 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
   { key: "payment", label: "Платежи", desc: "Новые заказы и подтверждённые оплаты" },
 ];
 
+// USER_EVENTS are what the user bot tells the person themselves. Keys must match
+// model.UserNotifyCatalog on the backend.
+const USER_EVENTS: { key: string; label: string; desc?: string }[] = [
+  {
+    key: "expiring",
+    label: "Подписка скоро закончится",
+    desc: "Напоминание за выбранное число дней",
+  },
+  { key: "expired", label: "Подписка истекла" },
+  {
+    key: "traffic_low",
+    label: "Трафик заканчивается",
+    desc: "Когда израсходовано 80% лимита",
+  },
+  { key: "limited", label: "Трафик закончился" },
+  {
+    key: "device_limited",
+    label: "Слишком много устройств",
+    desc: "Подключений больше, чем разрешено тарифом",
+  },
+  {
+    key: "disabled",
+    label: "Доступ приостановлен",
+    desc: "Аккаунт выключен администратором",
+  },
+  { key: "payment", label: "Оплата получена", desc: "Тариф активирован" },
+  {
+    key: "registration",
+    label: "Решение по заявке",
+    desc: "Регистрация одобрена или отклонена",
+  },
+];
+
+const EXPIRING_DAYS = [1, 3, 7, 14].map((d) => ({
+  value: String(d),
+  label: `За ${d} ${d === 1 ? "день" : d < 5 ? "дня" : "дней"}`,
+}));
+
 type AdminEvents = Record<string, boolean>;
 
 // groupIssue labels a candidate that cannot work yet, so the reason is visible at
@@ -70,8 +108,11 @@ function groupIssue(g: SupportGroup): string {
 }
 
 // sameEvents compares two category maps over the known keys (order-independent).
-const sameEvents = (a: AdminEvents, b: AdminEvents) =>
-  ADMIN_EVENTS.every((e) => !!a[e.key] === !!b[e.key]);
+const sameEvents = (
+  a: AdminEvents,
+  b: AdminEvents,
+  keys: { key: string }[] = ADMIN_EVENTS,
+) => keys.every((e) => !!a[e.key] === !!b[e.key]);
 
 export function TelegramSettings() {
   const [loaded, setLoaded] = useState(false);
@@ -83,6 +124,8 @@ export function TelegramSettings() {
   const [userRegMode, setUserRegMode] = useState<RegMode>("off");
   const [userRegCode, setUserRegCode] = useState("");
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
+  const [userEvents, setUserEvents] = useState<AdminEvents>({});
+  const [expiringDays, setExpiringDays] = useState("3");
   const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
   const [chats, setChats] = useState<number[]>([]);
   const [linkCode, setLinkCode] = useState("");
@@ -104,6 +147,8 @@ export function TelegramSettings() {
     userRegMode: "off" as RegMode,
     userRegCode: "",
     adminEvents: {} as AdminEvents,
+    userEvents: {} as AdminEvents,
+    expiringDays: "3",
     supportEnabled: false,
     supportToken: "",
     supportGroupID: "",
@@ -123,6 +168,8 @@ export function TelegramSettings() {
         setUserRegMode(t.user_reg_mode || "off");
         setUserRegCode(t.user_reg_code || "");
         setAdminEvents(t.admin_events || {});
+        setUserEvents(t.user_events || {});
+        setExpiringDays(String(t.user_expiring_days || 3));
         setChats(t.chat_ids || []);
         setLinkCode(t.link_code || "");
         setBotUsername(t.bot_username || "");
@@ -143,6 +190,8 @@ export function TelegramSettings() {
           userRegMode: t.user_reg_mode || "off",
           userRegCode: t.user_reg_code || "",
           adminEvents: t.admin_events || {},
+          userEvents: t.user_events || {},
+          expiringDays: String(t.user_expiring_days || 3),
           supportEnabled: t.support_enabled,
           supportToken: t.support_token || "",
           supportGroupID: groupID,
@@ -201,6 +250,8 @@ export function TelegramSettings() {
     userRegMode !== saved.userRegMode ||
     userRegCode.trim() !== saved.userRegCode.trim() ||
     !sameEvents(adminEvents, saved.adminEvents) ||
+    !sameEvents(userEvents, saved.userEvents, USER_EVENTS) ||
+    expiringDays !== saved.expiringDays ||
     supportEnabled !== saved.supportEnabled ||
     supportToken.trim() !== saved.supportToken.trim() ||
     supportGroupID.trim() !== saved.supportGroupID.trim() ||
@@ -224,6 +275,8 @@ export function TelegramSettings() {
         user_reg_mode: userRegMode,
         user_reg_code: userRegCode.trim(),
         admin_events: adminEvents,
+        user_events: userEvents,
+        user_expiring_days: Number(expiringDays) || 3,
         support_enabled: supportEnabled,
         support_token: supportToken.trim(),
         support_group_id: Number(supportGroupID.trim()) || 0,
@@ -238,6 +291,8 @@ export function TelegramSettings() {
         userRegMode,
         userRegCode: userRegCode.trim(),
         adminEvents,
+        userEvents,
+        expiringDays,
         supportEnabled,
         supportToken: supportToken.trim(),
         supportGroupID: supportGroupID.trim(),
@@ -262,6 +317,8 @@ export function TelegramSettings() {
     setUserRegMode(saved.userRegMode);
     setUserRegCode(saved.userRegCode);
     setAdminEvents(saved.adminEvents);
+    setUserEvents(saved.userEvents);
+    setExpiringDays(saved.expiringDays);
     setSchedule(detectPreset(saved.cron));
     setSupportEnabled(saved.supportEnabled);
     setSupportToken(saved.supportToken);
@@ -556,6 +613,45 @@ export function TelegramSettings() {
               />
             )}
           </div>
+        </div>
+      </SettingCard>
+
+      <SettingCard
+        title="Уведомления пользователю"
+        description="Что пользовательский бот пишет самому пользователю в его чат."
+      >
+        <div className="flex flex-col gap-3">
+          {!userEnabled && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
+              Пользовательский бот выключен — эти уведомления не отправляются.
+            </p>
+          )}
+          {USER_EVENTS.map((e) => (
+            <div key={e.key}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-ink">{e.label}</p>
+                  {e.desc && <p className="text-xs text-ink-muted">{e.desc}</p>}
+                </div>
+                <Switch
+                  checked={!!userEvents[e.key]}
+                  onChange={(v) =>
+                    setUserEvents((cur) => ({ ...cur, [e.key]: v }))
+                  }
+                  disabled={!userEnabled}
+                />
+              </div>
+              {e.key === "expiring" && userEvents.expiring && (
+                <div className="mt-2 max-w-xs">
+                  <Select
+                    data={EXPIRING_DAYS}
+                    value={expiringDays}
+                    onChange={setExpiringDays}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </SettingCard>
 

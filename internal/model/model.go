@@ -93,6 +93,17 @@ type User struct {
 	// push, webhook, audit row). Persisted so a panel restart cannot lose a transition
 	// that happened while it was down. "" = never alerted about.
 	NotifiedStatus string `json:"-"`
+
+	// NotifiedExpireAt is the ExpireAt a "runs out soon" warning was already sent for.
+	// Holding the expiry rather than a timestamp re-arms the warning for free: a
+	// renewal moves ExpireAt, the stored value stops matching, and the next cycle is
+	// eligible again.
+	NotifiedExpireAt int64 `json:"-"`
+
+	// NotifiedQuotaAt marks that a "running low on traffic" notice was already sent
+	// (0 = not yet). Cleared once usage falls back under the threshold, which is what
+	// a quota reset or a plan change does — so the warning re-arms on its own.
+	NotifiedQuotaAt int64 `json:"-"`
 }
 
 // TelegramLinkCodeTTL is how long a one-time Telegram bind code stays valid.
@@ -207,13 +218,53 @@ const (
 )
 
 // Broadcast audiences, resolved to a chat list once at launch.
+//
+// The parameterised ones carry their argument in the value itself ("seen:7") rather
+// than in another column: an audience is written once at launch and read back only to
+// be shown, so a second field would exist purely to be kept in sync with this one.
 const (
 	AudienceAll      = "all"
 	AudienceLinked   = "linked"   // has a panel account
 	AudienceUnlinked = "unlinked" // never registered, or the account was deleted
 	AudienceActive   = "active"   // account in the active state
 	AudienceExpired  = "expired"  // subscription ran out
+	AudienceNever    = "never"    // linked account that has never connected
+
+	AudienceSeenPrefix     = "seen:"     // connected within the last N days
+	AudienceUnseenPrefix   = "unseen:"   // not seen for N days (never counts)
+	AudienceExpiringPrefix = "expiring:" // subscription runs out within N days
 )
+
+// AudienceDays extracts the N from a parameterised audience, and reports whether the
+// value is one. Bounded so a typo can't turn "not seen for 90 days" into a filter
+// that quietly matches nobody or everybody.
+func AudienceDays(audience, prefix string) (int, bool) {
+	rest, ok := strings.CutPrefix(audience, prefix)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 || n > 365 {
+		return 0, false
+	}
+	return n, true
+}
+
+// ValidAudience reports whether an audience string is one the panel knows how to
+// resolve.
+func ValidAudience(a string) bool {
+	switch a {
+	case AudienceAll, AudienceLinked, AudienceUnlinked, AudienceActive,
+		AudienceExpired, AudienceNever:
+		return true
+	}
+	for _, p := range []string{AudienceSeenPrefix, AudienceUnseenPrefix, AudienceExpiringPrefix} {
+		if _, ok := AudienceDays(a, p); ok {
+			return true
+		}
+	}
+	return false
+}
 
 // BroadcastButton is one URL button under a broadcast. Only URL buttons are offered:
 // a callback button would need a handler in the bot, and one attached to a message
@@ -563,6 +614,12 @@ type Settings struct {
 	// to the authorized chats. Default -1 (all on); see AdminEventEnabled.
 	TGAdminEvents int64 `json:"-"`
 
+	// TGUserEvents is the same idea aimed the other way: which UserEvent* categories
+	// the USER bot pushes to the person themselves. TGUserExpiringDays is how many
+	// days ahead the expiry warning goes out.
+	TGUserEvents       int64 `json:"-"`
+	TGUserExpiringDays int   `json:"-"`
+
 	// Support relay (Settings → Telegram → Поддержка): a third bot whose only job is
 	// to carry messages between a user and a per-user topic in TGSupportGroupID, a
 	// forum supergroup the operator's admins answer in. It is separate from the user
@@ -693,6 +750,62 @@ var AdminEventCatalog = []struct {
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
 func (s *Settings) AdminEventEnabled(bit int64) bool { return s.TGAdminEvents&bit != 0 }
+
+// User notification categories (bitmask flags stored in Settings.TGUserEvents).
+// Named UserNotify* rather than UserEvent*, which the user journal already uses for
+// something else entirely — one records what happened, this decides what gets said.
+// Separate from the AdminEvent* set even where the subject matches: "чей-то трафик
+// закончился" and "ваш трафик закончился" are different messages to different people,
+// and an operator watching their own alerts should not thereby be writing to
+// customers.
+const (
+	UserNotifyExpiring      int64 = 1 << 0 // subscription runs out soon
+	UserNotifyExpired       int64 = 1 << 1 // subscription has run out
+	UserNotifyTrafficLow    int64 = 1 << 2 // most of the quota is spent
+	UserNotifyLimited       int64 = 1 << 3 // traffic quota exhausted
+	UserNotifyDeviceLimited int64 = 1 << 4 // too many devices at once
+	UserNotifyDisabled      int64 = 1 << 5 // access switched off by an operator
+	UserNotifyPayment       int64 = 1 << 6 // payment confirmed, plan activated
+	UserNotifyRegistration  int64 = 1 << 7 // moderated signup approved or rejected
+)
+
+// TrafficWarnPercent is how much of the quota must be spent before the "running
+// low" notice goes out. Fixed rather than configurable: the useful range is narrow,
+// and one more knob to explain buys nothing.
+const TrafficWarnPercent = 80
+
+// UserNotifyCatalog is the stable key→flag mapping the settings API and UI iterate
+// over. Appending is safe; renaming a key silently resets that toggle.
+var UserNotifyCatalog = []struct {
+	Key string
+	Bit int64
+}{
+	{"expiring", UserNotifyExpiring},
+	{"expired", UserNotifyExpired},
+	{"traffic_low", UserNotifyTrafficLow},
+	{"limited", UserNotifyLimited},
+	{"device_limited", UserNotifyDeviceLimited},
+	{"disabled", UserNotifyDisabled},
+	{"payment", UserNotifyPayment},
+	{"registration", UserNotifyRegistration},
+}
+
+// UserNotifyEnabled reports whether the given UserEvent* flag is enabled.
+func (s *Settings) UserNotifyEnabled(bit int64) bool { return s.TGUserEvents&bit != 0 }
+
+// ExpiringDays is the warning horizon, clamped to something a person would call a
+// warning: zero would fire at the moment of expiry (which the expired notice already
+// covers) and a huge value would warn about a subscription that is barely used.
+func (s *Settings) ExpiringDays() int {
+	switch {
+	case s.TGUserExpiringDays < 1:
+		return 1
+	case s.TGUserExpiringDays > 30:
+		return 30
+	default:
+		return s.TGUserExpiringDays
+	}
+}
 
 // SupportLink is the t.me URL of the support bot, or "" when support is off or the
 // bot's @username was never resolved. Callers render the entry point only for a
