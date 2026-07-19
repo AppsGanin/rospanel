@@ -49,6 +49,24 @@ const TEXT_MAX = 4096;
 const CAPTION_MAX = 1024;
 const BUTTONS_MAX = 8;
 
+// The formatting Telegram actually accepts. Anything outside this list is delivered
+// as literal text, so offering more would only produce broken-looking messages.
+const FORMATS = [
+  { label: "Ж", title: "Жирный", open: "<b>", close: "</b>", placeholder: "текст" },
+  { label: "К", title: "Курсив", open: "<i>", close: "</i>", placeholder: "текст" },
+  { label: "Ч", title: "Подчёркнутый", open: "<u>", close: "</u>", placeholder: "текст" },
+  { label: "S", title: "Зачёркнутый", open: "<s>", close: "</s>", placeholder: "текст" },
+  { label: "</>", title: "Моноширинный", open: "<code>", close: "</code>", placeholder: "код" },
+  {
+    label: "🔗",
+    title: "Ссылка",
+    open: '<a href="https://">',
+    close: "</a>",
+    placeholder: "текст ссылки",
+  },
+  { label: "👁", title: "Скрытый текст", open: "<tg-spoiler>", close: "</tg-spoiler>", placeholder: "спойлер" },
+];
+
 // Polled only while it is actually moving. A paused run changes nothing on its own,
 // and treating it as live left the tab polling every 1.5s forever against a progress
 // bar that never moves — on a panel whose store has a single connection.
@@ -75,6 +93,7 @@ export function BroadcastPanel() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const { confirm, confirmNode } = useConfirm();
 
   const load = () =>
@@ -116,6 +135,25 @@ export function BroadcastPanel() {
   const badButton = buttons.some((b) => !b.text.trim() || !b.url.trim());
   const canSend = !empty && !overLimit && !badButton;
   const payload = { text, audience, buttons };
+
+  // wrap puts the selected text inside a tag pair, or drops in a placeholder when
+  // nothing is selected. Telegram accepts a small fixed set of HTML and nothing
+  // else, so this stays a tag-wrapper rather than a Markdown editor: a converter
+  // would add a layer whose mistakes only surface once the audience has the message.
+  const wrap = (open: string, close: string, placeholder: string) => {
+    const el = textRef.current;
+    if (!el) return;
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
+    const chosen = text.slice(from, to) || placeholder;
+    const next = text.slice(0, from) + open + chosen + close + text.slice(to);
+    setText(next);
+    // Leave the inserted text selected so typing replaces it.
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(from + open.length, from + open.length + chosen.length);
+    });
+  };
 
   const clearMedia = () => {
     setMedia(null);
@@ -190,13 +228,29 @@ export function BroadcastPanel() {
               : `Получателей сейчас: ${reach}. Список фиксируется в момент запуска.`}
           </p>
 
-          <Textarea
-            label="Текст (HTML: <b>, <i>, <a href>)"
-            value={text}
-            onChange={setText}
-            rows={5}
-            placeholder="Например: <b>Плановые работы</b> 20 июля с 03:00 до 05:00."
-          />
+          <div>
+            <p className="mb-1 text-sm font-medium text-ink">Текст</p>
+            <div className="mb-1 flex flex-wrap gap-1">
+              {FORMATS.map((f) => (
+                <button
+                  key={f.label}
+                  type="button"
+                  title={f.title}
+                  onClick={() => wrap(f.open, f.close, f.placeholder)}
+                  className="rounded-md border border-gray-200 px-2 py-1 text-xs text-ink hover:bg-gray-50"
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <Textarea
+              value={text}
+              onChange={setText}
+              rows={5}
+              inputRef={textRef}
+              placeholder="Например: Плановые работы 20 июля с 03:00 до 05:00."
+            />
+          </div>
           <p
             className={`text-xs ${overLimit ? "text-red-600" : "text-ink-muted"}`}
           >
@@ -206,24 +260,34 @@ export function BroadcastPanel() {
 
           <div>
             <p className="mb-1 text-sm font-medium text-ink">Вложение</p>
+            {/* The native file input renders its own untranslated label ("Файл не
+                выбран"), which reads as a rendering fault next to styled controls.
+                Hidden, driven by a button that says what it does. */}
             <input
               ref={fileRef}
               type="file"
-              className="text-sm text-ink-muted"
+              className="hidden"
               onChange={(e) => setMedia(e.target.files?.[0] ?? null)}
             />
-            {media && (
-              <p className="mt-1 text-xs text-ink-muted">
-                {media.name} —{" "}
-                <button
-                  type="button"
-                  className="text-accent hover:underline"
-                  onClick={clearMedia}
-                >
-                  убрать
-                </button>
-              </p>
+            {media ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-ink">📎 {media.name}</span>
+                <Button variant="subtle" size="xs" onClick={clearMedia}>
+                  Убрать
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="light"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+              >
+                Выбрать файл
+              </Button>
             )}
+            <p className="mt-1 text-xs text-ink-muted">
+              Картинка придёт с текстом в подписи, любой другой файл — документом.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -289,7 +353,7 @@ export function BroadcastPanel() {
               onClick={sendTest}
               disabled={!canSend}
             >
-              Отправить тест мне
+              Отправить тест
             </Button>
           </div>
           <p className="text-xs text-ink-muted">
@@ -299,8 +363,7 @@ export function BroadcastPanel() {
         </div>
       </SettingCard>
 
-      <Card>
-        <p className="mb-3 text-sm font-medium text-ink">История</p>
+      <SettingCard title="История">
         {list.length === 0 ? (
           <p className="text-sm text-ink-muted">Рассылок ещё не было.</p>
         ) : (
@@ -310,7 +373,7 @@ export function BroadcastPanel() {
             ))}
           </div>
         )}
-      </Card>
+      </SettingCard>
     </div>
   );
 }

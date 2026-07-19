@@ -9,6 +9,7 @@ import {
   renameUser,
   resetUserTraffic,
   rotateSubToken,
+  messageUser,
   unlinkUserTelegram,
   setResetPeriod,
   setUserEnabled,
@@ -44,6 +45,7 @@ import {
   DatePicker,
   Divider,
   Modal,
+  Textarea,
   IconButton,
   IconCheck,
   IconClose,
@@ -156,10 +158,12 @@ export function UserDetail({
   user,
   onClose,
   onChanged,
+  userBotEnabled,
 }: {
   user: User | null
   onClose: () => void
   onChanged: () => void
+  userBotEnabled: boolean
 }) {
   const [series, setSeries] = useState<DailyPoint[]>([])
   const [conns, setConns] = useState<Connection[]>([])
@@ -170,6 +174,9 @@ export function UserDetail({
   const [plans, setPlans] = useState<TariffPlan[]>([])
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
   const [eventsOpen, setEventsOpen] = useState(false)
+  const [msgOpen, setMsgOpen] = useState(false)
+  const [msgText, setMsgText] = useState('')
+  const [sending, setSending] = useState(false)
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
@@ -430,6 +437,16 @@ export function UserDetail({
                   Telegram ID: <Code copy>{String(user.tg_chat_id)}</Code>
                 </p>
               )}
+              {/* A broadcast to one person. Shown only with a linked chat AND a
+                  running user bot — it is the bot that delivers, so without it the
+                  button could only ever produce an error. */}
+              {userBotEnabled && (
+                <div>
+                  <Button size="xs" variant="light" onClick={() => setMsgOpen(true)}>
+                    Отправить сообщение
+                  </Button>
+                </div>
+              )}
               <Button
                 size="xs"
                 variant="light"
@@ -532,6 +549,48 @@ export function UserDetail({
         open={eventsOpen}
         onClose={() => setEventsOpen(false)}
       />
+    )}
+    {user && (
+      <Modal
+        open={msgOpen}
+        onClose={() => setMsgOpen(false)}
+        title={`Сообщение для ${user.name}`}
+      >
+        <Textarea
+          value={msgText}
+          onChange={setMsgText}
+          rows={5}
+          placeholder="Текст придёт в чат с ботом. Можно HTML: <b>, <i>, <a href>."
+        />
+        <p className="mt-1 text-xs text-ink-muted">
+          Уйдёт от пользовательского бота — в тот же диалог, где человек уже
+          общается с сервисом.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="light" color="gray" onClick={() => setMsgOpen(false)}>
+            Отмена
+          </Button>
+          <Button
+            loading={sending}
+            disabled={!msgText.trim()}
+            onClick={async () => {
+              setSending(true)
+              try {
+                await messageUser(user.id, msgText.trim())
+                setMsgText('')
+                setMsgOpen(false)
+                notifySuccess('Сообщение отправлено')
+              } catch (e) {
+                notifyError(errMessage(e))
+              } finally {
+                setSending(false)
+              }
+            }}
+          >
+            Отправить
+          </Button>
+        </div>
+      </Modal>
     )}
     {confirmNode}
     </>

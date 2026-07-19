@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { getRegistrations, type RegistrationRequest } from "./api";
+import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
 import { RegistrationsPanel } from "./RegistrationsPanel";
+import { useIsAdmin } from "./role";
 import { navigate, useRoute } from "./router";
 import { StatsPanel } from "./StatsPanel";
 import { Badge, cn } from "./ui";
@@ -11,9 +13,9 @@ import { UsersPanel } from "./UsersPanel";
 // traffic, and what was done to whom — so they live as sub-tabs of this section
 // instead of eating two slots in the top nav. The "Заявки" tab appears only while
 // the user bot is in moderation mode (or a leftover queue needs clearing).
-type SubTab = "list" | "requests" | "stats" | "events";
+type SubTab = "list" | "requests" | "broadcast" | "stats" | "events";
 
-export function UsersPage() {
+export function UsersPage({ userBotEnabled }: { userBotEnabled: boolean }) {
   const seg = useRoute();
   const [reg, setReg] = useState<{
     moderation: boolean;
@@ -38,6 +40,7 @@ export function UsersPage() {
     return () => clearInterval(id);
   }, [loadReg]);
 
+  const isAdmin = useIsAdmin();
   const showRequests = reg.moderation || reg.requests.length > 0;
   const tabs: { value: SubTab; label: string; count?: number }[] = [
     { value: "list", label: "Список" },
@@ -49,6 +52,13 @@ export function UsersPage() {
             count: reg.requests.length,
           },
         ]
+      : []),
+    // Broadcasts live here rather than at the top level: the audience is the bot's
+    // users, and composing one is something you do while looking at them. Hidden
+    // without the user bot, which is what actually delivers them — the server would
+    // refuse anyway, and a tab that always errors is worse than no tab.
+    ...(isAdmin && userBotEnabled
+      ? [{ value: "broadcast" as SubTab, label: "Рассылка" }]
       : []),
     { value: "stats", label: "Статистика" },
     { value: "events", label: "Журнал" },
@@ -84,10 +94,11 @@ export function UsersPage() {
       </div>
 
       <div key={tab} className="animate-fade-in">
-        {tab === "list" && <UsersPanel />}
+        {tab === "list" && <UsersPanel userBotEnabled={userBotEnabled} />}
         {tab === "requests" && (
           <RegistrationsPanel requests={reg.requests} onReload={loadReg} />
         )}
+        {tab === "broadcast" && <BroadcastPanel />}
         {tab === "stats" && <StatsPanel />}
         {tab === "events" && <EventsPanel />}
       </div>

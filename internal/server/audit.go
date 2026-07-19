@@ -160,8 +160,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/rotate-sub":      skip,
 	"POST /api/users/{id}/telegram/unlink": skip,
 	"POST /api/users/{id}/telegram/link":   skip,
-	"POST /api/users/{id}/reset-period":    skip,
-	"POST /api/users/{id}/plan":            skip,
+	// Writing to a customer is worth its own row: unlike the routes above, nothing
+	// else records that it happened.
+	"POST /api/users/{id}/telegram/message": act(model.AuditUserMessaged),
+	"POST /api/users/{id}/reset-period":     skip,
+	"POST /api/users/{id}/plan":             skip,
 
 	// Sessions are audited inside their handlers: login has no session to read an
 	// actor from, and a FAILED login — the row worth having — never reaches a

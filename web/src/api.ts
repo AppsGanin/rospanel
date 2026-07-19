@@ -388,6 +388,7 @@ export interface Me {
   version: string
   must_change_password?: boolean
   billing_enabled?: boolean
+  user_bot_enabled?: boolean
 }
 
 export const getMe = () => api<Me>('api/me')
@@ -929,6 +930,15 @@ export const cancelBroadcast = (id: number) =>
 
 export const retryBroadcast = (id: number) =>
   api<Broadcast>(`api/broadcasts/${id}/retry`, { method: 'POST' })
+
+// messageUser sends one message to one user's Telegram chat — the same thing a
+// broadcast does, for an audience of one, but answered synchronously so the operator
+// learns immediately whether it arrived.
+export const messageUser = (id: number, text: string) =>
+  api<{ ok: boolean }>(`api/users/${id}/telegram/message`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
 
 // Moderated self-registration queue: signups awaiting an admin decision. No user
 // exists until a request is approved.

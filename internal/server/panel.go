@@ -239,6 +239,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
 	authedOpID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
 	authedOpID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
+	authedOpID("POST /api/users/{id}/telegram/message", rt.messageUser)
 	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
 	authedOpID("GET /api/users/{id}/events", rt.userEvents)
@@ -450,6 +451,10 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 		resp["setup_done"] = set.SetupDone
 		resp["timezone"] = set.Timezone
 		resp["billing_enabled"] = set.BillingEnabled
+		// Broadcasts and per-user messages both go through the user bot, so the SPA
+		// hides those surfaces entirely when it is off rather than offering an action
+		// the server would refuse.
+		resp["user_bot_enabled"] = set.TGUserBotEnabled
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
