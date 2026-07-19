@@ -301,6 +301,10 @@ export function TelegramSettings() {
       // The support bot's @username is resolved server-side during the save, so pull
       // the fresh value back rather than leaving a stale one on screen.
       await load();
+      // Turning the user bot on or off changes which surfaces exist elsewhere (the
+      // Рассылка tab, the per-user send button). Same event pattern the billing
+      // toggle uses, so they update without a reload.
+      window.dispatchEvent(new Event("rospanel:telegram-changed"));
       notifySuccess("Настройки Telegram сохранены");
     } catch (e) {
       notifyError(errMessage(e));

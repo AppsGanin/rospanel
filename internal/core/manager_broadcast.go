@@ -135,7 +135,12 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 	now := time.Now().Unix()
 	out := make([]int64, 0, len(subs))
 	for _, s := range subs {
-		u, linked := byID[s.UserID], s.UserID != 0
+		// Presence in the roster, not a non-zero id: a deleted account leaves its id
+		// behind on the subscriber row, and treating that as "linked" fed the filters
+		// a zero-value user — so "ни разу не подключался" collected ex-customers who
+		// had connected yesterday, while the audience documented to hold them
+		// ("без аккаунта") excluded them.
+		u, linked := byID[s.UserID]
 		keep := false
 		switch audience {
 		case model.AudienceAll:
@@ -154,9 +159,13 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 			if n, ok := model.AudienceDays(audience, model.AudienceSeenPrefix); ok {
 				keep = linked && u.LastSeen > 0 && now-u.LastSeen <= int64(n)*86400
 			} else if n, ok := model.AudienceDays(audience, model.AudienceUnseenPrefix); ok {
-				// "Never connected" counts as not seen: someone who never arrived is
-				// the clearest case of the thing this filter is looking for.
-				keep = linked && (u.LastSeen == 0 || now-u.LastSeen > int64(n)*86400)
+				// "Never connected" counts as not seen — someone who never arrived is
+				// the clearest case of what this filter looks for — but only once the
+				// account is itself older than the horizon. Otherwise "вы не заходили
+				// 90 дней" lands on people who registered this morning.
+				old := now-u.CreatedAt.Unix() > int64(n)*86400
+				stale := u.LastSeen > 0 && now-u.LastSeen > int64(n)*86400
+				keep = linked && (stale || (u.LastSeen == 0 && old))
 			} else if n, ok := model.AudienceDays(audience, model.AudienceExpiringPrefix); ok {
 				keep = linked && u.ExpireAt > now && u.ExpireAt-now <= int64(n)*86400
 			}
@@ -170,7 +179,19 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 
 // AudiencePreview reports how many recipients an audience currently resolves to, so
 // the operator sees the size before launching rather than after.
+//
+// It normalises and validates exactly as CreateBroadcast does. Without that, an
+// unrecognised audience resolved to an empty list and previewed as "0 получателей" —
+// while the launch itself would either refuse it or, for an empty string, fall back
+// to everyone. A preview that disagrees with the send is worse than no preview.
 func (m *Manager) AudiencePreview(audience string) (int, error) {
+	audience = strings.TrimSpace(audience)
+	if audience == "" {
+		audience = model.AudienceAll
+	}
+	if !model.ValidAudience(audience) {
+		return 0, invalid("неизвестная аудитория")
+	}
 	chats, err := m.audienceChats(audience)
 	if err != nil {
 		return 0, err

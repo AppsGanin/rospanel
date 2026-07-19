@@ -54,19 +54,31 @@ export function Dashboard({
   const [credsOpen, setCredsOpen] = useState(false);
   // Keep the payments-enabled flag fresh so the "Оплата" item appears/vanishes
   // without a full reload: re-read on every top-level tab change AND whenever the
-  // billing toggle is saved in Settings (which fires "rospanel:billing-changed").
+  // Both flags are saved in Settings, which fires an event when it does. Without a
+  // refresh they would keep their login-time values until a full page reload: the
+  // Рассылка tab and the per-user "Отправить сообщение" button would stay hidden
+  // after switching the user bot ON, and — worse — stay visible after switching it
+  // OFF, so every action behind them would answer 400.
   const [billing, setBilling] = useState(billingEnabled);
-  const refreshBilling = () =>
+  const [userBot, setUserBot] = useState(userBotEnabled);
+  const refreshFlags = () =>
     getMe()
-      .then((m) => setBilling(!!m.billing_enabled))
+      .then((m) => {
+        setBilling(!!m.billing_enabled);
+        setUserBot(!!m.user_bot_enabled);
+      })
       .catch(() => {});
   useEffect(() => {
-    refreshBilling();
+    refreshFlags();
   }, [seg[0]]);
   useEffect(() => {
-    const h = () => refreshBilling();
+    const h = () => refreshFlags();
     window.addEventListener("rospanel:billing-changed", h);
-    return () => window.removeEventListener("rospanel:billing-changed", h);
+    window.addEventListener("rospanel:telegram-changed", h);
+    return () => {
+      window.removeEventListener("rospanel:billing-changed", h);
+      window.removeEventListener("rospanel:telegram-changed", h);
+    };
   }, []);
 
   // An operator gets the tabs whose routes they can actually call: the dashboard and
@@ -228,7 +240,7 @@ export function Dashboard({
           {tab === "overview" && <OverviewPanel />}
           {tab === "users" && (
             <UsersPage
-              userBotEnabled={userBotEnabled}
+              userBotEnabled={userBot}
               billingEnabled={billing}
             />
           )}

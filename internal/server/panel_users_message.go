@@ -19,6 +19,15 @@ const (
 	captionUserMax = 1024
 )
 
+// Deliberately operator tier, unlike broadcasts (admin): writing to one customer is
+// support work, and support staff are exactly who does it. The broadcast gate exists
+// because that surface reaches everyone at once.
+//
+// It also ignores tg_subscribers.opt_out on purpose. That flag means "no mass
+// mailings" — the bot tells people so when they use it — not "never contact me";
+// service messages and support replies are precisely what it promises will still
+// arrive.
+//
 // messageUser sends one message to one user's Telegram chat — a broadcast of one,
 // without the machinery: the operator wants to know right now whether it arrived,
 // not to watch a progress bar for a single recipient.
@@ -70,17 +79,26 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 		return
 	}
 
+	// The row records who was written to. The body is deliberately never stored (it
+	// would put customer correspondence in the admin trail), so without the name the
+	// entry cannot answer the only question it exists for.
+	auditTarget(r, u.Name)
+
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	client := telegram.NewClient(token)
+	// Buttons ride along when a caller sends them, rather than being parsed and
+	// dropped: accepting a field and ignoring it answers 200 for a message that isn't
+	// what was asked for.
+	rows := telegram.BroadcastButtonRows(b.Buttons)
 	var sendErr error
 	switch {
 	case file == nil:
-		sendErr = client.SendMessage(ctx, u.TgChatID, text)
+		sendErr = client.SendMenu(ctx, u.TgChatID, text, rows)
 	case b.MediaKind == "photo":
-		_, sendErr = client.UploadPhoto(ctx, u.TgChatID, b.MediaName, text, nil, file)
+		_, sendErr = client.UploadPhoto(ctx, u.TgChatID, b.MediaName, text, rows, file)
 	default:
-		_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, nil, file)
+		_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, rows, file)
 	}
 	if err := sendErr; err != nil {
 		msg := "не удалось отправить: " + err.Error()

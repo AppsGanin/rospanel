@@ -285,10 +285,25 @@ func (s *Store) SetUserEnabled(id int64, enabled bool) error {
 	return err
 }
 
-// DeleteUser removes a user.
+// DeleteUser removes a user and detaches them from the broadcast audience.
+//
+// The subscriber row survives on purpose — someone whose account was deleted is
+// still in the bot, and reaching them is exactly what the "без аккаунта" audience is
+// for — but it must stop naming an account that no longer exists, or the audience
+// filters read a missing user's zero values as facts about a real one.
 func (s *Store) DeleteUser(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	if _, err := tx.Exec(`UPDATE tg_subscribers SET user_id = NULL WHERE user_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetUsersEnabled flips the manual enabled flag for many users in one statement,

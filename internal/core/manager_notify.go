@@ -130,11 +130,12 @@ func (m *Manager) notifyTrafficLow(set *model.Settings, users []model.User) {
 		return
 	}
 	for _, u := range users {
-		if u.DataLimit <= 0 {
-			continue
-		}
 		used := u.UsedUp + u.UsedDown
-		over := used*100 >= u.DataLimit*int64(model.TrafficWarnPercent)
+		// Unlimited is "not over" rather than "skip": returning early left the marker
+		// set forever on anyone moved to an unlimited plan, and a later move back to a
+		// limited one — which carries usage over — then suppressed the warning for
+		// good.
+		over := u.DataLimit > 0 && used*100 >= u.DataLimit*int64(model.TrafficWarnPercent)
 		switch {
 		case !over && u.NotifiedQuotaAt != 0:
 			// Back under the line — a reset or a bigger plan. Re-arm.
@@ -144,7 +145,7 @@ func (m *Manager) notifyTrafficLow(set *model.Settings, users []model.User) {
 			continue
 		case !over, u.NotifiedQuotaAt != 0:
 			continue
-		case used >= u.DataLimit:
+		case u.DataLimit > 0 && used >= u.DataLimit:
 			// Already out; the exhausted notice covers this and says something the
 			// warning no longer can.
 			continue
@@ -258,17 +259,20 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 					"📵 <b>Слишком много устройств</b>\n\nПодключено %d из %d. Отключите лишние — доступ восстановится сам.",
 					u.ActiveDevices, u.DeviceLimit))
 			}
-		case model.StatusDisabled:
-			// No admin counterpart: an operator who just switched someone off does not
-			// need telling. The person on the other end does.
-			if serr == nil {
-				m.notifyUserEvent(set, u, model.UserNotifyDisabled,
-					"🚫 <b>Доступ приостановлен</b>\n\nОбратитесь в поддержку, если это неожиданно.")
-			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventDeviceLimited, map[string]any{
 				"device_limit": u.DeviceLimit, "active_devices": u.ActiveDevices,
 			})
 			m.EmitWebhook(model.WebhookUserDeviceLimit, userEventData(u))
+		case model.StatusDisabled:
+			// No admin counterpart: an operator who just switched someone off does not
+			// need telling. The person on the other end does. No audit row or webhook
+			// either — the action that caused this is already recorded where it
+			// happened, and inventing an event here is how a manual disable ends up
+			// reported to integrations as something else entirely.
+			if serr == nil {
+				m.notifyUserEvent(set, u, model.UserNotifyDisabled,
+					"🚫 <b>Доступ приостановлен</b>\n\nОбратитесь в поддержку, если это неожиданно.")
+			}
 		}
 	}
 }

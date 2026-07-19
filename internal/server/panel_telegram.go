@@ -127,8 +127,15 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.UserEvents != nil {
-		if err := rt.mgr.SaveUserNotifyPrefs(req.UserEvents,
+	// Either field alone is enough to save: every other field in this handler is
+	// independently optional, and a body carrying just the horizon returning 200
+	// while changing nothing is the kind of silence that costs an hour to diagnose.
+	if req.UserEvents != nil || req.UserExpiringDays != nil {
+		prefs := req.UserEvents
+		if prefs == nil {
+			prefs, _ = rt.mgr.UserNotifyPrefs()
+		}
+		if err := rt.mgr.SaveUserNotifyPrefs(prefs,
 			or(req.UserExpiringDays, cur.ExpiringDays())); err != nil {
 			writeManagerErr(w, err)
 			return

@@ -200,7 +200,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	// If the chat got linked to an account in the meantime (e.g. via a panel link
 	// code), don't mint a duplicate — just let the applicant know they're set.
 	if existing, _ := m.store.GetUserByTelegramChatID(req.ChatID); existing != nil {
-		m.notifyUser(req.ChatID, "✅ Ваш аккаунт уже подключён — откройте меню в боте.")
+		m.notifyRegistrationDecision(req.ChatID, "✅ Ваш аккаунт уже подключён — откройте меню в боте.")
 		return nil
 	}
 	u, err := m.createRegisteredUser(req.Name)
