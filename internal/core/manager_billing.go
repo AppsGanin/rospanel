@@ -34,8 +34,26 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	// Price defines the tier: 0 ⇒ free (never expires, quota refills every срок
 	// действия via PeriodDays); > 0 ⇒ paid (expires after PeriodDays). There is no
 	// separate "free" flag — see model.TariffPlan.IsFree.
-	if p.PriceRub < 0 {
+	//
+	// Which plans may be free is not the operator's free choice: only the two the
+	// billing settings designate (free plan, trial plan) are, and they are ALWAYS
+	// free. Otherwise a paid plan picked as the free one would be handed out for
+	// nothing and forever, and a zero-price plan that is designated as neither is
+	// unreachable — filtered out of the purchase list, never assigned by anything.
+	set, err := m.Settings()
+	if err != nil {
+		return err
+	}
+	if p.ID > 0 && (p.ID == set.BillingFreePlanID || p.ID == set.BillingTrialPlanID) {
 		p.PriceRub = 0
+		// Enabled means "offered for sale", which a designated plan never is — it is
+		// assigned automatically and filtered out of every purchase list. The editor
+		// no longer shows the toggle for these, so a stale false would be an invisible
+		// switch: it would drop the plan out of the admin's own plan pickers (which
+		// filter on enabled) with nothing on screen explaining why.
+		p.Enabled = true
+	} else if p.PriceRub < 1 {
+		return invalid("цена должна быть больше 0 — бесплатным тариф становится, когда его выбирают бесплатным или пробным в разделе «Тарификация»")
 	}
 	if p.SortOrder < 0 {
 		p.SortOrder = 0
@@ -119,10 +137,72 @@ func (m *Manager) MigratePlanUsers(ctx context.Context, fromPlanID, toPlanID int
 }
 
 func (m *Manager) SaveBillingSettings(st *model.Settings) error {
-	if st.BillingTrialDays < 0 {
-		return invalid("пробный период не может быть отрицательным")
+	// The two roles must be different plans. Sharing one looks harmless in the UI but
+	// is a dead end for every self-registered user: planWriteFor treats the trial as
+	// paid-shaped (it must expire), while EnforceBilling refuses to downgrade anyone
+	// already on the free plan — so the trial expires and nothing ever rescues them.
+	if st.BillingFreePlanID != 0 && st.BillingFreePlanID == st.BillingTrialPlanID {
+		return invalid("бесплатный и пробный тарифы должны быть разными: иначе после окончания пробного периода пользователю некуда переходить")
 	}
-	return m.store.SetBillingSettings(st)
+	if err := m.store.SetBillingSettings(st); err != nil {
+		return err
+	}
+	// Designating a plan as the free or trial one MAKES it free: a paid plan left at
+	// its price here would be handed out for nothing (registration and the expiry
+	// downgrade never charge), and IsFree would still call it paid — so it would also
+	// stay on sale. Zero the price to match what the designation already means.
+	ctx := context.Background()
+	for _, id := range []int64{st.BillingFreePlanID, st.BillingTrialPlanID} {
+		if id == 0 {
+			continue
+		}
+		plan, err := m.store.GetTariffPlan(id)
+		if err != nil || plan == nil || (plan.PriceRub == 0 && plan.Enabled) {
+			continue
+		}
+		wasPaid := plan.PriceRub > 0
+		plan.PriceRub = 0
+		plan.Enabled = true // see SaveTariffPlan: the toggle is gone for designated plans
+		if err := m.store.SaveTariffPlan(plan); err != nil {
+			// Reported rather than swallowed: the settings write above has already
+			// committed, so a silent failure leaves the panel handing out a plan it
+			// still considers paid — free to every registrant AND still on sale.
+			return fmt.Errorf("тариф «%s» не удалось сделать бесплатным: %w", plan.Name, err)
+		}
+		logInfo("billing: designated plan is now free and active", "plan", plan.Name, "id", id)
+		if !wasPaid {
+			continue
+		}
+		// The plan row is free now, but everyone already on it still carries the paid
+		// shape it was bought under: an expiry in the future and no refill cycle. Left
+		// alone they expire and are then stuck — EnforceBilling skips users already on
+		// the free plan, and a free plan cannot be renewed — so re-apply the plan to
+		// rewrite those rows with the semantics it now has.
+		m.reapplyPlanToItsUsers(ctx, id)
+	}
+	return nil
+}
+
+// reapplyPlanToItsUsers re-runs the plan assignment for every user currently on it,
+// so their row reflects the plan's present terms. Best-effort per user: one failure
+// must not strand the rest.
+func (m *Manager) reapplyPlanToItsUsers(ctx context.Context, planID int64) {
+	ids, err := m.store.UserIDsOnPlan(planID)
+	if err != nil {
+		logErr("billing: listing users of a newly designated plan failed", "plan", planID, "err", err)
+		return
+	}
+	var done int
+	for _, uid := range ids {
+		if err := m.applyPlan(ctx, uid, planID, false, ""); err != nil {
+			logErr("billing: re-applying a newly designated plan failed", "user", uid, "plan", planID, "err", err)
+			continue
+		}
+		done++
+	}
+	if done > 0 {
+		logInfo("billing: rewrote users onto the newly free plan", "users", done, "plan", planID)
+	}
 }
 
 // CreateRegisteredUser creates an active user from self-registration (trial/free/
@@ -263,19 +343,27 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 		return m.createUser(name, 0, 0)
 	}
 	now := time.Now().Unix()
-	if set.BillingTrialDays > 0 && set.BillingTrialPlanID > 0 {
+	// The trial's length is the trial plan's own period — there is no separate
+	// "trial days" setting to disagree with it. A trial plan without a period would
+	// never expire, so it falls through to the free plan instead.
+	if set.BillingTrialPlanID > 0 {
 		plan, err := m.store.GetTariffPlan(set.BillingTrialPlanID)
-		if err == nil && plan != nil && plan.Enabled {
+		// Not gated on plan.Enabled: designating a plan as the trial IS the on switch
+		// (clear it in "Тарификация" to stop granting trials), and the editor no longer
+		// offers the toggle for designated plans — so reading it here would be an
+		// invisible second switch that silently disables registration trials.
+		if err == nil && plan != nil && plan.PeriodDays > 0 {
 			u, err := m.createBareUser(name)
 			if err != nil {
 				return nil, err
 			}
-			expire := now + int64(set.BillingTrialDays)*86400
-			if err := m.applyPlanLimits(u.ID, plan, expire, false); err != nil {
+			expire := now + int64(plan.PeriodDays)*86400
+			w := planLimits(u.ID, plan, expire, false, now)
+			w.TrialUsed = true
+			if err := m.store.ApplyUserPlan(w); err != nil {
 				return nil, err
 			}
-			_ = m.store.SetUserPlan(u.ID, plan.ID, true)
-			logInfo("user registered with trial plan", "user", u.ID, "plan", plan.Name, "days", set.BillingTrialDays)
+			logInfo("user registered with trial plan", "user", u.ID, "plan", plan.Name, "days", plan.PeriodDays)
 			m.TriggerUserSync()
 			return m.store.GetUser(u.ID)
 		}
@@ -287,10 +375,9 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := m.applyPlanLimits(u.ID, plan, 0, plan.IsFree()); err != nil {
+			if err := m.store.ApplyUserPlan(planLimits(u.ID, plan, 0, plan.IsFree(), now)); err != nil {
 				return nil, err
 			}
-			_ = m.store.SetUserPlan(u.ID, plan.ID, false)
 			logInfo("user registered with free plan", "user", u.ID, "plan", plan.Name)
 			m.TriggerUserSync()
 			return m.store.GetUser(u.ID)
@@ -311,7 +398,12 @@ func (m *Manager) createBareUser(name string) (*model.User, error) {
 	return m.store.CreateUser(name, uuid.NewString(), password, subToken, 0, 0, 0)
 }
 
-func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset bool) error {
+// planLimits computes the quota/expiry/reset columns a plan implies, without
+// writing them. Pure on purpose: the caller commits the result through
+// store.ApplyUserPlan (or, for a purchase, together with the order's paid claim),
+// which is what keeps the several columns a plan touches from landing separately.
+// PlanID is filled in here; TrialUsed is the caller's to set.
+func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset bool, now int64) store.UserPlanWrite {
 	period := "none"
 	if freeReset && plan.DataLimit > 0 && plan.PeriodDays > 0 {
 		// Free plan: refill the quota every срок действия (rolling N-day cycle),
@@ -319,10 +411,15 @@ func (m *Manager) applyPlanLimits(userID int64, plan *model.TariffPlan, expireAt
 		// never resets — its quota is one-time.
 		period = fmt.Sprintf("days:%d", plan.PeriodDays)
 	}
-	if err := m.store.SetUserLimits(userID, plan.DataLimit, expireAt, plan.DeviceLimit); err != nil {
-		return err
+	return store.UserPlanWrite{
+		UserID:      userID,
+		DataLimit:   plan.DataLimit,
+		ExpireAt:    expireAt,
+		DeviceLimit: plan.DeviceLimit,
+		ResetPeriod: period,
+		ResetAnchor: now,
+		PlanID:      plan.ID,
 	}
-	return m.store.SetResetPeriod(userID, period, time.Now().Unix())
 }
 
 // ApplyPlanToUser assigns a tariff and updates limits. extendFromCurrent stacks paid time.
@@ -344,54 +441,60 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 		return err
 	}
 	prevPlan := m.PlanName(u.PlanID)
-	trial := u.TrialUsed
+	w, planName, err := m.planWriteFor(*u, planID, extendFromCurrent)
+	if err != nil {
+		return err
+	}
+	if err := m.store.ApplyUserPlan(w); err != nil {
+		return err
+	}
+	m.TriggerUserSync()
+	m.auditPlan(ctx, userID, u.Name, action, prevPlan, planName, w.ExpireAt)
+	return nil
+}
+
+// planWriteFor resolves "give this user this plan" into the exact row the users
+// table should end up with, and the plan's display name for the audit trail. It
+// reads (the tariff, the settings) but writes nothing, so both callers — a plain
+// assignment and a payment confirmation — can commit the result in whatever
+// transaction they need. Callers must hold applyPlanMu: the expiry it computes is a
+// read-modify-write of the user's current expire_at.
+//
+// planID 0 means manual mode: no plan link, no limits, no reset cycle.
+func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent bool) (store.UserPlanWrite, string, error) {
+	now := time.Now().Unix()
 	if planID == 0 {
-		if err := m.store.SetUserLimits(userID, 0, 0, 0); err != nil {
-			return err
-		}
-		if err := m.store.SetResetPeriod(userID, "none", time.Now().Unix()); err != nil {
-			return err
-		}
-		if err := m.store.SetUserPlan(userID, 0, trial); err != nil {
-			return err
-		}
-		m.TriggerUserSync()
-		m.auditPlan(ctx, userID, u.Name, action, prevPlan, "", 0)
-		return nil
+		return store.UserPlanWrite{
+			UserID:      u.ID,
+			ResetPeriod: "none",
+			ResetAnchor: now,
+			TrialUsed:   u.TrialUsed,
+		}, "", nil
 	}
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
-		return err
+		return store.UserPlanWrite{}, "", err
 	}
 	set, err := m.Settings()
 	if err != nil {
-		return err
+		return store.UserPlanWrite{}, "", err
 	}
 	// The designated trial plan is a zero-price template that still EXPIRES when
 	// assigned (period-limited proba), so it is NOT treated as a free plan here
 	// even though its price is 0 — a manual assignment gives period_days of access,
 	// then EnforceBilling downgrades it to the free plan, same as the trial flow.
 	freePlan := plan.IsFree() && plan.ID != set.BillingTrialPlanID
-	now := time.Now().Unix()
 	var expire int64
-	if freePlan {
-		expire = 0
-	} else if plan.PeriodDays > 0 {
+	if !freePlan && plan.PeriodDays > 0 {
 		base := now
 		if extendFromCurrent && u.ExpireAt > now {
 			base = u.ExpireAt
 		}
 		expire = base + int64(plan.PeriodDays)*86400
 	}
-	if err := m.applyPlanLimits(userID, plan, expire, freePlan); err != nil {
-		return err
-	}
-	if err := m.store.SetUserPlan(userID, plan.ID, trial); err != nil {
-		return err
-	}
-	m.TriggerUserSync()
-	m.auditPlan(ctx, userID, u.Name, action, prevPlan, plan.Name, expire)
-	return nil
+	w := planLimits(u.ID, plan, expire, freePlan, now)
+	w.TrialUsed = u.TrialUsed
+	return w, plan.Name, nil
 }
 
 // auditPlan records a plan change. An empty action means the caller logs its own
@@ -416,8 +519,45 @@ func (m *Manager) isPlanRenewal(userID, planID int64) bool {
 	if err != nil {
 		return false
 	}
-	ap := m.ActivePaidPlan(*u)
+	return m.isPlanRenewalFor(*u, planID)
+}
+
+func (m *Manager) isPlanRenewalFor(u model.User, planID int64) bool {
+	ap := m.ActivePaidPlan(u)
 	return ap != nil && ap.ID == planID
+}
+
+// confirmOrderPaid is the one place an order becomes paid. It claims the
+// pending→paid transition and grants the plan in a single transaction, and reports
+// whether this caller won the claim (false = someone else already confirmed it, and
+// nothing was applied a second time).
+//
+// Both confirmation paths — the provider webhook/poll and the operator's manual
+// confirm — go through here, because both used to do it the same unsafe way: claim
+// first, grant after. Anything that killed the process in between took the money and
+// left no trace that the plan was owed, since every retry path looks for pending
+// orders and the claim had already cleared that flag.
+func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (bool, error) {
+	// Held across the read and the commit: the expiry being computed extends the
+	// user's current one, so a concurrent confirmer must not read the same baseline.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
+	u, err := m.store.GetUser(order.UserID)
+	if err != nil {
+		return false, err
+	}
+	// Extend from the current expiry only for a renewal of the active paid plan;
+	// buying from trial/free/expired starts from now (no inherited time).
+	w, _, err := m.planWriteFor(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID))
+	if err != nil {
+		return false, err
+	}
+	claimed, err := m.store.ConfirmPaymentOrder(order.ID, paidAt, w)
+	if err != nil || !claimed {
+		return false, err
+	}
+	m.TriggerUserSync()
+	return true, nil
 }
 
 // ActivePaidPlan returns the user's current tariff when it's a paid plan that is
@@ -463,18 +603,26 @@ func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 		}
 	}
 	// No free plan: end the subscription now — clear the plan and expire immediately.
+	// Under applyPlanMu like every other plan write: this reads the user's limits and
+	// writes them back, so without it a renewal confirming concurrently would be
+	// overwritten with the pre-purchase limits and expire_at = now — a paid period
+	// silently eaten.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
 	u, err := m.store.GetUser(userID)
 	if err != nil {
 		return err
 	}
 	now := time.Now().Unix()
-	if err := m.store.SetUserLimits(userID, u.DataLimit, now, u.DeviceLimit); err != nil {
-		return err
-	}
-	if err := m.store.SetResetPeriod(userID, "none", now); err != nil {
-		return err
-	}
-	if err := m.store.SetUserPlan(userID, 0, u.TrialUsed); err != nil {
+	if err := m.store.ApplyUserPlan(store.UserPlanWrite{
+		UserID:      userID,
+		DataLimit:   u.DataLimit,
+		ExpireAt:    now, // expire immediately: there is no free plan to fall back to
+		DeviceLimit: u.DeviceLimit,
+		ResetPeriod: "none",
+		ResetAnchor: now,
+		TrialUsed:   u.TrialUsed,
+	}); err != nil {
 		return err
 	}
 	m.TriggerUserSync()
@@ -577,19 +725,15 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 		return invalid("заказ уже обработан")
 	}
 	now := time.Now().Unix()
-	claimed, err := m.store.MarkPaymentOrderPaidIfPending(orderID, now)
+	// The claim and the plan land together — see confirmOrderPaid. Audited as the
+	// payment below rather than as a bare plan switch: one purchase is one event,
+	// and payment.paid already names the plan.
+	claimed, err := m.confirmOrderPaid(order, now)
 	if err != nil {
 		return err
 	}
 	if !claimed {
 		return invalid("заказ уже обработан")
-	}
-	// Extend from the current expiry only when this is a renewal of the active paid
-	// plan; otherwise start from now. Audited as the payment below rather than as a
-	// bare plan switch — one purchase is one event, and payment.paid names the plan.
-	if err := m.applyPlan(ctx, order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID), ""); err != nil {
-		_ = m.store.RevertPaymentOrderToPending(orderID) // let a retry re-apply
-		return err
 	}
 	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
 	order.Status, order.PaidAt = "paid", now

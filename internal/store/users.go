@@ -38,6 +38,48 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
 
+// UserCounts is the dashboard's view of the users table: how many there are, how
+// many are working, and the lifetime traffic totals.
+type UserCounts struct {
+	Total     int
+	Active    int
+	TotalUp   int64
+	TotalDown int64
+}
+
+// CountUsers computes UserCounts in one aggregate query.
+//
+// The dashboard used to get these four numbers by loading every user row into Go
+// and folding over the slice — on a 2s stream tick, per connected admin, which also
+// meant decrypting every user's stored password (see decField) just to count them.
+// This does the same arithmetic in SQLite and returns four scalars, so the cost
+// stops scaling with the number of users AND the number of open panel tabs.
+//
+// The WHERE clause is deriveStatus's "active" case spelled out in SQL, in the same
+// order: enabled, not expired, inside the quota, inside the device cap. The two must
+// agree — TestCountUsersMatchesDeriveStatus holds them to it.
+func (s *Store) CountUsers(now int64) (UserCounts, error) {
+	var c UserCounts
+	err := s.db.QueryRow(`
+		SELECT COUNT(*),
+		       COALESCE(SUM(u.used_up), 0),
+		       COALESCE(SUM(u.used_down), 0),
+		       COALESCE(SUM(CASE WHEN u.enabled != 0
+		            AND (u.expire_at = 0 OR u.expire_at > ?)
+		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
+		            AND (u.device_limit = 0 OR COALESCE(d.n, 0) <= u.device_limit)
+		           THEN 1 ELSE 0 END), 0)
+		FROM users u
+		LEFT JOIN (
+		    SELECT user_id, COUNT(DISTINCT ip) AS n
+		    FROM connections INDEXED BY idx_connections_last_seen
+		    WHERE last_seen > ? GROUP BY user_id
+		) d ON d.user_id = u.id`,
+		now, now-model.DeviceOnlineWindow,
+	).Scan(&c.Total, &c.TotalUp, &c.TotalDown, &c.Active)
+	return c, err
+}
+
 // ExpiredUsersBefore returns users whose expiry date is older than cutoff (unix
 // seconds) — the candidates for the auto-delete sweep.
 //
@@ -139,7 +181,11 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 
 // UpdateTraffic adds deltas to lifetime totals and records the raw counters.
 func (s *Store) UpdateTraffic(id, addUp, addDown, lastUp, lastDown int64) error {
-	_, err := s.db.Exec(
+	return updateTrafficOn(s.db, id, addUp, addDown, lastUp, lastDown)
+}
+
+func updateTrafficOn(ex execer, id, addUp, addDown, lastUp, lastDown int64) error {
+	_, err := ex.Exec(
 		`UPDATE users SET used_up = used_up + ?, used_down = used_down + ?,
 		 last_up = ?, last_down = ? WHERE id = ?`,
 		addUp, addDown, lastUp, lastDown, id,
@@ -151,7 +197,11 @@ func (s *Store) UpdateTraffic(id, addUp, addDown, lastUp, lastDown int64) error 
 // simultaneous device cap (0 = unlimited). Does not touch the manual enabled
 // flag; status is derived on read.
 func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
-	_, err := s.db.Exec(
+	return setUserLimitsOn(s.db, id, dataLimit, expireAt, deviceLimit)
+}
+
+func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) error {
+	_, err := ex.Exec(
 		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ? WHERE id = ?`,
 		dataLimit, expireAt, deviceLimit, id,
 	)

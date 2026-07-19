@@ -1118,24 +1118,38 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// batch. The agent persists its report id, so a restart no longer regresses it.
 	ack := req.ReportID
 	if req.ReportID > 0 {
-		claimed, err := m.store.ClaimNodeReport(n.ID, req.ReportID)
+		// One commit for the node's whole batch, watermark included. Written per user
+		// this was three fsyncs each on the panel's single connection, every 45s, per
+		// node — the last write path whose cost still scaled with the user count.
+		today := now.In(m.loc()).Format("2006-01-02")
+		deltas := make([]store.TrafficDelta, 0, len(req.Traffic))
+		for _, d := range req.Traffic {
+			up, down := nonNeg(d.Up), nonNeg(d.Down)
+			if up == 0 && down == 0 {
+				continue
+			}
+			// No Baseline: the node already subtracted on its side, and last_up/
+			// last_down belong to the master's own Xray counters.
+			deltas = append(deltas, store.TrafficDelta{
+				UserID: d.UserID, NodeID: n.ID, Day: today,
+				AddUp: up, AddDown: down, SeenAt: now.Unix(),
+			})
+		}
+		// Read before the write: enforceAfterTraffic wants the pre-ingest snapshot to
+		// spot who just crossed a limit.
+		var snapshot []model.User
+		if len(deltas) > 0 {
+			snapshot, _ = m.store.ListUsers()
+		}
+		claimed, err := m.store.ApplyNodeReport(n.ID, req.ReportID, deltas)
 		switch {
 		case err != nil:
-			// Couldn't record the watermark (e.g. DB busy): do NOT ack, so the node keeps
-			// the batch and resends it — acking now would silently drop the traffic.
+			// Nothing was committed — watermark included — so do NOT ack: the node keeps
+			// the batch and resends it, and that resend can still be counted.
+			logErr("node sync: traffic ingest failed",
+				"node", n.ID, "users", len(deltas), "err", err)
 			ack = 0
-		case claimed && len(req.Traffic) > 0:
-			today := now.In(m.loc()).Format("2006-01-02")
-			snapshot, _ := m.store.ListUsers()
-			for _, d := range req.Traffic {
-				up, down := nonNeg(d.Up), nonNeg(d.Down)
-				if up == 0 && down == 0 {
-					continue
-				}
-				_ = m.store.AddUsedTraffic(d.UserID, up, down)
-				_ = m.store.AddDailyTrafficNode(d.UserID, n.ID, today, up, down)
-				_ = m.store.TouchLastSeen(d.UserID, now.Unix())
-			}
+		case claimed && len(deltas) > 0:
 			_ = m.enforceAfterTraffic(snapshot)
 		}
 		// claimed==false with err==nil ⇒ already-counted duplicate ⇒ ack it (a no-op).

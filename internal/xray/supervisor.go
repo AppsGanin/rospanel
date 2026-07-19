@@ -509,9 +509,15 @@ func (s *Supervisor) monitor(p *proc) {
 	close(p.done) // unblocks stopProc() waiting to reuse :443
 
 	s.mu.Lock()
-	if p.stop || s.cur != p {
+	// s.closed matters as much as p.stop here. systemd's default KillMode signals
+	// every process in the cgroup, so on `systemctl stop` Xray gets its own SIGTERM
+	// and can die before the panel's handler reaches Stop() — p.stop is still false,
+	// and the exit reads as a crash. That produced a "Xray аварийно завершился" alert
+	// on every ordinary restart, with no all-clear after it: the restart is scheduled
+	// a second later, by which time the panel itself is gone.
+	if p.stop || s.cur != p || s.closed {
 		s.mu.Unlock()
-		return // intentional kill or already replaced
+		return // intentional kill, already replaced, or the panel is shutting down
 	}
 	s.cur = nil
 	// A run that reached healthy uptime is proven-good config: reset the backoff,

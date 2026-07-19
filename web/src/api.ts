@@ -1080,7 +1080,6 @@ export interface PaymentOrder {
 
 export interface BillingInfo {
   enabled: boolean
-  trial_days: number
   free_plan_id: number
   trial_plan_id: number
   payment_note: string
@@ -1132,7 +1131,6 @@ export const savePaymentProvider = (p: {
 
 export const saveBilling = (b: {
   enabled: boolean
-  trial_days: number
   free_plan_id: number
   trial_plan_id: number
   payment_note: string

@@ -38,6 +38,13 @@ const DeviceOnlineWindow int64 = 120
 // accrues a row per IP indefinitely without a sweep.
 const ConnectionRetentionDays = 30
 
+// TrafficDailyRetentionDays is how long per-day traffic history is kept. It sits
+// well above the journals' 30/90 days because this is reporting data rather than a
+// log — the stats page offers ranges up to a year — but it is bounded all the same:
+// traffic_daily grows at users × nodes × days, so without a sweep it is the one
+// table that never stops.
+const TrafficDailyRetentionDays = 365
+
 // User status values derived on read (not stored).
 const (
 	StatusActive        = "active"
@@ -637,9 +644,9 @@ type Settings struct {
 	LocalBackupCron string `json:"local_backup_cron"`
 	LocalBackupKeep int    `json:"local_backup_keep"`
 
-	// Billing (Settings → Оплата): plans, trial period, free-tier fallback.
+	// Billing (Settings → Оплата): plans, trial plan, free-tier fallback. The
+	// trial's length is the trial plan's own period_days, not a separate setting.
 	BillingEnabled     bool   `json:"-"`
-	BillingTrialDays   int    `json:"-"`
 	BillingFreePlanID  int64  `json:"-"`
 	BillingTrialPlanID int64  `json:"-"`
 	BillingPaymentNote string `json:"-"`

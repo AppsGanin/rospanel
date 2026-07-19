@@ -28,7 +28,7 @@ export function StatsPanel() {
 
   const load = useCallback(() => {
     const to = localDay(0)
-    const from = range === 'all' ? '2000-01-01' : localDay(Number(range) - 1)
+    const from = localDay(Number(range) - 1)
     Promise.all([
       getStatsSeries({ from, to }).then(setSeries),
       getStatsByUser(from, to).then(setTotals),

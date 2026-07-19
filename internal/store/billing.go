@@ -148,11 +148,75 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 }
 
 func (s *Store) SetUserPlan(userID, planID int64, trialUsed bool) error {
-	_, err := s.db.Exec(
+	return setUserPlanOn(s.db, userID, planID, trialUsed)
+}
+
+func setUserPlanOn(ex execer, userID, planID int64, trialUsed bool) error {
+	_, err := ex.Exec(
 		`UPDATE users SET plan_id = ?, trial_used = ? WHERE id = ?`,
 		planID, boolToInt(trialUsed), userID,
 	)
 	return err
+}
+
+// UserPlanWrite is every users column a plan assignment touches. It exists so a
+// caller can compute the whole target state up front and hand it over in one piece,
+// because the three UPDATEs behind it have to land together: a user left with the
+// new limits but the old plan_id (or vice versa) is a state nothing reconciles.
+type UserPlanWrite struct {
+	UserID      int64
+	DataLimit   int64
+	ExpireAt    int64
+	DeviceLimit int
+	ResetPeriod string
+	ResetAnchor int64 // last_reset_at: when the rolling quota cycle starts counting
+	PlanID      int64
+	TrialUsed   bool
+}
+
+// ApplyUserPlan writes a plan assignment atomically.
+func (s *Store) ApplyUserPlan(p UserPlanWrite) error {
+	return s.withTx(func(tx *sql.Tx) error { return applyUserPlanOn(tx, p) })
+}
+
+func applyUserPlanOn(ex execer, p UserPlanWrite) error {
+	if err := setUserLimitsOn(ex, p.UserID, p.DataLimit, p.ExpireAt, p.DeviceLimit); err != nil {
+		return err
+	}
+	if err := setResetPeriodOn(ex, p.UserID, p.ResetPeriod, p.ResetAnchor); err != nil {
+		return err
+	}
+	return setUserPlanOn(ex, p.UserID, p.PlanID, p.TrialUsed)
+}
+
+// ConfirmPaymentOrder claims the pending→paid transition AND applies the plan that
+// payment bought, in a single transaction. It reports whether this caller won the
+// claim — false means a concurrent webhook/poll already handled the order, and the
+// plan was NOT applied again.
+//
+// The atomicity is the whole point, and it is specifically about crashes rather
+// than concurrency (the CAS alone already handles concurrency). Done as separate
+// statements, the terminal status commits FIRST and the plan LAST — so a process
+// killed in between leaves an order marked paid whose plan was never granted. That
+// state is unrecoverable by design: every retry path here keys off status =
+// 'pending', which the claim has already overwritten, and a redelivered webhook
+// no-ops on the non-pending status. Money captured, nothing delivered, nothing that
+// can notice. In one transaction the pair is all-or-nothing: either the user has
+// what they paid for, or the order is still pending and the 25s poll re-confirms it
+// from the provider.
+func (s *Store) ConfirmPaymentOrder(orderID, paidAt int64, p UserPlanWrite) (bool, error) {
+	var claimed bool
+	err := s.withTx(func(tx *sql.Tx) error {
+		var err error
+		if claimed, err = markPaidIfPendingOn(tx, orderID, paidAt); err != nil || !claimed {
+			return err
+		}
+		return applyUserPlanOn(tx, p)
+	})
+	if err != nil {
+		return false, err
+	}
+	return claimed, nil
 }
 
 func (s *Store) UsersWithExpiredPlan(now int64) ([]model.User, error) {
@@ -316,8 +380,8 @@ func (s *Store) CancelPaymentOrderIfPending(id int64) (bool, error) {
 // concurrent confirmers (provider webhook + the poll fallback + a re-delivered
 // webhook) wins the CAS; a caller that gets false must not apply the plan, so a
 // single payment can never extend the user twice.
-func (s *Store) MarkPaymentOrderPaidIfPending(id, paidAt int64) (bool, error) {
-	res, err := s.db.Exec(
+func markPaidIfPendingOn(ex execer, id, paidAt int64) (bool, error) {
+	res, err := ex.Exec(
 		`UPDATE payment_orders SET status = 'paid', paid_at = ? WHERE id = ? AND status = 'pending'`,
 		paidAt, id,
 	)
@@ -326,13 +390,6 @@ func (s *Store) MarkPaymentOrderPaidIfPending(id, paidAt int64) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
-}
-
-// RevertPaymentOrderToPending puts a claimed order back to pending so the polling
-// fallback retries — used when applying the plan failed after the paid claim.
-func (s *Store) RevertPaymentOrderToPending(id int64) error {
-	_, err := s.db.Exec(`UPDATE payment_orders SET status = 'pending', paid_at = 0 WHERE id = ?`, id)
-	return err
 }
 
 // SetPaymentOrderProvider links an order to an external provider payment.
@@ -366,10 +423,10 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 
 func (s *Store) SetBillingSettings(st *model.Settings) error {
 	_, err := s.db.Exec(
-		`UPDATE settings SET billing_enabled = ?, billing_trial_days = ?,
+		`UPDATE settings SET billing_enabled = ?,
 		 billing_free_plan_id = ?, billing_trial_plan_id = ?, billing_payment_note = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(st.BillingEnabled), st.BillingTrialDays,
+		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
 	)
 	return err

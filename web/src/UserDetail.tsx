@@ -68,7 +68,7 @@ function planSelectData(plans: TariffPlan[], user: User) {
       .filter((p) => p.enabled)
       .map((p) => ({
         value: String(p.id),
-        label: p.name + (p.price_rub <= 0 ? ' (бесплатный)' : ''),
+        label: p.name,
       })),
   ]
   if (user.plan_id && !data.some((o) => o.value === String(user.plan_id))) {
@@ -79,6 +79,19 @@ function planSelectData(plans: TariffPlan[], user: User) {
 
 function unixToDate(unix: number): string {
   return unix ? new Date(unix * 1000).toISOString().slice(0, 10) : ''
+}
+
+// optLabel resolves a select value to its human label, for the confirmation text.
+function optLabel(data: { value: string; label: string }[], value: string): string {
+  return data.find((o) => o.value === value)?.label ?? value
+}
+
+// dateLabel renders an expiry (unix or a "YYYY-MM-DD" picker value) for the
+// confirmation text.
+function dateLabel(v: number | string): string {
+  if (!v) return 'бессрочно'
+  const d = typeof v === 'number' ? new Date(v * 1000) : new Date(v)
+  return d.toLocaleDateString('ru-RU')
 }
 
 // EditableName renders the user's name with a pencil; clicking it swaps to an
@@ -195,7 +208,7 @@ export function UserDetail({
       return
     }
     let alive = true // guard against an out-of-order response after a user switch
-    const from = range === 'all' ? '2000-01-01' : localDay(Number(range) - 1)
+    const from = localDay(Number(range) - 1)
     getStatsSeries({ user_id: user.id, from, to: localDay(0) })
       .then((d) => alive && setSeries(d))
       .catch(() => {})
@@ -250,6 +263,18 @@ export function UserDetail({
   const saveLimits = (dl: number, ea: number, dev: number) =>
     setUserLimits(user!.id, dl, ea, dev).then(onChanged).catch(fail)
 
+  // confirmChange gates an edit in the "Управление" block. These controls apply
+  // to a live subscription the moment they're touched, so a misclick would
+  // otherwise silently change what the user is paying for.
+  const confirmChange = async (field: string, from: string, to: string, apply: () => void) => {
+    const ok = await confirm({
+      title: 'Изменить настройку?',
+      body: `«${field}» для «${user!.name}»: ${from} → ${to}.`,
+      confirmLabel: 'Изменить',
+    })
+    if (ok) apply()
+  }
+
   const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
 
   return (
@@ -295,7 +320,14 @@ export function UserDetail({
             <span className="text-sm">{user.enabled ? 'Подписка включена' : 'Подписка выключена'}</span>
             <Switch
               checked={user.enabled}
-              onChange={(v) => setUserEnabled(user.id, v).then(onChanged).catch(fail)}
+              onChange={(v) =>
+                confirmChange(
+                  'Подписка',
+                  user.enabled ? 'включена' : 'выключена',
+                  v ? 'включена' : 'выключена',
+                  () => setUserEnabled(user.id, v).then(onChanged).catch(fail),
+                )
+              }
             />
           </div>
 
@@ -304,7 +336,9 @@ export function UserDetail({
             value={unixToDate(user.expire_at)}
             onChange={(v) => {
               const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
-              saveLimits(user.data_limit, ea, user.device_limit)
+              confirmChange('Действует до', dateLabel(user.expire_at), dateLabel(v), () =>
+                saveLimits(user.data_limit, ea, user.device_limit),
+              )
             }}
           />
 
@@ -312,19 +346,33 @@ export function UserDetail({
             label="Лимит трафика"
             data={quotaData}
             value={limitGb}
-            onChange={(v) => {
-              setLimitGb(v)
-              saveLimits(gbToBytes(Number(v)), user.expire_at, user.device_limit)
-            }}
+            onChange={(v) =>
+              confirmChange(
+                'Лимит трафика',
+                optLabel(quotaData, limitGb),
+                optLabel(quotaData, v),
+                () => {
+                  setLimitGb(v)
+                  saveLimits(gbToBytes(Number(v)), user.expire_at, user.device_limit)
+                },
+              )
+            }
           />
           <Select
             label="Лимит устройств"
             data={DEVICE_LIMIT_OPTIONS}
             value={deviceLimit}
-            onChange={(v) => {
-              setDeviceLimit(v)
-              saveLimits(user.data_limit, user.expire_at, Number(v))
-            }}
+            onChange={(v) =>
+              confirmChange(
+                'Лимит устройств',
+                optLabel(DEVICE_LIMIT_OPTIONS, deviceLimit),
+                optLabel(DEVICE_LIMIT_OPTIONS, v),
+                () => {
+                  setDeviceLimit(v)
+                  saveLimits(user.data_limit, user.expire_at, Number(v))
+                },
+              )
+            }
           />
           <p className="-mt-1 text-xs text-ink-muted">
             Одно устройство = один публичный IP. Телефон и компьютер в одной Wi‑Fi сети
@@ -335,7 +383,14 @@ export function UserDetail({
             label="Автосброс трафика"
             data={RESET_PERIODS}
             value={user.reset_period || 'none'}
-            onChange={(v) => setResetPeriod(user.id, v).then(onChanged).catch(fail)}
+            onChange={(v) =>
+              confirmChange(
+                'Автосброс трафика',
+                optLabel(RESET_PERIODS, user.reset_period || 'none'),
+                optLabel(RESET_PERIODS, v),
+                () => setResetPeriod(user.id, v).then(onChanged).catch(fail),
+              )
+            }
           />
           {billingOn && (
             <>
@@ -344,7 +399,12 @@ export function UserDetail({
                 data={planSelectData(plans, user)}
                 value={String(user.plan_id || 0)}
                 onChange={(v) =>
-                  setUserPlan(user.id, Number(v)).then(onChanged).catch(fail)
+                  confirmChange(
+                    'Тариф',
+                    optLabel(planSelectData(plans, user), String(user.plan_id || 0)),
+                    optLabel(planSelectData(plans, user), v),
+                    () => setUserPlan(user.id, Number(v)).then(onChanged).catch(fail),
+                  )
                 }
               />
               <p className="-mt-1 text-xs text-ink-muted">

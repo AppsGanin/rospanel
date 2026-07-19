@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 )
@@ -23,6 +24,11 @@ func (m *Manager) PollStats() error {
 		return err
 	}
 	today := time.Now().In(m.loc()).Format("2006-01-02") // operator-local calendar day
+	now := time.Now().Unix()
+	// Collect the whole cycle first, then commit it in one transaction. Written
+	// per-user this was three fsyncs per active user on a single connection, which is
+	// what put a hard ceiling on how many users the panel could account for at all.
+	deltas := make([]store.TrafficDelta, 0, len(users))
 	for _, u := range users {
 		t, ok := stats[fmt.Sprintf("u%d", u.ID)]
 		if !ok {
@@ -37,12 +43,21 @@ func (m *Manager) PollStats() error {
 		}
 		if addUp != 0 || addDown != 0 || t.Up != u.LastUp || t.Down != u.LastDown {
 			au, ad := nonNeg(addUp), nonNeg(addDown)
-			_ = m.store.UpdateTraffic(u.ID, au, ad, t.Up, t.Down)
-			_ = m.store.AddDailyTraffic(u.ID, today, au, ad) // per-day history
-			if au > 0 || ad > 0 {
-				_ = m.store.TouchLastSeen(u.ID, time.Now().Unix()) // online (all protocols)
+			d := store.TrafficDelta{
+				UserID: u.ID, NodeID: model.LocalNodeID, Day: today,
+				AddUp: au, AddDown: ad,
+				// The local poller reads cumulative counters, so it records where it
+				// read them for the next cycle to subtract from.
+				Baseline: &store.TrafficBaseline{Up: t.Up, Down: t.Down},
 			}
+			if au > 0 || ad > 0 {
+				d.SeenAt = now // online (all protocols)
+			}
+			deltas = append(deltas, d)
 		}
+	}
+	if err := m.store.ApplyTrafficDeltas(deltas); err != nil {
+		logErr("stats: traffic batch failed", "users", len(deltas), "err", err)
 	}
 	// Re-baseline a reset user's counters to the live Xray value (reusing the stats
 	// already fetched above) so the next poll measures the delta from the reset.
@@ -89,18 +104,16 @@ type Summary struct {
 
 // Summary computes the dashboard overview.
 func (m *Manager) Summary() (*Summary, error) {
-	users, err := m.store.ListUsers()
+	c, err := m.store.CountUsers(time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
-	s := &Summary{XrayRunning: m.sup.Running()}
-	for _, u := range users {
-		s.Users++
-		if u.Status == "active" {
-			s.EnabledUsers++ // actually working (enabled, not expired, within quota)
-		}
-		s.TotalUp += u.UsedUp
-		s.TotalDown += u.UsedDown
+	s := &Summary{
+		XrayRunning:  m.sup.Running(),
+		Users:        c.Total,
+		EnabledUsers: c.Active, // actually working (enabled, not expired, within quota)
+		TotalUp:      c.TotalUp,
+		TotalDown:    c.TotalDown,
 	}
 	today := time.Now().In(m.loc()).Format("2006-01-02") // operator-local calendar day
 	if pts, err := m.store.StatsSeries(0, today, today); err == nil {
@@ -236,4 +249,23 @@ func (m *Manager) StatsByUser(from, to string) ([]model.UserTotal, error) {
 // ResetStats clears the entire per-day traffic history.
 func (m *Manager) ResetStats() error {
 	return m.store.ResetDailyStats()
+}
+
+// PurgeOldTraffic drops per-day traffic history past the retention window. Shares
+// the journals' slow timer; safe to call as often as you like. The cutoff is a
+// calendar day in the operator's timezone rather than a duration, because that is
+// the calendar the rows were written on — deriving it any other way would shift the
+// boundary by a day for anyone east or west of UTC.
+func (m *Manager) PurgeOldTraffic() {
+	cutoff := time.Now().In(m.loc()).
+		AddDate(0, 0, -model.TrafficDailyRetentionDays).Format("2006-01-02")
+	n, err := m.store.PurgeTrafficDaily(cutoff)
+	if err != nil {
+		logErr("stats: traffic retention sweep failed", "err", err)
+		return
+	}
+	if n > 0 {
+		logInfo("stats: old traffic history purged",
+			"count", n, "older_than_days", model.TrafficDailyRetentionDays)
+	}
 }
