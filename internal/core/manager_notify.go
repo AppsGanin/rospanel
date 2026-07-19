@@ -284,12 +284,44 @@ func (m *Manager) onXrayCrash(err error) {
 		return
 	}
 	m.lastCrashNotify = now
+	m.crashAlerted = true
 	m.throttleMu.Unlock()
 	msg := "⚠️ <b>Xray аварийно завершился</b>\nПроцесс перезапускается автоматически."
 	if err != nil {
 		msg += "\nПричина: " + escHTML(err.Error())
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+}
+
+// onXrayRecover reports that Xray is back, but only when this panel actually raised
+// the alarm. An alert with no all-clear leaves the operator unable to tell "recovered
+// in two seconds" from "still down" — and an all-clear for an alarm that was
+// throttled away would announce the end of an outage nobody was told about.
+func (m *Manager) onXrayRecover() {
+	m.throttleMu.Lock()
+	alerted, at := m.crashAlerted, m.lastCrashNotify
+	m.crashAlerted = false
+	m.throttleMu.Unlock()
+	if !alerted {
+		return
+	}
+	msg := "✅ <b>Xray снова работает</b>"
+	if down := time.Since(at); down > time.Second {
+		msg += fmt.Sprintf("\nПростой: %s.", fmtDowntime(down))
+	}
+	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+}
+
+// fmtDowntime renders an outage length the way a person would say it.
+func fmtDowntime(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d сек", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%d мин", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d ч %d мин", int(d.Hours()), int(d.Minutes())%60)
+	}
 }
 
 // notifyCertRenewed reports a successful certificate renewal.

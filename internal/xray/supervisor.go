@@ -59,6 +59,11 @@ type Supervisor struct {
 
 	onAccess func(email, ip string) // called per access-log connection line
 	onCrash  func(err error)        // called when Xray exits unexpectedly (crash)
+	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
+	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
+	// renewed certificate): those are routine, and reporting them as recovery would
+	// make the one message that means "the outage is over" meaningless.
+	onRecover func()
 
 	verOnce sync.Once
 	version string
@@ -120,6 +125,16 @@ func (s *Supervisor) SetOnAccess(fn func(email, ip string)) { s.onAccess = fn }
 // SetOnCrash registers a callback invoked when the Xray child exits unexpectedly
 // (a genuine crash, not an intentional Stop/Apply). Used to alert the operator.
 func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
+
+// SetOnRecover registers a callback invoked when Xray comes back after a crash.
+func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
+
+// recovered fires the recovery callback off the restart path, mirroring onCrash.
+func (s *Supervisor) recovered() {
+	if s.onRecover != nil {
+		go s.onRecover()
+	}
+}
 
 // NewSupervisor resolves binName (via PATH or as an absolute path) and targets
 // configPath for the generated config. assetDir holds the geo databases.
@@ -537,6 +552,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 			if err := s.restoreBackupLocked(); err == nil {
 				slog.Info("xray: auto-rollback succeeded")
 				s.runMu.Unlock()
+				s.recovered()
 				return
 			} else {
 				slog.Error("xray: auto-rollback failed", "err", err)
@@ -569,6 +585,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 		err := s.startProc()
 		s.runMu.Unlock()
 		if err == nil {
+			s.recovered()
 			return // the new process's monitor takes over
 		}
 		slog.Error("xray: restart failed", "err", err)

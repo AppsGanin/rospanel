@@ -81,8 +81,11 @@ type Manager struct {
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.
-	throttleMu        sync.Mutex
-	lastCrashNotify   time.Time
+	throttleMu      sync.Mutex
+	lastCrashNotify time.Time
+	// crashAlerted records that admins were actually told about the current outage,
+	// so the all-clear is only sent for an alarm they saw.
+	crashAlerted      bool
 	lastCertErrNotify time.Time
 
 	// applyPlanMu serializes ApplyPlanToUser so the read-modify-write of expire_at
@@ -205,7 +208,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 			go func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) }()
 		}
 	}
-	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly
+	m.sup.SetOnCrash(m.onXrayCrash)     // alert admins when Xray exits unexpectedly
+	m.sup.SetOnRecover(m.onXrayRecover) // ...and tell them when it is back
 	go m.reconcileLoop()
 	go m.proxyLoop()
 	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence
