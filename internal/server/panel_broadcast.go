@@ -207,9 +207,15 @@ func (rt *Router) retryBroadcast(w http.ResponseWriter, r *http.Request, id int6
 // anyone else sees it. Broken HTML seen by the whole audience can only be corrected
 // by another broadcast, so this is the one guard that actually prevents the mistake.
 //
-// It goes out through the USER bot, since that is what the real run will use — which
-// means the operator must have opened that bot at least once. Telegram's refusal is
-// surfaced as exactly that instruction rather than a raw API error.
+// It goes out through the ADMIN bot, whose linked chats exist for exactly this — the
+// panel's established way to reach an admin. Sending it with the user bot's token
+// (as this first did) worked only by accident: chat ids are global Telegram user ids,
+// so the other bot's token lands in the same chat — but only if the admin had also
+// started the user bot themselves, and Telegram refuses outright if they hadn't.
+//
+// Fidelity is not lost by the swap. What a preview has to prove is the markup, the
+// buttons and the attachment, and every bot renders those identically; only the
+// sender's name differs, which is not what anyone is checking.
 func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 	b, file, _, ok := parseBroadcastForm(w, r)
 	if !ok {
@@ -230,9 +236,10 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
-	token := strings.TrimSpace(set.TGUserBotToken)
-	if !set.TGUserBotEnabled || token == "" {
-		writeErr(w, http.StatusBadRequest, "сначала включите пользовательского бота — рассылка идёт через него")
+	token := strings.TrimSpace(set.TGBotToken)
+	if !set.TGBotEnabled || token == "" {
+		writeErr(w, http.StatusBadRequest,
+			"включите админ-бота — тест приходит через него, в привязанный чат")
 		return
 	}
 	chats := set.TelegramChatIDs()
@@ -270,7 +277,7 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 	if sendErr != nil {
 		msg := "не удалось отправить: " + sendErr.Error()
 		if telegram.IsUnreachable(sendErr) {
-			msg = "откройте пользовательского бота и нажмите «Запустить» — иначе он не может вам написать"
+			msg = "привязанный чат недоступен — откройте админ-бота и убедитесь, что он не заблокирован"
 		}
 		writeErr(w, http.StatusBadGateway, msg)
 		return

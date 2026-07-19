@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   deleteUser,
@@ -35,6 +35,7 @@ import {
   statusInfo,
 } from './format'
 import { useAction } from './hooks'
+import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
 import { UserEventsModal } from './UserEventsModal'
@@ -45,7 +46,6 @@ import {
   DatePicker,
   Divider,
   Modal,
-  Textarea,
   IconButton,
   IconCheck,
   IconClose,
@@ -176,6 +176,8 @@ export function UserDetail({
   const [eventsOpen, setEventsOpen] = useState(false)
   const [msgOpen, setMsgOpen] = useState(false)
   const [msgText, setMsgText] = useState('')
+  const [msgMedia, setMsgMedia] = useState<File | null>(null)
+  const msgFileRef = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
@@ -556,13 +558,49 @@ export function UserDetail({
         onClose={() => setMsgOpen(false)}
         title={`Сообщение для ${user.name}`}
       >
-        <Textarea
+        <HtmlEditor
           value={msgText}
           onChange={setMsgText}
           rows={5}
-          placeholder="Текст придёт в чат с ботом. Можно HTML: <b>, <i>, <a href>."
+          placeholder="Текст придёт в чат с ботом."
         />
         <p className="mt-1 text-xs text-ink-muted">
+          {msgMedia
+            ? `${[...msgText].length} / 1024 — с вложением Telegram ограничивает подпись`
+            : `${[...msgText].length} / 4096`}
+        </p>
+        <div className="mt-3">
+          <input
+            ref={msgFileRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => setMsgMedia(e.target.files?.[0] ?? null)}
+          />
+          {msgMedia ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-ink">📎 {msgMedia.name}</span>
+              <Button
+                variant="subtle"
+                size="xs"
+                onClick={() => {
+                  setMsgMedia(null)
+                  if (msgFileRef.current) msgFileRef.current.value = ''
+                }}
+              >
+                Убрать
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="light"
+              size="sm"
+              onClick={() => msgFileRef.current?.click()}
+            >
+              Прикрепить файл
+            </Button>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-ink-muted">
           Уйдёт от пользовательского бота — в тот же диалог, где человек уже
           общается с сервисом.
         </p>
@@ -572,12 +610,16 @@ export function UserDetail({
           </Button>
           <Button
             loading={sending}
-            disabled={!msgText.trim()}
+            disabled={
+              (!msgText.trim() && !msgMedia) ||
+              [...msgText].length > (msgMedia ? 1024 : 4096)
+            }
             onClick={async () => {
               setSending(true)
               try {
-                await messageUser(user.id, msgText.trim())
+                await messageUser(user.id, msgText.trim(), msgMedia)
                 setMsgText('')
+                setMsgMedia(null)
                 setMsgOpen(false)
                 notifySuccess('Сообщение отправлено')
               } catch (e) {

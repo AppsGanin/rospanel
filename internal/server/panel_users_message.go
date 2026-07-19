@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,9 +11,13 @@ import (
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
-// messageUserMax matches Telegram's plain-message limit. Refused here rather than
-// per send, where the operator would only see a raw API error.
-const messageUserMax = 4096
+// Telegram's own caps: a plain message, and the shorter caption a message carrying
+// media is allowed. Refused here rather than per send, where the operator would only
+// see a raw API error.
+const (
+	messageUserMax = 4096
+	captionUserMax = 1024
+)
 
 // messageUser sends one message to one user's Telegram chat — a broadcast of one,
 // without the machinery: the operator wants to know right now whether it arrived,
@@ -21,20 +26,27 @@ const messageUserMax = 4096
 // It goes through the USER bot, the same one the person already talks to, so the
 // message lands in a conversation they recognise rather than from a stranger.
 func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) {
-	var req struct {
-		Text string `json:"text"`
-	}
-	if !decodeJSON(w, r, &req) {
+	// Same multipart shape as a broadcast, and the same parser: whether a file goes
+	// out as a photo or a document should not depend on which screen sent it.
+	b, file, _, ok := parseBroadcastForm(w, r)
+	if !ok {
 		return
 	}
-	text := strings.TrimSpace(req.Text)
-	if text == "" {
-		writeErr(w, http.StatusBadRequest, "сообщение пустое")
+	if file != nil {
+		defer file.Close()
+	}
+	text := strings.TrimSpace(b.Text)
+	if text == "" && b.MediaKind == "" {
+		writeErr(w, http.StatusBadRequest, "нечего отправлять — добавьте текст или вложение")
 		return
 	}
-	if n := utf8.RuneCountInString(text); n > messageUserMax {
-		writeErr(w, http.StatusBadRequest,
-			"сообщение длиннее 4096 символов — Telegram его не примет")
+	limit := messageUserMax
+	if b.MediaKind != "" {
+		limit = captionUserMax
+	}
+	if n := utf8.RuneCountInString(text); n > limit {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf(
+			"текст длиннее %d символов (сейчас %d) — Telegram его не примет", limit, n))
 		return
 	}
 
@@ -58,9 +70,19 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	if err := telegram.NewClient(token).SendMessage(ctx, u.TgChatID, text); err != nil {
+	client := telegram.NewClient(token)
+	var sendErr error
+	switch {
+	case file == nil:
+		sendErr = client.SendMessage(ctx, u.TgChatID, text)
+	case b.MediaKind == "photo":
+		_, sendErr = client.UploadPhoto(ctx, u.TgChatID, b.MediaName, text, nil, file)
+	default:
+		_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, nil, file)
+	}
+	if err := sendErr; err != nil {
 		msg := "не удалось отправить: " + err.Error()
 		if telegram.IsUnreachable(err) {
 			msg = "пользователь заблокировал бота или удалил аккаунт — сообщение не доставлено"

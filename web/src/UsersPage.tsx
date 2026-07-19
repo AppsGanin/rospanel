@@ -4,6 +4,7 @@ import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
 import { RegistrationsPanel } from "./RegistrationsPanel";
 import { useIsAdmin } from "./role";
+import { PaymentsPage } from "./PaymentsPage";
 import { navigate, useRoute } from "./router";
 import { StatsPanel } from "./StatsPanel";
 import { Badge, cn } from "./ui";
@@ -13,9 +14,21 @@ import { UsersPanel } from "./UsersPanel";
 // traffic, and what was done to whom — so they live as sub-tabs of this section
 // instead of eating two slots in the top nav. The "Заявки" tab appears only while
 // the user bot is in moderation mode (or a leftover queue needs clearing).
-type SubTab = "list" | "requests" | "broadcast" | "stats" | "events";
+type SubTab =
+  | "list"
+  | "requests"
+  | "broadcast"
+  | "payments"
+  | "stats"
+  | "events";
 
-export function UsersPage({ userBotEnabled }: { userBotEnabled: boolean }) {
+export function UsersPage({
+  userBotEnabled,
+  billingEnabled,
+}: {
+  userBotEnabled: boolean;
+  billingEnabled: boolean;
+}) {
   const seg = useRoute();
   const [reg, setReg] = useState<{
     moderation: boolean;
@@ -60,6 +73,11 @@ export function UsersPage({ userBotEnabled }: { userBotEnabled: boolean }) {
     ...(isAdmin && userBotEnabled
       ? [{ value: "broadcast" as SubTab, label: "Рассылка" }]
       : []),
+    // Payments are about what users pay for, so they belong beside the users rather
+    // than as a separate destination in the top menu.
+    ...(isAdmin && billingEnabled
+      ? [{ value: "payments" as SubTab, label: "Оплата" }]
+      : []),
     { value: "stats", label: "Статистика" },
     { value: "events", label: "Журнал" },
   ];
@@ -99,6 +117,7 @@ export function UsersPage({ userBotEnabled }: { userBotEnabled: boolean }) {
           <RegistrationsPanel requests={reg.requests} onReload={loadReg} />
         )}
         {tab === "broadcast" && <BroadcastPanel />}
+        {tab === "payments" && <PaymentsPage />}
         {tab === "stats" && <StatsPanel />}
         {tab === "events" && <EventsPanel />}
       </div>

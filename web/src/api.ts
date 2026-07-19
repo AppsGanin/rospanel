@@ -934,11 +934,14 @@ export const retryBroadcast = (id: number) =>
 // messageUser sends one message to one user's Telegram chat — the same thing a
 // broadcast does, for an audience of one, but answered synchronously so the operator
 // learns immediately whether it arrived.
-export const messageUser = (id: number, text: string) =>
-  api<{ ok: boolean }>(`api/users/${id}/telegram/message`, {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  })
+export const messageUser = (id: number, text: string, media: File | null) => {
+  // Same multipart shape as a broadcast — one parser on the server decides photo vs
+  // document, so a file behaves identically wherever it was attached.
+  const fd = new FormData()
+  fd.append('payload', JSON.stringify({ text }))
+  if (media) fd.append('media', media)
+  return apiForm<{ ok: boolean }>(`api/users/${id}/telegram/message`, fd)
+}
 
 // Moderated self-registration queue: signups awaiting an admin decision. No user
 // exists until a request is approved.
