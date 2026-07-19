@@ -642,7 +642,7 @@ export function TelegramSettings() {
                 />
               </div>
               {e.key === "expiring" && userEvents.expiring && (
-                <div className="mt-2 max-w-xs">
+                <div className="mt-2">
                   <Select
                     data={EXPIRING_DAYS}
                     value={expiringDays}

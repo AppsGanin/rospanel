@@ -165,9 +165,15 @@ func TestSubscriberBackfill(t *testing.T) {
 			t.Fatalf("drop %s: %v", tbl, err)
 		}
 	}
+	for _, col := range []string{"notified_expire_at", "notified_quota_at"} {
+		if _, err := st.db.Exec(`ALTER TABLE users DROP COLUMN ` + col); err != nil {
+			t.Fatalf("drop users.%s: %v", col, err)
+		}
+	}
 	for _, col := range []string{
 		"tg_support_enabled", "tg_support_bot_token", "tg_support_bot_username",
 		"tg_support_group_id", "tg_support_greeting",
+		"tg_user_events", "tg_user_expiring_days",
 	} {
 		if _, err := st.db.Exec(`ALTER TABLE settings DROP COLUMN ` + col); err != nil {
 			t.Fatalf("drop settings.%s: %v", col, err)
