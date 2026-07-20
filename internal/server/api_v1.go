@@ -69,9 +69,16 @@ type (
 // the two docs routes take precedence over the authenticated catch-all.
 func (rt *Router) apiHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/openapi.json", rt.apiOpenAPI)
-	mux.HandleFunc("GET /v1/docs", rt.apiDocs)
-	mux.HandleFunc("GET /v1/healthz", rt.apiHealthz)
+	// Recorded like the authenticated routes below, so the OpenAPI coverage test sees
+	// the whole /v1 surface and not just the part behind apiAuth.
+	for pattern, h := range map[string]http.HandlerFunc{
+		"GET /v1/openapi.json": rt.apiOpenAPI,
+		"GET /v1/docs":         rt.apiDocs,
+		"GET /v1/healthz":      rt.apiHealthz,
+	} {
+		rt.apiRoutes = append(rt.apiRoutes, pattern)
+		mux.HandleFunc(pattern, h)
+	}
 	mux.Handle("/", rt.apiAuth(rt.apiMux()))
 	return mux
 }
@@ -103,8 +110,16 @@ func (rt *Router) apiHealthz(w http.ResponseWriter, _ *http.Request) {
 // caller (apiAuth), so every route here already has a valid key.
 func (rt *Router) apiMux() http.Handler {
 	mux := http.NewServeMux()
+	// Every /v1 registration goes through hf so the route table is recorded as it is
+	// built: TestAPISpecCoversEveryRoute reads it back and fails when an endpoint
+	// ships without an OpenAPI entry. GET /v1/health had drifted that way — reachable,
+	// documented in docs/api.md, absent from the generated spec.
+	hf := func(pattern string, h http.HandlerFunc) {
+		rt.apiRoutes = append(rt.apiRoutes, pattern)
+		mux.HandleFunc(pattern, h)
+	}
 	id := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
-		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		hf(pattern, func(w http.ResponseWriter, r *http.Request) {
 			v, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 			if err != nil {
 				writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid id")
@@ -114,11 +129,11 @@ func (rt *Router) apiMux() http.Handler {
 		})
 	}
 
-	mux.HandleFunc("GET /v1/health", rt.apiHealth)
+	hf("GET /v1/health", rt.apiHealth)
 
-	mux.HandleFunc("GET /v1/users", rt.apiListUsers)
-	mux.HandleFunc("POST /v1/users", rt.apiCreateUser)
-	mux.HandleFunc("POST /v1/users/bulk", rt.apiBulkUsers)
+	hf("GET /v1/users", rt.apiListUsers)
+	hf("POST /v1/users", rt.apiCreateUser)
+	hf("POST /v1/users/bulk", rt.apiBulkUsers)
 	id("GET /v1/users/{id}", rt.apiGetUser)
 	id("PATCH /v1/users/{id}", rt.apiPatchUser)
 	id("DELETE /v1/users/{id}", rt.apiDeleteUser)
@@ -128,21 +143,22 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/plan", rt.apiApplyPlan)
 	id("GET /v1/users/{id}/connections", rt.apiUserConnections)
 
-	mux.HandleFunc("GET /v1/billing/providers", rt.apiListProviders)
-	mux.HandleFunc("GET /v1/billing/plans", rt.apiListPlans)
-	mux.HandleFunc("POST /v1/billing/plans", rt.apiSavePlan)
+	hf("GET /v1/billing/providers", rt.apiListProviders)
+	hf("GET /v1/billing/plans", rt.apiListPlans)
+	hf("POST /v1/billing/plans", rt.apiSavePlan)
 	id("DELETE /v1/billing/plans/{id}", rt.apiDeletePlan)
-	mux.HandleFunc("GET /v1/billing/orders", rt.apiListOrders)
-	mux.HandleFunc("POST /v1/billing/orders", rt.apiCreateOrder)
+	hf("GET /v1/billing/orders", rt.apiListOrders)
+	hf("POST /v1/billing/orders", rt.apiCreateOrder)
 	id("POST /v1/billing/orders/{id}/confirm", rt.apiConfirmOrder)
 	id("POST /v1/billing/orders/{id}/cancel", rt.apiCancelOrder)
 
-	mux.HandleFunc("GET /v1/stats/series", rt.apiStatsSeries)
-	mux.HandleFunc("GET /v1/stats/users", rt.apiStatsUsers)
+	hf("GET /v1/stats/series", rt.apiStatsSeries)
+	hf("GET /v1/stats/nodes", rt.apiStatsNodes)
+	hf("GET /v1/stats/users", rt.apiStatsUsers)
 
-	mux.HandleFunc("GET /v1/summary", rt.apiSummary)
-	mux.HandleFunc("GET /v1/system", rt.apiSystem)
-	mux.HandleFunc("GET /v1/health/report", rt.apiHealthReport)
+	hf("GET /v1/summary", rt.apiSummary)
+	hf("GET /v1/system", rt.apiSystem)
+	hf("GET /v1/health/report", rt.apiHealthReport)
 
 	// Node mutations over the external API must land in the admin audit trail too —
 	// the panel's audited-middleware wraps only the panel mux, not this one. idFn adds
@@ -158,10 +174,10 @@ func (rt *Router) apiMux() http.Handler {
 		}
 	}
 	nodeAudit := func(pattern, section string, h http.HandlerFunc) {
-		mux.HandleFunc(pattern, rt.apiAudited(section, h))
+		hf(pattern, rt.apiAudited(section, h))
 	}
 
-	mux.HandleFunc("GET /v1/nodes", rt.apiListNodes)
+	hf("GET /v1/nodes", rt.apiListNodes)
 	nodeAudit("POST /v1/nodes", "API · нода добавлена", rt.apiCreateNode)
 	id("GET /v1/nodes/{id}", rt.apiGetNode)
 	nodeAudit("PATCH /v1/nodes/{id}", "API · нода изменена", idFn(rt.apiPatchNode))
@@ -173,7 +189,7 @@ func (rt *Router) apiMux() http.Handler {
 
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	hf("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeAPIErr(w, http.StatusNotFound, "not_found", "no such endpoint")
 	})
 	return mux
@@ -312,7 +328,7 @@ func (rt *Router) apiUserView(w http.ResponseWriter, u model.User) {
 // ---- handlers ----
 
 func (rt *Router) apiHealth(w http.ResponseWriter, _ *http.Request) {
-	writeAPIData(w, http.StatusOK, map[string]any{"status": "ok"})
+	writeAPIData(w, http.StatusOK, oaHealthResp{Status: "ok"})
 }
 
 // apiListUsers lists users with optional filtering (?status, ?search) and
@@ -682,6 +698,32 @@ func (rt *Router) apiStatsSeries(w http.ResponseWriter, r *http.Request) {
 		series = []model.DailyPoint{}
 	}
 	writeAPIData(w, http.StatusOK, series)
+}
+
+// apiStatsNodes is the /v1 twin of the panel's per-server split: which server
+// carried the period's traffic. Offered here because a caller building their own
+// reporting on top of /v1/stats/series would otherwise have no way to break the same
+// numbers down by server.
+func (rt *Router) apiStatsNodes(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var userID int64
+	if s := q.Get("user_id"); s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || v < 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid user_id")
+			return
+		}
+		userID = v
+	}
+	rows, err := rt.mgr.NodeTrafficBreakdown(userID, q.Get("from"), q.Get("to"))
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []core.NodeTraffic{}
+	}
+	writeAPIData(w, http.StatusOK, rows)
 }
 
 func (rt *Router) apiStatsUsers(w http.ResponseWriter, r *http.Request) {

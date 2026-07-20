@@ -216,11 +216,24 @@ The join token is embedded once and expires in 24h; `/regen-join` issues a new o
 
 ```
 GET $BASE/v1/stats/series?user_id=5&from=2026-01-01&to=2026-01-31   → daily traffic points
+GET $BASE/v1/stats/nodes?user_id=5&from=2026-01-01&to=2026-01-31    → traffic split by server
 GET $BASE/v1/stats/users?from=2026-01-01&to=2026-01-31              → per-user totals
 ```
 
-`user_id` is optional on `series` (omit for a panel-wide series). `from`/`to` are
-`YYYY-MM-DD` (in the panel's configured timezone).
+`user_id` is optional on `series` and `nodes` (omit for a panel-wide figure).
+`from`/`to` are `YYYY-MM-DD` (in the panel's configured timezone).
+
+`nodes` breaks the same traffic down by the server that carried it, busiest first —
+`series` tells you how much, this tells you where. `node_id` is `0` for the panel's
+own server; names are resolved for you, including servers deleted since (their
+traffic rows outlive them).
+
+```json
+{ "data": [
+  { "node_id": 2, "name": "NL", "up": 46059475, "down": 1488367869 },
+  { "node_id": 0, "name": "Этот сервер", "up": 52711616, "down": 3901246326 }
+] }
+```
 
 ### Monitoring
 
