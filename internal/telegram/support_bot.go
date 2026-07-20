@@ -32,8 +32,7 @@ type SupportService struct {
 	botID       int64 // getMe result for the current token, resolved once
 	offset      int64
 
-	rateMu sync.Mutex
-	rate   map[int64]*rateWindow
+	rate *chatLimiter
 
 	// orphanWarned remembers which dead topics were already flagged, so a thread
 	// nobody owns doesn't collect a warning per message.
@@ -46,9 +45,6 @@ type SupportService struct {
 const (
 	supportRateWindow   = time.Minute
 	maxSupportPerWindow = 20
-	// rateGCThreshold caps the tracking map; stale windows are pruned past it so a
-	// long-lived process doesn't accumulate an entry per chat that ever wrote.
-	rateGCThreshold = 1024
 )
 
 // rightsRecheckEvery debounces the per-group rights lookup.
@@ -73,17 +69,12 @@ const internalNotePrefix = "//"
 // nothing about response time — that promise is the operator's to make.
 const defaultSupportGreeting = "💬 <b>Поддержка</b>\n\nОпишите проблему сообщением в этот чат — можно приложить скриншот. Ответим здесь же."
 
-type rateWindow struct {
-	start time.Time
-	count int
-}
-
 // NewSupport builds the support relay bot. Call Run to start polling.
 func NewSupport(panel Panel, st *store.Store) *SupportService {
 	return &SupportService{
 		panel:        panel,
 		store:        st,
-		rate:         map[int64]*rateWindow{},
+		rate:         newChatLimiter(supportRateWindow, maxSupportPerWindow),
 		orphanWarned: map[int64]bool{},
 	}
 }
@@ -107,25 +98,7 @@ func (s *SupportService) clientFor(token string) *Client {
 // spent; first marks the single message that crossed the line, so the sender can be
 // told exactly once instead of on every one of a hundred.
 func (s *SupportService) allow(chatID int64, now time.Time) (allowed, first bool) {
-	s.rateMu.Lock()
-	defer s.rateMu.Unlock()
-	if len(s.rate) > rateGCThreshold {
-		for id, w := range s.rate {
-			if now.Sub(w.start) >= supportRateWindow {
-				delete(s.rate, id)
-			}
-		}
-	}
-	w := s.rate[chatID]
-	if w == nil || now.Sub(w.start) >= supportRateWindow {
-		s.rate[chatID] = &rateWindow{start: now, count: 1}
-		return true, false
-	}
-	w.count++
-	if w.count > maxSupportPerWindow {
-		return false, w.count == maxSupportPerWindow+1
-	}
-	return true, false
+	return s.rate.allow(chatID, now)
 }
 
 // supportAllowedUpdates adds my_chat_member on top of the default set: it is what

@@ -31,6 +31,12 @@ type UserService struct {
 	regMu     sync.Mutex
 	regWindow time.Time // start of the current registration rate-limit window
 	regCount  int       // successful registrations in the current window
+
+	// rate bounds how much work one chat can drive; codeRate bounds invite-code
+	// guessing specifically. Both are per-chat — regWindow above is a global cap on
+	// successful sign-ups and does nothing for a chat that never succeeds.
+	rate     *chatLimiter
+	codeRate *chatLimiter
 }
 
 // Open-registration rate limit: the user bot is public, and each sign-up creates a
@@ -41,12 +47,28 @@ const (
 	maxRegPerWindow = 20
 )
 
+// Per-chat limits for the public user bot. The updates loop is a single goroutine
+// and every reply waits on the outbound one-second-per-chat slot, so an unbounded
+// chat stalls the bot for everyone — see chatLimiter.
+//
+// Invite codes get their own, far tighter budget: they are operator-chosen and
+// usually short, the comparison is constant-time but nothing bounded how many
+// guesses a chat could make, and a hit mints a real account.
+const (
+	userRateWindow    = time.Minute
+	maxUserPerWindow  = 20
+	codeRateWindow    = 10 * time.Minute
+	maxCodesPerWindow = 5
+)
+
 // NewUser builds the public user bot. Call Run to start polling.
 func NewUser(panel Panel, st *store.Store) *UserService {
 	return &UserService{
-		panel:   panel,
-		store:   st,
-		pending: map[int64]string{},
+		panel:    panel,
+		store:    st,
+		pending:  map[int64]string{},
+		rate:     newChatLimiter(userRateWindow, maxUserPerWindow),
+		codeRate: newChatLimiter(codeRateWindow, maxCodesPerWindow),
 	}
 }
 
@@ -147,6 +169,29 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 			log.Printf("telegram user: handler panic recovered: %v", r)
 		}
 	}()
+	// Gate before anything else, trackSubscriber included: it writes a row per
+	// update, and the handlers below answer synchronously on this one goroutine while
+	// each reply waits for the outbound per-chat slot. One chat is otherwise enough to
+	// stall registration, menus and payments for every other user.
+	var chatID int64
+	switch {
+	case u.Callback != nil && u.Callback.Message != nil:
+		chatID = u.Callback.Message.Chat.ID
+	case u.Message != nil:
+		chatID = u.Message.Chat.ID
+	}
+	if chatID != 0 {
+		switch allowed, first := s.rate.allow(chatID, time.Now()); {
+		case !allowed && first:
+			// Said once per window. Answering every rejected update would make a flood
+			// produce more outbound traffic than it did inbound.
+			s.send(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+			return
+		case !allowed:
+			return
+		}
+	}
+
 	switch {
 	case u.Callback != nil:
 		if u.Callback.Message != nil {
@@ -229,6 +274,16 @@ func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID 
 	want := strings.TrimSpace(set.TGUserRegCode)
 	if !set.RegistrationOpen() || set.RegMode() != model.RegInvite || want == "" {
 		s.sendWelcome(ctx, client, set, chatID)
+		return
+	}
+	// Spend an attempt before checking. Guessing must cost something: the comparison
+	// below is constant-time, but nothing else bounded how many codes one chat could
+	// try, and a hit mints a real account on the trial plan. Charged on every attempt
+	// rather than only on failures, so a correct guess mixed into a run of wrong ones
+	// doesn't buy the attacker a fresh budget.
+	if allowed, _ := s.codeRate.allow(chatID, time.Now()); !allowed {
+		s.send(ctx, client, chatID, "⚠️ Слишком много попыток. Попробуйте позже или обратитесь к администратору.")
+		s.clearPending(chatID)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(want)) != 1 {
