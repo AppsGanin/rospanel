@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/AppsGanin/rospanel/compare/v1.1.0...v1.2.0) (2026-07-20)
+
+
+### Features
+
+* **telegram:** support relay, broadcasts, and the scaling work that came out of it ([#34](https://github.com/AppsGanin/rospanel/issues/34)) ([a5bc0f8](https://github.com/AppsGanin/rospanel/commit/a5bc0f8a035da7a0e2f155d092974e038dde0454))
+
+
+### Bug Fixes
+
+* **telegram:** handle 429 rate limits with retry logic ([170a95d](https://github.com/AppsGanin/rospanel/commit/170a95d7875e28ed133d52d07ab2065fe9856b7f))
+
 ## [1.1.0](https://github.com/AppsGanin/rospanel/compare/v1.0.0...v1.1.0) (2026-07-16)
 
 
