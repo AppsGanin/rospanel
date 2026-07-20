@@ -503,11 +503,9 @@ export function UserDetail({
                   running user bot — it is the bot that delivers, so without it the
                   button could only ever produce an error. */}
               {userBotEnabled && (
-                <div>
                   <Button size="xs" variant="light" onClick={() => setMsgOpen(true)}>
                     Отправить сообщение
                   </Button>
-                </div>
               )}
               <Button
                 size="xs"
