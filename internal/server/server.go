@@ -46,6 +46,7 @@ type Router struct {
 	streams    *streamGate    // caps concurrent SSE streams
 	status     *statusFeed    // one dashboard-payload timer shared by every viewer
 	routes     []string       // panel route patterns, in registration order (audit exhaustiveness test)
+	apiRoutes  []string       // /v1 route patterns (OpenAPI coverage test)
 
 	mu        sync.RWMutex
 	secret    string

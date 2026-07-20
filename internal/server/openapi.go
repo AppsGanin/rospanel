@@ -39,6 +39,13 @@ type oaRoute struct {
 	noAuth                     bool // key-free route; overrides the document-wide bearerAuth
 }
 
+// oaHealthResp is what GET /v1/health answers. Named rather than an inline map so
+// the generated spec reflects its real shape — the same reason request bodies are
+// named types here.
+type oaHealthResp struct {
+	Status string `json:"status"` // "ok"
+}
+
 // oaOrderResp / oaAffectedResp document the two non-model JSON responses so the
 // spec types them precisely (they mirror the maps the handlers write).
 type oaOrderResp struct {
@@ -113,6 +120,13 @@ func apiSpecRoutes() []oaRoute {
 				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
 			},
 			resp: t(model.DailyPoint{}), list: true},
+		{method: "GET", path: "/v1/stats/nodes", tag: "Stats", summary: "Traffic split by server",
+			query: []oaParam{
+				{name: "user_id", typ: "integer", desc: "restrict to one user (omit for panel-wide)"},
+				{name: "from", typ: "string", desc: "YYYY-MM-DD"},
+				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
+			},
+			resp: t(core.NodeTraffic{}), list: true},
 		{method: "GET", path: "/v1/stats/users", tag: "Stats", summary: "Per-user traffic totals",
 			query: []oaParam{
 				{name: "from", typ: "string", desc: "YYYY-MM-DD"},
@@ -120,6 +134,8 @@ func apiSpecRoutes() []oaRoute {
 			},
 			resp: t(model.UserTotal{}), list: true},
 
+		{method: "GET", path: "/v1/health", tag: "Monitoring", summary: "API reachability check",
+			resp: t(oaHealthResp{})},
 		{method: "GET", path: "/v1/summary", tag: "Monitoring", summary: "Panel summary",
 			resp: t(core.Summary{})},
 		{method: "GET", path: "/v1/system", tag: "Monitoring", summary: "Live system metrics",
