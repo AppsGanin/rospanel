@@ -239,6 +239,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
 	authedOpID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
 	authedOpID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
+	authedOpID("POST /api/users/{id}/telegram/message", rt.messageUser)
 	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
 	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
 	authedOpID("GET /api/users/{id}/events", rt.userEvents)
@@ -262,6 +263,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/payments", rt.savePayments)
 	authed("GET /api/payments/stats", rt.paymentStats)
 	authedOp("GET /api/stats/series", rt.statsSeries)
+	authedOp("GET /api/stats/nodes", rt.statsNodes)
 	authedOp("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)
@@ -305,6 +307,18 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/telegram/link/cancel", rt.cancelTelegramLink)
 	authed("POST /api/telegram/unlink", rt.unlinkTelegram)
 	authed("POST /api/telegram/test-backup", rt.testTelegramBackup)
+	authed("GET /api/telegram/support/groups", rt.listSupportGroups)
+	authed("POST /api/telegram/support/check", rt.checkTelegramSupport)
+	// Mass broadcasts through the user bot (admin tier: it reaches every subscriber).
+	authed("GET /api/broadcasts", rt.listBroadcasts)
+	authed("POST /api/broadcasts", rt.createBroadcast)
+	authed("GET /api/broadcasts/audience", rt.broadcastAudience)
+	authed("POST /api/broadcasts/test", rt.testBroadcast)
+	authedID("GET /api/broadcasts/{id}", rt.getBroadcast)
+	authedID("POST /api/broadcasts/{id}/pause", rt.pauseBroadcast)
+	authedID("POST /api/broadcasts/{id}/resume", rt.resumeBroadcast)
+	authedID("POST /api/broadcasts/{id}/cancel", rt.cancelBroadcast)
+	authedID("POST /api/broadcasts/{id}/retry", rt.retryBroadcast)
 	// Content-hashed build assets (JS/CSS/fonts) never change for a given URL → cache forever.
 	mux.Handle("GET /assets/", cacheControl(rt.assets, "public, max-age=31536000, immutable"))
 	favicon := cacheControl(rt.assets, "public, max-age=604800") // stable name → 1 week
@@ -438,6 +452,10 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 		resp["setup_done"] = set.SetupDone
 		resp["timezone"] = set.Timezone
 		resp["billing_enabled"] = set.BillingEnabled
+		// Broadcasts and per-user messages both go through the user bot, so the SPA
+		// hides those surfaces entirely when it is off rather than offering an action
+		// the server would refuse.
+		resp["user_bot_enabled"] = set.TGUserBotEnabled
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

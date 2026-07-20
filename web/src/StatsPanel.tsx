@@ -10,6 +10,7 @@ import { fmtBytes, localDay, RANGES } from './format'
 import { useAction } from './hooks'
 import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
+import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
 const PALETTE = [
@@ -28,7 +29,7 @@ export function StatsPanel() {
 
   const load = useCallback(() => {
     const to = localDay(0)
-    const from = range === 'all' ? '2000-01-01' : localDay(Number(range) - 1)
+    const from = localDay(Number(range) - 1)
     Promise.all([
       getStatsSeries({ from, to }).then(setSeries),
       getStatsByUser(from, to).then(setTotals),
@@ -122,7 +123,10 @@ export function StatsPanel() {
         {chartData.length === 0 ? (
           <p className="py-10 text-center text-ink-muted">Нет данных за выбранный период</p>
         ) : (
-          <TrafficArea data={chartData} fmt={fmtBytes} />
+          <>
+            <TrafficArea data={chartData} fmt={fmtBytes} />
+            <NodeTrafficSplit from={localDay(Number(range) - 1)} to={localDay(0)} />
+          </>
         )}
       </Card>
 

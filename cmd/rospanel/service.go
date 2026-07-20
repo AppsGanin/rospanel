@@ -203,6 +203,9 @@ func runServer(dataDir string) {
 	go tlsLoop(mgr)
 	// Periodic traffic accounting + quota/expiry enforcement.
 	go statsPollLoop(mgr)
+	// Writes the buffered access-log sightings. RecordAccess only buffers, so this
+	// is what actually persists who connected from where.
+	go accessFlushLoop(mgr)
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
 	go paymentPollLoop(mgr)
@@ -217,6 +220,13 @@ func runServer(dataDir string) {
 	// Telegram user bot: public self-service for VPN clients (registration,
 	// subscription, stats). Idles until enabled with its own token in Settings.
 	go telegram.NewUser(mgr, st).Run(context.Background())
+	// Telegram support bot: relays messages between a user's private chat and a
+	// per-user topic in the operator's forum supergroup. Idles until enabled with its
+	// own token and a group in Settings → Telegram.
+	go telegram.NewSupport(mgr, st).Run(context.Background())
+	// Broadcast delivery. Polls the store rather than holding a queue, so a restart
+	// mid-run resumes from the remaining recipients instead of losing or repeating.
+	go telegram.NewBroadcast(st, dataDir).Run(context.Background())
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {
@@ -265,10 +275,16 @@ func runServer(dataDir string) {
 	<-stop
 	log.Print("shutting down")
 
+	// Stop Xray FIRST. Draining HTTP can take the full timeout below, and until the
+	// supervisor is marked closed an Xray exit still reads as a crash — which is
+	// exactly what happens under systemd's default KillMode, where Xray receives its
+	// own SIGTERM at the same moment we do. Marking the shutdown before we wait on
+	// anything is what keeps an ordinary restart from paging the operator.
+	sup.Stop()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
-	sup.Stop()
 }
 
 // bootstrapTLS configures host/SNI and resolves a cert via ACME, falling back to
@@ -344,6 +360,21 @@ func statsPollLoop(mgr *core.Manager) {
 	}
 }
 
+// accessFlushInterval bounds how long a connection sighting sits in memory before
+// it is written, and so how quickly a newly-appeared device can trip the device
+// cap. Short enough to stay prompt, long enough that a busy server folds many
+// sightings into each commit.
+const accessFlushInterval = 5 * time.Second
+
+// accessFlushLoop persists buffered access-log sightings.
+func accessFlushLoop(mgr *core.Manager) {
+	t := time.NewTicker(accessFlushInterval)
+	defer t.Stop()
+	for range t.C {
+		safeTick("access flush", mgr.FlushAccess)
+	}
+}
+
 // paymentPollLoop reconciles pending provider orders (webhook fallback) every 25s.
 func paymentPollLoop(mgr *core.Manager) {
 	t := time.NewTicker(25 * time.Second)
@@ -353,14 +384,15 @@ func paymentPollLoop(mgr *core.Manager) {
 	}
 }
 
-// retentionLoop drops audit rows and stale connection rows past their retention
-// windows. Both cutoffs move by the day, so a slow cadence is plenty — this only
-// keeps the tables from growing forever.
+// retentionLoop drops audit rows, stale connection rows and old traffic history
+// past their retention windows. Every cutoff moves by the day, so a slow cadence is
+// plenty — this only keeps the tables from growing forever.
 func retentionLoop(mgr *core.Manager) {
 	sweep := func() {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
+		mgr.PurgeOldTraffic()   // per-day traffic history past a year
 		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
 		mgr.PurgeDeletedNodes() // reclaim node tombstones past their grace window
 	}

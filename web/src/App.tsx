@@ -29,6 +29,7 @@ function AppInner() {
   const [role, setRole] = useState<Role>('operator')
   const [version, setVersion] = useState('')
   const [billingEnabled, setBillingEnabled] = useState(false)
+  const [userBotEnabled, setUserBotEnabled] = useState(false)
   const [agreed, setAgreed] = useState(agreementAccepted)
   const [showAgreement, setShowAgreement] = useState(false)
   const [showDonate, setShowDonate] = useState(false)
@@ -40,6 +41,7 @@ function AppInner() {
         setRole(m.role)
         setVersion(m.version)
         setBillingEnabled(!!m.billing_enabled)
+        setUserBotEnabled(!!m.user_bot_enabled)
         // The first-run wizard covers the owner's own password step, so it wins:
         // an install that hasn't been set up yet goes there, not to the bare
         // password screen. Everyone added later gets the password screen.
@@ -88,6 +90,7 @@ function AppInner() {
           username={username}
           version={version}
           billingEnabled={billingEnabled}
+          userBotEnabled={userBotEnabled}
           onLogout={() => setState('out')}
           onShowAgreement={openAgreement}
           onShowDonate={openDonate}

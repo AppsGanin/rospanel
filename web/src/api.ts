@@ -304,6 +304,21 @@ export const getStatsSeries = (p: { user_id?: number; from?: string; to?: string
   if (p.to) q.set('to', p.to)
   return api<DailyPoint[]>('api/stats/series?' + q.toString())
 }
+// NodeTraffic is one server's share of a period's traffic. node_id 0 is the panel's
+// own server; the name is resolved server-side so no node list is needed here.
+export type NodeTraffic = {
+  node_id: number
+  name: string
+  up: number
+  down: number
+}
+export const getNodeTraffic = (p: { user_id?: number; from?: string; to?: string }) => {
+  const q = new URLSearchParams()
+  if (p.user_id) q.set('user_id', String(p.user_id))
+  if (p.from) q.set('from', p.from)
+  if (p.to) q.set('to', p.to)
+  return api<NodeTraffic[]>('api/stats/nodes?' + q.toString())
+}
 export const getStatsByUser = (from?: string, to?: string) => {
   const q = new URLSearchParams()
   if (from) q.set('from', from)
@@ -388,6 +403,7 @@ export interface Me {
   version: string
   must_change_password?: boolean
   billing_enabled?: boolean
+  user_bot_enabled?: boolean
 }
 
 export const getMe = () => api<Me>('api/me')
@@ -764,6 +780,18 @@ export interface TelegramInfo {
   user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   admin_events: Record<string, boolean> // admin notification categories (key→on)
+  // What the USER bot tells the person themselves, and how many days ahead the
+  // expiry warning goes out.
+  user_events: Record<string, boolean>
+  user_expiring_days: number
+
+  // Support relay: a third bot that carries messages between a user's chat and a
+  // per-user topic in support_group_id (a forum supergroup the admins answer in).
+  support_enabled: boolean
+  support_token: string
+  support_group_id: number // 0 = not configured
+  support_greeting: string // shown on /start; empty = built-in text
+  support_bot_username: string // resolved on save; empty ⇒ entry point stays hidden
 }
 
 // Self-registration modes for the public user bot.
@@ -771,29 +799,51 @@ export type RegMode = 'off' | 'open' | 'moderation' | 'invite'
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
 
-export const saveTelegram = (
-  enabled: boolean,
-  token: string,
-  backup_cron: string,
-  user_enabled: boolean,
-  user_token: string,
-  user_reg_mode: RegMode,
-  user_reg_code: string,
-  admin_events: Record<string, boolean>,
-) =>
+// Takes an object rather than a positional list: the three bots contribute a dozen
+// fields, half of them same-typed, and a swapped token argument would fail silently.
+export const saveTelegram = (t: {
+  enabled: boolean
+  token: string
+  backup_cron: string
+  user_enabled: boolean
+  user_token: string
+  user_reg_mode: RegMode
+  user_reg_code: string
+  admin_events: Record<string, boolean>
+  user_events: Record<string, boolean>
+  user_expiring_days: number
+  support_enabled: boolean
+  support_token: string
+  support_group_id: number
+  support_greeting: string
+}) =>
   api<{ ok: boolean }>('api/telegram', {
     method: 'POST',
-    body: JSON.stringify({
-      enabled,
-      token,
-      backup_cron,
-      user_enabled,
-      user_token,
-      user_reg_mode,
-      user_reg_code,
-      admin_events,
-    }),
+    body: JSON.stringify(t),
   })
+
+// SupportGroup is a group the support bot has been added to — an option for the
+// picker, never applied on its own (anyone can add a public bot to a group).
+export interface SupportGroup {
+  chat_id: number
+  title: string
+  is_forum: boolean
+  is_admin: boolean
+}
+
+// listSupportGroups powers the group picker, so nobody has to dig a chat id out of
+// a Telegram Web URL and remember to prefix it with -100.
+export const listSupportGroups = () =>
+  api<SupportGroup[]>('api/telegram/support/groups')
+
+// checkTelegramSupport validates the support group end to end (reachable, a forum,
+// bot is an admin able to manage topics) — the privacy-mode failure it catches is
+// otherwise invisible: the bot receives users' messages but never the admins' replies.
+export const checkTelegramSupport = () =>
+  api<{ ok: boolean; bot_username: string; group_title: string }>(
+    'api/telegram/support/check',
+    { method: 'POST' },
+  )
 
 export const genTelegramLink = () =>
   api<{ code: string; bot_username: string }>('api/telegram/link', {
@@ -817,6 +867,100 @@ export const unlinkTelegram = (chat_id: number) =>
 
 export const testTelegramBackup = () =>
   api<{ ok: boolean }>('api/telegram/test-backup', { method: 'POST' })
+
+// Mass broadcasts through the user bot. The audience is snapshotted when a broadcast
+// starts, so total never moves once it is running.
+export type BroadcastStatus = 'running' | 'paused' | 'done' | 'cancelled'
+// A plain key ("all", "expired") or a parameterised one carrying its horizon
+// ("seen:7"). The string is what gets stored and displayed, so the parameter travels
+// with it rather than in a second field that would have to be kept in sync.
+export type BroadcastAudience = string
+
+export interface BroadcastButton {
+  text: string
+  url: string
+}
+
+export interface Broadcast {
+  id: number
+  created_by: string
+  text: string
+  media_kind: '' | 'photo' | 'document'
+  media_name: string
+  buttons: BroadcastButton[] | null
+  audience: BroadcastAudience
+  status: BroadcastStatus
+  created_at: number
+  started_at: number
+  finished_at: number
+  total: number
+  sent: number
+  failed: number
+  blocked: number
+  // Unsubscribed after the audience was frozen and skipped over on purpose. Counts
+  // toward total, so leaving it out of the progress arithmetic strands the bar
+  // short of 100% on any run where somebody opted out mid-flight.
+  skipped: number
+}
+
+export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
+
+export const getBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}`)
+
+// broadcastAudience previews how many recipients a filter resolves to right now.
+export const broadcastAudience = (audience: BroadcastAudience) =>
+  api<{ count: number }>(
+    `api/broadcasts/audience?audience=${encodeURIComponent(audience)}`,
+  )
+
+// broadcastForm packs the composed message the way both create and test expect: a
+// JSON "payload" part plus an optional file, since an attachment can't ride in JSON.
+const broadcastForm = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => {
+  const fd = new FormData()
+  fd.append('payload', JSON.stringify(b))
+  if (media) fd.append('media', media)
+  return fd
+}
+
+export const createBroadcast = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => apiForm<Broadcast>('api/broadcasts', broadcastForm(b, media))
+
+// testBroadcast delivers the composed message to the linked admin chats first.
+// Broken markup seen by the whole audience can only be fixed by another broadcast.
+export const testBroadcast = (
+  b: { text: string; audience: BroadcastAudience; buttons: BroadcastButton[] },
+  media: File | null,
+) => apiForm<{ ok: boolean }>('api/broadcasts/test', broadcastForm(b, media))
+
+export const pauseBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/pause`, { method: 'POST' })
+
+export const resumeBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/resume`, { method: 'POST' })
+
+export const cancelBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/cancel`, { method: 'POST' })
+
+export const retryBroadcast = (id: number) =>
+  api<Broadcast>(`api/broadcasts/${id}/retry`, { method: 'POST' })
+
+// messageUser sends one message to one user's Telegram chat — the same thing a
+// broadcast does, for an audience of one, but answered synchronously so the operator
+// learns immediately whether it arrived.
+export const messageUser = (id: number, text: string, media: File | null) => {
+  // Same multipart shape as a broadcast — one parser on the server decides photo vs
+  // document, so a file behaves identically wherever it was attached.
+  const fd = new FormData()
+  fd.append('payload', JSON.stringify({ text }))
+  if (media) fd.append('media', media)
+  return apiForm<{ ok: boolean }>(`api/users/${id}/telegram/message`, fd)
+}
 
 // Moderated self-registration queue: signups awaiting an admin decision. No user
 // exists until a request is approved.
@@ -951,7 +1095,6 @@ export interface PaymentOrder {
 
 export interface BillingInfo {
   enabled: boolean
-  trial_days: number
   free_plan_id: number
   trial_plan_id: number
   payment_note: string
@@ -1003,7 +1146,6 @@ export const savePaymentProvider = (p: {
 
 export const saveBilling = (b: {
   enabled: boolean
-  trial_days: number
   free_plan_id: number
   trial_plan_id: number
   payment_note: string

@@ -60,7 +60,8 @@ type Panel interface {
 	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
 
 	// Audit hooks for the actions the bots perform directly on the store.
-	UnlinkUserTelegram(ctx context.Context, id int64) error
+	// (Unlinking is deliberately absent: it is an operator action in the panel, not
+	// something a user can do to themselves from the bot.)
 	AuditTelegramLinked(ctx context.Context, id int64, username string)
 }
 
@@ -520,38 +521,18 @@ func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msg
 func (s *Service) promptAdd(ctx context.Context, client *Client, chatID, msgID int64) {
 	s.setPending(chatID, "add")
 	s.edit(ctx, client, chatID, msgID,
-		"➕ <b>Новый пользователь</b>\n\nОтправьте имя сообщением. Можно сразу указать лимит и срок:\n<code>имя 50G 30</code> — лимит 50 ГБ, 30 дней.",
+		"➕ <b>Новый пользователь</b>\n\nОтправьте имя сообщением — пользователь будет создан без лимита и срока.",
 		backToMenu())
 }
 
-// doAdd creates a user from the prompted text ("name [limit] [days]").
+// doAdd creates a user, without a data limit or expiry, from the prompted name.
 func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, set *model.Settings, text string) {
-	fields := strings.Fields(text)
-	if len(fields) == 0 {
+	name := strings.TrimSpace(text)
+	if name == "" {
 		s.send(ctx, client, chatID, "Имя не может быть пустым.")
 		return
 	}
-	name := fields[0]
-	var dataLimit, expireAt int64
-	if len(fields) >= 2 {
-		n, perr := parseSize(fields[1])
-		if perr != nil {
-			s.send(ctx, client, chatID, "Неверный лимит: "+esc(fields[1])+" (примеры: 50G, 500M, 0 — без лимита)")
-			return
-		}
-		dataLimit = n
-	}
-	if len(fields) >= 3 {
-		days, perr := strconv.Atoi(fields[2])
-		if perr != nil || days < 0 {
-			s.send(ctx, client, chatID, "Неверное число дней: "+esc(fields[2]))
-			return
-		}
-		if days > 0 {
-			expireAt = time.Now().Add(time.Duration(days) * 24 * time.Hour).Unix()
-		}
-	}
-	u, err := s.panel.CreateUser(ctx, name, dataLimit, expireAt)
+	u, err := s.panel.CreateUser(ctx, name, 0, 0)
 	if err != nil {
 		s.send(ctx, client, chatID, "⚠️ Не удалось создать: "+esc(err.Error()))
 		return

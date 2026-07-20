@@ -11,7 +11,8 @@ import (
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id,
-	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status`
+	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
+	notified_expire_at, notified_quota_at`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -35,6 +36,48 @@ func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, exp
 // ListUsers returns all users, newest first.
 func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
+}
+
+// UserCounts is the dashboard's view of the users table: how many there are, how
+// many are working, and the lifetime traffic totals.
+type UserCounts struct {
+	Total     int
+	Active    int
+	TotalUp   int64
+	TotalDown int64
+}
+
+// CountUsers computes UserCounts in one aggregate query.
+//
+// The dashboard used to get these four numbers by loading every user row into Go
+// and folding over the slice — on a 2s stream tick, per connected admin, which also
+// meant decrypting every user's stored password (see decField) just to count them.
+// This does the same arithmetic in SQLite and returns four scalars, so the cost
+// stops scaling with the number of users AND the number of open panel tabs.
+//
+// The WHERE clause is deriveStatus's "active" case spelled out in SQL, in the same
+// order: enabled, not expired, inside the quota, inside the device cap. The two must
+// agree — TestCountUsersMatchesDeriveStatus holds them to it.
+func (s *Store) CountUsers(now int64) (UserCounts, error) {
+	var c UserCounts
+	err := s.db.QueryRow(`
+		SELECT COUNT(*),
+		       COALESCE(SUM(u.used_up), 0),
+		       COALESCE(SUM(u.used_down), 0),
+		       COALESCE(SUM(CASE WHEN u.enabled != 0
+		            AND (u.expire_at = 0 OR u.expire_at > ?)
+		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
+		            AND (u.device_limit = 0 OR COALESCE(d.n, 0) <= u.device_limit)
+		           THEN 1 ELSE 0 END), 0)
+		FROM users u
+		LEFT JOIN (
+		    SELECT user_id, COUNT(DISTINCT ip) AS n
+		    FROM connections INDEXED BY idx_connections_last_seen
+		    WHERE last_seen > ? GROUP BY user_id
+		) d ON d.user_id = u.id`,
+		now, now-model.DeviceOnlineWindow,
+	).Scan(&c.Total, &c.TotalUp, &c.TotalDown, &c.Active)
+	return c, err
 }
 
 // ExpiredUsersBefore returns users whose expiry date is older than cutoff (unix
@@ -138,7 +181,11 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 
 // UpdateTraffic adds deltas to lifetime totals and records the raw counters.
 func (s *Store) UpdateTraffic(id, addUp, addDown, lastUp, lastDown int64) error {
-	_, err := s.db.Exec(
+	return updateTrafficOn(s.db, id, addUp, addDown, lastUp, lastDown)
+}
+
+func updateTrafficOn(ex execer, id, addUp, addDown, lastUp, lastDown int64) error {
+	_, err := ex.Exec(
 		`UPDATE users SET used_up = used_up + ?, used_down = used_down + ?,
 		 last_up = ?, last_down = ? WHERE id = ?`,
 		addUp, addDown, lastUp, lastDown, id,
@@ -150,7 +197,11 @@ func (s *Store) UpdateTraffic(id, addUp, addDown, lastUp, lastDown int64) error 
 // simultaneous device cap (0 = unlimited). Does not touch the manual enabled
 // flag; status is derived on read.
 func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
-	_, err := s.db.Exec(
+	return setUserLimitsOn(s.db, id, dataLimit, expireAt, deviceLimit)
+}
+
+func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) error {
+	_, err := ex.Exec(
 		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ? WHERE id = ?`,
 		dataLimit, expireAt, deviceLimit, id,
 	)
@@ -258,6 +309,18 @@ func (s *Store) ResetTraffic(id, lastUp, lastDown int64) error {
 	return err
 }
 
+// SetNotifiedExpireAt records the expiry a "runs out soon" warning was sent for.
+func (s *Store) SetNotifiedExpireAt(id, expireAt int64) error {
+	_, err := s.db.Exec(`UPDATE users SET notified_expire_at = ? WHERE id = ?`, expireAt, id)
+	return err
+}
+
+// SetNotifiedQuotaAt marks (at != 0) or re-arms (0) the traffic warning.
+func (s *Store) SetNotifiedQuotaAt(id, at int64) error {
+	_, err := s.db.Exec(`UPDATE users SET notified_quota_at = ? WHERE id = ?`, at, id)
+	return err
+}
+
 // SetNotifiedStatus records the status a user was last alerted about, so the
 // transition detector's comparison survives a panel restart (see the 0020 migration).
 func (s *Store) SetNotifiedStatus(id int64, status string) error {
@@ -272,10 +335,25 @@ func (s *Store) SetUserEnabled(id int64, enabled bool) error {
 	return err
 }
 
-// DeleteUser removes a user.
+// DeleteUser removes a user and detaches them from the broadcast audience.
+//
+// The subscriber row survives on purpose — someone whose account was deleted is
+// still in the bot, and reaching them is exactly what the "без аккаунта" audience is
+// for — but it must stop naming an account that no longer exists, or the audience
+// filters read a missing user's zero values as facts about a real one.
 func (s *Store) DeleteUser(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	if _, err := tx.Exec(`UPDATE tg_subscribers SET user_id = NULL WHERE user_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetUsersEnabled flips the manual enabled flag for many users in one statement,
@@ -357,6 +435,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
+			&u.NotifiedExpireAt, &u.NotifiedQuotaAt,
 		); err != nil {
 			return nil, err
 		}

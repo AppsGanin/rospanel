@@ -38,6 +38,10 @@ const reconcileDebounce = 800 * time.Millisecond
 const (
 	accLastMax = 4096
 	accLastTTL = int64(time.Hour / time.Second)
+	// accPendingMax bounds the unflushed sighting buffer. Sized above accLastMax so
+	// the throttle, not this cap, is what normally limits it — this only catches the
+	// pathological case where flushes keep failing and the buffer stops draining.
+	accPendingMax = 8192
 )
 
 // Manager is the application service layer.
@@ -53,6 +57,10 @@ type Manager struct {
 
 	accMu   sync.Mutex
 	accLast map[string]int64 // throttle key "uN|ip" → last recorded unix
+	// accPending buffers sightings between flushes, so the access-log reader never
+	// touches the database on the hot path. Bounded by the throttle above: one entry
+	// per user+IP per flush interval, not per log line.
+	accPending map[accPendingKey]store.ConnectionHit
 
 	// applyMu serializes config application (Reconcile + the live user-sync) so a
 	// direct Reconcile (e.g. from tlsLoop on cert renewal) can't interleave with the
@@ -81,8 +89,11 @@ type Manager struct {
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.
-	throttleMu        sync.Mutex
-	lastCrashNotify   time.Time
+	throttleMu      sync.Mutex
+	lastCrashNotify time.Time
+	// crashAlerted records that admins were actually told about the current outage,
+	// so the all-clear is only sent for an alarm they saw.
+	crashAlerted      bool
 	lastCertErrNotify time.Time
 
 	// applyPlanMu serializes ApplyPlanToUser so the read-modify-write of expire_at
@@ -176,6 +187,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		tls:              tls,
 		reconcileCh:      make(chan struct{}, 1),
 		accLast:          make(map[string]int64),
+		accPending:       make(map[accPendingKey]store.ConnectionHit),
 		applied:          make(map[int64]struct{}),
 		tz:               time.Local,
 		guard:            newBruteGuard(),
@@ -205,7 +217,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 			go func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) }()
 		}
 	}
-	m.sup.SetOnCrash(m.onXrayCrash) // alert admins when Xray exits unexpectedly
+	m.sup.SetOnCrash(m.onXrayCrash)     // alert admins when Xray exits unexpectedly
+	m.sup.SetOnRecover(m.onXrayRecover) // ...and tell them when it is back
 	go m.reconcileLoop()
 	go m.proxyLoop()
 	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence
@@ -248,8 +261,18 @@ func (m *Manager) loc() *time.Location {
 // Location exposes the operator timezone for handlers that compute date ranges.
 func (m *Manager) Location() *time.Location { return m.loc() }
 
+// accPendingKey identifies one buffered sighting.
+type accPendingKey struct {
+	userID int64
+	ip     string
+}
+
 // RecordAccess notes a connection from an Xray access-log line (email "uN" +
-// source IP). Throttled to one DB write per user+IP per 10s to absorb bursts.
+// source IP). Throttled to one recorded sighting per user+IP per 10s to absorb
+// bursts, then buffered — FlushAccess writes them.
+//
+// This is called from the access-log reader for every line Xray emits, so it does
+// no I/O at all: it takes a lock, updates two maps, and returns.
 func (m *Manager) RecordAccess(email, ip string) {
 	if !strings.HasPrefix(email, "u") {
 		return
@@ -261,8 +284,8 @@ func (m *Manager) RecordAccess(email, ip string) {
 	now := time.Now().Unix()
 	key := email + "|" + ip
 	m.accMu.Lock()
+	defer m.accMu.Unlock()
 	if now-m.accLast[key] < 10 {
-		m.accMu.Unlock()
 		return
 	}
 	m.accLast[key] = now
@@ -273,14 +296,70 @@ func (m *Manager) RecordAccess(email, ip string) {
 			}
 		}
 	}
+	pk := accPendingKey{userID: id, ip: ip}
+	h, buffered := m.accPending[pk]
+	// Bound the buffer. It normally drains every few seconds, but a persistent write
+	// failure (a full disk, say) makes FlushAccess requeue instead — and the throttle
+	// above stops protecting us as soon as accLast evicts a key, since that reopens
+	// the pair for buffering. Dropping the newest sighting for a pair we are not
+	// already tracking costs a last_seen update; growing without limit costs the
+	// process.
+	if !buffered && len(m.accPending) >= accPendingMax {
+		return
+	}
+	h.UserID, h.IP, h.Hits = id, ip, h.Hits+1
+	if now > h.SeenAt {
+		h.SeenAt = now
+	}
+	m.accPending[pk] = h
+}
+
+// FlushAccess writes the buffered access sightings in one transaction and, if the
+// new devices changed who should be online, syncs Xray.
+//
+// The device-cap re-check used to run per sighting — a full WorkingUsers query for
+// every user+IP every 10s. It belongs here: it only has to happen when something
+// was actually recorded, and once per batch answers the same question.
+func (m *Manager) FlushAccess() {
+	m.accMu.Lock()
+	if len(m.accPending) == 0 {
+		m.accMu.Unlock()
+		return
+	}
+	hits := make([]store.ConnectionHit, 0, len(m.accPending))
+	for _, h := range m.accPending {
+		hits = append(hits, h)
+	}
+	clear(m.accPending)
 	m.accMu.Unlock()
-	if err := m.store.AddConnection(id, ip, now); err != nil {
+
+	if err := m.store.AddConnections(hits); err != nil {
+		// Put them back rather than drop them: the buffer was already drained, so
+		// returning here would silently lose the sightings, and stale last_seen /
+		// undercounted devices feed straight into the device cap. Merging (rather than
+		// overwriting) keeps whatever arrived while the write was in flight.
+		m.accMu.Lock()
+		for _, h := range hits {
+			pk := accPendingKey{userID: h.UserID, ip: h.IP}
+			cur, buffered := m.accPending[pk]
+			if !buffered && len(m.accPending) >= accPendingMax {
+				continue // same bound as RecordAccess: shed rather than grow forever
+			}
+			cur.UserID, cur.IP = h.UserID, h.IP
+			cur.Hits += h.Hits
+			if h.SeenAt > cur.SeenAt {
+				cur.SeenAt = h.SeenAt
+			}
+			m.accPending[pk] = cur
+		}
+		m.accMu.Unlock()
+		logErr("access: flush failed, sightings requeued", "sightings", len(hits), "err", err)
 		return
 	}
 	// A new device (source IP) may push the user over their device cap — re-check
 	// the working set and sync promptly so the over-limit user drops out, instead
 	// of waiting for the next periodic reconcile.
-	if working, err := m.store.WorkingUsers(now); err == nil && m.workingChanged(working) {
+	if working, err := m.store.WorkingUsers(time.Now().Unix()); err == nil && m.workingChanged(working) {
 		m.TriggerUserSync()
 	}
 }

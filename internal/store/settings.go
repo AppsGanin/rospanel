@@ -19,6 +19,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
 	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
+	var tgSupportEn int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -44,14 +45,17 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_bot_enabled, tg_bot_token, tg_chat_ids, tg_link_code, tg_backup_cron,
 		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled,
 		       tg_user_reg_mode, tg_user_reg_code,
-		       billing_enabled, billing_trial_days, billing_free_plan_id,
+		       billing_enabled, billing_free_plan_id,
 		       billing_trial_plan_id, billing_payment_note,
 		       payment_webhook_secret,
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, trojan_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
-		       geo_refresh_hours, iplist_refresh_hours
+		       geo_refresh_hours, iplist_refresh_hours,
+		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
+		       tg_support_group_id, tg_support_greeting,
+		       tg_user_events, tg_user_expiring_days
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -77,7 +81,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&tgBotEn, &st.TGBotToken, &st.TGChatIDs, &st.TGLinkCode, &st.TGBackupCron,
 		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
 		&st.TGUserRegMode, &st.TGUserRegCode,
-		&billingEn, &st.BillingTrialDays, &st.BillingFreePlanID,
+		&billingEn, &st.BillingFreePlanID,
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
 		&st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
@@ -85,6 +89,9 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.LocalBackupCron, &st.LocalBackupKeep,
 		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
+		&tgSupportEn, &st.TGSupportBotToken, &st.TGSupportBotUsername,
+		&st.TGSupportGroupID, &st.TGSupportGreeting,
+		&st.TGUserEvents, &st.TGUserExpiringDays,
 	)
 	if err != nil {
 		return nil, err
@@ -117,10 +124,12 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGBotEnabled = tgBotEn != 0
 	st.TGUserBotEnabled = tgUserBotEn != 0
 	st.TGUserRegEnabled = tgUserRegEn != 0
+	st.TGSupportEnabled = tgSupportEn != 0
 	st.BillingEnabled = billingEn != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
+	st.TGSupportBotToken = decField(st.TGSupportBotToken)
 	st.WarpPrivateKey = decField(st.WarpPrivateKey)
 	st.RealityPrivateKey = decField(st.RealityPrivateKey)
 	st.ProxyModePass = decField(st.ProxyModePass)
@@ -161,6 +170,30 @@ func (s *Store) SetTelegramUserBot(enabled bool, token, regMode, regCode string)
 		        updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), encField(token), boolToInt(regOpen), regMode, regCode,
 	)
+	return err
+}
+
+// SetTelegramSupport persists the support relay configuration: the enable flag, the
+// dedicated support bot's token, its resolved @username (cached so the user bot can
+// render a t.me link without a getMe on every menu draw), the forum supergroup id
+// admins answer in, and the greeting shown on /start.
+func (s *Store) SetTelegramSupport(enabled bool, token, username string, groupID int64, greeting string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_support_enabled = ?, tg_support_bot_token = ?,
+		        tg_support_bot_username = ?, tg_support_group_id = ?,
+		        tg_support_greeting = ?, updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(enabled), encField(token), username, groupID, greeting,
+	)
+	return err
+}
+
+// SetUserEvents persists the user-facing notification bitmask (model.UserEvent*
+// flags) and how many days ahead the expiry warning goes out.
+func (s *Store) SetUserEvents(mask int64, expiringDays int) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_user_events = ?, tg_user_expiring_days = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		mask, expiringDays)
 	return err
 }
 

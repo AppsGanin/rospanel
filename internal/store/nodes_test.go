@@ -227,9 +227,18 @@ func TestNodeTrafficDimension(t *testing.T) {
 	if len(local) != 1 || local[0].Up != 100 {
 		t.Fatalf("local series = %+v, want up=100", local)
 	}
-	totals, _ := st.NodeTrafficTotals("2026-01-01", "2026-01-01")
+	totals, _ := st.NodeTrafficTotals(0, "2026-01-01", "2026-01-01")
 	if totals[0][0] != 100 || totals[7][0] != 10 {
 		t.Fatalf("node totals = %+v", totals)
+	}
+	// Narrowed to one user, the same split must hold — this is what the user card's
+	// per-server breakdown reads.
+	mine, _ := st.NodeTrafficTotals(uid, "2026-01-01", "2026-01-01")
+	if mine[0][0] != 100 || mine[7][0] != 10 {
+		t.Fatalf("per-user node totals = %+v", mine)
+	}
+	if other, _ := st.NodeTrafficTotals(uid+999, "2026-01-01", "2026-01-01"); len(other) != 0 {
+		t.Fatalf("a stranger's breakdown returned rows: %+v", other)
 	}
 }
 
