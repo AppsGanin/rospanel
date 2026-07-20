@@ -263,6 +263,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/payments", rt.savePayments)
 	authed("GET /api/payments/stats", rt.paymentStats)
 	authedOp("GET /api/stats/series", rt.statsSeries)
+	authedOp("GET /api/stats/nodes", rt.statsNodes)
 	authedOp("GET /api/stats/users", rt.statsByUser)
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)

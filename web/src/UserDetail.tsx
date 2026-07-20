@@ -38,6 +38,7 @@ import { useAction } from './hooks'
 import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
+import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { UserEventsModal } from './UserEventsModal'
 import {
   Badge,
@@ -595,7 +596,14 @@ export function UserDetail({
           {chart.length === 0 ? (
             <p className="py-3 text-center text-ink-muted">Нет данных</p>
           ) : (
-            <TrafficArea data={chart} height={200} fmt={fmtBytes} />
+            <>
+              <TrafficArea data={chart} height={200} fmt={fmtBytes} />
+              <NodeTrafficSplit
+                userId={user.id}
+                from={localDay(Number(range) - 1)}
+                to={localDay(0)}
+              />
+            </>
           )}
         </div>
       )}

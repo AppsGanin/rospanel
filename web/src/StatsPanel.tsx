@@ -10,6 +10,7 @@ import { fmtBytes, localDay, RANGES } from './format'
 import { useAction } from './hooks'
 import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
+import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
 const PALETTE = [
@@ -122,7 +123,10 @@ export function StatsPanel() {
         {chartData.length === 0 ? (
           <p className="py-10 text-center text-ink-muted">Нет данных за выбранный период</p>
         ) : (
-          <TrafficArea data={chartData} fmt={fmtBytes} />
+          <>
+            <TrafficArea data={chartData} fmt={fmtBytes} />
+            <NodeTrafficSplit from={localDay(Number(range) - 1)} to={localDay(0)} />
+          </>
         )}
       </Card>
 

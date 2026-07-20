@@ -334,7 +334,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		return nil, err
 	}
 	today := time.Now().In(m.loc()).Format("2006-01-02")
-	traffic, _ := m.store.NodeTrafficTotals(today, today)
+	traffic, _ := m.store.NodeTrafficTotals(0, today, today)
 	now := time.Now().Unix()
 
 	views := make([]NodeView, 0, len(nodes)+1)

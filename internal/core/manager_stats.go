@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"sort"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -239,6 +240,52 @@ func (m *Manager) SystemStatus() (*SystemStatus, error) {
 // StatsSeries returns per-day traffic between from/to (YYYY-MM-DD); userID 0 = all.
 func (m *Manager) StatsSeries(userID int64, from, to string) ([]model.DailyPoint, error) {
 	return m.store.StatsSeries(userID, from, to)
+}
+
+// NodeTraffic is one server's share of the traffic over a period.
+type NodeTraffic struct {
+	NodeID int64  `json:"node_id"` // 0 = the panel's own server
+	Name   string `json:"name"`
+	Up     int64  `json:"up"`
+	Down   int64  `json:"down"`
+}
+
+// NodeTrafficBreakdown splits a period's traffic by the server that carried it,
+// busiest first. userID 0 covers everyone, matching StatsSeries.
+//
+// Names are resolved here rather than left to the client: the caller would
+// otherwise need the node list too, and an operator without rights to see nodes
+// still gets the breakdown this way. A deleted node keeps its traffic rows (they
+// carry the numeric id), so it is named rather than dropped — its bytes were real.
+func (m *Manager) NodeTrafficBreakdown(userID int64, from, to string) ([]NodeTraffic, error) {
+	totals, err := m.store.NodeTrafficTotals(userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	names, _ := m.store.NodeNames() // best-effort: a failure just falls back to ids
+	if names == nil {
+		names = map[int64]string{}
+	}
+	names[model.LocalNodeID] = "Этот сервер"
+	out := make([]NodeTraffic, 0, len(totals))
+	for id, t := range totals {
+		if t[0] == 0 && t[1] == 0 {
+			continue
+		}
+		name := names[id]
+		if name == "" {
+			name = fmt.Sprintf("сервер #%d", id) // purged tombstone: id is all that's left
+		}
+		out = append(out, NodeTraffic{NodeID: id, Name: name, Up: t[0], Down: t[1]})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		li, lj := out[i].Up+out[i].Down, out[j].Up+out[j].Down
+		if li != lj {
+			return li > lj
+		}
+		return out[i].NodeID < out[j].NodeID
+	})
+	return out, nil
 }
 
 // StatsByUser returns per-user totals over the period.

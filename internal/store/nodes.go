@@ -215,6 +215,28 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 	return out, rows.Err()
 }
 
+// NodeNames maps every node id to its display name, tombstoned nodes included.
+// Traffic history outlives a node (traffic_daily rows carry the numeric id), so a
+// breakdown covering past days still has to be able to name a server that has since
+// been deleted.
+func (s *Store) NodeNames() (map[int64]string, error) {
+	rows, err := s.db.Query(`SELECT id, name FROM nodes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]string)
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		out[id] = name
+	}
+	return out, rows.Err()
+}
+
 // GetNode returns one live node by id, or (nil, nil) if it doesn't exist or was
 // deleted. (A tombstoned node is invisible to the operator; only the token lookup
 // still finds it, so its next sync can be answered Revoked.)

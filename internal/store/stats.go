@@ -142,11 +142,16 @@ func (s *Store) StatsSeriesNode(userID, nodeID int64, from, to string) ([]model.
 
 // NodeTrafficTotals returns each node's total up+down over the period, keyed by
 // node_id (0 = local server). Used by the Nodes UI.
-func (s *Store) NodeTrafficTotals(from, to string) (map[int64][2]int64, error) {
-	rows, err := s.db.Query(
-		`SELECT node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ? GROUP BY node_id`,
-		from, to,
-	)
+// userID 0 aggregates across all users, matching StatsSeries.
+func (s *Store) NodeTrafficTotals(userID int64, from, to string) (map[int64][2]int64, error) {
+	query := `SELECT node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ?`
+	args := []any{from, to}
+	if userID > 0 {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+	query += ` GROUP BY node_id`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

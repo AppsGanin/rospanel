@@ -304,6 +304,21 @@ export const getStatsSeries = (p: { user_id?: number; from?: string; to?: string
   if (p.to) q.set('to', p.to)
   return api<DailyPoint[]>('api/stats/series?' + q.toString())
 }
+// NodeTraffic is one server's share of a period's traffic. node_id 0 is the panel's
+// own server; the name is resolved server-side so no node list is needed here.
+export type NodeTraffic = {
+  node_id: number
+  name: string
+  up: number
+  down: number
+}
+export const getNodeTraffic = (p: { user_id?: number; from?: string; to?: string }) => {
+  const q = new URLSearchParams()
+  if (p.user_id) q.set('user_id', String(p.user_id))
+  if (p.from) q.set('from', p.from)
+  if (p.to) q.set('to', p.to)
+  return api<NodeTraffic[]>('api/stats/nodes?' + q.toString())
+}
 export const getStatsByUser = (from?: string, to?: string) => {
   const q = new URLSearchParams()
   if (from) q.set('from', from)
