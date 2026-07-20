@@ -58,33 +58,6 @@ func atoiOr(s string, def int) int {
 	return def
 }
 
-// parseSize parses a data-limit value: a plain byte count, or a number with a
-// K/M/G/T suffix (base 1024, optional trailing "B"/"iB"). "0" means unlimited.
-func parseSize(s string) (int64, error) {
-	s = strings.TrimSpace(strings.ToUpper(s))
-	s = strings.TrimSuffix(s, "IB")
-	s = strings.TrimSuffix(s, "B")
-	if s == "" {
-		return 0, fmt.Errorf("empty")
-	}
-	mult := int64(1)
-	switch s[len(s)-1] {
-	case 'K':
-		mult, s = 1<<10, s[:len(s)-1]
-	case 'M':
-		mult, s = 1<<20, s[:len(s)-1]
-	case 'G':
-		mult, s = 1<<30, s[:len(s)-1]
-	case 'T':
-		mult, s = 1<<40, s[:len(s)-1]
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || f < 0 {
-		return 0, fmt.Errorf("invalid size")
-	}
-	return int64(f * float64(mult)), nil
-}
-
 // joinIDs renders chat IDs as a comma-separated string for the tg_chat_ids column.
 func joinIDs(ids []int64) string {
 	parts := make([]string, len(ids))
@@ -174,11 +147,11 @@ func userCard(u model.User, loc *time.Location) string {
 	return b.String()
 }
 
-// planButtonLabel is the inline-button text for a tariff plan.
+// planButtonLabel is the inline-button text for a tariff plan. A free plan is just
+// its name: the price suffix said nothing the plan list didn't already imply, and
+// the end-user purchase list never shows free plans at all — only the admin bot's
+// "assign a plan" list reaches them.
 func planButtonLabel(p model.TariffPlan) string {
-	if p.IsFree() {
-		return p.Name + " · бесплатно"
-	}
 	if p.PriceRub > 0 && p.PeriodDays > 0 {
 		return fmt.Sprintf("%s · %d ₽ / %d дн.", p.Name, p.PriceRub, p.PeriodDays)
 	}

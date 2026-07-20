@@ -17,6 +17,30 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// execer is the write half shared by *sql.DB and *sql.Tx. A statement written
+// against it runs standalone or inside a transaction without its SQL living in two
+// places — which is what lets a multi-row change be made atomic without forking
+// every setter it touches.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// withTx runs fn inside a transaction, rolling back on any error. Worth reaching
+// for whenever a change spans more than one row: the pool is a single connection
+// (see Open), so a sequence of bare Exec calls is not just non-atomic, it is also
+// slower — each one pays its own commit and fsync, where a transaction pays one.
+func (s *Store) withTx(fn func(tx *sql.Tx) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 // ErrCorrupt reports a database file that exists but SQLite cannot use: a torn
 // page, a truncated header ("file is not a database"), or a failed integrity
 // check. It is the one failure a caller can act on — the file is unusable, so the

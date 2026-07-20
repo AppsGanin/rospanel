@@ -81,8 +81,16 @@ var auditActions = map[string]auditRoute{
 	"POST /api/telegram/link/cancel":     set("Telegram · привязка отменена"),
 	"POST /api/telegram/unlink":          set("Telegram · отвязка"),
 	"POST /api/telegram/test-backup":     set("Telegram · тестовый бэкап"),
-	"POST /api/billing":                  set("Биллинг"),
-	"POST /api/payments":                 set("Приём платежей"),
+	"POST /api/telegram/support/check":   set("Telegram · проверка группы поддержки"),
+
+	"POST /api/broadcasts":             act(model.AuditBroadcastStarted),
+	"POST /api/broadcasts/test":        act(model.AuditBroadcastTest),
+	"POST /api/broadcasts/{id}/pause":  act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/resume": act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/cancel": act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/retry":  act(model.AuditBroadcastChanged),
+	"POST /api/billing":                set("Биллинг"),
+	"POST /api/payments":               set("Приём платежей"),
 
 	// Tariff plans keep their own actions: they are objects with a lifecycle, not a
 	// settings form — "тариф удалён" is a different question from "кто трогал настройки".
@@ -152,8 +160,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/rotate-sub":      skip,
 	"POST /api/users/{id}/telegram/unlink": skip,
 	"POST /api/users/{id}/telegram/link":   skip,
-	"POST /api/users/{id}/reset-period":    skip,
-	"POST /api/users/{id}/plan":            skip,
+	// Writing to a customer is worth its own row: unlike the routes above, nothing
+	// else records that it happened.
+	"POST /api/users/{id}/telegram/message": act(model.AuditUserMessaged),
+	"POST /api/users/{id}/reset-period":     skip,
+	"POST /api/users/{id}/plan":             skip,
 
 	// Sessions are audited inside their handlers: login has no session to read an
 	// actor from, and a FAILED login — the row worth having — never reaches a

@@ -24,12 +24,19 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	commandsFor string // token whose command menu was already published
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
 
 	regMu     sync.Mutex
 	regWindow time.Time // start of the current registration rate-limit window
 	regCount  int       // successful registrations in the current window
+
+	// rate bounds how much work one chat can drive; codeRate bounds invite-code
+	// guessing specifically. Both are per-chat — regWindow above is a global cap on
+	// successful sign-ups and does nothing for a chat that never succeeds.
+	rate     *chatLimiter
+	codeRate *chatLimiter
 }
 
 // Open-registration rate limit: the user bot is public, and each sign-up creates a
@@ -40,12 +47,28 @@ const (
 	maxRegPerWindow = 20
 )
 
+// Per-chat limits for the public user bot. The updates loop is a single goroutine
+// and every reply waits on the outbound one-second-per-chat slot, so an unbounded
+// chat stalls the bot for everyone — see chatLimiter.
+//
+// Invite codes get their own, far tighter budget: they are operator-chosen and
+// usually short, the comparison is constant-time but nothing bounded how many
+// guesses a chat could make, and a hit mints a real account.
+const (
+	userRateWindow    = time.Minute
+	maxUserPerWindow  = 20
+	codeRateWindow    = 10 * time.Minute
+	maxCodesPerWindow = 5
+)
+
 // NewUser builds the public user bot. Call Run to start polling.
 func NewUser(panel Panel, st *store.Store) *UserService {
 	return &UserService{
-		panel:   panel,
-		store:   st,
-		pending: map[int64]string{},
+		panel:    panel,
+		store:    st,
+		pending:  map[int64]string{},
+		rate:     newChatLimiter(userRateWindow, maxUserPerWindow),
+		codeRate: newChatLimiter(codeRateWindow, maxCodesPerWindow),
 	}
 }
 
@@ -55,6 +78,9 @@ func (s *UserService) clientFor(token string) *Client {
 	if s.client == nil || s.clientToken != token {
 		s.client = NewClient(token)
 		s.clientToken = token
+		// Per-bot update ids: keeping the old offset across a token swap would ACK
+		// away the new bot's backlog and drop messages until it caught up.
+		s.offset = 0
 	}
 	return s.client
 }
@@ -117,7 +143,9 @@ func (s *UserService) Run(ctx context.Context) {
 			}
 			continue
 		}
-		client := s.clientFor(strings.TrimSpace(set.TGUserBotToken))
+		token := strings.TrimSpace(set.TGUserBotToken)
+		client := s.clientFor(token)
+		s.publishCommands(ctx, client, token)
 		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -141,13 +169,59 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 			log.Printf("telegram user: handler panic recovered: %v", r)
 		}
 	}()
+	// Gate before anything else, trackSubscriber included: it writes a row per
+	// update, and the handlers below answer synchronously on this one goroutine while
+	// each reply waits for the outbound per-chat slot. One chat is otherwise enough to
+	// stall registration, menus and payments for every other user.
+	var chatID int64
+	switch {
+	case u.Callback != nil && u.Callback.Message != nil:
+		chatID = u.Callback.Message.Chat.ID
+	case u.Message != nil:
+		chatID = u.Message.Chat.ID
+	}
+	if chatID != 0 {
+		switch allowed, first := s.rate.allow(chatID, time.Now()); {
+		case !allowed && first:
+			// Said once per window. Answering every rejected update would make a flood
+			// produce more outbound traffic than it did inbound.
+			s.send(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+			return
+		case !allowed:
+			return
+		}
+	}
+
 	switch {
 	case u.Callback != nil:
+		if u.Callback.Message != nil {
+			s.trackSubscriber(u.Callback.From, u.Callback.Message.Chat.ID)
+		}
 		// The VPN user is acting on their own account — stamp them as the actor so the
 		// audit log tells self-service apart from an admin doing it for them.
 		s.handleCallback(selfActorCtx(ctx, u.Callback.From), client, u.Callback)
 	case u.Message != nil && strings.TrimSpace(u.Message.Text) != "":
+		s.trackSubscriber(u.Message.From, u.Message.Chat.ID)
 		s.handleMessage(selfActorCtx(ctx, u.Message.From), client, u.Message)
+	}
+}
+
+// trackSubscriber records the chat in the broadcast audience registry. It runs on
+// every interaction, not just registration, so the roster also covers the people a
+// broadcast most needs to reach and the user roster cannot name: someone waiting on
+// moderation, someone who mistyped an invite code, someone whose account was deleted
+// but who is still sitting in the bot.
+func (s *UserService) trackSubscriber(from *User, chatID int64) {
+	var userID int64
+	if u, ok := s.findLinkedUser(chatID); ok {
+		userID = u.ID
+	}
+	var username, firstName, lang string
+	if from != nil {
+		username, firstName, lang = from.Username, from.FirstName, from.LangCode
+	}
+	if err := s.store.UpsertSubscriber(chatID, userID, username, firstName, lang, time.Now().Unix()); err != nil {
+		log.Printf("telegram user: track subscriber %d: %v", chatID, err)
 	}
 }
 
@@ -167,6 +241,13 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 
 	if cmd == "/start" {
 		s.handleStart(ctx, client, set, chatID, args)
+		return
+	}
+	// Handled before the pending-state machine so an explicit command always wins:
+	// someone half-way through registration must still be able to open this, and
+	// doing so must not eat the step they were on.
+	if cmd == "/mailing" {
+		s.showMailing(ctx, client, chatID, 0)
 		return
 	}
 	pending := s.takePending(chatID)
@@ -195,6 +276,16 @@ func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID 
 		s.sendWelcome(ctx, client, set, chatID)
 		return
 	}
+	// Spend an attempt before checking. Guessing must cost something: the comparison
+	// below is constant-time, but nothing else bounded how many codes one chat could
+	// try, and a hit mints a real account on the trial plan. Charged on every attempt
+	// rather than only on failures, so a correct guess mixed into a run of wrong ones
+	// doesn't buy the attacker a fresh budget.
+	if allowed, _ := s.codeRate.allow(chatID, time.Now()); !allowed {
+		s.send(ctx, client, chatID, "⚠️ Слишком много попыток. Попробуйте позже или обратитесь к администратору.")
+		s.clearPending(chatID)
+		return
+	}
 	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(want)) != 1 {
 		s.send(ctx, client, chatID, "⚠️ Неверный код-приглашение. Попробуйте ещё раз или обратитесь к администратору.")
 		s.setPending(chatID, "regcode")
@@ -219,8 +310,9 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 
 func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *model.Settings, chatID int64) {
 	if !set.RegistrationOpen() {
-		s.send(ctx, client, chatID,
-			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.")
+		s.sendMenu(ctx, client, chatID,
+			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.",
+			supportOnlyRows(set))
 		return
 	}
 	hint := "Нажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически."
@@ -230,11 +322,25 @@ func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *mode
 	case model.RegInvite:
 		hint = "Нажмите «Зарегистрироваться» и введите код-приглашение от администратора."
 	}
-	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows())
+	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows(set))
 }
 
-func welcomeRows() [][]InlineButton {
-	return [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
+// welcomeRows is the pre-registration keyboard. Support is offered here too: someone
+// who can't get past registration — wrong invite code, waiting on moderation — is
+// exactly the person who needs to reach a human, and they have no menu to reach it
+// from.
+func welcomeRows(set *model.Settings) [][]InlineButton {
+	rows := [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
+	return append(rows, supportOnlyRows(set)...)
+}
+
+// supportOnlyRows is the support link on its own, or no rows at all when support
+// isn't configured.
+func supportOnlyRows(set *model.Settings) [][]InlineButton {
+	if link := set.SupportLink(); link != "" {
+		return [][]InlineButton{{{Text: "💬 Поддержка", URL: link}}}
+	}
+	return nil
 }
 
 // tgDisplayName derives a user's panel name from their Telegram profile: the
@@ -260,6 +366,13 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 	msgID := cb.Message.MessageID
 	set, err := s.store.GetSettings()
 	if err != nil {
+		return
+	}
+	// Before the linked-user split and before pending is cleared: the mailing toggle
+	// belongs to everyone in the audience, registered or not, and tapping it must not
+	// drop a registration step in progress.
+	if on, ok := strings.CutPrefix(cb.Data, "vu:mail:"); ok {
+		s.setMailing(ctx, client, chatID, msgID, on == "on")
 		return
 	}
 	s.clearPending(chatID)
@@ -428,10 +541,16 @@ func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
 	if set.BillingEnabled {
 		rows = append(rows, []InlineButton{{Text: "💳 Тарифы", CallbackData: "vu:plans"}})
 	}
-	rows = append(rows,
-		[]InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}},
-		[]InlineButton{{Text: "🔓 Отвязать", CallbackData: "vu:unlink"}},
-	)
+	// Support lives in its own bot, so this is a plain link out. Empty when support is
+	// off or its @username never resolved — a dead button is worse than none.
+	if link := set.SupportLink(); link != "" {
+		rows = append(rows, []InlineButton{{Text: "💬 Поддержка", URL: link}})
+	}
+	// No self-service unlink. It only ever cost the person their access — the
+	// account survives, but they land back on the welcome screen and write to
+	// support to get it back — while an operator who genuinely needs to detach a
+	// chat already has the button in the user's card in the panel.
+	rows = append(rows, []InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}})
 	return rows
 }
 
@@ -571,17 +690,9 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 	case "vu:plans":
 		s.showPlans(ctx, client, chatID, msgID, set, u)
-	case "vu:unlink":
-		s.edit(ctx, client, chatID, msgID,
-			"Отвязать этот Telegram от VPN-подписки?\nАккаунт сохранится: снова нажав «Зарегистрироваться», вы вернёте ту же подписку.",
-			[][]InlineButton{
-				{{Text: "🔓 Да, отвязать", CallbackData: "vu:unlinkyes"}},
-				{{Text: "⬅️ Отмена", CallbackData: "vu:menu"}},
-			})
-	case "vu:unlinkyes":
-		_ = s.panel.UnlinkUserTelegram(ctx, u.ID)
-		s.edit(ctx, client, chatID, msgID, "Чат отвязан.", [][]InlineButton{})
-		s.sendWelcome(ctx, client, set, chatID)
+	// "vu:unlink"/"vu:unlinkyes" are gone. Old menus still carrying those buttons
+	// fall through to the default branch and do nothing, which is the intended
+	// outcome — the alternative is honouring a detach the panel no longer offers.
 	case "vu:cancelplan":
 		s.confirmCancelPlan(ctx, client, chatID, msgID, u)
 	case "vu:cancelyes":
@@ -791,6 +902,74 @@ func userStartLinkCode(arg string) string {
 		return code
 	}
 	return ""
+}
+
+// Broadcast opt-out. Kept as its own command rather than a button under every
+// broadcast: the alternative to a findable opt-out isn't a captive audience, it's
+// people blocking the bot — and a block is irreversible and silently kills payment
+// confirmations and support replies along with the newsletter.
+
+// mailingCard renders the current state and the button that flips it.
+func mailingCard(optOut bool) (string, [][]InlineButton) {
+	if optOut {
+		return "📣 <b>Рассылка</b>\n\nСейчас: <b>выключена</b>\n\n" +
+				"Служебные уведомления — оплата и ответы поддержки — приходят в любом случае.",
+			[][]InlineButton{{{Text: "🔔 Подписаться", CallbackData: "vu:mail:on"}}}
+	}
+	return "📣 <b>Рассылка</b>\n\nСейчас: <b>включена</b>\n\nНовости сервиса и важные объявления.",
+		[][]InlineButton{{{Text: "🔕 Отписаться", CallbackData: "vu:mail:off"}}}
+}
+
+// showMailing displays the toggle. msgID 0 sends a new message; otherwise the card
+// is edited in place, like the rest of the bot's screens.
+func (s *UserService) showMailing(ctx context.Context, client *Client, chatID, msgID int64) {
+	optOut := false
+	if sub, err := s.store.SubscriberByChat(chatID); err != nil {
+		log.Printf("telegram user: mailing state for %d: %v", chatID, err)
+	} else if sub != nil {
+		optOut = sub.OptOut
+	}
+	text, rows := mailingCard(optOut)
+	if msgID == 0 {
+		s.sendMenu(ctx, client, chatID, text, rows)
+		return
+	}
+	s.edit(ctx, client, chatID, msgID, text, rows)
+}
+
+func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, msgID int64, on bool) {
+	if err := s.store.SetSubscriberOptOut(chatID, !on, time.Now().Unix()); err != nil {
+		log.Printf("telegram user: set mailing for %d: %v", chatID, err)
+		return
+	}
+	s.showMailing(ctx, client, chatID, msgID)
+}
+
+// userBotCommands is the command menu published to Telegram. One entry, not three:
+// the card it opens shows the current state and the single button that flips it, so
+// naming each direction as its own command only made the menu longer without telling
+// anyone anything the card doesn't.
+var userBotCommands = []BotCommand{
+	{Command: "start", Description: "Моя подписка"},
+	{Command: "mailing", Description: "Рассылка: подписка и отписка"},
+}
+
+// publishCommands pushes the command menu once per token. Re-publishing on every
+// poll would spend an API call a cycle to send Telegram what it already has.
+func (s *UserService) publishCommands(ctx context.Context, client *Client, token string) {
+	s.mu.Lock()
+	done := s.commandsFor == token
+	s.mu.Unlock()
+	if done {
+		return
+	}
+	if err := client.SetMyCommands(ctx, userBotCommands); err != nil {
+		log.Printf("telegram user: publish commands: %v", err)
+		return // not latched: retried next cycle
+	}
+	s.mu.Lock()
+	s.commandsFor = token
+	s.mu.Unlock()
 }
 
 func (s *UserService) send(ctx context.Context, client *Client, chatID int64, html string) {

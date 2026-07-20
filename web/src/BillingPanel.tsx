@@ -238,7 +238,7 @@ const EMPTY_PLAN = (): TariffPlan => ({
   id: 0,
   slug: "",
   name: "",
-  price_rub: 0,
+  price_rub: 100, // a new plan is paid; free is a designation, not a price of 0
   period_days: 30,
   data_limit: 0,
   device_limit: 0,
@@ -296,12 +296,17 @@ function PlanForm({
   plan,
   onChange,
   isTrial,
+  isFree,
 }: {
   plan: TariffPlan;
   onChange: (p: TariffPlan) => void;
   isTrial: boolean;
+  isFree: boolean;
 }) {
   const patch = (p: Partial<TariffPlan>) => onChange({ ...plan, ...p });
+  // A plan is free because it is designated free/trial in "Тарификация" — never
+  // because someone typed 0 here. The server enforces both halves of that.
+  const designated = isFree || isTrial;
   const periodVal = PERIODS.some((o) => o.value === String(plan.period_days))
     ? String(plan.period_days)
     : String(plan.period_days || 0);
@@ -320,25 +325,34 @@ function PlanForm({
         onChange={(v) => patch({ slug: v.toLowerCase() })}
         placeholder="standard — пустой = из названия"
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextInput
-          label="Порядок в списке"
-          type="number"
-          value={String(plan.sort_order)}
-          onChange={(v) => patch({ sort_order: Math.max(0, Number(v) || 0) })}
-        />
-        <label className="flex items-end gap-2 pb-1 text-sm">
-          <Switch checked={plan.enabled} onChange={(v) => patch({ enabled: v })} />
-          Активен (виден пользователям)
-        </label>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <TextInput
-          label="Цена, ₽ (0 = бесплатный)"
-          type="number"
-          value={String(plan.price_rub)}
-          onChange={(v) => patch({ price_rub: Math.max(0, Number(v) || 0) })}
-        />
+      {/* Order, visibility and price are all about being offered for sale, which a
+          designated free/trial plan never is — it is assigned automatically and is
+          filtered out of every user-facing list server-side. Showing the fields just
+          invited setting a price nobody charges or hiding a plan that is not shown
+          anyway. */}
+      {!designated && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextInput
+            label="Порядок в списке"
+            type="number"
+            value={String(plan.sort_order)}
+            onChange={(v) => patch({ sort_order: Math.max(0, Number(v) || 0) })}
+          />
+          <label className="flex items-end gap-2 pb-1 text-sm">
+            <Switch checked={plan.enabled} onChange={(v) => patch({ enabled: v })} />
+            Активен (виден пользователям)
+          </label>
+        </div>
+      )}
+      <div className={designated ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
+        {!designated && (
+          <TextInput
+            label="Цена, ₽"
+            type="number"
+            value={String(plan.price_rub)}
+            onChange={(v) => patch({ price_rub: Math.max(1, Number(v) || 1) })}
+          />
+        )}
         <Select
           label="Срок действия"
           data={PERIODS}
@@ -348,8 +362,8 @@ function PlanForm({
       </div>
       <p className="text-xs text-ink-muted">
         {isTrial
-          ? "Пробный тариф: доступ истекает через срок действия (при выдаче пробного периода — через «Пробный период, дней»), затем — переход на бесплатный."
-          : plan.price_rub <= 0
+          ? "Пробный тариф: выдаётся при регистрации, доступ истекает через срок действия, затем — переход на бесплатный."
+          : isFree
             ? "Бесплатный тариф: доступ не истекает, лимит трафика сбрасывается каждый срок действия."
             : "Платный тариф: доступ истекает через срок действия, требуется продление."}
       </p>
@@ -412,7 +426,6 @@ export function BillingPanel() {
         const nextPlans = d.plans ?? [];
         const nextCfg: BillingInfo = {
           enabled: !!d.enabled,
-          trial_days: d.trial_days ?? 0,
           free_plan_id: d.free_plan_id ?? 0,
           trial_plan_id: d.trial_plan_id ?? 0,
           payment_note: d.payment_note ?? "",
@@ -433,7 +446,6 @@ export function BillingPanel() {
         const nextPlans = d.plans ?? [];
         const nextCfg: BillingInfo = {
           enabled: !!d.enabled,
-          trial_days: d.trial_days ?? 0,
           free_plan_id: d.free_plan_id ?? 0,
           trial_plan_id: d.trial_plan_id ?? 0,
           payment_note: d.payment_note ?? "",
@@ -469,12 +481,11 @@ export function BillingPanel() {
     .filter((p) => p.enabled)
     .map((p) => ({
       value: String(p.id),
-      label: p.name + (p.price_rub <= 0 ? " (бесплатный)" : ""),
+      label: p.name,
     }));
 
   const billingDirty =
     cfg.enabled !== saved.enabled ||
-    cfg.trial_days !== saved.trial_days ||
     cfg.free_plan_id !== saved.free_plan_id ||
     cfg.trial_plan_id !== saved.trial_plan_id ||
     cfg.payment_note !== saved.payment_note;
@@ -499,7 +510,6 @@ export function BillingPanel() {
       if (billingDirty) {
         await saveBilling({
           enabled: cfg.enabled,
-          trial_days: cfg.trial_days,
           free_plan_id: cfg.free_plan_id,
           trial_plan_id: cfg.trial_plan_id,
           payment_note: cfg.payment_note,
@@ -599,7 +609,7 @@ export function BillingPanel() {
           description="Создавайте и настраивайте тарифы: лимиты, цена, срок. Бесплатный тариф — для пользователей после пробного периода."
           action={
             <Button size="sm" onClick={openCreate}>
-              + Создать
+              Создать
             </Button>
           }
         >
@@ -665,45 +675,45 @@ export function BillingPanel() {
 
         <SettingCard
           title="Тарификация"
-          description="Пробный период, тариф по умолчанию и реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
+          description="Бесплатный и пробный тарифы, реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
         >
           <div className="flex flex-col gap-4">
             <div>
-              <TextInput
-                label="Пробный период, дней"
-                type="number"
-                value={String(cfg.trial_days)}
-                onChange={(v) =>
-                  setCfg({ ...cfg, trial_days: Math.max(0, Number(v) || 0) })
-                }
-              />
-              <p className="mt-1 text-xs text-ink-muted">
-                Сколько дней действует пробный тариф после регистрации. 0 —
-                без пробного периода.
-              </p>
-            </div>
-            <div>
               <Select
-                label="Тариф после пробного / при истечении"
-                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                label="Бесплатный тариф"
+                data={[
+                  { value: "0", label: "— не выбран —" },
+                  // One plan cannot hold both roles: the trial has to expire into
+                  // something, and it cannot expire into itself. The server refuses
+                  // it too — this just keeps the choice off the menu.
+                  ...planOptions.filter((o) => o.value !== String(cfg.trial_plan_id)),
+                ]}
                 value={String(cfg.free_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
               />
               <p className="mt-1 text-xs text-ink-muted">
                 На него пользователь переходит, когда закончился пробный или
-                платный период, а также при отмене подписки.
+                платный период, а также при отмене подписки. Если не выбран —
+                доступ просто прекращается и остаётся только купить платный.
+                Выбранный тариф становится бесплатным: цена обнулится, и он
+                перестанет продаваться.
               </p>
             </div>
             <div>
               <Select
-                label="Пробный тариф (лимиты на время пробы)"
-                data={[{ value: "0", label: "— не выбран —" }, ...planOptions]}
+                label="Пробный тариф"
+                data={[
+                  { value: "0", label: "— не выбран —" },
+                  ...planOptions.filter((o) => o.value !== String(cfg.free_plan_id)),
+                ]}
                 value={String(cfg.trial_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
               />
               <p className="mt-1 text-xs text-ink-muted">
-                Лимиты (трафик, устройства), которые действуют во время
-                пробного периода.
+                Выдаётся при регистрации: его лимиты и его срок действия и есть
+                пробный период. Тариф без срока действия пробным не выдаётся.
+                Выбранный тариф становится бесплатным: цена обнулится, и он
+                перестанет продаваться.
               </p>
             </div>
             <Textarea
@@ -740,6 +750,7 @@ export function BillingPanel() {
               plan={editor}
               onChange={setEditor}
               isTrial={editor.id > 0 && cfg.trial_plan_id === editor.id}
+              isFree={editor.id > 0 && cfg.free_plan_id === editor.id}
             />
             {editor.id > 0 && (planUsers[String(editor.id)] ?? 0) > 0 && (
               <div className="accent-tint border-accent rounded-lg border p-3">

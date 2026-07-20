@@ -1,0 +1,454 @@
+package telegram
+
+import (
+	"context"
+	"errors"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
+)
+
+// BroadcastService delivers mass messages through the user bot. It is a poller over
+// the store, not a queue in memory: the recipient list lives in broadcast_targets,
+// so a restart mid-run resumes instead of losing or repeating anything.
+//
+// Pacing is left entirely to the package rate limiter (ratelimit.go) — every send
+// goes through Client.send, which reserves a slot and honours a 429's retry_after. A
+// second regulator here would only let the two of them together exceed the ceiling
+// each was written to respect.
+type BroadcastService struct {
+	store   *store.Store
+	dataDir string
+
+	mu          sync.Mutex
+	client      *Client
+	clientToken string
+	warnedAt    time.Time // last "stalled, bot is off" warning
+	sweptAt     time.Time // last attachment sweep
+	// poisoned parks runs whose outcomes cannot be recorded, keyed by id → expiry.
+	// In memory on purpose: the condition it guards against is the database being
+	// unwritable, so a database-backed flag would fail in the same breath.
+	poisoned map[int64]time.Time
+}
+
+const (
+	// broadcastBatch is how many recipients are claimed per pass. Small enough that
+	// a pause or cancel takes effect within seconds rather than at the end of the run.
+	broadcastBatch = 50
+	// broadcastWorkers overlaps network round-trips. The limiter still caps the
+	// actual rate; without any overlap the send rate would be one per round-trip
+	// (~10/s on a 100 ms link) instead of the ~30/s the limiter allows.
+	broadcastWorkers = 8
+	// broadcastIdle is the pause between polls when nothing is running.
+	broadcastIdle = 5 * time.Second
+	// stalledWarnEvery throttles the "running but the bot is off" complaint so it
+	// doesn't fill the log every poll for as long as the condition holds.
+	stalledWarnEvery = 10 * time.Minute
+	// mediaSweepEvery bounds how often finished runs are re-examined for leftover
+	// attachments. Nothing is urgent about it — the files are already unreachable.
+	mediaSweepEvery = 15 * time.Minute
+	// quarantineFor is how long a run whose outcomes cannot be recorded is parked.
+	quarantineFor = 10 * time.Minute
+)
+
+// BroadcastMediaDir is where the panel stores an uploaded attachment until the first
+// recipient turns it into a Telegram file_id.
+func BroadcastMediaDir(dataDir string) string { return filepath.Join(dataDir, "broadcasts") }
+
+// BroadcastMediaPath is the attachment's file for one broadcast.
+func BroadcastMediaPath(dataDir string, id int64) string {
+	return filepath.Join(BroadcastMediaDir(dataDir), strconv.FormatInt(id, 10))
+}
+
+// NewBroadcast builds the delivery worker. Call Run to start it.
+func NewBroadcast(st *store.Store, dataDir string) *BroadcastService {
+	return &BroadcastService{store: st, dataDir: dataDir, poisoned: map[int64]time.Time{}}
+}
+
+func (s *BroadcastService) clientFor(token string) *Client {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client == nil || s.clientToken != token {
+		s.client = NewClient(token)
+		s.clientToken = token
+	}
+	return s.client
+}
+
+// Run delivers running broadcasts until ctx is cancelled.
+func (s *BroadcastService) Run(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		worked := s.step(ctx)
+		if !worked {
+			s.sweepMediaOccasionally()
+			if !sleep(ctx, broadcastIdle) {
+				return
+			}
+		}
+	}
+}
+
+// step delivers at most one batch and reports whether it had anything to do.
+func (s *BroadcastService) step(ctx context.Context) bool {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("telegram broadcast: panic recovered: %v", r)
+		}
+	}()
+
+	set, err := s.store.GetSettings()
+	if err != nil || !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+		s.warnStalled()
+		return false
+	}
+	b, err := s.store.NextRunningBroadcast()
+	if err != nil || b == nil {
+		if err != nil {
+			log.Printf("telegram broadcast: pick: %v", err)
+		}
+		return false
+	}
+	if s.quarantined(b.ID) {
+		return false
+	}
+	targets, err := s.store.NextPendingTargets(b.ID, broadcastBatch)
+	if err != nil {
+		log.Printf("telegram broadcast %d: targets: %v", b.ID, err)
+		return false
+	}
+	if len(targets) == 0 {
+		return s.finish(b)
+	}
+
+	client := s.clientFor(strings.TrimSpace(set.TGUserBotToken))
+	// An attachment is uploaded once, to the first recipient, and every later send
+	// reuses the file_id — otherwise the same bytes go over the wire once per person.
+	if b.MediaKind != "" && b.MediaFileID == "" {
+		if !s.primeMedia(ctx, client, b, targets[0]) {
+			// Reporting "no work done" makes Run sleep before trying again. Without
+			// it a persistently failing upload would be retried as fast as the loop
+			// can spin.
+			return false
+		}
+		targets = targets[1:]
+	}
+	s.deliver(ctx, client, b, targets)
+	return true
+}
+
+// finish marks a drained broadcast done and drops its uploaded file. Conditional on
+// the run still being 'running': an operator's cancel landing in the meantime must
+// win, not be overwritten with 'done'.
+// finish reports whether it settled the run. False means the status write failed and
+// the caller should idle: the row is still 'running' with nothing pending, so
+// retrying immediately would spin on the panel's single DB connection.
+func (s *BroadcastService) finish(b *model.Broadcast) bool {
+	// Anyone still 'pending' here unsubscribed after the audience was frozen and was
+	// skipped over on purpose. Closing them out keeps the progress bar able to reach
+	// its total instead of stalling one short of it forever.
+	if err := s.store.SkipRemainingTargets(b.ID); err != nil {
+		log.Printf("telegram broadcast %d: close out skipped: %v", b.ID, err)
+	}
+	ok, err := s.store.SetBroadcastStatusIf(b.ID, model.BroadcastRunning, model.BroadcastDone, time.Now().Unix())
+	if err != nil {
+		log.Printf("telegram broadcast %d: finish: %v", b.ID, err)
+		return false
+	}
+	// Only once there is a cached file_id. Deleting it after a run where every
+	// upload failed would leave "повторить неудачные" with nothing to send, and the
+	// only recovery would be composing the whole broadcast again.
+	if b.MediaFileID != "" {
+		s.removeMedia(b.ID)
+	}
+	if ok {
+		log.Printf("telegram broadcast %d: finished", b.ID)
+	}
+	return true
+}
+
+// quarantine parks a run this process must stop sending, whatever the database says.
+// It expires so a one-off lock doesn't strand a broadcast until the panel restarts;
+// a genuinely unwritable disk simply re-quarantines after one more batch.
+func (s *BroadcastService) quarantine(id int64) {
+	s.mu.Lock()
+	s.poisoned[id] = time.Now().Add(quarantineFor)
+	s.mu.Unlock()
+	log.Printf("telegram broadcast %d: quarantined for %s — cannot record delivery", id, quarantineFor)
+}
+
+// quarantined reports whether a run is parked.
+func (s *BroadcastService) quarantined(id int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	until, ok := s.poisoned[id]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(s.poisoned, id)
+		return false
+	}
+	return true
+}
+
+// warnStalled complains when a broadcast is still marked running but the user bot it
+// would be sent through has been switched off. Without this the run simply sits at
+// its current percentage forever: the panel keeps polling it as live, the bar never
+// moves, and nothing anywhere says why.
+func (s *BroadcastService) warnStalled() {
+	b, err := s.store.NextRunningBroadcast()
+	if err != nil || b == nil {
+		return
+	}
+	s.mu.Lock()
+	quiet := time.Since(s.warnedAt) < stalledWarnEvery
+	if !quiet {
+		s.warnedAt = time.Now()
+	}
+	s.mu.Unlock()
+	if !quiet {
+		log.Printf("telegram broadcast %d: stalled at %d/%d — the user bot is disabled or has no token",
+			b.ID, b.Sent+b.Failed+b.Blocked, b.Total)
+	}
+}
+
+// pause stops the run without overriding an operator decision made in the meantime.
+func (s *BroadcastService) pause(id int64, reason string) {
+	ok, err := s.store.SetBroadcastStatusIf(id, model.BroadcastRunning, model.BroadcastPaused, 0)
+	if err != nil {
+		log.Printf("telegram broadcast %d: pause: %v", id, err)
+		return
+	}
+	if ok {
+		log.Printf("telegram broadcast %d: paused — %s", id, reason)
+	}
+}
+
+// primeMedia sends the attachment to the first recipient and caches the file_id it
+// comes back with. Reports whether the run may continue.
+func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *model.Broadcast, chatID int64) bool {
+	f, err := os.Open(BroadcastMediaPath(s.dataDir, b.ID))
+	if err != nil {
+		// The file is gone (manually removed, or the panel's data dir was restored
+		// without it). Sending the text alone would silently drop what the operator
+		// attached, so stop and say so rather than deliver something else.
+		log.Printf("telegram broadcast %d: media missing: %v", b.ID, err)
+		s.pause(b.ID, "вложение не найдено на диске")
+		return false
+	}
+	defer f.Close()
+
+	name := b.MediaName
+	if name == "" {
+		name = "file"
+	}
+	// The buttons go on this send too. It is a real delivery to a real recipient —
+	// without them the first person in the audience gets the message with no call to
+	// action while everyone else gets one, and nothing surfaces the difference.
+	rows := broadcastRows(b.Buttons)
+	var fileID string
+	if b.MediaKind == "photo" {
+		fileID, err = client.UploadPhoto(ctx, chatID, name, b.Text, rows, f)
+	} else {
+		fileID, err = client.UploadDocument(ctx, chatID, name, b.Text, rows, f)
+	}
+	if err != nil {
+		if isBlockedByUser(err) {
+			// This recipient is unreachable, but the file may be fine. Consume them
+			// and let the next pass prime on somebody else.
+			if rerr := s.record(b.ID, chatID, err); rerr != nil {
+				s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+			}
+			return false
+		}
+		if isFileRejected(err) {
+			// The file itself is refused — oversized, wrong type, corrupt. Treating
+			// that as one bad recipient would walk the whole audience a person per
+			// pass, re-uploading the file each time and failing all of them: on 10k
+			// recipients, hundreds of gigabytes to deliver nothing.
+			log.Printf("telegram broadcast %d: upload rejected: %v", b.ID, err)
+			s.pause(b.ID, "вложение не принято Telegram: "+err.Error())
+			return false
+		}
+		// A timeout, a 5xx, a surviving 429 — nothing is known to be wrong with the
+		// file or the recipient. Leave the target pending and let the next pass try
+		// again, rather than pausing a 10k run over a blip and making the operator
+		// resume it by hand.
+		log.Printf("telegram broadcast %d: upload failed, will retry: %v", b.ID, err)
+		return false
+	}
+	if err := s.record(b.ID, chatID, nil); err != nil {
+		// The upload landed but the outcome is unrecorded, so this recipient is still
+		// 'pending' and would be primed again — another full upload, to someone who
+		// already has the message. Stop rather than repeat it.
+		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+		return false
+	}
+	if fileID == "" {
+		// Delivered, but Telegram returned no id to reuse — every later recipient
+		// would re-upload. Pause rather than quietly burn the bandwidth.
+		s.pause(b.ID, "Telegram не вернул file_id — иначе файл грузился бы заново каждому")
+		return false
+	}
+	if err := s.store.SetBroadcastMediaFileID(b.ID, fileID); err != nil {
+		// Without the cached id every later pass re-uploads the whole file to one
+		// more recipient, forever. Stop rather than quietly burn the bandwidth the
+		// file_id design exists to save.
+		log.Printf("telegram broadcast %d: cache file_id: %v", b.ID, err)
+		s.pause(b.ID, "не удалось сохранить file_id вложения")
+		return false
+	}
+	b.MediaFileID = fileID
+	return true
+}
+
+// deliver sends one batch, overlapping round-trips across a few workers while the
+// package limiter keeps the aggregate rate legal.
+func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model.Broadcast, targets []int64) {
+	if len(targets) == 0 {
+		return
+	}
+	ch := make(chan int64)
+	var wg sync.WaitGroup
+	var lostTrack atomic.Bool
+	for range min(broadcastWorkers, len(targets)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for chatID := range ch {
+				if err := s.record(b.ID, chatID, s.sendOne(ctx, client, b, chatID)); err != nil {
+					lostTrack.Store(true)
+				}
+			}
+		}()
+	}
+	for _, chatID := range targets {
+		select {
+		case <-ctx.Done():
+			close(ch)
+			wg.Wait()
+			return
+		case ch <- chatID:
+		}
+	}
+	close(ch)
+	wg.Wait()
+	if lostTrack.Load() {
+		// The message went out but the outcome could not be written down. Selecting
+		// pending rows is not claiming them, so the very same people would be picked
+		// up as the next batch and messaged again — every pass, forever.
+		//
+		// Pausing writes to the database, which is exactly what just failed, so it
+		// cannot be the only guard: the quarantine below lives in memory and holds
+		// even when nothing can be persisted at all.
+		s.quarantine(b.ID)
+		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+	}
+}
+
+func (s *BroadcastService) sendOne(ctx context.Context, client *Client, b *model.Broadcast, chatID int64) error {
+	rows := broadcastRows(b.Buttons)
+	switch b.MediaKind {
+	case "photo":
+		return client.SendPhotoID(ctx, chatID, b.MediaFileID, b.Text, rows)
+	case "document":
+		return client.SendDocumentID(ctx, chatID, b.MediaFileID, b.Text, rows)
+	default:
+		return client.SendMenu(ctx, chatID, b.Text, rows)
+	}
+}
+
+// record writes one delivery outcome. A permanent refusal is stored as "blocked" and
+// the subscriber is deactivated, so every later broadcast stops spending a send slot
+// on a chat that can never receive again.
+func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) error {
+	now := time.Now().Unix()
+	state, msg := model.TargetSent, ""
+	switch {
+	case sendErr == nil:
+	case isBlockedByUser(sendErr):
+		state, msg = model.TargetBlocked, sendErr.Error()
+		if err := s.store.SetSubscriberBlocked(chatID, now); err != nil {
+			log.Printf("telegram broadcast: mark %d blocked: %v", chatID, err)
+		}
+	default:
+		state, msg = model.TargetFailed, sendErr.Error()
+	}
+	if err := s.store.MarkTarget(broadcastID, chatID, state, msg, now); err != nil {
+		log.Printf("telegram broadcast %d: mark %d: %v", broadcastID, chatID, err)
+		return err
+	}
+	return nil
+}
+
+// sweepMedia deletes attachments belonging to runs that will never send again —
+// finished or cancelled. A PAUSED run keeps its file on purpose: it is still
+// resumable, and a resumed media broadcast with no file left would stop dead.
+// sweepMediaOccasionally rate-limits the sweep. Running it on every idle poll took
+// the panel's single DB connection every 5 seconds to re-examine runs that were
+// already cleaned up on the first pass.
+func (s *BroadcastService) sweepMediaOccasionally() {
+	s.mu.Lock()
+	due := time.Since(s.sweptAt) >= mediaSweepEvery
+	if due {
+		s.sweptAt = time.Now()
+	}
+	s.mu.Unlock()
+	if due {
+		s.sweepMedia()
+	}
+}
+
+func (s *BroadcastService) sweepMedia() {
+	ids, err := s.store.FinishedBroadcastIDs()
+	if err != nil {
+		log.Printf("telegram broadcast: sweep: %v", err)
+		return
+	}
+	for _, id := range ids {
+		if _, err := os.Stat(BroadcastMediaPath(s.dataDir, id)); err == nil {
+			s.removeMedia(id)
+		}
+	}
+}
+
+func (s *BroadcastService) removeMedia(id int64) {
+	if err := os.Remove(BroadcastMediaPath(s.dataDir, id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("telegram broadcast %d: remove media: %v", id, err)
+	}
+}
+
+// IsUnreachable reports whether Telegram refused permanently because it will never
+// deliver to that chat — the user blocked the bot, never started it, or the account
+// is gone. Exported so the panel can turn it into an instruction the operator can
+// act on instead of a raw API error.
+func IsUnreachable(err error) bool { return isBlockedByUser(err) }
+
+// BroadcastButtonRows renders the URL buttons for a broadcast (exported so a test
+// send from the panel renders them identically to the real run).
+func BroadcastButtonRows(buttons []model.BroadcastButton) [][]InlineButton {
+	return broadcastRows(buttons)
+}
+
+// broadcastRows renders the URL buttons, one per row so long labels stay readable.
+func broadcastRows(buttons []model.BroadcastButton) [][]InlineButton {
+	if len(buttons) == 0 {
+		return nil
+	}
+	rows := make([][]InlineButton, 0, len(buttons))
+	for _, b := range buttons {
+		rows = append(rows, []InlineButton{{Text: b.Text, URL: b.URL}})
+	}
+	return rows
+}

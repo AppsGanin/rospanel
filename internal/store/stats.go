@@ -1,6 +1,10 @@
 package store
 
-import "github.com/AppsGanin/rospanel/internal/model"
+import (
+	"database/sql"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+)
 
 // AddDailyTraffic adds up/down deltas to a user's row on the local server (node 0)
 // for the given day.
@@ -10,25 +14,100 @@ func (s *Store) AddDailyTraffic(userID int64, day string, up, down int64) error 
 
 // AddDailyTrafficNode adds up/down deltas attributed to a specific node.
 func (s *Store) AddDailyTrafficNode(userID, nodeID int64, day string, up, down int64) error {
+	return addDailyTrafficOn(s.db, userID, nodeID, day, up, down)
+}
+
+// addDailyTrafficOn books a day's traffic, skipping users that no longer exist.
+//
+// The EXISTS guard is load-bearing, not defensive noise. traffic_daily.user_id is a
+// foreign key, so a plain INSERT for a deleted user raises a constraint error — and
+// since these statements now run inside a batch transaction, that one bad row would
+// roll back the whole batch, including the node's ingest watermark. Reporters
+// legitimately carry stale users: a node's unacked batch can name someone the
+// auto-delete sweep removed in the meantime. One departed user must cost their own
+// row, never everyone else's.
+func addDailyTrafficOn(ex execer, userID, nodeID int64, day string, up, down int64) error {
 	if up == 0 && down == 0 {
 		return nil
 	}
-	_, err := s.db.Exec(`
-		INSERT INTO traffic_daily (user_id, node_id, day, up, down) VALUES (?, ?, ?, ?, ?)
+	_, err := ex.Exec(`
+		INSERT INTO traffic_daily (user_id, node_id, day, up, down)
+		SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
 		ON CONFLICT(user_id, node_id, day) DO UPDATE SET up = up + excluded.up, down = down + excluded.down`,
-		userID, nodeID, day, up, down,
+		userID, nodeID, day, up, down, userID,
 	)
 	return err
+}
+
+// TrafficBaseline is the pair of raw Xray counters a delta was measured against.
+type TrafficBaseline struct{ Up, Down int64 }
+
+// TrafficDelta is one user's accounted traffic from a single reporting cycle.
+type TrafficDelta struct {
+	UserID  int64
+	NodeID  int64
+	Day     string // operator-local calendar day the traffic is booked against
+	AddUp   int64  // delta to add to the lifetime totals
+	AddDown int64
+	// Baseline is the raw counters to remember as the next poll's reference point.
+	// Only the LOCAL poller has them: it reads Xray's cumulative counters and
+	// subtracts, so it must record where it read. A remote node subtracts on its own
+	// side and ships the delta already computed, so it leaves this nil — and
+	// last_up/last_down, which track the master's own Xray, stay untouched. Writing
+	// a node's numbers there would corrupt the next local poll's arithmetic.
+	Baseline *TrafficBaseline
+	SeenAt   int64 // stamp last_seen with this; 0 leaves it alone
+}
+
+// ApplyTrafficDeltas books a whole poll cycle's traffic in one transaction.
+//
+// This is the panel's hottest write path: it used to run three separate statements
+// per active user, each its own implicit transaction, each paying its own fsync on
+// a single-connection pool. One commit for the batch turns a per-user cost into a
+// per-cycle one — on the reference box that is the difference between ~70 users/sec
+// and the whole cycle landing in a few milliseconds.
+func (s *Store) ApplyTrafficDeltas(deltas []TrafficDelta) error {
+	if len(deltas) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error { return applyTrafficDeltasOn(tx, deltas) })
+}
+
+func applyTrafficDeltasOn(ex execer, deltas []TrafficDelta) error {
+	for _, d := range deltas {
+		var err error
+		if d.Baseline != nil {
+			err = updateTrafficOn(ex, d.UserID, d.AddUp, d.AddDown, d.Baseline.Up, d.Baseline.Down)
+		} else {
+			err = addUsedTrafficOn(ex, d.UserID, d.AddUp, d.AddDown)
+		}
+		if err != nil {
+			return err
+		}
+		if err := addDailyTrafficOn(ex, d.UserID, d.NodeID, d.Day, d.AddUp, d.AddDown); err != nil {
+			return err
+		}
+		if d.SeenAt > 0 {
+			if err := touchLastSeenOn(ex, d.UserID, d.SeenAt); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // AddUsedTraffic bumps a user's lifetime totals WITHOUT touching last_up/last_down
 // (the raw Xray counter baseline for the local poller). Remote-node traffic ingest
 // uses this: the node already computed the delta, so the panel just accumulates.
 func (s *Store) AddUsedTraffic(userID, up, down int64) error {
+	return addUsedTrafficOn(s.db, userID, up, down)
+}
+
+func addUsedTrafficOn(ex execer, userID, up, down int64) error {
 	if up == 0 && down == 0 {
 		return nil
 	}
-	_, err := s.db.Exec(
+	_, err := ex.Exec(
 		`UPDATE users SET used_up = used_up + ?, used_down = used_down + ? WHERE id = ?`,
 		up, down, userID,
 	)
@@ -63,11 +142,16 @@ func (s *Store) StatsSeriesNode(userID, nodeID int64, from, to string) ([]model.
 
 // NodeTrafficTotals returns each node's total up+down over the period, keyed by
 // node_id (0 = local server). Used by the Nodes UI.
-func (s *Store) NodeTrafficTotals(from, to string) (map[int64][2]int64, error) {
-	rows, err := s.db.Query(
-		`SELECT node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ? GROUP BY node_id`,
-		from, to,
-	)
+// userID 0 aggregates across all users, matching StatsSeries.
+func (s *Store) NodeTrafficTotals(userID int64, from, to string) (map[int64][2]int64, error) {
+	query := `SELECT node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ?`
+	args := []any{from, to}
+	if userID > 0 {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+	query += ` GROUP BY node_id`
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +230,11 @@ func (s *Store) ResetDailyStats() error {
 // SetResetPeriod sets a user's automatic quota-reset period and anchors the
 // cycle at now.
 func (s *Store) SetResetPeriod(id int64, period string, now int64) error {
-	_, err := s.db.Exec(
+	return setResetPeriodOn(s.db, id, period, now)
+}
+
+func setResetPeriodOn(ex execer, id int64, period string, now int64) error {
+	_, err := ex.Exec(
 		`UPDATE users SET reset_period = ?, last_reset_at = ? WHERE id = ?`,
 		period, now, id,
 	)
@@ -156,19 +244,71 @@ func (s *Store) SetResetPeriod(id int64, period string, now int64) error {
 // AddConnection records activity from a source IP for a user (upserting the
 // per-IP row) and bumps the user's last_seen.
 func (s *Store) AddConnection(userID int64, ip string, ts int64) error {
-	if _, err := s.db.Exec(`
-		INSERT INTO connections (user_id, ip, last_seen, count) VALUES (?, ?, ?, 1)
-		ON CONFLICT(user_id, ip) DO UPDATE SET last_seen = excluded.last_seen, count = count + 1`,
-		userID, ip, ts,
-	); err != nil {
-		return err
+	return s.AddConnections([]ConnectionHit{{UserID: userID, IP: ip, SeenAt: ts, Hits: 1}})
+}
+
+// ConnectionHit is one user+IP sighting, with however many times it was seen
+// folded into Hits.
+type ConnectionHit struct {
+	UserID int64
+	IP     string
+	SeenAt int64
+	Hits   int64
+}
+
+// AddConnections records a batch of sightings in one transaction.
+//
+// The access-log tap is the panel's highest-frequency write source — it fires per
+// user per source IP — and it used to do two separate statements per sighting.
+// Folding a few seconds' worth into one commit is what stops the write rate from
+// scaling with the number of connected devices.
+func (s *Store) AddConnections(hits []ConnectionHit) error {
+	if len(hits) == 0 {
+		return nil
 	}
-	return s.TouchLastSeen(userID, ts)
+	return s.withTx(func(tx *sql.Tx) error {
+		seen := make(map[int64]int64, len(hits)) // user → newest sighting in the batch
+		for _, h := range hits {
+			if h.Hits <= 0 {
+				h.Hits = 1
+			}
+			// EXISTS guard for the same reason addDailyTrafficOn has one: connections
+			// .user_id is a foreign key, and RecordAccess reads user ids straight out of
+			// the Xray access log — a deleted user with a still-live session keeps being
+			// named. Without this, that one ghost would void everyone else's sightings
+			// in the batch, every flush, until Xray reloads.
+			if _, err := tx.Exec(`
+				INSERT INTO connections (user_id, ip, last_seen, count)
+				SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+				ON CONFLICT(user_id, ip) DO UPDATE SET
+				    last_seen = MAX(last_seen, excluded.last_seen),
+				    count = count + excluded.count`,
+				h.UserID, h.IP, h.SeenAt, h.Hits, h.UserID,
+			); err != nil {
+				return err
+			}
+			if h.SeenAt > seen[h.UserID] {
+				seen[h.UserID] = h.SeenAt
+			}
+		}
+		// One last_seen write per user, not per sighting: a user on four devices
+		// would otherwise stamp the same column four times in the same commit.
+		for userID, ts := range seen {
+			if err := touchLastSeenOn(tx, userID, ts); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // TouchLastSeen updates a user's last activity time (used by the poller too).
 func (s *Store) TouchLastSeen(userID, ts int64) error {
-	_, err := s.db.Exec(`UPDATE users SET last_seen = ? WHERE id = ?`, ts, userID)
+	return touchLastSeenOn(s.db, userID, ts)
+}
+
+func touchLastSeenOn(ex execer, userID, ts int64) error {
+	_, err := ex.Exec(`UPDATE users SET last_seen = ? WHERE id = ?`, ts, userID)
 	return err
 }
 
@@ -213,6 +353,30 @@ func (s *Store) PurgeConnections(before int64) (int64, error) {
 			`DELETE FROM connections WHERE rowid IN (
 				SELECT rowid FROM connections WHERE last_seen < ? LIMIT ?
 			)`, before, purgeBatch)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < purgeBatch {
+			return total, nil
+		}
+	}
+}
+
+// PurgeTrafficDaily drops per-day traffic rows older than beforeDay (exclusive,
+// 'YYYY-MM-DD'), returning how many were removed. The cutoff is a calendar day and
+// not a timestamp because that is what the rows are keyed on — see AddDailyTraffic,
+// which writes the operator's local day. Batched for the same reason the other
+// sweeps are: one unbounded DELETE would hold the single connection for the whole
+// statement and stall every request behind it.
+func (s *Store) PurgeTrafficDaily(beforeDay string) (int64, error) {
+	var total int64
+	for {
+		res, err := s.db.Exec(
+			`DELETE FROM traffic_daily WHERE rowid IN (
+				SELECT rowid FROM traffic_daily WHERE day < ? LIMIT ?
+			)`, beforeDay, purgeBatch)
 		if err != nil {
 			return total, err
 		}

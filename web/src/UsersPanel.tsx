@@ -87,7 +87,7 @@ const PAGE_SIZE = 100;
 // expSortKey orders by soonest expiry; "never" (0) sorts last.
 const expSortKey = (u: User) => (u.expire_at > 0 ? u.expire_at : Infinity);
 
-export function UsersPanel() {
+export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
   const [users, setUsers] = useState<User[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
@@ -539,6 +539,7 @@ export function UsersPanel() {
 
       <UserDetail
         user={detail}
+        userBotEnabled={userBotEnabled}
         onChanged={refresh}
         onClose={() => {
           setDetail(null);

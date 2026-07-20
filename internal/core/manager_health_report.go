@@ -88,7 +88,11 @@ func (m *Manager) nodesHealth() *HealthCheck {
 		} else if n.Joined() {
 			offline++
 		}
-		if n.XrayVersion != "" && n.XrayVersion != xray.PinnedVersion {
+		// Through the helper, never a raw compare: PinnedVersion carries a leading "v"
+		// and `xray version` does not, so == reports every node as stale forever — the
+		// warning survived any number of updates, and the Nodes tab (which does use the
+		// helper) disagreed with the dashboard about the very same node.
+		if n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion) {
 			stale++
 		}
 	}

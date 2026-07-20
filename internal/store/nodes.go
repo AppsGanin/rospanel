@@ -215,6 +215,28 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 	return out, rows.Err()
 }
 
+// NodeNames maps every node id to its display name, tombstoned nodes included.
+// Traffic history outlives a node (traffic_daily rows carry the numeric id), so a
+// breakdown covering past days still has to be able to name a server that has since
+// been deleted.
+func (s *Store) NodeNames() (map[int64]string, error) {
+	rows, err := s.db.Query(`SELECT id, name FROM nodes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]string)
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		out[id] = name
+	}
+	return out, rows.Err()
+}
+
 // GetNode returns one live node by id, or (nil, nil) if it doesn't exist or was
 // deleted. (A tombstoned node is invisible to the operator; only the token lookup
 // still finds it, so its next sync can be answered Revoked.)
@@ -510,8 +532,8 @@ func (s *Store) SetNodeGeoRefresh(id int64, hours int) error {
 // returns true iff this call won the claim — so two concurrent (or replayed)
 // syncs carrying the same report can't both count their traffic. The caller
 // applies the traffic deltas only when this returns true.
-func (s *Store) ClaimNodeReport(id, reportID int64) (bool, error) {
-	res, err := s.db.Exec(
+func claimNodeReportOn(ex execer, id, reportID int64) (bool, error) {
+	res, err := ex.Exec(
 		`UPDATE nodes SET last_report_id = ? WHERE id = ? AND last_report_id < ?`,
 		reportID, id, reportID,
 	)
@@ -520,6 +542,31 @@ func (s *Store) ClaimNodeReport(id, reportID int64) (bool, error) {
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
+}
+
+// ApplyNodeReport claims a node's traffic-ingest watermark AND books the batch it
+// covers, in one transaction. It reports whether this call won the claim; false
+// means the report was already counted and nothing was written.
+//
+// The two halves must commit together, for the same reason a payment's claim does
+// (see ConfirmPaymentOrder). The watermark is what makes ingest idempotent, so once
+// it advances the node's resend of that batch is rejected as a duplicate — if the
+// traffic writes then failed or the process died, that batch is gone for good and
+// no retry can bring it back. Rolled back together, the node simply resends and the
+// traffic is counted on the next attempt.
+func (s *Store) ApplyNodeReport(nodeID, reportID int64, deltas []TrafficDelta) (bool, error) {
+	var claimed bool
+	err := s.withTx(func(tx *sql.Tx) error {
+		var err error
+		if claimed, err = claimNodeReportOn(tx, nodeID, reportID); err != nil || !claimed {
+			return err
+		}
+		return applyTrafficDeltasOn(tx, deltas)
+	})
+	if err != nil {
+		return false, err
+	}
+	return claimed, nil
 }
 
 // DeleteNode soft-deletes a node: it tombstones the row (keeping the token) and

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -33,6 +34,119 @@ func (rt *Router) xrayRestart(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"running": running, "started_at": startedAt})
 }
 
+// statusInterval is how often the dashboard payload is recomputed — once for the
+// whole panel, not once per viewer.
+const statusInterval = 2 * time.Second
+
+// statusFeed computes the dashboard payload on one timer and hands the same
+// marshalled JSON to every open stream.
+//
+// It exists because the work behind SystemStatus is not free — it counts users and
+// sums traffic in the database — and it used to run per connected admin, per tick.
+// Two open browser tabs meant twice the queries for byte-identical output, all of
+// it queued through the single write connection the rest of the panel shares. Now
+// the cost is fixed no matter how many people have the dashboard open.
+//
+// The timer only runs while somebody is watching: it starts with the first
+// subscriber and stops with the last, so an idle panel does no polling at all.
+type statusFeed struct {
+	payload  func() (any, error)
+	interval time.Duration
+
+	mu   sync.Mutex
+	subs map[chan string]struct{}
+	last string        // most recent payload, so a new tab paints immediately
+	stop chan struct{} // closed when the last subscriber leaves
+}
+
+func newStatusFeed(mgr *core.Manager) *statusFeed {
+	return newStatusFeedFunc(statusInterval, func() (any, error) { return mgr.SystemStatus() })
+}
+
+// newStatusFeedFunc builds a feed over any payload source, so the fan-out can be
+// tested without standing up a Manager.
+func newStatusFeedFunc(interval time.Duration, payload func() (any, error)) *statusFeed {
+	return &statusFeed{
+		payload:  payload,
+		interval: interval,
+		subs:     make(map[chan string]struct{}),
+	}
+}
+
+// subscribe registers a stream and returns its channel and a release func. The
+// channel is closed by release; readers must handle that.
+func (f *statusFeed) subscribe() (<-chan string, func()) {
+	ch := make(chan string, 1)
+	f.mu.Lock()
+	f.subs[ch] = struct{}{}
+	if f.last != "" {
+		ch <- f.last // don't make a fresh tab wait a tick for its first paint
+	}
+	if len(f.subs) == 1 {
+		f.stop = make(chan struct{})
+		go f.loop(f.stop)
+	}
+	f.mu.Unlock()
+
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			delete(f.subs, ch)
+			close(ch)
+			if len(f.subs) == 0 {
+				if f.stop != nil {
+					close(f.stop)
+					f.stop = nil
+				}
+				// Drop the cached payload with the last viewer. It only exists to spare a
+				// new tab the wait for the next tick; once nothing is refreshing it, it
+				// would instead hand that tab a snapshot from whenever the panel was last
+				// watched — and since the channel buffers one message, the fresh payload
+				// published moments later is dropped, leaving the stale numbers up.
+				f.last = ""
+			}
+		})
+	}
+}
+
+func (f *statusFeed) loop(stop chan struct{}) {
+	t := time.NewTicker(f.interval)
+	defer t.Stop()
+	for {
+		f.publish()
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+	}
+}
+
+func (f *statusFeed) publish() {
+	s, err := f.payload()
+	if err != nil {
+		return // skip this tick; the streams stay open
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+	msg := string(b)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.last = msg
+	for ch := range f.subs {
+		select {
+		case ch <- msg:
+		default:
+			// Reader is behind. Drop this tick for them rather than stall the
+			// publisher (and every other viewer) — the next one is 2s away.
+		}
+	}
+}
+
 // systemStream pushes the dashboard payload over Server-Sent Events every 2s, so
 // the client subscribes once instead of polling. EventSource reconnects on its
 // own if the stream drops (e.g. an Xray reload bounces the connection).
@@ -51,29 +165,17 @@ func (rt *Router) systemStream(w http.ResponseWriter, r *http.Request) {
 	// xray fork every 3s) when no dashboard is watching.
 	defer rt.mgr.TrackVPNViewer()()
 
-	send := func() bool {
-		s, err := rt.mgr.SystemStatus()
-		if err != nil {
-			return true // skip this tick, keep the stream open
-		}
-		b, err := json.Marshal(s)
-		if err != nil {
-			return true
-		}
-		return sseSend(w, flusher, string(b))
-	}
-
-	if !send() {
-		return
-	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	ch, release := rt.status.subscribe()
+	defer release()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-ticker.C:
-			if !send() {
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			if !sseSend(w, flusher, msg) {
 				return
 			}
 		}

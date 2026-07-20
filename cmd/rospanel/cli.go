@@ -253,6 +253,12 @@ func runInstall() {
 		"ExecStart=" + installBinPath + "\n" +
 		"Restart=always\n" +
 		"RestartSec=3\n" +
+		// Signal only the panel, not everything in the cgroup. The default
+		// (control-group) SIGTERMs the Xray child too, so it would die on its own
+		// before the panel could mark the stop intentional — reported as a crash on
+		// every restart. The panel stops Xray itself; KillMode=mixed still SIGKILLs
+		// the whole group if the timeout expires, so nothing can be left behind.
+		"KillMode=mixed\n" +
 		// The panel still runs as root (it execs Xray, runs iptables/nft for the
 		// brute-guard + Hysteria port-hopping, writes net.* sysctls for BBR, and
 		// self-updates its own binary in /usr/local/bin). Rather than drop the user,

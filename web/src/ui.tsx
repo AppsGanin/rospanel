@@ -477,6 +477,7 @@ export function Textarea({
   placeholder,
   rows = 3,
   hint,
+  inputRef,
 }: {
   label?: string;
   value: string;
@@ -484,10 +485,14 @@ export function Textarea({
   placeholder?: string;
   rows?: number;
   hint?: string;
+  // inputRef exposes the element so a caller can act on the selection — wrapping
+  // the highlighted text in a tag, for instance.
+  inputRef?: React.Ref<HTMLTextAreaElement>;
 }) {
   return (
     <Field label={label}>
       <textarea
+        ref={inputRef}
         className={cn(inputCls, "resize-y")}
         value={value}
         rows={rows}

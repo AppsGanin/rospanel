@@ -56,14 +56,16 @@ export function gbToBytes(gb: number): number {
 }
 
 // Date-range options for the traffic segmented controls, shared by the stats
-// panel and the per-user detail drawer.
+// panel and the per-user detail drawer. A year is the widest option on purpose:
+// the server keeps per-day traffic for model.TrafficDailyRetentionDays (365) and
+// sweeps the rest, so an "all time" button would only ever return the same rows as
+// "Год" — while promising history that no longer exists.
 export const RANGES = [
   { value: '1', label: 'День' },
   { value: '7', label: '7д' },
   { value: '30', label: '30д' },
   { value: '90', label: '90д' },
   { value: '365', label: 'Год' },
-  { value: 'all', label: 'Всё' },
 ]
 
 // plural picks the Russian form for n: one / few / many.

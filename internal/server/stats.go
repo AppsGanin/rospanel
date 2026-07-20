@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -63,6 +64,35 @@ func (rt *Router) statsSeries(w http.ResponseWriter, r *http.Request) {
 		pts = []model.DailyPoint{}
 	}
 	writeJSON(w, http.StatusOK, pts)
+}
+
+// statsNodes splits the period's traffic by the server that carried it. user_id
+// narrows it to one person (the user card); omitted, it covers everyone (the stats
+// page). Server names are resolved server-side so the caller needs no node list —
+// and an operator without rights to the Nodes tab still gets the breakdown.
+func (rt *Router) statsNodes(w http.ResponseWriter, r *http.Request) {
+	from, to, ok := rt.dateRange(w, r)
+	if !ok {
+		return
+	}
+	var userID int64
+	if v := r.URL.Query().Get("user_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 0 {
+			writeErr(w, http.StatusBadRequest, "неверный user_id")
+			return
+		}
+		userID = id
+	}
+	rows, err := rt.mgr.NodeTrafficBreakdown(userID, from, to)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []core.NodeTraffic{}
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {

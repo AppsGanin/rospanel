@@ -34,8 +34,11 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 		if err != nil {
 			return err
 		}
-		if set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) == token {
+		if strings.TrimSpace(set.TGUserBotToken) == token {
 			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+		if strings.TrimSpace(set.TGSupportBotToken) == token {
+			return invalid("у админ-бота и бота поддержки должны быть разные токены")
 		}
 	}
 	if err := m.store.SetTelegramBot(enabled, token, backupCron); err != nil {
@@ -74,11 +77,203 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 		if err != nil {
 			return err
 		}
-		if set.TGBotEnabled && strings.TrimSpace(set.TGBotToken) == token {
+		if strings.TrimSpace(set.TGBotToken) == token {
 			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		}
+		if strings.TrimSpace(set.TGSupportBotToken) == token {
+			return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
 		}
 	}
 	return m.store.SetTelegramUserBot(enabled, token, regMode, regCode)
+}
+
+// SaveTelegramSupport validates and persists the support relay: its own bot token,
+// the forum supergroup admins answer in, and the /start greeting. username is the
+// bot's resolved @username — the caller looks it up (core deliberately doesn't talk
+// to Telegram) and enabling without one is refused, because the user bot renders its
+// support button only for a non-empty username and the operator would be left with
+// support switched on and no visible way in.
+func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, groupID int64, greeting string) error {
+	groupID = normalizeGroupID(groupID)
+	token = strings.TrimSpace(token)
+	username = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(username), "@"))
+	greeting = strings.TrimSpace(greeting)
+	// Shape first: a token with an obvious typo gets the message that says what a
+	// token looks like, not the generic "couldn't verify" it would otherwise hit —
+	// getMe rejects a malformed token exactly like an unknown one.
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+	}
+	if enabled {
+		switch {
+		case token == "":
+			return invalid("укажите токен бота поддержки")
+		case groupID == 0:
+			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+		case username == "":
+			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+		}
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	// Compared regardless of whether the other bot is currently enabled: sharing a
+	// token with a disabled bot saves fine today and breaks the day it is switched
+	// on, when two poll loops race for one update stream and each steals half the
+	// other's messages.
+	if token != "" {
+		if strings.TrimSpace(set.TGBotToken) == token {
+			return invalid("у бота поддержки и админ-бота должны быть разные токены")
+		}
+		if strings.TrimSpace(set.TGUserBotToken) == token {
+			return invalid("у бота поддержки и пользовательского бота должны быть разные токены")
+		}
+	}
+	// No mapping reset here. Topic rows carry the group that issued them, so a
+	// mapping from another group simply never matches — which is what makes every
+	// transition (A→B, A→0→B, re-picking A after clearing the field) safe by
+	// construction. A reset had to be exactly right on all of them, and each way of
+	// getting it wrong either delivered one customer's messages into another's thread
+	// or orphaned live conversations Telegram gives no way to find again.
+	return m.store.SetTelegramSupport(enabled, token, username, groupID, greeting)
+}
+
+// normalizeGroupID repairs the one mistake everyone makes when typing a supergroup
+// id by hand. Telegram shows the bare internal id (in a web URL, or via an id-printing
+// bot), while the API wants it prefixed with -100 — so a pasted "1234567890" has to
+// become "-1001234567890" or every call reports the group as unreachable.
+//
+// Only a positive number is repaired. A negative one is already in some -prefixed
+// form, and guessing which would risk pointing support at a different chat entirely.
+func normalizeGroupID(id int64) int64 {
+	if id <= 0 {
+		return id
+	}
+	full, err := strconv.ParseInt("-100"+strconv.FormatInt(id, 10), 10, 64)
+	if err != nil {
+		return id // absurdly long: leave it and let validation complain
+	}
+	return full
+}
+
+// ListSupportGroups returns the groups the support bot has been added to, for the
+// settings picker. They are options only — see the store for why none is ever
+// applied on its own.
+func (m *Manager) ListSupportGroups() ([]model.SupportGroup, error) {
+	return m.store.ListSupportGroups()
+}
+
+// TelegramConfig is every Telegram bot's settings in one value, so they can be
+// checked together and written together.
+type TelegramConfig struct {
+	Enabled     bool
+	Token       string
+	BackupCron  string
+	UserEnabled bool
+	UserToken   string
+	UserRegMode string
+	UserRegCode string
+
+	SupportEnabled  bool
+	SupportToken    string
+	SupportUsername string
+	SupportGroupID  int64
+	SupportGreeting string
+}
+
+// SaveTelegramConfig validates all three bots BEFORE persisting any of them.
+//
+// Saved one after another, a failure on the third left the first two committed while
+// the caller reported failure — so the operator saw an error, the panel had changed,
+// and (because the audit middleware skips a failed request) nothing recorded it. The
+// third is the one that can fail for reasons outside anyone's control: it needs the
+// support bot's @username, which comes from Telegram.
+func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
+	if err := m.checkTelegram(c.Enabled, c.Token, c.BackupCron); err != nil {
+		return err
+	}
+	if err := m.checkTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
+		return err
+	}
+	if err := m.checkTelegramSupportCfg(c); err != nil {
+		return err
+	}
+	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron); err != nil {
+		return err
+	}
+	if err := m.SaveTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
+		return err
+	}
+	return m.SaveTelegramSupport(c.SupportEnabled, c.SupportToken, c.SupportUsername,
+		c.SupportGroupID, c.SupportGreeting)
+}
+
+// The check* helpers below are the validation halves of the Save* methods, reusable
+// without writing. Cross-token comparisons are made against the INCOMING values, not
+// the stored ones: one request may legitimately move a token from one bot to another.
+func (m *Manager) checkTelegram(enabled bool, token, backupCron string) error {
+	token = strings.TrimSpace(token)
+	if enabled && token == "" {
+		return invalid("укажите токен бота (получите его у @BotFather)")
+	}
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота выглядит неверно (формат «123456:ABC...»)")
+	}
+	if strings.TrimSpace(backupCron) != "" {
+		if _, err := cron.Parse(strings.TrimSpace(backupCron)); err != nil {
+			return invalid("неверное расписание (cron): %v", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) checkTelegramUserBot(enabled bool, token, regMode, regCode string) error {
+	switch regMode {
+	case model.RegOff, model.RegOpen, model.RegModeration, model.RegInvite:
+	default:
+		return invalid("неизвестный режим регистрации")
+	}
+	if regMode == model.RegInvite && strings.TrimSpace(regCode) == "" {
+		return invalid("для регистрации по коду укажите код-приглашение")
+	}
+	token = strings.TrimSpace(token)
+	if enabled && token == "" {
+		return invalid("укажите токен пользовательского бота")
+	}
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
+	}
+	return nil
+}
+
+func (m *Manager) checkTelegramSupportCfg(c TelegramConfig) error {
+	token := strings.TrimSpace(c.SupportToken)
+	if token != "" && !strings.Contains(token, ":") {
+		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+	}
+	if c.SupportEnabled {
+		switch {
+		case token == "":
+			return invalid("укажите токен бота поддержки")
+		case normalizeGroupID(c.SupportGroupID) == 0:
+			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+		case strings.TrimSpace(c.SupportUsername) == "":
+			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+		}
+	}
+	// Three distinct bots need three distinct tokens: two poll loops sharing one
+	// would each steal half the other's updates.
+	admin, user := strings.TrimSpace(c.Token), strings.TrimSpace(c.UserToken)
+	switch {
+	case admin != "" && admin == user:
+		return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+	case admin != "" && admin == token:
+		return invalid("у админ-бота и бота поддержки должны быть разные токены")
+	case user != "" && user == token:
+		return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
+	}
+	return nil
 }
 
 // CancelTelegramLink clears the pending one-time link code (cancels a link request).

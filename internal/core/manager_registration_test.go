@@ -18,6 +18,12 @@ func TestModerationRegistrationFlow(t *testing.T) {
 	m.SetAdminModerationNotifier(func(reqID int64, name, plan string) { moderated = append(moderated, reqID) })
 	var userMsgs []string
 	m.SetUserNotifier(func(chatID int64, html string) { userMsgs = append(userMsgs, html) })
+	// Moderated signups only ever arrive through the user bot, and its notices are
+	// now gated on it being switched on — a panel with the bot off must not have it
+	// writing to people.
+	if err := m.store.SetTelegramUserBot(true, "111:AAA", model.RegModeration, ""); err != nil {
+		t.Fatalf("enable user bot: %v", err)
+	}
 
 	// Request: no user is created, the admin is prompted, the chat is "pending".
 	ok, err := m.RequestRegistration(ctx, 555, "Петя")

@@ -46,7 +46,6 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":       set.BillingEnabled,
-		"trial_days":    set.BillingTrialDays,
 		"free_plan_id":  set.BillingFreePlanID,
 		"trial_plan_id": set.BillingTrialPlanID,
 		"payment_note":  set.BillingPaymentNote,
@@ -58,7 +57,6 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled     bool   `json:"enabled"`
-		TrialDays   int    `json:"trial_days"`
 		FreePlanID  int64  `json:"free_plan_id"`
 		TrialPlanID int64  `json:"trial_plan_id"`
 		PaymentNote string `json:"payment_note"`
@@ -72,7 +70,6 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set.BillingEnabled = req.Enabled
-	set.BillingTrialDays = req.TrialDays
 	set.BillingFreePlanID = req.FreePlanID
 	set.BillingTrialPlanID = req.TrialPlanID
 	set.BillingPaymentNote = strings.TrimSpace(req.PaymentNote)

@@ -1,0 +1,334 @@
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+)
+
+// Broadcast persistence. See migrations/0031_telegram_support_broadcast.sql for why the recipient
+// list lives on disk and the counters do not.
+
+// targetBatch caps how many recipients one INSERT statement carries. SQLite's
+// variable limit is what's being respected here, not row count.
+const targetBatch = 400
+
+// CreateBroadcast inserts a broadcast, paused. It is started separately, once the
+// caller has finished putting everything in place — an attachment is written to disk
+// after the row exists (it is named by id), and a worker that saw the row as running
+// in between would find no file and stop the run.
+func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
+	buttons := ""
+	if len(b.Buttons) > 0 {
+		raw, err := json.Marshal(b.Buttons)
+		if err != nil {
+			return 0, err
+		}
+		buttons = string(raw)
+	}
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO broadcasts (created_by, text, media_kind, media_name, buttons_json,
+		                         audience, status, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		b.CreatedBy, b.Text, b.MediaKind, b.MediaName, buttons,
+		b.Audience, model.BroadcastPaused, now,
+	).Scan(&id)
+	return id, err
+}
+
+// AddBroadcastTargets materialises the audience snapshot. Inserted in one
+// transaction so a broadcast is never left with a half-built recipient list that the
+// worker would happily treat as complete.
+func (s *Store) AddBroadcastTargets(broadcastID int64, chatIDs []int64) error {
+	if len(chatIDs) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	for start := 0; start < len(chatIDs); start += targetBatch {
+		end := min(start+targetBatch, len(chatIDs))
+		chunk := chatIDs[start:end]
+		args := make([]any, 0, len(chunk)*2)
+		values := make([]string, 0, len(chunk))
+		for _, id := range chunk {
+			values = append(values, "(?, ?)")
+			args = append(args, broadcastID, id)
+		}
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO broadcast_targets (broadcast_id, chat_id) VALUES `+
+				strings.Join(values, ","), args...); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// NextPendingTargets returns up to limit recipients still awaiting delivery,
+// excluding anyone who has unsubscribed or blocked the bot since the audience was
+// frozen. The snapshot fixes WHO was in scope; it must not override a decision the
+// person made afterwards — least of all one the bot confirmed to them.
+func (s *Store) NextPendingTargets(broadcastID int64, limit int) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT t.chat_id FROM broadcast_targets t
+		 LEFT JOIN tg_subscribers s ON s.chat_id = t.chat_id
+		 WHERE t.broadcast_id = ? AND t.state = ?
+		   AND COALESCE(s.opt_out, 0) = 0 AND COALESCE(s.active, 1) = 1
+		 ORDER BY t.chat_id LIMIT ?`,
+		broadcastID, model.TargetPending, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// MarkTarget records one delivery outcome. The state moves off 'pending' whatever
+// happened, so a recipient is attempted once per run and a resume can't repeat it.
+func (s *Store) MarkTarget(broadcastID, chatID int64, state, errMsg string, at int64) error {
+	_, err := s.db.Exec(
+		`UPDATE broadcast_targets
+		 SET state = ?, error = ?, attempts = attempts + 1, sent_at = ?
+		 WHERE broadcast_id = ? AND chat_id = ?`,
+		state, errMsg, at, broadcastID, chatID)
+	return err
+}
+
+// SetBroadcastMediaFileID caches the file_id Telegram assigned on the first upload,
+// so the remaining recipients are served by id instead of re-uploading the file.
+func (s *Store) SetBroadcastMediaFileID(id int64, fileID string) error {
+	_, err := s.db.Exec(`UPDATE broadcasts SET media_file_id = ? WHERE id = ?`, fileID, id)
+	return err
+}
+
+// SetBroadcastStatus moves a broadcast between running/paused/done/cancelled.
+// finishedAt is stamped only for the terminal states; started_at is stamped on the
+// first move to running and never overwritten, so resuming keeps the original launch
+// time rather than pretending the run began at the resume.
+func (s *Store) SetBroadcastStatus(id int64, status string, at int64) error {
+	if status == model.BroadcastRunning {
+		_, err := s.db.Exec(
+			`UPDATE broadcasts SET status = ?,
+			        started_at = CASE WHEN started_at = 0 THEN ? ELSE started_at END
+			 WHERE id = ?`, status, at, id)
+		return err
+	}
+	// Only a terminal state carries an end time. Stamping one on a pause left a
+	// resumed broadcast reporting status=running with a finished_at in the past.
+	if status == model.BroadcastPaused {
+		_, err := s.db.Exec(`UPDATE broadcasts SET status = ? WHERE id = ?`, status, id)
+		return err
+	}
+	_, err := s.db.Exec(
+		`UPDATE broadcasts SET status = ?, finished_at = ? WHERE id = ?`, status, at, id)
+	return err
+}
+
+// SetBroadcastStatusIf moves a broadcast only if it is still in the state the caller
+// last saw, and reports whether it applied. The worker uses it for every status write
+// it makes: between deciding to write and writing, the operator may have paused or
+// cancelled, and an unconditional UPDATE would silently revert that decision — with
+// the run then resumable through the normal controls.
+func (s *Store) SetBroadcastStatusIf(id int64, from, to string, at int64) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE broadcasts SET status = ?, finished_at = ? WHERE id = ? AND status = ?`,
+		to, at, id, from)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// RetryFailedBroadcast puts failed recipients back in the queue and resumes the run.
+// 'blocked' rows are left alone: Telegram will refuse them again for the same reason.
+// Both statements run in one transaction, and the re-open is conditional on the run
+// still being 'done'. Split across two writes, a crash in between would leave a
+// 'done' broadcast holding pending rows — a state no API can move, because the
+// controls refuse a finished run and a second retry finds nothing failed.
+func (s *Store) RetryFailedBroadcast(id, now int64) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+
+	res, err := tx.Exec(
+		`UPDATE broadcast_targets SET state = ?, error = ''
+		 WHERE broadcast_id = ? AND state = ?`,
+		model.TargetPending, id, model.TargetFailed)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, tx.Commit()
+	}
+	// Only a finished run re-opens. A cancelled one keeps its untouched pending
+	// recipients, and resuming it would deliver the remainder the operator stopped.
+	res, err = tx.Exec(
+		`UPDATE broadcasts SET status = ?, finished_at = 0 WHERE id = ? AND status = ?`,
+		model.BroadcastRunning, id, model.BroadcastDone)
+	if err != nil {
+		return 0, err
+	}
+	if moved, err := res.RowsAffected(); err != nil {
+		return 0, err
+	} else if moved == 0 {
+		return 0, nil // rolled back by the deferred call: the run wasn't 'done'
+	}
+	return int(n), tx.Commit()
+}
+
+// SkipRemainingTargets closes out the recipients a finished run never reached
+// because they unsubscribed mid-flight. Without it they would sit 'pending' forever
+// against a completed run, and the progress bar would never reach its total.
+func (s *Store) SkipRemainingTargets(broadcastID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE broadcast_targets SET state = ?
+		 WHERE broadcast_id = ? AND state = ?`,
+		model.TargetSkipped, broadcastID, model.TargetPending)
+	return err
+}
+
+// FinishedBroadcastIDs lists runs that will never send again. The worker uses it to
+// drop their attachments: removeMedia on the "done" path alone leaks a file for every
+// run that was cancelled, paused for good, or died between creation and start.
+func (s *Store) FinishedBroadcastIDs() ([]int64, error) {
+	// media_file_id must be set: a run where every upload failed still needs its
+	// file on disk, or "повторить неудачные" would have nothing left to send.
+	rows, err := s.db.Query(
+		`SELECT id FROM broadcasts
+		 WHERE status IN (?, ?) AND media_kind <> ''
+		   AND (media_file_id <> '' OR status = ?)`,
+		model.BroadcastDone, model.BroadcastCancelled, model.BroadcastCancelled)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// NextRunningBroadcast returns the oldest broadcast still being delivered, or nil.
+// Oldest-first so a queue drains in the order it was launched.
+func (s *Store) NextRunningBroadcast() (*model.Broadcast, error) {
+	b, err := s.scanBroadcast(`WHERE status = ? ORDER BY id LIMIT 1`, model.BroadcastRunning)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return b, err
+}
+
+// GetBroadcast returns one broadcast with its progress counters.
+func (s *Store) GetBroadcast(id int64) (*model.Broadcast, error) {
+	b, err := s.scanBroadcast(`WHERE id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	return b, s.fillCounts(b)
+}
+
+// ListBroadcasts returns the newest broadcasts with their progress counters.
+func (s *Store) ListBroadcasts(limit int) ([]model.Broadcast, error) {
+	rows, err := s.db.Query(broadcastSelect+` ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Broadcast
+	for rows.Next() {
+		b, err := scanBroadcastRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if err := s.fillCounts(&out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+const broadcastSelect = `SELECT id, created_by, text, media_kind, media_file_id, media_name,
+       buttons_json, audience, status, created_at, started_at, finished_at FROM broadcasts`
+
+type rowScanner interface{ Scan(dest ...any) error }
+
+func scanBroadcastRow(r rowScanner) (*model.Broadcast, error) {
+	var b model.Broadcast
+	var buttons string
+	if err := r.Scan(&b.ID, &b.CreatedBy, &b.Text, &b.MediaKind, &b.MediaFileID, &b.MediaName,
+		&buttons, &b.Audience, &b.Status, &b.CreatedAt, &b.StartedAt, &b.FinishedAt); err != nil {
+		return nil, err
+	}
+	if buttons != "" {
+		// A row written by a newer version could carry something this build can't
+		// read; dropping the buttons is better than failing the whole broadcast.
+		_ = json.Unmarshal([]byte(buttons), &b.Buttons)
+	}
+	return &b, nil
+}
+
+func (s *Store) scanBroadcast(where string, args ...any) (*model.Broadcast, error) {
+	return scanBroadcastRow(s.db.QueryRow(broadcastSelect+" "+where, args...))
+}
+
+// fillCounts derives the progress figures from the recipient rows — the single
+// source of truth for what actually happened.
+func (s *Store) fillCounts(b *model.Broadcast) error {
+	rows, err := s.db.Query(
+		`SELECT state, COUNT(*) FROM broadcast_targets WHERE broadcast_id = ? GROUP BY state`, b.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var state string
+		var n int
+		if err := rows.Scan(&state, &n); err != nil {
+			return err
+		}
+		b.Total += n
+		switch state {
+		case model.TargetSent:
+			b.Sent = n
+		case model.TargetFailed:
+			b.Failed = n
+		case model.TargetBlocked:
+			b.Blocked = n
+		case model.TargetSkipped:
+			b.Skipped = n
+		}
+	}
+	return rows.Err()
+}

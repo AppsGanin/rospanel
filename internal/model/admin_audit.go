@@ -61,6 +61,15 @@ const (
 	AuditWebhookUpdated = "webhook.updated"
 	AuditWebhookDeleted = "webhook.deleted"
 
+	// Mass broadcasts. Kept as their own actions rather than folded into
+	// AuditSettings: "who sent a message to every user, and what was in it" is the
+	// question this journal exists to answer, and it must not need reading a
+	// settings-changed row to find.
+	AuditBroadcastStarted = "broadcast.started"
+	AuditBroadcastChanged = "broadcast.changed"
+	AuditBroadcastTest    = "broadcast.test"
+	AuditUserMessaged     = "broadcast.user_messaged"
+
 	// The panel itself.
 	AuditXrayRestarted = "panel.xray_restarted"
 	AuditStatsReset    = "panel.stats_reset"
@@ -78,12 +87,13 @@ const (
 // dropdown would throw away the only thing the row is for. So the filter is unified,
 // not the events: pick an area, read the exact action on each row.
 const (
-	AuditCatSession  = "session"
-	AuditCatAdmins   = "admins"
-	AuditCatSettings = "settings"
-	AuditCatPlans    = "plans"
-	AuditCatAPI      = "api"
-	AuditCatPanel    = "panel"
+	AuditCatSession   = "session"
+	AuditCatAdmins    = "admins"
+	AuditCatSettings  = "settings"
+	AuditCatPlans     = "plans"
+	AuditCatAPI       = "api"
+	AuditCatBroadcast = "broadcast"
+	AuditCatPanel     = "panel"
 )
 
 // AdminAuditCategories is the filter's list, in the order it renders.
@@ -93,6 +103,7 @@ var AdminAuditCategories = []struct{ Key, Label string }{
 	{AuditCatSettings, "Настройки"},
 	{AuditCatPlans, "Тарифы"},
 	{AuditCatAPI, "API и вебхуки"},
+	{AuditCatBroadcast, "Рассылки"},
 	{AuditCatPanel, "Панель"},
 }
 
@@ -129,6 +140,11 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditWebhookCreated, "Вебхук создан", AuditCatAPI},
 	{AuditWebhookUpdated, "Вебхук изменён", AuditCatAPI},
 	{AuditWebhookDeleted, "Вебхук удалён", AuditCatAPI},
+
+	{AuditBroadcastStarted, "Рассылка запущена", AuditCatBroadcast},
+	{AuditBroadcastChanged, "Рассылка: пауза, отмена или повтор", AuditCatBroadcast},
+	{AuditBroadcastTest, "Тестовая отправка рассылки", AuditCatBroadcast},
+	{AuditUserMessaged, "Сообщение пользователю в Telegram", AuditCatBroadcast},
 
 	{AuditXrayRestarted, "Перезапуск Xray", AuditCatPanel},
 	{AuditStatsReset, "Сброс статистики", AuditCatPanel},

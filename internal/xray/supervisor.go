@@ -59,6 +59,11 @@ type Supervisor struct {
 
 	onAccess func(email, ip string) // called per access-log connection line
 	onCrash  func(err error)        // called when Xray exits unexpectedly (crash)
+	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
+	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
+	// renewed certificate): those are routine, and reporting them as recovery would
+	// make the one message that means "the outage is over" meaningless.
+	onRecover func()
 
 	verOnce sync.Once
 	version string
@@ -120,6 +125,16 @@ func (s *Supervisor) SetOnAccess(fn func(email, ip string)) { s.onAccess = fn }
 // SetOnCrash registers a callback invoked when the Xray child exits unexpectedly
 // (a genuine crash, not an intentional Stop/Apply). Used to alert the operator.
 func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
+
+// SetOnRecover registers a callback invoked when Xray comes back after a crash.
+func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
+
+// recovered fires the recovery callback off the restart path, mirroring onCrash.
+func (s *Supervisor) recovered() {
+	if s.onRecover != nil {
+		go s.onRecover()
+	}
+}
 
 // NewSupervisor resolves binName (via PATH or as an absolute path) and targets
 // configPath for the generated config. assetDir holds the geo databases.
@@ -494,9 +509,15 @@ func (s *Supervisor) monitor(p *proc) {
 	close(p.done) // unblocks stopProc() waiting to reuse :443
 
 	s.mu.Lock()
-	if p.stop || s.cur != p {
+	// s.closed matters as much as p.stop here. systemd's default KillMode signals
+	// every process in the cgroup, so on `systemctl stop` Xray gets its own SIGTERM
+	// and can die before the panel's handler reaches Stop() — p.stop is still false,
+	// and the exit reads as a crash. That produced a "Xray аварийно завершился" alert
+	// on every ordinary restart, with no all-clear after it: the restart is scheduled
+	// a second later, by which time the panel itself is gone.
+	if p.stop || s.cur != p || s.closed {
 		s.mu.Unlock()
-		return // intentional kill or already replaced
+		return // intentional kill, already replaced, or the panel is shutting down
 	}
 	s.cur = nil
 	// A run that reached healthy uptime is proven-good config: reset the backoff,
@@ -537,6 +558,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 			if err := s.restoreBackupLocked(); err == nil {
 				slog.Info("xray: auto-rollback succeeded")
 				s.runMu.Unlock()
+				s.recovered()
 				return
 			} else {
 				slog.Error("xray: auto-rollback failed", "err", err)
@@ -569,6 +591,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 		err := s.startProc()
 		s.runMu.Unlock()
 		if err == nil {
+			s.recovered()
 			return // the new process's monitor takes over
 		}
 		slog.Error("xray: restart failed", "err", err)

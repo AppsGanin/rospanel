@@ -266,20 +266,12 @@ export function OverviewPanel() {
           </div>
         </InfoCard>
 
-        <InfoCard title="Общий объём трафика">
-          <div className="grid grid-cols-2 gap-4">
-            <Metric label="↑ Отправлено" value={fmtBytes(s.total_up)} />
-            <Metric label="↓ Получено" value={fmtBytes(s.total_down)} />
-          </div>
-        </InfoCard>
-
-        <InfoCard title="Сеть сервера">
-          <div className="grid grid-cols-2 gap-4">
-            <Metric label="↑ Отдача" value={`${fmtBytes(s.net_up)}/s`} />
-            <Metric label="↓ Приём" value={`${fmtBytes(s.net_down)}/s`} />
-          </div>
-        </InfoCard>
-
+        {/* No "total traffic" card: it summed users.used_up/used_down, which the
+            quota reset zeroes per user — so it added up a different period for
+            everybody and read as a lifetime figure. The per-day history on
+            "Статистика" is the honest answer to that question. Server-wide NIC
+            throughput is gone for a related reason: it counts panel, SSH and
+            everything else, so it never matched the VPN number beside it. */}
         <InfoCard title="VPN-трафик">
           <div className="grid grid-cols-2 gap-4">
             <Metric label="↑ Отдача" value={`${fmtBytes(s.vpn_up)}/s`} />

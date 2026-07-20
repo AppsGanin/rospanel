@@ -366,11 +366,13 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 			paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
 		return fmt.Errorf("сумма оплаты не совпадает с заказом %d", order.ID)
 	}
-	// Atomically claim the pending→paid transition. A provider webhook and the
-	// polling fallback (or a re-delivered webhook) can reach here for the same order
-	// concurrently; only the caller that wins the CAS applies the plan, so one
-	// payment can't extend the user twice.
-	claimed, err := m.store.MarkPaymentOrderPaidIfPending(order.ID, time.Now().Unix())
+	// Claim the pending→paid transition and grant the plan in one transaction. A
+	// provider webhook and the polling fallback (or a re-delivered webhook) can reach
+	// here for the same order concurrently; only the caller that wins the claim
+	// applies the plan, so one payment can't extend the user twice. And because the
+	// claim commits with the plan rather than before it, a crash mid-way cannot leave
+	// the order paid with nothing delivered — see confirmOrderPaid.
+	claimed, err := m.confirmOrderPaid(order, time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -378,20 +380,16 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 		return nil // another confirmer already handled this order
 	}
 	// The provider (or the polling fallback) confirmed this, not a person — so the
-	// plan change and the payment land in the audit log as system actions.
+	// payment lands in the audit log as a system action.
 	ctx := context.Background()
-	// Extend from the current expiry only for a renewal of the active paid plan;
-	// buying from trial/free/expired starts from now (no inherited time). Audited as
-	// the payment below, not as a bare plan switch — one purchase is one event.
-	if err := m.applyPlan(ctx, order.UserID, order.PlanID, m.isPlanRenewal(order.UserID, order.PlanID), ""); err != nil {
-		// Roll the claim back so the polling fallback retries rather than leaving a
-		// paid order whose plan was never applied.
-		_ = m.store.RevertPaymentOrderToPending(order.ID)
-		return err
-	}
 	logInfo("payment: order paid", "order", order.ID, "provider", provider, "user", order.UserID, "plan", order.PlanID)
 	if u, e := m.store.GetUser(order.UserID); e == nil {
-		m.notifyUser(u.TgChatID, fmt.Sprintf("✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
+		// Gated like the other user-facing notices, so an operator who turns them all
+		// off does not still have the bot writing to people.
+		if set, err := m.store.GetSettings(); err == nil {
+			m.notifyUserEvent(set, *u, model.UserNotifyPayment, fmt.Sprintf(
+				"✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
+		}
 	}
 	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
@@ -431,12 +429,12 @@ func (m *Manager) PollPendingPayments() {
 	clients := map[string]payments.Client{}
 	for _, o := range orders {
 		// Abandoned orders (user never paid) would otherwise be polled forever — one
-		// live provider API call each, every cycle. Cancel anything older than the
-		// max age and stop polling it.
-		if o.CreatedAt > 0 && o.CreatedAt < staleBefore {
-			m.cancelPendingOrder(o, "abandoned")
-			continue
-		}
+		// live provider API call each, every cycle. Age alone does NOT settle that
+		// though: after any outage longer than the max age, every order waiting on us
+		// looks abandoned, including the ones that were paid while we were down. So
+		// age only ever decides what to do with an order the provider has already been
+		// asked about — cancelling first and asking later is how money goes missing.
+		stale := o.CreatedAt > 0 && o.CreatedAt < staleBefore
 		client, ok := clients[o.Provider]
 		if !ok {
 			// A provider that's since been switched off or unconfigured has no client —
@@ -445,12 +443,30 @@ func (m *Manager) PollPendingPayments() {
 			clients[o.Provider] = client
 		}
 		if client == nil {
+			// Nothing can confirm this order any more, so age is all there is to go on.
+			if stale {
+				m.cancelPendingOrder(o, "abandoned")
+			}
 			continue
 		}
 		res, err := client.Status(ctx, o.ProviderID)
 		if err != nil {
-			if !errors.Is(err, payments.ErrNoStatusAPI) {
+			if errors.Is(err, payments.ErrNoStatusAPI) {
+				// Webhook-only provider: there is no way to ask, so the age sweep is the
+				// only thing that ever stops this order being polled.
+				if stale {
+					m.cancelPendingOrder(o, "abandoned")
+				}
+			} else {
 				logErr("payment poll failed", "order", o.ID, "provider", o.Provider, "err", err)
+				// A provider that keeps erroring on this invoice (404 for one it expired
+				// on its side, a suspended merchant account) would otherwise leave the
+				// order pending forever, polled every cycle. PendingProviderOrders reads a
+				// fixed-size batch, so enough undead orders crowd out the real ones and
+				// genuine payments stop being reconciled at all.
+				if stale {
+					m.cancelPendingOrder(o, "abandoned")
+				}
 			}
 			continue
 		}
@@ -461,6 +477,11 @@ func (m *Manager) PollPendingPayments() {
 			}
 		case payments.StatusCanceled:
 			m.cancelPendingOrder(o, "provider_cancelled")
+		default:
+			// Still unpaid at the provider, and too old to keep asking about.
+			if stale {
+				m.cancelPendingOrder(o, "abandoned")
+			}
 		}
 	}
 }

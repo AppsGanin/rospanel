@@ -77,11 +77,23 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		return false, err
 	}
 	defer db.Close()
+	// Every encrypted column belongs here, not just the ones an install usually has.
+	// This is the guard that tells "no key yet, fresh install" apart from "the key is
+	// gone" — miss a column and an install configured with only that one secret looks
+	// fresh, so a new key is minted and the old ciphertext becomes unreadable for
+	// good. tg_support_bot_token was exactly that case.
 	checks := []string{
 		`SELECT tg_bot_token FROM settings WHERE id = 1`,
 		`SELECT tg_user_bot_token FROM settings WHERE id = 1`,
+		`SELECT tg_support_bot_token FROM settings WHERE id = 1`,
 		`SELECT reality_private_key FROM settings WHERE id = 1`,
+		`SELECT warp_private_key FROM settings WHERE id = 1`,
+		`SELECT proxy_mode_pass FROM settings WHERE id = 1`,
+		`SELECT zerossl_eab_hmac FROM settings WHERE id = 1`,
 		`SELECT password FROM users WHERE password LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT reality_private_key FROM nodes WHERE reality_private_key LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT warp_private_key FROM nodes WHERE warp_private_key LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT zerossl_eab_hmac FROM nodes WHERE zerossl_eab_hmac LIKE 'enc:v1:%' LIMIT 1`,
 	}
 	for _, q := range checks {
 		var v string
