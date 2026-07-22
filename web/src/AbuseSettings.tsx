@@ -108,16 +108,19 @@ export function AbuseSettings() {
   }, [enabled, cats, custom, alertMin, saved]);
 
   const save = () =>
-    run("save", async () => {
-      await saveAbuseSettings({
-        enabled,
-        categories: cats,
-        custom,
-        alert_min: alertMin,
-      });
-      notifySuccess("Настройки блоклистов сохранены");
-      await load();
-    }).catch((e) => notifyError(errMessage(e)));
+    run(
+      async () => {
+        await saveAbuseSettings({
+          enabled,
+          categories: cats,
+          custom,
+          alert_min: alertMin,
+        });
+        notifySuccess("Настройки блоклистов сохранены");
+        await load();
+      },
+      { key: "save" },
+    );
 
   const cancel = () => {
     setEnabled(saved.enabled);
@@ -127,12 +130,15 @@ export function AbuseSettings() {
   };
 
   const doRefresh = () =>
-    run("refresh", async () => {
-      await refreshAbuseFeeds();
-      notifySuccess("Обновление списков запущено — займёт до минуты");
-      // The download runs in the background; re-read status shortly after.
-      window.setTimeout(() => load().catch(() => {}), 8000);
-    }).catch((e) => notifyError(errMessage(e)));
+    run(
+      async () => {
+        await refreshAbuseFeeds();
+        notifySuccess("Обновление списков запущено — займёт до минуты");
+        // The download runs in the background; re-read status shortly after.
+        window.setTimeout(() => load().catch(() => {}), 8000);
+      },
+      { key: "refresh" },
+    );
 
   if (!loaded) return <CenterLoader />;
 
