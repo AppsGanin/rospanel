@@ -231,7 +231,7 @@ traffic rows outlive them).
 ```json
 { "data": [
   { "node_id": 2, "name": "NL", "up": 46059475, "down": 1488367869 },
-  { "node_id": 0, "name": "Этот сервер", "up": 52711616, "down": 3901246326 }
+  { "node_id": 0, "name": "Мастер", "up": 52711616, "down": 3901246326 }
 ] }
 ```
 

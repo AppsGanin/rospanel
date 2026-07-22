@@ -7,6 +7,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 func validDate(s string) bool {
@@ -109,6 +110,50 @@ func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {
 		totals = []model.UserTotal{}
 	}
 	writeJSON(w, http.StatusOK, totals)
+}
+
+// sitesLimit reads ?limit=, clamped to a sane range. The view is a top-N by
+// definition, so an out-of-range value is clamped rather than rejected — there is
+// no correct answer to reject in favour of.
+func sitesLimit(r *http.Request, def int) int {
+	n, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil {
+		return def
+	}
+	if n < 1 {
+		return 1
+	}
+	if n > 200 {
+		return 200
+	}
+	return n
+}
+
+
+// statsAbuse returns the fleet's recent blocklist matches, newest first.
+func (rt *Router) statsAbuse(w http.ResponseWriter, r *http.Request) {
+	rows, err := rt.mgr.RecentAbuse(sitesLimit(r, 50))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []store.AbuseMatch{}
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// userAbuse returns one user's blocklist matches, newest first.
+func (rt *Router) userAbuse(w http.ResponseWriter, r *http.Request, id int64) {
+	rows, err := rt.mgr.UserAbuse(id, sitesLimit(r, 20))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if rows == nil {
+		rows = []store.AbuseMatch{}
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 func (rt *Router) statsReset(w http.ResponseWriter, _ *http.Request) {

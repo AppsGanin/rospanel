@@ -1,3 +1,4 @@
+import { AbuseSettings } from "./AbuseSettings";
 import { ApiSettings } from "./ApiSettings";
 import { BillingPanel } from "./BillingPanel";
 import { BrandingSettings } from "./BrandingSettings";
@@ -17,6 +18,7 @@ const SUBTABS = [
   { value: "subscriptions", label: "Подписки" },
   { value: "telegram", label: "Telegram" },
   { value: "billing", label: "Оплата" },
+  { value: "abuse", label: "Блоклисты" },
   { value: "api", label: "API" },
 ] as const;
 
@@ -58,6 +60,7 @@ export function SettingsPanel() {
         {tab === "subscriptions" && <SubscriptionsPanel />}
         {tab === "telegram" && <TelegramSettings />}
         {tab === "billing" && <BillingPanel />}
+        {tab === "abuse" && <AbuseSettings />}
         {tab === "api" && (
           <div className="flex flex-col gap-4">
             <ApiSettings />

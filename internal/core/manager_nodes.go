@@ -341,7 +341,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	// Node 0: the panel's own server, identity from settings.
 	local := NodeView{
 		ID:              model.LocalNodeID,
-		Name:            "Этот сервер",
+		Name:            model.LocalNodeName,
 		Host:            set.Host,
 		Enabled:         true,
 		IsLocal:         true,
@@ -1080,6 +1080,76 @@ func (m *Manager) randomDecoy() (string, error) {
 
 // --- sync ingest --------------------------------------------------------------
 
+// maxNodeSiteRows bounds how many destination rows one sync may contribute. The
+// agent budgets its own payload well below this; the cap is here because the panel
+// must not depend on a node behaving, and because applying an unbounded batch was
+// measured at ~23ms of CPU on the same lock the master's access-log tap needs.
+const maxNodeSiteRows = 4096
+
+// userIDCacheTTL bounds how stale the node-site user-id validation set may be. Short
+// enough that a new user's node sites start counting within seconds, long enough
+// that a node cannot force a fresh id scan on every sync.
+const userIDCacheTTL = 15 * time.Second
+
+// ingestNodeAbuse matches a node's reported destinations against the blocklists,
+// dropping rows for user ids that do not exist.
+//
+// The id check keeps a node from buffering matches against fabricated users (the
+// EXISTS guard at write time would drop them anyway, but not before they cost buffer
+// space). A node that predates the IP-only switch may still report hostnames; those
+// simply never match and cost nothing beyond the row itself, since the per-sync abuse
+// budget is only spent on rows that actually matched.
+func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample) {
+	if m.abuse == nil {
+		return
+	}
+	if len(rows) > maxNodeSiteRows {
+		logErr("node sync: site rows truncated", "got", len(rows), "cap", maxNodeSiteRows)
+		rows = rows[:maxNodeSiteRows]
+	}
+	known, err := m.knownUserIDs()
+	if err != nil {
+		logErr("node sync: cannot validate site user ids", "err", err)
+		return
+	}
+	abuseBudget := abuseNodeMax // cap this sync's contribution to the shared buffer
+	for _, s := range rows {
+		if _, ok := known[s.UserID]; !ok {
+			continue
+		}
+		// Attributed to the reporting node: an abuse complaint names one server's IP,
+		// so which node emitted the traffic is the first thing the operator needs.
+		// Bounded so a hostile node cannot fill the whole match buffer (the feeds are
+		// public) and starve the master's own locally-observed matches.
+		if abuseBudget > 0 && m.RecordNodeAbuse(nodeID, s.UserID, s.Host, s.Count) {
+			abuseBudget--
+		}
+	}
+}
+
+// knownUserIDs returns the set of existing user ids, cached briefly.
+//
+// ingestNodeSites ran store.UserIDs() (a full id scan on the single write
+// connection) on every sync that carried sites — a read a node triggers at will,
+// and one a node opening parallel syncs could use to hammer the connection. The set
+// changes rarely, so a short TTL turns "once per sync" into "at most once per TTL"
+// while still picking up new users promptly. A newly created user's node-reported
+// sites are dropped for at most the TTL, which an advisory view can absorb.
+func (m *Manager) knownUserIDs() (map[int64]struct{}, error) {
+	m.userIDCacheMu.Lock()
+	defer m.userIDCacheMu.Unlock()
+	if m.userIDCache != nil && time.Since(m.userIDCacheAt) < userIDCacheTTL {
+		return m.userIDCache, nil
+	}
+	ids, err := m.store.UserIDs()
+	if err != nil {
+		return nil, err
+	}
+	m.userIDCache = ids
+	m.userIDCacheAt = time.Now()
+	return ids, nil
+}
+
 // IngestNodeSync records a node's reported status, ingests its traffic deltas
 // idempotently, and computes the response (whether the node's applied hash still
 // matches desired state). It does NOT block for the long-poll — the handler owns
@@ -1162,7 +1232,15 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// the master. Not gated on ReportID: connection samples are idempotent (upsert by
 	// user+ip) and independent of the traffic batch.
 	for _, c := range req.Conns {
-		m.RecordAccess(c.Email, c.IP)
+		m.RecordAccess(c.Email, c.IP, "")
+	}
+
+	// Destinations arrive pre-aggregated with a count, so they bypass RecordAccess
+	// (which counts one connection per call) and are folded straight into the rolling
+	// view. Not gated on ReportID either: a duplicated sync would double-count a
+	// sampled top-N that ages out in hours, which is not worth an ack protocol.
+	if len(req.Sites) > 0 {
+		m.ingestNodeAbuse(n.ID, req.Sites)
 	}
 
 	resp := &nodeapi.SyncResponse{AckReport: ack}

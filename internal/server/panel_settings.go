@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -316,6 +317,51 @@ func (rt *Router) setUserAutoDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditDetails(r, map[string]any{"days": req.Days})
+	writeOK(w)
+}
+
+// getAbuseSettings returns the blocklist config plus each category's live status
+// (loaded entry count, whether a cached feed is present, when it was updated).
+func (rt *Router) getAbuseSettings(w http.ResponseWriter, _ *http.Request) {
+	enabled, cats, custom, alertMin := rt.mgr.AbuseConfig()
+	if cats == nil {
+		cats = map[string]bool{}
+	}
+	status := rt.mgr.AbuseStatus()
+	if status == nil {
+		status = []abuse.FileInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":    enabled,
+		"categories": cats,
+		"custom":     custom,
+		"alert_min":  alertMin,
+		"status":     status,
+	})
+}
+
+// saveAbuseSettings persists the blocklist config and reconfigures the live matcher.
+func (rt *Router) saveAbuseSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled    bool            `json:"enabled"`
+		Categories map[string]bool `json:"categories"`
+		Custom     string          `json:"custom"`
+		AlertMin   int             `json:"alert_min"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetAbuseConfig(req.Enabled, req.Categories, req.Custom, req.AlertMin); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"enabled": req.Enabled, "alert_min": req.AlertMin})
+	writeOK(w)
+}
+
+// refreshAbuse forces an immediate re-download of the enabled feeds.
+func (rt *Router) refreshAbuse(w http.ResponseWriter, _ *http.Request) {
+	rt.mgr.RefreshAbuse()
 	writeOK(w)
 }
 

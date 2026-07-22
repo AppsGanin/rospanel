@@ -9,10 +9,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +29,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
+
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
@@ -105,6 +108,11 @@ type Agent struct {
 	// idempotently), so no ack/inflight machinery is needed.
 	connMu sync.Mutex
 	conns  map[string]nodeapi.ConnSample
+
+	// Destination hosts seen since the last sync, counted per (user, host) and
+	// truncated to the busiest few per user when the sync request is built. Shares
+	// connMu with conns: both are written from the same access-log callback.
+	sites map[siteKey]int64
 
 	logsWanted atomic.Bool // panel asked for the log tail on the next sync
 }
@@ -208,6 +216,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		pending:      map[int64]*nodeapi.TrafficDelta{},
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
 		conns:        map[string]nodeapi.ConnSample{},
+		sites:        map[siteKey]int64{},
 	}
 	// Resume report ids where the last run left off so the panel's forward-only
 	// watermark keeps accepting this node's traffic after a restart.
@@ -218,18 +227,75 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	return a, nil
 }
 
-// recordConn buffers one access-log connection (a "uN" email + source IP) for the
-// next sync. Deduped per (email, ip); the buffer is bounded so a flood can't grow it
-// without limit.
-func (a *Agent) recordConn(email, ip string) {
+// siteKey counts one user's connections to one destination host.
+type siteKey struct {
+	userID int64
+	host   string
+}
+
+const (
+	// sitesMax bounds the destination buffer between syncs. Larger than the conns
+	// bound because it is keyed per host rather than per source IP, and a sync is
+	// only ~45s apart.
+	sitesMax = 32768
+	// sitesPerUser is how many hosts per user survive into the sync request. The
+	// panel only ever renders a top-N, so shipping the long tail would cost payload
+	// for rows nothing displays.
+	sitesPerUser = 32
+	// sitesBytesMax is the payload budget for the destination rows.
+	//
+	// The panel caps a sync body at 1 MB and answers 400 above it, which the agent
+	// can only read as a generic failure — so an oversized body would stop config
+	// pushes and stall traffic reporting. An advisory view must not be able to break
+	// the channel it borrows, and a per-user row cap alone does not prevent that:
+	// nothing bounded the number of users, and at ~1000 active users the rows alone
+	// cleared 1 MB.
+	//
+	// Budgeted in bytes rather than rows because a client picks its own SNI, so
+	// hostname length is attacker-controlled: ~120 accounts using max-length names
+	// reach 1 MB where typical names would need thousands.
+	sitesBytesMax = 256 * 1024
+	// sitesRowOverhead approximates the JSON around one host ({"u":…,"h":"…","c":…}).
+	sitesRowOverhead = 32
+	// syncBodyCeiling is the whole-body budget sites yield to. Below the panel's 1 MB
+	// MaxBytesReader, with margin for the JSON framing not counted in the base
+	// measurement.
+	syncBodyCeiling = 900 * 1024
+)
+
+// recordConn buffers one access-log connection (a "uN" email + source IP, plus the
+// destination host when the line had one) for the next sync. Conns are deduped per
+// (email, ip); destinations are counted per (user, host). Both buffers are bounded
+// so a flood can't grow them without limit.
+func (a *Agent) recordConn(email, ip, dest string) {
 	if !strings.HasPrefix(email, "u") || ip == "" {
 		return
 	}
 	a.connMu.Lock()
+	defer a.connMu.Unlock()
 	if len(a.conns) < 8192 {
 		a.conns[email+"\x00"+ip] = nodeapi.ConnSample{Email: email, IP: ip}
 	}
-	a.connMu.Unlock()
+	if dest == "" {
+		return
+	}
+	// Only addresses are worth shipping: the panel matches destinations against
+	// IP-reputation lists and ignores anything that is not an address, so buffering a
+	// hostname here would spend node memory and sync payload on a row the panel drops.
+	// This also bounds the buffer for free — hostname sharding is what used to fill it
+	// with one-off names.
+	if _, err := netip.ParseAddr(dest); err != nil {
+		return
+	}
+	if id, ok := userIDFromEmail(email); ok {
+		k := siteKey{userID: id, host: dest}
+		// Only admit a new key while under the bound; already-counted pairs keep
+		// counting, so an overflowing buffer degrades to "the hosts seen first this
+		// sync" rather than losing the busy ones mid-count.
+		if _, seen := a.sites[k]; seen || len(a.sites) < sitesMax {
+			a.sites[k]++
+		}
+	}
 }
 
 // takeConns snapshots and clears the buffered connection samples.
@@ -244,6 +310,80 @@ func (a *Agent) takeConns() []nodeapi.ConnSample {
 		out = append(out, c)
 	}
 	a.conns = map[string]nodeapi.ConnSample{}
+	return out
+}
+
+// takeSites snapshots and clears the destination counters, keeping only each user's
+// busiest sitesPerUser hosts.
+//
+// Cleared unconditionally, like takeConns and unlike the traffic deltas: a lost send
+// costs one sync window of destination samples, which the next window replaces.
+// Traffic needs the ack/inflight machinery because its numbers are cumulative and a
+// dropped batch would be missing bytes forever; a sampled view has no such debt.
+func (a *Agent) takeSites(byteBudget int) []nodeapi.SiteSample {
+	a.connMu.Lock()
+	defer a.connMu.Unlock()
+	// Always clear, even when the budget is zero: the buffer must not accumulate
+	// across syncs just because the rest of this body left no room for sites.
+	if len(a.sites) == 0 {
+		return nil
+	}
+	byUser := make(map[int64][]nodeapi.SiteSample)
+	for k, c := range a.sites {
+		byUser[k.userID] = append(byUser[k.userID], nodeapi.SiteSample{
+			UserID: k.userID, Host: k.host, Count: c,
+		})
+	}
+	total := len(a.sites)
+	a.sites = map[siteKey]int64{}
+	if byteBudget <= 0 {
+		return nil
+	}
+
+	// Share the budget across users instead of letting the first users seen spend it
+	// all: every user keeps at least their busiest host, and a node with many users
+	// reports fewer hosts each rather than reporting nothing for most of them.
+	perUser := sitesPerUser
+	if n := len(byUser); n > 0 {
+		if fair := byteBudget / (n * (sitesRowOverhead + 16)); fair < perUser {
+			perUser = max(fair, 1)
+		}
+	}
+
+	// Capacity from the true key count, not users×cap: sizing by the latter reserved
+	// 33 MB to hold 1 MB on a node that may be a small box.
+	out := make([]nodeapi.SiteSample, 0, min(total, len(byUser)*perUser))
+	budget := byteBudget
+	users := make([]int64, 0, len(byUser))
+	for id := range byUser {
+		users = append(users, id)
+	}
+	// Stable user order so a node that runs out of budget drops the same users each
+	// sync rather than rotating which ones vanish.
+	sort.Slice(users, func(i, j int) bool { return users[i] < users[j] })
+
+	for _, id := range users {
+		rows := byUser[id]
+		// Ties broken by host so a node with more hosts than the cap sends a stable
+		// set rather than an arbitrary one that churns every sync.
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Count != rows[j].Count {
+				return rows[i].Count > rows[j].Count
+			}
+			return rows[i].Host < rows[j].Host
+		})
+		if len(rows) > perUser {
+			rows = rows[:perUser]
+		}
+		for _, r := range rows {
+			cost := len(r.Host) + sitesRowOverhead
+			if budget < cost {
+				return out // hard stop: the body limit is not negotiable
+			}
+			budget -= cost
+			out = append(out, r)
+		}
+	}
 	return out
 }
 
@@ -403,7 +543,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		})
 	}
 
-	return nodeapi.SyncRequest{
+	req := nodeapi.SyncRequest{
 		ConfigHash:     hash,
 		NodeVersion:    version.Version,
 		XrayVersion:    a.sup.Version(),
@@ -418,6 +558,20 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Logs:           logs,
 		GeoFiles:       geoFiles,
 	}
+	// Sites share the panel's 1 MB body cap with traffic, conns and logs, none of
+	// which this feature bounds. Sites are advisory, so they yield: measure the rest
+	// of the body and give sites only the remaining headroom (capped at their own
+	// budget). At fleet scale this drops sites rather than letting them tip an
+	// otherwise-fine body over the cap, which would 400 the whole sync and stall the
+	// node. takeSites still clears its buffer even when the budget is zero.
+	sitesBudget := sitesBytesMax
+	if base, err := json.Marshal(req); err == nil {
+		if head := syncBodyCeiling - len(base); head < sitesBudget {
+			sitesBudget = head
+		}
+	}
+	req.Sites = a.takeSites(sitesBudget)
+	return req
 }
 
 // logTail returns the node's recent log lines: the agent's own log ring (its slog

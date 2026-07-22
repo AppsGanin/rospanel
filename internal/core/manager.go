@@ -15,6 +15,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
+	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -61,6 +62,23 @@ type Manager struct {
 	// touches the database on the hot path. Bounded by the throttle above: one entry
 	// per user+IP per flush interval, not per log line.
 	accPending map[accPendingKey]store.ConnectionHit
+
+	// abuse holds the blocklists and their refresh loop. Nil when the feature is off,
+	// which the hot path treats as "matches nothing".
+	abuse *abuse.Store
+	// abuseMu guards the match buffer and the alert dedupe. Separate from accMu so a
+	// match never contends with the connections path it rides along with.
+	abuseMu      sync.Mutex
+	abusePending map[abusePendingKey]store.AbuseHit
+	abuseAlerted map[abuseAlertKey]struct{} // (user, day) already alerted for
+	abuseDropAt  int64                      // unix secs of the last "buffer full" log
+
+	// userIDCache is a short-lived snapshot of existing user ids, used to validate
+	// node-reported sites without a full id scan on the single connection per sync.
+	// The map is shared read-only with callers — never mutate it in place.
+	userIDCacheMu sync.Mutex
+	userIDCache   map[int64]struct{}
+	userIDCacheAt time.Time
 
 	// applyMu serializes config application (Reconcile + the live user-sync) so a
 	// direct Reconcile (e.g. from tlsLoop on cert renewal) can't interleave with the
@@ -188,6 +206,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		reconcileCh:      make(chan struct{}, 1),
 		accLast:          make(map[string]int64),
 		accPending:       make(map[accPendingKey]store.ConnectionHit),
+		abusePending:     make(map[abusePendingKey]store.AbuseHit),
+		abuseAlerted:     make(map[abuseAlertKey]struct{}),
 		applied:          make(map[int64]struct{}),
 		tz:               time.Local,
 		guard:            newBruteGuard(),
@@ -268,12 +288,13 @@ type accPendingKey struct {
 }
 
 // RecordAccess notes a connection from an Xray access-log line (email "uN" +
-// source IP). Throttled to one recorded sighting per user+IP per 10s to absorb
-// bursts, then buffered — FlushAccess writes them.
+// source IP, and the destination host when the line carried a usable one).
+// Throttled to one recorded sighting per user+IP per 10s to absorb bursts, then
+// buffered — FlushAccess writes them.
 //
 // This is called from the access-log reader for every line Xray emits, so it does
 // no I/O at all: it takes a lock, updates two maps, and returns.
-func (m *Manager) RecordAccess(email, ip string) {
+func (m *Manager) RecordAccess(email, ip, dest string) {
 	if !strings.HasPrefix(email, "u") {
 		return
 	}
@@ -281,6 +302,14 @@ func (m *Manager) RecordAccess(email, ip string) {
 	if err != nil {
 		return
 	}
+	// Abuse matching runs BEFORE the throttle, deliberately: the throttle below
+	// collapses a user+IP to one sighting per 10s (right for counting devices), and a
+	// low-volume malware callback is exactly the traffic that gate would hide. Matched
+	// on the FULL destination — feeds list specific hosts, and a listed subdomain of an
+	// unlisted parent must not be missed. Memory-only lookup, so it costs the hot path
+	// a hash probe rather than a write.
+	m.recordAbuse(id, dest)
+
 	now := time.Now().Unix()
 	key := email + "|" + ip
 	m.accMu.Lock()

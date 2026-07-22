@@ -52,6 +52,76 @@ export interface Connection {
 export const getUserConnections = (id: number) =>
   api<Connection[]>(`api/users/${id}/connections`)
 
+
+// AbuseMatch is one destination that hit a blocklist. These are PERSISTED (a short
+// window) and are the sensitive part of this feature: they name what an account
+// reached, not merely that it connected. category is one of
+// custom/malware/badip/piracy/gambling.
+export interface AbuseMatch {
+  user_id: number
+  user_name?: string
+  node_id: number
+  // The destination that matched — an IP address. Named `domain` because that is the
+  // column it has been stored in since before matching was narrowed to addresses;
+  // rows written back then may still hold a hostname.
+  domain: string
+  category: string
+  day: string
+  count: number
+  last_seen: number
+}
+
+export const abuseCategoryLabel: Record<string, string> = {
+  custom: 'Свой список',
+  malware: 'Вредоносное ПО',
+  badip: 'Вредоносный IP',
+  piracy: 'Пиратство',
+  gambling: 'Азартные игры',
+}
+
+export const getRecentAbuse = (limit = 50) =>
+  api<AbuseMatch[]>(`api/stats/abuse?limit=${limit}`)
+
+export const getUserAbuse = (id: number, limit = 20) =>
+  api<AbuseMatch[]>(`api/users/${id}/abuse?limit=${limit}`)
+
+// AbuseFeedStatus is one category's live state: whether it's on, how many entries
+// are loaded in the matcher, and (for downloaded feeds) the cached copy's size/age.
+export interface AbuseFeedStatus {
+  category: string
+  title: string
+  enabled: boolean
+  present: boolean
+  entries: number
+  size?: number
+  updated?: number
+}
+
+export interface AbuseSettingsInfo {
+  enabled: boolean
+  categories: Record<string, boolean>
+  custom: string
+  alert_min: number
+  status: AbuseFeedStatus[]
+}
+
+export const getAbuseSettings = () =>
+  api<AbuseSettingsInfo>('api/settings/abuse')
+
+export const saveAbuseSettings = (cfg: {
+  enabled: boolean
+  categories: Record<string, boolean>
+  custom: string
+  alert_min: number
+}) =>
+  api<{ ok: boolean }>('api/settings/abuse', {
+    method: 'POST',
+    body: JSON.stringify(cfg),
+  })
+
+export const refreshAbuseFeeds = () =>
+  api<{ ok: boolean }>('api/settings/abuse/refresh', { method: 'POST' })
+
 // ---- audit log ----
 
 // UserEvent is one audit-log row: what happened to a user, who did it, when.

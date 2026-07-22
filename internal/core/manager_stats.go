@@ -266,7 +266,7 @@ func (m *Manager) NodeTrafficBreakdown(userID int64, from, to string) ([]NodeTra
 	if names == nil {
 		names = map[int64]string{}
 	}
-	names[model.LocalNodeID] = "Этот сервер"
+	names[model.LocalNodeID] = model.LocalNodeName
 	out := make([]NodeTraffic, 0, len(totals))
 	for id, t := range totals {
 		if t[0] == 0 && t[1] == 0 {

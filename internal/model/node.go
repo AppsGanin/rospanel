@@ -5,6 +5,11 @@ package model
 // traffic history, link generation and the UI can treat every server uniformly.
 const LocalNodeID int64 = 0
 
+// LocalNodeName is what the panel's own server is called on screen. Shared rather
+// than written out at each call site: the Nodes tab and the traffic breakdown both
+// name node 0, and two spellings of the same server read as two servers.
+const LocalNodeName = "Мастер"
+
 // NodeOnlineWindow is how long after its last sync a node still counts as online.
 // Generous next to the node's own poll cadence (a held poll returns at least every
 // 45s), so one slow round trip doesn't flap the badge.
