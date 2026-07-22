@@ -69,6 +69,17 @@ type SyncRequest struct {
 	// device cap counts unique IPs across the WHOLE fleet, not just the master.
 	Conns []ConnSample `json:"conns,omitempty"`
 
+	// Sites are this node's busiest destination addresses per user since the last
+	// sync, which the panel matches against its IP blocklists.
+	//
+	// Aggregated on the node and truncated there, rather than shipped raw the way
+	// Conns are: destinations are high-cardinality (a browsing user produces dozens
+	// of distinct hosts a minute), so a raw per-connection feed would put the same
+	// unbounded growth on the wire that keeps it out of the database. Lossy by
+	// construction — the tail below the truncation never leaves the node, which is
+	// the right trade for a view that only ever shows a top-N.
+	Sites []SiteSample `json:"sites,omitempty"`
+
 	// Logs is the node's recent log tail (agent + Xray), sent only when the panel
 	// asked for it via SyncResponse.WantLogs — so a viewing operator sees fresh logs
 	// without every sync carrying the payload.
@@ -96,9 +107,27 @@ type TrafficDelta struct {
 
 // ConnSample is one (user-email, source-IP) pair the node observed. Email is the
 // Xray "uN" tag; the panel resolves it to a user id. Deduped per node per sync.
+//
+// Carries no destination on purpose: this set is deduped per (email, ip) and stays
+// small because a user has few source IPs. Adding the host would key it per
+// destination instead and multiply it without bound — see SiteSample, which is
+// pre-aggregated for exactly that reason.
 type ConnSample struct {
 	Email string `json:"e"`
 	IP    string `json:"ip"`
+}
+
+// SiteSample is one (user, destination address) pair with how many connections the
+// node saw to it since the last sync. UserID is already resolved from the Xray
+// "uN" tag node-side, matching TrafficDelta.
+//
+// Host only ever carries an IP: the panel matches destinations against
+// IP-reputation lists and ignores anything else, so the node filters hostnames out
+// rather than spending payload on rows the panel would drop.
+type SiteSample struct {
+	UserID int64  `json:"u"`
+	Host   string `json:"h"`
+	Count  int64  `json:"c"`
 }
 
 // SyncResponse is returned immediately when the desired state differs from what

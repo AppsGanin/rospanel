@@ -3,10 +3,12 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -265,6 +267,131 @@ func TestIngestNodeSyncIdempotent(t *testing.T) {
 	if got2.UsedUp != 110 || got2.UsedDown != 220 {
 		t.Fatalf("new report not applied: up=%d down=%d", got2.UsedUp, got2.UsedDown)
 	}
+}
+
+// abuseNodeManager builds a node-test manager wired with an abuse matcher primed
+// with the given known-bad addresses/ranges.
+func abuseNodeManager(t *testing.T, badIPs []string) *Manager {
+	t.Helper()
+	m := nodeTestManager(t)
+	m.abusePending = make(map[abusePendingKey]store.AbuseHit)
+	m.abuseAlerted = make(map[abuseAlertKey]struct{})
+	st := abuse.NewStore(t.TempDir())
+	st.Matcher().SetIP(abuse.CatBadIP, badIPs)
+	m.abuse = st
+	return m
+}
+
+// TestIngestNodeAbuseMatches: a node's reported destinations are matched against the
+// blocklists, attributed to the reporting node.
+func TestIngestNodeAbuseMatches(t *testing.T) {
+	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
+	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
+	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+
+	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{
+		ReportID: 1,
+		Sites: []nodeapi.SiteSample{
+			{UserID: u.ID, Host: "203.0.113.5", Count: 3},
+			{UserID: u.ID, Host: "8.8.8.8", Count: 40}, // clean, ignored
+		},
+	}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	m.FlushAbuse()
+	rows, _ := m.store.AbuseByUser(u.ID, 10)
+	if len(rows) != 1 || rows[0].Domain != "203.0.113.5" || rows[0].NodeID != n.ID {
+		t.Fatalf("node match wrong: %+v", rows)
+	}
+}
+
+// TestIngestNodeAbuseRejectsUnknownUsers: a node must not be able to buffer matches
+// against fabricated user ids — the EXISTS guard drops them at write time, but not
+// before they cost buffer space.
+func TestIngestNodeAbuseRejectsUnknownUsers(t *testing.T) {
+	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
+	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
+	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+
+	rows := []nodeapi.SiteSample{{UserID: u.ID, Host: "203.0.113.5", Count: 1}}
+	for i := range 5000 { // ids that do not exist
+		rows = append(rows, nodeapi.SiteSample{
+			UserID: int64(1_000_000 + i), Host: "203.0.113.5", Count: 100,
+		})
+	}
+	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{ReportID: 1, Sites: rows}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	// Only the real user's match was buffered.
+	if got := len(m.abusePending); got != 1 {
+		t.Fatalf("buffered %d matches, want 1 (fabricated users must be dropped)", got)
+	}
+}
+
+// TestIngestNodeAbuseTruncates: an oversized batch is truncated so nothing scales
+// with what the node chose to send.
+func TestIngestNodeAbuseTruncates(t *testing.T) {
+	m := abuseNodeManager(t, blMany(maxNodeSiteRows*3))
+	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
+	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+
+	rows := make([]nodeapi.SiteSample, 0, maxNodeSiteRows*3)
+	for i := range maxNodeSiteRows * 3 {
+		rows = append(rows, nodeapi.SiteSample{
+			UserID: u.ID, Host: fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256), Count: 1,
+		})
+	}
+	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{ReportID: 1, Sites: rows}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	// The per-sync abuse cap bounds it further, but the point is it never scales with
+	// the batch the node sent.
+	if got := len(m.abusePending); got > maxNodeSiteRows {
+		t.Fatalf("buffered %d from an oversized batch", got)
+	}
+}
+
+// TestIngestNodeSitesBoundsAbuseContribution: one node sync must not be able to
+// fill the shared match buffer with blocklisted domains and starve the master's own
+// locally-observed matches (the feeds are public, so a node can pick known hits).
+func TestIngestNodeSitesBoundsAbuseContribution(t *testing.T) {
+	m := nodeTestManager(t)
+	m.abusePending = make(map[abusePendingKey]store.AbuseHit)
+	m.abuseAlerted = make(map[abuseAlertKey]struct{})
+	st := abuse.NewStore(t.TempDir())
+	// Every host the node sends is a known-bad match.
+	st.Matcher().SetIP(abuse.CatBadIP, blMany(maxNodeSiteRows))
+	m.abuse = st
+
+	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
+	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+
+	rows := make([]nodeapi.SiteSample, 0, maxNodeSiteRows)
+	for i := range maxNodeSiteRows {
+		rows = append(rows, nodeapi.SiteSample{
+			UserID: u.ID, Host: fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256), Count: 1,
+		})
+	}
+	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{ReportID: 1, Sites: rows}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if got := len(m.abusePending); got > abuseNodeMax {
+		t.Fatalf("one sync buffered %d matches, node cap is %d — buffer starvation open", got, abuseNodeMax)
+	}
+	// And the master's own local match still finds room afterward.
+	m.recordAbuse(u.ID, "10.0.0.0")
+	if len(m.abusePending) == 0 {
+		t.Fatal("local match had no room after a node flood")
+	}
+}
+
+// blMany builds n distinct known-bad /32s, for the flood/starvation tests.
+func blMany(n int) []string {
+	out := make([]string, 0, n)
+	for i := range n {
+		out = append(out, fmt.Sprintf("10.%d.%d.%d", i/65536%256, i/256%256, i%256))
+	}
+	return out
 }
 
 func TestNodeNameUniqueness(t *testing.T) {

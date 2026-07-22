@@ -38,6 +38,28 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
 
+// UserIDs returns the set of existing user ids.
+//
+// For callers that only need to know whether an id is real — validating what a node
+// reported, say. ListUsers would answer the same question by building every column
+// of every row, which is a lot of work to throw away.
+func (s *Store) UserIDs() (map[int64]struct{}, error) {
+	rows, err := s.db.Query(`SELECT id FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]struct{})
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
 // UserCounts is the dashboard's view of the users table: how many there are, how
 // many are working, and the lifetime traffic totals.
 type UserCounts struct {

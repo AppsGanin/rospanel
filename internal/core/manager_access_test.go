@@ -35,8 +35,8 @@ func TestRecordAccessDoesNoIO(t *testing.T) {
 	email := fmt.Sprintf("u%d", u.ID)
 
 	for range 50 {
-		m.RecordAccess(email, "1.1.1.1")
-		m.RecordAccess(email, "2.2.2.2")
+		m.RecordAccess(email, "1.1.1.1", "example.com")
+		m.RecordAccess(email, "2.2.2.2", "example.com")
 	}
 
 	conns, err := st.RecentConnections(u.ID, 10)
@@ -62,7 +62,7 @@ func TestFlushAccessWritesBatch(t *testing.T) {
 	}
 	email := fmt.Sprintf("u%d", u.ID)
 	for _, ip := range []string{"1.1.1.1", "2.2.2.2", "3.3.3.3"} {
-		m.RecordAccess(email, ip)
+		m.RecordAccess(email, ip, "example.com")
 	}
 
 	m.FlushAccess()
@@ -97,9 +97,45 @@ func TestFlushAccessWritesBatch(t *testing.T) {
 func TestRecordAccessIgnoresJunk(t *testing.T) {
 	m, _ := accessTestManager(t)
 	for _, email := range []string{"", "admin", "unotanumber", "12", "u"} {
-		m.RecordAccess(email, "1.1.1.1")
+		m.RecordAccess(email, "1.1.1.1", "example.com")
 	}
 	if len(m.accPending) != 0 {
 		t.Fatalf("buffered %d sightings from junk emails", len(m.accPending))
+	}
+}
+
+// TestRecordAccessDestinationBypassesThrottle: the destination is handed to abuse
+// matching BEFORE the 10s connections throttle, because a browsing user opens many
+// hosts inside one window and inheriting that throttle would check the first and
+// silently drop the rest. Here the abuse matcher is nil, so we assert the property
+// via its precondition: the destination path runs without disturbing the throttled
+// connections buffer.
+func TestRecordAccessDestinationBypassesThrottle(t *testing.T) {
+	m, st := accessTestManager(t)
+	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	email := fmt.Sprintf("u%d", u.ID)
+	for _, h := range []string{"a.com", "b.com", "c.com", "d.com", "e.com"} {
+		m.RecordAccess(email, "1.1.1.1", h)
+	}
+	// The throttle still collapses one user+IP to a single buffered sighting.
+	if got := len(m.accPending); got != 1 {
+		t.Fatalf("buffered %d sightings for one user+IP, want 1", got)
+	}
+}
+
+// TestRecordAccessWithoutDestination: rejected and unparsable lines carry no host,
+// and must still produce a device sighting.
+func TestRecordAccessWithoutDestination(t *testing.T) {
+	m, st := accessTestManager(t)
+	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	m.RecordAccess(fmt.Sprintf("u%d", u.ID), "1.1.1.1", "")
+	if len(m.accPending) != 1 {
+		t.Fatal("a line without a destination cost us the device sighting")
 	}
 }

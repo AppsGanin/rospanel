@@ -57,8 +57,8 @@ type Supervisor struct {
 	restarts  int        // consecutive crash restarts (backoff exponent)
 	lastApply time.Time  // when the last Apply() succeeded (zero if never)
 
-	onAccess func(email, ip string) // called per access-log connection line
-	onCrash  func(err error)        // called when Xray exits unexpectedly (crash)
+	onAccess func(email, ip, dest string) // called per access-log connection line
+	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
 	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
 	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
 	// renewed certificate): those are routine, and reporting them as recovery would
@@ -120,7 +120,8 @@ func (s *Supervisor) Version() string {
 
 // SetOnAccess registers a callback invoked for each Xray access-log line that
 // carries a user email + source IP (used to track online status / connections).
-func (s *Supervisor) SetOnAccess(fn func(email, ip string)) { s.onAccess = fn }
+// dest is the destination host when the line has a usable one, else empty.
+func (s *Supervisor) SetOnAccess(fn func(email, ip, dest string)) { s.onAccess = fn }
 
 // SetOnCrash registers a callback invoked when the Xray child exits unexpectedly
 // (a genuine crash, not an intentional Stop/Apply). Used to alert the operator.
@@ -627,8 +628,8 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 		fmt.Fprintln(w, line)
 		fmt.Fprintln(s.logs, line)
 		if access && s.onAccess != nil {
-			if email, ip := parseAccess(line); email != "" && ip != "" {
-				s.dispatchAccess(email, ip)
+			if email, ip, dest := parseAccess(line); email != "" && ip != "" {
+				s.dispatchAccess(email, ip, dest)
 			}
 		}
 	}
@@ -636,47 +637,108 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 
 // dispatchAccess invokes the onAccess callback, recovering from any panic so a
 // malformed line or a store hiccup can't tear down the access-log reader.
-func (s *Supervisor) dispatchAccess(email, ip string) {
+func (s *Supervisor) dispatchAccess(email, ip, dest string) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("xray: onAccess panic recovered", "panic", r)
 		}
 	}()
-	s.onAccess(email, ip)
+	s.onAccess(email, ip, dest)
 }
 
-// parseAccess pulls the user email and source IP out of an Xray access line:
+// parseAccess pulls the user email, source IP and destination host out of an Xray
+// access line:
 //
 //	... from 1.2.3.4:5678 accepted tcp:host:443 [in >> out] email: u1
 //
 // Loopback sources (the Trojan-WS fallback hop) are ignored.
-func parseAccess(line string) (email, ip string) {
+//
+// dest is best-effort and may be empty even when email and ip are set: only
+// "accepted" lines carry a destination, and a line whose destination does not look
+// like a host is treated as having none. It must never cost us the sighting — the
+// device cap runs off email+ip alone and predates this.
+//
+// Because every user-facing inbound enables sniffing (see generate.go), dest is the
+// real SNI/Host for TLS, HTTP and QUIC rather than the dialled IP.
+func parseAccess(line string) (email, ip, dest string) {
 	e := strings.Index(line, "email: ")
 	if e < 0 {
-		return "", ""
+		return "", "", ""
 	}
 	email = strings.TrimSpace(line[e+len("email: "):])
 
 	f := strings.Index(line, "from ")
 	if f < 0 {
-		return "", ""
+		return "", "", ""
 	}
 	rest := line[f+len("from "):]
 	if sp := strings.IndexByte(rest, ' '); sp > 0 {
 		rest = rest[:sp]
 	}
-	// Some lines prefix the source with the network ("tcp:1.2.3.4:5678"); strip it
-	// so SplitHostPort sees a plain host:port and we key connections by IP only.
-	rest = strings.TrimPrefix(rest, "tcp:")
-	rest = strings.TrimPrefix(rest, "udp:")
-	host := rest
-	if h, _, err := net.SplitHostPort(rest); err == nil {
-		host = h
-	}
+	host := hostOf(rest)
 	if host == "" || host == "127.0.0.1" || host == "::1" {
-		return "", ""
+		return "", "", ""
 	}
-	return email, host
+
+	// Leading space so the marker cannot match inside some other token. Anything that
+	// does not parse as a host is dropped: the segment after "accepted" is only a
+	// destination on real connection lines, and on anything else (a truncated line, a
+	// future Xray format) it is arbitrary text we must not report as a domain.
+	if a := strings.Index(line, " accepted "); a >= 0 {
+		d := line[a+len(" accepted "):]
+		if sp := strings.IndexByte(d, ' '); sp > 0 {
+			d = d[:sp]
+		}
+		// Normalise before validating so the two agree on what the host is: a trailing
+		// root dot and upper-case SNI would otherwise each split one domain into two
+		// buckets downstream.
+		h := strings.ToLower(strings.TrimSuffix(hostOf(d), "."))
+		if validHost(h) {
+			dest = h
+		}
+	}
+	return email, host, dest
+}
+
+// hostOf strips the optional network prefix and the port off an Xray address token
+// ("tcp:1.2.3.4:5678", "udp:[2001:db8::1]:53", "example.com:443"), returning the
+// bare host. Tokens without a port pass through unchanged.
+func hostOf(s string) string {
+	s = strings.TrimPrefix(s, "tcp:")
+	s = strings.TrimPrefix(s, "udp:")
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		return h
+	}
+	return s
+}
+
+// validHost reports whether s is plausibly a destination host — an IP literal, or a
+// dotted name made only of label characters.
+//
+// This exists because SplitHostPort is happy to call almost anything a host: the
+// tail of "... accepted email: u3" parses as host "email", and without this check
+// that lands in the analytics as a visited domain.
+func validHost(s string) bool {
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	if !strings.Contains(s, ".") || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") ||
+		strings.Contains(s, "..") {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '.' || c == '-' || c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Stop terminates the Xray process and prevents further (re)starts (used on

@@ -10,6 +10,7 @@ import { fmtBytes, localDay, RANGES } from './format'
 import { useAction } from './hooks'
 import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
+import { AbuseList } from './AbuseList'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
@@ -176,6 +177,13 @@ export function StatsPanel() {
             </table>
           </div>
         </div>
+      </Card>
+
+      <Card className="p-4">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+          <h3 className="font-bold">Совпадения с блоклистами</h3>
+        </div>
+        <AbuseList limit={50} />
       </Card>
       {confirmNode}
     </div>

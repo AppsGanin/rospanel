@@ -66,6 +66,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/proxy-mode":      set("Режим прокси"),
 	"POST /api/settings/local-backup":    set("Локальные бэкапы"),
 	"POST /api/settings/autodelete":      set("Автоудаление истёкших"),
+	"POST /api/settings/abuse":           set("Блоклисты"),
+	"POST /api/settings/abuse/refresh":   set("Обновление блоклистов"),
 	"POST /api/settings/api-path":        set("Адрес API"),
 	"POST /api/setup/timezone":           set("Часовой пояс"),
 	"POST /api/setup/finish":             set("Первичная настройка"),

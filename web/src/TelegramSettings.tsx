@@ -57,6 +57,11 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
     desc: "Успешное продление или ошибка выпуска",
   },
   { key: "payment", label: "Платежи", desc: "Новые заказы и подтверждённые оплаты" },
+  {
+    key: "abuse",
+    label: "Подозрительный трафик",
+    desc: "Трафик пользователя попал в блоклист (вредоносное ПО, пиратство, азартные игры)",
+  },
 ];
 
 // USER_EVENTS are what the user bot tells the person themselves. Keys must match

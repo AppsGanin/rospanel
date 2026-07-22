@@ -39,6 +39,7 @@ import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
+import { AbuseList } from './AbuseList'
 import { UserEventsModal } from './UserEventsModal'
 import {
   Badge,
@@ -559,6 +560,9 @@ export function UserDetail({
               Включите пользовательского бота в настройках Telegram.
             </p>
           )}
+
+          <Divider label="Совпадения с блоклистами" />
+          <AbuseList userId={user.id} />
 
           <Divider label="Устройства (IP)" />
           <p className="text-sm text-ink-muted">

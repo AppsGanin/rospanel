@@ -111,7 +111,7 @@ function OverviewSkeleton() {
         </div>
       </Card>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {[...Array(6)].map((_, i) => (
+        {[...Array(4)].map((_, i) => (
           <Card key={i} className="p-4">
             <Skeleton className="mb-3 h-5 w-20" />
             <div className="grid grid-cols-2 gap-4">

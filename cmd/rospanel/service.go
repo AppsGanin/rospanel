@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/autobackup"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/connguard"
@@ -167,6 +168,12 @@ func runServer(dataDir string) {
 		filepath.Join(dataDir, "opera"))
 	sup.SetOnAccess(mgr.RecordAccess) // track online status + connection IPs
 	mgr.StartSysstat(dataDir)         // host metrics for the dashboard
+	// Blocklists for abuse detection. Cached copies load synchronously (fast, local),
+	// so matching works from the first access-log line; downloads run in background
+	// and a failure leaves the matcher empty rather than holding up the boot.
+	abuseStore := abuse.NewStore(filepath.Join(dataDir, "abuse"))
+	mgr.SetAbuse(abuseStore)
+	go abuseStore.Run(context.Background())
 	// The health report needs to tell "off on purpose" from "on, but nft refused it".
 	mgr.SetConnGuardWanted(connGuardWanted)
 
@@ -372,6 +379,10 @@ func accessFlushLoop(mgr *core.Manager) {
 	defer t.Stop()
 	for range t.C {
 		safeTick("access flush", mgr.FlushAccess)
+		// Same cadence and the same reason: recordAbuse only buffers. Separate call
+		// rather than folded into FlushAccess so a failure in one does not cost the
+		// other its batch — they write different tables for different purposes.
+		safeTick("abuse flush", mgr.FlushAbuse)
 	}
 }
 
@@ -392,6 +403,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
+		mgr.PurgeOldAbuse() // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()   // per-day traffic history past a year
 		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
 		mgr.PurgeDeletedNodes() // reclaim node tombstones past their grace window

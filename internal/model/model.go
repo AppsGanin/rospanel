@@ -38,6 +38,14 @@ const DeviceOnlineWindow int64 = 120
 // accrues a row per IP indefinitely without a sweep.
 const ConnectionRetentionDays = 30
 
+// AbuseRetentionDays is how long a blocklist match is kept.
+//
+// Short on purpose. This is the most sensitive data the panel holds — it names what
+// a person reached, not merely that they connected — and its job is to answer "is
+// this account a problem right now", which two weeks covers. An abuse complaint
+// that arrives later is answered from the complaint's own timestamp, not from here.
+const AbuseRetentionDays = 14
+
 // TrafficDailyRetentionDays is how long per-day traffic history is kept. It sits
 // well above the journals' 30/90 days because this is reporting data rather than a
 // log — the stats page offers ranges up to a year — but it is bounded all the same:
@@ -627,6 +635,14 @@ type Settings struct {
 	TGUserEvents       int64 `json:"-"`
 	TGUserExpiringDays int   `json:"-"`
 
+	// Abuse/blocklist config. AbuseEnabled is the master switch; AbuseCategories is a
+	// bitmask of active feed categories (AbuseCat*); AbuseCustom is the operator's own
+	// domains/IPs (one per line); AbuseAlertMin is matches-per-day before an alert.
+	AbuseEnabled    bool   `json:"-"`
+	AbuseCategories int64  `json:"-"`
+	AbuseCustom     string `json:"-"`
+	AbuseAlertMin   int    `json:"-"`
+
 	// Support relay (Settings → Telegram → Поддержка): a third bot whose only job is
 	// to carry messages between a user and a per-user topic in TGSupportGroupID, a
 	// forum supergroup the operator's admins answer in. It is separate from the user
@@ -738,6 +754,7 @@ const (
 	AdminEventXrayDown      int64 = 1 << 4 // Xray crashed and is being restarted
 	AdminEventCert          int64 = 1 << 5 // TLS certificate renewed or renewal failed
 	AdminEventPayment       int64 = 1 << 6 // payment lifecycle (order created / paid)
+	AdminEventAbuse         int64 = 1 << 7 // a user's traffic hit a threat/piracy/gambling list
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -753,10 +770,38 @@ var AdminEventCatalog = []struct {
 	{"xray_down", AdminEventXrayDown},
 	{"cert", AdminEventCert},
 	{"payment", AdminEventPayment},
+	{"abuse", AdminEventAbuse},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
 func (s *Settings) AdminEventEnabled(bit int64) bool { return s.TGAdminEvents&bit != 0 }
+
+// Abuse blocklist categories (bitmask flags stored in Settings.AbuseCategories).
+// The keys match the abuse.Category strings so the manager can map a bit straight to
+// a category. Appended, never renumbered, so saved masks keep their meaning — which
+// is why the retired domain bits below are still reserved rather than reused.
+const (
+	_                int64 = 1 << 0 // retired: threat-intelligence domains
+	AbuseCatBadIP    int64 = 1 << 1 // IP-reputation feed
+	_                int64 = 1 << 2 // retired: anti-piracy domains
+	_                int64 = 1 << 3 // retired: gambling domains
+)
+
+// AbuseCategoryCatalog is the stable key→flag mapping the settings API/UI iterate
+// over, in display order. Keys equal the abuse.Category strings.
+//
+// Only the IP feed remains: a domain can only be matched when the destination
+// reaches the panel as a domain, and on real traffic it arrives as a bare IP (see
+// package abuse).
+var AbuseCategoryCatalog = []struct {
+	Key string
+	Bit int64
+}{
+	{"badip", AbuseCatBadIP},
+}
+
+// AbuseCategoryEnabled reports whether a category bit is active.
+func (s *Settings) AbuseCategoryEnabled(bit int64) bool { return s.AbuseCategories&bit != 0 }
 
 // User notification categories (bitmask flags stored in Settings.TGUserEvents).
 // Named UserNotify* rather than UserEvent*, which the user journal already uses for
