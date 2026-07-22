@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/AppsGanin/rospanel/compare/v1.2.0...v1.3.0) (2026-07-22)
+
+
+### Features
+
+* add abuse detection with blocklist matching ([34d65fa](https://github.com/AppsGanin/rospanel/commit/34d65fa0b1b2927aa657f335cb58aef6fec73a83))
+* **api:** add /v1/stats/nodes endpoint for traffic breakdown by server ([b471b2c](https://github.com/AppsGanin/rospanel/commit/b471b2cb48d7d5f4ebe3cb6fb4581a4fe12e0929))
+
 ## [1.2.0](https://github.com/AppsGanin/rospanel/compare/v1.1.0...v1.2.0) (2026-07-20)
 
 
