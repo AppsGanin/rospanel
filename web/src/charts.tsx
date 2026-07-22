@@ -13,6 +13,13 @@ import {
   YAxis,
 } from 'recharts'
 
+// recharts 3 widened the tooltip formatter's value to `ValueType | undefined`
+// (it can be a string or an array for other chart kinds). Every series we plot is
+// numeric, so narrow once here instead of asserting at each call site.
+function num(v: unknown): number {
+  return typeof v === 'number' ? v : Number(v ?? 0)
+}
+
 // Read a themed CSS variable at render time so charts follow the colour theme.
 // Falls back to the stock value before styles resolve.
 export function cssVar(name: string, fallback: string): string {
@@ -54,7 +61,7 @@ export function TrafficArea({
         <XAxis dataKey="day" tick={{ fontSize: 12, fill: axis }} tickLine={false} axisLine={false} />
         <YAxis tickFormatter={fmt} tick={{ fontSize: 11, fill: axis }} tickLine={false} axisLine={false} width={56} />
         <Tooltip
-          formatter={(v: number, n) => [fmt(v), n === 'down' ? 'Принято' : 'Отдано']}
+          formatter={(v, n) => [fmt(num(v)), n === 'down' ? 'Принято' : 'Отдано']}
           contentStyle={{ borderRadius: 12, border: `1px solid ${grid}`, fontSize: 13 }}
         />
         <Legend
@@ -86,7 +93,7 @@ export function TrafficDonut({
       <ResponsiveContainer width="100%" height="100%">
         <RPieChart>
           <Tooltip
-            formatter={(v: number, n) => [fmt(v), n]}
+            formatter={(v, n) => [fmt(num(v)), n]}
             contentStyle={{ borderRadius: 12, border: `1px solid ${grid}`, fontSize: 13 }}
           />
           <Pie
