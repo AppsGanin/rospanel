@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/AppsGanin/rospanel/compare/v1.3.0...v1.4.0) (2026-07-23)
+
+
+### Features
+
+* **core:** add confirmed Xray restart tracking for remote nodes ([b0cd098](https://github.com/AppsGanin/rospanel/commit/b0cd098affb1deef291fbdc6c9029372d43372e0))
+
+
+### Bug Fixes
+
+* **web:** add typecheck script and update run() API usage ([9ccfef6](https://github.com/AppsGanin/rospanel/commit/9ccfef62fb71111fb7d7e8b11ae172302eb06db3))
+
 ## [1.3.0](https://github.com/AppsGanin/rospanel/compare/v1.2.0...v1.3.0) (2026-07-22)
 
 
