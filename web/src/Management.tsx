@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { AppLogs } from "./AppLogs";
-import { getBackupInfo, resetPanel } from "./api";
-import { HealthPanel } from "./HealthPanel";
+import { getBackupInfo, resetPanel, restartPanel } from "./api";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError } from "./notify";
 import {
@@ -28,10 +27,10 @@ function IconArchive() {
     </svg>
   );
 }
-function IconHealth() {
+function IconPower() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12h4l2 5 4-12 2 7h6" />
+      <path d="M12 3v9M18.4 6.6a9 9 0 1 1-12.8 0" />
     </svg>
   );
 }
@@ -110,12 +109,14 @@ const sqBtn =
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {
   const { data: info } = useFetch(getBackupInfo);
-  const [healthOpen, setHealthOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartWait, setRestartWait] = useState(false);
   const { fileRef, inspection, manifest, inspecting, restoring, done, pick, restore } =
     useRestore();
 
@@ -128,6 +129,21 @@ export function ManagementCard() {
     } catch (e) {
       notifyError(errMessage(e));
       setResetting(false);
+    }
+  };
+
+  // The panel answers before it goes down, so the wait screen (which polls the
+  // current address and returns here once it answers) starts on the 200.
+  const doRestart = async () => {
+    setRestarting(true);
+    try {
+      await restartPanel();
+      setRestartOpen(false);
+      setRestartWait(true);
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -144,28 +160,31 @@ export function ManagementCard() {
   if (resetUrl) {
     return <RestoreWaiting url={resetUrl} />;
   }
+  // A plain restart keeps the address, so the wait screen polls where we already are
+  // (and drops the cert/redirect wording, which only applies to a move).
+  if (restartWait) {
+    return <RestoreWaiting url={window.location.href} sameAddress />;
+  }
 
   return (
     <>
       <Card className="p-4">
         <h3 className="mb-2 font-bold text-ink">Управление</h3>
         <div className="flex flex-col items-stretch divide-y divide-gray-200 border-t border-gray-100 pt-1 sm:flex-row sm:divide-x sm:divide-y-0">
-          <ManageBtn icon={<IconHealth />} label="Диагностика" onClick={() => setHealthOpen(true)} />
+          {/* Diagnostics is per-server now — it lives on each card in «Сервера»,
+              where the server it describes is. */}
           <ManageBtn icon={<IconList />} label="Логи" onClick={() => setLogsOpen(true)} />
+          {/* One word, like every other button in this row — the modal it opens is
+              still titled "Бэкап и восстановление", so nothing is hidden. */}
+          <ManageBtn icon={<IconArchive />} label="Бэкапы" onClick={() => setBackupOpen(true)} />
           <ManageBtn
-            icon={<IconArchive />}
-            label="Бэкап и восстановление"
-            onClick={() => setBackupOpen(true)}
+            icon={<IconPower />}
+            label="Перезапуск"
+            onClick={() => setRestartOpen(true)}
           />
           <ManageBtn icon={<IconReset />} label="Сброс" danger onClick={() => setResetOpen(true)} />
         </div>
       </Card>
-
-      {/* Diagnostics — health report in a modal. HealthPanel mounts (and starts
-          its light auto-refresh) only while the modal is open. */}
-      <Modal open={healthOpen} onClose={() => setHealthOpen(false)} title="Диагностика" size="lg">
-        <HealthPanel />
-      </Modal>
 
       {logsOpen && <AppLogs onClose={() => setLogsOpen(false)} />}
 
@@ -229,6 +248,23 @@ export function ManagementCard() {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* Restart the panel process */}
+      <Modal open={restartOpen} onClose={() => setRestartOpen(false)} title="Перезапустить панель?">
+        <p className="text-sm text-ink-muted">
+          Панель перезапустится вместе с Xray — активные VPN-подключения на этом сервере
+          ненадолго прервутся, клиенты переподключатся сами. Данные и настройки не
+          изменятся. Страница обновится автоматически.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" color="gray" size="sm" onClick={() => setRestartOpen(false)}>
+            Отмена
+          </Button>
+          <Button variant="filled" color="red" size="sm" loading={restarting} onClick={doRestart}>
+            Перезапустить
+          </Button>
+        </div>
       </Modal>
 
       {/* Reset */}

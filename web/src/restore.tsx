@@ -131,12 +131,17 @@ export function RestoreWaiting({
   manifest,
   currentDomain,
   url,
+  sameAddress,
 }: {
   manifest?: BackupManifest;
   currentDomain?: string;
   // Explicit target URL (used by factory reset, where the panel moves to a
   // different host than the current origin). Falls back to the manifest.
   url?: string;
+  // The panel is coming back at the address we're already on (a plain restart):
+  // no address to show, and no cert warning to expect — saying otherwise makes a
+  // routine restart look like something went wrong.
+  sameAddress?: boolean;
 }) {
   const newUrl =
     url ??
@@ -182,19 +187,21 @@ export function RestoreWaiting({
       <div className="flex flex-col items-center gap-5 py-2">
         <Spinner size={40} className="text-brand-500" />
         <p className="text-center text-sm text-ink-muted">
-          Вас автоматически перенаправит, как только панель поднимется. Если
-          браузер предупредит о сертификате после смены адреса — это нормально,
-          продолжите по ссылке.
+          {sameAddress
+            ? "Страница обновится сама, как только панель поднимется — обычно это несколько секунд."
+            : "Вас автоматически перенаправит, как только панель поднимется. Если браузер предупредит о сертификате после смены адреса — это нормально, продолжите по ссылке."}
         </p>
-        <div className="flex flex-col items-center gap-1">
-          <p className="text-xs text-ink-muted">Адрес панели:</p>
-          <a
-            href={newUrl}
-            className="break-all font-mono text-xs text-accent hover:underline"
-          >
-            {newUrl}
-          </a>
-        </div>
+        {!sameAddress && (
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-xs text-ink-muted">Адрес панели:</p>
+            <a
+              href={newUrl}
+              className="break-all font-mono text-xs text-accent hover:underline"
+            >
+              {newUrl}
+            </a>
+          </div>
+        )}
         {crossDomain && (
           <p className="text-center text-sm text-warning">
             Домен изменился. После входа проверьте его в «Сервера» → карточка

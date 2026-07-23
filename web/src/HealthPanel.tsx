@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  getHealth,
-  runSelfTest,
-  type HealthReport,
-  type HealthStatus,
-  type SelfTestResult,
-} from "./api";
+import { getNodeHealth, type HealthReport, type HealthStatus } from "./api";
 import { errMessage, notifyError } from "./notify";
-import { Badge, Button, Card, Skeleton } from "./ui";
+import { Badge, Button, Skeleton } from "./ui";
 
-// STATUS_BADGE maps a check status to a Badge colour + word.
-const STATUS_BADGE: Record<HealthStatus, { color: string; word: string }> = {
-  ok: { color: "green", word: "OK" },
-  warn: { color: "orange", word: "Внимание" },
-  error: { color: "red", word: "Проблема" },
-  info: { color: "gray", word: "—" },
+// STATUS_BADGE maps a check status to a Badge colour + word, and to the tint the
+// row itself carries.
+//
+// Only the rows that need attention are tinted. Everything passing stays on the
+// plain surface: a screen of ten identically-coloured cards is what made a failing
+// check impossible to spot, and colouring the healthy ones too would just move the
+// problem — the eye needs somewhere quiet to not look.
+const STATUS_BADGE: Record<HealthStatus, { color: string; word: string; tint: string }> = {
+  ok: { color: "green", word: "OK", tint: "" },
+  warn: { color: "orange", word: "Внимание", tint: "warning-tint" },
+  error: { color: "red", word: "Проблема", tint: "danger-tint" },
+  info: { color: "gray", word: "—", tint: "" },
 };
 
 // OVERALL maps the report's worst status to a banner.
@@ -28,43 +28,30 @@ function HealthSkeleton() {
   return (
     <div className="flex flex-col gap-3">
       <Skeleton className="h-16 w-full rounded-2xl" />
-      {[...Array(5)].map((_, i) => (
-        <Skeleton key={i} className="h-20 w-full rounded-2xl" />
-      ))}
+      <Skeleton className="h-80 w-full rounded-2xl" />
     </div>
   );
 }
 
-export function HealthPanel() {
+// HealthPanel shows one server's diagnostics. nodeId picks the server: 0 is the
+// panel's own (the full local report), a node id is that node's — as it last
+// reported, since the panel doesn't dial a node to build the report.
+export function HealthPanel({ nodeId }: { nodeId: number }) {
   const [report, setReport] = useState<HealthReport | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResults, setTestResults] = useState<SelfTestResult[] | null>(null);
-
-  const runTest = useCallback(async () => {
-    setTesting(true);
-    try {
-      const { results } = await runSelfTest();
-      setTestResults(results);
-    } catch (e) {
-      notifyError(errMessage(e));
-    } finally {
-      setTesting(false);
-    }
-  }, []);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
-      setReport(await getHealth());
+      setReport(await getNodeHealth(nodeId));
     } catch (e) {
       if (manual) notifyError(errMessage(e));
     } finally {
       setLoaded(true);
       if (manual) setRefreshing(false);
     }
-  }, []);
+  }, [nodeId]);
 
   useEffect(() => {
     load();
@@ -104,11 +91,21 @@ export function HealthPanel() {
         </Button>
       </div>
 
-      {report.checks.map((c) => {
-        const b = STATUS_BADGE[c.status] ?? STATUS_BADGE.info;
-        return (
-          <Card key={c.key} className="p-4">
-            <div className="flex items-start justify-between gap-3">
+      {/* Deliberately NOT a Card. This panel lives inside a modal, and Card's
+          surface is the same --color-white the modal itself is painted with, so a
+          card here is invisible — which is how ten checks ended up looking like one
+          undifferentiated block. gray-50/200 are derived from the theme (surface
+          interpolated toward the text colour), so this reads as one step off the
+          modal in a light theme and in a dark one alike, instead of a hardcoded
+          grey that only works in one of them. */}
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 divide-y divide-gray-200">
+        {report.checks.map((c) => {
+          const b = STATUS_BADGE[c.status] ?? STATUS_BADGE.info;
+          return (
+            <div
+              key={c.key}
+              className={`flex items-start justify-between gap-3 p-4 ${b.tint}`}
+            >
               <div className="min-w-0">
                 <p className="font-medium text-ink">{c.label}</p>
                 <p className="mt-0.5 text-sm text-ink-muted">{c.detail}</p>
@@ -118,61 +115,9 @@ export function HealthPanel() {
               </div>
               <Badge color={b.color as never}>{b.word}</Badge>
             </div>
-          </Card>
-        );
-      })}
-
-      <Card className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-medium text-ink">Проверка подключения</p>
-            <p className="mt-0.5 text-sm text-ink-muted">
-              Панель подключается к каждому включённому протоколу как настоящий
-              клиент и проверяет, что трафик реально выходит наружу.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="light"
-            loading={testing}
-            onClick={runTest}
-          >
-            Проверить
-          </Button>
-        </div>
-
-        {testing && !testResults && (
-          <p className="mt-3 text-xs text-ink-muted">
-            Идёт проверка — каждый протокол проверяется отдельно, это может
-            занять до минуты…
-          </p>
-        )}
-
-        {testResults && (
-          <div className="mt-3 flex flex-col gap-2">
-            {testResults.map((t, i) => (
-              <div
-                key={t.proto || i}
-                className="flex items-start justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 dark:bg-white/5"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink">
-                    {t.label || "Проверка"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-ink-muted">{t.detail}</p>
-                </div>
-                <Badge color={(t.ok ? "green" : "red") as never}>
-                  {t.ok ? "Работает" : "Не проходит"}
-                </Badge>
-              </div>
-            ))}
-            <p className="mt-1 text-xs text-ink-muted">
-              Проверка идёт с самого сервера, поэтому не заменяет проверку
-              доступности портов снаружи (брандмауэр хостинга/провайдера).
-            </p>
-          </div>
-        )}
-      </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }

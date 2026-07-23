@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
-	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -176,6 +176,16 @@ type Manager struct {
 	nodeUpdateMu     sync.Mutex
 	nodeUpdateWanted map[int64]bool
 	nodeGeoWanted    map[int64]bool
+	// nodeRestart holds Xray-restart requests that have not been confirmed yet. Unlike
+	// the two flags above, a restart is not done when it is sent: the operator needs to
+	// know it actually happened, so the request outlives its delivery and is only
+	// dropped when the node reports a bounced Xray (or the wait times out).
+	nodeRestart map[int64]*nodeRestartReq
+
+	// nodeHostStats is each node's last-reported machine state (disk/RAM/guards) for
+	// its diagnostics page, under nodeGeoMu with the other "last reported" caches.
+	// Bounded by the node count; a deleted node's entry is dead weight of one struct.
+	nodeHostStats map[int64]nodeapi.HostStats
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
@@ -217,8 +227,10 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodes:            newNodeRegistry(),
 		nodeUpdateWanted: map[int64]bool{},
 		nodeGeoWanted:    map[int64]bool{},
+		nodeRestart:      map[int64]*nodeRestartReq{},
 		nodeLogs:         map[int64]nodeLogEntry{},
 		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
+		nodeHostStats:    map[int64]nodeapi.HostStats{},
 		nodeLogsWanted:   map[int64]int64{},
 	}
 	if set, err := st.GetSettings(); err == nil {

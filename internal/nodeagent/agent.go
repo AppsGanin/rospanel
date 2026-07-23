@@ -29,7 +29,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
-
+	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
@@ -45,9 +45,11 @@ const (
 	// backoffMin/Max bound the reconnect backoff when the panel is unreachable.
 	backoffMin = 2 * time.Second
 	backoffMax = 60 * time.Second
-	// revokedPoll is the slow cadence a revoked node keeps checking in at, in case
-	// it is re-enabled.
-	revokedPoll = 60 * time.Second
+	// revokedPoll paces a revoked node's check-ins. A current panel HOLDS these
+	// requests (see nodeapi.SyncRequest.Revoked), so this is not how fast a re-enable
+	// is noticed — it is only the guard against spinning against an older panel that
+	// answers immediately. Short, because it IS the re-enable latency there.
+	revokedPoll = 5 * time.Second
 	// statsInterval is how often the agent samples Xray traffic counters.
 	statsInterval = 60 * time.Second
 	// certRetryFast is how often the agent retries ACME while it has no CA cert yet
@@ -55,6 +57,12 @@ const (
 	// cert is in place (renewal is driven off the cert's own lifetime inside tlsmgr).
 	certRetryFast = 3 * time.Minute
 	certRenewSlow = 6 * time.Hour
+	// xrayWatchTick is how often the agent checks its OWN Xray state. Local and
+	// cheap — one mutex-guarded bool, no process spawned, no network.
+	xrayWatchTick = time.Second
+	// xrayWatchGap bounds how often that state may cut a held poll short, so a
+	// crash-looping Xray reports at a sane rate instead of once per bounce.
+	xrayWatchGap = 5 * time.Second
 )
 
 // Agent is the running node: it owns the local Xray supervisor and the decoy
@@ -72,6 +80,10 @@ type Agent struct {
 
 	state   *persistState
 	stateMu sync.Mutex
+
+	// sys samples this node's own CPU/RAM/disk, reported to the panel so the node's
+	// diagnostics page can show the same host facts the panel shows for itself.
+	sys *sysstat.Sampler
 
 	// Opera VPN egress helper (opera-proxy). Off unless the panel enables it for this
 	// node. operaCountry/operaPort track the last-applied config so a repeated apply
@@ -115,6 +127,20 @@ type Agent struct {
 	sites map[siteKey]int64
 
 	logsWanted atomic.Bool // panel asked for the log tail on the next sync
+
+	// revoked mirrors persistState.Revoked for the sync path: the panel has switched
+	// this node off. Reported on every request so the panel knows the node already
+	// heard, and can hold the poll (making a re-enable arrive at once) instead of
+	// answering "revoked" over and over.
+	revoked atomic.Bool
+
+	// syncCancel ends the long-poll currently in flight, so news from this side can
+	// go out at once instead of waiting for the panel to let the request go.
+	// syncInterrupted marks that ending as ours, so the loop doesn't mistake it for
+	// the panel being unreachable and back off from it.
+	syncMu          sync.Mutex
+	syncCancel      context.CancelFunc
+	syncInterrupted atomic.Bool
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -134,6 +160,15 @@ func Run(ctx context.Context, dataDir string) error {
 	if state, _ := tuning.EnsureBBR(); state == tuning.BBREnabled {
 		slog.Info("node: BBR enabled")
 	}
+	// A node the panel switched off stays off across a reboot. Suspending BEFORE the
+	// re-apply below is what makes that airtight: the config, certificate and
+	// firewall rules are still set up (so re-enabling is instant), but Xray is never
+	// started. Without this the node serves everyone again from boot until its first
+	// successful sync — and if the panel is unreachable from here, that is forever.
+	if a.wasRevoked() {
+		a.sup.Suspend()
+		slog.Warn("node: switched off by the panel — staying down until it says otherwise")
+	}
 	// Re-apply the last known-good config on boot so the node serves immediately,
 	// even before the first successful sync (or if the panel is down).
 	if a.state.LastConfig != nil {
@@ -143,8 +178,9 @@ func Run(ctx context.Context, dataDir string) error {
 	}
 
 	go a.statsLoop(ctx)
-	go a.certLoop(ctx) // retry ACME + reload Xray when the real cert lands
-	go a.geoLoop(ctx)  // auto-refresh geo databases on the panel-pushed cadence
+	go a.certLoop(ctx)  // retry ACME + reload Xray when the real cert lands
+	go a.geoLoop(ctx)   // auto-refresh geo databases on the panel-pushed cadence
+	go a.watchXray(ctx) // report an Xray that died (or came back) without waiting
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -175,6 +211,83 @@ func (a *Agent) geoLoop(ctx context.Context) {
 		if err := a.sup.Restart(); err != nil {
 			slog.Warn("node: xray restart after geo refresh failed", "err", err)
 		}
+	}
+}
+
+// watchXray ends the held sync as soon as this node's Xray goes down or comes back,
+// so the panel learns within a second instead of on the next poll — which, on a
+// quiet node, is up to the full 45-second hold away.
+//
+// This is the node's half of the wake the panel already has. Commands travel DOWN
+// the held request the moment they exist; this makes state travel UP it the same
+// way. The alternative — simply polling more often — would cost the panel a full
+// config generation over every user per node per cycle, and would still report a
+// crash later than this does.
+//
+// It watches Serving() rather than Running() on purpose: a deliberate restart is
+// not a state change worth interrupting for, and Serving already spans that bounce.
+func (a *Agent) watchXray(ctx context.Context) {
+	watchServing(ctx, a.sup.Serving, func(serving bool) {
+		slog.Info("node: xray state changed — telling the panel now", "serving", serving)
+		a.interruptSync()
+	})
+}
+
+// watchServing is watchXray's body over the two things it actually needs, so the
+// change detection and its rate limit can be tested without a live supervisor or a
+// test-only hook cut into the production one.
+func watchServing(ctx context.Context, serving func() bool, onChange func(bool)) {
+	last := serving()
+	var lastFired time.Time
+	t := time.NewTicker(xrayWatchTick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cur := serving()
+		// Neither condition updates `last` unless it actually reports: while the gap
+		// is still open the change stays pending and fires as soon as it closes, so
+		// flapping can be rate-limited without the final state being lost.
+		if cur == last || time.Since(lastFired) < xrayWatchGap {
+			continue
+		}
+		last, lastFired = cur, time.Now()
+		onChange(cur)
+	}
+}
+
+// interruptSync ends the long-poll in flight so the next request goes out at once
+// carrying fresh state. A no-op when nothing is in flight.
+func (a *Agent) interruptSync() {
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	if a.syncCancel != nil {
+		a.syncInterrupted.Store(true)
+		a.syncCancel()
+	}
+}
+
+// hostStats snapshots the node's own machine state for the panel's per-node
+// diagnostics. Cheap: the sampler keeps CPU/net rates warm in the background, and
+// memory/disk/uptime are read on demand — no extra process spawned per sync.
+func (a *Agent) hostStats() *nodeapi.HostStats {
+	if a.sys == nil {
+		return nil // no sampler (tests) → report nothing rather than a row of zeros
+	}
+	st := a.sys.Read()
+	return &nodeapi.HostStats{
+		DiskUsed:   st.DiskUsed,
+		DiskTotal:  st.DiskTotal,
+		MemUsed:    st.MemUsed,
+		MemTotal:   st.MemTotal,
+		HostUptime: st.HostUptime,
+		// Probed, not remembered: connguard.Ensure degrades to a no-op without nft or
+		// root and only logs, so "we asked for it" is not evidence it is in force.
+		ConnGuard: connguard.Active(),
+		BBR:       tuning.Active(),
 	}
 }
 
@@ -212,6 +325,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		operaSup:     opera.New(filepath.Join(operaDir, "opera-proxy")),
 		operaDir:     operaDir,
 		state:        loadState(dataDir),
+		sys:          sysstat.New(dataDir),
 		lastCounters: map[string]xray.Traffic{},
 		pending:      map[int64]*nodeapi.TrafficDelta{},
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
@@ -392,14 +506,28 @@ func (a *Agent) takeSites(byteBudget int) []nodeapi.SiteSample {
 func (a *Agent) syncLoop(ctx context.Context) {
 	backoff := backoffMin
 	applyBackoff := backoffMin
+	// Whether the panel currently has us revoked. Revocation is reversible — an
+	// operator flicks a node off and back on all the time — so it is tracked rather
+	// than treated as the end, and coming back is handled below.
+	// Seeded from disk so a reboot doesn't forget: the boot path has already
+	// suspended Xray, and this keeps the loop from treating the first revoked
+	// response as news (or the first enabled one as a no-op).
+	a.revoked.Store(a.wasRevoked())
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+		// Cleared per attempt so the flag only ever describes the request in flight.
+		a.syncInterrupted.Store(false)
 		resp, err := a.syncOnce(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
+			}
+			// Our own doing (watchXray had news): go straight back round with a fresh
+			// report. Backing off here would delay the very thing we cut the poll for.
+			if a.syncInterrupted.Load() {
+				continue
 			}
 			slog.Warn("node: sync failed (keeping last config)", "err", err)
 			if !sleepCtx(ctx, backoff) {
@@ -411,12 +539,41 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		backoff = backoffMin
 
 		if resp.Revoked {
-			slog.Warn("node: revoked by panel — stopping Xray, will keep checking in")
-			a.sup.Stop()
+			if !a.revoked.Load() {
+				slog.Warn("node: revoked by panel — stopping Xray, will keep checking in")
+				// Suspend, not Stop: Stop closes the supervisor for good, and this node
+				// fully expects to be switched back on. Recorded on disk so a reboot
+				// before the next sync doesn't quietly put it back to serving.
+				a.sup.Suspend()
+				a.setRevoked(true)
+				a.revoked.Store(true)
+			}
 			if !sleepCtx(ctx, revokedPoll) {
 				return
 			}
 			continue
+		}
+		if a.revoked.Load() {
+			// The panel took us back. Nothing about the config changed while we were
+			// out, so there is no push coming and no Changed to react to — starting
+			// again is on us. Resume (not Restart) is what lifts the suspension, and
+			// only here: everything else the node does while switched off must leave
+			// it switched off. Retried on the next sync if it fails.
+			if _, ok := a.currentMeta(); !ok {
+				// Nothing to serve yet. Lift the suspension anyway so the first pushed
+				// config starts Xray instead of being written and ignored.
+				if err := a.sup.Resume(); err != nil {
+					slog.Warn("node: resume without a config failed", "err", err)
+				}
+				a.setRevoked(false)
+				a.revoked.Store(false)
+			} else if err := a.sup.Resume(); err != nil {
+				slog.Error("node: start after re-enable failed", "err", err)
+			} else {
+				a.setRevoked(false)
+				a.revoked.Store(false)
+				slog.Info("node: re-enabled by panel — Xray started again")
+			}
 		}
 		if resp.PanelURL != "" && resp.PanelURL != a.ident.PanelURL {
 			if validPanelURL(resp.PanelURL) {
@@ -439,6 +596,15 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				slog.Warn("node: geo refresh (on request) failed", "err", err)
 			} else if err := a.sup.Restart(); err != nil {
 				slog.Warn("node: xray restart after geo refresh failed", "err", err)
+			}
+		}
+		// A restart the operator asked for, with the config unchanged — so it runs
+		// before applyState, whose own reload would make this one redundant.
+		if resp.RestartXray {
+			if err := a.sup.Restart(); err != nil {
+				slog.Warn("node: xray restart (on request) failed", "err", err)
+			} else {
+				slog.Info("node: xray restarted on operator request")
 			}
 		}
 		if resp.Update {
@@ -471,7 +637,18 @@ func (a *Agent) syncLoop(ctx context.Context) {
 func (a *Agent) syncOnce(ctx context.Context) (*nodeapi.SyncResponse, error) {
 	req := a.buildSyncRequest()
 	body, _ := json.Marshal(req)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.ident.syncURL(), bytes.NewReader(body))
+	// Own cancel per request so watchXray can end this one specifically.
+	reqCtx, cancel := context.WithCancel(ctx)
+	a.syncMu.Lock()
+	a.syncCancel = cancel
+	a.syncMu.Unlock()
+	defer func() {
+		a.syncMu.Lock()
+		a.syncCancel = nil
+		a.syncMu.Unlock()
+		cancel()
+	}()
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, a.ident.syncURL(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -544,10 +721,15 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 
 	req := nodeapi.SyncRequest{
-		ConfigHash:     hash,
-		NodeVersion:    version.Version,
-		XrayVersion:    a.sup.Version(),
-		XrayRunning:    a.sup.Running(),
+		ConfigHash:  hash,
+		NodeVersion: version.Version,
+		XrayVersion: a.sup.Version(),
+		// Serving, not Running: a sync that happens to land during a deliberate
+		// restart (cert renewal, config push, operator bounce) must not report the
+		// node as down for a whole poll cycle over a one-second gap.
+		XrayRunning:    a.sup.Serving(),
+		XrayStartedAt:  a.sup.StartedAt(),
+		Revoked:        a.revoked.Load(),
 		CertSHA256:     sha,
 		CertSelfSigned: selfSigned,
 		CertIssuer:     certIssuer,
@@ -557,6 +739,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Conns:          a.takeConns(),
 		Logs:           logs,
 		GeoFiles:       geoFiles,
+		Host:           a.hostStats(),
 	}
 	// Sites share the panel's 1 MB body cap with traffic, conns and logs, none of
 	// which this feature bounds. Sites are advisory, so they yield: measure the rest

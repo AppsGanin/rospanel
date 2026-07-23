@@ -1,23 +1,38 @@
 import { useEffect, useState } from 'react'
-import { getXrayConfig } from './api'
+import type { ReactNode } from 'react'
+import { getNodeXrayConfig, getXrayConfig } from './api'
 import { errMessage } from './notify'
 import { Button, IconCheck, IconCopy, ToolDialog, useCopy } from './ui'
 
-export function XrayConfigView({ onClose }: { onClose: () => void }) {
+// XrayConfigView shows an Xray config read-only. Without a nodeId it shows the
+// panel server's live config.json; with one it shows that server's config as the
+// panel generates it (node 0 resolves to the master's live file too).
+export function XrayConfigView({
+  nodeId,
+  title = 'Конфигурация Xray',
+  note,
+  onClose,
+}: {
+  nodeId?: number
+  title?: string
+  note?: ReactNode
+  onClose: () => void
+}) {
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
   const { copied, copy } = useCopy()
 
   useEffect(() => {
-    getXrayConfig()
+    ;(nodeId === undefined ? getXrayConfig() : getNodeXrayConfig(nodeId))
       .then(setText)
       .catch((e) => setErr(errMessage(e)))
-  }, [])
+  }, [nodeId])
 
   return (
     <ToolDialog
-      title="Конфигурация Xray"
+      title={title}
       onClose={onClose}
+      headerExtra={note ? <p className="text-xs text-ink-muted">{note}</p> : undefined}
       actions={
         <Button
           size="xs"

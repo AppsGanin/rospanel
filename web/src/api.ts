@@ -263,6 +263,7 @@ export interface SystemStatus {
   total_down: number
   users: number
   enabled_users: number
+  online_users: number // carrying traffic right now (fleet-wide, 2-minute window)
   traffic_today: number
   cert_days_left: number
 }
@@ -279,6 +280,10 @@ export const getXrayStatus = () => api<XrayStatus>('api/xray/status')
 // Bounces the Xray process. Drops every live VPN connection — confirm first.
 export const restartXray = () =>
   api<XrayStatus>('api/xray/restart', { method: 'POST' })
+
+// Restarts the panel process itself (the service manager brings it back, Xray with
+// it). The response is sent before the process goes down — confirm first.
+export const restartPanel = () => api<{ ok: boolean }>('api/panel/restart', { method: 'POST' })
 
 export interface BackupManifest {
   domain: string
@@ -1083,21 +1088,11 @@ export interface HealthReport {
   checks: HealthCheck[]
 }
 
-export const getHealth = () => api<HealthReport>('api/health')
-
-export interface SelfTestResult {
-  proto: string
-  label: string
-  ok: boolean
-  detail: string
-  exit_ip?: string
-}
-
-// runSelfTest connects to each enabled protocol as a real client and reports
-// whether traffic flows end-to-end. Slow (spawns a client per protocol), so the
-// caller shows a spinner; the request itself is bounded server-side.
-export const runSelfTest = () =>
-  api<{ results: SelfTestResult[] }>('api/health/selftest', { method: 'POST' })
+// Per-server diagnostics for the Nodes page. Node 0 is the panel's own server (the
+// full local report); a node's report is built from what it last told the panel.
+// (`api/health` still serves the panel-wide report for /v1 clients; the SPA reads
+// it per server.)
+export const getNodeHealth = (id: number) => api<HealthReport>(`api/nodes/${id}/health`)
 
 export type BulkAction = 'enable' | 'disable' | 'reset' | 'extend' | 'delete'
 
@@ -1383,6 +1378,10 @@ export interface NodeView {
   xray_version: string
   xray_running: boolean
   version_skew: boolean
+  // State of an operator-requested Xray bounce: 'pending' until the node proves it
+  // happened, then 'done' (or 'timeout' if we gave up) for a few seconds, then gone.
+  // Absent for the master, whose restart is synchronous.
+  xray_restart?: 'pending' | 'done' | 'timeout'
   vless_enabled: boolean
   trojan_enabled: boolean
   hysteria_enabled: boolean
@@ -1523,6 +1522,16 @@ export const updateAllNodes = () =>
 // send fresh logs on its next sync.
 export const getNodeLogs = (id: number) =>
   api<{ lines: string[]; at: number }>(`api/nodes/${id}/logs`)
+
+// getNodeXrayConfig returns a server's Xray config as text: the master's live file
+// for node 0, and for a node the config the panel generates and pushes to it.
+export const getNodeXrayConfig = (id: number): Promise<string> =>
+  apiText(`api/nodes/${id}/xray-config`)
+
+// restartNodeXray asks a node to bounce its Xray. The panel can only flag the wish;
+// the node acts on it at its next sync (which the flag wakes immediately).
+export const restartNodeXray = (id: number) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/xray-restart`, { method: 'POST' })
 
 // setNodeRouting saves a node's routing + egress override. A null routing means
 // "inherit the panel's"; egress (WARP/Opera) is the node's own. DNS has its own

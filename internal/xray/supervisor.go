@@ -53,9 +53,16 @@ type Supervisor struct {
 
 	mu        sync.Mutex // guards the fields below
 	cur       *proc      // currently-running process, or nil if down
-	closed    bool       // panel is shutting down; do not (re)start
+	closed    bool       // panel is shutting down; do not (re)start, ever
 	restarts  int        // consecutive crash restarts (backoff exponent)
 	lastApply time.Time  // when the last Apply() succeeded (zero if never)
+	// suspended is Stop's reversible twin: Xray is meant to stay down until somebody
+	// deliberately starts it again. It has to be checked everywhere `closed` is,
+	// because the crash supervisor is otherwise perfectly happy to bring Xray back
+	// up on a node the panel just revoked — which is exactly what revoking is meant
+	// to prevent (it runs the last config, with credentials we have withdrawn).
+	suspended  bool
+	restarting bool // a deliberate stop→start is in flight (the ~1s bounce)
 
 	onAccess func(email, ip, dest string) // called per access-log connection line
 	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
@@ -209,11 +216,30 @@ func childTZ() string {
 }
 
 // Running reports whether the Xray child process is currently up. Reflects
-// reality: a crashed process clears s.cur until a restart succeeds.
+// reality: a crashed process clears s.cur until a restart succeeds. Callers that
+// drive logic (health decisions, auto-restart) want this exact instantaneous truth.
 func (s *Supervisor) Running() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.cur != nil
+}
+
+// Serving reports whether Xray is up OR in the middle of a deliberate restart —
+// the answer to "is this server working", not "is a process alive this instant".
+//
+// It exists for status REPORTING, where Running() lies by omission. A restart
+// (operator button, cert renewal, config push) holds the process down for about a
+// second; a node's sync landing in that window would report xray_running=false and
+// paint the server as down for a full poll cycle, for what is really a healthy
+// bounce. A crash is different — that clears s.cur without setting restarting, so
+// Serving is false for it, which is correct: a crash IS an outage.
+func (s *Supervisor) Serving() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Suspended is never "serving", whatever else is true. A switched-off node still
+	// applies its config on boot, and that apply sets the bounce flag for a moment —
+	// long enough to report a revoked server as up if this didn't say otherwise.
+	return !s.suspended && (s.cur != nil || s.restarting)
 }
 
 // Apply writes the config atomically (validating first when possible) and
@@ -443,6 +469,17 @@ func (s *Supervisor) restart() error {
 		slog.Info("xray: config written (no binary; not started)", "path", s.configPath)
 		return nil
 	}
+	// Mark the bounce so Serving() covers the sub-second gap between the kill and
+	// the new process — a deliberate restart is not an outage. Cleared unconditionally
+	// so a failed start still ends the grace and lets the real "down" show.
+	s.mu.Lock()
+	s.restarting = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.restarting = false
+		s.mu.Unlock()
+	}()
 	s.stopProc()
 	return s.startProc()
 }
@@ -451,9 +488,18 @@ func (s *Supervisor) restart() error {
 // auto-restart on unexpected exit. Caller must hold s.runMu.
 func (s *Supervisor) startProc() error {
 	s.mu.Lock()
-	closed := s.closed
+	closed, suspended := s.closed, s.suspended
 	s.mu.Unlock()
-	if closed {
+	if closed || suspended {
+		// Not an error: both are states we deliberately put ourselves in. But it is
+		// worth a line either way — a start that quietly does nothing and reports
+		// success is how a dead Xray hid behind an operator's "перезапустить" button
+		// for hours.
+		reason := "the supervisor is shut down"
+		if suspended {
+			reason = "the server is switched off (suspended)"
+		}
+		slog.Warn("xray: start ignored — "+reason, "config", s.configPath)
 		return nil
 	}
 	cmd := exec.Command(s.bin, "run", "-c", s.configPath)
@@ -553,7 +599,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 		slog.Warn("xray: crashed after config change, attempting auto-rollback")
 		s.runMu.Lock()
 		s.mu.Lock()
-		skip := s.closed || s.cur != nil
+		skip := s.closed || s.suspended || s.cur != nil
 		s.mu.Unlock()
 		if !skip {
 			if err := s.restoreBackupLocked(); err == nil {
@@ -570,9 +616,9 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 
 	for {
 		s.mu.Lock()
-		if s.closed || s.cur != nil {
+		if s.closed || s.suspended || s.cur != nil {
 			s.mu.Unlock()
-			return // shutting down, or an Apply already started a new process
+			return // shutting down, suspended, or an Apply already started a new one
 		}
 		delay := backoffFor(s.restarts)
 		s.restarts++
@@ -583,7 +629,7 @@ func (s *Supervisor) superviseRestart(quickCrash bool) {
 
 		s.runMu.Lock()
 		s.mu.Lock()
-		skip := s.closed || s.cur != nil
+		skip := s.closed || s.suspended || s.cur != nil
 		s.mu.Unlock()
 		if skip {
 			s.runMu.Unlock()
@@ -741,8 +787,9 @@ func validHost(s string) bool {
 	return true
 }
 
-// Stop terminates the Xray process and prevents further (re)starts (used on
-// panel shutdown).
+// Stop terminates the Xray process and permanently closes the supervisor: every
+// later Apply/Restart is silently ignored. It is for process shutdown only — use
+// Suspend for a stop you intend to come back from.
 func (s *Supervisor) Stop() {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
@@ -750,6 +797,43 @@ func (s *Supervisor) Stop() {
 	s.closed = true
 	s.mu.Unlock()
 	s.stopProc()
+}
+
+// Suspend terminates the Xray process but leaves the supervisor usable, so a later
+// Apply or Restart brings it back. The auto-restart never fires for it: stopProc
+// marks the process as killed on purpose, which is what the monitor keys on — the
+// closed latch is not needed for that and is exactly what makes Stop one-way.
+//
+// This exists because a node stops serving for two very different reasons. One is
+// the agent going away; the other is the panel revoking it (disabled or deleted),
+// which is reversible — re-enable it and it must serve again. Using Stop for the
+// second poisoned the supervisor for good: the node kept syncing, applied every
+// config it was pushed, reported each operator restart as a success, and never ran
+// Xray again until its process was restarted by hand.
+func (s *Supervisor) Suspend() {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	s.mu.Lock()
+	s.suspended = true
+	s.mu.Unlock()
+	s.stopProc()
+}
+
+// Resume lifts a Suspend and starts Xray from the config on disk.
+//
+// Lifting the suspension is deliberately NOT a side effect of Apply or Restart.
+// A suspended node is one the panel switched off, and it still does everything
+// else — renews its certificate, accepts a config, keeps checking in — so any of
+// those paths would quietly put it back to serving users. Coming back has to be
+// something the caller asks for by name, in the one place that knows the panel
+// switched it on again.
+func (s *Supervisor) Resume() error {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	s.mu.Lock()
+	s.suspended = false
+	s.mu.Unlock()
+	return s.restart()
 }
 
 // Traffic is a per-user uplink/downlink counter snapshot.

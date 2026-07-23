@@ -105,6 +105,57 @@ export const IconEyeOff = ({ size = 18, className }: IconProps) =>
       <path d="M3 3l18 18" />
     </>,
   );
+// Server-card actions: settings, diagnostics, config, logs, restart. Icons instead
+// of labels — a card carries five of them per server, and spelled out they crowded
+// the server's own name off the row.
+export const IconGear = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </>,
+  );
+export const IconBraces = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1" />
+      <path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1" />
+    </>,
+  );
+export const IconTerminal = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="m4 17 6-6-6-6" />
+      <path d="M12 19h8" />
+    </>,
+  );
+export const IconPulse = ({ size = 16, className }: IconProps) =>
+  svg(size, className, <path d="M3 12h4l2 5 4-12 2 7h6" />);
+export const IconDots = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <circle cx="12" cy="5" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="12" cy="19" r="1" />
+    </>,
+  );
+export const IconRestart = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </>,
+  );
 // GitHub mark — a filled glyph, so it doesn't use the stroke-based `svg` helper.
 export const IconGithub = ({ size = 20, className }: IconProps) => (
   <svg

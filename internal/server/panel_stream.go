@@ -189,6 +189,13 @@ func (rt *Router) xrayConfig(w http.ResponseWriter, _ *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "конфиг недоступен: "+err.Error())
 		return
 	}
+	writeXrayConfig(w, raw)
+}
+
+// writeXrayConfig writes an Xray config body, indented for reading (the viewer
+// shows it verbatim). An unparsable body is written through as-is — the operator
+// looking at a broken config needs to see it, not an error page.
+func writeXrayConfig(w http.ResponseWriter, raw []byte) {
 	var pretty bytes.Buffer
 	if json.Indent(&pretty, raw, "", "  ") == nil {
 		raw = pretty.Bytes()

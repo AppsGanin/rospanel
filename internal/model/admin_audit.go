@@ -71,7 +71,8 @@ const (
 	AuditUserMessaged     = "broadcast.user_messaged"
 
 	// The panel itself.
-	AuditXrayRestarted = "panel.xray_restarted"
+	AuditXrayRestarted  = "panel.xray_restarted"
+	AuditPanelRestarted = "panel.restarted"
 	AuditStatsReset    = "panel.stats_reset"
 	AuditBackupTaken   = "panel.backup_downloaded"
 	AuditRestored      = "panel.restored"
@@ -147,6 +148,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditUserMessaged, "Сообщение пользователю в Telegram", AuditCatBroadcast},
 
 	{AuditXrayRestarted, "Перезапуск Xray", AuditCatPanel},
+	{AuditPanelRestarted, "Перезапуск панели", AuditCatPanel},
 	{AuditStatsReset, "Сброс статистики", AuditCatPanel},
 	{AuditBackupTaken, "Бэкап скачан", AuditCatPanel},
 	{AuditRestored, "Восстановление из бэкапа", AuditCatPanel},

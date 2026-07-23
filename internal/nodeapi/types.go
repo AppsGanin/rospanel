@@ -48,6 +48,19 @@ type SyncRequest struct {
 	NodeVersion string `json:"node_version"`
 	XrayVersion string `json:"xray_version"`
 	XrayRunning bool   `json:"xray_running"`
+	// Revoked ⇒ this node already knows the panel switched it off and has stopped
+	// serving. It changes how the panel answers: a node that has yet to hear the bad
+	// news is told at once, but one that already knows has its request HELD like any
+	// other, so switching it back on reaches it immediately instead of on its next
+	// slow poll. Absent from an older agent, which simply keeps the old behaviour.
+	Revoked bool `json:"revoked,omitempty"`
+
+	// XrayStartedAt is when the currently-running Xray started, in the NODE's clock
+	// (0 ⇒ down, or an agent too old to report it). The panel never compares it to
+	// its own clock — only to the previous value from this same node — which is what
+	// lets it confirm an operator-requested restart actually happened without the two
+	// machines having to agree on the time.
+	XrayStartedAt int64 `json:"xray_started_at,omitempty"`
 
 	// Live cert fingerprint, so the panel can emit correct pinning in this node's
 	// share links without ever seeing the node's disk. Empty sha ⇒ no cert yet.
@@ -88,6 +101,25 @@ type SyncRequest struct {
 	// GeoFiles is the on-disk status of the node's geo databases (name/size/mtime),
 	// so its Домен/Geo tab can show them like the master's. Small — sent every sync.
 	GeoFiles []GeoFile `json:"geo_files,omitempty"`
+
+	// Host is the node's own machine state for its diagnostics page. The panel can't
+	// stat a remote node's disk or read its nftables, so the node reports the same
+	// handful of facts the panel shows for itself. Optional: an older agent omits it
+	// and the report says so rather than inventing numbers.
+	Host *HostStats `json:"host,omitempty"`
+}
+
+// HostStats is a node's machine state as of its last sync.
+type HostStats struct {
+	DiskUsed   int64 `json:"disk_used"`
+	DiskTotal  int64 `json:"disk_total"`
+	MemUsed    int64 `json:"mem_used"`
+	MemTotal   int64 `json:"mem_total"`
+	HostUptime int64 `json:"host_uptime"` // seconds
+	// ConnGuard is whether the per-IP flood guard's nftables rules are actually in
+	// force on the node (it degrades to a no-op without nft/root, silently).
+	ConnGuard bool `json:"connguard"`
+	BBR       bool `json:"bbr"`
 }
 
 // GeoFile mirrors geo.FileInfo for reporting a node's geo database status.
@@ -153,6 +185,10 @@ type SyncResponse struct {
 	// Update ⇒ the operator asked this node to self-update to the latest release.
 	// The agent downloads + verifies the new binary and restarts itself.
 	Update bool `json:"update,omitempty"`
+
+	// RestartXray ⇒ the operator asked this node to bounce its Xray process (the
+	// config is unchanged; every live connection on that node drops and reconnects).
+	RestartXray bool `json:"restart_xray,omitempty"`
 
 	// WantLogs ⇒ an operator is viewing this node's logs; include the log tail in the
 	// next sync request.

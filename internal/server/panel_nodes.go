@@ -390,6 +390,41 @@ func (rt *Router) nodeLogs(w http.ResponseWriter, _ *http.Request, id int64) {
 	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "at": at})
 }
 
+// nodeXrayConfig returns one server's Xray config for the viewer — the master's
+// live file for node 0, and for a remote node the config the panel generates for
+// it. Generated on demand rather than read back from the node: it is the same
+// bytes the node applies, and it is available even while the node is offline.
+func (rt *Router) nodeXrayConfig(w http.ResponseWriter, _ *http.Request, id int64) {
+	raw, err := rt.mgr.NodeXrayConfig(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeXrayConfig(w, raw)
+}
+
+// nodeXrayRestart asks a node to bounce its Xray. It only flags the wish — the node
+// picks it up on its next sync (immediately, since the flag wakes its held poll), so
+// a 200 here means "asked", not "restarted".
+func (rt *Router) nodeXrayRestart(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.RequestNodeXrayRestart(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// nodeHealth returns one server's diagnostics — the panel's own full report for
+// node 0, and for a remote node what it last reported (the panel does not dial it).
+func (rt *Router) nodeHealth(w http.ResponseWriter, _ *http.Request, id int64) {
+	rep, err := rt.mgr.NodeHealth(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
 // setNodeEnabled toggles whether a node serves traffic and appears in links.
 func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {

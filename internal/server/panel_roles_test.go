@@ -31,7 +31,10 @@ func rolesTestRouter(t *testing.T) (*Router, *store.Store) {
 	t.Cleanup(func() { st.Close() })
 
 	sup := xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
-	mgr := core.New(st, sup, xray.Options{}, core.TLSPaths{}, dir)
+	// PanelDest is what a real install always has (Xray's fallback target); config
+	// generation refuses to run without it, so tests that reach a generating handler
+	// need it here.
+	mgr := core.New(st, sup, xray.Options{PanelDest: "127.0.0.1:8080"}, core.TLSPaths{}, dir)
 	return &Router{mgr: mgr, dataDir: dir}, st
 }
 
