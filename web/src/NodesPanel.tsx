@@ -31,6 +31,8 @@ import {
   updateGeo,
   updateIPLists,
   setIPListCadence as saveIPListCadence,
+  restartNodeXray,
+  restartXray,
   updateNode,
   updateNodeVersion,
   type GeoCategories,
@@ -42,11 +44,14 @@ import {
 import { ApplyingModal, useXrayApply } from "./apply";
 import { ConnectionsEditor } from "./ConnectionsEditor";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
-import { helperStatus } from "./EgressStatus";
+import { helperStatus } from "./egress";
 import { fmtBytes } from "./format";
 import { DECOY_LABELS } from "./GeneralSettings";
+import { HealthPanel } from "./HealthPanel";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
+import { XrayConfigView } from "./XrayConfig";
+import { XrayLogs } from "./XrayLogs";
 import {
   effectiveCfg,
   EMPTY,
@@ -69,7 +74,13 @@ import {
   Dropdown,
   DropdownDivider,
   DropdownItem,
-  IconChevron,
+  IconBraces,
+  IconButton,
+  IconDots,
+  IconGear,
+  IconPulse,
+  IconRestart,
+  IconTerminal,
   Modal,
   PasswordInput,
   SegmentedControl,
@@ -164,29 +175,61 @@ function fmtSeen(unix: number): string {
   });
 }
 
-// statusDot is the colour of the small connectivity dot that leads each server row:
-// green when up, red when a joined+enabled node is offline, grey when disabled or not
-// yet joined.
-function statusDot(node: NodeView): string {
-  if (node.is_local || (node.enabled && node.online)) return "bg-emerald-500";
-  if (!node.is_local && node.enabled && node.joined && !node.online) return "bg-red-500";
-  return "bg-gray-400";
+// statusDot is the colour of the small dot that leads each server row. It answers
+// "is this server serving users", not "is it answering us" — a node whose agent
+// syncs every few seconds while its Xray is dead carries nobody, and painting that
+// green put a green dot next to the red alert describing the very same server.
+//
+//	green  — up and serving
+//	amber  — on the wire, but its Xray is not running
+//	red    — enabled and installed, and we have not heard from it
+//	grey   — switched off, or never installed
+//
+// Exported because the dashboard's fleet strip shows the same servers — two places
+// deciding independently what "up" looks like is how they end up disagreeing about
+// the same node.
+export function statusDot(node: NodeView): string {
+  if (!node.enabled || !node.joined) return "bg-gray-400";
+  if (!node.is_local && !node.online) return "bg-red-500";
+  return node.xray_running ? "bg-emerald-500" : "bg-amber-500";
 }
 
 // StatusChip is the small state label next to a server's name. The master needs no
-// chip (its name already reads "Мастер" when unnamed); online is left to the green dot
-// to keep the row quiet; the states that need words get an xs badge.
+// chip for the states it cannot be in (its name already reads "Мастер" when unnamed);
+// plain "up and serving" is left to the green dot to keep the row quiet; the states
+// that need words get an xs badge.
 function StatusChip({ node }: { node: NodeView }) {
-  if (node.is_local) return null;
-  if (!node.enabled) return <Badge color="gray" size="xs">выключена</Badge>;
-  if (!node.joined) return <Badge color="gray" size="xs">не подключена</Badge>;
-  if (!node.online) return <Badge color="red" size="xs">офлайн</Badge>;
-  return null; // online → the green dot already says so
+  if (!node.is_local) {
+    if (!node.enabled) return <Badge color="gray" size="xs">выключена</Badge>;
+    if (!node.joined) return <Badge color="gray" size="xs">не подключена</Badge>;
+    if (!node.online) return <Badge color="red" size="xs">офлайн</Badge>;
+  }
+  // A restart the operator just asked for outranks everything below: during the
+  // bounce "Xray не запущен" is true too, and only this says the state is their own
+  // click rather than a fault. The outcome is shown for a few seconds after —
+  // confirmation lands about a second in, and a badge that appears and vanishes
+  // between two refreshes is why the same restart got clicked four times.
+  if (node.xray_restart === "pending") {
+    return <Badge color="brand" size="xs">перезапуск запрошен</Badge>;
+  }
+  if (node.xray_restart === "done") {
+    return <Badge color="green" size="xs">Xray перезапущен</Badge>;
+  }
+  if (node.xray_restart === "timeout") {
+    return <Badge color="orange" size="xs">перезапуск не подтверждён</Badge>;
+  }
+  // The amber dot needs a word: reachable but not serving is the one state an
+  // operator reads as "fine" if nothing says otherwise.
+  if (!node.xray_running) {
+    return <Badge color="orange" size="xs">Xray не запущен</Badge>;
+  }
+  return null; // up and serving → the green dot already says so
 }
 
 // serverName is what leads the row: the master shows its configured config-label, or
-// "Мастер" when none is set; a node shows its own name.
-function serverName(node: NodeView): string {
+// "Мастер" when none is set; a node shows its own name. Exported for the dashboard's
+// fleet strip, so a renamed master reads the same on both pages.
+export function serverName(node: NodeView): string {
   if (node.is_local) return node.master_label?.trim() || "Мастер";
   return node.name;
 }
@@ -414,11 +457,18 @@ function ReconnectDialog({
   node,
   onClose,
   onDone,
+  onRegen,
 }: {
   node: NodeView;
   onClose: () => void;
   onDone: () => void;
+  onRegen: (command: string) => void;
 }) {
+  // Both tabs reinstall the node; they differ only in who runs the installer. The
+  // command tab revokes the node's current token (the old install stops connecting
+  // until the command is run), SSH keeps it until the new install succeeds.
+  const [mode, setMode] = useState<"command" | "ssh">("command");
+  const [busy, setBusy] = useState(false);
   const [sshHost, setSshHost] = useState(node.host);
   const [sshPort, setSshPort] = useState("22");
   const [sshUser, setSshUser] = useState("root");
@@ -427,6 +477,20 @@ function ReconnectDialog({
   const [sshKey, setSshKey] = useState("");
   const [log, setLog] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+
+  // Command tab: mint a fresh install token and hand the one-liner to the parent,
+  // which shows it once (it is a credential — never rendered twice).
+  const issueCommand = async () => {
+    setBusy(true);
+    try {
+      const res = await regenNodeJoin(node.id);
+      onRegen(res.install_command);
+      onClose();
+    } catch (e) {
+      notifyError(errMessage(e));
+      setBusy(false);
+    }
+  };
 
   const run = async () => {
     if (!sshHost.trim()) return;
@@ -462,60 +526,90 @@ function ReconnectDialog({
 
   return (
     <Modal open onClose={onClose} title={`Переустановить «${node.name}»`} size="lg" dismissible={!running}>
-      <div className="space-y-3">
-        <p className="text-xs text-ink-muted">
-          Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
-          Данные SSH нигде не сохраняются.
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+        {(["command", "ssh"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            disabled={running}
+            className={cn(
+              "rounded-md px-3 py-1 transition",
+              mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+            )}
+          >
+            {m === "command" ? "Команда установки" : "Переустановить по SSH"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "command" ? (
+        <p className="text-sm text-ink-muted">
+          Панель выдаст новый токен и команду установки — выполните её на сервере ноды.
+          Текущая установка перестанет подключаться сразу, пока вы не выполните команду.
         </p>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="col-span-2">
-            <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-ink-muted">
+            Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
+            Текущая установка продолжает работать, пока новая не встанет. Данные SSH
+            нигде не сохраняются.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-2">
+              <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+            </div>
+            <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
           </div>
-          <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
-        </div>
-        <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
-        <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
-          {(["password", "key"] as const).map((a) => (
-            <button
-              key={a}
-              onClick={() => setSshAuth(a)}
-              className={cn(
-                "rounded-md px-3 py-1 transition",
-                sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
-              )}
-            >
-              {a === "password" ? "Пароль" : "Ключ"}
-            </button>
-          ))}
-        </div>
-        {sshAuth === "password" ? (
-          <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
-        ) : (
-          <Textarea
-            label="Приватный ключ (PEM)"
-            value={sshKey}
-            onChange={setSshKey}
-            rows={4}
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-          />
-        )}
-        {log.length > 0 && (
-          <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
-            {log.map((l, i) => (
-              <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
-                {l}
-              </div>
+          <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
+          <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+            {(["password", "key"] as const).map((a) => (
+              <button
+                key={a}
+                onClick={() => setSshAuth(a)}
+                className={cn(
+                  "rounded-md px-3 py-1 transition",
+                  sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+                )}
+              >
+                {a === "password" ? "Пароль" : "Ключ"}
+              </button>
             ))}
           </div>
-        )}
-      </div>
+          {sshAuth === "password" ? (
+            <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
+          ) : (
+            <Textarea
+              label="Приватный ключ (PEM)"
+              value={sshKey}
+              onChange={setSshKey}
+              rows={4}
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            />
+          )}
+          {log.length > 0 && (
+            <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
+              {log.map((l, i) => (
+                <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
+                  {l}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={running}>
           Отмена
         </Button>
-        <Button onClick={run} loading={running} disabled={!sshHost.trim()}>
-          Переустановить
-        </Button>
+        {mode === "command" ? (
+          <Button onClick={issueCommand} loading={busy}>
+            Получить команду
+          </Button>
+        ) : (
+          <Button onClick={run} loading={running} disabled={!sshHost.trim()}>
+            Переустановить
+          </Button>
+        )}
       </div>
     </Modal>
   );
@@ -1174,6 +1268,9 @@ function NodeCard({
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
   const [showingLogs, setShowingLogs] = useState(false);
+  const [showingConfig, setShowingConfig] = useState(false);
+  const [showingHealth, setShowingHealth] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   const toggleEnabled = async (enabled: boolean) => {
     try {
@@ -1203,29 +1300,44 @@ function NodeCard({
     }
   };
 
-  const regen = async () => {
-    if (
-      !(await confirm({
-        title: "Новый токен установки?",
-        body: "Текущая установка ноды перестанет подключаться, пока вы не переустановите её новой командой.",
-        confirmLabel: "Сгенерировать",
-      }))
-    )
-      return;
-    try {
-      const res = await regenNodeJoin(node.id);
-      onRegen(res.install_command);
-    } catch (e) {
-      notifyError(errMessage(e));
-    }
-  };
-
   const doUpdate = async () => {
     try {
       await updateNodeVersion(node.id);
       notifySuccess("Нода обновляется — Xray перезапустится");
     } catch (e) {
       notifyError(errMessage(e));
+    }
+  };
+
+  // Bouncing Xray drops every live connection on THAT server, so it is confirmed
+  // first. On the master it happens right away; on a node the panel can only ask —
+  // the node acts when its (immediately woken) poll returns, and the row then reads
+  // «перезапуск запрошен» until the node reports an Xray that actually restarted.
+  // Hence no success toast for a node: the claim isn't ours to make yet.
+  const doXrayRestart = async () => {
+    const ok = await confirm({
+      title: node.is_local
+        ? "Перезапустить Xray?"
+        : `Перезапустить Xray на «${node.name}»?`,
+      body: "Активные VPN-подключения на этом сервере будут разорваны — клиенты переподключатся автоматически через несколько секунд. Конфигурация не изменится.",
+      confirmLabel: "Перезапустить",
+      danger: true,
+    });
+    if (!ok) return;
+    setRestarting(true);
+    try {
+      if (node.is_local) {
+        await restartXray();
+        notifySuccess("Xray перезапущен");
+      } else {
+        await restartNodeXray(node.id);
+        notifySuccess("Ждём подтверждения от ноды");
+        onChanged(); // pick up the pending badge now, not on the next poll tick
+      }
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -1237,8 +1349,11 @@ function NodeCard({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDot(node))} />
             <span className="truncate font-semibold text-ink">{serverName(node)}</span>
-            <StatusChip node={node} />
+            {/* Address before the chip: the two identify the server and belong
+                together, and a chip wedged between them pushed the address around
+                every time the state changed. */}
             <span className="truncate font-mono text-sm text-ink-muted">{node.host}</span>
+            <StatusChip node={node} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
             <span>{fmtBytes(node.traffic_up + node.traffic_down)} сегодня</span>
@@ -1262,39 +1377,68 @@ function NodeCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
           {!node.is_local && <Switch checked={node.enabled} onChange={toggleEnabled} />}
-          <Button size="sm" variant="light" color="gray" onClick={() => setEditingRouting(true)}>
-            Настройки
-          </Button>
+          {/* Four per-server actions, as icons: spelled out they crowded the row and
+              pushed the server's own name off a narrow screen. */}
+          <IconButton title="Настройки" onClick={() => setEditingRouting(true)}>
+            <IconGear size={18} />
+          </IconButton>
+          <IconButton title="Диагностика" onClick={() => setShowingHealth(true)}>
+            <IconPulse size={18} />
+          </IconButton>
+          <IconButton title="Конфигурация Xray" onClick={() => setShowingConfig(true)}>
+            <IconBraces size={18} />
+          </IconButton>
+          <IconButton title="Логи" onClick={() => setShowingLogs(true)}>
+            <IconTerminal size={18} />
+          </IconButton>
+          <IconButton
+            title={
+              node.xray_restart === "pending"
+                ? "Перезапуск запрошен — ждём подтверждения от ноды"
+                : "Перезапустить Xray"
+            }
+            color="red"
+            disabled={
+              restarting ||
+              node.xray_restart === "pending" ||
+              (!node.is_local && (!node.enabled || !node.joined))
+            }
+            onClick={doXrayRestart}
+          >
+            <IconRestart
+              size={18}
+              className={node.xray_restart === "pending" ? "animate-spin" : undefined}
+            />
+          </IconButton>
           {!node.is_local && (
-            <>
-              <Button size="sm" variant="light" color="gray" onClick={() => setShowingLogs(true)}>
-                Логи
-              </Button>
-              <Dropdown
-                align="end"
-                width={210}
-                trigger={
-                  <span className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-gray-50">
-                    Управление
-                    <IconChevron className="h-3.5 w-3.5" />
-                  </span>
-                }
-              >
-                <DropdownItem onClick={doUpdate}>
-                  Обновить{node.version_skew ? " (новая версия)" : ""}
-                </DropdownItem>
-                <DropdownItem onClick={() => setReconnecting(true)}>
-                  Переустановить
-                </DropdownItem>
-                <DropdownItem onClick={regen}>Новый токен</DropdownItem>
-                <DropdownDivider />
-                <DropdownItem color="red" onClick={remove}>
-                  Удалить
-                </DropdownItem>
-              </Dropdown>
-            </>
+            <Dropdown
+              align="end"
+              width={210}
+              trigger={
+                <span
+                  title="Управление нодой"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 active:scale-90"
+                >
+                  <IconDots size={18} />
+                </span>
+              }
+            >
+              <DropdownItem onClick={doUpdate}>
+                Обновить{node.version_skew ? " (новая версия)" : ""}
+              </DropdownItem>
+              {/* One reinstall action: the dialog offers the command and the SSH way.
+                  They were two menu items ("Новый токен" just issued the command for
+                  the same reinstall), which read as two different operations. */}
+              <DropdownItem onClick={() => setReconnecting(true)}>
+                Переустановить
+              </DropdownItem>
+              <DropdownDivider />
+              <DropdownItem color="red" onClick={remove}>
+                Удалить
+              </DropdownItem>
+            </Dropdown>
           )}
         </div>
       </div>
@@ -1302,6 +1446,7 @@ function NodeCard({
         <ReconnectDialog
           node={node}
           onClose={() => setReconnecting(false)}
+          onRegen={onRegen}
           onDone={() => {
             setReconnecting(false);
             onChanged();
@@ -1326,8 +1471,32 @@ function NodeCard({
             onRefresh={onChanged}
           />
         ))}
-      {showingLogs && (
-        <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
+      {showingLogs &&
+        (node.is_local ? (
+          <XrayLogs onClose={() => setShowingLogs(false)} />
+        ) : (
+          <NodeLogsDialog node={node} onClose={() => setShowingLogs(false)} />
+        ))}
+      {/* HealthPanel mounts (and starts its light auto-refresh) only while open. */}
+      <Modal
+        open={showingHealth}
+        onClose={() => setShowingHealth(false)}
+        title={`Диагностика — «${serverName(node)}»`}
+        size="lg"
+      >
+        <HealthPanel nodeId={node.id} />
+      </Modal>
+      {showingConfig && (
+        <XrayConfigView
+          nodeId={node.id}
+          title={`Конфигурация Xray — «${node.name}»`}
+          note={
+            node.is_local
+              ? undefined
+              : "Конфиг генерирует панель и отдаёт ноде при синхронизации. Пути к сертификатам агент подставляет свои."
+          }
+          onClose={() => setShowingConfig(false)}
+        />
       )}
     </div>
   );
@@ -1459,10 +1628,19 @@ export function NodesPanel() {
         }),
       )
       .catch(() => {});
-    // Refresh liveness periodically so online/offline badges stay current.
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
   }, []);
+
+  // A requested restart resolves in a couple of seconds and its outcome is only
+  // shown briefly, so the list polls fast for the whole of it — pending AND the
+  // answer that follows. Polling only while pending would leave the "Xray
+  // перезапущен" badge on screen until the next lazy tick, well past the few
+  // seconds the server means it to be shown. Otherwise this is just the liveness
+  // refresh keeping online/offline badges current, and it stays lazy.
+  const showingRestart = !!nodes?.some((n) => n.xray_restart);
+  useEffect(() => {
+    const t = setInterval(load, showingRestart ? 2000 : 15000);
+    return () => clearInterval(t);
+  }, [showingRestart]);
 
   if (nodes === null) return <CenterLoader />;
 

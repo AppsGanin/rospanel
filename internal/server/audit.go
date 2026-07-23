@@ -119,24 +119,25 @@ var auditActions = map[string]auditRoute{
 
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.
-	"POST /api/nodes":                  set("Нода добавлена"),
-	"POST /api/nodes/master-name":      set("Имя мастера в конфигах"),
-	"POST /api/nodes/master-protocols": set("Протоколы мастера"),
-	"POST /api/nodes/master-reality":   set("REALITY мастера"),
-	"PATCH /api/nodes/{id}":            set("Нода изменена"),
-	"POST /api/nodes/{id}/routing":     set("Нода · роутинг"),
-	"POST /api/nodes/{id}/dns":         set("Нода · DNS"),
-	"POST /api/nodes/{id}/reality":     set("Нода · REALITY"),
-	"POST /api/nodes/{id}/connections": set("Нода · подключения"),
-	"POST /api/nodes/{id}/tls":         set("Нода · домен/TLS"),
-	"POST /api/nodes/{id}/geo-refresh": set("Нода · обновление geo"),
-	"POST /api/nodes/{id}/geo-cadence": set("Нода · автообновление geo"),
-	"DELETE /api/nodes/{id}":           set("Нода удалена"),
-	"POST /api/nodes/{id}/enabled":     set("Нода вкл/выкл"),
-	"POST /api/nodes/{id}/regen-join":  set("Нода · новый токен установки"),
-	"POST /api/nodes/{id}/update":      set("Нода · обновление"),
-	"POST /api/nodes/update-all":       set("Обновление всех нод"),
-	"POST /api/nodes/{id}/provision":   set("Нода · установка по SSH"),
+	"POST /api/nodes":                   set("Нода добавлена"),
+	"POST /api/nodes/master-name":       set("Имя мастера в конфигах"),
+	"POST /api/nodes/master-protocols":  set("Протоколы мастера"),
+	"POST /api/nodes/master-reality":    set("REALITY мастера"),
+	"PATCH /api/nodes/{id}":             set("Нода изменена"),
+	"POST /api/nodes/{id}/routing":      set("Нода · роутинг"),
+	"POST /api/nodes/{id}/dns":          set("Нода · DNS"),
+	"POST /api/nodes/{id}/reality":      set("Нода · REALITY"),
+	"POST /api/nodes/{id}/connections":  set("Нода · подключения"),
+	"POST /api/nodes/{id}/tls":          set("Нода · домен/TLS"),
+	"POST /api/nodes/{id}/geo-refresh":  set("Нода · обновление geo"),
+	"POST /api/nodes/{id}/geo-cadence":  set("Нода · автообновление geo"),
+	"DELETE /api/nodes/{id}":            set("Нода удалена"),
+	"POST /api/nodes/{id}/enabled":      set("Нода вкл/выкл"),
+	"POST /api/nodes/{id}/regen-join":   set("Нода · новый токен установки"),
+	"POST /api/nodes/{id}/update":       set("Нода · обновление"),
+	"POST /api/nodes/{id}/xray-restart": set("Нода · перезапуск Xray"),
+	"POST /api/nodes/update-all":        set("Обновление всех нод"),
+	"POST /api/nodes/{id}/provision":    set("Нода · установка по SSH"),
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
@@ -146,8 +147,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/reset":           act(model.AuditFactoryReset),
 	"POST /api/update":          act(model.AuditUpdated),
 	"POST /api/xray/restart":    act(model.AuditXrayRestarted),
+	"POST /api/panel/restart":   act(model.AuditPanelRestarted),
 	"POST /api/stats/reset":     act(model.AuditStatsReset),
-	"POST /api/health/selftest": skip, // a read-only probe: spawns a throwaway client, changes nothing
 
 	// End users: audited in the user journal instead, per user, with details this
 	// trail could not carry. Listed explicitly so the exhaustiveness test sees a

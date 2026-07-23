@@ -88,6 +88,15 @@ function optLabel(data: { value: string; label: string }[], value: string): stri
   return data.find((o) => o.value === value)?.label ?? value
 }
 
+// resetLabel renders a reset period for display. Beyond the fixed RESET_PERIODS
+// options it also handles the "days:N" rolling cycle that a free plan writes
+// (see planLimits in internal/core/manager_billing.go), which has no entry there.
+function resetLabel(v: string): string {
+  const m = /^days:(\d+)$/.exec(v)
+  if (m) return `каждые ${m[1]} дн.`
+  return optLabel(RESET_PERIODS, v || 'none')
+}
+
 // dateLabel renders an expiry (unix or a "YYYY-MM-DD" picker value) for the
 // confirmation text.
 function dateLabel(v: number | string): string {
@@ -279,6 +288,12 @@ export function UserDetail({
 
   const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
 
+  // A tariff owns the quota, the device cap and the reset cycle: applying or
+  // renewing one overwrites all three at once (planWriteFor, core/manager_billing.go),
+  // so editing them by hand here would only hold until the next payment. Under a
+  // plan the inputs are replaced by a read-only summary; "Вручную" brings them back.
+  const planManaged = billingOn && !!user?.plan_id
+
   return (
     <>
     <Modal
@@ -333,67 +348,6 @@ export function UserDetail({
             />
           </div>
 
-          <DatePicker
-            label="Действует до"
-            value={unixToDate(user.expire_at)}
-            onChange={(v) => {
-              const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
-              confirmChange('Действует до', dateLabel(user.expire_at), dateLabel(v), () =>
-                saveLimits(user.data_limit, ea, user.device_limit),
-              )
-            }}
-          />
-
-          <Select
-            label="Лимит трафика"
-            data={quotaData}
-            value={limitGb}
-            onChange={(v) =>
-              confirmChange(
-                'Лимит трафика',
-                optLabel(quotaData, limitGb),
-                optLabel(quotaData, v),
-                () => {
-                  setLimitGb(v)
-                  saveLimits(gbToBytes(Number(v)), user.expire_at, user.device_limit)
-                },
-              )
-            }
-          />
-          <Select
-            label="Лимит устройств"
-            data={DEVICE_LIMIT_OPTIONS}
-            value={deviceLimit}
-            onChange={(v) =>
-              confirmChange(
-                'Лимит устройств',
-                optLabel(DEVICE_LIMIT_OPTIONS, deviceLimit),
-                optLabel(DEVICE_LIMIT_OPTIONS, v),
-                () => {
-                  setDeviceLimit(v)
-                  saveLimits(user.data_limit, user.expire_at, Number(v))
-                },
-              )
-            }
-          />
-          <p className="-mt-1 text-xs text-ink-muted">
-            Одно устройство = один публичный IP. Телефон и компьютер в одной Wi‑Fi сети
-            считаются одним устройством. Для раздельного учёта используйте мобильный
-            интернет на одном из них.
-          </p>
-          <Select
-            label="Автосброс трафика"
-            data={RESET_PERIODS}
-            value={user.reset_period || 'none'}
-            onChange={(v) =>
-              confirmChange(
-                'Автосброс трафика',
-                optLabel(RESET_PERIODS, user.reset_period || 'none'),
-                optLabel(RESET_PERIODS, v),
-                () => setResetPeriod(user.id, v).then(onChanged).catch(fail),
-              )
-            }
-          />
           {billingOn && (
             <>
               <Select
@@ -413,6 +367,85 @@ export function UserDetail({
                 Назначение тарифа применяет его лимиты трафика, срок и устройства.
                 «Вручную» снимает тариф и обнуляет лимиты.
               </p>
+            </>
+          )}
+
+          <DatePicker
+            label="Действует до"
+            value={unixToDate(user.expire_at)}
+            onChange={(v) => {
+              const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
+              confirmChange('Действует до', dateLabel(user.expire_at), dateLabel(v), () =>
+                saveLimits(user.data_limit, ea, user.device_limit),
+              )
+            }}
+          />
+
+          {planManaged ? (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-xs text-ink-muted">
+              Лимиты задаёт тариф: трафик{' '}
+              <span className="text-ink">
+                {user.data_limit > 0 ? fmtBytes(user.data_limit) : 'без лимита'}
+              </span>
+              , устройства{' '}
+              <span className="text-ink">
+                {user.device_limit > 0 ? user.device_limit : 'без лимита'}
+              </span>
+              , автосброс <span className="text-ink">{resetLabel(user.reset_period)}</span>.
+              Чтобы задать их вручную, переключите тариф на «Вручную (без лимитов)».
+            </div>
+          ) : (
+            <>
+              <Select
+                label="Лимит трафика"
+                data={quotaData}
+                value={limitGb}
+                onChange={(v) =>
+                  confirmChange(
+                    'Лимит трафика',
+                    optLabel(quotaData, limitGb),
+                    optLabel(quotaData, v),
+                    () => {
+                      setLimitGb(v)
+                      saveLimits(gbToBytes(Number(v)), user.expire_at, user.device_limit)
+                    },
+                  )
+                }
+              />
+              <Select
+                label="Лимит устройств"
+                data={DEVICE_LIMIT_OPTIONS}
+                value={deviceLimit}
+                onChange={(v) =>
+                  confirmChange(
+                    'Лимит устройств',
+                    optLabel(DEVICE_LIMIT_OPTIONS, deviceLimit),
+                    optLabel(DEVICE_LIMIT_OPTIONS, v),
+                    () => {
+                      setDeviceLimit(v)
+                      saveLimits(user.data_limit, user.expire_at, Number(v))
+                    },
+                  )
+                }
+              />
+              <p className="-mt-1 text-xs text-ink-muted">
+                Одно устройство = один публичный IP. Телефон и компьютер в одной Wi‑Fi сети
+                считаются одним устройством. Для раздельного учёта используйте мобильный
+                интернет на одном из них.
+              </p>
+              <Select
+                label="Автосброс трафика"
+                data={RESET_PERIODS}
+                value={user.reset_period || 'none'}
+                onChange={(v) =>
+                  confirmChange(
+                    'Автосброс трафика',
+                    optLabel(RESET_PERIODS, user.reset_period || 'none'),
+                    optLabel(RESET_PERIODS, v),
+                    () => setResetPeriod(user.id, v).then(onChanged).catch(fail),
+                  )
+                }
+              />
             </>
           )}
           <Button variant="light" onClick={() => setEventsOpen(true)}>

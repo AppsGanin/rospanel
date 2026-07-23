@@ -96,6 +96,7 @@ func (m *Manager) enforceAfterTraffic(users []model.User) error {
 type Summary struct {
 	Users        int   `json:"users"`
 	EnabledUsers int   `json:"enabled_users"`
+	OnlineUsers  int   `json:"online_users"` // connected within model.DeviceOnlineWindow
 	TotalUp      int64 `json:"total_up"`
 	TotalDown    int64 `json:"total_down"`
 	TrafficToday int64 `json:"traffic_today"` // up+down for the current local-time day
@@ -113,6 +114,7 @@ func (m *Manager) Summary() (*Summary, error) {
 		XrayRunning:  m.sup.Running(),
 		Users:        c.Total,
 		EnabledUsers: c.Active, // actually working (enabled, not expired, within quota)
+		OnlineUsers:  c.Online, // carrying traffic right now, anywhere in the fleet
 		TotalUp:      c.TotalUp,
 		TotalDown:    c.TotalDown,
 	}
@@ -203,6 +205,7 @@ type SystemStatus struct {
 	TotalDown    int64  `json:"total_down"`
 	Users        int    `json:"users"`
 	EnabledUsers int    `json:"enabled_users"`
+	OnlineUsers  int    `json:"online_users"`
 	TrafficToday int64  `json:"traffic_today"`
 	CertDaysLeft int    `json:"cert_days_left"`
 }
@@ -225,6 +228,7 @@ func (m *Manager) SystemStatus() (*SystemStatus, error) {
 		TotalDown:    sum.TotalDown,
 		Users:        sum.Users,
 		EnabledUsers: sum.EnabledUsers,
+		OnlineUsers:  sum.OnlineUsers,
 		TrafficToday: sum.TrafficToday,
 		CertDaysLeft: sum.CertDaysLeft,
 	}

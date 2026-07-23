@@ -26,6 +26,12 @@ type persistState struct {
 	// the node's traffic would silently stop counting. Persisting it keeps report ids
 	// monotonic across restarts, honouring the wire contract in nodeapi.SyncRequest.
 	LastReportID int64 `json:"last_report_id,omitempty"`
+	// Revoked records that the panel has switched this node off, so a reboot doesn't
+	// undo it. Without it the agent re-applies LastConfig on every boot and serves
+	// again — with the users and credentials the panel withdrew — until its first
+	// successful sync says otherwise. If the panel happens to be unreachable from
+	// this node, "until" is forever, which makes disabling a node no guarantee at all.
+	Revoked bool `json:"revoked,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "state.json") }
@@ -66,6 +72,27 @@ func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
 	a.state.LastConfig = st
 	a.stateMu.Unlock()
 	a.writeState()
+}
+
+// setRevoked records whether the panel currently has this node switched off, so the
+// answer survives a reboot. Writes only on a change — this is called on every sync
+// that reports a revocation, and the state file is not worth rewriting every minute.
+func (a *Agent) setRevoked(revoked bool) {
+	a.stateMu.Lock()
+	if a.state.Revoked == revoked {
+		a.stateMu.Unlock()
+		return
+	}
+	a.state.Revoked = revoked
+	a.stateMu.Unlock()
+	a.writeState()
+}
+
+// wasRevoked reports the revocation remembered from before this process started.
+func (a *Agent) wasRevoked() bool {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	return a.state.Revoked
 }
 
 // noteReportID persists the newest traffic-report id so it survives a restart. Called

@@ -26,6 +26,15 @@ func scheduleRestart() {
 	}()
 }
 
+// restartPanel restarts the panel process itself. The reply goes out first and the
+// SIGTERM lands half a second later, so the SPA gets a 200 to react to; the service
+// manager brings the process back (and Xray with it, since the panel supervises it
+// — which is why the UI confirms first: live VPN connections drop for a moment).
+func (rt *Router) restartPanel(w http.ResponseWriter, _ *http.Request) {
+	writeOK(w)
+	scheduleRestart()
+}
+
 // factoryReset wipes panel state — the database (users, settings, secret path),
 // the TLS cert and ACME account, and the generated Xray config — but keeps the
 // re-downloadable assets (the Xray binary in bin/ and the geo databases), then

@@ -61,10 +61,12 @@ func (s *Store) UserIDs() (map[int64]struct{}, error) {
 }
 
 // UserCounts is the dashboard's view of the users table: how many there are, how
-// many are working, and the lifetime traffic totals.
+// many are working, how many are connected right now, and the lifetime traffic
+// totals.
 type UserCounts struct {
 	Total     int
 	Active    int
+	Online    int
 	TotalUp   int64
 	TotalDown int64
 }
@@ -80,6 +82,13 @@ type UserCounts struct {
 // The WHERE clause is deriveStatus's "active" case spelled out in SQL, in the same
 // order: enabled, not expired, inside the quota, inside the device cap. The two must
 // agree — TestCountUsersMatchesDeriveStatus holds them to it.
+//
+// Online rides on the device-count join that was already there: a user with at
+// least one IP seen inside DeviceOnlineWindow is connected right now. Deliberately
+// the same window that defines an "active device" everywhere else, so the dashboard
+// and a user's device count can never tell different stories about who is on. It
+// counts the whole fleet, not just this server — a node's sightings land in the
+// same connections table when it syncs.
 func (s *Store) CountUsers(now int64) (UserCounts, error) {
 	var c UserCounts
 	err := s.db.QueryRow(`
@@ -90,7 +99,8 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		            AND (u.expire_at = 0 OR u.expire_at > ?)
 		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
 		            AND (u.device_limit = 0 OR COALESCE(d.n, 0) <= u.device_limit)
-		           THEN 1 ELSE 0 END), 0)
+		           THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN COALESCE(d.n, 0) > 0 THEN 1 ELSE 0 END), 0)
 		FROM users u
 		LEFT JOIN (
 		    SELECT user_id, COUNT(DISTINCT ip) AS n
@@ -98,7 +108,7 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		    WHERE last_seen > ? GROUP BY user_id
 		) d ON d.user_id = u.id`,
 		now, now-model.DeviceOnlineWindow,
-	).Scan(&c.Total, &c.TotalUp, &c.TotalDown, &c.Active)
+	).Scan(&c.Total, &c.TotalUp, &c.TotalDown, &c.Active, &c.Online)
 	return c, err
 }
 

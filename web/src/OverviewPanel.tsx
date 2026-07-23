@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { restartXray, type SystemStatus } from "./api";
+import { listNodes, type NodeView, type SystemStatus } from "./api";
 import { cssVar } from "./charts";
 import { fmtBytes, fmtDuration, plural } from "./format";
-import { errMessage, notifyError, notifySuccess } from "./notify";
+import { serverName, statusDot } from "./NodesPanel";
 import { useIsAdmin } from "./role";
-import { Badge, Button, Card, Skeleton, useConfirm } from "./ui";
-import { XrayLogs } from "./XrayLogs";
-import { XrayConfigView } from "./XrayConfig";
+import { navigate } from "./router";
+import { Badge, Card, Skeleton } from "./ui";
 import { ManagementCard } from "./Management";
-import { EgressStatus } from "./EgressStatus";
 
 function Gauge({
   percent,
@@ -96,9 +94,89 @@ function Metric({
   );
 }
 
+// Kpi is one figure on the top row — the numbers an operator opens the panel to
+// read, before drilling into any page.
+function Kpi({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-ink-muted">{label}</p>
+      <p className={`text-2xl font-bold ${valueClass ?? "text-ink"}`}>{value}</p>
+    </div>
+  );
+}
+
+// FleetStrip is every server's connectivity in one line, and a shortcut to the page
+// that can fix it. It only renders on a multi-server install: with no nodes the
+// gauges below already describe the only server there is.
+function FleetStrip({ nodes }: { nodes: NodeView[] }) {
+  const remote = nodes.filter((n) => !n.is_local);
+  if (remote.length === 0) return null;
+  // The badge names the worst thing about the fleet, and says "все работают" only
+  // when it is true of every server — a grey dot for a node that was never installed
+  // must not hide behind a green summary. "Serving", not "reachable": a server whose
+  // Xray is down counts as broken however promptly its agent answers.
+  const offline = remote.filter((n) => n.enabled && n.joined && !n.online).length;
+  const dead = nodes.filter(
+    (n) => n.enabled && n.joined && (n.is_local || n.online) && !n.xray_running,
+  ).length;
+  const pending = remote.filter((n) => n.enabled && !n.joined).length;
+  const disabled = remote.filter((n) => !n.enabled).length;
+  return (
+    <Card className="p-4" onClick={() => navigate("nodes")}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="font-bold text-ink">Сервера</h3>
+        {offline > 0 ? (
+          <Badge color="red" size="xs">{offline} офлайн</Badge>
+        ) : dead > 0 ? (
+          <Badge color="orange" size="xs">{dead} без Xray</Badge>
+        ) : pending > 0 ? (
+          <Badge color="gray" size="xs">
+            {pending} {plural(pending, "не подключена", "не подключены", "не подключены")}
+          </Badge>
+        ) : disabled > 0 ? (
+          <Badge color="gray" size="xs">
+            {disabled} {plural(disabled, "выключена", "выключены", "выключены")}
+          </Badge>
+        ) : (
+          <Badge color="green" size="xs">все работают</Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        {nodes.map((n) => (
+          <span
+            key={n.id}
+            className="flex min-w-0 items-center gap-1.5 text-sm text-ink-muted"
+          >
+            <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot(n)}`} />
+            <span className="truncate">{serverName(n)}</span>
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function OverviewSkeleton() {
   return (
     <div className="flex flex-col gap-4 animate-fade-in">
+      <Card className="p-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-8 w-20" />
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[...Array(4)].map((_, i) => (
@@ -135,33 +213,7 @@ export function OverviewPanel() {
   const isAdmin = useIsAdmin();
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [cfgOpen, setCfgOpen] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const { confirm, confirmNode } = useConfirm();
-
-  // Restarting Xray drops every live VPN connection, so it is confirmed first and
-  // never fired implicitly. The SSE stream refreshes the card on its own once the
-  // new process is up, so there's nothing to refetch here.
-  const doRestart = async () => {
-    const ok = await confirm({
-      title: "Перезапустить Xray?",
-      body: "Все активные VPN-подключения будут разорваны — клиенты переподключатся автоматически через несколько секунд. Конфигурация не изменится.",
-      confirmLabel: "Перезапустить",
-      danger: true,
-    });
-    if (!ok) return;
-    setRestarting(true);
-    try {
-      await restartXray();
-      notifySuccess("Xray перезапущен");
-    } catch (e) {
-      notifyError(errMessage(e));
-    } finally {
-      setRestarting(false);
-    }
-  };
-
+  const [nodes, setNodes] = useState<NodeView[]>([]);
   useEffect(() => {
     // Live push via Server-Sent Events — the server streams updates every 2s and
     // EventSource auto-reconnects if the stream drops.
@@ -177,6 +229,21 @@ export function OverviewPanel() {
     return () => es.close();
   }, []);
 
+  // The node list is an admin-only route, so an operator never asks for it (and never
+  // sees a strip that would answer 403). It polls on a slow timer of its own rather
+  // than riding the 2s status stream: it costs a query per tick and a server's state
+  // does not change second to second.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const load = () =>
+      listNodes()
+        .then((r) => setNodes(r.nodes))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
+  }, [isAdmin]);
+
   if (!loaded) return <OverviewSkeleton />;
   if (!s) return null;
 
@@ -185,6 +252,22 @@ export function OverviewPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+
+      {/* The numbers the panel exists to report, above the machine it runs on. */}
+      <Card className="p-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Kpi label="Пользователи" value={String(s.users)} />
+          <Kpi label="Активные" value={String(s.enabled_users)} />
+          <Kpi
+            label="Онлайн"
+            value={String(s.online_users)}
+            valueClass={s.online_users > 0 ? "text-success" : "text-ink"}
+          />
+          <Kpi label="Трафик за сегодня" value={fmtBytes(s.traffic_today)} />
+        </div>
+      </Card>
+
+      {isAdmin && <FleetStrip nodes={nodes} />}
 
       {/* Resource gauges. */}
       <Card className="p-4">
@@ -216,42 +299,9 @@ export function OverviewPanel() {
         </div>
       </Card>
 
+      {/* No Xray card here: its status, config, logs and restart all live on one
+          server card in «Сервера», next to the same controls for every node. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <InfoCard title="Xray">
-
-          <div className="flex items-center flex-wrap justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Badge color={s.xray_running ? "green" : "red"}>
-                {s.xray_running ? "● Запущен" : "○ Остановлен"}
-              </Badge>
-              {s.xray_version && (
-                <span className="text-sm text-ink-muted">v{s.xray_version}</span>
-              )}
-            </div>
-            {/* Xray itself — its config, its logs, restarting it — is admin work.
-                An operator sees whether it's up, and nothing to press. */}
-            {isAdmin && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="xs" variant="light" color="gray" onClick={() => setCfgOpen(true)}>
-                  Конфиг
-                </Button>
-                <Button size="xs" variant="light" color="gray" onClick={() => setLogsOpen(true)}>
-                  Логи
-                </Button>
-                <Button
-                  size="xs"
-                  variant="light"
-                  color="red"
-                  loading={restarting}
-                  onClick={doRestart}
-                >
-                  Рестарт
-                </Button>
-              </div>
-            )}
-          </div>
-        </InfoCard>
-
         <InfoCard title="Время работы">
           <div className="grid grid-cols-2 gap-4">
             <Metric label="Xray" value={fmtDuration(s.xray_uptime)} />
@@ -266,32 +316,20 @@ export function OverviewPanel() {
           </div>
         </InfoCard>
 
-        {/* No "total traffic" card: it summed users.used_up/used_down, which the
-            quota reset zeroes per user — so it added up a different period for
-            everybody and read as a lifetime figure. The per-day history on
-            "Статистика" is the honest answer to that question. Server-wide NIC
-            throughput is gone for a related reason: it counts panel, SSH and
-            everything else, so it never matched the VPN number beside it. */}
-        <InfoCard title="VPN-трафик">
-          <div className="grid grid-cols-2 gap-4">
-            <Metric label="↑ Отдача" value={`${fmtBytes(s.vpn_up)}/s`} />
-            <Metric label="↓ Приём" value={`${fmtBytes(s.vpn_down)}/s`} />
-          </div>
-        </InfoCard>
+        {/* No traffic cards here at all. The live "VPN-трафик" rate was the master's
+            own Xray only — nodes report accumulated deltas, not a rate — so on a
+            multi-server panel it read as the fleet's throughput while showing one
+            server's. Per-server traffic is on each card in «Сервера», and the honest
+            fleet total is the per-day history on "Статистика". (An older card summing
+            users.used_up/down went for a related reason: the quota reset zeroes it per
+            user, so it added up a different period for everybody.) */}
       </div>
 
-      {/* Egress lanes read the routing config, and Управление holds backup/restore
-          and the factory reset — both admin-only on the server. */}
-      {isAdmin && (
-        <>
-          <EgressStatus />
-          <ManagementCard />
-        </>
-      )}
+      {/* No egress/routing card either — routing is per-server now and reads next to
+          the server it belongs to, in «Сервера». Управление holds backup/restore, the
+          restart and the factory reset — admin-only on the server. */}
+      {isAdmin && <ManagementCard />}
 
-      {logsOpen && <XrayLogs onClose={() => setLogsOpen(false)} />}
-      {cfgOpen && <XrayConfigView onClose={() => setCfgOpen(false)} />}
-      {confirmNode}
     </div>
   );
 }

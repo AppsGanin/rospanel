@@ -198,6 +198,31 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	}, nil
 }
 
+// NodeXrayConfig returns one server's Xray config for the read-only viewer: the
+// master's live on-disk config.json for node 0, and for a remote node the config
+// the panel generates and pushes (the same bytes the node applies).
+//
+// The node's copy differs in one respect: the cert/key paths are still the panel's
+// sentinels here, because only the agent knows its own data dir — it substitutes
+// them before handing the config to Xray. The viewer says so.
+func (m *Manager) NodeXrayConfig(id int64) ([]byte, error) {
+	if id == model.LocalNodeID {
+		return m.XrayConfig()
+	}
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, &ValidationError{Msg: "нода не найдена"}
+	}
+	state, err := m.NodeDesiredState(n)
+	if err != nil {
+		return nil, err
+	}
+	return state.XrayConfig, nil
+}
+
 // --- node wake registry -------------------------------------------------------
 //
 // Each connected node's sync handler parks on a wake channel; a config change
@@ -270,18 +295,22 @@ func (m *Manager) notifyNodes() { m.nodes.wakeAll() }
 // effective (override-resolved) protocol toggles and today's traffic. The local
 // server appears as node 0 (IsLocal) so the UI lists every server uniformly.
 type NodeView struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	Host            string `json:"host"`
-	Enabled         bool   `json:"enabled"`
-	IsLocal         bool   `json:"is_local"`
-	Online          bool   `json:"online"`
-	Joined          bool   `json:"joined"`
-	LastSeen        int64  `json:"last_seen"`
-	NodeVersion     string `json:"node_version"`
-	XrayVersion     string `json:"xray_version"`
-	XrayRunning     bool   `json:"xray_running"`
-	VersionSkew     bool   `json:"version_skew"` // running Xray differs from the pinned release
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Host        string `json:"host"`
+	Enabled     bool   `json:"enabled"`
+	IsLocal     bool   `json:"is_local"`
+	Online      bool   `json:"online"`
+	Joined      bool   `json:"joined"`
+	LastSeen    int64  `json:"last_seen"`
+	NodeVersion string `json:"node_version"`
+	XrayVersion string `json:"xray_version"`
+	XrayRunning bool   `json:"xray_running"`
+	VersionSkew bool   `json:"version_skew"` // running Xray differs from the pinned release
+	// XrayRestart is the state of an operator-requested Xray bounce: "pending" while
+	// the node has yet to prove it happened, then "done" or "timeout" briefly, then
+	// "". Always "" for the master, whose restart is synchronous — nothing to wait for.
+	XrayRestart     string `json:"xray_restart,omitempty"`
 	VLESSEnabled    bool   `json:"vless_enabled"`
 	TrojanEnabled   bool   `json:"trojan_enabled"`
 	HysteriaEnabled bool   `json:"hysteria_enabled"`
@@ -340,14 +369,16 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	views := make([]NodeView, 0, len(nodes)+1)
 	// Node 0: the panel's own server, identity from settings.
 	local := NodeView{
-		ID:              model.LocalNodeID,
-		Name:            model.LocalNodeName,
-		Host:            set.Host,
-		Enabled:         true,
-		IsLocal:         true,
-		Online:          m.sup.Running(),
-		Joined:          true,
-		XrayRunning:     m.sup.Running(),
+		ID:      model.LocalNodeID,
+		Name:    model.LocalNodeName,
+		Host:    set.Host,
+		Enabled: true,
+		IsLocal: true,
+		Online:  m.sup.Running(),
+		Joined:  true,
+		// Serving so the master's own row doesn't flash amber during a deliberate
+		// restart, matching how a node reports itself (see Supervisor.Serving).
+		XrayRunning:     m.sup.Serving(),
 		XrayVersion:     m.sup.Version(),
 		VLESSEnabled:    set.VLESSEnabled,
 		TrojanEnabled:   set.TrojanEnabled,
@@ -389,6 +420,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			XrayVersion:     n.XrayVersion,
 			XrayRunning:     n.XrayRunning,
 			VersionSkew:     n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
+			XrayRestart:     m.NodeRestartState(n.ID),
 			VLESSEnabled:    derefBool(n.VLESSEnabled),
 			TrojanEnabled:   derefBool(n.TrojanEnabled),
 			HysteriaEnabled: derefBool(n.HysteriaEnabled),
@@ -837,6 +869,150 @@ func (m *Manager) RequestNodeUpdate(id int64) error {
 	return nil
 }
 
+// What a node's restart request currently reads as, for the UI.
+const (
+	RestartPending = "pending" // asked, waiting for the node to prove it happened
+	RestartDone    = "done"    // the node reported a genuinely restarted Xray
+	RestartTimeout = "timeout" // waited long enough and never got proof
+)
+
+const (
+	// nodeRestartWait is how long an unconfirmed request stays pending. It covers the
+	// whole round trip — deliver on the node's poll (held up to 45s), bounce Xray,
+	// report the new start time on the next sync — with room to spare.
+	//
+	// Giving up matters as much as waiting: a node that is offline, or whose Xray
+	// refused to come back, must not leave the button saying "запрошено" forever.
+	nodeRestartWait = 2 * time.Minute
+	// nodeRestartShow is how long the OUTCOME stays visible after the request
+	// resolves. Without it the feature is invisible: confirmation normally lands
+	// about a second after the click, so the pending badge appears and vanishes
+	// between two refreshes and the operator — having seen nothing change — clicks
+	// again. Long enough to be read, short enough not to linger as stale news.
+	nodeRestartShow = 5 * time.Second
+)
+
+// nodeRestartReq is one operator-requested Xray restart, tracked from the click
+// until the node proves it happened — and then a little longer, so the answer is
+// seen.
+type nodeRestartReq struct {
+	at   time.Time // when the operator asked (drives the timeout)
+	sent bool      // handed to the node in a sync response
+	// priorStart is the node's reported Xray start time captured at the moment the
+	// command was handed over. Confirmation is "this value changed", never a compare
+	// against the panel's own clock: the two machines' clocks disagree freely (this
+	// pair runs an hour apart), and a node whose clock trails the panel's would never
+	// look restarted at all.
+	priorStart int64
+	// outcome is RestartDone/RestartTimeout once resolved, "" while still waiting;
+	// outcomeAt starts the window it stays on screen for.
+	outcome   string
+	outcomeAt time.Time
+}
+
+// waiting reports whether this request is still owed an answer — not yet resolved,
+// and not yet out of time.
+func (r *nodeRestartReq) waiting(now time.Time) bool {
+	return r != nil && r.outcome == "" && now.Sub(r.at) < nodeRestartWait
+}
+
+// RequestNodeXrayRestart flags a node to bounce its Xray on the next sync and wakes
+// it so it happens promptly. The panel can't reach into a node's process — this is
+// the node-side twin of the master's own Xray restart button.
+//
+// The request stays on record after it is sent, until the node's next sync proves
+// Xray actually bounced (see ConfirmNodeXrayRestart). That is the whole point: the
+// panel cannot restart a node, only ask, and an answer that always reads "готово"
+// the instant it is asked is not an answer.
+func (m *Manager) RequestNodeXrayRestart(id int64) error {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if n == nil {
+		return &ValidationError{Msg: "нода не найдена"}
+	}
+	m.nodeUpdateMu.Lock()
+	m.nodeRestart[id] = &nodeRestartReq{at: time.Now()}
+	m.nodeUpdateMu.Unlock()
+	m.nodes.wakeOne(id)
+	return nil
+}
+
+// TakeNodeXrayRestart reports whether this node should be told to bounce Xray now,
+// and marks the command as sent. reportedStart is the Xray start time the node just
+// reported, remembered as the "before" the confirmation compares against.
+//
+// It returns true exactly once per request: the node must not restart again on
+// every poll while the panel is still waiting to hear that the first one landed.
+func (m *Manager) TakeNodeXrayRestart(id int64, reportedStart int64) bool {
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	r := m.nodeRestart[id]
+	if !r.waiting(time.Now()) || r.sent {
+		// Absent, already answered, already sent, or out of time. The last case is
+		// deliberate: a node that was offline must not bounce Xray minutes after the
+		// operator gave up on the request.
+		return false
+	}
+	r.sent = true
+	r.priorStart = reportedStart
+	return true
+}
+
+// ConfirmNodeXrayRestart clears a pending restart once the node reports an Xray that
+// started at a different time than the one running when the command went out — the
+// node's own proof that the process really came back.
+//
+// A node that reports no start time at all (an agent older than this field) can
+// never confirm; its request simply times out, which reads as "we asked, we can't
+// tell" rather than a false "готово".
+func (m *Manager) ConfirmNodeXrayRestart(id int64, reportedStart int64) {
+	if reportedStart == 0 {
+		return
+	}
+	now := time.Now()
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	r := m.nodeRestart[id]
+	if r.waiting(now) && r.sent && reportedStart != r.priorStart {
+		r.outcome, r.outcomeAt = RestartDone, now
+	}
+}
+
+// NodeRestartState is what this node's restart request currently reads as:
+// RestartPending while waiting, then RestartDone or RestartTimeout for a short
+// window, then "" (nothing to say). Records past their window are dropped here, so
+// the state can never be left stuck on a stale answer.
+//
+// The timeout is decided lazily, on read, rather than by a timer: nothing else in
+// the panel needs to know, and a request nobody is looking at costs nothing to let
+// sit until someone asks.
+func (m *Manager) NodeRestartState(id int64) string {
+	now := time.Now()
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	r := m.nodeRestart[id]
+	switch {
+	case r == nil:
+		return ""
+	case r.outcome != "":
+		if now.Sub(r.outcomeAt) < nodeRestartShow {
+			return r.outcome
+		}
+		delete(m.nodeRestart, id)
+		return ""
+	case r.waiting(now):
+		return RestartPending
+	default:
+		// Out of time with no proof. Say so — and keep saying it for the display
+		// window, so "we asked and never heard back" is an answer the operator
+		// actually sees rather than the badge just disappearing.
+		r.outcome, r.outcomeAt = RestartTimeout, now
+		return RestartTimeout
+	}
+}
+
 // RequestAllNodesUpdate flags every enabled, connected node to self-update.
 func (m *Manager) RequestAllNodesUpdate() (int, error) {
 	nodes, err := m.store.ListNodes()
@@ -1025,6 +1201,15 @@ func (m *Manager) NodeGeoFiles(id int64) []nodeapi.GeoFile {
 	return m.nodeGeoFiles[id]
 }
 
+// NodeHostStats returns a node's last-reported machine state (ok=false when the
+// node hasn't reported one — an agent older than this feature never will).
+func (m *Manager) NodeHostStats(id int64) (nodeapi.HostStats, bool) {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	h, ok := m.nodeHostStats[id]
+	return h, ok
+}
+
 // SetNodeGeoRefresh sets a node's own geo auto-refresh cadence (hours; 0 ⇒ never) and
 // wakes it so the new cadence reaches its agent (via NodeMeta) promptly.
 func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
@@ -1162,12 +1347,20 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		return &nodeapi.SyncResponse{Revoked: true, AckReport: req.ReportID}, nil
 	}
 	now := time.Now()
+	// Before anything else: did the Xray we asked this node to bounce actually come
+	// back? The answer is in the report it just sent.
+	m.ConfirmNodeXrayRestart(n.ID, req.XrayStartedAt)
 	if len(req.Logs) > 0 {
 		m.storeNodeLogs(n.ID, req.Logs)
 	}
-	if len(req.GeoFiles) > 0 {
+	if len(req.GeoFiles) > 0 || req.Host != nil {
 		m.nodeGeoMu.Lock()
-		m.nodeGeoFiles[n.ID] = req.GeoFiles
+		if len(req.GeoFiles) > 0 {
+			m.nodeGeoFiles[n.ID] = req.GeoFiles
+		}
+		if req.Host != nil {
+			m.nodeHostStats[n.ID] = *req.Host
+		}
 		m.nodeGeoMu.Unlock()
 	}
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{

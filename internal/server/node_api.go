@@ -103,9 +103,23 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 		return
 	}
-	// A change (or a revocation) is delivered right away.
-	if resp.Changed || resp.Revoked {
-		rt.writeNodeSync(w, r, node.ID, resp)
+	// A config change — or any disagreement about whether this node is switched on —
+	// is answered on the spot. Only a node whose belief already matches ours has its
+	// request held.
+	//
+	// Both directions of that disagreement matter, and missing either one costs a
+	// node about a minute of downtime:
+	//
+	//   - it thinks it is on, we say off ⇒ tell it now, or it keeps serving users
+	//     the panel has stopped counting on it for;
+	//   - it thinks it is off, we say on ⇒ tell it now, or it sits suspended while
+	//     the panel shows it as enabled and phones fail to connect.
+	//
+	// The wake alone cannot cover this: re-enabling a node that is between polls
+	// (rather than parked on one) has nothing to wake, and that request — the one
+	// carrying the stale belief — is exactly the one that must not be held.
+	if resp.Changed || resp.Revoked != req.Revoked {
+		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp)
 		return
 	}
 	// Otherwise hold the request until the node is woken or the hold elapses, then
@@ -123,7 +137,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// Recompute after waking: the desired state may now differ.
 	fresh, err := rt.mgr.GetNode(node.ID)
 	if err != nil {
-		rt.writeNodeSync(w, r, node.ID, resp) // transient store error; let it re-sync
+		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp) // transient store error; let it re-sync
 		return
 	}
 	if fresh == nil {
@@ -143,19 +157,26 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		out.Changed = true
 		out.State = state
 	}
-	rt.writeNodeSync(w, r, node.ID, out)
+	rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, out)
 }
 
 // writeNodeSync stamps the per-request extras (a pending self-update flag, and a
 // panel-address broadcast if the node reached us at a stale host) onto the response
 // and writes it. A revoked response carries no extras (the node is going away).
-func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID int64, resp *nodeapi.SyncResponse) {
+//
+// reportedXrayStart is the Xray start time from the request being answered: handing
+// over a restart command records it, so the next sync can tell "it bounced" from
+// "nothing happened" by that value changing.
+func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, reportedXrayStart int64, resp *nodeapi.SyncResponse) {
 	if !resp.Revoked {
 		if rt.mgr.TakeNodeUpdate(nodeID) {
 			resp.Update = true
 		}
 		if rt.mgr.TakeNodeGeoRefresh(nodeID) {
 			resp.RefreshGeo = true
+		}
+		if rt.mgr.TakeNodeXrayRestart(nodeID, reportedXrayStart) {
+			resp.RestartXray = true
 		}
 		if rt.mgr.WantNodeLogs(nodeID) {
 			resp.WantLogs = true
