@@ -2,6 +2,7 @@ package xray
 
 import (
 	"fmt"
+	"hash/fnv"
 	"net"
 	"strings"
 
@@ -243,10 +244,11 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	}
 	var observatory *Observatory
 	if len(subjects) > 0 {
+		probeURL, probeInterval := probeProfile(set.Host)
 		observatory = &Observatory{
 			SubjectSelector:   subjects,
-			ProbeURL:          "https://www.google.com/generate_204",
-			ProbeInterval:     "1m",
+			ProbeURL:          probeURL,
+			ProbeInterval:     probeInterval,
 			EnableConcurrency: true,
 		}
 	}
@@ -276,6 +278,34 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, active),
 		Observatory: observatory,
 	}, nil
+}
+
+// probeTargets are the endpoints the Observatory health-probes an egress through.
+// All answer 204 to anyone, and all are hit constantly by ordinary phones and
+// laptops doing captive-portal detection — so the request itself is unremarkable
+// wherever it comes from. One fixed choice across every install would not be: it
+// turns "who talks to this exact URL on a schedule" into a fleet-wide query.
+var probeTargets = []string{
+	"https://www.gstatic.com/generate_204",
+	"https://connectivitycheck.gstatic.com/generate_204",
+	"https://www.google.com/generate_204",
+	"https://cp.cloudflare.com/generate_204",
+	"https://edge.microsoft.com/captiveportal/generate_204",
+}
+
+// probeProfile picks this server's probe endpoint and interval (45–89s), derived
+// from its own host so two servers rarely share either.
+//
+// Derived rather than random because the result goes into the generated config,
+// and the config's hash is what tells a node its configuration changed: a value
+// redrawn on every generate would restart Xray on every node, every time. Keyed on
+// the host so each node in a fleet still lands somewhere different.
+func probeProfile(host string) (url, interval string) {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(host))
+	n := h.Sum64()
+	return probeTargets[n%uint64(len(probeTargets))],
+		fmt.Sprintf("%ds", 45+(n/uint64(len(probeTargets)))%45)
 }
 
 // proxyModeInbound builds the forward-proxy inbound (proxy mode): socks or http,

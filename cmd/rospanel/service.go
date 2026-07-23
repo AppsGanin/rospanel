@@ -21,6 +21,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/datasec"
+	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -455,6 +456,14 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		// rotate it to a random one.
 		secret = "rospanel"
 		if err := st.SetSecretPath(secret); err != nil {
+			return "", err
+		}
+		// First run, so nobody has chosen a decoy yet: pick one instead of leaving
+		// every install on the same schema default. A shared front page makes the
+		// whole fleet one search query, and the default was a "coming soon"
+		// placeholder — a page that plausibly serves a few kilobytes a day, sitting
+		// on a box that moves gigabytes. The operator can still change it.
+		if err := st.SetDecoyTemplate(decoy.RandomTemplate()); err != nil {
 			return "", err
 		}
 	}

@@ -128,8 +128,13 @@ func (a *Agent) ackReport(ackReport int64) {
 // the pending buffer (sent on the next sync). It mirrors the panel's PollStats
 // reset-handling: a counter that dropped means Xray restarted, so the new value is
 // the delta from zero.
+//
+// A ticker would fire on an exact 60s grid forever. The sample itself is local, but
+// what it produces rides out on the next sync, so a fixed grid pushes a periodic
+// bump into the panel↔node traffic on top of the poll's own rhythm. Re-arming a
+// timer per iteration keeps the average cadence and drops the period.
 func (a *Agent) statsLoop(ctx context.Context) {
-	t := time.NewTicker(statsInterval)
+	t := time.NewTimer(jitter(statsInterval))
 	defer t.Stop()
 	for {
 		select {
@@ -137,6 +142,7 @@ func (a *Agent) statsLoop(ctx context.Context) {
 			return
 		case <-t.C:
 			a.sampleStats()
+			t.Reset(jitter(statsInterval))
 		}
 	}
 }

@@ -520,11 +520,7 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	if err := m.EnsureNodeAPIPath(); err != nil {
 		return nil, err
 	}
-	decoyTemplate, err := m.randomDecoy()
-	if err != nil {
-		return nil, err
-	}
-	n, err := m.store.CreateNode(name, host, decoyTemplate)
+	n, err := m.store.CreateNode(name, host, m.randomDecoy())
 	if errors.Is(err, store.ErrNodeNameTaken) {
 		return nil, &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
 	}
@@ -1252,15 +1248,15 @@ func (m *Manager) PurgeDeletedNodes() {
 	}
 }
 
-// randomDecoy picks a bundled decoy template at random so nodes don't all share
-// the panel's masquerade fingerprint. Falls back to "" (agent default) on error.
-func (m *Manager) randomDecoy() (string, error) {
-	list, err := decoy.Available()
-	if err != nil || len(list) == 0 {
-		return "", err
-	}
-	// Cheap, non-crypto pick: which masquerade a node wears isn't a secret.
-	return list[time.Now().UnixNano()%int64(len(list))], nil
+// randomDecoy picks a decoy template for a new node so nodes don't all share the
+// panel's masquerade fingerprint.
+//
+// Drawn from the busy-site pool rather than every bundled template: a node carries
+// nothing BUT tunnelled traffic, so landing it on a placeholder or a "temporarily
+// unavailable" page states outright that a box moving gigabytes is a site with
+// nothing on it. The operator can still set any template afterwards.
+func (m *Manager) randomDecoy() string {
+	return decoy.RandomTemplate()
 }
 
 // --- sync ingest --------------------------------------------------------------

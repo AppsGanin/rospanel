@@ -1,8 +1,10 @@
 package xray
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -261,5 +263,46 @@ func TestNormalizeOrder(t *testing.T) {
 				t.Errorf("normalizeOrder(%v, %v) = %v, want %v", tt.order, tt.lanes, got, tt.want)
 			}
 		})
+	}
+}
+
+// The Observatory is the one thing the server itself dials on a fixed schedule.
+// One hardcoded URL at one hardcoded interval across every install makes "who
+// probes this exact endpoint every 60s" a fleet-wide query, so both are derived
+// from the server's own host — but derived, not random: the generated config's
+// hash is what tells a node its configuration changed, and a value redrawn on
+// every generate would restart Xray on every node, every time.
+func TestProbeProfileIsStablePerHostAndVariesAcrossHosts(t *testing.T) {
+	url1, iv1 := probeProfile("nl1.example.com")
+	url2, iv2 := probeProfile("nl1.example.com")
+	if url1 != url2 || iv1 != iv2 {
+		t.Fatalf("same host gave different profiles: %s/%s vs %s/%s", url1, iv1, url2, iv2)
+	}
+
+	urls, intervals := map[string]bool{}, map[string]bool{}
+	hosts := []string{
+		"nl1.example.com", "de2.example.com", "fi3.example.com", "us4.example.com",
+		"se5.example.com", "203.0.113.9", "198.51.100.4", "192.0.2.77",
+	}
+	for _, h := range hosts {
+		u, iv := probeProfile(h)
+		if !slices.Contains(probeTargets, u) {
+			t.Errorf("host %q probes %q, which is not a listed target", h, u)
+		}
+		d, err := time.ParseDuration(iv)
+		if err != nil {
+			t.Errorf("host %q interval %q does not parse: %v", h, iv, err)
+			continue
+		}
+		if d < 45*time.Second || d > 90*time.Second {
+			t.Errorf("host %q interval %v outside 45–90s", h, d)
+		}
+		urls[u], intervals[iv] = true, true
+	}
+	if len(urls) < 2 {
+		t.Errorf("all %d hosts landed on one probe URL", len(hosts))
+	}
+	if len(intervals) < 2 {
+		t.Errorf("all %d hosts landed on one interval", len(hosts))
 	}
 }
