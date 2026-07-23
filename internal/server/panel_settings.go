@@ -388,7 +388,7 @@ func (rt *Router) setDecoyTemplate(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	h, err := decoy.New(req.Template) // validates the slug exists
+	h, err := decoy.New(req.Template, decoy.LoadStamp(rt.dataDir)) // validates the slug exists
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "неизвестный шаблон")
 		return

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strings"
@@ -10,11 +11,28 @@ import (
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 )
 
-// nodeSyncHoldSec is how long a no-change sync request is held before returning
-// Changed=false, so a connected node makes roughly one request per this interval
-// in steady state (carrying its traffic report). Comfortably inside the server's
-// idle timeout, and short enough that a node reflects a panel restart quickly.
+// nodeSyncHoldSec is the nominal time a no-change sync request is held before
+// returning Changed=false, so a connected node makes roughly one request per this
+// interval in steady state (carrying its traffic report). Comfortably inside the
+// server's idle timeout, and short enough that a node reflects a panel restart
+// quickly. Reported to a joining node as the round-trip budget to expect.
 const nodeSyncHoldSec = 45
+
+// nodeSyncHoldJitter spreads the actual hold over ±1/3 of the nominal value
+// (30–60s). A panel↔node link in steady state is a small encrypted exchange that
+// never ends, so its TIMING is the only thing left to look at — and a hold pinned
+// to exactly 45s makes that timing a flat line at one frequency, which is the
+// textbook signature of a control channel and nothing like a person browsing.
+// Under jitter the same link has no period to lock onto. Kept below the agent's
+// 90s syncTimeout so the longest hold still lands well inside it.
+const nodeSyncHoldJitter = 15
+
+// nodeSyncHold returns one jittered hold duration. Independent per request, so
+// even a single node's own successive polls don't line up into a period.
+func nodeSyncHold() time.Duration {
+	spread := 2*nodeSyncHoldJitter + 1
+	return time.Duration(nodeSyncHoldSec-nodeSyncHoldJitter+rand.IntN(spread)) * time.Second
+}
 
 // handleNodeAPI dispatches the node sync surface, mounted under the random
 // node-API segment. Only two routes exist; anything else falls through to the
@@ -125,8 +143,8 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// Otherwise hold the request until the node is woken or the hold elapses, then
 	// return no-change so the agent loops. The timer is stopped explicitly so an
 	// early wake (the common case — any user change wakes every node) doesn't leave
-	// a 45s timer alive.
-	timer := time.NewTimer(nodeSyncHoldSec * time.Second)
+	// a timer alive for the rest of the hold.
+	timer := time.NewTimer(nodeSyncHold())
 	defer timer.Stop()
 	select {
 	case <-wake:

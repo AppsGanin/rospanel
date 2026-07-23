@@ -60,7 +60,7 @@ type Router struct {
 
 // New builds the masquerade router for the given secret path and decoy template.
 func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler, error) {
-	d, err := decoy.New(decoyTemplate)
+	d, err := decoy.New(decoyTemplate, decoy.LoadStamp(dataDir))
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,12 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// status codes (401/403) so integrators can debug their credentials.
 	if apiPath != "" && seg == apiPath {
 		if !rt.apiLimiter.allow(clientIP(r)) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			// A real REST status, unlike every other surface below: reaching here means
+			// the caller already knows the segment, and an integrator throttled by us
+			// needs to see why. The body is the API's own JSON shape, so it is at least
+			// not net/http's bare text/plain default.
+			w.Header().Set("Retry-After", "60")
+			writeErr(w, http.StatusTooManyRequests, "too many requests")
 			return
 		}
 		r.URL.Path = rest
@@ -216,7 +221,11 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// decoy, so the surface is invisible to anyone without the segment + a token.
 	if nodePath != "" && seg == nodePath {
 		if !rt.apiLimiter.allow(clientIP(r)) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			// Decoy, not a 429: this surface's whole contract is that a caller without
+			// a valid token cannot tell it from unknown hosting, and a throttle reply
+			// that no static site emits would break that for anyone who floods it. A
+			// real node polls once per hold — it never approaches the limit.
+			decoy.ServeHTTP(w, r)
 			return
 		}
 		rt.handleNodeAPI(w, r, rest)
@@ -230,8 +239,10 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if paySecret != "" && seg == paySecret {
 		// Throttle per-IP: signature-less providers (e.g. YooKassa) re-fetch from the
 		// provider on callback, so an amplification/flood is possible if the secret leaks.
+		// Over the limit the answer is the decoy — see the subscription surface below
+		// for why a plain 429 here is a giveaway. Providers retry failed callbacks.
 		if !rt.subLimiter.allow(clientIP(r)) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			decoy.ServeHTTP(w, r)
 			return
 		}
 		leaf, _ := firstSegment(rest)
@@ -246,8 +257,14 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Light per-IP throttle: the token is the real secret (256-bit, unguessable),
 		// so this isn't about enumeration — it just stops a leaked token from being
 		// pulled in a tight loop (and the per-request routing-template fetch with it).
+		//
+		// Over the limit the decoy answers, never a 429. This prefix defaults to the
+		// literal "sub", so unlike every other segment above it is known in advance:
+		// anyone can fire 120 requests at /sub/anything and, if a throttle reply comes
+		// back, has confirmed a panel — no token, no domain, no guessing. Only the
+		// bytes are throttled here; the decoy is cheap and the surface stays silent.
 		if !rt.subLimiter.allow(clientIP(r)) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			decoy.ServeHTTP(w, r)
 			return
 		}
 		handleSub(rt, w, r, rest)

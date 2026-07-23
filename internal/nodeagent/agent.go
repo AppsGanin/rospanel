@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/netip"
@@ -64,6 +65,22 @@ const (
 	// crash-looping Xray reports at a sane rate instead of once per bounce.
 	xrayWatchGap = 5 * time.Second
 )
+
+// jitterPct is how far a recurring interval is spread around its nominal value.
+// Anything the agent does on a fixed period and that reaches the network is a
+// beacon: the payload is opaque but the schedule is not, and a schedule that
+// never drifts is what separates a machine from a user.
+const jitterPct = 30
+
+// jitter returns d spread uniformly over ±jitterPct, so a loop keeps its average
+// cadence without settling on a frequency.
+func jitter(d time.Duration) time.Duration {
+	span := int64(d) * 2 * jitterPct / 100
+	if span <= 0 {
+		return d
+	}
+	return time.Duration(int64(d)*(100-jitterPct)/100 + rand.Int64N(span))
+}
 
 // Agent is the running node: it owns the local Xray supervisor and the decoy
 // server, holds the long-poll to the panel, and reports traffic back.
@@ -912,12 +929,20 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 	if dest == "" {
 		dest = "127.0.0.1:8080"
 	}
-	h, err := decoy.New(template) // validate the template before touching the server
+	a.decoyMu.Lock()
+	defer a.decoyMu.Unlock()
+	// This runs on every pushed config change — on a busy panel that is one per user
+	// edit — and building a handler now walks and stamps the whole template. There is
+	// nothing to redo while the server is already up on that same template.
+	if a.decoySrv != nil && a.decoyTmpl == template {
+		return nil
+	}
+	// Stamped with THIS node's seed, not the panel's: a fleet running one template
+	// must not serve one body hash, or finding any node finds them all.
+	h, err := decoy.New(template, decoy.LoadStamp(a.dataDir)) // validates the template too
 	if err != nil {
 		return err
 	}
-	a.decoyMu.Lock()
-	defer a.decoyMu.Unlock()
 	var hh http.Handler = h
 	a.decoyHandler.Store(&hh) // swap the live handler (nil-safe until first set)
 	a.decoyTmpl = template
