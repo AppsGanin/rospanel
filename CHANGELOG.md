@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/AppsGanin/rospanel/compare/v1.4.0...v1.5.0) (2026-07-24)
+
+
+### Features
+
+* **core:** add fleet-wide Xray and TLS alerts for remote nodes ([e361e05](https://github.com/AppsGanin/rospanel/commit/e361e057e53e3ed2cf5b53dcceec1c08c82ace96))
+* **decoy:** harden decoy to mimic real static file server ([30ce448](https://github.com/AppsGanin/rospanel/commit/30ce448553d697f5d3f59d4ca03c3686e7cd95f3))
+
 ## [1.4.0](https://github.com/AppsGanin/rospanel/compare/v1.3.0...v1.4.0) (2026-07-23)
 
 
