@@ -140,15 +140,34 @@ func (s *Service) clearPending(chatID int64) {
 // token it idles, re-checking periodically.
 func (s *Service) Run(ctx context.Context) {
 	go s.backupLoop(ctx)
-	// Broadcast payment events (start/completion) to the authorized admin chats.
+	// Broadcast admin events (payments, outages, blocklist hits) to the authorized
+	// admin chats.
 	s.panel.SetAdminNotifier(func(html string) {
 		set, err := s.store.GetSettings()
-		if err != nil || strings.TrimSpace(set.TGBotToken) == "" {
+		if err != nil {
+			log.Printf("telegram: admin notify: settings: %v", err)
+			return
+		}
+		token := strings.TrimSpace(set.TGBotToken)
+		if token == "" {
+			log.Printf("telegram: admin notify dropped — no bot token")
+			return
+		}
+		chats := set.TelegramChatIDs()
+		if len(chats) == 0 {
+			// The whole feature is silent in this state and nothing else says so: every
+			// alert the panel raises is built, gated, and then delivered to nobody.
+			log.Printf("telegram: admin notify dropped — no linked admin chats")
 			return
 		}
 		c := NewClient(strings.TrimSpace(set.TGBotToken))
-		for _, id := range set.TelegramChatIDs() {
-			_ = c.SendMessage(context.Background(), id, html)
+		for _, id := range chats {
+			// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
+			// revoked token fails per send, and with the error discarded the panel looked
+			// exactly like a panel that had nothing to say.
+			if err := c.SendMessage(context.Background(), id, html); err != nil {
+				log.Printf("telegram: admin notify to %d failed: %v", id, err)
+			}
 		}
 	})
 	// A signup awaiting moderation: post it with approve/reject buttons.
@@ -168,7 +187,9 @@ func (s *Service) Run(ctx context.Context) {
 		}}
 		c := NewClient(strings.TrimSpace(set.TGBotToken))
 		for _, id := range set.TelegramChatIDs() {
-			_ = c.SendMenu(context.Background(), id, msg, rows)
+			if err := c.SendMenu(context.Background(), id, msg, rows); err != nil {
+				log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+			}
 		}
 	})
 	for {

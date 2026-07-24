@@ -290,7 +290,10 @@ func (m *Manager) onXrayCrash(err error) {
 	m.lastCrashNotify = now
 	m.crashAlerted = true
 	m.throttleMu.Unlock()
-	msg := "⚠️ <b>Xray аварийно завершился</b>\nПроцесс перезапускается автоматически."
+	// Named, because the same category now reports the nodes' Xray too and an
+	// unlabelled alarm in a fleet chat is a guess about which server is down.
+	msg := "⚠️ <b>Xray аварийно завершился</b>\nСервер: " + model.LocalNodeName +
+		"\nПроцесс перезапускается автоматически."
 	if err != nil {
 		msg += "\nПричина: " + escHTML(err.Error())
 	}
@@ -309,7 +312,7 @@ func (m *Manager) onXrayRecover() {
 	if !alerted {
 		return
 	}
-	msg := "✅ <b>Xray снова работает</b>"
+	msg := "✅ <b>Xray снова работает</b>\nСервер: " + model.LocalNodeName
 	if down := time.Since(at); down > time.Second {
 		msg += fmt.Sprintf("\nПростой: %s.", fmtDowntime(down))
 	}
@@ -331,7 +334,8 @@ func fmtDowntime(d time.Duration) string {
 // notifyCertRenewed reports a successful certificate renewal.
 func (m *Manager) notifyCertRenewed(host string, daysLeft int) {
 	m.notifyAdminEvent(model.AdminEventCert, fmt.Sprintf(
-		"🔒 <b>Сертификат TLS обновлён</b>\nХост: %s\nДействует ещё %d дн.", escHTML(host), daysLeft))
+		"🔒 <b>Сертификат TLS обновлён</b>\nСервер: %s\nХост: %s\nДействует ещё %d дн.",
+		model.LocalNodeName, escHTML(host), daysLeft))
 }
 
 // notifyCertError reports a failed ACME renewal, throttled so the fast retry
@@ -346,5 +350,6 @@ func (m *Manager) notifyCertError(host string, err error) {
 	m.lastCertErrNotify = now
 	m.throttleMu.Unlock()
 	m.notifyAdminEvent(model.AdminEventCert, fmt.Sprintf(
-		"🔓 <b>Не удалось обновить сертификат TLS</b>\nХост: %s\nОшибка: %s", escHTML(host), escHTML(err.Error())))
+		"🔓 <b>Не удалось обновить сертификат TLS</b>\nСервер: %s\nХост: %s\nОшибка: %s",
+		model.LocalNodeName, escHTML(host), escHTML(err.Error())))
 }

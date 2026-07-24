@@ -69,6 +69,11 @@ type SyncRequest struct {
 	// Cert details for the node's Домен tab: the issuer (≈ ACME provider) and expiry.
 	CertIssuer    string `json:"cert_issuer,omitempty"`
 	CertExpiresAt int64  `json:"cert_expires_at,omitempty"` // unix; 0 ⇒ unknown/no cert
+	// CertError is the node's last TLS/ACME failure, empty once a cert is in place.
+	// Reported because the panel raises the "Сертификат TLS" admin alert for the whole
+	// fleet — the node has no bot to tell anyone itself. Absent from an older agent,
+	// which simply never triggers that alert.
+	CertError string `json:"cert_error,omitempty"`
 
 	// Traffic deltas accumulated since the last acked report. ReportID is monotonic
 	// per node and persisted by the agent, so a lost response is retried without

@@ -196,6 +196,12 @@ type Manager struct {
 	// nodeGeoFiles holds each node's last-reported geo database status.
 	nodeGeoMu    sync.Mutex
 	nodeGeoFiles map[int64][]nodeapi.GeoFile
+
+	// nodeAlerts is what admins were last told about each node's reachability, Xray
+	// and certificate — the fleet-wide half of the "Сбой Xray" / "Сертификат TLS"
+	// admin events (see manager_nodes_notify.go).
+	nodeAlertMu sync.Mutex
+	nodeAlerts  map[int64]*nodeAlertState
 }
 
 // nodeLogEntry is a node's last-reported log tail.
@@ -232,6 +238,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
 		nodeHostStats:    map[int64]nodeapi.HostStats{},
 		nodeLogsWanted:   map[int64]int64{},
+		nodeAlerts:       map[int64]*nodeAlertState{},
 	}
 	if set, err := st.GetSettings(); err == nil {
 		m.tz = loadLocation(set.Timezone)
@@ -251,6 +258,9 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	}
 	m.sup.SetOnCrash(m.onXrayCrash)     // alert admins when Xray exits unexpectedly
 	m.sup.SetOnRecover(m.onXrayRecover) // ...and tell them when it is back
+	// The same two alerts for the remote nodes. They have no bot of their own, and a
+	// node that stops syncing altogether can only be noticed on a timer.
+	go m.nodeWatchLoop()
 	go m.reconcileLoop()
 	go m.proxyLoop()
 	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence

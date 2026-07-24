@@ -64,6 +64,8 @@ const (
 	// xrayWatchGap bounds how often that state may cut a held poll short, so a
 	// crash-looping Xray reports at a sane rate instead of once per bounce.
 	xrayWatchGap = 5 * time.Second
+	// certErrMax bounds the TLS error text reported to the panel.
+	certErrMax = 300
 )
 
 // jitterPct is how far a recurring interval is spread around its nominal value.
@@ -94,6 +96,13 @@ type Agent struct {
 	acmeDir  string
 	geoDir   string
 	certMu   sync.Mutex // serializes cert-file writes (applyState vs certLoop)
+
+	// certErr is the last TLS/ACME failure, reported to the panel so it can raise the
+	// operator's "Сертификат TLS" alert for this node. Under its own mutex, not
+	// certMu: certMu is held for the whole of an ACME exchange, and a sync building
+	// its request must never wait on that.
+	certErrMu sync.Mutex
+	certErr   string
 
 	state   *persistState
 	stateMu sync.Mutex
@@ -751,6 +760,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		CertSelfSigned: selfSigned,
 		CertIssuer:     certIssuer,
 		CertExpiresAt:  certExpiresAt,
+		CertError:      a.certError(),
 		ReportID:       rid,
 		Traffic:        traffic,
 		Conns:          a.takeConns(),
@@ -862,9 +872,36 @@ func (a *Agent) ensureCert(m nodeapi.NodeMeta) {
 		ZeroSSLEABKID:  m.ZeroSSLEABKID,
 		ZeroSSLEABHMAC: m.ZeroSSLEABHMAC,
 	}
-	if err := tlsmgr.Ensure(settings, a.certPath, a.keyPath, a.acmeDir, false); err != nil {
+	err := tlsmgr.Ensure(settings, a.certPath, a.keyPath, a.acmeDir, false)
+	if err != nil {
 		slog.Warn("node: TLS not ready yet (self-signed for now)", "err", err)
 	}
+	a.setCertError(err)
+}
+
+// setCertError records (or clears) the last TLS failure for the next sync report.
+// Truncated here as well as panel-side: an ACME failure can carry a whole server
+// response, and this rides in the sync body that the traffic/conns/sites payload
+// already has to fit into.
+func (a *Agent) setCertError(err error) {
+	a.certErrMu.Lock()
+	defer a.certErrMu.Unlock()
+	if err == nil {
+		a.certErr = ""
+		return
+	}
+	msg := err.Error()
+	if len(msg) > certErrMax {
+		msg = msg[:certErrMax]
+	}
+	a.certErr = msg
+}
+
+// certError returns the last TLS failure, empty when the cert is current.
+func (a *Agent) certError() string {
+	a.certErrMu.Lock()
+	defer a.certErrMu.Unlock()
+	return a.certErr
 }
 
 // certLoop keeps the node's TLS cert current: it retries ACME (fast while the node
