@@ -746,6 +746,12 @@ func (s *Settings) TelegramAuthorized(id int64) bool {
 // Admin notification categories (bitmask flags stored in Settings.TGAdminEvents).
 // The admin bot only pushes an event whose flag is set. New flags must be appended
 // (never renumbered) so existing saved masks keep their meaning.
+//
+// XrayDown and Cert cover the whole fleet, not just this server: a node has no bot
+// of its own, so the panel raises them on its behalf from what the node reports
+// (see core.SweepNodeAlerts). XrayDown additionally carries "a node stopped
+// answering at all" — the same fact from the operator's side, that server is not
+// serving.
 const (
 	AdminEventRegistered    int64 = 1 << 0 // a new user self-registered via the user bot
 	AdminEventExpired       int64 = 1 << 1 // a user's subscription expired

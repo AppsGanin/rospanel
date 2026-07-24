@@ -1359,6 +1359,9 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		}
 		m.nodeGeoMu.Unlock()
 	}
+	// The node's own TLS state, for the fleet-wide "Сертификат TLS" alert. Recorded
+	// here, raised by the node sweep — see manager_nodes_notify.go.
+	m.NoteNodeCertError(n.ID, req.CertError)
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
 		LastSeen:       now.Unix(),
 		NodeVersion:    req.NodeVersion,

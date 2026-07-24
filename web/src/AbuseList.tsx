@@ -57,8 +57,9 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
             </span>
           </div>
           <span className="shrink-0 text-xs text-ink-muted">
-            {/* Only on the fleet-wide view: inside a user's card the name is the page. */}
-            {userId === undefined && r.user_name ? `${r.user_name} · ` : ''}
+            {/* Only on the fleet-wide view: inside a user's card the name is the page.
+                The id rides along because names are not unique. */}
+            {userId === undefined ? `${r.user_name ? `${r.user_name} ` : ''}#${r.user_id} · ` : ''}
             {r.day} · {r.count.toLocaleString('ru-RU')}×
           </span>
         </div>
