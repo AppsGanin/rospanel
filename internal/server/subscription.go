@@ -122,16 +122,20 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// the page never loads it straight from telegram.org (blocked in Russia — a
 		// direct <script> there hangs the page until the connection times out).
 		//
-		// A cold/unreachable cache serves an EMPTY body rather than blocking on an
-		// inline fetch — never hanging the page is the whole point of this route. The
-		// page degrades cleanly: window.Telegram stays undefined, so it treats itself
-		// as a plain browser (INTG=false) exactly as it does today when telegram.org
-		// is blocked. no-store on that empty reply so the client picks up the real SDK
-		// as soon as the background fetch lands.
+		// A COLD cache fetches inline (bounded by the manager's budget) so the first
+		// visitor still gets the real SDK; if telegram.org is unreachable this serves
+		// an EMPTY body instead. The page degrades cleanly on empty: window.Telegram
+		// stays undefined, so it treats itself as a plain browser (INTG=false) exactly
+		// as it did when telegram.org was loaded directly and blocked.
+		//
+		// private, not public: the body is the same non-secret SDK for everyone, but
+		// the URL embeds the user's sub token — no reason to invite shared proxies to
+		// key a cache entry (and a log line) on it. no-store on the empty reply so a
+		// client doesn't pin the miss.
 		js, ok := rt.mgr.TelegramWebAppSDK()
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		if ok {
-			w.Header().Set("Cache-Control", "public, max-age=3600")
+			w.Header().Set("Cache-Control", "private, max-age=3600")
 		} else {
 			w.Header().Set("Cache-Control", "no-store")
 		}

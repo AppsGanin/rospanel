@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// Stub bodies must carry telegramSDKMarker — fetchTelegramSDK rejects anything that
+// doesn't look like the real wrapper, so a marker-less fixture would be discarded and
+// every test would read as a fetch failure.
+const (
+	fakeSDK      = "// WebView\nwindow.Telegram.WebApp = {platform:'test'};"
+	fakeSDKFresh = "// WebView fresh\nwindow.Telegram.WebApp = {platform:'test2'};"
+)
+
 // stubTelegramSDKFetch swaps the upstream GET for the duration of a test and
 // reports how many times it was called.
 func stubTelegramSDKFetch(t *testing.T, fn func(ctx context.Context) ([]byte, error)) *atomic.Int32 {
@@ -44,17 +52,33 @@ func waitTelegramSDKIdle(t *testing.T, m *Manager) {
 	}
 }
 
+// waitTelegramSDKCalls waits until the stub has been entered `want` times and the
+// resulting fetch has finished. Needed because a background refresh is spawned with
+// `go`: waiting only for "no fetch in flight" can't tell "not scheduled yet" from
+// "already done", so the test would race ahead and observe zero calls.
+func waitTelegramSDKCalls(t *testing.T, m *Manager, calls *atomic.Int32, want int32) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < want {
+		if time.Now().After(deadline) {
+			t.Fatalf("upstream called %d times after 5s, want %d", calls.Load(), want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	waitTelegramSDKIdle(t, m)
+}
+
 // A cold cache must fetch INLINE and hand the real body to the very first caller —
 // that's the whole point of the cold path (an empty file would silently disable the
 // Mini App bridge for whoever loads the page first).
 func TestTelegramSDKColdFetchesInline(t *testing.T) {
 	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
-		return []byte("// WebView"), nil
+		return []byte(fakeSDK), nil
 	})
 	m := &Manager{}
 
 	body, ok := m.TelegramWebAppSDK()
-	if !ok || string(body) != "// WebView" {
+	if !ok || string(body) != fakeSDK {
 		t.Fatalf("cold read: got (%q, %v), want the fetched body", body, ok)
 	}
 	if got := calls.Load(); got != 1 {
@@ -62,7 +86,7 @@ func TestTelegramSDKColdFetchesInline(t *testing.T) {
 	}
 
 	// Second read is served from cache — no new fetch.
-	if body, ok = m.TelegramWebAppSDK(); !ok || string(body) != "// WebView" {
+	if body, ok = m.TelegramWebAppSDK(); !ok || string(body) != fakeSDK {
 		t.Fatalf("warm read: got (%q, %v)", body, ok)
 	}
 	if got := calls.Load(); got != 1 {
@@ -115,7 +139,7 @@ func TestTelegramSDKConcurrentColdSingleflight(t *testing.T) {
 	release := make(chan struct{})
 	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		<-release // hold the fetch open so every goroutine piles up behind it
-		return []byte("// WebView"), nil
+		return []byte(fakeSDK), nil
 	})
 	m := &Manager{}
 
@@ -127,7 +151,7 @@ func TestTelegramSDKConcurrentColdSingleflight(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			body, ok := m.TelegramWebAppSDK()
-			got[i] = ok && string(body) == "// WebView"
+			got[i] = ok && string(body) == fakeSDK
 		}()
 	}
 	time.Sleep(50 * time.Millisecond) // let them all reach the cold path
@@ -144,6 +168,59 @@ func TestTelegramSDKConcurrentColdSingleflight(t *testing.T) {
 	}
 }
 
+// A stale copy plus a failing upstream must NOT become a retry loop. A failed fetch
+// never advances tgSDKAt, so the copy stays stale and every request re-triggers the
+// refresh — without the cooldown guard the panel dials a blocked telegram.org
+// back-to-back for as long as the page sees traffic.
+func TestTelegramSDKStaleFailureDoesNotLoop(t *testing.T) {
+	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
+		return nil, errors.New("dial tcp: i/o timeout")
+	})
+	m := &Manager{}
+	m.tgSDKBody = []byte("old")
+	m.tgSDKAt = time.Now().Add(-telegramSDKTTL - time.Minute) // stale
+
+	// First read kicks off a refresh, which fails and arms the cooldown.
+	if body, ok := m.TelegramWebAppSDK(); !ok || string(body) != "old" {
+		t.Fatalf("stale read: got (%q, %v), want the old body", body, ok)
+	}
+	waitTelegramSDKCalls(t, m, calls, 1)
+
+	// Hammer it: still stale, still failing — the cooldown must absorb every one.
+	for range 50 {
+		if body, ok := m.TelegramWebAppSDK(); !ok || string(body) != "old" {
+			t.Fatalf("stale read regressed: got (%q, %v)", body, ok)
+		}
+	}
+	waitTelegramSDKIdle(t, m)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("stale+failing upstream looped: %d upstream calls after 51 reads, want 1", got)
+	}
+}
+
+// A 200 that isn't actually the SDK (a transparent-proxy block page, or a body
+// truncated at the size cap — which returns no error) must not be cached: it would
+// be served as JS to every user for a full TTL.
+func TestTelegramSDKRejectsNonSDKBody(t *testing.T) {
+	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
+		return []byte("<html><body>Access denied</body></html>"), nil
+	})
+	m := &Manager{}
+
+	if body, ok := m.TelegramWebAppSDK(); ok || body != nil {
+		t.Fatalf("garbage body was accepted: got (%q, %v), want (nil, false)", body, ok)
+	}
+	m.tgSDKMu.Lock()
+	cached, failed := m.tgSDKBody, !m.tgSDKFailAt.IsZero()
+	m.tgSDKMu.Unlock()
+	if cached != nil {
+		t.Errorf("garbage body got cached: %q", cached)
+	}
+	if !failed {
+		t.Error("a rejected body must arm the failure cooldown like any other failure")
+	}
+}
+
 // A stale copy is served immediately (never blocking the page) while the refresh
 // happens behind it.
 func TestTelegramSDKStaleServedImmediately(t *testing.T) {
@@ -152,7 +229,7 @@ func TestTelegramSDKStaleServedImmediately(t *testing.T) {
 	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		once.Do(func() { close(started) })
 		<-block
-		return []byte("fresh"), nil
+		return []byte(fakeSDKFresh), nil
 	})
 	m := &Manager{}
 	m.tgSDKBody = []byte("old")
@@ -180,7 +257,7 @@ func TestTelegramSDKStaleServedImmediately(t *testing.T) {
 	waitTelegramSDKIdle(t, m) // let it land before cleanup restores the stub
 
 	// ...and the refresh it kicked off replaced the stale copy.
-	if body, ok := m.TelegramWebAppSDK(); !ok || string(body) != "fresh" {
+	if body, ok := m.TelegramWebAppSDK(); !ok || string(body) != fakeSDKFresh {
 		t.Fatalf("after refresh: got (%q, %v), want the fresh body", body, ok)
 	}
 }

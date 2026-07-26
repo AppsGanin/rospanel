@@ -289,8 +289,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
 	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
-	go m.refreshTelegramSDK() // fetch telegram-web-app.js so the sub page serves the
-	//                             real SDK (not the shim) from the first Mini App open
+	go m.refreshTelegramSDK() // warm telegram-web-app.js so the first subscription-page
+	//                             view doesn't pay for the fetch inline
 	// NOTE: the initial proxy-pool load is done synchronously by main.go via
 	// SeedProxies() before the first reconcile, so Xray starts once (with proxies)
 	// rather than starting empty and restarting when a background fetch lands.

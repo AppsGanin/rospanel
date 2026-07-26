@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -25,10 +26,17 @@ func TestPageServesTelegramSDKLocally(t *testing.T) {
 	if !strings.Contains(s, `/tg.js"></script>`) {
 		t.Error("page missing the same-origin <script src=.../tg.js>")
 	}
-	// It must stay a plain blocking script: the inline script at the bottom reads
-	// window.Telegram.WebApp synchronously, so defer/async would break the ordering.
-	if strings.Contains(s, "/tg.js\" defer") || strings.Contains(s, "/tg.js\" async") {
-		t.Error("tg.js must load synchronously, not deferred/async")
+	// It must stay a plain BLOCKING script: the inline script at the bottom reads
+	// window.Telegram.WebApp synchronously, so defer/async would leave it undefined
+	// and silently kill Mini App deep-link routing. Match the whole tag — checking
+	// only for `tg.js" defer` misses `<script async src=...>`, where the attribute
+	// comes first.
+	tag := regexp.MustCompile(`<script[^>]*\btg\.js\b[^>]*>`).FindString(s)
+	if tag == "" {
+		t.Fatal("no <script> tag for tg.js found")
+	}
+	if strings.Contains(tag, "async") || strings.Contains(tag, "defer") {
+		t.Errorf("tg.js must load synchronously, got %q", tag)
 	}
 }
 
@@ -46,10 +54,18 @@ func TestPageToleratesMissingSDK(t *testing.T) {
 	s := string(html)
 	// The guarded read + the INTG flag derived from it are what make an empty SDK
 	// degrade to "plain browser" instead of a ReferenceError.
-	if !strings.Contains(s, "window.Telegram && window.Telegram.WebApp") {
-		t.Error("page must read window.Telegram defensively (empty /tg.js is a valid state)")
+	const guard = "var TG = (window.Telegram && window.Telegram.WebApp) || null;"
+	if !strings.Contains(s, guard) {
+		t.Fatalf("page must read window.Telegram defensively (empty /tg.js is a valid state); want %q", guard)
 	}
 	if !strings.Contains(s, "var INTG") {
 		t.Error("page missing the INTG in-Telegram flag")
+	}
+	// Every other touch of the SDK must go through TG/INTG. A direct
+	// `Telegram.WebApp.…` anywhere else throws on an empty /tg.js and takes the whole
+	// page down with it, so assert the guarded read is the ONLY one. (Static check:
+	// it can't catch an unguarded `TG.foo()`, which the INTG branches cover.)
+	if rest := strings.Replace(s, guard, "", 1); strings.Contains(rest, "Telegram.WebApp") {
+		t.Error("unguarded Telegram.WebApp access outside the guarded read — would throw when /tg.js is empty")
 	}
 }
