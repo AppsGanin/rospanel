@@ -289,8 +289,12 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
 	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
-	go m.refreshTelegramSDK() // warm telegram-web-app.js so the first subscription-page
-	//                             view doesn't pay for the fetch inline
+	// NOTE: telegram-web-app.js is deliberately NOT prewarmed here. The cold path in
+	// TelegramWebAppSDK fetches it inline and serves it, so a warm-up would only save
+	// the first subscription-page view ~120ms — not worth an unconditional outbound
+	// call to telegram.org on every single start (a beacon the decoy story doesn't
+	// cover, and one that made `go test ./internal/server` hit the real network,
+	// since its tests build a Manager through New).
 	// NOTE: the initial proxy-pool load is done synchronously by main.go via
 	// SeedProxies() before the first reconcile, so Xray starts once (with proxies)
 	// rather than starting empty and restarting when a background fetch lands.

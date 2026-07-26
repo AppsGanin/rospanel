@@ -697,8 +697,9 @@ var telegramSDKFetch = func(ctx context.Context) ([]byte, error) {
 	return netguard.Get(ctx, telegramSDKURL, telegramSDKMaxBytes)
 }
 
-// refreshTelegramSDK fetches in the background (startup warm-up and stale refresh).
-// It's a no-op while a fetch is in flight OR while the failure cooldown is armed.
+// refreshTelegramSDK refreshes a stale copy in the background (the only caller —
+// there is no startup warm-up, see New). It's a no-op while a fetch is in flight OR
+// while the failure cooldown is armed.
 //
 // That cooldown is what stops a failing upstream from becoming a retry loop: a
 // failed fetch never advances tgSDKAt, so a stale copy stays stale and EVERY
