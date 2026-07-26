@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.5.0](https://github.com/AppsGanin/rospanel/compare/v1.4.0...v1.5.0) (2026-07-26)
+
+
+### Features
+
+* **core:** add custom inbounds, access groups, and runtime port guard refresh ([21fe5ba](https://github.com/AppsGanin/rospanel/commit/21fe5ba330643a5c5022e20b7bbec3284e8cff75))
+* **core:** add fleet-wide Xray and TLS alerts for remote nodes ([e361e05](https://github.com/AppsGanin/rospanel/commit/e361e057e53e3ed2cf5b53dcceec1c08c82ace96))
+* **core:** proxy Telegram Mini App SDK through our origin ([6453ea0](https://github.com/AppsGanin/rospanel/commit/6453ea0a066d7c4878e4026d91978cac46b6c054))
+* **decoy:** harden decoy to mimic real static file server ([30ce448](https://github.com/AppsGanin/rospanel/commit/30ce448553d697f5d3f59d4ca03c3686e7cd95f3))
+
+
+### Bug Fixes
+
+* **sub:** self-host Mulish webfonts to eliminate render-blocking Google Fonts ([b3d6b01](https://github.com/AppsGanin/rospanel/commit/b3d6b01d42c64fe0445ee47a8d6162d3bf27496c))
+
 ## [1.4.0](https://github.com/AppsGanin/rospanel/compare/v1.3.0...v1.4.0) (2026-07-23)
 
 
