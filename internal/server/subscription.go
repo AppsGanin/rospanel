@@ -167,6 +167,22 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			rt.handleSubApp(w, r, *u, set, idx)
 			return
 		}
+		// /font/<file>.woff2 — self-hosted Mulish. Served from our own origin instead
+		// of Google Fonts, which is throttled in Russia and would delay paint (the
+		// stylesheet is render-blocking). Content is build-immutable and named per
+		// subset+weight, so it caches for a year; private because the URL carries the
+		// user's sub token, same as the other per-token assets.
+		if name, ok := strings.CutPrefix(leaf, "font/"); ok {
+			b, ok := sub.Font(name)
+			if !ok {
+				rt.decoy.ServeHTTP(w, r) // unknown font ⇒ behave like any other 404
+				return
+			}
+			w.Header().Set("Content-Type", "font/woff2")
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+			_, _ = w.Write(b)
+			return
+		}
 		rt.decoy.ServeHTTP(w, r)
 	}
 }

@@ -2,7 +2,7 @@ package sub
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"fmt"
 	"html/template"
 	"strconv"
@@ -19,6 +19,29 @@ var logoSVG []byte
 
 // Logo returns the embedded РосПанель logo (SVG).
 func Logo() []byte { return logoSVG }
+
+// Mulish, self-hosted. The subscription page used to pull this from Google Fonts,
+// which is throttled in Russia — a render-blocking <link> to a throttled host delays
+// paint for exactly the users this panel serves. Same reasoning as the Telegram SDK
+// proxy; here self-hosting is simpler than proxying, since the SPA already ships the
+// same font. Subsets carry unicode-range in the page CSS, so a browser downloads only
+// what the text needs (cyrillic for the Russian UI, latin-ext only for glyphs like ₽).
+//
+//go:embed fonts/*.woff2
+var fontFS embed.FS
+
+// Font returns an embedded webfont by bare file name. It refuses any name with a path
+// separator, so a request can only ever name a file directly inside fonts/.
+func Font(name string) ([]byte, bool) {
+	if name == "" || strings.ContainsAny(name, `/\`) || !strings.HasSuffix(name, ".woff2") {
+		return nil, false
+	}
+	b, err := fontFS.ReadFile("fonts/" + name)
+	if err != nil {
+		return nil, false
+	}
+	return b, true
+}
 
 //go:embed page.html
 var pageHTML string
