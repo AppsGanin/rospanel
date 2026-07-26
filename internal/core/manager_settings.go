@@ -618,3 +618,108 @@ func (m *Manager) prewarmRoutingTemplates() {
 		}
 	}
 }
+
+const (
+	// telegramSDKURL is Telegram's official Mini App JS wrapper. The subscription
+	// page loads it from OUR origin (a cached copy of this) instead of directly:
+	// telegram.org is blocked in Russia, so a direct <script> would hang the page
+	// for the whole connection timeout before painting.
+	telegramSDKURL      = "https://telegram.org/js/telegram-web-app.js"
+	telegramSDKTTL      = 24 * time.Hour  // how long a cached copy is served before a refresh
+	telegramSDKBudget   = 5 * time.Second // cap on a single upstream fetch, inline ones included
+	telegramSDKRetryGap = time.Minute     // after a failed fetch, don't stall a page again this soon
+	telegramSDKMaxBytes = 1 << 20         // the wrapper is ~120 KB; 1 MiB is ample headroom
+)
+
+// TelegramWebAppSDK returns a server-side cached copy of telegram.org's
+// telegram-web-app.js so the subscription page can serve it from our own
+// (reachable) origin. A fresh copy is returned as-is; a stale one is served
+// immediately while a refresh runs behind it (stale-while-revalidate), so a page
+// load never waits on a copy we already have.
+//
+// A COLD cache fetches inline, so the first visitor still gets the real SDK rather
+// than an empty file. That is the one place this can make a page wait, and it is
+// bounded on both axes: telegramSDKBudget caps the single fetch, and a failure arms
+// a telegramSDKRetryGap cooldown during which cold reads return immediately. So an
+// unreachable telegram.org costs one bounded wait per cooldown, not one per page
+// load — which is what keeps this from reintroducing the very hang the proxy exists
+// to remove. ok=false means "serve an empty body"; the page treats a missing SDK as
+// "not in Telegram" and renders normally.
+func (m *Manager) TelegramWebAppSDK() ([]byte, bool) {
+	m.tgSDKMu.Lock()
+	if body := m.tgSDKBody; body != nil {
+		stale := time.Since(m.tgSDKAt) >= telegramSDKTTL
+		m.tgSDKMu.Unlock()
+		if stale {
+			go m.refreshTelegramSDK() // serve what we have now, refresh behind it
+		}
+		return body, true
+	}
+	if time.Since(m.tgSDKFailAt) < telegramSDKRetryGap {
+		m.tgSDKMu.Unlock() // upstream just failed us; don't stall this page too
+		return nil, false
+	}
+	wait, lead := m.tgSDKWait, false
+	if wait == nil { // nobody is fetching — this request does it
+		wait = make(chan struct{})
+		m.tgSDKWait, lead = wait, true
+	}
+	m.tgSDKMu.Unlock()
+
+	if lead {
+		m.fetchTelegramSDK()
+	} else {
+		// A fetch is already in flight: ride along instead of starting a second one.
+		select {
+		case <-wait:
+		case <-time.After(telegramSDKBudget):
+			return nil, false
+		}
+	}
+
+	m.tgSDKMu.Lock()
+	body := m.tgSDKBody
+	m.tgSDKMu.Unlock()
+	return body, body != nil
+}
+
+// telegramSDKFetch performs the upstream GET. It's a var so tests can drive the
+// cache logic without a network (netguard rejects loopback, so httptest is out).
+var telegramSDKFetch = func(ctx context.Context) ([]byte, error) {
+	return netguard.Get(ctx, telegramSDKURL, telegramSDKMaxBytes)
+}
+
+// refreshTelegramSDK fetches in the background (startup warm-up and stale refresh).
+// It's a no-op while another fetch is in flight, so the per-request stale trigger
+// can't pile up goroutines.
+func (m *Manager) refreshTelegramSDK() {
+	m.tgSDKMu.Lock()
+	if m.tgSDKWait != nil {
+		m.tgSDKMu.Unlock()
+		return
+	}
+	m.tgSDKWait = make(chan struct{})
+	m.tgSDKMu.Unlock()
+	m.fetchTelegramSDK()
+}
+
+// fetchTelegramSDK performs the upstream GET and publishes the result, then releases
+// everyone waiting on it. The caller must have claimed the fetch by setting
+// tgSDKWait. A failed fetch keeps any previous cached copy and stamps tgSDKFailAt so
+// cold readers stop blocking for a while.
+func (m *Manager) fetchTelegramSDK() {
+	ctx, cancel := context.WithTimeout(context.Background(), telegramSDKBudget)
+	defer cancel()
+	b, err := telegramSDKFetch(ctx)
+
+	m.tgSDKMu.Lock()
+	if err == nil && len(b) > 0 {
+		m.tgSDKBody, m.tgSDKAt = b, time.Now()
+		m.tgSDKFailAt = time.Time{}
+	} else {
+		m.tgSDKFailAt = time.Now()
+	}
+	close(m.tgSDKWait) // wake the riders; they re-read the cache
+	m.tgSDKWait = nil
+	m.tgSDKMu.Unlock()
+}

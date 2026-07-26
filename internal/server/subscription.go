@@ -116,6 +116,27 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write(b)
 
+	case "tg.js":
+		// The Telegram Mini App SDK, proxied through us: the panel fetches it from
+		// telegram.org server-side and serves the cached copy from our own origin, so
+		// the page never loads it straight from telegram.org (blocked in Russia — a
+		// direct <script> there hangs the page until the connection times out).
+		//
+		// A cold/unreachable cache serves an EMPTY body rather than blocking on an
+		// inline fetch — never hanging the page is the whole point of this route. The
+		// page degrades cleanly: window.Telegram stays undefined, so it treats itself
+		// as a plain browser (INTG=false) exactly as it does today when telegram.org
+		// is blocked. no-store on that empty reply so the client picks up the real SDK
+		// as soon as the background fetch lands.
+		js, ok := rt.mgr.TelegramWebAppSDK()
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		if ok {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		_, _ = w.Write(js)
+
 	case "qr.png":
 		png, err := qrcode.Encode(sub.URL(set, u.SubToken), qrcode.Medium, 512)
 		if err != nil {

@@ -97,6 +97,12 @@ type Manager struct {
 	tmplMu    sync.Mutex
 	tmplCache map[string]routingTmpl // cached routing templates by URL
 
+	tgSDKMu     sync.Mutex
+	tgSDKBody   []byte        // cached telegram.org telegram-web-app.js (nil until first fetch)
+	tgSDKAt     time.Time     // when tgSDKBody was fetched
+	tgSDKFailAt time.Time     // when the last fetch failed; suppresses inline retries for a cooldown
+	tgSDKWait   chan struct{} // non-nil while a fetch is in flight; closed when it lands (singleflight)
+
 	// userNotify pushes a message to a VPN user's Telegram chat (set by the user
 	// bot; nil when off); adminNotify broadcasts to the admin chats (set by the
 	// admin bot). Used e.g. to report payment start/completion. adminModerate asks
@@ -283,6 +289,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
 	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
+	go m.refreshTelegramSDK() // fetch telegram-web-app.js so the sub page serves the
+	//                             real SDK (not the shim) from the first Mini App open
 	// NOTE: the initial proxy-pool load is done synchronously by main.go via
 	// SeedProxies() before the first reconcile, so Xray starts once (with proxies)
 	// rather than starting empty and restarting when a background fetch lands.
