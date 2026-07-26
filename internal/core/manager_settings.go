@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"regexp"
@@ -631,6 +632,13 @@ const (
 	telegramSDKMaxBytes = 1 << 20         // the wrapper is ~120 KB; 1 MiB is ample headroom
 )
 
+// telegramSDKMarker must appear in a fetched body for it to be cached. netguard
+// already rejects non-200 and enforces https, but a transparent proxy answering 200
+// with an HTML block page would otherwise be cached as JS for a full TTL and served
+// to every user. It also catches a silent truncation at telegramSDKMaxBytes (which
+// returns no error). The real wrapper mentions Telegram.WebApp ~115 times.
+var telegramSDKMarker = []byte("Telegram.WebApp")
+
 // TelegramWebAppSDK returns a server-side cached copy of telegram.org's
 // telegram-web-app.js so the subscription page can serve it from our own
 // (reachable) origin. A fresh copy is returned as-is; a stale one is served
@@ -690,11 +698,16 @@ var telegramSDKFetch = func(ctx context.Context) ([]byte, error) {
 }
 
 // refreshTelegramSDK fetches in the background (startup warm-up and stale refresh).
-// It's a no-op while another fetch is in flight, so the per-request stale trigger
-// can't pile up goroutines.
+// It's a no-op while a fetch is in flight OR while the failure cooldown is armed.
+//
+// That cooldown is what stops a failing upstream from becoming a retry loop: a
+// failed fetch never advances tgSDKAt, so a stale copy stays stale and EVERY
+// subsequent request re-triggers this. Without the guard the panel would dial a
+// blocked telegram.org back-to-back for as long as the page saw traffic — a beacon
+// the decoy story does not cover.
 func (m *Manager) refreshTelegramSDK() {
 	m.tgSDKMu.Lock()
-	if m.tgSDKWait != nil {
+	if m.tgSDKWait != nil || time.Since(m.tgSDKFailAt) < telegramSDKRetryGap {
 		m.tgSDKMu.Unlock()
 		return
 	}
@@ -706,20 +719,32 @@ func (m *Manager) refreshTelegramSDK() {
 // fetchTelegramSDK performs the upstream GET and publishes the result, then releases
 // everyone waiting on it. The caller must have claimed the fetch by setting
 // tgSDKWait. A failed fetch keeps any previous cached copy and stamps tgSDKFailAt so
-// cold readers stop blocking for a while.
+// readers stop blocking for a while.
+//
+// Publish/release runs in a defer so a panic anywhere in the fetch stack can't latch
+// tgSDKWait non-nil forever — that would permanently disable refreshes AND make every
+// later reader wait out the full budget as a rider on a fetch that never completes.
 func (m *Manager) fetchTelegramSDK() {
+	var (
+		b   []byte
+		err error
+	)
+	defer func() {
+		m.tgSDKMu.Lock()
+		if err == nil && bytes.Contains(b, telegramSDKMarker) {
+			m.tgSDKBody, m.tgSDKAt = b, time.Now()
+			m.tgSDKFailAt = time.Time{}
+		} else {
+			m.tgSDKFailAt = time.Now()
+		}
+		if m.tgSDKWait != nil {
+			close(m.tgSDKWait) // wake the riders; they re-read the cache
+			m.tgSDKWait = nil
+		}
+		m.tgSDKMu.Unlock()
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), telegramSDKBudget)
 	defer cancel()
-	b, err := telegramSDKFetch(ctx)
-
-	m.tgSDKMu.Lock()
-	if err == nil && len(b) > 0 {
-		m.tgSDKBody, m.tgSDKAt = b, time.Now()
-		m.tgSDKFailAt = time.Time{}
-	} else {
-		m.tgSDKFailAt = time.Now()
-	}
-	close(m.tgSDKWait) // wake the riders; they re-read the cache
-	m.tgSDKWait = nil
-	m.tgSDKMu.Unlock()
+	b, err = telegramSDKFetch(ctx)
 }
