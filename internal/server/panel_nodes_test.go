@@ -20,9 +20,6 @@ func TestNodeXrayConfigServesTheGeneratedConfig(t *testing.T) {
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)
 	// First-run bootstrap seeds a WS path; this bare store has none and config
 	// generation requires one.
-	if err := st.SetWSPath("/ws"); err != nil {
-		t.Fatalf("seed ws path: %v", err)
-	}
 
 	node, err := rt.mgr.CreateNode("berlin", "de.example.com")
 	if err != nil {

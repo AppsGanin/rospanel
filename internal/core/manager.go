@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/abuse"
+	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -149,6 +150,11 @@ type Manager struct {
 	// "on, but nftables silently refused it" in the health report — the second is a
 	// problem, the first isn't. Set once at boot, before the panel serves.
 	connGuardWanted atomic.Bool
+	// connGuardLimits are the tunables the guard is (re-)applied with. Held so the
+	// port set can be refreshed at runtime — a custom inbound added after boot must
+	// come under the same guard as the built-in lanes.
+	connGuardMu     sync.Mutex
+	connGuardLimits connguard.Limits
 
 	// webhookCh is the outbound-webhook delivery queue drained by a small worker
 	// pool (see webhooks.go). Buffered so an event emit never blocks the caller;
@@ -163,6 +169,11 @@ type Manager struct {
 	// nodes tracks per-node wake channels so a config change wakes any held node
 	// long-poll to re-pull desired state (see manager_nodes.go).
 	nodes *nodeRegistry
+	// probes tracks in-flight "is this port free on that node" questions, answered
+	// over the same long-poll (see manager_node_probe.go); checks does the same for
+	// "does your Xray accept this config" (see manager_node_check.go).
+	probes *probeRegistry
+	checks *checkRegistry
 	// nodePathCB live-swaps the node-API URL segment into the router when the first
 	// node is created (nil until the server registers it; nil-safe for CLI/tests).
 	nodePathMu sync.Mutex
@@ -231,6 +242,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:        make(chan webhookJob, webhookQueueSize),
 		nodes:            newNodeRegistry(),
+		probes:           newProbeRegistry(),
+		checks:           newCheckRegistry(),
 		nodeUpdateWanted: map[int64]bool{},
 		nodeGeoWanted:    map[int64]bool{},
 		nodeRestart:      map[int64]*nodeRestartReq{},
@@ -510,20 +523,30 @@ func (m *Manager) syncUsers() error {
 	}
 	logInfo("user sync (live)", "added", len(added), "removed", len(removedEmails))
 
+	// The custom inbounds are part of the live update, not just of the regenerated
+	// config: without them a user added here would reach the built-in lanes at once
+	// but a custom one only after the next full restart — and, worse, a user removed
+	// here would keep working through every custom inbound until then.
+	opts, err := m.genOptsFor(model.LocalNodeID)
+	if err != nil {
+		return err
+	}
+	custom := opts.Custom
+
 	apiAddr := m.sup.APIAddr()
 	if len(removedEmails) > 0 {
-		if err := m.sup.RemoveUsers(apiAddr, xray.EnabledInboundTags(set), removedEmails); err != nil {
+		if err := m.sup.RemoveUsers(apiAddr, xray.EnabledInboundTags(set, custom), removedEmails); err != nil {
 			return err
 		}
 	}
 	if len(added) > 0 {
-		if err := m.sup.AddUsers(apiAddr, xray.UserInbounds(set, added)); err != nil {
+		if err := m.sup.AddUsers(apiAddr, xray.UserInbounds(set, custom, added, model.LocalNodeID, opts.Access)); err != nil {
 			return err
 		}
 	}
 	// Keep config.json current (no restart) so the monitor's crash-restart loads
 	// the right user set.
-	cfg, err := xray.Generate(set, users, m.genOpts(), m.getProxies())
+	cfg, err := xray.Generate(set, users, opts, m.getProxies())
 	if err != nil {
 		return err
 	}
@@ -531,16 +554,20 @@ func (m *Manager) syncUsers() error {
 		return err
 	}
 	m.setApplied(users)
-	// Xray's HandlerService can't live-apply user changes to the Hysteria2 (QUIC)
+	// Xray's HandlerService can't live-apply user changes to a Hysteria2 (QUIC)
 	// inbound — its authenticator is fixed when the inbound starts. The live adu/rmu
-	// above already made VLESS/Trojan/Reality reflect the change instantly; only
-	// Hysteria still needs a restart to pick it up. Defer that through the normal
-	// reconcile path instead of restarting inline: the reconcile debounce coalesces a
-	// burst of user changes into a SINGLE restart, and live traffic isn't dropped on
-	// every add when nothing but Hysteria membership needs the reload. Trade-off: a
-	// removed/disabled user keeps Hysteria access until this restart (~1 debounce
-	// cycle later) — acceptable, and VLESS/Trojan access was already revoked live.
-	if set.HysteriaEnabled {
+	// above already made the TCP lanes reflect the change instantly; only Hysteria
+	// still needs a restart to pick it up. Defer that through the normal reconcile
+	// path instead of restarting inline: the reconcile debounce coalesces a burst of
+	// user changes into a SINGLE restart, and live traffic isn't dropped on every add
+	// when nothing but Hysteria membership needs the reload. Trade-off: a removed/
+	// disabled user keeps Hysteria access until this restart (~1 debounce cycle
+	// later) — acceptable, and the TCP lanes were already revoked live.
+	//
+	// A CUSTOM Hysteria2 inbound counts exactly the same. Testing only the built-in
+	// lane would leave a removed user tunnelling through a custom QUIC inbound until
+	// something unrelated happened to trigger a reconcile.
+	if set.HysteriaEnabled || hasHysteria(custom) {
 		m.TriggerReconcile()
 	}
 	return m.store.MarkConfigApplied()
@@ -592,7 +619,13 @@ func (m *Manager) reconcileLocked() error {
 	if err != nil {
 		return err
 	}
-	cfg, err := xray.Generate(set, users, m.genOpts(), m.getProxies())
+	opts, err := m.genOptsFor(model.LocalNodeID)
+	if err != nil {
+		logErr("reconcile: options load failed", "err", err)
+		_ = m.store.SetConfigError(err.Error())
+		return err
+	}
+	cfg, err := xray.Generate(set, users, opts, m.getProxies())
 	if err != nil {
 		logErr("reconcile: config generation failed", "err", err)
 		_ = m.store.SetConfigError(err.Error())

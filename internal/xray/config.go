@@ -1,10 +1,16 @@
 // Package xray models the Xray-core config as typed Go structs (so field-name
 // mistakes are compile errors) and supervises the Xray child process.
 //
-// Engine note: Xray-core is the single proxy engine for all three protocols
-// (VLESS-Vision-TCP-443 with fallbacks, Trojan-WS-443 via fallback, and
-// Hysteria2-UDP-60000).
+// Engine note: Xray-core is the single proxy engine for every lane — the three
+// built-in ones (VLESS-Vision-TCP-443 with a fallback to the panel, VLESS-XHTTP-
+// REALITY on its own port, Hysteria2-UDP with port-hopping) and every operator-
+// defined custom inbound.
 package xray
+
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Config is the top-level Xray configuration document.
 type Config struct {
@@ -211,14 +217,85 @@ type Fallback struct {
 
 // StreamSettings configures transport + transport-level security.
 type StreamSettings struct {
-	Network          string            `json:"network,omitempty"`  // "tcp" | "ws" | "hysteria" | "grpc"
-	Security         string            `json:"security,omitempty"` // "tls" | "reality" | "" (none)
-	TLSSettings      *TLSSettings      `json:"tlsSettings,omitempty"`
-	WSSettings       *WSSettings       `json:"wsSettings,omitempty"`
-	HysteriaSettings *HysteriaSettings `json:"hysteriaSettings,omitempty"`
-	RealitySettings  *RealitySettings  `json:"realitySettings,omitempty"`
-	GRPCSettings     *GRPCSettings     `json:"grpcSettings,omitempty"`
-	Sockopt          *Sockopt          `json:"sockopt,omitempty"`
+	// Network is the transport: "tcp" | "ws" | "xhttp" | "grpc" | "httpupgrade" |
+	// "hysteria".
+	Network             string               `json:"network,omitempty"`
+	Security            string               `json:"security,omitempty"` // "tls" | "reality" | "" (none)
+	TLSSettings         *TLSSettings         `json:"tlsSettings,omitempty"`
+	TCPSettings         *TCPSettings         `json:"tcpSettings,omitempty"`
+	WSSettings          *WSSettings          `json:"wsSettings,omitempty"`
+	XHTTPSettings       *XHTTPSettings       `json:"xhttpSettings,omitempty"`
+	HTTPUpgradeSettings *HTTPUpgradeSettings `json:"httpupgradeSettings,omitempty"`
+	HysteriaSettings    *HysteriaSettings    `json:"hysteriaSettings,omitempty"`
+	RealitySettings     *RealitySettings     `json:"realitySettings,omitempty"`
+	GRPCSettings        *GRPCSettings        `json:"grpcSettings,omitempty"`
+	// Sockopt is the operator's socket-option block, passed through verbatim. Raw
+	// rather than typed: the field set is long, entirely server-local, and validated
+	// against a key whitelist before it gets here (model.SockoptKeys), so a typed
+	// mirror would be twenty fields of pure transcription with nothing to check.
+	Sockopt json.RawMessage `json:"sockopt,omitempty"`
+}
+
+// XHTTPSettings configures the XHTTP transport (Xray's HTTP-shaped transport, the
+// successor to SplitHTTP). Mode is "" (Xray's default), "packet-up", "stream-up" or
+// "stream-one"; with REALITY the default resolves to stream-one — one HTTP request
+// per connection, which is both the smallest surface and the only shape that would
+// survive path-based dispatch.
+//
+// Host is the Host header the client sends; empty means the client uses the address
+// it dialled, which is what we want when the inbound isn't behind a CDN.
+//
+// Extra is the operator's advanced block, passed through verbatim. Xray reads `extra`
+// as a COMPLETE XHTTP config and then overwrites its host/path/mode from the outer
+// three, which is what lets the same object be handed to the client in the share
+// link's extra= parameter with no translation.
+type XHTTPSettings struct {
+	Path  string          `json:"path,omitempty"`
+	Host  string          `json:"host,omitempty"`
+	Mode  string          `json:"mode,omitempty"`
+	Extra json.RawMessage `json:"extra,omitempty"`
+}
+
+// TCPSettings configures the raw-TCP transport. Header carries the optional HTTP
+// masquerade — the framing that makes a raw proxy stream open like an ordinary HTTP
+// exchange. Left nil the transport sends proxy bytes straight away.
+type TCPSettings struct {
+	Header *TCPHeader `json:"header,omitempty"`
+}
+
+// TCPHeader is the raw-TCP masquerade. Type is "none" or "http"; for "http" the
+// request/response templates decide what the framing claims to be.
+type TCPHeader struct {
+	Type     string        `json:"type"`
+	Request  *HTTPRequest  `json:"request,omitempty"`
+	Response *HTTPResponse `json:"response,omitempty"`
+}
+
+// HTTPRequest is the client-to-server half of the raw-TCP HTTP masquerade.
+type HTTPRequest struct {
+	Version string              `json:"version,omitempty"`
+	Method  string              `json:"method,omitempty"`
+	Path    []string            `json:"path,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
+}
+
+// HTTPResponse is the server-to-client half.
+type HTTPResponse struct {
+	Version string              `json:"version,omitempty"`
+	Status  string              `json:"status,omitempty"`
+	Reason  string              `json:"reason,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty"`
+}
+
+// HTTPUpgradeSettings configures the HTTPUpgrade transport — a WebSocket-shaped
+// upgrade without the WebSocket framing, so it fronts the same CDNs but carries no
+// per-frame masking.
+type HTTPUpgradeSettings struct {
+	Path string `json:"path,omitempty"`
+	Host string `json:"host,omitempty"`
+	// AcceptProxyProtocol reads the real client IP from a PROXY-protocol header
+	// prepended by an upstream that forwards to this inbound.
+	AcceptProxyProtocol bool `json:"acceptProxyProtocol,omitempty"`
 }
 
 // RealitySettings configures the REALITY security layer. Instead of presenting
@@ -237,22 +314,24 @@ type RealitySettings struct {
 	MaxTimeDiff int `json:"maxTimeDiff,omitempty"`
 }
 
-// GRPCSettings configures the gRPC transport.
+// GRPCSettings configures the gRPC transport. Authority overrides the :authority
+// pseudo-header; MultiMode multiplexes several streams over one connection.
+//
+// Note: current Xray marks the gRPC transport itself deprecated in favour of XHTTP
+// stream-up over H2 (it prints a warning on every start). It stays available because
+// existing clients speak it, but new lanes are better off on XHTTP.
 type GRPCSettings struct {
 	ServiceName string `json:"serviceName"`
+	Authority   string `json:"authority,omitempty"`
+	MultiMode   bool   `json:"multiMode,omitempty"`
 }
 
-// Sockopt carries socket-level inbound options. trustedXForwardedFor whitelists
-// the upstream peers whose X-Forwarded-For header Xray will trust.
-type Sockopt struct {
-	TrustedXForwardedFor []string `json:"trustedXForwardedFor,omitempty"`
-}
-
-// WSSettings configures the WebSocket transport (Trojan-WS).
+// WSSettings configures the WebSocket transport.
 type WSSettings struct {
 	Path string `json:"path,omitempty"`
-	// AcceptProxyProtocol lets the loopback Trojan inbound read the real client
-	// IP from the PROXY-protocol header the VLESS fallback prepends (xver).
+	Host string `json:"host,omitempty"`
+	// AcceptProxyProtocol reads the real client IP from a PROXY-protocol header
+	// prepended by an upstream that forwards to this inbound.
 	AcceptProxyProtocol bool `json:"acceptProxyProtocol,omitempty"`
 }
 
@@ -298,6 +377,46 @@ type TLSSettings struct {
 	ALPN             []string      `json:"alpn,omitempty"`
 	MinVersion       string        `json:"minVersion,omitempty"`
 	Certificates     []Certificate `json:"certificates,omitempty"`
+
+	// Extra are additional tlsSettings keys the operator supplied. Merged at
+	// marshal time (see MarshalJSON) rather than stored as a sibling block, because
+	// Xray reads one flat tlsSettings object — there is nowhere for a second one to
+	// go. Validated against model.TLSExtraKeys before it reaches here, so it cannot
+	// contain the fields above that the panel owns.
+	Extra json.RawMessage `json:"-"`
+}
+
+// MarshalJSON emits the derived fields with the operator's extra keys folded in.
+//
+// Written by hand because the alternative is making the whole block a raw blob, which
+// would cost every other call site its compile-time field checking — the reason these
+// structs are typed at all. The alias type breaks the recursion.
+func (t TLSSettings) MarshalJSON() ([]byte, error) {
+	type plain TLSSettings // no MarshalJSON on the alias ⇒ no recursion
+	base, err := json.Marshal(plain(t))
+	if err != nil {
+		return nil, err
+	}
+	if len(t.Extra) == 0 {
+		return base, nil
+	}
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(base, &merged); err != nil {
+		return nil, err
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal(t.Extra, &extra); err != nil {
+		return nil, fmt.Errorf("tls extra: %w", err)
+	}
+	// The operator's keys lose to the derived ones on collision. They are whitelisted
+	// not to overlap, so this only ever matters if that list and this struct drift —
+	// and then the panel's own value is the safe one to keep.
+	for k, v := range extra {
+		if _, taken := merged[k]; !taken {
+			merged[k] = v
+		}
+	}
+	return json.Marshal(merged)
 }
 
 // Certificate points at on-disk PEM files (shared cert for all listeners).

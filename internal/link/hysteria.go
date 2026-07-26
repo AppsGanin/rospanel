@@ -7,6 +7,21 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
+// hopParams renders the Hysteria2 port-hopping quicParams JSON carried in a link's
+// fm parameter.
+//
+// The JSON is kept COMPACT (no spaces/newlines) on purpose: fm is double-URL-encoded
+// because Xray decodes query params twice before consuming the value, and Go's
+// url.QueryEscape turns a space into "+", which after the second encode becomes
+// "%2B" and decodes back to a literal "+" on the client — corrupting the JSON. No
+// whitespace ⇒ no ambiguity.
+func hopParams(base, hopEnd int, interval string) string {
+	return fmt.Sprintf(
+		`{"quicParams":{"udpHop":{"ports":"%d-%d","interval":"%s"},"congestion":"bbr"}}`,
+		base, hopEnd, interval,
+	)
+}
+
 // Hysteria2 builds a hysteria2:// share link.
 //
 // Format matches what x-ui/3x-ui and similar Xray-based panels emit and that
@@ -14,12 +29,6 @@ import (
 //
 //	hysteria2://<pw>@<host>:<port>?type=hysteria&security=tls&sni=<sni>
 //	      &alpn=h3&fm=<quicParams>#<label>
-//
-// fm carries the port-hopping quicParams JSON and is double-URL-encoded because
-// Xray decodes query params twice before consuming the value. The JSON is kept
-// COMPACT (no spaces/newlines): Go's url.QueryEscape encodes a space as "+",
-// which after the second encode becomes "%2B" and decodes back to a literal "+"
-// on the client — corrupting the JSON. No whitespace ⇒ no ambiguity.
 func Hysteria2(u model.User, set *model.Settings) string {
 	q := url.Values{}
 	q.Set("type", "hysteria")
@@ -32,11 +41,8 @@ func Hysteria2(u model.User, set *model.Settings) string {
 		if interval == "" {
 			interval = "5-10"
 		}
-		fm := fmt.Sprintf(
-			`{"quicParams":{"udpHop":{"ports":"%d-%d","interval":"%s"},"congestion":"bbr"}}`,
-			set.HysteriaPort, set.HopEnd, interval,
-		)
-		q.Set("fm", url.QueryEscape(fm)) // Encode() escapes once more → double-encoded
+		// Encode() escapes once more → double-encoded, which is what the client wants.
+		q.Set("fm", url.QueryEscape(hopParams(set.HysteriaPort, set.HopEnd, interval)))
 	}
 	return assemble("hysteria2", url.QueryEscape(u.Password), set.HysteriaPort, q, model.ProtoHysteria, u, set)
 }

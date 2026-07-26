@@ -43,6 +43,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { ConnectionsEditor } from "./ConnectionsEditor";
+import { InboundsEditor } from "./InboundsEditor";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./egress";
 import { fmtBytes } from "./format";
@@ -857,6 +858,7 @@ function NodeSettingsDialog({
         tabs={[
           { value: "general", label: "Основное" },
           { value: "connections", label: "Подключения" },
+          { value: "inbounds", label: "Доп. подключения" },
           { value: "routing", label: "Роутинг" },
           { value: "dns", label: "DNS" },
           { value: "geo", label: "Geo" },
@@ -894,6 +896,8 @@ function NodeSettingsDialog({
           restartsPanel={false}
         />
       )}
+
+      {tab === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
 
       {tab === "routing" && (
         <div className="flex flex-col gap-4">
@@ -1136,6 +1140,7 @@ function MasterSettingsDialog({
             tabs={[
               { value: "general", label: "Основное" },
               { value: "connections", label: "Подключения" },
+              { value: "inbounds", label: "Доп. подключения" },
               { value: "routing", label: "Роутинг" },
               { value: "dns", label: "DNS" },
               { value: "geo", label: "Geo" },
@@ -1175,6 +1180,8 @@ function MasterSettingsDialog({
           {tab === "connections" && (
             <ConnectionsEditor load={getConnections} save={applyConnections} restartsPanel />
           )}
+
+          {tab === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
 
           {tab === "routing" && (
             <div className="flex flex-col gap-4">

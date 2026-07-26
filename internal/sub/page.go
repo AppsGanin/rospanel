@@ -145,30 +145,37 @@ func subStatus(s string) (label, class string) {
 // list shows one labelled entry per protocol × server (with a single server it's
 // unchanged). sets[0] is the local server, used for the sub URL, branding and
 // billing.
-func Page(u model.User, sets []*model.Settings, billing Billing) ([]byte, error) {
-	if len(sets) == 0 {
+func Page(u model.User, servers []Server, billing Billing) ([]byte, error) {
+	if len(servers) == 0 {
 		return nil, fmt.Errorf("no settings for subscription page")
 	}
-	set := sets[0]
+	set := servers[0].Set
 	subURL := URL(set, u.SubToken)
 	used := u.UsedUp + u.UsedDown
 
-	// Only protocols enabled in the Connections panel appear on the page, across
-	// every server. The label carries the node name (Settings.ProtoLabel), so a
-	// multi-node user can tell the entries apart.
+	// Only lanes enabled in the Connections panel appear on the page, across every
+	// server: the built-in ones first, then that server's custom inbounds. The label
+	// carries the node name (Settings.ProtoLabel / link.CustomLabel), so a multi-node
+	// user can tell the entries apart.
 	var protoLinks []protoLink
-	for _, s := range sets {
-		if s.VLESSEnabled {
+	for _, srv := range servers {
+		s := srv.Set
+		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoVLESS), link.VLESS(u, s)})
 		}
-		if s.RealityEnabled {
+		if s.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoReality), link.Reality(u, s)})
 		}
-		if s.TrojanEnabled {
-			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoTrojan), link.Trojan(u, s)})
-		}
-		if s.HysteriaEnabled {
+		if s.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoHysteria), link.Hysteria2(u, s)})
+		}
+		for _, in := range srv.Custom {
+			if !srv.allowsInbound(in.ID) {
+				continue
+			}
+			if l := link.Custom(u, in, s); l != "" {
+				protoLinks = append(protoLinks, protoLink{link.CustomLabel(in, s), l})
+			}
 		}
 	}
 

@@ -112,6 +112,60 @@ type SyncRequest struct {
 	// handful of facts the panel shows for itself. Optional: an older agent omits it
 	// and the report says so rather than inventing numbers.
 	Host *HostStats `json:"host,omitempty"`
+
+	// ConfigCheck answers a SyncResponse.CheckConfig request: did `xray run -test`
+	// accept the candidate config? The panel asks before SAVING an inbound, so the
+	// operator is told in the editor rather than by a crashed Xray and a rollback.
+	// An agent too old to know the request omits this, which the panel reads as
+	// "couldn't check".
+	ConfigCheck *ConfigCheckResult `json:"config_check,omitempty"`
+
+	// ProbeResults answers the port probes the panel asked for in the previous
+	// response (SyncResponse.ProbePorts). The panel is validating a custom inbound
+	// before saving it and cannot bind a socket on this machine itself. An agent too
+	// old to know the request simply omits this, which the panel reads as "couldn't
+	// check" rather than as a failure.
+	ProbeResults []PortProbeResult `json:"probe_results,omitempty"`
+}
+
+// ConfigCheckResult is the node's verdict on a candidate config. ID echoes the
+// request so a stale answer can't satisfy a newer question; Err carries Xray's own
+// complaint, which is the only thing precise enough to act on.
+type ConfigCheckResult struct {
+	ID  string `json:"id"`
+	OK  bool   `json:"ok"`
+	Err string `json:"err,omitempty"`
+}
+
+// HopRange is one UDP port-hopping funnel: Start..End redirected onto Target.
+type HopRange struct {
+	Start  int `json:"start"`
+	End    int `json:"end"`
+	Target int `json:"target"`
+}
+
+// ConfigCheckRequest is a candidate config to validate but not apply. ID is echoed
+// back so the panel can match the answer to the request that is still being waited on.
+type ConfigCheckRequest struct {
+	ID     string          `json:"id"`
+	Config json.RawMessage `json:"config"`
+}
+
+// PortProbe asks the node whether a port is free — "try to bind it, answer yes/no".
+// Network is "tcp" or "udp": a Hysteria2 inbound binds UDP, and testing the wrong
+// one would pass while the real bind fails.
+type PortProbe struct {
+	Network string `json:"network"`
+	Port    int    `json:"port"`
+}
+
+// PortProbeResult is the node's answer. Free is what the panel acts on; Err carries
+// the bind error for the operator when it isn't.
+type PortProbeResult struct {
+	Network string `json:"network"`
+	Port    int    `json:"port"`
+	Free    bool   `json:"free"`
+	Err     string `json:"err,omitempty"`
 }
 
 // HostStats is a node's machine state as of its last sync.
@@ -198,6 +252,18 @@ type SyncResponse struct {
 	// WantLogs ⇒ an operator is viewing this node's logs; include the log tail in the
 	// next sync request.
 	WantLogs bool `json:"want_logs,omitempty"`
+
+	// CheckConfig asks the node to run `xray run -test` over this candidate config and
+	// report the verdict, WITHOUT applying it. Set while an operator is saving an
+	// inbound: only the node's own Xray can say whether its advanced settings parse,
+	// and finding out by crashing it is the failure this avoids.
+	CheckConfig *ConfigCheckRequest `json:"check_config,omitempty"`
+
+	// ProbePorts asks the node to bind-test these ports and report the outcome in its
+	// next sync (SyncRequest.ProbeResults). Set while an operator is adding a custom
+	// inbound to this node: the panel validates the port before writing anything, and
+	// only the node itself can tell whether the port is free there.
+	ProbePorts []PortProbe `json:"probe_ports,omitempty"`
 }
 
 // NodeState is the full desired state for a node. XrayConfig is generated panel-
@@ -224,6 +290,13 @@ type NodeMeta struct {
 	HysteriaPort    int  `json:"hysteria_port"`
 	HopStart        int  `json:"hop_start"`
 	HopEnd          int  `json:"hop_end"`
+
+	// HopRanges is every UDP funnel this node should install — the built-in Hysteria2
+	// lane's range plus one per custom Hysteria2 inbound that asks for hopping. The
+	// agent recreates its nftables table wholesale from this list, so it must be the
+	// complete set. An older agent ignores it and keeps using the three fields above,
+	// which still describe the built-in lane exactly.
+	HopRanges []HopRange `json:"hop_ranges,omitempty"`
 
 	// ConnGuardPorts are the public TCP ports the per-IP connection guard should
 	// protect (VLESS, and REALITY when enabled).

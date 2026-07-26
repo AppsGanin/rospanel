@@ -523,7 +523,7 @@ func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msg
 		return
 	}
 	rows := [][]InlineButton{{{
-		Text:         "✋ Вручную (без лимитов)",
+		Text:         "✋ Вручную",
 		CallbackData: fmt.Sprintf("u:%d:plan:0", userID),
 	}}}
 	for _, p := range plans {

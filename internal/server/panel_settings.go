@@ -51,7 +51,6 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 	templates, _ := decoy.Available()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"secret_path":          set.PanelSecretPath,
-		"ws_path":              set.WSPath,
 		"decoy_template":       set.DecoyTemplate,
 		"decoy_templates":      templates,
 		"sub_path":             set.SubPathOr(),

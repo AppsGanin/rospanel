@@ -43,26 +43,45 @@ func validDNSServer(s string) bool {
 // protocols).
 type userView struct {
 	model.User
-	SystemEmail      string `json:"system_email"` // Xray client id "u<id>" (logs/stats/links)
-	SubURL           string `json:"sub_url"`
-	VLESS            string `json:"vless"`
-	Trojan           string `json:"trojan"`
-	Hysteria2        string `json:"hysteria2"`
-	Reality          string `json:"reality"`
-	TelegramLinked   bool   `json:"telegram_linked"`
-	TelegramLink     string `json:"telegram_link"`      // public user bot URL
-	TelegramDeepLink string `json:"telegram_deep_link"` // bind this (panel-created) account
+	SystemEmail string `json:"system_email"` // Xray client id "u<id>" (logs/stats/links)
+	SubURL      string `json:"sub_url"`
+	VLESS       string `json:"vless"`
+	Hysteria2   string `json:"hysteria2"`
+	Reality     string `json:"reality"`
+	// Links is every lane this user has on THIS server, built-in and custom, each
+	// with the name the client will show. The three fields above are the built-in
+	// lanes kept as their own keys for integrations that were written against them;
+	// a custom inbound can only appear here, since it has no fixed name to have a
+	// field of its own.
+	Links []namedLink `json:"links"`
+	// Groups the user belongs to (empty ⇒ access to everything). Shown as chips in the
+	// user list and detail; editing membership is a separate endpoint.
+	Groups           []model.GroupRef `json:"groups"`
+	TelegramLinked   bool             `json:"telegram_linked"`
+	TelegramLink     string           `json:"telegram_link"`      // public user bot URL
+	TelegramDeepLink string           `json:"telegram_deep_link"` // bind this (panel-created) account
+}
+
+// namedLink is one share link with the node name a client displays for it.
+type namedLink struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // makeUserView builds the API view for a user. userBotUsername is the resolved
-// @username of the public user bot ("" when disabled/unresolved) — passed in so
-// the caller resolves it once per request instead of per user.
-func makeUserView(u model.User, set *model.Settings, userBotUsername string) userView {
+// @username of the public user bot ("" when disabled/unresolved) and custom is the
+// local server's custom inbounds — both passed in so the caller resolves them once
+// per request rather than per user.
+func makeUserView(u model.User, set *model.Settings, userBotUsername string, custom []model.Inbound, groups []model.GroupRef, access model.Access) userView {
 	v := userView{
 		User:           u,
 		SystemEmail:    model.UserEmail(u.ID),
 		SubURL:         sub.URL(set, u.SubToken),
+		Groups:         groups,
 		TelegramLinked: u.TgChatID != 0,
+	}
+	if v.Groups == nil {
+		v.Groups = []model.GroupRef{}
 	}
 	// The bind deep link is no longer embedded here (it carried the permanent
 	// sub-token). It's now minted on demand as a one-time code via
@@ -70,21 +89,42 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string) use
 	if set.TGUserBotEnabled && userBotUsername != "" && u.TgChatID == 0 {
 		v.TelegramLink = telegram.UserBotLink(userBotUsername)
 	}
-	// A protocol switched off in the Connections panel drops out of the user's
-	// links (empty string ⇒ the UI hides it).
-	if set.VLESSEnabled {
+	// A lane switched off in the Connections panel drops out of the user's links, and
+	// so does one the user's groups don't grant — the admin view mirrors what the user
+	// actually gets, not just what exists.
+	if set.VLESSEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneVLESS) {
 		v.VLESS = link.VLESS(u, set)
+		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoVLESS), v.VLESS})
 	}
-	if set.TrojanEnabled {
-		v.Trojan = link.Trojan(u, set)
-	}
-	if set.HysteriaEnabled {
-		v.Hysteria2 = link.Hysteria2(u, set)
-	}
-	if set.RealityEnabled {
+	if set.RealityEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneReality) {
 		v.Reality = link.Reality(u, set)
+		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoReality), v.Reality})
+	}
+	if set.HysteriaEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneHysteria) {
+		v.Hysteria2 = link.Hysteria2(u, set)
+		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoHysteria), v.Hysteria2})
+	}
+	for _, in := range custom {
+		if !access.AllowsInbound(in.ID) {
+			continue
+		}
+		if l := link.Custom(u, in, set); l != "" {
+			v.Links = append(v.Links, namedLink{link.CustomLabel(in, set), l})
+		}
 	}
 	return v
+}
+
+// userViewFor builds a user's view, resolving their groups and access. For one user
+// (the create/patch/get handlers); the list handlers use the batch maps instead of a
+// query per row.
+func (rt *Router) userViewFor(u model.User, set *model.Settings, bot string) userView {
+	groups, _ := rt.mgr.GroupsForUser(u.ID)
+	access, err := rt.mgr.Store().UserAccess(u.ID)
+	if err != nil {
+		access = model.UnrestrictedAccess()
+	}
+	return makeUserView(u, set, bot, rt.localInbounds(), groups, access)
 }
 
 // applyTLSHints fills the per-request TLS fields used by link/sub generation. When
@@ -107,11 +147,41 @@ func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
 	// The master server's config labels get its display name too (multi-node), so a
 	// client can tell the master's entries from the nodes'.
 	local.NodeLabel = local.MasterLabel
+	local.ServerID = model.LocalNodeID
 	sets := []*model.Settings{local}
 	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
 		sets = append(sets, nodes...)
 	}
 	return sets
+}
+
+// subServers is subSettings paired with each server's custom inbounds and the
+// requesting user's access — the shape every subscription builder consumes. One query
+// covers the whole fleet; a read failure degrades to built-in lanes only rather than
+// failing the subscription, because a user who can't fetch a config has no way back
+// in. An access read failure degrades to unrestricted for the same reason — a broken
+// group query should hide nothing rather than lock the user out.
+func (rt *Router) subServers(local *model.Settings, userID int64) []sub.Server {
+	sets := rt.subSettings(local)
+	custom, err := rt.mgr.Store().AllInbounds()
+	if err != nil {
+		custom = nil
+	}
+	access, err := rt.mgr.Store().UserAccess(userID)
+	if err != nil {
+		access = model.UnrestrictedAccess()
+	}
+	return sub.Servers(sets, custom, access)
+}
+
+// localInbounds is the master's own custom inbounds, or none when they can't be
+// read (the user views degrade to the built-in lanes rather than erroring).
+func (rt *Router) localInbounds() []model.Inbound {
+	list, err := rt.mgr.Store().EnabledInbounds(model.LocalNodeID)
+	if err != nil {
+		return nil
+	}
+	return list
 }
 
 func (rt *Router) panelMux() http.Handler {
@@ -228,6 +298,15 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/panel/restart", rt.restartPanel)
 	authed("GET /api/connections", rt.connections)
 	authed("POST /api/connections", rt.applyConnections)
+	// User groups: which connections a member may use. Managed by operators, same tier
+	// as users (assigning a user to a group is a user-management action).
+	authedOp("GET /api/groups", rt.listGroups)
+	authedOp("GET /api/groups/targets", rt.groupTargets)
+	authedOp("POST /api/groups", rt.createGroup)
+	authedOpID("POST /api/groups/{id}", rt.updateGroup)
+	authedOpID("DELETE /api/groups/{id}", rt.deleteGroup)
+	authedOpID("POST /api/groups/{id}/members", rt.setGroupMembers)
+	authedOpID("POST /api/users/{id}/groups", rt.setUserGroups)
 	// End users, the journal and stats are the operator's job — everything below is
 	// open from RoleOperator up.
 	authedOp("GET /api/users", rt.listUsers)
@@ -288,6 +367,14 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
+	// Custom inbounds. The list/create routes are keyed by SERVER id (0 = master);
+	// edit/delete are keyed by the inbound's own id, which already implies its server.
+	authed("GET /api/inbounds/catalog", rt.inboundCatalog)
+	authedID("GET /api/servers/{id}/inbounds", rt.serverInbounds)
+	authedID("POST /api/servers/{id}/inbounds", rt.createServerInbound)
+	authedID("POST /api/inbounds/{id}", rt.updateInbound)
+	authedID("DELETE /api/inbounds/{id}", rt.deleteInbound)
+	authedID("POST /api/inbounds/{id}/regen-reality", rt.regenInboundReality)
 	authedID("GET /api/nodes/{id}/tls", rt.nodeTLS)
 	authedID("POST /api/nodes/{id}/tls", rt.setNodeACME)
 	authedID("GET /api/nodes/{id}/geo", rt.nodeGeoInfo)

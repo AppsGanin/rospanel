@@ -190,10 +190,6 @@ func certWarnThreshold(lifeDays int) int {
 	return t
 }
 
-// SetConnGuardWanted records whether the operator left the per-IP connection guard
-// enabled (ROSPANEL_CONNLIMIT != off). Called once at boot.
-func (m *Manager) SetConnGuardWanted(v bool) { m.connGuardWanted.Store(v) }
-
 // connGuardHealth reports whether the per-IP connection limits are actually in
 // force. connguard.Ensure degrades to a no-op when nft is missing or the panel
 // isn't root, and only logs — so an operator who believes they're protected can be

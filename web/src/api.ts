@@ -25,9 +25,19 @@ export interface User {
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
   vless: string
-  trojan: string
   hysteria2: string
   reality: string
+  // Every lane this user has on the master, built-in and custom, in client order.
+  // The three fields above are the built-in lanes kept as their own keys; a custom
+  // inbound can only appear here.
+  links: { name: string; url: string }[]
+  // Groups the user belongs to (empty ⇒ access to everything).
+  groups: GroupRef[]
+}
+
+export interface GroupRef {
+  id: number
+  name: string
 }
 
 export interface DailyPoint {
@@ -187,7 +197,6 @@ export interface ConnInfo {
 export interface ConnectionsStatus {
   host: string
   sni: string
-  ws_path: string
   protocols: ConnInfo[]
   hysteria_port: number
   hop_start: number
@@ -197,7 +206,7 @@ export interface ConnectionsStatus {
   reality_dest: string
   reality_public_key: string
   reality_short_id: string
-  reality_service_name: string
+  reality_path: string // secret XHTTP request path of the REALITY lane
   reality_anti_replay: boolean
   tls_fragment: boolean
   tls_min13: boolean
@@ -209,7 +218,6 @@ export interface ConnectionsUpdate {
   protocols: Record<string, boolean>
   fingerprints: Record<string, string>
   names: Record<string, string>
-  ws_path: string
   hysteria_port: number
   hop_start: number
   hop_end: number
@@ -641,7 +649,6 @@ export interface SubSettings {
 
 export interface SettingsInfo extends SubSettings {
   secret_path: string
-  ws_path: string
   decoy_template: string
   decoy_templates: string[]
   xray_dns: string
@@ -1383,7 +1390,6 @@ export interface NodeView {
   // Absent for the master, whose restart is synchronous.
   xray_restart?: 'pending' | 'done' | 'timeout'
   vless_enabled: boolean
-  trojan_enabled: boolean
   hysteria_enabled: boolean
   reality_enabled: boolean
   decoy_template: string
@@ -1402,11 +1408,11 @@ export interface NodeView {
   opera_enabled: boolean
   opera_country: string
   // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
-  // donor. The public key / short id / gRPC service are shown; private key is hidden.
+  // donor. The public key / short id / XHTTP path are shown; private key is hidden.
   reality_dest: string
   reality_public_key: string
   reality_short_id: string
-  reality_service_name: string
+  reality_path: string
   master_label?: string // config-label name of the master (local node only)
 }
 
@@ -1423,7 +1429,6 @@ export const setMasterName = (name: string) =>
 // Connection details stay in the global Подключения settings.
 export const setMasterProtocols = (p: {
   vless_enabled: boolean
-  trojan_enabled: boolean
   hysteria_enabled: boolean
   reality_enabled: boolean
 }) =>
@@ -1487,7 +1492,6 @@ export interface NodePatch {
   host: string
   decoy_template: string
   vless_enabled?: boolean
-  trojan_enabled?: boolean
   hysteria_enabled?: boolean
   reality_enabled?: boolean
 }
@@ -1615,3 +1619,262 @@ export async function provisionNode(
   if (buf.trim()) handle(buf)
   return outcome
 }
+
+// ---- Custom inbounds -------------------------------------------------------
+//
+// Operator-defined listeners that sit beside the three built-in lanes. Each
+// belongs to exactly one server (0 = the master, a node id otherwise), because
+// its port, REALITY identity and hop range are all facts about that machine.
+
+export interface InboundOpts {
+  transport: string
+  security: string
+  sni?: string
+  fp?: string
+  path?: string
+  host?: string
+  mode?: string
+  service_name?: string
+  reality_dest?: string
+  reality_public_key?: string
+  reality_short_id?: string
+  reality_max_time_diff?: number
+  hop_start?: number
+  hop_end?: number
+  hop_interval?: string
+  // Advanced. header_* / authority / multi_mode are simple mirrored-into-links knobs.
+  // The three JSON sections travel as typed forms, not on opts — see the *_form fields
+  // on Inbound below (the server nils the raw blobs out of opts).
+  header_type?: string
+  header_hosts?: string[]
+  header_paths?: string[]
+  authority?: string
+  multi_mode?: boolean
+}
+
+// The advanced JSON sections, presented as typed fields. A field left empty is
+// omitted; `raw` is a JSON-object string of any key the panel doesn't surface (the
+// escape hatch), preserved verbatim across a round trip.
+export interface XmuxForm {
+  maxConcurrency?: string
+  maxConnections?: string
+  cMaxReuseTimes?: string
+  hMaxRequestTimes?: string
+  hMaxReusableSecs?: string
+  hKeepAlivePeriod?: number
+}
+export interface XHTTPExtraForm {
+  headers?: Record<string, string>
+  xPaddingBytes?: string
+  xPaddingObfsMode?: boolean
+  xPaddingKey?: string
+  xPaddingHeader?: string
+  xPaddingPlacement?: string
+  xPaddingMethod?: string
+  uplinkHTTPMethod?: string
+  sessionIDPlacement?: string
+  sessionIDKey?: string
+  sessionIDTable?: string
+  sessionIDLength?: string
+  seqPlacement?: string
+  seqKey?: string
+  uplinkDataPlacement?: string
+  uplinkDataKey?: string
+  uplinkChunkSize?: string
+  noGRPCHeader?: boolean
+  noSSEHeader?: boolean
+  scMaxEachPostBytes?: string
+  scMinPostsIntervalMs?: string
+  scMaxBufferedPosts?: number
+  scStreamUpServerSecs?: string
+  serverMaxHeaderBytes?: number
+  xmux?: XmuxForm
+  raw?: string
+}
+export interface SockoptForm {
+  mark?: number
+  tcpFastOpen?: boolean
+  tproxy?: string
+  domainStrategy?: string
+  dialerProxy?: string
+  tcpKeepAliveInterval?: number
+  tcpKeepAliveIdle?: number
+  tcpCongestion?: string
+  tcpWindowClamp?: number
+  tcpMaxSeg?: number
+  penetrate?: boolean
+  tcpUserTimeout?: number
+  v6only?: boolean
+  interface?: string
+  tcpMptcp?: boolean
+  addressPortStrategy?: string
+  raw?: string
+}
+export interface TLSExtraForm {
+  minVersion?: string
+  maxVersion?: string
+  cipherSuites?: string
+  rejectUnknownSni?: boolean
+  curvePreferences?: string[]
+  enableSessionResumption?: boolean
+  disableSystemRoot?: boolean
+  verifyPeerCertByName?: string[]
+  raw?: string
+}
+
+export interface Inbound {
+  id: number
+  server_id: number
+  enabled: boolean
+  sort: number
+  name: string
+  protocol: string
+  port: number
+  opts: InboundOpts
+  created_at: number
+  // Subscription formats that cannot carry this combination and will skip it.
+  // A warning, not an error — those clients just won't see this lane.
+  unsupported: string[] | null
+  reality_public_key?: string
+  reality_short_id?: string
+  // The advanced sections, disassembled into forms the editor binds directly.
+  xhttp_extra_form: XHTTPExtraForm
+  sockopt_form: SockoptForm
+  tls_extra_form: TLSExtraForm
+}
+
+// InboundInput is the editable shape sent on create/update. The server owns the
+// id, the server_id and the REALITY private key, so none of them appear here.
+export interface InboundInput {
+  enabled: boolean
+  name: string
+  protocol: string
+  port: number
+  transport: string
+  security: string
+  sni: string
+  fp: string
+  path: string
+  host: string
+  mode: string
+  service_name: string
+  reality_dest: string
+  reality_anti_replay: boolean
+  hop_start: number
+  hop_end: number
+  hop_interval: string
+  header_type: string
+  header_hosts: string[]
+  header_paths: string[]
+  authority: string
+  multi_mode: boolean
+  // The three advanced sections as typed forms; the server assembles them into the
+  // JSON blob Xray reads and validates that.
+  xhttp_extra: XHTTPExtraForm
+  sockopt: SockoptForm
+  tls_extra: TLSExtraForm
+}
+
+// InboundCombo is one valid protocol × transport pair with the security layers it
+// accepts. The editor drives its dropdowns from this so the UI and the server-side
+// validator can never disagree about which combinations exist.
+export interface InboundCombo {
+  protocol: string
+  transport: string
+  securities: string[]
+  unsupported: string[] | null
+}
+
+// InboundEnums are the advanced-field dropdown options, straight from Xray's parser.
+export interface InboundEnums {
+  placements: string[]
+  uplink_methods: string[]
+  tproxy: string[]
+  domain_strategy: string[]
+  address_port_strategy: string[]
+  tls_versions: string[]
+}
+
+export interface InboundCatalog {
+  protocols: string[]
+  combos: InboundCombo[]
+  fingerprints: string[]
+  xhttp_modes: string[]
+  max: number
+  enums: InboundEnums
+}
+
+export const getInboundCatalog = () => api<InboundCatalog>('api/inbounds/catalog')
+
+export const listInbounds = (serverId: number) =>
+  api<Inbound[]>(`api/servers/${serverId}/inbounds`)
+
+export const createInbound = (serverId: number, v: InboundInput) =>
+  api<Inbound>(`api/servers/${serverId}/inbounds`, {
+    method: 'POST',
+    body: JSON.stringify(v),
+  })
+
+export const updateInbound = (id: number, v: InboundInput) =>
+  api<Inbound>(`api/inbounds/${id}`, { method: 'POST', body: JSON.stringify(v) })
+
+export const deleteInbound = (id: number) =>
+  api<{ ok: boolean }>(`api/inbounds/${id}`, { method: 'DELETE' })
+
+export const regenInboundReality = (id: number) =>
+  api<Inbound>(`api/inbounds/${id}/regen-reality`, { method: 'POST' })
+
+// ---- User groups -----------------------------------------------------------
+//
+// A group gates which connections its members may use. A user in no group reaches
+// everything; a user in groups reaches the union of their grants. Grants are opaque
+// tokens (a built-in lane on a server, or a custom inbound) that GroupTargets resolves
+// to names.
+
+export interface Group {
+  id: number
+  name: string
+  created_at: number
+  grants: string[] | null
+  members: number
+  member_ids: number[] | null
+}
+
+export interface GroupLaneOpt {
+  lane: string // vless | reality | hysteria2
+  label: string
+  token: string
+  enabled: boolean
+}
+export interface GroupInboundOpt {
+  id: number
+  name: string
+  token: string
+  enabled: boolean
+}
+// GroupTarget is one server's grantable connections, for the group editor.
+export interface GroupTarget {
+  server_id: number
+  server_name: string
+  lanes: GroupLaneOpt[]
+  inbounds: GroupInboundOpt[]
+}
+
+export const listGroups = () => api<Group[]>('api/groups')
+export const getGroupTargets = () => api<GroupTarget[]>('api/groups/targets')
+export const createGroup = (name: string, grants: string[]) =>
+  api<Group>('api/groups', { method: 'POST', body: JSON.stringify({ name, grants }) })
+export const updateGroup = (id: number, name: string, grants: string[]) =>
+  api<{ ok: boolean }>(`api/groups/${id}`, { method: 'POST', body: JSON.stringify({ name, grants }) })
+export const deleteGroup = (id: number) =>
+  api<{ ok: boolean }>(`api/groups/${id}`, { method: 'DELETE' })
+export const setGroupMembers = (groupId: number, userIds: number[]) =>
+  api<{ ok: boolean }>(`api/groups/${groupId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+export const setUserGroups = (userId: number, groupIds: number[]) =>
+  api<{ ok: boolean }>(`api/users/${userId}/groups`, {
+    method: 'POST',
+    body: JSON.stringify({ group_ids: groupIds }),
+  })

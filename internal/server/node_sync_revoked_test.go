@@ -111,12 +111,7 @@ func TestRevokedNodePollIsHeldOnlyOnceItKnows(t *testing.T) {
 // So a node still reporting itself revoked while the panel has it enabled must be
 // answered at once, with no wake involved anywhere in this test.
 func TestReEnabledNodeIsAnsweredWithoutWaitingForAWake(t *testing.T) {
-	rt, st := rolesTestRouter(t)
-	// An enabled node's sync runs the full ingest, which reaches config generation —
-	// and that needs the WS path first-run bootstrap normally seeds.
-	if err := st.SetWSPath("/ws"); err != nil {
-		t.Fatalf("seed ws path: %v", err)
-	}
+	rt, _ := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 
 	// The node reports the config it already has. Without this it would report an

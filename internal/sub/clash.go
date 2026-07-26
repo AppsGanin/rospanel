@@ -31,32 +31,27 @@ type clashProxy struct {
 	line string
 }
 
-// clashProxies builds the enabled-protocol Clash proxy entries for a user.
-func clashProxies(u model.User, set *model.Settings) []clashProxy {
+// clashProxies builds the enabled-lane Clash proxy entries for a user on one server.
+func clashProxies(u model.User, srv Server) []clashProxy {
+	set := srv.Set
 	sv := "false" // skip-cert-verify: true only for a self-signed/IP cert
 	if set.TLSInsecure {
 		sv = "true"
 	}
 	var out []clashProxy
-	if set.VLESSEnabled {
+	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		n := link.Label(model.ProtoVLESS, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
 			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
 	}
-	if set.RealityEnabled {
+	if set.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
 		n := link.Label(model.ProtoReality, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: grpc, tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, grpc-opts: {grpc-service-name: %q}}",
-			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityServiceName)})
+			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
+			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityPathOr())})
 	}
-	if set.TrojanEnabled {
-		n := link.Label(model.ProtoTrojan, set)
-		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: trojan, server: %q, port: %d, password: %q, network: ws, sni: %q, client-fingerprint: %s, skip-cert-verify: %s, ws-opts: {path: %q, headers: {Host: %q}}}",
-			n, set.Host, set.VLESSPort, u.Password, set.SNI, set.TrojanFP(), sv, set.WSPath, set.SNI)})
-	}
-	if set.HysteriaEnabled {
+	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		hop := ""
 		if set.HopEnd > set.HysteriaPort {
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", set.HysteriaPort, set.HopEnd))
@@ -66,32 +61,133 @@ func clashProxies(u model.User, set *model.Settings) []clashProxy {
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop)})
 	}
+	for _, in := range srv.Custom {
+		if !srv.allowsInbound(in.ID) {
+			continue
+		}
+		if p, ok := clashCustom(u, in, set, sv); ok {
+			out = append(out, p)
+		}
+	}
 	return out
+}
+
+// clashCustom renders one custom inbound as a Clash proxy, or reports false when
+// mihomo cannot express that protocol × transport (see model.SupportsClash). An
+// inexpressible combination is DROPPED rather than approximated: a client that
+// rejects one proxy entry usually rejects the whole profile, so a bad line would
+// cost the user every other server too.
+func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string) (clashProxy, bool) {
+	if !model.SupportsClash(in.Protocol, in.Opts.Transport) {
+		return clashProxy{}, false
+	}
+	o := in.Opts
+	n := link.CustomLabel(in, set)
+
+	if in.Protocol == model.InbHysteria {
+		hop := ""
+		if in.UsesHopping() {
+			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", in.Port, o.HopEnd))
+		}
+		return clashProxy{n, fmt.Sprintf(
+			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
+			n, set.Host, in.Port, u.Password, clashSNI(in, set), sv, hop)}, true
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "  - {name: %q, type: %s, server: %q, port: %d",
+		n, in.Protocol, set.Host, in.Port)
+	if in.Protocol == model.InbVLESS {
+		fmt.Fprintf(&b, ", uuid: %q", u.UUID)
+		if o.Flow != "" {
+			fmt.Fprintf(&b, ", flow: %s", o.Flow)
+		}
+	} else {
+		fmt.Fprintf(&b, ", password: %q", u.Password)
+	}
+	fmt.Fprintf(&b, ", network: %s", o.Transport)
+
+	switch o.Security {
+	case model.SecTLS:
+		// Trojan spells the server name "sni", VLESS spells it "servername".
+		key := "servername"
+		if in.Protocol == model.InbTrojan {
+			key = "sni"
+		}
+		fmt.Fprintf(&b, ", tls: true, %s: %q, client-fingerprint: %s, skip-cert-verify: %s",
+			key, clashSNI(in, set), o.FPOr(), sv)
+	case model.SecReality:
+		fmt.Fprintf(&b, ", tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}",
+			o.RealitySNI(), o.FPOr(), o.RealityPublicKey, firstShortID(o))
+	}
+
+	switch o.Transport {
+	case model.TrWS:
+		fmt.Fprintf(&b, ", ws-opts: {path: %q, headers: {Host: %q}}", o.Path, clashHost(in, set))
+	case model.TrGRPC:
+		fmt.Fprintf(&b, ", grpc-opts: {grpc-service-name: %q}", o.ServiceName)
+	case model.TrXHTTP:
+		fmt.Fprintf(&b, ", xhttp-opts: {path: %q", o.Path)
+		if o.Host != "" {
+			fmt.Fprintf(&b, ", host: %q", o.Host)
+		}
+		if o.Mode != "" {
+			fmt.Fprintf(&b, ", mode: %q", o.Mode)
+		}
+		b.WriteString("}")
+	}
+	b.WriteString("}")
+	return clashProxy{n, b.String()}, true
+}
+
+// clashSNI is the server name a custom inbound's client should present.
+func clashSNI(in model.Inbound, set *model.Settings) string {
+	if in.Opts.SNI != "" {
+		return in.Opts.SNI
+	}
+	return set.SNI
+}
+
+// clashHost is the Host header for the HTTP-shaped transports (defaults to the SNI).
+func clashHost(in model.Inbound, set *model.Settings) string {
+	if in.Opts.Host != "" {
+		return in.Opts.Host
+	}
+	return clashSNI(in, set)
+}
+
+// firstShortID is the REALITY shortId that goes into client configs (the server
+// accepts any of the stored set).
+func firstShortID(o model.InboundOpts) string {
+	if ids := o.RealityShortIDs(); len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
 }
 
 // clashProxiesAll concatenates a user's proxy entries across every server (local +
 // each node). Names are unique because Settings.ProtoLabel appends the node label.
-func clashProxiesAll(u model.User, sets []*model.Settings) []clashProxy {
+func clashProxiesAll(u model.User, servers []Server) []clashProxy {
 	var out []clashProxy
-	for _, set := range sets {
-		out = append(out, clashProxies(u, set)...)
+	for _, srv := range servers {
+		out = append(out, clashProxies(u, srv)...)
 	}
 	return out
 }
 
 // ClashYAML renders a minimal self-contained Clash-Meta config for one server.
 func ClashYAML(u model.User, set *model.Settings) string {
-	return ClashYAMLMulti(u, []*model.Settings{set})
+	return ClashYAMLMulti(u, One(set))
 }
 
 // ClashYAMLMulti renders a Clash-Meta (Mihomo) config spanning every server: all
-// proxies under one select group. sets[0] is the local server (group title + rules).
-func ClashYAMLMulti(u model.User, sets []*model.Settings) string {
-	if len(sets) == 0 {
+// proxies under one select group. servers[0] is the local server (group title + rules).
+func ClashYAMLMulti(u model.User, servers []Server) string {
+	if len(servers) == 0 {
 		return ""
 	}
-	local := sets[0]
-	proxies := clashProxiesAll(u, sets)
+	local := servers[0].Set
+	proxies := clashProxiesAll(u, servers)
 	var b strings.Builder
 	// Encrypted DNS (DoH) to defeat DNS poisoning/blocking on plaintext UDP/53.
 	b.WriteString("dns:\n" +
@@ -118,20 +214,15 @@ func ClashYAMLMulti(u model.User, sets []*model.Settings) string {
 	return b.String()
 }
 
-// ClashWithTemplate injects the user's proxies into a RoscomVPN-style Mihomo
+// ClashWithTemplateMulti injects the user's proxies into a RoscomVPN-style Mihomo
 // routing template. The template carries two "# LEAVE THIS LINE!" markers: the
-// `proxies:` line (full proxy definitions) and a slot inside the main select
-// group (proxy node names). Falls back to the plain config if the template has
-// no proxies marker.
-func ClashWithTemplate(u model.User, set *model.Settings, template string) string {
-	return ClashWithTemplateMulti(u, []*model.Settings{set}, template)
-}
-
-// ClashWithTemplateMulti is ClashWithTemplate across every server.
-func ClashWithTemplateMulti(u model.User, sets []*model.Settings, template string) string {
-	proxies := clashProxiesAll(u, sets)
+// `proxies:` line (full proxy definitions) and a slot inside the main select group
+// (proxy node names). Falls back to the plain config if the template has no proxies
+// marker.
+func ClashWithTemplateMulti(u model.User, servers []Server, template string) string {
+	proxies := clashProxiesAll(u, servers)
 	if len(proxies) == 0 || !strings.Contains(template, "proxies: # LEAVE THIS LINE!") {
-		return ClashYAMLMulti(u, sets)
+		return ClashYAMLMulti(u, servers)
 	}
 
 	defs := make([]string, len(proxies))

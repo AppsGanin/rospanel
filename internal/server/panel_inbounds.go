@@ -1,0 +1,232 @@
+package server
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+)
+
+// Custom-inbound endpoints. Every route is keyed by SERVER id (0 = the master, a
+// node id otherwise), because an inbound belongs to exactly one machine — its port,
+// its REALITY identity and its hop range are all facts about that box.
+
+// serverInbounds lists one server's custom inbounds.
+func (rt *Router) serverInbounds(w http.ResponseWriter, _ *http.Request, serverID int64) {
+	list, err := rt.mgr.Inbounds(serverID)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// inboundReq is the editable shape of a custom inbound. It deliberately mirrors
+// model.Inbound rather than accepting it directly, so no request can set the fields
+// the panel owns — the row id, the server, or the REALITY private key.
+type inboundReq struct {
+	Enabled  bool   `json:"enabled"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port"`
+
+	Transport string `json:"transport"`
+	Security  string `json:"security"`
+	SNI       string `json:"sni"`
+	FP        string `json:"fp"`
+	Path      string `json:"path"`
+	Host      string `json:"host"`
+	Mode      string `json:"mode"`
+
+	ServiceName string `json:"service_name"`
+
+	RealityDest       string `json:"reality_dest"`
+	RealityAntiReplay bool   `json:"reality_anti_replay"`
+
+	HopStart    int    `json:"hop_start"`
+	HopEnd      int    `json:"hop_end"`
+	HopInterval string `json:"hop_interval"`
+
+	// Advanced. Each transport knob is its own typed field; the three JSON-blob
+	// sections (XHTTP extra, sockopt, extra TLS) arrive as structured forms that the
+	// server assembles into the blob Xray reads. Every form carries a Raw escape hatch
+	// (`*_raw`) for keys the panel does not surface as a field.
+	HeaderType  string   `json:"header_type"`
+	HeaderHosts []string `json:"header_hosts"`
+	HeaderPaths []string `json:"header_paths"`
+	Authority   string   `json:"authority"`
+	MultiMode   bool     `json:"multi_mode"`
+
+	XHTTPExtra model.XHTTPExtraForm `json:"xhttp_extra"`
+	Sockopt    model.SockoptForm    `json:"sockopt"`
+	TLSExtra   model.TLSExtraForm   `json:"tls_extra"`
+}
+
+// toModel converts the request into a domain inbound. serverID and id come from the
+// route, never the body. The three advanced forms are assembled into the JSON blobs
+// InboundOpts stores; validation (whitelist + xray -test) then runs on those blobs.
+func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
+	in := model.Inbound{
+		ID:       id,
+		ServerID: serverID,
+		Enabled:  r.Enabled,
+		Name:     r.Name,
+		Protocol: r.Protocol,
+		Port:     r.Port,
+		Opts: model.InboundOpts{
+			Transport:   r.Transport,
+			Security:    r.Security,
+			SNI:         r.SNI,
+			FP:          r.FP,
+			Path:        r.Path,
+			Host:        r.Host,
+			Mode:        r.Mode,
+			ServiceName: r.ServiceName,
+			RealityDest: r.RealityDest,
+			HopStart:    r.HopStart,
+			HopEnd:      r.HopEnd,
+			HopInterval: r.HopInterval,
+			HeaderType:  r.HeaderType,
+			HeaderHosts: r.HeaderHosts,
+			HeaderPaths: r.HeaderPaths,
+			Authority:   r.Authority,
+			MultiMode:   r.MultiMode,
+		},
+	}
+	if r.RealityAntiReplay {
+		in.Opts.RealityMaxTimeDiff = realityAntiReplayWindowMs
+	}
+	var err error
+	if in.Opts.XHTTPExtra, err = model.AssembleXHTTPExtra(r.XHTTPExtra); err != nil {
+		return in, fmt.Errorf("XHTTP extra: %s", jsonErr(err))
+	}
+	if in.Opts.Sockopt, err = model.AssembleSockopt(r.Sockopt); err != nil {
+		return in, fmt.Errorf("sockopt: %s", jsonErr(err))
+	}
+	if in.Opts.TLSExtra, err = model.AssembleTLSExtra(r.TLSExtra); err != nil {
+		return in, fmt.Errorf("доп. TLS: %s", jsonErr(err))
+	}
+	return in, nil
+}
+
+// jsonErr softens a raw json error into something an operator reads as "the JSON
+// you typed in the raw box doesn't parse".
+func jsonErr(err error) string {
+	if strings.Contains(err.Error(), "json") || strings.Contains(err.Error(), "invalid") {
+		return "поле «прочее» не разбирается как JSON"
+	}
+	return err.Error()
+}
+
+// realityAntiReplayWindowMs mirrors core's REALITY maxTimeDiff — a ±60s window,
+// generous enough not to reject phones with a skewed clock.
+const realityAntiReplayWindowMs = 60000
+
+// createServerInbound adds a custom inbound to one server.
+func (rt *Router) createServerInbound(w http.ResponseWriter, r *http.Request, serverID int64) {
+	var req inboundReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	in, err := req.toModel(serverID, 0)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	v, err := rt.mgr.CreateInbound(r.Context(), in)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, v)
+}
+
+// updateInbound edits one custom inbound. The server it belongs to is taken from
+// the stored row, so this route needs only the inbound id.
+func (rt *Router) updateInbound(w http.ResponseWriter, r *http.Request, id int64) {
+	var req inboundReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	in, err := req.toModel(0, id)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	v, err := rt.mgr.UpdateInbound(r.Context(), in)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// deleteInbound removes one custom inbound.
+func (rt *Router) deleteInbound(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.DeleteInbound(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// regenInboundReality mints fresh REALITY material for one inbound. Its own route
+// rather than part of an edit: every client using this lane has to re-import.
+func (rt *Router) regenInboundReality(w http.ResponseWriter, _ *http.Request, id int64) {
+	v, err := rt.mgr.RegenInboundReality(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// inboundCatalog is the static "what can be combined with what" table the editor
+// drives its dropdowns from, so the UI and the server-side validator can never
+// disagree about which combinations exist (see model.InboundSecurities).
+func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
+	type combo struct {
+		Protocol   string   `json:"protocol"`
+		Transport  string   `json:"transport"`
+		Securities []string `json:"securities"`
+		// Unsupported names the subscription formats that cannot carry this
+		// combination, so the editor can warn before the operator commits to it.
+		Unsupported []string `json:"unsupported"`
+	}
+	var combos []combo
+	for _, p := range model.InboundProtocols {
+		for _, tr := range model.InboundTransports(p) {
+			var unsupported []string
+			if !model.SupportsClash(p, tr) {
+				unsupported = append(unsupported, "Clash / Mihomo")
+			}
+			if !model.SupportsSingBox(p, tr) {
+				unsupported = append(unsupported, "sing-box / Hiddify")
+			}
+			combos = append(combos, combo{
+				Protocol:    p,
+				Transport:   tr,
+				Securities:  model.InboundSecurities(p, tr),
+				Unsupported: unsupported,
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"protocols":    model.InboundProtocols,
+		"combos":       combos,
+		"fingerprints": model.Fingerprints,
+		"xhttp_modes":  []string{model.XHTTPAuto, model.XHTTPPacketUp, model.XHTTPStreamUp, model.XHTTPStreamOne},
+		"max":          model.MaxInboundsPerServer,
+		// The advanced-field dropdowns come straight from Xray's parser (see model),
+		// so the editor's options and the server's validation can't disagree.
+		"enums": map[string]any{
+			"placements":            model.XHTTPPlacements,
+			"uplink_methods":        model.XHTTPUplinkMethods,
+			"tproxy":                model.SockoptTProxy,
+			"domain_strategy":       model.SockoptDomainStrats,
+			"address_port_strategy": model.SockoptAddrPortStrats,
+			"tls_versions":          model.TLSVersions,
+		},
+	})
+}

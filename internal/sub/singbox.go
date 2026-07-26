@@ -11,16 +11,15 @@ import (
 
 // SingBoxJSON renders an importable sing-box configuration for a single server.
 func SingBoxJSON(u model.User, set *model.Settings) string {
-	return SingBoxJSONMulti(u, []*model.Settings{set})
+	return SingBoxJSONMulti(u, One(set))
 }
 
 // singboxProxies builds the protocol outbounds + their tags for one server. Tags
 // carry the node label (see Settings.ProtoLabel) so multi-node configs stay
 // unambiguous.
-func singboxProxies(u model.User, set *model.Settings) (proxies []any, tags []string) {
+func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
+	set := srv.Set
 	nV := link.Label(model.ProtoVLESS, set)
-	nR := link.Label(model.ProtoReality, set)
-	nT := link.Label(model.ProtoTrojan, set)
 	nH := link.Label(model.ProtoHysteria, set)
 	insecure := set.TLSInsecure // true only for a self-signed/IP cert
 
@@ -30,27 +29,6 @@ func singboxProxies(u model.User, set *model.Settings) (proxies []any, tags []st
 		"tls": map[string]any{
 			"enabled": true, "server_name": set.SNI, "insecure": insecure,
 			"utls": map[string]any{"enabled": true, "fingerprint": set.VLESSFP()},
-		},
-	}
-	// VLESS + gRPC + REALITY: borrows RealityDest's TLS (no insecure flag), grpc
-	// transport, no Vision flow.
-	reality := map[string]any{
-		"type": "vless", "tag": nR, "server": set.Host, "server_port": set.RealityPort,
-		"uuid": u.UUID,
-		"tls": map[string]any{
-			"enabled": true, "server_name": set.RealitySNI(),
-			"utls":    map[string]any{"enabled": true, "fingerprint": set.RealityFP()},
-			"reality": map[string]any{"enabled": true, "public_key": set.RealityPublicKey, "short_id": set.RealitySID()},
-		},
-		"transport": map[string]any{"type": "grpc", "service_name": set.RealityServiceName},
-	}
-	trojan := map[string]any{
-		"type": "trojan", "tag": nT, "server": set.Host, "server_port": set.VLESSPort,
-		"password": u.Password,
-		"tls":      map[string]any{"enabled": true, "server_name": set.SNI, "insecure": insecure},
-		"transport": map[string]any{
-			"type": "ws", "path": set.WSPath,
-			"headers": map[string]any{"Host": set.SNI},
 		},
 	}
 	hy2 := map[string]any{
@@ -69,58 +47,131 @@ func singboxProxies(u model.User, set *model.Settings) (proxies []any, tags []st
 
 	// Anti-DPI shaping of the generated config (client-side only; no server change).
 	// ClientHello fragmentation (sing-box ≥1.12) defeats stateless SNI inspection on
-	// the lanes whose handshake carries our real SNI — VLESS-Vision and Trojan-WS.
-	// REALITY already hides its SNI behind the donor and Hysteria2 is QUIC, so
-	// neither is fragmented here. Fragmenting sits below the TLS record layer, so it
-	// doesn't disturb Vision's flow or the Trojan WebSocket upgrade.
+	// the one lane whose handshake carries our real SNI — VLESS-Vision. REALITY hides
+	// its SNI behind the donor and Hysteria2 is QUIC, so neither is fragmented here.
+	// Fragmenting sits below the TLS record layer, so it doesn't disturb Vision's flow.
 	if set.TLSFragment {
 		vless["tls"].(map[string]any)["fragment"] = true
-		trojan["tls"].(map[string]any)["fragment"] = true
 	}
 	// ALPN consistency on the Vision lane: the :443 inbound offers [h2,http/1.1];
 	// offering the same aligns the ClientHello with a real browser to that cert.
-	// (Deliberately NOT on Trojan-WS — WebSocket needs http/1.1 and the shared :443
-	// fallback dispatches it, so forcing h2 there could break the upgrade.)
 	vless["tls"].(map[string]any)["alpn"] = []string{"h2", "http/1.1"}
-	// Match the VLESS uTLS fingerprint on Trojan too (they share the :443 host+cert),
-	// so a passive classifier doesn't see a Go-stdlib ClientHello beside a browser one.
-	trojan["tls"].(map[string]any)["utls"] = map[string]any{"enabled": true, "fingerprint": set.TrojanFP()}
 
-	// Only the protocols enabled in the Connections panel become outbounds; tags
-	// list collects them in the same order for the selector/urltest groups.
-	if set.VLESSEnabled {
+	// Only the lanes enabled in the Connections panel become outbounds; tags collects
+	// them in the same order for the selector/urltest groups.
+	//
+	// The built-in REALITY lane is deliberately absent: it runs on XHTTP, for which
+	// sing-box has no transport at all. Xray-core clients still get it through the
+	// universal link list — see model.SupportsSingBox, which applies the same rule to
+	// custom inbounds.
+	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		proxies = append(proxies, vless)
 		tags = append(tags, nV)
 	}
-	if set.RealityEnabled {
-		proxies = append(proxies, reality)
-		tags = append(tags, nR)
-	}
-	if set.TrojanEnabled {
-		proxies = append(proxies, trojan)
-		tags = append(tags, nT)
-	}
-	if set.HysteriaEnabled {
+	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		proxies = append(proxies, hy2)
 		tags = append(tags, nH)
+	}
+	for _, in := range srv.Custom {
+		if !srv.allowsInbound(in.ID) {
+			continue
+		}
+		if o, tag, ok := singboxCustom(u, in, set); ok {
+			proxies = append(proxies, o)
+			tags = append(tags, tag)
+		}
 	}
 	return proxies, tags
 }
 
+// singboxCustom renders one custom inbound as a sing-box outbound, or reports false
+// when sing-box cannot express that protocol × transport (see model.SupportsSingBox
+// — most notably it has no XHTTP at all). Dropped rather than approximated, for the
+// same reason as the Clash side.
+func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[string]any, string, bool) {
+	if !model.SupportsSingBox(in.Protocol, in.Opts.Transport) {
+		return nil, "", false
+	}
+	o := in.Opts
+	tag := link.CustomLabel(in, set)
+
+	if in.Protocol == model.InbHysteria {
+		out := map[string]any{
+			"type": "hysteria2", "tag": tag, "server": set.Host, "server_port": in.Port,
+			"password": u.Password,
+			"tls": map[string]any{
+				"enabled": true, "server_name": clashSNI(in, set),
+				"alpn": []string{"h3"}, "insecure": set.TLSInsecure,
+			},
+		}
+		if in.UsesHopping() {
+			out["server_ports"] = []string{fmt.Sprintf("%d:%d", in.Port, o.HopEnd)}
+			out["hop_interval"] = "10s"
+			delete(out, "server_port")
+		}
+		return out, tag, true
+	}
+
+	out := map[string]any{
+		"type": in.Protocol, "tag": tag, "server": set.Host, "server_port": in.Port,
+	}
+	if in.Protocol == model.InbVLESS {
+		out["uuid"] = u.UUID
+		if o.Flow != "" {
+			out["flow"] = o.Flow
+		}
+	} else {
+		out["password"] = u.Password
+	}
+
+	switch o.Security {
+	case model.SecTLS:
+		tls := map[string]any{
+			"enabled": true, "server_name": clashSNI(in, set), "insecure": set.TLSInsecure,
+			"utls": map[string]any{"enabled": true, "fingerprint": o.FPOr()},
+		}
+		if o.Transport == model.TrGRPC {
+			tls["alpn"] = []string{"h2"}
+		}
+		out["tls"] = tls
+	case model.SecReality:
+		out["tls"] = map[string]any{
+			"enabled": true, "server_name": o.RealitySNI(),
+			"utls":    map[string]any{"enabled": true, "fingerprint": o.FPOr()},
+			"reality": map[string]any{"enabled": true, "public_key": o.RealityPublicKey, "short_id": firstShortID(o)},
+		}
+	}
+
+	switch o.Transport {
+	case model.TrWS:
+		out["transport"] = map[string]any{
+			"type": "ws", "path": o.Path,
+			"headers": map[string]any{"Host": clashHost(in, set)},
+		}
+	case model.TrHTTPUpgrade:
+		out["transport"] = map[string]any{
+			"type": "httpupgrade", "path": o.Path, "host": clashHost(in, set),
+		}
+	case model.TrGRPC:
+		out["transport"] = map[string]any{"type": "grpc", "service_name": o.ServiceName}
+	}
+	return out, tag, true
+}
+
 // SingBoxJSONMulti renders a sing-box config spanning every server (local + each
-// node): one outbound per protocol × server, all gathered under the selector/
-// urltest groups. sets[0] is the local server, used for the group title + DNS
-// bootstrap anchor.
-func SingBoxJSONMulti(u model.User, sets []*model.Settings) string {
-	if len(sets) == 0 {
+// node): one outbound per lane × server, all gathered under the selector/urltest
+// groups. servers[0] is the local server, used for the group title + DNS bootstrap
+// anchor.
+func SingBoxJSONMulti(u model.User, servers []Server) string {
+	if len(servers) == 0 {
 		return "{}"
 	}
-	local := sets[0]
+	local := servers[0].Set
 
 	var proxies []any
 	var tags []string
-	for _, set := range sets {
-		p, t := singboxProxies(u, set)
+	for _, srv := range servers {
+		p, t := singboxProxies(u, srv)
 		proxies = append(proxies, p...)
 		tags = append(tags, t...)
 	}
@@ -143,9 +194,9 @@ func SingBoxJSONMulti(u model.User, sets []*model.Settings) string {
 	}
 	dns := map[string]any{"servers": dnsServers, "final": "remote", "strategy": "prefer_ipv4"}
 	var bootstrapHosts []string
-	for _, set := range sets {
-		if net.ParseIP(set.Host) == nil {
-			bootstrapHosts = append(bootstrapHosts, set.Host)
+	for _, srv := range servers {
+		if net.ParseIP(srv.Set.Host) == nil {
+			bootstrapHosts = append(bootstrapHosts, srv.Set.Host)
 		}
 	}
 	if len(bootstrapHosts) > 0 {

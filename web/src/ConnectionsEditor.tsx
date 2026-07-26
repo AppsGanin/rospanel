@@ -83,7 +83,6 @@ export function ConnectionsEditor({
   const [fps, setFps] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
   const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10" });
-  const [wsPath, setWsPath] = useState("");
   const [reality, setReality] = useState<Reality>({ port: 0, dests: [], antiReplay: false });
   const [anti, setAnti] = useState<Anti>({ fragment: false, min13: false, blockQuic: false });
   const [regenReality, setRegenReality] = useState(false);
@@ -92,7 +91,6 @@ export function ConnectionsEditor({
     fps: Record<string, string>;
     names: Record<string, string>;
     hy: Hy;
-    wsPath: string;
     reality: Reality;
     anti: Anti;
   }>({
@@ -100,7 +98,6 @@ export function ConnectionsEditor({
     fps: {},
     names: {},
     hy: { port: 0, start: 0, end: 0, interval: "5-10" },
-    wsPath: "",
     reality: { port: 0, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
   });
@@ -123,16 +120,14 @@ export function ConnectionsEditor({
       antiReplay: s.reality_anti_replay,
     };
     const a: Anti = { fragment: s.tls_fragment, min13: s.tls_min13, blockQuic: s.block_quic };
-    const ws = s.ws_path.replace(/^\/+/, "");
     setEnabled(en);
     setFps(fp);
     setNames(nm);
     setHy(h);
-    setWsPath(ws);
     setReality(r);
     setAnti(a);
     setRegenReality(false);
-    setSaved({ enabled: en, fps: fp, names: nm, hy: h, wsPath: ws, reality: r, anti: a });
+    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a });
   };
 
   useEffect(() => {
@@ -146,7 +141,6 @@ export function ConnectionsEditor({
   const protocolsChanged = Object.keys(enabled).some((k) => enabled[k] !== saved.enabled[k]);
   const portsChanged = hy.port !== saved.hy.port || hy.start !== saved.hy.start || hy.end !== saved.hy.end;
   const hyChanged = portsChanged || hy.interval !== saved.hy.interval;
-  const wsChanged = wsPath !== saved.wsPath;
   const realityChanged =
     reality.port !== saved.reality.port ||
     reality.dests.join(",") !== saved.reality.dests.join(",") ||
@@ -156,10 +150,10 @@ export function ConnectionsEditor({
   const antiServerChanged = anti.min13 !== saved.anti.min13;
   const antiClientChanged = anti.fragment !== saved.anti.fragment || anti.blockQuic !== saved.anti.blockQuic;
   const dirty =
-    fpsChanged || namesChanged || protocolsChanged || hyChanged || wsChanged ||
+    fpsChanged || namesChanged || protocolsChanged || hyChanged ||
     realityChanged || regenReality || antiServerChanged || antiClientChanged;
   // Config-affecting changes restart Xray (on the master) or re-push to the node.
-  const restartsXray = protocolsChanged || portsChanged || wsChanged || realityChanged || regenReality || antiServerChanged;
+  const restartsXray = protocolsChanged || portsChanged || realityChanged || regenReality || antiServerChanged;
 
   const setHyNum = (key: "port" | "start" | "end") => (v: string) =>
     setHy((h) => ({ ...h, [key]: Number(v.replace(/\D/g, "")) || 0 }));
@@ -170,7 +164,6 @@ export function ConnectionsEditor({
         protocols: enabled,
         fingerprints: fps,
         names,
-        ws_path: wsPath,
         hysteria_port: hy.port,
         hop_start: hy.start,
         hop_end: hy.end,
@@ -195,7 +188,6 @@ export function ConnectionsEditor({
     setFps(saved.fps);
     setNames(saved.names);
     setHy(saved.hy);
-    setWsPath(saved.wsPath);
     setReality(saved.reality);
     setAnti(saved.anti);
     setRegenReality(false);
@@ -268,21 +260,6 @@ export function ConnectionsEditor({
                     </div>
                   )}
 
-                  {p.key === "trojan" && (
-                    <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
-                      <TextInput
-                        label="Путь WebSocket"
-                        value={wsPath}
-                        onChange={(v) => setWsPath(v.replace(/^\/+/, ""))}
-                        placeholder="path"
-                      />
-                      <p className="text-xs text-ink-muted">
-                        Путь WS-туннеля Trojan. Слеш в начале добавляется
-                        автоматически — вводи без него.
-                      </p>
-                    </div>
-                  )}
-
                   {p.key === "hysteria2" &&
                     (on ? (
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
@@ -338,7 +315,7 @@ export function ConnectionsEditor({
                         </label>
                         <LongField label="Public key" value={status.reality_public_key} />
                         <LongField label="Short IDs" value={status.reality_short_id} />
-                        <LongField label="gRPC service" value={status.reality_service_name} />
+                        <LongField label="Путь XHTTP" value={status.reality_path} />
                         <div>
                           <Button
                             size="sm"
@@ -359,7 +336,7 @@ export function ConnectionsEditor({
                       </div>
                     ) : (
                       <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        Включите VLESS-GRPC-REALITY, чтобы настроить порт и маскировку.
+                        Включите VLESS-XHTTP-REALITY, чтобы настроить порт и маскировку.
                       </p>
                     ))}
                 </div>
@@ -381,7 +358,7 @@ export function ConnectionsEditor({
               Фрагментация ClientHello
               <span className="block text-xs text-ink-muted">
                 Дробит TLS-рукопожатие, чтобы stateless-DPI не прочитал SNI
-                (VLESS-Vision и Trojan-WS). Требует sing-box 1.12+.
+                (VLESS-Vision).
               </span>
             </span>
             <Switch checked={anti.fragment} onChange={(v) => setAnti((a) => ({ ...a, fragment: v }))} />

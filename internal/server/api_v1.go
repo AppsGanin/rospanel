@@ -187,6 +187,20 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/nodes/{id}/update", "API · нода · обновление", idFn(rt.apiUpdateNode))
 	nodeAudit("POST /v1/nodes/update-all", "API · обновление всех нод", rt.apiUpdateAllNodes)
 
+	// Custom inbounds. Every mutation opens, changes or closes a public listener on a
+	// server, so all three are audited the same way node mutations are.
+	hf("GET /v1/groups", rt.apiListGroups)
+	nodeAudit("POST /v1/groups", "API · группа добавлена", rt.apiCreateGroup)
+	nodeAudit("POST /v1/groups/{id}", "API · группа изменена", idFn(rt.apiUpdateGroup))
+	nodeAudit("DELETE /v1/groups/{id}", "API · группа удалена", idFn(rt.apiDeleteGroup))
+	nodeAudit("POST /v1/groups/{id}/members", "API · группа · участники", idFn(rt.apiSetGroupMembers))
+	nodeAudit("POST /v1/users/{id}/groups", "API · группы пользователя", idFn(rt.apiSetUserGroups))
+
+	id("GET /v1/servers/{id}/inbounds", rt.apiListInbounds)
+	nodeAudit("POST /v1/servers/{id}/inbounds", "API · подключение добавлено", idFn(rt.apiCreateInbound))
+	nodeAudit("POST /v1/inbounds/{id}", "API · подключение изменено", idFn(rt.apiUpdateInbound))
+	nodeAudit("DELETE /v1/inbounds/{id}", "API · подключение удалено", idFn(rt.apiDeleteInbound))
+
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
 	hf("/", func(w http.ResponseWriter, _ *http.Request) {
@@ -322,7 +336,7 @@ func (rt *Router) apiUserView(w http.ResponseWriter, u model.User) {
 		return
 	}
 	rt.applyTLSHints(set)
-	writeAPIData(w, http.StatusOK, makeUserView(u, set, ""))
+	writeAPIData(w, http.StatusOK, rt.userViewFor(u, set, ""))
 }
 
 // ---- handlers ----
@@ -373,9 +387,12 @@ func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
 		page = page[:limit]
 	}
 
+	custom := rt.localInbounds()
+	groupsMap, _ := rt.mgr.GroupsForAllUsers()
+	accessMap, _ := rt.mgr.Store().AccessMap()
 	views := make([]userView, 0, len(page))
 	for _, u := range page {
-		views = append(views, makeUserView(u, set, ""))
+		views = append(views, makeUserView(u, set, "", custom, groupsMap[u.ID], model.AccessOf(accessMap, u.ID)))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"data": views,

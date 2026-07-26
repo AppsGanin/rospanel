@@ -85,14 +85,14 @@ func TestProtocolNamesRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected default names: %+v", set)
 	}
 
-	if err := st.SetProtocolNames("Основной", "", "Резерв", ""); err != nil {
+	if err := st.SetProtocolNames("Основной", "Резерв", ""); err != nil {
 		t.Fatalf("set names: %v", err)
 	}
 	set, err = st.GetSettings()
 	if err != nil {
 		t.Fatalf("get after set: %v", err)
 	}
-	if set.VLESSName != "Основной" || set.TrojanName != "Резерв" {
+	if set.VLESSName != "Основной" || set.RealityName != "Резерв" {
 		t.Fatalf("names not persisted: %+v", set)
 	}
 	if got := set.ProtoLabel("VLESS-TCP-TLS"); got != "Основной" {

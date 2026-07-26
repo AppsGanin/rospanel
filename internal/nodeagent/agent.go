@@ -154,6 +154,14 @@ type Agent struct {
 
 	logsWanted atomic.Bool // panel asked for the log tail on the next sync
 
+	// probeResults holds port-probe answers between the response that asked for them
+	// and the next request that carries them back.
+	probeMu      sync.Mutex
+	probeResults []nodeapi.PortProbeResult
+	// configCheck is the verdict on a candidate config the panel asked us to validate,
+	// held until the next sync carries it back.
+	configCheck *nodeapi.ConfigCheckResult
+
 	// revoked mirrors persistState.Revoked for the sync path: the panel has switched
 	// this node off. Reported on every request so the panel knows the node already
 	// heard, and can hold the poll (making a re-enable arrive at once) instead of
@@ -617,6 +625,19 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		if resp.WantLogs {
 			a.logsWanted.Store(true) // include the log tail in the next sync request
 		}
+		// Port probes: an operator is waiting on these to save a custom inbound here,
+		// so run them right away and carry the answers on the next sync. Done before
+		// applyState on purpose — a config push would otherwise bind the very port
+		// being asked about and turn a correct "free" into a spurious "busy".
+		if len(resp.ProbePorts) > 0 {
+			a.stashProbeResults(runPortProbes(resp.ProbePorts))
+		}
+		// Same idea for a candidate config: an operator is blocked on the verdict, and
+		// only this machine's Xray can give it. Runs before applyState so the answer is
+		// about the config as asked, not about one a concurrent push just replaced.
+		if resp.CheckConfig != nil {
+			a.stashConfigCheck(a.runConfigCheck(*resp.CheckConfig))
+		}
 		if resp.RefreshGeo {
 			if err := geo.Refresh(a.geoDir); err != nil {
 				slog.Warn("node: geo refresh (on request) failed", "err", err)
@@ -767,6 +788,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Logs:           logs,
 		GeoFiles:       geoFiles,
 		Host:           a.hostStats(),
+		ProbeResults:   a.takeProbeResults(),
+		ConfigCheck:    a.takeConfigCheck(),
 	}
 	// Sites share the panel's 1 MB body cap with traffic, conns and logs, none of
 	// which this feature bounds. Sites are advisory, so they yield: measure the rest
@@ -830,8 +853,14 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	a.ensureCert(m)
 
 	// Port-hopping for Hysteria2 (best-effort; no-op off Linux / without nft).
-	if m.HysteriaEnabled {
-		if err := hop.Ensure(m.HopStart, m.HopEnd, m.HysteriaPort); err != nil {
+	//
+	// Applied as one set: the nftables table is recreated wholesale, so installing
+	// ranges one at a time would leave only the last one standing. HopRanges is the
+	// panel's complete list (built-in lane + every custom Hysteria2 inbound that asks
+	// for hopping); a panel too old to send it falls back to the three scalar fields,
+	// which describe exactly the built-in lane.
+	if ranges := hopRanges(m); len(ranges) > 0 {
+		if err := hop.EnsureAll(ranges); err != nil {
 			slog.Warn("node: port-hopping setup failed", "err", err)
 		}
 	}

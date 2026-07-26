@@ -24,7 +24,6 @@ type (
 		Host          *string              `json:"host,omitempty"`
 		DecoyTemplate *string              `json:"decoy_template,omitempty"`
 		VLESS         *bool                `json:"vless_enabled,omitempty"`
-		Trojan        *bool                `json:"trojan_enabled,omitempty"`
 		Hysteria      *bool                `json:"hysteria_enabled,omitempty"`
 		Reality       *bool                `json:"reality_enabled,omitempty"`
 		Routing       *model.RoutingConfig `json:"routing,omitempty"`
@@ -108,7 +107,6 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 		Host:          node.Host,
 		DecoyTemplate: node.DecoyTemplate,
 		VLESS:         node.VLESSEnabled,
-		Trojan:        node.TrojanEnabled,
 		Hysteria:      node.HysteriaEnabled,
 		Reality:       node.RealityEnabled,
 		Routing:       node.Routing,
@@ -128,9 +126,6 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.VLESS != nil {
 		edit.VLESS = req.VLESS
-	}
-	if req.Trojan != nil {
-		edit.Trojan = req.Trojan
 	}
 	if req.Hysteria != nil {
 		edit.Hysteria = req.Hysteria
