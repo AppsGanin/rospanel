@@ -54,17 +54,19 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	switch leaf {
 	case "":
 		// A real browser (Accept: text/html) gets the human page; a proxy client
-		// gets the machine payload.
-		if isBrowser(r) {
+		// gets the machine payload. An explicit ?format= forces the machine payload
+		// even from a browser — that's how the page's own "download Clash config"
+		// button fetches YAML from this very URL instead of re-rendering the page.
+		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			if err := rt.servePage(w, *u, set); err != nil {
 				rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on render errors
 			}
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
-		// allSets spans the local server plus each enabled, connected node, so the
+		// allServers spans the local server plus each enabled, connected node, so the
 		// payload carries one entry per protocol × server (single-server = local only).
-		allSets := rt.subSettings(set)
+		allServers := rt.subServers(set, u.ID)
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -72,20 +74,25 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
-			body := sub.ClashYAMLMulti(*u, allSets)
+			body := sub.ClashYAMLMulti(*u, allServers)
 			if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
-					body = sub.ClashWithTemplateMulti(*u, allSets, tpl)
+					body = sub.ClashWithTemplateMulti(*u, allServers, tpl)
 				}
 			}
 			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+			// ?dl= makes the browser save the YAML as a file (the page's download
+			// button) instead of showing it inline; real Clash clients omit it.
+			if r.URL.Query().Get("dl") != "" {
+				w.Header().Set("Content-Disposition", `attachment; filename="clash.yaml"`)
+			}
 			_, _ = w.Write([]byte(body))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allSets)))
+			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allServers)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			links := sub.ShareLinksAll(*u, allSets)
+			links := sub.ShareLinksAll(*u, allServers)
 			var body string
 			if set.SubBase64 {
 				body = sub.Base64Payload(links)
@@ -339,7 +346,7 @@ func isBrowser(r *http.Request) bool {
 func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
-	html, err := sub.Page(u, rt.subSettings(set), rt.buildBilling(u, set))
+	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set))
 	if err != nil {
 		return err
 	}

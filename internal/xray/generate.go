@@ -41,17 +41,41 @@ type Options struct {
 	// caller (they only change on a geo refresh). Nil or missing groups simply
 	// drop those rules — see expandGroups.
 	Groups geo.GroupSet
+
+	// Custom are this server's operator-defined inbounds (already filtered to the
+	// enabled ones). Each gets its own listener beside the built-in lanes; none of
+	// them share :443, so nothing here can disturb the Vision inbound or the decoy.
+	Custom []model.Inbound
+
+	// ServerID is the server this config is for (LocalNodeID for the master), used to
+	// resolve per-user access to the built-in lanes. Access maps a user id to what
+	// they may connect to; a user absent from it is unrestricted (see model.AccessOf).
+	// A nil Access means the feature is off and every user reaches every lane — the
+	// historical behaviour.
+	ServerID int64
+	Access   map[int64]model.Access
+}
+
+// allowsBuiltin reports whether a user may use a built-in lane on this server.
+func (o Options) allowsBuiltin(userID int64, lane string) bool {
+	return model.AccessOf(o.Access, userID).AllowsBuiltin(o.ServerID, lane)
+}
+
+// allowsInbound reports whether a user may use a custom inbound.
+func (o Options) allowsInbound(userID, inboundID int64) bool {
+	return model.AccessOf(o.Access, userID).AllowsInbound(inboundID)
 }
 
 // Generate builds the full Xray config from settings + enabled users.
 //
 // Layout (all on one box):
-//   - VLESS-Vision inbound owns :443 + TLS. fallbacks route by path → loopback
-//     Trojan-WS inbound; default → the Go panel (decoy/panel/sub).
-//   - Trojan inbound on 127.0.0.1:<trojan_port>, WS transport, no TLS (the 443
-//     inbound already terminated it).
+//   - VLESS-Vision inbound owns :443 + TLS. Its only fallback is the default one →
+//     the Go panel (decoy/panel/sub), so :443 has no path that behaves differently
+//     from an ordinary website under probing.
+//   - VLESS-XHTTP-REALITY on its own port, borrowing the donor's TLS.
 //   - Hysteria2 inbound on :<hysteria_port> (UDP), its own TLS; host nftables
 //     redirects the hop range to it.
+//   - Every operator-defined custom inbound, each on its own port (opts.Custom).
 //   - One credential set per user (uuid for VLESS, password for Trojan/Hy2).
 //
 // proxies holds the live upstream proxies of each egress lane, keyed by lane ID.
@@ -59,16 +83,15 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	if set.CertPath == "" || set.KeyPath == "" {
 		return nil, fmt.Errorf("tls cert/key not configured")
 	}
-	if set.WSPath == "" {
-		return nil, fmt.Errorf("ws path not configured")
-	}
 	if opts.PanelDest == "" {
 		return nil, fmt.Errorf("panel fallback dest not configured")
 	}
 
 	// A disabled protocol keeps its inbound but gets an empty client list, so the
-	// listener stays up while nobody can authenticate against it.
-	vlessClients, trojanClients, hy2Clients, realityClients := protocolClients(set, users)
+	// listener stays up while nobody can authenticate against it. The per-user access
+	// filter drops a user's credential from a lane they aren't allowed — so a hidden
+	// lane can't be reached with a hand-made link, not just hidden in the UI.
+	vlessClients, hy2Clients, realityClients := protocolClients(set, users, opts.allowsBuiltin)
 
 	sharedCert := []Certificate{{CertificateFile: set.CertPath, KeyFile: set.KeyPath}}
 
@@ -100,12 +123,14 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			Clients:    vlessClients,
 			Decryption: "none",
 			Fallbacks: []Fallback{
-				// WebSocket path → loopback Trojan inbound. xver=1 forwards the
-				// real client IP via PROXY protocol (Trojan inbound accepts it).
-				{Path: set.WSPath, Dest: set.TrojanPort, Xver: 1},
-				// Everything else → the Go panel (decoy / panel / subscription).
-				// xver=1 prepends the PROXY-protocol header so the panel sees the
-				// real client IP (its proxyproto listener parses it).
+				// The single default fallback → the Go panel (decoy / panel /
+				// subscription). xver=1 prepends the PROXY-protocol header so the
+				// panel sees the real client IP (its proxyproto listener parses it).
+				//
+				// There is deliberately no path-keyed fallback any more. One used to
+				// dispatch a secret path to a loopback Trojan-WS inbound, which made
+				// that path an oracle: everything else on :443 answered like a website
+				// and it did not. Now every request on this port reaches the decoy.
 				{Dest: opts.PanelDest, Xver: 1},
 			},
 		},
@@ -119,23 +144,6 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 				MinVersion:       minTLS,
 				Certificates:     sharedCert,
 			},
-		},
-		Sniffing: sniff,
-	}
-
-	trojan := Inbound{
-		Tag:      "trojan-in",
-		Listen:   "127.0.0.1",
-		Port:     set.TrojanPort,
-		Protocol: "trojan",
-		Settings: TrojanInboundSettings{Clients: trojanClients},
-		StreamSettings: &StreamSettings{
-			Network:    "ws",
-			WSSettings: &WSSettings{Path: set.WSPath, AcceptProxyProtocol: true},
-			// The only upstream is the VLESS fallback over loopback, so trust the
-			// real client IP it forwards only from 127.0.0.1 (silences Xray's
-			// insecure-X-Forwarded-For warning).
-			Sockopt: &Sockopt{TrustedXForwardedFor: []string{"127.0.0.1"}},
 		},
 		Sniffing: sniff,
 	}
@@ -165,13 +173,20 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		Settings: DokodemoSettings{Address: "127.0.0.1"},
 	}
 
-	inbounds := []Inbound{apiInbound, vless, trojan, hysteria}
+	inbounds := []Inbound{apiInbound, vless, hysteria}
 
-	// VLESS + gRPC + REALITY on its own port. Only emitted when enabled AND keys
+	// VLESS + XHTTP + REALITY on its own port. Only emitted when enabled AND keys
 	// are present (REALITY can't authenticate without them). It borrows the TLS of
 	// RealityDest instead of our cert.
 	if set.RealityEnabled && set.RealityPrivateKey != "" {
 		inbounds = append(inbounds, realityInbound(set, realityClients, sniff))
+	}
+
+	// Operator-defined inbounds, each on its own port. They are generated last so a
+	// malformed one can only ever be an extra listener that fails to bind — it can't
+	// displace :443 or the REALITY lane.
+	for _, in := range opts.Custom {
+		inbounds = append(inbounds, customInbound(in, set, users, sniff, sharedCert, minTLS, opts))
 	}
 
 	// Proxy mode: a socks/http forward-proxy inbound other RosPanel servers chain
@@ -367,15 +382,19 @@ func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint) []Outbound {
 	return out
 }
 
-// Inbound tags (also the keys the live add/remove-user API addresses).
+// Inbound tags (also the keys the live add/remove-user API addresses). A custom
+// inbound's tag is derived from its row id — see model.Inbound.Tag.
 const (
 	TagVLESS    = "vless-in"
-	TagTrojan   = "trojan-in"
 	TagHysteria = "hysteria-in"
 	TagReality  = "vless-reality-in"
 )
 
-// realityInbound builds the VLESS + gRPC + REALITY inbound from settings.
+// realityInbound builds the built-in VLESS + XHTTP + REALITY inbound from settings.
+//
+// XHTTP rather than gRPC: gRPC+REALITY is the most fingerprinted of the current
+// combinations, and with a REALITY config present XHTTP's default mode resolves to
+// stream-one — one HTTP request per connection, the smallest surface it offers.
 func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing) Inbound {
 	return Inbound{
 		Tag:      TagReality,
@@ -384,7 +403,7 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 		Protocol: "vless",
 		Settings: VLESSInboundSettings{Clients: clients, Decryption: "none"},
 		StreamSettings: &StreamSettings{
-			Network:  "grpc",
+			Network:  "xhttp",
 			Security: "reality",
 			RealitySettings: &RealitySettings{
 				Show:        false,
@@ -394,51 +413,251 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 				ShortIds:    strings.Split(set.RealityShortID, ","),
 				MaxTimeDiff: set.RealityMaxTimeDiff, // anti-replay window (ms); 0 = off
 			},
-			GRPCSettings: &GRPCSettings{ServiceName: set.RealityServiceName},
+			XHTTPSettings: &XHTTPSettings{Path: set.RealityPathOr()},
 		},
 		Sniffing: sniff,
 	}
 }
 
-// protocolClients builds the per-protocol client lists for the enabled protocols
-// (a disabled protocol gets none, so nobody can authenticate against it). REALITY
-// reuses the VLESS UUID but with no flow (Vision is raw-TCP only, not gRPC).
-func protocolClients(set *model.Settings, users []model.User) ([]VLESSClient, []TrojanClient, []HysteriaClient, []VLESSClient) {
+// customInbound builds one operator-defined inbound. Which of the stream fields are
+// populated is decided entirely by (protocol, transport, security), the same triple
+// model.Inbound.Validate has already accepted — so anything reaching here is a
+// combination the panel is willing to emit a client config for.
+func customInbound(in model.Inbound, set *model.Settings, users []model.User,
+	sniff *Sniffing, cert []Certificate, minTLS string, opts Options) Inbound {
+
+	// Only the users allowed this inbound get a credential in it — the access gate.
+	allowed := allowedUsers(users, func(u model.User) bool { return opts.allowsInbound(u.ID, in.ID) })
+
+	out := Inbound{
+		Tag:      in.Tag(),
+		Listen:   "0.0.0.0",
+		Port:     in.Port,
+		Protocol: in.Protocol,
+		Sniffing: sniff,
+	}
+	switch in.Protocol {
+	case model.InbVLESS:
+		out.Settings = VLESSInboundSettings{
+			Clients:    customVLESSClients(in, allowed),
+			Decryption: "none",
+		}
+	case model.InbTrojan:
+		out.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
+	case model.InbHysteria:
+		out.Protocol = "hysteria"
+		out.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+	}
+	out.StreamSettings = customStream(in, set, cert, minTLS)
+	return out
+}
+
+// allowedUsers returns the subset of users the predicate admits.
+func allowedUsers(users []model.User, allow func(model.User) bool) []model.User {
+	out := make([]model.User, 0, len(users))
+	for _, u := range users {
+		if allow(u) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// customStream builds the streamSettings for one custom inbound.
+func customStream(in model.Inbound, set *model.Settings, cert []Certificate, minTLS string) *StreamSettings {
+	o := in.Opts
+	st := &StreamSettings{Network: o.Transport}
+
+	switch o.Transport {
+	case model.TrTCP:
+		if header := tcpMasquerade(o); header != nil {
+			st.TCPSettings = &TCPSettings{Header: header}
+		}
+	case model.TrWS:
+		st.WSSettings = &WSSettings{Path: o.Path, Host: o.Host}
+	case model.TrHTTPUpgrade:
+		st.HTTPUpgradeSettings = &HTTPUpgradeSettings{Path: o.Path, Host: o.Host}
+	case model.TrXHTTP:
+		st.XHTTPSettings = &XHTTPSettings{
+			Path: o.Path, Host: o.Host, Mode: o.Mode, Extra: o.XHTTPExtra,
+		}
+	case model.TrGRPC:
+		st.GRPCSettings = &GRPCSettings{
+			ServiceName: o.ServiceName, Authority: o.Authority, MultiMode: o.MultiMode,
+		}
+	case model.TrHysteria:
+		st.HysteriaSettings = &HysteriaSettings{Version: 2}
+	}
+	st.Sockopt = o.Sockopt
+
+	switch o.Security {
+	case model.SecTLS:
+		st.Security = "tls"
+		sni := o.SNI
+		if sni == "" {
+			sni = set.SNI
+		}
+		st.TLSSettings = &TLSSettings{
+			ServerName:   sni,
+			ALPN:         customALPN(o.Transport),
+			MinVersion:   minTLS,
+			Certificates: cert,
+			Extra:        o.TLSExtra,
+		}
+		if in.Protocol == model.InbHysteria {
+			// Hysteria2 is QUIC/HTTP3: the TLS layer MUST offer exactly h3, and a
+			// minVersion floor is meaningless (QUIC is TLS 1.3 by construction).
+			st.TLSSettings.ALPN = []string{"h3"}
+			st.TLSSettings.MinVersion = ""
+		}
+	case model.SecReality:
+		st.Security = "reality"
+		st.RealitySettings = &RealitySettings{
+			Show:        false,
+			Dest:        o.RealitySNI() + ":443",
+			ServerNames: o.RealityServerNames(),
+			PrivateKey:  o.RealityPrivateKey,
+			ShortIds:    o.RealityShortIDs(),
+			MaxTimeDiff: o.RealityMaxTimeDiff,
+		}
+	}
+	return st
+}
+
+// tcpMasquerade builds the raw-TCP HTTP header masquerade, or nil when the inbound
+// asked for none. The request/response templates make the connection open like an
+// ordinary HTTP exchange instead of going straight to proxy bytes.
+//
+// The header values are what the framing CLAIMS to be, so they are chosen to look
+// like a plain browser fetch of the operator's stated hosts. Xray requires the same
+// hosts and paths on the client, which is why they are mirrored into the share link.
+func tcpMasquerade(o model.InboundOpts) *TCPHeader {
+	if o.HeaderType != "http" {
+		return nil
+	}
+	return &TCPHeader{
+		Type: "http",
+		Request: &HTTPRequest{
+			Version: "1.1",
+			Method:  "GET",
+			Path:    o.HeaderPathsOr(),
+			Headers: map[string][]string{
+				"Host": o.HeaderHosts,
+				"User-Agent": {
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+					"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+				},
+				"Accept-Encoding": {"gzip, deflate"},
+				"Connection":      {"keep-alive"},
+				"Pragma":          {"no-cache"},
+			},
+		},
+		Response: &HTTPResponse{
+			Version: "1.1",
+			Status:  "200",
+			Reason:  "OK",
+			Headers: map[string][]string{
+				"Content-Type":      {"application/octet-stream", "video/mpeg"},
+				"Transfer-Encoding": {"chunked"},
+				"Connection":        {"keep-alive"},
+				"Pragma":            {"no-cache"},
+			},
+		},
+	}
+}
+
+// customALPN is the ALPN a TLS-secured custom inbound offers, matched to what its
+// transport actually speaks: WebSocket and HTTPUpgrade need HTTP/1.1 to complete
+// their upgrade, gRPC is HTTP/2-only, and the rest are happiest with both.
+func customALPN(transport string) []string {
+	switch transport {
+	case model.TrWS, model.TrHTTPUpgrade:
+		return []string{"http/1.1"}
+	case model.TrGRPC:
+		return []string{"h2"}
+	default:
+		return []string{"h2", "http/1.1"}
+	}
+}
+
+// customVLESSClients builds a custom VLESS inbound's client list. The flow comes
+// from the inbound (Vision on raw TCP, none elsewhere) rather than being assumed.
+func customVLESSClients(in model.Inbound, users []model.User) []VLESSClient {
+	out := make([]VLESSClient, 0, len(users))
+	for _, u := range users {
+		out = append(out, VLESSClient{ID: u.UUID, Flow: in.Opts.Flow, Email: model.UserEmail(u.ID)})
+	}
+	return out
+}
+
+// customTrojanClients builds a custom Trojan inbound's client list.
+func customTrojanClients(users []model.User) []TrojanClient {
+	out := make([]TrojanClient, 0, len(users))
+	for _, u := range users {
+		out = append(out, TrojanClient{Password: u.Password, Email: model.UserEmail(u.ID)})
+	}
+	return out
+}
+
+// customHysteriaClients builds a custom Hysteria2 inbound's user list.
+func customHysteriaClients(users []model.User) []HysteriaClient {
+	out := make([]HysteriaClient, 0, len(users))
+	for _, u := range users {
+		out = append(out, HysteriaClient{Auth: u.Password, Email: model.UserEmail(u.ID)})
+	}
+	return out
+}
+
+// protocolClients builds the client lists for the three BUILT-IN lanes (a disabled
+// one gets none, so nobody can authenticate against it). REALITY reuses the VLESS
+// UUID but with no flow — Vision is raw-TCP only, not XHTTP.
+//
+// allowBuiltin decides whether a user's credential goes into a given built-in lane —
+// the per-user access gate. Nil (the historical path) admits everyone.
+func protocolClients(set *model.Settings, users []model.User, allowBuiltin func(userID int64, lane string) bool) ([]VLESSClient, []HysteriaClient, []VLESSClient) {
+	if allowBuiltin == nil {
+		allowBuiltin = func(int64, string) bool { return true }
+	}
 	vc := make([]VLESSClient, 0, len(users))
-	tc := make([]TrojanClient, 0, len(users))
 	hc := make([]HysteriaClient, 0, len(users))
 	rc := make([]VLESSClient, 0, len(users))
 	for _, u := range users {
 		email := model.UserEmail(u.ID)
-		if set.VLESSEnabled {
+		if set.VLESSEnabled && allowBuiltin(u.ID, model.LaneVLESS) {
 			vc = append(vc, VLESSClient{ID: u.UUID, Flow: VisionFlow, Email: email})
 		}
-		if set.TrojanEnabled {
-			tc = append(tc, TrojanClient{Password: u.Password, Email: email})
-		}
-		if set.HysteriaEnabled {
+		if set.HysteriaEnabled && allowBuiltin(u.ID, model.LaneHysteria) {
 			hc = append(hc, HysteriaClient{Auth: u.Password, Email: email})
 		}
-		if set.RealityEnabled {
+		if set.RealityEnabled && allowBuiltin(u.ID, model.LaneReality) {
 			rc = append(rc, VLESSClient{ID: u.UUID, Email: email})
 		}
 	}
-	return vc, tc, hc, rc
+	return vc, hc, rc
 }
 
-// UserInbounds builds inbound stubs (tag + protocol + clients) for the given
-// users on the enabled protocols. Used by the live add-user API (`xray api adu`)
-// so new users join the running Xray without a restart.
-func UserInbounds(set *model.Settings, users []model.User) []Inbound {
-	vc, tc, hc, rc := protocolClients(set, users)
+// UserInbounds builds inbound stubs (tag + protocol + clients) for the given users
+// on every inbound that carries users — the built-in lanes AND each custom inbound.
+// Used by the live add-user API (`xray api adu`) so a new user joins the running
+// Xray without a restart.
+//
+// Driving this from the actual inbound list, rather than from the settings booleans,
+// is what keeps custom inbounds in step: a user added while one exists reaches it
+// immediately instead of at the next full restart, and — the half that matters more
+// — a user removed is gone from it just as fast.
+// serverID + access gate which inbounds each added user is placed into, exactly as
+// the full generator does — so a live add can never put a user into a lane their
+// groups don't grant.
+func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.User, serverID int64, access map[int64]model.Access) []Inbound {
+	allowBuiltin := func(userID int64, lane string) bool {
+		return model.AccessOf(access, userID).AllowsBuiltin(serverID, lane)
+	}
+	vc, hc, rc := protocolClients(set, users, allowBuiltin)
 	// `xray api adu` parses each entry as a full InboundDetour, so a valid Port is
 	// required even though only the users are applied (matched by tag).
 	var in []Inbound
 	if len(vc) > 0 {
 		in = append(in, Inbound{Tag: TagVLESS, Port: set.VLESSPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: vc, Decryption: "none"}})
-	}
-	if len(tc) > 0 {
-		in = append(in, Inbound{Tag: TagTrojan, Listen: "127.0.0.1", Port: set.TrojanPort, Protocol: "trojan", Settings: TrojanInboundSettings{Clients: tc}})
 	}
 	if len(hc) > 0 {
 		in = append(in, Inbound{Tag: TagHysteria, Port: set.HysteriaPort, Protocol: "hysteria", Settings: HysteriaInboundSettings{Version: 2, Users: hc}})
@@ -446,24 +665,48 @@ func UserInbounds(set *model.Settings, users []model.User) []Inbound {
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
+	if len(users) == 0 {
+		return in
+	}
+	for _, c := range custom {
+		allowed := allowedUsers(users, func(u model.User) bool {
+			return model.AccessOf(access, u.ID).AllowsInbound(c.ID)
+		})
+		if len(allowed) == 0 {
+			continue
+		}
+		stub := Inbound{Tag: c.Tag(), Port: c.Port, Protocol: c.Protocol}
+		switch c.Protocol {
+		case model.InbVLESS:
+			stub.Settings = VLESSInboundSettings{Clients: customVLESSClients(c, allowed), Decryption: "none"}
+		case model.InbTrojan:
+			stub.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
+		case model.InbHysteria:
+			stub.Protocol = "hysteria"
+			stub.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+		default:
+			continue
+		}
+		in = append(in, stub)
+	}
 	return in
 }
 
-// EnabledInboundTags lists the inbound tags that currently carry users (the
-// targets for live user removal via `xray api rmu`).
-func EnabledInboundTags(set *model.Settings) []string {
+// EnabledInboundTags lists the inbound tags that currently carry users (the targets
+// for live user removal via `xray api rmu`) — built-in lanes plus custom inbounds.
+func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	var tags []string
 	if set.VLESSEnabled {
 		tags = append(tags, TagVLESS)
-	}
-	if set.TrojanEnabled {
-		tags = append(tags, TagTrojan)
 	}
 	if set.HysteriaEnabled {
 		tags = append(tags, TagHysteria)
 	}
 	if set.RealityEnabled {
 		tags = append(tags, TagReality)
+	}
+	for _, c := range custom {
+		tags = append(tags, c.Tag())
 	}
 	return tags
 }

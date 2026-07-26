@@ -136,7 +136,11 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// The wake alone cannot cover this: re-enabling a node that is between polls
 	// (rather than parked on one) has nothing to wake, and that request — the one
 	// carrying the stale belief — is exactly the one that must not be held.
-	if resp.Changed || resp.Revoked != req.Revoked {
+	// A port probe or config check the operator is blocked on is answered on the spot
+	// for the same reason. Only an UNSENT one counts: an agent too old to answer would
+	// otherwise leave the request pending forever, making every poll return instantly
+	// and turning the node into a hot loop against the panel for the whole timeout.
+	if resp.Changed || resp.Revoked != req.Revoked || rt.mgr.NodeHasFreshWork(node.ID) {
 		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp)
 		return
 	}
@@ -199,6 +203,15 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, 
 		if rt.mgr.WantNodeLogs(nodeID) {
 			resp.WantLogs = true
 		}
+		// Port probes an operator is waiting on before saving a custom inbound here.
+		// Not "taken" like the flags above: the pending entry lives until its answer
+		// arrives or the waiter gives up, so a probe that misses one round trip is
+		// simply asked again on the next.
+		resp.ProbePorts = rt.mgr.NodeProbePorts(nodeID)
+		// A candidate config an operator is waiting on a verdict for. Like the probes
+		// it is not "taken": it stays pending until answered or abandoned, so missing
+		// one round trip only means asking again on the next.
+		resp.CheckConfig = rt.mgr.NodeConfigCheck(nodeID)
 		if canonical := rt.canonicalPanelURL(r); canonical != "" {
 			resp.PanelURL = canonical
 		}

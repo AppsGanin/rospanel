@@ -14,7 +14,6 @@ func laneSettings(rc model.RoutingConfig) *model.Settings {
 	return &model.Settings{
 		CertPath: "/tmp/cert.pem",
 		KeyPath:  "/tmp/key.pem",
-		WSPath:   "/ws",
 		Routing:  rc,
 	}
 }

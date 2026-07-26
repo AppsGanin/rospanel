@@ -381,6 +381,11 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                       {u.active_devices}/{u.device_limit} устр.
                     </Badge>
                   )}
+                  {(u.groups ?? []).map((g) => (
+                    <Badge key={g.id} color="brand">
+                      {g.name}
+                    </Badge>
+                  ))}
                 </div>
 
                 <div className="flex gap-2 mt-auto">

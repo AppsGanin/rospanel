@@ -23,7 +23,6 @@ import (
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
@@ -115,8 +114,12 @@ func runServer(dataDir string) {
 		log.Fatalf("load settings: %v", err)
 	}
 
-	// Best-effort host-NAT port hopping for Hysteria2 (no-op off Linux).
-	if err := hop.Ensure(set.HopStart, set.HopEnd, set.HysteriaPort); err != nil {
+	// Best-effort host-NAT port hopping for Hysteria2 (no-op off Linux). Goes through
+	// core so boot installs the SAME funnel set the runtime does — the built-in lane
+	// plus every custom Hysteria2 inbound. Installing only the built-in one here would
+	// erase the custom funnels on every restart (the nftables table is recreated
+	// wholesale), leaving them gone until an unrelated edit happened to re-apply them.
+	if err := core.EnsureHostHops(st); err != nil {
 		log.Printf("port-hopping setup failed (Hysteria2 hopping disabled): %v", err)
 	}
 
@@ -127,18 +130,21 @@ func runServer(dataDir string) {
 	// Tunable / disable-able at runtime via ROSPANEL_CONNLIMIT* (no redeploy needed
 	// if a busy CGNAT egress trips the defaults).
 	connGuardWanted := !strings.EqualFold(env("ROSPANEL_CONNLIMIT", "on"), "off")
+	connGuardLimits := connguard.DefaultLimits()
 	if !connGuardWanted {
 		log.Printf("connguard: disabled via ROSPANEL_CONNLIMIT=off")
 		_ = connguard.Ensure(nil, connguard.DefaultLimits()) // tear down any stale table
 	} else {
-		ports := []int{set.VLESSPort}
-		if set.RealityEnabled {
-			ports = append(ports, set.RealityPort)
+		// Same port set the runtime uses (built-in lanes + enabled custom TCP inbounds),
+		// so a custom inbound is guarded from boot and not only after the next edit.
+		ports, err := core.HostConnGuardPorts(st)
+		if err != nil {
+			log.Printf("connguard: port list failed: %v", err)
+			ports = []int{set.VLESSPort}
 		}
-		lim := connguard.DefaultLimits()
-		lim.MaxConnPerIP = envInt("ROSPANEL_CONNLIMIT_MAX", lim.MaxConnPerIP)
-		lim.NewConnRate = envInt("ROSPANEL_CONNLIMIT_RATE", lim.NewConnRate)
-		if err := connguard.Ensure(ports, lim); err != nil {
+		connGuardLimits.MaxConnPerIP = envInt("ROSPANEL_CONNLIMIT_MAX", connGuardLimits.MaxConnPerIP)
+		connGuardLimits.NewConnRate = envInt("ROSPANEL_CONNLIMIT_RATE", connGuardLimits.NewConnRate)
+		if err := connguard.Ensure(ports, connGuardLimits); err != nil {
 			log.Printf("connguard setup failed (per-IP connection limits not active): %v", err)
 		}
 	}
@@ -176,7 +182,7 @@ func runServer(dataDir string) {
 	mgr.SetAbuse(abuseStore)
 	go abuseStore.Run(context.Background())
 	// The health report needs to tell "off on purpose" from "on, but nft refused it".
-	mgr.SetConnGuardWanted(connGuardWanted)
+	mgr.SetConnGuard(connGuardWanted, connGuardLimits)
 
 	// Load the proxy pool synchronously before the first reconcile so Xray starts
 	// once with the proxies already in place — instead of starting empty and being
@@ -468,18 +474,8 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		}
 	}
 
-	if set.WSPath == "" {
-		ws, err := auth.RandomWSPath()
-		if err != nil {
-			return "", err
-		}
-		if err := st.SetWSPath(ws); err != nil {
-			return "", err
-		}
-	}
-
-	// REALITY needs an X25519 keypair + shortId + gRPC service name; generate them
-	// once so the inbound and share links are ready when the operator enables it.
+	// REALITY needs an X25519 keypair + shortId + XHTTP path; generate them once so
+	// the inbound and share links are ready when the operator enables it.
 	if set.RealityPrivateKey == "" {
 		priv, pub, err := auth.GenerateRealityKeys()
 		if err != nil {
@@ -489,11 +485,11 @@ func bootstrapPanel(st *store.Store) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		svc, err := auth.RandomServiceName()
+		path, err := auth.RandomRealityPath()
 		if err != nil {
 			return "", err
 		}
-		if err := st.SetRealityKeys(priv, pub, shortIDs, svc); err != nil {
+		if err := st.SetRealityKeys(priv, pub, shortIDs, path); err != nil {
 			return "", err
 		}
 	}

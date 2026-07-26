@@ -36,11 +36,14 @@ func RandomShortIDs() (string, error) {
 	return strings.Join(ids, ","), nil
 }
 
-// RandomServiceName returns a random lowercase gRPC service name.
-func RandomServiceName() (string, error) {
+// RandomRealityPath returns the secret request path of a REALITY inbound's XHTTP
+// transport ("/<random>"). It is the shared secret a client must know on top of the
+// keypair, so it is generated rather than named: a guessable path lets a prober
+// address the inbound directly instead of being handed the donor site.
+func RandomRealityPath() (string, error) {
 	b := make([]byte, 6)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return strings.ToLower(secretPathEnc.EncodeToString(b)), nil
+	return "/" + strings.ToLower(secretPathEnc.EncodeToString(b)), nil
 }

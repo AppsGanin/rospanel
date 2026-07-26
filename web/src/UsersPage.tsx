@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getRegistrations, type RegistrationRequest } from "./api";
 import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
+import { GroupsPanel } from "./GroupsPanel";
 import { RegistrationsPanel } from "./RegistrationsPanel";
 import { useIsAdmin } from "./role";
 import { PaymentsPage } from "./PaymentsPage";
@@ -17,6 +18,7 @@ import { UsersPanel } from "./UsersPanel";
 type SubTab =
   | "list"
   | "requests"
+  | "groups"
   | "broadcast"
   | "payments"
   | "stats"
@@ -78,6 +80,10 @@ export function UsersPage({
     ...(isAdmin && billingEnabled
       ? [{ value: "payments" as SubTab, label: "Оплата" }]
       : []),
+    // Access groups gate which connections a user may use; managing them lives beside
+    // the users whose membership they govern. Admin-and-up, like the other management
+    // sub-tabs.
+    ...(isAdmin ? [{ value: "groups" as SubTab, label: "Группы" }] : []),
     { value: "stats", label: "Статистика" },
     { value: "events", label: "Журнал" },
   ];
@@ -118,6 +124,7 @@ export function UsersPage({
         )}
         {tab === "broadcast" && <BroadcastPanel />}
         {tab === "payments" && <PaymentsPage />}
+        {tab === "groups" && <GroupsPanel />}
         {tab === "stats" && <StatsPanel />}
         {tab === "events" && <EventsPanel />}
       </div>

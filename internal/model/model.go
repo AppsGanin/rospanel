@@ -23,8 +23,7 @@ const (
 // keeping them here as the single source stops those copies from drifting apart.
 const (
 	ProtoVLESS    = "VLESS-TCP-TLS"
-	ProtoReality  = "VLESS-GRPC-REALITY"
-	ProtoTrojan   = "TROJAN-WS"
+	ProtoReality  = "VLESS-XHTTP-REALITY"
 	ProtoHysteria = "HYSTERIA-UDP"
 )
 
@@ -503,8 +502,6 @@ type Settings struct {
 	PanelName     string `json:"-"`
 	PanelTheme    string `json:"-"` // JSON {accent,text,muted,bg,surface}, empty ⇒ defaults
 	DecoyTemplate string `json:"decoy_template"`
-	WSPath        string `json:"-"` // Trojan-WS path matched by VLESS fallbacks
-	TrojanPort    int    `json:"-"` // loopback Trojan inbound port
 	HysteriaPort  int    `json:"hysteria_port"`
 	HopStart      int    `json:"hop_start"`
 	HopEnd        int    `json:"hop_end"`
@@ -516,7 +513,6 @@ type Settings struct {
 	// out of user subscriptions/share links and its clients are removed from the
 	// Xray inbound (the listener stays up but rejects everyone).
 	VLESSEnabled    bool `json:"-"`
-	TrojanEnabled   bool `json:"-"`
 	HysteriaEnabled bool `json:"-"`
 
 	// VLESS + gRPC + REALITY inbound (separate port). REALITY borrows the TLS of a
@@ -528,7 +524,7 @@ type Settings struct {
 	RealityPrivateKey  string `json:"-"` // X25519 private (base64 raw-url)
 	RealityPublicKey   string `json:"-"` // X25519 public (base64 raw-url), in links (pbk)
 	RealityShortID     string `json:"-"` // hex shortId, in links (sid)
-	RealityServiceName string `json:"-"` // gRPC service name
+	RealityPath string `json:"-"` // gRPC service name
 
 	// Proxy mode: a socks/http forward-proxy inbound so other RosPanel servers can
 	// chain their egress through this one (point their proxy pool at host:port).
@@ -568,7 +564,6 @@ type Settings struct {
 	// Per-connection uTLS fingerprint embedded in share links (fp=). Hysteria2
 	// (QUIC) has none.
 	VLESSFp   string `json:"-"`
-	TrojanFp  string `json:"-"`
 	RealityFp string `json:"-"`
 
 	// Per-connection display names shown in VPN clients / on the subscription page
@@ -576,14 +571,13 @@ type Settings struct {
 	// default protocol label (ProtoVLESS, ProtoReality, …). See Settings.ProtoLabel.
 	VLESSName    string `json:"-"`
 	RealityName  string `json:"-"`
-	TrojanName   string `json:"-"`
 	HysteriaName string `json:"-"`
 
 	// Anti-DPI / anti-censorship transport hardening (Settings → Подключения).
 	// TLSFragment / BlockQUIC shape the GENERATED client configs (sing-box only —
-	// no server change); TLSMin13 / RealityMaxTimeDiff / RealityDestPort change the
-	// SERVER inbound config.
-	TLSFragment        bool `json:"-"` // sing-box ClientHello fragmentation (Vision + Trojan-WS)
+	// no server change); TLSMin13 / RealityMaxTimeDiff change the SERVER inbound
+	// config.
+	TLSFragment        bool `json:"-"` // sing-box ClientHello fragmentation (VLESS-Vision)
 	TLSMin13           bool `json:"-"` // require TLS 1.3 on the :443 inbound
 	BlockQUIC          bool `json:"-"` // drop untunneled browser QUIC (UDP/443) in client configs
 	RealityMaxTimeDiff int  `json:"-"` // REALITY anti-replay window in ms (0 = off)
@@ -713,6 +707,12 @@ type Settings struct {
 	// appended to every protocol label ("VLESS · Нидерланды") so a client shows which
 	// node each entry belongs to. Empty for the local server / single-node installs.
 	NodeLabel string `json:"-"`
+
+	// ServerID is computed (NOT stored): which server this materialized settings
+	// value describes — LocalNodeID for the master, the node's id for a node. It is
+	// what pairs a settings value with that server's custom inbounds, which live in
+	// their own table rather than in this row.
+	ServerID int64 `json:"-"`
 }
 
 // WarpRegistered reports whether a WARP account has been provisioned.
@@ -960,6 +960,18 @@ func (s *Settings) RealitySNI() string {
 	return strings.TrimSpace(s.RealityDest)
 }
 
+// RealityPathOr returns the REALITY lane's XHTTP request path, guaranteeing a
+// leading slash. An install whose stored value predates the gRPC→XHTTP move (or one
+// whose value was cleared) would otherwise emit an empty path, which Xray reads as
+// "/" — a path any prober can guess.
+func (s *Settings) RealityPathOr() string {
+	p := strings.TrimSpace(s.RealityPath)
+	if p == "" {
+		return ""
+	}
+	return "/" + strings.TrimLeft(p, "/")
+}
+
 // fpOr returns fp, defaulting to "firefox" when empty.
 func fpOr(fp string) string {
 	if fp != "" {
@@ -968,11 +980,34 @@ func fpOr(fp string) string {
 	return "firefox"
 }
 
-// VLESSFP / TrojanFP / RealityFP return the per-connection uTLS fingerprint for
-// share links, each defaulting to "firefox".
+// VLESSFP / RealityFP return the per-connection uTLS fingerprint for share links,
+// each defaulting to "firefox".
 func (s *Settings) VLESSFP() string   { return fpOr(s.VLESSFp) }
-func (s *Settings) TrojanFP() string  { return fpOr(s.TrojanFp) }
 func (s *Settings) RealityFP() string { return fpOr(s.RealityFp) }
+
+// BuiltinLaneLabels returns the resolved display names of the three built-in lanes
+// WITHOUT the multi-node prefix — the names a custom inbound must not take, since
+// both end up as node names in the same Clash/sing-box document and a duplicate tag
+// makes a client reject the whole profile.
+//
+// Deliberately not ProtoLabel: that one prefixes the server label for subscriptions,
+// which is a rendering concern. Uniqueness is a per-server property, so it is decided
+// on the bare labels.
+func (s *Settings) BuiltinLaneLabels() []string {
+	out := make([]string, 0, 3)
+	for proto, custom := range map[string]string{
+		ProtoVLESS:    s.VLESSName,
+		ProtoReality:  s.RealityName,
+		ProtoHysteria: s.HysteriaName,
+	} {
+		if c := strings.TrimSpace(custom); c != "" {
+			out = append(out, c)
+			continue
+		}
+		out = append(out, proto)
+	}
+	return out
+}
 
 // ProtoLabel returns the display name for a protocol constant (ProtoVLESS, …):
 // the admin-configured custom name when set, otherwise the constant itself. Used
@@ -988,8 +1023,6 @@ func (s *Settings) ProtoLabel(proto string) string {
 		custom = s.VLESSName
 	case ProtoReality:
 		custom = s.RealityName
-	case ProtoTrojan:
-		custom = s.TrojanName
 	case ProtoHysteria:
 		custom = s.HysteriaName
 	}

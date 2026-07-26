@@ -194,6 +194,36 @@ func (m *Manager) genOpts() xray.Options {
 	return opts
 }
 
+// genOptsFor is genOpts plus the per-server pieces: the server id, its custom
+// inbounds, and the per-user access map that gates which lanes each user's credential
+// is written into.
+//
+// The two reads fail differently ON PURPOSE. A custom-inbounds read failure is soft:
+// generation proceeds with no custom inbounds, because the built-in lanes are what keep
+// the server reachable and losing a lane cosmetically beats an outage. An ACCESS read
+// failure is HARD (returns an error): the access map decides which users are withheld
+// from which lanes, so generating without it would write every restricted user's
+// credential into every lane — a security regression baked into the live config until
+// the next reconcile. Failing the reconcile instead keeps the previous, correctly
+// gated config in force. (The subscription path reads per-user and can fail soft — it
+// is read-only and self-corrects on the next fetch; here we are about to persist.)
+func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
+	opts := m.genOpts()
+	opts.ServerID = serverID
+	access, err := m.store.AccessMap()
+	if err != nil {
+		return opts, fmt.Errorf("load access map: %w", err)
+	}
+	opts.Access = access
+	list, err := m.store.EnabledInbounds(serverID)
+	if err != nil {
+		logErr("inbounds: load failed", "server", serverID, "err", err)
+		return opts, nil
+	}
+	opts.Custom = list
+	return opts, nil
+}
+
 // GeoStatus reports the on-disk state of the Xray geo databases (presence, size,
 // last-download time) for the settings UI.
 func (m *Manager) GeoStatus() []geo.FileInfo { return geo.Status(m.assetDir()) }

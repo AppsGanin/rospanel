@@ -6,17 +6,22 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// Reality builds a vless:// share link for VLESS + gRPC + REALITY.
+// Reality builds a vless:// share link for VLESS + XHTTP + REALITY.
 //
-//	vless://<uuid>@<host>:<port>?encryption=none&security=reality&type=grpc
-//	      &serviceName=<svc>&mode=gun&pbk=<pub>&sid=<sid>&sni=<dest>&fp=<fp>#<label>
+//	vless://<uuid>@<host>:<port>?encryption=none&security=reality&type=xhttp
+//	      &path=<path>&mode=auto&pbk=<pub>&sid=<sid>&sni=<dest>&fp=<fp>#<label>
+//
+// mode stays "auto" on purpose: with a REALITY config present Xray's client resolves
+// auto to stream-one (one HTTP request per connection), which is both the smallest
+// surface and what the server side expects. Pinning a different mode here would only
+// make the two disagree.
 func Reality(u model.User, set *model.Settings) string {
 	q := url.Values{}
 	q.Set("encryption", "none")
 	q.Set("security", "reality")
-	q.Set("type", "grpc")
-	q.Set("serviceName", set.RealityServiceName)
-	q.Set("mode", "gun")
+	q.Set("type", "xhttp")
+	q.Set("path", set.RealityPathOr())
+	q.Set("mode", "auto")
 	q.Set("pbk", set.RealityPublicKey)
 	q.Set("sid", set.RealitySID())
 	q.Set("sni", set.RealitySNI())

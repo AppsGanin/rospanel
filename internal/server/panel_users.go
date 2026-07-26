@@ -21,9 +21,12 @@ func (rt *Router) listUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	rt.applyTLSHints(set)
 	bot := botUsername(r.Context(), set.TGUserBotToken)
+	custom := rt.localInbounds()
+	groupsMap, _ := rt.mgr.GroupsForAllUsers()
+	accessMap, _ := rt.mgr.Store().AccessMap()
 	views := make([]userView, 0, len(users))
 	for _, u := range users {
-		views = append(views, makeUserView(u, set, bot))
+		views = append(views, makeUserView(u, set, bot, custom, groupsMap[u.ID], model.AccessOf(accessMap, u.ID)))
 	}
 	writeJSON(w, http.StatusOK, views)
 }
@@ -53,7 +56,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusCreated, makeUserView(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
+	writeJSON(w, http.StatusCreated, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
 }
 
 // bulkUsers applies one action to a set of users in a single pass (one Xray sync),
@@ -125,7 +128,7 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusOK, makeUserView(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
+	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
 }
 
 // unlinkUserTelegram detaches a VPN user's linked Telegram chat (admin action).

@@ -35,13 +35,12 @@ type Node struct {
 	RealityPrivateKey  string `json:"-"`
 	RealityPublicKey   string `json:"-"`
 	RealityShortID     string `json:"-"`
-	RealityServiceName string `json:"-"`
+	RealityPath string `json:"-"`
 	RealityDest        string `json:"-"`
 
 	// Per-node protocols (the node's OWN — no inheritance from the master). A stored
 	// nil is treated as off; every write sets an explicit value.
 	VLESSEnabled    *bool `json:"vless_enabled"`
-	TrojanEnabled   *bool `json:"trojan_enabled"`
 	HysteriaEnabled *bool `json:"hysteria_enabled"`
 	RealityEnabled  *bool `json:"reality_enabled"`
 
@@ -113,7 +112,6 @@ type Node struct {
 // are separate per-node fields; this holds the ports, port-hopping, WS path, REALITY
 // port + anti-replay, uTLS fingerprints, connection display names, and anti-DPI.
 type NodeConnections struct {
-	WSPath             string `json:"ws_path"`
 	HysteriaPort       int    `json:"hysteria_port"`
 	HopStart           int    `json:"hop_start"`
 	HopEnd             int    `json:"hop_end"`
@@ -124,10 +122,8 @@ type NodeConnections struct {
 	TLSMin13           bool   `json:"tls_min13"`
 	BlockQUIC          bool   `json:"block_quic"`
 	VLESSFp            string `json:"vless_fp"`
-	TrojanFp           string `json:"trojan_fp"`
 	RealityFp          string `json:"reality_fp"`
 	VLESSName          string `json:"vless_name"`
-	TrojanName         string `json:"trojan_name"`
 	RealityName        string `json:"reality_name"`
 	HysteriaName       string `json:"hysteria_name"`
 }

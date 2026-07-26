@@ -139,16 +139,31 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/update-all":        set("Обновление всех нод"),
 	"POST /api/nodes/{id}/provision":    set("Нода · установка по SSH"),
 
+	// Custom inbounds. Each of these opens, changes or closes a public listener on a
+	// server, so all four are recorded.
+	"POST /api/servers/{id}/inbounds":       set("Подключение добавлено"),
+	"POST /api/inbounds/{id}":               set("Подключение изменено"),
+	"DELETE /api/inbounds/{id}":             set("Подключение удалено"),
+	"POST /api/inbounds/{id}/regen-reality": set("Подключение · новые ключи REALITY"),
+
+	// User groups: what connections a member may reach. A grant change alters access
+	// for everyone in the group, so all four are recorded.
+	"POST /api/groups":              set("Группа добавлена"),
+	"POST /api/groups/{id}":         set("Группа изменена"),
+	"DELETE /api/groups/{id}":       set("Группа удалена"),
+	"POST /api/groups/{id}/members": set("Группа · участники"),
+	"POST /api/users/{id}/groups":   set("Группы пользователя"),
+
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.
-	"GET /api/backup":           act(model.AuditBackupTaken),
-	"POST /api/backup/inspect":  skip, // read-only: inspects an uploaded file, changes nothing
-	"POST /api/restore":         act(model.AuditRestored),
-	"POST /api/reset":           act(model.AuditFactoryReset),
-	"POST /api/update":          act(model.AuditUpdated),
-	"POST /api/xray/restart":    act(model.AuditXrayRestarted),
-	"POST /api/panel/restart":   act(model.AuditPanelRestarted),
-	"POST /api/stats/reset":     act(model.AuditStatsReset),
+	"GET /api/backup":          act(model.AuditBackupTaken),
+	"POST /api/backup/inspect": skip, // read-only: inspects an uploaded file, changes nothing
+	"POST /api/restore":        act(model.AuditRestored),
+	"POST /api/reset":          act(model.AuditFactoryReset),
+	"POST /api/update":         act(model.AuditUpdated),
+	"POST /api/xray/restart":   act(model.AuditXrayRestarted),
+	"POST /api/panel/restart":  act(model.AuditPanelRestarted),
+	"POST /api/stats/reset":    act(model.AuditStatsReset),
 
 	// End users: audited in the user journal instead, per user, with details this
 	// trail could not carry. Listed explicitly so the exhaustiveness test sees a

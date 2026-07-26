@@ -242,6 +242,80 @@ func (s *Supervisor) Serving() bool {
 	return !s.suspended && (s.cur != nil || s.restarting)
 }
 
+// ValidateBytes runs `xray run -test` over a config WITHOUT applying it, and returns
+// Xray's own complaint when it refuses.
+//
+// This is what lets the panel reject a bad advanced setting in the editor instead of
+// storing it, pushing it, and finding out from a crashed Xray and a rollback. Nothing
+// but Xray can answer the question — the settings it accepts are defined by its
+// parser, and a panel-side whitelist only catches misspelled keys, not values it
+// dislikes.
+//
+// A missing binary means "cannot judge", not "invalid": the caller then falls back to
+// its own checks rather than blocking every save.
+func (s *Supervisor) ValidateBytes(data []byte) error {
+	if s == nil || s.bin == "" {
+		return nil
+	}
+	f, err := os.CreateTemp("", "xray-check-*.json")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	defer os.Remove(name)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), validateTimeout)
+	defer cancel()
+	// -format json for the same reason Apply passes it: Xray infers the format from
+	// the file extension, and a temp file's is not to be relied on.
+	cmd := exec.CommandContext(ctx, s.bin, "run", "-test", "-format", "json", "-c", name)
+	cmd.Env = s.env()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s", cleanValidationError(string(out)))
+	}
+	return nil
+}
+
+// cleanValidationError reduces `xray -test` output to the part an operator can act
+// on. Raw, it opens with a version banner and names a temp file — noise in front of
+// the one sentence that says what is actually wrong.
+func cleanValidationError(out string) string {
+	var kept []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "", strings.HasPrefix(line, "Xray "),
+			strings.HasPrefix(line, "A unified platform"):
+			continue
+		}
+		// Xray nests causes as "outer > inner > root"; the root is the useful one, and
+		// the outer frames repeat the temp path.
+		if i := strings.LastIndex(line, "> "); i >= 0 {
+			line = strings.TrimSpace(line[i+2:])
+		}
+		kept = append(kept, line)
+	}
+	if len(kept) == 0 {
+		return strings.TrimSpace(out)
+	}
+	return strings.Join(kept, "; ")
+}
+
+// ValidateConfig is ValidateBytes for a config still in struct form.
+func (s *Supervisor) ValidateConfig(cfg *Config) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return s.ValidateBytes(data)
+}
+
 // Apply writes the config atomically (validating first when possible) and
 // restarts Xray.
 func (s *Supervisor) Apply(cfg *Config) error {

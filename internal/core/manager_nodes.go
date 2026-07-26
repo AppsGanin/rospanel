@@ -33,12 +33,13 @@ import (
 // helper. All egress is off by default, so a node with no config egresses direct.
 func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns := *set // shallow copy; we only overwrite value fields below
+	ns.ServerID = n.ID
 	ns.Host = n.Host
 	ns.SNI = n.Host
 	ns.RealityPrivateKey = n.RealityPrivateKey
 	ns.RealityPublicKey = n.RealityPublicKey
 	ns.RealityShortID = n.RealityShortID
-	ns.RealityServiceName = n.RealityServiceName
+	ns.RealityPath = n.RealityPath
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -47,7 +48,6 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 
 	// A node's protocols are its OWN — no inheritance from the master. Unset ⇒ off.
 	ns.VLESSEnabled = derefBool(n.VLESSEnabled)
-	ns.TrojanEnabled = derefBool(n.TrojanEnabled)
 	ns.HysteriaEnabled = derefBool(n.HysteriaEnabled)
 	ns.RealityEnabled = derefBool(n.RealityEnabled)
 
@@ -98,7 +98,6 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	// Connection transport: the node's own if configured, otherwise inherit the
 	// master's (ns already carries the master's values from the shallow copy).
 	if c := n.Connections; c != nil {
-		ns.WSPath = c.WSPath
 		ns.HysteriaPort = c.HysteriaPort
 		ns.HopStart = c.HopStart
 		ns.HopEnd = c.HopEnd
@@ -109,10 +108,8 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.TLSMin13 = c.TLSMin13
 		ns.BlockQUIC = c.BlockQUIC
 		ns.VLESSFp = c.VLESSFp
-		ns.TrojanFp = c.TrojanFp
 		ns.RealityFp = c.RealityFp
 		ns.VLESSName = c.VLESSName
-		ns.TrojanName = c.TrojanName
 		ns.RealityName = c.RealityName
 		ns.HysteriaName = c.HysteriaName
 	}
@@ -143,7 +140,11 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
 	// panel's own layout. Egress lanes resolve against the node's OWN proxy pool.
-	cfg, err := xray.Generate(ns, users, m.genOpts(), m.getNodeProxies(n.ID))
+	opts, err := m.genOptsFor(n.ID)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := xray.Generate(ns, users, opts, m.getNodeProxies(n.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +155,15 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	connGuardPorts := []int{ns.VLESSPort}
 	if ns.RealityEnabled {
 		connGuardPorts = append(connGuardPorts, ns.RealityPort)
+	}
+	// Custom inbounds get the same per-IP flood guard as the built-in lanes — they are
+	// public listeners on the same box, and leaving them out would make "add a custom
+	// inbound" quietly the way to bypass the guard. Only the TCP ones: the guard's
+	// rules count connections, which UDP/QUIC has none of.
+	for _, in := range opts.Custom {
+		if in.Protocol != model.InbHysteria {
+			connGuardPorts = append(connGuardPorts, in.Port)
+		}
 	}
 	// ACME: the node's own provider/email/EAB when set, otherwise the panel's.
 	acmeEmail := set.ACMEEmail
@@ -175,6 +185,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		HysteriaPort:      ns.HysteriaPort,
 		HopStart:          ns.HopStart,
 		HopEnd:            ns.HopEnd,
+		HopRanges:         nodeHopMeta(ns, opts.Custom),
 		ConnGuardPorts:    connGuardPorts,
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
@@ -312,7 +323,6 @@ type NodeView struct {
 	// "". Always "" for the master, whose restart is synchronous — nothing to wait for.
 	XrayRestart     string `json:"xray_restart,omitempty"`
 	VLESSEnabled    bool   `json:"vless_enabled"`
-	TrojanEnabled   bool   `json:"trojan_enabled"`
 	HysteriaEnabled bool   `json:"hysteria_enabled"`
 	RealityEnabled  bool   `json:"reality_enabled"`
 	DecoyTemplate   string `json:"decoy_template"`
@@ -341,11 +351,11 @@ type NodeView struct {
 	// REALITY identity (per-server). RealityDest is this server's own donor ("" on a
 	// node ⇒ inherits the panel's); the public key/shortId/service are shown so the
 	// operator can see them and regenerate. The private key is never exposed.
-	RealityDest        string `json:"reality_dest"`
-	RealityPublicKey   string `json:"reality_public_key"`
-	RealityShortID     string `json:"reality_short_id"`
-	RealityServiceName string `json:"reality_service_name"`
-	JoinToken          string `json:"join_token,omitempty"` // only right after create/regen
+	RealityDest      string `json:"reality_dest"`
+	RealityPublicKey string `json:"reality_public_key"`
+	RealityShortID   string `json:"reality_short_id"`
+	RealityPath      string `json:"reality_path"`
+	JoinToken        string `json:"join_token,omitempty"` // only right after create/regen
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
@@ -381,7 +391,6 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		XrayRunning:     m.sup.Serving(),
 		XrayVersion:     m.sup.Version(),
 		VLESSEnabled:    set.VLESSEnabled,
-		TrojanEnabled:   set.TrojanEnabled,
 		HysteriaEnabled: set.HysteriaEnabled,
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
@@ -395,11 +404,11 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		OperaEnabled:   set.OperaEnabled,
 		OperaCountry:   set.OperaCountryOr(),
 		// The master's own REALITY identity.
-		RealityDest:        set.RealityDest,
-		RealityPublicKey:   set.RealityPublicKey,
-		RealityShortID:     set.RealityShortID,
-		RealityServiceName: set.RealityServiceName,
-		GeoRefreshHours:    set.GeoRefreshHours,
+		RealityDest:      set.RealityDest,
+		RealityPublicKey: set.RealityPublicKey,
+		RealityShortID:   set.RealityShortID,
+		RealityPath:      set.RealityPath,
+		GeoRefreshHours:  set.GeoRefreshHours,
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -422,7 +431,6 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			VersionSkew:     n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
 			XrayRestart:     m.NodeRestartState(n.ID),
 			VLESSEnabled:    derefBool(n.VLESSEnabled),
-			TrojanEnabled:   derefBool(n.TrojanEnabled),
 			HysteriaEnabled: derefBool(n.HysteriaEnabled),
 			RealityEnabled:  derefBool(n.RealityEnabled),
 			DecoyTemplate:   n.DecoyTemplate,
@@ -437,10 +445,10 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			OperaEnabled:    n.OperaEnabled,
 			OperaCountry:    n.OperaCountry,
 			// The node's own REALITY identity (dest "" ⇒ inherits the panel's donor).
-			RealityDest:        n.RealityDest,
-			RealityPublicKey:   n.RealityPublicKey,
-			RealityShortID:     n.RealityShortID,
-			RealityServiceName: n.RealityServiceName,
+			RealityDest:      n.RealityDest,
+			RealityPublicKey: n.RealityPublicKey,
+			RealityShortID:   n.RealityShortID,
+			RealityPath:      n.RealityPath,
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
@@ -628,7 +636,7 @@ func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
 		if err != nil {
 			return err
 		}
-		svc, err := auth.RandomServiceName()
+		svc, err := auth.RandomRealityPath()
 		if err != nil {
 			return err
 		}
@@ -708,19 +716,15 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		}
 		return "firefox"
 	}
-	vlessFp, trojanFp, realityFp := fpOf("vless"), fpOf("trojan"), fpOf("reality")
-	for _, fp := range []string{vlessFp, trojanFp, realityFp} {
+	vlessFp, realityFp := fpOf("vless"), fpOf("reality")
+	for _, fp := range []string{vlessFp, realityFp} {
 		if !model.ValidFingerprint(fp) {
 			return invalid("неизвестный fingerprint %q", fp)
 		}
 	}
-	connNames, err := validateConnNames(u.Names)
+	connNames, err := validateConnNames(u.Names, m.inboundNames(id))
 	if err != nil {
 		return err
-	}
-	ws := "/" + strings.TrimLeft(strings.TrimSpace(u.WSPath), "/")
-	if !wsPathRe.MatchString(ws) {
-		return invalid("неверный путь WebSocket (начинается с «/», допустимы латиница, цифры, - _ . /)")
 	}
 	if u.HysteriaPort < 1 || u.HysteriaPort > 65535 {
 		return invalid("порт вне диапазона 1–65535")
@@ -753,7 +757,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 
 	// Protocols (the node's own explicit on/off).
 	if err := m.store.SetNodeProtocols(id,
-		u.Protocols["vless"], u.Protocols["trojan"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
+		u.Protocols["vless"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
 		return err
 	}
 	// REALITY donor + optional key regeneration.
@@ -769,7 +773,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		if kerr != nil {
 			return kerr
 		}
-		svc, kerr := auth.RandomServiceName()
+		svc, kerr := auth.RandomRealityPath()
 		if kerr != nil {
 			return kerr
 		}
@@ -779,7 +783,6 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	}
 	// Transport blob.
 	blob := &model.NodeConnections{
-		WSPath:             ws,
 		HysteriaPort:       u.HysteriaPort,
 		HopStart:           u.HopStart,
 		HopEnd:             u.HopEnd,
@@ -790,10 +793,8 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		TLSMin13:           u.TLSMin13,
 		BlockQUIC:          u.BlockQUIC,
 		VLESSFp:            vlessFp,
-		TrojanFp:           trojanFp,
 		RealityFp:          realityFp,
 		VLESSName:          connNames["vless"],
-		TrojanName:         connNames["trojan"],
 		RealityName:        connNames["reality"],
 		HysteriaName:       connNames["hysteria2"],
 	}
@@ -831,6 +832,24 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 func (m *Manager) DeleteNode(id int64) error {
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
+	}
+	// A node row is tombstoned rather than removed, but its custom inbounds are not
+	// carried by that row — they are their own table keyed by server id. Left behind
+	// they would be orphans the fleet-wide readers still hand out, and a re-created
+	// node reusing the id would silently inherit them.
+	inbounds, _ := m.store.Inbounds(id) // for grant cleanup below, before they're gone
+	if err := m.store.DeleteServerInbounds(id); err != nil {
+		logErr("inbounds: cleanup after node delete failed", "node", id, "err", err)
+	}
+	// Sweep group grants that referenced this node's built-in lanes and its inbounds,
+	// so a group doesn't keep tokens for a server that no longer exists.
+	if err := m.store.DeleteServerGrants(id); err != nil {
+		logErr("groups: builtin grant cleanup after node delete failed", "node", id, "err", err)
+	}
+	for _, in := range inbounds {
+		if err := m.store.DeleteInboundGrants(in.ID); err != nil {
+			logErr("groups: inbound grant cleanup after node delete failed", "inbound", in.ID, "err", err)
+		}
 	}
 	m.nodes.dropWaiter(id)
 	return nil
@@ -1346,6 +1365,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// Before anything else: did the Xray we asked this node to bounce actually come
 	// back? The answer is in the report it just sent.
 	m.ConfirmNodeXrayRestart(n.ID, req.XrayStartedAt)
+	// Answers to any port probes an operator is waiting on before saving a custom
+	// inbound on this node. Delivered early: the waiter has a short deadline, and
+	// nothing below this line can change the answer.
+	m.RecordNodeProbeResults(n.ID, req.ProbeResults)
+	m.RecordNodeConfigCheck(n.ID, req.ConfigCheck)
 	if len(req.Logs) > 0 {
 		m.storeNodeLogs(n.ID, req.Logs)
 	}

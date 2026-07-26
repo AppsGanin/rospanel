@@ -15,8 +15,11 @@ import {
   setUserEnabled,
   setUserLimits,
   setUserPlan,
+  setUserGroups,
+  listGroups,
   type Connection,
   type DailyPoint,
+  type Group,
   type TariffPlan,
   type User,
 } from './api'
@@ -56,6 +59,7 @@ import {
   SegmentedControl,
   Select,
   Switch,
+  TextInput,
   useConfirm,
   useCopy,
 } from './ui'
@@ -65,7 +69,7 @@ import {
 // value still resolves to a label).
 function planSelectData(plans: TariffPlan[], user: User) {
   const data = [
-    { value: '0', label: 'Вручную (без лимитов)' },
+    { value: '0', label: 'Вручную' },
     ...plans
       .filter((p) => p.enabled)
       .map((p) => ({
@@ -203,6 +207,10 @@ export function UserDetail({
   const [msgMedia, setMsgMedia] = useState<File | null>(null)
   const msgFileRef = useRef<HTMLInputElement>(null)
   const [sending, setSending] = useState(false)
+  const [allGroups, setAllGroups] = useState<Group[]>([])
+  const [sel, setSel] = useState<Set<number>>(new Set())
+  const [groupQuery, setGroupQuery] = useState('')
+  const [savingGroups, setSavingGroups] = useState(false)
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
@@ -211,6 +219,20 @@ export function UserDetail({
     setDeviceLimit(user ? String(user.device_limit ?? 0) : '0')
     setTgLink(null) // a one-time bind link is per-user; don't leak it across switches
     setEventsOpen(false) // ditto for the journal — never show one user's trail over another
+    setSel(new Set((user?.groups ?? []).map((g) => g.id)))
+    setGroupQuery('')
+  }, [user])
+
+  // All groups, for the access-group selector. Loaded once the card opens.
+  useEffect(() => {
+    if (!user) return
+    let alive = true
+    listGroups()
+      .then((g) => alive && setAllGroups(g))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
   }, [user])
 
   useEffect(() => {
@@ -273,6 +295,41 @@ export function UserDetail({
 
   const saveLimits = (dl: number, ea: number, dev: number) =>
     setUserLimits(user!.id, dl, ea, dev).then(onChanged).catch(fail)
+
+  // Group membership is applied on a button, not per chip: each save reconciles Xray,
+  // so toggling several groups at once should be one restart, not several.
+  const current = new Set((user?.groups ?? []).map((g) => g.id))
+  const groupsDirty =
+    user != null && (sel.size !== current.size || [...sel].some((id) => !current.has(id)))
+  const toggleGroup = (id: number, on: boolean) =>
+    setSel((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  const resetGroups = () => setSel(new Set(current))
+  const applyGroups = () => {
+    if (!user) return
+    setSavingGroups(true)
+    setUserGroups(user.id, [...sel])
+      .then(onChanged)
+      .then(() => notifySuccess('Группы обновлены'))
+      .catch(fail)
+      .finally(() => setSavingGroups(false))
+  }
+  // A user whose ONLY selected groups grant nothing sees no connections at all — a
+  // silent lockout that's easy to create by accident (an empty group revokes rather
+  // than grants). Warn before it's applied.
+  const selectedGrantCount = allGroups
+    .filter((g) => sel.has(g.id))
+    .reduce((n, g) => n + (g.grants?.length ?? 0), 0)
+  const groupQ = groupQuery.trim().toLowerCase()
+  const selectedGroups = allGroups.filter((g) => sel.has(g.id))
+  const availableGroups = allGroups.filter(
+    (g) => !sel.has(g.id) && (!groupQ || g.name.toLowerCase().includes(groupQ)),
+  )
+  const showGroupSearch = allGroups.length > 8
 
   // confirmChange gates an edit in the "Управление" block. These controls apply
   // to a live subscription the moment they're touched, so a misclick would
@@ -348,6 +405,83 @@ export function UserDetail({
             />
           </div>
 
+          {allGroups.length > 0 && (
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Группы доступа</span>
+                <Badge color={sel.size === 0 ? 'gray' : 'brand'} size="xs">
+                  {sel.size === 0 ? 'все подключения' : `${sel.size} выбрано`}
+                </Badge>
+              </div>
+
+              {/* Membership: solid chips are the groups the user is IN; click × to leave. */}
+              {selectedGroups.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedGroups.map((g) => (
+                    <GroupChip
+                      key={g.id}
+                      name={g.name}
+                      count={g.grants?.length ?? 0}
+                      state="on"
+                      onClick={() => toggleGroup(g.id, false)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-ink-muted">
+                  Не состоит в группах — доступны все подключения.
+                </p>
+              )}
+
+              {/* Add: dashed chips are groups the user can join; click ＋ to add. */}
+              {(availableGroups.length > 0 || groupQ) && (
+                <div className="flex flex-col gap-1.5 border-t border-gray-100 pt-2.5">
+                  <span className="text-xs text-ink-muted">Добавить в группу</span>
+                  {showGroupSearch && (
+                    <TextInput
+                      value={groupQuery}
+                      onChange={setGroupQuery}
+                      placeholder="Поиск группы…"
+                    />
+                  )}
+                  {availableGroups.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableGroups.map((g) => (
+                        <GroupChip
+                          key={g.id}
+                          name={g.name}
+                          count={g.grants?.length ?? 0}
+                          state="add"
+                          onClick={() => toggleGroup(g.id, true)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-0.5 text-xs text-ink-muted">Ничего не найдено.</p>
+                  )}
+                </div>
+              )}
+
+              {sel.size > 0 && selectedGrantCount === 0 && (
+                <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">
+                  Выбранные группы не дают ни одного подключения — пользователь не увидит
+                  ни одного варианта.
+                </p>
+              )}
+
+              {groupsDirty && (
+                <div className="flex justify-end gap-2 pt-0.5">
+                  <Button size="sm" variant="light" color="gray" onClick={resetGroups} disabled={savingGroups}>
+                    Отмена
+                  </Button>
+                  <Button size="sm" loading={savingGroups} onClick={applyGroups}>
+                    Применить
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {billingOn && (
             <>
               <Select
@@ -392,7 +526,7 @@ export function UserDetail({
                 {user.device_limit > 0 ? user.device_limit : 'без лимита'}
               </span>
               , автосброс <span className="text-ink">{resetLabel(user.reset_period)}</span>.
-              Чтобы задать их вручную, переключите тариф на «Вручную (без лимитов)».
+              Чтобы задать их вручную, переключите тариф на «Вручную».
             </div>
           ) : (
             <>
@@ -735,5 +869,52 @@ export function UserDetail({
     )}
     {confirmNode}
     </>
+  )
+}
+
+// GroupChip is one access group in the user drawer. A solid chip ("on") is a group the
+// user belongs to — clicking it (the ×) leaves; a dashed chip ("add") is one they can
+// join — clicking (the ＋) adds. `count` is how many connections the group grants, shown
+// so an operator can tell a rich group from an empty (access-revoking) one at a glance.
+function GroupChip({
+  name,
+  count,
+  state,
+  onClick,
+}: {
+  name: string
+  count: number
+  state: 'on' | 'add'
+  onClick: () => void
+}) {
+  const on = state === 'on'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${count} ${count === 1 ? 'подключение' : 'подключений'} · ${on ? 'убрать из группы' : 'добавить в группу'}`}
+      className={
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ' +
+        // Selected uses the theme-composited accent tint (translucent → readable on a
+        // dark surface too), NOT a fixed bg-brand-NN shade, which would bake a light
+        // fill that stays light in the dark theme. Mirrors the Checkbox checked state.
+        (on
+          ? 'border-accent accent-tint text-accent hover:border-brand-500'
+          : 'border-dashed border-gray-300 bg-white text-ink-muted hover:border-brand-400 hover:text-accent')
+      }
+    >
+      {!on && (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 2v8M2 6h8" />
+        </svg>
+      )}
+      <span className="max-w-40 truncate">{name}</span>
+      <span className="opacity-70">· {count}</span>
+      {on && (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M3 3l6 6M9 3l-6 6" />
+        </svg>
+      )}
+    </button>
   )
 }

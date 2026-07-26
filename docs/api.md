@@ -136,8 +136,10 @@ required only for `extend`). Response: `{ "data": { "affected": 3 } }`.
 ```
 
 `data_limit` is bytes (0 = unlimited); `expire_at` is a Unix timestamp
-(0 = never). The response `data` is the full user object, including `sub_url`,
-`vless`, `trojan`, `hysteria2`, and `reality` share links.
+(0 = never). The response `data` is the full user object, including `sub_url`, the
+built-in lanes' `vless` / `reality` / `hysteria2` share links, and `links` — every
+lane the user has on this server, custom inbounds included, each with the name the
+client will display.
 
 **Patch** — send only the fields you want to change:
 
@@ -211,6 +213,72 @@ command for a fresh Ubuntu server:
 ```
 
 The join token is embedded once and expires in 24h; `/regen-join` issues a new one.
+
+### Custom inbounds
+
+Operator-defined inbounds beyond the three built-in lanes, one set per server (server
+`0` = the master). Each is a public listener, so a create/update is validated **on the
+target machine** (`xray -test` + a port-bind probe) before it's saved.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/servers/{id}/inbounds` | List one server's custom inbounds (`id` = server id, `0` = master). |
+| `POST` | `/v1/servers/{id}/inbounds` | Create a custom inbound on that server. |
+| `POST` | `/v1/inbounds/{id}` | Update a custom inbound (keyed by the inbound's own id). |
+| `DELETE` | `/v1/inbounds/{id}` | Delete a custom inbound. |
+
+**Create / update** — the body mirrors the panel's inbound editor: `name`, `protocol`
+(`vless` / `trojan` / `hysteria2`), `transport` (`tcp` / `ws` / `xhttp` / `grpc` /
+`httpupgrade`), `port`, `security` (`none` / `tls` / `reality`) with the matching keys
+(REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
+advanced blocks (XHTTP `extra`, TCP HTTP masquerade, `sockopt`, extra TLS keys). The
+full field list — and which combinations are valid — is in `openapi.json` / Swagger.
+The response `data` is the saved inbound; a rejected config (port already bound, invalid
+combo, node offline) returns `400` with the reason. Inbounds a client can't represent are
+silently dropped from Clash/sing-box subscriptions rather than emitted broken.
+
+An inbound is addressable by an access group via the `inbound:<id>` grant token (see
+**Groups**).
+
+### Groups
+
+Access groups gate which connections a user may use. A user in **no** group reaches
+everything; a user in one or more groups reaches the **union** of their groups' grants.
+Enforcement is **server-side** — a disallowed lane's credential is withheld from Xray,
+not merely hidden — so the user object's `links`, the subscription, and a hand-built
+link all expose only what's granted.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/groups` | List groups, each with its `grants`, `member_ids` and member count. |
+| `POST` | `/v1/groups` | Create a group. |
+| `POST` | `/v1/groups/{id}` | Update a group (name + grants). |
+| `DELETE` | `/v1/groups/{id}` | Delete a group (members left in no group revert to unrestricted). |
+| `POST` | `/v1/groups/{id}/members` | Replace the group's members. |
+| `POST` | `/v1/users/{id}/groups` | Replace one user's group membership. |
+
+**Create / update** — body:
+
+```json
+{ "name": "VIP", "grants": ["builtin:0:vless", "builtin:0:reality", "inbound:7"] }
+```
+
+A **grant token** names one connection:
+
+- `builtin:<server_id>:<lane>` — a built-in lane, where `<lane>` is `vless`, `reality`
+  or `hysteria2` and `<server_id>` is `0` for the master or a node id from `GET /v1/nodes`.
+- `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
+
+An empty `grants` array is a real state, not a no-op: members of a group that grants
+nothing reach nothing — that's how you revoke. The response `data` is the group.
+
+**Set members** — body `{ "user_ids": [1, 2, 3] }`; replaces the whole member set.
+
+**Set a user's groups** — body `{ "group_ids": [4, 5] }`; replaces the user's whole
+membership. An empty array removes the user from every group (→ unrestricted).
+
+Grants that reference a deleted inbound or node are swept automatically, and harmless
+until then.
 
 ### Stats
 

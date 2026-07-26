@@ -22,11 +22,6 @@ func nodeTestManager(t *testing.T) *Manager {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	// Bootstrap normally seeds a WS path; a bare test store has none, and
-	// xray.Generate requires it. Set the minimum for config generation to succeed.
-	if err := st.SetWSPath("/ws"); err != nil {
-		t.Fatalf("seed ws path: %v", err)
-	}
 	return &Manager{
 		store:   st,
 		nodes:   newNodeRegistry(),
@@ -103,7 +98,7 @@ func TestRoutingPropagatesMasterAndNode(t *testing.T) {
 func TestNodeSettingsOverrides(t *testing.T) {
 	set := &model.Settings{
 		Host: "panel.example.com", SNI: "panel.example.com",
-		VLESSEnabled: true, TrojanEnabled: true, HysteriaEnabled: true, RealityEnabled: true,
+		VLESSEnabled: true, HysteriaEnabled: true, RealityEnabled: true,
 		RealityPrivateKey: "panel-priv", RealityPublicKey: "panel-pub",
 		XrayDNS: "8.8.8.8",
 		// Master-only local proxy: must NEVER leak into a node's config.
@@ -123,7 +118,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 		Host:              "nl1.example.com",
 		RealityPrivateKey: "node-priv", RealityPublicKey: "node-pub",
 		// A node's protocols are its OWN (no inheritance): explicit on/off per node.
-		VLESSEnabled: &yes, TrojanEnabled: &yes, RealityEnabled: &yes,
+		VLESSEnabled: &yes, RealityEnabled: &yes,
 		HysteriaEnabled: &no,
 		CertSelfSigned:  true,
 		CertSHA256:      "deadbeef",
@@ -138,7 +133,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 		t.Fatal("REALITY identity not overridden")
 	}
 	// Protocols are the node's own: its enabled ones on, its disabled one off.
-	if !ns.VLESSEnabled || !ns.TrojanEnabled || !ns.RealityEnabled {
+	if !ns.VLESSEnabled || !ns.RealityEnabled {
 		t.Fatal("node's own enabled protocols should be on")
 	}
 	if ns.HysteriaEnabled {
@@ -147,7 +142,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	// No inheritance: an unset protocol is OFF even though the master has it on.
 	bare := &model.Node{Host: "n2.example.com"}
 	nsBare := nodeSettings(set, bare)
-	if nsBare.VLESSEnabled || nsBare.TrojanEnabled || nsBare.HysteriaEnabled || nsBare.RealityEnabled {
+	if nsBare.VLESSEnabled || nsBare.HysteriaEnabled || nsBare.RealityEnabled {
 		t.Fatal("a node with unset protocols must be all-off (no inheritance from master)")
 	}
 	// No DNS inheritance either: unset ⇒ empty, not the master's "8.8.8.8".

@@ -91,7 +91,6 @@ type nodePatchReq struct {
 	Host          string `json:"host"`
 	DecoyTemplate string `json:"decoy_template"`
 	VLESS         *bool  `json:"vless_enabled"`
-	Trojan        *bool  `json:"trojan_enabled"`
 	Hysteria      *bool  `json:"hysteria_enabled"`
 	Reality       *bool  `json:"reality_enabled"`
 }
@@ -133,7 +132,6 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		// Preserve protocols (edited on the Подключения tab) when omitted — otherwise a
 		// name/decoy save racing a just-made protocol change could revert it.
 		VLESS:    orBool(req.VLESS, node.VLESSEnabled),
-		Trojan:   orBool(req.Trojan, node.TrojanEnabled),
 		Hysteria: orBool(req.Hysteria, node.HysteriaEnabled),
 		Reality:  orBool(req.Reality, node.RealityEnabled),
 		// Preserve the node's existing routing/DNS/egress config — this endpoint doesn't
@@ -184,7 +182,6 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		Host:          node.Host,
 		DecoyTemplate: node.DecoyTemplate,
 		VLESS:         node.VLESSEnabled,
-		Trojan:        node.TrojanEnabled,
 		Hysteria:      node.HysteriaEnabled,
 		Reality:       node.RealityEnabled,
 		Routing:       req.Routing,  // may be nil ⇒ inherit
@@ -366,14 +363,13 @@ func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int6
 func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		VLESS    bool `json:"vless_enabled"`
-		Trojan   bool `json:"trojan_enabled"`
 		Hysteria bool `json:"hysteria_enabled"`
 		Reality  bool `json:"reality_enabled"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetMasterProtocols(req.VLESS, req.Trojan, req.Hysteria, req.Reality); err != nil {
+	if err := rt.mgr.SetMasterProtocols(req.VLESS, req.Hysteria, req.Reality); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

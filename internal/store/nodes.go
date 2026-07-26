@@ -35,8 +35,8 @@ const defaultGeoRefreshHours = 168
 
 // nodeColumns is the SELECT list every node read shares, in Node-field order.
 const nodeColumns = `id, name, host, enabled,
-	reality_private_key, reality_public_key, reality_short_id, reality_service_name, reality_dest,
-	vless_enabled, trojan_enabled, hysteria_enabled, reality_enabled,
+	reality_private_key, reality_public_key, reality_short_id, reality_path, reality_dest,
+	vless_enabled, hysteria_enabled, reality_enabled,
 	decoy_template, routing_config, xray_dns,
 	warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
 	warp_address_v4, warp_address_v6, warp_reserved, opera_enabled, opera_country,
@@ -61,13 +61,13 @@ func generateNodeToken() (string, error) {
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
-	var vlessEn, trojanEn, hysteriaEn, realityEn sql.NullBool
+	var vlessEn, hysteriaEn, realityEn sql.NullBool
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
 	if err := sc.Scan(
 		&n.ID, &n.Name, &n.Host, &enabled,
-		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityServiceName, &n.RealityDest,
-		&vlessEn, &trojanEn, &hysteriaEn, &realityEn,
+		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityPath, &n.RealityDest,
+		&vlessEn, &hysteriaEn, &realityEn,
 		&n.DecoyTemplate, &routingJSON, &xrayDNS,
 		&warpEn, &n.WarpPrivateKey, &n.WarpPublicKey, &n.WarpEndpoint,
 		&n.WarpAddressV4, &n.WarpAddressV6, &n.WarpReserved, &operaEn, &n.OperaCountry,
@@ -89,7 +89,6 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
 	n.ZeroSSLEABHMAC = decField(n.ZeroSSLEABHMAC)
 	n.VLESSEnabled = nullBoolPtr(vlessEn)
-	n.TrojanEnabled = nullBoolPtr(trojanEn)
 	n.HysteriaEnabled = nullBoolPtr(hysteriaEn)
 	n.RealityEnabled = nullBoolPtr(realityEn)
 	if routingJSON != "" {
@@ -138,7 +137,7 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	if err != nil {
 		return nil, err
 	}
-	serviceName, err := auth.RandomServiceName()
+	realityPath, err := auth.RandomRealityPath()
 	if err != nil {
 		return nil, err
 	}
@@ -154,10 +153,10 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	exp := now.Add(joinTokenTTL).Unix()
 	res, err := s.db.Exec(`
 		INSERT INTO nodes (name, host, enabled,
-			reality_private_key, reality_public_key, reality_short_id, reality_service_name,
+			reality_private_key, reality_public_key, reality_short_id, reality_path,
 			decoy_template, join_token_hash, join_expires_at, created_at, geo_refresh_hours)
 		VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, host, encField(priv), pub, shortID, serviceName,
+		name, host, encField(priv), pub, shortID, realityPath,
 		decoyTemplate, joinHash, exp, now.Unix(), defaultGeoRefreshHours,
 	)
 	if err != nil {
@@ -168,18 +167,18 @@ func (s *Store) CreateNode(name, host, decoyTemplate string) (*model.Node, error
 	}
 	id, _ := res.LastInsertId()
 	return &model.Node{
-		ID:                 id,
-		Name:               name,
-		Host:               host,
-		Enabled:            true,
-		RealityPrivateKey:  priv,
-		RealityPublicKey:   pub,
-		RealityShortID:     shortID,
-		RealityServiceName: serviceName,
-		DecoyTemplate:      decoyTemplate,
-		CreatedAt:          now.Unix(),
-		JoinExpiresAt:      exp,
-		RawJoinToken:       joinToken,
+		ID:                id,
+		Name:              name,
+		Host:              host,
+		Enabled:           true,
+		RealityPrivateKey: priv,
+		RealityPublicKey:  pub,
+		RealityShortID:    shortID,
+		RealityPath:       realityPath,
+		DecoyTemplate:     decoyTemplate,
+		CreatedAt:         now.Unix(),
+		JoinExpiresAt:     exp,
+		RawJoinToken:      joinToken,
 	}, nil
 }
 
@@ -375,7 +374,6 @@ type NodeEdit struct {
 	Host          string
 	DecoyTemplate string
 	VLESS         *bool
-	Trojan        *bool
 	Hysteria      *bool
 	Reality       *bool
 	Routing       *model.RoutingConfig // nil ⇒ inherit global routing
@@ -404,12 +402,12 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 	}
 	_, err := s.db.Exec(`
 		UPDATE nodes SET name = ?, host = ?, decoy_template = ?,
-			vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
+			vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
 			routing_config = ?, xray_dns = ?,
 			warp_enabled = ?, opera_enabled = ?, opera_country = ?
 		WHERE id = ?`,
 		e.Name, e.Host, e.DecoyTemplate,
-		boolToNull(e.VLESS), boolToNull(e.Trojan), boolToNull(e.Hysteria), boolToNull(e.Reality),
+		boolToNull(e.VLESS), boolToNull(e.Hysteria), boolToNull(e.Reality),
 		routingJSON, dns,
 		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
 		id,
@@ -455,7 +453,7 @@ func (s *Store) SetNodeRealityDest(id int64, dest string) error {
 func (s *Store) SaveNodeReality(id int64, priv, pub, shortID, service string) error {
 	_, err := s.db.Exec(`
 		UPDATE nodes SET reality_private_key = ?, reality_public_key = ?,
-			reality_short_id = ?, reality_service_name = ? WHERE id = ?`,
+			reality_short_id = ?, reality_path = ? WHERE id = ?`,
 		encField(priv), pub, shortID, service, id,
 	)
 	return err
@@ -463,11 +461,11 @@ func (s *Store) SaveNodeReality(id int64, priv, pub, shortID, service string) er
 
 // SetNodeProtocols sets a node's protocol on/off flags explicitly (the node's own —
 // no inheritance).
-func (s *Store) SetNodeProtocols(id int64, vless, trojan, hysteria, reality bool) error {
+func (s *Store) SetNodeProtocols(id int64, vless, hysteria, reality bool) error {
 	_, err := s.db.Exec(`
-		UPDATE nodes SET vless_enabled = ?, trojan_enabled = ?, hysteria_enabled = ?,
+		UPDATE nodes SET vless_enabled = ?, hysteria_enabled = ?,
 			reality_enabled = ? WHERE id = ?`,
-		boolToInt(vless), boolToInt(trojan), boolToInt(hysteria), boolToInt(reality), id,
+		boolToInt(vless), boolToInt(hysteria), boolToInt(reality), id,
 	)
 	return err
 }

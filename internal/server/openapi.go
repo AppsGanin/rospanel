@@ -163,7 +163,38 @@ func apiSpecRoutes() []oaRoute {
 			resp: t(oaOKResp{})},
 		{method: "POST", path: "/v1/nodes/update-all", tag: "Nodes", summary: "Ask every connected node to self-update",
 			resp: t(oaNodeCountResp{})},
+
+		// Custom inbounds. {id} is a SERVER id on the list/create pair (0 = the panel's
+		// own server, a node id otherwise) and the INBOUND id on the rest — an inbound
+		// belongs to exactly one server, so its id already says which.
+		{method: "GET", path: "/v1/servers/{id}/inbounds", tag: "Inbounds",
+			summary: "List a server's custom inbounds (id 0 = the master)",
+			resp:    t(core.InboundView{}), list: true},
+		{method: "POST", path: "/v1/servers/{id}/inbounds", tag: "Inbounds",
+			summary: "Add a custom inbound to a server (id 0 = the master)",
+			req:     t(inboundReq{}), resp: t(core.InboundView{}), status: 201},
+		{method: "POST", path: "/v1/inbounds/{id}", tag: "Inbounds", summary: "Update a custom inbound",
+			req: t(inboundReq{}), resp: t(core.InboundView{})},
+		{method: "DELETE", path: "/v1/inbounds/{id}", tag: "Inbounds", summary: "Delete a custom inbound"},
+
+		{method: "GET", path: "/v1/groups", tag: "Groups", summary: "List user groups", resp: t(model.Group{}), list: true},
+		{method: "POST", path: "/v1/groups", tag: "Groups", summary: "Create a group",
+			req: t(groupReq{}), resp: t(model.Group{}), status: 201},
+		{method: "POST", path: "/v1/groups/{id}", tag: "Groups", summary: "Update a group", req: t(groupReq{})},
+		{method: "DELETE", path: "/v1/groups/{id}", tag: "Groups", summary: "Delete a group"},
+		{method: "POST", path: "/v1/groups/{id}/members", tag: "Groups", summary: "Set a group's members",
+			req: t(oaGroupMembersReq{})},
+		{method: "POST", path: "/v1/users/{id}/groups", tag: "Users", summary: "Set a user's group membership",
+			req: t(oaUserGroupsReq{})},
 	}
+}
+
+// oaUserGroupsReq / oaGroupMembersReq document the two set-membership bodies.
+type oaUserGroupsReq struct {
+	GroupIDs []int64 `json:"group_ids"`
+}
+type oaGroupMembersReq struct {
+	UserIDs []int64 `json:"user_ids"`
 }
 
 // oaNodeCountResp types the update-all response.

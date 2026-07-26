@@ -12,34 +12,40 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// ShareLinks returns the enabled protocol links for a user, in client-import
-// order. Protocols switched off in the Connections panel are omitted.
-func ShareLinks(u model.User, set *model.Settings) []string {
-	links := make([]string, 0, 4)
-	if set.VLESSEnabled {
+// ShareLinks returns one server's links for a user, in client-import order: the
+// enabled built-in lanes first, then each custom inbound in its display order.
+// Protocols switched off in the Connections panel are omitted.
+func ShareLinks(u model.User, srv Server) []string {
+	set := srv.Set
+	links := make([]string, 0, 3+len(srv.Custom))
+	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		links = append(links, link.VLESS(u, set))
 	}
-	if set.RealityEnabled {
+	if set.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
 		links = append(links, link.Reality(u, set))
 	}
-	if set.TrojanEnabled {
-		links = append(links, link.Trojan(u, set))
-	}
-	if set.HysteriaEnabled {
+	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		links = append(links, link.Hysteria2(u, set))
+	}
+	for _, in := range srv.Custom {
+		if !srv.allowsInbound(in.ID) {
+			continue
+		}
+		if l := link.Custom(u, in, set); l != "" {
+			links = append(links, l)
+		}
 	}
 	return links
 }
 
-// ShareLinksAll concatenates the protocol links for a user across every server —
-// the local one plus each enabled node — so a subscription carries one entry per
-// protocol × server. Each settings clone carries its own host/ports/keys and a
-// NodeLabel that disambiguates the links. With a single (local) server the output
-// is identical to ShareLinks.
-func ShareLinksAll(u model.User, sets []*model.Settings) []string {
+// ShareLinksAll concatenates the links for a user across every server — the local
+// one plus each enabled node — so a subscription carries one entry per lane × server.
+// Each settings clone carries its own host/ports/keys and a NodeLabel that
+// disambiguates the links.
+func ShareLinksAll(u model.User, servers []Server) []string {
 	var links []string
-	for _, set := range sets {
-		links = append(links, ShareLinks(u, set)...)
+	for _, srv := range servers {
+		links = append(links, ShareLinks(u, srv)...)
 	}
 	return links
 }

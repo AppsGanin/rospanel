@@ -13,7 +13,7 @@ import (
 func (s *Store) GetSettings() (*model.Settings, error) {
 	var st model.Settings
 	var updated int64
-	var vlessEn, trojanEn, hysteriaEn, setupDone int
+	var vlessEn, hysteriaEn, setupDone int
 	var realityEn, proxyModeEn int
 	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
@@ -26,17 +26,17 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
 		       panel_secret_path, panel_name, panel_theme, decoy_template,
-		       ws_path, trojan_port, hysteria_port, hop_start, hop_end,
-		       vless_enabled, trojan_enabled, hysteria_enabled,
+		       hysteria_port, hop_start, hop_end,
+		       vless_enabled, hysteria_enabled,
 		       setup_done, timezone,
 		       sub_base64, sub_email_in_name, sub_title, sub_routing,
 		       sub_routing_happ, sub_routing_incy, sub_routing_mihomo,
 		       sub_update_interval, xray_dns,
 		       warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
 		       warp_address_v4, warp_address_v6, warp_reserved, routing_config,
-		       vless_fp, trojan_fp, reality_fp, hop_interval,
+		       vless_fp, reality_fp, hop_interval,
 		       reality_enabled, reality_port, reality_dest, reality_private_key,
-		       reality_public_key, reality_short_id, reality_service_name,
+		       reality_public_key, reality_short_id, reality_path,
 		       proxy_mode_enabled, proxy_mode_type, proxy_mode_port,
 		       proxy_mode_user, proxy_mode_pass,
 		       tls_fragment, tls_min13, block_quic,
@@ -50,7 +50,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       billing_trial_plan_id, billing_payment_note,
 		       payment_webhook_secret,
 		       tg_admin_events, api_path,
-		       vless_name, reality_name, trojan_name, hysteria_name,
+		       vless_name, reality_name, hysteria_name,
 		       local_backup_cron, local_backup_keep,
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
 		       geo_refresh_hours, iplist_refresh_hours,
@@ -63,17 +63,17 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
 		&st.VLESSPort, &st.ConfigRevision, &st.LastConfigError, &updated,
 		&st.PanelSecretPath, &st.PanelName, &st.PanelTheme, &st.DecoyTemplate,
-		&st.WSPath, &st.TrojanPort, &st.HysteriaPort, &st.HopStart, &st.HopEnd,
-		&vlessEn, &trojanEn, &hysteriaEn,
+		&st.HysteriaPort, &st.HopStart, &st.HopEnd,
+		&vlessEn, &hysteriaEn,
 		&setupDone, &st.Timezone,
 		&subBase64, &subNameInTitle, &st.SubTitle, &subRouting,
 		&st.SubRoutingHapp, &st.SubRoutingIncy, &st.SubRoutingMihomo,
 		&st.SubUpdateInterval, &st.XrayDNS,
 		&warpEn, &st.WarpPrivateKey, &st.WarpPublicKey, &st.WarpEndpoint,
 		&st.WarpAddressV4, &st.WarpAddressV6, &st.WarpReserved, &routingCfg,
-		&st.VLESSFp, &st.TrojanFp, &st.RealityFp, &st.HopInterval,
+		&st.VLESSFp, &st.RealityFp, &st.HopInterval,
 		&realityEn, &st.RealityPort, &st.RealityDest, &st.RealityPrivateKey,
-		&st.RealityPublicKey, &st.RealityShortID, &st.RealityServiceName,
+		&st.RealityPublicKey, &st.RealityShortID, &st.RealityPath,
 		&proxyModeEn, &st.ProxyModeType, &st.ProxyModePort,
 		&st.ProxyModeUser, &st.ProxyModePass,
 		&tlsFragment, &tlsMin13, &blockQUIC,
@@ -87,7 +87,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.BillingTrialPlanID, &st.BillingPaymentNote,
 		&st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
-		&st.VLESSName, &st.RealityName, &st.TrojanName, &st.HysteriaName,
+		&st.VLESSName, &st.RealityName, &st.HysteriaName,
 		&st.LocalBackupCron, &st.LocalBackupKeep,
 		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
@@ -111,7 +111,6 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	}
 	st.UpdatedAt = time.Unix(updated, 0)
 	st.VLESSEnabled = vlessEn != 0
-	st.TrojanEnabled = trojanEn != 0
 	st.HysteriaEnabled = hysteriaEn != 0
 	st.RealityEnabled = realityEn != 0
 	st.ProxyModeEnabled = proxyModeEn != 0
@@ -256,22 +255,22 @@ func (s *Store) SetHysteriaPorts(port, hopStart, hopEnd int, interval string) er
 }
 
 // SetFingerprints persists the per-connection uTLS fingerprints used in links.
-func (s *Store) SetFingerprints(vless, trojan, reality string) error {
+func (s *Store) SetFingerprints(vless, reality string) error {
 	_, err := s.db.Exec(
-		`UPDATE settings SET vless_fp = ?, trojan_fp = ?, reality_fp = ?,
+		`UPDATE settings SET vless_fp = ?, reality_fp = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
-		vless, trojan, reality,
+		vless, reality,
 	)
 	return err
 }
 
 // SetProtocolNames persists the custom per-connection display names (empty ⇒ the
 // default protocol label is used at render time).
-func (s *Store) SetProtocolNames(vless, reality, trojan, hysteria string) error {
+func (s *Store) SetProtocolNames(vless, reality, hysteria string) error {
 	_, err := s.db.Exec(
-		`UPDATE settings SET vless_name = ?, reality_name = ?, trojan_name = ?,
+		`UPDATE settings SET vless_name = ?, reality_name = ?,
 		        hysteria_name = ?, updated_at = unixepoch() WHERE id = 1`,
-		vless, reality, trojan, hysteria,
+		vless, reality, hysteria,
 	)
 	return err
 }
@@ -353,7 +352,6 @@ func (s *Store) SetSetupDone(done bool) error { return s.setSetting("setup_done"
 // protocolColumn maps a public protocol name to its settings toggle column.
 var protocolColumn = map[string]string{
 	"vless":     "vless_enabled",
-	"trojan":    "trojan_enabled",
 	"hysteria2": "hysteria_enabled",
 	"reality":   "reality_enabled",
 }
@@ -453,9 +451,6 @@ func (s *Store) SetProxyMode(enabled bool, typ string, port int, user, pass stri
 	return err
 }
 
-// SetWSPath persists the Trojan-WS path.
-func (s *Store) SetWSPath(p string) error { return s.setSetting("ws_path", p) }
-
 // SetRealityPorts persists the REALITY port and destination (SNI/serverName).
 func (s *Store) SetRealityPorts(port int, dest string) error {
 	_, err := s.db.Exec(
@@ -470,7 +465,7 @@ func (s *Store) SetRealityPorts(port int, dest string) error {
 func (s *Store) SetRealityKeys(priv, pub, shortID, serviceName string) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET reality_private_key = ?, reality_public_key = ?,
-		        reality_short_id = ?, reality_service_name = ?,
+		        reality_short_id = ?, reality_path = ?,
 		        updated_at = unixepoch() WHERE id = 1`,
 		encField(priv), pub, shortID, serviceName,
 	)

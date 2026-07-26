@@ -8,9 +8,8 @@ import "testing"
 func TestValidateConnNames(t *testing.T) {
 	// Valid: custom names plus empties (which fall back to distinct defaults).
 	got, err := validateConnNames(map[string]string{
-		"vless":  "  Основной  ",
-		"trojan": "Резерв",
-	})
+		"vless": "  Основной  ",
+	}, nil)
 	if err != nil {
 		t.Fatalf("valid names rejected: %v", err)
 	}
@@ -21,25 +20,32 @@ func TestValidateConnNames(t *testing.T) {
 		t.Fatalf("empty name should stay empty, got %q", got["reality"])
 	}
 
-	// Two protocols resolving to the same display name must be rejected.
+	// Two lanes resolving to the same display name must be rejected.
 	if _, err := validateConnNames(map[string]string{
-		"vless":  "Main",
-		"trojan": "main", // case-insensitive clash
-	}); err == nil {
+		"vless":     "Main",
+		"hysteria2": "main", // case-insensitive clash
+	}, nil); err == nil {
 		t.Fatal("expected duplicate-name rejection")
 	}
 
-	// A custom name equal to another protocol's DEFAULT label collides too.
+	// A custom name equal to another lane's DEFAULT label collides too.
 	if _, err := validateConnNames(map[string]string{
-		"vless": "TROJAN-WS",
-	}); err == nil {
+		"vless": "HYSTERIA-UDP",
+	}, nil); err == nil {
 		t.Fatal("expected clash with default label")
 	}
 
 	for _, bad := range []string{"auto", "direct", "bad\"quote", "no,comma", "a{b}"} {
-		if _, err := validateConnNames(map[string]string{"vless": bad}); err == nil {
+		if _, err := validateConnNames(map[string]string{"vless": bad}, nil); err == nil {
 			t.Fatalf("expected rejection for %q", bad)
 		}
+	}
+
+	// A built-in lane may not be renamed onto a name a custom inbound already holds:
+	// both become node names in the same generated document, and a duplicate tag makes
+	// a client reject the whole profile.
+	if _, err := validateConnNames(map[string]string{"vless": "Резерв"}, []string{"Резерв"}); err == nil {
+		t.Fatal("expected a clash with a custom inbound's name")
 	}
 
 	// Over 32 runes.
@@ -47,7 +53,7 @@ func TestValidateConnNames(t *testing.T) {
 	for i := 0; i < 33; i++ {
 		long += "x"
 	}
-	if _, err := validateConnNames(map[string]string{"vless": long}); err == nil {
+	if _, err := validateConnNames(map[string]string{"vless": long}, nil); err == nil {
 		t.Fatal("expected length rejection")
 	}
 }
