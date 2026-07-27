@@ -1,54 +1,57 @@
 <div align="center">
 
-<img src="docs/img/logo.svg" alt="РосПанель" width="120" height="120">
+<img src="docs/img/logo.svg" alt="RosPanel" width="120" height="120">
 
-# РосПанель
+# RosPanel
 
-**Self-hosted панель управления VPN на Xray-core — от одного личного сервера до сети нод.**
+**Self-hosted VPN control panel built on Xray-core — from a single personal server to a network of nodes.**
 
-![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=версия&sort=semver&color=2ea44f)
+![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=release&sort=semver&color=2ea44f)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
 
-[Что это](#что-это) · [Где взять сервер](#️-где-взять-сервер) · [Быстрый старт](#-быстрый-старт) · [Возможности](#-возможности) · [CLI](#️-cli) · [Архитектура](#-архитектура) · [Дисклеймер](#️-дисклеймер) · [Разработка](#-разработка) · [Поддержать](#-поддержать-проект)
+**English** · [Русский](README-RU.md)
+
+[What it is](#what-it-is) · [Where to get a server](#️-where-to-get-a-server) · [Quick start](#-quick-start) · [Features](#-features) · [CLI](#️-cli) · [Architecture](#-architecture) · [Disclaimer](#️-disclaimer) · [Development](#-development) · [Support](#-support-the-project)
 
 </div>
 
 ---
 
-## Что это
+## What it is
 
-**РосПанель** — self-hosted панель управления VPN на
-[Xray-core](https://github.com/XTLS/Xray-core). Один процесс поднимает сразу несколько
-протоколов, а панель даёт веб-интерфейс: пользователи, подписки, тарифы и приём оплаты,
-маршрутизация, статистика, бэкапы, брендинг — без правки конфигов руками. Когда одного
-сервера мало, та же панель разрастается в **сеть серверов**: добавляете ноды —
-пользователи едут на все сразу.
+**RosPanel** is a self-hosted VPN control panel built on
+[Xray-core](https://github.com/XTLS/Xray-core). A single process serves several protocols at
+once, and the panel gives you a web interface for users, subscriptions, plans and payments,
+routing, statistics, backups and branding — no hand-editing of config files. When one server
+is no longer enough, the same panel grows into a **network of servers**: add nodes and every
+user is served by all of them.
 
-**Самодостаточна:** один статический бинарник — ни nginx, ни certbot, ни сторонних
-скриптов. TLS панель выпускает себе сама через ACME, а **домен не обязателен**: сертификат
-встанет и на голый IP. Панель открывается по своему адресу сразу после установки — без DNS,
-без reverse-proxy и без SSH-туннелей. Конфиг Xray генерируется из состояния панели
-(JSON руками не трогаете), пользователи добавляются и удаляются на лету без обрыва
-чужих подключений, а при повреждении БД панель сама поднимается из последнего бэкапа.
+**Self-contained:** one static binary — no nginx, no certbot, no third-party scripts. The
+panel issues its own TLS via ACME, and **a domain is optional**: the certificate will be
+issued for a bare IP too. The panel is reachable at its own address right after install — no
+DNS, no reverse proxy, no SSH tunnels. The Xray config is generated from the panel's state
+(you never touch JSON by hand), users are added and removed on the fly without dropping
+anyone else's connections, and if the database gets corrupted the panel brings itself back up
+from the last backup.
 
 > [!NOTE]
-> Это **панель управления** (control plane), а не VPN-клиент. Она настраивает и обслуживает
-> ваш собственный сервер. Назначение — образовательное и
-> исследовательское (см. [Дисклеймер](#️-дисклеймер)).
+> This is a **control plane**, not a VPN client. It configures and operates your own server.
+> The project is intended for educational and research use (see [Disclaimer](#️-disclaimer)).
 
 ---
 
-## 🖥️ Где взять сервер
+## 🖥️ Where to get a server
 
-Панели хватит самого дешёвого VPS: 1 vCPU, 1 ГБ RAM, любой Linux — этого достаточно
-и для панели, и для Xray на десятки пользователей.
+The cheapest VPS is enough: 1 vCPU, 1 GB RAM, any Linux — that covers both the panel and
+Xray for dozens of users.
 
-**Если ещё не выбрали хостинг — зарегистрируйтесь по ссылкам ниже.** Это бесплатный для
-вас способ поддержать проект: цена та же, а часть от аренды идёт на развитие панели.
+**If you haven't picked a host yet, sign up through the links below.** It's a free way to
+support the project: the price is the same for you, and a share of the rent goes into the
+panel's development.
 
 [VDSina](https://www.vdsina.com/?partner=nmzki7z7tu) ·
 [Aeza](https://aeza.net/?ref=375522) ·
@@ -57,45 +60,45 @@
 [u1Host](https://u1host.com/?from=7702) ·
 [Waicore](https://waicore.net/?from=35607)
 
-Спасибо тем, кто регистрируется по этим ссылкам 🙏
+Thanks to everyone who signs up through them 🙏
 
 ---
 
-## 🚀 Быстрый старт
+## 🚀 Quick start
 
-### Вариант 1 — установочный скрипт (рекомендуется)
+### Option 1 — install script (recommended)
 
-Одной командой: скачает релиз, поставит systemd-сервис, запустит и покажет логин.
+One command: downloads the release, installs a systemd service, starts it and prints the login.
 
 ```bash
 curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash
 ```
 
-**Домен не обязателен.** Скрипт спросит про него: есть домен — введите, нет —
-нажмите Enter, и панель поднимется на IP сервера. Сертификат Let's Encrypt она
-получит в обоих случаях: он выдаётся и на IP-адрес, никаких предупреждений в
-браузере не будет.
+**A domain is optional.** The script will ask for one: if you have a domain, enter it; if you
+don't, just press Enter and the panel comes up on the server's IP. It gets a Let's Encrypt
+certificate either way — certificates are issued for IP addresses as well, so no browser
+warnings.
 
-Домен можно задать заранее, тогда вопроса не
-будет: `curl -Ls … | sudo ROSPANEL_HOST=vpn.example.com bash`.
+You can set the domain up front and skip the question:
+`curl -Ls … | sudo ROSPANEL_HOST=vpn.example.com bash`.
 
-### Вариант 2 — бинарник + systemd вручную
+### Option 2 — binary + systemd by hand
 
 ```bash
-# скачать последний релиз (замените amd64 на arm64 для ARM-серверов)
+# download the latest release (replace amd64 with arm64 for ARM servers)
 curl -fsSL -o rospanel \
   https://github.com/AppsGanin/rospanel/releases/latest/download/rospanel-linux-amd64
 chmod +x rospanel
 
-# установить как сервис (копирует бинарь в /usr/local/bin, пишет systemd-юнит, стартует)
+# install as a service (copies the binary to /usr/local/bin, writes a systemd unit, starts it)
 sudo ./rospanel install
-#   сразу с доменом:  sudo ROSPANEL_HOST=vpn.example.com ./rospanel install
+#   with a domain right away:  sudo ROSPANEL_HOST=vpn.example.com ./rospanel install
 
-# логин и секретный путь печатаются ОДИН раз:
+# the login and the secret path are printed ONCE:
 journalctl -u rospanel | grep -A6 FIRST-RUN
 ```
 
-### Вариант 3 — Docker
+### Option 3 — Docker
 
 ```bash
 docker run -d --name rospanel \
@@ -108,338 +111,363 @@ docker logs rospanel | grep -A6 FIRST-RUN
 ```
 
 > [!NOTE]
-> `--network host` нужен, чтобы Xray слушал 443/TCP, 80/TCP и UDP-порты Hysteria2 напрямую;
-> `NET_ADMIN` — чтобы панель могла править правила фаервола: port-hopping и лимиты
-> соединений (nftables), бан за перебор (iptables).
+> `--network host` is required so Xray can listen on 443/TCP, 80/TCP and the Hysteria2 UDP
+> ports directly; `NET_ADMIN` lets the panel manage firewall rules: port hopping and
+> connection limits (nftables), brute-force bans (iptables).
 
-### 🔑 Вход по умолчанию
+### 🔑 Default login
 
-| Поле        | Значение     |
+| Field       | Value        |
 | ----------- | ------------ |
-| Логин       | `admin`      |
-| Пароль      | `admin`      |
-| Путь панели | `/rospanel/` |
+| Username    | `admin`      |
+| Password    | `admin`      |
+| Panel path  | `/rospanel/` |
 
-Сразу после установки панель доступна по адресу `https://<домен-или-IP>/rospanel/`.
-Точная ссылка дублируется в логе (`journalctl -u rospanel | grep -A6 FIRST-RUN`
-или `docker logs rospanel | grep -A6 FIRST-RUN`).
+Right after install the panel is available at `https://<domain-or-IP>/rospanel/`. The exact
+link is also in the log (`journalctl -u rospanel | grep -A6 FIRST-RUN` or
+`docker logs rospanel | grep -A6 FIRST-RUN`).
 
-При первом входе мастер настройки **принудительно потребует сменить пароль** и
-предложит **сменить путь панели на случайный секрет** — дефолтные `admin/admin` и
-`/rospanel/` работают только до этого шага.
+On first login the setup wizard **forces a password change** and offers to **replace the panel
+path with a random secret** — the default `admin/admin` and `/rospanel/` only work up to that
+step.
 
 > [!IMPORTANT]
-> После смены панель доступна **только по секретному пути** — корень отдаёт
-> страницу-обманку. Без знания `/<secret>/` форму логина не найти.
+> After the change the panel is reachable **only via the secret path** — the root serves a
+> decoy page. Without knowing `/<secret>/` there is no login form to find.
 
-### 🌐 Добавить ноду
+### 🌐 Adding a node
 
-Нода — это **чистый Ubuntu-сервер** с тем же бинарником в режиме ноды: конфиг ей
-генерирует панель, отдельно настраивать нечего. Заводится всё из UI:
-**Сервера → Добавить ноду**, где нужно указать название и домен-или-IP ноды.
-Дальше — два способа на выбор.
+A node is a **clean Ubuntu server** running the same binary in node mode: the panel generates
+its config, there is nothing to set up separately. Everything starts in the UI:
+**Servers → Add node**, where you enter a name and the node's domain or IP. From there you
+have two options.
 
-**Способ 1 — команда установки.** Панель покажет готовую однострочную команду;
-выполните её на сервере ноды от root:
+**Option 1 — install command.** The panel shows a ready one-liner; run it on the node's server
+as root:
 
 ```bash
 curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh \
-  | sudo bash -s -- --join 'https://<панель>/<node-api-path>/v1/join#<токен>'
+  | sudo bash -s -- --join 'https://<panel>/<node-api-path>/v1/join#<token>'
 ```
 
-Копируйте команду **целиком из диалога** — и адрес, и токен в ней подставляются
-автоматически. Токен показывается **один раз** и живёт 24 часа; `<node-api-path>` —
-отдельный неугадываемый сегмент для синка нод (не путь панели и не путь REST API:
-смена любого из них не отвяжет ноды). Если панель работает на голом IP (сертификат не
-от публичного CA), панель сама добавит в команду `--insecure`.
+Copy the command **whole, from the dialog** — both the address and the token are filled in
+automatically. The token is shown **once** and lives for 24 hours; `<node-api-path>` is a
+separate unguessable segment for node sync (neither the panel path nor the REST API path:
+changing either one won't detach your nodes). If the panel runs on a bare IP (certificate not
+from a public CA), the panel adds `--insecure` to the command itself.
 
-**Способ 2 — установка по SSH.** Вкладка «Установить по SSH» в том же диалоге: панель
-сама зайдёт на сервер (адрес, порт, пользователь + пароль **или** приватный ключ PEM),
-зальёт **свой** бинарник и поставит агента — лог установки идёт вживую. Версия ноды
-гарантированно совпадёт с версией панели. **Данные SSH нигде не сохраняются.**
+**Option 2 — install over SSH.** The "Install over SSH" tab in the same dialog: the panel logs
+into the server itself (address, port, user + password **or** a PEM private key), uploads
+**its own** binary and installs the agent — with a live install log. The node version is
+guaranteed to match the panel's. **SSH credentials are never stored.**
 
-Через несколько секунд после установки нода появится в списке как онлайн: она сама
-стучится к панели исходящим HTTPS, поэтому входящий доступ к ней панели не нужен и
-пробрасывать ничего не требуется.
+A few seconds after install the node shows up in the list as online: it reaches out to the
+panel over outbound HTTPS, so the panel needs no inbound access to it and there is nothing to
+forward.
 
 ```bash
-systemctl status rospanel-node        # сервис ноды
-journalctl -u rospanel-node -f        # лог агента
-rospanel node status                  # локальный статус
+systemctl status rospanel-node        # node service
+journalctl -u rospanel-node -f        # agent log
+rospanel node status                  # local status
 ```
 
 > [!NOTE]
-> Один сервер — **либо** панель, **либо** нода: они делят 443-й порт. Если на машине
-> уже стоит сервис панели, `node install` его выключит.
+> One server is **either** a panel **or** a node: they share port 443. If the panel service is
+> already on the machine, `node install` will disable it.
 
 ---
 
-## ✨ Возможности
+## ✨ Features
 
-#### 🔐 Протоколы, маскировка, TLS
+#### 🔐 Protocols, masquerading, TLS
 
-Один конфиг, один набор учёток: **VLESS-Vision** (TCP/443 + uTLS), **VLESS-XHTTP-REALITY**
-(маскировка под чужой TLS), **Hysteria2** (UDP + port-hopping). Сверх этого —
-**свои инбаунды** на каждом сервере: VLESS / Trojan / Hysteria2 на любом транспорте
-(TCP, WebSocket, XHTTP, gRPC, HTTPUpgrade) со своим портом, ключами REALITY, диапазоном
-хопа и **тонкой настройкой транспорта** (XHTTP `extra`, HTTP-маскировка, sockopt, доп.
-поля TLS) — отдельными полями или сырым JSON; конфиг проверяется прямо на нужной машине
-(`xray -test` + бинд порта) до сохранения, а неподдерживаемые клиентом связки молча не
-попадают в Clash/sing-box подписки. Панель спрятана
-за **секретным путём**, любой другой путь отдаёт сайт-заглушку (11 шаблонов). TLS из
-коробки — **ACME** (Let's Encrypt / ZeroSSL) с авто-продлением; сертификат можно
-выпустить и **на голый IP, без домена и DNS**.
+One config, one set of credentials: **VLESS-Vision** (TCP/443 + uTLS), **VLESS-XHTTP-REALITY**
+(masquerading as someone else's TLS), **Hysteria2** (UDP + port hopping). On top of that —
+**custom inbounds** on every server: VLESS / Trojan / Hysteria2 over any transport (TCP,
+WebSocket, XHTTP, gRPC, HTTPUpgrade) with their own port, REALITY keys, hop range and
+**fine-grained transport tuning** (XHTTP `extra`, HTTP masquerading, sockopt, extra TLS
+fields) — as individual fields or raw JSON; the config is validated on the target machine
+itself (`xray -test` + port bind) before saving, and combinations a client can't handle are
+silently kept out of Clash/sing-box subscriptions. The panel hides behind a **secret path**;
+any other path serves a decoy site (11 templates). TLS out of the box — **ACME** (Let's
+Encrypt / ZeroSSL) with auto-renewal; the certificate can also be issued **for a bare IP, with
+no domain and no DNS**.
 
-#### 👤 Пользователи
+#### 👤 Users
 
-Лимиты трафика и срок с авто-отключением и авто-сбросом квоты (день/неделя/месяц/год),
-**лимит устройств** по уникальным IP. Учёт трафика через Xray Stats, онлайн-статус,
-список подключений; истёкших можно авто-удалять. Поиск и фильтры не тормозят на сотнях
-юзеров, а **групповые операции** (вкл/выкл/сброс/продление/удаление) идут одной
-перезагрузкой Xray. Дашборд — CPU / RAM / swap / диск и VPN-трафик в реальном времени.
+Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
+**device limit** by unique IP. Traffic accounting via Xray Stats, online status, connection
+list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
+and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
+The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time.
 
-**Группы доступа** решают, какие подключения достаются пользователю: встроенные лейны и
-свои инбаунды отмечаются галочками по каждому серверу, юзер без группы получает всё, в
-нескольких группах — объединение их подключений. Ограничение **серверное** — учётка
-просто не попадает в запрещённые инбаунды Xray (а не прячется в UI), поэтому и подписка,
-и собранная вручную ссылка отдают только разрешённое. Членство правится с обеих сторон —
-в карточке пользователя и в самой группе, а группы юзера видны в его карточке и списке.
+**Access groups** decide which connections a user gets: built-in lanes and custom inbounds are
+ticked per server, a user with no group gets everything, a user in several groups gets the
+union of their connections. The restriction is **server-side** — the account simply isn't
+added to the forbidden Xray inbounds (rather than being hidden in the UI), so both the
+subscription and a hand-crafted link only ever hand out what's allowed. Membership is editable
+from both sides — in the user's card and in the group itself — and a user's groups are visible
+in their card and in the list.
 
-#### 📲 Подписки
+#### 📲 Subscriptions
 
-`/<путь>/<токен>` — base64-список плюс страница с QR, deep-links и импортом в популярные
-клиенты (авто-роутинг-заголовки Happ / INCY / Mihomo), со своими названиями узлов. Ссылку
-можно **сбросить** (ротация токена) без смены UUID и паролей. **Объявление** внутри клиента
-(Happ, v2RayTun) — короткий текст прямо в приложении.
+`/<path>/<token>` — a base64 list plus a page with a QR code, deep links and import into
+popular clients (auto-routing headers for Happ / INCY / Mihomo), with your own node names. The
+link can be **reset** (token rotation) without changing UUIDs and passwords. An
+**announcement** inside the client (Happ, v2RayTun) puts a short text right in the app.
 
-#### 🧭 Маршрутизация и выходы
+#### 🧭 Routing and egress
 
-Категории **block / direct / WARP / Opera** с приоритетом, пресеты **geosite/geoip** с
-авто-загрузкой баз, выход через **Cloudflare WARP** (WireGuard) и бесплатный **Opera VPN**
-с выбором региона. **Полосы прокси** — независимые выходы, у каждого свои socks5/http-апстримы
-и правила по зонам с балансировкой по живым (Observatory).
+**block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
+automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
+**Opera VPN** with region selection. **Proxy lanes** are independent egresses, each with its
+own socks5/http upstreams and zone rules, balanced across whatever is alive (Observatory).
 
-#### 🌐 Сеть серверов (мультинода)
+#### 🌐 Server network (multi-node)
 
-Одна панель управляет **мастером** и любым числом удалённых **нод**. Сервер добавляется из
-UI: копируете **одну команду** для чистого Ubuntu или даёте панели **зайти по SSH** и
-поставить агента — лог установки идёт вживую. **Нода сама стучится к панели** (исходящий
-HTTPS long-poll), поэтому панели не нужен доступ к нодам, а её переезд ноды
-не отвязывает. Пользователи, лимиты и тарифы раскатываются на все ноды; трафик и устройства
-считаются в **общие** лимиты, а статистика и карточка юзера показывают, **сколько трафика прошло через каждый сервер**.
+A single panel manages the **master** and any number of remote **nodes**. A server is added
+from the UI: copy **one command** for a clean Ubuntu box, or let the panel **log in over SSH**
+and install the agent — with a live install log. **The node reaches out to the panel** itself
+(outbound HTTPS long-poll), so the panel needs no access to the nodes, and moving the panel
+doesn't detach them. Users, limits and plans roll out to every node; traffic and devices count
+against **shared** limits, while statistics and the user card show **how much traffic went
+through each server**.
 
-Каждый сервер настраивается отдельно (протоколы, выходы, DNS, ключи REALITY, домен и TLS,
-geo-базы, заглушка). Нода — **тот же бинарник** в режиме ноды: конфиг ей генерирует панель,
-локальный `xray -test` с откатом страхует от несовместимости версий, обновление идёт из UI
-со сверкой SHA256.
+Every server is configured separately (protocols, egress, DNS, REALITY keys, domain and TLS,
+geo databases, decoy). A node is **the same binary** in node mode: the panel generates its
+config, a local `xray -test` with rollback guards against version mismatches, and updates run
+from the UI with SHA256 verification.
 
-#### 💳 Тарифы и оплата (опционально)
+#### 💳 Plans and payments (optional)
 
-**Планы**: цена, срок, лимиты трафика и устройств; цена 0 — бесплатный тариф. Есть пробный
-период, бесплатный тариф-фоллбэк для истёкших, продление и перенос пользователей. **Приём
-платежей** — провайдеры на выбор: **ЮКасса**, **PayPalych**, **RioPay**, **RollyPay**,
-**SeverPay**, **Platega**, **PayPear**, **AuraPay** (карты, СБП, ₽), **CryptoBot** и
-**Heleket** (крипта). Клиент платит в боте или на странице подписки — тариф **включается
-сам**. Подтверждает вебхук (подпись проверяется), поллинг страхует, если вебхук не дошёл;
-обработка идемпотентна, сумма сверяется с заказом. Без провайдеров оплату подтверждает админ.
+**Plans**: price, duration, traffic and device limits; price 0 makes a free plan. There's a
+trial period, a free fallback plan for expired users, renewals and user migration between
+plans. **Payment acceptance** — pick a provider: **YooKassa**, **PayPalych**, **RioPay**,
+**RollyPay**, **SeverPay**, **Platega**, **PayPear**, **AuraPay** (cards, SBP, ₽),
+**CryptoBot** and **Heleket** (crypto). The client pays in the bot or on the subscription
+page, and the plan **activates itself**. A webhook confirms it (signature verified), polling
+covers the case where the webhook never arrives; processing is idempotent and the amount is
+checked against the order. With no provider configured, an admin confirms payments manually.
 
 > [!WARNING]
-> **Провайдеры оплаты пока не проверены на боевых аккаунтах.** Если вы подключили какой-то из них — пожалуйста, [сообщите в issue](https://github.com/AppsGanin/rospanel/issues), работает он или нет (какой провайдер, что получилось, что сломалось). Это поможет отметить проверенные провайдеры и починить остальные.
+> **Payment providers have not yet been verified against live accounts.** If you've connected
+> one of them, please [open an issue](https://github.com/AppsGanin/rospanel/issues) and say
+> whether it works (which provider, what worked, what broke). That's what lets verified
+> providers be marked as such and the rest get fixed.
 
-#### 👥 Доступ, роли и аудит
+#### 👥 Access, roles and audit
 
-Роли: **владелец** (может всё, один и неудаляем), **администратор** (без списка
-админов), **оператор** (юзеры, статистика, журнал). Права проверяются на сервере на каждом
-запросе; новому админу выдаётся временный пароль со сменой при первом
-входе. **Журнал пользователя** — что с ним делали и кто (админ, API-ключ, бот, сам юзер,
-система), переживает его удаление. **Журнал панели** (виден владельцу) — входы и **неудачные
-попытки с IP**, изменения настроек, бэкапы; пишется только успешное действие, тела запросов —
-никогда. Оба журнала хранятся 90 дней.
+Roles: **owner** (can do everything, exactly one, cannot be deleted), **administrator**
+(everything except the admin list), **operator** (users, statistics, activity log). Permissions
+are checked server-side on every request; a new admin gets a temporary password that must be
+changed on first login. The **user log** records what was done to them and by whom (admin, API
+key, bot, the user themselves, the system) and survives their deletion. The **panel log**
+(visible to the owner) covers logins and **failed attempts with IPs**, settings changes and
+backups; only successful actions are written, request bodies never are. Both logs are kept for
+90 days.
 
-#### 🤖 Интеграции
+#### 🤖 Integrations
 
-**Админ-бот** в Telegram: управление юзерами, тарифы, QR-подписка, бэкапы по расписанию,
-уведомления о событиях (регистрации, истечения, сбой Xray, оплаты, сертификат). 
+**Admin bot** in Telegram: user management, plans, subscription QR codes, scheduled backups,
+event notifications (signups, expirations, Xray failures, payments, certificates).
 
-**Клиентский бот**: саморегистрация, личное меню с подпиской и статистикой, покупка тарифа — и **личные уведомления** самому пользователю: подписка заканчивается, трафик на исходе, оплата прошла.
+**Client bot**: self-signup, a personal menu with the subscription and statistics, plan
+purchase — plus **personal notifications** to the user: subscription ending, traffic running
+out, payment received.
 
-**Бот поддержки** — третий бот: человек пишет ему в личку, а переписка попадает в вашу форум-группу, **по теме на каждого**; отвечаете прямо оттуда, и ответ уходит ему в бот.
+**Support bot** — a third bot: a person writes to it in a DM and the conversation lands in your
+forum group, **one topic per person**; you reply straight from there and the answer goes back
+to them in the bot.
 
-**Рассылки** — девять срезов аудитории (все, с аккаунтом и без, активные, истёкшие, у кого скоро закончится, кто давно не заходил, кто ни разу не подключался) с картинкой и кнопкой.
-Доставка идёт по таблице получателей, поэтому прерванная рассылка **продолжается, а не начинается заново**, и никто не получает сообщение дважды.
+**Broadcasts** — nine audience slices (everyone, with and without an account, active, expired,
+expiring soon, long-inactive, never connected) with an image and a button. Delivery is driven
+by a recipient table, so an interrupted broadcast **resumes instead of restarting**, and nobody
+gets the message twice.
 
-**REST API** с именованными ключами (`Authorization: Bearer`), **OpenAPI из кода** и
-Swagger UI; **вебхуки** шлют подписанные HMAC-SHA256 события с ретраями.
-Подробнее — [docs/api.md](docs/api.md).
+**REST API** with named keys (`Authorization: Bearer`), **OpenAPI generated from the code** and
+Swagger UI; **webhooks** send HMAC-SHA256 signed events with retries. More in
+[docs/api.md](docs/api.md).
 
-#### 🎨 Брендинг и тема
+#### 🎨 Branding and theme
 
-Своё название и логотип вместо «РосПанели» — в панели и на странице подписки. Акцентный цвет
-перекрашивает весь интерфейс, а **тёмная тема** сама подстраивает текст, статусы и графики.
+Your own name and logo instead of "RosPanel" — in the panel and on the subscription page. An
+accent color repaints the whole interface, and **dark mode** adapts text, statuses and charts
+on its own.
 
-#### 🛡️ Обнаружение злоупотреблений
+#### 🛡️ Abuse detection
 
-Панель сверяет **IP-адреса назначения** из access-лога Xray со списком вредоносных сетей и записывает **только совпадения** — обычный трафик никуда не сохраняется. Нужно это ровно для одного: когда прилетает абуз-жалоба на адрес сервера, понять, чей это был трафик.
+The panel checks **destination IP addresses** from the Xray access log against a list of
+malicious networks and records **matches only** — ordinary traffic is never stored. It exists
+for exactly one purpose: when an abuse complaint arrives about the server's address, you can
+tell whose traffic it was.
 
-Список — **FireHOL level 1**: управляющие серверы ботнетов, атакующие и спам-сети. Отобранный уровень с минимумом ложных срабатываний, без CDN и шаред-хостинга. Рядом — **свой список**
-(IP/CIDR), который проверяется первым. Совпадения видны в статистике и в карточке юзера, с привязкой к **серверу**, который выпустил трафик; при превышении дневного порога уходит уведомление в Telegram. Категории, свой список, порог и обновление — на вкладке *Настройки → Блоклисты*.
+The list is **FireHOL level 1**: botnet command-and-control servers, attackers and spam
+networks. A curated level with minimal false positives, without CDNs or shared hosting.
+Alongside it there's **your own list** (IP/CIDR), which is checked first. Matches show up in
+the statistics and in the user's card, attributed to the **server** the traffic left from; when
+the daily threshold is exceeded a Telegram notification goes out. Categories, the custom list,
+the threshold and updates live in *Settings → Blocklists*.
 
-Проверка идёт по адресу, а не по домену, и это не упрощение. Современные клиенты резолвят DNS
-мимо туннеля и шифруют SNI (ECH), поэтому до сервера доезжает голый IP.
+Checks run against addresses, not domains, and that isn't a simplification. Modern clients
+resolve DNS outside the tunnel and encrypt SNI (ECH), so all that reaches the server is a bare
+IP.
 
-Совпадения хранятся **14 дней** — этого хватает на разбор жалобы.
+Matches are kept for **14 days** — enough to handle a complaint.
 
-#### 🧰 Эксплуатация и безопасность
+#### 🧰 Operations and security
 
-**Диагностика** одной кнопкой: процесс Xray, применение конфига, срок TLS, место на диске,
-свежесть geo-баз, состояние выходов — каждая проверка с подсказкой. Отдельная **проверка
-подключения** коннектится к каждому протоколу как настоящий клиент и убеждается, что трафик
-проходит наружу, — ловит рассинхрон учёток, TLS или ALPN раньше пользователя. **Бэкап /
-восстановление** и сброс — из панели и CLI.
+**Diagnostics** in one click: the Xray process, config application, TLS expiry, disk space, geo
+database freshness, egress health — every check with a hint. A separate **connection self-test**
+connects to each protocol as a real client and confirms traffic actually goes out — catching
+credential, TLS or ALPN drift before a user does. **Backup / restore** and reset are available
+from the panel and the CLI.
 
-**Обновление** одной командой: панель сверяет SHA256, прогоняет бинарь вхолостую, снимает
-бэкап и только потом подменяет себя, храня прошлую версию рядом. Xray-ядро зафиксировано,
-упавшее супервизор поднимает сам.
+**Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
+only then replaces itself, keeping the previous version next to it. The Xray core is pinned,
+and the supervisor restarts it if it crashes.
 
-**Секреты в БД зашифрованы** (AES-GCM). Токены сессий и API-ключи хранятся только хэшами —
-даже с доступом к таблице чужую сессию не подставить. Подтверждение оплаты и управление
-админами требуют **повторного пароля**. Исходящие запросы защищены от SSRF, перебор на
-инбаундах банится iptables, а число соединений с одного IP ограничено nftables.
+**Secrets in the database are encrypted** (AES-GCM). Session tokens and API keys are stored as
+hashes only — even with table access you can't reuse someone's session. Payment confirmation
+and admin management require **re-entering the password**. Outbound requests are protected
+against SSRF, brute force on inbounds is banned via iptables, and the number of connections per
+IP is limited via nftables.
 
 ---
 
 ## 🛠️ CLI
 
 ```text
-rospanel                     запустить панель (обычно через systemd)
-rospanel install             установить systemd-сервис и запустить (root)
-rospanel uninstall [-y]      снять сервис (данные сохраняются)
-rospanel start|stop|restart  управление сервисом
-rospanel status              статус сервиса
-rospanel update [-y]         обновиться до последнего релиза с GitHub
-rospanel backup [файл]       снапшот .tar.gz (БД + ключ шифрования + сертификаты + конфиг Xray)
-rospanel restore [-y] <файл> восстановить из снапшота (применится при старте)
-rospanel host [-y] [домен|IP] показать/сменить адрес (перевыпуск TLS)
-rospanel path                показать URL панели и проверить secrets.key / БД
-rospanel reset [-y]          сброс к заводским настройкам (стирает БД)
-rospanel version             версия
-rospanel help                полная справка
+rospanel                     run the panel (usually via systemd)
+rospanel install             install the systemd service and start it (root)
+rospanel uninstall [-y]      remove the service (data is kept)
+rospanel start|stop|restart  service control
+rospanel status              service status
+rospanel update [-y]         update to the latest GitHub release
+rospanel backup [file]       .tar.gz snapshot (DB + encryption key + certificates + Xray config)
+rospanel restore [-y] <file> restore from a snapshot (applied on start)
+rospanel host [-y] [domain|IP] show/change the address (reissues TLS)
+rospanel path                show the panel URL and check secrets.key / the DB
+rospanel reset [-y]          factory reset (wipes the DB)
+rospanel version             version
+rospanel help                full help
 ```
 
-Деструктивные команды (`reset`, `restore`, `host`, `uninstall`) спрашивают
-подтверждение; флаг `-y` его пропускает.
+Destructive commands (`reset`, `restore`, `host`, `uninstall`) ask for confirmation; the `-y`
+flag skips it.
 
-### Режим ноды
+### Node mode
 
-Тот же бинарник умеет работать как управляемая панелью нода. Команду `install`
-подставляет диалог «Добавить ноду» в панели — руками её обычно набирать не нужно.
+The same binary can run as a panel-managed node. The `install` command is generated by the
+"Add node" dialog in the panel — you normally never type it by hand.
 
 ```text
-rospanel node install --join '<url>'   присоединиться к панели и поставить сервис (root)
-rospanel node run                       агент ноды (точка входа systemd)
-rospanel node set-panel <url>           переключить ноду на новый адрес панели
-rospanel node status                    локальный статус ноды
-rospanel node uninstall [-y]            снять сервис ноды (данные сохраняются)
+rospanel node install --join '<url>'   join the panel and install the service (root)
+rospanel node run                       node agent (systemd entry point)
+rospanel node set-panel <url>           point the node at a new panel address
+rospanel node status                    local node status
+rospanel node uninstall [-y]            remove the node service (data is kept)
 ```
 
-`--join` берётся из диалога добавления ноды; токен в нём одноразовый и живёт 24 часа.
-Как завести ноду от начала до конца — [🌐 Добавить ноду](#-добавить-ноду).
+`--join` comes from the add-node dialog; the token in it is single-use and lives for 24 hours.
+For the full walkthrough see [🌐 Adding a node](#-adding-a-node).
 
 ---
 
-## 🧱 Архитектура
+## 🧱 Architecture
 
-Единственный источник правды — **SQLite**; конфиг Xray всегда генерируется из неё
-и применяется супервизором. Веб-панель встроена в бинарник.
+The single source of truth is **SQLite**; the Xray config is always generated from it and
+applied by the supervisor. The web panel is embedded in the binary.
 
-**Стек:** Go 1.26 · Xray-core · SQLite (modernc, без CGO) · React + Vite + Tailwind.
-
----
-
-## ⚠️ Дисклеймер
-
-Программное обеспечение предоставляется «как есть» (as is), без каких-либо гарантий.
-
-**Назначение проекта — образовательное и исследовательское:** изучение сетевых протоколов,
-TLS и прокси-технологий, **CTF** и лабораторные работы по сетевой безопасности,
-**авторизованное** тестирование на проникновение и управление **собственной**
-инфраструктурой. Проект **не предназначен** для обхода законных ограничений или иных
-противоправных действий; механизмы маскировки служат для изучения технологий и проверки
-устойчивости сервисов в рамках санкционированного тестирования.
-
-Ответственность за установку, настройку, эксплуатацию и соблюдение законов своей юрисдикции
-несёт **оператор сервера**. Авторы и контрибьюторы не отвечают за использование проекта
-третьими лицами.
+**Stack:** Go 1.26 · Xray-core · SQLite (modernc, CGO-free) · React + Vite + Tailwind.
 
 ---
 
-## 🧑‍💻 Разработка
+## ⚠️ Disclaimer
+
+The software is provided "as is", without warranties of any kind.
+
+**The project is intended for educational and research use:** studying network protocols, TLS
+and proxy technologies, **CTF** and network security lab work, **authorized** penetration
+testing, and managing **your own** infrastructure. The project is **not intended** for
+circumventing lawful restrictions or for any other unlawful activity; the masquerading
+mechanisms exist to study the technology and to test service resilience within sanctioned
+testing.
+
+Responsibility for installing, configuring and operating the software, and for complying with
+the laws of your jurisdiction, lies with the **server operator**. The authors and contributors
+are not responsible for how third parties use the project.
+
+---
+
+## 🧑‍💻 Development
 
 ```bash
-# фронтенд (после изменений в web/)
+# frontend (after changes in web/)
 npm --prefix web install
-npm --prefix web run build      # → web/dist (вшивается в бинарник)
+npm --prefix web run build      # → web/dist (embedded into the binary)
 
-# бинарник
+# binary
 go build -o rospanel ./cmd/rospanel
 ./rospanel
 ```
 
-Полезные переменные окружения (все опциональны): `ROSPANEL_DATA` (каталог данных),
-`ROSPANEL_ADMIN_ADDR` (loopback-адрес панели, по умолчанию `127.0.0.1:8080`),
-`XRAY_BIN`, `ROSPANEL_HOST`, `ROSPANEL_ACME_EMAIL`.
+Useful environment variables (all optional): `ROSPANEL_DATA` (data directory),
+`ROSPANEL_ADMIN_ADDR` (the panel's loopback address, `127.0.0.1:8080` by default), `XRAY_BIN`,
+`ROSPANEL_HOST`, `ROSPANEL_ACME_EMAIL`.
 
-Защита от флуда (nftables-лимиты на публичных TCP-портах, см. «Эксплуатация») тоже
-настраивается через окружение — пригодится, если за одним IP сидит целый офис или
-CGNAT-оператор и клиенты упираются в дефолты:
+Flood protection (nftables limits on public TCP ports, see "Operations") is configured through
+the environment too — handy when a whole office or a CGNAT carrier sits behind one IP and
+clients hit the defaults:
 
-| Переменная | Что делает |
+| Variable | What it does |
 | --- | --- |
-| `ROSPANEL_CONNLIMIT=off` | Полностью выключает лимиты (правила nftables сносятся) |
-| `ROSPANEL_CONNLIMIT_MAX` | Максимум одновременных TCP-соединений с одного IP |
-| `ROSPANEL_CONNLIMIT_RATE` | Максимум новых соединений с одного IP в секунду |
+| `ROSPANEL_CONNLIMIT=off` | Disables the limits entirely (nftables rules are removed) |
+| `ROSPANEL_CONNLIMIT_MAX` | Maximum concurrent TCP connections from a single IP |
+| `ROSPANEL_CONNLIMIT_RATE` | Maximum new connections per second from a single IP |
 
-Текущее состояние защиты видно в **Дашборд → Управление → Диагностика**: если
-nftables не установлен или панель работает не от root, правила молча не применятся —
-диагностика об этом скажет.
+The current state is visible in **Dashboard → Management → Diagnostics**: if nftables isn't
+installed or the panel isn't running as root, the rules silently won't apply — diagnostics will
+say so.
 
-PR и issue приветствуются. Коммиты — в стиле [Conventional Commits](https://www.conventionalcommits.org/):
-на их основе release-please собирает релиз и публикует бинарь + Docker-образ в GHCR.
+PRs and issues are welcome. Commits follow
+[Conventional Commits](https://www.conventionalcommits.org/): release-please uses them to cut
+releases and publish the binary and the Docker image to GHCR.
 
 ---
 
-## 💝 Поддержать проект
+## 💝 Support the project
 
-РосПанель развивается в свободное время и распространяется бесплатно. Если панель оказалась
-полезной — проще всего поддержать через **[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)**
-или **[Boosty](https://boosty.to/githubapps)** (картой РФ, разово или регулярно).
-Спасибо! 🙏
-
-
-<b>Криптой</b>
+RosPanel is developed in spare time and distributed for free. If the panel turned out to be
+useful, the easiest way to support it is
+**[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** or
+**[Boosty](https://boosty.to/githubapps)** (RU cards, one-off or recurring). Thank you! 🙏
 
 
-**USDT.** Выберите сеть и **внимательно** скопируйте адрес — сеть отправителя и получателя
-должны совпадать. Отправляйте только **USDT** и только в указанной сети: перевод по неверной
-сети невозвратен. Дешевле всего комиссия в **TRON (TRC20)** и **TON**.
+<b>Crypto</b>
 
-| Сеть             | Токен | Адрес                                              |
+
+**USDT.** Pick a network and copy the address **carefully** — the sender's and the receiver's
+network must match. Send **USDT** only, and only on the network listed: a transfer on the wrong
+network cannot be recovered. The cheapest fees are on **TRON (TRC20)** and **TON**.
+
+| Network          | Token | Address                                            |
 | ---------------- | ----- | -------------------------------------------------- |
 | TRC20 (Tron)     | USDT  | `TJwyrPVEZVZ1YrcmDiZTyFjLo3Q2DmEGzs`               |
 | ERC20 (Ethereum) | USDT  | `0xf9d663146ce902da91911b214c71cc73a5269d1d`       |
 | Solana           | USDT  | `2qAZRTbaUMTfYuZbD1dCYHjkYgxkw4dUYE9XY3JhC2Cs`     |
 | TON              | USDT  | `UQDoat731MLYuIw8ayL3Vhhw7zTBbLvRaQFmDvab--CNNI7e` |
 
-**Bybit.** Если у вас тоже Bybit — переводом по UID `136462734`: мгновенно и без комиссии.
+**Bybit.** If you're on Bybit too — transfer to UID `136462734`: instant and free.
 
-**Нет возможности поддержать деньгами?** Тоже можно помочь — арендуйте серверы по
-реферальным ссылкам из раздела [Где взять сервер](#️-где-взять-сервер). Вам это ничего
-не стоит, а проекту помогает.
+**Can't support financially?** You can still help — rent servers through the referral links in
+[Where to get a server](#️-where-to-get-a-server). It costs you nothing and helps the project.
 
 ---
 
-## 📄 Лицензия
+## 📄 License
 
 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
 
-Проект свободен для использования, изменения и self-hosting. Если вы предоставляете доступ к изменённой версии панели по сети (в т.ч. как сервис), вы обязаны открыть исходный код своих изменений на тех же условиях.
+The project is free to use, modify and self-host. If you provide network access to a modified
+version of the panel (including as a service), you must release the source of your changes
+under the same terms.
