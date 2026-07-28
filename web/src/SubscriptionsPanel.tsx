@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   ANNOUNCE_MAX,
   getSettings,
@@ -6,6 +7,7 @@ import {
   type SubSettings,
 } from "./api";
 import { useAction, useDirtyForm } from "./hooks";
+import i18n from "./i18n";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
@@ -36,17 +38,17 @@ const EMPTY_SUB: SubSettings = {
 };
 
 // Subscription auto-update cadence (hours; "0" = never).
-const INTERVALS = [
-  { value: "0", label: "Никогда" },
-  { value: "1", label: "1 час" },
-  { value: "6", label: "6 часов" },
-  { value: "12", label: "12 часов" },
-  { value: "24", label: "24 часа" },
-  { value: "48", label: "48 часов" },
-  { value: "168", label: "Неделя" },
+const intervals = () => [
+  { value: "0", label: i18n.t("subs.never") },
+  ...[1, 6, 12, 24, 48].map((h) => ({
+    value: String(h),
+    label: i18n.t("subs.hours", { count: h }),
+  })),
+  { value: "168", label: i18n.t("subs.week") },
 ];
 
 export function SubscriptionsPanel() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const { draft: s, setDraft: setS, isDirty: dirty, load, commit, reset } = useDirtyForm<SubSettings>(EMPTY_SUB);
   const [secret, setSecret] = useState("");
@@ -85,7 +87,7 @@ export function SubscriptionsPanel() {
     run(async () => {
       await saveSubSettings(s);
       commit();
-      notifySuccess("Настройки подписок сохранены");
+      notifySuccess(t("subs.saved"));
     });
 
   if (!loaded) return <CenterLoader />;
@@ -93,11 +95,11 @@ export function SubscriptionsPanel() {
   return (
     <div className="flex flex-col gap-4 pb-20">
       <Card className="p-4">
-        <h3 className="mb-3 font-bold text-ink">Формат подписки</h3>
+        <h3 className="mb-3 font-bold text-ink">{t("subs.format")}</h3>
         <div className="flex flex-col gap-4">
           <div>
             <TextInput
-              label="Путь подписки"
+              label={t("subs.path")}
               placeholder="sub"
               value={s.sub_path}
               onChange={(v) =>
@@ -108,39 +110,38 @@ export function SubscriptionsPanel() {
               <p className="mt-1 text-xs text-danger">{pathErr}</p>
             ) : (
               <p className="mt-1 text-xs text-ink-muted">
-                Адрес подписки: /{s.sub_path || "sub"}/токен. Смена пути ломает
-                уже выданные ссылки — раздайте заново.
+                {t("subs.pathHint", { path: s.sub_path || "sub" })}
               </p>
             )}
           </div>
           <ToggleRow
-            label="Шифровать в base64"
-            hint="Универсальный список ссылок отдаётся в base64 (выкл — обычным текстом)."
+            label={t("subs.base64")}
+            hint={t("subs.base64Hint")}
             checked={s.sub_base64}
             onChange={(v) => patch({ sub_base64: v })}
           />
           <TextInput
-            label="Заголовок подписки"
-            placeholder="Например, имя вашего сервера"
+            label={t("subs.title")}
+            placeholder={t("subs.titlePlaceholder")}
             value={s.sub_title}
             onChange={(v) => patch({ sub_title: v })}
           />
           <ToggleRow
-            label="Имя пользователя в заголовке подписки"
-            hint="Добавлять имя пользователя к заголовку профиля в клиенте (например, «Мой VPN — Маша»)."
+            label={t("subs.nameInTitle")}
+            hint={t("subs.nameInTitleHint")}
             checked={s.sub_name_in_title}
             onChange={(v) => patch({ sub_name_in_title: v })}
           />
           <Select
-            label="Интервал автообновления"
-            data={INTERVALS}
+            label={t("subs.updateInterval")}
+            data={intervals()}
             value={String(s.sub_update_interval)}
             onChange={(v) => patch({ sub_update_interval: Number(v) })}
           />
           <div>
             <Textarea
-              label="Объявление в клиенте"
-              placeholder="Например: сервер переезжает 3 августа, ссылка не меняется"
+              label={t("subs.announce")}
+              placeholder={t("subs.announcePlaceholder")}
               rows={2}
               value={s.sub_announce}
               onChange={(v) => patch({ sub_announce: v })}
@@ -151,7 +152,7 @@ export function SubscriptionsPanel() {
                 announceErr ? "text-danger" : "text-ink-muted",
               )}
             >
-              Показывается строкой внутри VPN-клиента (Happ, v2RayTun). Пусто — объявления нет. {announceLen}/{ANNOUNCE_MAX}
+              {t("subs.announceHint")} {announceLen}/{ANNOUNCE_MAX}
             </p>
           </div>
         </div>
@@ -160,9 +161,9 @@ export function SubscriptionsPanel() {
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h3 className="font-bold text-ink">Маршрутизация</h3>
+            <h3 className="font-bold text-ink">{t("subs.routing")}</h3>
             <p className="text-xs text-ink-muted">
-              Авто-роутинг для клиентов. Готовые URL —{" "}
+              {t("subs.routingHint")}{" "}
               <a
                 href={ROUTING_REPO}
                 target="_blank"
@@ -182,32 +183,33 @@ export function SubscriptionsPanel() {
         {s.sub_routing && (
           <div className="flex flex-col gap-3">
             <TextInput
-              label="Happ — URL правил"
+              label={t("subs.happRules")}
               placeholder="https://.../HAPP/DEFAULT.DEEPLINK"
               value={s.sub_routing_happ}
               onChange={(v) => patch({ sub_routing_happ: v })}
             />
             <TextInput
-              label="INCY — URL правил"
+              label={t("subs.incyRules")}
               placeholder="https://.../INCY/DEFAULT.DEEPLINK"
               value={s.sub_routing_incy}
               onChange={(v) => patch({ sub_routing_incy: v })}
             />
             <div>
               <TextInput
-                label="Mihomo (Clash Meta) — URL правил"
+                label={t("subs.mihomoRules")}
                 placeholder="https://.../MIHOMO/default.yaml"
                 value={s.sub_routing_mihomo}
                 onChange={(v) => patch({ sub_routing_mihomo: v })}
               />
               <p className="mt-1 text-xs text-ink-muted">
-                Для Clash/Mihomo прокси пользователя подставляются в шаблон в
-                строку{" "}
-                <code className="rounded bg-gray-100 px-1 font-mono">
-                  # LEAVE THIS LINE!
-                </code>{" "}
-                (и их имена — в группу прокси). Укажите URL YAML-шаблона с этим
-                маркером.
+                <Trans
+                  i18nKey="subs.mihomoHint"
+                  components={{
+                    marker: (
+                      <code className="rounded bg-gray-100 px-1 font-mono" />
+                    ),
+                  }}
+                />
               </p>
             </div>
           </div>

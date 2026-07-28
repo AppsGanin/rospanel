@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Button,
   IconCheck,
@@ -8,20 +9,7 @@ import {
   useCopy,
 } from "./ui";
 
-const SECTIONS: { title: string; body: string }[] = [
-  {
-    title: "1. Свободный проект",
-    body: "«РосПанель» — открытое программное обеспечение. Проект развивается в свободное время и распространяется бесплатно.",
-  },
-  {
-    title: "2. Добровольность",
-    body: "Пожертвование является исключительно добровольным жестом и не даёт никаких дополнительных прав, гарантий, привилегий или обязательств со стороны авторов проекта. Отказ от пожертвования никак не ограничивает использование программного обеспечения.",
-  },
-  {
-    title: "3. Без возврата",
-    body: "Переведённые средства не подлежат возврату. Перед отправкой пожертвования убедитесь в правильности реквизитов. Авторы не несут ответственности за переводы, совершённые по ошибочным реквизитам.",
-  },
-];
+const SECTIONS = [1, 2, 3] as const;
 
 const DONATIONALERTS_URL = "https://www.donationalerts.com/r/dmitryapp";
 const BOOSTY_URL = "https://boosty.to/githubapps";
@@ -59,10 +47,11 @@ function MethodRow({ label, value }: { label: string; value: string }) {
 }
 
 export function Donate({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   return (
     <InfoModal
       icon={<IconHeart size={22} />}
-      title="Пожертвования"
+      title={t("nav.donate")}
       onClose={onClose}
       footer={
         <Button
@@ -71,13 +60,16 @@ export function Donate({ onClose }: { onClose: () => void }) {
           onClick={onClose}
           className="w-full sm:w-auto"
         >
-          Закрыть
+          {t("common.close")}
         </Button>
       }
     >
-      {SECTIONS.map((s) => (
-        <InfoSection key={s.title} title={s.title}>
-          {s.body}
+      {SECTIONS.map((n) => (
+        <InfoSection
+          key={n}
+          title={t(`donate.s${n}Title` as "donate.s1Title")}
+        >
+          {t(`donate.s${n}Body` as "donate.s1Body")}
         </InfoSection>
       ))}
 
@@ -89,10 +81,10 @@ export function Donate({ onClose }: { onClose: () => void }) {
           className="flex items-center justify-center gap-2 rounded-lg bg-[#f57d07] px-3 py-2.5 text-sm font-bold text-onaccent transition hover:bg-[#d96e06]"
         >
           <IconHeart size={18} />
-          Поддержать через DonationAlerts
+          {t("donate.viaDonationAlerts")}
         </a>
         <p className="text-center text-xs text-gray-500">
-          Разовая поддержка через DonationAlerts — картой РФ и другими способами.
+          {t("donate.donationAlertsNote")}
         </p>
       </InfoSection>
 
@@ -104,23 +96,20 @@ export function Donate({ onClose }: { onClose: () => void }) {
           className="flex items-center justify-center gap-2 rounded-lg bg-[#f15f2c] px-3 py-2.5 text-sm font-bold text-onaccent transition hover:bg-[#d94e1f]"
         >
           <IconHeart size={18} />
-          Поддержать на Boosty
+          {t("donate.viaBoosty")}
         </a>
         <p className="text-center text-xs text-gray-500">
-          Регулярная или разовая поддержка через Boosty — картой РФ и другими
-          способами.
+          {t("donate.boostyNote")}
         </p>
       </InfoSection>
 
-      <InfoSection title="Реквизиты" bordered={false}>
+      <InfoSection title={t("donate.details")} bordered={false}>
         <div className="flex flex-col gap-2">
           {METHODS.map((m) => (
             <MethodRow key={m.label} {...m} />
           ))}
           <p className="text-center text-xs text-gray-500">
-            Нажмите на реквизит, чтобы скопировать. Отправляйте только USDT и
-            только в указанной сети — перевод по неверной сети невозвратен.
-            Дешевле всего комиссия в сетях TRON (TRC20) и TON.
+            {t("donate.detailsNote")}
           </p>
         </div>
       </InfoSection>

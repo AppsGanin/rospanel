@@ -52,7 +52,7 @@ func (rt *Router) applyUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !updater.IsNewer(rel.Version, version.Version) {
-		writeErr(w, http.StatusBadRequest, "уже установлена последняя версия")
+		writeErrCode(w, http.StatusBadRequest, "err.alreadyLatest", "уже установлена последняя версия")
 		return
 	}
 	backupFn := func() error {

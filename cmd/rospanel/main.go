@@ -89,7 +89,7 @@ func main() {
 		case "help", "--help", "-h":
 			printUsage(os.Stdout)
 		default:
-			fmt.Fprintf(os.Stderr, "неизвестная команда %q\n\n", os.Args[1])
+			fmt.Fprintf(os.Stderr, "unknown command %q\n\n", os.Args[1])
 			printUsage(os.Stderr)
 			os.Exit(2)
 		}

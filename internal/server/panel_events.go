@@ -10,7 +10,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/store"
 )
 
-// The audit log surface: one user's trail (the «Журнал» modal in the user detail)
+// The audit log surface: one user's trail (the "Journal" modal in the user detail)
 // and the global trail (the journal page). Both page backwards with ?before=<id>,
 // the id of the oldest row the client already has — the rows are id-ordered, so it
 // stays a stable cursor even as new events land at the top.
@@ -45,7 +45,7 @@ func eventPageArgs(r *http.Request) (limit int, before int64) {
 	return limit, before
 }
 
-// userEvents returns one user's audit trail (the «Журнал» modal).
+// userEvents returns one user's audit trail (the "Journal" modal).
 func (rt *Router) userEvents(w http.ResponseWriter, r *http.Request, id int64) {
 	limit, before := eventPageArgs(r)
 	events, err := rt.mgr.UserEvents(id, limit, before)
@@ -66,7 +66,7 @@ func (rt *Router) events(w http.ResponseWriter, r *http.Request) {
 	// "nothing happened" — so a typo'd filter fails loudly instead.
 	action := strings.TrimSpace(q.Get("action"))
 	if action != "" && !model.ValidUserEvent(action) {
-		writeErr(w, http.StatusBadRequest, "неизвестное событие")
+		writeErrCode(w, http.StatusBadRequest, "err.unknownEvent", "неизвестное событие")
 		return
 	}
 	events, err := rt.mgr.Events(store.UserEventFilter{
@@ -83,12 +83,13 @@ func (rt *Router) events(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, makeEventsResponse(events, limit))
 }
 
-// eventCatalog returns the stable action key→label list so the UI renders event
-// names (and builds its filter dropdown) from one source of truth.
+// eventCatalog returns the stable action key list the UI builds its filter dropdown
+// from. Keys only: the panel renders each name from its own dictionaries, so the
+// journal is in the language the admin picked, not the server's.
 func (rt *Router) eventCatalog(w http.ResponseWriter, _ *http.Request) {
 	out := make([]map[string]string, 0, len(model.UserEventCatalog))
 	for _, e := range model.UserEventCatalog {
-		out = append(out, map[string]string{"key": e.Key, "label": e.Label})
+		out = append(out, map[string]string{"key": e})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

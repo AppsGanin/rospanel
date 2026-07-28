@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getRegistrations, type RegistrationRequest } from "./api";
 import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
@@ -13,7 +14,7 @@ import { UsersPanel } from "./UsersPanel";
 
 // Statistics and the journal are both *about* end users — who spent how much
 // traffic, and what was done to whom — so they live as sub-tabs of this section
-// instead of eating two slots in the top nav. The "Заявки" tab appears only while
+// instead of eating two slots in the top nav. The "Requests" tab appears only while
 // the user bot is in moderation mode (or a leftover queue needs clearing).
 type SubTab =
   | "list"
@@ -31,6 +32,7 @@ export function UsersPage({
   userBotEnabled: boolean;
   billingEnabled: boolean;
 }) {
+  const { t } = useTranslation();
   const seg = useRoute();
   const [reg, setReg] = useState<{
     moderation: boolean;
@@ -58,12 +60,12 @@ export function UsersPage({
   const isAdmin = useIsAdmin();
   const showRequests = reg.moderation || reg.requests.length > 0;
   const tabs: { value: SubTab; label: string; count?: number }[] = [
-    { value: "list", label: "Список" },
+    { value: "list", label: t("users.tabList") },
     ...(showRequests
       ? [
           {
             value: "requests" as SubTab,
-            label: "Заявки",
+            label: t("users.tabRequests"),
             count: reg.requests.length,
           },
         ]
@@ -73,19 +75,21 @@ export function UsersPage({
     // without the user bot, which is what actually delivers them — the server would
     // refuse anyway, and a tab that always errors is worse than no tab.
     ...(isAdmin && userBotEnabled
-      ? [{ value: "broadcast" as SubTab, label: "Рассылка" }]
+      ? [{ value: "broadcast" as SubTab, label: t("users.tabBroadcast") }]
       : []),
     // Payments are about what users pay for, so they belong beside the users rather
     // than as a separate destination in the top menu.
     ...(isAdmin && billingEnabled
-      ? [{ value: "payments" as SubTab, label: "Оплата" }]
+      ? [{ value: "payments" as SubTab, label: t("users.tabPayments") }]
       : []),
     // Access groups gate which connections a user may use; managing them lives beside
     // the users whose membership they govern. Admin-and-up, like the other management
     // sub-tabs.
-    ...(isAdmin ? [{ value: "groups" as SubTab, label: "Группы" }] : []),
-    { value: "stats", label: "Статистика" },
-    { value: "events", label: "Журнал" },
+    ...(isAdmin
+      ? [{ value: "groups" as SubTab, label: t("users.tabGroups") }]
+      : []),
+    { value: "stats", label: t("users.tabStats") },
+    { value: "events", label: t("users.tabEvents") },
   ];
 
   const wanted = seg[1] as SubTab;

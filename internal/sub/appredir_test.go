@@ -4,10 +4,12 @@ import (
 	"html/template"
 	"strings"
 	"testing"
+
+	"github.com/AppsGanin/rospanel/internal/i18n"
 )
 
 func TestAppRedirectKeepsScheme(t *testing.T) {
-	b, err := AppRedirect(template.URL("happ://add/https://vpn.example.com/sub/tok"))
+	b, err := AppRedirect(template.URL("happ://add/https://vpn.example.com/sub/tok"), i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

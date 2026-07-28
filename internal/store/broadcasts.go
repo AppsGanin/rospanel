@@ -213,7 +213,7 @@ func (s *Store) SkipRemainingTargets(broadcastID int64) error {
 // run that was cancelled, paused for good, or died between creation and start.
 func (s *Store) FinishedBroadcastIDs() ([]int64, error) {
 	// media_file_id must be set: a run where every upload failed still needs its
-	// file on disk, or "повторить неудачные" would have nothing left to send.
+	// file on disk, or "retry the failures" would have nothing left to send.
 	rows, err := s.db.Query(
 		`SELECT id FROM broadcasts
 		 WHERE status IN (?, ?) AND media_kind <> ''

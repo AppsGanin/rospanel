@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import i18n from "./i18n";
+import { useTranslation } from "react-i18next";
 import {
   applyUpdate,
   checkUpdate,
@@ -42,35 +44,46 @@ type LocalBackup = { schedule: Schedule; keep: number };
 
 const EMPTY_BK: LocalBackup = { schedule: EMPTY_SCHEDULE, keep: 7 };
 
-// Grace period between a user's expiry date and their deletion. "Никогда" is the
+// Grace period between a user's expiry date and their deletion. "Never" is the
 // default and is deliberately first: deleting paying customers because a dropdown
 // defaulted to something is not a mistake anyone should be able to make by accident.
-const AUTODELETE_OPTIONS = [
-  { value: "0", label: "Никогда" },
-  { value: "7", label: "7 дней после истечения" },
-  { value: "30", label: "30 дней после истечения" },
-  { value: "90", label: "90 дней после истечения" },
-  { value: "180", label: "180 дней после истечения" },
-  { value: "365", label: "365 дней после истечения" },
+const autodeleteOptions = () => [
+  { value: "0", label: i18n.t("general.never") },
+  ...[7, 30, 90, 180, 365].map((d) => ({
+    value: String(d),
+    label: i18n.t("general.daysAfterExpiry", { count: d }),
+  })),
 ];
 
-// DECOY_LABELS maps decoy slugs to friendly names. Exported so the master/node
+// decoyLabel maps decoy slugs to friendly names. Exported so the master/node
 // settings dialogs (where the decoy is now chosen) show the same labels.
-export const DECOY_LABELS: Record<string, string> = {
-  "coming-soon": "Coming soon (скоро открытие)",
-  nginx: "Nginx (страница по умолчанию)",
-  maintenance: "Технические работы",
-  "10gag": "9GAG (развлечения)",
-  "503-1": "Ошибка 503 (вариант 1)",
-  "503-2": "Ошибка 503 (вариант 2)",
-  YouTube: "YouTube",
-  converter: "Конвертер файлов",
-  downloader: "Загрузчик файлов",
-  filecloud: "Файловое облако",
-  speedtest: "Speedtest",
+export const decoyLabel = (slug: string): string => {
+  switch (slug) {
+    case "coming-soon":
+      return i18n.t("decoy.comingSoon");
+    case "nginx":
+      return i18n.t("decoy.nginx");
+    case "maintenance":
+      return i18n.t("decoy.maintenance");
+    case "10gag":
+      return i18n.t("decoy.gag");
+    case "503-1":
+      return i18n.t("decoy.err503a");
+    case "503-2":
+      return i18n.t("decoy.err503b");
+    case "converter":
+      return i18n.t("decoy.converter");
+    case "downloader":
+      return i18n.t("decoy.downloader");
+    case "filecloud":
+      return i18n.t("decoy.filecloud");
+    default:
+      return slug; // YouTube, Speedtest — brand names, same in every language
+  }
 };
 
 export function GeneralSettings() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [timezone, setTimezone] = useState("");
   const [savedTz, setSavedTz] = useState("");
@@ -148,7 +161,7 @@ export function GeneralSettings() {
           await setUserAutoDelete(autoDel);
           setSavedAutoDel(autoDel);
         }
-        notifySuccess("Настройки сохранены");
+        notifySuccess(t("general.saved"));
       },
       { key: "save" },
     );
@@ -161,9 +174,9 @@ export function GeneralSettings() {
 
   const doRegenSecret = async () => {
     const ok = await confirm({
-      title: "Перегенерировать секретный путь?",
-      body: "URL входа в панель изменится, текущая сессия слетит — вас перекинет на новый адрес. Старая ссылка перестанет работать.",
-      confirmLabel: "Перегенерировать",
+      title: t("general.regenTitle"),
+      body: t("general.regenBody"),
+      confirmLabel: t("general.regen"),
       danger: true,
     });
     if (!ok) return;
@@ -185,7 +198,7 @@ export function GeneralSettings() {
         setUpd(info);
         setVersion(info.current);
         if (info.error) notifyError(info.error);
-        else if (!info.available) notifySuccess("У вас последняя версия");
+        else if (!info.available) notifySuccess(t("general.upToDate"));
       },
       { key: "upd-check" },
     );
@@ -193,9 +206,9 @@ export function GeneralSettings() {
   const doUpdate = async () => {
     if (!upd?.latest) return;
     const ok = await confirm({
-      title: `Обновить до v${upd.latest}?`,
-      body: "Панель скачает новую версию и перезапустится. Все подключения (VPN и панель) кратко прервутся на несколько секунд. Настройки и пользователи сохранятся — БД не трогается.",
-      confirmLabel: "Обновить",
+      title: t("general.updateTitle", { version: upd.latest }),
+      body: t("general.updateBody"),
+      confirmLabel: t("general.update"),
     });
     if (!ok) return;
     const target = upd.latest.replace(/^v/, "");
@@ -223,7 +236,7 @@ export function GeneralSettings() {
             window.location.reload();
           } else if (++tries > 60) {
             setUpdating(false);
-            notifyError("Обновление затянулось — перезагрузите страницу вручную");
+            notifyError(t("general.updateSlow"));
           } else {
             window.setTimeout(poll, 2000);
           }
@@ -232,7 +245,7 @@ export function GeneralSettings() {
           wentDown = true; // panel dropped ⇒ the restart is underway
           if (++tries > 60) {
             setUpdating(false);
-            notifyError("Панель не ответила — перезагрузите страницу вручную");
+            notifyError(t("general.noAnswer"));
           } else {
             window.setTimeout(poll, 2000);
           }
@@ -246,13 +259,14 @@ export function GeneralSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title="Обновление панели"
+        title={t("general.updateSection")}
         description={
           <>
-            Текущая версия: <b>v{version || "—"}</b>
+            {t("general.currentVersion")} <b>v{version || "—"}</b>
             {upd?.available && upd.latest && (
               <>
-                {" · "}доступна{" "}
+                {" · "}
+                {t("general.availableVersion")}{" "}
                 <b className="text-accent">v{upd.latest}</b>
               </>
             )}
@@ -267,11 +281,11 @@ export function GeneralSettings() {
             disabled={updating}
             onClick={doCheckUpdate}
           >
-            Проверить обновления
+            {t("general.checkUpdates")}
           </Button>
           {upd?.available && (
             <Button loading={updating} onClick={doUpdate}>
-              Обновить до v{upd.latest}
+              {t("general.updateTo", { version: upd.latest })}
             </Button>
           )}
         </div>
@@ -279,40 +293,38 @@ export function GeneralSettings() {
           open={updating}
           onClose={() => {}}
           dismissible={false}
-          title="Обновление панели"
+          title={t("general.updateSection")}
         >
           <div className="flex items-start gap-3">
             <Spinner size={22} className="mt-0.5 shrink-0" />
             <p className="text-sm text-ink">
-              Панель скачивает новую версию и перезапускается. Не закрывайте эту
-              страницу — она перезагрузится автоматически, как только новая версия
-              запустится. Это может занять до минуты.
+              {t("general.updatingHint")}
             </p>
           </div>
         </Modal>
       </SettingCard>
 
       <SettingCard
-        title="Часовой пояс"
-        description="Граница суток в статистике/логах."
+        title={t("wizard.timezone")}
+        description={t("general.timezoneHint")}
       >
         <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
       </SettingCard>
 
       <SettingCard
-        title="Автоматические бэкапы"
-        description="Резервные копии сохраняются на сам сервер, в каталог данных панели (backups/). Работает независимо от Telegram — бот для этого не нужен."
+        title={t("general.autoBackups")}
+        description={t("general.autoBackupsHint")}
       >
         <CronPicker
           value={bk.schedule}
           onChange={(schedule) => setBk((b) => ({ ...b, schedule }))}
-          offLabel="Автоматические бэкапы выключены."
+          offLabel={t("general.autoBackupsOff")}
           // Retention only means something once a schedule exists, and it belongs
-          // beside it: "каждый день в 03:00, храним 7 копий" is one sentence.
+          // beside it: "every day at 03:00, keep 7 copies" is one sentence.
           extra={
             bkCron ? (
               <TextInput
-                label="Сколько копий хранить"
+                label={t("general.keepCopies")}
                 type="number"
                 value={String(bk.keep)}
                 onChange={(v) =>
@@ -324,36 +336,34 @@ export function GeneralSettings() {
         />
         {bkCron && (
           <p className="mt-1 text-xs text-ink-muted">
-            Лишние копии удаляются, остаются самые свежие. 0 — не удалять ничего.
+            {t("general.keepCopiesHint")}
           </p>
         )}
         <p className="mt-3 text-xs text-warning">
-          ⚠️ Копия лежит на том же диске, что и панель, и содержит ключ шифрования
-          секретов — от потери сервера она не спасёт. Скачивайте её к себе или
-          включите отправку в Telegram.
+          {t("general.backupWarn")}
         </p>
       </SettingCard>
 
       <SettingCard
-        title="Автоудаление истёкших пользователей"
-        description="Пользователь с истёкшим сроком удаляется через указанное время после даты окончания. Записи в журнале остаются — видно, кого и когда удалили."
+        title={t("general.autodelete")}
+        description={t("general.autodeleteHint")}
       >
         <Select
-          label="Удалять через"
-          data={AUTODELETE_OPTIONS}
+          label={t("general.deleteAfter")}
+          data={autodeleteOptions()}
           value={String(autoDel)}
           onChange={(v) => setAutoDel(Number(v))}
         />
         <p className="mt-2 text-xs text-ink-muted">
           {autoDel === 0
-            ? "Никто не удаляется — истёкшие копятся в списке."
-            : "Удаление необратимо. Не затрагивает пользователей без срока и тех, кому срок продлили."}
+            ? t("general.autodeleteOff")
+            : t("general.autodeleteOn")}
         </p>
       </SettingCard>
 
       <SettingCard
-        title="Секретный путь панели"
-        description="Скрытый сегмент адреса, по которому открывается панель. Перегенерация сменит URL входа."
+        title={t("general.secretPath")}
+        description={t("general.secretPathHint")}
       >
         <Code block className="mb-3">
           /{settings?.secret_path}/
@@ -364,7 +374,7 @@ export function GeneralSettings() {
           loading={isBusy("secret")}
           onClick={doRegenSecret}
         >
-          Перегенерировать
+          {t("general.regen")}
         </Button>
       </SettingCard>
 
@@ -381,19 +391,17 @@ export function GeneralSettings() {
         open={!!newSecret}
         onClose={() => {}}
         dismissible={false}
-        title="Секретный путь изменён"
+        title={t("general.secretPathChanged")}
       >
         <div className="flex flex-col gap-4">
           <p className="text-sm leading-relaxed text-ink-muted">
-            Панель теперь открывается только по этому адресу. Сохраните его —
-            восстановить путь нельзя, а по старому адресу панель больше недоступна.
+            {t("wizard.newPathIntro")}
           </p>
           <Code block copy>
             {`${window.location.origin}/${newSecret}/`}
           </Code>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-            Запишите адрес в надёжное место (менеджер паролей, заметки). Без него вы
-            потеряете доступ к панели.
+            {t("wizard.newPathWarn")}
           </div>
           <div className="flex justify-end">
             <Button
@@ -401,7 +409,7 @@ export function GeneralSettings() {
                 window.location.href = `${window.location.origin}/${newSecret}/`;
               }}
             >
-              Я сохранил, перейти на новый адрес
+              {t("wizard.savedGoToNew")}
             </Button>
           </div>
         </div>

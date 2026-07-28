@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -66,8 +67,23 @@ const topicNameMax = 128
 const internalNotePrefix = "//"
 
 // defaultSupportGreeting is used when the operator hasn't written one. It promises
-// nothing about response time — that promise is the operator's to make.
-const defaultSupportGreeting = "💬 <b>Поддержка</b>\n\nОпишите проблему сообщением в этот чат — можно приложить скриншот. Ответим здесь же."
+// nothing about response time — that promise is the operator's to make. Resolved
+// per writer, so an English speaker is not greeted in Russian; an operator-written
+// greeting is used verbatim in whatever language they typed it.
+func defaultSupportGreeting(lang i18n.Lang) string {
+	return i18n.T(lang, "support.greeting")
+}
+
+// lang resolves the writer's language from the subscriber record the client bot
+// stores on first contact. Support and the client bot share the same person, so
+// the two speak to them in the same language.
+func (s *SupportService) lang(chatID int64) i18n.Lang {
+	sub, err := s.store.SubscriberByChat(chatID)
+	if err != nil || sub == nil {
+		return i18n.Default
+	}
+	return i18n.Normalize(sub.Lang)
+}
 
 // NewSupport builds the support relay bot. Call Run to start polling.
 func NewSupport(panel Panel, st *store.Store) *SupportService {
@@ -284,7 +300,7 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 	case !allowed && first:
 		// Told once per window. Answering every rejected message would make a flood
 		// produce MORE outbound traffic than it did inbound.
-		s.reply(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+		s.reply(ctx, client, chatID, i18n.T(s.lang(chatID), "user.tooManyMessages"))
 		return
 	case !allowed:
 		return
@@ -293,13 +309,13 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 	// operator is still setting it up. Say so — silently eating the message would
 	// leave them waiting for an answer nobody will ever see.
 	if !set.TGSupportEnabled || set.TGSupportGroupID == 0 {
-		s.reply(ctx, client, chatID, "⚙️ Поддержка ещё не настроена. Загляните позже.")
+		s.reply(ctx, client, chatID, i18n.T(s.lang(chatID), "support.notConfigured"))
 		return
 	}
 	if cmd, _ := splitCmd(m.Text); cmd == "/start" {
 		greeting := strings.TrimSpace(set.TGSupportGreeting)
 		if greeting == "" {
-			greeting = defaultSupportGreeting
+			greeting = defaultSupportGreeting(s.lang(chatID))
 		}
 		if err := client.SendMessage(ctx, chatID, greeting); err != nil {
 			log.Printf("telegram support: greeting to %d: %v", chatID, err)
@@ -309,7 +325,7 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 	topicID, created, err := s.ensureTopic(ctx, client, set, m)
 	if err != nil {
 		log.Printf("telegram support: ensure topic for %d: %v", chatID, err)
-		s.reply(ctx, client, chatID, "⚠️ Не удалось передать сообщение. Попробуйте позже.")
+		s.reply(ctx, client, chatID, i18n.T(s.lang(chatID), "support.relayFailed"))
 		return
 	}
 
@@ -335,11 +351,11 @@ func (s *SupportService) handleUserMessage(ctx context.Context, client *Client, 
 		// Never confirm in this case: a "✅ delivered" the operator will never see is
 		// worse than an honest failure, because the user then waits for an answer.
 		log.Printf("telegram support: forward from %d: %v", chatID, err)
-		s.reply(ctx, client, chatID, "⚠️ Не удалось передать сообщение. Попробуйте позже.")
+		s.reply(ctx, client, chatID, i18n.T(s.lang(chatID), "support.relayFailed"))
 		return
 	}
 	if created {
-		s.reply(ctx, client, chatID, "✅ Отправлено. Ответим здесь же — уведомление придёт в этот чат.")
+		s.reply(ctx, client, chatID, i18n.T(s.lang(chatID), "support.sent"))
 	}
 }
 
@@ -350,7 +366,7 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 	}
 	if m.IsForumService() {
 		// Renaming or closing a topic is not a reply. Relaying it would fail and post
-		// an alarming "не доставлено" notice for routine housekeeping.
+		// an alarming "not delivered" notice for routine housekeeping.
 		return
 	}
 	// Body(), not Text: a note written as a photo caption is still a note, and the
@@ -379,9 +395,9 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 	if err := client.CopyMessage(ctx, chatID, set.TGSupportGroupID, m.MessageID); err != nil {
 		// Report into the thread rather than the log: the admin is standing right
 		// there waiting, and silence reads as "delivered".
-		note := "⚠️ Не доставлено: " + esc(err.Error())
+		note := i18n.T(i18n.Default, "support.notDelivered", esc(err.Error()))
 		if isBlockedByUser(err) {
-			note = "🚫 Пользователь заблокировал бота — ответ не доставлен."
+			note = i18n.T(i18n.Default, "support.userBlocked")
 		}
 		if _, err := client.SendTopic(ctx, set.TGSupportGroupID, m.MessageThreadID, note); err != nil {
 			log.Printf("telegram support: notice to topic %d: %v", m.MessageThreadID, err)
@@ -404,7 +420,7 @@ func (s *SupportService) ensureTopic(ctx context.Context, client *Client, set *m
 		// Telegram answered OK without a thread id. Storing 0 would address the
 		// General thread, where replies are dropped by the thread guard and no
 		// recovery path ever fires — that user's support would be dead for good.
-		return 0, false, errors.New("telegram вернул пустой id темы")
+		return 0, false, errors.New("telegram returned an empty topic id")
 	}
 	if err = s.store.SetSupportTopic(set.TGSupportGroupID, chatID, topicID, time.Now().Unix()); err != nil {
 		// The topic exists in Telegram but nothing can address it, and the next
@@ -457,19 +473,21 @@ func topicTitle(u model.User, linked bool, m *Message) string {
 
 // topicCard is the pinned first post of a topic: who this is, and how the thread
 // behaves.
+// The card is posted into the operators' support group, so it is written in the
+// panel's own language — not the user's, whose language governs only what the bot
+// sends back to them.
 func topicCard(u model.User, linked bool, m *Message, set *model.Settings, panel Panel) string {
 	var b strings.Builder
 	if linked {
-		b.WriteString(userSelfCard(u, set, panel))
+		b.WriteString(userSelfCard(u, set, panel, i18n.Default))
 	} else {
-		b.WriteString("👤 <b>Не зарегистрирован</b>\n")
+		b.WriteString(i18n.T(i18n.Default, "support.notRegistered") + "\n")
 		if m.From != nil && m.From.Username != "" {
 			fmt.Fprintf(&b, "Telegram: @%s\n", esc(m.From.Username))
 		}
 		fmt.Fprintf(&b, "Chat ID: <code>%d</code>", m.Chat.ID)
 	}
-	b.WriteString("\n\n<i>Ответьте в этой теме — сообщение уйдёт пользователю. Строка, начинающаяся с " +
-		internalNotePrefix + ", остаётся между админами.</i>")
+	b.WriteString("\n\n" + i18n.T(i18n.Default, "support.topicHint", internalNotePrefix))
 	return b.String()
 }
 
@@ -504,8 +522,7 @@ func hasInternalNote(body string) bool {
 // reason to believe it was delivered.
 func (s *SupportService) warnWithheld(ctx context.Context, client *Client, set *model.Settings, m *Message) {
 	if _, err := client.SendTopic(ctx, set.TGSupportGroupID, m.MessageThreadID,
-		"🔒 Не отправлено: строка с <code>"+internalNotePrefix+"</code> делает внутренним всё сообщение "+
-			"целиком. Пришлите заметку отдельным сообщением."); err != nil {
+		i18n.T(i18n.Default, "support.internalWholeMessage", internalNotePrefix)); err != nil {
 		log.Printf("telegram support: withheld notice in %d: %v", m.MessageThreadID, err)
 	}
 }
@@ -524,8 +541,7 @@ func (s *SupportService) noteOrphanTopic(ctx context.Context, client *Client, se
 		return
 	}
 	if _, err := client.SendTopic(ctx, set.TGSupportGroupID, threadID,
-		"⚠️ Эта тема не связана с пользователем — ответы из неё не доставляются. "+
-			"Так бывает у тем, созданных вручную или оставшихся от другой группы поддержки."); err != nil {
+		i18n.T(i18n.Default, "support.orphanTopic")); err != nil {
 		log.Printf("telegram support: orphan notice in %d: %v", threadID, err)
 	}
 }

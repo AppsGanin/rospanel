@@ -22,7 +22,7 @@ func TestTelegramRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected telegram defaults: %+v", set)
 	}
 
-	if err := st.SetTelegramBot(true, "123456:ABC", "0 3 * * *"); err != nil {
+	if err := st.SetTelegramBot(true, "123456:ABC", "0 3 * * *", ""); err != nil {
 		t.Fatalf("SetTelegramBot: %v", err)
 	}
 	if err := st.SetTelegramChats("111,222"); err != nil {

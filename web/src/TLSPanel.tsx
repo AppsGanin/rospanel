@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { getTLS, setACME, type TLSStatus } from "./api";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { Badge, Button, Select, Skeleton, TextInput } from "./ui";
@@ -19,6 +20,7 @@ export function TLSPanel({
   redirectOnSuccess?: boolean;
   onChanged?: () => void;
 } = {}) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<TLSStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [target, setTarget] = useState("");
@@ -43,18 +45,18 @@ export function TLSPanel({
   }, [status]);
 
   const issue = async () => {
-    const t = target.trim();
+    const host = target.trim();
     setBusy(true);
     try {
-      const s = await save(t, email.trim(), provider);
+      const s = await save(host, email.trim(), provider);
       setStatus(s);
       if (redirectOnSuccess) {
-        notifySuccess("Домен изменён — переходим на новый адрес…");
+        notifySuccess(t("tls.changedRedirect"));
         setTimeout(() => {
-          window.location.href = `https://${t}${window.location.pathname}${window.location.hash}`;
+          window.location.href = `https://${host}${window.location.pathname}${window.location.hash}`;
         }, 2500);
       } else {
-        notifySuccess("Домен изменён — сертификат перевыпустится на новом адресе");
+        notifySuccess(t("tls.changedReissue"));
         setBusy(false);
         onChanged?.();
       }
@@ -84,30 +86,30 @@ export function TLSPanel({
   const valid = cert && cert.issuer && cert.issuer !== cert.subject;
   const certLabel = valid
     ? status?.acme_provider === "zerossl"
-      ? "валидный (ZeroSSL)"
-      : "валидный (Let's Encrypt)"
-    : "временный";
+      ? t("tls.validZerossl")
+      : t("tls.validLetsencrypt")
+    : t("tls.temporary");
 
   const isZeroSSL = provider === "zerossl";
-  const t = target.trim();
+  const host = target.trim();
   const e = email.trim();
-  const targetErr = t !== "" && !isValidACMETarget(t, isZeroSSL);
+  const targetErr = host !== "" && !isValidACMETarget(host, isZeroSSL);
   const emailErr = e !== "" && !isValidEmail(e);
   const emailMissing = isZeroSSL && e === "";
-  const disabled = t === "" || targetErr || emailErr || emailMissing;
+  const disabled = host === "" || targetErr || emailErr || emailMissing;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div className="min-w-0">
-            <p className="text-sm text-ink-muted">Текущий адрес</p>
+            <p className="text-sm text-ink-muted">{t("tls.currentAddress")}</p>
             <p className="break-all text-lg font-bold text-ink">
               {status?.domain || "—"}
             </p>
             {cert && (
               <p className="mt-1 text-sm text-ink-muted">
-                сертификат: {cert.issuer || "—"} · ещё {cert.days_left} дн.
+                {t("tls.certLine", { issuer: cert.issuer || "—", days: cert.days_left })}
               </p>
             )}
           </div>
@@ -121,20 +123,22 @@ export function TLSPanel({
 
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <div className="flex flex-col gap-3">
-          <p className="font-semibold">Сменить домен</p>
+          <p className="font-semibold">{t("tls.changeDomain")}</p>
           <p className="text-sm text-ink-muted">
-            Укажи <b>домен</b>, направленный на этот сервер,{" "}
-            <b>или IP сервера</b>. Должен быть открыт порт <b>80</b>. После
-            смены {redirectOnSuccess ? "панель и подписки" : "нода и её ссылки"}{" "}
-            начнут использовать новый адрес.
+            <Trans
+              i18nKey={
+                redirectOnSuccess ? "tls.changeHintPanel" : "tls.changeHintNode"
+              }
+              components={{ b: <b /> }}
+            />
           </p>
           <div>
             <TextInput
-              label={isZeroSSL ? "Новый домен" : "Новый домен или IP"}
+              label={isZeroSSL ? t("tls.newDomain") : t("tls.newDomainOrIp")}
               placeholder={
                 isZeroSSL
                   ? "vpn.example.com"
-                  : "vpn.example.com или 144.31.159.81"
+                  : t("wizard.domainOrIpPlaceholder")
               }
               value={target}
               onChange={setTarget}
@@ -142,8 +146,8 @@ export function TLSPanel({
             {targetErr && (
               <p className="mt-1 text-xs text-danger">
                 {isZeroSSL
-                  ? "Введите домен (ZeroSSL не выдаёт сертификаты на IP)."
-                  : "Введите корректный домен или IP-адрес."}
+                  ? t("wizard.errDomainOnly")
+                  : t("wizard.errBadTarget")}
               </p>
             )}
           </div>
@@ -151,8 +155,8 @@ export function TLSPanel({
             <TextInput
               label={
                 isZeroSSL
-                  ? "E-mail (обязательно для ZeroSSL)"
-                  : "E-mail (необязательно)"
+                  ? t("wizard.emailRequired")
+                  : t("wizard.emailOptional")
               }
               placeholder="you@example.com"
               value={email}
@@ -160,12 +164,12 @@ export function TLSPanel({
             />
             {emailErr && (
               <p className="mt-1 text-xs text-danger">
-                Введите корректный e-mail.
+                {t("wizard.errBadEmail")}
               </p>
             )}
           </div>
           <Select
-            label="Центр сертификации"
+            label={t("wizard.certAuthority")}
             value={provider}
             onChange={setProvider}
             data={[
@@ -175,21 +179,19 @@ export function TLSPanel({
           />
           {isZeroSSL && (
             <p className="text-sm text-ink-muted">
-              ZeroSSL поддерживает только домены. EAB-ключи будут получены
-              автоматически по указанному e-mail.
+              {t("wizard.zerosslNote")}
             </p>
           )}
           {!isZeroSSL && (
             <p className="text-sm text-ink-muted">
-              Let's Encrypt выдаёт сертификаты на домены и IP (на IP ~6 дней,
-              продлеваются автоматически).
+              {t("wizard.letsencryptNote")}
             </p>
           )}
           <Button loading={busy} disabled={disabled} onClick={issue}>
-            {busy ? "Меняю домен…" : "Сменить домен"}
+            {busy ? t("tls.changing") : t("tls.changeDomain")}
           </Button>
           <p className="text-xs text-ink-muted">
-            Занимает 10–30 секунд (проверка через порт 80).
+            {t("tls.takesSeconds")}
           </p>
         </div>
       </div>

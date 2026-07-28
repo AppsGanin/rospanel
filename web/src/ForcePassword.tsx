@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { setupPassword } from "./api";
+import { LangPills } from "./LangSwitch";
 import { useAction } from "./hooks";
 import { BrandLogo } from "./Logo";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -17,21 +19,22 @@ export function ForcePassword({
   username: string;
   onDone: () => void;
 }) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const { busy, run } = useAction();
 
   const submit = () => {
     if (password.length < 8) {
-      return notifyError("Пароль должен быть не короче 8 символов");
+      return notifyError(t("password.tooShort"));
     }
     if (password !== confirm) {
-      return notifyError("Пароли не совпадают");
+      return notifyError(t("password.mismatch"));
     }
     run(async () => {
       try {
         await setupPassword(password);
-        notifySuccess("Пароль изменён");
+        notifySuccess(t("password.changed"));
         onDone();
       } catch (e) {
         notifyError(errMessage(e));
@@ -41,6 +44,7 @@ export function ForcePassword({
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-4">
+      <LangPills className="fixed right-3 top-3" />
       <Card className="w-full max-w-sm animate-fade-in-up p-6">
         <form
           className="flex flex-col gap-3"
@@ -53,22 +57,25 @@ export function ForcePassword({
             <BrandLogo size={32} />
           </div>
           <p className="text-center text-sm text-ink-muted">
-            Вы вошли как <b className="text-ink">{username}</b> с временным
-            паролем. Придумайте свой — до этого панель закрыта.
+            <Trans
+              i18nKey="password.forcedIntro"
+              values={{ username }}
+              components={{ b: <b className="text-ink" /> }}
+            />
           </p>
           <PasswordInput
-            label="Новый пароль"
+            label={t("password.new")}
             value={password}
             onChange={setPassword}
             autoFocus
           />
           <PasswordInput
-            label="Повторите пароль"
+            label={t("password.repeat")}
             value={confirm}
             onChange={setConfirm}
           />
           <Button type="submit" loading={busy} fullWidth>
-            Сохранить и войти
+            {t("password.saveAndEnter")}
           </Button>
         </form>
       </Card>

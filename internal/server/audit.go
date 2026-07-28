@@ -22,7 +22,7 @@ import (
 
 // auditRoute is what one route records: the action key, and — for the settings
 // routes, which all share a single action — the section it touched, which lands in
-// the row's target so the journal reads "Изменение настроек · Маршрутизация".
+// the row's target so the journal reads "Settings changed · Routing".
 type auditRoute struct {
 	action  string
 	section string
@@ -32,8 +32,15 @@ type auditRoute struct {
 var skip = auditRoute{}
 
 // set builds a settings row: one action for every section of the settings.
+//
+// The argument is a dictionary key leaf, not a label. It is stored in the row's
+// target and rendered by the PANEL — the journal has to read in whichever language
+// the admin picked in their browser, and the server cannot know that. The stored
+// value is prefixed so the panel can tell a section apart from the other things a
+// target can hold (an admin login, an API key name), which are free-form and pass
+// through verbatim.
 func set(section string) auditRoute {
-	return auditRoute{action: model.AuditSettings, section: section}
+	return auditRoute{action: model.AuditSettings, section: model.AuditSectionPrefix + section}
 }
 
 func act(action string) auditRoute { return auditRoute{action: action} }
@@ -56,34 +63,34 @@ var auditActions = map[string]auditRoute{
 	"DELETE /api/admins/{id}":        act(model.AuditAdminDeleted),
 
 	// Settings — one action, the section in the target.
-	"POST /api/settings/branding":        set("Брендинг"),
-	"POST /api/settings/branding/logo":   set("Брендинг · логотип"),
-	"DELETE /api/settings/branding/logo": set("Брендинг · логотип удалён"),
-	"POST /api/settings/secret":          set("Секретный путь"),
-	"POST /api/settings/decoy":           set("Заглушка"),
-	"POST /api/settings/subscription":    set("Подписки"),
-	"POST /api/settings/dns":             set("DNS"),
-	"POST /api/settings/proxy-mode":      set("Режим прокси"),
-	"POST /api/settings/local-backup":    set("Локальные бэкапы"),
-	"POST /api/settings/autodelete":      set("Автоудаление истёкших"),
-	"POST /api/settings/abuse":           set("Блоклисты"),
-	"POST /api/settings/abuse/refresh":   set("Обновление блоклистов"),
-	"POST /api/settings/api-path":        set("Адрес API"),
-	"POST /api/setup/timezone":           set("Часовой пояс"),
-	"POST /api/setup/finish":             set("Первичная настройка"),
-	"POST /api/routing":                  set("Маршрутизация"),
-	"POST /api/connections":              set("Подключения"),
-	"POST /api/geo/update":               set("Geo-базы"),
-	"POST /api/geo/lists/update":         set("Списки iplist"),
-	"POST /api/geo/lists/cadence":        set("Списки iplist · автообновление"),
-	"POST /api/geo/cadence":              set("Geo-базы · автообновление"),
-	"POST /api/tls":                      set("TLS-сертификат"),
-	"POST /api/telegram":                 set("Telegram"),
-	"POST /api/telegram/link":            set("Telegram · привязка"),
-	"POST /api/telegram/link/cancel":     set("Telegram · привязка отменена"),
-	"POST /api/telegram/unlink":          set("Telegram · отвязка"),
-	"POST /api/telegram/test-backup":     set("Telegram · тестовый бэкап"),
-	"POST /api/telegram/support/check":   set("Telegram · проверка группы поддержки"),
+	"POST /api/settings/branding":        set("branding"),
+	"POST /api/settings/branding/logo":   set("brandingLogo"),
+	"DELETE /api/settings/branding/logo": set("brandingLogoDeleted"),
+	"POST /api/settings/secret":          set("secretPath"),
+	"POST /api/settings/decoy":           set("decoy"),
+	"POST /api/settings/subscription":    set("subscriptions"),
+	"POST /api/settings/dns":             set("dns"),
+	"POST /api/settings/proxy-mode":      set("proxyMode"),
+	"POST /api/settings/local-backup":    set("localBackups"),
+	"POST /api/settings/autodelete":      set("autodelete"),
+	"POST /api/settings/abuse":           set("blocklists"),
+	"POST /api/settings/abuse/refresh":   set("blocklistsRefresh"),
+	"POST /api/settings/api-path":        set("apiPath"),
+	"POST /api/setup/timezone":           set("timezone"),
+	"POST /api/setup/finish":             set("setupFinish"),
+	"POST /api/routing":                  set("routing"),
+	"POST /api/connections":              set("connections"),
+	"POST /api/geo/update":               set("geo"),
+	"POST /api/geo/lists/update":         set("iplist"),
+	"POST /api/geo/lists/cadence":        set("iplistCadence"),
+	"POST /api/geo/cadence":              set("geoCadence"),
+	"POST /api/tls":                      set("tls"),
+	"POST /api/telegram":                 set("telegram"),
+	"POST /api/telegram/link":            set("tgLink"),
+	"POST /api/telegram/link/cancel":     set("tgLinkCancel"),
+	"POST /api/telegram/unlink":          set("tgUnlink"),
+	"POST /api/telegram/test-backup":     set("tgTestBackup"),
+	"POST /api/telegram/support/check":   set("tgSupportCheck"),
 
 	"POST /api/broadcasts":             act(model.AuditBroadcastStarted),
 	"POST /api/broadcasts/test":        act(model.AuditBroadcastTest),
@@ -91,11 +98,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/broadcasts/{id}/resume": act(model.AuditBroadcastChanged),
 	"POST /api/broadcasts/{id}/cancel": act(model.AuditBroadcastChanged),
 	"POST /api/broadcasts/{id}/retry":  act(model.AuditBroadcastChanged),
-	"POST /api/billing":                set("Биллинг"),
-	"POST /api/payments":               set("Приём платежей"),
+	"POST /api/billing":                set("billing"),
+	"POST /api/payments":               set("payments"),
 
 	// Tariff plans keep their own actions: they are objects with a lifecycle, not a
-	// settings form — "тариф удалён" is a different question from "кто трогал настройки".
+	// settings form — "a plan was deleted" is a different question from "who touched the settings".
 	"POST /api/billing/plans":              act(model.AuditPlanSaved),
 	"DELETE /api/billing/plans/{id}":       act(model.AuditPlanDeleted),
 	"POST /api/billing/plans/{id}/migrate": act(model.AuditPlanMigrated),
@@ -109,7 +116,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/registrations/{id}/reject":  skip,
 
 	// API keys and webhooks: credentials and outbound endpoints, each with its own
-	// lifecycle — worth their own rows, not folded into "настройки".
+	// lifecycle — worth their own rows, not folded into "settings".
 	"POST /api/apikeys":            act(model.AuditAPIKeyCreated),
 	"DELETE /api/apikeys/{id}":     act(model.AuditAPIKeyRevoked),
 	"POST /api/webhooks":           act(model.AuditWebhookCreated),
@@ -119,40 +126,40 @@ var auditActions = map[string]auditRoute{
 
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.
-	"POST /api/nodes":                   set("Нода добавлена"),
-	"POST /api/nodes/master-name":       set("Имя мастера в конфигах"),
-	"POST /api/nodes/master-protocols":  set("Протоколы мастера"),
-	"POST /api/nodes/master-reality":    set("REALITY мастера"),
-	"PATCH /api/nodes/{id}":             set("Нода изменена"),
-	"POST /api/nodes/{id}/routing":      set("Нода · роутинг"),
-	"POST /api/nodes/{id}/dns":          set("Нода · DNS"),
-	"POST /api/nodes/{id}/reality":      set("Нода · REALITY"),
-	"POST /api/nodes/{id}/connections":  set("Нода · подключения"),
-	"POST /api/nodes/{id}/tls":          set("Нода · домен/TLS"),
-	"POST /api/nodes/{id}/geo-refresh":  set("Нода · обновление geo"),
-	"POST /api/nodes/{id}/geo-cadence":  set("Нода · автообновление geo"),
-	"DELETE /api/nodes/{id}":            set("Нода удалена"),
-	"POST /api/nodes/{id}/enabled":      set("Нода вкл/выкл"),
-	"POST /api/nodes/{id}/regen-join":   set("Нода · новый токен установки"),
-	"POST /api/nodes/{id}/update":       set("Нода · обновление"),
-	"POST /api/nodes/{id}/xray-restart": set("Нода · перезапуск Xray"),
-	"POST /api/nodes/update-all":        set("Обновление всех нод"),
-	"POST /api/nodes/{id}/provision":    set("Нода · установка по SSH"),
+	"POST /api/nodes":                   set("nodeAdded"),
+	"POST /api/nodes/master-name":       set("masterName"),
+	"POST /api/nodes/master-protocols":  set("masterProtocols"),
+	"POST /api/nodes/master-reality":    set("masterReality"),
+	"PATCH /api/nodes/{id}":             set("nodeChanged"),
+	"POST /api/nodes/{id}/routing":      set("nodeRouting"),
+	"POST /api/nodes/{id}/dns":          set("nodeDns"),
+	"POST /api/nodes/{id}/reality":      set("nodeReality"),
+	"POST /api/nodes/{id}/connections":  set("nodeConnections"),
+	"POST /api/nodes/{id}/tls":          set("nodeTls"),
+	"POST /api/nodes/{id}/geo-refresh":  set("nodeGeoRefresh"),
+	"POST /api/nodes/{id}/geo-cadence":  set("nodeGeoCadence"),
+	"DELETE /api/nodes/{id}":            set("nodeDeleted"),
+	"POST /api/nodes/{id}/enabled":      set("nodeToggled"),
+	"POST /api/nodes/{id}/regen-join":   set("nodeNewToken"),
+	"POST /api/nodes/{id}/update":       set("nodeUpdate"),
+	"POST /api/nodes/{id}/xray-restart": set("nodeXrayRestart"),
+	"POST /api/nodes/update-all":        set("nodesUpdateAll"),
+	"POST /api/nodes/{id}/provision":    set("nodeProvision"),
 
 	// Custom inbounds. Each of these opens, changes or closes a public listener on a
 	// server, so all four are recorded.
-	"POST /api/servers/{id}/inbounds":       set("Подключение добавлено"),
-	"POST /api/inbounds/{id}":               set("Подключение изменено"),
-	"DELETE /api/inbounds/{id}":             set("Подключение удалено"),
-	"POST /api/inbounds/{id}/regen-reality": set("Подключение · новые ключи REALITY"),
+	"POST /api/servers/{id}/inbounds":       set("inboundAdded"),
+	"POST /api/inbounds/{id}":               set("inboundChanged"),
+	"DELETE /api/inbounds/{id}":             set("inboundDeleted"),
+	"POST /api/inbounds/{id}/regen-reality": set("inboundRegenReality"),
 
 	// User groups: what connections a member may reach. A grant change alters access
 	// for everyone in the group, so all four are recorded.
-	"POST /api/groups":              set("Группа добавлена"),
-	"POST /api/groups/{id}":         set("Группа изменена"),
-	"DELETE /api/groups/{id}":       set("Группа удалена"),
-	"POST /api/groups/{id}/members": set("Группа · участники"),
-	"POST /api/users/{id}/groups":   set("Группы пользователя"),
+	"POST /api/groups":              set("groupAdded"),
+	"POST /api/groups/{id}":         set("groupChanged"),
+	"DELETE /api/groups/{id}":       set("groupDeleted"),
+	"POST /api/groups/{id}/members": set("groupMembers"),
+	"POST /api/users/{id}/groups":   set("userGroups"),
 
 	// The panel itself. The backup download is a GET, but it hands over a file
 	// containing every secret the panel holds — that is worth a row.

@@ -11,11 +11,11 @@ func TestIPMatchCIDRAndBoundaries(t *testing.T) {
 	m.SetIP(CatBadIP, []string{"10.0.0.0/24", "192.0.2.5", "2001:db8::/32"})
 
 	hit := []string{
-		"10.0.0.0",     // network address
-		"10.0.0.1",     //
-		"10.0.0.255",   // broadcast / last in /24
-		"192.0.2.5",    // single host
-		"2001:db8::1",  // inside v6 prefix
+		"10.0.0.0",    // network address
+		"10.0.0.1",    //
+		"10.0.0.255",  // broadcast / last in /24
+		"192.0.2.5",   // single host
+		"2001:db8::1", // inside v6 prefix
 		"2001:db8:ffff:ffff::1",
 	}
 	for _, ip := range hit {
@@ -25,9 +25,9 @@ func TestIPMatchCIDRAndBoundaries(t *testing.T) {
 	}
 
 	miss := []string{
-		"10.0.1.0",   // just past the /24
+		"10.0.1.0", // just past the /24
 		"9.255.255.255",
-		"192.0.2.4",  // adjacent to the single host
+		"192.0.2.4", // adjacent to the single host
 		"192.0.2.6",
 		"2001:db9::1", // just past the v6 /32
 		"8.8.8.8",

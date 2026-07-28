@@ -1,5 +1,6 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type BulkAction,
   bulkUsers,
@@ -10,13 +11,14 @@ import {
   type User,
 } from "./api";
 import { useAction } from "./hooks";
+import i18n, { currentLang } from "./i18n";
 import {
   fmtExpire,
   fmtQuota,
   gbToBytes,
   isOnline,
-  QUOTA_OPTIONS,
-  RESET_PERIODS,
+  quotaOptions,
+  resetPeriods,
   statusInfo,
 } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -64,21 +66,21 @@ function UsersSkeleton() {
 }
 
 // Status filter options for the toolbar (keys match User.status).
-const STATUS_FILTERS = [
-  { value: "all", label: "Все статусы" },
-  { value: "active", label: "Активные" },
-  { value: "disabled", label: "Выключенные" },
-  { value: "expired", label: "Истёкшие" },
-  { value: "limited", label: "Лимит трафика" },
-  { value: "device_limited", label: "Лимит устройств" },
+const statusFilters = () => [
+  { value: "all", label: i18n.t("usersPanel.fAll") },
+  { value: "active", label: i18n.t("usersPanel.fActive") },
+  { value: "disabled", label: i18n.t("usersPanel.fDisabled") },
+  { value: "expired", label: i18n.t("usersPanel.fExpired") },
+  { value: "limited", label: i18n.t("usersPanel.fLimited") },
+  { value: "device_limited", label: i18n.t("usersPanel.fDeviceLimited") },
 ];
 
-const SORTS = [
-  { value: "new", label: "Сначала новые" },
-  { value: "name", label: "По имени" },
-  { value: "traffic", label: "По трафику" },
-  { value: "expiry", label: "По сроку" },
-  { value: "online", label: "По онлайну" },
+const sorts = () => [
+  { value: "new", label: i18n.t("usersPanel.sNew") },
+  { value: "name", label: i18n.t("usersPanel.sName") },
+  { value: "traffic", label: i18n.t("usersPanel.sTraffic") },
+  { value: "expiry", label: i18n.t("usersPanel.sExpiry") },
+  { value: "online", label: i18n.t("usersPanel.sOnline") },
 ];
 
 const EXTEND_PRESETS = [7, 30, 90, 180];
@@ -88,6 +90,7 @@ const PAGE_SIZE = 100;
 const expSortKey = (u: User) => (u.expire_at > 0 ? u.expire_at : Infinity);
 
 export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
@@ -144,7 +147,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
     const arr = [...filtered];
     switch (sort) {
       case "name":
-        arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        arr.sort((a, b) => a.name.localeCompare(b.name, currentLang()));
         break;
       case "traffic":
         arr.sort(
@@ -202,7 +205,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
     setPending(action);
     try {
       const { affected } = await bulkUsers(ids, action, days);
-      notifySuccess(`Готово — затронуто пользователей: ${affected}`);
+      notifySuccess(t("usersPanel.bulkDone", { count: affected }));
       clearSelection();
       setExtendOpen(false);
       setConfirmDelete(false);
@@ -215,28 +218,28 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
   };
 
   // confirmBulk asks for confirmation before an immediate bulk action (these hit
-  // many users at once and aren't trivially reversible), then runs it. "Продлить"
-  // and "Удалить" have their own dedicated dialogs.
+  // many users at once and aren't trivially reversible), then runs it. Extend and
+  // delete have their own dedicated dialogs.
   const confirmBulk = async (action: "enable" | "disable" | "reset") => {
     const n = selected.size;
     const opts =
       action === "enable"
         ? {
-            title: "Включить пользователей",
-            body: `Включить выбранных пользователей (${n})?`,
-            confirmLabel: "Включить",
+            title: t("usersPanel.enableTitle"),
+            body: t("usersPanel.enableBody", { count: n }),
+            confirmLabel: t("usersPanel.enable"),
           }
         : action === "disable"
           ? {
-              title: "Выключить пользователей",
-              body: `Выключить выбранных (${n})? Они потеряют доступ к VPN, пока вы не включите их обратно.`,
-              confirmLabel: "Выключить",
+              title: t("usersPanel.disableTitle"),
+              body: t("usersPanel.disableBody", { count: n }),
+              confirmLabel: t("usersPanel.disable"),
               danger: true,
             }
           : {
-              title: "Сбросить трафик",
-              body: `Обнулить счётчики трафика у выбранных (${n})? Лимит начнёт считаться заново; действие необратимо.`,
-              confirmLabel: "Сбросить",
+              title: t("usersPanel.resetTitle"),
+              body: t("usersPanel.resetBody", { count: n }),
+              confirmLabel: t("usersPanel.reset"),
               danger: true,
             };
     if (await confirm(opts)) runBulk(action);
@@ -249,19 +252,19 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
     const cls = grid ? "" : "shrink-0";
     return [
       <Button key="enable" size="sm" variant="light" fullWidth={grid} className={cls} loading={pending === "enable"} disabled={pending !== null} onClick={() => confirmBulk("enable")}>
-        Включить
+        {t("usersPanel.enable")}
       </Button>,
       <Button key="disable" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "disable"} disabled={pending !== null} onClick={() => confirmBulk("disable")}>
-        Выключить
+        {t("usersPanel.disable")}
       </Button>,
       <Button key="reset" size="sm" variant="light" color="gray" fullWidth={grid} className={cls} loading={pending === "reset"} disabled={pending !== null} onClick={() => confirmBulk("reset")}>
-        Сбросить трафик
+        {t("usersPanel.resetTraffic")}
       </Button>,
       <Button key="extend" size="sm" variant="light" fullWidth={grid} className={cls} disabled={pending !== null} onClick={() => setExtendOpen(true)}>
-        Продлить
+        {t("usersPanel.extend")}
       </Button>,
       <Button key="delete" size="sm" variant="light" color="red" fullWidth={grid} className={grid ? "col-span-2" : "shrink-0"} disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
-        Удалить
+        {t("common.delete")}
       </Button>,
     ];
   };
@@ -272,7 +275,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
     return (
       <>
         <p className="py-12 text-center text-ink-muted">
-          Пока нет пользователей. Нажмите кнопку «+» внизу справа.
+          {t("usersPanel.emptyHint")}
         </p>
         <AddFab onClick={() => setAddOpen(true)} />
         <AddUser
@@ -295,26 +298,26 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
           <TextInput
             value={query}
             onChange={setQuery}
-            placeholder="Поиск по имени или ID…"
+            placeholder={t("groups.searchUsers")}
           />
         </div>
         <div className="sm:w-48 sm:shrink-0">
           <Select
             value={statusFilter}
             onChange={setStatusFilter}
-            data={STATUS_FILTERS}
+            data={statusFilters()}
           />
         </div>
         <div className="sm:w-48 sm:shrink-0">
-          <Select value={sort} onChange={setSort} data={SORTS} />
+          <Select value={sort} onChange={setSort} data={sorts()} />
         </div>
       </div>
 
       <div className="mb-3 flex items-center justify-between gap-3 text-sm text-ink-muted">
         <span>
           {filtered.length === users.length
-            ? `Всего: ${users.length}`
-            : `Найдено: ${filtered.length} из ${users.length}`}
+            ? t("usersPanel.totalN", { count: users.length })
+            : t("usersPanel.foundOf", { found: filtered.length, total: users.length })}
         </span>
         {filtered.length > 0 && (
           <button
@@ -322,15 +325,15 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             className="font-medium text-accent hover:underline"
           >
             {allFilteredSelected
-              ? "Снять выделение"
-              : `Выбрать все (${filtered.length})`}
+              ? t("usersPanel.clearSelection")
+              : t("usersPanel.selectAll", { count: filtered.length })}
           </button>
         )}
       </div>
 
       {filtered.length === 0 ? (
         <p className="py-12 text-center text-ink-muted">
-          Ничего не найдено. Измените поиск или фильтр.
+          {t("usersPanel.noneMatch")}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -346,7 +349,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                   <SelectCheck
                     checked={checked}
                     onChange={(v) => toggleOne(u.id, v)}
-                    label={`Выбрать ${u.name}`}
+                    label={t("usersPanel.selectUser", { name: u.name })}
                   />
                   <Switch
                     checked={u.enabled}
@@ -368,17 +371,17 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                 <div className="mb-3 flex flex-wrap gap-2">
                   <Badge color={st.color as never}>{st.label}</Badge>
                   <Badge color={isOnline(u.last_seen) ? "greenSolid" : "gray"}>
-                    {isOnline(u.last_seen) ? "● онлайн" : "офлайн"}
+                    {isOnline(u.last_seen) ? t("usersPanel.online") : t("usersPanel.offline")}
                   </Badge>
                   <Badge color="brand">
                     {fmtQuota(u.used_up + u.used_down, u.data_limit)}
                   </Badge>
                   {u.expire_at > 0 && (
-                    <Badge color="gray">до {fmtExpire(u.expire_at)}</Badge>
+                    <Badge color="gray">{t("usersPanel.until", { date: fmtExpire(u.expire_at) })}</Badge>
                   )}
                   {u.device_limit > 0 && (
                     <Badge color={u.status === "device_limited" ? "orange" : "gray"}>
-                      {u.active_devices}/{u.device_limit} устр.
+                      {t("usersPanel.devicesShort", { active: u.active_devices, limit: u.device_limit })}
                     </Badge>
                   )}
                   {(u.groups ?? []).map((g) => (
@@ -396,7 +399,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                     target="_blank"
                     className="flex-1"
                   >
-                    Подписка
+                    {t("usersPanel.subscription")}
                   </Button>
                   <Button
                     size="sm"
@@ -405,7 +408,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                     onClick={() => setDetail(u)}
                     className="flex-1"
                   >
-                    Подробнее
+                    {t("usersPanel.details")}
                   </Button>
                 </div>
               </Card>
@@ -423,7 +426,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             disabled={curPage <= 1}
             onClick={() => setPage(curPage - 1)}
           >
-            Назад
+            {t("common.back")}
           </Button>
           <span className="text-sm text-ink-muted">
             {curPage} / {pageCount}
@@ -435,7 +438,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             disabled={curPage >= pageCount}
             onClick={() => setPage(curPage + 1)}
           >
-            Вперёд
+            {t("usersPanel.forward")}
           </Button>
         </div>
       )}
@@ -458,24 +461,24 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             <div className="md:hidden">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-medium text-ink">
-                  Выбрано: {selected.size}
+                  {t("usersPanel.selectedN", { count: selected.size })}
                 </span>
                 <button
                   onClick={clearSelection}
                   disabled={pending !== null}
                   className="text-sm font-medium text-ink-muted hover:text-ink disabled:opacity-60"
                 >
-                  Отмена
+                  {t("common.cancel")}
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">{renderBulkActions(true)}</div>
             </div>
 
             {/* Desktop: single row; actions scroll horizontally only if they don't
-                fit, the label and "Отмена" stay pinned. md breakpoint matches the header. */}
+                fit, the label and Cancel stay pinned. md breakpoint matches the header. */}
             <div className="hidden items-center gap-2 md:flex">
               <span className="shrink-0 text-sm font-medium text-ink">
-                Выбрано: {selected.size}
+                {t("usersPanel.selectedN", { count: selected.size })}
               </span>
               <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
                 {renderBulkActions(false)}
@@ -488,7 +491,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
                 disabled={pending !== null}
                 onClick={clearSelection}
               >
-                Отмена
+                {t("common.cancel")}
               </Button>
             </div>
           </div>
@@ -506,12 +509,11 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
       <Modal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title="Удалить пользователей?"
+        title={t("usersPanel.deleteTitle")}
       >
         <div className="flex flex-col gap-4">
           <p className="text-sm text-ink-muted">
-            Будет удалено пользователей: {selected.size}. Действие необратимо —
-            их подписки и ссылки сразу перестанут работать.
+            {t("usersPanel.deleteBody", { count: selected.size })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -520,7 +522,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
               loading={pending === "delete"}
               onClick={() => runBulk("delete")}
             >
-              Удалить {selected.size}
+              {t("usersPanel.deleteN", { count: selected.size })}
             </Button>
             <Button
               variant="subtle"
@@ -528,7 +530,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
               fullWidth
               onClick={() => setConfirmDelete(false)}
             >
-              Отмена
+              {t("common.cancel")}
             </Button>
           </div>
         </div>
@@ -559,11 +561,12 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
 
 // AddFab is the floating "+" button to add a user.
 function AddFab({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onClick}
-      aria-label="Добавить пользователя"
-      title="Добавить пользователя"
+      aria-label={t("usersPanel.addUser")}
+      title={t("usersPanel.addUser")}
       className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700 hover:shadow-xl active:scale-95"
     >
       <svg
@@ -594,7 +597,7 @@ function SelectCheck({
   label: string;
 }) {
   return (
-    <label className="flex shrink-0 cursor-pointer items-center" title="Выбрать">
+    <label className="flex shrink-0 cursor-pointer items-center" title={i18n.t("usersPanel.select")}>
       <input
         type="checkbox"
         className="sr-only"
@@ -631,14 +634,14 @@ function ExtendModal({
   onApply: (days: number) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [days, setDays] = useState("30");
   const n = Math.floor(Number(days) || 0);
   return (
-    <Modal open={open} onClose={onClose} title="Продлить подписку">
+    <Modal open={open} onClose={onClose} title={t("usersPanel.extendTitle")}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-ink-muted">
-          Срок будет продлён у выбранных пользователей ({count}). Те, у кого срок
-          не задан (бессрочные), не меняются.
+          {t("usersPanel.extendBody", { count })}
         </p>
         <div className="flex flex-wrap gap-2">
           {EXTEND_PRESETS.map((p) => (
@@ -649,12 +652,12 @@ function ExtendModal({
               color="gray"
               onClick={() => setDays(String(p))}
             >
-              +{p} дн.
+              {t("usersPanel.plusDays", { count: p })}
             </Button>
           ))}
         </div>
         <TextInput
-          label="Дней"
+          label={t("usersPanel.days")}
           type="number"
           value={days}
           onChange={setDays}
@@ -666,10 +669,12 @@ function ExtendModal({
             disabled={n <= 0}
             onClick={() => onApply(n)}
           >
-            Продлить на {n > 0 ? n : "—"} дн.
+            {n > 0
+              ? t("usersPanel.extendByDays", { count: n })
+              : t("usersPanel.extend")}
           </Button>
           <Button variant="subtle" color="gray" fullWidth onClick={onClose}>
-            Отмена
+            {t("common.cancel")}
           </Button>
         </div>
       </div>
@@ -689,6 +694,7 @@ function AddUser({
   const [resetPeriod, setResetPeriodState] = useState("none");
   const [expDate, setExpDate] = useState("");
   const [created, setCreated] = useState<User | null>(null);
+  const { t } = useTranslation();
   const { busy, run } = useAction();
   const { copied, copy } = useCopy();
 
@@ -716,45 +722,45 @@ function AddUser({
     <Modal
       open={opened}
       onClose={close}
-      title={created ? "Пользователь создан" : "Новый пользователь"}
+      title={t(created ? "usersPanel.userCreated" : "usersPanel.newUser")}
     >
       {!created ? (
         <div className="flex flex-col gap-3">
           <TextInput
-            label="Имя"
-            placeholder="например, Андрей"
+            label={t("usersPanel.name")}
+            placeholder={t("usersPanel.namePlaceholder")}
             value={name}
             onChange={setName}
             autoFocus
           />
           <div className="grid grid-cols-2 gap-3">
             <DatePicker
-              label="Действует до"
+              label={t("usersPanel.validUntil")}
               value={expDate}
               onChange={setExpDate}
               min={new Date().toISOString().slice(0, 10)}
             />
             <Select
-              label="Лимит трафика"
-              data={QUOTA_OPTIONS}
+              label={t("usersPanel.trafficLimit")}
+              data={quotaOptions()}
               value={limitGb}
               onChange={setLimitGb}
             />
           </div>
           <Select
-            label="Автосброс трафика"
-            data={RESET_PERIODS}
+            label={t("usersPanel.autoReset")}
+            data={resetPeriods()}
             value={resetPeriod}
             onChange={setResetPeriodState}
           />
           <Button loading={busy} onClick={submit}>
-            Создать и показать ссылку
+            {t("usersPanel.createAndShowLink")}
           </Button>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3">
           <p className="text-sm text-ink-muted">
-            Подписка (все протоколы) — отсканируйте или поделитесь ссылкой
+            {t("usersPanel.subQrHint")}
           </p>
           <div className="rounded-lg bg-onaccent p-3">
             <QRCodeSVG value={created.sub_url} size={200} />
@@ -767,7 +773,7 @@ function AddUser({
             color={copied ? "teal" : "brand"}
             onClick={() => copy(created.sub_url)}
           >
-            {copied ? "Скопировано" : "Скопировать ссылку подписки"}
+            {t(copied ? "common.copied" : "usersPanel.copySubLink")}
           </Button>
           <Button
             variant="light"
@@ -775,10 +781,10 @@ function AddUser({
             href={created.sub_url}
             target="_blank"
           >
-            Открыть подписку
+            {t("usersPanel.openSub")}
           </Button>
           <Button variant="subtle" color="gray" fullWidth onClick={close}>
-            Готово
+            {t("common.done")}
           </Button>
         </div>
       )}

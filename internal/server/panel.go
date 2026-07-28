@@ -441,7 +441,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(req.Username)
 	if rt.limiter.blocked(ip, username) {
 		slog.Warn("login: rate-limited", "ip", ip)
-		writeErr(w, http.StatusTooManyRequests, "слишком много попыток, повторите позже")
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyAttempts", "слишком много попыток, повторите позже")
 		return
 	}
 
@@ -464,14 +464,14 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		rt.limiter.fail(ip, username)
 		slog.Warn("login: unknown user", "ip", ip)
 		auditLogin(model.AuditLoginFailed)
-		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
+		writeErrCode(w, http.StatusUnauthorized, "err.badCredentials", "неверный логин или пароль")
 		return
 	}
 	if !auth.VerifyPassword(hash, req.Password) {
 		rt.limiter.fail(ip, username)
 		slog.Warn("login: bad password", "user", username, "ip", ip)
 		auditLogin(model.AuditLoginFailed)
-		writeErr(w, http.StatusUnauthorized, "неверный логин или пароль")
+		writeErrCode(w, http.StatusUnauthorized, "err.badCredentials", "неверный логин или пароль")
 		return
 	}
 	rt.limiter.success(ip, username)
@@ -480,7 +480,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second)
 	if err != nil {
 		slog.Error("login: session creation failed", "err", err)
-		writeErr(w, http.StatusInternalServerError, "не удалось создать сессию")
+		writeErrCode(w, http.StatusInternalServerError, "err.sessionCreateFailed", "не удалось создать сессию")
 		return
 	}
 	// Best-effort: the roster shows it, nothing depends on it, and a failed write
@@ -578,7 +578,7 @@ func (rt *Router) adminID(r *http.Request) (int64, bool) {
 func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password string) bool {
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
 		return false
 	}
 	if !set.SetupDone {
@@ -597,16 +597,16 @@ func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password 
 func (rt *Router) verifyAdminPassword(w http.ResponseWriter, r *http.Request, password string) bool {
 	id, ok := rt.adminID(r)
 	if !ok {
-		writeErr(w, http.StatusUnauthorized, "не авторизован")
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
 		return false
 	}
 	hash, err := rt.mgr.Store().GetAdminHash(id)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
 		return false
 	}
 	if !auth.VerifyPassword(hash, password) {
-		writeErr(w, http.StatusForbidden, "неверный пароль")
+		writeErrCode(w, http.StatusForbidden, "err.wrongPassword", "неверный пароль")
 		return false
 	}
 	return true
@@ -648,16 +648,16 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
 		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "не авторизован")
+			writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
 			return
 		}
 		a, ok := rt.mgr.Store().LookupSession(c.Value)
 		if !ok {
-			writeErr(w, http.StatusUnauthorized, "не авторизован")
+			writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
 			return
 		}
 		if !mustChangeAllowed[r.URL.Path] && a.MustChangePassword {
-			writeErr(w, http.StatusForbidden, "смените пароль, прежде чем пользоваться панелью")
+			writeErrCode(w, http.StatusForbidden, "err.mustChangePassword", "смените пароль, прежде чем пользоваться панелью")
 			return
 		}
 		// Stamp the acting admin onto the context so the audit log can attribute every
@@ -672,14 +672,14 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 // (operator < admin < owner), so the check is a rank comparison — see model.RoleAtLeast.
 //
 // A caller below the tier gets 403, never 401: their session is perfectly valid, so
-// the SPA must show "недостаточно прав" rather than bounce them to the login screen.
+// the SPA must show "not enough permissions" rather than bounce them to the login screen.
 func (rt *Router) requireRole(tier string, next http.HandlerFunc) http.HandlerFunc {
 	return rt.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		a, ok := sessionAdminFrom(r.Context())
 		if !ok || !model.RoleAtLeast(a.Role, tier) {
 			slog.Warn("panel: role check failed",
 				"admin", a.Username, "role", a.Role, "need", tier, "path", r.URL.Path)
-			writeErr(w, http.StatusForbidden, "недостаточно прав")
+			writeErrCode(w, http.StatusForbidden, "err.forbidden", "недостаточно прав")
 			return
 		}
 		next(w, r)

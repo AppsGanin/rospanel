@@ -13,6 +13,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -178,28 +179,28 @@ func (rt *Router) apiMux() http.Handler {
 	}
 
 	hf("GET /v1/nodes", rt.apiListNodes)
-	nodeAudit("POST /v1/nodes", "API · нода добавлена", rt.apiCreateNode)
+	nodeAudit("POST /v1/nodes", "apiNodeAdded", rt.apiCreateNode)
 	id("GET /v1/nodes/{id}", rt.apiGetNode)
-	nodeAudit("PATCH /v1/nodes/{id}", "API · нода изменена", idFn(rt.apiPatchNode))
-	nodeAudit("DELETE /v1/nodes/{id}", "API · нода удалена", idFn(rt.apiDeleteNode))
-	nodeAudit("POST /v1/nodes/{id}/enabled", "API · нода вкл/выкл", idFn(rt.apiSetNodeEnabled))
-	nodeAudit("POST /v1/nodes/{id}/regen-join", "API · нода · новый токен установки", idFn(rt.apiRegenNodeJoin))
-	nodeAudit("POST /v1/nodes/{id}/update", "API · нода · обновление", idFn(rt.apiUpdateNode))
-	nodeAudit("POST /v1/nodes/update-all", "API · обновление всех нод", rt.apiUpdateAllNodes)
+	nodeAudit("PATCH /v1/nodes/{id}", "apiNodeChanged", idFn(rt.apiPatchNode))
+	nodeAudit("DELETE /v1/nodes/{id}", "apiNodeDeleted", idFn(rt.apiDeleteNode))
+	nodeAudit("POST /v1/nodes/{id}/enabled", "apiNodeToggled", idFn(rt.apiSetNodeEnabled))
+	nodeAudit("POST /v1/nodes/{id}/regen-join", "apiNodeRejoin", idFn(rt.apiRegenNodeJoin))
+	nodeAudit("POST /v1/nodes/{id}/update", "apiNodeUpdate", idFn(rt.apiUpdateNode))
+	nodeAudit("POST /v1/nodes/update-all", "apiNodesUpdateAll", rt.apiUpdateAllNodes)
 
 	// Custom inbounds. Every mutation opens, changes or closes a public listener on a
 	// server, so all three are audited the same way node mutations are.
 	hf("GET /v1/groups", rt.apiListGroups)
-	nodeAudit("POST /v1/groups", "API · группа добавлена", rt.apiCreateGroup)
-	nodeAudit("POST /v1/groups/{id}", "API · группа изменена", idFn(rt.apiUpdateGroup))
-	nodeAudit("DELETE /v1/groups/{id}", "API · группа удалена", idFn(rt.apiDeleteGroup))
-	nodeAudit("POST /v1/groups/{id}/members", "API · группа · участники", idFn(rt.apiSetGroupMembers))
-	nodeAudit("POST /v1/users/{id}/groups", "API · группы пользователя", idFn(rt.apiSetUserGroups))
+	nodeAudit("POST /v1/groups", "apiGroupAdded", rt.apiCreateGroup)
+	nodeAudit("POST /v1/groups/{id}", "apiGroupChanged", idFn(rt.apiUpdateGroup))
+	nodeAudit("DELETE /v1/groups/{id}", "apiGroupDeleted", idFn(rt.apiDeleteGroup))
+	nodeAudit("POST /v1/groups/{id}/members", "apiGroupMembers", idFn(rt.apiSetGroupMembers))
+	nodeAudit("POST /v1/users/{id}/groups", "apiUserGroups", idFn(rt.apiSetUserGroups))
 
 	id("GET /v1/servers/{id}/inbounds", rt.apiListInbounds)
-	nodeAudit("POST /v1/servers/{id}/inbounds", "API · подключение добавлено", idFn(rt.apiCreateInbound))
-	nodeAudit("POST /v1/inbounds/{id}", "API · подключение изменено", idFn(rt.apiUpdateInbound))
-	nodeAudit("DELETE /v1/inbounds/{id}", "API · подключение удалено", idFn(rt.apiDeleteInbound))
+	nodeAudit("POST /v1/servers/{id}/inbounds", "apiInboundAdded", idFn(rt.apiCreateInbound))
+	nodeAudit("POST /v1/inbounds/{id}", "apiInboundChanged", idFn(rt.apiUpdateInbound))
+	nodeAudit("DELETE /v1/inbounds/{id}", "apiInboundDeleted", idFn(rt.apiDeleteInbound))
 
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
@@ -256,6 +257,9 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 // apiAudited wraps a mutating /v1 node handler so a successful request lands in the
 // admin audit trail, attributed to the API key's name — the panel's audited middleware
 // doesn't cover this mux. Nothing is recorded on a 4xx/5xx (it didn't happen).
+// section is a dictionary key leaf under audit.sec.*, the same namespace the
+// panel's own audited routes use — the two land in one log and are read by one
+// reader, so they must be worded by one dictionary.
 func (rt *Router) apiAudited(section string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sw := &auditStatus{ResponseWriter: w, code: http.StatusOK}
@@ -266,7 +270,7 @@ func (rt *Router) apiAudited(section string, h http.HandlerFunc) http.HandlerFun
 		a := actor.From(r.Context())
 		rt.mgr.AddAdminAudit(model.AdminAudit{
 			Action:    model.AuditSettings,
-			Target:    section,
+			Target:    model.AuditSectionPrefix + section,
 			ActorKind: a.Kind,
 			ActorName: a.Name,
 			IP:        clientIP(r),
@@ -652,7 +656,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Provider == "" {
-		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), req.UserID, req.PlanID)
+		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID)
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -660,7 +664,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPayment(r.Context(), req.UserID, req.PlanID, req.Provider)
+	order, err := rt.mgr.StartPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, req.Provider)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

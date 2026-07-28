@@ -218,7 +218,7 @@ func TestAuditNoRowForNoOpToggle(t *testing.T) {
 }
 
 // A bulk extend must carry the limits it did NOT touch: the row renders as a full
-// "limits changed" statement, and omitting the quota made it read "без лимита".
+// "limits changed" statement, and omitting the quota made it read "unlimited".
 func TestAuditBulkExtendKeepsLimits(t *testing.T) {
 	m := bulkTestManager(t)
 	ctx := adminCtx()

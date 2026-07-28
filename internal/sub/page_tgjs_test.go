@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ import (
 func TestPageServesTelegramSDKLocally(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{})
+	html, err := Page(u, One(set), Billing{}, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestPageServesTelegramSDKLocally(t *testing.T) {
 func TestPageToleratesMissingSDK(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{})
+	html, err := Page(u, One(set), Billing{}, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

@@ -24,40 +24,40 @@ import (
 
 // printUsage writes the CLI help to w.
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `rospanel `+version.Version+` — панель управления VPN (Xray + sing-box)
+	fmt.Fprint(w, `rospanel `+version.Version+` — VPN control panel (Xray + sing-box)
 
-Использование:
-  rospanel [команда] [аргументы]
+Usage:
+  rospanel [command] [arguments]
 
-Без команды запускается сервер панели (обычно его запускает systemd).
+With no command the panel server starts (normally launched by systemd).
 
-Команды:
-  install            Установить и запустить systemd-сервис (root, только Linux).
-  uninstall [-y]     Удалить systemd-сервис (данные в каталоге данных сохраняются).
-  start              Запустить сервис (systemctl start).
-  stop               Остановить сервис (systemctl stop).
-  restart            Перезапустить сервис (systemctl restart).
-  status             Показать статус сервиса (systemctl status).
-  update [-y]        Обновиться до последнего релиза с GitHub и перезапуститься.
-  node <под>         Режим ноды: install --join '<url>', run, set-panel, status,
-                     uninstall (см. rospanel node help).
-  backup [файл]      Создать бэкап .tar.gz (БД + сертификаты + конфиг Xray).
-                     Без аргумента имя файла — с текущей датой/временем.
-  restore [-y] <файл>
-                     Подготовить восстановление из бэкапа; применится при
-                     следующем старте панели (нужно перезапустить сервис).
-  host [-y] [домен|IP]
-                     Показать текущий адрес или сменить домен/IP (перевыпуск TLS).
-  path               Показать URL панели и проверить secrets.key / БД.
-  reset [-y]         Сброс к заводским настройкам — стирает всю базу данных.
-  version            Показать версию.
-  help               Показать эту справку.
+Commands:
+  install            Install and start the systemd service (root, Linux only).
+  uninstall [-y]     Remove the systemd service (data in the data dir is kept).
+  start              Start the service (systemctl start).
+  stop               Stop the service (systemctl stop).
+  restart            Restart the service (systemctl restart).
+  status             Show the service status (systemctl status).
+  update [-y]        Update to the latest GitHub release and restart.
+  node <sub>         Node mode: install --join '<url>', run, set-panel, status,
+                     uninstall (see rospanel node help).
+  backup [file]      Create a .tar.gz backup (DB + certificates + Xray config).
+                     Without an argument the file is named after the current time.
+  restore [-y] <file>
+                     Stage a restore from a backup; it is applied at the panel's
+                     next start (restart the service).
+  host [-y] [domain|IP]
+                     Show the current address, or change the domain/IP (reissues TLS).
+  path               Show the panel URL and check secrets.key / the database.
+  reset [-y]         Factory reset — wipes the entire database.
+  version            Show the version.
+  help               Show this help.
 
-Флаги:
-  -y, --yes          Не запрашивать подтверждение
-                     (для update, reset, uninstall, restore, host).
+Flags:
+  -y, --yes          Don't ask for confirmation
+                     (for update, reset, uninstall, restore, host).
 
-Примеры:
+Examples:
   sudo rospanel install
   rospanel backup /root/rospanel.tar.gz
   rospanel restore /root/rospanel.tar.gz && systemctl restart rospanel
@@ -83,11 +83,11 @@ func runRestore(dataDir string, args []string) {
 		log.Fatal("usage: rospanel restore [-y] <backup.tar.gz>")
 	}
 	if !hasYesFlag(args) && !confirmTTY(
-		"Восстановление из бэкапа ЗАМЕНИТ все текущие данные при следующем старте панели:\n"+
-			"пользователи, настройки, домен/TLS, секретный путь. Текущие данные будут\n"+
-			"потеряны — сделайте бэкап заранее.\n"+
-			"Продолжить? [y/N]: ") {
-		fmt.Println("Отменено.")
+		"Restoring a backup REPLACES all current data at the panel's next start:\n"+
+			"users, settings, domain/TLS, the secret path. The current data will be\n"+
+			"lost — take a backup first.\n"+
+			"Continue? [y/N]: ") {
+		fmt.Println("Cancelled.")
 		return
 	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
@@ -112,33 +112,33 @@ func firstPositional(args []string) string {
 // runPath prints the panel URL and checks secrets.key / database health.
 func runPath(dataDir string) {
 	if err := datasec.Init(dataDir); err != nil {
-		fmt.Fprintln(os.Stderr, "Ошибка secrets.key:", err)
+		fmt.Fprintln(os.Stderr, "secrets.key error:", err)
 		os.Exit(1)
 	}
 	st, err := store.Open(filepath.Join(dataDir, "rospanel.db"))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Ошибка БД:", err)
+		fmt.Fprintln(os.Stderr, "database error:", err)
 		os.Exit(1)
 	}
 	defer st.Close()
 	set, err := st.GetSettings()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Ошибка настроек:", err)
+		fmt.Fprintln(os.Stderr, "settings error:", err)
 		os.Exit(1)
 	}
 	host := strings.TrimSpace(set.Host)
 	if host == "" {
-		host = "<домен-не-настроен>"
+		host = "<domain-not-configured>"
 	}
 	secret := strings.TrimSpace(set.PanelSecretPath)
 	if secret == "" {
-		fmt.Println("Секретный путь панели ещё не задан (первый запуск?).")
+		fmt.Println("The panel's secret path is not set yet (first run?).")
 		return
 	}
-	fmt.Printf("Панель: https://%s/%s/\n", host, secret)
-	fmt.Printf("Подписки: https://%s/%s/<токен>\n", host, set.SubPathOr())
+	fmt.Printf("Panel: https://%s/%s/\n", host, secret)
+	fmt.Printf("Subscriptions: https://%s/%s/<token>\n", host, set.SubPathOr())
 	if strings.TrimSpace(set.TGBotToken) == "" && set.TGBotEnabled {
-		fmt.Println("ВНИМАНИЕ: админ-бот включён, но токен пуст (проверьте secrets.key).")
+		fmt.Println("WARNING: the admin bot is enabled but its token is empty (check secrets.key).")
 	}
 }
 
@@ -169,11 +169,11 @@ func runHost(dataDir string, args []string) {
 		return
 	}
 	if !hasYesFlag(args) && !confirmTTY(fmt.Sprintf(
-		"Сменить адрес панели на %q?\n"+
-			"  Будет перевыпущен TLS-сертификат (нужен открытый порт 80), а клиентам и\n"+
-			"  подпискам понадобится новый адрес. Сервис перезапустится.\n"+
-			"Продолжить? [y/N]: ", host)) {
-		fmt.Println("Отменено.")
+		"Change the panel address to %q?\n"+
+			"  The TLS certificate will be reissued (port 80 must be open), and clients\n"+
+			"  and subscriptions will need the new address. The service will restart.\n"+
+			"Continue? [y/N]: ", host)) {
+		fmt.Println("Cancelled.")
 		return
 	}
 	certPath := filepath.Join(dataDir, "certs", "cert.pem")
@@ -308,10 +308,10 @@ func runUninstall(args []string) {
 		log.Fatal("uninstall: run as root (sudo)")
 	}
 	if !hasYesFlag(args) && !confirmTTY(
-		"Удалить systemd-сервис rospanel? Панель будет остановлена.\n"+
-			"Данные в каталоге данных (/var/lib/rospanel) сохранятся, бинарь не удаляется.\n"+
-			"Продолжить? [y/N]: ") {
-		fmt.Println("Отменено.")
+		"Remove the rospanel systemd service? The panel will be stopped.\n"+
+			"Data in the data dir (/var/lib/rospanel) is kept, and the binary is not removed.\n"+
+			"Continue? [y/N]: ") {
+		fmt.Println("Cancelled.")
 		return
 	}
 	_ = exec.Command("systemctl", "disable", "--now", "rospanel").Run()
@@ -325,7 +325,7 @@ func runUninstall(args []string) {
 // runService controls the systemd unit: start / stop / restart / status.
 func runService(action string) {
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		log.Fatalf("%s: systemctl не найден (управление сервисом доступно только на Linux + systemd)", action)
+		log.Fatalf("%s: systemctl not found (service control needs Linux + systemd)", action)
 	}
 	c := exec.Command("systemctl", action, "rospanel")
 	c.Stdout, c.Stderr = os.Stdout, os.Stderr
@@ -334,9 +334,9 @@ func runService(action string) {
 		return // `status` exits non-zero when inactive; its output is already shown
 	}
 	if err != nil {
-		log.Fatalf("%s: не удалось (%v) — нужен root, попробуйте sudo", action, err)
+		log.Fatalf("%s: failed (%v) — needs root, try sudo", action, err)
 	}
-	log.Printf("%s: готово", action)
+	log.Printf("%s: done", action)
 }
 
 // copyFile copies src to dst atomically (write to .new, then rename) with mode.
@@ -379,46 +379,46 @@ func runUpdate(args []string) {
 		repo = r
 	}
 
-	fmt.Printf("Текущая версия: v%s\n", version.Version)
+	fmt.Printf("Current version: v%s\n", version.Version)
 	rel, err := updater.Latest(ctx, repo)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Ошибка:", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 	if !updater.IsNewer(rel.Version, version.Version) {
-		fmt.Println("У вас последняя версия.")
+		fmt.Println("You are on the latest version.")
 		return
 	}
 	if rel.AssetURL == "" {
-		fmt.Fprintf(os.Stderr, "В релизе v%s нет файла %s.\n", rel.Version, updater.AssetName)
+		fmt.Fprintf(os.Stderr, "Release v%s has no %s asset.\n", rel.Version, updater.AssetName)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Доступна версия v%s.\n", rel.Version)
+	fmt.Printf("Version v%s is available.\n", rel.Version)
 	if !yes && !confirmTTY(fmt.Sprintf(
-		"Обновить v%s → v%s? Сервис перезапустится, подключения кратко прервутся. [y/N]: ",
+		"Update v%s → v%s? The service restarts and connections drop briefly. [y/N]: ",
 		version.Version, rel.Version)) {
-		fmt.Println("Отменено.")
+		fmt.Println("Cancelled.")
 		return
 	}
 
-	fmt.Println("Скачиваю и устанавливаю…")
+	fmt.Println("Downloading and installing…")
 	dataDir := resolveDataDir()
 	backupFn := func() error {
 		return backup.Create(dataDir, filepath.Join(dataDir, "pre-update-backup.tgz"))
 	}
 	if err := updater.Apply(ctx, rel, backupFn); err != nil {
-		fmt.Fprintln(os.Stderr, "Ошибка:", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Перезапускаю сервис…")
+	fmt.Println("Restarting the service…")
 	if err := exec.Command("systemctl", "restart", "rospanel").Run(); err != nil {
 		fmt.Fprintf(os.Stderr,
-			"Бинарь обновлён, но перезапуск не удался: %v\nЗапустите вручную: systemctl restart rospanel\n", err)
+			"The binary was updated but the restart failed: %v\nRun it manually: systemctl restart rospanel\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Готово — обновлено до v%s.\n", rel.Version)
+	fmt.Printf("Done — updated to v%s.\n", rel.Version)
 }
 
 // runReset is the `rospanel reset [-y]` CLI: a FULL factory reset. It stops the
@@ -428,12 +428,12 @@ func runUpdate(args []string) {
 // disk are left in place (reused once a domain is configured again).
 func runReset(args []string) {
 	if !hasYesFlag(args) && !confirmTTY(
-		"ПОЛНЫЙ СБРОС панели к заводским настройкам.\n"+
-			"Будет СТЁРТО ВСЁ: пользователи, админ-аккаунт, домен/TLS, секретный путь,\n"+
-			"протоколы, порты, роутинг, прокси, DNS — вся база данных.\n"+
-			"После сброса: вход admin/admin, путь /rospanel/, повторная первичная настройка.\n"+
-			"Действие необратимо. Продолжить? [y/N]: ") {
-		fmt.Println("Отменено.")
+		"FULL FACTORY RESET of the panel.\n"+
+			"EVERYTHING will be WIPED: users, the admin account, domain/TLS, the secret\n"+
+			"path, protocols, ports, routing, proxies, DNS — the entire database.\n"+
+			"After the reset: login admin/admin, path /rospanel/, first-run setup again.\n"+
+			"This cannot be undone. Continue? [y/N]: ") {
+		fmt.Println("Cancelled.")
 		return
 	}
 
@@ -445,10 +445,10 @@ func runReset(args []string) {
 		hasSystemctl = true
 		_ = exec.Command("systemctl", "stop", "rospanel").Run()
 		if out, _ := exec.Command("systemctl", "is-active", "rospanel").Output(); strings.TrimSpace(string(out)) == "active" {
-			log.Fatal("reset: сервис rospanel всё ещё активен — остановите его вручную (systemctl stop rospanel) и повторите")
+			log.Fatal("reset: the rospanel service is still active — stop it manually (systemctl stop rospanel) and retry")
 		}
 	} else {
-		log.Print("reset: systemctl не найден — остановите запущенную панель вручную перед сбросом, иначе удаление БД не применится")
+		log.Print("reset: systemctl not found — stop the running panel manually before resetting, or deleting the database will not take effect")
 	}
 
 	removed := false
@@ -460,23 +460,23 @@ func runReset(args []string) {
 		case os.IsNotExist(err):
 			// nothing to remove
 		default:
-			fmt.Fprintf(os.Stderr, "Не удалось удалить %s: %v\n", f, err)
+			fmt.Fprintf(os.Stderr, "Could not remove %s: %v\n", f, err)
 			os.Exit(1)
 		}
 	}
 	if !removed {
-		fmt.Fprintln(os.Stderr, "База данных не найдена — нечего сбрасывать.")
+		fmt.Fprintln(os.Stderr, "No database found — nothing to reset.")
 	}
 
 	if hasSystemctl {
 		if err := exec.Command("systemctl", "start", "rospanel").Run(); err != nil {
 			fmt.Fprintf(os.Stderr,
-				"База удалена, но сервис не запустился: %v\nЗапустите вручную: systemctl start rospanel\n", err)
+				"The database was deleted but the service did not start: %v\nRun it manually: systemctl start rospanel\n", err)
 			os.Exit(1)
 		}
 	}
-	fmt.Println("Готово — панель сброшена к заводским настройкам.")
-	fmt.Println("Вход: admin / admin · путь панели: /rospanel/ (первичная настройка попросит сменить пароль).")
+	fmt.Println("Done — the panel has been reset to factory settings.")
+	fmt.Println("Login: admin / admin · panel path: /rospanel/ (the setup wizard will ask you to change the password).")
 }
 
 // hasYesFlag reports whether the CLI args carry a non-interactive confirm flag.
@@ -494,6 +494,8 @@ func confirmTTY(prompt string) bool {
 	fmt.Print(prompt)
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {
+	// "д"/"да" stay accepted: an operator on a Russian keyboard layout answering a
+	// destructive prompt should not have their intent silently read as "no".
 	case "y", "yes", "д", "да":
 		return true
 	}

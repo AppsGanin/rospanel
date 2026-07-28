@@ -26,17 +26,17 @@ func (rt *Router) dateRange(w http.ResponseWriter, r *http.Request) (from, to st
 	if to == "" {
 		to = now.Format("2006-01-02")
 	} else if !validDate(to) {
-		writeErr(w, http.StatusBadRequest, "неверный параметр to (ожидается YYYY-MM-DD)")
+		writeErrCode(w, http.StatusBadRequest, "err.badTo", "неверный параметр to (ожидается YYYY-MM-DD)")
 		return "", "", false
 	}
 	if from == "" {
 		from = now.AddDate(0, 0, -29).Format("2006-01-02")
 	} else if !validDate(from) {
-		writeErr(w, http.StatusBadRequest, "неверный параметр from (ожидается YYYY-MM-DD)")
+		writeErrCode(w, http.StatusBadRequest, "err.badFrom", "неверный параметр from (ожидается YYYY-MM-DD)")
 		return "", "", false
 	}
 	if from > to { // lexicographic ordering is correct for zero-padded YYYY-MM-DD
-		writeErr(w, http.StatusBadRequest, "from не может быть позже to")
+		writeErrCode(w, http.StatusBadRequest, "err.fromAfterTo", "from не может быть позже to")
 		return "", "", false
 	}
 	return from, to, true
@@ -51,7 +51,7 @@ func (rt *Router) statsSeries(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("user_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || id < 0 {
-			writeErr(w, http.StatusBadRequest, "неверный user_id")
+			writeErrCode(w, http.StatusBadRequest, "err.badUserID", "неверный user_id")
 			return
 		}
 		userID = id
@@ -80,7 +80,7 @@ func (rt *Router) statsNodes(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("user_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || id < 0 {
-			writeErr(w, http.StatusBadRequest, "неверный user_id")
+			writeErrCode(w, http.StatusBadRequest, "err.badUserID", "неверный user_id")
 			return
 		}
 		userID = id
@@ -128,7 +128,6 @@ func sitesLimit(r *http.Request, def int) int {
 	}
 	return n
 }
-
 
 // statsAbuse returns the fleet's recent blocklist matches, newest first.
 func (rt *Router) statsAbuse(w http.ResponseWriter, r *http.Request) {

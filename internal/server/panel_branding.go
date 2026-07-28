@@ -35,7 +35,7 @@ func (rt *Router) getBranding(w http.ResponseWriter, _ *http.Request) {
 func (rt *Router) brandingLogo(w http.ResponseWriter, _ *http.Request) {
 	b, err := branding.ReadLogo(rt.dataDir)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "не удалось прочитать логотип")
+		writeErrCode(w, http.StatusInternalServerError, "err.logoReadFailed", "не удалось прочитать логотип")
 		return
 	}
 	w.Header().Set("Content-Type", branding.LogoContentType(b))
@@ -68,17 +68,20 @@ func (rt *Router) uploadBrandingLogo(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(2 * time.Minute))
 	r.Body = http.MaxBytesReader(w, r.Body, branding.MaxLogoBytes+4096)
 	if err := r.ParseMultipartForm(branding.MaxLogoBytes); err != nil {
-		writeErr(w, http.StatusBadRequest, "не удалось разобрать загрузку")
+		writeErrCode(w, http.StatusBadRequest, "err.uploadParseFailed", "не удалось разобрать загрузку")
 		return
 	}
 	f, _, err := r.FormFile("logo")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "файл logo не найден")
+		writeErrCode(w, http.StatusBadRequest, "err.logoFileMissing", "файл logo не найден")
 		return
 	}
 	defer f.Close()
+	// writeManagerErr, not writeErr: SaveLogo raises a coded FieldError for a
+	// rejected upload (too big, wrong format) and a plain error for a disk failure.
+	// writeErr would flatten both to text and drop the code the panel translates.
 	if err := branding.SaveLogo(rt.dataDir, f); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeManagerErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, rt.brandingInfo())
@@ -87,7 +90,7 @@ func (rt *Router) uploadBrandingLogo(w http.ResponseWriter, r *http.Request) {
 // deleteBrandingLogo removes the custom logo, reverting to the default.
 func (rt *Router) deleteBrandingLogo(w http.ResponseWriter, _ *http.Request) {
 	if err := branding.DeleteLogo(rt.dataDir); err != nil {
-		writeErr(w, http.StatusInternalServerError, "не удалось удалить логотип")
+		writeErrCode(w, http.StatusInternalServerError, "err.logoDeleteFailed", "не удалось удалить логотип")
 		return
 	}
 	writeJSON(w, http.StatusOK, rt.brandingInfo())

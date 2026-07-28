@@ -47,7 +47,7 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 	// Delivery runs on the user bot's token; without it nothing would ever be sent
 	// and the broadcast would sit at 0 % with no explanation.
 	if !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
-		return nil, invalid("сначала включите пользовательского бота — рассылка идёт через него")
+		return nil, invalidCode("err.enableUserBotFirst", "сначала включите пользовательского бота — рассылка идёт через него")
 	}
 
 	chats, err := m.audienceChats(b.Audience)
@@ -55,7 +55,7 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 		return nil, err
 	}
 	if len(chats) == 0 {
-		return nil, invalid("в выбранной аудитории нет получателей")
+		return nil, invalidCode("err.audienceEmpty", "в выбранной аудитории нет получателей")
 	}
 
 	b.CreatedBy = actor.From(ctx).Name
@@ -79,35 +79,35 @@ func (m *Manager) StartBroadcast(id int64) error {
 
 func validateBroadcast(b *model.Broadcast) error {
 	if !model.ValidAudience(b.Audience) {
-		return invalid("неизвестная аудитория")
+		return invalidCode("err.unknownAudience", "неизвестная аудитория")
 	}
 	switch b.MediaKind {
 	case "", "photo", "document":
 	default:
-		return invalid("неизвестный тип вложения")
+		return invalidCode("err.unknownAttachment", "неизвестный тип вложения")
 	}
 	if b.Text == "" && b.MediaKind == "" {
-		return invalid("нечего отправлять — добавьте текст или вложение")
+		return invalidCode("err.nothingToSend", "нечего отправлять — добавьте текст или вложение")
 	}
 	limit := broadcastTextMax
 	if b.MediaKind != "" {
 		limit = broadcastCaptionMax
 	}
 	if n := utf8.RuneCountInString(b.Text); n > limit {
-		return invalid("текст длиннее %d символов (сейчас %d) — Telegram его не примет", limit, n)
+		return invalidCode("err.textTooLong", "текст длиннее {{limit}} символов (сейчас {{count}}) — Telegram его не примет", map[string]any{"limit": limit, "count": n})
 	}
 	if len(b.Buttons) > broadcastButtonsMax {
-		return invalid("слишком много кнопок (максимум %d)", broadcastButtonsMax)
+		return invalidCode("err.tooManyButtons", "слишком много кнопок (максимум {{max}})", map[string]any{"max": broadcastButtonsMax})
 	}
 	for i := range b.Buttons {
 		b.Buttons[i].Text = strings.TrimSpace(b.Buttons[i].Text)
 		b.Buttons[i].URL = strings.TrimSpace(b.Buttons[i].URL)
 		if b.Buttons[i].Text == "" || b.Buttons[i].URL == "" {
-			return invalid("у кнопки должны быть и текст, и ссылка")
+			return invalidCode("err.buttonNeedsBoth", "у кнопки должны быть и текст, и ссылка")
 		}
 		u, err := url.Parse(b.Buttons[i].URL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return invalid("ссылка кнопки «%s» должна начинаться с http:// или https://", b.Buttons[i].Text)
+			return invalidCode("err.buttonLinkScheme", "ссылка кнопки «{{label}}» должна начинаться с http:// или https://", map[string]any{"label": b.Buttons[i].Text})
 		}
 	}
 	return nil
@@ -137,9 +137,9 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 	for _, s := range subs {
 		// Presence in the roster, not a non-zero id: a deleted account leaves its id
 		// behind on the subscriber row, and treating that as "linked" fed the filters
-		// a zero-value user — so "ни разу не подключался" collected ex-customers who
+		// a zero-value user — so "never connected" collected ex-customers who
 		// had connected yesterday, while the audience documented to hold them
-		// ("без аккаунта") excluded them.
+		// ("without an account") excluded them.
 		u, linked := byID[s.UserID]
 		keep := false
 		switch audience {
@@ -161,8 +161,8 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 			} else if n, ok := model.AudienceDays(audience, model.AudienceUnseenPrefix); ok {
 				// "Never connected" counts as not seen — someone who never arrived is
 				// the clearest case of what this filter looks for — but only once the
-				// account is itself older than the horizon. Otherwise "вы не заходили
-				// 90 дней" lands on people who registered this morning.
+				// account is itself older than the horizon. Otherwise "you have not been
+				// online for 90 days" lands on people who registered this morning.
 				old := now-u.CreatedAt.Unix() > int64(n)*86400
 				stale := u.LastSeen > 0 && now-u.LastSeen > int64(n)*86400
 				keep = linked && (stale || (u.LastSeen == 0 && old))
@@ -181,7 +181,7 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 // the operator sees the size before launching rather than after.
 //
 // It normalises and validates exactly as CreateBroadcast does. Without that, an
-// unrecognised audience resolved to an empty list and previewed as "0 получателей" —
+// unrecognised audience resolved to an empty list and previewed as "0 recipients" —
 // while the launch itself would either refuse it or, for an empty string, fall back
 // to everyone. A preview that disagrees with the send is worse than no preview.
 func (m *Manager) AudiencePreview(audience string) (int, error) {
@@ -190,7 +190,7 @@ func (m *Manager) AudiencePreview(audience string) (int, error) {
 		audience = model.AudienceAll
 	}
 	if !model.ValidAudience(audience) {
-		return 0, invalid("неизвестная аудитория")
+		return 0, invalidCode("err.unknownAudience", "неизвестная аудитория")
 	}
 	chats, err := m.audienceChats(audience)
 	if err != nil {
@@ -208,8 +208,9 @@ func (m *Manager) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 }
 
 // ErrBroadcastNotFound lets the API answer 404 instead of leaking a raw SQL error
-// as a 500.
-var ErrBroadcastNotFound = errors.New("рассылка не найдена")
+// as a 500. A sentinel is compared, never shown — the handler words the 404 with a
+// dictionary code — so its text is English like every other sentinel here.
+var ErrBroadcastNotFound = errors.New("broadcast not found")
 
 // GetBroadcast returns one broadcast with its progress.
 func (m *Manager) GetBroadcast(id int64) (*model.Broadcast, error) {
@@ -240,13 +241,13 @@ func (m *Manager) SetBroadcastStatus(id int64, status string) error {
 		return err
 	}
 	if b.Status == model.BroadcastDone || b.Status == model.BroadcastCancelled {
-		return invalid("рассылка уже завершена")
+		return invalidCode("err.broadcastFinished", "рассылка уже завершена")
 	}
 	switch status {
 	case model.BroadcastPaused, model.BroadcastRunning, model.BroadcastCancelled:
 		return m.store.SetBroadcastStatus(id, status, time.Now().Unix())
 	default:
-		return invalid("неизвестное состояние рассылки")
+		return invalidCode("err.unknownBroadcastState", "неизвестное состояние рассылки")
 	}
 }
 
@@ -263,14 +264,14 @@ func (m *Manager) RetryBroadcast(id int64) (int, error) {
 		return 0, err
 	}
 	if b.Status != model.BroadcastDone {
-		return 0, invalid("повторить можно только завершённую рассылку")
+		return 0, invalidCode("err.retryOnlyFinished", "повторить можно только завершённую рассылку")
 	}
 	n, err := m.store.RetryFailedBroadcast(id, time.Now().Unix())
 	if err != nil {
 		return 0, err
 	}
 	if n == 0 {
-		return 0, invalid("нет неудачных отправок для повтора")
+		return 0, invalidCode("err.noFailedToRetry", "нет неудачных отправок для повтора")
 	}
 	return n, nil
 }

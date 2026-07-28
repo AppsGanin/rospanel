@@ -43,19 +43,13 @@ const (
 	CatGambling Category = "gambling"
 )
 
-// Title is the Russian label shown in the panel.
-func (c Category) Title() string {
+// TitleKey is the dictionary key for the category's name. It is a key and not a
+// word because the only reader is a Telegram alert, and which language that alert
+// is written in is a setting, not a build-time constant.
+func (c Category) TitleKey() string {
 	switch c {
-	case CatCustom:
-		return "Свой список"
-	case CatBadIP:
-		return "Вредоносный IP"
-	case CatMalware:
-		return "Вредоносное ПО"
-	case CatPiracy:
-		return "Пиратство"
-	case CatGambling:
-		return "Азартные игры"
+	case CatCustom, CatBadIP, CatMalware, CatPiracy, CatGambling:
+		return "abuse." + string(c)
 	}
 	return string(c)
 }

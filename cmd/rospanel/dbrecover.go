@@ -49,7 +49,7 @@ func ensureHealthyDB(dbPath, dataDir string) error {
 		return fmt.Errorf("database is corrupt and there is no local backup to restore from. "+
 			"The damaged file is left at %s. Restore an off-box backup with `rospanel restore <file>`, "+
 			"or wipe and start fresh with `rospanel reset`. "+
-			"Turn on scheduled local backups (Настройки → Бэкапы) so this is recoverable next time", dbPath)
+			"Turn on scheduled local backups (Settings → Backups) so this is recoverable next time", dbPath)
 	}
 
 	quarantine, qerr := quarantineDB(dbPath)

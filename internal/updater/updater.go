@@ -43,7 +43,7 @@ type Release struct {
 func Latest(ctx context.Context, repo string) (*Release, error) {
 	repo = strings.Trim(strings.TrimSpace(repo), "/")
 	if repo == "" {
-		return nil, fmt.Errorf("Репозиторий обновлений не настроен")
+		return nil, fmt.Errorf("update repository is not configured")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"https://api.github.com/repos/"+repo+"/releases/latest", nil)
@@ -54,14 +54,14 @@ func Latest(ctx context.Context, repo string) (*Release, error) {
 	req.Header.Set("User-Agent", "rospanel-updater")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GitHub недоступен: %w", err)
+		return nil, fmt.Errorf("GitHub is unreachable: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("У репозитория %s нет релизов", repo)
+		return nil, fmt.Errorf("repository %s has no releases", repo)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub вернул статус %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub returned status %d", resp.StatusCode)
 	}
 	var gh struct {
 		TagName string `json:"tag_name"`
@@ -127,10 +127,10 @@ func splitVer(v string) []int {
 // ships no SHA256SUMS (integrity cannot be proven).
 func Apply(ctx context.Context, rel *Release, backupFn func() error) error {
 	if rel == nil || rel.AssetURL == "" {
-		return fmt.Errorf("В релизе нет файла %s", AssetName)
+		return fmt.Errorf("the release carries no %s", AssetName)
 	}
 	if rel.ChecksumURL == "" {
-		return fmt.Errorf("В релизе нет файла SHA256SUMS — обновление отменено (нельзя проверить целостность)")
+		return fmt.Errorf("the release carries no SHA256SUMS — update cancelled (integrity cannot be verified)")
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -142,30 +142,30 @@ func Apply(ctx context.Context, rel *Release, backupFn func() error) error {
 	tmp := exe + ".new"
 
 	if err := download(ctx, rel.AssetURL, tmp); err != nil {
-		return fmt.Errorf("Скачивание не удалось: %w", err)
+		return fmt.Errorf("download failed: %w", err)
 	}
 	// Integrity gate FIRST — a tampered/corrupted asset is rejected here and is
 	// never executed or swapped in.
 	want, err := expectedSum(ctx, rel.ChecksumURL, AssetName)
 	if err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Не удалось получить контрольную сумму: %w", err)
+		return fmt.Errorf("could not fetch the checksum: %w", err)
 	}
 	got, err := fileSum(tmp)
 	if err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Не удалось вычислить контрольную сумму: %w", err)
+		return fmt.Errorf("could not compute the checksum: %w", err)
 	}
 	if !strings.EqualFold(got, want) {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Контрольная сумма не совпала — обновление отменено")
+		return fmt.Errorf("checksum mismatch — update cancelled")
 	}
 	// Only now (integrity proven) run the binary to catch a wrong-arch/truncated
 	// build before the swap.
 	out, err := exec.Command(tmp, "version").Output()
 	if err != nil || !strings.Contains(string(out), ".") {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Скачанный бинарь не запускается — обновление отменено")
+		return fmt.Errorf("the downloaded binary does not run — update cancelled")
 	}
 	// Pre-update snapshot (defence-in-depth; an update never touches the DB, but a
 	// bad release shouldn't be able to strand the operator). Non-fatal on failure.
@@ -179,12 +179,12 @@ func Apply(ctx context.Context, rel *Release, backupFn func() error) error {
 	_ = os.Remove(bak)
 	if err := os.Rename(exe, bak); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Не удалось сохранить резервную копию: %w", err)
+		return fmt.Errorf("could not keep a backup copy: %w", err)
 	}
 	if err := os.Rename(tmp, exe); err != nil {
 		_ = os.Rename(bak, exe) // roll back to the previous binary
 		_ = os.Remove(tmp)
-		return fmt.Errorf("Замена файла не удалась: %w", err)
+		return fmt.Errorf("replacing the binary failed: %w", err)
 	}
 	return nil
 }
@@ -203,7 +203,7 @@ func expectedSum(ctx context.Context, url, name string) (string, error) {
 			return f[0], nil
 		}
 	}
-	return "", fmt.Errorf("нет записи для %s в SHA256SUMS", name)
+	return "", fmt.Errorf("no SHA256SUMS entry for %s", name)
 }
 
 // fileSum returns the hex SHA-256 of the file at path.
@@ -234,7 +234,7 @@ func fetchText(ctx context.Context, url string) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("статус %d", resp.StatusCode)
+		return "", fmt.Errorf("status %d", resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	return string(b), err
@@ -254,7 +254,7 @@ func download(ctx context.Context, url, dst string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("статус %d", resp.StatusCode)
+		return fmt.Errorf("status %d", resp.StatusCode)
 	}
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {

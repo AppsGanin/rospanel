@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>{{.BrandName}} · Подписка</title>
+    <title>{{.BrandName}} · {{.L.Title}}</title>
     <script src="{{.SubURL}}/tg.js"></script>
     <style>
       /* Mulish, self-hosted from this panel (see sub.Font). Google Fonts is
@@ -470,20 +470,20 @@
     <div class="wrap">
       <div class="logo">
         <img class="logomark" src="{{.SubURL}}/logo.svg" alt="" />
-        {{if .IsDefault}}<span class="b">РосПанель</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
+        {{if .IsDefault}}<span class="b">{{.L.DefaultBrand}}</span>{{else}}<span class="b">{{.BrandName}}</span>{{end}}
       </div>
-      <h1>Привет{{if .Name}}, {{.Name}}{{end}} 👋</h1>
+      <h1>{{.L.Greeting}}{{if .Name}}, {{.Name}}{{end}} 👋</h1>
 
       <div class="badges">
         <span class="badge {{.StatusClass}}">{{.StatusLabel}}</span>
-        {{if .Online}}<span class="badge green">● онлайн</span>{{else}}<span
+        {{if .Online}}<span class="badge green">{{.L.Online}}</span>{{else}}<span
           class="badge gray"
-          >○ офлайн{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
+          >{{.L.Offline}}{{if .LastSeen}} · {{.LastSeen}}{{end}}</span
         >{{end}}
         <span class="badge brand"
-          >Трафик: {{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</span
+          >{{.L.Traffic}}: {{.Used}}{{if .HasLimit}} / {{.Limit}}{{end}}</span
         >
-        {{if .HasReset}}<span class="badge gray">Трафик до {{.ResetText}}</span>{{end}}
+        {{if .HasReset}}<span class="badge gray">{{.L.TrafficUntil}} {{.ResetText}}</span>{{end}}
         {{if .HasExpire}}<span class="badge gray">{{.Expire}}</span>{{end}}
       </div>
       {{if .HasLimit}}
@@ -495,12 +495,11 @@
         <div id="paywatch" class="paywatch" style="display: none">
           <span class="spinner"></span>
           <span
-            >Оплата обрабатывается… Подписка активируется автоматически после
-            подтверждения.</span
+            >{{.L.PayProcessing}}</span
           >
         </div>
         <div class="bill-cur">
-          <span class="muted">Текущий тариф</span>
+          <span class="muted">{{.L.CurrentPlan}}</span>
           <span class="v"
             >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
             .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
@@ -512,20 +511,19 @@
             <div class="pname">{{.Name}}</div>
             <div class="pprice">{{.Label}}</div>
           </div>
-          <button class="btn" onclick="pay({{.ID}}, this)">{{if $.Billing.Locked}}Продлить{{else}}Оплатить{{end}}</button>
+          <button class="btn" onclick="pay({{.ID}}, this)">{{if $.Billing.Locked}}{{$.L.Renew}}{{else}}{{$.L.Pay}}{{end}}</button>
         </div>
         {{end}}
         {{if .Billing.Cancelable}}
         <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
-          Отменить подписку
+          {{.L.CancelSub}}
         </button>
         <p class="muted" style="margin: 10px 0 0">
-          Сменить тариф можно только после отмены текущего. При отмене вы перейдёте на
-          бесплатный тариф.
+          {{.L.ChangePlanNote}}
         </p>
         {{else if .Billing.Manual}}
         <p class="muted" style="margin: 12px 0 0">
-          После оплаты администратор подтвердит платёж.
+          {{.L.ManualNote}}
         </p>
         {{end}}
         {{if and .Billing.Manual .Billing.Note}}
@@ -537,35 +535,35 @@
       <div class="card">
         <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
         <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
-          Отсканируйте QR в приложении или нажмите кнопку ниже
+          {{.L.ScanQR}}
         </p>
         <button class="btn" onclick="copy('{{.SubURL}}', this)">
-          Скопировать ссылку подписки
+          {{.L.CopyLink}}
         </button>
         <button
           id="openapps-btn"
           class="btn alt"
           onclick="openApps()"
         >
-          Открыть в приложении
+          {{.L.OpenInApp}}
         </button>
         <a
           class="btn alt"
           href="{{.SubURL}}?format=clash&amp;dl=1"
           download="clash.yaml"
         >
-          Скачать конфиг Clash
+          {{.L.DownloadClash}}
         </a>
       </div>
 
       <div class="card">
-        <div class="lbl" style="margin-bottom: 8px">Отдельные конфиги</div>
+        <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
         {{range .Links}}
         <details>
           <summary>{{.Proto}}</summary>
           <p><code>{{.URL}}</code></p>
           <button class="btn alt" onclick="copy('{{.URL}}', this)">
-            Скопировать {{.Proto}}
+            {{$.L.Copy}} {{.Proto}}
           </button>
         </details>
         {{end}}
@@ -578,7 +576,7 @@
     >
       <div class="modal-card">
         <div class="modal-head">
-          <b>Выберите приложение</b>
+          <b>{{.L.PickApp}}</b>
           <button
             class="x"
             onclick="document.getElementById('apps').classList.remove('show')"
@@ -603,7 +601,7 @@
     >
       <div class="modal-card">
         <div class="modal-head">
-          <b>Способ оплаты</b>
+          <b>{{.L.PayMethod}}</b>
           <button
             class="x"
             onclick="document.getElementById('paymodal').classList.remove('show')"
@@ -628,7 +626,7 @@
     >
       <div class="modal-card">
         <div class="modal-head">
-          <b id="msgmodal-title">Оплата</b>
+          <b id="msgmodal-title">{{.L.PayTitle}}</b>
           <button
             class="x"
             onclick="document.getElementById('msgmodal').classList.remove('show')"
@@ -685,7 +683,7 @@
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {
           var o = el.textContent;
-          el.textContent = "Скопировано";
+          el.textContent = {{.L.Copied}};
           setTimeout(function () {
             el.textContent = o;
           }, 1200);
@@ -734,7 +732,7 @@
       function cancelSub(el) {
         if (
           !confirm(
-            "Отменить текущую подписку? Вы перейдёте на бесплатный тариф, оставшееся оплаченное время сгорит.",
+            {{.L.CancelConfirm}},
           )
         )
           return;
@@ -751,14 +749,14 @@
               location.reload();
             } else {
               return r.json().then(function (j) {
-                alert(j.error || "Не удалось отменить");
+                alert(j.error || {{.L.CancelFailed}});
                 el.textContent = old;
                 el.disabled = false;
               });
             }
           })
           .catch(function () {
-            alert("Ошибка сети, попробуйте ещё раз");
+            alert({{.L.NetworkError}});
             el.textContent = old;
             el.disabled = false;
           });
@@ -773,7 +771,7 @@
         var modal = document.getElementById("msgmodal");
         if (body && modal) {
           body.textContent = text;
-          if (head) head.textContent = title || "Оплата";
+          if (head) head.textContent = title || {{.L.PayTitle}};
           modal.classList.add("show");
         } else {
           alert(text);
@@ -824,20 +822,20 @@
               // the instructions modal.
               reset();
               showPayMsg(
-                res.body.message || "Заказ создан. Ожидайте подтверждения.",
-                "Оплата заказа",
+                res.body.message || {{.L.OrderCreated}},
+                {{.L.OrderTitle}},
               );
             } else {
               reset();
               showPayMsg(
-                res.body.error || "Не удалось создать платёж. Попробуйте позже.",
-                "Ошибка",
+                res.body.error || {{.L.PayFailed}},
+                {{.L.Error}},
               );
             }
           })
           .catch(function () {
             reset();
-            showPayMsg("Ошибка сети, попробуйте ещё раз.", "Ошибка");
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
           });
       }
     </script>

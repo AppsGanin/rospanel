@@ -11,12 +11,12 @@ import (
 // event keys. It writes the error response and returns false on failure.
 func validateWebhook(w http.ResponseWriter, url string, events []string) bool {
 	if err := model.ValidWebhookURL(url); err != nil {
-		writeErr(w, http.StatusBadRequest, "неверный URL вебхука: "+err.Error())
+		writeManagerErr(w, err)
 		return false
 	}
 	for _, e := range events {
 		if !model.ValidWebhookEvent(e) {
-			writeErr(w, http.StatusBadRequest, "неизвестное событие: "+e)
+			writeErrDetail(w, http.StatusBadRequest, "err.unknownEventNamed", "неизвестное событие: ", e)
 			return false
 		}
 	}
@@ -36,7 +36,7 @@ func (rt *Router) listWebhooks(w http.ResponseWriter, _ *http.Request) {
 	}
 	catalog := make([]map[string]string, 0, len(model.WebhookEventCatalog))
 	for _, e := range model.WebhookEventCatalog {
-		catalog = append(catalog, map[string]string{"key": e.Key, "label": e.Label})
+		catalog = append(catalog, map[string]string{"key": e})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"webhooks": hooks,

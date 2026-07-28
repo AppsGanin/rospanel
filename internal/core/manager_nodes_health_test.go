@@ -77,9 +77,11 @@ func TestNodeOnOldXrayIsStale(t *testing.T) {
 	if h == nil {
 		t.Fatal("no node health check produced")
 	}
-	if h.Status != healthWarn || !strings.Contains(h.Detail, "устаревш") {
+	// The wording lives in the panel's dictionaries now, so assert the KEY: that is
+	// what actually decides which sentence the operator reads.
+	if h.Status != healthWarn || h.DetailKey != "health.nodesStale" {
 		t.Fatalf("a node on Xray 1.8.0 reads as %q (%q), want a stale-version warning",
-			h.Status, h.Detail)
+			h.Status, h.DetailKey)
 	}
 }
 

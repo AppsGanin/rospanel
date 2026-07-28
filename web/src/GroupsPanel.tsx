@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createGroup,
   deleteGroup,
@@ -32,6 +33,7 @@ const LANE_LABELS: Record<string, string> = {
 // members may reach. A user in no group reaches everything; membership is assigned
 // on the user (in the user drawer), not here.
 export function GroupsPanel() {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [targets, setTargets] = useState<GroupTarget[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -71,7 +73,7 @@ export function GroupsPanel() {
       await setGroupMembers(gid, [...members]);
       await reload();
       setEditing(null);
-      notifySuccess("Сохранено");
+      notifySuccess(t("common.saved"));
     });
   };
 
@@ -80,7 +82,7 @@ export function GroupsPanel() {
       await deleteGroup(g.id);
       await reload();
       setConfirmDel(null);
-      notifySuccess("Удалено");
+      notifySuccess(t("groups.deleted"));
     });
 
   if (!groups || !targets) return <CenterLoader />;
@@ -88,17 +90,13 @@ export function GroupsPanel() {
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <h3 className="mb-1 font-bold text-ink">Группы доступа</h3>
-        <p className="text-sm text-ink-muted">
-          Группа задаёт, какие подключения доступны её участникам. Пользователь без
-          групп видит все подключения; в нескольких группах — объединение их
-          подключений. Участников назначаешь в карточке пользователя.
-        </p>
+        <h3 className="mb-1 font-bold text-ink">{t("groups.title")}</h3>
+        <p className="text-sm text-ink-muted">{t("groups.description")}</p>
       </div>
 
       {groups.length === 0 && (
         <p className="px-1 text-sm text-ink-muted">
-          Групп пока нет — все пользователи видят все подключения.
+          {t("groups.empty")}
         </p>
       )}
 
@@ -110,8 +108,12 @@ export function GroupsPanel() {
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="font-medium text-ink">{g.name}</span>
-              <Badge color="gray">{(g.grants?.length ?? 0)} подкл.</Badge>
-              <Badge color="gray">{g.members} участн.</Badge>
+              <Badge color="gray">
+                {t("groups.nConnections", { count: g.grants?.length ?? 0 })}
+              </Badge>
+              <Badge color="gray">
+                {t("groups.nMembers", { count: g.members })}
+              </Badge>
             </div>
             <div className="flex shrink-0 gap-2">
               <Button
@@ -127,10 +129,10 @@ export function GroupsPanel() {
                   })
                 }
               >
-                Изменить
+                {t("common.edit")}
               </Button>
               <Button size="sm" variant="light" color="red" onClick={() => setConfirmDel(g)}>
-                Удалить
+                {t("common.delete")}
               </Button>
             </div>
           </div>
@@ -142,26 +144,26 @@ export function GroupsPanel() {
           variant="light"
           onClick={() => setEditing({ id: 0, name: "", grants: new Set(), members: new Set() })}
         >
-          Создать группу
+          {t("groups.create")}
         </Button>
       </div>
 
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={editing?.id ? "Группа" : "Новая группа"}
+        title={editing?.id ? t("groups.group") : t("groups.newGroup")}
         size="lg"
       >
         {editing && (
           <div className="flex flex-col gap-4">
             <TextInput
-              label="Название"
+              label={t("groups.name")}
               value={editing.name}
               onChange={(v) => setEditing({ ...editing, name: v })}
-              placeholder="напр. VIP"
+              placeholder={t("groups.namePlaceholder")}
             />
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-ink-muted">Подключения, доступные участникам:</p>
+              <p className="text-sm text-ink-muted">{t("groups.grantsIntro")}</p>
               {targets.map((srv) => (
                 <div key={srv.server_id} className="rounded-lg border border-gray-200/80 bg-white/50 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{srv.server_name}</p>
@@ -181,7 +183,7 @@ export function GroupsPanel() {
                         key={i.token}
                         token={i.token}
                         label={i.name}
-                        badge="доп."
+                        badge={t("groups.extraBadge")}
                         off={!i.enabled}
                         grants={editing.grants}
                         onToggle={(g) => setEditing({ ...editing, grants: g })}
@@ -200,28 +202,27 @@ export function GroupsPanel() {
 
             <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
               <Button variant="light" color="gray" onClick={() => setEditing(null)} disabled={busy}>
-                Отмена
+                {t("common.cancel")}
               </Button>
               <Button onClick={save} loading={busy} disabled={!editing.name.trim()}>
-                Сохранить
+                {t("common.save")}
               </Button>
             </div>
           </div>
         )}
       </Modal>
 
-      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Удалить группу?">
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title={t("groups.deleteTitle")}>
         <div className="flex flex-col gap-3">
           <p className="text-sm text-ink-muted">
-            «{confirmDel?.name}» будет удалена. Участники, оставшись без групп, снова
-            получат доступ ко всем подключениям.
+            {t("groups.deleteBody", { name: confirmDel?.name ?? "" })}
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="light" color="gray" onClick={() => setConfirmDel(null)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
             <Button color="red" loading={busy} onClick={() => confirmDel && remove(confirmDel)}>
-              Удалить
+              {t("common.delete")}
             </Button>
           </div>
         </div>
@@ -267,15 +268,17 @@ function MembersPicker({
     onChange(next);
   };
 
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-ink-muted">Участники</span>
-        <Badge color="gray">{members.size} выбрано</Badge>
+        <span className="text-sm text-ink-muted">{t("groups.members")}</span>
+        <Badge color="gray">{t("groups.nSelected", { count: members.size })}</Badge>
       </div>
-      <TextInput value={query} onChange={setQuery} placeholder="Поиск по имени или ID…" />
+      <TextInput value={query} onChange={setQuery} placeholder={t("groups.searchUsers")} />
       {users.length === 0 ? (
-        <p className="text-xs text-ink-muted">Пользователей пока нет.</p>
+        <p className="text-xs text-ink-muted">{t("groups.noUsers")}</p>
       ) : (
         <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
           <div className="flex flex-col gap-1.5">
@@ -289,7 +292,7 @@ function MembersPicker({
               />
             ))}
             {filtered.length === 0 && (
-              <p className="px-1 py-2 text-xs text-ink-muted">Ничего не найдено.</p>
+              <p className="px-1 py-2 text-xs text-ink-muted">{t("common.nothingFound")}</p>
             )}
           </div>
         </div>
@@ -314,6 +317,7 @@ function GrantRow({
   grants: Set<string>;
   onToggle: (g: Set<string>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Checkbox
       checked={grants.has(token)}
@@ -327,7 +331,7 @@ function GrantRow({
         <span className="flex items-center gap-2">
           <span>{label}</span>
           {badge && <Badge color="gray">{badge}</Badge>}
-          {off && <Badge color="gray">выключено</Badge>}
+          {off && <Badge color="gray">{t("groups.off")}</Badge>}
         </span>
       }
     />

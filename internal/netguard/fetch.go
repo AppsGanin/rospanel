@@ -19,21 +19,21 @@ const defaultFetchTimeout = 15 * time.Second
 func ValidateFetchURL(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return fmt.Errorf("пустой URL")
+		return fmt.Errorf("empty URL")
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("неверный URL: %w", err)
+		return fmt.Errorf("invalid URL: %w", err)
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("разрешён только https")
+		return fmt.Errorf("only https is allowed")
 	}
 	if u.User != nil {
-		return fmt.Errorf("учётные данные в URL не допускаются")
+		return fmt.Errorf("credentials in the URL are not allowed")
 	}
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("не указан хост")
+		return fmt.Errorf("no host given")
 	}
 	return rejectPrivateHost(host)
 }
@@ -46,10 +46,10 @@ func rejectPrivateHost(host string) error {
 	defer cancel()
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return fmt.Errorf("не удалось разрешить хост: %w", err)
+		return fmt.Errorf("could not resolve the host: %w", err)
 	}
 	if len(ips) == 0 {
-		return fmt.Errorf("хост не разрешается")
+		return fmt.Errorf("the host does not resolve")
 	}
 	for _, ia := range ips {
 		if err := rejectPrivateIP(ia.IP); err != nil {
@@ -62,15 +62,15 @@ func rejectPrivateHost(host string) error {
 func rejectPrivateIP(ip net.IP) error {
 	ip = ip.To16()
 	if ip == nil {
-		return fmt.Errorf("неверный IP")
+		return fmt.Errorf("invalid IP")
 	}
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return fmt.Errorf("запрещённый адрес: %s", ip)
+		return fmt.Errorf("forbidden address: %s", ip)
 	}
 	// AWS/GCP/Azure metadata endpoints.
 	if ip.Equal(net.ParseIP("169.254.169.254")) {
-		return fmt.Errorf("запрещённый адрес: metadata")
+		return fmt.Errorf("forbidden address: metadata")
 	}
 	return nil
 }
@@ -91,7 +91,7 @@ func dialValidated(ctx context.Context, network, addr string) (net.Conn, error) 
 	} else {
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 		if err != nil {
-			return nil, fmt.Errorf("не удалось разрешить хост: %w", err)
+			return nil, fmt.Errorf("could not resolve the host: %w", err)
 		}
 		for _, ia := range ips {
 			if err := rejectPrivateIP(ia.IP); err != nil {
@@ -100,7 +100,7 @@ func dialValidated(ctx context.Context, network, addr string) (net.Conn, error) 
 			targets = append(targets, net.JoinHostPort(ia.IP.String(), port))
 		}
 		if len(targets) == 0 {
-			return nil, fmt.Errorf("запрещённый адрес")
+			return nil, fmt.Errorf("forbidden address")
 		}
 	}
 	var d net.Dialer
@@ -115,7 +115,7 @@ func dialValidated(ctx context.Context, network, addr string) (net.Conn, error) 
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("не удалось подключиться")
+	return nil, fmt.Errorf("could not connect")
 }
 
 func safeTransport() *http.Transport {
@@ -135,7 +135,7 @@ func Client(timeout time.Duration) *http.Client {
 				return fmt.Errorf("redirect blocked: %w", err)
 			}
 			if len(via) >= 3 {
-				return fmt.Errorf("слишком много перенаправлений")
+				return fmt.Errorf("too many redirects")
 			}
 			return nil
 		},

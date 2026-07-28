@@ -3,31 +3,49 @@
 // timezone). Used by both backup schedules — the Telegram one and the local one —
 // so the two can't drift apart in what they accept or how they render it.
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import i18n, { currentLang } from "./i18n";
 import { Select, TextInput } from "./ui";
+
+// weekdayName renders a cron weekday number (0 = Sunday) via Intl, so a new
+// language needs no calendar strings of its own.
+function weekdayName(d: number): string {
+  // 2021-08-01 was a Sunday, so +d lands on the wanted weekday.
+  const s = new Intl.DateTimeFormat(currentLang(), { weekday: "long" }).format(
+    new Date(2021, 7, 1 + d),
+  );
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // Presets map a friendly choice to a cron expression. "daily"/"weekly" build their
 // cron from the time/weekday inputs; "custom" takes a raw expression.
-export const PRESETS = [
-  { value: "off", label: "Выключено" },
-  { value: "hourly", label: "Каждый час" },
-  { value: "every6", label: "Каждые 6 часов" },
-  { value: "every12", label: "Каждые 12 часов" },
-  { value: "daily", label: "Ежедневно в…" },
-  { value: "weekly", label: "Еженедельно в…" },
-  { value: "custom", label: "Своё (cron)" },
-] as const;
-
-export const WEEKDAYS = [
-  { value: "1", label: "Понедельник" },
-  { value: "2", label: "Вторник" },
-  { value: "3", label: "Среда" },
-  { value: "4", label: "Четверг" },
-  { value: "5", label: "Пятница" },
-  { value: "6", label: "Суббота" },
-  { value: "0", label: "Воскресенье" },
+export const presets = () => [
+  { value: "off", label: i18n.t("cron.off") },
+  { value: "hourly", label: i18n.t("cron.hourly") },
+  { value: "every6", label: i18n.t("cron.every6") },
+  { value: "every12", label: i18n.t("cron.every12") },
+  { value: "daily", label: i18n.t("cron.daily") },
+  { value: "weekly", label: i18n.t("cron.weekly") },
+  { value: "custom", label: i18n.t("cron.custom") },
 ];
 
-export type Preset = (typeof PRESETS)[number]["value"];
+export const weekdays = () => [
+  // Weekday names come from Intl (cron numbers days 0=Sunday), so a new language
+  // needs no calendar strings.
+  ...[1, 2, 3, 4, 5, 6, 0].map((d) => ({
+    value: String(d),
+    label: weekdayName(d),
+  })),
+];
+
+export type Preset =
+  | "off"
+  | "hourly"
+  | "every6"
+  | "every12"
+  | "daily"
+  | "weekly"
+  | "custom";
 
 export type Schedule = {
   preset: Preset;
@@ -92,17 +110,18 @@ export function buildCron(s: Schedule): string {
 export function CronPicker({
   value,
   onChange,
-  offLabel = "Расписание выключено.",
+  offLabel,
   extra,
 }: {
   value: Schedule;
   onChange: (s: Schedule) => void;
   offLabel?: string;
-  // A field that belongs on the same row as the schedule — "сколько копий хранить"
+  // A field that belongs on the same row as the schedule — "how many copies to keep"
   // for the local backups. It rides inside the picker's row rather than sitting in a
   // block underneath, so the whole schedule reads as one line on a desktop.
   extra?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const set = (patch: Partial<Schedule>) => onChange({ ...value, ...patch });
   const cron = buildCron(value);
   const timed = value.preset === "daily" || value.preset === "weekly";
@@ -117,26 +136,26 @@ export function CronPicker({
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
         <div className="min-w-45 flex-1">
           <Select
-            label="Расписание"
+            label={t("cron.schedule")}
             value={value.preset}
             onChange={(v) => set({ preset: v as Preset })}
-            data={PRESETS as unknown as { value: string; label: string }[]}
+            data={presets()}
           />
         </div>
         {value.preset === "weekly" && (
           <div className="min-w-45 flex-1">
             <Select
-              label="День недели"
+              label={t("cron.weekday")}
               value={value.weekday}
               onChange={(v) => set({ weekday: v })}
-              data={WEEKDAYS}
+              data={weekdays()}
             />
           </div>
         )}
         {timed && (
           <div className="min-w-45 flex-1">
             <TextInput
-              label="Время"
+              label={t("cron.time")}
               type="time"
               value={value.time}
               onChange={(v) => set({ time: v })}
@@ -146,7 +165,7 @@ export function CronPicker({
         {value.preset === "custom" && (
           <div className="min-w-45 flex-1">
             <TextInput
-              label="Cron-выражение"
+              label={t("cron.expression")}
               value={value.custom}
               onChange={(v) => set({ custom: v })}
               mono
@@ -162,7 +181,7 @@ export function CronPicker({
             Cron: <span className="font-mono">{cron}</span>
           </>
         ) : (
-          offLabel
+          (offLabel ?? t("cron.offLabel"))
         )}
       </p>
     </div>

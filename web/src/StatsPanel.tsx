@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   getStatsByUser,
   getStatsSeries,
@@ -6,7 +7,7 @@ import {
   type DailyPoint,
   type UserTotal,
 } from './api'
-import { fmtBytes, localDay, RANGES } from './format'
+import { fmtBytes, localDay, ranges } from './format'
 import { useAction } from './hooks'
 import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
@@ -20,6 +21,7 @@ const PALETTE = [
 ]
 
 export function StatsPanel() {
+  const { t } = useTranslation()
   const isAdmin = useIsAdmin()
   const [range, setRange] = useState('30')
   const [series, setSeries] = useState<DailyPoint[]>([])
@@ -45,9 +47,9 @@ export function StatsPanel() {
 
   const doReset = async () => {
     const ok = await confirm({
-      title: 'Очистить статистику?',
-      body: 'Вся накопленная статистика трафика будет удалена. Действие необратимо.',
-      confirmLabel: 'Очистить',
+      title: t('stats.resetTitle'),
+      body: t('stats.resetBody'),
+      confirmLabel: t('common.clear'),
       danger: true,
     })
     if (!ok) return
@@ -105,24 +107,24 @@ export function StatsPanel() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SegmentedControl value={range} onChange={setRange} data={RANGES} />
+        <SegmentedControl value={range} onChange={setRange} data={ranges()} />
         {/* Reading the numbers is the operator's job; wiping them is not. */}
         {isAdmin && (
           <Button color="red" variant="light" loading={busy} onClick={doReset}>
-            Сбросить статистику
+            {t('stats.reset')}
           </Button>
         )}
       </div>
 
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-bold">Трафик по дням</h3>
+          <h3 className="font-bold">{t('stats.trafficByDay')}</h3>
           <p className="text-sm text-ink-muted">
             Σ ↓ {fmtBytes(sumDown)} · ↑ {fmtBytes(sumUp)}
           </p>
         </div>
         {chartData.length === 0 ? (
-          <p className="py-10 text-center text-ink-muted">Нет данных за выбранный период</p>
+          <p className="py-10 text-center text-ink-muted">{t('stats.noDataForRange')}</p>
         ) : (
           <>
             <TrafficArea data={chartData} fmt={fmtBytes} />
@@ -132,23 +134,23 @@ export function StatsPanel() {
       </Card>
 
       <Card className="p-4">
-        <h3 className="mb-3 font-bold">Доля трафика по пользователям</h3>
+        <h3 className="mb-3 font-bold">{t('stats.shareByUser')}</h3>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div className="flex items-center justify-center">
             {pieData.length > 0 ? (
               <TrafficDonut data={pieData} fmt={fmtBytes} centerLabel={fmtBytes(sumUp + sumDown)} />
             ) : (
-              <p className="py-10 text-ink-muted">Нет данных</p>
+              <p className="py-10 text-ink-muted">{t('stats.noData')}</p>
             )}
           </div>
           <div className="max-h-80 overflow-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white">
                 <tr className="border-b border-gray-200 text-left text-ink-muted">
-                  <th className="py-2 pr-2 font-medium">Пользователь</th>
-                  <th className="py-2 pr-2 font-medium">↓ Принято</th>
-                  <th className="py-2 pr-2 font-medium">↑ Отдано</th>
-                  <th className="py-2 font-medium">Всего</th>
+                  <th className="py-2 pr-2 font-medium">{t('stats.user')}</th>
+                  <th className="py-2 pr-2 font-medium">↓ {t('traffic.received')}</th>
+                  <th className="py-2 pr-2 font-medium">↑ {t('traffic.sent')}</th>
+                  <th className="py-2 font-medium">{t('stats.total')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,7 +171,7 @@ export function StatsPanel() {
                 {totals.length === 0 && (
                   <tr>
                     <td colSpan={4} className="py-4 text-center text-ink-muted">
-                      Нет данных
+                      {t('stats.noData')}
                     </td>
                   </tr>
                 )}
@@ -181,7 +183,7 @@ export function StatsPanel() {
 
       <Card className="p-4">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
-          <h3 className="font-bold">Совпадения с блоклистами</h3>
+          <h3 className="font-bold">{t('stats.blocklistMatches')}</h3>
         </div>
         <AbuseList limit={50} />
       </Card>

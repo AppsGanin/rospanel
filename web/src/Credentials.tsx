@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { updateCredentials } from './api'
 import { useAction } from './hooks'
 import { notifyError, notifySuccess } from './notify'
@@ -13,6 +14,7 @@ export function Credentials({
   onClose: () => void
   onUpdated: () => void
 }) {
+  const { t } = useTranslation()
   const [login, setLogin] = useState(username)
   const [current, setCurrent] = useState('')
   const [password, setPassword] = useState('')
@@ -22,49 +24,58 @@ export function Credentials({
   const submit = async () => {
     const changingPassword = password.length > 0
     if (changingPassword && password.length < 8) {
-      return notifyError('Пароль должен быть не короче 8 символов')
+      return notifyError(t('password.tooShort'))
     }
     if (changingPassword && password !== confirm) {
-      return notifyError('Пароли не совпадают')
+      return notifyError(t('password.mismatch'))
     }
     if (!login.trim() && !changingPassword) {
-      return notifyError('Нечего сохранять')
+      return notifyError(t('creds.nothingToSave'))
     }
     if (!current) {
-      return notifyError('Введите текущий пароль для подтверждения')
+      return notifyError(t('creds.needCurrent'))
     }
     run(async () => {
       // Send the login only if it changed; password only if entered. The current
       // password re-authenticates the change server-side.
       const newLogin = login.trim() && login.trim() !== username ? login.trim() : ''
       await updateCredentials(newLogin, password, current)
-      notifySuccess('Учётные данные обновлены')
+      notifySuccess(t('creds.updated'))
       onUpdated() // refresh the header username immediately
       onClose()
     })
   }
 
   return (
-    <Modal open onClose={onClose} title="Учётные данные">
+    <Modal open onClose={onClose} title={t('nav.credentials')}>
       <div className="flex flex-col gap-3">
-        <TextInput label="Логин" value={login} onChange={setLogin} autoFocus />
+        <TextInput
+          label={t('login.username')}
+          value={login}
+          onChange={setLogin}
+          autoFocus
+        />
         <PasswordInput
-          label="Новый пароль"
-          placeholder="оставьте пустым, чтобы не менять"
+          label={t('password.new')}
+          placeholder={t('creds.leaveEmpty')}
           value={password}
           onChange={setPassword}
         />
         {password.length > 0 && (
-          <PasswordInput label="Повторите пароль" value={confirm} onChange={setConfirm} />
+          <PasswordInput
+            label={t('password.repeat')}
+            value={confirm}
+            onChange={setConfirm}
+          />
         )}
         <PasswordInput
-          label="Текущий пароль"
-          placeholder="для подтверждения изменений"
+          label={t('creds.currentPassword')}
+          placeholder={t('creds.toConfirm')}
           value={current}
           onChange={setCurrent}
         />
         <Button loading={busy} onClick={submit}>
-          Сохранить
+          {t('common.save')}
         </Button>
       </div>
     </Modal>

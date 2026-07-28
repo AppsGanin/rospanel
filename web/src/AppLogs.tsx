@@ -1,3 +1,4 @@
+import i18n from './i18n'
 import { LogViewer } from './LogViewer'
 
 // classify a panel log line by its leveled tag ([INFO]/[WARN]/[ERROR]) with a
@@ -15,20 +16,20 @@ const COLORS: Record<string, string> = {
   info: 'text-success',
 }
 
-const FILTERS = [
-  { value: 'all', label: 'Все' },
-  { value: 'info', label: 'Инфо' },
-  { value: 'warning', label: 'Предупр.' },
-  { value: 'error', label: 'Ошибки' },
+const FILTERS = () => [
+  { value: 'all', label: i18n.t('logs.all') },
+  { value: 'info', label: i18n.t('logs.info') },
+  { value: 'warning', label: i18n.t('logs.warning') },
+  { value: 'error', label: i18n.t('logs.error') },
 ]
 
 export function AppLogs({ onClose }: { onClose: () => void }) {
   return (
     <LogViewer
-      title="Логи панели"
+      title={i18n.t('logs.panelTitle')}
       streamUrl="api/logs/stream"
       onClose={onClose}
-      filters={FILTERS}
+      filters={FILTERS()}
       classify={classify}
       colorOf={(c) => COLORS[c] ?? 'text-gray-700'}
     />

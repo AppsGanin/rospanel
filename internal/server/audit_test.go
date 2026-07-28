@@ -15,7 +15,7 @@ import (
 // inSomeCategory reports whether an action is reachable from the journal's filter.
 func inSomeCategory(action string) bool {
 	for _, c := range model.AdminAuditCategories {
-		for _, key := range model.AdminAuditActionsIn(c.Key) {
+		for _, key := range model.AdminAuditActionsIn(c) {
 			if key == action {
 				return true
 			}
@@ -64,7 +64,7 @@ func TestEveryAuditActionHasALabel(t *testing.T) {
 		if route.action == "" {
 			continue
 		}
-		if model.AdminAuditLabel(route.action) == route.action {
+		if !model.AdminAuditKnown(route.action) {
 			t.Errorf("action %q (route %q) is missing from model.AdminAuditCatalog",
 				route.action, pattern)
 		}
@@ -75,8 +75,8 @@ func TestEveryAuditActionHasALabel(t *testing.T) {
 				route.action, pattern)
 		}
 		// The settings share one action, so the section is the ONLY thing that says
-		// what was changed. A settings route without one records "кто-то что-то
-		// поменял", which is not an audit trail.
+		// what was changed. A settings route without one records "somebody changed
+		// something", which is not an audit trail.
 		if route.action == model.AuditSettings && route.section == "" {
 			t.Errorf("settings route %q records no section — the row would not say what changed", pattern)
 		}
@@ -110,7 +110,10 @@ func TestAuditSettingsRowsCarryTheirSection(t *testing.T) {
 	if rows[0].Action != model.AuditSettings {
 		t.Errorf("action = %q, want the shared %q", rows[0].Action, model.AuditSettings)
 	}
-	if rows[0].Target != "DNS" {
+	// The target is a dictionary key now, not a label: the journal is rendered in
+	// whichever language the admin picked in their browser, which the server cannot
+	// know. Assert the key — that is what decides which section the operator reads.
+	if rows[0].Target != model.AuditSectionPrefix+"dns" {
 		t.Errorf("target = %q, want the section that was changed", rows[0].Target)
 	}
 }

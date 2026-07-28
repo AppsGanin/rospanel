@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   deleteBrandingLogo,
   saveBranding,
@@ -19,11 +20,11 @@ const ACCENT_PRESETS = [
 type ColorKey = keyof ThemeColors;
 
 const COLOR_FIELDS: Array<{ key: ColorKey; label: string; hint: string }> = [
-  { key: "accent", label: "Акцент", hint: "Кнопки, ссылки, активные вкладки, логотип" },
-  { key: "text", label: "Текст", hint: "Основной текст и заголовки" },
-  { key: "muted", label: "Приглушённый текст", hint: "Подписи, второстепенный текст" },
-  { key: "bg", label: "Фон страницы", hint: "Подложка панели и страницы подписки" },
-  { key: "surface", label: "Поверхность", hint: "Карточки, поля ввода, модалки" },
+  { key: "accent", label: "brand.accent", hint: "brand.accentHint" },
+  { key: "text", label: "brand.text", hint: "brand.textHint" },
+  { key: "muted", label: "brand.muted", hint: "brand.mutedHint" },
+  { key: "bg", label: "brand.bg", hint: "brand.bgHint" },
+  { key: "surface", label: "brand.surface", hint: "brand.surfaceHint" },
 ];
 
 function normHex(v: string): string {
@@ -43,6 +44,7 @@ function ColorField({
   def: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const isDefault = value.toLowerCase() === def.toLowerCase();
   return (
     <div className="flex items-center gap-3">
@@ -72,7 +74,7 @@ function ColorField({
           onClick={() => onChange(def)}
           className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
         >
-          сброс
+          {t("brand.reset")}
         </button>
       )}
     </div>
@@ -80,6 +82,7 @@ function ColorField({
 }
 
 export function BrandingSettings() {
+  const { t } = useTranslation();
   const brand = useBrand();
   const [name, setName] = useState("");
   const [savedName, setSavedName] = useState("");
@@ -130,7 +133,7 @@ export function BrandingSettings() {
         await brand.refresh();
         setSavedName(name.trim());
         setSavedTheme(clean);
-        notifySuccess("Брендинг сохранён");
+        notifySuccess(t("brand.saved"));
       },
       { key: "brand" },
     );
@@ -144,7 +147,7 @@ export function BrandingSettings() {
       async () => {
         await uploadBrandingLogo(file);
         await brand.refresh();
-        notifySuccess("Логотип загружен");
+        notifySuccess(t("brand.logoUploaded"));
       },
       { key: "logo" },
     );
@@ -154,7 +157,7 @@ export function BrandingSettings() {
       async () => {
         await deleteBrandingLogo();
         await brand.refresh();
-        notifySuccess("Логотип сброшен на стандартный");
+        notifySuccess(t("brand.logoReset"));
       },
       { key: "logo" },
     );
@@ -162,12 +165,12 @@ export function BrandingSettings() {
   return (
     <>
     <SettingCard
-      title="Брендинг"
-      description="Название, цвета и логотип панели. Применяется и на странице подписки."
+      title={t("settings.tabBranding")}
+      description={t("brand.description")}
     >
       <div className="flex flex-col gap-4">
         <TextInput
-          label="Название панели"
+          label={t("brand.panelName")}
           placeholder={brand.default_name}
           value={name}
           onChange={setName}
@@ -175,13 +178,13 @@ export function BrandingSettings() {
 
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-medium text-ink">Цвета</p>
+            <p className="text-sm font-medium text-ink">{t("brand.colors")}</p>
             <button
               type="button"
               onClick={resetAll}
               className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
             >
-              Сбросить все
+              {t("brand.resetAll")}
             </button>
           </div>
 
@@ -192,7 +195,7 @@ export function BrandingSettings() {
                 type="button"
                 onClick={() => setColor("accent", c)}
                 title={c}
-                aria-label={`Акцент ${c}`}
+                aria-label={t("brand.accentSwatch", { color: c })}
                 className={
                   "h-7 w-7 rounded-full border transition " +
                   (theme.accent.toLowerCase() === c.toLowerCase()
@@ -208,8 +211,8 @@ export function BrandingSettings() {
             {COLOR_FIELDS.map((f) => (
               <ColorField
                 key={f.key}
-                label={f.label}
-                hint={f.hint}
+                label={t(f.label as "brand.accent")}
+                hint={t(f.hint as "brand.accentHint")}
                 value={theme[f.key]}
                 def={brand.default_theme[f.key]}
                 onChange={(v) => setColor(f.key, v)}
@@ -219,7 +222,7 @@ export function BrandingSettings() {
         </div>
 
         <div>
-          <p className="mb-1.5 text-sm font-medium text-ink">Логотип</p>
+          <p className="mb-1.5 text-sm font-medium text-ink">{t("brand.logo")}</p>
           <div className="flex items-center gap-3">
             {brand.has_custom_logo && (
               <img
@@ -234,7 +237,7 @@ export function BrandingSettings() {
               loading={isBusy("logo")}
               onClick={onPickLogo}
             >
-              Загрузить логотип
+              {t("brand.uploadLogo")}
             </Button>
             {brand.has_custom_logo && (
               <Button
@@ -243,7 +246,7 @@ export function BrandingSettings() {
                 loading={isBusy("logo")}
                 onClick={removeLogo}
               >
-                Сбросить
+                {t("usersPanel.reset")}
               </Button>
             )}
             <input
@@ -255,7 +258,7 @@ export function BrandingSettings() {
             />
           </div>
           <p className="mt-1.5 text-xs text-ink-muted">
-            PNG или JPEG, до 512 КБ, не больше 1024×1024 px.
+            {t("brand.logoHint")}
           </p>
         </div>
 

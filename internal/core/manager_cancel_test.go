@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -51,12 +52,12 @@ func TestCancelAndSwitchGuard(t *testing.T) {
 	}
 
 	// Switching to a DIFFERENT paid plan is blocked while one is active.
-	if _, err := m.startPlanPayment(context.Background(), u.ID, pro.ID, "cryptobot", ""); err == nil ||
+	if _, err := m.startPlanPayment(context.Background(), i18n.RU, u.ID, pro.ID, "cryptobot", ""); err == nil ||
 		!strings.Contains(err.Error(), "отмените") {
 		t.Fatalf("switch to Про should be blocked with a cancel hint, got err=%v", err)
 	}
 	// Renewing the SAME plan passes the guard (fails later only on provider config).
-	if _, err := m.startPlanPayment(context.Background(), u.ID, std.ID, "cryptobot", ""); err != nil &&
+	if _, err := m.startPlanPayment(context.Background(), i18n.RU, u.ID, std.ID, "cryptobot", ""); err != nil &&
 		strings.Contains(err.Error(), "отмените") {
 		t.Fatalf("renewing the same plan must not be blocked by the switch guard: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestCancelAndSwitchGuard(t *testing.T) {
 	}
 
 	// Now on free, buying any paid plan passes the guard.
-	if _, err := m.startPlanPayment(context.Background(), u.ID, pro.ID, "cryptobot", ""); err != nil &&
+	if _, err := m.startPlanPayment(context.Background(), i18n.RU, u.ID, pro.ID, "cryptobot", ""); err != nil &&
 		strings.Contains(err.Error(), "отмените") {
 		t.Fatalf("buying a paid plan after cancel must be allowed: %v", err)
 	}
@@ -103,11 +104,11 @@ func TestRequestPlanPaymentReusesPendingOrder(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	o1, _, err := m.RequestPlanPayment(context.Background(), u.ID, plan.ID)
+	o1, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, plan.ID)
 	if err != nil {
 		t.Fatalf("first request: %v", err)
 	}
-	o2, _, err := m.RequestPlanPayment(context.Background(), u.ID, plan.ID)
+	o2, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, plan.ID)
 	if err != nil {
 		t.Fatalf("second request: %v", err)
 	}
@@ -202,11 +203,11 @@ func TestRequestPlanPaymentSwitchGuard(t *testing.T) {
 		t.Fatalf("apply a: %v", err)
 	}
 	// Manual order for a DIFFERENT plan while A is active → blocked.
-	if _, _, err := m.RequestPlanPayment(context.Background(), u.ID, b.ID); err == nil || !contains(err.Error(), "отмените") {
+	if _, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, b.ID); err == nil || !contains(err.Error(), "отмените") {
 		t.Fatalf("manual order for B must be blocked while A active, got %v", err)
 	}
 	// Manual order for the SAME plan (renewal) → allowed.
-	if _, _, err := m.RequestPlanPayment(context.Background(), u.ID, a.ID); err != nil {
+	if _, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, a.ID); err != nil {
 		t.Fatalf("manual renewal of A must be allowed: %v", err)
 	}
 }
@@ -229,10 +230,10 @@ func TestDisabledPlanNotPurchasable(t *testing.T) {
 	}
 	u, _ := st.CreateUser("u", "uuid", "pw", "tok", 0, 0, 0)
 
-	if _, err := m.startPlanPayment(context.Background(), u.ID, p.ID, "cryptobot", ""); err == nil || !contains(err.Error(), "недоступен") {
+	if _, err := m.startPlanPayment(context.Background(), i18n.RU, u.ID, p.ID, "cryptobot", ""); err == nil || !contains(err.Error(), "недоступен") {
 		t.Fatalf("auto pay for disabled plan should be rejected, got %v", err)
 	}
-	if _, _, err := m.RequestPlanPayment(context.Background(), u.ID, p.ID); err == nil || !contains(err.Error(), "недоступен") {
+	if _, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, p.ID); err == nil || !contains(err.Error(), "недоступен") {
 		t.Fatalf("manual order for disabled plan should be rejected, got %v", err)
 	}
 
@@ -240,11 +241,11 @@ func TestDisabledPlanNotPurchasable(t *testing.T) {
 	if err := st.SetUserPlan(u.ID, p.ID, false); err != nil {
 		t.Fatalf("put user on disabled plan: %v", err)
 	}
-	if _, _, err := m.RequestPlanPayment(context.Background(), u.ID, p.ID); err != nil {
+	if _, _, err := m.RequestPlanPayment(context.Background(), i18n.RU, u.ID, p.ID); err != nil {
 		t.Fatalf("renewing your own (now-disabled) plan must be allowed: %v", err)
 	}
 	// Auto path renewal passes the enabled/switch guards (only later needs a provider).
-	if _, err := m.startPlanPayment(context.Background(), u.ID, p.ID, "cryptobot", ""); err != nil &&
+	if _, err := m.startPlanPayment(context.Background(), i18n.RU, u.ID, p.ID, "cryptobot", ""); err != nil &&
 		(contains(err.Error(), "недоступен") || contains(err.Error(), "отмените")) {
 		t.Fatalf("auto renewal of your own disabled plan must not be blocked by guards: %v", err)
 	}

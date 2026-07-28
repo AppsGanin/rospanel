@@ -192,7 +192,7 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 // users are left alone (extending "never" is meaningless) and not counted.
 func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string, days int) (int, error) {
 	if len(ids) == 0 {
-		return 0, invalid("не выбрано ни одного пользователя")
+		return 0, invalidCode("err.noUsersSelected", "не выбрано ни одного пользователя")
 	}
 	// Snapshot the users up front. The audit rows for a bulk DELETE can't look their
 	// names up afterwards; an id that isn't in the snapshot doesn't exist (so this
@@ -221,10 +221,10 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		m.auditBulk(ctx, pick(names(before), reset), model.EventTrafficReset, nil)
 	case "extend":
 		if days <= 0 {
-			return 0, invalid("укажите число дней для продления")
+			return 0, invalidCode("err.extendDaysRequired", "укажите число дней для продления")
 		}
 		if days > maxExtendDays {
-			return 0, invalid("слишком большой срок продления (макс. %d дней)", maxExtendDays)
+			return 0, invalidCode("err.extendTooLong", "слишком большой срок продления (макс. {{max}} дней)", map[string]any{"max": maxExtendDays})
 		}
 		extended := m.bulkExtendExpiry(ids, days)
 		affected = int64(len(extended))
@@ -238,7 +238,7 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 			})
 		}
 	default:
-		return 0, invalid("неизвестное действие %q", action)
+		return 0, invalidCode("err.unknownAction", "неизвестное действие {{value}}", map[string]any{"value": action})
 	}
 	if err != nil {
 		logErr("bulk user action failed", "action", action, "count", len(ids), "err", err)
@@ -391,7 +391,7 @@ func (m *Manager) GenerateUserTgLinkCode(userID int64) (string, error) {
 		return "", err
 	}
 	if u.TgChatID != 0 {
-		return "", invalid("Telegram уже привязан к этому пользователю")
+		return "", invalidCode("err.tgAlreadyLinked", "Telegram уже привязан к этому пользователю")
 	}
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -415,7 +415,7 @@ func (m *Manager) SetResetPeriod(ctx context.Context, id int64, period string) e
 	switch period {
 	case "none", "daily", "weekly", "monthly", "yearly":
 	default:
-		return invalid("неверный период сброса %q", period)
+		return invalidCode("err.badResetPeriod", "неверный период сброса {{value}}", map[string]any{"value": period})
 	}
 	if err := m.store.SetResetPeriod(id, period, time.Now().Unix()); err != nil {
 		return err
@@ -454,7 +454,7 @@ func resetDue(period string, lastReset, now int64, loc *time.Location) bool {
 		return false
 	}
 	// Rolling N-day cycle ("days:N"), used by free plans to refill the quota
-	// every срок действия: due once N days have elapsed since the last reset,
+	// every plan duration: due once N days have elapsed since the last reset,
 	// regardless of calendar boundaries.
 	if spec, ok := strings.CutPrefix(period, "days:"); ok {
 		n, err := strconv.Atoi(spec)

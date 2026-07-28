@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { AbuseSettings } from "./AbuseSettings";
 import { ApiSettings } from "./ApiSettings";
 import { BillingPanel } from "./BillingPanel";
@@ -10,16 +11,16 @@ import { cn } from "./ui";
 import { WebhooksSettings } from "./WebhooksSettings";
 
 // Everything server-specific (connections/protocols, domain, routing, DNS, decoy)
-// moved to the per-server cards on the "Сервера" page: each server (the master
+// moved to the per-server cards on the "Servers" page: each server (the master
 // included) owns its own, edited from its card rather than as global tabs here.
 const SUBTABS = [
-  { value: "general", label: "Основное" },
-  { value: "branding", label: "Брендинг" },
-  { value: "subscriptions", label: "Подписки" },
-  { value: "telegram", label: "Telegram" },
-  { value: "billing", label: "Оплата" },
-  { value: "abuse", label: "Блоклисты" },
-  { value: "api", label: "API" },
+  { value: "general", label: "settings.tabGeneral" },
+  { value: "branding", label: "settings.tabBranding" },
+  { value: "subscriptions", label: "settings.tabSubscriptions" },
+  { value: "telegram", label: "settings.tabTelegram" },
+  { value: "billing", label: "settings.tabBilling" },
+  { value: "abuse", label: "settings.tabAbuse" },
+  { value: "api", label: "settings.tabApi" },
 ] as const;
 
 type SubTab = (typeof SUBTABS)[number]["value"];
@@ -28,6 +29,7 @@ type SubTab = (typeof SUBTABS)[number]["value"];
 // business, not a setting of the VPN — and hangs off the account menu instead.
 // See AdminsSettings, rendered by Dashboard on the "admins" route.
 export function SettingsPanel() {
+  const { t: tr } = useTranslation();
   const seg = useRoute();
   const tab = (SUBTABS.find((t) => t.value === seg[1])?.value ??
     "general") as SubTab;
@@ -49,7 +51,7 @@ export function SettingsPanel() {
                 : "border-transparent text-ink-muted hover:text-ink",
             )}
           >
-            {t.label}
+            {tr(t.label)}
           </button>
         ))}
       </div>

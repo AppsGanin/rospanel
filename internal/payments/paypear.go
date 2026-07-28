@@ -26,19 +26,19 @@ func payPearDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyPayPear,
 		Label: "PayPear",
-		Note:  "Карты, СБП, SberPay · ₽",
+		Note:  "payNote.cardsSbpSberpay",
 		Fields: []Field{
 			{Key: "shop_id", Label: "Shop ID", Kind: FieldText},
-			{Key: "secret_key", Label: "Секретный ключ", Kind: FieldSecret},
-			{Key: "method", Label: "Метод оплаты", Kind: FieldSelect, Optional: true,
+			{Key: "secret_key", Label: "payField.secretKey", Kind: FieldSecret},
+			{Key: "method", Label: "payField.method", Kind: FieldSelect, Optional: true,
 				Options: []FieldOption{
-					{Value: "", Label: "Все методы (выбор на странице)"},
-					{Value: "sbp", Label: "СБП"},
-					{Value: "bank_card", Label: "Карты"},
+					{Value: "", Label: "payField.allMethods"},
+					{Value: "sbp", Label: "payField.sbp"},
+					{Value: "bank_card", Label: "payField.cards"},
 					{Value: "sberpay", Label: "SberPay"},
 					{Value: "tpay", Label: "T-Pay"},
 				},
-				Help: "Пусто — клиент выбирает метод на странице PayPear."},
+				Help: "payHelp.methodPaypear"},
 		},
 		New: func(cfg Config) Client {
 			return &PayPear{shopID: cfg.Get("shop_id"), secretKey: cfg.Get("secret_key"), method: cfg.Get("method")}
@@ -96,7 +96,7 @@ func (p *PayPear) Create(ctx context.Context, req CreateReq) (string, string, er
 	}
 	payURL := firstNonEmpty(out.Result.Confirmation.ConfirmationURL, out.Result.URL)
 	if !out.Success || out.Result.ID == "" || payURL == "" {
-		return "", "", fmt.Errorf("PayPear: не удалось создать платёж: %s", out.Message)
+		return "", "", fmt.Errorf("PayPear: could not create the payment: %s", out.Message)
 	}
 	return out.Result.ID, payURL, nil
 }
@@ -122,7 +122,7 @@ func (p *PayPear) Webhook(ctx context.Context, body []byte, _ http.Header) (stri
 		} `json:"object"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.Object.ID == "" {
-		return "", Result{}, fmt.Errorf("PayPear: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("PayPear: malformed notification")
 	}
 	res, err := p.Status(ctx, n.Object.ID)
 	if err != nil {

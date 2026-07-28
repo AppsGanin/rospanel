@@ -2,7 +2,7 @@
 // colour and logo. The name and accent live in the settings table (so they ride
 // along in the SQLite backup); a custom logo is a file under <dataDir>/branding/
 // (which the data-dir tar backup already captures). When nothing is configured
-// the built-in РосПанель defaults apply.
+// the built-in RosPanel defaults apply.
 package branding
 
 import (
@@ -20,12 +20,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 //go:embed default-logo.svg
 var defaultLogoSVG []byte
 
-// DefaultLogo returns the built-in РосПанель logo (SVG).
+// DefaultLogo returns the built-in RosPanel logo (SVG).
 func DefaultLogo() []byte { return defaultLogoSVG }
 
 const (
@@ -47,7 +49,7 @@ type Theme struct {
 	Surface string `json:"surface"` // cards / inputs / panels
 }
 
-// DefaultTheme is the stock РосПанель palette (Госуслуги-style blue on a soft
+// DefaultTheme is the stock RosPanel palette (Gosuslugi-style blue on a soft
 // blue page with white surfaces).
 func DefaultTheme() Theme {
 	return Theme{
@@ -100,27 +102,30 @@ func pick(v, fallback string) string {
 // NormalizeTheme validates each provided colour and returns the JSON to persist.
 // Empty fields are dropped (⇒ default applies); a non-empty non-hex field errors.
 func NormalizeTheme(t Theme) (string, error) {
-	clean := func(name, v string) (string, error) {
+	// Which colour failed is part of the message, and it is a word — so each field
+	// gets its own code rather than one code with the field name glued in: an
+	// argument travels verbatim and would arrive at an English panel in Russian.
+	clean := func(code, fallback, v string) (string, error) {
 		v = strings.ToLower(strings.TrimSpace(v))
 		if v == "" || accentRe.MatchString(v) {
 			return v, nil
 		}
-		return "", fmt.Errorf("цвет «%s» должен быть в формате #RRGGBB", name)
+		return "", model.FieldErr(code, fallback)
 	}
 	var err error
-	if t.Accent, err = clean("акцент", t.Accent); err != nil {
+	if t.Accent, err = clean("err.badColorAccent", "цвет «акцент» должен быть в формате #RRGGBB", t.Accent); err != nil {
 		return "", err
 	}
-	if t.Text, err = clean("текст", t.Text); err != nil {
+	if t.Text, err = clean("err.badColorText", "цвет «текст» должен быть в формате #RRGGBB", t.Text); err != nil {
 		return "", err
 	}
-	if t.Muted, err = clean("приглушённый текст", t.Muted); err != nil {
+	if t.Muted, err = clean("err.badColorMuted", "цвет «приглушённый текст» должен быть в формате #RRGGBB", t.Muted); err != nil {
 		return "", err
 	}
-	if t.Bg, err = clean("фон", t.Bg); err != nil {
+	if t.Bg, err = clean("err.badColorBg", "цвет «фон» должен быть в формате #RRGGBB", t.Bg); err != nil {
 		return "", err
 	}
-	if t.Surface, err = clean("поверхность", t.Surface); err != nil {
+	if t.Surface, err = clean("err.badColorSurface", "цвет «поверхность» должен быть в формате #RRGGBB", t.Surface); err != nil {
 		return "", err
 	}
 	if t == (Theme{}) {
@@ -229,17 +234,17 @@ func SaveLogo(dataDir string, r io.Reader) error {
 		return err
 	}
 	if len(b) == 0 {
-		return fmt.Errorf("пустой файл")
+		return model.FieldErr("err.emptyFile", "пустой файл")
 	}
 	if len(b) > MaxLogoBytes {
-		return fmt.Errorf("логотип больше %d КБ", MaxLogoBytes>>10)
+		return model.FieldErr("err.logoTooBig", "логотип больше {{kb}} КБ", map[string]any{"kb": MaxLogoBytes >> 10})
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(b))
 	if err != nil || (format != "png" && format != "jpeg") {
-		return fmt.Errorf("нужен PNG или JPEG")
+		return model.FieldErr("err.needPngJpeg", "нужен PNG или JPEG")
 	}
 	if cfg.Width > maxLogoDim || cfg.Height > maxLogoDim {
-		return fmt.Errorf("изображение больше %d×%d пикселей", maxLogoDim, maxLogoDim)
+		return model.FieldErr("err.imageTooLarge", "изображение больше {{dim}}×{{dim}} пикселей", map[string]any{"dim": maxLogoDim})
 	}
 	if err := os.MkdirAll(brandingDir(dataDir), 0o700); err != nil {
 		return err

@@ -20,7 +20,7 @@ type laneHealth struct {
 
 // healthLoop periodically probes the enabled Opera lane through its local proxy
 // and records whether it's alive, so the dashboard/routing UI can show
-// "активен" vs "на фолбэке".
+// "active" vs "on fallback".
 func (m *Manager) healthLoop() {
 	t := time.NewTicker(laneHealthInterval)
 	defer t.Stop()

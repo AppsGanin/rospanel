@@ -22,12 +22,12 @@ func pal24Descriptor() Descriptor {
 	return Descriptor{
 		Key:   keyPal24,
 		Label: "PayPalych",
-		Note:  "Карты, СБП · ₽",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
-			{Key: "api_token", Label: "API-токен", Kind: FieldSecret, Help: "Личный кабинет PayPalych → API."},
+			{Key: "api_token", Label: "payField.apiToken", Kind: FieldSecret, Help: "payHelp.pal24Token"},
 			{Key: "shop_id", Label: "Shop ID", Kind: FieldText},
-			{Key: "signature_token", Label: "Токен подписи", Kind: FieldSecret, Optional: true,
-				Help: "Необязательно. Если пусто — подпись вебхука проверяется по API-токену."},
+			{Key: "signature_token", Label: "payField.signToken", Kind: FieldSecret, Optional: true,
+				Help: "payHelp.signFallbackToken"},
 		},
 		New: func(cfg Config) Client {
 			return &Pal24{apiToken: cfg.Get("api_token"), shopID: cfg.Get("shop_id"), signatureToken: cfg.Get("signature_token")}
@@ -87,7 +87,7 @@ func (p *Pal24) Create(ctx context.Context, req CreateReq) (string, string, erro
 	}
 	payURL := firstNonEmpty(out.LinkPageURL, out.LinkURL, out.TransferURL)
 	if out.BillID == "" || payURL == "" {
-		return "", "", fmt.Errorf("PayPalych: пустой ответ при создании счёта: %s%s", out.Message, out.Error)
+		return "", "", fmt.Errorf("PayPalych: empty response when creating the invoice: %s%s", out.Message, out.Error)
 	}
 	return out.BillID, payURL, nil
 }
@@ -123,19 +123,19 @@ func (p *Pal24) Webhook(_ context.Context, body []byte, h http.Header) (string, 
 	billID := firstNonEmpty(fields["bill_id"], fields["BillId"], fields["BillID"])
 	status := firstNonEmpty(fields["Status"], fields["status"])
 	if invID == "" || outSum == "" || sig == "" {
-		return "", Result{}, fmt.Errorf("PayPalych: неполное уведомление")
+		return "", Result{}, fmt.Errorf("PayPalych: incomplete notification")
 	}
 	// PayPalych signs the OutSum string exactly as it sent it — don't reformat it.
 	want := strings.ToUpper(md5Hex(outSum + ":" + invID + ":" + p.signToken()))
 	if !eqSig(want, sig) {
-		return "", Result{}, fmt.Errorf("PayPalych: неверная подпись")
+		return "", Result{}, fmt.Errorf("PayPalych: bad signature")
 	}
 	// The order is keyed on bill_id (what Create stored). Never substitute our own
 	// order id here: it isn't a bill_id, so the lookup would miss — or, worse, collide
 	// with some other order whose bill_id happens to equal this number. A postback
 	// without bill_id is left to the polling fallback (bill/status by bill_id).
 	if billID == "" {
-		return "", Result{}, fmt.Errorf("PayPalych: в уведомлении нет bill_id")
+		return "", Result{}, fmt.Errorf("PayPalych: the notification carries no bill_id")
 	}
 	return billID, pal24Status(status, outSum, "RUB"), nil
 }

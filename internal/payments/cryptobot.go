@@ -18,9 +18,9 @@ func cryptoBotDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyCryptoBot,
 		Label: "CryptoBot",
-		Note:  "Крипта: USDT, TON, BTC · счёт в ₽",
+		Note:  "payNote.cryptoTon",
 		Fields: []Field{
-			{Key: "token", Label: "API-токен", Kind: FieldSecret, Placeholder: "12345:AA…",
+			{Key: "token", Label: "payField.apiToken", Kind: FieldSecret, Placeholder: "12345:AA…",
 				Help: "@CryptoBot → Crypto Pay → Create App."},
 			{Key: "testnet", Label: "Testnet (@CryptoTestnetBot)", Kind: FieldBool},
 		},
@@ -42,7 +42,7 @@ func (c *CryptoBot) Status(ctx context.Context, providerID string) (Result, erro
 // invoice it carries (including its amount) can be trusted as-is.
 func (c *CryptoBot) Webhook(_ context.Context, body []byte, h http.Header) (string, Result, error) {
 	if !c.VerifyWebhook(body, h.Get("crypto-pay-api-signature")) {
-		return "", Result{}, fmt.Errorf("CryptoBot: неверная подпись")
+		return "", Result{}, fmt.Errorf("CryptoBot: bad signature")
 	}
 	var upd struct {
 		UpdateType string `json:"update_type"`
@@ -52,7 +52,7 @@ func (c *CryptoBot) Webhook(_ context.Context, body []byte, h http.Header) (stri
 		} `json:"payload"`
 	}
 	if json.Unmarshal(body, &upd) != nil || upd.Payload.InvoiceID == 0 {
-		return "", Result{}, fmt.Errorf("CryptoBot: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("CryptoBot: malformed notification")
 	}
 	res := upd.Payload.AsResult()
 	if upd.UpdateType == "invoice_paid" {
@@ -112,7 +112,7 @@ func (c *CryptoBot) CreateInvoice(ctx context.Context, amountRub int, orderID in
 		url = out.Result.BotURL
 	}
 	if out.Result.InvoiceID == 0 || url == "" {
-		return "", "", fmt.Errorf("CryptoBot: пустой ответ при создании счёта")
+		return "", "", fmt.Errorf("CryptoBot: empty response when creating the invoice")
 	}
 	return fmt.Sprintf("%d", out.Result.InvoiceID), url, nil
 }
@@ -198,7 +198,7 @@ func (c *CryptoBot) call(ctx context.Context, method string, body any, out any) 
 	}
 	_ = json.Unmarshal(data, &envelope)
 	if !envelope.OK {
-		return fmt.Errorf("CryptoBot: ошибка API: %s", string(envelope.Error))
+		return fmt.Errorf("CryptoBot: API error: %s", string(envelope.Error))
 	}
 	return json.Unmarshal(data, out)
 }

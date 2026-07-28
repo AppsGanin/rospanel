@@ -98,12 +98,12 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(10 * time.Minute))
 	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, http.StatusBadRequest, "ошибка разбора загрузки")
+		writeErrCode(w, http.StatusBadRequest, "err.uploadParseError", "ошибка разбора загрузки")
 		return
 	}
 	f, _, err := r.FormFile("backup")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "нет файла бэкапа")
+		writeErrCode(w, http.StatusBadRequest, "err.noBackupFile", "нет файла бэкапа")
 		return
 	}
 	defer f.Close()
@@ -116,7 +116,7 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	defer os.Remove(tmp.Name())
 	if _, err := io.Copy(tmp, f); err != nil {
 		tmp.Close()
-		writeErr(w, http.StatusInternalServerError, "ошибка записи загрузки: "+err.Error())
+		writeErrDetail(w, http.StatusInternalServerError, "err.uploadWriteFailed", "ошибка записи загрузки: ", err.Error())
 		return
 	}
 	tmp.Close()
@@ -129,11 +129,14 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	m, mErr := backup.ReadManifest(mf)
 	mf.Close()
 	if mErr != nil {
-		writeErr(w, http.StatusBadRequest, mErr.Error())
+		writeErrDetail(w, http.StatusBadRequest, "err.backupUnreadable",
+			"не удалось прочитать архив: ", mErr.Error())
 		return
 	}
 
 	// Extract to a throwaway dir and validate the embedded database.
+	// issue is a dictionary key, not a sentence: the restore screen is the panel's,
+	// and its language is the admin's choice.
 	valid, issue, dbUsers, dbAdmins := true, "", 0, 0
 	dir, err := os.MkdirTemp("", "rospanel-inspect-*")
 	if err != nil {
@@ -142,11 +145,11 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(dir)
 	if err := backup.Restore(tmp.Name(), dir); err != nil {
-		valid, issue = false, "архив повреждён: "+err.Error()
+		valid, issue = false, "restore.archiveCorrupt"
 	} else if u, a, _, err := store.InspectDB(filepath.Join(dir, "rospanel.db")); err != nil {
-		valid, issue = false, "база данных в бэкапе пуста или повреждена"
+		valid, issue = false, "restore.dbUnreadable"
 	} else if a == 0 {
-		valid, issue, dbUsers, dbAdmins = false, "в бэкапе нет администратора — восстанавливать нечего", u, a
+		valid, issue, dbUsers, dbAdmins = false, "restore.noAdmin", u, a
 	} else {
 		dbUsers, dbAdmins = u, a
 	}
@@ -170,12 +173,12 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, http.StatusBadRequest, "ошибка разбора загрузки")
+		writeErrCode(w, http.StatusBadRequest, "err.uploadParseError", "ошибка разбора загрузки")
 		return
 	}
 	f, _, err := r.FormFile("backup")
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "нет файла бэкапа")
+		writeErrCode(w, http.StatusBadRequest, "err.noBackupFile", "нет файла бэкапа")
 		return
 	}
 	defer f.Close()
@@ -189,7 +192,7 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := io.Copy(tmp, f); err != nil {
 		tmp.Close()
-		writeErr(w, http.StatusInternalServerError, "ошибка записи загрузки: "+err.Error())
+		writeErrDetail(w, http.StatusInternalServerError, "err.uploadWriteFailed", "ошибка записи загрузки: ", err.Error())
 		return
 	}
 	tmp.Close()
@@ -197,7 +200,7 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 	// Stage the restore and apply it on the next boot (before the DB is opened),
 	// so the live process's WAL can't checkpoint stale data over the restored DB.
 	if err := backup.StageRestore(tmp.Name(), rt.dataDir); err != nil {
-		writeErr(w, http.StatusBadRequest, "восстановление не удалось: "+err.Error())
+		writeErrDetail(w, http.StatusBadRequest, "err.restoreFailed", "восстановление не удалось: ", err.Error())
 		return
 	}
 
