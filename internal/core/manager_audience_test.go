@@ -27,7 +27,8 @@ func TestAudienceTargeting(t *testing.T) {
 	soon := mkUser(t, m, "soon", now.Add(48*time.Hour).Unix())
 
 	// "never" registered long ago and still hasn't shown up — the case the filter is
-	// for. "fresh" registered minutes ago; a "вы не заходили 30 дней" message would be
+	// for. "fresh" registered minutes ago; a "you have not been online for 30 days"
+	// message would be
 	// nonsense to them, so the account's own age has to floor the filter.
 	if err := m.store.BackdateUserForTest(never, now.Add(-60*24*time.Hour)); err != nil {
 		t.Fatalf("backdate: %v", err)
@@ -103,9 +104,10 @@ func TestAudienceValidation(t *testing.T) {
 }
 
 // A deleted account leaves its subscriber row behind on purpose — the person is
-// still in the bot, and reaching them is what the "без аккаунта" audience is for. But
+// still in the bot, and reaching them is what the "without an account" audience is
+// for. But
 // the row must stop naming the account, or the filters read a missing user's zero
-// values as facts: "ни разу не подключался" collected ex-customers who connected
+// values as facts: "never connected" collected ex-customers who connected
 // yesterday, while the audience meant to hold them excluded them.
 func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 	m := bcManager(t)
@@ -143,7 +145,7 @@ func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 }
 
 // The preview has to agree with the send. An unrecognised audience resolved to an
-// empty list and previewed as "0 получателей", while the launch would either refuse
+// empty list and previewed as "0 recipients", while the launch would either refuse
 // it or — for an empty string — fall back to everyone.
 func TestAudiencePreviewMatchesTheSend(t *testing.T) {
 	m := bcManager(t)

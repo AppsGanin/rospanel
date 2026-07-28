@@ -23,11 +23,11 @@ func (m *Manager) SaveLocalBackup(expr string, keep int) error {
 	expr = strings.TrimSpace(expr)
 	if expr != "" {
 		if _, err := cron.Parse(expr); err != nil {
-			return invalid("неверное расписание (cron): %v", err)
+			return invalidCode("err.badCron", "неверное расписание (cron): {{err}}", map[string]any{"err": err})
 		}
 	}
 	if keep < 0 || keep > maxBackupKeep {
-		return invalid("число хранимых копий должно быть от 0 до %d (0 — хранить все)", maxBackupKeep)
+		return invalidCode("err.backupKeepRange", "число хранимых копий должно быть от 0 до {{max}} (0 — хранить все)", map[string]any{"max": maxBackupKeep})
 	}
 	return m.store.SetLocalBackup(expr, keep)
 }

@@ -1,4 +1,6 @@
 import { useMemo, type ReactNode } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import i18n, { currentLang } from "./i18n";
 import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import {
@@ -65,14 +67,14 @@ export type BadgeColor = "gray" | "green" | "orange" | "red";
 export type StatusBadge = { label: string; color: BadgeColor };
 export type Opt = { value: string; label: string };
 
-// PROXY_REFRESH are the URL auto-refresh cadence options (minutes; -1 = never).
-export const PROXY_REFRESH: Opt[] = [
-  { value: "30", label: "Каждые 30 минут" },
-  { value: "60", label: "Каждый 1 час" },
-  { value: "180", label: "Каждые 3 часа" },
-  { value: "360", label: "Каждые 6 часов" },
-  { value: "720", label: "Каждые 12 часов" },
-  { value: "-1", label: "Никогда" },
+// proxyRefresh() are the URL auto-refresh cadence options (minutes; -1 = never).
+export const proxyRefresh = (): Opt[] => [
+  { value: "30", label: i18n.t("route.every30m") },
+  { value: "60", label: i18n.t("route.every1h") },
+  { value: "180", label: i18n.t("route.every3h") },
+  { value: "360", label: i18n.t("route.every6h") },
+  { value: "720", label: i18n.t("route.every12h") },
+  { value: "-1", label: i18n.t("subs.never") },
 ];
 
 // EMPTY is a blank routing config with sane defaults (built-in lanes in precedence).
@@ -92,19 +94,16 @@ export const EMPTY: RoutingConfig = {
   proxy_refresh_minutes: 30,
 };
 
-// BUILTIN_LANE_NAMES label the always-present lanes in the routing-order card.
+// builtinLaneName labels the always-present lanes in the routing-order card.
 // A proxy lane is labelled by its own name instead.
-const BUILTIN_LANE_NAMES: Record<string, string> = {
-  direct: "Напрямую",
-  warp: "WARP",
-  opera: "Opera VPN",
-};
+const builtinLaneName = (lane: string): string =>
+  lane === "direct" ? i18n.t("route.direct") : lane === "warp" ? "WARP" : "Opera VPN";
 
 // Opera VPN regions opera-proxy supports.
-export const OPERA_COUNTRIES = [
-  { value: "EU", label: "Европа" },
-  { value: "AS", label: "Азия" },
-  { value: "AM", label: "Америка" },
+export const operaCountries = () => [
+  { value: "EU", label: i18n.t("route.europe") },
+  { value: "AS", label: i18n.t("route.asia") },
+  { value: "AM", label: i18n.t("route.america") },
 ];
 
 // BUILTIN_LANES are the lanes that always exist, in default precedence. Mirrors
@@ -117,7 +116,7 @@ const MAX_LANES = 16;
 // fmtWhen renders a unix timestamp as a local date+time, or a dash when unset.
 const fmtWhen = (unix: number) =>
   unix
-    ? new Date(unix * 1000).toLocaleString("ru-RU", {
+    ? new Date(unix * 1000).toLocaleString(currentLang(), {
         dateStyle: "short",
         timeStyle: "short",
       })
@@ -207,24 +206,24 @@ export function hydrateRouting(
   };
 }
 
-// GEO_CADENCE are the geo auto-refresh options (hours; 0 = never).
-export const GEO_CADENCE: Opt[] = [
-  { value: "0", label: "Никогда (только вручную)" },
-  { value: "24", label: "Раз в день" },
-  { value: "72", label: "Раз в 3 дня" },
-  { value: "168", label: "Раз в неделю" },
+// geoCadence() are the geo auto-refresh options (hours; 0 = never).
+export const geoCadence = (): Opt[] => [
+  { value: "0", label: i18n.t("route.neverManual") },
+  { value: "24", label: i18n.t("route.onceADay") },
+  { value: "72", label: i18n.t("route.every3Days") },
+  { value: "168", label: i18n.t("route.onceAWeek") },
 ];
 
-// IPLIST_CADENCE are the iplist auto-refresh options. They get their own list —
+// iplistCadence() are the iplist auto-refresh options. They get their own list —
 // and a 12-hour step the geo one has no use for — because the iplist services
 // re-resolve their addresses about every 12 hours, so polling them daily already
 // lags a full cycle behind.
-export const IPLIST_CADENCE: Opt[] = [
-  { value: "0", label: "Никогда (только вручную)" },
-  { value: "12", label: "Раз в 12 часов" },
-  { value: "24", label: "Раз в день" },
-  { value: "72", label: "Раз в 3 дня" },
-  { value: "168", label: "Раз в неделю" },
+export const iplistCadence = (): Opt[] => [
+  { value: "0", label: i18n.t("route.neverManual") },
+  { value: "12", label: i18n.t("route.every12hOnce") },
+  { value: "24", label: i18n.t("route.onceADay") },
+  { value: "72", label: i18n.t("route.every3Days") },
+  { value: "168", label: i18n.t("route.onceAWeek") },
 ];
 
 // FileRow reports one database's on-disk state, with an optional note beneath it.
@@ -246,6 +245,7 @@ function FileRow({
   label?: string;
   note?: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
@@ -254,8 +254,8 @@ function FileRow({
         </span>
         <span className="text-xs text-ink-muted sm:shrink-0">
           {file.present
-            ? `${fmtBytes(file.size)} · обновлено ${fmtWhen(file.modified_at)}`
-            : "нет файла"}
+            ? `${fmtBytes(file.size)} · ${t("route.updatedAt", { when: fmtWhen(file.modified_at) })}`
+            : t("route.noFile")}
         </span>
       </div>
       {note}
@@ -276,7 +276,7 @@ function GeoFileRows({ status }: { status: GeoFile[] }) {
 }
 
 // CadenceSelect is one database set's auto-refresh schedule. Each set has its own
-// (see IPLIST_CADENCE), so the option list is passed in rather than assumed.
+// (see iplistCadence()), so the option list is passed in rather than assumed.
 function CadenceSelect({
   cadence,
   onCadence,
@@ -286,9 +286,10 @@ function CadenceSelect({
   onCadence: (hours: number) => void;
   options: Opt[];
 }) {
+  const { t } = useTranslation();
   return (
     <Select
-      label="Автообновление"
+      label={t("route.autoUpdate")}
       data={options}
       value={String(cadence)}
       onChange={(v) => onCadence(Number(v))}
@@ -313,23 +314,24 @@ export function GeoSection({
   cadence: number;
   onCadence: (hours: number) => void;
 }) {
+  const { t } = useTranslation();
   return (
     // The description goes in the BODY, not Section's `desc` slot: that slot sits
     // beside the action button, which on a phone leaves it ~180px and wraps a plain
     // sentence into a four-line column. As a child it gets the full width.
     <Section
-      title="Geo-базы"
+      title={t("route.geoDbs")}
       action={
         <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
-          Обновить
+          {t("common.refresh")}
         </Button>
       }
     >
       <p className="text-sm text-ink-muted">
-        geosite.dat / geoip.dat — категории доменов и IP для правил роутинга.
+        {t("route.geoHint")}
       </p>
       <GeoFileRows status={status} />
-      <CadenceSelect cadence={cadence} onCadence={onCadence} options={GEO_CADENCE} />
+      <CadenceSelect cadence={cadence} onCadence={onCadence} options={geoCadence()} />
     </Section>
   );
 }
@@ -349,14 +351,14 @@ const IPLIST_SOURCES: {
     source: "global",
     host: "iplist.my-handbook.ru",
     url: "https://iplist.my-handbook.ru",
-    about: "21 группа: ai, youtube, games, messengers, socials, torrent, news…",
+    about: "route.iplistGlobalAbout",
   },
   {
     file: "iplist-russia.json",
     source: "russia",
     host: "russia.iplist.opencck.org",
     url: "https://russia.iplist.opencck.org",
-    about: "3 группы: russia, vk, yandex — российские сервисы",
+    about: "route.iplistRussiaAbout",
   },
 ];
 
@@ -378,19 +380,20 @@ export function IPListSection({
   cadence: number;
   onCadence: (hours: number) => void;
 }) {
+  const { t } = useTranslation();
   const byFile = (name: string) => IPLIST_SOURCES.find((s) => s.file === name);
   return (
     // Description in the body rather than Section's `desc` slot — see GeoSection.
     <Section
-      title="Списки iplist"
+      title={t("route.iplists")}
       action={
         <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
-          Обновить
+          {t("common.refresh")}
         </Button>
       }
     >
       <p className="text-sm text-ink-muted">
-        Списки доменов и адресов, сгруппированные по сервисам.
+        {t("route.iplistHint")}
       </p>
 
       <div className="flex flex-col gap-3">
@@ -412,7 +415,7 @@ export function IPListSection({
                     >
                       {src.host}
                     </a>{" "}
-                    · {src.about}
+                    · {t(src.about as "route.iplistGlobalAbout")}
                   </p>
                 )
               }
@@ -423,13 +426,13 @@ export function IPListSection({
 
       <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-xs text-ink-muted">
         <p>
-          В правилах роутинга выбираются из выпадающего списка как{" "}
-          <span className="font-mono">iplist:источник/группа</span>. Одна и та же
-          группа означает разное в зависимости от поля: в «Доменах» подставятся
-          домены сервиса, в «IP» — его подсети.
+          <Trans
+            i18nKey="route.iplistUsage"
+            components={{ m: <span className="font-mono" /> }}
+          />
         </p>
         <p>
-          Оба источника — публичные сервисы на движке{" "}
+          {t("route.iplistSources")}{" "}
           <a
             href="https://github.com/rekryt/iplist"
             target="_blank"
@@ -438,14 +441,11 @@ export function IPListSection({
           >
             rekryt/iplist
           </a>
-          , они сами перепроверяют адреса примерно раз в 12 часов. Списки нужны
-          только панели: она разворачивает группы в конкретные домены и подсети
-          при сборке конфига, поэтому на ноды уходит уже готовый результат и
-          качать их туда не нужно.
+          {t("route.iplistSourcesTail")}
         </p>
       </div>
 
-      <CadenceSelect cadence={cadence} onCadence={onCadence} options={IPLIST_CADENCE} />
+      <CadenceSelect cadence={cadence} onCadence={onCadence} options={iplistCadence()} />
     </Section>
   );
 }
@@ -512,6 +512,7 @@ export function RoutingEditor({
   applying: boolean;
   liveStatus?: boolean;
 }) {
+  const { t } = useTranslation();
   const set = onCfg;
 
   const moveLane = (i: number, dir: -1 | 1) => {
@@ -525,7 +526,7 @@ export function RoutingEditor({
   // laneLabel names a routing-order entry: a built-in lane by its fixed label, a
   // proxy lane by the name the operator gave it.
   const laneLabel = (id: string) =>
-    BUILTIN_LANE_NAMES[id] ??
+    (["direct", "warp", "opera"].includes(id) ? builtinLaneName(id) : null) ??
     cfg.lanes.find((l) => l.id === id)?.name?.trim() ??
     id;
 
@@ -541,7 +542,7 @@ export function RoutingEditor({
     const id = newLaneID(cfg.lanes);
     const lane: EgressLane = {
       id,
-      name: `Полоса ${cfg.lanes.length + 1}`,
+      name: i18n.t("route.laneN", { n: cfg.lanes.length + 1 }),
       enabled: true,
       urls: [],
       manual: [],
@@ -627,7 +628,7 @@ export function RoutingEditor({
   // moving this lane up the order can.
   const catchAll = cfg.routing_order[cfg.routing_order.length - 1];
   const CATCH_ALL_NOTE =
-    "Сейчас эта полоса последняя в порядке маршрутизации: в неё и так уходит весь трафик, не совпавший с правилами выше, — поэтому её собственные правила ни на что не влияют. Чтобы забрать трафик у полосы выше, поднимите эту полосу в списке.";
+    i18n.t("route.catchAllNote");
   const withCatchAllNote = (desc: string, lane: string) =>
     lane === catchAll ? `${desc} ${CATCH_ALL_NOTE}` : desc;
 
@@ -635,48 +636,48 @@ export function RoutingEditor({
   // URL sources served). It is NOT a liveness signal. On a node the panel can't see
   // the remote count, so we only show enabled/disabled there (liveStatus=false).
   const laneStatus = (lane: EgressLane): StatusBadge => {
-    if (!lane.enabled) return { label: "выключена", color: "gray" };
-    if (!liveStatus) return { label: "включена", color: "green" };
+    if (!lane.enabled) return { label: t("route.laneOff"), color: "gray" };
+    if (!liveStatus) return { label: t("route.laneOn"), color: "green" };
     const n = proxyCounts[lane.id] ?? 0;
     return n > 0
-      ? { label: `${n} прокси`, color: "green" }
-      : { label: "нет прокси", color: "orange" };
+      ? { label: t("route.nProxies", { count: n }), color: "green" }
+      : { label: t("route.noProxies"), color: "orange" };
   };
 
   return (
     <div className="flex flex-col gap-4">
       {/* Block */}
-      <Section title="Блокировки">
+      <Section title={t("route.blocks")}>
         <ToggleRow
-          label="Заблокировать рекламу"
+          label={t("route.blockAds")}
           checked={cfg.block_ads}
           onChange={(v) => set({ block_ads: v })}
         />
         <ToggleRow
-          label="Заблокировать BitTorrent"
+          label={t("route.blockTorrent")}
           checked={cfg.block_bittorrent}
           onChange={(v) => set({ block_bittorrent: v })}
         />
         <TagsInput
-          label="Заблокированные IP-адреса"
+          label={t("route.blockedIps")}
           value={cfg.block_ips}
           onChange={(v) => set({ block_ips: v })}
           options={ipOpts(cfg.block_ips)}
-          placeholder="CIDR или geoip:xx…"
+          placeholder={t("route.ipPlaceholder")}
         />
         <TagsInput
-          label="Заблокированные домены"
+          label={t("route.blockedDomains")}
           value={cfg.block_domains}
           onChange={(v) => set({ block_domains: v })}
           options={domainOpts(cfg.block_domains)}
-          placeholder="домен, regexp: или geosite:…"
+          placeholder={t("route.domainPlaceholder")}
         />
       </Section>
 
       {/* Routing order */}
       <Section
-        title="Порядок маршрутизации"
-        desc="Правила проверяются сверху вниз (блокировки — всегда первыми). Последний пункт — «всё остальное»: туда уходит весь несовпавший трафик."
+        title={t("route.order")}
+        desc={t("route.orderHint")}
       >
         <div className="flex flex-col gap-1.5">
           {cfg.routing_order.map((lane, i) => {
@@ -693,7 +694,7 @@ export function RoutingEditor({
                   {laneLabel(lane)}
                   {last && (
                     <span className="ml-2 text-xs font-normal text-ink-muted">
-                      · всё остальное
+                      · {t("route.everythingElse")}
                     </span>
                   )}
                 </span>
@@ -720,20 +721,20 @@ export function RoutingEditor({
       </Section>
 
       {/* Direct */}
-      <Section title="Напрямую" desc={withCatchAllNote("Эти домены/IP идут напрямую с этого сервера.", "direct")}>
+      <Section title={t("route.direct")} desc={withCatchAllNote(t("route.directHint"), "direct")}>
         <TagsInput
-          label="Домены"
+          label={t("route.domains")}
           value={cfg.direct_domains}
           onChange={(v) => set({ direct_domains: v })}
           options={domainOpts(cfg.direct_domains)}
-          placeholder="домен, regexp: или geosite:…"
+          placeholder={t("route.domainPlaceholder")}
         />
         <TagsInput
           label="IP"
           value={cfg.direct_ips}
           onChange={(v) => set({ direct_ips: v })}
           options={ipOpts(cfg.direct_ips)}
-          placeholder="CIDR или geoip:xx…"
+          placeholder={t("route.ipPlaceholder")}
         />
       </Section>
 
@@ -745,7 +746,7 @@ export function RoutingEditor({
             <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
           </span>
         }
-        desc={withCatchAllNote("Включите, чтобы работали категории «Правила WARP» ниже.", "warp")}
+        desc={withCatchAllNote(t("route.warpHint"), "warp")}
         action={
           <Switch
             checked={warpEnabled}
@@ -755,18 +756,18 @@ export function RoutingEditor({
         }
       >
         <TagsInput
-          label="Правила WARP - Домены"
+          label={t("route.warpDomains")}
           value={cfg.warp_domains}
           onChange={(v) => set({ warp_domains: v })}
           options={domainOpts(cfg.warp_domains)}
-          placeholder="домен, regexp: или geosite:…"
+          placeholder={t("route.domainPlaceholder")}
         />
         <TagsInput
-          label="Правила WARP — IP"
+          label={t("route.warpIps")}
           value={cfg.warp_ips}
           onChange={(v) => set({ warp_ips: v })}
           options={ipOpts(cfg.warp_ips)}
-          placeholder="CIDR или geoip:xx…"
+          placeholder={t("route.ipPlaceholder")}
         />
       </Section>
 
@@ -778,7 +779,7 @@ export function RoutingEditor({
             <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
           </span>
         }
-        desc={withCatchAllNote("Бесплатный Opera VPN как отдельный выход. Включите, чтобы работали категории «Правила Opera» ниже.", "opera")}
+        desc={withCatchAllNote(t("route.operaHint"), "opera")}
         action={
           <Switch
             checked={operaEnabled}
@@ -788,35 +789,35 @@ export function RoutingEditor({
         }
       >
         <Select
-          label="Регион"
-          data={OPERA_COUNTRIES}
+          label={t("route.region")}
+          data={operaCountries()}
           value={operaCountry}
           onChange={setOperaCountry}
         />
         <TagsInput
-          label="Правила Opera — Домены"
+          label={t("route.operaDomains")}
           value={cfg.opera_domains}
           onChange={(v) => set({ opera_domains: v })}
           options={domainOpts(cfg.opera_domains)}
-          placeholder="домен, regexp: или geosite:…"
+          placeholder={t("route.domainPlaceholder")}
         />
         <TagsInput
-          label="Правила Opera — IP"
+          label={t("route.operaIps")}
           value={cfg.opera_ips}
           onChange={(v) => set({ opera_ips: v })}
           options={ipOpts(cfg.opera_ips)}
-          placeholder="CIDR или geoip:xx…"
+          placeholder={t("route.ipPlaceholder")}
         />
       </Section>
 
       {/* Proxy lanes */}
       <Section
-        title="Полосы прокси"
-        desc="У каждой полосы свои прокси и свои правила: например, .ru уходит через один, а .com — через другой."
+        title={t("route.lanes")}
+        desc={t("route.lanesHint")}
       >
         {cfg.lanes.length === 0 && (
           <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-ink-muted">
-            Полос пока нет.
+            {t("route.noLanes")}
           </p>
         )}
 
@@ -835,7 +836,7 @@ export function RoutingEditor({
                   <TextInput
                     value={lane.name}
                     onChange={(v) => patchLane(lane.id, { name: v })}
-                    placeholder="Название полосы, например «Зона .ru»"
+                    placeholder={t("route.laneNamePlaceholder")}
                   />
                 </div>
                 <Switch
@@ -847,7 +848,7 @@ export function RoutingEditor({
 
               <div>
                 <span className="mb-1.5 block text-sm text-ink-muted">
-                  Источник прокси
+                  {t("route.proxySource")}
                 </span>
                 <SegmentedControl
                   value={laneSrc[lane.id] ?? "manual"}
@@ -855,24 +856,24 @@ export function RoutingEditor({
                     setLaneSrc((s) => ({ ...s, [lane.id]: v as LaneSource }))
                   }
                   data={[
-                    { value: "manual", label: "Вручную" },
-                    { value: "urls", label: "Файлы (URL)" },
+                    { value: "manual", label: t("userDetail.manual") },
+                    { value: "urls", label: t("route.filesUrls") },
                   ]}
                 />
               </div>
               {(laneSrc[lane.id] ?? "manual") === "manual" ? (
                 <TagsInput
-                  label="Прокси вручную"
+                  label={t("route.proxiesManual")}
                   value={lane.manual}
                   onChange={(v) => patchLane(lane.id, { manual: v })}
-                  placeholder="socks5://ip:port — добавить и Enter…"
+                  placeholder={t("route.proxyPlaceholder")}
                 />
               ) : (
                 <TagsInput
-                  label="URL-списки прокси"
+                  label={t("route.proxyUrlLists")}
                   value={lane.urls}
                   onChange={(v) => patchLane(lane.id, { urls: v })}
-                  placeholder="https://example.com/proxy.txt — добавить и Enter…"
+                  placeholder={t("route.proxyUrlPlaceholder")}
                 />
               )}
               {lane.id === catchAll && (
@@ -881,18 +882,18 @@ export function RoutingEditor({
                 </p>
               )}
               <TagsInput
-                label="Домены полосы"
+                label={t("route.laneDomains")}
                 value={lane.domains}
                 onChange={(v) => patchLane(lane.id, { domains: v })}
                 options={domainOpts(lane.domains)}
-                placeholder="домен, regexp: или geosite:…"
+                placeholder={t("route.domainPlaceholder")}
               />
               <TagsInput
-                label="IP полосы"
+                label={t("route.laneIps")}
                 value={lane.ips}
                 onChange={(v) => patchLane(lane.id, { ips: v })}
                 options={ipOpts(lane.ips)}
-                placeholder="CIDR или geoip:xx…"
+                placeholder={t("route.ipPlaceholder")}
               />
               <div className="flex justify-end">
                 <Button
@@ -900,7 +901,7 @@ export function RoutingEditor({
                   size="sm"
                   onClick={() => removeLane(lane.id)}
                 >
-                  Удалить полосу
+                  {t("route.deleteLane")}
                 </Button>
               </div>
             </div>
@@ -914,11 +915,11 @@ export function RoutingEditor({
             disabled={cfg.lanes.length >= MAX_LANES}
             onClick={addLane}
           >
-            + Добавить полосу
+            + {t("route.addLane")}
           </Button>
           {cfg.lanes.length >= MAX_LANES && (
             <span className="text-xs text-ink-muted">
-              максимум {MAX_LANES} полос
+              {t("route.maxLanes", { count: MAX_LANES })}
             </span>
           )}
         </div>
@@ -926,8 +927,8 @@ export function RoutingEditor({
         {/* One cadence for every URL-sourced lane. */}
         {cfg.lanes.some((l) => laneSrc[l.id] === "urls") && (
           <Select
-            label="Авто-обновление URL-списков"
-            data={PROXY_REFRESH}
+            label={t("route.autoRefreshUrls")}
+            data={proxyRefresh()}
             value={String(cfg.proxy_refresh_minutes)}
             onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
           />

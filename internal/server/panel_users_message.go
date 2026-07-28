@@ -46,7 +46,7 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	text := strings.TrimSpace(b.Text)
 	if text == "" && b.MediaKind == "" {
-		writeErr(w, http.StatusBadRequest, "нечего отправлять — добавьте текст или вложение")
+		writeErrCode(w, http.StatusBadRequest, "err.nothingToSend2", "нечего отправлять — добавьте текст или вложение")
 		return
 	}
 	limit := messageUserMax
@@ -54,18 +54,19 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 		limit = captionUserMax
 	}
 	if n := utf8.RuneCountInString(text); n > limit {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf(
-			"текст длиннее %d символов (сейчас %d) — Telegram его не примет", limit, n))
+		writeCoded(w, "err.messageTooLong",
+			map[string]any{"limit": limit, "count": n},
+			fmt.Sprintf("текст длиннее %d символов (сейчас %d) — Telegram его не примет", limit, n))
 		return
 	}
 
 	u, err := rt.mgr.Store().GetUser(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "пользователь не найден")
+		writeErrCode(w, http.StatusNotFound, "err.userNotFound", "пользователь не найден")
 		return
 	}
 	if u.TgChatID == 0 {
-		writeErr(w, http.StatusBadRequest, "у пользователя не привязан Telegram")
+		writeErrCode(w, http.StatusBadRequest, "err.userHasNoTelegram", "у пользователя не привязан Telegram")
 		return
 	}
 	set, err := rt.mgr.Settings()
@@ -75,7 +76,7 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	token := strings.TrimSpace(set.TGUserBotToken)
 	if !set.TGUserBotEnabled || token == "" {
-		writeErr(w, http.StatusBadRequest, "включите пользовательского бота — сообщение идёт через него")
+		writeErrCode(w, http.StatusBadRequest, "err.enableUserBotToMessage", "включите пользовательского бота — сообщение идёт через него")
 		return
 	}
 
@@ -101,11 +102,12 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 		_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, rows, file)
 	}
 	if err := sendErr; err != nil {
-		msg := "не удалось отправить: " + err.Error()
 		if telegram.IsUnreachable(err) {
-			msg = "пользователь заблокировал бота или удалил аккаунт — сообщение не доставлено"
+			writeErrCode(w, http.StatusBadGateway, "err.userUnreachable",
+				"пользователь заблокировал бота или удалил аккаунт — сообщение не доставлено")
+			return
 		}
-		writeErr(w, http.StatusBadGateway, msg)
+		writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", err.Error())
 		return
 	}
 	writeOK(w)

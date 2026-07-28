@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { abuseCategoryLabel, getRecentAbuse, getUserAbuse, type AbuseMatch } from './api'
+import { currentLang } from './i18n'
 import { Badge } from './ui'
 
 // AbuseList shows destinations that matched a threat, piracy or gambling blocklist
@@ -15,6 +17,7 @@ import { Badge } from './ui'
 // CDN can land in a threat list, and malware hits usually mean the user's device is
 // compromised rather than that the user is misbehaving. The empty state says so.
 export function AbuseList({ userId, limit }: { userId?: number; limit?: number }) {
+  const { t } = useTranslation()
   const [rows, setRows] = useState<AbuseMatch[] | null>(null)
 
   useEffect(() => {
@@ -36,7 +39,7 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
   if (rows.length === 0) {
     return (
       <p className="py-2 text-center text-sm text-ink-muted">
-        Совпадений нет
+        {t('abuse.noMatches')}
       </p>
     )
   }
@@ -50,7 +53,7 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
         >
           <div className="flex min-w-0 items-center gap-2">
             <Badge color={r.category === 'malware' || r.category === 'badip' ? 'red' : 'gray'}>
-              {abuseCategoryLabel[r.category] ?? r.category}
+              {abuseCategoryLabel(r.category)}
             </Badge>
             <span className="truncate font-mono text-sm" title={r.domain}>
               {r.domain}
@@ -60,7 +63,7 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
             {/* Only on the fleet-wide view: inside a user's card the name is the page.
                 The id rides along because names are not unique. */}
             {userId === undefined ? `${r.user_name ? `${r.user_name} ` : ''}#${r.user_id} · ` : ''}
-            {r.day} · {r.count.toLocaleString('ru-RU')}×
+            {r.day} · {r.count.toLocaleString(currentLang())}×
           </span>
         </div>
       ))}

@@ -132,7 +132,10 @@ func TestNodeCertAlerts(t *testing.T) {
 	if first.bit != model.AdminEventCert || !strings.Contains(first.html, "выпущен") {
 		t.Fatalf("expected an issued-cert alert, got %+v", first)
 	}
-	if !strings.Contains(first.html, "89 дн.") && !strings.Contains(first.html, "90 дн.") {
+	// Assert the number, not the wording around it: the day count now goes through
+	// the plural catalog ("89 дней"), and pinning the exact phrasing would make this
+	// test fail on a translation change that is not a regression.
+	if !strings.Contains(first.html, "89") && !strings.Contains(first.html, "90") {
 		t.Fatalf("alert lost the expiry: %s", first.html)
 	}
 

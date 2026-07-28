@@ -329,11 +329,11 @@ func csrfGuard(next http.Handler) http.Handler {
 			return
 		}
 		if r.Header.Get("X-RosPanel-CSRF") == "" {
-			writeErr(w, http.StatusForbidden, "запрос отклонён (CSRF)")
+			writeErrCode(w, http.StatusForbidden, "err.csrfRejected", "запрос отклонён (CSRF)")
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r.Host) {
-			writeErr(w, http.StatusForbidden, "запрос отклонён (origin)")
+			writeErrCode(w, http.StatusForbidden, "err.originRejected", "запрос отклонён (origin)")
 			return
 		}
 		next.ServeHTTP(w, r)

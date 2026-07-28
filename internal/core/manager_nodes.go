@@ -225,7 +225,7 @@ func (m *Manager) NodeXrayConfig(id int64) ([]byte, error) {
 		return nil, err
 	}
 	if n == nil {
-		return nil, &ValidationError{Msg: "нода не найдена"}
+		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	state, err := m.NodeDesiredState(n)
 	if err != nil {
@@ -328,7 +328,7 @@ type NodeView struct {
 	DecoyTemplate   string `json:"decoy_template"`
 	// CertSelfSigned is what the node last reported about its live TLS cert: true ⇒
 	// still on the self-signed fallback (ACME not obtained yet), false ⇒ a CA cert is
-	// in place. Lets the node's Домен tab show the cert status like the master's.
+	// in place. Lets the node's Domain tab show the cert status like the master's.
 	CertSelfSigned bool   `json:"cert_self_signed"`
 	CertIssuer     string `json:"cert_issuer"`     // ≈ ACME provider (empty for the local node)
 	CertExpiresAt  int64  `json:"cert_expires_at"` // unix; 0 ⇒ unknown
@@ -523,14 +523,14 @@ func (m *Manager) CreateNode(name, host string) (*model.Node, error) {
 	if taken, err := m.store.NodeNameTaken(name, 0); err != nil {
 		return nil, err
 	} else if taken {
-		return nil, &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+		return nil, invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 	}
 	if err := m.EnsureNodeAPIPath(); err != nil {
 		return nil, err
 	}
 	n, err := m.store.CreateNode(name, host, m.randomDecoy())
 	if errors.Is(err, store.ErrNodeNameTaken) {
-		return nil, &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+		return nil, invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 	}
 	return n, err
 }
@@ -540,11 +540,11 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 	if taken, err := m.store.NodeNameTaken(e.Name, id); err != nil {
 		return err
 	} else if taken {
-		return &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+		return invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 	}
 	if e.Routing != nil {
 		if err := e.Routing.ValidateLanes(); err != nil {
-			return &ValidationError{Msg: err.Error()}
+			return fromFieldErr(err)
 		}
 	}
 	// WARP is a per-node Cloudflare registration: provision one BEFORE persisting the
@@ -557,7 +557,7 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 	}
 	if err := m.store.UpdateNode(id, e); err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
-			return &ValidationError{Msg: "нода с таким названием уже есть — имя должно быть уникальным"}
+			return invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 		}
 		return err
 	}
@@ -599,7 +599,7 @@ func (m *Manager) ensureNodeWarp(id int64) error {
 	acc, err := warp.Register(ctx)
 	if err != nil {
 		logErr("warp: node registration failed", "node", id, "err", err)
-		return &ValidationError{Msg: fmt.Sprintf("регистрация WARP для ноды не удалась: %v", err)}
+		return invalidCode("err.nodeWarpFailed", "регистрация WARP для ноды не удалась: {{detail}}", map[string]any{"detail": err.Error()})
 	}
 	return m.store.SaveNodeWarp(id, acc.PrivateKey, acc.PeerPublicKey, acc.Endpoint,
 		acc.AddressV4, acc.AddressV6, joinInts(acc.Reserved))
@@ -614,7 +614,7 @@ func (m *Manager) SetNodeReality(id int64, dest string, regen bool) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	dest = strings.TrimSpace(dest)
 	if dest != "" {
@@ -691,7 +691,7 @@ func (m *Manager) NodeConnectionsInfo(id int64) (*ConnectionsStatus, error) {
 		return nil, err
 	}
 	if n == nil {
-		return nil, &ValidationError{Msg: "нода не найдена"}
+		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	return buildConnectionsStatus(nodeSettings(set, n)), nil
 }
@@ -707,7 +707,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 
 	fpOf := func(key string) string {
@@ -719,7 +719,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	vlessFp, realityFp := fpOf("vless"), fpOf("reality")
 	for _, fp := range []string{vlessFp, realityFp} {
 		if !model.ValidFingerprint(fp) {
-			return invalid("неизвестный fingerprint %q", fp)
+			return invalidCode("err.unknownFingerprint", "неизвестный fingerprint {{value}}", map[string]any{"value": fp})
 		}
 	}
 	connNames, err := validateConnNames(u.Names, m.inboundNames(id))
@@ -727,20 +727,20 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		return err
 	}
 	if u.HysteriaPort < 1 || u.HysteriaPort > 65535 {
-		return invalid("порт вне диапазона 1–65535")
+		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
 	}
 	if u.HopStart < 1 || u.HopEnd > 65535 || u.HopStart > u.HopEnd {
-		return invalid("неверный диапазон хопа")
+		return invalidCode("err.badHopRange", "неверный диапазон хопа")
 	}
 	interval := strings.TrimSpace(u.HopInterval)
 	if interval == "" {
 		interval = "5-10"
 	}
 	if !hopIntervalRe.MatchString(interval) {
-		return invalid("неверный интервал (нужно «N-M», напр. 5-10)")
+		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
 	if u.RealityPort < 1 || u.RealityPort > 65535 {
-		return invalid("порт REALITY вне диапазона 1–65535")
+		return invalidCode("err.realityPortRange", "порт REALITY вне диапазона 1–65535")
 	}
 	realityDest := strings.TrimSpace(u.RealityDest)
 	if realityDest != "" {
@@ -875,7 +875,7 @@ func (m *Manager) RequestNodeUpdate(id int64) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
 	m.nodeUpdateWanted[id] = true
@@ -897,7 +897,7 @@ const (
 	// report the new start time on the next sync — with room to spare.
 	//
 	// Giving up matters as much as waiting: a node that is offline, or whose Xray
-	// refused to come back, must not leave the button saying "запрошено" forever.
+	// refused to come back, must not leave the button saying "queued" forever.
 	nodeRestartWait = 2 * time.Minute
 	// nodeRestartShow is how long the OUTCOME stays visible after the request
 	// resolves. Without it the feature is invisible: confirmation normally lands
@@ -937,7 +937,7 @@ func (r *nodeRestartReq) waiting(now time.Time) bool {
 //
 // The request stays on record after it is sent, until the node's next sync proves
 // Xray actually bounced (see ConfirmNodeXrayRestart). That is the whole point: the
-// panel cannot restart a node, only ask, and an answer that always reads "готово"
+// panel cannot restart a node, only ask, and an answer that always reads "done"
 // the instant it is asked is not an answer.
 func (m *Manager) RequestNodeXrayRestart(id int64) error {
 	n, err := m.store.GetNode(id)
@@ -945,7 +945,7 @@ func (m *Manager) RequestNodeXrayRestart(id int64) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
 	m.nodeRestart[id] = &nodeRestartReq{at: time.Now()}
@@ -981,7 +981,7 @@ func (m *Manager) TakeNodeXrayRestart(id int64, reportedStart int64) bool {
 //
 // A node that reports no start time at all (an agent older than this field) can
 // never confirm; its request simply times out, which reads as "we asked, we can't
-// tell" rather than a false "готово".
+// tell" rather than a false "done".
 func (m *Manager) ConfirmNodeXrayRestart(id int64, reportedStart int64) {
 	if reportedStart == 0 {
 		return
@@ -1102,7 +1102,7 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
 	m.nodeGeoWanted[id] = true
@@ -1111,7 +1111,7 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 	return nil
 }
 
-// NodeTLSStatus reports a node's effective TLS/ACME status for its Домен tab: its
+// NodeTLSStatus reports a node's effective TLS/ACME status for its Domain tab: its
 // address, its own (or inherited) ACME provider/email, and its cert metadata (built
 // from what the node last reported). Mirrors the master's TLSStatus.
 func (m *Manager) NodeTLSStatus(id int64) (*TLSStatus, error) {
@@ -1124,7 +1124,7 @@ func (m *Manager) NodeTLSStatus(id int64) (*TLSStatus, error) {
 		return nil, err
 	}
 	if n == nil {
-		return nil, &ValidationError{Msg: "нода не найдена"}
+		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	provider := n.ACMEProvider
 	if provider == "" {
@@ -1141,7 +1141,7 @@ func (m *Manager) NodeTLSStatus(id int64) (*TLSStatus, error) {
 	if n.CertExpiresAt > 0 || n.CertIssuer != "" {
 		exp := time.Unix(n.CertExpiresAt, 0)
 		cert = &tlsutil.CertInfo{
-			Issuer:   n.CertIssuer, // "" when self-signed → UI shows "временный"
+			Issuer:   n.CertIssuer, // "" when self-signed → the panel shows it as temporary
 			NotAfter: exp,
 			DaysLeft: int(time.Until(exp).Hours() / 24),
 		}
@@ -1166,27 +1166,27 @@ func (m *Manager) SetNodeACME(id int64, target, email, provider string) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	target = NormalizeACMEHost(target)
 	email = strings.TrimSpace(email)
 	if target == "" {
-		return invalid("укажите домен или IP-адрес")
+		return invalidCode("err.hostRequired", "укажите домен или IP-адрес")
 	}
 	if provider != model.ACMEProviderZeroSSL {
 		provider = model.ACMEProviderLE
 	}
 	if !validACMETarget(target, provider) {
 		if provider == model.ACMEProviderZeroSSL {
-			return invalid("ZeroSSL поддерживает только домены (не IP): %q — это не похоже на домен", target)
+			return invalidCode("err.zerosslDomainsOnly", "ZeroSSL поддерживает только домены (не IP): {{value}} — это не похоже на домен", map[string]any{"value": target})
 		}
-		return invalid("%q — это не похоже на домен или IP-адрес", target)
+		return invalidCode("err.notDomainOrIP", "{{value}} — это не похоже на домен или IP-адрес", map[string]any{"value": target})
 	}
 	if email != "" && !validEmail(email) {
-		return invalid("%q — это не похоже на e-mail адрес", email)
+		return invalidCode("err.notEmail", "{{value}} — это не похоже на e-mail адрес", map[string]any{"value": email})
 	}
 	if provider == model.ACMEProviderZeroSSL && email == "" {
-		return invalid("ZeroSSL требует e-mail адрес")
+		return invalidCode("err.zerosslNeedsEmail", "ZeroSSL требует e-mail адрес")
 	}
 	// ZeroSSL: reuse the node's stored EAB, else fetch a fresh one for its e-mail.
 	eabKID, eabHMAC := "", ""
@@ -1196,7 +1196,7 @@ func (m *Manager) SetNodeACME(id int64, target, email, provider string) error {
 		} else {
 			kid, hmac, err := tlsmgr.FetchZeroSSLEAB(email)
 			if err != nil {
-				return fmt.Errorf("получение EAB от ZeroSSL: %w", err)
+				return fmt.Errorf("fetching the ZeroSSL EAB: %w", err)
 			}
 			eabKID, eabHMAC = kid, hmac
 		}
@@ -1233,7 +1233,7 @@ func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
 		return err
 	}
 	if n == nil {
-		return &ValidationError{Msg: "нода не найдена"}
+		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	if err := m.store.SetNodeGeoRefresh(id, hours); err != nil {
 		return err
@@ -1383,7 +1383,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		}
 		m.nodeGeoMu.Unlock()
 	}
-	// The node's own TLS state, for the fleet-wide "Сертификат TLS" alert. Recorded
+	// The node's own TLS state, for the fleet-wide "TLS certificate" alert. Recorded
 	// here, raised by the node sweep — see manager_nodes_notify.go.
 	m.NoteNodeCertError(n.ID, req.CertError)
 	_ = m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{

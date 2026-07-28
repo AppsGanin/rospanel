@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getNodeHealth, type HealthReport, type HealthStatus } from "./api";
+import { useTranslation } from "react-i18next";
+import { getNodeHealth, type HealthCheck, type HealthReport, type HealthStatus } from "./api";
+import i18n, { td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Badge, Button, Skeleton } from "./ui";
 
@@ -10,18 +12,26 @@ import { Badge, Button, Skeleton } from "./ui";
 // plain surface: a screen of ten identically-coloured cards is what made a failing
 // check impossible to spot, and colouring the healthy ones too would just move the
 // problem — the eye needs somewhere quiet to not look.
-const STATUS_BADGE: Record<HealthStatus, { color: string; word: string; tint: string }> = {
+const statusBadge = (): Record<
+  HealthStatus,
+  { color: string; word: string; tint: string }
+> => ({
   ok: { color: "green", word: "OK", tint: "" },
-  warn: { color: "orange", word: "Внимание", tint: "warning-tint" },
-  error: { color: "red", word: "Проблема", tint: "danger-tint" },
+  warn: { color: "orange", word: i18n.t("health.warn"), tint: "warning-tint" },
+  error: { color: "red", word: i18n.t("health.problem"), tint: "danger-tint" },
   info: { color: "gray", word: "—", tint: "" },
-};
+});
 
-// OVERALL maps the report's worst status to a banner.
-const OVERALL: Record<string, { title: string; cls: string }> = {
-  ok: { title: "Всё в порядке", cls: "success-tint text-success" },
-  warn: { title: "Есть предупреждения", cls: "warning-tint text-warning" },
-  error: { title: "Есть проблемы", cls: "danger-tint text-danger" },
+// overall maps the report's worst status to a banner.
+const overallFor = (status: string): { title: string; cls: string } => {
+  switch (status) {
+    case "warn":
+      return { title: i18n.t("health.someWarnings"), cls: "warning-tint text-warning" };
+    case "error":
+      return { title: i18n.t("health.someProblems"), cls: "danger-tint text-danger" };
+    default:
+      return { title: i18n.t("health.allGood"), cls: "success-tint text-success" };
+  }
 };
 
 function HealthSkeleton() {
@@ -36,7 +46,18 @@ function HealthSkeleton() {
 // HealthPanel shows one server's diagnostics. nodeId picks the server: 0 is the
 // panel's own (the full local report), a node id is that node's — as it last
 // reported, since the panel doesn't dial a node to build the report.
+// checkDetail renders one check's detail line. Most are a key plus arguments; a few
+// carry verbatim text the panel did not word (Xray's own config error). The
+// short-lived-certificate note is appended rather than baked into the key: it
+// applies to two different TLS states, and duplicating each of them just to vary a
+// trailing clause would double the keys for no gain.
+function checkDetail(c: HealthCheck): string {
+  const base = c.detail_key ? td(c.detail_key, c.args) : (c.detail ?? "");
+  return c.args?.shortLived ? `${base} · ${i18n.t("health.shortLivedNote")}` : base;
+}
+
 export function HealthPanel({ nodeId }: { nodeId: number }) {
+  const { t } = useTranslation();
   const [report, setReport] = useState<HealthReport | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +83,7 @@ export function HealthPanel({ nodeId }: { nodeId: number }) {
   if (!loaded) return <HealthSkeleton />;
   if (!report) return null;
 
-  const overall = OVERALL[report.status] ?? OVERALL.ok;
+  const overall = overallFor(report.status);
 
   return (
     <div className="flex flex-col gap-3 pb-6">
@@ -76,7 +97,7 @@ export function HealthPanel({ nodeId }: { nodeId: number }) {
           <div>
             <p className="font-semibold">{overall.title}</p>
             <p className="text-xs opacity-80">
-              Проверок: {report.checks.length}
+              {t("health.checksCount", { count: report.checks.length })}
             </p>
           </div>
         </div>
@@ -87,7 +108,7 @@ export function HealthPanel({ nodeId }: { nodeId: number }) {
           loading={refreshing}
           onClick={() => load(true)}
         >
-          Обновить
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -100,17 +121,18 @@ export function HealthPanel({ nodeId }: { nodeId: number }) {
           grey that only works in one of them. */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 divide-y divide-gray-200">
         {report.checks.map((c) => {
-          const b = STATUS_BADGE[c.status] ?? STATUS_BADGE.info;
+          const badges = statusBadge();
+          const b = badges[c.status] ?? badges.info;
           return (
             <div
               key={c.key}
               className={`flex items-start justify-between gap-3 p-4 ${b.tint}`}
             >
               <div className="min-w-0">
-                <p className="font-medium text-ink">{c.label}</p>
-                <p className="mt-0.5 text-sm text-ink-muted">{c.detail}</p>
-                {c.hint && c.status !== "ok" && (
-                  <p className="mt-1.5 text-xs text-ink-muted">💡 {c.hint}</p>
+                <p className="font-medium text-ink">{td(c.label_key)}</p>
+                <p className="mt-0.5 text-sm text-ink-muted">{checkDetail(c)}</p>
+                {c.hint_key && c.status !== "ok" && (
+                  <p className="mt-1.5 text-xs text-ink-muted">💡 {td(c.hint_key)}</p>
                 )}
               </div>
               <Badge color={b.color as never}>{b.word}</Badge>

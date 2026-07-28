@@ -1,4 +1,4 @@
-// Package decoy serves an innocent-looking website ("заглушка") for every
+// Package decoy serves an innocent-looking website ("decoy") for every
 // request that doesn't carry the secret panel path. The goal: a visitor, DPI,
 // or scanner sees an ordinary site, never a hint that a VPN panel exists.
 //
@@ -62,7 +62,7 @@ func Available() ([]string, error) {
 // long-lived transfers are the whole point.
 //
 // The slugs are directory names, not brands: "YouTube" is a video-hosting layout
-// that presents itself as "Видеоландия" and carries no third-party naming.
+// that presents itself as "Videolandia" and carries no third-party naming.
 //
 // Left out are the templates that contradict a busy box rather than explain it:
 // the placeholders (coming-soon), the maintenance pages (503-*, maintenance) and

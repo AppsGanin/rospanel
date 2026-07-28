@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listNodes, type NodeView, type SystemStatus } from "./api";
 import { cssVar } from "./charts";
-import { fmtBytes, fmtDuration, plural } from "./format";
+import { fmtBytes, fmtDuration } from "./format";
 import { serverName, statusDot } from "./NodesPanel";
 import { useIsAdmin } from "./role";
 import { navigate } from "./router";
@@ -117,9 +118,10 @@ function Kpi({
 // that can fix it. It only renders on a multi-server install: with no nodes the
 // gauges below already describe the only server there is.
 function FleetStrip({ nodes }: { nodes: NodeView[] }) {
+  const { t } = useTranslation();
   const remote = nodes.filter((n) => !n.is_local);
   if (remote.length === 0) return null;
-  // The badge names the worst thing about the fleet, and says "все работают" only
+  // The badge names the worst thing about the fleet, and says "all healthy" only
   // when it is true of every server — a grey dot for a node that was never installed
   // must not hide behind a green summary. "Serving", not "reachable": a server whose
   // Xray is down counts as broken however promptly its agent answers.
@@ -132,21 +134,21 @@ function FleetStrip({ nodes }: { nodes: NodeView[] }) {
   return (
     <Card className="p-4" onClick={() => navigate("nodes")}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-bold text-ink">Сервера</h3>
+        <h3 className="font-bold text-ink">{t("nav.servers")}</h3>
         {offline > 0 ? (
-          <Badge color="red" size="xs">{offline} офлайн</Badge>
+          <Badge color="red" size="xs">{t("overview.nOffline", { count: offline })}</Badge>
         ) : dead > 0 ? (
-          <Badge color="orange" size="xs">{dead} без Xray</Badge>
+          <Badge color="orange" size="xs">{t("overview.nNoXray", { count: dead })}</Badge>
         ) : pending > 0 ? (
           <Badge color="gray" size="xs">
-            {pending} {plural(pending, "не подключена", "не подключены", "не подключены")}
+            {t("overview.nNotJoined", { count: pending })}
           </Badge>
         ) : disabled > 0 ? (
           <Badge color="gray" size="xs">
-            {disabled} {plural(disabled, "выключена", "выключены", "выключены")}
+            {t("overview.nDisabled", { count: disabled })}
           </Badge>
         ) : (
-          <Badge color="green" size="xs">все работают</Badge>
+          <Badge color="green" size="xs">{t("overview.allHealthy")}</Badge>
         )}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -210,6 +212,7 @@ function OverviewSkeleton() {
 }
 
 export function OverviewPanel() {
+  const { t } = useTranslation();
   const isAdmin = useIsAdmin();
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -256,14 +259,14 @@ export function OverviewPanel() {
       {/* The numbers the panel exists to report, above the machine it runs on. */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Kpi label="Пользователи" value={String(s.users)} />
-          <Kpi label="Активные" value={String(s.enabled_users)} />
+          <Kpi label={t("nav.users")} value={String(s.users)} />
+          <Kpi label={t("overview.activeUsers")} value={String(s.enabled_users)} />
           <Kpi
-            label="Онлайн"
+            label={t("overview.online")}
             value={String(s.online_users)}
             valueClass={s.online_users > 0 ? "text-success" : "text-ink"}
           />
-          <Kpi label="Трафик за сегодня" value={fmtBytes(s.traffic_today)} />
+          <Kpi label={t("overview.trafficToday")} value={fmtBytes(s.traffic_today)} />
         </div>
       </Card>
 
@@ -275,7 +278,7 @@ export function OverviewPanel() {
           <Gauge
             percent={s.cpu_percent}
             label="CPU"
-            value={`${s.cpu_cores} ${plural(s.cpu_cores, 'ядро', 'ядра', 'ядер')}`}
+            value={t("overview.cores", { count: s.cpu_cores })}
           />
           <Gauge
             percent={pct(s.mem_used, s.mem_total)}
@@ -288,45 +291,45 @@ export function OverviewPanel() {
             value={
               s.swap_total > 0
                 ? `${fmtBytes(s.swap_used)} / ${fmtBytes(s.swap_total)}`
-                : "нет"
+                : t("common.none")
             }
           />
           <Gauge
             percent={pct(s.disk_used, s.disk_total)}
-            label="Диск"
+            label={t("overview.disk")}
             value={`${fmtBytes(s.disk_used)} / ${fmtBytes(s.disk_total)}`}
           />
         </div>
       </Card>
 
       {/* No Xray card here: its status, config, logs and restart all live on one
-          server card in «Сервера», next to the same controls for every node. */}
+          server card in Servers, next to the same controls for every node. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <InfoCard title="Время работы">
+        <InfoCard title={t("overview.uptime")}>
           <div className="grid grid-cols-2 gap-4">
             <Metric label="Xray" value={fmtDuration(s.xray_uptime)} />
-            <Metric label="Система" value={fmtDuration(s.host_uptime)} />
+            <Metric label={t("overview.system")} value={fmtDuration(s.host_uptime)} />
           </div>
         </InfoCard>
 
-        <InfoCard title="Использование">
+        <InfoCard title={t("overview.usage")}>
           <div className="grid grid-cols-2 gap-4">
-            <Metric label="RAM панели" value={fmtBytes(s.proc_mem)} />
-            <Metric label="Потоки" value={String(s.goroutines)} />
+            <Metric label={t("overview.panelRam")} value={fmtBytes(s.proc_mem)} />
+            <Metric label={t("overview.threads")} value={String(s.goroutines)} />
           </div>
         </InfoCard>
 
-        {/* No traffic cards here at all. The live "VPN-трафик" rate was the master's
+        {/* No traffic cards here at all. The live VPN-traffic rate was the master's
             own Xray only — nodes report accumulated deltas, not a rate — so on a
             multi-server panel it read as the fleet's throughput while showing one
-            server's. Per-server traffic is on each card in «Сервера», and the honest
-            fleet total is the per-day history on "Статистика". (An older card summing
+            server's. Per-server traffic is on each card in Servers, and the honest
+            fleet total is the per-day history on Statistics. (An older card summing
             users.used_up/down went for a related reason: the quota reset zeroes it per
             user, so it added up a different period for everybody.) */}
       </div>
 
       {/* No egress/routing card either — routing is per-server now and reads next to
-          the server it belongs to, in «Сервера». Управление holds backup/restore, the
+          the server it belongs to, in Servers. Maintenance holds backup/restore, the
           restart and the factory reset — admin-only on the server. */}
       {isAdmin && <ManagementCard />}
 

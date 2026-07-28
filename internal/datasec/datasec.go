@@ -36,7 +36,7 @@ func Init(dataDir string) error {
 	b, err := os.ReadFile(path)
 	if err == nil {
 		if len(b) != keySize {
-			return errors.New("secrets.key: неверный размер")
+			return errors.New("secrets.key: wrong size")
 		}
 		key = b
 		return nil
@@ -49,8 +49,8 @@ func Init(dataDir string) error {
 		return err
 	} else if enc {
 		return fmt.Errorf(
-			"secrets.key отсутствует, но в %s уже есть зашифрованные секреты — "+
-				"восстановите secrets.key из резервной копии каталога данных",
+			"secrets.key is missing but %s already holds encrypted secrets — "+
+				"restore secrets.key from a backup of the data directory",
 			dbPath,
 		)
 	}
@@ -149,7 +149,7 @@ func Decrypt(s string) (string, error) {
 		return "", err
 	}
 	if len(raw) < gcm.NonceSize() {
-		return "", errors.New("неверный шифротекст")
+		return "", errors.New("invalid ciphertext")
 	}
 	nonce, ct := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
 	pt, err := gcm.Open(nil, nonce, ct, nil)
@@ -162,7 +162,7 @@ func Decrypt(s string) (string, error) {
 // EncryptFile reads path and returns encrypted bytes (AES-GCM, random nonce prepended).
 func EncryptFile(path string) ([]byte, error) {
 	if key == nil {
-		return nil, errors.New("datasec: не инициализирован")
+		return nil, errors.New("datasec: not initialised")
 	}
 	plain, err := os.ReadFile(path)
 	if err != nil {

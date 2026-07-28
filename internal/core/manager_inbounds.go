@@ -88,7 +88,7 @@ func (m *Manager) checkServerExists(serverID int64) error {
 		return err
 	}
 	if n == nil {
-		return invalid("сервер не найден")
+		return invalidCode("err.serverNotFound", "сервер не найден")
 	}
 	return nil
 }
@@ -110,7 +110,7 @@ func (m *Manager) effectiveSettings(serverID int64) (*model.Settings, error) {
 		return nil, err
 	}
 	if n == nil {
-		return nil, invalid("сервер не найден")
+		return nil, invalidCode("err.serverNotFound", "сервер не найден")
 	}
 	return nodeSettings(set, n), nil
 }
@@ -142,16 +142,16 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	hold(set.VLESSPort, "VLESS-Vision")
 	hold(set.RealityPort, "VLESS-XHTTP-REALITY")
 	hold(set.HysteriaPort, "HYSTERIA-UDP")
-	hold(xray.APIPort, "внутренний API Xray")
+	hold(xray.APIPort, "Xray internal API")
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a funnel onto the Hysteria port: anything inside
 		// it would have its traffic silently stolen by the nftables redirect.
 		for p := set.HysteriaPort + 1; p <= set.HopEnd; p++ {
-			hold(p, "диапазон хопа HYSTERIA-UDP")
+			hold(p, "HYSTERIA-UDP hop range")
 		}
 	}
 	if set.ProxyModeEnabled {
-		hold(set.ProxyModePort, "режим прокси")
+		hold(set.ProxyModePort, "proxy mode")
 	}
 	if set.OperaEnabled {
 		hold(set.OperaPortOr(), "Opera VPN")
@@ -190,7 +190,7 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 		return nil, err
 	}
 	if cur == nil {
-		return nil, invalid("подключение не найдено")
+		return nil, invalidCode("err.inboundNotFound", "подключение не найдено")
 	}
 	in.ServerID = cur.ServerID
 	in.CreatedAt = cur.CreatedAt
@@ -231,10 +231,10 @@ func (m *Manager) RegenInboundReality(id int64) (*InboundView, error) {
 		return nil, err
 	}
 	if in == nil {
-		return nil, invalid("подключение не найдено")
+		return nil, invalidCode("err.inboundNotFound", "подключение не найдено")
 	}
 	if in.Opts.Security != model.SecReality {
-		return nil, invalid("у этого подключения нет REALITY")
+		return nil, invalidCode("err.inboundHasNoReality", "у этого подключения нет REALITY")
 	}
 	in.Opts.RealityPrivateKey = ""
 	if err := m.prepareInbound(in); err != nil {
@@ -324,12 +324,12 @@ func (m *Manager) validateAgainstSet(ctx context.Context, in model.Inbound, excl
 	if _, port, err := net.SplitHostPort(m.opts.PanelDest); err == nil {
 		if p, err := strconv.Atoi(port); err == nil {
 			if _, taken := reserved[p]; !taken {
-				reserved[p] = "внутренний порт панели"
+				reserved[p] = "panel internal port"
 			}
 		}
 	}
 	if err := model.ValidateInboundSet(next, reserved, set.BuiltinLaneLabels()); err != nil {
-		return invalid("%s", err.Error())
+		return fromFieldErr(err)
 	}
 
 	// A REALITY donor has to actually serve TLS 1.3 + HTTP/2 with a small enough
@@ -391,7 +391,7 @@ func (m *Manager) validateCandidate(ctx context.Context, serverID int64, set []m
 
 	if serverID == model.LocalNodeID {
 		if err := m.sup.ValidateConfig(cfg); err != nil {
-			return invalid("Xray отклонил конфигурацию: %s", err.Error())
+			return invalidCode("err.xrayRejectedConfig", "Xray отклонил конфигурацию: {{err}}", map[string]any{"err": err.Error()})
 		}
 		return nil
 	}
@@ -446,9 +446,9 @@ func (m *Manager) candidateConfig(serverID int64, custom []model.Inbound) (*xray
 func inboundConflict(err error) error {
 	switch {
 	case errors.Is(err, store.ErrInboundPortTaken):
-		return invalid("порт уже занят другим подключением на этом сервере — выбери другой")
+		return invalidCode("err.portTakenHere", "порт уже занят другим подключением на этом сервере — выбери другой")
 	case errors.Is(err, store.ErrInboundNameTaken):
-		return invalid("название уже занято другим подключением на этом сервере")
+		return invalidCode("err.inboundNameTakenHere", "название уже занято другим подключением на этом сервере")
 	}
 	return err
 }
@@ -486,7 +486,7 @@ func portNetwork(in model.Inbound) string {
 func (m *Manager) probePort(ctx context.Context, serverID int64, network string, port int) error {
 	if serverID == model.LocalNodeID {
 		if !portFree(network, port) {
-			return invalid("порт %d (%s) уже занят на этом сервере — выбери другой", port, network)
+			return invalidCode("err.portTakenOnServer", "порт {{port}} ({{network}}) уже занят на этом сервере — выберите другой", map[string]any{"port": port, "network": network})
 		}
 		return nil
 	}
@@ -496,7 +496,7 @@ func (m *Manager) probePort(ctx context.Context, serverID int64, network string,
 		return nil
 	}
 	if !free {
-		return invalid("порт %d (%s) уже занят на этом сервере — выбери другой", port, network)
+		return invalidCode("err.portTakenOnServer", "порт {{port}} ({{network}}) уже занят на этом сервере — выберите другой", map[string]any{"port": port, "network": network})
 	}
 	return nil
 }

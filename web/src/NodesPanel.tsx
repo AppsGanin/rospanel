@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n, { currentLang } from "./i18n";
 import {
   applyConnections,
   applyNodeConnections,
@@ -47,7 +49,7 @@ import { InboundsEditor } from "./InboundsEditor";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./egress";
 import { fmtBytes } from "./format";
-import { DECOY_LABELS } from "./GeneralSettings";
+import { decoyLabel } from "./GeneralSettings";
 import { HealthPanel } from "./HealthPanel";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
@@ -97,6 +99,10 @@ import {
 // server's many sections (domain / routing / DNS / …) don't stack into one long
 // scroll. All tabs' state lives in the parent, so switching never loses edits and
 // the single footer Save persists everything regardless of the active tab.
+// ERR_PREFIX marks a failed line in the live install log so it can be coloured
+// without parsing the message itself.
+const ERR_PREFIX = "ERROR";
+
 function DialogTabs({
   tabs,
   value,
@@ -126,9 +132,9 @@ function DialogTabs({
   );
 }
 
-// TabSaveBar is the inline save row for the "form" tabs (Основное / Роутинг / DNS)
+// TabSaveBar is the inline save row for the "form" tabs (general / routing / DNS)
 // of the server dialogs, so each tab commits on its own — exactly like the
-// Подключения / Geo / Домен tabs already do, staying open after save. "Отменить"
+// connections / geo / domain tabs already do, staying open after save. Cancel
 // reverts unsaved edits to the last-saved state; both buttons disable when there's
 // nothing to save. The note spells out that edits are staged and per-section.
 function TabSaveBar({
@@ -142,10 +148,11 @@ function TabSaveBar({
   dirty: boolean;
   busy: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs text-ink-muted">
-        У каждого раздела своё сохранение. Без сохранения изменения не применятся.
+        {t("conn.saveHint")}
       </p>
       <div className="flex justify-end gap-2">
         <Button
@@ -154,10 +161,10 @@ function TabSaveBar({
           onClick={onReset}
           disabled={!dirty || busy}
         >
-          Отменить
+          {t("common.cancel")}
         </Button>
         <Button onClick={onSave} loading={busy} disabled={!dirty}>
-          Сохранить
+          {t("common.save")}
         </Button>
       </div>
     </div>
@@ -165,12 +172,12 @@ function TabSaveBar({
 }
 
 function fmtSeen(unix: number): string {
-  if (!unix) return "ещё не подключалась";
+  if (!unix) return i18n.t("nodes.neverJoined");
   const ago = Math.floor(Date.now() / 1000) - unix;
-  if (ago < 60) return "только что";
-  if (ago < 3600) return `${Math.floor(ago / 60)} мин назад`;
-  if (ago < 86400) return `${Math.floor(ago / 3600)} ч назад`;
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  if (ago < 60) return i18n.t("lastSeen.justNow");
+  if (ago < 3600) return i18n.t("lastSeen.minutes", { n: Math.floor(ago / 60) });
+  if (ago < 86400) return i18n.t("lastSeen.hours", { n: Math.floor(ago / 3600) });
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -196,42 +203,42 @@ export function statusDot(node: NodeView): string {
 }
 
 // StatusChip is the small state label next to a server's name. The master needs no
-// chip for the states it cannot be in (its name already reads "Мастер" when unnamed);
+// chip for the states it cannot be in (its name already reads "Master" when unnamed);
 // plain "up and serving" is left to the green dot to keep the row quiet; the states
 // that need words get an xs badge.
 function StatusChip({ node }: { node: NodeView }) {
   if (!node.is_local) {
-    if (!node.enabled) return <Badge color="gray" size="xs">выключена</Badge>;
-    if (!node.joined) return <Badge color="gray" size="xs">не подключена</Badge>;
-    if (!node.online) return <Badge color="red" size="xs">офлайн</Badge>;
+    if (!node.enabled) return <Badge color="gray" size="xs">{i18n.t("nodes.disabled")}</Badge>;
+    if (!node.joined) return <Badge color="gray" size="xs">{i18n.t("nodes.notJoined")}</Badge>;
+    if (!node.online) return <Badge color="red" size="xs">{i18n.t("usersPanel.offline")}</Badge>;
   }
   // A restart the operator just asked for outranks everything below: during the
-  // bounce "Xray не запущен" is true too, and only this says the state is their own
+  // bounce "Xray not running" is true too, and only this says the state is their own
   // click rather than a fault. The outcome is shown for a few seconds after —
   // confirmation lands about a second in, and a badge that appears and vanishes
   // between two refreshes is why the same restart got clicked four times.
   if (node.xray_restart === "pending") {
-    return <Badge color="brand" size="xs">перезапуск запрошен</Badge>;
+    return <Badge color="brand" size="xs">{i18n.t("nodes.restartQueued")}</Badge>;
   }
   if (node.xray_restart === "done") {
-    return <Badge color="green" size="xs">Xray перезапущен</Badge>;
+    return <Badge color="green" size="xs">{i18n.t("nodes.xrayRestarted")}</Badge>;
   }
   if (node.xray_restart === "timeout") {
-    return <Badge color="orange" size="xs">перезапуск не подтверждён</Badge>;
+    return <Badge color="orange" size="xs">{i18n.t("nodes.restartUnconfirmed")}</Badge>;
   }
   // The amber dot needs a word: reachable but not serving is the one state an
   // operator reads as "fine" if nothing says otherwise.
   if (!node.xray_running) {
-    return <Badge color="orange" size="xs">Xray не запущен</Badge>;
+    return <Badge color="orange" size="xs">{i18n.t("nodes.xrayDown")}</Badge>;
   }
   return null; // up and serving → the green dot already says so
 }
 
 // serverName is what leads the row: the master shows its configured config-label, or
-// "Мастер" when none is set; a node shows its own name. Exported for the dashboard's
+// "Master" when none is set; a node shows its own name. Exported for the dashboard's
 // fleet strip, so a renamed master reads the same on both pages.
 export function serverName(node: NodeView): string {
-  if (node.is_local) return node.master_label?.trim() || "Мастер";
+  if (node.is_local) return node.master_label?.trim() || i18n.t("nodes.master");
   return node.name;
 }
 
@@ -249,11 +256,11 @@ function InstallCommandModal({
   command: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
-    <Modal open onClose={onClose} title="Команда установки ноды" size="lg">
+    <Modal open onClose={onClose} title={t("nodes.installCommand")} size="lg">
       <p className="text-sm text-ink-muted">
-        Выполните на сервере ноды (Ubuntu, от root). Через минуту нода станет
-        онлайн в списке. Токен показывается один раз — сохраните команду.
+        {t("nodes.installCommandHint")}
       </p>
       <div className="mt-3">
         <Code block copy>
@@ -261,7 +268,7 @@ function InstallCommandModal({
         </Code>
       </div>
       <div className="mt-4 flex justify-end">
-        <Button onClick={onClose}>Готово</Button>
+        <Button onClick={onClose}>{t("common.done")}</Button>
       </div>
     </Modal>
   );
@@ -278,6 +285,7 @@ function AddNodeDialog({
   onCreated: (command: string) => void;
   onDone: () => void;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"command" | "ssh">("command");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
@@ -315,15 +323,15 @@ function AddNodeDialog({
     setInstalling(true);
     try {
       // Create the node once; on a retry reuse the existing id so a failed install
-      // doesn't leave a trail of orphan "не подключена" nodes.
+      // doesn't leave a trail of orphan not-joined nodes.
       let nodeId = createdId;
       if (nodeId == null) {
-        setLog(["Создаём ноду…"]);
+        setLog([t("nodes.creating")]);
         const res = await createNode(name.trim(), host.trim());
         nodeId = res.id;
         setCreatedId(res.id);
       } else {
-        setLog(["Повторная установка…"]);
+        setLog([t("nodes.reinstalling")]);
       }
       const outcome = await provisionNode(
         nodeId,
@@ -337,21 +345,21 @@ function AddNodeDialog({
         (line) => setLog((l) => [...l, line]),
       );
       if (outcome === "done") {
-        notifySuccess("Нода установлена по SSH");
+        notifySuccess(t("nodes.installedOverSsh"));
         onDone();
       } else {
-        notifyError("Установка завершилась с ошибкой — см. лог");
+        notifyError(t("nodes.installFailed"));
         setInstalling(false);
       }
     } catch (e) {
-      setLog((l) => [...l, "ОШИБКА: " + errMessage(e)]);
+      setLog((l) => [...l, `${ERR_PREFIX}: ${errMessage(e)}`]);
       notifyError(errMessage(e));
       setInstalling(false);
     }
   };
 
   return (
-    <Modal open onClose={onClose} title="Добавить ноду" size="lg" dismissible={!installing}>
+    <Modal open onClose={onClose} title={t("nodes.addNode")} size="lg" dismissible={!installing}>
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
@@ -363,15 +371,15 @@ function AddNodeDialog({
               mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
             )}
           >
-            {m === "command" ? "Команда установки" : "Установить по SSH"}
+            {t(m === "command" ? "nodes.tabCommand" : "nodes.tabSsh")}
           </button>
         ))}
       </div>
 
       <div className="space-y-3">
-        <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
+        <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
         <TextInput
-          label="Домен или IP ноды"
+          label={t("nodes.hostLabel")}
           value={host}
           onChange={setHost}
           placeholder="nl1.example.com"
@@ -380,16 +388,15 @@ function AddNodeDialog({
         {mode === "ssh" && (
           <div className="space-y-3 border-t border-gray-100 pt-3">
             <p className="text-xs text-ink-muted">
-              Панель зайдёт на сервер по SSH и установит ноду сама. Данные SSH
-              нигде не сохраняются — используются только на время установки.
+              {t("nodes.sshHint")}
             </p>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+                <TextInput label={t("nodes.sshHost")} value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
               </div>
-              <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
+              <TextInput label={t("conn.port")} value={sshPort} onChange={setSshPort} placeholder="22" />
             </div>
-            <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
+            <TextInput label={t("nodes.sshUser")} value={sshUser} onChange={setSshUser} placeholder="root" />
             <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
               {(["password", "key"] as const).map((a) => (
                 <button
@@ -400,15 +407,15 @@ function AddNodeDialog({
                     sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
                   )}
                 >
-                  {a === "password" ? "Пароль" : "Ключ"}
+                  {t(a === "password" ? "login.password" : "nodes.key")}
                 </button>
               ))}
             </div>
             {sshAuth === "password" ? (
-              <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
+              <PasswordInput label={t("nodes.sshPassword")} value={sshPassword} onChange={setSshPassword} />
             ) : (
               <Textarea
-                label="Приватный ключ (PEM)"
+                label={t("nodes.privateKey")}
                 value={sshKey}
                 onChange={setSshKey}
                 rows={4}
@@ -421,7 +428,7 @@ function AddNodeDialog({
         {log.length > 0 && (
           <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
             {log.map((l, i) => (
-              <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
+              <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
                 {l}
               </div>
             ))}
@@ -431,11 +438,11 @@ function AddNodeDialog({
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={installing}>
-          Отмена
+          {t("common.cancel")}
         </Button>
         {mode === "command" ? (
           <Button onClick={submitCommand} loading={busy} disabled={!name.trim() || !host.trim()}>
-            Создать
+            {t("common.create")}
           </Button>
         ) : (
           <Button
@@ -443,7 +450,7 @@ function AddNodeDialog({
             loading={installing}
             disabled={!name.trim() || !host.trim() || !sshHost.trim()}
           >
-            Установить
+            {t("nodes.install")}
           </Button>
         )}
       </div>
@@ -468,6 +475,7 @@ function ReconnectDialog({
   // Both tabs reinstall the node; they differ only in who runs the installer. The
   // command tab revokes the node's current token (the old install stops connecting
   // until the command is run), SSH keeps it until the new install succeeds.
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"command" | "ssh">("command");
   const [busy, setBusy] = useState(false);
   const [sshHost, setSshHost] = useState(node.host);
@@ -498,7 +506,7 @@ function ReconnectDialog({
     if (sshAuth === "password" && !sshPassword) return;
     if (sshAuth === "key" && !sshKey.trim()) return;
     setRunning(true);
-    setLog(["Переустанавливаем ноду…"]);
+    setLog([t("nodes.reinstallingNode")]);
     try {
       const outcome = await provisionNode(
         node.id,
@@ -512,21 +520,21 @@ function ReconnectDialog({
         (line) => setLog((l) => [...l, line]),
       );
       if (outcome === "done") {
-        notifySuccess("Нода переустановлена — подключится в течение минуты");
+        notifySuccess(t("nodes.reinstalled"));
         onDone();
       } else {
-        notifyError("Не удалось — см. лог");
+        notifyError(t("nodes.failedSeeLog"));
         setRunning(false);
       }
     } catch (e) {
-      setLog((l) => [...l, "ОШИБКА: " + errMessage(e)]);
+      setLog((l) => [...l, `${ERR_PREFIX}: ${errMessage(e)}`]);
       notifyError(errMessage(e));
       setRunning(false);
     }
   };
 
   return (
-    <Modal open onClose={onClose} title={`Переустановить «${node.name}»`} size="lg" dismissible={!running}>
+    <Modal open onClose={onClose} title={t("nodes.reinstallOf", { name: node.name })} size="lg" dismissible={!running}>
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
@@ -538,30 +546,27 @@ function ReconnectDialog({
               mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
             )}
           >
-            {m === "command" ? "Команда установки" : "Переустановить по SSH"}
+            {t(m === "command" ? "nodes.tabCommand" : "nodes.tabReinstallSsh")}
           </button>
         ))}
       </div>
 
       {mode === "command" ? (
         <p className="text-sm text-ink-muted">
-          Панель выдаст новый токен и команду установки — выполните её на сервере ноды.
-          Текущая установка перестанет подключаться сразу, пока вы не выполните команду.
+          {t("nodes.reinstallCommandHint")}
         </p>
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-ink-muted">
-            Панель зайдёт на сервер ноды по SSH и переустановит агент с новым токеном.
-            Текущая установка продолжает работать, пока новая не встанет. Данные SSH
-            нигде не сохраняются.
+            {t("nodes.reinstallSshHint")}
           </p>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
-              <TextInput label="SSH-адрес (IP)" value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+              <TextInput label={t("nodes.sshHost")} value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
             </div>
-            <TextInput label="Порт" value={sshPort} onChange={setSshPort} placeholder="22" />
+            <TextInput label={t("conn.port")} value={sshPort} onChange={setSshPort} placeholder="22" />
           </div>
-          <TextInput label="SSH-пользователь" value={sshUser} onChange={setSshUser} placeholder="root" />
+          <TextInput label={t("nodes.sshUser")} value={sshUser} onChange={setSshUser} placeholder="root" />
           <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
             {(["password", "key"] as const).map((a) => (
               <button
@@ -572,15 +577,15 @@ function ReconnectDialog({
                   sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
                 )}
               >
-                {a === "password" ? "Пароль" : "Ключ"}
+                {t(a === "password" ? "login.password" : "nodes.key")}
               </button>
             ))}
           </div>
           {sshAuth === "password" ? (
-            <PasswordInput label="SSH-пароль" value={sshPassword} onChange={setSshPassword} />
+            <PasswordInput label={t("nodes.sshPassword")} value={sshPassword} onChange={setSshPassword} />
           ) : (
             <Textarea
-              label="Приватный ключ (PEM)"
+              label={t("nodes.privateKey")}
               value={sshKey}
               onChange={setSshKey}
               rows={4}
@@ -590,7 +595,7 @@ function ReconnectDialog({
           {log.length > 0 && (
             <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
               {log.map((l, i) => (
-                <div key={i} className={l.startsWith("ОШИБКА") ? "text-danger" : ""}>
+                <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
                   {l}
                 </div>
               ))}
@@ -600,15 +605,15 @@ function ReconnectDialog({
       )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={running}>
-          Отмена
+          {t("common.cancel")}
         </Button>
         {mode === "command" ? (
           <Button onClick={issueCommand} loading={busy}>
-            Получить команду
+            {t("nodes.getCommand")}
           </Button>
         ) : (
           <Button onClick={run} loading={running} disabled={!sshHost.trim()}>
-            Переустановить
+            {t("nodes.reinstall")}
           </Button>
         )}
       </div>
@@ -639,7 +644,7 @@ function useServerRouting(init: {
   const [warpEnabled, setWarpEnabled] = useState(init.warp);
   const [operaEnabled, setOperaEnabled] = useState(init.opera);
   const [operaCountry, setOperaCountry] = useState(init.country || "EU");
-  // base is the last-saved snapshot, for dirty-tracking and "Отменить" (revert).
+  // base is the last-saved snapshot, for dirty-tracking and Cancel (revert).
   // Seeded from init, re-seeded on reset (master's async load), refreshed on commit
   // (after a successful save).
   const [base, setBase] = useState({
@@ -697,8 +702,9 @@ function useServerRouting(init: {
 
 // NodeGeoCard is the node's Geo tab — the same GeoSection as the master (geo file
 // status + auto-refresh cadence), but scoped to the node: files come from the node's
-// report, "Обновить" queues a refresh on the node, and the cadence is the node's own.
+// report, the refresh button queues a refresh on the node, and the cadence is the node's own.
 function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => void }) {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<GeoInfo | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -710,7 +716,7 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
     setBusy(true);
     try {
       await refreshNodeGeo(node.id);
-      notifySuccess("Нода обновит geo при следующей синхронизации");
+      notifySuccess(t("nodes.geoQueued"));
     } catch (e) {
       notifyError(errMessage(e));
     }
@@ -722,7 +728,7 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
     setInfo((i) => (i ? { ...i, refresh_hours: hours } : i));
     try {
       await setNodeGeoCadence(node.id, hours);
-      notifySuccess("Автообновление geo сохранено");
+      notifySuccess(t("nodes.geoCadenceSaved"));
       onChanged();
     } catch (e) {
       // Roll the optimistic update back so the dropdown doesn't misreport the cadence.
@@ -760,10 +766,11 @@ function NodeSettingsDialog({
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
   // genBase / dnsBase are the last-saved snapshots powering dirty-tracking + revert on
-  // the Основное and DNS tabs (routing carries its own inside useServerRouting).
+  // the General and DNS tabs (routing carries its own inside useServerRouting).
   const [genBase, setGenBase] = useState({ name: node.name, decoy: node.decoy_template });
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
@@ -781,16 +788,16 @@ function NodeSettingsDialog({
   // Status badges: WARP registration is known from the node's report; Opera runs
   // remotely, so the panel only shows enabled/disabled.
   const warpBadge: StatusBadge = !r.warpEnabled
-    ? { label: "выключен", color: "gray" }
+    ? { label: t("conn.off"), color: "gray" }
     : node.warp_registered
-      ? { label: "активен", color: "green" }
-      : { label: "будет зарегистрирован", color: "orange" };
+      ? { label: t("egress.alive"), color: "green" }
+      : { label: t("nodes.willRegister"), color: "orange" };
   const operaBadge: StatusBadge = r.operaEnabled
-    ? { label: "включён", color: "green" }
-    : { label: "выключен", color: "gray" };
+    ? { label: t("nodes.on"), color: "green" }
+    : { label: t("conn.off"), color: "gray" };
 
-  // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
-  // updates the background list. Основное persists name/decoy, Роутинг the routing +
+  // Each tab saves on its own (like Connections/Geo/Domain) and stays open; onRefresh
+  // updates the background list. General persists name/decoy, Routing the routing +
   // egress, DNS its own endpoint — three independent saves.
   const saveGeneral = async () => {
     if (!name.trim()) return;
@@ -798,13 +805,13 @@ function NodeSettingsDialog({
     try {
       await updateNode(node.id, {
         name: name.trim(),
-        host: node.host, // domain is changed from the Домен tab
+        host: node.host, // domain is changed from the Domain tab
         decoy_template: decoy,
-        // Protocols are edited on the Подключения tab; omitting them here tells the
+        // Protocols are edited on the Connections tab; omitting them here tells the
         // panel to preserve the current values (never revert a just-made change).
       });
       setGenBase({ name, decoy });
-      notifySuccess("Основное сохранено");
+      notifySuccess(t("nodes.generalSaved"));
       onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -826,7 +833,7 @@ function NodeSettingsDialog({
         r.operaCountry,
       );
       r.commit();
-      notifySuccess("Роутинг сохранён");
+      notifySuccess(t("nodes.routingSaved"));
       onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -841,7 +848,7 @@ function NodeSettingsDialog({
       // Empty ⇒ inherit the panel's default resolver.
       await setNodeDNS(node.id, dns.trim() ? dns : null);
       setDnsBase(dns);
-      notifySuccess("DNS сохранён");
+      notifySuccess(t("nodes.dnsSaved"));
       onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -851,30 +858,30 @@ function NodeSettingsDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={`Настройки — «${node.name}»`} size="xl">
+    <Modal open onClose={onClose} title={t("nodes.settingsOf", { name: node.name })} size="xl">
       <DialogTabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { value: "general", label: "Основное" },
-          { value: "connections", label: "Подключения" },
-          { value: "inbounds", label: "Доп. подключения" },
-          { value: "routing", label: "Роутинг" },
+          { value: "general", label: t("settings.tabGeneral") },
+          { value: "connections", label: t("nodes.tabConnections") },
+          { value: "inbounds", label: t("nodes.tabInbounds") },
+          { value: "routing", label: t("nodes.tabRouting") },
           { value: "dns", label: "DNS" },
           { value: "geo", label: "Geo" },
-          { value: "domain", label: "Домен" },
+          { value: "domain", label: t("restore.domain") },
         ]}
       />
 
       {tab === "general" && (
         <div className="flex flex-col gap-4">
-          <Section title="Сервер">
-            <TextInput label="Название" value={name} onChange={setName} placeholder="Нидерланды #1" />
+          <Section title={t("nodes.server")}>
+            <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
             <Select
-              label="Заглушка"
+              label={t("nodes.decoy")}
               value={decoy}
               onChange={setDecoy}
-              data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+              data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
             />
           </Section>
           <TabSaveBar
@@ -928,7 +935,7 @@ function NodeSettingsDialog({
 
       {tab === "dns" && (
         <div className="flex flex-col gap-4">
-          <Section title="DNS" desc="Резолвер, который использует нода. Пусто — по умолчанию.">
+          <Section title="DNS" desc={t("nodes.dnsNodeHint")}>
             <DnsEditor value={dns} onChange={setDns} />
           </Section>
           <TabSaveBar
@@ -955,7 +962,7 @@ function NodeSettingsDialog({
 }
 
 // MasterNameEditor lets the operator name the master server for config labels
-// (shown as "<имя> · VLESS…" in clients). Empty = no prefix.
+// (shown as "<name> · VLESS…" in clients). Empty = no prefix.
 // MasterSettingsDialog holds the master server's per-server settings. The master's
 // protocols, decoy, routing and DNS are the panel's GLOBAL settings (edited in their
 // own tabs), so here we only set its config-label name and point at the rest.
@@ -972,8 +979,9 @@ function MasterSettingsDialog({
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   const { applying, apply } = useXrayApply();
-  // "Основное" (name + decoy) doesn't touch the Xray config, so it saves without the
+  // The general tab (name + decoy) doesn't touch the Xray config, so it saves without the
   // xray-restart wait that `apply` blocks on — otherwise it hangs polling for a
   // restart that never comes.
   const [savingGeneral, setSavingGeneral] = useState(false);
@@ -1048,13 +1056,13 @@ function MasterSettingsDialog({
   const refreshGeo = () =>
     apply(async () => {
       setGeoStatus((await updateGeo()).files);
-      notifySuccess("Geo-базы обновлены");
+      notifySuccess(t("nodes.geoUpdated"));
     });
 
   const refreshIPLists = () =>
     apply(async () => {
       setIPListStatus((await updateIPLists()).iplist_files ?? []);
-      notifySuccess("Списки iplist обновлены");
+      notifySuccess(t("nodes.iplistUpdated"));
     });
 
   // Mirrors changeGeoCadence: optimistic, rolled back on failure so the dropdown
@@ -1064,7 +1072,7 @@ function MasterSettingsDialog({
     setIPListCadence(hours);
     try {
       await saveIPListCadence(hours);
-      notifySuccess("Автообновление списков сохранено");
+      notifySuccess(t("nodes.iplistCadenceSaved"));
     } catch (e) {
       setIPListCadence(prev);
       notifyError(errMessage(e));
@@ -1075,17 +1083,17 @@ function MasterSettingsDialog({
     setGeoCadence(hours);
     try {
       await saveGeoCadence(hours);
-      notifySuccess("Автообновление geo сохранено");
+      notifySuccess(t("nodes.geoCadenceSaved"));
     } catch (e) {
       notifyError(errMessage(e));
     }
   };
 
   const warpBadge: StatusBadge = !r.warpEnabled
-    ? { label: "выключен", color: "gray" }
+    ? { label: t("conn.off"), color: "gray" }
     : warpRegistered
-      ? { label: "активен", color: "green" }
-      : { label: "не зарегистрирован", color: "orange" };
+      ? { label: t("egress.alive"), color: "green" }
+      : { label: t("nodes.notRegistered"), color: "orange" };
   const operaBadge = helperStatus(
     r.operaEnabled,
     operaRunning,
@@ -1093,7 +1101,7 @@ function MasterSettingsDialog({
     "",
   ) as StatusBadge;
 
-  // Each tab saves on its own (like Подключения/Geo/Домен) and stays open; onRefresh
+  // Each tab saves on its own (like Connections/Geo/Domain) and stays open; onRefresh
   // updates the background list. These map to the panel's global settings behind the
   // master's card, so they stay as separate endpoints.
   const saveGeneral = async () => {
@@ -1102,7 +1110,7 @@ function MasterSettingsDialog({
       await setMasterName(name.trim());
       await saveDecoy(decoy);
       setGenBase({ name, decoy });
-      notifySuccess("Основное сохранено");
+      notifySuccess(t("nodes.generalSaved"));
       onRefresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -1116,7 +1124,7 @@ function MasterSettingsDialog({
       // Routing + WARP/Opera together (one reconcile).
       await saveRouting(r.effective(), r.warpEnabled, r.operaEnabled, r.operaCountry);
       r.commit();
-      notifySuccess("Роутинг сохранён");
+      notifySuccess(t("nodes.routingSaved"));
       onRefresh();
     });
 
@@ -1124,12 +1132,12 @@ function MasterSettingsDialog({
     apply(async () => {
       await setXrayDNS(dns);
       setDnsBase(dns);
-      notifySuccess("DNS сохранён");
+      notifySuccess(t("nodes.dnsSaved"));
       onRefresh();
     });
 
   return (
-    <Modal open onClose={onClose} title="Настройки — мастер" size="xl">
+    <Modal open onClose={onClose} title={t("nodes.masterSettings")} size="xl">
       {!loaded ? (
         <CenterLoader />
       ) : (
@@ -1138,31 +1146,31 @@ function MasterSettingsDialog({
             value={tab}
             onChange={setTab}
             tabs={[
-              { value: "general", label: "Основное" },
-              { value: "connections", label: "Подключения" },
-              { value: "inbounds", label: "Доп. подключения" },
-              { value: "routing", label: "Роутинг" },
+              { value: "general", label: t("settings.tabGeneral") },
+              { value: "connections", label: t("nodes.tabConnections") },
+              { value: "inbounds", label: t("nodes.tabInbounds") },
+              { value: "routing", label: t("nodes.tabRouting") },
               { value: "dns", label: "DNS" },
               { value: "geo", label: "Geo" },
-              { value: "iplist", label: "Списки" },
-              { value: "domain", label: "Домен" },
+              { value: "iplist", label: t("nodes.tabLists") },
+              { value: "domain", label: t("restore.domain") },
             ]}
           />
 
           {tab === "general" && (
             <div className="flex flex-col gap-4">
-              <Section title="Сервер">
+              <Section title={t("nodes.server")}>
                 <TextInput
-                  label="Название"
+                  label={t("groups.name")}
                   value={name}
                   onChange={setName}
-                  placeholder="напр. Main (пусто — без префикса)"
+                  placeholder={t("nodes.masterNamePlaceholder")}
                 />
                 <Select
-                  label="Заглушка"
+                  label={t("nodes.decoy")}
                   value={decoy}
                   onChange={setDecoy}
-                  data={decoys.map((d) => ({ value: d, label: DECOY_LABELS[d] ?? d }))}
+                  data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
                 />
               </Section>
               <TabSaveBar
@@ -1215,7 +1223,7 @@ function MasterSettingsDialog({
 
           {tab === "dns" && (
             <div className="flex flex-col gap-4">
-              <Section title="DNS" desc="Резолвер, который использует Xray. Пусто — по умолчанию.">
+              <Section title="DNS" desc={t("nodes.dnsMasterHint")}>
                 <DnsEditor value={dns} onChange={setDns} />
               </Section>
               <TabSaveBar
@@ -1247,7 +1255,7 @@ function MasterSettingsDialog({
             />
           )}
 
-          {/* Domain / TLS — its own load + "сменить домен" button (page redirects
+          {/* Domain / TLS — its own load + change-domain button (page redirects
               on success), independent of this dialog's Save. */}
           {tab === "domain" && <TLSPanel />}
         </>
@@ -1271,6 +1279,7 @@ function NodeCard({
   onChanged: () => void;
   onRegen: (command: string) => void;
 }) {
+  const { t } = useTranslation();
   const { confirm, confirmNode } = useConfirm();
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
@@ -1291,16 +1300,16 @@ function NodeCard({
   const remove = async () => {
     if (
       !(await confirm({
-        title: "Удалить ноду?",
-        body: `«${node.name}» перестанет обслуживать пользователей. Историю трафика можно оставить.`,
-        confirmLabel: "Удалить",
+        title: t("nodes.deleteTitle"),
+        body: t("nodes.deleteBody", { name: node.name }),
+        confirmLabel: t("common.delete"),
         danger: true,
       }))
     )
       return;
     try {
       await deleteNode(node.id);
-      notifySuccess("Нода удалена");
+      notifySuccess(t("nodes.deleted"));
       onChanged();
     } catch (e) {
       notifyError(errMessage(e));
@@ -1310,7 +1319,7 @@ function NodeCard({
   const doUpdate = async () => {
     try {
       await updateNodeVersion(node.id);
-      notifySuccess("Нода обновляется — Xray перезапустится");
+      notifySuccess(t("nodes.updating"));
     } catch (e) {
       notifyError(errMessage(e));
     }
@@ -1319,15 +1328,15 @@ function NodeCard({
   // Bouncing Xray drops every live connection on THAT server, so it is confirmed
   // first. On the master it happens right away; on a node the panel can only ask —
   // the node acts when its (immediately woken) poll returns, and the row then reads
-  // «перезапуск запрошен» until the node reports an Xray that actually restarted.
+  // the restart-queued badge until the node reports an Xray that actually restarted.
   // Hence no success toast for a node: the claim isn't ours to make yet.
   const doXrayRestart = async () => {
     const ok = await confirm({
       title: node.is_local
-        ? "Перезапустить Xray?"
-        : `Перезапустить Xray на «${node.name}»?`,
-      body: "Активные VPN-подключения на этом сервере будут разорваны — клиенты переподключатся автоматически через несколько секунд. Конфигурация не изменится.",
-      confirmLabel: "Перезапустить",
+        ? t("nodes.restartXrayTitle")
+        : t("nodes.restartXrayOn", { name: node.name }),
+      body: t("nodes.restartXrayBody"),
+      confirmLabel: t("manage.restartConfirm"),
       danger: true,
     });
     if (!ok) return;
@@ -1335,10 +1344,10 @@ function NodeCard({
     try {
       if (node.is_local) {
         await restartXray();
-        notifySuccess("Xray перезапущен");
+        notifySuccess(t("nodes.xrayRestarted"));
       } else {
         await restartNodeXray(node.id);
-        notifySuccess("Ждём подтверждения от ноды");
+        notifySuccess(t("nodes.awaitingNode"));
         onChanged(); // pick up the pending badge now, not on the next poll tick
       }
     } catch (e) {
@@ -1363,7 +1372,7 @@ function NodeCard({
             <StatusChip node={node} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
-            <span>{fmtBytes(node.traffic_up + node.traffic_down)} сегодня</span>
+            <span>{t("nodes.todayTraffic", { value: fmtBytes(node.traffic_up + node.traffic_down) })}</span>
             {!node.is_local && (
               <>
                 <Sep />
@@ -1378,7 +1387,7 @@ function NodeCard({
             {!node.is_local && (
               <>
                 <Sep />
-                <span>агент {node.node_version || "—"}</span>
+                <span>{t("nodes.agentVersion", { version: node.node_version || "—" })}</span>
               </>
             )}
           </div>
@@ -1388,23 +1397,23 @@ function NodeCard({
           {!node.is_local && <Switch checked={node.enabled} onChange={toggleEnabled} />}
           {/* Four per-server actions, as icons: spelled out they crowded the row and
               pushed the server's own name off a narrow screen. */}
-          <IconButton title="Настройки" onClick={() => setEditingRouting(true)}>
+          <IconButton title={t("nav.settings")} onClick={() => setEditingRouting(true)}>
             <IconGear size={18} />
           </IconButton>
-          <IconButton title="Диагностика" onClick={() => setShowingHealth(true)}>
+          <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
             <IconPulse size={18} />
           </IconButton>
-          <IconButton title="Конфигурация Xray" onClick={() => setShowingConfig(true)}>
+          <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
             <IconBraces size={18} />
           </IconButton>
-          <IconButton title="Логи" onClick={() => setShowingLogs(true)}>
+          <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
             <IconTerminal size={18} />
           </IconButton>
           <IconButton
             title={
               node.xray_restart === "pending"
-                ? "Перезапуск запрошен — ждём подтверждения от ноды"
-                : "Перезапустить Xray"
+                ? t("nodes.restartQueuedHint")
+                : t("nodes.restartXray")
             }
             color="red"
             disabled={
@@ -1425,7 +1434,7 @@ function NodeCard({
               width={210}
               trigger={
                 <span
-                  title="Управление нодой"
+                  title={t("nodes.manageNode")}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 active:scale-90"
                 >
                   <IconDots size={18} />
@@ -1433,17 +1442,17 @@ function NodeCard({
               }
             >
               <DropdownItem onClick={doUpdate}>
-                Обновить{node.version_skew ? " (новая версия)" : ""}
+                {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
               </DropdownItem>
               {/* One reinstall action: the dialog offers the command and the SSH way.
-                  They were two menu items ("Новый токен" just issued the command for
+                  They were two menu items (one just issued the command for
                   the same reinstall), which read as two different operations. */}
               <DropdownItem onClick={() => setReconnecting(true)}>
-                Переустановить
+                {t("nodes.reinstall")}
               </DropdownItem>
               <DropdownDivider />
               <DropdownItem color="red" onClick={remove}>
-                Удалить
+                {t("common.delete")}
               </DropdownItem>
             </Dropdown>
           )}
@@ -1488,7 +1497,7 @@ function NodeCard({
       <Modal
         open={showingHealth}
         onClose={() => setShowingHealth(false)}
-        title={`Диагностика — «${serverName(node)}»`}
+        title={t("nodes.diagnosticsOf", { name: serverName(node) })}
         size="lg"
       >
         <HealthPanel nodeId={node.id} />
@@ -1496,11 +1505,11 @@ function NodeCard({
       {showingConfig && (
         <XrayConfigView
           nodeId={node.id}
-          title={`Конфигурация Xray — «${node.name}»`}
+          title={t("nodes.xrayConfigOf", { name: node.name })}
           note={
             node.is_local
               ? undefined
-              : "Конфиг генерирует панель и отдаёт ноде при синхронизации. Пути к сертификатам агент подставляет свои."
+              : t("nodes.configNote")
           }
           onClose={() => setShowingConfig(false)}
         />
@@ -1529,18 +1538,21 @@ const NODE_LOG_COLORS: Record<string, string> = {
   info: "text-brand-600",
 };
 
-const NODE_LOG_FILTERS = [
-  { value: "all", label: "Все" },
-  { value: "access", label: "Доступ" },
-  { value: "info", label: "Инфо" },
-  { value: "warning", label: "Предупр." },
-  { value: "error", label: "Ошибки" },
+// A factory, not a constant: a constant would freeze the labels in whichever
+// language happened to be active when this module was first imported.
+const nodeLogFilters = () => [
+  { value: "all", label: i18n.t("logs.all") },
+  { value: "access", label: i18n.t("logs.access") },
+  { value: "info", label: i18n.t("logs.info") },
+  { value: "warning", label: i18n.t("logs.warning") },
+  { value: "error", label: i18n.t("logs.error") },
 ];
 
 // NodeLogsDialog streams a node's recent logs. It polls the panel, which asks the
 // node to include its log tail on its next sync (agent + Xray), so the view stays
 // fresh while open (with up to one sync interval of latency). Tabs filter by level.
 function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void }) {
+  const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [level, setLevel] = useState("all");
@@ -1569,20 +1581,20 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
       : lines.filter((l) => classifyNodeLog(l) === level);
 
   return (
-    <Modal open onClose={onClose} title={`Логи — «${node.name}»`} size="xl">
+    <Modal open onClose={onClose} title={t("nodes.logsOf", { name: node.name })} size="xl">
       <div className="mb-3 overflow-x-auto">
-        <SegmentedControl data={NODE_LOG_FILTERS} value={level} onChange={setLevel} />
+        <SegmentedControl data={nodeLogFilters()} value={level} onChange={setLevel} />
       </div>
       {!loaded ? (
-        <p className="text-sm text-ink-muted">Запрашиваем логи у ноды…</p>
+        <p className="text-sm text-ink-muted">{t("nodes.requestingLogs")}</p>
       ) : lines.length === 0 ? (
         <p className="text-sm text-ink-muted">
-          Логи пока не получены. Нода пришлёт их при следующей синхронизации.
+          {t("nodes.logsPending")}
         </p>
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs leading-relaxed">
           {shown.length === 0 ? (
-            <p className="text-gray-400">Нет строк выбранного уровня</p>
+            <p className="text-gray-400">{t("logs.noLinesAtLevel")}</p>
           ) : (
             shown.map((l, i) => (
               <div
@@ -1600,7 +1612,7 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
       )}
       <div className="mt-4 flex justify-end">
         <Button variant="light" color="gray" onClick={onClose}>
-          Закрыть
+          {t("common.close")}
         </Button>
       </div>
     </Modal>
@@ -1608,6 +1620,7 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
 }
 
 export function NodesPanel() {
+  const { t } = useTranslation();
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
   const [decoys, setDecoys] = useState<string[]>([]);
   // Geo categories feed the routing editor's domain/IP suggestions (same list for
@@ -1640,7 +1653,7 @@ export function NodesPanel() {
   // A requested restart resolves in a couple of seconds and its outcome is only
   // shown briefly, so the list polls fast for the whole of it — pending AND the
   // answer that follows. Polling only while pending would leave the "Xray
-  // перезапущен" badge on screen until the next lazy tick, well past the few
+  // restarted badge on screen until the next lazy tick, well past the few
   // seconds the server means it to be shown. Otherwise this is just the liveness
   // refresh keeping online/offline badges current, and it stays lazy.
   const showingRestart = !!nodes?.some((n) => n.xray_restart);
@@ -1657,7 +1670,7 @@ export function NodesPanel() {
   const updateAll = async () => {
     try {
       const r = await updateAllNodes();
-      notifySuccess(`Обновление запущено на нодах: ${r.nodes}`);
+      notifySuccess(t("nodes.updateStarted", { count: r.nodes }));
     } catch (e) {
       notifyError(errMessage(e));
     }
@@ -1667,15 +1680,15 @@ export function NodesPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Сервера</h1>
+          <h1 className="text-xl font-semibold text-ink">{t("nav.servers")}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           {remoteCount > 0 && (
             <Button variant="light" color="gray" onClick={updateAll}>
-              Обновить все ноды{anyStale ? " ⚠" : ""}
+              {t("nodes.updateAll")}{anyStale ? " ⚠" : ""}
             </Button>
           )}
-          <Button onClick={() => setAdding(true)}>Добавить ноду</Button>
+          <Button onClick={() => setAdding(true)}>{t("nodes.addNode")}</Button>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/abuse"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -252,17 +253,17 @@ func (m *Manager) alertAbuse(hits []store.AbuseHit) {
 // it reached, with a few examples — the operator's next move is to look at that
 // account, and a bare count would not tell them whether it is worth doing.
 func (m *Manager) notifyAbuse(u model.User, total int64, matches []store.AbuseMatch) {
+	lang := m.botLang()
 	var b strings.Builder
-	fmt.Fprintf(&b, "🚨 <b>Подозрительный трафик</b>\nПользователь: %s\nСовпадений: %d",
-		escHTML(u.Name), total)
+	b.WriteString(i18n.T(lang, "notify.abuse", escHTML(u.Name), total))
 	for _, mt := range matches {
 		fmt.Fprintf(&b, "\n• %s — %s (%d)",
-			escHTML(mt.Domain), escHTML(abuse.Category(mt.Category).Title()), mt.Count)
+			escHTML(mt.Domain), escHTML(i18n.T(lang, abuse.Category(mt.Category).TitleKey())), mt.Count)
 		// Name the reporting node when it is not the master. A match seen ONLY via a
 		// node (never on the master's own traffic) is worth the operator's suspicion
 		// both ways: real abuse on that node, or a misbehaving node fabricating it.
 		if mt.NodeID != 0 {
-			fmt.Fprintf(&b, " · нода %d", mt.NodeID)
+			b.WriteString(i18n.T(lang, "notify.abuseNode", mt.NodeID))
 		}
 	}
 	m.notifyAdminEvent(model.AdminEventAbuse, b.String())

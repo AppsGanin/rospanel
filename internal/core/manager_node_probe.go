@@ -160,7 +160,7 @@ func (m *Manager) ProbeNodePort(ctx context.Context, nodeID int64, network strin
 		return false, err
 	}
 	if n == nil {
-		return false, invalid("сервер не найден")
+		return false, invalidCode("err.serverNotFound", "сервер не найден")
 	}
 	if !n.Online(nowUnix()) || m.probes == nil {
 		return false, errProbeUnavailable

@@ -1,15 +1,17 @@
+import { useTranslation } from "react-i18next";
 import {
   approveRegistration,
   rejectRegistration,
   type RegistrationRequest,
 } from "./api";
 import { useAction } from "./hooks";
+import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { Button, SettingCard } from "./ui";
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -17,7 +19,7 @@ function fmtDateTime(unix: number): string {
   });
 }
 
-// RegistrationsPanel is the "Заявки" sub-tab: the moderated self-registration queue
+// RegistrationsPanel is the "Requests" sub-tab: the moderated self-registration queue
 // with approve/reject per request. It's presentational — the list and reload come
 // from UsersPage (which owns the poll that drives the tab's visibility and count).
 export function RegistrationsPanel({
@@ -27,22 +29,23 @@ export function RegistrationsPanel({
   requests: RegistrationRequest[];
   onReload: () => void;
 }) {
+  const { t } = useTranslation();
   const { busy, run } = useAction();
 
   const decide = (id: number, approve: boolean) =>
     run(async () => {
       await (approve ? approveRegistration(id) : rejectRegistration(id));
-      notifySuccess(approve ? "Заявка одобрена" : "Заявка отклонена");
+      notifySuccess(t(approve ? "reg.approved" : "reg.rejected"));
       onReload();
     }).catch((e) => notifyError(errMessage(e)));
 
   return (
     <SettingCard
-      title="Заявки на регистрацию"
-      description="Модерация самостоятельной регистрации: аккаунт создаётся только после одобрения. Одобрить или отклонить также можно кнопками в админ-боте."
+      title={t("reg.title")}
+      description={t("reg.description")}
     >
       {requests.length === 0 ? (
-        <p className="text-sm text-ink-muted">Новых заявок нет.</p>
+        <p className="text-sm text-ink-muted">{t("reg.empty")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {requests.map((r) => (
@@ -62,7 +65,7 @@ export function RegistrationsPanel({
                   disabled={busy}
                   onClick={() => decide(r.id, true)}
                 >
-                  Одобрить
+                  {t("reg.approve")}
                 </Button>
                 <Button
                   size="sm"
@@ -71,7 +74,7 @@ export function RegistrationsPanel({
                   disabled={busy}
                   onClick={() => decide(r.id, false)}
                 >
-                  Отклонить
+                  {t("reg.reject")}
                 </Button>
               </span>
             </li>

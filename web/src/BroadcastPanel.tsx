@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n, { currentLang } from "./i18n";
 import {
   type Broadcast,
   type BroadcastAudience,
@@ -29,28 +31,37 @@ import {
 
 // The audience picker. `days` marks the filters that take a horizon, which travels
 // inside the value the server stores ("seen:7").
-const AUDIENCES: { value: string; label: string; days?: boolean }[] = [
-  { value: "all", label: "Все, кто открывал бота" },
-  { value: "linked", label: "Только с аккаунтом в панели" },
-  { value: "unlinked", label: "Без аккаунта (не завершили регистрацию)" },
-  { value: "active", label: "С активной подпиской" },
-  { value: "expired", label: "С истёкшей подпиской" },
-  { value: "expiring", label: "Подписка скоро закончится", days: true },
-  { value: "seen", label: "Были в сети за последние…", days: true },
-  { value: "unseen", label: "Не заходили дольше…", days: true },
-  { value: "never", label: "Ни разу не подключались" },
+const audiences = (): { value: string; label: string; days?: boolean }[] => [
+  { value: "all", label: i18n.t("bc.audAll") },
+  { value: "linked", label: i18n.t("bc.audLinked") },
+  { value: "unlinked", label: i18n.t("bc.audUnlinked") },
+  { value: "active", label: i18n.t("bc.audActive") },
+  { value: "expired", label: i18n.t("bc.audExpired") },
+  { value: "expiring", label: i18n.t("bc.audExpiring"), days: true },
+  { value: "seen", label: i18n.t("bc.audSeen"), days: true },
+  { value: "unseen", label: i18n.t("bc.audUnseen"), days: true },
+  { value: "never", label: i18n.t("bc.audNever") },
 ];
 
-const DAY_CHOICES = [1, 3, 7, 14, 30, 90].map((d) => ({
-  value: String(d),
-  label: `${d} ${d === 1 ? "день" : d < 5 ? "дня" : "дней"}`,
-}));
+const dayChoices = () =>
+  [1, 3, 7, 14, 30, 90].map((d) => ({
+    value: String(d),
+    label: i18n.t("bc.days", { count: d }),
+  }));
 
-const STATUS: Record<Broadcast["status"], { label: string; color: string }> = {
-  running: { label: "Идёт", color: "blue" },
-  paused: { label: "Пауза", color: "yellow" },
-  done: { label: "Завершена", color: "green" },
-  cancelled: { label: "Отменена", color: "gray" },
+const statusMeta = (
+  status: Broadcast["status"],
+): { label: string; color: string } => {
+  switch (status) {
+    case "running":
+      return { label: i18n.t("bc.stRunning"), color: "blue" };
+    case "paused":
+      return { label: i18n.t("bc.stPaused"), color: "yellow" };
+    case "done":
+      return { label: i18n.t("bc.stDone"), color: "green" };
+    default:
+      return { label: i18n.t("bc.stCancelled"), color: "gray" };
+  }
 };
 
 // Telegram's own caps. Exceeded, it refuses each message separately, so the whole
@@ -67,7 +78,7 @@ const isLive = (b: Broadcast) => b.status === "running";
 
 function fmtTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -76,12 +87,13 @@ function fmtTime(unix: number): string {
 }
 
 export function BroadcastPanel() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [list, setList] = useState<Broadcast[]>([]);
   const [text, setText] = useState("");
   const [audienceKind, setAudienceKind] = useState("all");
   const [audienceDays, setAudienceDays] = useState("7");
-  const needsDays = !!AUDIENCES.find((a) => a.value === audienceKind)?.days;
+  const needsDays = !!audiences().find((a) => a.value === audienceKind)?.days;
   // What the server stores and resolves: the horizon rides inside the value.
   const audience: BroadcastAudience = needsDays
     ? `${audienceKind}:${audienceDays}`
@@ -141,12 +153,12 @@ export function BroadcastPanel() {
 
   const send = async () => {
     const ok = await confirm({
-      title: "Запустить рассылку?",
+      title: t("bc.startTitle"),
       body:
         reach === null
-          ? "Сообщение уйдёт всем выбранным получателям."
-          : `Сообщение уйдёт ${reach} получателям. Отменить отправленное уже нельзя.`,
-      confirmLabel: "Запустить",
+          ? t("bc.startBodyUnknown")
+          : t("bc.startBody", { count: reach }),
+      confirmLabel: t("bc.start"),
     });
     if (!ok) return;
     setBusy(true);
@@ -156,7 +168,7 @@ export function BroadcastPanel() {
       setButtons([]);
       clearMedia();
       await load();
-      notifySuccess("Рассылка запущена");
+      notifySuccess(t("bc.started"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -168,7 +180,7 @@ export function BroadcastPanel() {
     setTesting(true);
     try {
       await testBroadcast(payload, media);
-      notifySuccess("Тест отправлен в привязанные админ-чаты");
+      notifySuccess(t("bc.testSent"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -191,15 +203,15 @@ export function BroadcastPanel() {
     <div className="flex flex-col gap-4 pb-20">
       {confirmNode}
       <SettingCard
-        title="Новая рассылка"
-        description="Сообщение уйдёт через пользовательского бота всем, кто не отписался и не заблокировал его."
+        title={t("bc.title")}
+        description={t("bc.description")}
       >
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-[16rem] flex-1">
               <Select
-                label="Кому"
-                data={AUDIENCES.map((a) => ({ value: a.value, label: a.label }))}
+                label={t("bc.to")}
+                data={audiences().map((a) => ({ value: a.value, label: a.label }))}
                 value={audienceKind}
                 onChange={setAudienceKind}
               />
@@ -207,7 +219,7 @@ export function BroadcastPanel() {
             {needsDays && (
               <div className="w-40">
                 <Select
-                  data={DAY_CHOICES}
+                  data={dayChoices()}
                   value={audienceDays}
                   onChange={setAudienceDays}
                 />
@@ -216,28 +228,28 @@ export function BroadcastPanel() {
           </div>
           <p className="text-xs text-ink-muted">
             {reach === null
-              ? "Считаем получателей…"
-              : `Получателей сейчас: ${reach}. Список фиксируется в момент запуска.`}
+              ? t("bc.counting")
+              : t("bc.reachNow", { count: reach })}
           </p>
 
           <HtmlEditor
-            label="Текст"
+            label={t("bc.text")}
             value={text}
             onChange={setText}
             rows={5}
-            placeholder="Например: Плановые работы 20 июля с 03:00 до 05:00."
+            placeholder={t("bc.textPlaceholder")}
           />
           <p
             className={`text-xs ${overLimit ? "text-red-600" : "text-ink-muted"}`}
           >
             {[...text].length} / {limit}
-            {media && " — с вложением Telegram ограничивает подпись"}
+            {media && ` — ${t("bc.captionNote")}`}
           </p>
 
           <div>
-            <p className="mb-1 text-sm font-medium text-ink">Вложение</p>
-            {/* The native file input renders its own untranslated label ("Файл не
-                выбран"), which reads as a rendering fault next to styled controls.
+            <p className="mb-1 text-sm font-medium text-ink">{t("bc.attachment")}</p>
+            {/* The native file input renders its own browser-locale label, which
+                reads as a rendering fault next to styled controls.
                 Hidden, driven by a button that says what it does. */}
             <input
               ref={fileRef}
@@ -249,7 +261,7 @@ export function BroadcastPanel() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-ink">📎 {media.name}</span>
                 <Button variant="subtle" size="xs" onClick={clearMedia}>
-                  Убрать
+                  {t("userDetail.removeAttachment")}
                 </Button>
               </div>
             ) : (
@@ -258,33 +270,33 @@ export function BroadcastPanel() {
                 size="sm"
                 onClick={() => fileRef.current?.click()}
               >
-                Выбрать файл
+                {t("bc.pickFile")}
               </Button>
             )}
             <p className="mt-1 text-xs text-ink-muted">
-              Картинка придёт с текстом в подписи, любой другой файл — документом.
+              {t("bc.attachmentHint")}
             </p>
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-ink">Кнопки-ссылки</p>
+            <p className="text-sm font-medium text-ink">{t("bc.buttons")}</p>
             {buttons.map((b, i) => (
               <div key={i} className="flex items-end gap-2">
                 <div className="flex-1">
                   <TextInput
-                    label={i === 0 ? "Текст" : undefined}
+                    label={i === 0 ? t("bc.text") : undefined}
                     value={b.text}
                     onChange={(v) =>
                       setButtons((cur) =>
                         cur.map((x, j) => (j === i ? { ...x, text: v } : x)),
                       )
                     }
-                    placeholder="Инструкция"
+                    placeholder={t("bc.buttonPlaceholder")}
                   />
                 </div>
                 <div className="flex-1">
                   <TextInput
-                    label={i === 0 ? "Ссылка" : undefined}
+                    label={i === 0 ? t("bc.link") : undefined}
                     value={b.url}
                     onChange={(v) =>
                       setButtons((cur) =>
@@ -295,7 +307,7 @@ export function BroadcastPanel() {
                   />
                 </div>
                 <IconButton
-                  title="Убрать кнопку"
+                  title={t("bc.removeButton")}
                   onClick={() =>
                     setButtons((cur) => cur.filter((_, j) => j !== i))
                   }
@@ -313,7 +325,7 @@ export function BroadcastPanel() {
                     setButtons((cur) => [...cur, { text: "", url: "" }])
                   }
                 >
-                  Добавить кнопку
+                  {t("bc.addButton")}
                 </Button>
               </div>
             )}
@@ -321,7 +333,7 @@ export function BroadcastPanel() {
 
           <div className="flex flex-wrap gap-2">
             <Button loading={busy} onClick={send} disabled={!canSend}>
-              Запустить рассылку
+              {t("bc.startBroadcast")}
             </Button>
             <Button
               variant="light"
@@ -329,20 +341,18 @@ export function BroadcastPanel() {
               onClick={sendTest}
               disabled={!canSend}
             >
-              Отправить тест
+              {t("bc.sendTest")}
             </Button>
           </div>
           <p className="text-xs text-ink-muted">
-            Тест придёт от админ-бота в привязанные админ-чаты — проверьте разметку
-            и кнопки до запуска, отправленное уже не исправить. Аудитория получит
-            это же сообщение от пользовательского бота.
+            {t("bc.testHint")}
           </p>
         </div>
       </SettingCard>
 
-      <SettingCard title="История">
+      <SettingCard title={t("bc.history")}>
         {list.length === 0 ? (
-          <p className="text-sm text-ink-muted">Рассылок ещё не было.</p>
+          <p className="text-sm text-ink-muted">{t("bc.historyEmpty")}</p>
         ) : (
           <div className="flex flex-col gap-3">
             {list.map((b) => (
@@ -365,9 +375,10 @@ function BroadcastRow({
   // Every terminal state, skipped included — it is part of total, and omitting it
   // froze the bar below 100% on a finished run with no way to correct itself
   // (polling stops once the run is done).
+  const { t } = useTranslation();
   const done = b.sent + b.failed + b.blocked + b.skipped;
   const pct = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
-  const st = STATUS[b.status];
+  const st = statusMeta(b.status);
 
   return (
     <div className="rounded-lg border border-gray-200 p-3">
@@ -380,7 +391,7 @@ function BroadcastRow({
       </div>
 
       <p className="mb-2 line-clamp-2 text-sm text-ink">
-        {b.text || <span className="text-ink-muted">(без текста)</span>}
+        {b.text || <span className="text-ink-muted">{t("bc.noText")}</span>}
       </p>
       {b.media_name && (
         <p className="mb-2 text-xs text-ink-muted">📎 {b.media_name}</p>
@@ -393,10 +404,10 @@ function BroadcastRow({
         />
       </div>
       <p className="text-xs text-ink-muted">
-        {done} из {b.total} · доставлено {b.sent}
-        {b.failed > 0 && ` · ошибок ${b.failed}`}
-        {b.blocked > 0 && ` · заблокировали бота ${b.blocked}`}
-        {b.skipped > 0 && ` · отписались ${b.skipped}`}
+        {t("bc.progress", { done, total: b.total, sent: b.sent })}
+        {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
+        {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
+        {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}
       </p>
 
       <div className="mt-2 flex flex-wrap gap-2">
@@ -406,7 +417,7 @@ function BroadcastRow({
             size="sm"
             onClick={() => onControl(() => pauseBroadcast(b.id))}
           >
-            Пауза
+            {t("bc.pause")}
           </Button>
         )}
         {b.status === "paused" && (
@@ -415,7 +426,7 @@ function BroadcastRow({
             size="sm"
             onClick={() => onControl(() => resumeBroadcast(b.id))}
           >
-            Продолжить
+            {t("bc.resume")}
           </Button>
         )}
         {(b.status === "running" || b.status === "paused") && (
@@ -425,7 +436,7 @@ function BroadcastRow({
             size="sm"
             onClick={() => onControl(() => cancelBroadcast(b.id))}
           >
-            Отменить
+            {t("bc.cancel")}
           </Button>
         )}
         {/* Only a finished run. Cancelling leaves the untouched recipients queued,
@@ -437,7 +448,7 @@ function BroadcastRow({
             size="sm"
             onClick={() => onControl(() => retryBroadcast(b.id))}
           >
-            Повторить неудачные ({b.failed})
+            {t("bc.retryFailed", { count: b.failed })}
           </Button>
         )}
       </div>

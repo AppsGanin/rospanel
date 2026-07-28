@@ -98,10 +98,10 @@ func (rt *Router) getPayments(w http.ResponseWriter, _ *http.Request) {
 		// users. Optional — empty falls back to the provider's default label.
 		fields = append(fields, map[string]any{
 			"key":         payments.DisplayNameKey,
-			"label":       "Название для кнопки оплаты",
+			"label":       "payField.displayName",
 			"kind":        string(payments.FieldText),
 			"placeholder": d.Label,
-			"help":        "Показывается пользователю в боте и на странице подписки. Пусто — «" + d.Label + "».",
+			"help":        "payHelp.displayName",
 			"optional":    true,
 			"value":       p.Config[payments.DisplayNameKey],
 		})

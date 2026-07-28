@@ -4,6 +4,7 @@
 // waits until Xray has actually come back before unblocking the UI.
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getXrayStatus } from "./api";
 import { errMessage, notifyError } from "./notify";
 import { Modal, Spinner } from "./ui";
@@ -54,19 +55,17 @@ export function useXrayApply() {
 }
 
 export function ApplyingModal({ open }: { open: boolean }) {
+  const { t } = useTranslation();
   return (
     <Modal
       open={open}
       onClose={() => {}}
       dismissible={false}
-      title="Применение настроек"
+      title={t("apply.title")}
     >
       <div className="flex flex-col items-center gap-4 py-2">
         <Spinner size={36} className="text-brand-500" />
-        <p className="text-center text-sm text-ink-muted">
-          Xray перезапускается с новой конфигурацией. Это может занять до 30
-          секунд — не закрывайте страницу.
-        </p>
+        <p className="text-center text-sm text-ink-muted">{t("apply.body")}</p>
       </div>
     </Modal>
   );

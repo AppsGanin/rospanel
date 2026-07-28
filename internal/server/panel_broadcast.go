@@ -41,12 +41,12 @@ func parseBroadcastForm(w http.ResponseWriter, r *http.Request) (*model.Broadcas
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(2 * time.Minute))
 	r.Body = http.MaxBytesReader(w, r.Body, maxBroadcastUpload+64<<10)
 	if err := r.ParseMultipartForm(maxBroadcastUpload); err != nil {
-		writeErr(w, http.StatusBadRequest, "не удалось разобрать загрузку (возможно, файл слишком большой)")
+		writeErrCode(w, http.StatusBadRequest, "err.uploadParseFailedBig", "не удалось разобрать загрузку (возможно, файл слишком большой)")
 		return nil, nil, "", false
 	}
 	var form broadcastForm
 	if err := json.Unmarshal([]byte(r.FormValue("payload")), &form); err != nil {
-		writeErr(w, http.StatusBadRequest, "неверное тело запроса")
+		writeErrCode(w, http.StatusBadRequest, "err.badRequestBody", "неверное тело запроса")
 		return nil, nil, "", false
 	}
 	b := &model.Broadcast{
@@ -92,7 +92,7 @@ func (rt *Router) listBroadcasts(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) getBroadcast(w http.ResponseWriter, r *http.Request, id int64) {
 	b, err := rt.mgr.GetBroadcast(id)
 	if errors.Is(err, core.ErrBroadcastNotFound) {
-		writeErr(w, http.StatusNotFound, err.Error())
+		writeErrCode(w, http.StatusNotFound, "err.broadcastNotFound", "рассылка не найдена")
 		return
 	}
 	if err != nil {
@@ -134,7 +134,7 @@ func (rt *Router) createBroadcast(w http.ResponseWriter, r *http.Request) {
 			// The row exists but has no attachment, and it is still paused — cancel
 			// it so nothing half-formed can be resumed into going out.
 			_ = rt.mgr.SetBroadcastStatus(created.ID, model.BroadcastCancelled)
-			writeErr(w, http.StatusInternalServerError, "не удалось сохранить вложение: "+err.Error())
+			writeErrDetail(w, http.StatusInternalServerError, "err.attachmentSaveFailed", "не удалось сохранить вложение: ", err.Error())
 			return
 		}
 	}
@@ -238,13 +238,13 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimSpace(set.TGBotToken)
 	if !set.TGBotEnabled || token == "" {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.adminBotOff",
 			"включите админ-бота — тест приходит через него, в привязанный чат")
 		return
 	}
 	chats := set.TelegramChatIDs()
 	if len(chats) == 0 {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.noAdminChats",
 			"нет привязанных админ-чатов — привяжите чат в разделе Telegram, чтобы получать тесты")
 		return
 	}
@@ -275,11 +275,12 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if sendErr != nil {
-		msg := "не удалось отправить: " + sendErr.Error()
 		if telegram.IsUnreachable(sendErr) {
-			msg = "привязанный чат недоступен — откройте админ-бота и убедитесь, что он не заблокирован"
+			writeErrCode(w, http.StatusBadGateway, "err.adminChatUnreachable",
+				"привязанный чат недоступен — откройте админ-бота и убедитесь, что он не заблокирован")
+			return
 		}
-		writeErr(w, http.StatusBadGateway, msg)
+		writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", sendErr.Error())
 		return
 	}
 	writeOK(w)

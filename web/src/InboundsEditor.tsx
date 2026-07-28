@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createInbound,
   deleteInbound,
@@ -17,6 +18,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
+import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -47,25 +49,24 @@ const TRANSPORT_LABELS: Record<string, string> = {
   hysteria: "QUIC / UDP",
 };
 
-const SECURITY_LABELS: Record<string, string> = {
-  none: "Нет",
+const securityLabels = (): Record<string, string> => ({
+  none: i18n.t("common.none"),
   tls: "TLS",
   reality: "REALITY",
-};
+});
 
-const XHTTP_MODE_LABELS: Record<string, string> = {
-  auto: "auto (по умолчанию)",
+const xhttpModeLabels = (): Record<string, string> => ({
+  auto: i18n.t("inb.autoDefault"),
   "packet-up": "packet-up",
   "stream-up": "stream-up",
   "stream-one": "stream-one",
-};
+});
 
-const HOP_INTERVALS = [
-  { value: "5-10", label: "5–10 с" },
-  { value: "10-30", label: "10–30 с" },
-  { value: "30-60", label: "30–60 с" },
-  { value: "60-120", label: "60–120 с" },
-];
+const hopIntervals = () =>
+  ["5–10", "10–30", "30–60", "60–120"].map((range, i) => ({
+    value: ["5-10", "10-30", "30-60", "60-120"][i],
+    label: i18n.t("conn.sec", { range }),
+  }));
 
 // blank is a new inbound's starting point: the combination that works everywhere
 // and needs the least explaining — VLESS over WebSocket behind our own certificate.
@@ -149,6 +150,7 @@ export function InboundsEditor({
   serverId: number;
   restartsPanel: boolean;
 }) {
+  const { t } = useTranslation();
   const [list, setList] = useState<Inbound[] | null>(null);
   const [catalog, setCatalog] = useState<InboundCatalog | null>(null);
   const [editing, setEditing] = useState<{ id: number; v: InboundInput } | null>(null);
@@ -177,7 +179,7 @@ export function InboundsEditor({
     const task = async () => {
       await fn();
       await reload();
-      notifySuccess("Сохранено");
+      notifySuccess(t("common.saved"));
     };
     if (restartsPanel) applyXray(task);
     else run(task);
@@ -212,15 +214,15 @@ export function InboundsEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <h3 className="mb-1 font-bold text-ink">Дополнительные подключения</h3>
+        <h3 className="mb-1 font-bold text-ink">{t("inb.title")}</h3>
         <p className="text-sm text-ink-muted">
-          Произвольные инбаунды Xray на этом сервере. Каждый занимает собственный порт. Максимум {catalog.max}.
+          {t("inb.description", { max: catalog.max })}
         </p>
       </div>
 
       {list.length === 0 && (
         <p className="px-1 text-sm text-ink-muted">
-          Пока ничего не добавлено — работают только встроенные подключения.
+          {t("inb.empty")}
         </p>
       )}
 
@@ -244,11 +246,11 @@ export function InboundsEditor({
           onClick={() => setEditing({ id: 0, v: blank() })}
           disabled={busy || applying || full}
         >
-          Добавить подключение
+          {t("inb.add")}
         </Button>
         {full && (
           <p className="mt-2 text-xs text-ink-muted">
-            Достигнут предел в {catalog.max} подключений на сервер.
+            {t("inb.limitReached", { max: catalog.max })}
           </p>
         )}
       </div>
@@ -256,7 +258,7 @@ export function InboundsEditor({
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={editing?.id ? "Подключение" : "Новое подключение"}
+        title={t(editing?.id ? "inb.connection" : "inb.newConnection")}
         size="lg"
       >
         {editing && (
@@ -274,23 +276,22 @@ export function InboundsEditor({
       <Modal
         open={!!confirmDel}
         onClose={() => setConfirmDel(null)}
-        title="Удалить подключение?"
+        title={t("inb.deleteTitle")}
       >
         <div className="flex flex-col gap-3">
           <p className="text-sm text-ink-muted">
-            «{confirmDel?.name}» перестанет принимать клиентов. Выданные ссылки на
-            него сломаются — подписка обновится сама, вручную импортированные нет.
+            {t("inb.deleteBody", { name: confirmDel?.name ?? "" })}
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="light" color="gray" onClick={() => setConfirmDel(null)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
             <Button
               color="red"
               loading={busy || applying}
               onClick={() => confirmDel && remove(confirmDel)}
             >
-              Удалить
+              {t("common.delete")}
             </Button>
           </div>
         </div>
@@ -316,6 +317,7 @@ function InboundRow({
   onDelete: () => void;
   onRegen: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const o = v.opts;
   return (
@@ -333,9 +335,9 @@ function InboundRow({
           <Badge color="gray">{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Badge>
           <Badge color="gray">{TRANSPORT_LABELS[o.transport] ?? o.transport}</Badge>
           {o.security === "reality" && <Badge color="green">REALITY</Badge>}
-          {o.security === "none" && <Badge color="orange">без TLS</Badge>}
+          {o.security === "none" && <Badge color="orange">{t("inb.noTls")}</Badge>}
           <Badge color="gray">{v.port}</Badge>
-          {!v.enabled && <Badge color="gray">выключен</Badge>}
+          {!v.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
         </div>
         <span onClick={(e) => e.stopPropagation()} className="flex items-center">
           <Switch checked={v.enabled} onChange={onToggle} disabled={busy} />
@@ -346,38 +348,37 @@ function InboundRow({
         <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
           {hasAdvanced(v) && (
             <p className="rounded-lg bg-gray-100 px-3 py-2 text-xs text-ink-muted">
-              Заданы дополнительные параметры — смотри «Изменить».
+              {t("inb.hasExtras")}
             </p>
           )}
           {v.unsupported && v.unsupported.length > 0 && (
             <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
-              Не поддерживают {v.unsupported.join(", ")} — в их подписку не попадёт.
-              В остальных форматах работает как обычно.
+              {t("inb.unsupportedBy", { clients: v.unsupported.join(", ") })}
             </p>
           )}
           <div className="flex flex-col gap-1 text-sm">
-            <Row label="Порт" value={String(v.port)} />
+            <Row label={t("conn.port")} value={String(v.port)} />
             <Row
-              label="Транспорт"
+              label={t("conn.transport")}
               value={TRANSPORT_LABELS[o.transport] ?? o.transport}
             />
             <Row
-              label="Защита"
-              value={SECURITY_LABELS[o.security] ?? o.security}
+              label={t("inb.security")}
+              value={securityLabels()[o.security] ?? o.security}
             />
-            {o.path && <Row label="Путь" value={o.path} />}
-            {o.service_name && <Row label="gRPC-сервис" value={o.service_name} />}
-            {o.mode && <Row label="Режим XHTTP" value={o.mode} />}
+            {o.path && <Row label={t("inb.path")} value={o.path} />}
+            {o.service_name && <Row label={t("inb.grpcService")} value={o.service_name} />}
+            {o.mode && <Row label={t("inb.xhttpMode")} value={o.mode} />}
             {o.header_type === "http" && (
-              <Row label="HTTP-маскировка" value={(o.header_hosts ?? []).join(", ")} />
+              <Row label={t("inb.httpMasq")} value={(o.header_hosts ?? []).join(", ")} />
             )}
             {o.authority && <Row label="Authority" value={o.authority} />}
             {o.multi_mode && <Row label="gRPC" value="multi-mode" />}
             {o.host && <Row label="Host" value={o.host} />}
             {o.sni && <Row label="SNI" value={o.sni} />}
-            {o.reality_dest && <Row label="Маскировка" value={o.reality_dest} />}
+            {o.reality_dest && <Row label={t("inb.masquerade")} value={o.reality_dest} />}
             {(o.hop_end ?? 0) > v.port && (
-              <Row label="Хоп" value={`${o.hop_start}–${o.hop_end}`} />
+              <Row label={t("inb.hop")} value={`${o.hop_start}–${o.hop_end}`} />
             )}
           </div>
           {o.security === "reality" && (
@@ -389,14 +390,14 @@ function InboundRow({
           <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
             {o.security === "reality" && (
               <Button size="sm" variant="light" color="orange" onClick={onRegen} disabled={busy}>
-                Перегенерировать ключи
+                {t("conn.regenKeys")}
               </Button>
             )}
             <Button size="sm" variant="light" color="gray" onClick={onEdit} disabled={busy}>
-              Изменить
+              {t("common.edit")}
             </Button>
             <Button size="sm" variant="light" color="red" onClick={onDelete} disabled={busy}>
-              Удалить
+              {t("common.delete")}
             </Button>
           </div>
         </div>
@@ -452,16 +453,17 @@ function ANum({ label, value, onChange, placeholder }: {
 }
 
 // ASel is a dropdown bound to `string | undefined`; the first "" option reads as
-// «по умолчанию» (Xray's own default).
+// the "default" option (Xray's own default).
 function ASel({ label, value, onChange, options }: {
   label: string; value?: string; onChange: (v: string) => void; options: string[];
 }) {
+  const { t } = useTranslation();
   return (
     <Select
       label={label}
       value={value ?? ""}
       onChange={onChange}
-      data={options.map((o) => ({ value: o, label: o === "" ? "по умолчанию" : o }))}
+      data={options.map((o) => ({ value: o, label: o === "" ? t("inb.byDefault") : o }))}
     />
   );
 }
@@ -489,6 +491,7 @@ function HeadersEditor({ value, onChange }: {
   value?: Record<string, string>;
   onChange: (v?: Record<string, string>) => void;
 }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<[string, string][]>(() => Object.entries(value ?? {}));
   const push = (next: [string, string][]) => {
     setRows(next);
@@ -498,17 +501,17 @@ function HeadersEditor({ value, onChange }: {
   };
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-sm text-ink-muted">Заголовки запроса</span>
+      <span className="text-sm text-ink-muted">{t("inb.requestHeaders")}</span>
       {rows.map(([k, val], i) => (
         <div key={i} className="flex items-center gap-2">
           <TextInput
             value={k}
-            placeholder="Имя"
+            placeholder={t("inb.headerName")}
             onChange={(x) => push(rows.map((r, j) => (j === i ? [x, r[1]] : r)))}
           />
           <TextInput
             value={val}
-            placeholder="Значение"
+            placeholder={t("inb.headerValue")}
             onChange={(x) => push(rows.map((r, j) => (j === i ? [r[0], x] : r)))}
           />
           <Button size="sm" variant="light" color="red" onClick={() => push(rows.filter((_, j) => j !== i))}>
@@ -518,7 +521,7 @@ function HeadersEditor({ value, onChange }: {
       ))}
       <div>
         <Button size="sm" variant="light" onClick={() => push([...rows, ["", ""]])}>
-          Добавить заголовок
+          {t("inb.addHeader")}
         </Button>
       </div>
     </div>
@@ -533,6 +536,7 @@ function RawFallback({ value, onChange, example }: {
   onChange: (v: string) => void;
   example?: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(!!value);
   return (
     <div>
@@ -542,7 +546,7 @@ function RawFallback({ value, onChange, example }: {
         className="flex items-center gap-1 text-xs text-ink-muted"
       >
         <IconChevron className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-        Прочее (сырой JSON)
+        {t("inb.rawJson")}
       </button>
       {open && (
         <Textarea
@@ -573,6 +577,7 @@ function AdvancedSection({
   set: <K extends keyof InboundInput>(k: K, val: InboundInput[K]) => void;
   enums: InboundEnums;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (v.protocol === "hysteria2") return null; // Hysteria2 has no transport to tune
 
@@ -585,9 +590,9 @@ function AdvancedSection({
   const s = v.sockopt;
   const setS = <K extends keyof SockoptForm>(k: K, val: SockoptForm[K]) =>
     set("sockopt", { ...s, [k]: val });
-  const t = v.tls_extra;
+  const tlsx = v.tls_extra;
   const setT = <K extends keyof TLSExtraForm>(k: K, val: TLSExtraForm[K]) =>
-    set("tls_extra", { ...t, [k]: val });
+    set("tls_extra", { ...tlsx, [k]: val });
   // off → undefined for the *bool fields (sockopt / TLS), so the config carries no
   // explicit `false`; XHTTP bools are plain bools and drop false on their own.
   const off = (b: boolean) => (b ? true : undefined);
@@ -600,36 +605,36 @@ function AdvancedSection({
         className="flex w-full items-center gap-2 text-left text-sm font-medium text-ink"
       >
         <IconChevron className={`shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
-        Дополнительные параметры
+        {t("inb.extraParams")}
       </button>
 
       {open && (
         <div className="mt-3 flex flex-col gap-5">
           {v.transport === "tcp" && (
             <div className="flex flex-col gap-3">
-              <GroupLabel>HTTP-маскировка</GroupLabel>
+              <GroupLabel>{t("inb.httpMasq")}</GroupLabel>
               <Select
-                label="Тип"
+                label={t("inb.type")}
                 value={v.header_type || "none"}
                 onChange={(hx) => set("header_type", hx === "none" ? "" : hx)}
                 data={[
-                  { value: "none", label: "Выключена" },
-                  { value: "http", label: "HTTP (сырой TCP притворяется веб-запросом)" },
+                  { value: "none", label: t("inb.masqOff") },
+                  { value: "http", label: t("inb.masqHttp") },
                 ]}
               />
               {v.header_type === "http" && (
                 <>
                   <TagsInput
-                    label="Хосты маскировки"
+                    label={t("inb.masqHosts")}
                     value={v.header_hosts}
                     onChange={(hx) => set("header_hosts", hx)}
-                    placeholder="www.example.com — добавить и Enter…"
+                    placeholder={t("inb.hostPlaceholder")}
                   />
                   <TagsInput
-                    label="Пути (пусто — «/»)"
+                    label={t("inb.masqPaths")}
                     value={v.header_paths}
                     onChange={(hx) => set("header_paths", hx)}
-                    placeholder="assets/app.js — добавить и Enter…"
+                    placeholder={t("inb.pathPlaceholder")}
                   />
                 </>
               )}
@@ -640,7 +645,7 @@ function AdvancedSection({
             <div className="flex flex-col gap-3">
               <GroupLabel>gRPC</GroupLabel>
               <TextInput
-                label="Authority (пусто — как SNI)"
+                label={t("inb.authority")}
                 value={v.authority}
                 onChange={(gx) => set("authority", gx)}
                 placeholder="grpc.example.com"
@@ -652,7 +657,7 @@ function AdvancedSection({
           {v.transport === "xhttp" && (
             <div className="flex flex-col gap-4">
               <GroupLabel>XHTTP</GroupLabel>
-              <p className="text-xs font-medium text-ink-muted">Мультиплекс (xmux)</p>
+              <p className="text-xs font-medium text-ink-muted">{t("inb.xmux")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <TextInput label="maxConcurrency" value={xmux.maxConcurrency ?? ""} onChange={(z) => setXmux("maxConcurrency", z)} placeholder="8-32" />
                 <TextInput label="maxConnections" value={xmux.maxConnections ?? ""} onChange={(z) => setXmux("maxConnections", z)} />
@@ -662,7 +667,7 @@ function AdvancedSection({
                 <ANum label="hKeepAlivePeriod" value={xmux.hKeepAlivePeriod} onChange={(z) => setXmux("hKeepAlivePeriod", z)} />
               </div>
 
-              <p className="text-xs font-medium text-ink-muted">Паддинг</p>
+              <p className="text-xs font-medium text-ink-muted">{t("inb.padding")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <TextInput label="xPaddingBytes" value={x.xPaddingBytes ?? ""} onChange={(z) => setX("xPaddingBytes", z)} placeholder="100-1000" />
                 <ASel label="xPaddingPlacement" value={x.xPaddingPlacement} onChange={(z) => setX("xPaddingPlacement", z)} options={enums.placements} />
@@ -672,7 +677,7 @@ function AdvancedSection({
               </div>
               <ASw label="xPaddingObfsMode" value={x.xPaddingObfsMode} onChange={(b) => setX("xPaddingObfsMode", b)} />
 
-              <p className="text-xs font-medium text-ink-muted">Идентификаторы сессии</p>
+              <p className="text-xs font-medium text-ink-muted">{t("inb.sessionIds")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <ASel label="sessionIDPlacement" value={x.sessionIDPlacement} onChange={(z) => setX("sessionIDPlacement", z)} options={enums.placements} />
                 <TextInput label="sessionIDKey" value={x.sessionIDKey ?? ""} onChange={(z) => setX("sessionIDKey", z)} placeholder="auth" />
@@ -682,7 +687,7 @@ function AdvancedSection({
                 <TextInput label="seqKey" value={x.seqKey ?? ""} onChange={(z) => setX("seqKey", z)} placeholder="id" />
               </div>
 
-              <p className="text-xs font-medium text-ink-muted">Аплинк</p>
+              <p className="text-xs font-medium text-ink-muted">{t("inb.uplink")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <ASel label="uplinkHTTPMethod" value={x.uplinkHTTPMethod} onChange={(z) => setX("uplinkHTTPMethod", z)} options={enums.uplink_methods} />
                 <ASel label="uplinkDataPlacement" value={x.uplinkDataPlacement} onChange={(z) => setX("uplinkDataPlacement", z)} options={enums.placements} />
@@ -690,7 +695,7 @@ function AdvancedSection({
                 <TextInput label="uplinkChunkSize" value={x.uplinkChunkSize ?? ""} onChange={(z) => setX("uplinkChunkSize", z)} />
               </div>
 
-              <p className="text-xs font-medium text-ink-muted">Управление потоком</p>
+              <p className="text-xs font-medium text-ink-muted">{t("inb.flowControl")}</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <TextInput label="scMaxEachPostBytes" value={x.scMaxEachPostBytes ?? ""} onChange={(z) => setX("scMaxEachPostBytes", z)} />
                 <TextInput label="scMinPostsIntervalMs" value={x.scMinPostsIntervalMs ?? ""} onChange={(z) => setX("scMinPostsIntervalMs", z)} />
@@ -709,18 +714,18 @@ function AdvancedSection({
 
           {v.security === "tls" && (
             <div className="flex flex-col gap-3">
-              <GroupLabel>Доп. TLS</GroupLabel>
+              <GroupLabel>{t("inb.extraTls")}</GroupLabel>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <ASel label="minVersion" value={t.minVersion} onChange={(z) => setT("minVersion", z)} options={enums.tls_versions} />
-                <ASel label="maxVersion" value={t.maxVersion} onChange={(z) => setT("maxVersion", z)} options={enums.tls_versions} />
+                <ASel label="minVersion" value={tlsx.minVersion} onChange={(z) => setT("minVersion", z)} options={enums.tls_versions} />
+                <ASel label="maxVersion" value={tlsx.maxVersion} onChange={(z) => setT("maxVersion", z)} options={enums.tls_versions} />
               </div>
-              <TextInput label="cipherSuites" value={t.cipherSuites ?? ""} onChange={(z) => setT("cipherSuites", z)} />
-              <TagsInput label="curvePreferences" value={t.curvePreferences ?? []} onChange={(z) => setT("curvePreferences", z.length ? z : undefined)} placeholder="X25519 — добавить и Enter…" />
-              <TagsInput label="verifyPeerCertByName" value={t.verifyPeerCertByName ?? []} onChange={(z) => setT("verifyPeerCertByName", z.length ? z : undefined)} placeholder="example.com — добавить и Enter…" />
-              <ASw label="rejectUnknownSni" value={t.rejectUnknownSni} onChange={(b) => setT("rejectUnknownSni", off(b))} />
-              <ASw label="enableSessionResumption" value={t.enableSessionResumption} onChange={(b) => setT("enableSessionResumption", off(b))} />
-              <ASw label="disableSystemRoot" value={t.disableSystemRoot} onChange={(b) => setT("disableSystemRoot", off(b))} />
-              <RawFallback value={t.raw} onChange={(z) => setT("raw", z)} />
+              <TextInput label="cipherSuites" value={tlsx.cipherSuites ?? ""} onChange={(z) => setT("cipherSuites", z)} />
+              <TagsInput label="curvePreferences" value={tlsx.curvePreferences ?? []} onChange={(z) => setT("curvePreferences", z.length ? z : undefined)} placeholder={t("inb.curvePlaceholder")} />
+              <TagsInput label="verifyPeerCertByName" value={tlsx.verifyPeerCertByName ?? []} onChange={(z) => setT("verifyPeerCertByName", z.length ? z : undefined)} placeholder={t("inb.verifyPlaceholder")} />
+              <ASw label="rejectUnknownSni" value={tlsx.rejectUnknownSni} onChange={(b) => setT("rejectUnknownSni", off(b))} />
+              <ASw label="enableSessionResumption" value={tlsx.enableSessionResumption} onChange={(b) => setT("enableSessionResumption", off(b))} />
+              <ASw label="disableSystemRoot" value={tlsx.disableSystemRoot} onChange={(b) => setT("disableSystemRoot", off(b))} />
+              <RawFallback value={tlsx.raw} onChange={(z) => setT("raw", z)} />
             </div>
           )}
 
@@ -790,6 +795,7 @@ function InboundForm({
   onSave: () => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation();
   const set = <K extends keyof InboundInput>(k: K, val: InboundInput[K]) =>
     onChange({ ...v, [k]: val });
 
@@ -830,19 +836,18 @@ function InboundForm({
   return (
     <div className="flex flex-col gap-3">
       <TextInput
-        label="Название"
+        label={t("groups.name")}
         value={v.name}
         onChange={(x) => set("name", x)}
-        placeholder="напр. Резерв"
+        placeholder={t("inb.namePlaceholder")}
       />
       <p className="-mt-1 text-xs text-ink-muted">
-        Имя узла, которое увидит клиент в списке подключений. Должно отличаться от
-        остальных на этом сервере.
+        {t("inb.nameHint")}
       </p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Select
-          label="Протокол"
+          label={t("inb.protocol")}
           value={v.protocol}
           onChange={pickProtocol}
           data={catalog.protocols.map((p) => ({
@@ -851,7 +856,7 @@ function InboundForm({
           }))}
         />
         <TextInput
-          label="Порт"
+          label={t("conn.port")}
           type="number"
           value={String(v.port || "")}
           onChange={(x) => set("port", num(x))}
@@ -861,7 +866,7 @@ function InboundForm({
       {!isHysteria && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
-            label="Транспорт"
+            label={t("conn.transport")}
             value={v.transport}
             onChange={pickTransport}
             data={transports.map((c) => ({
@@ -870,12 +875,12 @@ function InboundForm({
             }))}
           />
           <Select
-            label="Защита"
+            label={t("inb.security")}
             value={v.security}
             onChange={(x) => set("security", x)}
             data={securities.map((s) => ({
               value: s,
-              label: SECURITY_LABELS[s] ?? s,
+              label: securityLabels()[s] ?? s,
             }))}
           />
         </div>
@@ -883,29 +888,27 @@ function InboundForm({
 
       {combo?.unsupported && combo.unsupported.length > 0 && (
         <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
-          Эту комбинацию не поддерживают {combo.unsupported.join(", ")} — в их
-          подписку она не попадёт. В остальных клиентах работает как обычно.
+          {t("inb.comboUnsupported", { clients: combo.unsupported.join(", ") })}
         </p>
       )}
 
       {usesPath && (
         <div className="flex flex-col gap-2">
           <TextInput
-            label="Путь"
+            label={t("inb.path")}
             value={v.path}
             onChange={(x) => set("path", x.replace(/^\/+/, ""))}
             placeholder="secret"
           />
           <p className="text-xs text-ink-muted">
-            Слеш в начале добавляется автоматически. Путь — это секрет: по нему
-            клиент находит подключение, поэтому не делай его угадываемым.
+            {t("inb.pathHint")}
           </p>
         </div>
       )}
 
       {v.transport === "grpc" && (
         <TextInput
-          label="Имя gRPC-сервиса"
+          label={t("inb.grpcServiceName")}
           value={v.service_name}
           onChange={(x) => set("service_name", x)}
           placeholder="secretsvc"
@@ -914,12 +917,12 @@ function InboundForm({
 
       {v.transport === "xhttp" && (
         <Select
-          label="Режим XHTTP"
+          label={t("inb.xhttpMode")}
           value={v.mode || "auto"}
           onChange={(x) => set("mode", x === "auto" ? "" : x)}
           data={catalog.xhttp_modes.map((m) => ({
             value: m,
-            label: XHTTP_MODE_LABELS[m] ?? m,
+            label: xhttpModeLabels()[m] ?? m,
           }))}
         />
       )}
@@ -927,14 +930,14 @@ function InboundForm({
       {!isHysteria && v.security !== "reality" && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextInput
-            label="SNI (пусто — адрес сервера)"
+            label={t("inb.sni")}
             value={v.sni}
             onChange={(x) => set("sni", x)}
             placeholder="example.com"
           />
           {usesPath && (
             <TextInput
-              label="Host (пусто — как SNI)"
+              label={t("inb.host")}
               value={v.host}
               onChange={(x) => set("host", x)}
               placeholder="example.com"
@@ -958,17 +961,16 @@ function InboundForm({
       {v.security === "reality" && (
         <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
           <TagsInput
-            label="Маскировка (SNI донора)"
+            label={t("inb.realityDest")}
             value={dests}
             onChange={(x) => set("reality_dest", x.join(","))}
-            placeholder="www.apple.com — добавить и Enter…"
+            placeholder={t("inb.realityPlaceholder")}
           />
           <label className="flex items-center justify-between gap-3">
             <span className="text-sm">
-              Анти-replay
+              {t("conn.antiReplay")}
               <span className="block text-xs text-ink-muted">
-                Окно ±60 с против повтора рукопожатия зондом. Может резать клиентов
-                со сбитыми часами.
+                {t("conn.antiReplayHint")}
               </span>
             </span>
             <Switch
@@ -977,8 +979,7 @@ function InboundForm({
             />
           </label>
           <p className="text-xs text-ink-muted">
-            Донор должен отдавать TLS 1.3 + HTTP/2 — это проверяется при сохранении.
-            Первый в списке основной (идёт в ссылки), сервер принимает все.
+            {t("inb.realityHint")}
           </p>
         </div>
       )}
@@ -987,27 +988,26 @@ function InboundForm({
         <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
           <div className="grid grid-cols-2 gap-3">
             <TextInput
-              label="Хоп от"
+              label={t("conn.hopFrom")}
               type="number"
               value={String(v.hop_start || "")}
               onChange={(x) => set("hop_start", num(x))}
             />
             <TextInput
-              label="Хоп до"
+              label={t("conn.hopTo")}
               type="number"
               value={String(v.hop_end || "")}
               onChange={(x) => set("hop_end", num(x))}
             />
           </div>
           <Select
-            label="Интервал смены порта"
+            label={t("conn.hopInterval")}
             value={v.hop_interval || "5-10"}
             onChange={(x) => set("hop_interval", x)}
-            data={HOP_INTERVALS}
+            data={hopIntervals()}
           />
           <p className="text-xs text-ink-muted">
-            Оставь диапазон пустым, если хоппинг не нужен. Он не должен пересекаться
-            с портами других подключений на этом сервере.
+            {t("inb.hopHint")}
           </p>
         </div>
       )}
@@ -1015,16 +1015,16 @@ function InboundForm({
       <AdvancedSection v={v} set={set} enums={catalog.enums} />
 
       <label className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-        <span className="text-sm">Включено</span>
+        <span className="text-sm">{t("common.enabled")}</span>
         <Switch checked={v.enabled} onChange={(x) => set("enabled", x)} />
       </label>
 
       <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
         <Button variant="light" color="gray" onClick={onCancel} disabled={busy}>
-          Отмена
+          {t("common.cancel")}
         </Button>
         <Button onClick={onSave} loading={busy}>
-          Сохранить
+          {t("common.save")}
         </Button>
       </div>
     </div>

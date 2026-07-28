@@ -166,7 +166,7 @@ func (s *BroadcastService) finish(b *model.Broadcast) bool {
 		return false
 	}
 	// Only once there is a cached file_id. Deleting it after a run where every
-	// upload failed would leave "повторить неудачные" with nothing to send, and the
+	// upload failed would leave "retry the failures" with nothing to send, and the
 	// only recovery would be composing the whole broadcast again.
 	if b.MediaFileID != "" {
 		s.removeMedia(b.ID)
@@ -224,6 +224,8 @@ func (s *BroadcastService) warnStalled() {
 }
 
 // pause stops the run without overriding an operator decision made in the meantime.
+// reason is written to the log and nowhere else, so it is English like the rest
+// of the log — no operator ever reads it through the panel.
 func (s *BroadcastService) pause(id int64, reason string) {
 	ok, err := s.store.SetBroadcastStatusIf(id, model.BroadcastRunning, model.BroadcastPaused, 0)
 	if err != nil {
@@ -244,7 +246,7 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 		// without it). Sending the text alone would silently drop what the operator
 		// attached, so stop and say so rather than deliver something else.
 		log.Printf("telegram broadcast %d: media missing: %v", b.ID, err)
-		s.pause(b.ID, "вложение не найдено на диске")
+		s.pause(b.ID, "attachment missing on disk")
 		return false
 	}
 	defer f.Close()
@@ -268,7 +270,7 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 			// This recipient is unreachable, but the file may be fine. Consume them
 			// and let the next pass prime on somebody else.
 			if rerr := s.record(b.ID, chatID, err); rerr != nil {
-				s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+				s.pause(b.ID, "could not record a send outcome — broadcast stopped")
 			}
 			return false
 		}
@@ -278,7 +280,7 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 			// pass, re-uploading the file each time and failing all of them: on 10k
 			// recipients, hundreds of gigabytes to deliver nothing.
 			log.Printf("telegram broadcast %d: upload rejected: %v", b.ID, err)
-			s.pause(b.ID, "вложение не принято Telegram: "+err.Error())
+			s.pause(b.ID, "Telegram rejected the attachment: "+err.Error())
 			return false
 		}
 		// A timeout, a 5xx, a surviving 429 — nothing is known to be wrong with the
@@ -292,13 +294,13 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 		// The upload landed but the outcome is unrecorded, so this recipient is still
 		// 'pending' and would be primed again — another full upload, to someone who
 		// already has the message. Stop rather than repeat it.
-		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+		s.pause(b.ID, "could not record a send outcome — broadcast stopped")
 		return false
 	}
 	if fileID == "" {
 		// Delivered, but Telegram returned no id to reuse — every later recipient
 		// would re-upload. Pause rather than quietly burn the bandwidth.
-		s.pause(b.ID, "Telegram не вернул file_id — иначе файл грузился бы заново каждому")
+		s.pause(b.ID, "Telegram returned no file_id — the file would be re-uploaded to every recipient")
 		return false
 	}
 	if err := s.store.SetBroadcastMediaFileID(b.ID, fileID); err != nil {
@@ -306,7 +308,7 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 		// more recipient, forever. Stop rather than quietly burn the bandwidth the
 		// file_id design exists to save.
 		log.Printf("telegram broadcast %d: cache file_id: %v", b.ID, err)
-		s.pause(b.ID, "не удалось сохранить file_id вложения")
+		s.pause(b.ID, "could not cache the attachment file_id")
 		return false
 	}
 	b.MediaFileID = fileID
@@ -353,7 +355,7 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 		// cannot be the only guard: the quarantine below lives in memory and holds
 		// even when nothing can be persisted at all.
 		s.quarantine(b.ID)
-		s.pause(b.ID, "не удалось записать результат отправки — рассылка остановлена")
+		s.pause(b.ID, "could not record a send outcome — broadcast stopped")
 	}
 }
 

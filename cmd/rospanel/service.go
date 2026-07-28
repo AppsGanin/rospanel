@@ -39,7 +39,7 @@ import (
 // generate the Xray config, start the background loops and serve the admin API +
 // masquerade/subscription surface until a termination signal arrives.
 func runServer(dataDir string) {
-	log.Printf("startup: РосПанель %s booting (data dir %s)", version.Version, dataDir)
+	log.Printf("startup: RosPanel %s booting (data dir %s)", version.Version, dataDir)
 	adminAddr := env("ROSPANEL_ADMIN_ADDR", "127.0.0.1:8080")
 	startupStage("resolving Xray binary")
 	xrayBin := resolveXrayBin(env("XRAY_BIN", "xray"), filepath.Join(dataDir, "bin"))
@@ -308,7 +308,7 @@ func bootstrapTLS(st *store.Store, certPath, keyPath, acmeDir string) error {
 	if err != nil {
 		return err
 	}
-	// A real host set in the panel (setup wizard → Settings → Домен) always wins.
+	// A real host set in the panel (setup wizard → Settings → Domain) always wins.
 	// When none is set yet — or a previous boot persisted the loopback fallback —
 	// resolve one for an unattended first boot: an explicit ROSPANEL_HOST (domain
 	// or IP) takes priority so an operator can pin a domain; otherwise auto-detect

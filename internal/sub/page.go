@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/branding"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -17,7 +18,7 @@ import (
 //go:embed logo.svg
 var logoSVG []byte
 
-// Logo returns the embedded РосПанель logo (SVG).
+// Logo returns the embedded RosPanel logo (SVG).
 func Logo() []byte { return logoSVG }
 
 // Mulish, self-hosted. The subscription page used to pull this from Google Fonts,
@@ -54,27 +55,115 @@ var pageTmpl = template.Must(template.New("sub").Parse(pageHTML))
 // Telegram webview — but the browser it lands in resolves the scheme and opens
 // the app. Href is template.URL so the scheme survives html/template's URL filter.
 var appRedirectTmpl = template.Must(template.New("appredir").Parse(
-	`<!doctype html><html lang="ru"><head><meta charset="utf-8">` +
+	`<!doctype html><html lang="{{.Lang}}"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1">` +
-		`<title>Открываем приложение…</title>` +
+		`<title>{{.Opening}}</title>` +
 		`<script>location.replace("{{.Href}}")</script>` +
 		`<meta http-equiv="refresh" content="0;url={{.Href}}"></head>` +
 		`<body style="font-family:sans-serif;padding:24px;color:#333">` +
-		`<p>Открываем приложение…<br>Если оно не открылось — ` +
-		`<a href="{{.Href}}">нажмите здесь</a>.</p></body></html>`))
+		`<p>{{.Opening}}<br>{{.IfNotOpened}} ` +
+		`<a href="{{.Href}}">{{.ClickHere}}</a>.</p></body></html>`))
 
 // AppRedirect renders the deep-link hand-off page for one client's share link.
-func AppRedirect(href template.URL) ([]byte, error) {
+func AppRedirect(href template.URL, lang i18n.Lang) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := appRedirectTmpl.Execute(&buf, struct{ Href template.URL }{href}); err != nil {
+	data := struct {
+		Href        template.URL
+		Lang        string
+		Opening     string
+		IfNotOpened string
+		ClickHere   string
+	}{
+		Href:        href,
+		Lang:        string(lang),
+		Opening:     i18n.T(lang, "sub.openingApp"),
+		IfNotOpened: i18n.T(lang, "sub.ifNotOpened"),
+		ClickHere:   i18n.T(lang, "sub.clickHere"),
+	}
+	if err := appRedirectTmpl.Execute(&buf, data); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
+// pageText is every localised string the template renders. A struct rather than a
+// map so the template refers to fields by name and a typo is a template error at
+// render time instead of a silently empty span.
+type pageText struct {
+	Title          string
+	DefaultBrand   string
+	Greeting       string
+	Online         string
+	Offline        string
+	Traffic        string
+	TrafficUntil   string
+	PayProcessing  string
+	CurrentPlan    string
+	Pay            string
+	Renew          string
+	CancelSub      string
+	ChangePlanNote string
+	ManualNote     string
+	ScanQR         string
+	CopyLink       string
+	OpenInApp      string
+	DownloadClash  string
+	SingleConfigs  string
+	Copy           string
+	Copied         string
+	PickApp        string
+	PayMethod      string
+	PayTitle       string
+	CancelConfirm  string
+	CancelFailed   string
+	NetworkError   string
+	OrderCreated   string
+	OrderTitle     string
+	PayFailed      string
+	Error          string
+}
+
+func text(lang i18n.Lang) pageText {
+	t := func(key string) string { return i18n.T(lang, key) }
+	return pageText{
+		Title:          t("sub.title"),
+		DefaultBrand:   t("sub.defaultBrand"),
+		Greeting:       t("sub.greeting"),
+		Online:         t("sub.online"),
+		Offline:        t("sub.offline"),
+		Traffic:        t("sub.traffic"),
+		TrafficUntil:   t("sub.trafficUntilPrefix"),
+		PayProcessing:  t("sub.payProcessing"),
+		CurrentPlan:    t("sub.currentPlan"),
+		Pay:            t("sub.pay"),
+		Renew:          t("sub.renew"),
+		CancelSub:      t("sub.cancelSub"),
+		ChangePlanNote: t("sub.changePlanNote"),
+		ManualNote:     t("sub.manualNote"),
+		ScanQR:         t("sub.scanQR"),
+		CopyLink:       t("sub.copyLink"),
+		OpenInApp:      t("sub.openInApp"),
+		DownloadClash:  t("sub.downloadClash"),
+		SingleConfigs:  t("sub.singleConfigs"),
+		Copy:           t("sub.copy"),
+		Copied:         t("sub.copied"),
+		PickApp:        t("sub.pickApp"),
+		PayMethod:      t("sub.payMethod"),
+		PayTitle:       t("sub.payTitle"),
+		CancelConfirm:  t("sub.cancelConfirm"),
+		CancelFailed:   t("sub.cancelFailed"),
+		NetworkError:   t("sub.networkError"),
+		OrderCreated:   t("sub.orderCreated"),
+		OrderTitle:     t("sub.orderTitle"),
+		PayFailed:      t("sub.payFailed"),
+		Error:          t("sub.error"),
+	}
+}
+
 type pageData struct {
+	L         pageText
 	Name      string
-	BrandName string // panel display name (defaults to «РосПанель»)
+	BrandName string // panel display name (defaults to the stock RosPanel name)
 	Brand     string // accent colour #rrggbb
 	BrandDark string // darker accent for hover/active states
 	AccentFg  string // accent text colour adjusted for the surface
@@ -85,7 +174,7 @@ type pageData struct {
 	Muted     string // secondary text colour
 	Bg        string // page background base
 	Surface   string // card background
-	IsDefault bool   // true when the stock РосПанель name is in effect
+	IsDefault bool   // true when the stock RosPanel name is in effect
 	SubURL    string
 	Links     []protoLink
 	DeepLinks []DeepLink
@@ -112,7 +201,7 @@ type pageData struct {
 type Billing struct {
 	Show        bool
 	CurrentPlan string        // active plan name ("" = none / manual)
-	ExpireText  string        // "до DD.MM.YYYY" for a paid expiry, else ""
+	ExpireText  string        // "until DD.MM.YYYY" for a paid expiry, else ""
 	Plans       []BillingPlan // paid plans offered for purchase/renewal
 	Providers   []BillingPay  // enabled payment methods (empty ⇒ manual only)
 	Manual      bool          // no automatic provider ⇒ pay button creates a manual order
@@ -130,7 +219,7 @@ type Billing struct {
 type BillingPlan struct {
 	ID      int64
 	Name    string
-	Label   string // price + period, e.g. "199 ₽ / 30 дн."
+	Label   string // price + period, e.g. "199 ₽ / 30 d"
 	Current bool   // the user's currently active plan
 }
 
@@ -146,16 +235,16 @@ type protoLink struct {
 }
 
 // subStatus maps the derived user status to a label + badge color class.
-func subStatus(s string) (label, class string) {
+func subStatus(s string, lang i18n.Lang) (label, class string) {
 	switch s {
 	case "active":
-		return "Активно", "green"
+		return i18n.T(lang, "sub.statusActive"), "green"
 	case "disabled":
-		return "Отключено", "gray"
+		return i18n.T(lang, "sub.statusOff"), "gray"
 	case "expired":
-		return "Срок истёк", "red"
+		return i18n.T(lang, "sub.statusExpired"), "red"
 	case "limited":
-		return "Лимит исчерпан", "orange"
+		return i18n.T(lang, "sub.statusLimited"), "orange"
 	default:
 		return s, "gray"
 	}
@@ -168,7 +257,7 @@ func subStatus(s string) (label, class string) {
 // list shows one labelled entry per protocol × server (with a single server it's
 // unchanged). sets[0] is the local server, used for the sub URL, branding and
 // billing.
-func Page(u model.User, servers []Server, billing Billing) ([]byte, error) {
+func Page(u model.User, servers []Server, billing Billing, lang i18n.Lang) ([]byte, error) {
 	if len(servers) == 0 {
 		return nil, fmt.Errorf("no settings for subscription page")
 	}
@@ -202,11 +291,20 @@ func Page(u model.User, servers []Server, billing Billing) ([]byte, error) {
 		}
 	}
 
-	statusLabel, statusClass := subStatus(u.Status)
+	statusLabel, statusClass := subStatus(u.Status, lang)
+	// A custom panel name is the operator's own text and passes through verbatim;
+	// only the stock name is localised, so an English page does not announce itself
+	// in Russian in the <title> and the header.
+	brandName := branding.Name(set.PanelName)
+	isDefault := brandName == branding.DefaultName
+	if isDefault {
+		brandName = i18n.T(lang, "sub.defaultBrand")
+	}
 	theme := branding.ParseTheme(set.PanelTheme)
 	data := pageData{
+		L:           text(lang),
 		Name:        u.Name,
-		BrandName:   branding.Name(set.PanelName),
+		BrandName:   brandName,
 		Brand:       theme.Accent,
 		BrandDark:   branding.Darken(theme.Accent, 0.16),
 		AccentFg:    branding.Fg(theme.Accent, theme.Surface),
@@ -217,15 +315,15 @@ func Page(u model.User, servers []Server, billing Billing) ([]byte, error) {
 		Muted:       theme.Muted,
 		Bg:          theme.Bg,
 		Surface:     theme.Surface,
-		IsDefault:   branding.Name(set.PanelName) == branding.DefaultName,
+		IsDefault:   isDefault,
 		SubURL:      subURL,
 		Links:       protoLinks,
-		DeepLinks:   DeepLinks(subURL),
+		DeepLinks:   DeepLinks(subURL, lang),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,
 		Used:        fmtBytes(used),
 		Limit:       "∞",
-		Expire:      "бессрочно",
+		Expire:      i18n.T(lang, "sub.never"),
 		Online:      u.LastSeen > 0 && time.Now().Unix()-u.LastSeen < 120,
 		Billing:     billing,
 	}
@@ -240,10 +338,10 @@ func Page(u model.User, servers []Server, billing Billing) ([]byte, error) {
 	}
 	if u.ExpireAt > 0 {
 		data.HasExpire = true
-		data.Expire = "до " + time.Unix(u.ExpireAt, 0).Format("02.01.2006")
+		data.Expire = i18n.T(lang, "sub.until", time.Unix(u.ExpireAt, 0).Format("02.01.2006"))
 	}
 	if !data.Online && u.LastSeen > 0 {
-		data.LastSeen = relTime(time.Now().Unix() - u.LastSeen)
+		data.LastSeen = relTime(time.Now().Unix()-u.LastSeen, lang)
 	}
 
 	var buf bytes.Buffer
@@ -303,13 +401,13 @@ func fmtBytes(n int64) string {
 	return fmt.Sprintf("%.0f %s", v, u[i])
 }
 
-func relTime(sec int64) string {
+func relTime(sec int64, lang i18n.Lang) string {
 	switch {
 	case sec < 3600:
-		return fmt.Sprintf("%d мин назад", sec/60)
+		return i18n.T(lang, "sub.minutesAgo", sec/60)
 	case sec < 86400:
-		return fmt.Sprintf("%d ч назад", sec/3600)
+		return i18n.T(lang, "sub.hoursAgo", sec/3600)
 	default:
-		return fmt.Sprintf("%d дн назад", sec/86400)
+		return i18n.T(lang, "sub.daysAgo", sec/86400)
 	}
 }

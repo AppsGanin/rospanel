@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/payments"
 )
@@ -63,6 +64,16 @@ func (m *Manager) notifyModeration(reqID int64, name, plan string) {
 	}
 }
 
+// methodLabel names a payment method in an alert. Provider names are brands and
+// travel as-is; the one that needs wording is the manual path, which is a word and
+// not a brand — so it comes from the dictionary.
+func (m *Manager) methodLabel(lang i18n.Lang, key string) string {
+	if key == "" {
+		return i18n.T(lang, "pay.manual")
+	}
+	return m.ProviderLabel(key)
+}
+
 // ProviderLabel is the pay-button label for a provider key: the operator's custom
 // name if they set one, otherwise the provider's default. "" ⇒ a manual order.
 func (m *Manager) ProviderLabel(key string) string {
@@ -111,7 +122,7 @@ func (m *Manager) PaymentProviders() ([]payments.Descriptor, map[string]model.Pa
 func (m *Manager) SavePaymentProvider(key string, enabled bool, cfg map[string]string) error {
 	d, ok := payments.Get(key)
 	if !ok {
-		return invalid("неизвестный способ оплаты")
+		return invalidCode("err.unknownPayMethod", "неизвестный способ оплаты")
 	}
 	cur, err := m.store.GetPaymentProvider(key)
 	if err != nil {
@@ -138,7 +149,7 @@ func (m *Manager) SavePaymentProvider(key string, enabled bool, cfg map[string]s
 			if f.Optional || f.Kind == payments.FieldBool || next[f.Key] != "" {
 				continue
 			}
-			return invalid("%s: заполните «%s»", d.Label, f.Label)
+			return invalidCode("err.providerFieldRequired", "{{provider}}: заполните «{{field}}»", map[string]any{"provider": d.Label, "field": f.Label})
 		}
 	}
 	if err := m.store.SavePaymentProvider(model.PaymentProvider{Key: key, Enabled: enabled, Config: next}); err != nil {
@@ -161,17 +172,17 @@ func boolValue(v string) string {
 func (m *Manager) providerClient(key string) (payments.Client, error) {
 	d, ok := payments.Get(key)
 	if !ok {
-		return nil, invalid("неизвестный способ оплаты")
+		return nil, invalidCode("err.unknownPayMethod", "неизвестный способ оплаты")
 	}
 	p, err := m.store.GetPaymentProvider(key)
 	if err != nil {
 		return nil, err
 	}
 	if !p.Enabled {
-		return nil, invalid("%s: способ оплаты выключен", d.Label)
+		return nil, invalidCode("err.providerDisabled", "{{provider}}: способ оплаты выключен", map[string]any{"provider": d.Label})
 	}
 	if !d.Configured(p.Config) {
-		return nil, invalid("%s: не заполнены настройки", d.Label)
+		return nil, invalidCode("err.providerUnconfigured", "{{provider}}: не заполнены настройки", map[string]any{"provider": d.Label})
 	}
 	return d.New(p.Config), nil
 }
@@ -214,25 +225,29 @@ func (m *Manager) PaymentWebhookURL(key string) string {
 // StartPlanPayment creates an order plus a provider payment and returns the order
 // with its hosted pay URL. provider may be "" when exactly one method is enabled.
 // The payer is returned to Telegram after paying (the bot flow).
-func (m *Manager) StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(ctx, userID, planID, provider, "https://t.me/")
+func (m *Manager) StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, lang, userID, planID, provider, "https://t.me/")
 }
 
 // StartPlanPaymentReturn is StartPlanPayment for the web subscription page: it
 // sends the payer back to returnURL (the sub page) after a card payment instead of
 // to Telegram. returnURL is used by hosted-form providers (YooKassa); CryptoBot
 // ignores it.
-func (m *Manager) StartPlanPaymentReturn(ctx context.Context, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(ctx, userID, planID, provider, returnURL)
+func (m *Manager) StartPlanPaymentReturn(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, lang, userID, planID, provider, returnURL)
 }
 
-func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
+// lang is the language the PAYER is being served in, and it comes from the caller
+// rather than from the user record: someone paying from an English subscription page
+// may have no Telegram chat at all, and the invoice description they are about to
+// read is on the provider's page, not in the bot.
+func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
-		return nil, invalid("тариф не найден")
+		return nil, invalidCode("err.planNotFound", "тариф не найден")
 	}
 	if plan.IsFree() {
-		return nil, invalid("этот тариф бесплатный")
+		return nil, invalidCode("err.planIsFree", "этот тариф бесплатный")
 	}
 	// No switching between plans while a paid one is active: the user must cancel
 	// the current subscription first. Paying for the SAME plan (renewal/extension)
@@ -246,21 +261,21 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 		// A disabled plan can't be bought as a new purchase/switch, but an existing
 		// subscriber may still renew the plan they're already on (grandfathering).
 		if !plan.Enabled {
-			return nil, invalid("тариф недоступен")
+			return nil, invalidCode("err.planUnavailable", "тариф недоступен")
 		}
 		if cur := m.ActivePaidPlan(*u); cur != nil {
-			return nil, invalid("у вас активна подписка «%s» — сначала отмените её, чтобы сменить тариф", cur.Name)
+			return nil, invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": cur.Name})
 		}
 	}
 	methods := m.PaymentMethods()
 	if len(methods) == 0 {
-		return nil, invalid("автоматическая оплата не настроена")
+		return nil, invalidCode("err.autoPayNotConfigured", "автоматическая оплата не настроена")
 	}
 	if provider == "" && len(methods) == 1 {
 		provider = methods[0]
 	}
 	if !slices.Contains(methods, provider) {
-		return nil, invalid("способ оплаты недоступен")
+		return nil, invalidCode("err.payMethodUnavailable", "способ оплаты недоступен")
 	}
 
 	// Reuse a fresh pending order for the same plan+provider instead of minting a new
@@ -280,6 +295,9 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 	if err != nil {
 		return nil, err
 	}
+	// The alerts below are read by the operator, the invoice description by the
+	// payer — two audiences, two languages.
+	adminLang := m.botLang()
 	// A separate timeout context for the outbound provider call — ctx carries the
 	// actor for the audit row and must not be cancelled along with the HTTP request.
 	callCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -290,7 +308,7 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 	providerID, payURL, err := client.Create(callCtx, payments.CreateReq{
 		AmountRub:   plan.PriceRub,
 		OrderID:     order.ID,
-		Description: fmt.Sprintf("Тариф «%s», заказ #%d", plan.Name, order.ID),
+		Description: i18n.T(lang, "order.description", plan.Name, order.ID),
 		ReturnURL:   returnURL,
 		WebhookURL:  m.PaymentWebhookURL(provider),
 	})
@@ -300,18 +318,16 @@ func (m *Manager) startPlanPayment(ctx context.Context, userID, planID int64, pr
 		// 401 with the shopId hint) — log it for the operator, but return a clean,
 		// generic message to the end user.
 		logErr("payment: create failed", "provider", provider, "order", order.ID, "err", err)
-		m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-			"⚠️ <b>Платёж не создан</b>\nЗаказ #%d · способ %s\nПроверьте настройки провайдера.",
-			order.ID, payments.Label(provider)))
-		return nil, invalid("не удалось создать платёж — попробуйте другой способ или позже")
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payNotCreated",
+			order.ID, m.methodLabel(adminLang, provider)))
+		return nil, invalidCode("err.paymentCreateFailed", "не удалось создать платёж — попробуйте другой способ или позже")
 	}
 	if err := m.store.SetPaymentOrderProvider(order.ID, provider, providerID, payURL); err != nil {
 		return nil, err
 	}
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
-	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-		"🛒 <b>Начата оплата</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, payments.Label(provider)))
+	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payStarted",
+		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, m.methodLabel(adminLang, provider)))
 	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
 		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": provider,
 	})
@@ -346,8 +362,7 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 		// invoice TTL and the 24h sweep already fired): money was captured but no plan
 		// applied — flag it so the operator can apply the tariff by hand.
 		if order.Status == "cancelled" {
-			m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-				"⚠️ <b>Оплата по отменённому заказу</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nОплата пришла после отмены — примените тариф вручную.",
+			m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payOnCancelled",
 				order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub))
 		}
 		return nil
@@ -360,11 +375,10 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 			"order", order.ID, "provider", provider,
 			"expected_rub", order.AmountRub,
 			"got", fmt.Sprintf("%d.%02d %s", paid.AmountKopecks/100, paid.AmountKopecks%100, paid.Currency))
-		m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-			"⚠️ <b>Сумма оплаты не совпала</b>\nЗаказ #%d · %s\nОжидалось: %d ₽ · пришло: %d.%02d %s\nТариф НЕ выдан — проверьте платёж вручную.",
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payMismatch",
 			order.ID, escHTML(order.UserName), order.AmountRub,
 			paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
-		return fmt.Errorf("сумма оплаты не совпадает с заказом %d", order.ID)
+		return fmt.Errorf("payment amount does not match order %d", order.ID)
 	}
 	// Claim the pending→paid transition and grant the plan in one transaction. A
 	// provider webhook and the polling fallback (or a re-delivered webhook) can reach
@@ -387,13 +401,13 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 		// Gated like the other user-facing notices, so an operator who turns them all
 		// off does not still have the bot writing to people.
 		if set, err := m.store.GetSettings(); err == nil {
-			m.notifyUserEvent(set, *u, model.UserNotifyPayment, fmt.Sprintf(
-				"✅ Оплата получена. Тариф «%s» активирован.", m.PlanName(order.PlanID)))
+			m.notifyUserEvent(set, *u, model.UserNotifyPayment,
+				i18n.T(m.userLang(u.TgChatID), "notify.userPaid", m.PlanName(order.PlanID)))
 		}
 	}
-	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-		"✅ <b>Оплачено</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nСпособ: %s",
-		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, payments.Label(provider)))
+	adminLang := m.botLang()
+	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paid",
+		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, m.methodLabel(adminLang, provider)))
 	order.Status = "paid"
 	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
 		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": provider,
@@ -516,7 +530,7 @@ func (m *Manager) HandleProviderWebhook(key string, body []byte, h http.Header) 
 		return err
 	}
 	if providerID == "" {
-		return invalid("%s: в уведомлении нет идентификатора платежа", payments.Label(key))
+		return invalidCode("err.webhookNoPaymentID", "{{provider}}: в уведомлении нет идентификатора платежа", map[string]any{"provider": payments.Label(key)})
 	}
 	switch res.Status {
 	case payments.StatusPaid:

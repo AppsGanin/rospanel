@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getNodeXrayConfig, getXrayConfig } from './api'
 import { errMessage } from './notify'
 import { Button, IconCheck, IconCopy, ToolDialog, useCopy } from './ui'
@@ -9,7 +10,7 @@ import { Button, IconCheck, IconCopy, ToolDialog, useCopy } from './ui'
 // panel generates it (node 0 resolves to the master's live file too).
 export function XrayConfigView({
   nodeId,
-  title = 'Конфигурация Xray',
+  title,
   note,
   onClose,
 }: {
@@ -18,6 +19,7 @@ export function XrayConfigView({
   note?: ReactNode
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [text, setText] = useState('')
   const [err, setErr] = useState('')
   const { copied, copy } = useCopy()
@@ -30,7 +32,7 @@ export function XrayConfigView({
 
   return (
     <ToolDialog
-      title={title}
+      title={title ?? t('xray.configTitle')}
       onClose={onClose}
       headerExtra={note ? <p className="text-xs text-ink-muted">{note}</p> : undefined}
       actions={
@@ -42,7 +44,7 @@ export function XrayConfigView({
           onClick={() => copy(text)}
         >
           {copied ? <IconCheck /> : <IconCopy />}
-          {copied ? 'Скопировано' : 'Копировать'}
+          {t(copied ? 'common.copied' : 'common.copy')}
         </Button>
       }
     >
@@ -52,7 +54,7 @@ export function XrayConfigView({
         ) : text ? (
           <pre className="whitespace-pre-wrap break-all text-gray-700">{text}</pre>
         ) : (
-          <p className="text-gray-400">Загрузка…</p>
+          <p className="text-gray-400">{t('common.loading')}</p>
         )}
       </div>
     </ToolDialog>

@@ -118,7 +118,7 @@ func sanitizeGrants(tokens []string) []string {
 func (m *Manager) CreateGroup(name string, grants []string) (*model.Group, error) {
 	name = strings.TrimSpace(name)
 	if err := model.ValidateGroupName(name); err != nil {
-		return nil, invalid("%s", err.Error())
+		return nil, fromFieldErr(err)
 	}
 	g, err := m.store.CreateGroup(name, sanitizeGrants(grants))
 	if err != nil {
@@ -132,7 +132,7 @@ func (m *Manager) CreateGroup(name string, grants []string) (*model.Group, error
 func (m *Manager) UpdateGroup(id int64, name string, grants []string) error {
 	name = strings.TrimSpace(name)
 	if err := model.ValidateGroupName(name); err != nil {
-		return invalid("%s", err.Error())
+		return fromFieldErr(err)
 	}
 	if err := m.store.UpdateGroup(id, name, sanitizeGrants(grants)); err != nil {
 		return groupErr(err)
@@ -158,7 +158,7 @@ func (m *Manager) SetGroupMembers(groupID int64, userIDs []int64) error {
 		return err
 	}
 	if g == nil {
-		return invalid("группа не найдена")
+		return invalidCode("err.groupNotFound", "группа не найдена")
 	}
 	if err := m.store.SetGroupMembers(groupID, userIDs); err != nil {
 		return err
@@ -198,7 +198,7 @@ func (m *Manager) applyAccessChange() {
 // groupErr maps the store's name-conflict sentinel to a user-facing message.
 func groupErr(err error) error {
 	if errors.Is(err, store.ErrGroupNameTaken) {
-		return invalid("группа с таким названием уже есть")
+		return invalidCode("err.groupNameTaken", "группа с таким названием уже есть")
 	}
 	return err
 }

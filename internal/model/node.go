@@ -8,7 +8,10 @@ const LocalNodeID int64 = 0
 // LocalNodeName is what the panel's own server is called on screen. Shared rather
 // than written out at each call site: the Nodes tab and the traffic breakdown both
 // name node 0, and two spellings of the same server read as two servers.
-const LocalNodeName = "Мастер"
+//
+// It sits next to operator-chosen node names in every list that shows it, so it is
+// a name and not a dictionary key — and "Master" is the word in both languages.
+const LocalNodeName = "Master"
 
 // NodeOnlineWindow is how long after its last sync a node still counts as online.
 // Generous next to the node's own poll cadence (a held poll returns at least every
@@ -32,11 +35,11 @@ type Node struct {
 	// Per-node REALITY identity. RealityPrivateKey is encrypted at rest and never
 	// serialized to any client. RealityDest is the node's own masquerade donor SNI
 	// (empty ⇒ inherit the panel's donor).
-	RealityPrivateKey  string `json:"-"`
-	RealityPublicKey   string `json:"-"`
-	RealityShortID     string `json:"-"`
-	RealityPath string `json:"-"`
-	RealityDest        string `json:"-"`
+	RealityPrivateKey string `json:"-"`
+	RealityPublicKey  string `json:"-"`
+	RealityShortID    string `json:"-"`
+	RealityPath       string `json:"-"`
+	RealityDest       string `json:"-"`
 
 	// Per-node protocols (the node's OWN — no inheritance from the master). A stored
 	// nil is treated as off; every write sets an explicit value.

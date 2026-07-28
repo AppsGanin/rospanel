@@ -20,11 +20,11 @@ func rioPayDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyRioPay,
 		Label: "RioPay",
-		Note:  "Карты, СБП · ₽",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
-			{Key: "api_token", Label: "API-токен", Kind: FieldSecret},
-			{Key: "webhook_secret", Label: "Секрет вебхука", Kind: FieldSecret, Optional: true,
-				Help: "Необязательно. Если пусто — вебхук подписывается API-токеном."},
+			{Key: "api_token", Label: "payField.apiToken", Kind: FieldSecret},
+			{Key: "webhook_secret", Label: "payField.webhookSecret", Kind: FieldSecret, Optional: true,
+				Help: "payHelp.signedWithToken"},
 		},
 		New: func(cfg Config) Client {
 			return &RioPay{token: cfg.Get("api_token"), webhookSecret: cfg.Get("webhook_secret")}
@@ -71,7 +71,7 @@ func (r *RioPay) Create(ctx context.Context, req CreateReq) (string, string, err
 		return "", "", err
 	}
 	if out.ID == "" || out.PaymentLink == "" {
-		return "", "", fmt.Errorf("RioPay: пустой ответ при создании заказа: %s%s", out.Message, out.Error)
+		return "", "", fmt.Errorf("RioPay: empty response when creating the order: %s%s", out.Message, out.Error)
 	}
 	return out.ID, out.PaymentLink, nil
 }
@@ -89,18 +89,18 @@ func (r *RioPay) Status(ctx context.Context, providerID string) (Result, error) 
 func (r *RioPay) Webhook(_ context.Context, body []byte, h http.Header) (string, Result, error) {
 	sig := h.Get("X-Signature")
 	if sig == "" {
-		return "", Result{}, fmt.Errorf("RioPay: нет подписи")
+		return "", Result{}, fmt.Errorf("RioPay: no signature")
 	}
 	key := r.webhookSecret
 	if key == "" {
 		key = r.token
 	}
 	if !eqSig(hmacSHA512Hex(key, string(body)), sig) {
-		return "", Result{}, fmt.Errorf("RioPay: неверная подпись")
+		return "", Result{}, fmt.Errorf("RioPay: bad signature")
 	}
 	var out rioPayOrder
 	if json.Unmarshal(body, &out) != nil || out.ID == "" {
-		return "", Result{}, fmt.Errorf("RioPay: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("RioPay: malformed notification")
 	}
 	return out.ID, out.result(), nil
 }

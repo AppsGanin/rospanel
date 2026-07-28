@@ -8,6 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
+import i18n from "./i18n";
+import { currentLang } from "./i18n";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -432,15 +435,16 @@ export function SaveBar({
   onCancel: () => void;
   saveDisabled?: boolean;
 }) {
+  const { t } = useTranslation();
   if (!dirty) return null;
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">Есть несохранённые изменения</p>
-          <p className="text-xs text-ink-muted">
-            При уходе со страницы изменения отменятся
+          <p className="text-sm font-medium text-ink">
+            {t("common.unsavedTitle")}
           </p>
+          <p className="text-xs text-ink-muted">{t("common.unsavedHint")}</p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
@@ -449,7 +453,7 @@ export function SaveBar({
             onClick={onCancel}
             className="flex-1 sm:flex-none"
           >
-            Отменить
+            {t("common.cancel")}
           </Button>
           <Button
             loading={busy}
@@ -457,7 +461,7 @@ export function SaveBar({
             onClick={onSave}
             className="flex-1 sm:flex-none"
           >
-            Сохранить
+            {t("common.save")}
           </Button>
         </div>
       </div>
@@ -573,8 +577,8 @@ export function PasswordInput(
         <button
           type="button"
           onClick={() => setShow((s) => !s)}
-          aria-label={show ? "Скрыть пароль" : "Показать пароль"}
-          title={show ? "Скрыть пароль" : "Показать пароль"}
+          aria-label={i18n.t(show ? "common.hidePassword" : "common.showPassword")}
+          title={i18n.t(show ? "common.hidePassword" : "common.showPassword")}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 transition hover:text-gray-700"
         >
           {show ? <IconEyeOff /> : <IconEye />}
@@ -638,7 +642,7 @@ export function Select({
   onChange,
   data,
   searchable,
-  placeholder = 'Выберите…',
+  placeholder,
   className,
 }: {
   label?: string
@@ -649,6 +653,8 @@ export function Select({
   placeholder?: string
   className?: string
 }) {
+  const { t } = useTranslation()
+  placeholder = placeholder ?? t('common.select')
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLButtonElement>(null)
@@ -687,14 +693,14 @@ export function Select({
                     autoFocus
                     value={q}
                     onChange={(e) => setQ(e.currentTarget.value)}
-                    placeholder="Поиск…"
+                    placeholder={t('common.search')}
                     className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
                   />
                 </div>
               )}
               <div className="max-h-60 overflow-y-auto py-1">
                 {filtered.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">Ничего не найдено</p>
+                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
                 )}
                 {filtered.map((o) => (
                   <button
@@ -729,7 +735,7 @@ export function TagsInput({
   value,
   onChange,
   options,
-  placeholder = 'добавить и Enter…',
+  placeholder,
 }: {
   label?: string
   hint?: string
@@ -738,6 +744,8 @@ export function TagsInput({
   options?: { value: string; label: string }[]
   placeholder?: string
 }) {
+  const { t } = useTranslation()
+  placeholder = placeholder ?? t('common.addAndEnter')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [q, setQ] = useState('')
@@ -784,8 +792,8 @@ export function TagsInput({
             <span className="min-w-0 truncate">{labelFor(v)}</span>
             <button
               type="button"
-              aria-label="Удалить"
-              title="Удалить"
+              aria-label={t('common.delete')}
+              title={t('common.delete')}
               // preventDefault on mousedown so the click only removes (and doesn't
               // also fire the container's focus handler).
               onMouseDown={(e) => e.preventDefault()}
@@ -842,13 +850,13 @@ export function TagsInput({
                   autoFocus
                   value={q}
                   onChange={(e) => setQ(e.currentTarget.value)}
-                  placeholder="Поиск категории…"
+                  placeholder={t('common.searchCategory')}
                   className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
                 />
               </div>
               <div className="max-h-72 overflow-y-auto py-1">
                 {shown.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">Ничего не найдено</p>
+                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
                 )}
                 {shown.map((o) => (
                   <button
@@ -863,7 +871,7 @@ export function TagsInput({
                 ))}
                 {matched.length > SHOWN && (
                   <p className="px-3 py-2 text-xs text-gray-400">
-                    Показано {SHOWN} из {matched.length} — уточните поиск
+                    {t('common.shownOfMatched', { shown: SHOWN, total: matched.length })}
                   </p>
                 )}
               </div>
@@ -875,11 +883,26 @@ export function TagsInput({
   )
 }
 
-const MONTHS = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-]
-const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+// Month and weekday names come from Intl rather than a dictionary: the browser
+// already ships correct, capitalised names for every locale, so a new language
+// needs no calendar strings at all. Both lists start on Monday, matching the grid
+// the picker draws below.
+function monthNames(): string[] {
+  const f = new Intl.DateTimeFormat(currentLang(), { month: 'long' })
+  return Array.from({ length: 12 }, (_, m) => {
+    const s = f.format(new Date(2021, m, 1))
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  })
+}
+
+function weekdayNames(): string[] {
+  const f = new Intl.DateTimeFormat(currentLang(), { weekday: 'short' })
+  // 2021-03-01 was a Monday.
+  return Array.from({ length: 7 }, (_, i) => {
+    const s = f.format(new Date(2021, 2, 1 + i))
+    return s.charAt(0).toUpperCase() + s.slice(1)
+  })
+}
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -898,7 +921,7 @@ export function DatePicker({
   value,
   onChange,
   min,
-  placeholder = 'бессрочно',
+  placeholder,
 }: {
   label?: string
   value: string
@@ -906,6 +929,10 @@ export function DatePicker({
   min?: string
   placeholder?: string
 }) {
+  const { t } = useTranslation()
+  placeholder = placeholder ?? t('common.never')
+  const months = monthNames()
+  const weekdays = weekdayNames()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   const selected = parseYmd(value)
@@ -913,7 +940,7 @@ export function DatePicker({
   const minDate = min ? parseYmd(min) : null
 
   const display = selected
-    ? selected.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    ? selected.toLocaleDateString(currentLang(), { day: '2-digit', month: '2-digit', year: 'numeric' })
     : ''
 
   // Build the 6-week grid for the viewed month (Monday-first).
@@ -958,7 +985,7 @@ export function DatePicker({
                   <IconChevron className="rotate-90" />
                 </button>
                 <span className="text-sm font-semibold text-ink">
-                  {MONTHS[view.getMonth()]} {view.getFullYear()}
+                  {months[view.getMonth()]} {view.getFullYear()}
                 </span>
                 <button
                   type="button"
@@ -969,7 +996,7 @@ export function DatePicker({
                 </button>
               </div>
               <div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium text-gray-400">
-                {WEEKDAYS.map((w) => (
+                {weekdays.map((w) => (
                   <span key={w}>{w}</span>
                 ))}
               </div>
@@ -1008,7 +1035,7 @@ export function DatePicker({
                   }}
                   className="mt-2 w-full rounded-md py-1.5 text-sm font-medium text-danger danger-tint-hover"
                 >
-                  Очистить
+                  {t('common.clear')}
                 </button>
               )}
             </div>
@@ -1192,7 +1219,7 @@ export function Code({
         <button
           type="button"
           onClick={() => doCopy(String(children))}
-          title={copied ? "Скопировано" : "Копировать"}
+          title={i18n.t(copied ? "common.copied" : "common.copy")}
           className="absolute right-1.5 top-1.5 rounded-md p-1.5 text-ink-muted transition hover:bg-gray-200 hover:text-accent"
         >
           {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
@@ -1356,20 +1383,20 @@ export function useConfirm() {
     <Modal
       open={!!req}
       onClose={() => close(false)}
-      title={req?.title ?? "Подтвердите действие"}
+      title={req?.title ?? i18n.t("common.confirmAction")}
     >
       {req?.body && (
         <div className="text-sm leading-relaxed text-ink-muted">{req.body}</div>
       )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={() => close(false)}>
-          {req?.cancelLabel ?? "Отмена"}
+          {req?.cancelLabel ?? i18n.t("common.cancel")}
         </Button>
         <Button
           color={req?.danger ? "red" : "brand"}
           onClick={() => close(true)}
         >
-          {req?.confirmLabel ?? "Подтвердить"}
+          {req?.confirmLabel ?? i18n.t("common.confirm")}
         </Button>
       </div>
     </Modal>

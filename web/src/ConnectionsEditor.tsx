@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   FINGERPRINTS,
   type ConnectionsStatus,
@@ -6,6 +7,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
+import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -45,11 +47,11 @@ const FP_OPTIONS = FINGERPRINTS.map((f) => ({
   label: f.charAt(0).toUpperCase() + f.slice(1),
 }));
 
-const HOP_INTERVALS = [
-  { value: "5-10", label: "5–10 с" },
-  { value: "10-30", label: "10–30 с" },
-  { value: "30-60", label: "30–60 с" },
-  { value: "60-120", label: "60–120 с" },
+const hopIntervals = () => [
+  { value: "5-10", label: i18n.t("conn.sec", { range: "5–10" }) },
+  { value: "10-30", label: i18n.t("conn.sec", { range: "10–30" }) },
+  { value: "30-60", label: i18n.t("conn.sec", { range: "30–60" }) },
+  { value: "60-120", label: i18n.t("conn.sec", { range: "60–120" }) },
 ];
 
 type Hy = { port: number; start: number; end: number; interval: string };
@@ -74,6 +76,7 @@ export function ConnectionsEditor({
   save: (u: ConnectionsUpdate) => Promise<ConnectionsStatus>;
   restartsPanel: boolean;
 }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ConnectionsStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const { busy, run } = useAction();
@@ -177,7 +180,7 @@ export function ConnectionsEditor({
         block_quic: anti.blockQuic,
       });
       applyStatus(s);
-      notifySuccess("Сохранено");
+      notifySuccess(t("common.saved"));
     };
     if (restartsPanel && restartsXray) applyXray(run1);
     else run(run1);
@@ -218,7 +221,7 @@ export function ConnectionsEditor({
                   />
                   <span className="font-medium text-ink">{p.name}</span>
                   <Badge color="gray">{p.port}</Badge>
-                  {!on && <Badge color="gray">выключен</Badge>}
+                  {!on && <Badge color="gray">{t("conn.off")}</Badge>}
                 </div>
                 <span onClick={(e) => e.stopPropagation()} className="flex items-center">
                   <Switch checked={on} onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))} />
@@ -229,21 +232,20 @@ export function ConnectionsEditor({
                 <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
                   <div className="flex flex-col gap-2">
                     <TextInput
-                      label="Название подключения"
+                      label={t("conn.name")}
                       value={names[p.key] ?? ""}
                       onChange={(v) => setNames((n) => ({ ...n, [p.key]: v }))}
                       placeholder={p.name}
                     />
                     <p className="text-xs text-ink-muted">
-                      Имя узла, которое видит клиент в списке подключений. Пусто —
-                      используется «{p.name}».
+                      {t("conn.nameHint", { name: p.name })}
                     </p>
                   </div>
 
                   <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
-                    <Field label="Транспорт" value={p.transport} />
-                    <Field label="Шифрование" value={p.security} />
-                    {p.note && <Field label="Примечание" value={p.note} />}
+                    <Field label={t("conn.transport")} value={p.transport} />
+                    <Field label={t("conn.security")} value={p.security} />
+                    {p.note && <Field label={t("conn.note")} value={p.note} />}
                   </div>
 
                   {p.fingerprint && (
@@ -255,7 +257,7 @@ export function ConnectionsEditor({
                         onChange={(v) => setFps((f) => ({ ...f, [p.key]: v }))}
                       />
                       <p className="mt-2 text-xs text-ink-muted">
-                        Отпечаток TLS-клиента, имитируемый ссылкой (параметр fp).
+                        {t("conn.fpHint")}
                       </p>
                     </div>
                   )}
@@ -264,24 +266,23 @@ export function ConnectionsEditor({
                     (on ? (
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                         <div className="grid grid-cols-3 gap-2">
-                          <TextInput label="Порт" type="number" value={String(hy.port)} onChange={setHyNum("port")} />
-                          <TextInput label="Хоп от" type="number" value={String(hy.start)} onChange={setHyNum("start")} />
-                          <TextInput label="Хоп до" type="number" value={String(hy.end)} onChange={setHyNum("end")} />
+                          <TextInput label={t("conn.port")} type="number" value={String(hy.port)} onChange={setHyNum("port")} />
+                          <TextInput label={t("conn.hopFrom")} type="number" value={String(hy.start)} onChange={setHyNum("start")} />
+                          <TextInput label={t("conn.hopTo")} type="number" value={String(hy.end)} onChange={setHyNum("end")} />
                         </div>
                         <Select
-                          label="Интервал смены порта"
-                          data={HOP_INTERVALS}
+                          label={t("conn.hopInterval")}
+                          data={hopIntervals()}
                           value={hy.interval}
                           onChange={(v) => setHy((h) => ({ ...h, interval: v }))}
                         />
                         <p className="text-xs text-ink-muted">
-                          Клиент разбрасывает трафик по диапазону «хоп от–до»,
-                          nftables сводит его на базовый порт.
+                          {t("conn.hopHint")}
                         </p>
                       </div>
                     ) : (
                       <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        Включите HYSTERIA-UDP, чтобы настроить порты и интервал.
+                        {t("conn.enableHysteria")}
                       </p>
                     ))}
 
@@ -289,23 +290,22 @@ export function ConnectionsEditor({
                     (on ? (
                       <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                         <TextInput
-                          label="Порт"
+                          label={t("conn.port")}
                           type="number"
                           value={String(reality.port)}
                           onChange={(v) => setReality((r) => ({ ...r, port: Number(v.replace(/\D/g, "")) || 0 }))}
                         />
                         <TagsInput
-                          label="Маскировка (SNI)"
+                          label={t("conn.masquerade")}
                           value={reality.dests}
                           onChange={(v) => setReality((r) => ({ ...r, dests: v }))}
-                          placeholder="max.ru — добавить и Enter…"
+                          placeholder={t("conn.sniPlaceholder")}
                         />
                         <label className="flex items-center justify-between gap-3">
                           <span className="text-sm">
-                            Анти-replay
+                            {t("conn.antiReplay")}
                             <span className="block text-xs text-ink-muted">
-                              Окно ±60 с против повтора рукопожатия зондом. Может
-                              резать клиентов со сбитыми часами.
+                              {t("conn.antiReplayHint")}
                             </span>
                           </span>
                           <Switch
@@ -315,7 +315,7 @@ export function ConnectionsEditor({
                         </label>
                         <LongField label="Public key" value={status.reality_public_key} />
                         <LongField label="Short IDs" value={status.reality_short_id} />
-                        <LongField label="Путь XHTTP" value={status.reality_path} />
+                        <LongField label={t("conn.xhttpPath")} value={status.reality_path} />
                         <div>
                           <Button
                             size="sm"
@@ -323,20 +323,16 @@ export function ConnectionsEditor({
                             color={regenReality ? "orange" : "gray"}
                             onClick={() => setRegenReality((v) => !v)}
                           >
-                            {regenReality ? "Ключи будут перегенерированы ✓" : "Перегенерировать ключи"}
+                            {t(regenReality ? "conn.keysWillRegen" : "conn.regenKeys")}
                           </Button>
                         </div>
                         <p className="text-xs text-ink-muted">
-                          REALITY заимствует TLS реального сайта (TLS 1.3 + H2,
-                          проверяется при сохранении). Можно указать несколько SNI —
-                          первый основной (идёт в ссылки), сервер принимает все;
-                          альтернативные должны делить сертификат основного донора
-                          (быть его SAN).
+                          {t("conn.realityHint")}
                         </p>
                       </div>
                     ) : (
                       <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        Включите VLESS-XHTTP-REALITY, чтобы настроить порт и маскировку.
+                        {t("conn.enableReality")}
                       </p>
                     ))}
                 </div>
@@ -347,17 +343,16 @@ export function ConnectionsEditor({
       </div>
 
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <h3 className="mb-1 font-bold text-ink">Анти-DPI</h3>
+        <h3 className="mb-1 font-bold text-ink">{t("conn.antiDpi")}</h3>
         <p className="mb-3 text-sm text-ink-muted">
-          Меры против обнаружения и блокировки (ТСПУ). Фрагментация и блок QUIC
-          меняют только выдаваемые клиентам конфиги; TLS 1.3 — серверный.
+          {t("conn.antiDpiHint")}
         </p>
         <div className="flex flex-col divide-y divide-gray-100">
           <label className="flex items-center justify-between gap-3 py-3 first:pt-0">
             <span className="text-sm">
-              Фрагментация ClientHello
+              {t("conn.fragment")}
               <span className="block text-xs text-ink-muted">
-                Дробит TLS-рукопожатие, чтобы stateless-DPI не прочитал SNI
+                {t("conn.fragmentHint")}
                 (VLESS-Vision).
               </span>
             </span>
@@ -365,20 +360,18 @@ export function ConnectionsEditor({
           </label>
           <label className="flex items-center justify-between gap-3 py-3">
             <span className="text-sm">
-              Блокировать QUIC (UDP/443)
+              {t("conn.blockQuic")}
               <span className="block text-xs text-ink-muted">
-                Не даёт браузерному QUIC утечь мимо туннеля; может сломать
-                приложения, которым QUIC обязателен.
+                {t("conn.blockQuicHint")}
               </span>
             </span>
             <Switch checked={anti.blockQuic} onChange={(v) => setAnti((a) => ({ ...a, blockQuic: v }))} />
           </label>
           <label className="flex items-center justify-between gap-3 py-3 last:pb-0">
             <span className="text-sm">
-              Требовать TLS 1.3 на :443
+              {t("conn.requireTls13")}
               <span className="block text-xs text-ink-muted">
-                Поднимает минимум TLS. Может чуть снизить правдоподобность
-                сайта-заглушки для совсем старых клиентов.
+                {t("conn.requireTls13Hint")}
               </span>
             </span>
             <Switch checked={anti.min13} onChange={(v) => setAnti((a) => ({ ...a, min13: v }))} />
@@ -388,7 +381,7 @@ export function ConnectionsEditor({
 
       <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-ink-muted">
-          У каждого раздела своё сохранение. Без сохранения изменения не применятся.
+          {t("conn.saveHint")}
         </p>
         <div className="flex justify-end gap-2">
           <Button
@@ -397,10 +390,10 @@ export function ConnectionsEditor({
             onClick={cancel}
             disabled={!dirty || busy || applying}
           >
-            Отменить
+            {t("common.cancel")}
           </Button>
           <Button onClick={doSave} loading={busy || applying} disabled={!dirty}>
-            Сохранить
+            {t("common.save")}
           </Button>
         </div>
       </div>

@@ -126,13 +126,13 @@ var groupNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-]+$`)
 func ValidateGroupName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("укажи название группы")
+		return fieldErr("err.groupNameRequired", "укажи название группы")
 	}
 	if len([]rune(name)) > 32 {
-		return fmt.Errorf("название группы не длиннее 32 символов")
+		return fieldErr("err.groupNameTooLong", "название группы не длиннее 32 символов")
 	}
 	if !groupNameRe.MatchString(name) {
-		return fmt.Errorf("недопустимое название группы (буквы, цифры, пробел, . _ - ( ))")
+		return fieldErr("err.groupNameChars", "недопустимое название группы (буквы, цифры, пробел, . _ - ( ))")
 	}
 	return nil
 }

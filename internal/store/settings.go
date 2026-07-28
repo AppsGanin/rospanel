@@ -55,7 +55,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
 		       geo_refresh_hours, iplist_refresh_hours,
 		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
-		       tg_support_group_id, tg_support_greeting,
+		       tg_support_group_id, tg_support_greeting, tg_lang,
 		       tg_user_events, tg_user_expiring_days,
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min
 		FROM settings WHERE id = 1`,
@@ -92,7 +92,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
 		&tgSupportEn, &st.TGSupportBotToken, &st.TGSupportBotUsername,
-		&st.TGSupportGroupID, &st.TGSupportGreeting,
+		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang,
 		&st.TGUserEvents, &st.TGUserExpiringDays,
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
 	)
@@ -142,11 +142,12 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 
 // SetTelegramBot persists the bot's enable flag, token, and backup schedule (a
 // 5-field cron expression in the operator timezone; empty disables scheduling).
-func (s *Store) SetTelegramBot(enabled bool, token, cron string) error {
+// lang is the language the admin bot writes in; empty leaves the panel default.
+func (s *Store) SetTelegramBot(enabled bool, token, cron, lang string) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
-		        updated_at = unixepoch() WHERE id = 1`,
-		boolToInt(enabled), encField(token), cron,
+		        tg_lang = ?, updated_at = unixepoch() WHERE id = 1`,
+		boolToInt(enabled), encField(token), cron, lang,
 	)
 	return err
 }
@@ -232,7 +233,7 @@ func (s *Store) SetTelegramChats(csv string) error {
 }
 
 // SetAntiDPI persists the anti-DPI transport-hardening settings (Settings →
-// Подключения): client-config shaping (TLS fragmentation, QUIC block) and the
+// Connections): client-config shaping (TLS fragmentation, QUIC block) and the
 // server-inbound knobs (TLS 1.3 floor, REALITY anti-replay window + donor port).
 func (s *Store) SetAntiDPI(tlsFragment, tlsMin13, blockQUIC bool, realityMaxTimeDiff int) error {
 	_, err := s.db.Exec(

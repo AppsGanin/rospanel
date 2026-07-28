@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getMe, type Role, setUnauthorizedHandler } from './api'
 import { Spinner } from './ui'
 import { Login } from './Login'
@@ -16,8 +17,15 @@ import { RoleProvider } from './role'
 type AuthState = 'loading' | 'out' | 'setup' | 'password' | 'in'
 
 export function App() {
+  const { i18n } = useTranslation()
+  // Keying the tree on the language remounts it when the admin switches. Most
+  // components re-render on their own (useTranslation subscribes them), but label
+  // tables built outside render — option lists, chart series, memoised columns —
+  // would keep the old language until something else happened to invalidate them.
+  // Switching is a deliberate, rare action, so paying a remount for "everything is
+  // in the new language, without exception" is the right trade.
   return (
-    <BrandProvider>
+    <BrandProvider key={i18n.language}>
       <AppInner />
     </BrandProvider>
   )

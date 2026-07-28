@@ -335,7 +335,7 @@ func TestAccessGatesClientLists(t *testing.T) {
 	access := map[int64]model.Access{
 		2: {Tokens: map[string]bool{
 			model.BuiltinToken(model.LocalNodeID, model.LaneVLESS): true,
-			model.InboundToken(5):                                 true,
+			model.InboundToken(5): true,
 		}},
 	}
 	cfg, err := Generate(set, users, Options{

@@ -1,5 +1,6 @@
 // API client. All paths are RELATIVE so they resolve against <base href="/<secret>/">
 // injected by the Go server — the SPA never needs to know its own secret path.
+import i18n from './i18n'
 
 export interface User {
   id: number
@@ -81,12 +82,23 @@ export interface AbuseMatch {
   last_seen: number
 }
 
-export const abuseCategoryLabel: Record<string, string> = {
-  custom: 'Свой список',
-  malware: 'Вредоносное ПО',
-  badip: 'Вредоносный IP',
-  piracy: 'Пиратство',
-  gambling: 'Азартные игры',
+// A function rather than a table: a table would capture whichever language was
+// active when this module was first imported and never update.
+export function abuseCategoryLabel(category: string): string {
+  switch (category) {
+    case 'custom':
+      return i18n.t('abuseCat.custom')
+    case 'malware':
+      return i18n.t('abuseCat.malware')
+    case 'badip':
+      return i18n.t('abuseCat.badip')
+    case 'piracy':
+      return i18n.t('abuseCat.piracy')
+    case 'gambling':
+      return i18n.t('abuseCat.gambling')
+    default:
+      return category
+  }
 }
 
 export const getRecentAbuse = (limit = 50) =>
@@ -99,7 +111,7 @@ export const getUserAbuse = (id: number, limit = 20) =>
 // are loaded in the matcher, and (for downloaded feeds) the cached copy's size/age.
 export interface AbuseFeedStatus {
   category: string
-  title: string
+  title_key: string
   enabled: boolean
   present: boolean
   entries: number
@@ -309,7 +321,7 @@ export interface BackupInspection {
   valid: boolean
   db_users: number
   db_admins: number
-  issue: string // human-readable problem when !valid
+  issue: string // dictionary key naming the problem when !valid
 }
 
 const backupForm = (file: File) => {
@@ -424,6 +436,31 @@ export function setUnauthorizedHandler(fn: () => void) {
 // preflight the panel never grants, so this stops form/img/script-driven CSRF.
 const CSRF_HEADER = { 'X-RosPanel-CSRF': '1' }
 
+// ApiError carries the server's dictionary code alongside its message. errMessage
+// (notify.ts) translates the code and falls back to the message, so every existing
+// `notifyError(errMessage(e))` call site gets a localised toast without changing.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly args?: Record<string, unknown>,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+// apiError builds the thrown value from a parsed error body.
+function apiError(data: Record<string, unknown>, status: number): ApiError {
+  const msg = typeof data.error === 'string' ? data.error : `HTTP ${status}`
+  const code = typeof data.code === 'string' ? data.code : undefined
+  const args =
+    data.args && typeof data.args === 'object'
+      ? (data.args as Record<string, unknown>)
+      : undefined
+  return new ApiError(msg, code, args)
+}
+
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -433,7 +470,7 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   if (res.status === 401) onUnauthorized?.()
   const text = await res.text()
   const data = text ? JSON.parse(text) : {}
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  if (!res.ok) throw apiError(data, res.status)
   return data as T
 }
 
@@ -449,7 +486,7 @@ async function apiForm<T>(path: string, body: FormData): Promise<T> {
   if (res.status === 401) onUnauthorized?.()
   const text = await res.text()
   const data = text ? JSON.parse(text) : {}
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  if (!res.ok) throw apiError(data, res.status)
   return data as T
 }
 
@@ -466,17 +503,10 @@ async function apiText(path: string): Promise<string> {
 // exposes for end users, an admin everything but the roster, the owner everything.
 export type Role = 'owner' | 'admin' | 'operator'
 
-export const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Владелец',
-  admin: 'Администратор',
-  operator: 'Оператор',
-}
+export const roleLabel = (r: Role): string => i18n.t(`roles.${r}`)
 
-export const ROLE_HINTS: Record<Role, string> = {
-  owner: 'Полный доступ, включая управление администраторами',
-  admin: 'Всё, кроме управления администраторами',
-  operator: 'Пользователи, статистика и журнал — без настроек, бэкапов и API',
-}
+export const roleHint = (r: Role): string =>
+  i18n.t(`roles.${r}Desc` as 'roles.ownerDesc')
 
 export interface Me {
   username: string
@@ -565,7 +595,7 @@ export interface AdminAuditPage {
   next_before: number // 0 = no older rows
 }
 
-// The journal filters by category ("Настройки", "Администраторы", …) rather than by
+// The journal filters by category ("Settings", "Administrators", …) rather than by
 // each of the two dozen actions: the actions stay precise on the rows, the filter
 // stays short.
 export const listAdminAudit = (params: {
@@ -852,6 +882,10 @@ export interface TelegramInfo {
   enabled: boolean
   token: string
   backup_cron: string // 5-field cron in the operator timezone; "" = off
+  // Language the ADMIN bot writes in. Panel-wide, unlike the client and support
+  // bots, which follow each person's own Telegram language: the admin bot also
+  // pushes unprompted alerts, which carry no update to read a language from.
+  lang: string
   chat_ids: number[] // linked (authorized) chat IDs
   link_code: string // pending one-time linking code (if any)
   bot_username: string // admin bot @username (empty if token unset/invalid)
@@ -887,6 +921,7 @@ export const saveTelegram = (t: {
   enabled: boolean
   token: string
   backup_cron: string
+  lang: string
   user_enabled: boolean
   user_token: string
   user_reg_mode: RegMode
@@ -1082,12 +1117,21 @@ export const createUser = (name: string, data_limit = 0, expire_at = 0) =>
 
 export type HealthStatus = 'ok' | 'warn' | 'error' | 'info'
 
+// The server sends dictionary KEYS plus the values to interpolate, not sentences:
+// the panel's language is a per-browser choice the server cannot see, so anything
+// it worded itself would be stuck in one language on a bilingual page.
+//
+// `detail` is the exception and carries verbatim text — some details are not ours
+// to word (Xray's own config error, an ACME failure). Exactly one of detail_key /
+// detail is set.
 export interface HealthCheck {
   key: string
-  label: string
+  label_key: string
   status: HealthStatus
-  detail: string
-  hint?: string
+  detail_key?: string
+  detail?: string
+  args?: Record<string, unknown>
+  hint_key?: string
 }
 
 export interface HealthReport {
@@ -1136,7 +1180,7 @@ export const setACME = (target: string, email: string, provider: string) =>
   })
 
 
-// --- Billing / tariffs (Settings → Тарифы) ---
+// --- Billing / tariffs (Settings → Plans) ---
 
 export interface TariffPlan {
   id: number
@@ -1331,9 +1375,10 @@ export interface Webhook {
   last_error: string
 }
 
+// Key only: the panel labels each event from its own dictionaries, so the picker
+// reads in the admin's language rather than the server's.
 export interface WebhookEventDef {
   key: string
-  label: string
 }
 
 export interface WebhooksInfo {
@@ -1426,7 +1471,7 @@ export const setMasterName = (name: string) =>
   })
 
 // setMasterProtocols toggles the panel's own protocols on/off (the master card).
-// Connection details stay in the global Подключения settings.
+// Connection details stay in the global Connections settings.
 export const setMasterProtocols = (p: {
   vless_enabled: boolean
   hysteria_enabled: boolean
@@ -1485,7 +1530,7 @@ export const createNode = (name: string, host: string) =>
   })
 
 // NodePatch carries a node edit (name/host/decoy). Protocols are edited on the
-// Подключения tab and are OPTIONAL here: omitting them tells the panel to preserve the
+// Connections tab and are OPTIONAL here: omitting them tells the panel to preserve the
 // node's current values, so a name/decoy save can't revert a just-made protocol change.
 export interface NodePatch {
   name: string

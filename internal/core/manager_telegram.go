@@ -8,25 +8,30 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/cron"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable
-// flag, bot token, and backup schedule as a 5-field cron expression (empty = no
-// scheduled backups). The authorized chat set and the pending link code are managed
-// separately (linking happens in the bot / via GenerateTelegramLinkCode).
-func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
+// flag, bot token, the backup schedule as a 5-field cron expression (empty = no
+// scheduled backups), and the language the bot writes in. The authorized chat set
+// and the pending link code are managed separately (linking happens in the bot /
+// via GenerateTelegramLinkCode).
+func (m *Manager) SaveTelegram(enabled bool, token, backupCron, lang string) error {
 	token = strings.TrimSpace(token)
 	backupCron = strings.TrimSpace(backupCron)
+	// An unrecognised tag is normalised rather than rejected: this is a dropdown,
+	// and a value the panel does not ship is a bug on our side, not the operator's.
+	lang = string(i18n.Normalize(lang))
 	if enabled && token == "" {
-		return invalid("укажите токен бота (получите его у @BotFather)")
+		return invalidCode("err.adminTokenRequired", "укажите токен бота (получите его у @BotFather)")
 	}
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен бота выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badAdminToken", "токен бота выглядит неверно (формат «123456:ABC...»)")
 	}
 	if backupCron != "" {
 		if _, err := cron.Parse(backupCron); err != nil {
-			return invalid("неверное расписание (cron): %v", err)
+			return invalidCode("err.badCron", "неверное расписание (cron): {{err}}", map[string]any{"err": err})
 		}
 	}
 	if enabled && token != "" {
@@ -35,13 +40,13 @@ func (m *Manager) SaveTelegram(enabled bool, token, backupCron string) error {
 			return err
 		}
 		if strings.TrimSpace(set.TGUserBotToken) == token {
-			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+			return invalidCode("err.adminUserSameToken", "у админ-бота и пользовательского бота должны быть разные токены")
 		}
 		if strings.TrimSpace(set.TGSupportBotToken) == token {
-			return invalid("у админ-бота и бота поддержки должны быть разные токены")
+			return invalidCode("err.adminSupportSameToken", "у админ-бота и бота поддержки должны быть разные токены")
 		}
 	}
-	if err := m.store.SetTelegramBot(enabled, token, backupCron); err != nil {
+	if err := m.store.SetTelegramBot(enabled, token, backupCron, lang); err != nil {
 		return err
 	}
 	// Disabling the bot drops any pending link request — it can't be completed
@@ -61,16 +66,16 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 	switch regMode {
 	case model.RegOff, model.RegOpen, model.RegModeration, model.RegInvite:
 	default:
-		return invalid("неизвестный режим регистрации")
+		return invalidCode("err.unknownRegMode", "неизвестный режим регистрации")
 	}
 	if regMode == model.RegInvite && regCode == "" {
-		return invalid("для регистрации по коду укажите код-приглашение")
+		return invalidCode("err.inviteCodeRequired", "для регистрации по коду укажите код-приглашение")
 	}
 	if enabled && token == "" {
-		return invalid("укажите токен пользовательского бота")
+		return invalidCode("err.userTokenRequired", "укажите токен пользовательского бота")
 	}
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badUserToken", "токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
 	}
 	if enabled && token != "" {
 		set, err := m.store.GetSettings()
@@ -78,10 +83,10 @@ func (m *Manager) SaveTelegramUserBot(enabled bool, token, regMode, regCode stri
 			return err
 		}
 		if strings.TrimSpace(set.TGBotToken) == token {
-			return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+			return invalidCode("err.adminUserSameToken", "у админ-бота и пользовательского бота должны быть разные токены")
 		}
 		if strings.TrimSpace(set.TGSupportBotToken) == token {
-			return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
+			return invalidCode("err.userSupportSameToken", "у пользовательского бота и бота поддержки должны быть разные токены")
 		}
 	}
 	return m.store.SetTelegramUserBot(enabled, token, regMode, regCode)
@@ -102,16 +107,16 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 	// token looks like, not the generic "couldn't verify" it would otherwise hit —
 	// getMe rejects a malformed token exactly like an unknown one.
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badSupportToken", "токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
 	}
 	if enabled {
 		switch {
 		case token == "":
-			return invalid("укажите токен бота поддержки")
+			return invalidCode("err.supportTokenRequired", "укажите токен бота поддержки")
 		case groupID == 0:
-			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+			return invalidCode("err.supportGroupRequired", "укажите группу поддержки (супергруппа с включёнными темами)")
 		case username == "":
-			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+			return invalidCode("err.supportTokenUnverifiable", "не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
 		}
 	}
 	set, err := m.store.GetSettings()
@@ -124,10 +129,10 @@ func (m *Manager) SaveTelegramSupport(enabled bool, token, username string, grou
 	// other's messages.
 	if token != "" {
 		if strings.TrimSpace(set.TGBotToken) == token {
-			return invalid("у бота поддержки и админ-бота должны быть разные токены")
+			return invalidCode("err.supportAdminSameToken", "у бота поддержки и админ-бота должны быть разные токены")
 		}
 		if strings.TrimSpace(set.TGUserBotToken) == token {
-			return invalid("у бота поддержки и пользовательского бота должны быть разные токены")
+			return invalidCode("err.supportUserSameToken", "у бота поддержки и пользовательского бота должны быть разные токены")
 		}
 	}
 	// No mapping reset here. Topic rows carry the group that issued them, so a
@@ -167,9 +172,13 @@ func (m *Manager) ListSupportGroups() ([]model.SupportGroup, error) {
 // TelegramConfig is every Telegram bot's settings in one value, so they can be
 // checked together and written together.
 type TelegramConfig struct {
-	Enabled     bool
-	Token       string
-	BackupCron  string
+	Enabled    bool
+	Token      string
+	BackupCron string
+	// Lang is the language the admin bot writes in. Panel-wide because the bot also
+	// pushes unprompted alerts, which carry no Telegram update to read a language
+	// from. Empty means the panel default.
+	Lang        string
 	UserEnabled bool
 	UserToken   string
 	UserRegMode string
@@ -199,7 +208,7 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 	if err := m.checkTelegramSupportCfg(c); err != nil {
 		return err
 	}
-	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron); err != nil {
+	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron, c.Lang); err != nil {
 		return err
 	}
 	if err := m.SaveTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
@@ -215,14 +224,14 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 func (m *Manager) checkTelegram(enabled bool, token, backupCron string) error {
 	token = strings.TrimSpace(token)
 	if enabled && token == "" {
-		return invalid("укажите токен бота (получите его у @BotFather)")
+		return invalidCode("err.adminTokenRequired", "укажите токен бота (получите его у @BotFather)")
 	}
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен бота выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badAdminToken", "токен бота выглядит неверно (формат «123456:ABC...»)")
 	}
 	if strings.TrimSpace(backupCron) != "" {
 		if _, err := cron.Parse(strings.TrimSpace(backupCron)); err != nil {
-			return invalid("неверное расписание (cron): %v", err)
+			return invalidCode("err.badCron", "неверное расписание (cron): {{err}}", map[string]any{"err": err})
 		}
 	}
 	return nil
@@ -232,17 +241,17 @@ func (m *Manager) checkTelegramUserBot(enabled bool, token, regMode, regCode str
 	switch regMode {
 	case model.RegOff, model.RegOpen, model.RegModeration, model.RegInvite:
 	default:
-		return invalid("неизвестный режим регистрации")
+		return invalidCode("err.unknownRegMode", "неизвестный режим регистрации")
 	}
 	if regMode == model.RegInvite && strings.TrimSpace(regCode) == "" {
-		return invalid("для регистрации по коду укажите код-приглашение")
+		return invalidCode("err.inviteCodeRequired", "для регистрации по коду укажите код-приглашение")
 	}
 	token = strings.TrimSpace(token)
 	if enabled && token == "" {
-		return invalid("укажите токен пользовательского бота")
+		return invalidCode("err.userTokenRequired", "укажите токен пользовательского бота")
 	}
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badUserToken", "токен пользовательского бота выглядит неверно (формат «123456:ABC...»)")
 	}
 	return nil
 }
@@ -250,16 +259,16 @@ func (m *Manager) checkTelegramUserBot(enabled bool, token, regMode, regCode str
 func (m *Manager) checkTelegramSupportCfg(c TelegramConfig) error {
 	token := strings.TrimSpace(c.SupportToken)
 	if token != "" && !strings.Contains(token, ":") {
-		return invalid("токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
+		return invalidCode("err.badSupportToken", "токен бота поддержки выглядит неверно (формат «123456:ABC...»)")
 	}
 	if c.SupportEnabled {
 		switch {
 		case token == "":
-			return invalid("укажите токен бота поддержки")
+			return invalidCode("err.supportTokenRequired", "укажите токен бота поддержки")
 		case normalizeGroupID(c.SupportGroupID) == 0:
-			return invalid("укажите группу поддержки (супергруппа с включёнными темами)")
+			return invalidCode("err.supportGroupRequired", "укажите группу поддержки (супергруппа с включёнными темами)")
 		case strings.TrimSpace(c.SupportUsername) == "":
-			return invalid("не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
+			return invalidCode("err.supportTokenUnverifiable", "не удалось проверить токен бота поддержки — проверьте его и попробуйте снова")
 		}
 	}
 	// Three distinct bots need three distinct tokens: two poll loops sharing one
@@ -267,11 +276,11 @@ func (m *Manager) checkTelegramSupportCfg(c TelegramConfig) error {
 	admin, user := strings.TrimSpace(c.Token), strings.TrimSpace(c.UserToken)
 	switch {
 	case admin != "" && admin == user:
-		return invalid("у админ-бота и пользовательского бота должны быть разные токены")
+		return invalidCode("err.adminUserSameToken", "у админ-бота и пользовательского бота должны быть разные токены")
 	case admin != "" && admin == token:
-		return invalid("у админ-бота и бота поддержки должны быть разные токены")
+		return invalidCode("err.adminSupportSameToken", "у админ-бота и бота поддержки должны быть разные токены")
 	case user != "" && user == token:
-		return invalid("у пользовательского бота и бота поддержки должны быть разные токены")
+		return invalidCode("err.userSupportSameToken", "у пользовательского бота и бота поддержки должны быть разные токены")
 	}
 	return nil
 }
@@ -291,7 +300,7 @@ func (m *Manager) GenerateTelegramLinkCode() (string, error) {
 		return "", err
 	}
 	if !set.TGBotEnabled {
-		return "", invalid("сначала включите админ-бота и сохраните настройки")
+		return "", invalidCode("err.enableAdminBotFirst", "сначала включите админ-бота и сохраните настройки")
 	}
 	var b [5]byte
 	if _, err := rand.Read(b[:]); err != nil {

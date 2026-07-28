@@ -215,7 +215,7 @@ type Manager struct {
 	nodeGeoFiles map[int64][]nodeapi.GeoFile
 
 	// nodeAlerts is what admins were last told about each node's reachability, Xray
-	// and certificate — the fleet-wide half of the "Сбой Xray" / "Сертификат TLS"
+	// and certificate — the fleet-wide half of the "Xray failure" / "TLS certificate"
 	// admin events (see manager_nodes_notify.go).
 	nodeAlertMu sync.Mutex
 	nodeAlerts  map[int64]*nodeAlertState

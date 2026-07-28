@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -99,22 +98,32 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 	}
 	var err error
 	if in.Opts.XHTTPExtra, err = model.AssembleXHTTPExtra(r.XHTTPExtra); err != nil {
-		return in, fmt.Errorf("XHTTP extra: %s", jsonErr(err))
+		return in, rawFieldErr("XHTTP extra", err)
 	}
 	if in.Opts.Sockopt, err = model.AssembleSockopt(r.Sockopt); err != nil {
-		return in, fmt.Errorf("sockopt: %s", jsonErr(err))
+		return in, rawFieldErr("sockopt", err)
 	}
 	if in.Opts.TLSExtra, err = model.AssembleTLSExtra(r.TLSExtra); err != nil {
-		return in, fmt.Errorf("доп. TLS: %s", jsonErr(err))
+		return in, rawFieldErr("TLS extra", err)
 	}
 	return in, nil
 }
 
+// rawFieldErr reports a raw-JSON box that would not parse. The box's name is a
+// technical one ("sockopt"), identical in both languages, so it rides as an
+// argument; the sentence around it is a code the panel words.
+func rawFieldErr(field string, err error) error {
+	return model.FieldErr("err.rawFieldBadJSON", "{{field}}: не разбирается как JSON ({{detail}})",
+		map[string]any{"field": field, "detail": jsonErr(err)})
+}
+
 // jsonErr softens a raw json error into something an operator reads as "the JSON
-// you typed in the raw box doesn't parse".
+// you typed in the raw box doesn't parse". Its own text is deliberately not a
+// dictionary key: what it returns on the else branch is the json package's message,
+// which is English whatever we do.
 func jsonErr(err error) string {
 	if strings.Contains(err.Error(), "json") || strings.Contains(err.Error(), "invalid") {
-		return "поле «прочее» не разбирается как JSON"
+		return "not valid JSON"
 	}
 	return err.Error()
 }
@@ -131,7 +140,7 @@ func (rt *Router) createServerInbound(w http.ResponseWriter, r *http.Request, se
 	}
 	in, err := req.toModel(serverID, 0)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeManagerErr(w, err)
 		return
 	}
 	v, err := rt.mgr.CreateInbound(r.Context(), in)
@@ -151,7 +160,7 @@ func (rt *Router) updateInbound(w http.ResponseWriter, r *http.Request, id int64
 	}
 	in, err := req.toModel(0, id)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeManagerErr(w, err)
 		return
 	}
 	v, err := rt.mgr.UpdateInbound(r.Context(), in)

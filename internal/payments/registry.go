@@ -80,12 +80,12 @@ type Client interface {
 
 // ErrNoStatusAPI is returned by Status for providers that expose no way to query a
 // payment. The polling fallback skips them (the webhook is the only confirmation).
-var ErrNoStatusAPI = errors.New("провайдер не поддерживает опрос статуса")
+var ErrNoStatusAPI = errors.New("the provider has no status API")
 
 // Descriptor is a provider's registry entry.
 type Descriptor struct {
 	Key    string  // stable id, stored on the order row and used as the webhook path leaf
-	Label  string  // display name, e.g. "ЮКасса"
+	Label  string  // display name, e.g. "YooKassa"
 	Note   string  // one line under the name: methods, currency, who can sign up
 	Fields []Field // credentials; also the settings form
 	New    func(cfg Config) Client
@@ -151,13 +151,16 @@ func Get(key string) (Descriptor, bool) {
 	return Descriptor{}, false
 }
 
-// Label is the display name for a provider key ("" ⇒ a manual order).
+// Label is the display name for a provider key ("" ⇒ a manual order). Provider
+// names are brands and are the same in every language; the manual path is a word,
+// so a caller that shows it to a human words it through the dictionary instead —
+// see core.methodLabel. This is the last-resort fallback.
 func Label(key string) string {
 	if d, ok := Get(key); ok {
 		return d.Label
 	}
 	if key == "" {
-		return "вручную"
+		return "manual"
 	}
 	return key
 }

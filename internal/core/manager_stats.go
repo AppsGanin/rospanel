@@ -278,7 +278,7 @@ func (m *Manager) NodeTrafficBreakdown(userID int64, from, to string) ([]NodeTra
 		}
 		name := names[id]
 		if name == "" {
-			name = fmt.Sprintf("сервер #%d", id) // purged tombstone: id is all that's left
+			name = fmt.Sprintf("server #%d", id) // purged tombstone: id is all that's left
 		}
 		out = append(out, NodeTraffic{NodeID: id, Name: name, Up: t[0], Down: t[1]})
 	}
