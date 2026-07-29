@@ -30,7 +30,7 @@ func TestRegistryConfiguredAndLabel(t *testing.T) {
 	if !d.Configured(Config{"merchant_id": "m", "api_key": "k"}) {
 		t.Fatal("required fields present should be configured")
 	}
-	if Label("heleket") != "Heleket" || Label("") != "вручную" || Label("nope") != "nope" {
+	if Label("heleket") != "Heleket" || Label("") != "manual" || Label("nope") != "nope" {
 		t.Fatalf("unexpected labels")
 	}
 }

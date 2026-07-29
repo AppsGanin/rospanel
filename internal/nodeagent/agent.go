@@ -98,7 +98,7 @@ type Agent struct {
 	certMu   sync.Mutex // serializes cert-file writes (applyState vs certLoop)
 
 	// certErr is the last TLS/ACME failure, reported to the panel so it can raise the
-	// operator's "Сертификат TLS" alert for this node. Under its own mutex, not
+	// operator's "TLS certificate" alert for this node. Under its own mutex, not
 	// certMu: certMu is held for the whole of an ACME exchange, and a sync building
 	// its request must never wait on that.
 	certErrMu sync.Mutex

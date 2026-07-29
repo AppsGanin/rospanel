@@ -370,7 +370,7 @@ func (s *Store) SetUserEnabled(id int64, enabled bool) error {
 // DeleteUser removes a user and detaches them from the broadcast audience.
 //
 // The subscriber row survives on purpose — someone whose account was deleted is
-// still in the bot, and reaching them is exactly what the "без аккаунта" audience is
+// still in the bot, and reaching them is exactly what the "without an account" audience is
 // for — but it must stop naming an account that no longer exists, or the audience
 // filters read a missing user's zero values as facts about a real one.
 func (s *Store) DeleteUser(id int64) error {

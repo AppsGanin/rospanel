@@ -142,7 +142,7 @@ func TestCountUsersEmpty(t *testing.T) {
 	}
 }
 
-// TestCountUsersOnlineWindow pins what the dashboard's "Онлайн" figure means: a
+// TestCountUsersOnlineWindow pins what the dashboard's "Online" figure means: a
 // user is online while any of their addresses was seen inside DeviceOnlineWindow,
 // counted once however many devices they are on, and they drop off the moment the
 // last sighting ages past the window.

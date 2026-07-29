@@ -34,13 +34,13 @@ func (m *Manager) ListAdmins() ([]model.Admin, error) {
 func (m *Manager) CreateAdmin(username, password, role string) (model.Admin, error) {
 	username = strings.TrimSpace(username)
 	if !adminNameRe.MatchString(username) {
-		return model.Admin{}, invalid("логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание")
+		return model.Admin{}, invalidCode("err.loginCharset", "логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание")
 	}
 	if !model.GrantableRole(role) {
-		return model.Admin{}, invalid("неизвестная роль %q", role)
+		return model.Admin{}, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
 	}
 	if len(password) < minAdminPassword {
-		return model.Admin{}, invalid("пароль должен быть не короче %d символов", minAdminPassword)
+		return model.Admin{}, invalidCode("err.passwordTooShort", "пароль должен быть не короче {{min}} символов", map[string]any{"min": minAdminPassword})
 	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -48,7 +48,7 @@ func (m *Manager) CreateAdmin(username, password, role string) (model.Admin, err
 	}
 	id, err := m.store.CreateAdmin(username, hash, role, true)
 	if err != nil {
-		return model.Admin{}, invalid("не удалось создать администратора (логин уже занят?)")
+		return model.Admin{}, invalidCode("err.adminCreateFailed", "не удалось создать администратора (логин уже занят?)")
 	}
 	slog.Info("admin roster: created", "admin", username, "role", role, "id", id)
 	return m.store.GetAdmin(id)
@@ -58,7 +58,7 @@ func (m *Manager) CreateAdmin(username, password, role string) (model.Admin, err
 // admin_sessions rows cascade), so a colleague who is let go loses the panel on
 // their next request, not when their cookie happens to expire.
 func (m *Manager) DeleteAdmin(actorID, targetID int64) error {
-	target, err := m.rosterTarget(actorID, targetID, "удалить")
+	target, err := m.rosterTarget(actorID, targetID, opDelete)
 	if err != nil {
 		return err
 	}
@@ -71,12 +71,12 @@ func (m *Manager) DeleteAdmin(actorID, targetID int64) error {
 
 // SetAdminRole moves an account between roles.
 func (m *Manager) SetAdminRole(actorID, targetID int64, role string) error {
-	target, err := m.rosterTarget(actorID, targetID, "изменить")
+	target, err := m.rosterTarget(actorID, targetID, opEdit)
 	if err != nil {
 		return err
 	}
 	if !model.GrantableRole(role) {
-		return invalid("неизвестная роль %q", role)
+		return invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
 	}
 	if err := m.store.SetAdminRole(targetID, role); err != nil {
 		return err
@@ -90,12 +90,12 @@ func (m *Manager) SetAdminRole(actorID, targetID int64, role string) error {
 // login, and every session that account had is revoked: whoever was using the old
 // password is out.
 func (m *Manager) ResetAdminPassword(actorID, targetID int64, password string) error {
-	target, err := m.rosterTarget(actorID, targetID, "сбросить пароль")
+	target, err := m.rosterTarget(actorID, targetID, opReset)
 	if err != nil {
 		return err
 	}
 	if len(password) < minAdminPassword {
-		return invalid("пароль должен быть не короче %d символов", minAdminPassword)
+		return invalidCode("err.passwordTooShort", "пароль должен быть не короче {{min}} символов", map[string]any{"min": minAdminPassword})
 	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -111,24 +111,48 @@ func (m *Manager) ResetAdminPassword(actorID, targetID int64, password string) e
 	return nil
 }
 
+// rosterOp names the two refusals a roster action can raise. The verb ("delete",
+// "edit") is part of the sentence, so it cannot travel as an argument: an argument
+// reaches the panel verbatim and would land in Russian on an English screen. Hence
+// a code per operation rather than one code with the verb filled in.
+type rosterOp struct {
+	ownerCode, ownerMsg string
+	selfCode, selfMsg   string
+}
+
+var (
+	opDelete = rosterOp{
+		"err.cannotDeleteOwner", "нельзя удалить владельца панели",
+		"err.cannotDeleteSelf", "нельзя удалить собственную учётную запись",
+	}
+	opEdit = rosterOp{
+		"err.cannotEditOwner", "нельзя изменить владельца панели",
+		"err.cannotEditSelf", "нельзя изменить собственную учётную запись",
+	}
+	opReset = rosterOp{
+		"err.cannotResetOwner", "нельзя сбросить пароль владельца панели",
+		"err.cannotResetSelf", "нельзя сбросить пароль собственной учётной записи",
+	}
+)
+
 // rosterTarget resolves the admin an owner is acting on and rejects the two moves
 // that would strand the panel: acting on the owner (there is exactly one, and it
 // must remain) and acting on yourself through the roster (your own login and
 // password live in the profile dialog, which re-verifies the current password —
 // the roster does not).
-func (m *Manager) rosterTarget(actorID, targetID int64, verb string) (model.Admin, error) {
+func (m *Manager) rosterTarget(actorID, targetID int64, op rosterOp) (model.Admin, error) {
 	target, err := m.store.GetAdmin(targetID)
 	if errors.Is(err, store.ErrAdminNotFound) {
-		return model.Admin{}, invalid("администратор не найден")
+		return model.Admin{}, invalidCode("err.adminNotFound", "администратор не найден")
 	}
 	if err != nil {
 		return model.Admin{}, err
 	}
 	if target.Role == model.RoleOwner {
-		return model.Admin{}, invalid("нельзя %s владельца панели", verb)
+		return model.Admin{}, invalidCode(op.ownerCode, op.ownerMsg)
 	}
 	if target.ID == actorID {
-		return model.Admin{}, invalid("нельзя %s собственную учётную запись", verb)
+		return model.Admin{}, invalidCode(op.selfCode, op.selfMsg)
 	}
 	return target, nil
 }

@@ -54,37 +54,40 @@ const (
 	EventPaymentCancelled = "payment.cancelled"
 )
 
-// UserEventCatalog is the stable key→label list the journal UI iterates over (for
-// the filter dropdown and for rendering an action name). Adding an event appends here.
-var UserEventCatalog = []struct{ Key, Label string }{
-	{EventUserCreated, "Пользователь создан"},
-	{EventUserRegistered, "Саморегистрация"},
-	{EventUserDeleted, "Пользователь удалён"},
-	{EventUserRenamed, "Переименован"},
-	{EventUserEnabled, "Включён"},
-	{EventUserDisabled, "Отключён"},
-	{EventUserLimits, "Изменены лимиты"},
-	{EventTrafficReset, "Сброшен трафик"},
-	{EventQuotaReset, "Автосброс квоты"},
-	{EventResetPeriod, "Изменён период автосброса"},
-	{EventSubRotated, "Обновлена ссылка подписки"},
-	{EventUserExpired, "Подписка истекла"},
-	{EventUserLimited, "Исчерпан трафик"},
-	{EventDeviceLimited, "Превышен лимит устройств"},
-	{EventTelegramLinked, "Telegram привязан"},
-	{EventTelegramUnlink, "Telegram отвязан"},
-	{EventPlanChanged, "Изменён тариф"},
-	{EventPlanDowngraded, "Переведён на бесплатный тариф"},
-	{EventPlanCancelled, "Подписка отменена"},
-	{EventPaymentCreated, "Заказ создан"},
-	{EventPaymentPaid, "Оплачено"},
-	{EventPaymentCancelled, "Заказ отменён"},
+// UserEventCatalog is the stable key list the journal UI iterates over to build its
+// filter dropdown. Keys only: the panel renders every action name from its own
+// dictionaries, so the label is decided by the language the ADMIN chose in the
+// browser rather than by whatever the server happens to speak. Adding an event
+// appends here — and to events.action.* in the frontend dictionaries.
+var UserEventCatalog = []string{
+	EventUserCreated,
+	EventUserRegistered,
+	EventUserDeleted,
+	EventUserRenamed,
+	EventUserEnabled,
+	EventUserDisabled,
+	EventUserLimits,
+	EventTrafficReset,
+	EventQuotaReset,
+	EventResetPeriod,
+	EventSubRotated,
+	EventUserExpired,
+	EventUserLimited,
+	EventDeviceLimited,
+	EventTelegramLinked,
+	EventTelegramUnlink,
+	EventPlanChanged,
+	EventPlanDowngraded,
+	EventPlanCancelled,
+	EventPaymentCreated,
+	EventPaymentPaid,
+	EventPaymentCancelled,
 }
 
 // ValidUserEvent reports whether k is a known audit action key.
 func ValidUserEvent(k string) bool {
-	for _, e := range UserEventCatalog {
-		if e.Key == k {
+	for _, key := range UserEventCatalog {
+		if key == k {
 			return true
 		}
 	}

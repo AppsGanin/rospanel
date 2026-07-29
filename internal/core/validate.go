@@ -23,11 +23,11 @@ const (
 func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 	switch {
 	case dataLimit < 0 || dataLimit > maxDataLimit:
-		return invalid("некорректный лимит трафика")
+		return invalidCode("err.badTrafficLimit", "некорректный лимит трафика")
 	case expireAt < 0 || expireAt > maxExpireAt:
-		return invalid("некорректная дата истечения")
+		return invalidCode("err.badExpiryDate", "некорректная дата истечения")
 	case deviceLimit < 0:
-		return invalid("лимит устройств не может быть отрицательным")
+		return invalidCode("err.deviceLimitNegative", "лимит устройств не может быть отрицательным")
 	}
 	return nil
 }
@@ -36,10 +36,10 @@ func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 func cleanUserName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", invalid("укажите имя")
+		return "", invalidCode("err.nameRequired", "укажите имя")
 	}
 	if len([]rune(name)) > maxUserNameLen {
-		return "", invalid("имя слишком длинное (макс. %d символов)", maxUserNameLen)
+		return "", invalidCode("err.nameTooLong", "имя слишком длинное (макс. {{max}} символов)", map[string]any{"max": maxUserNameLen})
 	}
 	return name, nil
 }

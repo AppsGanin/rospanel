@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn, SegmentedControl, ToolDialog } from "./ui";
 
 // LogViewer is the live-tailing log dialog shared by the panel and Xray log views.
@@ -19,6 +20,7 @@ export function LogViewer({
   classify: (line: string) => string;
   colorOf: (cat: string) => string;
 }) {
+  const { t } = useTranslation();
   const [lines, setLines] = useState<string[]>([]);
   const [level, setLevel] = useState("all");
   const [atBottom, setAtBottom] = useState(true);
@@ -78,8 +80,8 @@ export function LogViewer({
         {shown.length === 0 ? (
           <p className="text-gray-400">
             {lines.length === 0
-              ? "Ожидание логов…"
-              : "Нет строк выбранного уровня"}
+              ? t("logs.waiting")
+              : t("logs.noLinesAtLevel")}
           </p>
         ) : (
           shown.map((l, i) => (
@@ -95,7 +97,7 @@ export function LogViewer({
       {!atBottom && (
         <button
           onClick={scrollToBottom}
-          aria-label="Прокрутить вниз"
+          aria-label={t("logs.scrollDown")}
           className="absolute bottom-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700"
         >
           <svg

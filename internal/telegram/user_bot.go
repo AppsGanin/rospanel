@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/actor"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -185,7 +186,7 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 		case !allowed && first:
 			// Said once per window. Answering every rejected update would make a flood
 			// produce more outbound traffic than it did inbound.
-			s.send(ctx, client, chatID, "⏳ Слишком много сообщений подряд. Подождите минуту.")
+			s.send(ctx, client, chatID, i18n.T(s.lang(chatID), "user.tooManyMessages"))
 			return
 		case !allowed:
 			return
@@ -223,6 +224,18 @@ func (s *UserService) trackSubscriber(from *User, chatID int64) {
 	if err := s.store.UpsertSubscriber(chatID, userID, username, firstName, lang, time.Now().Unix()); err != nil {
 		log.Printf("telegram user: track subscriber %d: %v", chatID, err)
 	}
+}
+
+// lang resolves one chat's language from the subscriber record. Telegram hands us
+// the client's interface language on first contact and trackSubscriber stores it,
+// so every reply — including one sent long after that contact — can be written in
+// it without asking. An unknown chat falls back to the reference language.
+func (s *UserService) lang(chatID int64) i18n.Lang {
+	sub, err := s.store.SubscriberByChat(chatID)
+	if err != nil || sub == nil {
+		return i18n.Default
+	}
+	return i18n.Normalize(sub.Lang)
 }
 
 // selfActorCtx marks the context as "this VPN user is acting on themself".
@@ -271,6 +284,7 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 
 // handleRegCode checks an entered invite code and, on a match, registers the user.
 func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID int64, set *model.Settings, code, name string) {
+	lang := s.lang(chatID)
 	want := strings.TrimSpace(set.TGUserRegCode)
 	if !set.RegistrationOpen() || set.RegMode() != model.RegInvite || want == "" {
 		s.sendWelcome(ctx, client, set, chatID)
@@ -282,12 +296,12 @@ func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID 
 	// rather than only on failures, so a correct guess mixed into a run of wrong ones
 	// doesn't buy the attacker a fresh budget.
 	if allowed, _ := s.codeRate.allow(chatID, time.Now()); !allowed {
-		s.send(ctx, client, chatID, "⚠️ Слишком много попыток. Попробуйте позже или обратитесь к администратору.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.tooManyAttempts"))
 		s.clearPending(chatID)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(code)), []byte(want)) != 1 {
-		s.send(ctx, client, chatID, "⚠️ Неверный код-приглашение. Попробуйте ещё раз или обратитесь к администратору.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.badInvite"))
 		s.setPending(chatID, "regcode")
 		return
 	}
@@ -309,36 +323,37 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 }
 
 func (s *UserService) sendWelcome(ctx context.Context, client *Client, set *model.Settings, chatID int64) {
+	lang := s.lang(chatID)
 	if !set.RegistrationOpen() {
 		s.sendMenu(ctx, client, chatID,
-			"👋 Это бот VPN-подписки.\n\nРегистрация новых пользователей закрыта. Обратитесь к администратору.",
-			supportOnlyRows(set))
+			i18n.T(lang, "user.regClosedWelcome"),
+			supportOnlyRows(set, lang))
 		return
 	}
-	hint := "Нажмите «Зарегистрироваться» — VPN-подписка будет создана автоматически."
+	hint := i18n.T(lang, "user.hintOpen")
 	switch set.RegMode() {
 	case model.RegModeration:
-		hint = "Нажмите «Зарегистрироваться» — заявку рассмотрит администратор, и мы откроем доступ."
+		hint = i18n.T(lang, "user.hintModeration")
 	case model.RegInvite:
-		hint = "Нажмите «Зарегистрироваться» и введите код-приглашение от администратора."
+		hint = i18n.T(lang, "user.hintInvite")
 	}
-	s.sendMenu(ctx, client, chatID, "👋 <b>Добро пожаловать!</b>\n\n"+hint, welcomeRows(set))
+	s.sendMenu(ctx, client, chatID, i18n.T(lang, "user.welcome")+"\n\n"+hint, welcomeRows(set, lang))
 }
 
 // welcomeRows is the pre-registration keyboard. Support is offered here too: someone
 // who can't get past registration — wrong invite code, waiting on moderation — is
 // exactly the person who needs to reach a human, and they have no menu to reach it
 // from.
-func welcomeRows(set *model.Settings) [][]InlineButton {
-	rows := [][]InlineButton{{{Text: "✨ Зарегистрироваться", CallbackData: "vu:reg"}}}
-	return append(rows, supportOnlyRows(set)...)
+func welcomeRows(set *model.Settings, lang i18n.Lang) [][]InlineButton {
+	rows := [][]InlineButton{{{Text: i18n.T(lang, "user.btnRegister"), CallbackData: "vu:reg"}}}
+	return append(rows, supportOnlyRows(set, lang)...)
 }
 
 // supportOnlyRows is the support link on its own, or no rows at all when support
 // isn't configured.
-func supportOnlyRows(set *model.Settings) [][]InlineButton {
+func supportOnlyRows(set *model.Settings, lang i18n.Lang) [][]InlineButton {
 	if link := set.SupportLink(); link != "" {
-		return [][]InlineButton{{{Text: "💬 Поддержка", URL: link}}}
+		return [][]InlineButton{{{Text: i18n.T(lang, "user.btnSupport"), URL: link}}}
 	}
 	return nil
 }
@@ -358,6 +373,7 @@ func tgDisplayName(from *User, fallbackID int64) string {
 }
 
 func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *CallbackQuery) {
+	lang := s.lang(cb.Message.Chat.ID)
 	_ = client.AnswerCallback(ctx, cb.ID, "")
 	if cb.Message == nil {
 		return
@@ -386,19 +402,19 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 	case "vu:reg":
 		if !set.RegistrationOpen() {
 			s.edit(ctx, client, chatID, msgID,
-				"Регистрация закрыта. Обратитесь к администратору.", [][]InlineButton{})
+				i18n.T(lang, "user.regClosed"), [][]InlineButton{})
 			return
 		}
 		// Invite mode: ask for the code first; the account is created only once it matches.
 		if set.RegMode() == model.RegInvite {
 			s.setPending(chatID, "regcode")
-			s.edit(ctx, client, chatID, msgID, "🔑 Введите код-приглашение:",
-				[][]InlineButton{{{Text: "⬅️ Отмена", CallbackData: "vu:cancel"}}})
+			s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.enterInvite"),
+				[][]InlineButton{{{Text: i18n.T(lang, "user.btnCancel"), CallbackData: "vu:cancel"}}})
 			return
 		}
 		// Name is taken automatically from the Telegram profile (first name, or the
 		// numeric Telegram id when it's empty) — no manual entry needed.
-		s.edit(ctx, client, chatID, msgID, "✨ Создаю аккаунт…", [][]InlineButton{})
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.creatingAccount"), [][]InlineButton{})
 		s.doRegister(ctx, client, chatID, set, tgDisplayName(cb.From, chatID))
 	case "vu:cancel":
 		s.clearPending(chatID)
@@ -407,9 +423,10 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 }
 
 func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int64, set *model.Settings, name string) {
+	lang := s.lang(chatID)
 	name = strings.TrimSpace(name)
 	if name == "" {
-		s.send(ctx, client, chatID, "Имя не может быть пустым. Отправьте имя ещё раз.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.emptyName"))
 		s.setPending(chatID, "reg")
 		return
 	}
@@ -424,17 +441,17 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		return
 	}
 	if !set.RegistrationOpen() {
-		s.send(ctx, client, chatID, "Регистрация закрыта. Обратитесь к администратору.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.regClosed"))
 		return
 	}
 	// A chat that already has a pending moderated request must not re-tap its way
 	// through the global rate limit (or spam admins) — short-circuit before both.
 	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {
-		s.send(ctx, client, chatID, "⏳ Ваша заявка уже на рассмотрении. Дождитесь ответа администратора.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.requestPending"))
 		return
 	}
 	if !s.allowRegistration(time.Now()) {
-		s.send(ctx, client, chatID, "Сейчас слишком много регистраций. Попробуйте через минуту.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.tooManySignups"))
 		return
 	}
 	// Moderation: don't create an account — file a request an admin must approve. No
@@ -442,46 +459,47 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	if set.RegMode() == model.RegModeration {
 		ok, err := s.panel.RequestRegistration(ctx, chatID, name)
 		if err != nil {
-			s.send(ctx, client, chatID, "⚠️ Не удалось отправить заявку: "+esc(err.Error()))
+			s.send(ctx, client, chatID, i18n.T(lang, "user.requestFailed", esc(err.Error())))
 			return
 		}
 		if !ok {
-			s.send(ctx, client, chatID, "⏳ Ваша заявка уже на рассмотрении. Дождитесь ответа администратора.")
+			s.send(ctx, client, chatID, i18n.T(lang, "user.requestPending"))
 			return
 		}
 		s.send(ctx, client, chatID,
-			"✅ <b>Заявка отправлена!</b>\n\nОжидает одобрения администратора — мы сообщим, как только доступ откроют.")
+			i18n.T(lang, "user.requestSent"))
 		return
 	}
 	// Open / invite: create the account and show its menu right away. CreateRegistered
 	// User applies the trial/free plan when billing is on, else a plain account.
 	u, err := s.panel.CreateRegisteredUser(ctx, name)
 	if err != nil {
-		s.send(ctx, client, chatID, "⚠️ Не удалось создать аккаунт: "+esc(err.Error()))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.createFailed", esc(err.Error())))
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, "⚠️ Аккаунт создан, но не удалось привязать чат: "+esc(err.Error()))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.linkFailed", esc(err.Error())))
 		return
 	}
 	log.Printf("telegram user: registered user %d from chat %d", u.ID, chatID)
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	u.TgChatID = chatID
 	s.sendMenu(ctx, client, chatID,
-		"✅ Аккаунт создан!\n\n"+userSelfCard(*u, set, s.panel),
-		userMenuRows(set, *u))
+		i18n.T(lang, "user.accountCreated")+"\n\n"+userSelfCard(*u, set, s.panel, lang),
+		userMenuRows(set, *u, lang))
 }
 
 // restoreDetachedUser reattaches an account this chat previously unlinked (if any)
 // and shows its menu, returning the restored user. Returns nil when the chat has no
 // detached account to restore, so the caller falls through to normal registration.
 func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, chatID int64, set *model.Settings) *model.User {
+	lang := s.lang(chatID)
 	u, err := s.store.GetDetachedUserByPrevChat(chatID)
 	if err != nil || u == nil {
 		return nil
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, "⚠️ Не удалось восстановить аккаунт: "+esc(err.Error()))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.restoreFailed", esc(err.Error())))
 		return u
 	}
 	if fresh, ok := s.findLinkedUser(chatID); ok {
@@ -492,8 +510,8 @@ func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, c
 	// unlinked, since the unlink WAS recorded.
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	s.sendMenu(ctx, client, chatID,
-		"♻️ С возвращением! Ваш прежний аккаунт восстановлен.\n\n"+userSelfCard(*u, set, s.panel),
-		userMenuRows(set, *u))
+		i18n.T(lang, "user.welcomeBack")+"\n\n"+userSelfCard(*u, set, s.panel, lang),
+		userMenuRows(set, *u, lang))
 	return u
 }
 
@@ -506,17 +524,18 @@ func (s *UserService) findLinkedUser(chatID int64) (model.User, bool) {
 }
 
 func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set *model.Settings, chatID int64, code string) {
+	lang := s.lang(chatID)
 	u, err := s.store.GetUserByTgLinkCode(code)
 	if err != nil {
-		s.send(ctx, client, chatID, "⚠️ Код недействителен или устарел. Откройте страницу подписки и получите новый.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.codeInvalid"))
 		return
 	}
 	if u.TgChatID != 0 && u.TgChatID != chatID {
-		s.send(ctx, client, chatID, "⚠️ Этот аккаунт уже привязан к другому чату.")
+		s.send(ctx, client, chatID, i18n.T(lang, "user.alreadyLinked"))
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, "⚠️ Не удалось привязать чат: "+esc(err.Error()))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.linkChatFailed", esc(err.Error())))
 		return
 	}
 	_ = s.store.ClearUserTgLinkCode(u.ID) // one-time: burn the code
@@ -530,27 +549,27 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 // @username the audit row records as the account that was bound.
 func actorFromCtxName(ctx context.Context) string { return actor.From(ctx).Name }
 
-func userMenuRows(set *model.Settings, u model.User) [][]InlineButton {
+func userMenuRows(set *model.Settings, u model.User, lang i18n.Lang) [][]InlineButton {
 	var rows [][]InlineButton
 	// A Mini App button opens the subscription page inside Telegram (QR, link,
 	// import buttons — all on one page). Needs an https:// URL, so it's skipped
 	// until the host is set.
 	if url := subWebAppURL(set, u); url != "" {
-		rows = append(rows, []InlineButton{{Text: "🌐 Моя подписка", WebApp: &WebAppInfo{URL: url}}})
+		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnMySub"), WebApp: &WebAppInfo{URL: url}}})
 	}
 	if set.BillingEnabled {
-		rows = append(rows, []InlineButton{{Text: "💳 Тарифы", CallbackData: "vu:plans"}})
+		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnPlans"), CallbackData: "vu:plans"}})
 	}
 	// Support lives in its own bot, so this is a plain link out. Empty when support is
 	// off or its @username never resolved — a dead button is worse than none.
 	if link := set.SupportLink(); link != "" {
-		rows = append(rows, []InlineButton{{Text: "💬 Поддержка", URL: link}})
+		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnSupport"), URL: link}})
 	}
 	// No self-service unlink. It only ever cost the person their access — the
 	// account survives, but they land back on the welcome screen and write to
 	// support to get it back — while an operator who genuinely needs to detach a
 	// chat already has the button in the user's card in the panel.
-	rows = append(rows, []InlineButton{{Text: "🔄 Обновить", CallbackData: "vu:menu"}})
+	rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnRefresh"), CallbackData: "vu:menu"}})
 	return rows
 }
 
@@ -569,114 +588,116 @@ func subWebAppURL(set *model.Settings, u model.User) string {
 
 // userSelfCard is the friendly subscription card the user sees in the bot (no
 // internal id, emoji labels, human-readable expiry / last-seen).
-func userSelfCard(u model.User, set *model.Settings, panel Panel) string {
+func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang) string {
 	loc := panel.Location()
 	now := time.Now().Unix()
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "👤 <b>%s</b> · <code>#%d</code>\n\n", esc(u.Name), u.ID)
-	fmt.Fprintf(&b, "%s\n", userStatusLine(u.Status))
+	fmt.Fprintf(&b, "%s\n", userStatusLine(u.Status, lang))
 
 	// Plan (only when billing is in play).
 	if u.PlanID != 0 {
 		if name := panel.PlanName(u.PlanID); name != "" {
-			fmt.Fprintf(&b, "💳 Тариф: <b>%s</b>\n", esc(name))
+			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardPlan", esc(name)))
 		}
 	} else if set.BillingEnabled {
-		b.WriteString("💳 Тариф: вручную\n")
+		b.WriteString(i18n.T(lang, "user.cardPlanManual") + "\n")
 	}
 
 	// Expiry + remaining time.
 	if u.ExpireAt > 0 {
 		exp := time.Unix(u.ExpireAt, 0).In(loc).Format("02.01.2006")
 		if u.ExpireAt > now {
-			fmt.Fprintf(&b, "📅 До %s · %s\n", exp, humanLeft(u.ExpireAt-now))
+			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardUntil", exp, humanLeft(u.ExpireAt-now, lang)))
 		} else {
-			fmt.Fprintf(&b, "📅 Срок истёк %s\n", exp)
+			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardExpiredOn", exp))
 		}
 	} else {
-		b.WriteString("📅 Бессрочно\n")
+		b.WriteString(i18n.T(lang, "user.cardNoExpiry") + "\n")
 	}
 
 	// Traffic.
 	used := formatBytes(u.UsedUp + u.UsedDown)
 	if u.DataLimit > 0 {
 		pct := int(min(100, (u.UsedUp+u.UsedDown)*100/u.DataLimit))
-		fmt.Fprintf(&b, "📊 %s из %s · %d%%\n", used, formatBytes(u.DataLimit), pct)
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardTraffic", used, formatBytes(u.DataLimit), pct))
 	} else {
-		fmt.Fprintf(&b, "📊 %s · безлимит\n", used)
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardTrafficUnlimited", used))
 	}
 
 	// Devices (only when limited).
 	if u.DeviceLimit > 0 {
-		fmt.Fprintf(&b, "📱 Устройства: %d из %d\n", u.ActiveDevices, u.DeviceLimit)
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevices", u.ActiveDevices, u.DeviceLimit))
 	}
 
-	b.WriteString(userOnlineLine(u, now, loc))
+	b.WriteString(userOnlineLine(u, now, loc, lang))
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // userStatusLine renders a friendly, emoji-led status for the user card.
-func userStatusLine(status string) string {
+func userStatusLine(status string, lang i18n.Lang) string {
 	switch status {
 	case model.StatusActive:
-		return "🟢 <b>Активна</b>"
+		return i18n.T(lang, "user.stActive")
 	case model.StatusExpired:
-		return "🔴 <b>Срок истёк</b>"
+		return i18n.T(lang, "user.stExpired")
 	case model.StatusLimited:
-		return "🟠 <b>Лимит трафика</b>"
+		return i18n.T(lang, "user.stLimited")
 	case model.StatusDeviceLimited:
-		return "🟠 <b>Лишние устройства</b>"
+		return i18n.T(lang, "user.stDeviceLimited")
 	case model.StatusDisabled:
-		return "⚪ <b>Отключена</b>"
+		return i18n.T(lang, "user.stDisabled")
 	default:
 		return "▫️ " + esc(status)
 	}
 }
 
-// humanLeft renders remaining time as "осталось N дн./ч./мин.".
-func humanLeft(sec int64) string {
+// humanLeft renders remaining time as "N days/hours/minutes left".
+func humanLeft(sec int64, lang i18n.Lang) string {
 	if d := sec / 86400; d >= 1 {
-		return fmt.Sprintf("осталось %d дн.", d)
+		return i18n.T(lang, "user.leftDays", d)
 	}
 	if h := sec / 3600; h >= 1 {
-		return fmt.Sprintf("осталось %d ч.", h)
+		return i18n.T(lang, "user.leftHours", h)
 	}
-	return fmt.Sprintf("осталось %d мин.", sec/60)
+	return i18n.T(lang, "user.leftMinutes", sec/60)
 }
 
 // userOnlineLine renders the last-seen state in human terms.
-func userOnlineLine(u model.User, now int64, loc *time.Location) string {
+func userOnlineLine(u model.User, now int64, loc *time.Location, lang i18n.Lang) string {
 	if u.LastSeen == 0 {
-		return "🕐 Ещё не подключались"
+		return i18n.T(lang, "user.neverConnected")
 	}
 	diff := now - u.LastSeen
 	switch {
 	case diff < 120:
-		return "🟢 Сейчас в сети"
+		return i18n.T(lang, "user.onlineNow")
 	case diff < 3600:
-		return fmt.Sprintf("🕐 Был в сети %d мин назад", diff/60)
+		return i18n.T(lang, "user.seenMinutes", diff/60)
 	case diff < 86400:
-		return fmt.Sprintf("🕐 Был в сети %d ч назад", diff/3600)
+		return i18n.T(lang, "user.seenHours", diff/3600)
 	case diff < 7*86400:
-		return fmt.Sprintf("🕐 Был в сети %d дн назад", diff/86400)
+		return i18n.T(lang, "user.seenDays", diff/86400)
 	default:
-		return "🕐 Был в сети " + time.Unix(u.LastSeen, 0).In(loc).Format("02.01.2006")
+		return i18n.T(lang, "user.seenOn", time.Unix(u.LastSeen, 0).In(loc).Format("02.01.2006"))
 	}
 }
 
 func (s *UserService) sendUserMenu(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User) {
+	lang := s.lang(chatID)
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel), userMenuRows(set, u))
+	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel, lang), userMenuRows(set, u, lang))
 }
 
 func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
+	lang := s.lang(chatID)
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel), userMenuRows(set, u))
+	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel, lang), userMenuRows(set, u, lang))
 }
 
 func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb *CallbackQuery, set *model.Settings, u model.User) {
@@ -711,42 +732,45 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 
 // confirmCancelPlan asks the user to confirm cancelling their active paid plan.
 func (s *UserService) confirmCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, u model.User) {
+	lang := s.lang(chatID)
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
 	active := s.panel.ActivePaidPlan(u)
 	if active == nil {
-		s.edit(ctx, client, chatID, msgID, "Активной подписки нет.",
-			[][]InlineButton{{{Text: "🏠 Меню", CallbackData: "vu:menu"}}})
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.noActiveSub"),
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}}})
 		return
 	}
 	s.edit(ctx, client, chatID, msgID,
-		"Отменить подписку «"+esc(active.Name)+"»?\nВы перейдёте на бесплатный тариф, оставшееся оплаченное время сгорит.",
+		i18n.T(lang, "user.cancelConfirm", esc(active.Name)),
 		[][]InlineButton{
-			{{Text: "🚫 Да, отменить", CallbackData: "vu:cancelyes"}},
-			{{Text: "⬅️ Отмена", CallbackData: "vu:plans"}},
+			{{Text: i18n.T(lang, "user.btnCancelYes"), CallbackData: "vu:cancelyes"}},
+			{{Text: i18n.T(lang, "user.btnCancel"), CallbackData: "vu:plans"}},
 		})
 }
 
 // doCancelPlan cancels the active paid plan (→ free plan) and returns to the menu.
 func (s *UserService) doCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
+	lang := s.lang(chatID)
 	if err := s.panel.CancelUserPlan(ctx, u.ID); err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
-			[][]InlineButton{{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}}})
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}})
 		return
 	}
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
 	s.edit(ctx, client, chatID, msgID,
-		"✅ Подписка отменена — вы на бесплатном тарифе.\n\n"+userSelfCard(u, set, s.panel),
-		userMenuRows(set, u))
+		i18n.T(lang, "user.subCancelled")+"\n\n"+userSelfCard(u, set, s.panel, lang),
+		userMenuRows(set, u, lang))
 }
 
 // showPlans presents the billing options. While a paid plan is active only renewal
 // and cancellation are offered (no switching); otherwise the paid tariffs are listed
 // for purchase. Free/trial plans are never self-selectable here.
 func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
+	lang := s.lang(chatID)
 	if !set.BillingEnabled {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 		return
@@ -757,19 +781,18 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	// Active paid plan: renew the same plan or cancel it — switching is blocked.
 	if active := s.panel.ActivePaidPlan(u); active != nil {
 		s.edit(ctx, client, chatID, msgID,
-			"💳 <b>Подписка</b>\n\nАктивен тариф «"+esc(active.Name)+"»"+planActiveUntil(u, s.panel)+
-				".\nМожно продлить его или отменить. Сменить тариф можно только после отмены.",
+			i18n.T(lang, "user.planActive", esc(active.Name), planActiveUntil(u, s.panel, lang)),
 			[][]InlineButton{
-				{{Text: "🔄 Продлить «" + active.Name + "»", CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}},
-				{{Text: "🚫 Отменить подписку", CallbackData: "vu:cancelplan"}},
-				{{Text: "⬅️ Назад", CallbackData: "vu:menu"}},
+				{{Text: i18n.T(lang, "user.btnRenewPlan", active.Name), CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}},
+				{{Text: i18n.T(lang, "user.btnCancelSub"), CallbackData: "vu:cancelplan"}},
+				{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}},
 			})
 		return
 	}
 	plans, err := s.panel.ListTariffPlans(false)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
-			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}}})
 		return
 	}
 	var rows [][]InlineButton
@@ -778,31 +801,31 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 			continue // paid plans only
 		}
 		rows = append(rows, []InlineButton{{
-			Text:         planButtonLabel(p),
+			Text:         planButtonLabel(p, lang),
 			CallbackData: fmt.Sprintf("vu:buy:%d", p.ID),
 		}})
 	}
 	if len(rows) == 0 {
-		s.edit(ctx, client, chatID, msgID, "Сейчас нет доступных тарифов.",
-			[][]InlineButton{{{Text: "⬅️ Назад", CallbackData: "vu:menu"}}})
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.noPlans"),
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}}})
 		return
 	}
-	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: "vu:menu"}})
-	msg := "💳 <b>Тарифы</b>\n\n"
+	rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}})
+	msg := i18n.T(lang, "user.plansTitle") + "\n\n"
 	if len(s.panel.PaymentMethods()) > 0 {
-		msg += "Оплата картой или криптой — тариф активируется автоматически."
+		msg += i18n.T(lang, "user.plansAuto")
 	} else {
-		msg += "Оплата и подтверждение админом."
+		msg += i18n.T(lang, "user.plansManual")
 	}
 	s.edit(ctx, client, chatID, msgID, msg, rows)
 }
 
-// planActiveUntil renders " до DD.MM.YYYY" for a user's paid expiry (empty if none).
-func planActiveUntil(u model.User, panel Panel) string {
+// planActiveUntil renders " until DD.MM.YYYY" for a user's paid expiry (empty if none).
+func planActiveUntil(u model.User, panel Panel, lang i18n.Lang) string {
 	if u.ExpireAt <= 0 {
 		return ""
 	}
-	return " до " + time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006")
+	return " " + i18n.T(lang, "user.untilDate", time.Unix(u.ExpireAt, 0).In(panel.Location()).Format("02.01.2006"))
 }
 
 // providerButton is the pay-method button text: a wallet icon plus the provider's
@@ -812,6 +835,7 @@ func (s *UserService) providerButton(key string) string {
 }
 
 func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
+	lang := s.lang(chatID)
 	var planID int64
 	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
@@ -828,49 +852,51 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		for _, p := range methods {
 			rows = append(rows, []InlineButton{{Text: s.providerButton(p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
 		}
-		rows = append(rows, []InlineButton{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}})
-		s.edit(ctx, client, chatID, msgID, "Выберите способ оплаты:", rows)
+		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}})
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.pickPayMethod"), rows)
 	}
 }
 
 // startProviderPayment creates a provider payment and shows the pay button. The
 // tariff is applied automatically once the provider confirms (webhook/poll).
 func (s *UserService) startProviderPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planIDStr, provider string) {
+	lang := s.lang(chatID)
 	var planID int64
 	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
 		return
 	}
-	order, err := s.panel.StartPlanPayment(ctx, u.ID, planID, provider)
+	order, err := s.panel.StartPlanPayment(ctx, lang, u.ID, planID, provider)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{
-				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
-				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+				{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
+				{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
 			})
 		return
 	}
-	msg := fmt.Sprintf("💳 <b>Оплата заказа #%d</b>\nСумма: %d ₽\n\nНажмите кнопку, чтобы оплатить. Тариф активируется автоматически после оплаты.", order.ID, order.AmountRub)
+	msg := i18n.T(lang, "user.orderPay", order.ID, order.AmountRub)
 	s.edit(ctx, client, chatID, msgID, msg,
 		[][]InlineButton{
-			{{Text: "💳 Оплатить", URL: order.PayURL}},
-			{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			{{Text: i18n.T(lang, "user.btnPay"), URL: order.PayURL},
+				{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
 		})
 }
 
 func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64) {
-	_, msg, err := s.panel.RequestPlanPayment(ctx, u.ID, planID)
+	lang := s.lang(chatID)
+	_, msg, err := s.panel.RequestPlanPayment(ctx, lang, u.ID, planID)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
 			[][]InlineButton{
-				{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
-				{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+				{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
+				{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
 			})
 		return
 	}
 	s.edit(ctx, client, chatID, msgID, esc(msg),
 		[][]InlineButton{
-			{{Text: "⬅️ К тарифам", CallbackData: "vu:plans"}},
-			{{Text: "🏠 Меню", CallbackData: "vu:menu"}},
+			{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
+			{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
 		})
 }
 
@@ -910,26 +936,26 @@ func userStartLinkCode(arg string) string {
 // confirmations and support replies along with the newsletter.
 
 // mailingCard renders the current state and the button that flips it.
-func mailingCard(optOut bool) (string, [][]InlineButton) {
+func mailingCard(optOut bool, lang i18n.Lang) (string, [][]InlineButton) {
 	if optOut {
-		return "📣 <b>Рассылка</b>\n\nСейчас: <b>выключена</b>\n\n" +
-				"Служебные уведомления — оплата и ответы поддержки — приходят в любом случае.",
-			[][]InlineButton{{{Text: "🔔 Подписаться", CallbackData: "vu:mail:on"}}}
+		return i18n.T(lang, "user.mailingOff"),
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnSubscribe"), CallbackData: "vu:mail:on"}}}
 	}
-	return "📣 <b>Рассылка</b>\n\nСейчас: <b>включена</b>\n\nНовости сервиса и важные объявления.",
-		[][]InlineButton{{{Text: "🔕 Отписаться", CallbackData: "vu:mail:off"}}}
+	return i18n.T(lang, "user.mailingOn"),
+		[][]InlineButton{{{Text: i18n.T(lang, "user.btnUnsubscribe"), CallbackData: "vu:mail:off"}}}
 }
 
 // showMailing displays the toggle. msgID 0 sends a new message; otherwise the card
 // is edited in place, like the rest of the bot's screens.
 func (s *UserService) showMailing(ctx context.Context, client *Client, chatID, msgID int64) {
+	lang := s.lang(chatID)
 	optOut := false
 	if sub, err := s.store.SubscriberByChat(chatID); err != nil {
 		log.Printf("telegram user: mailing state for %d: %v", chatID, err)
 	} else if sub != nil {
 		optOut = sub.OptOut
 	}
-	text, rows := mailingCard(optOut)
+	text, rows := mailingCard(optOut, lang)
 	if msgID == 0 {
 		s.sendMenu(ctx, client, chatID, text, rows)
 		return
@@ -949,9 +975,11 @@ func (s *UserService) setMailing(ctx context.Context, client *Client, chatID, ms
 // the card it opens shows the current state and the single button that flips it, so
 // naming each direction as its own command only made the menu longer without telling
 // anyone anything the card doesn't.
-var userBotCommands = []BotCommand{
-	{Command: "start", Description: "Моя подписка"},
-	{Command: "mailing", Description: "Рассылка: подписка и отписка"},
+func userBotCommands(lang i18n.Lang) []BotCommand {
+	return []BotCommand{
+		{Command: "start", Description: i18n.T(lang, "user.cmdStart")},
+		{Command: "mailing", Description: i18n.T(lang, "user.cmdMailing")},
+	}
 }
 
 // publishCommands pushes the command menu once per token. Re-publishing on every
@@ -963,9 +991,31 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 	if done {
 		return
 	}
-	if err := client.SetMyCommands(ctx, userBotCommands); err != nil {
-		log.Printf("telegram user: publish commands: %v", err)
-		return // not latched: retried next cycle
+	// Telegram picks a command menu by the client's interface language, and falls
+	// back to the unscoped one for a language nothing was published for. That has to
+	// agree with i18n.Normalize, which words every message the bot sends: anything
+	// not recognisably Russian is answered in English, so English is what the
+	// fallback scope holds. Russian is published under the tags Normalize treats as
+	// Russian, or a Belarusian user would read Russian messages under an English menu.
+	//
+	// The English set is published to its own scope as well as the fallback. Dropping
+	// that call would leave whatever was last written to language_code=en in place —
+	// a scope match beats the fallback, so a stale English menu would outrank the
+	// fresh one, and only for English users.
+	for _, pub := range []struct {
+		lang  i18n.Lang
+		scope string
+	}{
+		{i18n.EN, ""}, // fallback: every language nothing is published for
+		{i18n.EN, "en"},
+		{i18n.RU, "ru"},
+		{i18n.RU, "be"},
+		{i18n.RU, "uk"},
+	} {
+		if err := client.SetMyCommands(ctx, userBotCommands(pub.lang), pub.scope); err != nil {
+			log.Printf("telegram user: publish commands (scope %q): %v", pub.scope, err)
+			return // not latched: retried next cycle
+		}
 	}
 	s.mu.Lock()
 	s.commandsFor = token

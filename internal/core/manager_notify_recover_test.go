@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestXrayCrashAndRecoveryArePaired(t *testing.T) {
 	}
 
 	// And it fires once: the supervisor may report recovery more than once (an
-	// auto-rollback that then starts cleanly), and a stream of "снова работает" is
+	// auto-rollback that then starts cleanly), and a stream of "working again" is
 	// its own kind of noise.
 	m.onXrayRecover()
 	if len(sent) != 2 {
@@ -60,8 +61,8 @@ func TestFmtDowntime(t *testing.T) {
 		2*time.Hour + 5*time.Minute: "2 ч 5 мин",
 	}
 	for d, want := range cases {
-		if got := fmtDowntime(d); got != want {
-			t.Errorf("fmtDowntime(%s) = %q, want %q", d, got, want)
+		if got := fmtDowntime(d, i18n.RU); got != want {
+			t.Errorf("fmtDowntime(%s, i18n.RU) = %q, want %q", d, got, want)
 		}
 	}
 }

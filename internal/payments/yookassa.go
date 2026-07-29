@@ -22,13 +22,13 @@ const keyYooKassa = "yookassa"
 func yooKassaDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyYooKassa,
-		Label: "ЮКасса",
-		Note:  "Карты, СБП · ₽",
+		Label: "YooKassa",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
 			{Key: "shop_id", Label: "shopId", Kind: FieldText},
-			{Key: "secret_key", Label: "Секретный ключ", Kind: FieldSecret, Placeholder: "live_… или test_…"},
-			{Key: "test", Label: "Тестовый магазин", Kind: FieldBool,
-				Help: "У ЮКассы нет отдельного адреса песочницы — тестовый режим включается тестовыми ключами."},
+			{Key: "secret_key", Label: "payField.secretKey", Kind: FieldSecret, Placeholder: "payHelp.yookassaKeyExample"},
+			{Key: "test", Label: "payField.testShop", Kind: FieldBool,
+				Help: "payHelp.yookassaSandbox"},
 		},
 		New: func(cfg Config) Client { return NewYooKassa(cfg.Get("shop_id"), cfg.Get("secret_key")) },
 	}
@@ -54,7 +54,7 @@ func (y *YooKassa) Webhook(ctx context.Context, body []byte, _ http.Header) (str
 		} `json:"object"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.Object.ID == "" {
-		return "", Result{}, fmt.Errorf("ЮКасса: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("YooKassa: malformed notification")
 	}
 	res, err := y.PaymentStatus(ctx, n.Object.ID)
 	if err != nil {
@@ -110,7 +110,7 @@ func (y *YooKassa) CreatePayment(ctx context.Context, amountRub int, orderID int
 		return "", "", err
 	}
 	if out.ID == "" || out.Confirmation.ConfirmationURL == "" {
-		return "", "", fmt.Errorf("ЮКасса: пустой ответ при создании платежа")
+		return "", "", fmt.Errorf("YooKassa: empty response when creating the payment")
 	}
 	return out.ID, out.Confirmation.ConfirmationURL, nil
 }
@@ -161,7 +161,7 @@ func (y *YooKassa) do(req *http.Request, out any) error {
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("ЮКасса: HTTP %d: %s", resp.StatusCode, string(data))
+		return fmt.Errorf("YooKassa: HTTP %d: %s", resp.StatusCode, string(data))
 	}
 	return json.Unmarshal(data, out)
 }

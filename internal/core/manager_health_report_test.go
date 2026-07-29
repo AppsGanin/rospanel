@@ -75,10 +75,12 @@ func TestMemHealthThresholds(t *testing.T) {
 
 func TestHumanBytes(t *testing.T) {
 	cases := map[int64]string{
-		512:                    "512 Б",
-		2 * 1024:               "2.0 КБ",
-		5 * 1024 * 1024:        "5.0 МБ",
-		3 * 1024 * 1024 * 1024: "3.0 ГБ",
+		// Units are language-neutral: the byte count is interpolated into a
+		// translated sentence on the panel, so it must not carry Russian of its own.
+		512:                    "512 B",
+		2 * 1024:               "2.0 KB",
+		5 * 1024 * 1024:        "5.0 MB",
+		3 * 1024 * 1024 * 1024: "3.0 GB",
 	}
 	for in, want := range cases {
 		if got := humanBytes(in); got != want {
@@ -91,13 +93,13 @@ func TestHumanDuration(t *testing.T) {
 	if got := humanDuration(0); got != "—" {
 		t.Fatalf("humanDuration(0) = %q", got)
 	}
-	if got := humanDuration(90); !strings.HasPrefix(got, "1м") {
+	if got := humanDuration(90); !strings.HasPrefix(got, "1m") {
 		t.Fatalf("humanDuration(90s) = %q, want minutes", got)
 	}
-	if got := humanDuration(3 * 3600); !strings.Contains(got, "ч") {
+	if got := humanDuration(3 * 3600); !strings.Contains(got, "h") {
 		t.Fatalf("humanDuration(3h) = %q, want hours", got)
 	}
-	if got := humanDuration(50 * 3600); !strings.Contains(got, "д") {
+	if got := humanDuration(50 * 3600); !strings.Contains(got, "d") {
 		t.Fatalf("humanDuration(50h) = %q, want days", got)
 	}
 }

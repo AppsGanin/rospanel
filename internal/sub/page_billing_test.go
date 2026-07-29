@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"strings"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestPageBillingBlock(t *testing.T) {
 			{Key: "cryptobot", Label: "Криптовалютой (CryptoBot)"},
 		},
 	}
-	html, err := Page(u, One(set), billing)
+	html, err := Page(u, One(set), billing, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestPageBillingLocked(t *testing.T) {
 		Plans:       []BillingPlan{{ID: 3, Name: "Стандарт", Label: "199 ₽ / 30 дн.", Current: true}},
 		Providers:   []BillingPay{{Key: "cryptobot", Label: "Криптовалютой (CryptoBot)"}},
 	}
-	html, err := Page(u, One(set), billing)
+	html, err := Page(u, One(set), billing, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestPageBillingManual(t *testing.T) {
 		Plans:   []BillingPlan{{ID: 5, Name: "Месяц", Label: "199 ₽ / 30 дн."}},
 		Note:    "Переведите на карту 0000",
 	}
-	html, err := Page(u, One(set), billing)
+	html, err := Page(u, One(set), billing, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestPageBillingManual(t *testing.T) {
 func TestPageBillingHidden(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{})
+	html, err := Page(u, One(set), Billing{}, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

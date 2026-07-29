@@ -34,7 +34,7 @@ func nodeTestManager(t *testing.T) *Manager {
 // TestRoutingPropagatesMasterAndNode is the end-to-end routing check: the master's
 // routing goes into the master's Xray config, a node's OWN routing goes into the exact
 // JSON the panel pushes to that node (NodeDesiredState), and neither inherits the
-// other's rule. This is the "прокидывает роут на мастере и нодах" guarantee.
+// other's rule. This is the "a route reaches the master and the nodes alike" guarantee.
 func TestRoutingPropagatesMasterAndNode(t *testing.T) {
 	m := nodeTestManager(t)
 	const masterMark = "master-route-marker.example"

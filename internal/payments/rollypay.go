@@ -22,11 +22,11 @@ func rollyPayDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyRollyPay,
 		Label: "RollyPay",
-		Note:  "Карты, СБП · ₽",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
-			{Key: "api_key", Label: "API-ключ", Kind: FieldSecret, Placeholder: "rpk_live_…"},
+			{Key: "api_key", Label: "payField.apiKey", Kind: FieldSecret, Placeholder: "rpk_live_…"},
 			{Key: "signing_secret", Label: "Signing secret", Kind: FieldSecret,
-				Help: "Ключ для проверки подписи вебхука."},
+				Help: "payHelp.webhookSignKey"},
 		},
 		New: func(cfg Config) Client {
 			return &RollyPay{apiKey: cfg.Get("api_key"), signingSecret: cfg.Get("signing_secret")}
@@ -73,7 +73,7 @@ func (r *RollyPay) Create(ctx context.Context, req CreateReq) (string, string, e
 		return "", "", err
 	}
 	if out.PaymentID == "" || out.PayURL == "" {
-		return "", "", fmt.Errorf("RollyPay: пустой ответ при создании платежа: %s%s", out.Message, out.Error)
+		return "", "", fmt.Errorf("RollyPay: empty response when creating the payment: %s%s", out.Message, out.Error)
 	}
 	return out.PaymentID, out.PayURL, nil
 }
@@ -93,14 +93,14 @@ func (r *RollyPay) Status(ctx context.Context, providerID string) (Result, error
 func (r *RollyPay) Webhook(_ context.Context, body []byte, h http.Header) (string, Result, error) {
 	sig, ts := h.Get("X-Signature"), h.Get("X-Timestamp")
 	if sig == "" || ts == "" {
-		return "", Result{}, fmt.Errorf("RollyPay: нет подписи")
+		return "", Result{}, fmt.Errorf("RollyPay: no signature")
 	}
 	if !eqSig(hmacSHA256Hex(r.signingSecret, ts+"."+string(body)), sig) {
-		return "", Result{}, fmt.Errorf("RollyPay: неверная подпись")
+		return "", Result{}, fmt.Errorf("RollyPay: bad signature")
 	}
 	var out rollyPayPayment
 	if json.Unmarshal(body, &out) != nil || out.PaymentID == "" {
-		return "", Result{}, fmt.Errorf("RollyPay: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("RollyPay: malformed notification")
 	}
 	res := out.result()
 	// A "payment.paid" event is itself the paid signal even if the status field lags.

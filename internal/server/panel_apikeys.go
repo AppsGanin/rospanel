@@ -54,7 +54,7 @@ func (rt *Router) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		writeErr(w, http.StatusBadRequest, "укажите название ключа")
+		writeErrCode(w, http.StatusBadRequest, "err.keyNameRequired", "укажите название ключа")
 		return
 	}
 	key, err := rt.mgr.Store().CreateAPIKey(req.Name)
@@ -106,7 +106,7 @@ func (rt *Router) setAPIPathSettings(w http.ResponseWriter, r *http.Request) {
 	case set.APIPath == "" || req.Rotate:
 		p, err := auth.RandomSecretPath()
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "не удалось сгенерировать путь API")
+			writeErrCode(w, http.StatusInternalServerError, "err.apiPathGenFailed", "не удалось сгенерировать путь API")
 			return
 		}
 		newPath = p

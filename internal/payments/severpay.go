@@ -26,10 +26,10 @@ func severPayDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keySeverPay,
 		Label: "SeverPay",
-		Note:  "Карты, СБП · ₽",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
 			{Key: "mid", Label: "Merchant ID (MID)", Kind: FieldText},
-			{Key: "token", Label: "Токен (ключ подписи)", Kind: FieldSecret},
+			{Key: "token", Label: "payField.signingToken", Kind: FieldSecret},
 		},
 		New: func(cfg Config) Client { return &SeverPay{mid: cfg.Get("mid"), token: cfg.Get("token")} },
 	}
@@ -96,7 +96,7 @@ func (s *SeverPay) Create(ctx context.Context, req CreateReq) (string, string, e
 		return "", "", err
 	}
 	if !out.Status || out.Data.ID == 0 || out.Data.URL == "" {
-		return "", "", fmt.Errorf("SeverPay: не удалось создать платёж: %s", out.Msg)
+		return "", "", fmt.Errorf("SeverPay: could not create the payment: %s", out.Msg)
 	}
 	return fmt.Sprintf("%d", out.Data.ID), out.Data.URL, nil
 }
@@ -105,7 +105,7 @@ func (s *SeverPay) Create(ctx context.Context, req CreateReq) (string, string, e
 func (s *SeverPay) Status(ctx context.Context, providerID string) (Result, error) {
 	id, err := strconv.ParseInt(providerID, 10, 64)
 	if err != nil {
-		return Result{}, fmt.Errorf("SeverPay: некорректный id платежа %q", providerID)
+		return Result{}, fmt.Errorf("SeverPay: malformed payment id %q", providerID)
 	}
 	body := map[string]any{"id": id}
 	s.sign(body)
@@ -114,7 +114,7 @@ func (s *SeverPay) Status(ctx context.Context, providerID string) (Result, error
 		return Result{}, err
 	}
 	if !out.Status {
-		return Result{}, fmt.Errorf("SeverPay: статус недоступен: %s", out.Msg)
+		return Result{}, fmt.Errorf("SeverPay: status unavailable: %s", out.Msg)
 	}
 	return severStatus(out.Data.Status, out.Data.Amount, out.Data.Currency), nil
 }
@@ -129,7 +129,7 @@ func (s *SeverPay) Webhook(ctx context.Context, body []byte, _ http.Header) (str
 		} `json:"data"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.Data.ID == 0 {
-		return "", Result{}, fmt.Errorf("SeverPay: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("SeverPay: malformed notification")
 	}
 	res, err := s.Status(ctx, fmt.Sprintf("%d", n.Data.ID))
 	if err != nil {

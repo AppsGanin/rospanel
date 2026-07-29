@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { finishSetup, getTLS, regenSecret, setACME, setupPassword, setupTimezone } from './api'
 import type { TLSStatus } from './api'
+import { LangPills } from './LangSwitch'
 import { BrandLogo } from './Logo'
 import { errMessage, notifyError } from './notify'
 import { BACKUP_ACCEPT, ManifestCard, RestoreWaiting, useRestore, ValidationNote } from './restore'
@@ -8,7 +10,12 @@ import { browserTimezone, tzOptions } from './tz'
 import { Button, Card, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
 import { isIP, isValidACMETarget, isValidEmail } from './validate'
 
-const STEPS = ['Пароль', 'Время', 'Адрес', 'Путь панели']
+const STEP_KEYS = [
+  'wizard.stepPassword',
+  'wizard.stepTime',
+  'wizard.stepAddress',
+  'wizard.stepPath',
+] as const
 
 function currentSecret(): string {
   return window.location.pathname.split('/').filter(Boolean)[0] || 'rospanel'
@@ -17,15 +24,14 @@ function currentSecret(): string {
 // ── Restore flow ─────────────────────────────────────────────────────────────
 
 function RestoreFlow({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation()
   const { fileRef, file, inspection, manifest, inspecting, restoring, done, pick, restore } = useRestore()
 
   if (done) return <RestoreWaiting manifest={done} currentDomain={window.location.hostname} />
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-ink-muted">
-        Выберите файл бэкапа (.tar.gz). Все текущие данные будут заменены, панель перезапустится.
-      </p>
+      <p className="text-sm text-ink-muted">{t('wizard.restoreIntro')}</p>
       <input
         ref={fileRef}
         type="file"
@@ -34,15 +40,15 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
         onChange={(e) => pick(e.target.files?.[0] ?? null)}
       />
       <Button variant="light" color="gray" loading={inspecting} onClick={() => fileRef.current?.click()}>
-        {file ? file.name : 'Выбрать файл…'}
+        {file ? file.name : t('wizard.pickFile')}
       </Button>
 
-      {manifest && <ManifestCard m={manifest} label="В бэкапе" />}
+      {manifest && <ManifestCard m={manifest} label={t('wizard.inBackup')} />}
       {inspection && <ValidationNote inspection={inspection} />}
 
       <div className="flex items-center justify-between">
         <Button variant="outline" color="gray" onClick={onBack}>
-          Назад
+          {t('common.back')}
         </Button>
         {manifest && (
           <Button
@@ -51,7 +57,7 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
             disabled={!inspection?.valid}
             onClick={restore}
           >
-            Восстановить и перезапустить
+            {t('wizard.restoreAndRestart')}
           </Button>
         )}
       </div>
@@ -62,6 +68,7 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
 // ── Main Wizard ───────────────────────────────────────────────────────────────
 
 export function Wizard({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<'' | 'new' | 'restore'>('')
   const [active, setActive] = useState(0)
   const defaultTz = useMemo(browserTimezone, [])
@@ -108,7 +115,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
   const cert = tls?.cert
   // A real CA cert has issuer ≠ subject; a self-signed fallback has them equal
-  // (mirrors the settings TLS panel's "valid vs временный" distinction).
+  // (mirrors the settings TLS panel's "valid vs temporary" distinction).
   const certValid = !!cert && !!cert.issuer && cert.issuer !== cert.subject
   const curHost = (tls?.domain || '').trim()
   const curIsDomain = curHost !== '' && !isIP(curHost)
@@ -126,8 +133,8 @@ export function Wizard({ onDone }: { onDone: () => void }) {
   const domainInvalid = domainTrim === '' || targetErr || emailErr || emailMissing
 
   const savePassword = async () => {
-    if (password.length < 8) return notifyError('Пароль должен быть не короче 8 символов')
-    if (password !== confirm) return notifyError('Пароли не совпадают')
+    if (password.length < 8) return notifyError(t('password.tooShort'))
+    if (password !== confirm) return notifyError(t('password.mismatch'))
     setBusy(true)
     try {
       await setupPassword(password)
@@ -161,7 +168,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
         setFinalHost(domainTrim)
         setActive(3)
       } catch (e) {
-        notifyError(errMessage(e, 'Не удалось получить сертификат'))
+        notifyError(errMessage(e, t('wizard.certFailed')))
       } finally {
         setBusy(false)
       }
@@ -218,33 +225,34 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-4">
+      <LangPills className="fixed right-3 top-3" />
       <Card className="w-full max-w-xl animate-fade-in-up p-6 sm:p-8">
         <div className="flex flex-col gap-5">
           <div className="flex justify-center">
             <BrandLogo size={30} />
           </div>
-          <h1 className="text-center text-lg font-bold">Первоначальная настройка</h1>
+          <h1 className="text-center text-lg font-bold">{t('wizard.title')}</h1>
 
           {/* Mode choice */}
           {mode === '' && (
             <div className="flex animate-fade-in flex-col gap-3">
-              <p className="text-sm text-ink-muted">Выберите, как начать работу с панелью.</p>
+              <p className="text-sm text-ink-muted">{t('wizard.chooseStart')}</p>
               <button
                 className="flex flex-col gap-1 rounded-xl border-2 border-accent accent-tint p-4 text-left transition hover:border-brand-500"
                 onClick={() => setMode('new')}
               >
-                <span className="font-semibold text-ink">Новый сервер</span>
+                <span className="font-semibold text-ink">{t('wizard.newServer')}</span>
                 <span className="text-sm text-ink-muted">
-                  Настройте пароль, часовой пояс и домен с нуля.
+                  {t('wizard.newServerHint')}
                 </span>
               </button>
               <button
                 className="flex flex-col gap-1 rounded-xl border-2 border-gray-200 bg-gray-50 p-4 text-left transition hover:border-gray-400"
                 onClick={() => setMode('restore')}
               >
-                <span className="font-semibold text-ink">Восстановить из бэкапа</span>
+                <span className="font-semibold text-ink">{t('wizard.restoreFromBackup')}</span>
                 <span className="text-sm text-ink-muted">
-                  Загрузите архив — пользователи и настройки будут восстановлены.
+                  {t('wizard.restoreHint')}
                 </span>
               </button>
             </div>
@@ -256,18 +264,14 @@ export function Wizard({ onDone }: { onDone: () => void }) {
           {/* Save the freshly generated secret path before leaving the wizard */}
           {mode === 'new' && savedPath && (
             <div className="flex animate-fade-in flex-col gap-4">
-              <p className="text-sm text-ink-muted">
-                Панель теперь открывается только по этому адресу. Сохраните его — восстановить
-                путь нельзя, а по старому адресу панель больше недоступна.
-              </p>
+              <p className="text-sm text-ink-muted">{t('wizard.newPathIntro')}</p>
               <Code block copy>
                 {`https://${finalHost || window.location.hostname}/${savedPath}/`}
               </Code>
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                Запишите адрес в надёжное место (менеджер паролей, заметки). Без него вы потеряете
-                доступ к панели.
+                {t('wizard.newPathWarn')}
               </div>
-              <Button onClick={() => redirect(savedPath)}>Я сохранил, перейти на новый адрес</Button>
+              <Button onClick={() => redirect(savedPath)}>{t('wizard.savedGoToNew')}</Button>
             </div>
           )}
 
@@ -276,8 +280,8 @@ export function Wizard({ onDone }: { onDone: () => void }) {
             <>
               {/* Stepper header */}
               <div className="flex items-center">
-                {STEPS.map((s, i) => (
-                  <div key={s} className={cn('flex items-center', i < STEPS.length - 1 && 'flex-1')}>
+                {STEP_KEYS.map((s, i) => (
+                  <div key={s} className={cn('flex items-center', i < STEP_KEYS.length - 1 && 'flex-1')}>
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
@@ -295,10 +299,10 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           i <= active ? 'text-ink' : 'text-gray-400',
                         )}
                       >
-                        {s}
+                        {t(s)}
                       </span>
                     </div>
-                    {i < STEPS.length - 1 && (
+                    {i < STEP_KEYS.length - 1 && (
                       <div
                         className={cn('mx-2 h-px flex-1', i < active ? 'bg-brand-500' : 'bg-gray-200')}
                       />
@@ -309,21 +313,17 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
               {active === 0 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">
-                    Задайте новый пароль администратора вместо выданного при установке.
-                  </p>
-                  <PasswordInput label="Новый пароль" value={password} onChange={setPassword} autoFocus />
-                  <PasswordInput label="Повторите пароль" value={confirm} onChange={setConfirm} />
+                  <p className="text-sm text-ink-muted">{t('wizard.passwordIntro')}</p>
+                  <PasswordInput label={t('password.new')} value={password} onChange={setPassword} autoFocus />
+                  <PasswordInput label={t('password.repeat')} value={confirm} onChange={setConfirm} />
                 </div>
               )}
 
               {active === 1 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">
-                    Используется для границы суток в статистике трафика.
-                  </p>
+                  <p className="text-sm text-ink-muted">{t('wizard.timezoneIntro')}</p>
                   <Select
-                    label="Часовой пояс"
+                    label={t('wizard.timezone')}
                     data={tzData}
                     value={timezone}
                     onChange={setTimezone}
@@ -337,10 +337,9 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                   {onDomainWithCert ? (
                     <>
                       <p className="text-sm text-ink-muted">
-                        Панель уже работает на домене{' '}
-                        <span className="font-medium text-ink">{curHost}</span>
-                        {cert ? `, сертификат действует ещё ${cert.days_left} дн.` : ''}. Можно
-                        оставить как есть или сменить адрес.
+                        {t('wizard.onDomainWithCert', { host: curHost })}
+                        {cert ? t('wizard.certDaysLeft', { days: cert.days_left }) : ''}
+                        {t('wizard.keepOrChange')}
                       </p>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -350,7 +349,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('keep')}
                           className="accent-brand-600"
                         />
-                        Оставить домен {curHost}
+                        {t('wizard.keepDomain', { host: curHost })}
                       </label>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -360,16 +359,13 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('domain')}
                           className="accent-brand-600"
                         />
-                        Сменить домен или перейти на IP
+                        {t('wizard.changeDomainOrIp')}
                       </label>
                     </>
                   ) : curIsDomain ? (
                     <>
                       <p className="text-sm text-ink-muted">
-                        Панель настроена на домен{' '}
-                        <span className="font-medium text-ink">{curHost}</span>, но действующий
-                        сертификат пока временный (самоподписанный) — настоящий ещё не выпущен (домен
-                        не указывает на сервер, закрыт порт 80 или достигнут лимит выпуска).
+                        {t('wizard.onDomainTempCert', { host: curHost })}
                       </p>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -379,7 +375,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('domain')}
                           className="accent-brand-600"
                         />
-                        Выпустить сертификат для {curHost}
+                        {t('wizard.issueCertFor', { host: curHost })}
                       </label>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -389,15 +385,13 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('keep')}
                           className="accent-brand-600"
                         />
-                        Пока оставить временный сертификат
+                        {t('wizard.keepTempCert')}
                       </label>
                     </>
                   ) : (
                     <>
                       <p className="text-sm text-ink-muted">
-                        Панель сейчас работает по IP
-                        {certValid ? '' : ' с временным самоподписанным сертификатом'}. Можно перейти
-                        на домен и выпустить для него сертификат Let's Encrypt, либо остаться на IP.
+                        {certValid ? t('wizard.onIp') : t('wizard.onIpTempCert')}
                       </p>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -407,9 +401,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('ip')}
                           className="accent-brand-600"
                         />
-                        {certValid
-                          ? 'Остаться на IP (текущий сертификат)'
-                          : 'Остаться на IP (временный сертификат)'}
+                        {certValid ? t('wizard.stayOnIp') : t('wizard.stayOnIpTemp')}
                       </label>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -419,7 +411,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                           onChange={() => setWizMode('domain')}
                           className="accent-brand-600"
                         />
-                        Перейти на домен
+                        {t('wizard.moveToDomain')}
                       </label>
                     </>
                   )}
@@ -427,32 +419,32 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                     <>
                       <div>
                         <TextInput
-                          label={isZeroSSL ? 'Домен' : 'Домен или IP'}
-                          placeholder={isZeroSSL ? 'vpn.example.com' : 'vpn.example.com или 144.31.159.81'}
+                          label={isZeroSSL ? t('wizard.domain') : t('wizard.domainOrIp')}
+                          placeholder={isZeroSSL ? 'vpn.example.com' : t('wizard.domainOrIpPlaceholder')}
                           value={domain}
                           onChange={setDomain}
                         />
                         {targetErr && (
                           <p className="mt-1 text-xs text-danger">
                             {isZeroSSL
-                              ? 'Введите домен (ZeroSSL не выдаёт сертификаты на IP).'
-                              : 'Введите корректный домен или IP-адрес.'}
+                              ? t('wizard.errDomainOnly')
+                              : t('wizard.errBadTarget')}
                           </p>
                         )}
                       </div>
                       <div>
                         <TextInput
-                          label={isZeroSSL ? 'E-mail (обязательно для ZeroSSL)' : 'E-mail (необязательно)'}
+                          label={isZeroSSL ? t('wizard.emailRequired') : t('wizard.emailOptional')}
                           placeholder="you@example.com"
                           value={email}
                           onChange={setEmail}
                         />
                         {emailErr && (
-                          <p className="mt-1 text-xs text-danger">Введите корректный e-mail.</p>
+                          <p className="mt-1 text-xs text-danger">{t('wizard.errBadEmail')}</p>
                         )}
                       </div>
                       <Select
-                        label="Центр сертификации"
+                        label={t('wizard.certAuthority')}
                         value={provider}
                         onChange={setProvider}
                         data={[
@@ -461,20 +453,11 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                         ]}
                       />
                       {isZeroSSL ? (
-                        <p className="text-sm text-ink-muted">
-                          ZeroSSL поддерживает только домены. EAB-ключи будут получены автоматически
-                          по указанному e-mail.
-                        </p>
+                        <p className="text-sm text-ink-muted">{t('wizard.zerosslNote')}</p>
                       ) : (
-                        <p className="text-sm text-ink-muted">
-                          Let's Encrypt выдаёт сертификаты на домены и IP (на IP ~6 дней, продлеваются
-                          автоматически).
-                        </p>
+                        <p className="text-sm text-ink-muted">{t('wizard.letsencryptNote')}</p>
                       )}
-                      <p className="text-xs text-ink-muted">
-                        Домен должен указывать на этот сервер, порт 80 открыт. Выпуск занимает
-                        10–30 секунд.
-                      </p>
+                      <p className="text-xs text-ink-muted">{t('wizard.acmeRequirements')}</p>
                     </>
                   )}
                 </div>
@@ -482,10 +465,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
               {active === 3 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">
-                    Панель открывается по секретному пути. Рекомендуем сгенерировать случайный — так
-                    панель сложнее обнаружить.
-                  </p>
+                  <p className="text-sm text-ink-muted">{t('wizard.pathIntro')}</p>
                   <label className="flex items-start gap-2 text-sm">
                     <input
                       type="radio"
@@ -495,9 +475,9 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                       className="mt-1 accent-brand-600"
                     />
                     <span>
-                      <span className="font-medium text-ink">Сгенерировать новый случайный путь</span>
+                      <span className="font-medium text-ink">{t('wizard.generatePath')}</span>
                       <span className="block text-xs text-ink-muted">
-                        Рекомендуется. После смены вас перекинет на новый адрес.
+                        {t('wizard.generatePathHint')}
                       </span>
                     </span>
                   </label>
@@ -510,7 +490,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                       className="mt-1 accent-brand-600"
                     />
                     <span>
-                      <span className="font-medium text-ink">Оставить текущий путь</span>
+                      <span className="font-medium text-ink">{t('wizard.keepPath')}</span>
                       <Code block className="mt-1">
                         /{currentSecret()}/
                       </Code>
@@ -526,16 +506,16 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                   disabled={busy}
                   onClick={() => (active === 0 ? setMode('') : setActive((s) => Math.max(0, s - 1)))}
                 >
-                  Назад
+                  {t('common.back')}
                 </Button>
                 {active === 0 && (
                   <Button loading={busy} onClick={savePassword}>
-                    Далее
+                    {t('common.next')}
                   </Button>
                 )}
                 {active === 1 && (
                   <Button loading={busy} onClick={saveTimezone}>
-                    Далее
+                    {t('common.next')}
                   </Button>
                 )}
                 {active === 2 && (
@@ -544,7 +524,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                     disabled={wizMode === 'domain' && domainInvalid}
                     onClick={advanceAddress}
                   >
-                    {wizMode === 'domain' ? 'Получить сертификат' : 'Далее'}
+                    {wizMode === 'domain' ? t('wizard.getCert') : t('common.next')}
                   </Button>
                 )}
                 {active === 3 && (
@@ -552,7 +532,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                     loading={busy}
                     onClick={pathMode === 'generate' ? finishGenerate : finishKeep}
                   >
-                    Завершить
+                    {t('wizard.finish')}
                   </Button>
                 )}
               </div>

@@ -49,22 +49,22 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 	target = NormalizeACMEHost(target)
 	email = strings.TrimSpace(email)
 	if target == "" {
-		return invalid("укажите домен или IP-адрес")
+		return invalidCode("err.hostRequired", "укажите домен или IP-адрес")
 	}
 	if provider != model.ACMEProviderZeroSSL {
 		provider = model.ACMEProviderLE // default
 	}
 	if !validACMETarget(target, provider) {
 		if provider == model.ACMEProviderZeroSSL {
-			return invalid("ZeroSSL поддерживает только домены (не IP): %q — это не похоже на домен", target)
+			return invalidCode("err.zerosslDomainsOnly", "ZeroSSL поддерживает только домены (не IP): {{value}} — это не похоже на домен", map[string]any{"value": target})
 		}
-		return invalid("%q — это не похоже на домен или IP-адрес", target)
+		return invalidCode("err.notDomainOrIP", "{{value}} — это не похоже на домен или IP-адрес", map[string]any{"value": target})
 	}
 	if email != "" && !validEmail(email) {
-		return invalid("%q — это не похоже на e-mail адрес", email)
+		return invalidCode("err.notEmail", "{{value}} — это не похоже на e-mail адрес", map[string]any{"value": email})
 	}
 	if provider == model.ACMEProviderZeroSSL && email == "" {
-		return invalid("ZeroSSL требует e-mail адрес")
+		return invalidCode("err.zerosslNeedsEmail", "ZeroSSL требует e-mail адрес")
 	}
 	cur, err := m.store.GetSettings()
 	if err != nil {
@@ -87,7 +87,7 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 		} else {
 			kid, hmac, err := tlsmgr.FetchZeroSSLEAB(email)
 			if err != nil {
-				return fmt.Errorf("получение EAB от ZeroSSL: %w", err)
+				return fmt.Errorf("fetching the ZeroSSL EAB: %w", err)
 			}
 			eabKID, eabHMAC = kid, hmac
 		}

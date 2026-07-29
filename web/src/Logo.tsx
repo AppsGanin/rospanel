@@ -1,8 +1,9 @@
 // Brand logo: shows the custom uploaded logo + panel name when configured,
-// otherwise the bundled "РосПанель" wordmark. The default mark is a bundled SVG
+// otherwise the bundled wordmark. The default mark is a bundled SVG
 // import (Vite emits it under /assets/ with a relative URL, so it resolves under
 // the per-install secret panel path — an absolute "/favicon.svg" would not).
 import logoUrl from './assets/logo.svg'
+import i18n from './i18n'
 import { useBrand } from './brand'
 
 export function BrandLogo({ size = 30 }: { size?: number }) {
@@ -27,7 +28,7 @@ export function BrandLogo({ size = 30 }: { size?: number }) {
         className="min-w-0 truncate font-extrabold leading-none tracking-tight text-accent"
         style={{ fontSize: `${(size * 0.72) / 16}rem` }}
       >
-        {isDefault ? 'РосПанель' : brand.panel_name}
+        {isDefault ? i18n.t('brand.defaultName') : brand.panel_name}
       </span>
     </span>
   )

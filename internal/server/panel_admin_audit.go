@@ -18,7 +18,7 @@ type adminAuditResponse struct {
 }
 
 // adminAudit returns the admin trail, optionally filtered by category (the journal's
-// dropdown: "Настройки", "Администраторы", …), by a single action, or by actor.
+// dropdown: "Settings", "Administrators", …), by a single action, or by actor.
 func (rt *Router) adminAudit(w http.ResponseWriter, r *http.Request) {
 	limit, before := eventPageArgs(r)
 	q := r.URL.Query()
@@ -61,11 +61,12 @@ func (rt *Router) adminAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 // adminAuditCatalog returns what the journal needs to render itself: the categories
-// its filter offers, and the action→label map its rows are titled from.
+// its filter offers and the actions each one expands to. Labels come from the
+// panel's own dictionaries, so only keys travel.
 func (rt *Router) adminAuditCatalog(w http.ResponseWriter, _ *http.Request) {
 	cats := make([]map[string]string, 0, len(model.AdminAuditCategories))
 	for _, c := range model.AdminAuditCategories {
-		cats = append(cats, map[string]string{"key": c.Key, "label": c.Label})
+		cats = append(cats, map[string]string{"key": c})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"categories": cats,

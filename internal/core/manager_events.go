@@ -12,7 +12,7 @@ import (
 // The audit trail. Every mutating Manager method calls audit() (or auditNamed(),
 // when the user row is about to disappear) to record what happened, who did it, and
 // enough detail to make the row meaningful on its own — the panel shows this in the
-// user's «Журнал» modal and on the global journal page.
+// user's "Journal" modal and on the global journal page.
 //
 // Auditing is best-effort: a failed write is logged and swallowed. Losing an audit
 // row must never fail the operation that produced it.
@@ -52,7 +52,7 @@ func detailsOrNil(d map[string]any) any {
 	return d
 }
 
-// UserEvents returns one user's audit trail, newest first (the «Журнал» modal).
+// UserEvents returns one user's audit trail, newest first (the "Journal" modal).
 func (m *Manager) UserEvents(userID int64, limit int, beforeID int64) ([]model.UserEvent, error) {
 	return m.store.ListUserEvents(userID, EventPageLimit(limit), beforeID)
 }

@@ -44,7 +44,7 @@ const (
 	AuditCredentialsChanged = "admin.credentials_changed"
 
 	// Settings — one action for all of them. Which section was touched goes in the
-	// row's Target ("Маршрутизация", "DNS", …), not into a key of its own: a filter
+	// row's Target ("Routing", "DNS", …), not into a key of its own: a filter
 	// with twenty near-identical entries is a filter nobody uses, and the answer the
 	// owner wants ("who has been changing settings?") is one row type, not twenty.
 	AuditSettings = "settings.changed"
@@ -73,18 +73,18 @@ const (
 	// The panel itself.
 	AuditXrayRestarted  = "panel.xray_restarted"
 	AuditPanelRestarted = "panel.restarted"
-	AuditStatsReset    = "panel.stats_reset"
-	AuditBackupTaken   = "panel.backup_downloaded"
-	AuditRestored      = "panel.restored"
-	AuditFactoryReset  = "panel.factory_reset"
-	AuditUpdated       = "panel.updated"
+	AuditStatsReset     = "panel.stats_reset"
+	AuditBackupTaken    = "panel.backup_downloaded"
+	AuditRestored       = "panel.restored"
+	AuditFactoryReset   = "panel.factory_reset"
+	AuditUpdated        = "panel.updated"
 )
 
 // Audit categories. What the journal is FILTERED by — a handful of areas instead of
 // two dozen near-identical actions.
 //
-// The actions themselves stay precise: "администратор удалён" and "администратор
-// создан" are not the same event, and folding them into one key to shorten a
+// The actions themselves stay precise: "administrator deleted" and "administrator
+// created" are not the same event, and folding them into one key to shorten a
 // dropdown would throw away the only thing the row is for. So the filter is unified,
 // not the events: pick an area, read the exact action on each row.
 const (
@@ -97,74 +97,76 @@ const (
 	AuditCatPanel     = "panel"
 )
 
-// AdminAuditCategories is the filter's list, in the order it renders.
-var AdminAuditCategories = []struct{ Key, Label string }{
-	{AuditCatSession, "Входы"},
-	{AuditCatAdmins, "Администраторы"},
-	{AuditCatSettings, "Настройки"},
-	{AuditCatPlans, "Тарифы"},
-	{AuditCatAPI, "API и вебхуки"},
-	{AuditCatBroadcast, "Рассылки"},
-	{AuditCatPanel, "Панель"},
+// AdminAuditCategories is the filter's list, in the order it renders. Keys only —
+// the panel labels them from its own dictionaries (audit.cat.*), so the journal
+// follows the admin's chosen language rather than the server's.
+var AdminAuditCategories = []string{
+	AuditCatSession,
+	AuditCatAdmins,
+	AuditCatSettings,
+	AuditCatPlans,
+	AuditCatAPI,
+	AuditCatBroadcast,
+	AuditCatPanel,
 }
 
-// AdminAuditEntry is one action: its stable key, how it reads, and the area it
-// belongs to.
+// AdminAuditEntry is one action: its stable key and the area it belongs to. There
+// is no label — see AdminAuditCategories.
 type AdminAuditEntry struct {
 	Key      string `json:"key"`
-	Label    string `json:"label"`
 	Category string `json:"category"`
 }
 
 // AdminAuditCatalog is the stable action list the journal UI iterates over (to render
 // an action name, and to expand a category filter). Adding an event appends here.
 var AdminAuditCatalog = []AdminAuditEntry{
-	{AuditLogin, "Вход в панель", AuditCatSession},
-	{AuditLoginFailed, "Неудачный вход", AuditCatSession},
-	{AuditLogout, "Выход", AuditCatSession},
+	{AuditLogin, AuditCatSession},
+	{AuditLoginFailed, AuditCatSession},
+	{AuditLogout, AuditCatSession},
 
-	{AuditAdminCreated, "Администратор создан", AuditCatAdmins},
-	{AuditAdminDeleted, "Администратор удалён", AuditCatAdmins},
-	{AuditAdminRoleChanged, "Роль изменена", AuditCatAdmins},
-	{AuditAdminPasswordReset, "Пароль сброшен", AuditCatAdmins},
-	{AuditPasswordChanged, "Смена своего пароля", AuditCatAdmins},
-	{AuditCredentialsChanged, "Смена своих учётных данных", AuditCatAdmins},
+	{AuditAdminCreated, AuditCatAdmins},
+	{AuditAdminDeleted, AuditCatAdmins},
+	{AuditAdminRoleChanged, AuditCatAdmins},
+	{AuditAdminPasswordReset, AuditCatAdmins},
+	{AuditPasswordChanged, AuditCatAdmins},
+	{AuditCredentialsChanged, AuditCatAdmins},
 
-	{AuditSettings, "Изменение настроек", AuditCatSettings},
+	{AuditSettings, AuditCatSettings},
 
-	{AuditPlanSaved, "Тариф сохранён", AuditCatPlans},
-	{AuditPlanDeleted, "Тариф удалён", AuditCatPlans},
-	{AuditPlanMigrated, "Перенос пользователей тарифа", AuditCatPlans},
+	{AuditPlanSaved, AuditCatPlans},
+	{AuditPlanDeleted, AuditCatPlans},
+	{AuditPlanMigrated, AuditCatPlans},
 
-	{AuditAPIKeyCreated, "Ключ API создан", AuditCatAPI},
-	{AuditAPIKeyRevoked, "Ключ API отозван", AuditCatAPI},
-	{AuditWebhookCreated, "Вебхук создан", AuditCatAPI},
-	{AuditWebhookUpdated, "Вебхук изменён", AuditCatAPI},
-	{AuditWebhookDeleted, "Вебхук удалён", AuditCatAPI},
+	{AuditAPIKeyCreated, AuditCatAPI},
+	{AuditAPIKeyRevoked, AuditCatAPI},
+	{AuditWebhookCreated, AuditCatAPI},
+	{AuditWebhookUpdated, AuditCatAPI},
+	{AuditWebhookDeleted, AuditCatAPI},
 
-	{AuditBroadcastStarted, "Рассылка запущена", AuditCatBroadcast},
-	{AuditBroadcastChanged, "Рассылка: пауза, отмена или повтор", AuditCatBroadcast},
-	{AuditBroadcastTest, "Тестовая отправка рассылки", AuditCatBroadcast},
-	{AuditUserMessaged, "Сообщение пользователю в Telegram", AuditCatBroadcast},
+	{AuditBroadcastStarted, AuditCatBroadcast},
+	{AuditBroadcastChanged, AuditCatBroadcast},
+	{AuditBroadcastTest, AuditCatBroadcast},
+	{AuditUserMessaged, AuditCatBroadcast},
 
-	{AuditXrayRestarted, "Перезапуск Xray", AuditCatPanel},
-	{AuditPanelRestarted, "Перезапуск панели", AuditCatPanel},
-	{AuditStatsReset, "Сброс статистики", AuditCatPanel},
-	{AuditBackupTaken, "Бэкап скачан", AuditCatPanel},
-	{AuditRestored, "Восстановление из бэкапа", AuditCatPanel},
-	{AuditFactoryReset, "Сброс к заводским", AuditCatPanel},
-	{AuditUpdated, "Обновление панели", AuditCatPanel},
+	{AuditXrayRestarted, AuditCatPanel},
+	{AuditPanelRestarted, AuditCatPanel},
+	{AuditStatsReset, AuditCatPanel},
+	{AuditBackupTaken, AuditCatPanel},
+	{AuditRestored, AuditCatPanel},
+	{AuditFactoryReset, AuditCatPanel},
+	{AuditUpdated, AuditCatPanel},
 }
 
-// AdminAuditLabel returns the human label for an action key, falling back to the key
-// itself so a row written by a newer build still renders as something.
-func AdminAuditLabel(action string) string {
+// AdminAuditKnown reports whether an action is in the catalog. The panel renders
+// its label from the frontend dictionaries, so an action missing here shows up in
+// the journal as a bare key like "settings.changed" and cannot be filtered for.
+func AdminAuditKnown(action string) bool {
 	for _, e := range AdminAuditCatalog {
 		if e.Key == action {
-			return e.Label
+			return true
 		}
 	}
-	return action
+	return false
 }
 
 // AdminAuditActionsIn returns every action key in a category — what a category filter
@@ -180,3 +182,8 @@ func AdminAuditActionsIn(category string) []string {
 	}
 	return out
 }
+
+// AuditSectionPrefix marks an audit target that is a settings section, so the panel
+// knows to translate it rather than print it. Everything else a target can hold —
+// an admin login, an API key name, a webhook URL — is free-form and shown as-is.
+const AuditSectionPrefix = "audit.sec."

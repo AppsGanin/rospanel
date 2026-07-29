@@ -31,13 +31,13 @@ func heleketDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyHeleket,
 		Label: "Heleket",
-		Note:  "Крипта: USDT и др. · счёт в ₽",
+		Note:  "payNote.cryptoMulti",
 		Fields: []Field{
 			{Key: "merchant_id", Label: "Merchant UUID", Kind: FieldText,
-				Help: "Личный кабинет Heleket → Merchant → UUID."},
+				Help: "payHelp.heleketUuid"},
 			{Key: "api_key", Label: "Payment API key", Kind: FieldSecret},
-			{Key: "to_currency", Label: "Валюта оплаты", Kind: FieldText, Optional: true,
-				Placeholder: "USDT", Help: "Необязательно. Пусто — плательщик выбирает монету сам."},
+			{Key: "to_currency", Label: "payField.currency", Kind: FieldText, Optional: true,
+				Placeholder: "USDT", Help: "payHelp.coinOptional"},
 		},
 		New: func(cfg Config) Client {
 			return &Heleket{merchant: cfg.Get("merchant_id"), apiKey: cfg.Get("api_key"), toCurrency: cfg.Get("to_currency")}
@@ -111,7 +111,7 @@ func (h *Heleket) Create(ctx context.Context, req CreateReq) (string, string, er
 		return "", "", err
 	}
 	if out.Result.UUID == "" || out.Result.URL == "" {
-		return "", "", fmt.Errorf("Heleket: пустой ответ при создании счёта: %s", out.Message)
+		return "", "", fmt.Errorf("Heleket: empty response when creating the invoice: %s", out.Message)
 	}
 	return out.Result.UUID, out.Result.URL, nil
 }
@@ -133,7 +133,7 @@ func (h *Heleket) Webhook(ctx context.Context, body []byte, _ http.Header) (stri
 		OrderID string `json:"order_id"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.UUID == "" {
-		return "", Result{}, fmt.Errorf("Heleket: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("Heleket: malformed notification")
 	}
 	res, err := h.Status(ctx, n.UUID)
 	if err != nil {

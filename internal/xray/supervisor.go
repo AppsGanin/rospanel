@@ -567,7 +567,7 @@ func (s *Supervisor) startProc() error {
 	if closed || suspended {
 		// Not an error: both are states we deliberately put ourselves in. But it is
 		// worth a line either way — a start that quietly does nothing and reports
-		// success is how a dead Xray hid behind an operator's "перезапустить" button
+		// success is how a dead Xray hid behind an operator's restart button
 		// for hours.
 		reason := "the supervisor is shut down"
 		if suspended {
@@ -633,7 +633,7 @@ func (s *Supervisor) monitor(p *proc) {
 	// s.closed matters as much as p.stop here. systemd's default KillMode signals
 	// every process in the cgroup, so on `systemctl stop` Xray gets its own SIGTERM
 	// and can die before the panel's handler reaches Stop() — p.stop is still false,
-	// and the exit reads as a crash. That produced a "Xray аварийно завершился" alert
+	// and the exit reads as a crash. That produced an "Xray crashed" alert
 	// on every ordinary restart, with no all-clear after it: the restart is scheduled
 	// a second later, by which time the panel itself is gone.
 	if p.stop || s.cur != p || s.closed {

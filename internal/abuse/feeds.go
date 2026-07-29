@@ -134,7 +134,7 @@ func (s *Store) Matcher() *Matcher { return s.matcher }
 // FileInfo is one category's state, for the settings UI.
 type FileInfo struct {
 	Category string `json:"category"`
-	Title    string `json:"title"`
+	TitleKey string `json:"title_key"` // dictionary key; the panel words it
 	Enabled  bool   `json:"enabled"`
 	Present  bool   `json:"present"`           // a cached feed on disk, or a non-empty custom list
 	Entries  int    `json:"entries"`           // entries currently loaded in the matcher
@@ -149,7 +149,7 @@ func (s *Store) Status() []FileInfo {
 	out := make([]FileInfo, 0, len(Feeds)+1)
 	for _, cat := range feedCats() {
 		fi := FileInfo{
-			Category: string(cat), Title: cat.Title(),
+			Category: string(cat), TitleKey: cat.TitleKey(),
 			Enabled: s.catEnabled(cat), Entries: counts[cat],
 		}
 		if st, err := os.Stat(s.path(cat)); err == nil {
@@ -162,7 +162,7 @@ func (s *Store) Status() []FileInfo {
 	customSet := strings.TrimSpace(s.custom) != ""
 	s.cfgMu.Unlock()
 	out = append(out, FileInfo{
-		Category: string(CatCustom), Title: CatCustom.Title(),
+		Category: string(CatCustom), TitleKey: CatCustom.TitleKey(),
 		Enabled: s.catEnabled(CatCustom), Present: customSet, Entries: counts[CatCustom],
 	})
 	return out

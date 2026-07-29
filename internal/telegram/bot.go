@@ -13,6 +13,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/backup"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 )
@@ -36,7 +37,7 @@ type Panel interface {
 	ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error)
 	ApplyPlanToUser(ctx context.Context, userID, planID int64, extendFromCurrent bool) error
 	PlanName(planID int64) string
-	RequestPlanPayment(ctx context.Context, userID, planID int64) (*model.PaymentOrder, string, error)
+	RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64) (*model.PaymentOrder, string, error)
 	// CreateRegisteredUser signs a new user up (active, for the open/invite modes).
 	CreateRegisteredUser(ctx context.Context, name string) (*model.User, error)
 	// RequestRegistration records a moderated signup (no user yet); ApproveRegistration
@@ -54,7 +55,7 @@ type Panel interface {
 	// Automatic payment providers (no-op surface unless configured).
 	PaymentMethods() []string
 	ProviderLabel(key string) string
-	StartPlanPayment(ctx context.Context, userID, planID int64, provider string) (*model.PaymentOrder, error)
+	StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string) (*model.PaymentOrder, error)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))
 	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
@@ -176,14 +177,15 @@ func (s *Service) Run(ctx context.Context) {
 		if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
 			return
 		}
-		msg := "🕒 <b>Заявка на регистрацию</b>\nПользователь: " + esc(name)
+		lang := s.lang()
+		msg := i18n.T(lang, "admin.regRequest", esc(name))
 		if plan != "" {
-			msg += "\nТариф: " + esc(plan)
+			msg += "\n" + i18n.T(lang, "admin.planIs", esc(plan))
 		}
-		msg += "\n\nОдобрить доступ?"
+		msg += "\n\n" + i18n.T(lang, "admin.approveAccess")
 		rows := [][]InlineButton{{
-			{Text: "✅ Одобрить", CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
-			{Text: "🚫 Отклонить", CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
+			{Text: i18n.T(lang, "admin.btnApprove"), CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
+			{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
 		}}
 		c := NewClient(strings.TrimSpace(set.TGBotToken))
 		for _, id := range set.TelegramChatIDs() {
@@ -270,6 +272,7 @@ func actorName(u *User) string {
 }
 
 func (s *Service) handleMessage(ctx context.Context, client *Client, m *Message) {
+	lang := s.lang()
 	set, err := s.store.GetSettings()
 	if err != nil {
 		return
@@ -284,7 +287,7 @@ func (s *Service) handleMessage(ctx context.Context, client *Client, m *Message)
 		return
 	}
 	if !set.TelegramAuthorized(chatID) {
-		s.send(ctx, client, chatID, accessDenied)
+		s.send(ctx, client, chatID, accessDenied(lang))
 		return
 	}
 	// A pending prompt (e.g. "send the new user's name") consumes the next message.
@@ -299,6 +302,7 @@ func (s *Service) handleMessage(ctx context.Context, client *Client, m *Message)
 // handleStart links a chat when "/start CODE" carries the current one-time code,
 // otherwise opens the menu (linked) or explains how to link (un-linked).
 func (s *Service) handleStart(ctx context.Context, client *Client, set *model.Settings, chatID int64, args []string) {
+	lang := s.lang()
 	if len(args) >= 1 && set.TGLinkCode != "" &&
 		subtle.ConstantTimeCompare([]byte(args[0]), []byte(set.TGLinkCode)) == 1 {
 		ids := set.TelegramChatIDs()
@@ -308,19 +312,20 @@ func (s *Service) handleStart(ctx context.Context, client *Client, set *model.Se
 		_ = s.store.SetTelegramChats(joinIDs(ids))
 		_ = s.store.SetTelegramLinkCode("") // one-time: burn the code
 		log.Printf("telegram: chat %d linked", chatID)
-		s.sendMenu(ctx, client, chatID, "✅ Чат привязан к панели.\n\n"+menuHeader, mainMenuRows())
+		s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.chatLinked")+"\n\n"+menuHeader(lang), mainMenuRows(lang))
 		return
 	}
 	if set.TelegramAuthorized(chatID) {
 		s.sendMainMenu(ctx, client, chatID)
 		return
 	}
-	s.send(ctx, client, chatID, "👋 Это бот управления VPN-панелью.\n\nЧтобы привязать этот чат, откройте раздел <b>Telegram</b> в настройках панели, сгенерируйте код и отправьте <code>/start КОД</code>.")
+	s.send(ctx, client, chatID, i18n.T(lang, "admin.startHint"))
 }
 
 // handleCallback routes an inline-button tap. Navigation edits the current message
 // in place; actions that produce an artifact (links, a backup) send a new message.
 func (s *Service) handleCallback(ctx context.Context, client *Client, cb *CallbackQuery) {
+	lang := s.lang()
 	_ = client.AnswerCallback(ctx, cb.ID, "")
 	if cb.Message == nil {
 		return
@@ -336,7 +341,7 @@ func (s *Service) handleCallback(ctx context.Context, client *Client, cb *Callba
 	data := cb.Data
 	switch {
 	case data == "menu":
-		s.edit(ctx, client, chatID, msgID, menuHeader, mainMenuRows())
+		s.edit(ctx, client, chatID, msgID, menuHeader(lang), mainMenuRows(lang))
 	case strings.HasPrefix(data, "users:"):
 		s.showUsers(ctx, client, chatID, msgID, atoiOr(strings.TrimPrefix(data, "users:"), 0))
 	case strings.HasPrefix(data, "u:"):
@@ -353,6 +358,7 @@ func (s *Service) handleCallback(ctx context.Context, client *Client, cb *Callba
 // handleModeration approves or rejects a signup awaiting moderation. payload is
 // "<id>:ok" | "<id>:no". The prompt message is edited in place to the outcome.
 func (s *Service) handleModeration(ctx context.Context, client *Client, chatID, msgID int64, payload string) {
+	lang := s.lang()
 	idStr, action, _ := strings.Cut(payload, ":")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -361,22 +367,23 @@ func (s *Service) handleModeration(ctx context.Context, client *Client, chatID, 
 	switch action {
 	case "ok":
 		if err := s.panel.ApproveRegistrationRequest(ctx, id); err != nil {
-			s.edit(ctx, client, chatID, msgID, "⚠️ Не удалось одобрить: "+esc(err.Error()), nil)
+			s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.approveFailed", esc(err.Error())), nil)
 			return
 		}
-		s.edit(ctx, client, chatID, msgID, "✅ Заявка одобрена — аккаунт создан, доступ открыт.", nil)
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.requestApproved"), nil)
 	case "no":
 		if err := s.panel.RejectRegistrationRequest(ctx, id); err != nil {
-			s.edit(ctx, client, chatID, msgID, "⚠️ Не удалось отклонить: "+esc(err.Error()), nil)
+			s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.rejectFailed", esc(err.Error())), nil)
 			return
 		}
-		s.edit(ctx, client, chatID, msgID, "🚫 Заявка отклонена.", nil)
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.requestRejected"), nil)
 	}
 }
 
 // handleUserAction handles the per-user buttons. payload is "<id>" (show card) or
 // "<id>:<action>".
 func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, payload string) {
+	lang := s.lang()
 	idStr, action, _ := strings.Cut(payload, ":")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -408,14 +415,14 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 			return
 		}
 		s.edit(ctx, client, chatID, msgID,
-			fmt.Sprintf("Удалить пользователя <b>#%d %s</b>?\nДействие необратимо.", u.ID, esc(u.Name)),
+			i18n.T(lang, "admin.deleteConfirm", u.ID, esc(u.Name)),
 			[][]InlineButton{
-				{{Text: "🗑 Да, удалить", CallbackData: fmt.Sprintf("u:%d:delyes", id)}},
-				{{Text: "⬅️ Отмена", CallbackData: fmt.Sprintf("u:%d", id)}},
+				{{Text: i18n.T(lang, "admin.btnDeleteYes"), CallbackData: fmt.Sprintf("u:%d:delyes", id)}},
+				{{Text: i18n.T(lang, "admin.btnCancel"), CallbackData: fmt.Sprintf("u:%d", id)}},
 			})
 	case "delyes":
 		if derr := s.panel.DeleteUser(ctx, id); derr != nil {
-			s.send(ctx, client, chatID, "⚠️ Ошибка: "+esc(derr.Error()))
+			s.send(ctx, client, chatID, i18n.T(lang, "admin.error", esc(derr.Error())))
 		}
 		s.showUsers(ctx, client, chatID, msgID, 0)
 	default:
@@ -423,7 +430,7 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 		if planStr, ok := strings.CutPrefix(action, "plan:"); ok {
 			planID, _ := strconv.ParseInt(planStr, 10, 64)
 			if perr := s.panel.ApplyPlanToUser(ctx, id, planID, false); perr != nil {
-				s.send(ctx, client, chatID, "⚠️ Не удалось сменить тариф: "+esc(perr.Error()))
+				s.send(ctx, client, chatID, i18n.T(lang, "admin.planChangeFailed", esc(perr.Error())))
 			}
 			s.showUserCard(ctx, client, chatID, msgID, set, id)
 		}
@@ -432,15 +439,16 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 
 // showUsers edits the message into a paginated list of user buttons.
 func (s *Service) showUsers(ctx context.Context, client *Client, chatID, msgID int64, page int) {
+	lang := s.lang()
 	users, err := s.panel.ListUsers()
 	if err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ Ошибка: "+esc(err.Error()), backToMenu())
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.error", esc(err.Error())), backToMenu(lang))
 		return
 	}
 	if len(users) == 0 {
-		s.edit(ctx, client, chatID, msgID, "Пользователей пока нет.", [][]InlineButton{
-			{{Text: "➕ Добавить", CallbackData: "add"}},
-			{{Text: "⬅️ Меню", CallbackData: "menu"}},
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.noUsers"), [][]InlineButton{
+			{{Text: i18n.T(lang, "admin.btnAdd"), CallbackData: "add"}},
+			{{Text: i18n.T(lang, "admin.btnMenu"), CallbackData: "menu"}},
 		})
 		return
 	}
@@ -473,43 +481,45 @@ func (s *Service) showUsers(ctx context.Context, client *Client, chatID, msgID i
 		rows = append(rows, nav)
 	}
 	rows = append(rows, []InlineButton{
-		{Text: "➕ Добавить", CallbackData: "add"},
-		{Text: "⬅️ Меню", CallbackData: "menu"},
+		{Text: i18n.T(lang, "admin.btnAdd"), CallbackData: "add"},
+		{Text: i18n.T(lang, "admin.btnMenu"), CallbackData: "menu"},
 	})
-	s.edit(ctx, client, chatID, msgID, fmt.Sprintf("<b>Пользователи (%d)</b>\nВыберите пользователя:", len(users)), rows)
+	s.edit(ctx, client, chatID, msgID, i18n.T(lang, "admin.usersTitle", len(users)), rows)
 }
 
 // showUserCard edits the message into a user's card with action buttons.
 func (s *Service) showUserCard(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, id int64) {
+	lang := s.lang()
 	u, ok := s.findUser(id)
 	if !ok {
 		s.showUsers(ctx, client, chatID, msgID, 0)
 		return
 	}
-	toggle := InlineButton{Text: "⛔ Выключить", CallbackData: fmt.Sprintf("u:%d:off", id)}
+	toggle := InlineButton{Text: i18n.T(lang, "admin.btnDisable"), CallbackData: fmt.Sprintf("u:%d:off", id)}
 	if !u.Enabled {
-		toggle = InlineButton{Text: "✅ Включить", CallbackData: fmt.Sprintf("u:%d:on", id)}
+		toggle = InlineButton{Text: i18n.T(lang, "admin.btnEnable"), CallbackData: fmt.Sprintf("u:%d:on", id)}
 	}
 	rows := [][]InlineButton{
-		{{Text: "📲 Подписка", CallbackData: fmt.Sprintf("u:%d:sub", id)}},
-		{toggle, {Text: "♻️ Сбросить трафик", CallbackData: fmt.Sprintf("u:%d:reset", id)}},
+		{{Text: i18n.T(lang, "admin.btnSub"), CallbackData: fmt.Sprintf("u:%d:sub", id)}},
+		{toggle, {Text: i18n.T(lang, "admin.btnResetTraffic"), CallbackData: fmt.Sprintf("u:%d:reset", id)}},
 	}
 	if set.BillingEnabled {
-		rows = append(rows, []InlineButton{{Text: "💳 Тариф", CallbackData: fmt.Sprintf("u:%d:plans", id)}})
+		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "admin.btnPlan"), CallbackData: fmt.Sprintf("u:%d:plans", id)}})
 	}
 	rows = append(rows,
-		[]InlineButton{{Text: "🗑 Удалить", CallbackData: fmt.Sprintf("u:%d:del", id)}},
-		[]InlineButton{{Text: "⬅️ К списку", CallbackData: "users:0"}},
+		[]InlineButton{{Text: i18n.T(lang, "admin.btnDelete"), CallbackData: fmt.Sprintf("u:%d:del", id)}},
+		[]InlineButton{{Text: i18n.T(lang, "admin.btnToList"), CallbackData: "users:0"}},
 	)
 	planName := ""
 	if u.PlanID != 0 {
 		planName = s.panel.PlanName(u.PlanID)
 	}
-	s.edit(ctx, client, chatID, msgID, userCardWithPlan(u, s.panel.Location(), planName, set.BillingEnabled), rows)
+	s.edit(ctx, client, chatID, msgID, userCardWithPlan(u, s.panel.Location(), planName, set.BillingEnabled, lang), rows)
 }
 
 // showUserPlans lets the admin assign a tariff (or switch back to manual limits).
 func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, userID int64) {
+	lang := s.lang()
 	u, ok := s.findUser(userID)
 	if !ok {
 		s.showUsers(ctx, client, chatID, msgID, 0)
@@ -518,50 +528,52 @@ func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msg
 	plans, err := s.panel.ListTariffPlans(false)
 	if err != nil {
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()), [][]InlineButton{
-			{{Text: "⬅️ Назад", CallbackData: fmt.Sprintf("u:%d", userID)}},
+			{{Text: i18n.T(lang, "admin.btnBack"), CallbackData: fmt.Sprintf("u:%d", userID)}},
 		})
 		return
 	}
 	rows := [][]InlineButton{{{
-		Text:         "✋ Вручную",
+		Text:         i18n.T(lang, "admin.btnManual"),
 		CallbackData: fmt.Sprintf("u:%d:plan:0", userID),
 	}}}
 	for _, p := range plans {
 		rows = append(rows, []InlineButton{{
-			Text:         planButtonLabel(p),
+			Text:         planButtonLabel(p, lang),
 			CallbackData: fmt.Sprintf("u:%d:plan:%d", userID, p.ID),
 		}})
 	}
-	rows = append(rows, []InlineButton{{Text: "⬅️ Назад", CallbackData: fmt.Sprintf("u:%d", userID)}})
+	rows = append(rows, []InlineButton{{Text: i18n.T(lang, "admin.btnBack"), CallbackData: fmt.Sprintf("u:%d", userID)}})
 	s.edit(ctx, client, chatID, msgID,
-		fmt.Sprintf("💳 <b>Тариф — #%d %s</b>\n\nВыберите тариф:", u.ID, esc(u.Name)),
+		i18n.T(lang, "admin.pickPlan", u.ID, esc(u.Name)),
 		rows)
 }
 
 // promptAdd asks for the new user's details and arms the pending-input state.
 func (s *Service) promptAdd(ctx context.Context, client *Client, chatID, msgID int64) {
+	lang := s.lang()
 	s.setPending(chatID, "add")
 	s.edit(ctx, client, chatID, msgID,
-		"➕ <b>Новый пользователь</b>\n\nОтправьте имя сообщением — пользователь будет создан без лимита и срока.",
-		backToMenu())
+		i18n.T(lang, "admin.newUserPrompt"),
+		backToMenu(lang))
 }
 
 // doAdd creates a user, without a data limit or expiry, from the prompted name.
 func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, set *model.Settings, text string) {
+	lang := s.lang()
 	name := strings.TrimSpace(text)
 	if name == "" {
-		s.send(ctx, client, chatID, "Имя не может быть пустым.")
+		s.send(ctx, client, chatID, i18n.T(lang, "admin.emptyName"))
 		return
 	}
 	u, err := s.panel.CreateUser(ctx, name, 0, 0)
 	if err != nil {
-		s.send(ctx, client, chatID, "⚠️ Не удалось создать: "+esc(err.Error()))
+		s.send(ctx, client, chatID, i18n.T(lang, "admin.createFailed", esc(err.Error())))
 		return
 	}
-	s.sendMenu(ctx, client, chatID, "✅ Пользователь создан.\n\n"+userCard(*u, s.panel.Location()),
+	s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.userCreated")+"\n\n"+userCard(*u, s.panel.Location(), lang),
 		[][]InlineButton{
-			{{Text: "📲 Подписка", CallbackData: fmt.Sprintf("u:%d:sub", u.ID)}},
-			{{Text: "⬅️ Меню", CallbackData: "menu"}},
+			{{Text: i18n.T(lang, "admin.btnSub"), CallbackData: fmt.Sprintf("u:%d:sub", u.ID)}},
+			{{Text: i18n.T(lang, "admin.btnMenu"), CallbackData: "menu"}},
 		})
 }
 
@@ -569,7 +581,8 @@ func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, set *
 // in the caption (a fallback text message is sent if the QR can't be rendered or
 // uploaded).
 func (s *Service) sendSubscription(ctx context.Context, client *Client, chatID int64, set *model.Settings, u model.User) {
-	caption := subCaption(u, set)
+	lang := s.lang()
+	caption := subCaption(u, set, lang)
 	png, err := subQR(u, set)
 	if err != nil {
 		s.send(ctx, client, chatID, caption) // fallback: URL only
@@ -582,15 +595,17 @@ func (s *Service) sendSubscription(ctx context.Context, client *Client, chatID i
 }
 
 func (s *Service) cmdBackup(ctx context.Context, client *Client, chatID int64, set *model.Settings) {
-	s.send(ctx, client, chatID, "📦 Готовлю резервную копию…")
+	lang := s.lang()
+	s.send(ctx, client, chatID, i18n.T(lang, "admin.preparingBackup"))
 	if err := SendBackup(ctx, client, []int64{chatID}, s.dataDir,
-		s.panel.BackupManifest(), s.store.Checkpoint, "Резервная копия (по запросу)"); err != nil {
-		s.send(ctx, client, chatID, "⚠️ Не удалось отправить бэкап: "+esc(err.Error()))
+		s.panel.BackupManifest(), s.store.Checkpoint, i18n.T(lang, "admin.backupCaption")); err != nil {
+		s.send(ctx, client, chatID, i18n.T(lang, "admin.backupFailed", esc(err.Error())))
 	}
 }
 
 func (s *Service) sendMainMenu(ctx context.Context, client *Client, chatID int64) {
-	s.sendMenu(ctx, client, chatID, menuHeader, mainMenuRows())
+	lang := s.lang()
+	s.sendMenu(ctx, client, chatID, menuHeader(lang), mainMenuRows(lang))
 }
 
 // findUser looks up a user by ID from the current list.
@@ -613,6 +628,18 @@ func (s *Service) send(ctx context.Context, client *Client, chatID int64, html s
 	if err := client.SendMessage(ctx, chatID, html); err != nil {
 		log.Printf("telegram: send to %d: %v", chatID, err)
 	}
+}
+
+// lang is the language the admin bot writes in. Unlike the client and support
+// bots it is not per-recipient: the admin bot also pushes unprompted alerts, which
+// carry no Telegram update to read a language from, so a panel-wide setting decides
+// it (Settings → Telegram).
+func (s *Service) lang() i18n.Lang {
+	set, err := s.store.GetSettings()
+	if err != nil || set == nil {
+		return i18n.Default
+	}
+	return i18n.Normalize(set.BotLang())
 }
 
 func (s *Service) sendMenu(ctx context.Context, client *Client, chatID int64, html string, rows [][]InlineButton) {

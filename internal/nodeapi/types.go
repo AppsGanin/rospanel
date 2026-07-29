@@ -66,11 +66,11 @@ type SyncRequest struct {
 	// share links without ever seeing the node's disk. Empty sha ⇒ no cert yet.
 	CertSHA256     string `json:"cert_sha256"`
 	CertSelfSigned bool   `json:"cert_self_signed"`
-	// Cert details for the node's Домен tab: the issuer (≈ ACME provider) and expiry.
+	// Cert details for the node's Domain tab: the issuer (≈ ACME provider) and expiry.
 	CertIssuer    string `json:"cert_issuer,omitempty"`
 	CertExpiresAt int64  `json:"cert_expires_at,omitempty"` // unix; 0 ⇒ unknown/no cert
 	// CertError is the node's last TLS/ACME failure, empty once a cert is in place.
-	// Reported because the panel raises the "Сертификат TLS" admin alert for the whole
+	// Reported because the panel raises the "TLS certificate" admin alert for the whole
 	// fleet — the node has no bot to tell anyone itself. Absent from an older agent,
 	// which simply never triggers that alert.
 	CertError string `json:"cert_error,omitempty"`
@@ -104,7 +104,7 @@ type SyncRequest struct {
 	Logs []string `json:"logs,omitempty"`
 
 	// GeoFiles is the on-disk status of the node's geo databases (name/size/mtime),
-	// so its Домен/Geo tab can show them like the master's. Small — sent every sync.
+	// so its Domain/Geo tab can show them like the master's. Small — sent every sync.
 	GeoFiles []GeoFile `json:"geo_files,omitempty"`
 
 	// Host is the node's own machine state for its diagnostics page. The panel can't

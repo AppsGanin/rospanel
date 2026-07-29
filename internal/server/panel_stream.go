@@ -26,7 +26,7 @@ func (rt *Router) xrayStatus(w http.ResponseWriter, _ *http.Request) {
 func (rt *Router) xrayRestart(w http.ResponseWriter, _ *http.Request) {
 	if err := rt.mgr.RestartXray(); err != nil {
 		slog.Error("xray: restart requested by operator failed", "err", err)
-		writeErr(w, http.StatusInternalServerError, "не удалось перезапустить Xray")
+		writeErrCode(w, http.StatusInternalServerError, "err.xrayRestartFailed", "не удалось перезапустить Xray")
 		return
 	}
 	running, startedAt := rt.mgr.XrayStatus()
@@ -153,7 +153,7 @@ func (f *statusFeed) publish() {
 func (rt *Router) systemStream(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
-		writeErr(w, http.StatusTooManyRequests, "слишком много активных потоков")
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyStreams", "слишком много активных потоков")
 		return
 	}
 	defer rt.streams.release(ip)
@@ -186,7 +186,7 @@ func (rt *Router) systemStream(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) xrayConfig(w http.ResponseWriter, _ *http.Request) {
 	raw, err := rt.mgr.XrayConfig()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "конфиг недоступен: "+err.Error())
+		writeErrDetail(w, http.StatusInternalServerError, "err.configUnavailable", "конфиг недоступен: ", err.Error())
 		return
 	}
 	writeXrayConfig(w, raw)
@@ -209,7 +209,7 @@ func writeXrayConfig(w http.ResponseWriter, raw []byte) {
 func (rt *Router) xrayLogs(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
-		writeErr(w, http.StatusTooManyRequests, "слишком много активных потоков")
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyStreams", "слишком много активных потоков")
 		return
 	}
 	defer rt.streams.release(ip)
@@ -252,7 +252,7 @@ func (rt *Router) xrayLogs(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) appLogs(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
-		writeErr(w, http.StatusTooManyRequests, "слишком много активных потоков")
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyStreams", "слишком много активных потоков")
 		return
 	}
 	defer rt.streams.release(ip)

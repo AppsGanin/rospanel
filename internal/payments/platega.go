@@ -22,19 +22,19 @@ func plategaDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyPlatega,
 		Label: "Platega",
-		Note:  "Карты, СБП, крипта · ₽",
+		Note:  "payNote.cardsSbpCrypto",
 		Fields: []Field{
 			{Key: "merchant_id", Label: "Merchant ID", Kind: FieldText},
-			{Key: "secret", Label: "Secret (API-ключ)", Kind: FieldSecret},
-			{Key: "method", Label: "Метод оплаты", Kind: FieldSelect, Optional: true,
+			{Key: "secret", Label: "payField.secretApiKey", Kind: FieldSecret},
+			{Key: "method", Label: "payField.method", Kind: FieldSelect, Optional: true,
 				Options: []FieldOption{
-					{Value: "", Label: "Все методы (выбор на странице)"},
-					{Value: "2", Label: "СБП / SberPay"},
-					{Value: "11", Label: "Карты РФ"},
-					{Value: "12", Label: "Межд. карты"},
-					{Value: "13", Label: "Крипта"},
+					{Value: "", Label: "payField.allMethods"},
+					{Value: "2", Label: "payField.sbpSberpay"},
+					{Value: "11", Label: "payField.cardsRu"},
+					{Value: "12", Label: "payField.cardsIntl"},
+					{Value: "13", Label: "payField.crypto"},
 				},
-				Help: "Пусто — клиент выбирает способ на странице Platega."},
+				Help: "payHelp.methodPlatega"},
 		},
 		New: func(cfg Config) Client {
 			return &Platega{merchantID: cfg.Get("merchant_id"), secret: cfg.Get("secret"), method: cfg.Get("method")}
@@ -93,7 +93,7 @@ func (p *Platega) Create(ctx context.Context, req CreateReq) (string, string, er
 	id := firstNonEmpty(out.TransactionID, out.ID)
 	payURL := firstNonEmpty(out.Redirect, out.URL)
 	if id == "" || payURL == "" {
-		return "", "", fmt.Errorf("Platega: пустой ответ при создании платежа: %s", out.Message)
+		return "", "", fmt.Errorf("Platega: empty response when creating the payment: %s", out.Message)
 	}
 	return id, payURL, nil
 }
@@ -118,7 +118,7 @@ func (p *Platega) Webhook(ctx context.Context, body []byte, _ http.Header) (stri
 		ID string `json:"id"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.ID == "" {
-		return "", Result{}, fmt.Errorf("Platega: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("Platega: malformed notification")
 	}
 	res, err := p.Status(ctx, n.ID)
 	if err != nil {

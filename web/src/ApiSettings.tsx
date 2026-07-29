@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type ApiKey,
   type ApiKeysInfo,
@@ -7,6 +8,7 @@ import {
   revokeApiKey,
   setApiPath,
 } from "./api";
+import i18n, { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -27,7 +29,7 @@ import {
 
 function fmtTs(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -75,7 +77,7 @@ function CopyField({ value }: { value: string }) {
         {value}
       </code>
       <Button variant="light" color="gray" onClick={() => copy(value)}>
-        <IconCopy /> {copied ? "Скопировано" : "Копировать"}
+        <IconCopy /> {i18n.t(copied ? "common.copied" : "common.copy")}
       </Button>
     </div>
   );
@@ -117,6 +119,7 @@ function DocTile({
 
 // KeyRow is one API key in the list.
 function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: (k: ApiKey) => void }) {
+  const { t } = useTranslation();
   const revoked = !!k.revoked_at;
   return (
     <div
@@ -133,19 +136,21 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: (k: ApiKey) => void }) {
           </code>
         </div>
         <div className="mt-0.5 text-xs text-ink-muted">
-          Создан {fmtTs(k.created_at)} · Использован{" "}
-          {k.last_used_at ? fmtTs(k.last_used_at) : "ни разу"}
+          {t("api.createdAt", { date: fmtTs(k.created_at) })} ·{" "}
+          {t("api.usedAt", {
+            date: k.last_used_at ? fmtTs(k.last_used_at) : t("admins.never"),
+          })}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {revoked ? (
-          <Badge color="gray">отозван</Badge>
+          <Badge color="gray">{t("api.revoked")}</Badge>
         ) : (
-          <Badge color="green">активен</Badge>
+          <Badge color="green">{t("api.active")}</Badge>
         )}
         {!revoked && (
           <Button size="sm" variant="light" color="red" onClick={() => onRevoke(k)}>
-            Отозвать
+            {t("api.revoke")}
           </Button>
         )}
       </div>
@@ -154,6 +159,7 @@ function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: (k: ApiKey) => void }) {
 }
 
 export function ApiSettings() {
+  const { t } = useTranslation();
   const [info, setInfo] = useState<ApiKeysInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -199,9 +205,9 @@ export function ApiSettings() {
 
   const revoke = async (k: ApiKey) => {
     const ok = await confirm({
-      title: "Отозвать ключ?",
-      body: `Ключ «${k.name}» перестанет работать немедленно. Интеграции, использующие его, потеряют доступ. Действие необратимо.`,
-      confirmLabel: "Отозвать",
+      title: t("api.revokeTitle"),
+      body: t("api.revokeBody", { name: k.name }),
+      confirmLabel: t("api.revoke"),
       danger: true,
     });
     if (!ok) return;
@@ -215,16 +221,16 @@ export function ApiSettings() {
 
   const rotatePath = async () => {
     const ok = await confirm({
-      title: "Сменить адрес API?",
-      body: "Базовый URL изменится — все интеграции нужно будет обновить. Сами ключи продолжат работать по новому адресу.",
-      confirmLabel: "Сменить адрес",
+      title: t("api.rotateTitle"),
+      body: t("api.rotateBody"),
+      confirmLabel: t("api.rotateConfirm"),
       danger: true,
     });
     if (!ok) return;
     try {
       const res = await setApiPath(true, true);
       setInfo((i) => (i ? { ...i, ...res } : i));
-      notifySuccess("Адрес API обновлён");
+      notifySuccess(t("api.rotated"));
       await refresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -240,7 +246,7 @@ export function ApiSettings() {
       const res = await setApiPath(enabledDraft);
       setInfo((i) => (i ? { ...i, ...res } : i));
       if (enabledDraft) await refresh();
-      notifySuccess(enabledDraft ? "API включён" : "API отключён");
+      notifySuccess(t(enabledDraft ? "api.enabled" : "api.disabled"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -256,21 +262,21 @@ export function ApiSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title="Доступ по API"
-        description="REST-API для управления пользователями, тарифами и статистикой из внешних систем. Каждый запрос авторизуется ключом: заголовок Authorization: Bearer <ключ>."
+        title={t("api.title")}
+        description={t("api.description")}
         action={<Switch checked={enabledDraft} onChange={setEnabledDraft} />}
       >
         {info.enabled ? (
           <div className="flex flex-col gap-3">
             <div>
               <div className="mb-1 text-sm font-semibold text-ink">
-                Базовый адрес
+                {t("api.baseUrl")}
               </div>
               <CopyField value={info.base_url} />
             </div>
             <div className="flex flex-wrap gap-2 pt-2">
               <Button size="sm" variant="light" color="gray" onClick={rotatePath}>
-                Сменить адрес
+                {t("api.rotateConfirm")}
               </Button>
             </div>
           </div>
@@ -280,8 +286,7 @@ export function ApiSettings() {
               <IconShield size={20} />
             </span>
             <p className="text-sm text-ink-muted">
-              API выключен. Включите переключатель справа, чтобы открыть доступ.
-              Ключи можно создать заранее — они заработают после включения.
+              {t("api.offHint")}
             </p>
           </div>
         )}
@@ -289,41 +294,41 @@ export function ApiSettings() {
 
       {info.enabled && (
         <SettingCard
-          title="Документация"
-          description="Открываются без ключа — сам адрес секретный."
+          title={t("api.docs")}
+          description={t("api.docsHint")}
         >
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <DocTile
               href={`${info.base_url}/v1/docs`}
               icon={<IconDoc />}
               title="Swagger UI"
-              subtitle="Интерактивная документация, вызовы из браузера"
+              subtitle={t("api.swaggerHint")}
             />
             <DocTile
               href={`${info.base_url}/v1/openapi.json`}
               icon={<IconBraces />}
               title="openapi.json"
-              subtitle="Машиночитаемая спека OpenAPI 3.0"
+              subtitle={t("api.openapiHint")}
             />
           </div>
         </SettingCard>
       )}
 
       <SettingCard
-        title="Ключи API"
-        description="Ключ показывается один раз при создании — сохраните его сразу. В панели остаётся только префикс для опознания."
+        title={t("api.keys")}
+        description={t("api.keysHint")}
       >
         <div className="flex items-end gap-2">
           <div className="flex-1">
             <TextInput
-              label="Название нового ключа"
+              label={t("api.newKeyName")}
               value={name}
               onChange={setName}
-              placeholder="например, billing-bot"
+              placeholder={t("api.newKeyPlaceholder")}
             />
           </div>
           <Button onClick={create} loading={creating} disabled={!name.trim()}>
-            Создать
+            {t("common.create")}
           </Button>
         </div>
 
@@ -335,16 +340,15 @@ export function ApiSettings() {
           </div>
         ) : (
           <p className="mt-4 text-center text-sm text-ink-muted">
-            Ключей пока нет — создайте первый выше.
+            {t("api.noKeys")}
           </p>
         )}
       </SettingCard>
 
       {/* One-time reveal of a freshly created key. */}
-      <Modal open={!!created} onClose={() => setCreated(null)} title="Ключ создан">
+      <Modal open={!!created} onClose={() => setCreated(null)} title={t("api.keyCreated")}>
         <p className="text-sm text-ink-muted">
-          Скопируйте ключ сейчас — он больше не будет показан. Если потеряете его,
-          создайте новый.
+          {t("api.keyCreatedHint")}
         </p>
         {created?.raw_key && (
           <div className="mt-3">
@@ -352,7 +356,7 @@ export function ApiSettings() {
           </div>
         )}
         <div className="mt-5 flex justify-end">
-          <Button onClick={() => setCreated(null)}>Готово</Button>
+          <Button onClick={() => setCreated(null)}>{t("common.done")}</Button>
         </div>
       </Modal>
 

@@ -26,7 +26,7 @@ func (m *Manager) SetTimezone(name string) error {
 	name = strings.TrimSpace(name)
 	if name != "" {
 		if _, err := time.LoadLocation(name); err != nil {
-			return invalid("неизвестный часовой пояс %q", name)
+			return invalidCode("err.unknownTimezone", "неизвестный часовой пояс {{value}}", map[string]any{"value": name})
 		}
 	}
 	if err := m.store.SetTimezone(name); err != nil {
@@ -44,7 +44,7 @@ func (m *Manager) SetTimezone(name string) error {
 // themselves is exactly what the gate is waiting for).
 func (m *Manager) ChangeAdminPassword(adminID int64, newPassword string) error {
 	if len(newPassword) < minAdminPassword {
-		return invalid("пароль должен быть не короче %d символов", minAdminPassword)
+		return invalidCode("err.passwordTooShort", "пароль должен быть не короче {{min}} символов", map[string]any{"min": minAdminPassword})
 	}
 	hash, err := auth.HashPassword(newPassword)
 	if err != nil {
@@ -67,14 +67,14 @@ func (m *Manager) FinishSetup() error {
 func (m *Manager) UpdateAdminCredentials(adminID int64, currentPassword, username, password, keepToken string) error {
 	username = strings.TrimSpace(username)
 	if username == "" && password == "" {
-		return invalid("нечего обновлять")
+		return invalidCode("err.nothingToUpdate", "нечего обновлять")
 	}
 	hash, err := m.store.GetAdminHash(adminID)
 	if err != nil {
 		return err
 	}
 	if !auth.VerifyPassword(hash, currentPassword) {
-		return invalid("текущий пароль неверен")
+		return invalidCode("err.wrongCurrentPassword", "текущий пароль неверен")
 	}
 	if username != "" {
 		if err := m.store.UpdateAdminUsername(adminID, username); err != nil {
@@ -106,7 +106,7 @@ func (m *Manager) RegenerateSecretPath() (string, error) {
 func (m *Manager) SetPanelName(name string) error {
 	name = strings.TrimSpace(name)
 	if utf8.RuneCountInString(name) > branding.MaxNameLen {
-		return invalid("название панели не длиннее %d символов", branding.MaxNameLen)
+		return invalidCode("err.panelNameTooLong", "название панели не длиннее {{max}} символов", map[string]any{"max": branding.MaxNameLen})
 	}
 	return m.store.SetPanelName(name)
 }
@@ -116,7 +116,7 @@ func (m *Manager) SetPanelName(name string) error {
 func (m *Manager) SetPanelTheme(t branding.Theme) error {
 	js, err := branding.NormalizeTheme(t)
 	if err != nil {
-		return invalid("%s", err.Error())
+		return fromFieldErr(err)
 	}
 	return m.store.SetPanelTheme(js)
 }
@@ -400,14 +400,14 @@ func (m *Manager) SetIPListRefresh(hours int) error {
 // SetProxyMode persists the forward-proxy inbound (proxy mode) and reloads Xray.
 func (m *Manager) SetProxyMode(enabled bool, typ string, port int, user, pass string) error {
 	if typ != "socks" && typ != "http" {
-		return invalid("тип прокси должен быть socks или http")
+		return invalidCode("err.proxyTypeInvalid", "тип прокси должен быть socks или http")
 	}
 	if port < 1 || port > 65535 {
-		return invalid("порт вне диапазона 1–65535")
+		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
 	}
 	user = strings.TrimSpace(user)
 	if enabled && (user == "" || pass == "") {
-		return invalid("для режима прокси нужны логин и пароль")
+		return invalidCode("err.proxyNeedsCredentials", "для режима прокси нужны логин и пароль")
 	}
 	if err := m.store.SetProxyMode(enabled, typ, port, user, pass); err != nil {
 		return err
@@ -426,7 +426,7 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	// validate — so what we persist is always in the lane model.
 	cfg.MigrateLanes()
 	if err := cfg.ValidateLanes(); err != nil {
-		return invalid("%s", err)
+		return fromFieldErr(err)
 	}
 	set, err := m.store.GetSettings()
 	if err != nil {
@@ -441,7 +441,7 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 		acc, err := warp.Register(ctx)
 		if err != nil {
 			logErr("warp: registration failed", "err", err)
-			return fmt.Errorf("регистрация WARP не удалась: %w", err)
+			return fmt.Errorf("WARP registration failed: %w", err)
 		}
 		set.WarpPrivateKey = acc.PrivateKey
 		set.WarpPublicKey = acc.PeerPublicKey
@@ -517,25 +517,26 @@ var reservedSubPaths = map[string]bool{
 func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	st.SubPath = strings.TrimSpace(st.SubPath)
 	if !subPathRe.MatchString(st.SubPath) {
-		return invalid("путь подписки: латиница, цифры, «-» и «_», 1–32 символа")
+		return invalidCode("err.subPathCharset", "путь подписки: латиница, цифры, «-» и «_», 1–32 символа")
 	}
 	st.SubAnnounce = strings.TrimSpace(st.SubAnnounce)
 	// Clients render at most 200 characters of the announcement and silently cut the
 	// rest, so a longer text is a message the operator thinks they sent and nobody
 	// ever read. Reject it here instead. Runes, not bytes: the text is Cyrillic.
 	if n := utf8.RuneCountInString(st.SubAnnounce); n > announceMaxRunes {
-		return invalid("объявление: не длиннее %d символов (сейчас %d) — клиенты обрежут остальное",
-			announceMaxRunes, n)
+		return invalidCode("err.announceTooLong",
+			"объявление: не длиннее {{max}} символов (сейчас {{count}}) — клиенты обрежут остальное",
+			map[string]any{"max": announceMaxRunes, "count": n})
 	}
 	if reservedSubPaths[strings.ToLower(st.SubPath)] {
-		return invalid("путь подписки «%s» зарезервирован панелью — выберите другой", st.SubPath)
+		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» зарезервирован панелью — выберите другой", map[string]any{"path": st.SubPath})
 	}
 	cur, err := m.store.GetSettings()
 	if err != nil {
 		return err
 	}
 	if strings.EqualFold(st.SubPath, cur.PanelSecretPath) {
-		return invalid("путь подписки не может совпадать с секретным путём панели")
+		return invalidCode("err.subPathSameAsPanel", "путь подписки не может совпадать с секретным путём панели")
 	}
 	return m.store.SetSubSettings(st)
 }

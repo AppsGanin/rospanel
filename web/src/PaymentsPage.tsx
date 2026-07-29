@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { currentLang, td } from "./i18n";
 import {
   cancelPaymentOrder,
   confirmPaymentOrder,
@@ -22,35 +24,35 @@ const PROVIDER_META: Record<
   string,
   { label: string; color: "brand" | "teal" | "gray" }
 > = {
-  yookassa: { label: "ЮКасса · карта", color: "brand" },
-  cryptobot: { label: "CryptoBot · крипта", color: "teal" },
-  pal24: { label: "PayPalych · карта/СБП", color: "brand" },
-  riopay: { label: "RioPay · карта/СБП", color: "brand" },
-  rollypay: { label: "RollyPay · карта/СБП", color: "brand" },
-  severpay: { label: "SeverPay · карта/СБП", color: "brand" },
-  platega: { label: "Platega · карта/СБП", color: "brand" },
-  paypear: { label: "PayPear · карта/СБП", color: "brand" },
-  aurapay: { label: "AuraPay · карта/СБП", color: "brand" },
-  heleket: { label: "Heleket · крипта", color: "teal" },
-  "": { label: "Вручную", color: "gray" },
+  yookassa: { label: "yookassa", color: "brand" },
+  cryptobot: { label: "cryptobot", color: "teal" },
+  pal24: { label: "pal24", color: "brand" },
+  riopay: { label: "riopay", color: "brand" },
+  rollypay: { label: "rollypay", color: "brand" },
+  severpay: { label: "severpay", color: "brand" },
+  platega: { label: "platega", color: "brand" },
+  paypear: { label: "paypear", color: "brand" },
+  aurapay: { label: "aurapay", color: "brand" },
+  heleket: { label: "heleket", color: "teal" },
+  "": { label: "manual", color: "gray" },
 };
 
 const STATUS_META: Record<
   string,
   { label: string; color: "green" | "gray" | "orange" }
 > = {
-  paid: { label: "оплачен", color: "green" },
-  cancelled: { label: "отменён", color: "gray" },
-  pending: { label: "ожидает", color: "orange" },
+  paid: { label: "paid", color: "green" },
+  cancelled: { label: "cancelled", color: "gray" },
+  pending: { label: "pending", color: "orange" },
 };
 
 function fmtRub(n: number): string {
-  return `${n.toLocaleString("ru-RU")} ₽`;
+  return `${n.toLocaleString(currentLang())} ₽`;
 }
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -59,8 +61,20 @@ function fmtDateTime(unix: number): string {
   });
 }
 
+// The label is a dictionary key, resolved at call time so the badges follow the
+// panel's language rather than whichever one was active at import.
 function providerMeta(p: string) {
-  return PROVIDER_META[p] ?? { label: p, color: "gray" as const };
+  const m = PROVIDER_META[p];
+  return m
+    ? { label: td(`pay.provider.${m.label}`), color: m.color }
+    : { label: p, color: "gray" as const };
+}
+
+function statusMeta(status: string) {
+  const m = STATUS_META[status];
+  return m
+    ? { label: td(`pay.status.${m.label}`), color: m.color }
+    : { label: status, color: "gray" as const };
 }
 
 // StatTile is one headline number in the revenue row.
@@ -108,6 +122,7 @@ function PendingRow({
   onConfirm: (id: number) => void;
   onCancel: (id: number) => void;
 }) {
+  const { t } = useTranslation();
   const prov = providerMeta(order.provider);
   const auto = order.provider !== "";
   return (
@@ -119,7 +134,7 @@ function PendingRow({
         </span>
         <span className="flex gap-2">
           <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
-            Подтвердить
+            {t("common.confirm")}
           </Button>
           <Button
             size="sm"
@@ -128,7 +143,7 @@ function PendingRow({
             onClick={() => onCancel(order.id)}
             disabled={busy}
           >
-            Отмена
+            {t("common.cancel")}
           </Button>
         </span>
       </div>
@@ -136,8 +151,8 @@ function PendingRow({
         <Badge color={prov.color} size="xs">
           {prov.label}
         </Badge>
-        <span>· создан {fmtDateTime(order.created_at)}</span>
-        {auto && <span>· оплата подтвердится автоматически</span>}
+        <span>· {t("pay.createdAt", { when: fmtDateTime(order.created_at) })}</span>
+        {auto && <span>· {t("pay.autoConfirm")}</span>}
       </div>
     </li>
   );
@@ -145,11 +160,9 @@ function PendingRow({
 
 // HistoryRow is a read-only completed order.
 function HistoryRow({ order }: { order: PaymentOrder }) {
+  const { t } = useTranslation();
   const prov = providerMeta(order.provider);
-  const st = STATUS_META[order.status] ?? {
-    label: order.status,
-    color: "gray" as const,
-  };
+  const st = statusMeta(order.status);
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
       <div className="min-w-0">
@@ -162,7 +175,7 @@ function HistoryRow({ order }: { order: PaymentOrder }) {
             {prov.label}
           </Badge>
           <span>
-            · {order.status === "paid" ? "оплачен" : "создан"}{" "}
+            · {t(order.status === "paid" ? "pay.paidWord" : "pay.createdWord")}{" "}
             {fmtDateTime(order.status === "paid" ? order.paid_at : order.created_at)}
           </span>
         </div>
@@ -176,6 +189,7 @@ function HistoryRow({ order }: { order: PaymentOrder }) {
 }
 
 export function PaymentsPage() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,7 +218,7 @@ export function PaymentsPage() {
     setBusy(true);
     try {
       await confirmPaymentOrder(confirmId, password);
-      notifySuccess("Оплата подтверждена");
+      notifySuccess(t("pay.confirmed"));
       setConfirmId(null);
       setPassword("");
       await refresh();
@@ -220,7 +234,7 @@ export function PaymentsPage() {
     setBusy(true);
     try {
       await cancelPaymentOrder(cancelId, password);
-      notifySuccess("Заказ отменён");
+      notifySuccess(t("pay.orderCancelled"));
       setCancelId(null);
       setPassword("");
       await refresh();
@@ -242,26 +256,26 @@ export function PaymentsPage() {
       {/* Revenue headline */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
-          label="Всего заработано"
+          label={t("pay.totalEarned")}
           value={fmtRub(stats.total_paid)}
-          sub={`${stats.paid_count} оплат`}
+          sub={t("pay.nPayments", { count: stats.paid_count })}
           accent
         />
-        <StatTile label="За месяц" value={fmtRub(stats.earned_month)} />
-        <StatTile label="Сегодня" value={fmtRub(stats.earned_today)} />
+        <StatTile label={t("pay.thisMonth")} value={fmtRub(stats.earned_month)} />
+        <StatTile label={t("pay.today")} value={fmtRub(stats.earned_today)} />
         <StatTile
-          label="Ожидают оплаты"
+          label={t("pay.awaiting")}
           value={String(stats.pending_count)}
-          sub={stats.pending_sum ? `на ${fmtRub(stats.pending_sum)}` : "—"}
+          sub={stats.pending_sum ? t("pay.forSum", { sum: fmtRub(stats.pending_sum) }) : "—"}
         />
       </div>
 
       <SettingCard
-        title="По провайдерам"
-        description="Подтверждённые оплаты в разрезе способа."
+        title={t("pay.byProvider")}
+        description={t("pay.byProviderHint")}
       >
         {stats.by_provider.length === 0 ? (
-          <p className="text-sm text-ink-muted">Оплат пока не было.</p>
+          <p className="text-sm text-ink-muted">{t("pay.noPayments")}</p>
         ) : (
           <div className="flex flex-col gap-2">
             {stats.by_provider.map((p) => {
@@ -277,7 +291,7 @@ export function PaymentsPage() {
                   <div className="flex items-center gap-2">
                     <Badge color={meta.color}>{meta.label}</Badge>
                     <span className="text-xs text-ink-muted">
-                      {p.count} оплат · {share}%
+                      {t("pay.nPayments", { count: p.count })} · {share}%
                     </span>
                   </div>
                   <span className="font-semibold text-ink">{fmtRub(p.sum)}</span>
@@ -289,7 +303,7 @@ export function PaymentsPage() {
       </SettingCard>
 
       <SettingCard
-        title="Ожидают оплаты"
+        title={t("pay.awaiting")}
         action={
           pending.length > 0 ? (
             <Badge color="orange">{pending.length}</Badge>
@@ -297,7 +311,7 @@ export function PaymentsPage() {
         }
       >
         {pending.length === 0 ? (
-          <p className="text-sm text-ink-muted">Нет необработанных заказов.</p>
+          <p className="text-sm text-ink-muted">{t("pay.noPending")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {pending.map((o) => (
@@ -313,9 +327,9 @@ export function PaymentsPage() {
         )}
       </SettingCard>
 
-      <SettingCard title="История оплат">
+      <SettingCard title={t("pay.history")}>
         {history.length === 0 ? (
-          <p className="text-sm text-ink-muted">История пуста.</p>
+          <p className="text-sm text-ink-muted">{t("pay.historyEmpty")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {history.map((o) => (
@@ -328,23 +342,22 @@ export function PaymentsPage() {
       <Modal
         open={confirmId !== null}
         onClose={() => setConfirmId(null)}
-        title="Подтверждение оплаты"
+        title={t("pay.confirmTitle")}
       >
         <p className="mb-3 text-sm text-ink-muted">
-          Введите текущий пароль администратора, чтобы подтвердить заказ и
-          применить тариф.
+          {t("pay.confirmBody")}
         </p>
         <PasswordInput
-          label="Текущий пароль"
+          label={t("creds.currentPassword")}
           value={password}
           onChange={setPassword}
         />
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="subtle" onClick={() => setConfirmId(null)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button loading={busy} onClick={() => void submitConfirm()}>
-            Подтвердить оплату
+            {t("pay.confirmPayment")}
           </Button>
         </div>
       </Modal>
@@ -352,22 +365,22 @@ export function PaymentsPage() {
       <Modal
         open={cancelId !== null}
         onClose={() => setCancelId(null)}
-        title="Отмена заказа"
+        title={t("pay.cancelTitle")}
       >
         <p className="mb-3 text-sm text-ink-muted">
-          Введите текущий пароль администратора, чтобы отменить заказ.
+          {t("pay.cancelBody")}
         </p>
         <PasswordInput
-          label="Текущий пароль"
+          label={t("creds.currentPassword")}
           value={password}
           onChange={setPassword}
         />
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="subtle" onClick={() => setCancelId(null)}>
-            Назад
+            {t("common.back")}
           </Button>
           <Button loading={busy} color="red" onClick={() => void submitCancel()}>
-            Отменить заказ
+            {t("pay.cancelOrder")}
           </Button>
         </div>
       </Modal>

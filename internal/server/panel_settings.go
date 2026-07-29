@@ -12,7 +12,7 @@ import (
 func (rt *Router) setupPassword(w http.ResponseWriter, r *http.Request) {
 	id, ok := rt.adminID(r)
 	if !ok {
-		writeErr(w, http.StatusUnauthorized, "не авторизован")
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
 		return
 	}
 	var req struct {
@@ -201,7 +201,7 @@ func (rt *Router) setIPListCadence(w http.ResponseWriter, r *http.Request) {
 }
 
 // getRouting returns the structured routing config plus WARP availability so the
-// panel knows whether to offer the "через WARP" category.
+// panel knows whether to offer the "via WARP" category.
 func (rt *Router) getRouting(w http.ResponseWriter, _ *http.Request) {
 	set, err := rt.mgr.Settings()
 	if err != nil {
@@ -251,7 +251,7 @@ func (rt *Router) setXrayDNS(w http.ResponseWriter, r *http.Request) {
 		return r == '\n' || r == '\r' || r == ',' || r == ' '
 	}) {
 		if !validDNSServer(e) {
-			writeErr(w, http.StatusBadRequest, "неверный DNS-адрес: "+e)
+			writeErrDetail(w, http.StatusBadRequest, "err.badDNS", "неверный DNS-адрес: ", e)
 			return
 		}
 	}
@@ -389,7 +389,7 @@ func (rt *Router) setDecoyTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	h, err := decoy.New(req.Template, decoy.LoadStamp(rt.dataDir)) // validates the slug exists
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "неизвестный шаблон")
+		writeErrCode(w, http.StatusBadRequest, "err.unknownTemplate", "неизвестный шаблон")
 		return
 	}
 	if err := rt.mgr.SetDecoyTemplate(req.Template); err != nil {
@@ -403,7 +403,7 @@ func (rt *Router) setDecoyTemplate(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) updateCredentials(w http.ResponseWriter, r *http.Request) {
 	id, ok := rt.adminID(r)
 	if !ok {
-		writeErr(w, http.StatusUnauthorized, "не авторизован")
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
 		return
 	}
 	var req struct {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   cancelTelegramLink,
   checkTelegramSupport,
@@ -19,6 +20,7 @@ import {
   EMPTY_SCHEDULE,
   type Schedule,
 } from "./CronPicker";
+import i18n, { LANGS } from "./i18n";
 import { notifyError, notifySuccess, errMessage } from "./notify";
 import {
   Button,
@@ -40,27 +42,27 @@ import {
 const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
   {
     key: "registered",
-    label: "Новая регистрация",
-    desc: "Пользователь зарегистрировался в боте",
+    label: "tg.evRegLabel",
+    desc: "tg.evRegDesc",
   },
-  { key: "expired", label: "Подписка истекла" },
-  { key: "limited", label: "Исчерпан трафик" },
-  { key: "device_limited", label: "Превышен лимит устройств" },
+  { key: "expired", label: "tg.evExpired" },
+  { key: "limited", label: "tg.evLimited" },
+  { key: "device_limited", label: "tg.evDeviceLimited" },
   {
     key: "xray_down",
-    label: "Сбой Xray",
-    desc: "Прокси-процесс упал и был перезапущен",
+    label: "tg.evXrayLabel",
+    desc: "tg.evXrayDesc",
   },
   {
     key: "cert",
-    label: "Сертификат TLS",
-    desc: "Успешное продление или ошибка выпуска",
+    label: "tg.evTlsLabel",
+    desc: "tg.evTlsDesc",
   },
-  { key: "payment", label: "Платежи", desc: "Новые заказы и подтверждённые оплаты" },
+  { key: "payment", label: "tg.evPaymentLabel", desc: "tg.evPaymentDesc" },
   {
     key: "abuse",
-    label: "Подозрительный трафик",
-    desc: "Трафик пользователя попал в блоклист (вредоносное ПО, пиратство, азартные игры)",
+    label: "tg.evAbuseLabel",
+    desc: "tg.evAbuseDesc",
   },
 ];
 
@@ -69,46 +71,46 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
 const USER_EVENTS: { key: string; label: string; desc?: string }[] = [
   {
     key: "expiring",
-    label: "Подписка скоро закончится",
-    desc: "Напоминание за выбранное число дней",
+    label: "tg.uEndingLabel",
+    desc: "tg.uEndingDesc",
   },
-  { key: "expired", label: "Подписка истекла" },
+  { key: "expired", label: "tg.evExpired" },
   {
     key: "traffic_low",
-    label: "Трафик заканчивается",
-    desc: "Когда израсходовано 80% лимита",
+    label: "tg.uLowTrafficLabel",
+    desc: "tg.uLowTrafficDesc",
   },
-  { key: "limited", label: "Трафик закончился" },
+  { key: "limited", label: "tg.uOutOfTraffic" },
   {
     key: "device_limited",
-    label: "Слишком много устройств",
-    desc: "Подключений больше, чем разрешено тарифом",
+    label: "tg.uDevicesLabel",
+    desc: "tg.uDevicesDesc",
   },
   {
     key: "disabled",
-    label: "Доступ приостановлен",
-    desc: "Аккаунт выключен администратором",
+    label: "tg.uSuspendedLabel",
+    desc: "tg.uSuspendedDesc",
   },
-  { key: "payment", label: "Оплата получена", desc: "Тариф активирован" },
+  { key: "payment", label: "tg.uPaymentLabel", desc: "tg.uPaymentDesc" },
   {
     key: "registration",
-    label: "Решение по заявке",
-    desc: "Регистрация одобрена или отклонена",
+    label: "tg.uDecisionLabel",
+    desc: "tg.uDecisionDesc",
   },
 ];
 
-const EXPIRING_DAYS = [1, 3, 7, 14].map((d) => ({
+const expiringDayOptions = () => [1, 3, 7, 14].map((d) => ({
   value: String(d),
-  label: `За ${d} ${d === 1 ? "день" : d < 5 ? "дня" : "дней"}`,
+  label: i18n.t("tg.daysBefore", { count: d }),
 }));
 
 type AdminEvents = Record<string, boolean>;
 
 // groupIssue labels a candidate that cannot work yet, so the reason is visible at
-// the moment of choosing rather than after clicking "Проверить".
+// the moment of choosing rather than after clicking Check.
 function groupIssue(g: SupportGroup): string {
-  if (!g.is_forum) return " — нет тем";
-  if (!g.is_admin) return " — бот не админ";
+  if (!g.is_forum) return ` — ${i18n.t("tg.noTopics")}`;
+  if (!g.is_admin) return ` — ${i18n.t("tg.notAdmin")}`;
   return "";
 }
 
@@ -120,6 +122,7 @@ const sameEvents = (
 ) => keys.every((e) => !!a[e.key] === !!b[e.key]);
 
 export function TelegramSettings() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [enabled, setEnabled] = useState(false);
@@ -131,6 +134,7 @@ export function TelegramSettings() {
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [userEvents, setUserEvents] = useState<AdminEvents>({});
   const [expiringDays, setExpiringDays] = useState("3");
+  const [botLang, setBotLang] = useState("ru");
   const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
   const [chats, setChats] = useState<number[]>([]);
   const [linkCode, setLinkCode] = useState("");
@@ -154,6 +158,7 @@ export function TelegramSettings() {
     adminEvents: {} as AdminEvents,
     userEvents: {} as AdminEvents,
     expiringDays: "3",
+    botLang: "ru",
     supportEnabled: false,
     supportToken: "",
     supportGroupID: "",
@@ -165,42 +170,44 @@ export function TelegramSettings() {
 
   const load = () =>
     getTelegram()
-      .then((t) => {
-        setEnabled(t.enabled);
-        setToken(t.token);
-        setUserEnabled(t.user_enabled);
-        setUserToken(t.user_token);
-        setUserRegMode(t.user_reg_mode || "off");
-        setUserRegCode(t.user_reg_code || "");
-        setAdminEvents(t.admin_events || {});
-        setUserEvents(t.user_events || {});
-        setExpiringDays(String(t.user_expiring_days || 3));
-        setChats(t.chat_ids || []);
-        setLinkCode(t.link_code || "");
-        setBotUsername(t.bot_username || "");
-        setUserBotUsername(t.user_bot_username || "");
-        setSchedule(detectPreset(t.backup_cron || ""));
-        const groupID = t.support_group_id ? String(t.support_group_id) : "";
-        setSupportEnabled(t.support_enabled);
-        setSupportToken(t.support_token || "");
+      .then((cfg) => {
+        setEnabled(cfg.enabled);
+        setToken(cfg.token);
+        setUserEnabled(cfg.user_enabled);
+        setUserToken(cfg.user_token);
+        setUserRegMode(cfg.user_reg_mode || "off");
+        setUserRegCode(cfg.user_reg_code || "");
+        setAdminEvents(cfg.admin_events || {});
+        setUserEvents(cfg.user_events || {});
+        setExpiringDays(String(cfg.user_expiring_days || 3));
+        setChats(cfg.chat_ids || []);
+        setLinkCode(cfg.link_code || "");
+        setBotUsername(cfg.bot_username || "");
+        setUserBotUsername(cfg.user_bot_username || "");
+        setSchedule(detectPreset(cfg.backup_cron || ""));
+        setBotLang(cfg.lang || "ru");
+        const groupID = cfg.support_group_id ? String(cfg.support_group_id) : "";
+        setSupportEnabled(cfg.support_enabled);
+        setSupportToken(cfg.support_token || "");
         setSupportGroupID(groupID);
-        setSupportGreeting(t.support_greeting || "");
-        setSupportBotUsername(t.support_bot_username || "");
+        setSupportGreeting(cfg.support_greeting || "");
+        setSupportBotUsername(cfg.support_bot_username || "");
         setSaved({
-          enabled: t.enabled,
-          token: t.token,
-          cron: t.backup_cron || "",
-          userEnabled: t.user_enabled,
-          userToken: t.user_token,
-          userRegMode: t.user_reg_mode || "off",
-          userRegCode: t.user_reg_code || "",
-          adminEvents: t.admin_events || {},
-          userEvents: t.user_events || {},
-          expiringDays: String(t.user_expiring_days || 3),
-          supportEnabled: t.support_enabled,
-          supportToken: t.support_token || "",
+          enabled: cfg.enabled,
+          token: cfg.token,
+          cron: cfg.backup_cron || "",
+          botLang: cfg.lang || "ru",
+          userEnabled: cfg.user_enabled,
+          userToken: cfg.user_token,
+          userRegMode: cfg.user_reg_mode || "off",
+          userRegCode: cfg.user_reg_code || "",
+          adminEvents: cfg.admin_events || {},
+          userEvents: cfg.user_events || {},
+          expiringDays: String(cfg.user_expiring_days || 3),
+          supportEnabled: cfg.support_enabled,
+          supportToken: cfg.support_token || "",
           supportGroupID: groupID,
-          supportGreeting: t.support_greeting || "",
+          supportGreeting: cfg.support_greeting || "",
         });
       })
       .catch((e) => notifyError(errMessage(e)));
@@ -257,6 +264,7 @@ export function TelegramSettings() {
     !sameEvents(adminEvents, saved.adminEvents) ||
     !sameEvents(userEvents, saved.userEvents, USER_EVENTS) ||
     expiringDays !== saved.expiringDays ||
+    botLang !== saved.botLang ||
     supportEnabled !== saved.supportEnabled ||
     supportToken.trim() !== saved.supportToken.trim() ||
     supportGroupID.trim() !== saved.supportGroupID.trim() ||
@@ -275,6 +283,7 @@ export function TelegramSettings() {
         enabled,
         token: token.trim(),
         backup_cron: cron,
+        lang: botLang,
         user_enabled: userEnabled,
         user_token: userToken.trim(),
         user_reg_mode: userRegMode,
@@ -291,6 +300,7 @@ export function TelegramSettings() {
         enabled,
         token: token.trim(),
         cron,
+        botLang,
         userEnabled,
         userToken: userToken.trim(),
         userRegMode,
@@ -307,10 +317,10 @@ export function TelegramSettings() {
       // the fresh value back rather than leaving a stale one on screen.
       await load();
       // Turning the user bot on or off changes which surfaces exist elsewhere (the
-      // Рассылка tab, the per-user send button). Same event pattern the billing
+      // broadcast tab, the per-user send button). Same event pattern the billing
       // toggle uses, so they update without a reload.
       window.dispatchEvent(new Event("rospanel:telegram-changed"));
-      notifySuccess("Настройки Telegram сохранены");
+      notifySuccess(t("tg.saved"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -328,6 +338,7 @@ export function TelegramSettings() {
     setAdminEvents(saved.adminEvents);
     setUserEvents(saved.userEvents);
     setExpiringDays(saved.expiringDays);
+    setBotLang(saved.botLang);
     setSchedule(detectPreset(saved.cron));
     setSupportEnabled(saved.supportEnabled);
     setSupportToken(saved.supportToken);
@@ -341,7 +352,7 @@ export function TelegramSettings() {
       const r = await genTelegramLink();
       setLinkCode(r.code);
       if (r.bot_username) setBotUsername(r.bot_username);
-      notifySuccess("Код привязки создан");
+      notifySuccess(t("tg.codeCreated"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -373,7 +384,7 @@ export function TelegramSettings() {
     try {
       await unlinkTelegram(id);
       setChats((cur) => cur.filter((c) => c !== id));
-      notifySuccess("Чат отвязан");
+      notifySuccess(t("tg.chatUnlinked"));
     } catch (e) {
       notifyError(errMessage(e));
     }
@@ -383,7 +394,7 @@ export function TelegramSettings() {
     setTesting(true);
     try {
       await testTelegramBackup();
-      notifySuccess("Тестовый бэкап отправлен");
+      notifySuccess(t("tg.testBackupSent"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -404,8 +415,8 @@ export function TelegramSettings() {
       setSupportBotUsername(r.bot_username || supportBotUsername);
       notifySuccess(
         r.group_title
-          ? `Всё готово: @${r.bot_username} — администратор группы «${r.group_title}»`
-          : "Проверка прошла успешно",
+          ? t("tg.checkOkDetailed", { bot: r.bot_username, group: r.group_title })
+          : t("tg.checkOk"),
       );
     } catch (e) {
       notifyError(errMessage(e));
@@ -424,20 +435,32 @@ export function TelegramSettings() {
   return (
     <div className="flex flex-col gap-4 pb-20">
       <SettingCard
-        title="Админ-бот"
-        description="Управление пользователями и бэкапы. Доступ только по коду привязки из панели."
+        title={t("tg.adminBot")}
+        description={t("tg.adminBotHint")}
         action={<Switch checked={enabled} onChange={onToggleEnabled} />}
       >
         <div className="flex flex-col gap-3">
           <PasswordInput
-            label="Токен админ-бота (от @BotFather)"
+            label={t("tg.adminToken")}
             value={token}
             onChange={setToken}
             placeholder="123456789:AA..."
           />
+          {/* Panel-wide on purpose: the admin bot also pushes unprompted alerts,
+              which carry no Telegram update to read a language from. The client and
+              support bots ignore this and follow each person's own language. */}
+          <div>
+            <Select
+              label={t("tg.botLang")}
+              value={botLang}
+              onChange={setBotLang}
+              data={LANGS.map((l) => ({ value: l.code, label: l.label }))}
+            />
+            <p className="mt-1 text-xs text-ink-muted">{t("tg.botLangHint")}</p>
+          </div>
           {botUsername && (
-            <p className="text-sm text-ink-muted">
-              Бот:{" "}
+            <p className="text-sm font-medium text-ink-muted">
+              {t("tg.botIs")}{" "}
               <a
                 href={`https://t.me/${botUsername}`}
                 target="_blank"
@@ -452,8 +475,8 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Привязка админ-чата"
-        description="Сгенерируйте код и откройте админ-бота — только вы получите доступ к управлению панелью."
+        title={t("tg.linkChat")}
+        description={t("tg.linkChatHint")}
         action={
           <Button
             variant="light"
@@ -461,7 +484,7 @@ export function TelegramSettings() {
             onClick={generate}
             disabled={!canGenerate}
           >
-            Сгенерировать код
+            {t("tg.generateCode")}
           </Button>
         }
       >
@@ -469,12 +492,12 @@ export function TelegramSettings() {
           {enabled && linkCode ? (
             <div className="relative rounded-lg border border-accent accent-tint p-3 pr-11">
               <div className="absolute right-1.5 top-1.5">
-                <IconButton title="Отменить привязку" onClick={cancelLink}>
+                <IconButton title={t("tg.cancelLink")} onClick={cancelLink}>
                   <IconClose size={18} />
                 </IconButton>
               </div>
               <p className="text-sm text-ink">
-                Отправьте боту: <Code>/start {linkCode}</Code>
+                {t("tg.sendToBot")} <Code>/start {linkCode}</Code>
               </p>
               {startLink && (
                 <Button
@@ -483,30 +506,30 @@ export function TelegramSettings() {
                   href={startLink}
                   target="_blank"
                 >
-                  Открыть бота и привязать
+                  {t("tg.openBotAndLink")}
                 </Button>
               )}
             </div>
           ) : !enabled ? (
             <p className="text-sm text-ink-muted">
-              Включите бота выше, чтобы привязать чат.
+              {t("tg.enableBotFirst")}
             </p>
           ) : botConfigDirty ? (
             <p className="text-sm text-ink-muted">
-              Сохраните настройки, затем создавайте код привязки.
+              {t("tg.saveThenCode")}
             </p>
           ) : (
             <p className="text-sm text-ink-muted">
-              Активного кода нет. Нажмите «Сгенерировать код».
+              {t("tg.noActiveCode")}
             </p>
           )}
 
           <div>
             <p className="mb-1 text-sm font-medium text-ink">
-              Привязанные чаты ({chats.length})
+              {t("tg.linkedChats", { count: chats.length })}
             </p>
             {chats.length === 0 ? (
-              <p className="text-sm text-ink-muted">Пока ни одного.</p>
+              <p className="text-sm text-ink-muted">{t("tg.noneYet")}</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {chats.map((id) => (
@@ -521,7 +544,7 @@ export function TelegramSettings() {
                       size="sm"
                       onClick={() => unlink(id)}
                     >
-                      Отвязать
+                      {t("userDetail.unlink")}
                     </Button>
                   </div>
                 ))}
@@ -532,8 +555,8 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Уведомления админу"
-        description="Какие события админ-бот присылает в привязанные чаты."
+        title={t("tg.adminNotifs")}
+        description={t("tg.adminNotifsHint")}
       >
         <div className="flex flex-col gap-3">
           {ADMIN_EVENTS.map((e) => (
@@ -542,9 +565,9 @@ export function TelegramSettings() {
               className="flex items-center justify-between gap-3"
             >
               <div>
-                <p className="text-sm font-medium text-ink">{e.label}</p>
+                <p className="text-sm font-medium text-ink">{t(e.label as "tg.evExpired")}</p>
                 {e.desc && (
-                  <p className="text-xs text-ink-muted">{e.desc}</p>
+                  <p className="text-xs text-ink-muted">{t(e.desc as "tg.evRegDesc")}</p>
                 )}
               </div>
               <Switch
@@ -560,20 +583,20 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Пользовательский бот"
-        description="Открытый бот для семьи и друзей: регистрация, подписка и статистика."
+        title={t("tg.userBot")}
+        description={t("tg.userBotHint")}
         action={<Switch checked={userEnabled} onChange={setUserEnabled} />}
       >
         <div className="flex flex-col gap-3">
           <PasswordInput
-            label="Токен пользовательского бота (от @BotFather)"
+            label={t("tg.userToken")}
             value={userToken}
             onChange={setUserToken}
             placeholder="987654321:BB..."
           />
           {userBotUsername && (
             <p className="text-sm text-ink-muted">
-              Бот:{" "}
+              {t("tg.botIs")}{" "}
               <a
                 href={`https://t.me/${userBotUsername}`}
                 target="_blank"
@@ -587,37 +610,33 @@ export function TelegramSettings() {
           <div className="flex flex-col gap-2">
             <div>
               <p className="text-sm font-medium text-ink">
-                Самостоятельная регистрация
+                {t("tg.selfSignup")}
               </p>
               <p className="text-xs text-ink-muted">
-                Как новые пользователи получают аккаунт по кнопке
-                «Зарегистрироваться». Привязка существующего аккаунта по коду из
-                карточки пользователя работает при любом режиме.
+                {t("tg.selfSignupHint")}
               </p>
             </div>
             <Select
               data={[
-                { value: "off", label: "Закрыта" },
-                { value: "open", label: "Открыта — сразу активен" },
-                { value: "moderation", label: "С модерацией (одобряет админ)" },
-                { value: "invite", label: "По коду-приглашению" },
+                { value: "off", label: t("tg.regOff") },
+                { value: "open", label: t("tg.regOpen") },
+                { value: "moderation", label: t("tg.regModeration") },
+                { value: "invite", label: t("tg.regInvite") },
               ]}
               value={userRegMode}
               onChange={(v) => setUserRegMode(v as RegMode)}
             />
             {userRegMode === "moderation" && (
               <p className="text-xs text-ink-muted">
-                Аккаунт создаётся выключенным. Админу приходит заявка с кнопками
-                «Одобрить / Отклонить» (в админ-боте), либо включите пользователя
-                вручную в списке.
+                {t("tg.moderationHint")}
               </p>
             )}
             {userRegMode === "invite" && (
               <TextInput
-                label="Код-приглашение"
+                label={t("tg.inviteCode")}
                 value={userRegCode}
                 onChange={setUserRegCode}
-                placeholder="например, VPN2026"
+                placeholder={t("tg.invitePlaceholder")}
                 disabled={!userEnabled}
               />
             )}
@@ -626,21 +645,21 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Уведомления пользователю"
-        description="Что пользовательский бот пишет самому пользователю в его чат."
+        title={t("tg.userNotifs")}
+        description={t("tg.userNotifsHint")}
       >
         <div className="flex flex-col gap-3">
           {!userEnabled && (
             <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
-              Пользовательский бот выключен — эти уведомления не отправляются.
+              {t("tg.userBotOff")}
             </p>
           )}
           {USER_EVENTS.map((e) => (
             <div key={e.key}>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-ink">{e.label}</p>
-                  {e.desc && <p className="text-xs text-ink-muted">{e.desc}</p>}
+                  <p className="text-sm font-medium text-ink">{t(e.label as "tg.evExpired")}</p>
+                  {e.desc && <p className="text-xs text-ink-muted">{t(e.desc as "tg.evRegDesc")}</p>}
                 </div>
                 <Switch
                   checked={!!userEvents[e.key]}
@@ -653,7 +672,7 @@ export function TelegramSettings() {
               {e.key === "expiring" && userEvents.expiring && (
                 <div className="mt-2">
                   <Select
-                    data={EXPIRING_DAYS}
+                    data={expiringDayOptions()}
                     value={expiringDays}
                     onChange={setExpiringDays}
                   />
@@ -665,20 +684,20 @@ export function TelegramSettings() {
       </SettingCard>
 
       <SettingCard
-        title="Поддержка"
-        description="Отдельный бот для обращений: пользователь пишет ему, сообщение попадает в отдельную тему группы, ответ в теме уходит обратно пользователю."
+        title={t("tg.support")}
+        description={t("tg.supportHint")}
         action={<Switch checked={supportEnabled} onChange={setSupportEnabled} />}
       >
         <div className="flex flex-col gap-3">
           <PasswordInput
-            label="Токен бота поддержки (от @BotFather)"
+            label={t("tg.supportToken")}
             value={supportToken}
             onChange={setSupportToken}
             placeholder="555555555:CC..."
           />
           {supportBotUsername && (
             <p className="text-sm text-ink-muted">
-              Бот:{" "}
+              {t("tg.botIs")}{" "}
               <a
                 href={`https://t.me/${supportBotUsername}`}
                 target="_blank"
@@ -692,47 +711,46 @@ export function TelegramSettings() {
           {manualGroup ? (
             <>
               <TextInput
-                label="ID группы поддержки"
+                label={t("tg.supportGroupId")}
                 value={supportGroupID}
                 onChange={setSupportGroupID}
                 placeholder="-1001234567890"
               />
               <p className="text-xs text-ink-muted">
-                ID супергруппы начинается с -100 — если вставить его без префикса,
-                панель допишет сама.{" "}
+                {t("tg.groupIdHint")}{" "}
                 <button
                   type="button"
                   className="text-accent hover:underline"
                   onClick={() => setManualGroup(false)}
                 >
-                  Выбрать из списка
+                  {t("tg.pickFromList")}
                 </button>
               </p>
             </>
           ) : supportGroups.length > 0 ? (
             <>
               <Select
-                label="Группа поддержки"
+                label={t("tg.supportGroup")}
                 data={[
-                  { value: "", label: "— выберите группу —" },
+                  { value: "", label: t("tg.pickGroup") },
                   ...supportGroups.map((g) => ({
                     value: String(g.chat_id),
                     // The id is shown alongside the name because names repeat and
                     // are renamed, and it is the id that actually gets saved.
-                    label: `${g.title || "Без названия"} · ${g.chat_id}${groupIssue(g)}`,
+                    label: `${g.title || t("tg.untitled")} · ${g.chat_id}${groupIssue(g)}`,
                   })),
                 ]}
                 value={supportGroupID}
                 onChange={setSupportGroupID}
               />
               <p className="text-xs text-ink-muted">
-                Группы, в которые добавлен бот.{" "}
+                {t("tg.groupsWithBot")}{" "}
                 <button
                   type="button"
                   className="text-accent hover:underline"
                   onClick={() => setManualGroup(true)}
                 >
-                  Ввести ID вручную
+                  {t("tg.enterIdManually")}
                 </button>
               </p>
             </>
@@ -741,17 +759,16 @@ export function TelegramSettings() {
                very promise printed next to it — so the empty state says what the
                panel is waiting for instead, and manual entry stays one click away. */
             <div className="rounded-lg border border-dashed border-gray-300 p-3">
-              <p className="mb-1 text-sm font-medium text-ink">Группа поддержки</p>
+              <p className="mb-1 text-sm font-medium text-ink">{t("tg.supportGroup")}</p>
               {saved.supportToken.trim() ? (
                 /* No spinner: nothing is loading — the panel is waiting on the
                    operator, and an animation that never resolves would promise
                    progress that isn't happening. */
                 <>
                   <p className="text-sm text-ink-muted">
-                    Добавьте бота{supportBotUsername && ` @${supportBotUsername}`} в
-                    супергруппу администратором — она появится здесь сама, даже пока
-                    поддержка выключена. Список обновляется сам, перезагружать
-                    страницу не нужно.
+                    {t("tg.addBotHint", {
+                      bot: supportBotUsername ? ` @${supportBotUsername}` : "",
+                    })}
                   </p>
                   {/* The case an empty list strands, and the common one: the bot is
                       normally already in the group by the time anyone opens these
@@ -760,18 +777,15 @@ export function TelegramSettings() {
                       group joined earlier stays invisible until something happens in
                       it. Neither recovery is guessable, so both are spelled out. */}
                   <p className="mt-2 text-sm text-ink-muted">
-                    <b>Уже добавили, а группы нет?</b> Напишите в ней любое сообщение —
-                    хоть «привет». Telegram не даёт боту списка его групп, поэтому о
-                    добавлении, случившемся раньше, он узнаёт только из сообщения.
+                    <Trans i18nKey="tg.groupMissingHint" components={{ b: <b /> }} />
                   </p>
                   <p className="mt-1 text-sm text-ink-muted">
-                    Не помогло — уберите бота из группы и добавьте заново.
+                    {t("tg.reAddHint")}
                   </p>
                 </>
               ) : (
                 <p className="text-sm text-ink-muted">
-                  Сначала укажите токен выше и сохраните — после этого бот сможет
-                  показать свои группы.
+                  {t("tg.tokenFirst")}
                 </p>
               )}
               <button
@@ -779,7 +793,7 @@ export function TelegramSettings() {
                 className="mt-2 text-xs text-accent hover:underline"
                 onClick={() => setManualGroup(true)}
               >
-                Ввести ID вручную
+                {t("tg.enterIdManually")}
               </button>
             </div>
           )}
@@ -789,30 +803,22 @@ export function TelegramSettings() {
                obvious: the bot starts polling on a token alone, so saving with the
                switch OFF is what makes the group list appear. */
             <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
-              Поддержку не включить без группы — иначе кнопка в боте вела бы в никуда.
-              Выключите тумблер и сохраните: бот заработает с одним токеном и покажет
-              свои группы здесь, после чего останется выбрать одну и включить.
+              {t("tg.needGroupHint")}
             </p>
           )}
           <p className="text-xs text-ink-muted">
-            Создайте супергруппу, включите в её настройках «Темы» и добавьте бота
-            поддержки администратором с правом управления темами. Без прав
-            администратора бот не увидит ответы — Telegram скрывает от него
-            сообщения в группе.
+            {t("tg.setupHint")}
           </p>
           <p className="text-xs text-ink-muted">
-            <b>Держите группу закрытой.</b> Бот отправляет пользователю любое
-            сообщение из его темы, кем бы оно ни было написано: попавший в группу
-            посторонний прочитает всю переписку и сможет писать клиентам от имени
-            поддержки.
+            <Trans i18nKey="tg.keepPrivate" components={{ b: <b /> }} />
           </p>
           <Textarea
-            label="Приветствие в боте поддержки"
+            label={t("tg.supportGreeting")}
             value={supportGreeting}
             onChange={setSupportGreeting}
             rows={2}
-            placeholder="Опишите проблему — ответим в течение дня."
-            hint="Пустое поле — текст по умолчанию, без обещаний о сроках ответа."
+            placeholder={t("tg.greetingPlaceholder")}
+            hint={t("tg.greetingHint")}
           />
           <div>
             <Button
@@ -825,26 +831,26 @@ export function TelegramSettings() {
                 supportConfigDirty
               }
             >
-              Проверить
+              {t("tg.check")}
             </Button>
             <p className="mt-1 text-xs text-ink-muted">
               {supportConfigDirty
-                ? "Сохраните настройки, затем запускайте проверку."
-                : "Проверит доступность группы, включённые темы и права бота."}
+                ? t("tg.saveThenCheck")
+                : t("tg.checkWhat")}
             </p>
           </div>
         </div>
       </SettingCard>
 
       <SettingCard
-        title="Бэкапы по расписанию"
-        description="Резервные копии отправляются во все привязанные чаты по расписанию (в часовом поясе панели)."
+        title={t("tg.scheduledBackups")}
+        description={t("tg.scheduledBackupsHint")}
       >
         <div className="flex flex-col gap-3">
           <CronPicker
             value={schedule}
             onChange={setSchedule}
-            offLabel="Автоматические бэкапы выключены."
+            offLabel={t("general.autoBackupsOff")}
           />
           <div>
             <Button
@@ -853,11 +859,11 @@ export function TelegramSettings() {
               onClick={sendTest}
               disabled={chats.length === 0 || !token.trim()}
             >
-              Отправить тестовый бэкап
+              {t("tg.sendTestBackup")}
             </Button>
             {(chats.length === 0 || !token.trim()) && (
               <p className="mt-1 text-xs text-ink-muted">
-                Нужен токен и хотя бы один привязанный чат.
+                {t("tg.needTokenAndChat")}
               </p>
             )}
           </div>

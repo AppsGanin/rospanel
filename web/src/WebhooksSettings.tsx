@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createWebhook,
   deleteWebhook,
@@ -8,6 +9,7 @@ import {
   type Webhook,
   type WebhookEventDef,
 } from "./api";
+import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -24,7 +26,7 @@ import {
 
 function fmtTs(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -32,10 +34,10 @@ function fmtTs(unix: number): string {
 
 // StatusBadge shows the outcome of the last delivery attempt.
 function StatusBadge({ hook }: { hook: Webhook }) {
-  if (!hook.last_attempt_at) return <Badge color="gray">нет доставок</Badge>;
+  if (!hook.last_attempt_at) return <Badge color="gray">{i18n.t("hooks.noDeliveries")}</Badge>;
   if (hook.last_status >= 200 && hook.last_status < 300)
     return <Badge color="green">{hook.last_status}</Badge>;
-  return <Badge color="red">{hook.last_status || "ошибка"}</Badge>;
+  return <Badge color="red">{hook.last_status || i18n.t("hooks.failed")}</Badge>;
 }
 
 // SecretField reveals + copies the signing secret (needed by the receiver to
@@ -49,10 +51,10 @@ function SecretField({ value }: { value: string }) {
         {shown ? value : "•".repeat(24)}
       </code>
       <Button size="sm" variant="light" color="gray" onClick={() => setShown((s) => !s)}>
-        {shown ? "Скрыть" : "Показать"}
+        {i18n.t(shown ? "hooks.hide" : "hooks.show")}
       </Button>
       <Button size="sm" variant="light" color="gray" onClick={() => copy(value)}>
-        <IconCopy size={14} /> {copied ? "Ок" : "Копировать"}
+        <IconCopy size={14} /> {i18n.t(copied ? "hooks.ok" : "common.copy")}
       </Button>
     </div>
   );
@@ -74,7 +76,7 @@ function EventPicker({
       {catalog.map((e) => (
         <Checkbox
           key={e.key}
-          label={e.label}
+          label={td(`webhookEvent.${slugKey(e.key)}`)}
           hint={e.key}
           checked={selected.has(e.key)}
           onChange={() => onToggle(e.key)}
@@ -95,6 +97,7 @@ function WebhookRow({
   catalog: WebhookEventDef[];
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<Set<string>>(new Set(hook.events));
   const [busy, setBusy] = useState(false);
   const [testResult, setTestResult] = useState<string>("");
@@ -127,7 +130,7 @@ function WebhookRow({
     setBusy(true);
     try {
       await updateWebhook(hook.id, hook.url, [...events], hook.enabled);
-      notifySuccess("События обновлены");
+      notifySuccess(t("hooks.eventsUpdated"));
       onChanged();
     } catch (e) {
       notifyError(errMessage(e));
@@ -142,7 +145,9 @@ function WebhookRow({
     try {
       const r = await testWebhook(hook.id);
       setTestResult(
-        r.ok ? `Доставлено (HTTP ${r.status})` : `Ошибка: ${r.error || r.status}`,
+        r.ok
+          ? t("hooks.delivered", { status: r.status })
+          : t("hooks.deliverFailed", { error: r.error || r.status }),
       );
       onChanged();
     } catch (e) {
@@ -155,9 +160,9 @@ function WebhookRow({
   const remove = async () => {
     if (
       !(await confirm({
-        title: "Удалить вебхук?",
-        body: `Панель перестанет отправлять события на ${hook.url}.`,
-        confirmLabel: "Удалить",
+        title: t("hooks.deleteTitle"),
+        body: t("hooks.deleteBody", { url: hook.url }),
+        confirmLabel: t("common.delete"),
         danger: true,
       }))
     )
@@ -179,7 +184,7 @@ function WebhookRow({
             <StatusBadge hook={hook} />
           </div>
           <p className="mt-0.5 text-xs text-ink-muted">
-            Последняя доставка: {fmtTs(hook.last_attempt_at)}
+            {t("hooks.lastDelivery", { when: fmtTs(hook.last_attempt_at) })}
             {hook.last_error ? ` · ${hook.last_error}` : ""}
           </p>
         </div>
@@ -190,14 +195,14 @@ function WebhookRow({
 
       <div>
         <div className="mb-1 text-xs font-semibold text-ink-muted">
-          Секрет подписи (HMAC-SHA256)
+          {t("hooks.signingSecret")}
         </div>
         <SecretField value={hook.secret} />
       </div>
 
       <div>
         <div className="mb-1.5 text-xs font-semibold text-ink-muted">
-          События (ничего не выбрано = все)
+          {t("hooks.eventsLabel")}
         </div>
         <EventPicker catalog={catalog} selected={events} onToggle={toggle} />
       </div>
@@ -205,14 +210,14 @@ function WebhookRow({
       <div className="flex flex-wrap items-center gap-2">
         {dirty && (
           <Button size="sm" onClick={saveEvents} loading={busy}>
-            Сохранить события
+            {t("hooks.saveEvents")}
           </Button>
         )}
         <Button size="sm" variant="light" color="gray" onClick={runTest} loading={busy}>
-          Тест
+          {t("hooks.test")}
         </Button>
         <Button size="sm" variant="light" color="red" onClick={remove}>
-          Удалить
+          {t("common.delete")}
         </Button>
         {testResult && <span className="text-xs text-ink-muted">{testResult}</span>}
       </div>
@@ -222,6 +227,7 @@ function WebhookRow({
 }
 
 export function WebhooksSettings() {
+  const { t } = useTranslation();
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [catalog, setCatalog] = useState<WebhookEventDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -251,7 +257,7 @@ export function WebhooksSettings() {
       setUrl("");
       setNewEvents(new Set());
       await refresh();
-      notifySuccess("Вебхук добавлен");
+      notifySuccess(t("hooks.added"));
     } catch (e) {
       notifyError(errMessage(e));
     } finally {
@@ -274,25 +280,25 @@ export function WebhooksSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title="Вебхуки"
-        description="Панель отправляет POST-запрос на указанные адреса при событиях (создание пользователя, оплата и т.д.). Каждая доставка подписана HMAC-SHA256 — проверяйте заголовок X-RosPanel-Signature вашим секретом."
+        title={t("hooks.title")}
+        description={t("hooks.description")}
       >
         <div className="flex flex-col gap-3">
           <TextInput
-            label="URL нового вебхука"
+            label={t("hooks.newUrl")}
             value={url}
             onChange={setUrl}
-            placeholder="https://ваш-сервис.example.com/webhook"
+            placeholder="https://your-service.example.com/webhook"
           />
           <div>
             <div className="mb-1.5 text-xs font-semibold text-ink-muted">
-              События (ничего не выбрано = все)
+              {t("hooks.eventsLabel")}
             </div>
             <EventPicker catalog={catalog} selected={newEvents} onToggle={toggleNew} />
           </div>
           <div>
             <Button onClick={create} loading={creating} disabled={!url.trim()}>
-              Добавить вебхук
+              {t("hooks.add")}
             </Button>
           </div>
         </div>

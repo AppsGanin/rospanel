@@ -21,17 +21,17 @@ func auraPayDescriptor() Descriptor {
 	return Descriptor{
 		Key:   keyAuraPay,
 		Label: "AuraPay",
-		Note:  "Карты, СБП · ₽",
+		Note:  "payNote.cardsSbp",
 		Fields: []Field{
-			{Key: "api_key", Label: "API-ключ", Kind: FieldSecret},
-			{Key: "shop_id", Label: "Shop ID (UUID кассы)", Kind: FieldText},
-			{Key: "method", Label: "Метод оплаты", Kind: FieldSelect, Optional: true,
+			{Key: "api_key", Label: "payField.apiKey", Kind: FieldSecret},
+			{Key: "shop_id", Label: "payField.shopIdUuid", Kind: FieldText},
+			{Key: "method", Label: "payField.method", Kind: FieldSelect, Optional: true,
 				Options: []FieldOption{
-					{Value: "", Label: "Все методы (выбор на странице)"},
-					{Value: "sbp", Label: "СБП"},
-					{Value: "card", Label: "Карты"},
+					{Value: "", Label: "payField.allMethods"},
+					{Value: "sbp", Label: "payField.sbp"},
+					{Value: "card", Label: "payField.cards"},
 				},
-				Help: "Пусто — клиент выбирает метод на странице AuraPay."},
+				Help: "payHelp.methodAurapay"},
 		},
 		New: func(cfg Config) Client {
 			return &AuraPay{apiKey: cfg.Get("api_key"), shopID: cfg.Get("shop_id"), method: cfg.Get("method")}
@@ -89,7 +89,7 @@ func (a *AuraPay) Create(ctx context.Context, req CreateReq) (string, string, er
 		return "", "", err
 	}
 	if out.ID == "" || out.PaymentData.URL == "" {
-		return "", "", fmt.Errorf("AuraPay: пустой ответ при создании счёта: %s", out.Error)
+		return "", "", fmt.Errorf("AuraPay: empty response when creating the invoice: %s", out.Error)
 	}
 	return out.ID, out.PaymentData.URL, nil
 }
@@ -113,7 +113,7 @@ func (a *AuraPay) Webhook(ctx context.Context, body []byte, _ http.Header) (stri
 		ID string `json:"id"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.ID == "" {
-		return "", Result{}, fmt.Errorf("AuraPay: некорректное уведомление")
+		return "", Result{}, fmt.Errorf("AuraPay: malformed notification")
 	}
 	res, err := a.Status(ctx, n.ID)
 	if err != nil {

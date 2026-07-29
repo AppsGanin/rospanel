@@ -266,7 +266,7 @@ func (c *Client) redact(err error) error {
 	if !strings.Contains(msg, c.token) {
 		return err
 	}
-	return errors.New(strings.ReplaceAll(msg, c.token, "<токен скрыт>"))
+	return errors.New(strings.ReplaceAll(msg, c.token, "<token hidden>"))
 }
 
 // do executes req, decodes the envelope, and surfaces a non-OK API error.
@@ -577,8 +577,14 @@ type BotCommand struct {
 // SetMyCommands publishes the bot's command menu. Without it a command nobody was
 // told about is a command nobody uses — which matters for an opt-out that has to be
 // findable to count as one.
-func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand) error {
-	return c.call(ctx, "setMyCommands", map[string]any{"commands": cmds}, nil)
+// lang is an IETF tag scoping the menu to clients using that interface language;
+// empty publishes the default menu Telegram falls back to for everyone else.
+func (c *Client) SetMyCommands(ctx context.Context, cmds []BotCommand, lang string) error {
+	body := map[string]any{"commands": cmds}
+	if lang != "" {
+		body["language_code"] = lang
+	}
+	return c.call(ctx, "setMyCommands", body, nil)
 }
 
 // upload streams r as a multipart file for sendDocument/sendPhoto (field is

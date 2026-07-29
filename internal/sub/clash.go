@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // SubTitle is the per-user profile title: the configured subscription title (or
-// «РосПанель» by default), optionally suffixed with the user name when
+// "RosPanel" by default), optionally suffixed with the user name when
 // SubNameInTitle is enabled.
 func SubTitle(u model.User, set *model.Settings) string {
 	base := strings.TrimSpace(set.SubTitle)
 	if base == "" {
-		base = "РосПанель"
+		// One source of truth for the stock name — it used to be duplicated here as
+		// a literal, so rebranding the panel left the client profile title behind.
+		base = branding.DefaultName
 	}
 	if set.SubNameInTitle {
 		if name := strings.TrimSpace(u.Name); name != "" {

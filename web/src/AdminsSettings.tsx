@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { AdminAuditPanel } from "./AdminAuditPanel";
 import {
   type Admin,
@@ -8,10 +9,11 @@ import {
   listAdmins,
   resetAdminPassword,
   type Role,
-  ROLE_HINTS,
-  ROLE_LABELS,
+  roleHint,
+  roleLabel,
   setAdminRole,
 } from "./api";
+import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -27,18 +29,21 @@ import {
 
 function fmtTs(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
 }
 
-// The roles an owner can hand out. "Владелец" is absent on purpose: ownership is
-// singular, and the server refuses to grant it (see model.GrantableRoles).
-const ROLE_OPTIONS: { value: Role; label: string }[] = [
-  { value: "admin", label: ROLE_LABELS.admin },
-  { value: "operator", label: ROLE_LABELS.operator },
+// The roles an owner can hand out. The owner role is absent on purpose: ownership
+// is singular, and the server refuses to grant it (see model.GrantableRoles).
+const roleOptions = (): { value: Role; label: string }[] => [
+  { value: "admin", label: roleLabel("admin") },
+  { value: "operator", label: roleLabel("operator") },
 ];
+
+// ALL_ROLES drives the legend below the roster, owner included.
+const ALL_ROLES: Role[] = ["owner", "admin", "operator"];
 
 // A password the owner will read out or paste into a chat — memorable enough to
 // survive the trip, and replaced by the colleague at first sign-in anyway.
@@ -50,9 +55,9 @@ function suggestPassword(): string {
 }
 
 function RoleBadge({ role }: { role: Role }) {
-  if (role === "owner") return <Badge color="brand">{ROLE_LABELS.owner}</Badge>;
-  if (role === "admin") return <Badge color="green">{ROLE_LABELS.admin}</Badge>;
-  return <Badge color="orange">{ROLE_LABELS.operator}</Badge>;
+  if (role === "owner") return <Badge color="brand">{roleLabel("owner")}</Badge>;
+  if (role === "admin") return <Badge color="green">{roleLabel("admin")}</Badge>;
+  return <Badge color="orange">{roleLabel("operator")}</Badge>;
 }
 
 function AdminRow({
@@ -70,25 +75,28 @@ function AdminRow({
 }) {
   // The owner is untouchable, and you are not your own administrator: your login
   // and password live in the account menu, which re-asks for the current password.
+  const { t } = useTranslation();
   const locked = a.role === "owner" || isMe;
   return (
     // Narrow screens stack the identity above the actions; from sm up they sit on
     // one row. The action group must be allowed to wrap (three buttons plus a badge
     // don't fit a phone), and the identity column needs min-w-0 or its long
-    // "Создан … · Вход …" line would rather squeeze the column to nothing than wrap.
+    // created/last-login line would rather squeeze the column to nothing than wrap.
     <div className="flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate font-semibold text-ink">{a.username}</span>
           <RoleBadge role={a.role} />
-          {isMe && <span className="text-xs text-ink-muted">— это вы</span>}
+          {isMe && <span className="text-xs text-ink-muted">{t("admins.itsYou")}</span>}
           {a.must_change_password && (
-            <Badge color="orange">ждёт смены пароля</Badge>
+            <Badge color="orange">{t("admins.awaitingPassword")}</Badge>
           )}
         </div>
         <div className="mt-0.5 text-xs text-ink-muted">
-          Создан {fmtTs(a.created_at)} · Вход{" "}
-          {a.last_login_at ? fmtTs(a.last_login_at) : "ни разу"}
+          {t("admins.createdAt", { date: fmtTs(a.created_at) })} ·{" "}
+          {t("admins.lastLogin", {
+            date: a.last_login_at ? fmtTs(a.last_login_at) : t("admins.never"),
+          })}
         </div>
       </div>
       {/* The owner's row and your own have no actions at all, so the whole group is
@@ -102,7 +110,7 @@ function AdminRow({
             color="gray"
             onClick={() => onChangeRole(a)}
           >
-            Роль
+            {t("admins.role")}
           </Button>
           <Button
             size="sm"
@@ -110,7 +118,7 @@ function AdminRow({
             color="gray"
             onClick={() => onResetPassword(a)}
           >
-            Пароль
+            {t("login.password")}
           </Button>
           <Button
             size="sm"
@@ -118,7 +126,7 @@ function AdminRow({
             color="red"
             onClick={() => onDelete(a)}
           >
-            Удалить
+            {t("common.delete")}
           </Button>
         </div>
       )}
@@ -127,6 +135,7 @@ function AdminRow({
 }
 
 export function AdminsSettings() {
+  const { t } = useTranslation();
   const [list, setList] = useState<AdminList | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -167,11 +176,11 @@ export function AdminsSettings() {
   };
 
   const add = async () => {
-    if (!login.trim()) return notifyError("Укажите логин");
+    if (!login.trim()) return notifyError(t("admins.needLogin"));
     if (password.length < 8) {
-      return notifyError("Пароль должен быть не короче 8 символов");
+      return notifyError(t("password.tooShort"));
     }
-    if (!current) return notifyError("Введите свой пароль для подтверждения");
+    if (!current) return notifyError(t("admins.needOwnPassword"));
     setBusy(true);
     try {
       await createAdmin(login.trim(), password, role, current);
@@ -195,11 +204,11 @@ export function AdminsSettings() {
 
   const saveRole = async () => {
     if (!editing) return;
-    if (!current) return notifyError("Введите свой пароль для подтверждения");
+    if (!current) return notifyError(t("admins.needOwnPassword"));
     setBusy(true);
     try {
       await setAdminRole(editing.id, editRole, current);
-      notifySuccess(`${editing.username}: ${ROLE_LABELS[editRole].toLowerCase()}`);
+      notifySuccess(`${editing.username}: ${roleLabel(editRole).toLowerCase()}`);
       setEditing(null);
       await refresh();
     } catch (e) {
@@ -218,9 +227,9 @@ export function AdminsSettings() {
   const saveReset = async () => {
     if (!resetting) return;
     if (newPassword.length < 8) {
-      return notifyError("Пароль должен быть не короче 8 символов");
+      return notifyError(t("password.tooShort"));
     }
-    if (!current) return notifyError("Введите свой пароль для подтверждения");
+    if (!current) return notifyError(t("admins.needOwnPassword"));
     setBusy(true);
     try {
       await resetAdminPassword(resetting.id, newPassword, current);
@@ -241,11 +250,11 @@ export function AdminsSettings() {
 
   const remove = async () => {
     if (!deleting) return;
-    if (!current) return notifyError("Введите свой пароль для подтверждения");
+    if (!current) return notifyError(t("admins.needOwnPassword"));
     setBusy(true);
     try {
       await deleteAdmin(deleting.id, current);
-      notifySuccess(`«${deleting.username}» удалён`);
+      notifySuccess(t("admins.deleted", { name: deleting.username }));
       setDeleting(null);
       await refresh();
     } catch (e) {
@@ -261,9 +270,9 @@ export function AdminsSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title="Администраторы"
-        description="Учётные записи для входа в панель. Владелец один: он управляет этим списком, и его нельзя удалить."
-        action={<Button onClick={openAdd}>Добавить</Button>}
+        title={t("nav.admins")}
+        description={t("admins.description")}
+        action={<Button onClick={openAdd}>{t("common.add")}</Button>}
         stackAction
       >
         <div className="flex flex-col gap-2">
@@ -280,7 +289,7 @@ export function AdminsSettings() {
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
+          {ALL_ROLES.map((r) => (
             <div
               key={r}
               className={cn(
@@ -291,7 +300,7 @@ export function AdminsSettings() {
               <div className="mb-1">
                 <RoleBadge role={r} />
               </div>
-              <p className="text-xs text-ink-muted">{ROLE_HINTS[r]}</p>
+              <p className="text-xs text-ink-muted">{roleHint(r)}</p>
             </div>
           ))}
         </div>
@@ -303,36 +312,36 @@ export function AdminsSettings() {
       <Modal
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        title="Новый администратор"
+        title={t("admins.newAdmin")}
       >
         <div className="flex flex-col gap-3">
           <TextInput
-            label="Логин"
+            label={t("login.username")}
             value={login}
             onChange={setLogin}
-            placeholder="например, support"
+            placeholder={t("admins.loginPlaceholder")}
             autoFocus
           />
           <Select
-            label="Роль"
+            label={t("admins.role")}
             value={role}
             onChange={(v) => setRole(v as Role)}
-            data={ROLE_OPTIONS}
+            data={roleOptions()}
           />
           <PasswordInput
-            label="Временный пароль"
-            placeholder="передайте его сотруднику"
+            label={t("admins.tempPassword")}
+            placeholder={t("admins.tempPasswordHint")}
             value={password}
             onChange={setPassword}
           />
           <PasswordInput
-            label="Ваш пароль"
-            placeholder="для подтверждения"
+            label={t("admins.yourPassword")}
+            placeholder={t("creds.toConfirm")}
             value={current}
             onChange={setCurrent}
           />
           <Button loading={busy} onClick={add}>
-            Создать
+            {t("common.create")}
           </Button>
         </div>
       </Modal>
@@ -341,23 +350,23 @@ export function AdminsSettings() {
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
-        title={`Роль: ${editing?.username ?? ""}`}
+        title={t("admins.roleOf", { name: editing?.username ?? "" })}
       >
         <div className="flex flex-col gap-3">
           <Select
-            label="Роль"
+            label={t("admins.role")}
             value={editRole}
             onChange={(v) => setEditRole(v as Role)}
-            data={ROLE_OPTIONS}
+            data={roleOptions()}
           />
           <PasswordInput
-            label="Ваш пароль"
-            placeholder="для подтверждения"
+            label={t("admins.yourPassword")}
+            placeholder={t("creds.toConfirm")}
             value={current}
             onChange={setCurrent}
           />
           <Button loading={busy} onClick={saveRole}>
-            Сохранить
+            {t("common.save")}
           </Button>
         </div>
       </Modal>
@@ -366,26 +375,25 @@ export function AdminsSettings() {
       <Modal
         open={!!resetting}
         onClose={() => setResetting(null)}
-        title={`Сброс пароля: ${resetting?.username ?? ""}`}
+        title={t("admins.resetOf", { name: resetting?.username ?? "" })}
       >
         <div className="flex flex-col gap-3">
           <p className="text-sm text-ink-muted">
-            Все сессии этого администратора будут разорваны, а при следующем входе
-            он задаст свой пароль.
+            {t("admins.resetHint")}
           </p>
           <PasswordInput
-            label="Новый временный пароль"
+            label={t("admins.newTempPassword")}
             value={newPassword}
             onChange={setNewPassword}
           />
           <PasswordInput
-            label="Ваш пароль"
-            placeholder="для подтверждения"
+            label={t("admins.yourPassword")}
+            placeholder={t("creds.toConfirm")}
             value={current}
             onChange={setCurrent}
           />
           <Button loading={busy} onClick={saveReset}>
-            Сбросить
+            {t("usersPanel.reset")}
           </Button>
         </div>
       </Modal>
@@ -394,21 +402,21 @@ export function AdminsSettings() {
       <Modal
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        title={`Удалить: ${deleting?.username ?? ""}`}
+        title={t("admins.deleteOf", { name: deleting?.username ?? "" })}
       >
         <div className="flex flex-col gap-3">
           <p className="text-sm text-ink-muted">
-            Доступ к панели пропадёт немедленно — активные сессии будут разорваны. Действие необратимо.
+            {t("admins.deleteHint")}
           </p>
           <PasswordInput
-            label="Ваш пароль"
-            placeholder="для подтверждения"
+            label={t("admins.yourPassword")}
+            placeholder={t("creds.toConfirm")}
             value={current}
             onChange={setCurrent}
             autoFocus
           />
           <Button color="red" loading={busy} onClick={remove}>
-            Удалить
+            {t("common.delete")}
           </Button>
         </div>
       </Modal>
@@ -417,24 +425,27 @@ export function AdminsSettings() {
       <Modal
         open={!!created}
         onClose={() => setCreated(null)}
-        title="Передайте эти данные"
+        title={t("admins.handOver")}
       >
         <p className="text-sm text-ink-muted">
-          Пароль показан один раз. При первом входе <b>{created?.username}</b>{" "}
-          задаст свой — этот работает только до тех пор.
+          <Trans
+            i18nKey="admins.handOverHint"
+            values={{ name: created?.username ?? "" }}
+            components={{ b: <b /> }}
+          />
         </p>
         <div className="mt-3 flex flex-col gap-2">
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-            <div className="text-xs text-ink-muted">Логин</div>
+            <div className="text-xs text-ink-muted">{t("login.username")}</div>
             <code className="font-mono text-sm text-ink">{created?.username}</code>
           </div>
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-            <div className="text-xs text-ink-muted">Пароль</div>
+            <div className="text-xs text-ink-muted">{t("login.password")}</div>
             <code className="font-mono text-sm text-ink">{created?.password}</code>
           </div>
         </div>
         <div className="mt-5 flex justify-end">
-          <Button onClick={() => setCreated(null)}>Готово</Button>
+          <Button onClick={() => setCreated(null)}>{t("common.done")}</Button>
         </div>
       </Modal>
     </div>

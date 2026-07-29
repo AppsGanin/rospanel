@@ -54,12 +54,12 @@ func Install(ctx context.Context, c Credentials, localBinary string, installArgs
 	}
 	defer client.Close()
 
-	onLine("Загрузка агента на сервер…")
+	onLine("Uploading the agent to the server…")
 	if err := uploadBinary(ctx, client, localBinary); err != nil {
 		return fp, fmt.Errorf("upload agent binary: %w", err)
 	}
 
-	onLine("Запуск установки…")
+	onLine("Running the installer…")
 	// Run the installer, then remove it whatever the outcome, preserving its exit code.
 	cmd := shellQuote(remoteInstaller) + " node " + shellJoin(installArgs) +
 		"; rc=$?; rm -f " + shellQuote(remoteInstaller) + "; exit $rc"
@@ -107,7 +107,7 @@ func dial(ctx context.Context, c Credentials, onLine func(string)) (*ssh.Client,
 		return nil, fp, fmt.Errorf("ssh handshake: %w", err)
 	}
 	client := ssh.NewClient(sshConn, chans, reqs)
-	onLine("Подключено к " + addr + " (отпечаток ключа " + fp + ")")
+	onLine("Connected to " + addr + " (host key fingerprint " + fp + ")")
 	return client, fp, nil
 }
 

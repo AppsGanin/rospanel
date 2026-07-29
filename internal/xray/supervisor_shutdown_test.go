@@ -7,7 +7,7 @@ import (
 )
 
 // TestNoCrashAlertDuringShutdown reproduces a false alarm seen in production: on an
-// ordinary `systemctl stop`, admins were paged with "Xray аварийно завершился" and
+// ordinary `systemctl stop`, admins were paged with "Xray crashed" and
 // then never got an all-clear.
 //
 // The cause is systemd's default KillMode=control-group, which SIGTERMs every

@@ -42,7 +42,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		writeErr(w, http.StatusBadRequest, "укажите имя")
+		writeErrCode(w, http.StatusBadRequest, "err.nameRequired2", "укажите имя")
 		return
 	}
 	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
@@ -104,7 +104,7 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 	if req.DeviceLimit < 0 {
-		writeErr(w, http.StatusBadRequest, "лимит устройств не может быть отрицательным")
+		writeErrCode(w, http.StatusBadRequest, "err.deviceLimitNegative2", "лимит устройств не может быть отрицательным")
 		return
 	}
 	if err := rt.mgr.SetUserLimits(r.Context(), id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
@@ -150,7 +150,7 @@ func (rt *Router) genUserTelegramLink(w http.ResponseWriter, r *http.Request, id
 	}
 	bot := botUsername(r.Context(), set.TGUserBotToken)
 	if !set.TGUserBotEnabled || bot == "" {
-		writeErr(w, http.StatusBadRequest, "пользовательский бот выключен или недоступен")
+		writeErrCode(w, http.StatusBadRequest, "err.userBotUnavailable", "пользовательский бот выключен или недоступен")
 		return
 	}
 	code, err := rt.mgr.GenerateUserTgLinkCode(id)
@@ -186,7 +186,7 @@ func (rt *Router) renameUser(w http.ResponseWriter, r *http.Request, id int64) {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		writeErr(w, http.StatusBadRequest, "имя не может быть пустым")
+		writeErrCode(w, http.StatusBadRequest, "err.nameEmpty", "имя не может быть пустым")
 		return
 	}
 	if err := rt.mgr.RenameUser(r.Context(), id, name); err != nil {

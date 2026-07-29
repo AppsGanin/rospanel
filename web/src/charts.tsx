@@ -12,6 +12,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import i18n from './i18n'
+
+// seriesLabel names the two traffic series. recharts hands the formatter the raw
+// dataKey, so this maps it rather than the component threading labels down.
+function seriesLabel(key: unknown): string {
+  return key === 'down' ? i18n.t('traffic.received') : i18n.t('traffic.sent')
+}
 
 // recharts 3 widened the tooltip formatter's value to `ValueType | undefined`
 // (it can be a string or an array for other chart kinds). Every series we plot is
@@ -61,11 +68,11 @@ export function TrafficArea({
         <XAxis dataKey="day" tick={{ fontSize: 12, fill: axis }} tickLine={false} axisLine={false} />
         <YAxis tickFormatter={fmt} tick={{ fontSize: 11, fill: axis }} tickLine={false} axisLine={false} width={56} />
         <Tooltip
-          formatter={(v, n) => [fmt(num(v)), n === 'down' ? 'Принято' : 'Отдано']}
+          formatter={(v, n) => [fmt(num(v)), seriesLabel(n)]}
           contentStyle={{ borderRadius: 12, border: `1px solid ${grid}`, fontSize: 13 }}
         />
         <Legend
-          formatter={(v) => (v === 'down' ? 'Принято' : 'Отдано')}
+          formatter={(v) => seriesLabel(v)}
           iconType="circle"
           wrapperStyle={{ fontSize: 13 }}
         />
