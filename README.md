@@ -288,6 +288,16 @@ gets the message twice.
 Swagger UI; **webhooks** send HMAC-SHA256 signed events with retries. More in
 [docs/api.md](docs/api.md).
 
+#### 🌍 Language (RU / EN)
+
+| Surface                   | Language comes from                                            |
+| ------------------------- | -------------------------------------------------------------- |
+| Panel                     | the admin's own pick (per browser), otherwise the browser's languages |
+| Subscription page         | `Accept-Language`                                              |
+| Client and support bots   | each person's Telegram language                                |
+| Admin bot                 | a panel-wide setting (*Settings → Telegram*) |
+| CLI                       | English                                                        |
+
 #### 🎨 Branding and theme
 
 Your own name and logo instead of "RosPanel" — in the panel and on the subscription page. An
@@ -410,6 +420,12 @@ npm --prefix web run build      # → web/dist (embedded into the binary)
 go build -o rospanel ./cmd/rospanel
 ./rospanel
 ```
+
+**Localisation.** The panel's dictionaries are `web/src/i18n/ru.ts` and `en.ts`, typed against
+each other: a key present in one and missing in the other is a build error, not a silent fallback.
+What Go renders itself — the bots and the subscription page — lives in `internal/i18n/`; the
+backend hands the panel a key plus arguments and never rendered prose. Adding a third language
+means one more dictionary on each side.
 
 Useful environment variables (all optional): `ROSPANEL_DATA` (data directory),
 `ROSPANEL_ADMIN_ADDR` (the panel's loopback address, `127.0.0.1:8080` by default), `XRAY_BIN`,
