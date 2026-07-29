@@ -1,3 +1,8 @@
+import i18n from './i18n'
+
+// The option tables below are functions, not constants: a constant would freeze
+// the labels in whichever language happened to be active when the module was first
+// imported, and switching language would leave every dropdown behind.
 export function fmtBytes(n: number): string {
   if (!n) return '0 B'
   const u = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -16,39 +21,38 @@ const GB = 1024 * 1024 * 1024
 // create form, the user detail editor and the tariff-plan editor — one source of
 // truth so every place offers the same values. The two sub-GiB presets use exact
 // GiB fractions (100/1024, 500/1024) so gbToBytes round-trips to whole MiB.
-export const QUOTA_OPTIONS = [
-  { value: '0', label: 'Без лимита' },
-  { value: '0.09765625', label: '100 МБ' },
-  { value: '0.48828125', label: '500 МБ' },
-  { value: '1', label: '1 ГБ' },
-  { value: '5', label: '5 ГБ' },
-  { value: '10', label: '10 ГБ' },
-  { value: '25', label: '25 ГБ' },
-  { value: '50', label: '50 ГБ' },
-  { value: '100', label: '100 ГБ' },
-  { value: '250', label: '250 ГБ' },
-  { value: '500', label: '500 ГБ' },
+export const quotaOptions = () => [
+  { value: '0', label: i18n.t('quota.unlimited') },
+  { value: '0.09765625', label: i18n.t('quota.mb', { n: 100 }) },
+  { value: '0.48828125', label: i18n.t('quota.mb', { n: 500 }) },
+  { value: '1', label: i18n.t('quota.gb', { n: 1 }) },
+  { value: '5', label: i18n.t('quota.gb', { n: 5 }) },
+  { value: '10', label: i18n.t('quota.gb', { n: 10 }) },
+  { value: '25', label: i18n.t('quota.gb', { n: 25 }) },
+  { value: '50', label: i18n.t('quota.gb', { n: 50 }) },
+  { value: '100', label: i18n.t('quota.gb', { n: 100 }) },
+  { value: '250', label: i18n.t('quota.gb', { n: 250 }) },
+  { value: '500', label: i18n.t('quota.gb', { n: 500 }) },
 ]
 
 // Per-user simultaneous device cap options ("0" = unlimited), used by the user
 // detail editor.
-export const DEVICE_LIMIT_OPTIONS = [
-  { value: '0', label: 'Без лимита' },
-  { value: '1', label: '1 устройство' },
-  { value: '2', label: '2 устройства' },
-  { value: '3', label: '3 устройства' },
-  { value: '5', label: '5 устройств' },
-  { value: '10', label: '10 устройств' },
+export const deviceLimitOptions = () => [
+  { value: '0', label: i18n.t('devices.unlimited') },
+  ...[1, 2, 3, 5, 10].map((n) => ({
+    value: String(n),
+    label: i18n.t('devices.count', { count: n }),
+  })),
 ]
 
 // Automatic quota-reset period options, shared by the create form and the user
 // detail editor.
-export const RESET_PERIODS = [
-  { value: 'none', label: 'Без автосброса' },
-  { value: 'daily', label: 'Ежедневно' },
-  { value: 'weekly', label: 'Еженедельно' },
-  { value: 'monthly', label: 'Ежемесячно' },
-  { value: 'yearly', label: 'Ежегодно' },
+export const resetPeriods = () => [
+  { value: 'none', label: i18n.t('reset.none') },
+  { value: 'daily', label: i18n.t('reset.daily') },
+  { value: 'weekly', label: i18n.t('reset.weekly') },
+  { value: 'monthly', label: i18n.t('reset.monthly') },
+  { value: 'yearly', label: i18n.t('reset.yearly') },
 ]
 
 export function gbToBytes(gb: number): number {
@@ -59,24 +63,14 @@ export function gbToBytes(gb: number): number {
 // panel and the per-user detail drawer. A year is the widest option on purpose:
 // the server keeps per-day traffic for model.TrafficDailyRetentionDays (365) and
 // sweeps the rest, so an "all time" button would only ever return the same rows as
-// "Год" — while promising history that no longer exists.
-export const RANGES = [
-  { value: '1', label: 'День' },
-  { value: '7', label: '7д' },
-  { value: '30', label: '30д' },
-  { value: '90', label: '90д' },
-  { value: '365', label: 'Год' },
+// the "Year" button — while promising history that no longer exists.
+export const ranges = () => [
+  { value: '1', label: i18n.t('range.day') },
+  { value: '7', label: i18n.t('range.d7') },
+  { value: '30', label: i18n.t('range.d30') },
+  { value: '90', label: i18n.t('range.d90') },
+  { value: '365', label: i18n.t('range.year') },
 ]
-
-// plural picks the Russian form for n: one / few / many.
-export function plural(n: number, one: string, few: string, many: string): string {
-  const m10 = n % 10
-  const m100 = n % 100
-  if (m100 >= 11 && m100 <= 14) return many
-  if (m10 === 1) return one
-  if (m10 >= 2 && m10 <= 4) return few
-  return many
-}
 
 // fmtDuration renders a span of seconds compactly: "1d 13h", "6h 4m", "12m".
 export function fmtDuration(sec: number): string {
@@ -115,15 +109,15 @@ export function fmtQuota(used: number, limit: number): string {
 export function statusInfo(status: string): { label: string; color: string } {
   switch (status) {
     case 'active':
-      return { label: 'активно', color: 'teal' }
+      return { label: i18n.t('status.active'), color: 'teal' }
     case 'disabled':
-      return { label: 'отключено', color: 'gray' }
+      return { label: i18n.t('status.disabled'), color: 'gray' }
     case 'expired':
-      return { label: 'срок истёк', color: 'red' }
+      return { label: i18n.t('status.expired'), color: 'red' }
     case 'limited':
-      return { label: 'лимит исчерпан', color: 'orange' }
+      return { label: i18n.t('status.limited'), color: 'orange' }
     case 'device_limited':
-      return { label: 'лимит устройств', color: 'orange' }
+      return { label: i18n.t('status.deviceLimited'), color: 'orange' }
     default:
       return { label: status, color: 'gray' }
   }
@@ -135,11 +129,11 @@ export function isOnline(lastSeen: number): boolean {
 }
 
 export function fmtLastSeen(unix: number): string {
-  if (!unix) return 'не подключался'
+  if (!unix) return i18n.t('lastSeen.never')
   const sec = Math.floor(Date.now() / 1000 - unix)
-  if (sec < 120) return 'только что'
-  if (sec < 3600) return `${Math.floor(sec / 60)} мин назад`
-  if (sec < 86400) return `${Math.floor(sec / 3600)} ч назад`
-  if (sec < 7 * 86400) return `${Math.floor(sec / 86400)} дн назад`
+  if (sec < 120) return i18n.t('lastSeen.justNow')
+  if (sec < 3600) return i18n.t('lastSeen.minutes', { n: Math.floor(sec / 60) })
+  if (sec < 86400) return i18n.t('lastSeen.hours', { n: Math.floor(sec / 3600) })
+  if (sec < 7 * 86400) return i18n.t('lastSeen.days', { n: Math.floor(sec / 86400) })
   return new Date(unix * 1000).toLocaleString()
 }

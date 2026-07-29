@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { getUserEvents } from "./api";
 import { EventList } from "./events";
 import { Modal } from "./ui";
@@ -16,6 +17,7 @@ export function UserEventsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   // Memoized so EventList refetches only when the user changes, not on every render
   // of the parent.
   const load = useCallback(
@@ -27,11 +29,11 @@ export function UserEventsModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={`Журнал · ${userName}`}
+      title={`${t("users.tabEvents")} · ${userName}`}
     >
       <EventList
         load={load}
-        empty="По этому пользователю пока нет событий"
+        empty={t("events.emptyForUser")}
       />
     </Modal>
   );

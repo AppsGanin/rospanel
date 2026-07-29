@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   abuseCategoryLabel,
   getAbuseSettings,
@@ -7,6 +8,7 @@ import {
   type AbuseFeedStatus,
 } from "./api";
 import { useAction } from "./hooks";
+import i18n, { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Button,
@@ -23,42 +25,34 @@ import {
 //
 // `kind` is on screen because it decides what a list can actually catch: a domain
 // list only fires when the domain is visible, and on modern clients most traffic
-// arrives as a bare IP instead. Without it, "35 764 записей" under a domain list
+// arrives as a bare IP instead. Without it, "35,764 entries" under a domain list
 // reads as though it covered IPs too.
 const CATEGORIES: { key: string; desc: string }[] = [
-  {
-    key: "badip",
-    desc: "FireHOL level 1: управляющие серверы ботнетов, атакующие и спам-сети. Отобранный список с минимумом ложных срабатываний — без CDN и шаред-хостинга.",
-  },
+  { key: "badip", desc: "abuse.badipDesc" },
 ];
-
-// plural picks the Russian form: 1 диапазон, 2 диапазона, 5 диапазонов.
-function plural(n: number, one: string, few: string, many: string) {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-  return many;
-}
 
 // fmtEntries names what the count actually is — ranges of addresses, not hosts.
 function fmtEntries(n: number) {
-  return `${n.toLocaleString("ru-RU")} ${plural(n, "диапазон", "диапазона", "диапазонов")}`;
+  return i18n.t("abuse.ranges", {
+    count: n,
+    formatted: n.toLocaleString(currentLang()),
+  });
 }
 
 function fmtBytes(n?: number) {
   if (!n) return "";
-  if (n < 1024) return `${n} Б`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} КБ`;
-  return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+  if (n < 1024) return i18n.t("abuse.bytes", { n });
+  if (n < 1024 * 1024) return i18n.t("abuse.kbytes", { n: Math.round(n / 1024) });
+  return i18n.t("abuse.mbytes", { n: (n / 1024 / 1024).toFixed(1) });
 }
 
 function fmtWhen(ts?: number) {
-  if (!ts) return "не загружен";
-  return new Date(ts * 1000).toLocaleString("ru-RU");
+  if (!ts) return i18n.t("abuse.notLoaded");
+  return new Date(ts * 1000).toLocaleString(currentLang());
 }
 
 export function AbuseSettings() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [enabled, setEnabled] = useState(true);
   const [cats, setCats] = useState<Record<string, boolean>>({});
@@ -116,7 +110,7 @@ export function AbuseSettings() {
           custom,
           alert_min: alertMin,
         });
-        notifySuccess("Настройки блоклистов сохранены");
+        notifySuccess(t("abuse.saved"));
         await load();
       },
       { key: "save" },
@@ -133,7 +127,7 @@ export function AbuseSettings() {
     run(
       async () => {
         await refreshAbuseFeeds();
-        notifySuccess("Обновление списков запущено — займёт до минуты");
+        notifySuccess(t("abuse.refreshStarted"));
         // The download runs in the background; re-read status shortly after.
         window.setTimeout(() => load().catch(() => {}), 8000);
       },
@@ -145,18 +139,18 @@ export function AbuseSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title="Обнаружение злоупотреблений"
-        description="Панель сверяет IP-адреса, к которым подключаются пользователи, со списками вредоносных сетей и записывает только совпадения — обычный трафик никуда не сохраняется. Нужно, чтобы по абуз-жалобе можно было понять, чей это был трафик."
+        title={t("abuse.title")}
+        description={t("abuse.description")}
       >
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-ink">Включено</span>
+          <span className="text-sm text-ink">{t("common.enabled")}</span>
           <Switch checked={enabled} onChange={setEnabled} />
         </div>
       </SettingCard>
 
       <SettingCard
-        title="Списки"
-        description="Проверка идёт по IP-адресу назначения. Отключённый список не скачивается и не занимает память."
+        title={t("abuse.lists")}
+        description={t("abuse.listsDescription")}
       >
         <div className="flex flex-col gap-3">
           {CATEGORIES.map((c) => {
@@ -165,7 +159,7 @@ export function AbuseSettings() {
               <div key={c.key} className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-baseline gap-x-2 text-sm text-ink">
-                    <span>{abuseCategoryLabel[c.key] ?? c.key}</span>
+                    <span>{abuseCategoryLabel(c.key)}</span>
                     {st && st.entries > 0 && (
                       <span className="text-xs text-ink-muted">
                         {fmtEntries(st.entries)}
@@ -173,10 +167,10 @@ export function AbuseSettings() {
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-ink-muted">{c.desc}</div>
+                  <div className="text-xs text-ink-muted">{t(c.desc as "abuse.badipDesc")}</div>
                   {st && (
                     <div className="text-xs text-ink-muted">
-                      Обновлён: {fmtWhen(st.updated)}
+                      {t("abuse.updatedAt", { when: fmtWhen(st.updated) })}
                     </div>
                   )}
                 </div>
@@ -197,27 +191,27 @@ export function AbuseSettings() {
             disabled={!enabled}
             onClick={doRefresh}
           >
-            Обновить списки сейчас
+            {t("abuse.refreshNow")}
           </Button>
         </div>
       </SettingCard>
 
       <SettingCard
-        title="Свой список"
-        description="IP-адреса и подсети (CIDR), по одному в строке. Проверяются первыми — раньше скачанного списка."
+        title={t("abuse.customList")}
+        description={t("abuse.customListDescription")}
       >
         <Textarea
           value={custom}
           onChange={setCustom}
           rows={6}
           placeholder={"203.0.113.0/24\n198.51.100.7\n2001:db8::/32"}
-          hint="Строки с # игнорируются. Всё, что не адрес и не подсеть, пропускается."
+          hint={t("abuse.customHint")}
         />
       </SettingCard>
 
       <SettingCard
-        title="Порог оповещения"
-        description="Сколько совпадений за сутки должно набрать одного пользователя, прежде чем в Telegram уйдёт оповещение. Одно совпадение — это шум; закономерность — нет."
+        title={t("abuse.threshold")}
+        description={t("abuse.thresholdDescription")}
       >
         <TextInput
           type="number"

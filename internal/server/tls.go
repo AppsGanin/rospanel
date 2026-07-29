@@ -29,11 +29,11 @@ func (rt *Router) setACME(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Target) == "" {
-		writeErr(w, http.StatusBadRequest, "укажите домен или IP-адрес")
+		writeErrCode(w, http.StatusBadRequest, "err.hostRequired2", "укажите домен или IP-адрес")
 		return
 	}
 	if err := rt.mgr.SetACMETarget(req.Target, req.Email, req.Provider, req.EABKeyID, req.EABHMACKey); err != nil {
-		writeErr(w, http.StatusBadRequest, "не удалось получить сертификат: "+err.Error())
+		writeErrDetail(w, http.StatusBadRequest, "err.certIssueFailed", "не удалось получить сертификат: ", err.Error())
 		return
 	}
 	rt.tlsStatus(w, r)

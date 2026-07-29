@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -12,7 +13,7 @@ import (
 // A node runs the same Xray and gets its own TLS certificate, but it has no
 // Telegram bot of its own — the panel is the only process that can reach the
 // operator. So the two admin-event categories that already cover the master's Xray
-// and certificate ("Сбой Xray", "Сертификат TLS") are raised here for every node
+// and certificate ("Xray failure", "TLS certificate") are raised here for every node
 // too, out of what each node reports on sync.
 //
 // Every decision is made in one periodic sweep rather than on the sync path, on
@@ -113,6 +114,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 	defer m.nodeAlertMu.Unlock()
 	st := m.nodeAlertLocked(n.ID)
 	online := n.Online(now.Unix())
+	lang := m.botLang()
 
 	if !st.known {
 		st.known, st.online, st.xrayUp = true, online, n.XrayRunning
@@ -125,13 +127,13 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 	case st.online && !online:
 		st.offlineAlerted, st.offlineSince = true, n.LastSeen
 		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, fmt.Sprintf(
-			"⚠️ <b>Нет связи с сервером</b>\n%s\nНе отвечает %s — его пользователи сейчас не обслуживаются.",
-			nodeLabel(n), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0))))})
+			i18n.T(lang, "notify.nodeOffline"),
+			nodeLabel(n), fmtDowntime(now.Sub(time.Unix(n.LastSeen, 0)), lang))})
 	case !st.online && online && st.offlineAlerted:
 		st.offlineAlerted = false
-		msg := "✅ <b>Связь с сервером восстановлена</b>\n" + nodeLabel(n)
+		msg := i18n.T(lang, "notify.nodeBack") + "\n" + nodeLabel(n)
 		if st.offlineSince > 0 {
-			msg += fmt.Sprintf("\nПростой: %s.", fmtDowntime(now.Sub(time.Unix(st.offlineSince, 0))))
+			msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(now.Sub(time.Unix(st.offlineSince, 0)), lang))
 		}
 		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
 	}
@@ -153,14 +155,14 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 		if now.Sub(st.lastXrayNotify) >= nodeXrayNotifyThrottle {
 			st.lastXrayNotify, st.xrayAlerted, st.xrayDownAt = now, true, now
 			out = append(out, nodeAlertMsg{model.AdminEventXrayDown, fmt.Sprintf(
-				"⚠️ <b>Xray аварийно завершился</b>\n%s\nАгент перезапускает процесс автоматически.",
+				i18n.T(lang, "notify.nodeXrayCrashed"),
 				nodeLabel(n))})
 		}
 	case !st.xrayUp && n.XrayRunning && st.xrayAlerted:
 		st.xrayAlerted = false
-		msg := "✅ <b>Xray снова работает</b>\n" + nodeLabel(n)
+		msg := i18n.T(lang, "notify.nodeXrayBack") + "\n" + nodeLabel(n)
 		if down := now.Sub(st.xrayDownAt); down > time.Second {
-			msg += fmt.Sprintf("\nПростой: %s.", fmtDowntime(down))
+			msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(down, lang))
 		}
 		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
 	}
@@ -170,13 +172,13 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 	// is the agent's fallback while ACME is unavailable, not an event: it changes on
 	// its own schedule and says nothing an operator can act on.
 	if n.CertSHA256 != "" && n.CertSHA256 != st.certSHA && !n.CertSelfSigned {
-		verb := "обновлён"
+		key := "notify.nodeCertRenewed"
 		if st.certSHA == "" || st.certSelf {
-			verb = "выпущен" // first real cert for this node, not a renewal
+			key = "notify.nodeCertIssued" // first real cert for this node, not a renewal
 		}
-		msg := fmt.Sprintf("🔒 <b>Сертификат TLS %s</b>\n%s", verb, nodeLabel(n))
+		msg := i18n.T(lang, key, nodeLabel(n))
 		if days := certDaysLeft(n.CertExpiresAt, now); days >= 0 {
-			msg += fmt.Sprintf("\nДействует ещё %d дн.", days)
+			msg += "\n" + i18n.TN(lang, "notify.validForDays", days)
 		}
 		out = append(out, nodeAlertMsg{model.AdminEventCert, msg})
 	}
@@ -185,7 +187,7 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 	if st.certErr != "" && now.Sub(st.lastCertErrAt) >= certErrNotifyThrottle {
 		st.lastCertErrAt = now
 		out = append(out, nodeAlertMsg{model.AdminEventCert, fmt.Sprintf(
-			"🔓 <b>Не удалось обновить сертификат TLS</b>\n%s\nОшибка: %s",
+			i18n.T(lang, "notify.nodeCertFailed"),
 			nodeLabel(n), escHTML(st.certErr))})
 	}
 	return out
@@ -247,7 +249,7 @@ func (m *Manager) pruneNodeAlerts(live map[int64]struct{}) {
 // abuse complaint, a hoster's mail and a traceroute all name the address, not the
 // label the operator picked in the panel.
 func nodeLabel(n *model.Node) string {
-	s := "Сервер: " + escHTML(n.Name)
+	s := i18n.T(i18n.Default, "notify.serverIs", escHTML(n.Name))
 	if n.Host != "" {
 		s += " (" + escHTML(n.Host) + ")"
 	}

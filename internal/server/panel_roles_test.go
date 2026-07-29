@@ -76,7 +76,7 @@ func TestRouteTiersByRole(t *testing.T) {
 	operator := signIn(t, st, "support", model.RoleOperator, false)
 
 	// One representative route per tier. 403 — not 401 — is the required refusal:
-	// the session is valid, so the SPA must show "недостаточно прав" rather than
+	// the session is valid, so the SPA must show "not enough permissions" rather than
 	// bounce the admin to the login screen.
 	const denied = http.StatusForbidden
 	cases := []struct {

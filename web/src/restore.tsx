@@ -1,14 +1,16 @@
 // Shared backup-restore building blocks used by both the first-run wizard and
-// the Settings → Бэкап panel: the manifest preview card, the file-pick/inspect/
+// the Settings → Backup panel: the manifest preview card, the file-pick/inspect/
 // restore lifecycle hook, and the post-restore "panel restarting" screen.
 
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   inspectBackup,
   restoreBackup,
   type BackupInspection,
   type BackupManifest,
 } from "./api";
+import { currentLang, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Modal, Spinner } from "./ui";
 
@@ -34,8 +36,9 @@ export function ManifestCard({
   m: BackupManifest;
   label?: string;
 }) {
+  const { t } = useTranslation();
   const date = m.created_at
-    ? new Date(m.created_at).toLocaleString("ru-RU", {
+    ? new Date(m.created_at).toLocaleString(currentLang(), {
         dateStyle: "medium",
         timeStyle: "short",
       })
@@ -47,10 +50,9 @@ export function ManifestCard({
           {label}
         </div>
       )}
-      {m.domain && <Row label="Домен" value={m.domain} />}
-      <Row label="Путь панели" value={`/${m.secret_path}/`} />
-      <Row label="Пользователей" value={String(m.user_count)} />
-      {date && <Row label="Создан" value={date} />}
+      {m.domain && <Row label={t("restore.domain")} value={m.domain} />}
+      <Row label={t("restore.panelPath")} value={`/${m.secret_path}/`} />
+      {date && <Row label={t("restore.createdAt")} value={date} />}
     </div>
   );
 }
@@ -62,12 +64,13 @@ export function ValidationNote({
 }: {
   inspection: BackupInspection;
 }) {
+  const { t } = useTranslation();
   if (inspection.valid) {
     return null;
   }
   return (
     <p className="mt-2 text-sm text-danger">
-      ✗ {inspection.issue || "Бэкап нельзя восстановить."}
+      ✗ {inspection.issue ? td(inspection.issue) : t("restore.cannotRestore")}
     </p>
   );
 }
@@ -143,6 +146,7 @@ export function RestoreWaiting({
   // routine restart look like something went wrong.
   sameAddress?: boolean;
 }) {
+  const { t } = useTranslation();
   const newUrl =
     url ??
     (manifest?.domain
@@ -183,17 +187,22 @@ export function RestoreWaiting({
     !!manifest?.domain && !!currentDomain && manifest.domain !== currentDomain;
 
   return (
-    <Modal open onClose={() => {}} dismissible={false} title="Панель перезапускается…">
+    <Modal
+      open
+      onClose={() => {}}
+      dismissible={false}
+      title={t("restore.restartingTitle")}
+    >
       <div className="flex flex-col items-center gap-5 py-2">
         <Spinner size={40} className="text-brand-500" />
         <p className="text-center text-sm text-ink-muted">
           {sameAddress
-            ? "Страница обновится сама, как только панель поднимется — обычно это несколько секунд."
-            : "Вас автоматически перенаправит, как только панель поднимется. Если браузер предупредит о сертификате после смены адреса — это нормально, продолжите по ссылке."}
+            ? t("restore.restartingSame")
+            : t("restore.restartingMoved")}
         </p>
         {!sameAddress && (
           <div className="flex flex-col items-center gap-1">
-            <p className="text-xs text-ink-muted">Адрес панели:</p>
+            <p className="text-xs text-ink-muted">{t("restore.panelAddress")}</p>
             <a
               href={newUrl}
               className="break-all font-mono text-xs text-accent hover:underline"
@@ -204,8 +213,7 @@ export function RestoreWaiting({
         )}
         {crossDomain && (
           <p className="text-center text-sm text-warning">
-            Домен изменился. После входа проверьте его в «Сервера» → карточка
-            мастера → Домен.
+            {t("restore.domainChanged")}
           </p>
         )}
       </div>

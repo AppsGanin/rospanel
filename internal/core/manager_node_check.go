@@ -159,7 +159,7 @@ func (m *Manager) checkNodeConfig(ctx context.Context, nodeID int64, cfg json.Ra
 		if res.OK {
 			return nil
 		}
-		return invalid("Xray на этом сервере отклонил конфигурацию: %s", res.Err)
+		return invalidCode("err.nodeXrayRejectedConfig", "Xray на этом сервере отклонил конфигурацию: {{err}}", map[string]any{"err": res.Err})
 	case <-ctx.Done():
 		return errProbeUnavailable
 	}

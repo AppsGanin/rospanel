@@ -61,13 +61,13 @@ const MaxInboundsPerServer = 16
 // there is no global list with per-node toggles, because a port that is free on one
 // box says nothing about the next one.
 type Inbound struct {
-	ID       int64  `json:"id"`
-	ServerID int64  `json:"server_id"` // LocalNodeID (0) = the master
-	Enabled  bool   `json:"enabled"`
-	Sort     int    `json:"sort"`
-	Name     string `json:"name"` // node label shown in the client
-	Protocol string `json:"protocol"`
-	Port     int    `json:"port"`
+	ID       int64       `json:"id"`
+	ServerID int64       `json:"server_id"` // LocalNodeID (0) = the master
+	Enabled  bool        `json:"enabled"`
+	Sort     int         `json:"sort"`
+	Name     string      `json:"name"` // node label shown in the client
+	Protocol string      `json:"protocol"`
+	Port     int         `json:"port"`
 	Opts     InboundOpts `json:"opts"`
 
 	CreatedAt int64 `json:"created_at"`
@@ -229,7 +229,8 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(blob, &fields); err != nil {
-		return fmt.Errorf("%s: ожидается JSON-объект (%v)", label, err)
+		return fieldErr("err.expectJSONObject", "{{field}}: ожидается JSON-объект ({{err}})",
+			map[string]any{"field": label, "err": err})
 	}
 	var unknown []string
 	for k := range fields {
@@ -239,8 +240,9 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return fmt.Errorf("%s: Xray не знает эти параметры и молча их проигнорирует — %s",
-			label, strings.Join(unknown, ", "))
+		return fieldErr("err.unknownXrayKeys",
+			"{{field}}: Xray не знает эти параметры и молча их проигнорирует — {{keys}}",
+			map[string]any{"field": label, "keys": strings.Join(unknown, ", ")})
 	}
 	return nil
 }
@@ -452,67 +454,71 @@ const VisionFlowName = "xtls-rprx-vision"
 // ValidateInboundSet's job. Messages are user-facing.
 func (in *Inbound) Validate() error {
 	if in.Name == "" {
-		return fmt.Errorf("укажи название подключения")
+		return fieldErr("err.inboundNameRequired", "укажите название подключения")
 	}
 	if len([]rune(in.Name)) > 32 {
-		return fmt.Errorf("название подключения не длиннее 32 символов")
+		return fieldErr("err.inboundNameTooLong2", "название подключения не длиннее 32 символов")
 	}
 	if !inboundNameRe.MatchString(in.Name) {
-		return fmt.Errorf("недопустимое название %q (буквы, цифры, пробел, . _ - ( ))", in.Name)
+		return fieldErr("err.inboundNameCharset2", "недопустимое название {{name}} (буквы, цифры, пробел, . _ - ( ))", map[string]any{"name": in.Name})
 	}
 	if lower := strings.ToLower(in.Name); lower == "auto" || lower == "direct" {
-		return fmt.Errorf("название %q зарезервировано — выбери другое", in.Name)
+		return fieldErr("err.inboundNameReserved", "название {{name}} зарезервировано — выберите другое", map[string]any{"name": in.Name})
 	}
 	if !contains(InboundProtocols, in.Protocol) {
-		return fmt.Errorf("неизвестный протокол %q", in.Protocol)
+		return fieldErr("err.unknownProtocol", "неизвестный протокол {{value}}", map[string]any{"value": in.Protocol})
 	}
 	if in.Port < 1 || in.Port > 65535 {
-		return fmt.Errorf("порт вне диапазона 1–65535")
+		return fieldErr("err.inboundPortRange", "порт вне диапазона 1–65535")
 	}
 	o := in.Opts
 	if !contains(InboundTransports(in.Protocol), o.Transport) {
-		return fmt.Errorf("транспорт %q не поддерживается протоколом %s", o.Transport, in.Protocol)
+		return fieldErr("err.transportUnsupported", "транспорт {{transport}} не поддерживается протоколом {{protocol}}", map[string]any{"transport": o.Transport, "protocol": in.Protocol})
 	}
 	sec := InboundSecurities(in.Protocol, o.Transport)
 	if !contains(sec, o.Security) {
-		return fmt.Errorf("%s + %s не поддерживает защиту %q (доступно: %s)",
-			in.Protocol, o.Transport, o.Security, strings.Join(sec, ", "))
+		return fieldErr("err.securityUnsupported",
+			"{{transport}} + {{protocol}} не поддерживает защиту {{security}} (доступно: {{available}})",
+			map[string]any{
+				"protocol": in.Protocol, "transport": o.Transport,
+				"security": o.Security, "available": strings.Join(sec, ", "),
+			})
 	}
 
 	if in.Protocol == InbHysteria {
 		if o.HopEnd != 0 || o.HopStart != 0 {
 			if o.HopStart < 1 || o.HopEnd > 65535 || o.HopStart > o.HopEnd {
-				return fmt.Errorf("неверный диапазон хопа")
+				return fieldErr("err.badHopRange2", "неверный диапазон хопа")
 			}
 			if o.HopInterval != "" && !inboundHopRe.MatchString(o.HopInterval) {
-				return fmt.Errorf("неверный интервал хопа (нужно «N-M», напр. 5-10)")
+				return fieldErr("err.badHopInterval", "неверный интервал хопа (нужно «N-M», напр. 5-10)")
 			}
 		}
 		return nil
 	}
 
 	if o.FP != "" && !ValidFingerprint(o.FP) {
-		return fmt.Errorf("неизвестный fingerprint %q", o.FP)
+		return fieldErr("err.unknownFingerprint2", "неизвестный fingerprint {{value}}", map[string]any{"value": o.FP})
 	}
 	switch o.Transport {
 	case TrWS, TrHTTPUpgrade, TrXHTTP:
 		if o.Path == "" {
-			return fmt.Errorf("укажи путь для транспорта %s", o.Transport)
+			return fieldErr("err.pathRequired", "укажите путь для транспорта {{transport}}", map[string]any{"transport": o.Transport})
 		}
 		if !inboundPathRe.MatchString(o.Path) {
-			return fmt.Errorf("неверный путь (начинается с «/», допустимы латиница, цифры, - _ . /)")
+			return fieldErr("err.badPath", "неверный путь (начинается с «/», допустимы латиница, цифры, - _ . /)")
 		}
 	case TrGRPC:
 		if o.ServiceName == "" {
-			return fmt.Errorf("укажи имя gRPC-сервиса")
+			return fieldErr("err.grpcServiceRequired", "укажите имя gRPC-сервиса")
 		}
 		if !inboundServiceRe.MatchString(o.ServiceName) {
-			return fmt.Errorf("неверное имя gRPC-сервиса (латиница, цифры, . _ -)")
+			return fieldErr("err.badGrpcService", "неверное имя gRPC-сервиса (латиница, цифры, . _ -)")
 		}
 	}
 	if o.Transport == TrXHTTP && o.Mode != "" &&
 		!contains([]string{XHTTPAuto, XHTTPPacketUp, XHTTPStreamUp, XHTTPStreamOne}, o.Mode) {
-		return fmt.Errorf("неизвестный режим XHTTP %q", o.Mode)
+		return fieldErr("err.unknownXhttpMode", "неизвестный режим XHTTP {{value}}", map[string]any{"value": o.Mode})
 	}
 	if err := validateJSONObject(o.XHTTPExtra, XHTTPExtraKeys, "XHTTP extra"); err != nil {
 		return err
@@ -520,35 +526,35 @@ func (in *Inbound) Validate() error {
 	if err := validateJSONObject(o.Sockopt, SockoptKeys, "sockopt"); err != nil {
 		return err
 	}
-	if err := validateJSONObject(o.TLSExtra, TLSExtraKeys, "доп. TLS"); err != nil {
+	if err := validateJSONObject(o.TLSExtra, TLSExtraKeys, "TLS extra"); err != nil {
 		return err
 	}
 	if o.HeaderType != "" && o.HeaderType != "http" {
-		return fmt.Errorf("неизвестный тип маскировки %q (доступно: http)", o.HeaderType)
+		return fieldErr("err.unknownMasqType", "неизвестный тип маскировки {{value}} (доступно: http)", map[string]any{"value": o.HeaderType})
 	}
 	if o.HeaderType == "http" && len(o.HeaderHosts) == 0 {
-		return fmt.Errorf("для HTTP-маскировки укажи хотя бы один хост")
+		return fieldErr("err.masqHostRequired", "для HTTP-маскировки укажите хотя бы один хост")
 	}
 	for _, h := range o.HeaderHosts {
 		if !RealityHostRe.MatchString(h) {
-			return fmt.Errorf("хост маскировки %q не похож на настоящий домен", h)
+			return fieldErr("err.masqHostInvalid", "хост маскировки {{value}} не похож на настоящий домен", map[string]any{"value": h})
 		}
 	}
 	for _, p := range o.HeaderPaths {
 		if !inboundPathRe.MatchString(p) {
-			return fmt.Errorf("неверный путь маскировки %q", p)
+			return fieldErr("err.badMasqPath", "неверный путь маскировки {{value}}", map[string]any{"value": p})
 		}
 	}
 	if o.Authority != "" && !RealityHostRe.MatchString(o.Authority) {
-		return fmt.Errorf("authority %q не похож на домен", o.Authority)
+		return fieldErr("err.badAuthority", "authority {{value}} не похож на домен", map[string]any{"value": o.Authority})
 	}
 	if o.Security == SecReality {
 		if len(o.RealityServerNames()) == 0 {
-			return fmt.Errorf("укажи домен маскировки REALITY")
+			return fieldErr("err.realityDestRequired2", "укажите домен маскировки REALITY")
 		}
 		for _, d := range o.RealityServerNames() {
 			if !RealityHostRe.MatchString(d) {
-				return fmt.Errorf("домен маскировки REALITY %q не похож на настоящий", d)
+				return fieldErr("err.realityDestInvalid2", "домен маскировки REALITY {{value}} не похож на настоящий", map[string]any{"value": d})
 			}
 		}
 	}
@@ -675,7 +681,7 @@ type ReservedPorts map[int]string
 // and letting two entries share a name only to fail on enable is worse.
 func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []string) error {
 	if len(list) > MaxInboundsPerServer {
-		return fmt.Errorf("слишком много подключений: максимум %d", MaxInboundsPerServer)
+		return fieldErr("err.tooManyInbounds", "слишком много подключений: максимум {{max}}", map[string]any{"max": MaxInboundsPerServer})
 	}
 	names := map[string]bool{}
 	for _, n := range takenNames {
@@ -697,17 +703,17 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 		}
 		lower := strings.ToLower(in.Name)
 		if names[lower] {
-			return fmt.Errorf("название подключения %q уже занято на этом сервере — сделай их разными", in.Name)
+			return fieldErr("err.inboundNameDuplicate2", "название подключения {{name}} уже занято на этом сервере — сделайте их разными", map[string]any{"name": in.Name})
 		}
 		names[lower] = true
 		if !in.Enabled {
 			continue
 		}
 		if who, taken := reserved[in.Port]; taken {
-			return fmt.Errorf("порт %d уже занят (%s) — выбери другой", in.Port, who)
+			return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Port, "who": who})
 		}
 		if who, dup := ports[in.Port]; dup {
-			return fmt.Errorf("порт %d уже занят подключением «%s»", in.Port, who)
+			return fieldErr("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": who})
 		}
 		ports[in.Port] = in.Name
 
@@ -718,8 +724,12 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 			}
 			for _, h := range hops {
 				if from <= h.to && h.from <= in.Opts.HopEnd {
-					return fmt.Errorf("диапазон хопа %d–%d пересекается с «%s» (%d–%d)",
-						from, in.Opts.HopEnd, h.name, h.from, h.to)
+					return fieldErr("err.hopRangeOverlap",
+						"диапазон хопа {{from}}–{{to}} пересекается с «{{name}}» ({{otherFrom}}–{{otherTo}})",
+						map[string]any{
+							"from": from, "to": in.Opts.HopEnd,
+							"name": h.name, "otherFrom": h.from, "otherTo": h.to,
+						})
 				}
 			}
 			hops = append(hops, hopRange{in.Name, from, in.Opts.HopEnd})
@@ -730,14 +740,16 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 	for _, h := range hops {
 		for p, who := range ports {
 			if p >= h.from && p <= h.to && who != h.name {
-				return fmt.Errorf("диапазон хопа «%s» (%d–%d) накрывает порт %d подключения «%s»",
-					h.name, h.from, h.to, p, who)
+				return fieldErr("err.hopRangeCoversInbound",
+					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} подключения «{{who}}»",
+					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
 			}
 		}
 		for p, who := range reserved {
 			if p >= h.from && p <= h.to {
-				return fmt.Errorf("диапазон хопа «%s» (%d–%d) накрывает порт %d (%s)",
-					h.name, h.from, h.to, p, who)
+				return fieldErr("err.hopRangeCoversPort",
+					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} ({{who}})",
+					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
 			}
 		}
 	}

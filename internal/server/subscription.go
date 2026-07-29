@@ -11,6 +11,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/branding"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -58,7 +59,8 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// even from a browser — that's how the page's own "download Clash config"
 		// button fetches YAML from this very URL instead of re-rendering the page.
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
-			if err := rt.servePage(w, *u, set); err != nil {
+			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+			if err := rt.servePage(w, *u, set, lang); err != nil {
 				rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on render errors
 			}
 			return
@@ -195,12 +197,13 @@ func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.U
 		rt.decoy.ServeHTTP(w, r)
 		return
 	}
-	links := sub.DeepLinks(sub.URL(set, u.SubToken))
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	links := sub.DeepLinks(sub.URL(set, u.SubToken), lang)
 	if n < 0 || n >= len(links) {
 		rt.decoy.ServeHTTP(w, r)
 		return
 	}
-	html, err := sub.AppRedirect(links[n].Href)
+	html, err := sub.AppRedirect(links[n].Href, lang)
 	if err != nil {
 		rt.decoy.ServeHTTP(w, r)
 		return
@@ -218,8 +221,9 @@ func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u mode
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	if !set.BillingEnabled {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "недоступно"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(lang, "sub.unavailable")})
 		return
 	}
 	if rt.mgr.ActivePaidPlan(u) == nil {
@@ -243,8 +247,9 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	if !set.BillingEnabled {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "оплата недоступна"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(lang, "sub.payUnavailable")})
 		return
 	}
 	var req struct {
@@ -259,14 +264,14 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 	if req.PlanID != u.PlanID {
 		if active := rt.mgr.ActivePaidPlan(u); active != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "у вас активна подписка «" + active.Name + "» — сначала отмените её"})
+				"error": i18n.T(lang, "sub.alreadySubscribed", active.Name)})
 			return
 		}
 	}
 	// No automatic provider passed/configured ⇒ create a manual order and return the
 	// payment instructions for the page to show (admin confirms it later).
 	if req.Provider == "" && len(rt.mgr.PaymentMethods()) == 0 {
-		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), u.ID, req.PlanID)
+		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), lang, u.ID, req.PlanID)
 		if err != nil {
 			writeManagerErr(w, err)
 			return
@@ -274,7 +279,7 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
+	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -309,7 +314,7 @@ func (rt *Router) handleSubOrder(w http.ResponseWriter, _ *http.Request, u model
 // page: the active plan, its paid expiry, and the paid tariffs the user can buy or
 // extend. Returns a zero (hidden) block unless billing is on with at least one
 // enabled paid plan.
-func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
+func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang) sub.Billing {
 	if !set.BillingEnabled {
 		return sub.Billing{}
 	}
@@ -333,7 +338,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 		Note:        strings.TrimSpace(set.BillingPaymentNote),
 	}
 	if u.ExpireAt > 0 {
-		b.ExpireText = "до " + time.Unix(u.ExpireAt, 0).Format("02.01.2006")
+		b.ExpireText = i18n.T(lang, "sub.until", time.Unix(u.ExpireAt, 0).Format("02.01.2006"))
 	}
 	// While a paid plan is active, switching is blocked: offer only that plan
 	// (renewal) plus cancellation. Otherwise offer every paid plan to buy.
@@ -341,7 +346,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 		b.Locked = true
 		b.Cancelable = true
 		b.Plans = []sub.BillingPlan{{
-			ID: active.ID, Name: active.Name, Label: payPlanLabel(*active), Current: true,
+			ID: active.ID, Name: active.Name, Label: payPlanLabel(lang, *active), Current: true,
 		}}
 	} else {
 		for _, p := range plans {
@@ -349,7 +354,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 				continue // paid plans only (no free/trial self-select)
 			}
 			b.Plans = append(b.Plans, sub.BillingPlan{
-				ID: p.ID, Name: p.Name, Label: payPlanLabel(p), Current: p.ID == u.PlanID,
+				ID: p.ID, Name: p.Name, Label: payPlanLabel(lang, p), Current: p.ID == u.PlanID,
 			})
 		}
 	}
@@ -367,12 +372,12 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings) sub.Billing {
 	return b
 }
 
-// payPlanLabel renders a paid plan's price/period, e.g. "199 ₽ / 30 дн.".
-func payPlanLabel(p model.TariffPlan) string {
+// payPlanLabel renders a paid plan's price/period, e.g. "199 ₽ / 30 d".
+func payPlanLabel(lang i18n.Lang, p model.TariffPlan) string {
 	if p.PeriodDays > 0 {
-		return fmt.Sprintf("%d ₽ / %d дн.", p.PriceRub, p.PeriodDays)
+		return i18n.T(lang, "sub.pricePeriod", p.PriceRub, i18n.TN(lang, "sub.periodDays", p.PeriodDays))
 	}
-	return fmt.Sprintf("%d ₽", p.PriceRub)
+	return i18n.T(lang, "sub.price", p.PriceRub)
 }
 
 // isBrowser reports whether the request looks like a web browser (so we serve
@@ -384,10 +389,13 @@ func isBrowser(r *http.Request) bool {
 // servePage renders the human-facing subscription page. It returns an error
 // (writing nothing) instead of a 500 so the caller can fall through to the decoy
 // and keep the masquerade intact.
-func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings) error {
+// lang comes from the caller's Accept-Language: the subscription page is the one
+// surface a VPN *user* sees, and the panel knows nothing about their language
+// preference, so the browser decides it per request.
+func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, lang i18n.Lang) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
-	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set))
+	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set, lang), lang)
 	if err != nil {
 		return err
 	}

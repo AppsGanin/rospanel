@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   type AdminAudit,
   getAdminAuditCatalog,
   listAdminAudit,
 } from "./api";
+import { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Badge, Button, Select, SettingCard, Skeleton } from "./ui";
 
 const PAGE = 50;
 
 function fmtTs(unix: number): string {
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     dateStyle: "medium",
     timeStyle: "short",
   });
@@ -61,7 +63,7 @@ function AuditRow({
           )}
           {ev.target && (
             <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-ink-muted">
-              {ev.target}
+              {auditTarget(ev.target)}
             </code>
           )}
         </div>
@@ -78,12 +80,23 @@ function AuditRow({
   );
 }
 
+// A settings row's target is a dictionary key (the server marks it with this
+// prefix) so the journal reads in the admin's language. Everything else a target
+// holds — a login, an API key name, a URL — is free-form and shown verbatim. Rows
+// written before this existed carry plain Russian text and fall through the same
+// way, which is honest: they record what was shown at the time.
+const SECTION_PREFIX = "audit.sec.";
+
+function auditTarget(target: string): string {
+  return target.startsWith(SECTION_PREFIX) ? td(target) : target;
+}
+
 export function AdminAuditPanel() {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<AdminAudit[]>([]);
-  const [labels, setLabels] = useState<Record<string, string>>({});
-  const [options, setOptions] = useState<{ value: string; label: string }[]>([
-    { value: "", label: "Все события" },
-  ]);
+  // Only the KEYS come from the server; the labels are looked up here so the
+  // journal follows the panel's language rather than the server's.
+  const [categoryKeys, setCategoryKeys] = useState<string[]>([]);
   const [category, setCategory] = useState("");
   const [next, setNext] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -91,16 +104,17 @@ export function AdminAuditPanel() {
 
   useEffect(() => {
     getAdminAuditCatalog()
-      .then((c) => {
-        // Rows are titled by their exact action; the filter offers areas.
-        setLabels(Object.fromEntries(c.actions.map((a) => [a.key, a.label])));
-        setOptions([
-          { value: "", label: "Все события" },
-          ...c.categories.map((x) => ({ value: x.key, label: x.label })),
-        ]);
-      })
-      .catch(() => {}); // the journal still renders, just with raw action keys
+      .then((c) => setCategoryKeys(c.categories.map((x) => x.key)))
+      .catch(() => {}); // the journal still renders, just without the filter
   }, []);
+
+  const options = [
+    { value: "", label: t("audit.allEvents") },
+    ...categoryKeys.map((k) => ({ value: k, label: td(`audit.cat.${k}`) })),
+  ];
+
+  // Rows are titled by their exact action; the filter offers areas.
+  const actionLabel = (action: string) => td(`audit.action.${slugKey(action)}`);
 
   // Refetch from the top whenever the filter changes.
   const load = useCallback(() => {
@@ -132,8 +146,8 @@ export function AdminAuditPanel() {
 
   return (
     <SettingCard
-      title="Журнал администраторов"
-      description="Кто входил в панель и что менял: настройки, тарифы, ключи, бэкапы, состав администраторов. Пароли и токены в журнал не попадают. Хранится 90 дней."
+      title={t("audit.title")}
+      description={t("audit.description", { days: 90 })}
       action={
         <div className="w-48">
           <Select value={category} onChange={setCategory} data={options} />
@@ -149,7 +163,7 @@ export function AdminAuditPanel() {
         </div>
       ) : events.length === 0 ? (
         <p className="py-4 text-center text-sm text-ink-muted">
-          Событий нет.
+          {t("audit.empty")}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -157,7 +171,7 @@ export function AdminAuditPanel() {
             <AuditRow
               key={ev.id}
               ev={ev}
-              label={labels[ev.action] ?? ev.action}
+              label={actionLabel(ev.action)}
             />
           ))}
           {next > 0 && (
@@ -168,7 +182,7 @@ export function AdminAuditPanel() {
                 loading={more}
                 onClick={loadMore}
               >
-                Показать ещё
+                {t("common.showMore")}
               </Button>
             </div>
           )}

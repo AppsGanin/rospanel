@@ -18,7 +18,7 @@ const autoDeleteMaxDays = 365
 // written by the HTTP layer (see server/audit.go), like every other setting.
 func (m *Manager) SetUserAutoDelete(days int) error {
 	if days < 0 || days > autoDeleteMaxDays {
-		return invalid("срок хранения истёкших: от 0 (не удалять) до %d дней", autoDeleteMaxDays)
+		return invalidCode("err.autodeleteRange", "срок хранения истёкших: от 0 (не удалять) до {{max}} дней", map[string]any{"max": autoDeleteMaxDays})
 	}
 	return m.store.SetUserAutoDeleteDays(days)
 }
@@ -32,7 +32,7 @@ func (m *Manager) SetUserAutoDelete(days int) error {
 //     a user whose plan was renewed has a future expiry and is never a candidate;
 //   - users with no expiry date at all are never touched;
 //   - every deletion is written to the user journal (which outlives the user) and
-//     pushed as a webhook, so «где мой пользователь?» always has an answer.
+//     pushed as a webhook, so "where did my user go?" always has an answer.
 func (m *Manager) PurgeExpiredUsers() {
 	set, err := m.store.GetSettings()
 	if err != nil || set == nil || set.UserAutoDeleteDays <= 0 {

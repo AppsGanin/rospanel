@@ -36,7 +36,7 @@ func designatedFixture(t *testing.T) (*Manager, *store.Store, *model.TariffPlan,
 	return m, st, free, trial
 }
 
-// TestDesignatedPlanStaysActive: the editor no longer shows an "Активен" toggle for
+// TestDesignatedPlanStaysActive: the editor no longer shows an "Active" toggle for
 // a designated free/trial plan, because such a plan is never offered for sale. The
 // server must therefore keep the flag true — a stale false would drop the plan out
 // of the admin's own plan pickers (they filter on enabled) with nothing on screen

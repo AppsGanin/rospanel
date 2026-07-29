@@ -43,7 +43,7 @@ func runNode(args []string) {
 	case "help", "--help", "-h":
 		printNodeUsage(os.Stdout)
 	default:
-		fmt.Fprintf(os.Stderr, "неизвестная node-команда %q\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown node command %q\n\n", args[0])
 		printNodeUsage(os.Stderr)
 		os.Exit(2)
 	}
@@ -221,9 +221,9 @@ func runNodeUninstall(args []string) {
 		log.Fatal("node uninstall: run as root (sudo)")
 	}
 	if !hasYesFlag(args) && !confirmTTY(
-		"Удалить systemd-сервис rospanel-node? Нода будет остановлена.\n"+
-			"Данные ноды сохранятся, бинарь не удаляется. Продолжить? [y/N]: ") {
-		fmt.Println("Отменено.")
+		"Remove the rospanel-node systemd service? The node will be stopped.\n"+
+			"Node data is kept and the binary is not removed. Continue? [y/N]: ") {
+		fmt.Println("Cancelled.")
 		return
 	}
 	_ = exec.Command("systemctl", "disable", "--now", "rospanel-node").Run()

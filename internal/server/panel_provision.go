@@ -35,11 +35,11 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 	req.SSHHost = strings.TrimSpace(req.SSHHost)
 	req.SSHUser = strings.TrimSpace(req.SSHUser)
 	if req.SSHHost == "" || req.SSHUser == "" {
-		writeErr(w, http.StatusBadRequest, "укажите адрес сервера и SSH-пользователя")
+		writeErrCode(w, http.StatusBadRequest, "err.sshHostUserRequired", "укажите адрес сервера и SSH-пользователя")
 		return
 	}
 	if req.SSHPassword == "" && req.SSHKey == "" {
-		writeErr(w, http.StatusBadRequest, "укажите SSH-пароль или приватный ключ")
+		writeErrCode(w, http.StatusBadRequest, "err.sshCredsRequired", "укажите SSH-пароль или приватный ключ")
 		return
 	}
 	node, err := rt.mgr.GetNode(id)
@@ -48,7 +48,7 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 		return
 	}
 	if node == nil {
-		writeErr(w, http.StatusNotFound, "нода не найдена")
+		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
 
@@ -57,7 +57,7 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 	// this works for an unreleased build and avoids version skew.
 	self, err := os.Executable()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "не удалось определить путь к бинарю панели")
+		writeErrCode(w, http.StatusInternalServerError, "err.binaryPathUnknown", "не удалось определить путь к бинарю панели")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 
 	ip := clientIP(r)
 	if !rt.streams.acquire(ip) {
-		writeErr(w, http.StatusTooManyRequests, "слишком много активных потоков")
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyStreams", "слишком много активных потоков")
 		return
 	}
 	defer rt.streams.release(ip)
@@ -116,12 +116,12 @@ func (rt *Router) provisionNode(w http.ResponseWriter, r *http.Request, id int64
 
 	_, err = provision.Install(ctx, creds, self, installArgs, emit)
 	if err != nil {
-		emit("ОШИБКА: " + err.Error())
+		emit("ERROR: " + err.Error())
 		emit("event:error")
 		return
 	}
 	// Give the freshly-started agent a moment; the UI polls the node list for online.
 	time.Sleep(500 * time.Millisecond)
-	emit("Установка завершена. Нода подключится к панели в течение минуты.")
+	emit("Install finished. The node will reach the panel within a minute.")
 	emit("event:done")
 }

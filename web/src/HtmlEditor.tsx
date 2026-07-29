@@ -1,8 +1,9 @@
 import { useRef } from "react";
+import i18n from "./i18n";
 import { Textarea } from "./ui";
 
 // Icons in the stroke-and-currentColor style the rest of the panel uses. The
-// letter-shaped controls deliberately render in the style they apply — Ж bold, К
+// letter-shaped controls deliberately render in the style they apply — B bold, I
 // italic — which says what they do without needing a legend.
 const IconCode = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -33,41 +34,41 @@ const IconSpoiler = () => (
 // Deliberately a tag-wrapper and not a Markdown editor: Telegram parses a small fixed
 // subset of HTML, and a Markdown converter would add a layer whose mistakes surface
 // only once the message is already in someone's chat.
-const FORMATS: {
+const formats = (): {
   key: string;
   title: string;
   open: string;
   close: string;
   placeholder: string;
   content: React.ReactNode;
-}[] = [
+}[] => [
   {
-    key: "b", title: "Жирный", open: "<b>", close: "</b>", placeholder: "текст",
-    content: <span className="font-bold">Ж</span>,
+    key: "b", title: i18n.t("html.bold"), open: "<b>", close: "</b>", placeholder: i18n.t("html.text"),
+    content: <span className="font-bold">{i18n.t("html.boldGlyph")}</span>,
   },
   {
-    key: "i", title: "Курсив", open: "<i>", close: "</i>", placeholder: "текст",
-    content: <span className="italic">К</span>,
+    key: "i", title: i18n.t("html.italic"), open: "<i>", close: "</i>", placeholder: i18n.t("html.text"),
+    content: <span className="italic">{i18n.t("html.italicGlyph")}</span>,
   },
   {
-    key: "u", title: "Подчёркнутый", open: "<u>", close: "</u>", placeholder: "текст",
-    content: <span className="underline">Ч</span>,
+    key: "u", title: i18n.t("html.underline"), open: "<u>", close: "</u>", placeholder: i18n.t("html.text"),
+    content: <span className="underline">{i18n.t("html.underlineGlyph")}</span>,
   },
   {
-    key: "s", title: "Зачёркнутый", open: "<s>", close: "</s>", placeholder: "текст",
+    key: "s", title: i18n.t("html.strike"), open: "<s>", close: "</s>", placeholder: i18n.t("html.text"),
     content: <span className="line-through">S</span>,
   },
   {
-    key: "code", title: "Моноширинный", open: "<code>", close: "</code>", placeholder: "код",
+    key: "code", title: i18n.t("html.mono"), open: "<code>", close: "</code>", placeholder: i18n.t("html.code"),
     content: <IconCode />,
   },
   {
-    key: "a", title: "Ссылка", open: '<a href="https://">', close: "</a>",
-    placeholder: "текст ссылки", content: <IconLink />,
+    key: "a", title: i18n.t("html.link"), open: '<a href="https://">', close: "</a>",
+    placeholder: i18n.t("html.linkText"), content: <IconLink />,
   },
   {
-    key: "spoiler", title: "Скрытый текст", open: "<tg-spoiler>", close: "</tg-spoiler>",
-    placeholder: "спойлер", content: <IconSpoiler />,
+    key: "spoiler", title: i18n.t("html.spoiler"), open: "<tg-spoiler>", close: "</tg-spoiler>",
+    placeholder: i18n.t("html.spoilerText"), content: <IconSpoiler />,
   },
 ];
 
@@ -107,7 +108,7 @@ export function HtmlEditor({
     <div>
       {label && <p className="mb-1 text-sm font-medium text-ink">{label}</p>}
       <div className="mb-1 flex flex-wrap gap-1">
-        {FORMATS.map((f) => (
+        {formats().map((f) => (
           <button
             key={f.key}
             type="button"

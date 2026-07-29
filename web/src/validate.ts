@@ -1,6 +1,7 @@
 // Client-side validators for the ACME form. These mirror the server checks in
 // internal/core/validate.go — they exist only for instant feedback; the server
 // is still the authority.
+import i18n from './i18n'
 
 // isValidEmail reports whether s is a single, well-formed e-mail with a dotted
 // domain part (e.g. "a@localhost" is rejected, as ACME CAs won't accept it).
@@ -53,13 +54,13 @@ const RESERVED_SUB_PATHS = new Set(['api', 'assets', 'login', 'logout', 'favicon
 export function subPathError(path: string, secret: string): string | null {
   const p = path.trim()
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(p)) {
-    return 'Путь подписки: латиница, цифры, «-» и «_», 1–32 символа.'
+    return i18n.t('validate.subPath')
   }
   if (RESERVED_SUB_PATHS.has(p.toLowerCase())) {
-    return `Путь «${p}» зарезервирован панелью — выберите другой.`
+    return i18n.t('validate.subPathReserved', { path: p })
   }
   if (secret && p.toLowerCase() === secret.toLowerCase()) {
-    return 'Путь подписки не может совпадать с секретным путём панели.'
+    return i18n.t('validate.subPathSameAsPanel')
   }
   return null
 }

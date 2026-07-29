@@ -24,12 +24,12 @@ func (m *Manager) syncOpera(enabled bool, country string, port int) error {
 	}
 	if _, err := opera.EnsureBinary(m.operaDir); err != nil {
 		logErr("opera: binary download failed", "err", err)
-		return fmt.Errorf("opera-proxy: загрузка не удалась: %w", err)
+		return fmt.Errorf("opera-proxy: download failed: %w", err)
 	}
 	logInfo("opera: starting helper", "country", country, "port", port)
 	if err := m.operaSup.Start(country, port); err != nil {
 		logErr("opera: start failed", "err", err)
-		return fmt.Errorf("opera-proxy: запуск не удался: %w", err)
+		return fmt.Errorf("opera-proxy: start failed: %w", err)
 	}
 	// Observe readiness off the request path; don't stop the helper on timeout.
 	go func() {

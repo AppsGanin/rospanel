@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
@@ -29,6 +30,7 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"enabled":            set.TGBotEnabled,
 		"token":              set.TGBotToken,
 		"backup_cron":        set.TGBackupCron,
+		"lang":               set.BotLang(),
 		"chat_ids":           chats,
 		"link_code":          set.TGLinkCode,
 		"bot_username":       botUsername(r.Context(), set.TGBotToken),
@@ -66,6 +68,7 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		Enabled     *bool           `json:"enabled"`
 		Token       *string         `json:"token"`
 		BackupCron  *string         `json:"backup_cron"`
+		Lang        *string         `json:"lang"`
 		UserEnabled *bool           `json:"user_enabled"`
 		UserToken   *string         `json:"user_token"`
 		UserRegMode *string         `json:"user_reg_mode"`
@@ -101,6 +104,7 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		Enabled:     or(req.Enabled, cur.TGBotEnabled),
 		Token:       or(req.Token, cur.TGBotToken),
 		BackupCron:  or(req.BackupCron, cur.TGBackupCron),
+		Lang:        or(req.Lang, cur.TGLang),
 		UserEnabled: or(req.UserEnabled, cur.TGUserBotEnabled),
 		UserToken:   or(req.UserToken, cur.TGUserBotToken),
 		UserRegMode: or(req.UserRegMode, cur.RegMode()),
@@ -173,11 +177,11 @@ func (rt *Router) checkTelegramSupport(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimSpace(set.TGSupportBotToken)
 	if token == "" {
-		writeErr(w, http.StatusBadRequest, "сначала укажите токен бота поддержки и сохраните настройки")
+		writeErrCode(w, http.StatusBadRequest, "err.setSupportTokenFirst", "сначала укажите токен бота поддержки и сохраните настройки")
 		return
 	}
 	if set.TGSupportGroupID == 0 {
-		writeErr(w, http.StatusBadRequest, "сначала укажите ID группы поддержки и сохраните настройки")
+		writeErrCode(w, http.StatusBadRequest, "err.setSupportGroupFirst", "сначала укажите ID группы поддержки и сохраните настройки")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -186,37 +190,38 @@ func (rt *Router) checkTelegramSupport(w http.ResponseWriter, r *http.Request) {
 
 	me, err := client.GetMe(ctx)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "токен бота поддержки не принят: "+err.Error())
+		writeErrDetail(w, http.StatusBadGateway, "err.supportTokenRejected", "токен бота поддержки не принят: ", err.Error())
 		return
 	}
 	chat, err := client.GetChat(ctx, set.TGSupportGroupID)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway,
+		writeCoded(w, "err.supportGroupUnreachable",
+			map[string]any{"detail": err.Error(), "bot": me.Username},
 			"группа недоступна: "+err.Error()+" — добавьте @"+me.Username+" в группу и проверьте её ID")
 		return
 	}
 	if chat.Type != "supergroup" {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.notSupergroup",
 			"указанный чат не является супергруппой — создайте группу и включите в ней «Темы»")
 		return
 	}
 	if !chat.IsForum {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.topicsOff",
 			"в группе не включены «Темы» — включите их в настройках группы, иначе диалоги не разделить")
 		return
 	}
 	member, err := client.GetChatMember(ctx, set.TGSupportGroupID, me.ID)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "не удалось проверить права бота: "+err.Error())
+		writeErrDetail(w, http.StatusBadGateway, "err.botRightsCheckFailed", "не удалось проверить права бота: ", err.Error())
 		return
 	}
 	if member.Status != "administrator" && member.Status != "creator" {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.botNotGroupAdmin",
 			"бот должен быть администратором группы — иначе он не увидит ответы админов")
 		return
 	}
 	if member.Status == "administrator" && !member.CanManageTopics {
-		writeErr(w, http.StatusBadRequest,
+		writeErrCode(w, http.StatusBadRequest, "err.botCannotManageTopics",
 			"у бота нет права «Управление темами» — без него он не сможет завести тему на пользователя")
 		return
 	}
@@ -303,20 +308,20 @@ func (rt *Router) testTelegramBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if set.TGBotToken == "" {
-		writeErr(w, http.StatusBadRequest, "сначала укажите токен бота")
+		writeErrCode(w, http.StatusBadRequest, "err.setBotTokenFirst", "сначала укажите токен бота")
 		return
 	}
 	chats := set.TelegramChatIDs()
 	if len(chats) == 0 {
-		writeErr(w, http.StatusBadRequest, "нет привязанных чатов — сначала привяжите чат кодом")
+		writeErrCode(w, http.StatusBadRequest, "err.noLinkedChats", "нет привязанных чатов — сначала привяжите чат кодом")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	client := telegram.NewClient(set.TGBotToken)
 	if err := telegram.SendBackup(ctx, client, chats, rt.dataDir, rt.mgr.BackupManifest(),
-		rt.mgr.Store().Checkpoint, "Тестовая резервная копия"); err != nil {
-		writeErr(w, http.StatusBadGateway, "не удалось отправить: "+err.Error())
+		rt.mgr.Store().Checkpoint, i18n.T(rt.mgr.BotLang(), "bot.testBackup")); err != nil {
+		writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", err.Error())
 		return
 	}
 	writeOK(w)

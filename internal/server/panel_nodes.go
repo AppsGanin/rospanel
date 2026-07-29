@@ -59,11 +59,11 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Host = strings.TrimSpace(req.Host)
 	if req.Name == "" {
-		writeErr(w, http.StatusBadRequest, "укажите название ноды")
+		writeErrCode(w, http.StatusBadRequest, "err.nodeNameRequired", "укажите название ноды")
 		return
 	}
 	if req.Host == "" {
-		writeErr(w, http.StatusBadRequest, "укажите домен или IP ноды")
+		writeErrCode(w, http.StatusBadRequest, "err.nodeHostRequired", "укажите домен или IP ноды")
 		return
 	}
 	node, err := rt.mgr.CreateNode(req.Name, req.Host)
@@ -83,7 +83,7 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 }
 
 // nodePatchReq edits a node's name/host and decoy. Protocols are edited on the
-// Подключения tab, so a nil protocol pointer here means "leave it as it is" — the
+// Connections tab, so a nil protocol pointer here means "leave it as it is" — the
 // handler preserves the node's current value. Routing/DNS/egress are likewise
 // preserved: a name/decoy edit must never silently wipe a protocol or routing override.
 type nodePatchReq struct {
@@ -116,20 +116,20 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 	if node == nil {
-		writeErr(w, http.StatusNotFound, "нода не найдена")
+		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Host = strings.TrimSpace(req.Host)
 	if req.Name == "" || req.Host == "" {
-		writeErr(w, http.StatusBadRequest, "название и домен обязательны")
+		writeErrCode(w, http.StatusBadRequest, "err.nameAndHostRequired", "название и домен обязательны")
 		return
 	}
 	edit := store.NodeEdit{
 		Name:          req.Name,
 		Host:          req.Host,
 		DecoyTemplate: req.DecoyTemplate,
-		// Preserve protocols (edited on the Подключения tab) when omitted — otherwise a
+		// Preserve protocols (edited on the Connections tab) when omitted — otherwise a
 		// name/decoy save racing a just-made protocol change could revert it.
 		VLESS:    orBool(req.VLESS, node.VLESSEnabled),
 		Hysteria: orBool(req.Hysteria, node.HysteriaEnabled),
@@ -151,7 +151,7 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 
 // nodeRoutingReq sets a node's routing + egress overrides. A null routing field means
 // "inherit the panel's"; egress (WARP/Opera) is the node's own and off by default. DNS
-// is saved separately (setNodeDNS), so the Роутинг tab never touches it. The node
+// is saved separately (setNodeDNS), so the Routing tab never touches it. The node
 // card's full routing editor always sends every field — no risk of a protocol toggle
 // wiping them. Mirrors the master's ApplyRouting(cfg, warp, opera, country) shape.
 type nodeRoutingReq struct {
@@ -174,7 +174,7 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	if node == nil {
-		writeErr(w, http.StatusNotFound, "нода не найдена")
+		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
 	edit := store.NodeEdit{
@@ -309,7 +309,7 @@ func (rt *Router) nodeGeoInfo(w http.ResponseWriter, _ *http.Request, id int64) 
 		return
 	}
 	if node == nil {
-		writeErr(w, http.StatusNotFound, "нода не найдена")
+		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -359,7 +359,7 @@ func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int6
 }
 
 // setMasterProtocols toggles the panel's own protocols on/off from the master server
-// card (the connection details stay in the global Подключения settings).
+// card (the connection details stay in the global Connections settings).
 func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		VLESS    bool `json:"vless_enabled"`
@@ -471,7 +471,7 @@ func (rt *Router) regenNodeJoin(w http.ResponseWriter, r *http.Request, id int64
 		writeManagerErr(w, err)
 		return
 	} else if node == nil {
-		writeErr(w, http.StatusNotFound, "нода не найдена")
+		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
 	token, err := rt.mgr.RegenJoinToken(id)

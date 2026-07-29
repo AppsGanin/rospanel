@@ -192,10 +192,10 @@ func validateConnNames(names map[string]string, taken []string) (map[string]stri
 	for _, nk := range connNameKeys {
 		raw := strings.TrimSpace(names[nk.key])
 		if len([]rune(raw)) > 32 {
-			return nil, invalid("название подключения не длиннее 32 символов")
+			return nil, invalidCode("err.inboundNameTooLong", "название подключения не длиннее 32 символов")
 		}
 		if raw != "" && !connNameRe.MatchString(raw) {
-			return nil, invalid("недопустимое название подключения %q (буквы, цифры, пробел, . _ - ( ))", raw)
+			return nil, invalidCode("err.inboundNameCharset", "недопустимое название подключения {{value}} (буквы, цифры, пробел, . _ - ( ))", map[string]any{"value": raw})
 		}
 		display := raw
 		if display == "" {
@@ -203,13 +203,13 @@ func validateConnNames(names map[string]string, taken []string) (map[string]stri
 		}
 		lower := strings.ToLower(display)
 		if lower == "auto" || lower == "direct" {
-			return nil, invalid("название %q зарезервировано — выберите другое", display)
+			return nil, invalidCode("err.nameReserved", "название {{value}} зарезервировано — выберите другое", map[string]any{"value": display})
 		}
 		if who, dup := seen[lower]; dup {
 			if who == "custom" {
-				return nil, invalid("название %q уже занято дополнительным подключением — выберите другое", display)
+				return nil, invalidCode("err.nameTakenByInbound", "название {{value}} уже занято дополнительным подключением — выберите другое", map[string]any{"value": display})
 			}
-			return nil, invalid("название подключения %q повторяется — сделайте их разными", display)
+			return nil, invalidCode("err.inboundNameDuplicate", "название подключения {{value}} повторяется — сделайте их разными", map[string]any{"value": display})
 		}
 		seen[lower] = nk.key
 		custom[nk.key] = raw
@@ -258,18 +258,19 @@ func validateRealityDestLive(host string) error {
 	}}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, "443"))
 	if err != nil {
-		return invalid("донор %q недоступен по TLS 1.3 на :443 (%v)", host, err)
+		return invalidCode("err.donorNoTLS13", "донор {{host}} недоступен по TLS 1.3 на :443 ({{err}})", map[string]any{"host": host, "err": err})
 	}
 	defer conn.Close()
 	state := conn.(*tls.Conn).ConnectionState()
 	if state.NegotiatedProtocol != "h2" {
-		return invalid("донор %q не поддерживает HTTP/2 — выбери другой сайт", host)
+		return invalidCode("err.donorNoHTTP2", "донор {{host}} не поддерживает HTTP/2 — выберите другой сайт", map[string]any{"host": host})
 	}
 	if size := certRecordSize(state.PeerCertificates); size > realityCertLimit {
-		return invalid("сертификат донора %q слишком большой (%d Б) — REALITY-хендшейк не "+
-			"завершается на этой версии Xray, если запись сертификата больше %d Б (issue #6402). "+
-			"Выбери сайт с меньшим сертификатом, например www.cloudflare.com, www.apple.com или dl.google.com",
-			host, size, realityCertLimit)
+		return invalidCode("err.donorCertTooBig",
+			"сертификат донора {{host}} слишком большой ({{size}} Б) — REALITY-хендшейк не "+
+				"завершается на этой версии Xray, если запись сертификата больше {{limit}} Б (issue #6402). "+
+				"Выберите сайт с меньшим сертификатом, например www.cloudflare.com, www.apple.com или dl.google.com",
+			map[string]any{"host": host, "size": size, "limit": realityCertLimit})
 	}
 	return nil
 }
@@ -311,7 +312,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	vlessFp, realityFp := fpOf("vless"), fpOf("reality")
 	for _, fp := range []string{vlessFp, realityFp} {
 		if !model.ValidFingerprint(fp) {
-			return invalid("неизвестный fingerprint %q", fp)
+			return invalidCode("err.unknownFingerprint", "неизвестный fingerprint {{value}}", map[string]any{"value": fp})
 		}
 	}
 	connNames, err := validateConnNames(u.Names, m.inboundNames(model.LocalNodeID))
@@ -319,20 +320,20 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if u.HysteriaPort < 1 || u.HysteriaPort > 65535 {
-		return invalid("порт вне диапазона 1–65535")
+		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
 	}
 	if u.HopStart < 1 || u.HopEnd > 65535 || u.HopStart > u.HopEnd {
-		return invalid("неверный диапазон хопа")
+		return invalidCode("err.badHopRange", "неверный диапазон хопа")
 	}
 	interval := strings.TrimSpace(u.HopInterval)
 	if interval == "" {
 		interval = "5-10"
 	}
 	if !hopIntervalRe.MatchString(interval) {
-		return invalid("неверный интервал (нужно «N-M», напр. 5-10)")
+		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
 	if u.RealityPort < 1 || u.RealityPort > 65535 {
-		return invalid("порт REALITY вне диапазона 1–65535")
+		return invalidCode("err.realityPortRange", "порт REALITY вне диапазона 1–65535")
 	}
 	// A port we're about to (re)bind must be free on the host, so a typo'd or
 	// colliding port is rejected up front instead of crash-looping Xray. Hysteria's
@@ -340,24 +341,24 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	// exists only while enabled, so check whenever it'll be enabled on a port our
 	// REALITY inbound isn't already holding.
 	if u.HysteriaPort != set.HysteriaPort && !portFree("udp", u.HysteriaPort) {
-		return invalid("UDP-порт %d уже занят — выберите другой", u.HysteriaPort)
+		return invalidCode("err.udpPortTaken", "UDP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.HysteriaPort})
 	}
 	realityHeld := set.RealityEnabled && set.RealityPrivateKey != "" && set.RealityPort == u.RealityPort
 	if u.Protocols["reality"] && !realityHeld && !portFree("tcp", u.RealityPort) {
-		return invalid("TCP-порт %d уже занят — выберите другой", u.RealityPort)
+		return invalidCode("err.tcpPortTaken", "TCP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.RealityPort})
 	}
 	// REALITY donor SNIs: comma-separated, the first is primary (used in links).
 	var dests []string
 	for _, d := range strings.Split(u.RealityDest, ",") {
 		if d = strings.TrimSpace(d); d != "" {
 			if !realityHostRe.MatchString(d) {
-				return invalid("домен маскировки REALITY %q не похож на настоящий", d)
+				return invalidCode("err.realityDestInvalid", "домен маскировки REALITY {{value}} не похож на настоящий", map[string]any{"value": d})
 			}
 			dests = append(dests, d)
 		}
 	}
 	if len(dests) == 0 {
-		return invalid("укажи хотя бы один домен маскировки REALITY")
+		return invalidCode("err.realityDestRequired", "укажи хотя бы один домен маскировки REALITY")
 	}
 	realityDest := strings.Join(dests, ",")
 	// Live TLS probe each donor only when REALITY is on and the set changed — a
@@ -420,20 +421,20 @@ func validateRealityDests(dest string) (string, error) {
 	for _, d := range strings.Split(dest, ",") {
 		if d = strings.TrimSpace(d); d != "" {
 			if !realityHostRe.MatchString(d) {
-				return "", invalid("домен маскировки REALITY %q не похож на настоящий", d)
+				return "", invalidCode("err.realityDestInvalid", "домен маскировки REALITY {{value}} не похож на настоящий", map[string]any{"value": d})
 			}
 			out = append(out, d)
 		}
 	}
 	if len(out) == 0 {
-		return "", invalid("укажи хотя бы один домен маскировки REALITY")
+		return "", invalidCode("err.realityDestRequired", "укажи хотя бы один домен маскировки REALITY")
 	}
 	return strings.Join(out, ","), nil
 }
 
 // SetMasterProtocols toggles the panel's own (master) protocols on/off. The
 // connection DETAILS (ports, transport, REALITY donor, anti-DPI) stay global and are
-// edited in the Подключения settings; only the on/off lives on the master server
+// edited in the Connections settings; only the on/off lives on the master server
 // card, so the master toggles its protocols the same way a node does.
 func (m *Manager) SetMasterProtocols(vless, hysteria, reality bool) error {
 	if reality {
@@ -442,7 +443,7 @@ func (m *Manager) SetMasterProtocols(vless, hysteria, reality bool) error {
 			return err
 		}
 		if strings.TrimSpace(set.RealityDest) == "" {
-			return invalid("сначала задайте домен маскировки REALITY во вкладке «Подключения»")
+			return invalidCode("err.setRealityDestFirst", "сначала задайте домен маскировки REALITY во вкладке «Подключения»")
 		}
 	}
 	for name, en := range map[string]bool{

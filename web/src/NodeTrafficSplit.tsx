@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getNodeTraffic, type NodeTraffic } from './api'
 import { fmtBytes } from './format'
 
@@ -18,6 +19,7 @@ export function NodeTrafficSplit({
   from: string
   to: string
 }) {
+  const { t } = useTranslation()
   const [rows, setRows] = useState<NodeTraffic[]>([])
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function NodeTrafficSplit({
 
   return (
     <div className="mt-4">
-      <div className="mb-2 text-xs font-medium text-ink-muted">По серверам</div>
+      <div className="mb-2 text-xs font-medium text-ink-muted">{t('stats.byServer')}</div>
       <div className="flex flex-col gap-1.5">
         {rows.map((r) => {
           const share = total > 0 ? Math.round(((r.up + r.down) / total) * 100) : 0
@@ -56,10 +58,10 @@ export function NodeTrafficSplit({
               <span className="w-10 shrink-0 text-right tabular-nums text-ink-muted">
                 {share}%
               </span>
-              <span className="w-20 shrink-0 text-right tabular-nums" title="Принято">
+              <span className="w-20 shrink-0 text-right tabular-nums" title={t('traffic.received')}>
                 ↓ {fmtBytes(r.down)}
               </span>
-              <span className="w-20 shrink-0 text-right tabular-nums text-ink-muted" title="Отдано">
+              <span className="w-20 shrink-0 text-right tabular-nums text-ink-muted" title={t('traffic.sent')}>
                 ↑ {fmtBytes(r.up)}
               </span>
             </div>

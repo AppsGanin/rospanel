@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -15,6 +16,31 @@ const (
 	crashNotifyThrottle   = 5 * time.Minute
 	certErrNotifyThrottle = 6 * time.Hour
 )
+
+// BotLang exposes botLang outside core: the server layer sends the odd Telegram
+// message itself (a test backup) and must word it the same way.
+func (m *Manager) BotLang() i18n.Lang { return m.botLang() }
+
+// botLang is the language the admin bot writes in — a panel-wide setting, because
+// these messages are pushes with no incoming update to read a language from.
+func (m *Manager) botLang() i18n.Lang {
+	set, err := m.store.GetSettings()
+	if err != nil || set == nil {
+		return i18n.Default
+	}
+	return i18n.Normalize(set.BotLang())
+}
+
+// userLang is one VPN user's own language, from the subscriber record the client
+// bot stored at first contact. The operator and the user are told the same fact in
+// different languages, which is the whole reason these two helpers are separate.
+func (m *Manager) userLang(chatID int64) i18n.Lang {
+	sub, err := m.store.SubscriberByChat(chatID)
+	if err != nil || sub == nil {
+		return i18n.Default
+	}
+	return i18n.Normalize(sub.Lang)
+}
 
 // notifyAdminEvent broadcasts an HTML message (via the admin bot's notifier) to
 // the authorized admin chats, but only when the given AdminEvent* category is
@@ -45,13 +71,15 @@ func (m *Manager) notifyUserEvent(set *model.Settings, u model.User, bit int64, 
 }
 
 // notifyRegistrationDecision tells a chat the outcome of its moderated signup. It
-// takes a chat id rather than a user because a rejection has no user to speak of.
-func (m *Manager) notifyRegistrationDecision(chatID int64, html string) {
+// takes a chat id rather than a user because a rejection has no user to speak of —
+// and a dictionary key rather than text, since the applicant's language is theirs,
+// looked up from that same chat.
+func (m *Manager) notifyRegistrationDecision(chatID int64, key string) {
 	set, err := m.store.GetSettings()
 	if err != nil || !set.TGUserBotEnabled || !set.UserNotifyEnabled(model.UserNotifyRegistration) {
 		return
 	}
-	m.notifyUser(chatID, html)
+	m.notifyUser(chatID, i18n.T(m.userLang(chatID), key))
 }
 
 // UserNotifyPrefs returns the per-category on/off map plus the warning horizon, for
@@ -115,10 +143,11 @@ func (m *Manager) notifyExpiring(set *model.Settings, users []model.User) {
 			logErr("notify: recording expiry warning failed", "user", u.ID, "err", err)
 			continue
 		}
-		left := int((u.ExpireAt - now + 86399) / 86400) // round up: "0 дней" reads as expired
-		m.notifyUser(u.TgChatID, fmt.Sprintf(
-			"⏳ <b>Подписка заканчивается</b>\n\nОсталось %d %s — до %s.",
-			left, pluralDays(left), time.Unix(u.ExpireAt, 0).In(m.Location()).Format("02.01.2006")))
+		left := int((u.ExpireAt - now + 86399) / 86400) // round up: "0 days" reads as expired
+		lang := m.userLang(u.TgChatID)
+		m.notifyUser(u.TgChatID, i18n.T(lang, "notify.expiring",
+			i18n.TN(lang, "notify.days", left),
+			time.Unix(u.ExpireAt, 0).In(m.Location()).Format("02.01.2006")))
 	}
 }
 
@@ -159,21 +188,8 @@ func (m *Manager) notifyTrafficLow(set *model.Settings, users []model.User) {
 			logErr("notify: recording quota warning failed", "user", u.ID, "err", err)
 			continue
 		}
-		m.notifyUser(u.TgChatID, fmt.Sprintf(
-			"📊 <b>Трафик заканчивается</b>\n\nИзрасходовано %d%% — осталось %s.",
+		m.notifyUser(u.TgChatID, i18n.T(m.userLang(u.TgChatID), "notify.trafficLow",
 			used*100/u.DataLimit, humanBytes(u.DataLimit-used)))
-	}
-}
-
-// pluralDays picks the Russian form for a day count.
-func pluralDays(n int) string {
-	switch {
-	case n%10 == 1 && n%100 != 11:
-		return "день"
-	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
-		return "дня"
-	default:
-		return "дней"
 	}
 }
 
@@ -232,19 +248,19 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 		switch u.Status {
 		case model.StatusExpired:
 			m.notifyAdminEvent(model.AdminEventExpired, fmt.Sprintf(
-				"⌛ <b>Подписка истекла</b>\nПользователь: %s", escHTML(u.Name)))
+				i18n.T(m.botLang(), "notify.adminExpired"), escHTML(u.Name)))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyExpired,
-					"⌛ <b>Подписка истекла</b>\n\nДоступ приостановлен. Продлите подписку в этом боте, чтобы снова подключиться.")
+					i18n.T(m.userLang(u.TgChatID), "notify.userExpired"))
 			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventUserExpired, map[string]any{"expire_at": u.ExpireAt})
 			m.EmitWebhook(model.WebhookUserExpired, userEventData(u))
 		case model.StatusLimited:
 			m.notifyAdminEvent(model.AdminEventLimited, fmt.Sprintf(
-				"📉 <b>Исчерпан трафик</b>\nПользователь: %s", escHTML(u.Name)))
+				i18n.T(m.botLang(), "notify.adminLimited"), escHTML(u.Name)))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyLimited,
-					"📉 <b>Трафик закончился</b>\n\nДоступ приостановлен до обновления лимита или смены тарифа.")
+					i18n.T(m.userLang(u.TgChatID), "notify.userLimited"))
 			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventUserLimited, map[string]any{
 				"data_limit": u.DataLimit, "used": u.UsedUp + u.UsedDown,
@@ -252,11 +268,11 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 			m.EmitWebhook(model.WebhookUserLimited, userEventData(u))
 		case model.StatusDeviceLimited:
 			m.notifyAdminEvent(model.AdminEventDeviceLimited, fmt.Sprintf(
-				"📵 <b>Превышен лимит устройств</b>\nПользователь: %s\nАктивных устройств: %d из %d",
+				i18n.T(m.botLang(), "notify.adminDeviceLimited"),
 				escHTML(u.Name), u.ActiveDevices, u.DeviceLimit))
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyDeviceLimited, fmt.Sprintf(
-					"📵 <b>Слишком много устройств</b>\n\nПодключено %d из %d. Отключите лишние — доступ восстановится сам.",
+					i18n.T(m.userLang(u.TgChatID), "notify.userDeviceLimited"),
 					u.ActiveDevices, u.DeviceLimit))
 			}
 			m.auditNamed(ctx, u.ID, u.Name, model.EventDeviceLimited, map[string]any{
@@ -271,7 +287,7 @@ func (m *Manager) notifyStatusTransitions(users []model.User) {
 			// reported to integrations as something else entirely.
 			if serr == nil {
 				m.notifyUserEvent(set, u, model.UserNotifyDisabled,
-					"🚫 <b>Доступ приостановлен</b>\n\nОбратитесь в поддержку, если это неожиданно.")
+					i18n.T(m.userLang(u.TgChatID), "notify.userSuspended"))
 			}
 		}
 	}
@@ -292,10 +308,10 @@ func (m *Manager) onXrayCrash(err error) {
 	m.throttleMu.Unlock()
 	// Named, because the same category now reports the nodes' Xray too and an
 	// unlabelled alarm in a fleet chat is a guess about which server is down.
-	msg := "⚠️ <b>Xray аварийно завершился</b>\nСервер: " + model.LocalNodeName +
-		"\nПроцесс перезапускается автоматически."
+	lang := m.botLang()
+	msg := i18n.T(lang, "notify.xrayCrashed", model.LocalNodeName)
 	if err != nil {
-		msg += "\nПричина: " + escHTML(err.Error())
+		msg += "\n" + i18n.T(lang, "notify.reason", escHTML(err.Error()))
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
 }
@@ -312,29 +328,30 @@ func (m *Manager) onXrayRecover() {
 	if !alerted {
 		return
 	}
-	msg := "✅ <b>Xray снова работает</b>\nСервер: " + model.LocalNodeName
+	lang := m.botLang()
+	msg := i18n.T(lang, "notify.xrayBack", model.LocalNodeName)
 	if down := time.Since(at); down > time.Second {
-		msg += fmt.Sprintf("\nПростой: %s.", fmtDowntime(down))
+		msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(down, lang))
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
 }
 
 // fmtDowntime renders an outage length the way a person would say it.
-func fmtDowntime(d time.Duration) string {
+func fmtDowntime(d time.Duration, lang i18n.Lang) string {
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%d сек", int(d.Seconds()))
+		return i18n.T(lang, "notify.seconds", int(d.Seconds()))
 	case d < time.Hour:
-		return fmt.Sprintf("%d мин", int(d.Minutes()))
+		return i18n.T(lang, "notify.minutes", int(d.Minutes()))
 	default:
-		return fmt.Sprintf("%d ч %d мин", int(d.Hours()), int(d.Minutes())%60)
+		return i18n.T(lang, "notify.hoursMinutes", int(d.Hours()), int(d.Minutes())%60)
 	}
 }
 
 // notifyCertRenewed reports a successful certificate renewal.
 func (m *Manager) notifyCertRenewed(host string, daysLeft int) {
 	m.notifyAdminEvent(model.AdminEventCert, fmt.Sprintf(
-		"🔒 <b>Сертификат TLS обновлён</b>\nСервер: %s\nХост: %s\nДействует ещё %d дн.",
+		i18n.T(m.botLang(), "notify.certRenewed"),
 		model.LocalNodeName, escHTML(host), daysLeft))
 }
 
@@ -350,6 +367,6 @@ func (m *Manager) notifyCertError(host string, err error) {
 	m.lastCertErrNotify = now
 	m.throttleMu.Unlock()
 	m.notifyAdminEvent(model.AdminEventCert, fmt.Sprintf(
-		"🔓 <b>Не удалось обновить сертификат TLS</b>\nСервер: %s\nХост: %s\nОшибка: %s",
+		i18n.T(m.botLang(), "notify.certFailed"),
 		model.LocalNodeName, escHTML(host), escHTML(err.Error())))
 }

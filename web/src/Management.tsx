@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { AppLogs } from "./AppLogs";
 import { getBackupInfo, resetPanel, restartPanel } from "./api";
 import { useFetch } from "./hooks";
@@ -108,6 +109,7 @@ const sqBtn =
 
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {
+  const { t } = useTranslation();
   const { data: info } = useFetch(getBackupInfo);
   const [logsOpen, setLogsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
@@ -169,40 +171,40 @@ export function ManagementCard() {
   return (
     <>
       <Card className="p-4">
-        <h3 className="mb-2 font-bold text-ink">Управление</h3>
+        <h3 className="mb-2 font-bold text-ink">{t("manage.title")}</h3>
         <div className="flex flex-col items-stretch divide-y divide-gray-200 border-t border-gray-100 pt-1 sm:flex-row sm:divide-x sm:divide-y-0">
-          {/* Diagnostics is per-server now — it lives on each card in «Сервера»,
+          {/* Diagnostics is per-server now — it lives on each card under Servers,
               where the server it describes is. */}
-          <ManageBtn icon={<IconList />} label="Логи" onClick={() => setLogsOpen(true)} />
+          <ManageBtn icon={<IconList />} label={t("manage.logs")} onClick={() => setLogsOpen(true)} />
           {/* One word, like every other button in this row — the modal it opens is
-              still titled "Бэкап и восстановление", so nothing is hidden. */}
-          <ManageBtn icon={<IconArchive />} label="Бэкапы" onClick={() => setBackupOpen(true)} />
+              still titled "backup and restore", so nothing is hidden. */}
+          <ManageBtn icon={<IconArchive />} label={t("manage.backups")} onClick={() => setBackupOpen(true)} />
           <ManageBtn
             icon={<IconPower />}
-            label="Перезапуск"
+            label={t("manage.restart")}
             onClick={() => setRestartOpen(true)}
           />
-          <ManageBtn icon={<IconReset />} label="Сброс" danger onClick={() => setResetOpen(true)} />
+          <ManageBtn icon={<IconReset />} label={t("manage.reset")} danger onClick={() => setResetOpen(true)} />
         </div>
       </Card>
 
       {logsOpen && <AppLogs onClose={() => setLogsOpen(false)} />}
 
       {/* Backup & restore */}
-      <Modal open={backupOpen} onClose={closeBackup} title="Бэкап и восстановление">
+      <Modal open={backupOpen} onClose={closeBackup} title={t("manage.backupRestore")}>
         {!manifest ? (
           <div className="flex flex-col divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200">
             <Row
-              title="Экспорт базы данных"
-              desc="Скачать архив с базой данных, TLS-сертификатами и конфигом Xray."
+              title={t("manage.exportTitle")}
+              desc={t("manage.exportDesc")}
             >
               <a href="api/backup" download="rospanel-backup.tar.gz" onClick={closeBackup} className={sqBtn}>
                 <IconDownload />
               </a>
             </Row>
             <Row
-              title="Импорт базы данных"
-              desc="Загрузить архив для восстановления данных из резервной копии."
+              title={t("manage.importTitle")}
+              desc={t("manage.importDesc")}
             >
               <input
                 ref={fileRef}
@@ -218,22 +220,21 @@ export function ManagementCard() {
           </div>
         ) : (
           <>
-            <ManifestCard m={manifest} label="В бэкапе" />
+            <ManifestCard m={manifest} label={t("wizard.inBackup")} />
             {inspection && <ValidationNote inspection={inspection} />}
             {manifest.domain && info?.domain && manifest.domain !== info.domain && (
               <p className="mt-3 text-sm text-warning">
-                Домен в бэкапе ({manifest.domain}) отличается от текущего ({info.domain}). После
-                восстановления войдите через новый адрес.
+                {t("manage.domainDiffers", { backup: manifest.domain, current: info.domain })}
               </p>
             )}
             {inspection?.valid && (
               <p className="mt-3 text-sm text-danger">
-                Все текущие данные будут заменены. Панель перезапустится — войдите заново.
+                {t("manage.restoreWarn")}
               </p>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" color="gray" size="sm" onClick={() => pick(null)}>
-                Назад
+                {t("common.back")}
               </Button>
               <Button
                 variant="filled"
@@ -243,7 +244,7 @@ export function ManagementCard() {
                 disabled={!inspection?.valid}
                 onClick={restore}
               >
-                Восстановить
+                {t("manage.restore")}
               </Button>
             </div>
           </>
@@ -251,35 +252,34 @@ export function ManagementCard() {
       </Modal>
 
       {/* Restart the panel process */}
-      <Modal open={restartOpen} onClose={() => setRestartOpen(false)} title="Перезапустить панель?">
+      <Modal open={restartOpen} onClose={() => setRestartOpen(false)} title={t("manage.restartTitle")}>
         <p className="text-sm text-ink-muted">
-          Панель перезапустится вместе с Xray — активные VPN-подключения на этом сервере
-          ненадолго прервутся, клиенты переподключатся сами. Данные и настройки не
-          изменятся. Страница обновится автоматически.
+          {t("manage.restartBody")}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" color="gray" size="sm" onClick={() => setRestartOpen(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button variant="filled" color="red" size="sm" loading={restarting} onClick={doRestart}>
-            Перезапустить
+            {t("manage.restartConfirm")}
           </Button>
         </div>
       </Modal>
 
       {/* Reset */}
-      <Modal open={resetOpen} onClose={() => setResetOpen(false)} title="Сброс до заводских настроек">
+      <Modal open={resetOpen} onClose={() => setResetOpen(false)} title={t("manage.resetTitle")}>
         <p className="text-sm text-danger">
-          Все данные будут удалены без возможности восстановления: пользователи, настройки,
-          секретный путь, TLS-сертификат. Панель перезапустится в режиме первого запуска по адресу{" "}
-          <code>/rospanel/</code> (admin/admin). Сделайте бэкап заранее.
+          <Trans
+            i18nKey="manage.resetBody"
+            components={{ c: <code /> }}
+          />
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" color="gray" size="sm" onClick={() => setResetOpen(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button variant="filled" color="red" size="sm" loading={resetting} onClick={doReset}>
-            Сбросить всё
+            {t("manage.resetConfirm")}
           </Button>
         </div>
       </Modal>

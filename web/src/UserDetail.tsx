@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   deleteUser,
@@ -31,10 +32,10 @@ import {
   gbToBytes,
   isOnline,
   localDay,
-  DEVICE_LIMIT_OPTIONS,
-  QUOTA_OPTIONS,
-  RANGES,
-  RESET_PERIODS,
+  deviceLimitOptions,
+  quotaOptions,
+  ranges,
+  resetPeriods,
   statusInfo,
 } from './format'
 import { useAction } from './hooks'
@@ -63,13 +64,14 @@ import {
   useConfirm,
   useCopy,
 } from './ui'
+import i18n, { currentLang } from './i18n'
 
 // planSelectData builds the tariff dropdown: "manual" plus enabled plans, and a
 // fallback entry if the user is on a plan that's hidden/disabled (so the current
 // value still resolves to a label).
 function planSelectData(plans: TariffPlan[], user: User) {
   const data = [
-    { value: '0', label: 'Вручную' },
+    { value: '0', label: i18n.t('userDetail.manual') },
     ...plans
       .filter((p) => p.enabled)
       .map((p) => ({
@@ -78,7 +80,10 @@ function planSelectData(plans: TariffPlan[], user: User) {
       })),
   ]
   if (user.plan_id && !data.some((o) => o.value === String(user.plan_id))) {
-    data.push({ value: String(user.plan_id), label: user.plan_name || `тариф #${user.plan_id}` })
+    data.push({
+      value: String(user.plan_id),
+      label: user.plan_name || i18n.t('userDetail.planNum', { id: user.plan_id }),
+    })
   }
   return data
 }
@@ -92,21 +97,21 @@ function optLabel(data: { value: string; label: string }[], value: string): stri
   return data.find((o) => o.value === value)?.label ?? value
 }
 
-// resetLabel renders a reset period for display. Beyond the fixed RESET_PERIODS
+// resetLabel renders a reset period for display. Beyond the fixed resetPeriods()
 // options it also handles the "days:N" rolling cycle that a free plan writes
 // (see planLimits in internal/core/manager_billing.go), which has no entry there.
 function resetLabel(v: string): string {
   const m = /^days:(\d+)$/.exec(v)
-  if (m) return `каждые ${m[1]} дн.`
-  return optLabel(RESET_PERIODS, v || 'none')
+  if (m) return i18n.t('userDetail.everyNDays', { count: Number(m[1]) })
+  return optLabel(resetPeriods(), v || 'none')
 }
 
 // dateLabel renders an expiry (unix or a "YYYY-MM-DD" picker value) for the
 // confirmation text.
 function dateLabel(v: number | string): string {
-  if (!v) return 'бессрочно'
+  if (!v) return i18n.t('common.never')
   const d = typeof v === 'number' ? new Date(v * 1000) : new Date(v)
-  return d.toLocaleDateString('ru-RU')
+  return d.toLocaleDateString(currentLang())
 }
 
 // EditableName renders the user's name with a pencil; clicking it swaps to an
@@ -144,7 +149,7 @@ function EditableName({ user, onChanged }: { user: User; onChanged: () => void }
             setEditing(true)
           }}
           className="shrink-0 text-gray-400 transition hover:text-accent"
-          title="Переименовать"
+          title={i18n.t('userDetail.rename')}
         >
           <IconPencil size={16} />
         </button>
@@ -166,14 +171,14 @@ function EditableName({ user, onChanged }: { user: User; onChanged: () => void }
       <button
         onClick={save}
         disabled={busy}
-        title="Сохранить"
+        title={i18n.t('common.save')}
         className="shrink-0 text-success transition hover:text-success disabled:opacity-50"
       >
         <IconCheck size={18} />
       </button>
       <button
         onClick={() => setEditing(false)}
-        title="Отмена"
+        title={i18n.t('common.cancel')}
         className="shrink-0 text-gray-400 transition hover:text-gray-600"
       >
         <IconClose size={18} />
@@ -193,6 +198,7 @@ export function UserDetail({
   onChanged: () => void
   userBotEnabled: boolean
 }) {
+  const { t } = useTranslation()
   const [series, setSeries] = useState<DailyPoint[]>([])
   const [conns, setConns] = useState<Connection[]>([])
   const [range, setRange] = useState('30')
@@ -288,10 +294,10 @@ export function UserDetail({
   const fail = (e: unknown) => notifyError(errMessage(e))
 
   const quotaData = user
-    ? QUOTA_OPTIONS.some((o) => o.value === limitGb)
-      ? QUOTA_OPTIONS
-      : [...QUOTA_OPTIONS, { value: limitGb, label: fmtBytes(user.data_limit) }]
-    : QUOTA_OPTIONS
+    ? quotaOptions().some((o) => o.value === limitGb)
+      ? quotaOptions()
+      : [...quotaOptions(), { value: limitGb, label: fmtBytes(user.data_limit) }]
+    : quotaOptions()
 
   const saveLimits = (dl: number, ea: number, dev: number) =>
     setUserLimits(user!.id, dl, ea, dev).then(onChanged).catch(fail)
@@ -314,7 +320,7 @@ export function UserDetail({
     setSavingGroups(true)
     setUserGroups(user.id, [...sel])
       .then(onChanged)
-      .then(() => notifySuccess('Группы обновлены'))
+      .then(() => notifySuccess(t('userDetail.groupsUpdated')))
       .catch(fail)
       .finally(() => setSavingGroups(false))
   }
@@ -331,14 +337,14 @@ export function UserDetail({
   )
   const showGroupSearch = allGroups.length > 8
 
-  // confirmChange gates an edit in the "Управление" block. These controls apply
+  // confirmChange gates an edit in the management block. These controls apply
   // to a live subscription the moment they're touched, so a misclick would
   // otherwise silently change what the user is paying for.
   const confirmChange = async (field: string, from: string, to: string, apply: () => void) => {
     const ok = await confirm({
-      title: 'Изменить настройку?',
-      body: `«${field}» для «${user!.name}»: ${from} → ${to}.`,
-      confirmLabel: 'Изменить',
+      title: t('userDetail.changeTitle'),
+      body: t('userDetail.changeBody', { field, name: user!.name, from, to }),
+      confirmLabel: t('common.edit'),
     })
     if (ok) apply()
   }
@@ -348,7 +354,7 @@ export function UserDetail({
   // A tariff owns the quota, the device cap and the reset cycle: applying or
   // renewing one overwrites all three at once (planWriteFor, core/manager_billing.go),
   // so editing them by hand here would only hold until the next payment. Under a
-  // plan the inputs are replaced by a read-only summary; "Вручную" brings them back.
+  // plan the inputs are replaced by a read-only summary; "manual" brings them back.
   const planManaged = billingOn && !!user?.plan_id
 
   return (
@@ -364,41 +370,45 @@ export function UserDetail({
           <div className="flex flex-wrap gap-2">
             <Badge color={statusInfo(user.status).color as never}>{statusInfo(user.status).label}</Badge>
             <Badge color={isOnline(user.last_seen) ? 'greenSolid' : 'gray'}>
-              {isOnline(user.last_seen) ? '● онлайн' : `офлайн · ${fmtLastSeen(user.last_seen)}`}
+              {isOnline(user.last_seen)
+                ? t('usersPanel.online')
+                : `${t('usersPanel.offline')} · ${fmtLastSeen(user.last_seen)}`}
             </Badge>
             <Badge color="brand">{fmtQuota(user.used_up + user.used_down, user.data_limit)}</Badge>
             {user.expire_at > 0 && (
-              <Badge color="gray">до {fmtExpire(user.expire_at)}</Badge>
+              <Badge color="gray">{t('usersPanel.until', { date: fmtExpire(user.expire_at) })}</Badge>
             )}
             {user.device_limit > 0 && (
               <Badge color={user.status === 'device_limited' ? 'orange' : 'gray'}>
-                устройств {user.active_devices}/{user.device_limit}
+                {t('userDetail.devicesOf', { active: user.active_devices, limit: user.device_limit })}
               </Badge>
             )}
           </div>
 
           <div className="flex items-center gap-2 text-sm text-ink-muted">
-            <span className="shrink-0">ID в системе:</span>
+            <span className="shrink-0">{t('userDetail.systemId')}</span>
             <Code>{user.system_email}</Code>
             <button
               onClick={() => email.copy(user.system_email)}
               className="text-gray-400 transition hover:text-gray-600"
-              title="Скопировать"
+              title={t('common.copy')}
             >
               {email.copied ? <IconCheck /> : <IconCopy />}
             </button>
           </div>
 
-          <Divider label="Управление" />
+          <Divider label={t('userDetail.management')} />
           <div className="flex items-center justify-between">
-            <span className="text-sm">{user.enabled ? 'Подписка включена' : 'Подписка выключена'}</span>
+            <span className="text-sm">
+              {t(user.enabled ? 'userDetail.subOn' : 'userDetail.subOff')}
+            </span>
             <Switch
               checked={user.enabled}
               onChange={(v) =>
                 confirmChange(
-                  'Подписка',
-                  user.enabled ? 'включена' : 'выключена',
-                  v ? 'включена' : 'выключена',
+                  t('usersPanel.subscription'),
+                  t(user.enabled ? 'userDetail.on' : 'userDetail.off'),
+                  t(v ? 'userDetail.on' : 'userDetail.off'),
                   () => setUserEnabled(user.id, v).then(onChanged).catch(fail),
                 )
               }
@@ -408,9 +418,11 @@ export function UserDetail({
           {allGroups.length > 0 && (
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-sm">Группы доступа</span>
+                <span className="text-sm">{t('groups.title')}</span>
                 <Badge color={sel.size === 0 ? 'gray' : 'brand'} size="xs">
-                  {sel.size === 0 ? 'все подключения' : `${sel.size} выбрано`}
+                  {sel.size === 0
+                    ? t('userDetail.allConnections')
+                    : t('groups.nSelected', { count: sel.size })}
                 </Badge>
               </div>
 
@@ -429,19 +441,19 @@ export function UserDetail({
                 </div>
               ) : (
                 <p className="text-xs text-ink-muted">
-                  Не состоит в группах — доступны все подключения.
+                  {t('userDetail.noGroups')}
                 </p>
               )}
 
               {/* Add: dashed chips are groups the user can join; click ＋ to add. */}
               {(availableGroups.length > 0 || groupQ) && (
                 <div className="flex flex-col gap-1.5 border-t border-gray-100 pt-2.5">
-                  <span className="text-xs text-ink-muted">Добавить в группу</span>
+                  <span className="text-xs text-ink-muted">{t('userDetail.addToGroup')}</span>
                   {showGroupSearch && (
                     <TextInput
                       value={groupQuery}
                       onChange={setGroupQuery}
-                      placeholder="Поиск группы…"
+                      placeholder={t('userDetail.searchGroup')}
                     />
                   )}
                   {availableGroups.length > 0 ? (
@@ -457,25 +469,24 @@ export function UserDetail({
                       ))}
                     </div>
                   ) : (
-                    <p className="px-0.5 text-xs text-ink-muted">Ничего не найдено.</p>
+                    <p className="px-0.5 text-xs text-ink-muted">{t('common.nothingFound')}</p>
                   )}
                 </div>
               )}
 
               {sel.size > 0 && selectedGrantCount === 0 && (
                 <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">
-                  Выбранные группы не дают ни одного подключения — пользователь не увидит
-                  ни одного варианта.
+                  {t('userDetail.groupsGrantNothing')}
                 </p>
               )}
 
               {groupsDirty && (
                 <div className="flex justify-end gap-2 pt-0.5">
                   <Button size="sm" variant="light" color="gray" onClick={resetGroups} disabled={savingGroups}>
-                    Отмена
+                    {t('common.cancel')}
                   </Button>
                   <Button size="sm" loading={savingGroups} onClick={applyGroups}>
-                    Применить
+                    {t('common.apply')}
                   </Button>
                 </div>
               )}
@@ -485,12 +496,12 @@ export function UserDetail({
           {billingOn && (
             <>
               <Select
-                label="Тариф"
+                label={t('userDetail.plan')}
                 data={planSelectData(plans, user)}
                 value={String(user.plan_id || 0)}
                 onChange={(v) =>
                   confirmChange(
-                    'Тариф',
+                    t('userDetail.plan'),
                     optLabel(planSelectData(plans, user), String(user.plan_id || 0)),
                     optLabel(planSelectData(plans, user), v),
                     () => setUserPlan(user.id, Number(v)).then(onChanged).catch(fail),
@@ -498,18 +509,17 @@ export function UserDetail({
                 }
               />
               <p className="-mt-1 text-xs text-ink-muted">
-                Назначение тарифа применяет его лимиты трафика, срок и устройства.
-                «Вручную» снимает тариф и обнуляет лимиты.
+                {t('userDetail.planHint')}
               </p>
             </>
           )}
 
           <DatePicker
-            label="Действует до"
+            label={t('usersPanel.validUntil')}
             value={unixToDate(user.expire_at)}
             onChange={(v) => {
               const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
-              confirmChange('Действует до', dateLabel(user.expire_at), dateLabel(v), () =>
+              confirmChange(t('usersPanel.validUntil'), dateLabel(user.expire_at), dateLabel(v), () =>
                 saveLimits(user.data_limit, ea, user.device_limit),
               )
             }}
@@ -517,26 +527,27 @@ export function UserDetail({
 
           {planManaged ? (
             <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-xs text-ink-muted">
-              Лимиты задаёт тариф: трафик{' '}
+              {t('userDetail.planLimitsPrefix')}{' '}
               <span className="text-ink">
-                {user.data_limit > 0 ? fmtBytes(user.data_limit) : 'без лимита'}
+                {user.data_limit > 0 ? fmtBytes(user.data_limit) : t('userDetail.noLimit')}
               </span>
-              , устройства{' '}
+              {t('userDetail.planLimitsDevices')}{' '}
               <span className="text-ink">
-                {user.device_limit > 0 ? user.device_limit : 'без лимита'}
+                {user.device_limit > 0 ? user.device_limit : t('userDetail.noLimit')}
               </span>
-              , автосброс <span className="text-ink">{resetLabel(user.reset_period)}</span>.
-              Чтобы задать их вручную, переключите тариф на «Вручную».
+              {t('userDetail.planLimitsReset')}{' '}
+              <span className="text-ink">{resetLabel(user.reset_period)}</span>.{' '}
+              {t('userDetail.planLimitsSuffix')}
             </div>
           ) : (
             <>
               <Select
-                label="Лимит трафика"
+                label={t('usersPanel.trafficLimit')}
                 data={quotaData}
                 value={limitGb}
                 onChange={(v) =>
                   confirmChange(
-                    'Лимит трафика',
+                    t('usersPanel.trafficLimit'),
                     optLabel(quotaData, limitGb),
                     optLabel(quotaData, v),
                     () => {
@@ -547,14 +558,14 @@ export function UserDetail({
                 }
               />
               <Select
-                label="Лимит устройств"
-                data={DEVICE_LIMIT_OPTIONS}
+                label={t('userDetail.deviceLimit')}
+                data={deviceLimitOptions()}
                 value={deviceLimit}
                 onChange={(v) =>
                   confirmChange(
-                    'Лимит устройств',
-                    optLabel(DEVICE_LIMIT_OPTIONS, deviceLimit),
-                    optLabel(DEVICE_LIMIT_OPTIONS, v),
+                    t('userDetail.deviceLimit'),
+                    optLabel(deviceLimitOptions(), deviceLimit),
+                    optLabel(deviceLimitOptions(), v),
                     () => {
                       setDeviceLimit(v)
                       saveLimits(user.data_limit, user.expire_at, Number(v))
@@ -563,19 +574,17 @@ export function UserDetail({
                 }
               />
               <p className="-mt-1 text-xs text-ink-muted">
-                Одно устройство = один публичный IP. Телефон и компьютер в одной Wi‑Fi сети
-                считаются одним устройством. Для раздельного учёта используйте мобильный
-                интернет на одном из них.
+                {t('userDetail.deviceLimitHint')}
               </p>
               <Select
-                label="Автосброс трафика"
-                data={RESET_PERIODS}
+                label={t('usersPanel.autoReset')}
+                data={resetPeriods()}
                 value={user.reset_period || 'none'}
                 onChange={(v) =>
                   confirmChange(
-                    'Автосброс трафика',
-                    optLabel(RESET_PERIODS, user.reset_period || 'none'),
-                    optLabel(RESET_PERIODS, v),
+                    t('usersPanel.autoReset'),
+                    optLabel(resetPeriods(), user.reset_period || 'none'),
+                    optLabel(resetPeriods(), v),
                     () => setResetPeriod(user.id, v).then(onChanged).catch(fail),
                   )
                 }
@@ -583,31 +592,31 @@ export function UserDetail({
             </>
           )}
           <Button variant="light" onClick={() => setEventsOpen(true)}>
-            Журнал действий
+            {t('events.title')}
           </Button>
           <Button
             color="orange"
             variant="light"
             onClick={async () => {
               const ok = await confirm({
-                title: 'Сбросить трафик?',
-                body: `Счётчик трафика пользователя «${user.name}» будет обнулён.`,
-                confirmLabel: 'Сбросить',
+                title: t('userDetail.resetTrafficTitle'),
+                body: t('userDetail.resetTrafficBody', { name: user.name }),
+                confirmLabel: t('usersPanel.reset'),
                 danger: true,
               })
               if (ok) resetUserTraffic(user.id).then(onChanged).catch(fail)
             }}
           >
-            Сбросить трафик
+            {t('usersPanel.resetTraffic')}
           </Button>
           <Button
             color="red"
             variant="light"
             onClick={async () => {
               const ok = await confirm({
-                title: 'Удалить пользователя?',
-                body: `Пользователь «${user.name}» будет удалён. Это действие необратимо.`,
-                confirmLabel: 'Удалить',
+                title: t('userDetail.deleteTitle'),
+                body: t('userDetail.deleteBody', { name: user.name }),
+                confirmLabel: t('common.delete'),
                 danger: true,
               })
               if (ok) {
@@ -620,10 +629,10 @@ export function UserDetail({
               }
             }}
           >
-            Удалить пользователя
+            {t('userDetail.deleteUser')}
           </Button>
 
-          <Divider label="Подписка" />
+          <Divider label={t('usersPanel.subscription')} />
           <div className="flex justify-center">
             <div className="rounded-lg bg-onaccent p-3">
               <QRCodeSVG value={user.sub_url} size={200} />
@@ -632,7 +641,7 @@ export function UserDetail({
           <Code block copy>{user.sub_url}</Code>
           <div className="flex flex-wrap gap-2">
             <Button size="xs" variant="light" href={user.sub_url} target="_blank">
-              Открыть подписку
+              {t('usersPanel.openSub')}
             </Button>
             <Button
               size="xs"
@@ -640,29 +649,29 @@ export function UserDetail({
               color="orange"
               onClick={async () => {
                 const ok = await confirm({
-                  title: 'Сбросить ссылку подписки?',
+                  title: t('userDetail.rotateTitle'),
                   body:
-                    'Будет выдана новая ссылка. Старая перестанет работать — на всех устройствах нужно обновить подписку в клиенте. UUID и пароли протоколов не меняются.',
-                  confirmLabel: 'Сбросить ссылку',
+                    t('userDetail.rotateBody'),
+                  confirmLabel: t('userDetail.rotateConfirm'),
                   danger: true,
                 })
                 if (!ok) return
                 rotateSubToken(user.id)
                   .then(() => {
-                    notifySuccess('Ссылка подписки обновлена')
+                    notifySuccess(t('userDetail.rotated'))
                     onChanged()
                   })
                   .catch(fail)
               }}
             >
-              Сбросить ссылку
+              {t('userDetail.rotate')}
             </Button>
           </div>
 
           <Divider label="Telegram" />
           {user.telegram_linked ? (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-success">Бот привязан к чату пользователя</p>
+              <p className="text-sm text-success">{t('userDetail.botLinked')}</p>
               {!!user.tg_chat_id && (
                 <p className="text-xs text-ink-muted">
                   Telegram ID: <Code copy>{String(user.tg_chat_id)}</Code>
@@ -673,7 +682,7 @@ export function UserDetail({
                   button could only ever produce an error. */}
               {userBotEnabled && (
                   <Button size="xs" variant="light" onClick={() => setMsgOpen(true)}>
-                    Отправить сообщение
+                    {t('userDetail.sendMessage')}
                   </Button>
               )}
               <Button
@@ -682,22 +691,21 @@ export function UserDetail({
                 color="orange"
                 onClick={async () => {
                   const ok = await confirm({
-                    title: 'Отвязать Telegram?',
-                    body: 'Пользователь потеряет доступ к боту, пока снова не откроет ссылку привязки.',
-                    confirmLabel: 'Отвязать',
+                    title: t('userDetail.unlinkTitle'),
+                    body: t('userDetail.unlinkBody'),
+                    confirmLabel: t('userDetail.unlink'),
                     danger: true,
                   })
                   if (ok) unlinkUserTelegram(user.id).then(onChanged).catch(fail)
                 }}
               >
-                Отвязать Telegram
+                {t('userDetail.unlinkTelegram')}
               </Button>
             </div>
           ) : user.telegram_link ? (
             <div className="flex flex-col gap-2">
               <p className="text-sm text-ink-muted">
-                Сгенерируйте одноразовую ссылку привязки и отправьте её
-                пользователю — он откроет её и привяжет аккаунт к боту.
+                {t('userDetail.linkHint')}
               </p>
               <Button
                 size="xs"
@@ -710,35 +718,41 @@ export function UserDetail({
                     .catch(fail)
                 }
               >
-                Получить ссылку привязки
+                {t('userDetail.getLink')}
               </Button>
               {tgLink && (
                 <>
                   <Code block copy>{tgLink.url}</Code>
                   <p className="text-xs text-ink-muted">
-                    Скопируйте и отправьте пользователю. Одноразовая ссылка,
-                    действует {tgLink.mins} мин.
+                    {t('userDetail.linkNote', { mins: tgLink.mins })}
                   </p>
                 </>
               )}
             </div>
           ) : (
             <p className="text-sm text-ink-muted">
-              Включите пользовательского бота в настройках Telegram.
+              {t('userDetail.enableUserBot')}
             </p>
           )}
 
-          <Divider label="Совпадения с блоклистами" />
+          <Divider label={t('stats.blocklistMatches')} />
           <AbuseList userId={user.id} />
 
-          <Divider label="Устройства (IP)" />
+          <Divider label={t('userDetail.devices')} />
           <p className="text-sm text-ink-muted">
             {user.device_limit > 0
-              ? `Активно ${activeConnCount} из ${user.device_limit} · всего ${conns.length} IP`
-              : `Активно ${activeConnCount} · всего ${conns.length} IP`}
+              ? t('userDetail.activeOfLimit', {
+                  active: activeConnCount,
+                  limit: user.device_limit,
+                  total: conns.length,
+                })
+              : t('userDetail.activeTotal', {
+                  active: activeConnCount,
+                  total: conns.length,
+                })}
           </p>
           {conns.length === 0 ? (
-            <p className="py-2 text-center text-sm text-ink-muted">Пока нет подключений</p>
+            <p className="py-2 text-center text-sm text-ink-muted">{t('userDetail.noConnections')}</p>
           ) : (
             <div className="flex flex-col gap-1.5">
               {conns.map((c) => (
@@ -748,9 +762,9 @@ export function UserDetail({
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     {isOnline(c.last_seen) ? (
-                      <Badge color="greenSolid">онлайн</Badge>
+                      <Badge color="greenSolid">{t('userDetail.onlineWord')}</Badge>
                     ) : (
-                      <Badge color="gray">офлайн</Badge>
+                      <Badge color="gray">{t('usersPanel.offline')}</Badge>
                     )}
                     <span className="truncate font-mono text-sm">{c.ip}</span>
                   </div>
@@ -762,10 +776,10 @@ export function UserDetail({
             </div>
           )}
 
-          <Divider label="Трафик" />
-          <SegmentedControl fullWidth value={range} onChange={setRange} data={RANGES} />
+          <Divider label={t('userDetail.traffic')} />
+          <SegmentedControl fullWidth value={range} onChange={setRange} data={ranges()} />
           {chart.length === 0 ? (
-            <p className="py-3 text-center text-ink-muted">Нет данных</p>
+            <p className="py-3 text-center text-ink-muted">{t('stats.noData')}</p>
           ) : (
             <>
               <TrafficArea data={chart} height={200} fmt={fmtBytes} />
@@ -793,17 +807,17 @@ export function UserDetail({
       <Modal
         open={msgOpen}
         onClose={() => setMsgOpen(false)}
-        title={`Сообщение для ${user.name}`}
+        title={t('userDetail.messageTo', { name: user.name })}
       >
         <HtmlEditor
           value={msgText}
           onChange={setMsgText}
           rows={5}
-          placeholder="Текст придёт в чат с ботом."
+          placeholder={t('userDetail.messagePlaceholder')}
         />
         <p className="mt-1 text-xs text-ink-muted">
           {msgMedia
-            ? `${[...msgText].length} / 1024 — с вложением Telegram ограничивает подпись`
+            ? t('userDetail.captionLimit', { n: [...msgText].length })
             : `${[...msgText].length} / 4096`}
         </p>
         <div className="mt-3">
@@ -824,7 +838,7 @@ export function UserDetail({
                   if (msgFileRef.current) msgFileRef.current.value = ''
                 }}
               >
-                Убрать
+                {t('userDetail.removeAttachment')}
               </Button>
             </div>
           ) : (
@@ -833,13 +847,13 @@ export function UserDetail({
               size="sm"
               onClick={() => msgFileRef.current?.click()}
             >
-              Прикрепить файл
+              {t('userDetail.attachFile')}
             </Button>
           )}
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={() => setMsgOpen(false)}>
-            Отмена
+            {t('common.cancel')}
           </Button>
           <Button
             loading={sending}
@@ -854,7 +868,7 @@ export function UserDetail({
                 setMsgText('')
                 setMsgMedia(null)
                 setMsgOpen(false)
-                notifySuccess('Сообщение отправлено')
+                notifySuccess(t('userDetail.messageSent'))
               } catch (e) {
                 notifyError(errMessage(e))
               } finally {
@@ -862,7 +876,7 @@ export function UserDetail({
               }
             }}
           >
-            Отправить
+            {t('userDetail.send')}
           </Button>
         </div>
       </Modal>
@@ -892,7 +906,7 @@ function GroupChip({
     <button
       type="button"
       onClick={onClick}
-      title={`${count} ${count === 1 ? 'подключение' : 'подключений'} · ${on ? 'убрать из группы' : 'добавить в группу'}`}
+      title={`${i18n.t('userDetail.nConnections', { count })} · ${i18n.t(on ? 'userDetail.removeFromGroup' : 'userDetail.addToGroup')}`}
       className={
         'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ' +
         // Selected uses the theme-composited accent tint (translucent → readable on a

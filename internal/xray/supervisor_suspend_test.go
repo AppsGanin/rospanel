@@ -91,7 +91,7 @@ func TestServingCoversRestartWindowButNotCrash(t *testing.T) {
 // back on just as often. That path used Stop, which latches the supervisor closed:
 // afterwards every Apply and Restart returned success and started nothing. On a live
 // node it looked like this — the agent kept syncing, the panel kept reporting the node
-// online, each "перезапустить Xray" logged "restarted on operator request", and no
+// online, each Xray restart logged "restarted on operator request", and no
 // process ever came back until someone restarted the agent by hand.
 func TestSuspendCanBeUndone(t *testing.T) {
 	s := newTestSup(t)

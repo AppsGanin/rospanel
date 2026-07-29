@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -73,17 +74,21 @@ type DeepLink struct {
 
 // DeepLinks builds best-effort import deep-links for the popular clients, most
 // popular first. Schemes drift across client releases — verify periodically.
-func DeepLinks(subURL string) []DeepLink {
+func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
 	enc := url.QueryEscape(subURL)
+	// Only the generic platform blurbs are translated; the OS names below are
+	// proper nouns and read the same in every language.
+	all := i18n.T(lang, "sub.allPlatforms")
+	allTV := i18n.T(lang, "sub.allPlusTV")
 	// Shadowrocket's sub:// URI carries the subscription URL base64-encoded (NOT
 	// percent-encoded) — feeding it a %-escaped URL makes it fail with "invalid URL".
 	subB64 := base64.StdEncoding.EncodeToString([]byte(subURL))
 	return []DeepLink{
-		{"Happ", "Все платформы · TV", template.URL("happ://add/" + subURL)},
-		{"INCY", "Все платформы · TV", template.URL("incy://import/" + subURL)},
-		{"Hiddify", "Все платформы", template.URL("hiddify://import/" + subURL)},
-		{"Karing", "Все платформы · TV", template.URL("karing://install-config?url=" + enc)},
-		{"sing-box", "Все платформы", template.URL("sing-box://import-remote-profile?url=" + enc)},
+		{"Happ", allTV, template.URL("happ://add/" + subURL)},
+		{"INCY", allTV, template.URL("incy://import/" + subURL)},
+		{"Hiddify", all, template.URL("hiddify://import/" + subURL)},
+		{"Karing", allTV, template.URL("karing://install-config?url=" + enc)},
+		{"sing-box", all, template.URL("sing-box://import-remote-profile?url=" + enc)},
 		{"Clash Meta / Mihomo", "Windows · macOS · Linux · Android", template.URL("clash://install-config?url=" + enc)},
 		{"V2Box", "iOS · macOS · Android", template.URL("v2box://install-sub?url=" + enc)},
 		{"v2rayNG", "Android", template.URL("v2rayng://install-sub?url=" + enc)},

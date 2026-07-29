@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
+import { LangChoice, LangPills } from "./LangSwitch";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
 import { useIsAdmin, useIsOwner } from "./role";
@@ -47,16 +49,17 @@ export function Dashboard({
   onShowDonate: () => void;
   onAccountChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const seg = useRoute();
   const isAdmin = useIsAdmin();
   const isOwner = useIsOwner();
   const [menuOpen, setMenuOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
-  // Keep the payments-enabled flag fresh so the "Оплата" item appears/vanishes
+  // Keep the payments-enabled flag fresh so the "Payments" item appears/vanishes
   // without a full reload: re-read on every top-level tab change AND whenever the
   // Both flags are saved in Settings, which fires an event when it does. Without a
   // refresh they would keep their login-time values until a full page reload: the
-  // Рассылка tab and the per-user "Отправить сообщение" button would stay hidden
+  // Broadcast tab and the per-user "send a message" button would stay hidden
   // after switching the user bot ON, and — worse — stay visible after switching it
   // OFF, so every action behind them would answer 400.
   const [billing, setBilling] = useState(billingEnabled);
@@ -87,10 +90,10 @@ export function Dashboard({
   // by hand, `tab` falls back to the dashboard rather than showing a page whose every
   // request would 403.
   const NAV: { value: Tab; label: string }[] = [
-    { value: "overview", label: "Дашборд" },
-    { value: "users", label: "Пользователи" },
-    ...(isAdmin ? [{ value: "nodes" as Tab, label: "Сервера" }] : []),
-    ...(isAdmin ? [{ value: "settings" as Tab, label: "Настройки" }] : []),
+    { value: "overview", label: t("nav.overview") },
+    { value: "users", label: t("nav.users") },
+    ...(isAdmin ? [{ value: "nodes" as Tab, label: t("nav.servers") }] : []),
+    ...(isAdmin ? [{ value: "settings" as Tab, label: t("nav.settings") }] : []),
   ];
   // The roster isn't in NAV, so resolve it separately — and only for the owner, so
   // hand-typing /admins as anyone else lands on the dashboard rather than on a page
@@ -133,7 +136,7 @@ export function Dashboard({
             <button
               className="text-gray-600 md:hidden"
               onClick={() => setMenuOpen(true)}
-              aria-label="Меню"
+              aria-label={t("common.menu")}
             >
               <IconBurger />
             </button>
@@ -179,13 +182,17 @@ export function Dashboard({
               <DropdownLabel>{username}</DropdownLabel>
               <DropdownDivider />
               <DropdownItem onClick={() => setCredsOpen(true)}>
-                Учётные данные
+                {t("nav.credentials")}
               </DropdownItem>
               {isOwner && (
-                <DropdownItem onClick={goAdmins}>Администраторы</DropdownItem>
+                <DropdownItem onClick={goAdmins}>{t("nav.admins")}</DropdownItem>
               )}
+              <DropdownDivider />
+              <DropdownLabel>{t("common.language")}</DropdownLabel>
+              <LangChoice />
+              <DropdownDivider />
               <DropdownItem color="red" onClick={doLogout}>
-                Выйти
+                {t("nav.logout")}
               </DropdownItem>
             </Dropdown>
           </div>
@@ -222,16 +229,21 @@ export function Dashboard({
                 onAdmins ? "text-brand-800" : "text-accent",
               )}
             >
-              Администраторы
+              {t("nav.admins")}
             </button>
           )}
         </nav>
+        <hr className="my-4 border-gray-200" />
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          {t("common.language")}
+        </p>
+        <LangPills />
         <hr className="my-4 border-gray-200" />
         <button
           onClick={doLogout}
           className="text-lg font-medium text-danger"
         >
-          Выйти
+          {t("nav.logout")}
         </button>
       </Drawer>
 
@@ -258,13 +270,13 @@ export function Dashboard({
             onClick={onShowAgreement}
             className="transition hover:text-accent"
           >
-            Пользовательское соглашение
+            {t("nav.agreement")}
           </button>
           <button
             onClick={onShowDonate}
             className="transition hover:text-accent"
           >
-            Пожертвования
+            {t("nav.donate")}
           </button>
         </div>
         <a
@@ -272,7 +284,7 @@ export function Dashboard({
           target="_blank"
           rel="noreferrer"
           aria-label="GitHub"
-          title="Исходный код на GitHub"
+          title={t("nav.sourceOnGithub")}
           className="justify-self-end text-gray-400 transition hover:text-accent"
         >
           <IconGithub size={18} />

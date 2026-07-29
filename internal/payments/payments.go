@@ -163,7 +163,7 @@ func send(name string, req *http.Request, out any) error {
 		return nil
 	}
 	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("%s: не удалось разобрать ответ: %w", name, err)
+		return fmt.Errorf("%s: could not parse the response: %w", name, err)
 	}
 	return nil
 }

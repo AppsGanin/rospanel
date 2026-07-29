@@ -40,19 +40,6 @@ func GrantableRole(role string) bool {
 	return false
 }
 
-// RoleLabel is the Russian name shown in the panel.
-func RoleLabel(role string) string {
-	switch role {
-	case RoleOwner:
-		return "Владелец"
-	case RoleAdmin:
-		return "Администратор"
-	case RoleOperator:
-		return "Оператор"
-	}
-	return role
-}
-
 // Admin is one row of the admin roster. The password hash never leaves the store.
 type Admin struct {
 	ID                 int64  `json:"id"`
@@ -60,5 +47,5 @@ type Admin struct {
 	Role               string `json:"role"`
 	MustChangePassword bool   `json:"must_change_password"`
 	CreatedAt          int64  `json:"created_at"`
-	LastLoginAt        int64  `json:"last_login_at"` // 0 — ни разу не входил
+	LastLoginAt        int64  `json:"last_login_at"` // 0 ⇒ never signed in
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Checkbox } from "./ui";
 
 // DnsPreset contributes its servers IN ORDER — primary first, then the secondary —
@@ -12,7 +13,7 @@ const POPULAR_DNS: DnsPreset[] = [
   { key: "google-doh", label: "Google DoH", servers: ["https://dns.google/dns-query"] },
   { key: "quad9", label: "Quad9 — 9.9.9.9 / 149.112.112.112", servers: ["9.9.9.9", "149.112.112.112"] },
   { key: "adguard", label: "AdGuard — 94.140.14.14 / 94.140.15.15", servers: ["94.140.14.14", "94.140.15.15"] },
-  { key: "yandex", label: "Яндекс — 77.88.8.8 / 77.88.8.1", servers: ["77.88.8.8", "77.88.8.1"] },
+  { key: "yandex", label: "Yandex — 77.88.8.8 / 77.88.8.1", servers: ["77.88.8.8", "77.88.8.1"] },
   { key: "xbox-doh", label: "Xbox DNS — DoH", servers: ["https://xbox-dns.ru/dns-query"] },
   { key: "xbox", label: "Xbox DNS — 111.88.96.50 / 111.88.96.51", servers: ["111.88.96.50", "111.88.96.51"] },
   { key: "geohide-doh", label: "GeoHide — DoH", servers: ["https://dns.geohide.ru:444/dns-query"] },
@@ -84,10 +85,11 @@ export function DnsEditor({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const [st, setSt] = useState(() => parseDns(value));
 
   // Re-derive from `value` when the container changes it out from under us (e.g. the
-  // "Отменить" reset restores the last-saved DNS) — but not for our own edits, whose
+  // the Cancel reset restores the last-saved DNS) — but not for our own edits, whose
   // recombined string already equals `value`, so the parse is skipped.
   useEffect(() => {
     if (value !== combineDns(st.sel, st.custom)) setSt(parseDns(value));
@@ -119,9 +121,9 @@ export function DnsEditor({
         ))}
       </div>
       <div className="mt-4">
-        <p className="mb-1 text-sm font-medium text-ink">Свои серверы</p>
+        <p className="mb-1 text-sm font-medium text-ink">{t("dns.customServers")}</p>
         <p className="mb-2 text-xs text-ink-muted">
-          По одному в строке: IP, DoH-URL или localhost.
+          {t("dns.customHint")}
         </p>
         <textarea
           value={st.custom}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   deleteTariffPlan,
   getBilling,
@@ -11,8 +12,9 @@ import {
   type PaymentProvider,
   type TariffPlan,
 } from "./api";
-import { fmtBytes, gbToBytes, QUOTA_OPTIONS } from "./format";
+import { fmtBytes, gbToBytes, quotaOptions } from "./format";
 import { useAction } from "./hooks";
+import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -70,6 +72,7 @@ function ProviderCard({
   draft: ProviderDraft;
   onChange: (d: ProviderDraft) => void;
 }) {
+  const { t } = useTranslation();
   const setField = (key: string, value: string) =>
     onChange({ ...draft, config: { ...draft.config, [key]: value } });
 
@@ -82,10 +85,10 @@ function ProviderCard({
   });
 
   const status = !draft.enabled
-    ? { label: "Выключен", color: "gray" as const }
+    ? { label: i18n.t("bill.provOff"), color: "gray" as const }
     : configured
-      ? { label: "Подключён", color: "green" as const }
-      : { label: "Не настроен", color: "orange" as const };
+      ? { label: i18n.t("bill.provOn"), color: "green" as const }
+      : { label: i18n.t("bill.provUnset"), color: "orange" as const };
 
   return (
     <div
@@ -111,7 +114,7 @@ function ProviderCard({
               {status.label}
             </Badge>
           </div>
-          <p className="truncate text-xs text-ink-muted">{provider.note}</p>
+          <p className="truncate text-xs text-ink-muted">{td(provider.note)}</p>
         </div>
         <Switch
           checked={draft.enabled}
@@ -133,9 +136,9 @@ function ProviderCard({
                     checked={draft.config[f.key] === "1"}
                     onChange={(v) => setField(f.key, v ? "1" : "")}
                   />
-                  {f.label}
+                  {td(f.label)}
                   {f.help && (
-                    <span className="text-xs text-ink-muted">— {f.help}</span>
+                    <span className="text-xs text-ink-muted">— {td(f.help)}</span>
                   )}
                 </label>
               );
@@ -145,34 +148,33 @@ function ProviderCard({
               return (
                 <div key={f.key}>
                   <Select
-                    label={f.label}
-                    data={opts}
+                    label={td(f.label)}
+                    data={opts.map((o) => ({ ...o, label: td(o.label) }))}
                     value={draft.config[f.key] || opts[0]?.value || ""}
                     onChange={(v) => setField(f.key, v)}
                   />
                   {f.help && (
-                    <p className="mt-1 text-xs text-ink-muted">{f.help}</p>
+                    <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
                   )}
                 </div>
               );
             }
             const isSecret = f.kind === "secret";
-            const label =
-              isSecret && f.is_set
-                ? `${f.label} (задан — оставьте пустым, чтобы не менять)`
-                : f.optional
-                  ? `${f.label}`
-                  : f.label;
+            // Every operator-visible string a provider describes itself with — label,
+            // note, help, placeholder — is a dictionary key. td() falls back to the
+            // string itself, so a brand name in the same field renders unchanged.
+            const name = td(f.label);
+            const label = isSecret && f.is_set ? t("bill.fieldSet", { label: name }) : name;
             return (
               <div key={f.key}>
                 <TextInput
                   label={label}
                   value={draft.config[f.key] ?? ""}
                   onChange={(v) => setField(f.key, v)}
-                  placeholder={isSecret && f.is_set ? "••••••••" : f.placeholder}
+                  placeholder={isSecret && f.is_set ? "••••••••" : td(f.placeholder ?? "")}
                 />
                 {f.help && !isSecret && (
-                  <p className="mt-1 text-xs text-ink-muted">{f.help}</p>
+                  <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
                 )}
               </div>
             );
@@ -181,7 +183,7 @@ function ProviderCard({
           {provider.webhook_url && (
             <div>
               <p className="mb-1 text-xs text-ink-muted">
-                URL для вебхука в кабинете провайдера:
+                {t("bill.webhookUrl")}
               </p>
               <Code block copy>
                 {provider.webhook_url}
@@ -209,10 +211,11 @@ function PaymentIntegrations({
   err: string;
   onChange: (key: string, d: ProviderDraft) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <SettingCard
-      title="Приём платежей"
-      description="Автоматическая оплата тарифов в пользовательском боте. Тариф активируется сам после оплаты. Без провайдеров оплата идёт вручную (подтверждает админ)."
+      title={t("bill.acceptTitle")}
+      description={t("bill.acceptDescription")}
     >
       {err ? (
         <p className="text-sm text-danger">{err}</p>
@@ -247,8 +250,8 @@ const EMPTY_PLAN = (): TariffPlan => ({
 });
 
 
-const DEVICES = [
-  { value: "0", label: "Без лимита" },
+const devices = () => [
+  { value: "0", label: i18n.t("common.unlimited") },
   { value: "1", label: "1" },
   { value: "2", label: "2" },
   { value: "3", label: "3" },
@@ -256,28 +259,24 @@ const DEVICES = [
   { value: "10", label: "10" },
 ];
 
-const PERIODS = [
-  { value: "0", label: "Бессрочно" },
-  { value: "1", label: "1 день" },
-  { value: "3", label: "3 дня" },
-  { value: "7", label: "7 дней" },
-  { value: "14", label: "14 дней" },
-  { value: "30", label: "30 дней" },
-  { value: "90", label: "90 дней" },
-  { value: "180", label: "180 дней" },
-  { value: "365", label: "365 дней" },
+const periods = () => [
+  { value: "0", label: i18n.t("bill.unlimitedTerm") },
+  ...[1, 3, 7, 14, 30, 90, 180, 365].map((d) => ({
+    value: String(d),
+    label: i18n.t("bc.days", { count: d }),
+  })),
 ];
 
 function gbFromBytes(b: number): string {
   if (!b) return "0";
   const gb = b / (1024 * 1024 * 1024);
-  const hit = QUOTA_OPTIONS.find((o) => o.value === String(gb));
+  const hit = quotaOptions().find((o) => o.value === String(gb));
   return hit ? hit.value : String(gb);
 }
 
 function periodLabel(days: number): string {
-  if (!days) return "бессрочно";
-  return `${days} дн.`;
+  if (!days) return i18n.t("common.never");
+  return i18n.t("bill.nDays", { count: days });
 }
 
 function planSummary(p: TariffPlan): string {
@@ -285,10 +284,14 @@ function planSummary(p: TariffPlan): string {
   if (p.price_rub > 0) {
     parts.push(`${p.price_rub} ₽ / ${periodLabel(p.period_days)}`);
   } else {
-    parts.push(`бесплатный · ${periodLabel(p.period_days)}`);
+    parts.push(`${i18n.t("bill.free")} · ${periodLabel(p.period_days)}`);
   }
-  parts.push(p.data_limit ? fmtBytes(p.data_limit) : "∞ трафик");
-  parts.push(p.device_limit ? `${p.device_limit} устр.` : "∞ устр.");
+  parts.push(p.data_limit ? fmtBytes(p.data_limit) : i18n.t("bill.infTraffic"));
+  parts.push(
+    p.device_limit
+      ? i18n.t("bill.nDevices", { count: p.device_limit })
+      : i18n.t("bill.infDevices"),
+  );
   return parts.join(" · ");
 }
 
@@ -303,27 +306,28 @@ function PlanForm({
   isTrial: boolean;
   isFree: boolean;
 }) {
+  const { t } = useTranslation();
   const patch = (p: Partial<TariffPlan>) => onChange({ ...plan, ...p });
-  // A plan is free because it is designated free/trial in "Тарификация" — never
+  // A plan is free because it is designated free/trial in the pricing card — never
   // because someone typed 0 here. The server enforces both halves of that.
   const designated = isFree || isTrial;
-  const periodVal = PERIODS.some((o) => o.value === String(plan.period_days))
+  const periodVal = periods().some((o) => o.value === String(plan.period_days))
     ? String(plan.period_days)
     : String(plan.period_days || 0);
 
   return (
     <div className="flex flex-col gap-3">
       <TextInput
-        label="Название"
+        label={t("groups.name")}
         value={plan.name}
         onChange={(v) => patch({ name: v })}
-        placeholder="Стандарт"
+        placeholder={t("bill.namePlaceholder")}
       />
       <TextInput
-        label="Код (slug)"
+        label={t("bill.slug")}
         value={plan.slug}
         onChange={(v) => patch({ slug: v.toLowerCase() })}
-        placeholder="standard — пустой = из названия"
+        placeholder={t("bill.slugPlaceholder")}
       />
       {/* Order, visibility and price are all about being offered for sale, which a
           designated free/trial plan never is — it is assigned automatically and is
@@ -333,50 +337,50 @@ function PlanForm({
       {!designated && (
         <div className="grid gap-3 sm:grid-cols-2">
           <TextInput
-            label="Порядок в списке"
+            label={t("bill.order")}
             type="number"
             value={String(plan.sort_order)}
             onChange={(v) => patch({ sort_order: Math.max(0, Number(v) || 0) })}
           />
           <label className="flex items-end gap-2 pb-1 text-sm">
             <Switch checked={plan.enabled} onChange={(v) => patch({ enabled: v })} />
-            Активен (виден пользователям)
+            {t("bill.activeVisible")}
           </label>
         </div>
       )}
       <div className={designated ? "grid gap-3" : "grid gap-3 sm:grid-cols-2"}>
         {!designated && (
           <TextInput
-            label="Цена, ₽"
+            label={t("bill.price")}
             type="number"
             value={String(plan.price_rub)}
             onChange={(v) => patch({ price_rub: Math.max(1, Number(v) || 1) })}
           />
         )}
         <Select
-          label="Срок действия"
-          data={PERIODS}
+          label={t("bill.term")}
+          data={periods()}
           value={periodVal}
           onChange={(v) => patch({ period_days: Number(v) })}
         />
       </div>
       <p className="text-xs text-ink-muted">
         {isTrial
-          ? "Пробный тариф: выдаётся при регистрации, доступ истекает через срок действия, затем — переход на бесплатный."
+          ? t("bill.trialHint")
           : isFree
-            ? "Бесплатный тариф: доступ не истекает, лимит трафика сбрасывается каждый срок действия."
-            : "Платный тариф: доступ истекает через срок действия, требуется продление."}
+            ? t("bill.freeHint")
+            : t("bill.paidHint")}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Select
-          label="Лимит трафика"
-          data={QUOTA_OPTIONS}
+          label={t("usersPanel.trafficLimit")}
+          data={quotaOptions()}
           value={gbFromBytes(plan.data_limit)}
           onChange={(v) => patch({ data_limit: gbToBytes(Number(v)) })}
         />
         <Select
-          label="Лимит устройств"
-          data={DEVICES}
+          label={t("userDetail.deviceLimit")}
+          data={devices()}
           value={String(plan.device_limit)}
           onChange={(v) => patch({ device_limit: Number(v) })}
         />
@@ -386,6 +390,7 @@ function PlanForm({
 }
 
 export function BillingPanel() {
+  const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
@@ -465,12 +470,12 @@ export function BillingPanel() {
 
   if (loadErr || !cfg || !saved) {
     return (
-      <SettingCard title="Тарифы">
+      <SettingCard title={t("bill.plans")}>
         <p className="text-sm text-danger">
-          {loadErr || "Не удалось загрузить настройки тарифов."}
+          {loadErr || t("bill.loadFailed")}
         </p>
         <Button className="mt-3" onClick={() => reload()}>
-          Повторить
+          {t("common.retry")}
         </Button>
       </SettingCard>
     );
@@ -515,7 +520,7 @@ export function BillingPanel() {
           payment_note: cfg.payment_note,
         });
         setSaved({ ...cfg, plans: safePlans });
-        // Tell the top nav to re-read billing_enabled so the "Оплата" menu item
+        // Tell the top nav to re-read billing_enabled so the payments menu item
         // appears/disappears immediately (no page reload needed).
         window.dispatchEvent(new Event("rospanel:billing-changed"));
       }
@@ -530,7 +535,7 @@ export function BillingPanel() {
         latest = list;
       }
       if (latest) seedProviders(latest);
-      notifySuccess("Настройки сохранены");
+      notifySuccess(t("general.saved"));
     }).catch((e) => notifyError(errMessage(e)));
 
   const openCreate = () => {
@@ -541,14 +546,14 @@ export function BillingPanel() {
   const savePlan = () => {
     if (!editor) return;
     if (!editor.name.trim()) {
-      notifyError("Укажите название тарифа");
+      notifyError(t("bill.needName"));
       return;
     }
     run(async () => {
       const savedPlan = await saveTariffPlan(editor);
       setEditor(null);
       reload();
-      notifySuccess(savedPlan.id ? "Тариф сохранён" : "Тариф создан");
+      notifySuccess(t(savedPlan.id ? "bill.planSaved" : "bill.planCreated"));
     }).catch((e) => notifyError(errMessage(e)));
   };
 
@@ -558,22 +563,22 @@ export function BillingPanel() {
       const r = await migratePlanUsers(editor.id, migrateTo);
       setMigrateTo(0);
       reload();
-      notifySuccess(`Переведено пользователей: ${r.migrated}`);
+      notifySuccess(t("bill.migrated", { count: r.migrated }));
     }).catch((e) => notifyError(errMessage(e)));
   };
 
   const removePlan = async (p: TariffPlan) => {
     const ok = await confirm({
-      title: "Удалить тариф?",
-      body: `«${p.name}» будет удалён без возможности восстановления.`,
-      confirmLabel: "Удалить",
+      title: t("bill.deleteTitle"),
+      body: t("bill.deleteBody", { name: p.name }),
+      confirmLabel: t("common.delete"),
       danger: true,
     });
     if (!ok) return;
     run(async () => {
       await deleteTariffPlan(p.id);
       reload();
-      notifySuccess("Тариф удалён");
+      notifySuccess(t("bill.planDeleted"));
     }).catch((e) => notifyError(errMessage(e)));
   };
 
@@ -583,8 +588,8 @@ export function BillingPanel() {
       {confirmNode}
       <div className="flex flex-col gap-4">
         <SettingCard
-          title="Оплата"
-          description="Глобальное включение приёма оплаты. При включении в главном меню появляется раздел «Оплата» со статистикой, ожидающими и историей."
+          title={t("settings.tabBilling")}
+          description={t("bill.globalHint")}
           action={
             <Switch
               checked={cfg.enabled}
@@ -593,9 +598,7 @@ export function BillingPanel() {
           }
         >
           <p className="text-sm text-ink-muted">
-            Существующие пользователи <b>не меняются</b> — у них остаются текущие
-            лимиты («тариф вручную»), пока вы не назначите тариф в карточке
-            пользователя или через admin-бот.
+            <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
           </p>
         </SettingCard>
         <PaymentIntegrations
@@ -605,17 +608,17 @@ export function BillingPanel() {
           onChange={patchProvider}
         />
         <SettingCard
-          title="Тарифные планы"
-          description="Создавайте и настраивайте тарифы: лимиты, цена, срок. Бесплатный тариф — для пользователей после пробного периода."
+          title={t("bill.plansTitle")}
+          description={t("bill.plansHint")}
           action={
             <Button size="sm" onClick={openCreate}>
-              Создать
+              {t("common.create")}
             </Button>
           }
         >
           {safePlans.length === 0 ? (
             <p className="text-sm text-ink-muted">
-              Тарифов пока нет. Нажмите «Создать», чтобы добавить первый.
+              {t("bill.noPlans")}
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
@@ -627,23 +630,23 @@ export function BillingPanel() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-ink">{p.name}</span>
-                      {!p.enabled && <Badge color="gray">выключен</Badge>}
+                      {!p.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
                       {(planUsers[String(p.id)] ?? 0) > 0 && (
                         <Badge color="gray">
-                          {planUsers[String(p.id)]} польз.
+                          {t("bill.nUsers", { count: planUsers[String(p.id)] })}
                         </Badge>
                       )}
-                      {p.price_rub <= 0 && <Badge color="teal">бесплатный</Badge>}
+                      {p.price_rub <= 0 && <Badge color="teal">{t("bill.free")}</Badge>}
                       {cfg.free_plan_id === p.id && (
-                        <Badge color="brand">после пробного</Badge>
+                        <Badge color="brand">{t("bill.afterTrial")}</Badge>
                       )}
                       {cfg.trial_plan_id === p.id && (
-                        <Badge color="orange">пробный</Badge>
+                        <Badge color="orange">{t("bill.trial")}</Badge>
                       )}
                     </div>
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {planSummary(p)}
-                      {p.slug ? ` · код: ${p.slug}` : ""}
+                      {p.slug ? ` · ${t("bill.codeIs", { slug: p.slug })}` : ""}
                     </p>
                   </div>
                   <span className="flex shrink-0 gap-2">
@@ -655,7 +658,7 @@ export function BillingPanel() {
                         setMigrateTo(0);
                       }}
                     >
-                      Изменить
+                      {t("common.edit")}
                     </Button>
                     <Button
                       size="sm"
@@ -664,7 +667,7 @@ export function BillingPanel() {
                       onClick={() => removePlan(p)}
                       disabled={busy}
                     >
-                      Удалить
+                      {t("common.delete")}
                     </Button>
                   </span>
                 </li>
@@ -674,15 +677,15 @@ export function BillingPanel() {
         </SettingCard>
 
         <SettingCard
-          title="Тарификация"
-          description="Бесплатный и пробный тарифы, реквизиты для ручной оплаты. Действуют в user-боте и на странице подписки."
+          title={t("bill.pricing")}
+          description={t("bill.pricingHint")}
         >
           <div className="flex flex-col gap-4">
             <div>
               <Select
-                label="Бесплатный тариф"
+                label={t("bill.freePlan")}
                 data={[
-                  { value: "0", label: "— не выбран —" },
+                  { value: "0", label: t("bill.notSelected") },
                   // One plan cannot hold both roles: the trial has to expire into
                   // something, and it cannot expire into itself. The server refuses
                   // it too — this just keeps the choice off the menu.
@@ -692,39 +695,32 @@ export function BillingPanel() {
                 onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
               />
               <p className="mt-1 text-xs text-ink-muted">
-                На него пользователь переходит, когда закончился пробный или
-                платный период, а также при отмене подписки. Если не выбран —
-                доступ просто прекращается и остаётся только купить платный.
-                Выбранный тариф становится бесплатным: цена обнулится, и он
-                перестанет продаваться.
+                {t("bill.freePlanHint")}
               </p>
             </div>
             <div>
               <Select
-                label="Пробный тариф"
+                label={t("bill.trialPlan")}
                 data={[
-                  { value: "0", label: "— не выбран —" },
+                  { value: "0", label: t("bill.notSelected") },
                   ...planOptions.filter((o) => o.value !== String(cfg.free_plan_id)),
                 ]}
                 value={String(cfg.trial_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
               />
               <p className="mt-1 text-xs text-ink-muted">
-                Выдаётся при регистрации: его лимиты и его срок действия и есть
-                пробный период. Тариф без срока действия пробным не выдаётся.
-                Выбранный тариф становится бесплатным: цена обнулится, и он
-                перестанет продаваться.
+                {t("bill.trialPlanHint")}
               </p>
             </div>
             <Textarea
-              label="Реквизиты для ручной оплаты"
+              label={t("bill.manualDetails")}
               value={cfg.payment_note}
               onChange={(v) => setCfg({ ...cfg, payment_note: v })}
               placeholder={
-                "Например:\nПеревод на карту 0000 0000 0000 0000\nили СБП по номеру +7 900 000-00-00\nПосле оплаты напишите @admin"
+                t("bill.manualPlaceholder")
               }
               rows={4}
-              hint="Показывается пользователю, когда не подключён автоматический провайдер — и в боте, и на странице подписки. Укажите реквизиты и как подтвердить перевод."
+              hint={t("bill.manualHint")}
             />
           </div>
         </SettingCard>
@@ -741,7 +737,7 @@ export function BillingPanel() {
       <Modal
         open={!!editor}
         onClose={() => setEditor(null)}
-        title={editor?.id ? `Тариф: ${editor.name}` : "Новый тариф"}
+        title={editor?.id ? t("bill.planOf", { name: editor.name }) : t("bill.newPlan")}
         size="md"
       >
         {editor && (
@@ -755,17 +751,16 @@ export function BillingPanel() {
             {editor.id > 0 && (planUsers[String(editor.id)] ?? 0) > 0 && (
               <div className="accent-tint border-accent rounded-lg border p-3">
                 <p className="text-sm font-semibold text-accent">
-                  На тарифе {planUsers[String(editor.id)]} польз.
+                  {t("bill.onPlanN", { count: planUsers[String(editor.id)] })}
                 </p>
                 <p className="mt-0.5 text-xs text-ink-muted">
-                  Перед отключением или удалением тарифа переведите их на другой —
-                  они получат его лимиты и срок.
+                  {t("bill.migrateHint")}
                 </p>
                 <Select
                   className="mt-2"
-                  label="Перевести на другой тариф"
+                  label={t("bill.migrateTo")}
                   data={[
-                    { value: "0", label: "— выберите тариф —" },
+                    { value: "0", label: t("bill.pickPlan") },
                     ...safePlans
                       .filter((p) => p.id !== editor.id)
                       .map((p) => ({ value: String(p.id), label: p.name })),
@@ -779,16 +774,16 @@ export function BillingPanel() {
                   disabled={!migrateTo || busy}
                   loading={busy}
                 >
-                  Перевести {planUsers[String(editor.id)]} польз.
+                  {t("bill.migrateN", { count: planUsers[String(editor.id)] })}
                 </Button>
               </div>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="subtle" onClick={() => setEditor(null)}>
-                Отмена
+                {t("common.cancel")}
               </Button>
               <Button onClick={savePlan} loading={busy}>
-                {editor.id ? "Сохранить" : "Создать"}
+                {t(editor.id ? "common.save" : "common.create")}
               </Button>
             </div>
           </div>

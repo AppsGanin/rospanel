@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/google/uuid"
@@ -22,17 +23,17 @@ func (m *Manager) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, err
 func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
-		return invalid("укажите название тарифа")
+		return invalidCode("err.planNameRequired", "укажите название тарифа")
 	}
 	p.Slug = strings.TrimSpace(p.Slug)
 	if p.Slug == "" {
 		p.Slug = slugifyPlan(p.Name)
 	}
 	if !slugRe.MatchString(p.Slug) {
-		return invalid("код тарифа: только латинские буквы, цифры и дефис")
+		return invalidCode("err.planSlugCharset", "код тарифа: только латинские буквы, цифры и дефис")
 	}
-	// Price defines the tier: 0 ⇒ free (never expires, quota refills every срок
-	// действия via PeriodDays); > 0 ⇒ paid (expires after PeriodDays). There is no
+	// Price defines the tier: 0 ⇒ free (never expires, quota refills every plan
+	// duration via PeriodDays); > 0 ⇒ paid (expires after PeriodDays). There is no
 	// separate "free" flag — see model.TariffPlan.IsFree.
 	//
 	// Which plans may be free is not the operator's free choice: only the two the
@@ -53,14 +54,14 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 		// filter on enabled) with nothing on screen explaining why.
 		p.Enabled = true
 	} else if p.PriceRub < 1 {
-		return invalid("цена должна быть больше 0 — бесплатным тариф становится, когда его выбирают бесплатным или пробным в разделе «Тарификация»")
+		return invalidCode("err.priceMustBePositive", "цена должна быть больше 0 — бесплатным тариф становится, когда его выбирают бесплатным или пробным в разделе «Тарификация»")
 	}
 	if p.SortOrder < 0 {
 		p.SortOrder = 0
 	}
 	if err := m.store.SaveTariffPlan(p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
-			return invalid("тариф с таким кодом уже существует")
+			return invalidCode("err.planSlugTaken", "тариф с таким кодом уже существует")
 		}
 		return err
 	}
@@ -98,14 +99,14 @@ func (m *Manager) DeleteTariffPlan(id int64) error {
 		return err
 	}
 	if set.BillingFreePlanID == id || set.BillingTrialPlanID == id {
-		return invalid("тариф указан в настройках биллинга — сначала выберите другой")
+		return invalidCode("err.planUsedInBilling", "тариф указан в настройках биллинга — сначала выберите другой")
 	}
 	n, err := m.store.CountUsersOnPlan(id)
 	if err != nil {
 		return err
 	}
 	if n > 0 {
-		return invalid("тариф назначен %d пользователям — сначала смените им тариф", n)
+		return invalidCode("err.planHasUsers", "тариф назначен {{count}} пользователям — сначала смените им тариф", map[string]any{"count": n})
 	}
 	return m.store.DeleteTariffPlan(id)
 }
@@ -115,10 +116,10 @@ func (m *Manager) DeleteTariffPlan(id int64) error {
 // users were moved.
 func (m *Manager) MigratePlanUsers(ctx context.Context, fromPlanID, toPlanID int64) (int, error) {
 	if fromPlanID == toPlanID {
-		return 0, invalid("выберите другой тариф для перевода")
+		return 0, invalidCode("err.pickAnotherPlanToMigrate", "выберите другой тариф для перевода")
 	}
 	if _, err := m.store.GetTariffPlan(toPlanID); err != nil {
-		return 0, invalid("целевой тариф не найден")
+		return 0, invalidCode("err.targetPlanNotFound", "целевой тариф не найден")
 	}
 	ids, err := m.store.UserIDsOnPlan(fromPlanID)
 	if err != nil {
@@ -142,7 +143,7 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	// paid-shaped (it must expire), while EnforceBilling refuses to downgrade anyone
 	// already on the free plan — so the trial expires and nothing ever rescues them.
 	if st.BillingFreePlanID != 0 && st.BillingFreePlanID == st.BillingTrialPlanID {
-		return invalid("бесплатный и пробный тарифы должны быть разными: иначе после окончания пробного периода пользователю некуда переходить")
+		return invalidCode("err.freeAndTrialMustDiffer", "бесплатный и пробный тарифы должны быть разными: иначе после окончания пробного периода пользователю некуда переходить")
 	}
 	if err := m.store.SetBillingSettings(st); err != nil {
 		return err
@@ -167,7 +168,7 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 			// Reported rather than swallowed: the settings write above has already
 			// committed, so a silent failure leaves the panel handing out a plan it
 			// still considers paid — free to every registrant AND still on sale.
-			return fmt.Errorf("тариф «%s» не удалось сделать бесплатным: %w", plan.Name, err)
+			return fmt.Errorf("could not make the %q plan free: %w", plan.Name, err)
 		}
 		logInfo("billing: designated plan is now free and active", "plan", plan.Name, "id", id)
 		if !wasPaid {
@@ -214,17 +215,19 @@ func (m *Manager) CreateRegisteredUser(ctx context.Context, name string) (*model
 		return u, err
 	}
 	plan := m.PlanName(u.PlanID)
-	m.notifyAdminEvent(model.AdminEventRegistered, "🆕 <b>Новая регистрация</b>\nПользователь: "+escHTML(u.Name)+planLine(plan))
+	lang := m.botLang()
+	m.notifyAdminEvent(model.AdminEventRegistered,
+		i18n.T(lang, "notify.registered", escHTML(u.Name))+planLine(lang, plan))
 	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan})
 	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
 	return u, nil
 }
 
-func planLine(plan string) string {
+func planLine(lang i18n.Lang, plan string) string {
 	if plan == "" {
 		return ""
 	}
-	return "\nТариф: " + escHTML(plan)
+	return i18n.T(lang, "notify.planLine", escHTML(plan))
 }
 
 // RequestRegistration records a moderated signup: no user is created — the request
@@ -243,8 +246,8 @@ func (m *Manager) RequestRegistration(ctx context.Context, chatID int64, name st
 	if err != nil {
 		return false, err
 	}
-	// Best-effort admin-bot ping with approve/reject buttons. The panel's "Заявки на
-	// регистрацию" tab is the authoritative surface regardless (and the only one when
+	// Best-effort admin-bot ping with approve/reject buttons. The panel's sign-up
+	// requests tab is the authoritative surface regardless (and the only one when
 	// the admin bot is off or its registration notifications are disabled).
 	m.notifyModeration(req.ID, req.Name, "")
 	return true, nil
@@ -268,7 +271,7 @@ func (m *Manager) ListRegistrationRequests() ([]model.RegistrationRequest, error
 func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) error {
 	req, err := m.store.GetRegistrationRequest(reqID)
 	if err != nil {
-		return invalid("заявка не найдена")
+		return invalidCode("err.requestNotFound", "заявка не найдена")
 	}
 	claimed, err := m.store.ClaimRegistrationRequest(reqID)
 	if err != nil {
@@ -280,7 +283,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	// If the chat got linked to an account in the meantime (e.g. via a panel link
 	// code), don't mint a duplicate — just let the applicant know they're set.
 	if existing, _ := m.store.GetUserByTelegramChatID(req.ChatID); existing != nil {
-		m.notifyRegistrationDecision(req.ChatID, "✅ Ваш аккаунт уже подключён — откройте меню в боте.")
+		m.notifyRegistrationDecision(req.ChatID, "notify.regAlreadyLinked")
 		return nil
 	}
 	u, err := m.createRegisteredUser(req.Name)
@@ -302,8 +305,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
 	// Gated with the other user-facing notices: an operator who switched them all off
 	// should not still have the bot writing to people.
-	m.notifyRegistrationDecision(req.ChatID,
-		"✅ Ваш аккаунт одобрен — доступ открыт. Откройте меню в боте, чтобы получить подписку.")
+	m.notifyRegistrationDecision(req.ChatID, "notify.regApproved")
 	return nil
 }
 
@@ -313,7 +315,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) error {
 	req, err := m.store.GetRegistrationRequest(reqID)
 	if err != nil {
-		return invalid("заявка не найдена")
+		return invalidCode("err.requestNotFound", "заявка не найдена")
 	}
 	claimed, err := m.store.ClaimRegistrationRequest(reqID)
 	if err != nil {
@@ -322,8 +324,7 @@ func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) er
 	if !claimed {
 		return nil // another admin already decided this request
 	}
-	m.notifyRegistrationDecision(req.ChatID,
-		"🚫 Заявка на регистрацию отклонена. Обратитесь к администратору.")
+	m.notifyRegistrationDecision(req.ChatID, "notify.regRejected")
 	return nil
 }
 
@@ -333,7 +334,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 	// (truncate rather than reject) so it can't bloat the DB / config unboundedly.
 	name = truncateName(name)
 	if name == "" {
-		return nil, invalid("укажите имя")
+		return nil, invalidCode("err.nameRequired", "укажите имя")
 	}
 	set, err := m.Settings()
 	if err != nil {
@@ -349,7 +350,7 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 	if set.BillingTrialPlanID > 0 {
 		plan, err := m.store.GetTariffPlan(set.BillingTrialPlanID)
 		// Not gated on plan.Enabled: designating a plan as the trial IS the on switch
-		// (clear it in "Тарификация" to stop granting trials), and the editor no longer
+		// (clear it in "Pricing" to stop granting trials), and the editor no longer
 		// offers the toggle for designated plans — so reading it here would be an
 		// invisible second switch that silently disables registration trials.
 		if err == nil && plan != nil && plan.PeriodDays > 0 {
@@ -406,8 +407,8 @@ func (m *Manager) createBareUser(name string) (*model.User, error) {
 func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset bool, now int64) store.UserPlanWrite {
 	period := "none"
 	if freeReset && plan.DataLimit > 0 && plan.PeriodDays > 0 {
-		// Free plan: refill the quota every срок действия (rolling N-day cycle),
-		// not on a fixed calendar month. A "бессрочно" free plan (PeriodDays 0)
+		// Free plan: refill the quota every plan duration (rolling N-day cycle),
+		// not on a fixed calendar month. A free plan with no duration (PeriodDays 0)
 		// never resets — its quota is one-time.
 		period = fmt.Sprintf("days:%d", plan.PeriodDays)
 	}
@@ -663,53 +664,54 @@ func (m *Manager) EnforceBilling(now int64) error {
 // payment instructions. To keep a spammed "Pay" button from piling up duplicate
 // orders (and admin pings), it reuses the user's latest still-pending manual order
 // for the same plan instead of creating another.
-func (m *Manager) RequestPlanPayment(ctx context.Context, userID, planID int64) (*model.PaymentOrder, string, error) {
+func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64) (*model.PaymentOrder, string, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
-		return nil, "", invalid("тариф не найден")
+		return nil, "", invalidCode("err.planNotFound", "тариф не найден")
 	}
 	if plan.IsFree() {
-		return nil, "", invalid("этот тариф бесплатный")
+		return nil, "", invalidCode("err.planIsFree", "этот тариф бесплатный")
 	}
 	// Same rules as the automatic path: block switching (and buying a disabled plan)
 	// while a paid one is active — but let an existing subscriber renew the plan
 	// they're already on, even if it's since been disabled (grandfathering).
 	if u, err := m.store.GetUser(userID); err == nil && u.PlanID != planID {
 		if !plan.Enabled {
-			return nil, "", invalid("тариф недоступен")
+			return nil, "", invalidCode("err.planUnavailable", "тариф недоступен")
 		}
 		if cur := m.ActivePaidPlan(*u); cur != nil {
-			return nil, "", invalid("у вас активна подписка «%s» — сначала отмените её, чтобы сменить тариф", cur.Name)
+			return nil, "", invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": cur.Name})
 		}
 	}
 	set, _ := m.Settings()
 	if existing, err := m.store.LatestPendingManualOrder(userID, planID); err == nil && existing != nil {
-		return existing, manualOrderMessage(existing, plan, set), nil // reuse, no new order/notification
+		return existing, manualOrderMessage(lang, existing, plan, set), nil // reuse, no new order/notification
 	}
 	order, err := m.store.CreatePaymentOrder(userID, planID, plan.PriceRub)
 	if err != nil {
 		return nil, "", err
 	}
-	m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
-		"🛒 <b>Новый заказ (ручная оплата)</b>\nЗаказ #%d · %s\nТариф: %s · %d ₽\nЖдёт подтверждения админом.",
+	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.manualOrder",
 		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
 	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
 		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": "manual",
 	})
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
-	return order, manualOrderMessage(order, plan, set), nil
+	return order, manualOrderMessage(lang, order, plan, set), nil
 }
 
 // manualOrderMessage builds the user-facing manual-payment instructions for an
 // order: amount, the operator's payment note, and the order number to quote in the
 // transfer comment.
-func manualOrderMessage(order *model.PaymentOrder, plan *model.TariffPlan, set *model.Settings) string {
-	msg := fmt.Sprintf("Заказ #%d\nТариф: %s\nСумма: %d ₽", order.ID, plan.Name, plan.PriceRub)
+func manualOrderMessage(lang i18n.Lang, order *model.PaymentOrder, plan *model.TariffPlan, set *model.Settings) string {
+	msg := i18n.T(lang, "order.head", order.ID, plan.Name, plan.PriceRub)
+	// The operator's own payment note is their words, in whatever language they wrote
+	// it — passed through untouched.
 	if set != nil && strings.TrimSpace(set.BillingPaymentNote) != "" {
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
-	msg += fmt.Sprintf("\n\nВ комментарии к переводу укажите: заказ #%d", order.ID)
-	msg += "\n\nПосле подтверждения платежа администратором услуга будет активирована."
+	msg += i18n.T(lang, "order.comment", order.ID)
+	msg += i18n.T(lang, "order.afterConfirm")
 	return msg
 }
 
@@ -722,7 +724,7 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 		return err
 	}
 	if order.Status != "pending" {
-		return invalid("заказ уже обработан")
+		return invalidCode("err.orderAlreadyHandled", "заказ уже обработан")
 	}
 	now := time.Now().Unix()
 	// The claim and the plan land together — see confirmOrderPaid. Audited as the
@@ -733,7 +735,7 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 		return err
 	}
 	if !claimed {
-		return invalid("заказ уже обработан")
+		return invalidCode("err.orderAlreadyHandled", "заказ уже обработан")
 	}
 	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
 	order.Status, order.PaidAt = "paid", now

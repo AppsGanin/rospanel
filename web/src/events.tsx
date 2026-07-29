@@ -1,74 +1,77 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { EventPage, UserEvent } from "./api";
 import { fmtBytes } from "./format";
+import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Badge, Button, CenterLoader } from "./ui";
 
-// The audit-log rendering shared by the per-user «Журнал» modal and the global
-// journal page: how each action is labelled and coloured, how its details read in
-// Russian, and the paged list itself.
+// The audit-log rendering shared by the per-user journal modal and the global
+// journal page: how each action is labelled and coloured, how its details read,
+// and the paged list itself.
 
 type Color = "brand" | "green" | "orange" | "red" | "gray" | "teal";
 
-// ACTION_META mirrors model.UserEventCatalog (internal/model/events.go). An action
-// missing here still renders — it just falls back to its raw key.
-const ACTION_META: Record<string, { label: string; color: Color }> = {
-  "user.created": { label: "Пользователь создан", color: "green" },
-  "user.registered": { label: "Саморегистрация", color: "green" },
-  "user.deleted": { label: "Пользователь удалён", color: "red" },
-  "user.renamed": { label: "Переименован", color: "gray" },
-  "user.enabled": { label: "Включён", color: "green" },
-  "user.disabled": { label: "Отключён", color: "orange" },
-  "user.limits_changed": { label: "Изменены лимиты", color: "brand" },
-  "user.traffic_reset": { label: "Сброшен трафик", color: "brand" },
-  "user.quota_reset": { label: "Автосброс квоты", color: "gray" },
-  "user.reset_period": { label: "Период автосброса", color: "gray" },
-  "user.sub_rotated": { label: "Обновлена ссылка", color: "brand" },
-  "user.expired": { label: "Подписка истекла", color: "orange" },
-  "user.limited": { label: "Исчерпан трафик", color: "orange" },
-  "user.device_limited": { label: "Лимит устройств", color: "orange" },
-  "user.telegram_linked": { label: "Telegram привязан", color: "teal" },
-  "user.telegram_unlinked": { label: "Telegram отвязан", color: "gray" },
-  "plan.changed": { label: "Изменён тариф", color: "brand" },
-  "plan.downgraded": { label: "Переведён на бесплатный", color: "orange" },
-  "plan.cancelled": { label: "Подписка отменена", color: "orange" },
-  "payment.created": { label: "Заказ создан", color: "brand" },
-  "payment.paid": { label: "Оплачено", color: "green" },
-  "payment.cancelled": { label: "Заказ отменён", color: "gray" },
+// ACTION_COLORS mirrors model.UserEventCatalog (internal/model/events.go). The
+// label for each action lives in the dictionaries under events.action.<key>; an
+// action missing there still renders — it just falls back to its raw key.
+const ACTION_COLORS: Record<string, Color> = {
+  "user.created": "green",
+  "user.registered": "green",
+  "user.deleted": "red",
+  "user.renamed": "gray",
+  "user.enabled": "green",
+  "user.disabled": "orange",
+  "user.limits_changed": "brand",
+  "user.traffic_reset": "brand",
+  "user.quota_reset": "gray",
+  "user.reset_period": "gray",
+  "user.sub_rotated": "brand",
+  "user.expired": "orange",
+  "user.limited": "orange",
+  "user.device_limited": "orange",
+  "user.telegram_linked": "teal",
+  "user.telegram_unlinked": "gray",
+  "plan.changed": "brand",
+  "plan.downgraded": "orange",
+  "plan.cancelled": "orange",
+  "payment.created": "brand",
+  "payment.paid": "green",
+  "payment.cancelled": "gray",
 };
 
-export function actionMeta(action: string) {
-  return ACTION_META[action] ?? { label: action, color: "gray" as Color };
+export function actionMeta(action: string): { label: string; color: Color } {
+  const color = ACTION_COLORS[action];
+  if (!color) return { label: action, color: "gray" };
+  return { label: td(`events.action.${slugKey(action)}`), color };
 }
 
-// ACTOR_META mirrors the model.Actor* kinds.
-const ACTOR_META: Record<string, string> = {
-  admin: "админ",
-  apikey: "API-ключ",
-  telegram: "Telegram",
-  user: "сам пользователь",
-  system: "система",
-};
+const ACTOR_KINDS = ["admin", "apikey", "telegram", "user", "system"] as const;
 
-export const ACTOR_OPTIONS = [
-  { value: "", label: "Кто угодно" },
-  { value: "admin", label: "Админ" },
-  { value: "apikey", label: "API-ключ" },
-  { value: "telegram", label: "Telegram-бот" },
-  { value: "user", label: "Сам пользователь" },
-  { value: "system", label: "Система" },
+function actorKindLabel(kind: string): string {
+  return (ACTOR_KINDS as readonly string[]).includes(kind)
+    ? td(`events.actor.${kind}`)
+    : kind;
+}
+
+export const actorOptions = () => [
+  { value: "", label: i18n.t("events.actorAny") },
+  ...ACTOR_KINDS.map((k) => ({
+    value: k as string,
+    label: td(`events.actorOption.${k}`),
+  })),
 ];
 
-// actorLabel reads as "кто это сделал": the person's name when we have one,
-// otherwise just the kind ("система" has no name).
+// actorLabel reads as "who did this": the person's name when we have one,
+// otherwise just the kind (the system has no name).
 function actorLabel(e: UserEvent): string {
-  const kind = ACTOR_META[e.actor_kind] ?? e.actor_kind;
+  const kind = actorKindLabel(e.actor_kind);
   return e.actor_name ? `${e.actor_name} · ${kind}` : kind;
 }
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString("ru-RU", {
+  return new Date(unix * 1000).toLocaleString(currentLang(), {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -78,13 +81,13 @@ function fmtDateTime(unix: number): string {
 }
 
 function fmtDate(unix: number): string {
-  if (!unix) return "бессрочно";
-  return new Date(unix * 1000).toLocaleDateString("ru-RU");
+  if (!unix) return i18n.t("common.never");
+  return new Date(unix * 1000).toLocaleDateString(currentLang());
 }
 
 // num/str read one typed field out of the free-form details object. A missing key
 // reads as 0/"" — so a renderer must distinguish "absent" from "zero" (has() does)
-// before turning a value into a claim like "без лимита".
+// before turning a value into a claim like "unlimited".
 function num(d: Record<string, unknown>, k: string): number {
   const v = d[k];
   return typeof v === "number" ? v : 0;
@@ -97,24 +100,27 @@ function str(d: Record<string, unknown>, k: string): string {
   return typeof v === "string" ? v : "";
 }
 
-const PERIOD_LABELS: Record<string, string> = {
-  none: "без автосброса",
-  daily: "ежедневно",
-  weekly: "еженедельно",
-  monthly: "ежемесячно",
-  yearly: "ежегодно",
-};
+const PERIODS = ["none", "daily", "weekly", "monthly", "yearly"] as const;
 
-const PROVIDER_LABELS: Record<string, string> = {
-  manual: "вручную",
-  yookassa: "ЮКасса",
-  cryptobot: "CryptoBot",
-};
+function periodLabel(p: string): string {
+  return (PERIODS as readonly string[]).includes(p) ? td(`events.period.${p}`) : p;
+}
 
-const CANCEL_REASONS: Record<string, string> = {
-  abandoned: "истёк срок оплаты",
-  provider_cancelled: "отменён провайдером",
-};
+const PROVIDERS = ["manual", "yookassa", "cryptobot"] as const;
+
+function providerLabel(p: string): string {
+  return (PROVIDERS as readonly string[]).includes(p)
+    ? td(`events.provider.${p}`)
+    : p;
+}
+
+const CANCEL_REASONS = ["abandoned", "provider_cancelled"] as const;
+
+function cancelReason(r: string): string {
+  return (CANCEL_REASONS as readonly string[]).includes(r)
+    ? td(`events.cancelReason.${r}`)
+    : r;
+}
 
 // eventDetails turns the row's details object into the one-line human summary shown
 // under the action name. An action with nothing worth saying returns "".
@@ -129,16 +135,24 @@ export function eventDetails(e: UserEvent): string {
       // not "unlimited", and rendering it as the latter would be a false claim.
       if (has(d, "data_limit")) {
         const limit = num(d, "data_limit");
-        parts.push(limit ? `лимит ${fmtBytes(limit)}` : "без лимита трафика");
+        parts.push(
+          limit
+            ? i18n.t("events.det.limit", { value: fmtBytes(limit) })
+            : i18n.t("events.det.noTrafficLimit"),
+        );
       }
       if (has(d, "expire_at")) {
         const expire = num(d, "expire_at");
-        parts.push(expire ? `до ${fmtDate(expire)}` : "бессрочно");
+        parts.push(
+          expire
+            ? i18n.t("events.det.until", { date: fmtDate(expire) })
+            : i18n.t("common.never"),
+        );
       }
       const devices = num(d, "device_limit");
-      if (devices) parts.push(`устройств: ${devices}`);
+      if (devices) parts.push(i18n.t("events.det.devices", { count: devices }));
       const days = num(d, "extended_days");
-      if (days) parts.push(`продлено на ${days} дн.`);
+      if (days) parts.push(i18n.t("events.det.extendedDays", { count: days }));
       break;
     }
     case "user.renamed":
@@ -146,53 +160,63 @@ export function eventDetails(e: UserEvent): string {
     case "user.traffic_reset":
     case "user.quota_reset": {
       const used = num(d, "used_before");
-      if (used) parts.push(`сброшено ${fmtBytes(used)}`);
+      if (used) parts.push(i18n.t("events.det.reset", { value: fmtBytes(used) }));
       const period = str(d, "period");
-      if (period && period !== "none")
-        parts.push(PERIOD_LABELS[period] ?? period);
+      if (period && period !== "none") parts.push(periodLabel(period));
       break;
     }
     case "user.reset_period":
-      return PERIOD_LABELS[str(d, "period")] ?? str(d, "period");
+      return periodLabel(str(d, "period"));
     case "user.registered":
-      return str(d, "plan") ? `тариф: ${str(d, "plan")}` : "";
+      return str(d, "plan")
+        ? i18n.t("events.det.plan", { plan: str(d, "plan") })
+        : "";
     case "user.expired":
-      return `срок истёк ${fmtDate(num(d, "expire_at"))}`;
+      return i18n.t("events.det.expiredOn", {
+        date: fmtDate(num(d, "expire_at")),
+      });
     case "user.limited":
-      return `${fmtBytes(num(d, "used"))} из ${fmtBytes(num(d, "data_limit"))}`;
+      return i18n.t("events.det.usedOf", {
+        used: fmtBytes(num(d, "used")),
+        limit: fmtBytes(num(d, "data_limit")),
+      });
     case "user.device_limited":
-      return `${num(d, "active_devices")} устройств при лимите ${num(d, "device_limit")}`;
+      return i18n.t("events.det.devicesOverLimit", {
+        active: num(d, "active_devices"),
+        limit: num(d, "device_limit"),
+      });
     case "user.telegram_linked":
       return str(d, "username");
     case "plan.changed":
     case "plan.downgraded": {
-      const prev = str(d, "prev_plan") || "без тарифа";
-      const next = str(d, "plan") || "без тарифа";
+      const noPlan = i18n.t("events.det.noPlan");
+      const prev = str(d, "prev_plan") || noPlan;
+      const next = str(d, "plan") || noPlan;
       parts.push(`${prev} → ${next}`);
       const expire = num(d, "expire_at");
-      if (expire) parts.push(`до ${fmtDate(expire)}`);
+      if (expire) parts.push(i18n.t("events.det.until", { date: fmtDate(expire) }));
       break;
     }
     case "plan.cancelled": {
       const plan = str(d, "plan");
       if (plan) parts.push(plan);
       const to = str(d, "moved_to");
-      if (to) parts.push(`переведён на «${to}»`);
+      if (to) parts.push(i18n.t("events.det.movedTo", { plan: to }));
       break;
     }
     case "payment.created":
     case "payment.paid":
     case "payment.cancelled": {
       const order = num(d, "order_id");
-      if (order) parts.push(`заказ #${order}`);
+      if (order) parts.push(i18n.t("events.det.order", { id: order }));
       const plan = str(d, "plan");
       if (plan) parts.push(plan);
       const amount = num(d, "amount_rub");
-      if (amount) parts.push(`${amount.toLocaleString("ru-RU")} ₽`);
+      if (amount) parts.push(`${amount.toLocaleString(currentLang())} ₽`);
       const provider = str(d, "provider");
-      if (provider) parts.push(PROVIDER_LABELS[provider] ?? provider);
+      if (provider) parts.push(providerLabel(provider));
       const reason = str(d, "reason");
-      if (reason) parts.push(CANCEL_REASONS[reason] ?? reason);
+      if (reason) parts.push(cancelReason(reason));
       break;
     }
   }
@@ -208,6 +232,7 @@ export function EventRow({
   event: UserEvent;
   showUser?: boolean;
 }) {
+  const { t } = useTranslation();
   const meta = actionMeta(event.action);
   const details = eventDetails(event);
   const bulk = event.details?.bulk === true;
@@ -219,7 +244,7 @@ export function EventRow({
         </Badge>
         {bulk && (
           <Badge color="gray" size="xs">
-            массово
+            {t("events.bulk")}
           </Badge>
         )}
         {showUser && (
@@ -242,12 +267,13 @@ export function EventRow({
 export function EventList({
   load,
   showUser,
-  empty = "Пока нет событий",
+  empty,
 }: {
   load: (before: number) => Promise<EventPage>;
   showUser?: boolean;
   empty?: string;
 }) {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<UserEvent[]>([]);
   const [next, setNext] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -289,7 +315,11 @@ export function EventList({
 
   if (loading) return <CenterLoader />;
   if (!events.length)
-    return <div className="py-6 text-center text-sm text-ink-muted">{empty}</div>;
+    return (
+      <div className="py-6 text-center text-sm text-ink-muted">
+        {empty ?? t("events.empty")}
+      </div>
+    );
 
   return (
     <div className="flex flex-col gap-3">
@@ -300,7 +330,7 @@ export function EventList({
       </ul>
       {next > 0 && (
         <Button variant="light" fullWidth loading={more} onClick={loadMore}>
-          Показать ещё
+          {t("common.showMore")}
         </Button>
       )}
     </div>
