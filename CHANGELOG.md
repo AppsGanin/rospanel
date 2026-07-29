@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/AppsGanin/rospanel/compare/v1.5.0...v2.0.0) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **i18n:** response shapes that carried rendered Russian now carry dictionary keys, so anything reading them has to word them itself.
+
+### Features
+
+* **i18n:** Russian/English across the panel, bots, subscription page and CLI ([bfe6c88](https://github.com/AppsGanin/rospanel/commit/bfe6c8832fd04d5556279bd2e21783b045e27265))
+
 ## [1.5.0](https://github.com/AppsGanin/rospanel/compare/v1.4.0...v1.5.0) (2026-07-26)
 
 
