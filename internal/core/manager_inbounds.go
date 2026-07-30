@@ -458,18 +458,6 @@ func inboundConflict(err error) error {
 	return err
 }
 
-// hasHysteria reports whether any custom inbound is Hysteria2. Such an inbound
-// cannot have its users live-updated (QUIC authenticators are fixed at start), so
-// its presence is what makes a user change need a reconcile.
-func hasHysteria(list []model.Inbound) bool {
-	for _, in := range list {
-		if in.Protocol == model.InbHysteria {
-			return true
-		}
-	}
-	return false
-}
-
 // portNetwork is the transport-layer network an inbound listens on. Hysteria2 is
 // QUIC, so it binds UDP; everything else binds TCP. Testing the wrong one would pass
 // while the real bind fails.
