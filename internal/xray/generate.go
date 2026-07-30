@@ -769,6 +769,19 @@ func warpOutbound(set *model.Settings) Outbound {
 			Address:   addrs,
 			Reserved:  reserved,
 			MTU:       1280,
+			// Userspace WireGuard, NOT a kernel TUN device. Xray picks kernel mode
+			// whenever it has CAP_NET_ADMIN — which our systemd unit grants it for
+			// nftables and the BBR sysctls — and that mode LEAKS: every Xray start
+			// adds an `ip -6 rule` pair and a routing table it never removes. The
+			// panel restarts Xray on each config change, so the leak grows all day
+			// until Xray dies on "failed to find available ipv6 table index" and
+			// refuses to start at all. That takes down every VPN lane, not just WARP.
+			// Observed on the test box: 30 stale rules and a dead Xray.
+			//
+			// Userspace mode is slower than kernel TUN, and that is the right trade:
+			// a WARP lane at reduced throughput beats a panel that stops serving
+			// after enough edits.
+			NoKernelTun: true,
 			Peers: []WireGuardPeer{{
 				PublicKey:  set.WarpPublicKey,
 				Endpoint:   set.WarpEndpoint,
