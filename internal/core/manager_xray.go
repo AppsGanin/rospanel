@@ -19,6 +19,10 @@ func (m *Manager) XrayStatus() (running bool, startedAt int64) {
 	return m.sup.Running(), m.sup.StartedAt()
 }
 
+// XrayAppliedAt is when a config was last applied, restart or not. See
+// Supervisor.LastApply.
+func (m *Manager) XrayAppliedAt() int64 { return m.sup.LastApply() }
+
 // BackupManifest returns a Manifest describing the current server state for
 // inclusion in backup archives.
 func (m *Manager) BackupManifest() backup.Manifest {
