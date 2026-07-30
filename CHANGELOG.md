@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0](https://github.com/AppsGanin/rospanel/compare/v2.0.0...v2.1.0) (2026-07-30)
+
+
+### Features
+
+* **routing:** give WARP a local address and publish both egresses ([603fcb8](https://github.com/AppsGanin/rospanel/commit/603fcb8e1e435f1342eedc333a17881fe93ff17f))
+* **telegram:** route everything Telegram-bound through an optional proxy ([0c94e1f](https://github.com/AppsGanin/rospanel/commit/0c94e1f85b6a1b2d829ad7d986587bdc5c47eae0))
+
+
+### Bug Fixes
+
+* **telegram:** hold the bots until a local egress actually answers ([298bada](https://github.com/AppsGanin/rospanel/commit/298badaf344599d7a6c34557213e2e6b491667ba))
+* **telegram:** log why the Mini App SDK fetch failed ([9319614](https://github.com/AppsGanin/rospanel/commit/931961431df753d67188dc8efa430e1165f9446b))
+* **xray:** rebuild Hysteria2 inbounds instead of restarting for user changes ([52a93e8](https://github.com/AppsGanin/rospanel/commit/52a93e8a139160e544f750f9baaae9fa7cde17fd))
+* **xray:** run WARP's WireGuard in userspace to stop a routing-table leak ([fe7556c](https://github.com/AppsGanin/rospanel/commit/fe7556c4ce6de211a14149a7df9d72412149b589))
+
+
+### Performance Improvements
+
+* **xray:** skip the restart when the generated config is unchanged ([c76f3d9](https://github.com/AppsGanin/rospanel/commit/c76f3d971626e71dc7214e2b65f206cf616788c2))
+
 ## [2.0.0](https://github.com/AppsGanin/rospanel/compare/v1.5.0...v2.0.0) (2026-07-29)
 
 
