@@ -630,6 +630,7 @@ const (
 	telegramSDKTTL      = 24 * time.Hour  // how long a cached copy is served before a refresh
 	telegramSDKBudget   = 5 * time.Second // cap on a single upstream fetch, inline ones included
 	telegramSDKRetryGap = time.Minute     // after a failed fetch, don't stall a page again this soon
+	telegramSDKLogGap   = time.Hour       // rate limit on the "fetch failed" log line (retries are far more frequent)
 	telegramSDKMaxBytes = 1 << 20         // the wrapper is ~120 KB; 1 MiB is ample headroom
 )
 
@@ -730,20 +731,54 @@ func (m *Manager) fetchTelegramSDK() {
 	var (
 		b   []byte
 		err error
+		// Decided inside the defer while the mutex is held, acted on by the logging
+		// switch once it is released.
+		landed, recovered, shout bool
 	)
 	defer func() {
 		m.tgSDKMu.Lock()
-		if err == nil && bytes.Contains(b, telegramSDKMarker) {
+		if landed = err == nil && bytes.Contains(b, telegramSDKMarker); landed {
+			// tgSDKLogAt non-zero means we complained about this being broken, so the
+			// operator is owed the "it works again" line.
+			recovered = !m.tgSDKLogAt.IsZero()
 			m.tgSDKBody, m.tgSDKAt = b, time.Now()
-			m.tgSDKFailAt = time.Time{}
+			m.tgSDKFailAt, m.tgSDKLogAt = time.Time{}, time.Time{}
 		} else {
 			m.tgSDKFailAt = time.Now()
+			// Log the reason, but not on every attempt: a blocked telegram.org fails
+			// once per telegramSDKRetryGap for as long as the page sees traffic, and
+			// that would push everything else out of the 1000-line dashboard ring
+			// inside a day. One line per telegramSDKLogGap is enough to diagnose it.
+			if shout = time.Since(m.tgSDKLogAt) >= telegramSDKLogGap; shout {
+				m.tgSDKLogAt = time.Now()
+			}
 		}
 		if m.tgSDKWait != nil {
 			close(m.tgSDKWait) // wake the riders; they re-read the cache
 			m.tgSDKWait = nil
 		}
 		m.tgSDKMu.Unlock()
+
+		// Logging happens after the unlock: a slog handler can write to disk, and the
+		// riders released just above are waiting to take this same mutex.
+		//
+		// The two failure branches cost the operator the same thing — /tg.js goes out
+		// empty, so window.Telegram never appears and the "open in app" buttons stop
+		// working inside the Telegram Mini App — so both spell that out. They differ
+		// only in cause, which is exactly what the operator can't see from outside.
+		switch {
+		case landed:
+			if recovered {
+				logInfo("telegram mini app sdk reachable again", "bytes", len(b))
+			}
+		case !shout: // same failure already reported inside the log gap
+		case err != nil:
+			logWarn("telegram mini app sdk fetch failed; /tg.js will be served empty and in-app deep links will not work",
+				"url", telegramSDKURL, "err", err)
+		default:
+			logWarn("telegram mini app sdk fetch returned an unexpected body (blocked or truncated); /tg.js will be served empty and in-app deep links will not work",
+				"url", telegramSDKURL, "bytes", len(b))
+		}
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), telegramSDKBudget)
