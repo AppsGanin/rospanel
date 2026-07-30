@@ -133,3 +133,31 @@ func TestPanelEgressRuleSitsBelowThePrivateAddressFloor(t *testing.T) {
 			"a local process could dial the LAN through Xray", blockAt, panelAt)
 	}
 }
+
+// WARP must run in USERSPACE WireGuard, never a kernel TUN device. Xray picks kernel
+// mode whenever it has CAP_NET_ADMIN — which the panel's systemd unit grants it — and
+// that mode leaks an `ip -6 rule` pair plus a routing table on every start. The panel
+// restarts Xray on each config change, so the leak grows until Xray refuses to boot
+// with "failed to find available ipv6 table index", taking down every lane. Observed
+// live: 30 stale rules and a dead Xray.
+func TestWarpOutboundStaysOutOfTheKernel(t *testing.T) {
+	set := warpSettings()
+	cfg, err := Generate(set, nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	for _, o := range cfg.Outbounds {
+		if o.Tag != "warp" {
+			continue
+		}
+		wg, ok := o.Settings.(WireGuardSettings)
+		if !ok {
+			t.Fatalf("warp settings are %T, not WireGuardSettings", o.Settings)
+		}
+		if !wg.NoKernelTun {
+			t.Error("noKernelTun is off — Xray will take a kernel TUN and leak a routing table per restart")
+		}
+		return
+	}
+	t.Fatal("no warp outbound generated")
+}
