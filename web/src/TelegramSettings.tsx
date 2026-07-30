@@ -135,6 +135,8 @@ export function TelegramSettings() {
   const [userEvents, setUserEvents] = useState<AdminEvents>({});
   const [expiringDays, setExpiringDays] = useState("3");
   const [botLang, setBotLang] = useState("ru");
+  const [proxy, setProxy] = useState("");
+  const [proxyMode, setProxyMode] = useState("direct");
   const [schedule, setSchedule] = useState<Schedule>(EMPTY_SCHEDULE);
   const [chats, setChats] = useState<number[]>([]);
   const [linkCode, setLinkCode] = useState("");
@@ -163,6 +165,8 @@ export function TelegramSettings() {
     supportToken: "",
     supportGroupID: "",
     supportGreeting: "",
+    proxy: "",
+    proxyMode: "direct",
   });
   const [linking, setLinking] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -186,6 +190,8 @@ export function TelegramSettings() {
         setUserBotUsername(cfg.user_bot_username || "");
         setSchedule(detectPreset(cfg.backup_cron || ""));
         setBotLang(cfg.lang || "ru");
+        setProxy(cfg.proxy || "");
+        setProxyMode(cfg.proxy_mode || "direct");
         const groupID = cfg.support_group_id ? String(cfg.support_group_id) : "";
         setSupportEnabled(cfg.support_enabled);
         setSupportToken(cfg.support_token || "");
@@ -208,6 +214,8 @@ export function TelegramSettings() {
           supportToken: cfg.support_token || "",
           supportGroupID: groupID,
           supportGreeting: cfg.support_greeting || "",
+          proxy: cfg.proxy || "",
+          proxyMode: cfg.proxy_mode || "direct",
         });
       })
       .catch((e) => notifyError(errMessage(e)));
@@ -268,7 +276,9 @@ export function TelegramSettings() {
     supportEnabled !== saved.supportEnabled ||
     supportToken.trim() !== saved.supportToken.trim() ||
     supportGroupID.trim() !== saved.supportGroupID.trim() ||
-    supportGreeting.trim() !== saved.supportGreeting.trim();
+    supportGreeting.trim() !== saved.supportGreeting.trim() ||
+    proxy.trim() !== saved.proxy.trim() ||
+    proxyMode !== saved.proxyMode;
 
   // Linking only makes sense once the bot is enabled and that state is saved (the
   // bot polls against the persisted config; a code is redeemed by the running bot).
@@ -295,6 +305,8 @@ export function TelegramSettings() {
         support_token: supportToken.trim(),
         support_group_id: Number(supportGroupID.trim()) || 0,
         support_greeting: supportGreeting.trim(),
+        proxy_mode: proxyMode,
+        proxy: proxy.trim(),
       });
       setSaved({
         enabled,
@@ -312,6 +324,8 @@ export function TelegramSettings() {
         supportToken: supportToken.trim(),
         supportGroupID: supportGroupID.trim(),
         supportGreeting: supportGreeting.trim(),
+        proxy: proxy.trim(),
+        proxyMode,
       });
       // The support bot's @username is resolved server-side during the save, so pull
       // the fresh value back rather than leaving a stale one on screen.
@@ -344,6 +358,8 @@ export function TelegramSettings() {
     setSupportToken(saved.supportToken);
     setSupportGroupID(saved.supportGroupID);
     setSupportGreeting(saved.supportGreeting);
+    setProxy(saved.proxy);
+    setProxyMode(saved.proxyMode);
   };
 
   const generate = async () => {
@@ -434,6 +450,33 @@ export function TelegramSettings() {
 
   return (
     <div className="flex flex-col gap-4 pb-20">
+      {/* First on the page because it decides whether anything below it can work
+          at all: on a server that cannot reach Telegram, all three bots go silent
+          and the subscription page's "open in app" buttons die with them. */}
+      <SettingCard title={t("tg.proxy")} description={t("tg.proxyHint")}>
+        <div className="flex flex-col gap-3">
+          {/* Two choices only. WARP and Opera are not modes here: Routing owns those
+              egresses and publishes the address of each one it has running, so
+              sending Telegram through one is just pasting it below. */}
+          <Select
+            label={t("tg.proxyMode")}
+            value={proxyMode}
+            onChange={setProxyMode}
+            data={[
+              { value: "direct", label: t("tg.proxyModeDirect") },
+              { value: "custom", label: t("tg.proxyModeCustom") },
+            ]}
+          />
+          {proxyMode === "custom" && (
+            <PasswordInput
+              label={t("tg.proxyUrl")}
+              value={proxy}
+              onChange={setProxy}
+              placeholder="socks5://127.0.0.1:1080"
+            />
+          )}
+        </div>
+      </SettingCard>
       <SettingCard
         title={t("tg.adminBot")}
         description={t("tg.adminBotHint")}

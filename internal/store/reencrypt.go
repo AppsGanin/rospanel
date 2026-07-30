@@ -50,7 +50,7 @@ func (s *Store) ReencryptSensitiveFields() error {
 		name string
 	}
 	for _, c := range []col{
-		{"tg_bot_token"}, {"tg_user_bot_token"}, {"tg_support_bot_token"},
+		{"tg_bot_token"}, {"tg_user_bot_token"}, {"tg_support_bot_token"}, {"tg_proxy"},
 		{"warp_private_key"}, {"reality_private_key"}, {"proxy_mode_pass"},
 		{"zerossl_eab_hmac"},
 	} {

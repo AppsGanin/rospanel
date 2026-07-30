@@ -1,0 +1,41 @@
+-- An outbound proxy for everything the panel sends to Telegram (issue #43).
+
+-- Some hosting providers — and some networks the panel is deployed into — cannot
+-- reach Telegram at all. That breaks the panel in two visibly different ways which
+-- share one cause: the three bots stop long-polling (so the panel looks dead to its
+-- users), and the server-side fetch of telegram.org's Mini App SDK fails, which
+-- serves an empty /tg.js and silently kills the "open in app" deep links on the
+-- subscription page.
+--
+-- Both are fixed by the same knob, so it is ONE setting rather than one per bot:
+-- the operator points the panel at a proxy that can reach Telegram, and every
+-- Telegram-bound request goes through it. Splitting it per bot would let an
+-- operator half-fix the problem and leave the SDK — the part nobody thinks about
+-- until a user reports dead buttons — still broken.
+--
+-- Stored as a URL so scheme, credentials, host and port travel in one field the
+-- operator can paste: socks5://user:pass@host:1080, http://host:3128, https://…
+-- Empty (the default, and what every existing install gets) means direct.
+--
+-- Deliberately NOT reused for anything else the panel fetches. Blocklist feeds,
+-- ACME and the updater are separate concerns with separate reachability, and
+-- quietly routing them through a proxy chosen to reach Telegram would be a
+-- surprise — including a privacy one, since the proxy operator would then see
+-- traffic the setting never mentioned.
+ALTER TABLE settings ADD COLUMN tg_proxy TEXT NOT NULL DEFAULT '';
+
+-- How that route is chosen: '' (or 'direct') = straight out, 'custom' = the URL in
+-- tg_proxy above.
+--
+-- Deliberately only two. WARP and Opera are NOT modes here even though the panel
+-- provisions both: they are egresses the Routing page owns, and it publishes the
+-- loopback address of each one it has running, so sending Telegram down one is just
+-- pasting that address as a custom proxy. Modelling them as modes here meant this
+-- setting had to know which egresses existed, whether they were up, and had to
+-- regenerate the Xray config when it changed — three couplings for what is an address.
+--
+-- 'custom' is a first-class mode rather than inferred from "tg_proxy is not empty":
+-- that inference would silently switch an operator back to a stale hand-typed proxy
+-- the moment they picked 'direct', instead of leaving the old value in the box where
+-- they can see it.
+ALTER TABLE settings ADD COLUMN tg_proxy_mode TEXT NOT NULL DEFAULT '';

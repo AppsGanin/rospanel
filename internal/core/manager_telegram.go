@@ -10,6 +10,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/cron"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/netguard"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable
@@ -178,7 +179,12 @@ type TelegramConfig struct {
 	// Lang is the language the admin bot writes in. Panel-wide because the bot also
 	// pushes unprompted alerts, which carry no Telegram update to read a language
 	// from. Empty means the panel default.
-	Lang        string
+	Lang string
+	// ProxyMode/Proxy route every Telegram-bound request — all three bots and the
+	// Mini App SDK fetch — for servers that cannot reach Telegram. ProxyMode is one
+	// of model.TGProxy*; Proxy is the URL the custom mode uses.
+	ProxyMode   string
+	Proxy       string
 	UserEnabled bool
 	UserToken   string
 	UserRegMode string
@@ -205,7 +211,16 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 	if err := m.checkTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
 		return err
 	}
+	if _, err := checkTelegramProxy(c.ProxyMode, c.Proxy); err != nil {
+		return err
+	}
 	if err := m.checkTelegramSupportCfg(c); err != nil {
+		return err
+	}
+	// The proxy goes in first. It is what the other three are reached THROUGH, so a
+	// save that wrote the bots and then failed would leave them pointed down a route
+	// the operator had just replaced.
+	if err := m.SaveTelegramProxy(c.ProxyMode, c.Proxy); err != nil {
 		return err
 	}
 	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron, c.Lang); err != nil {
@@ -216,6 +231,47 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 	}
 	return m.SaveTelegramSupport(c.SupportEnabled, c.SupportToken, c.SupportUsername,
 		c.SupportGroupID, c.SupportGreeting)
+}
+
+// SaveTelegramProxy validates and persists how Telegram is reached: the mode, and
+// the URL the custom mode uses.
+//
+// No reconcile. This setting does not change the generated Xray config — WARP's
+// loopback entrance exists whenever WARP does, regardless of who dials it — so an
+// unrelated Telegram save must not restart Xray and drop every live VPN connection.
+func (m *Manager) SaveTelegramProxy(mode, raw string) error {
+	raw = strings.TrimSpace(raw)
+	mode, err := checkTelegramProxy(mode, raw)
+	if err != nil {
+		return err
+	}
+	return m.store.SetTelegramProxy(mode, raw)
+}
+
+// checkTelegramProxy validates the mode/URL pair and returns the normalized mode.
+func checkTelegramProxy(mode, raw string) (string, error) {
+	switch mode {
+	case "", model.TGProxyDirect:
+		return model.TGProxyDirect, nil
+	case model.TGProxyCustom:
+		// Empty is checked first: ParseProxy accepts it (that is how "direct" is
+		// spelled everywhere else), so on its own it would let the custom mode save
+		// with no address and quietly behave as direct.
+		if raw == "" {
+			return "", invalidCode("err.telegramProxyRequired", "укажите адрес прокси")
+		}
+		// The plain-English reason from ParseProxy travels with the error: "invalid
+		// proxy" alone leaves the operator re-reading a URL that looks fine to them,
+		// when what's wrong is a missing port or an unsupported scheme.
+		if _, err := netguard.ParseProxy(raw); err != nil {
+			return "", invalidCode("err.badTelegramProxy", "неверный адрес прокси: {{err}}",
+				map[string]any{"err": err})
+		}
+		return mode, nil
+	default:
+		return "", invalidCode("err.unknownTelegramProxyMode", "неизвестный режим прокси {{value}}",
+			map[string]any{"value": mode})
+	}
 }
 
 // The check* helpers below are the validation halves of the Save* methods, reusable

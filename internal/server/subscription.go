@@ -411,7 +411,7 @@ func (rt *Router) telegramSupportURL(ctx context.Context, set *model.Settings, u
 	if !set.TGUserBotEnabled {
 		return ""
 	}
-	bot := botUsername(ctx, set.TGUserBotToken)
+	bot := botUsername(ctx, set.TGUserBotToken, set.TelegramProxyURL())
 	if bot == "" {
 		return ""
 	}

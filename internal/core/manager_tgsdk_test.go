@@ -3,10 +3,13 @@ package core
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // Stub bodies must carry telegramSDKMarker — fetchTelegramSDK rejects anything that
@@ -17,13 +20,27 @@ const (
 	fakeSDKFresh = "// WebView fresh\nwindow.Telegram.WebApp = {platform:'test2'};"
 )
 
+// tgTestManager builds a Manager with a real (empty) store. The SDK cache itself
+// needs no data, but the fetch reads the Telegram proxy setting, so a nil store
+// would panic — and guarding for one in production code would be inventing a state
+// the panel never has.
+func tgTestManager(t *testing.T) *Manager {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "tgsdk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return &Manager{store: st}
+}
+
 // stubTelegramSDKFetch swaps the upstream GET for the duration of a test and
 // reports how many times it was called.
 func stubTelegramSDKFetch(t *testing.T, fn func(ctx context.Context) ([]byte, error)) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	prev := telegramSDKFetch
-	telegramSDKFetch = func(ctx context.Context) ([]byte, error) {
+	telegramSDKFetch = func(ctx context.Context, _ string) ([]byte, error) {
 		calls.Add(1)
 		return fn(ctx)
 	}
@@ -75,7 +92,7 @@ func TestTelegramSDKColdFetchesInline(t *testing.T) {
 	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return []byte(fakeSDK), nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	body, ok := m.TelegramWebAppSDK()
 	if !ok || string(body) != fakeSDK {
@@ -101,7 +118,7 @@ func TestTelegramSDKUnreachableArmsCooldown(t *testing.T) {
 	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return nil, errors.New("dial tcp: connection refused")
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	if body, ok := m.TelegramWebAppSDK(); ok || body != nil {
 		t.Fatalf("failed fetch: got (%q, %v), want (nil, false)", body, ok)
@@ -141,7 +158,7 @@ func TestTelegramSDKConcurrentColdSingleflight(t *testing.T) {
 		<-release // hold the fetch open so every goroutine piles up behind it
 		return []byte(fakeSDK), nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	const readers = 12
 	var wg sync.WaitGroup
@@ -176,7 +193,7 @@ func TestTelegramSDKStaleFailureDoesNotLoop(t *testing.T) {
 	calls := stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return nil, errors.New("dial tcp: i/o timeout")
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 	m.tgSDKBody = []byte("old")
 	m.tgSDKAt = time.Now().Add(-telegramSDKTTL - time.Minute) // stale
 
@@ -205,7 +222,7 @@ func TestTelegramSDKRejectsNonSDKBody(t *testing.T) {
 	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return []byte("<html><body>Access denied</body></html>"), nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	if body, ok := m.TelegramWebAppSDK(); ok || body != nil {
 		t.Fatalf("garbage body was accepted: got (%q, %v), want (nil, false)", body, ok)
@@ -231,7 +248,7 @@ func TestTelegramSDKStaleServedImmediately(t *testing.T) {
 		<-block
 		return []byte(fakeSDKFresh), nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 	m.tgSDKBody = []byte("old")
 	m.tgSDKAt = time.Now().Add(-telegramSDKTTL - time.Minute) // stale
 

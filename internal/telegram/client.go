@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/netguard"
 )
 
 // apiBase is the Telegram Bot API root; the token is appended per request.
@@ -33,10 +35,19 @@ type Client struct {
 	base string
 }
 
-// NewClient builds a client for the given bot token. The HTTP timeout comfortably
+// NewClient builds a client for the given bot token, reaching the Bot API through
+// proxy (a URL; empty means direct — see ParseProxy). The HTTP timeout comfortably
 // exceeds the long-poll window so GetUpdates isn't cut off mid-wait.
-func NewClient(token string) *Client {
-	return &Client{token: token, base: apiBase, http: &http.Client{Timeout: 60 * time.Second}}
+//
+// The proxy is a parameter rather than package state so the compiler accounts for
+// every path that talks to Telegram. A call site that forgot it would look healthy
+// on a reachable server and be dead on the servers the setting exists for.
+func NewClient(token, proxy string) *Client {
+	return &Client{
+		token: token,
+		base:  apiBase,
+		http:  &http.Client{Timeout: 60 * time.Second, Transport: netguard.ProxyTransport(proxy)},
+	}
 }
 
 // newTestClient builds a client pointed at a stub server.
