@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -566,8 +567,111 @@ func (s *Supervisor) AddUsers(apiAddr string, inbounds []Inbound) error {
 	}
 	f.Close()
 
-	if _, err := s.runXray(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name()); err != nil {
+	out, err := s.runXray(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name())
+	if err != nil {
 		return fmt.Errorf("api adu: %w", err)
+	}
+	// `xray api adu` exits 0 even when it adds nobody: a rejected inbound prints its
+	// reason and the run still ends "Added N user(s) in total". Comparing N against
+	// what we asked for is the only reliable signal — matching on error text would
+	// miss a PARTIAL failure, where some inbounds took their users and one did not
+	// (that run still reports a non-zero N). A user silently missing from one lane
+	// until something unrelated regenerates the config is exactly what this catches.
+	if want := countInboundUsers(inbounds); reportedAdded(out) != want {
+		return fmt.Errorf("api adu added %d of %d user entries: %s",
+			reportedAdded(out), want, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
+// addedRe pulls N out of xray's closing "Added N user(s) in total." line.
+var addedRe = regexp.MustCompile(`Added (\d+) user\(s\)`)
+
+// reportedAdded is how many user entries xray says it added, or -1 when its output
+// carries no such line (an output shape we don't recognise is not a success).
+func reportedAdded(out []byte) int {
+	m := addedRe.FindSubmatch(out)
+	if m == nil {
+		return -1
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// countInboundUsers totals the user entries across inbounds — the number xray should
+// report back. Settings is an interface, so this enumerates the shapes AddUsers is
+// ever handed; an unrecognised one contributes nothing rather than guessing.
+func countInboundUsers(inbounds []Inbound) int {
+	n := 0
+	for _, in := range inbounds {
+		switch s := in.Settings.(type) {
+		case VLESSInboundSettings:
+			n += len(s.Clients)
+		case TrojanInboundSettings:
+			n += len(s.Clients)
+		case HysteriaInboundSettings:
+			n += len(s.Users)
+		}
+	}
+	return n
+}
+
+// ReplaceInbounds rebuilds whole inbounds in the running Xray: each one is removed
+// and re-added through the API, which reconstructs it from scratch — users included.
+//
+// This exists for Hysteria2. Xray's HandlerService cannot manage users on a QUIC
+// inbound: `adu` refuses outright ("unsupported inbound type") and, worse, `rmu`
+// reports success while doing nothing, so a revoked user keeps their access. The
+// only way to change that user set was a full Xray restart, which drops every OTHER
+// lane's connections and the panel's own (:443 is Xray's; the panel sits on its
+// fallback) for a change that concerns one inbound.
+//
+// Verified against Xray 26.6.27: rmi + adi swap the user set with the process
+// untouched — same pid, same listening socket.
+//
+// Failure is the caller's to handle: rmi may have already landed, leaving that lane
+// down, so a caller that cannot fix it must fall back to a full reconcile.
+func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
+	if s.bin == "" {
+		return fmt.Errorf("xray binary unavailable")
+	}
+	for _, in := range inbounds {
+		if in.Tag == "" {
+			return fmt.Errorf("inbound with no tag")
+		}
+		data, err := json.Marshal(map[string]any{"inbounds": []Inbound{in}})
+		if err != nil {
+			return err
+		}
+		f, err := os.CreateTemp("", "xray-adi-*.json")
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(data); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return err
+		}
+		f.Close()
+
+		// A failed removal is not fatal on its own — an inbound that isn't there is
+		// exactly the state the add below wants. Only the add has to succeed.
+		if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, in.Tag); err != nil {
+			slog.Warn("xray: could not remove inbound before re-adding it", "tag", in.Tag, "err", err)
+		}
+		out, err := s.runXray(statsTimeout, "api", "adi", "--server="+apiAddr, f.Name())
+		os.Remove(f.Name())
+		if err != nil {
+			return fmt.Errorf("api adi tag=%s: %w", in.Tag, err)
+		}
+		// The CLI exits 0 even when it added nothing, so the output is the only
+		// evidence. Leaving that unchecked is how a lane could quietly stay down.
+		if bytes.Contains(out, []byte("failed to")) {
+			return fmt.Errorf("api adi tag=%s: %s", in.Tag, bytes.TrimSpace(out))
+		}
 	}
 	return nil
 }

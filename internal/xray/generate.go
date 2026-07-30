@@ -687,16 +687,16 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 	allowBuiltin := func(userID int64, lane string) bool {
 		return model.AccessOf(access, userID).AllowsBuiltin(serverID, lane)
 	}
-	vc, hc, rc := protocolClients(set, users, allowBuiltin)
+	vc, _, rc := protocolClients(set, users, allowBuiltin)
 	// `xray api adu` parses each entry as a full InboundDetour, so a valid Port is
 	// required even though only the users are applied (matched by tag).
 	var in []Inbound
 	if len(vc) > 0 {
 		in = append(in, Inbound{Tag: TagVLESS, Port: set.VLESSPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: vc, Decryption: "none"}})
 	}
-	if len(hc) > 0 {
-		in = append(in, Inbound{Tag: TagHysteria, Port: set.HysteriaPort, Protocol: "hysteria", Settings: HysteriaInboundSettings{Version: 2, Users: hc}})
-	}
+	// Hysteria2 is deliberately absent: `xray api adu` rejects a QUIC inbound with
+	// "unsupported inbound type". Its user set is swapped by rebuilding the whole
+	// inbound instead — see HysteriaInbounds / Supervisor.ReplaceInbounds.
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
@@ -717,14 +717,30 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		case model.InbTrojan:
 			stub.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
 		case model.InbHysteria:
-			stub.Protocol = "hysteria"
-			stub.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+			// Same as the built-in lane above: rebuilt, not live-updated.
+			continue
 		default:
 			continue
 		}
 		in = append(in, stub)
 	}
 	return in
+}
+
+// HysteriaInbounds picks the generated inbounds whose users Xray cannot live-update,
+// so the caller can rebuild them through the API instead of restarting everything.
+//
+// Selected by protocol rather than by tag: the built-in lane and every operator
+// -defined Hysteria2 inbound have the same limitation, and testing only the built-in
+// one would leave a revoked user tunnelling through a custom QUIC inbound.
+func HysteriaInbounds(cfg *Config) []Inbound {
+	var out []Inbound
+	for _, in := range cfg.Inbounds {
+		if in.Protocol == "hysteria" {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
 // EnabledInboundTags lists the inbound tags that currently carry users (the targets
@@ -734,13 +750,16 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	if set.VLESSEnabled {
 		tags = append(tags, TagVLESS)
 	}
-	if set.HysteriaEnabled {
-		tags = append(tags, TagHysteria)
-	}
+	// Hysteria2 is NOT here. `xray api rmu` reports success on a QUIC inbound while
+	// removing nothing, so listing it would have the panel believe it revoked access
+	// it still grants. Its user set is swapped by rebuilding the inbound instead.
 	if set.RealityEnabled {
 		tags = append(tags, TagReality)
 	}
 	for _, c := range custom {
+		if c.Protocol == model.InbHysteria {
+			continue // rebuilt, not live-updated (see above)
+		}
 		tags = append(tags, c.Tag())
 	}
 	return tags
