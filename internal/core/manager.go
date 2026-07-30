@@ -101,6 +101,7 @@ type Manager struct {
 	tgSDKBody   []byte        // cached telegram.org telegram-web-app.js (nil until first fetch)
 	tgSDKAt     time.Time     // when tgSDKBody was fetched
 	tgSDKFailAt time.Time     // when the last fetch failed; suppresses inline retries for a cooldown
+	tgSDKLogAt  time.Time     // when the last fetch failure was logged; rate-limits that line
 	tgSDKWait   chan struct{} // non-nil while a fetch is in flight; closed when it lands (singleflight)
 
 	// userNotify pushes a message to a VPN user's Telegram chat (set by the user
