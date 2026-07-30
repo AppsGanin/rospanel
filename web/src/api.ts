@@ -293,6 +293,9 @@ export const getXrayConfig = (): Promise<string> => apiText('api/xray/config')
 export interface XrayStatus {
   running: boolean
   started_at: number // unix; advances on every Xray (re)start
+  // unix; advances on every config apply, INCLUDING the ones that changed nothing
+  // and so did not restart. Absent on a panel older than this field.
+  applied_at?: number
 }
 
 export const getXrayStatus = () => api<XrayStatus>('api/xray/status')
