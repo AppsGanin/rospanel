@@ -320,6 +320,9 @@ const en: Dict = {
     autodeleteRange: "retention for expired users: from 0 (never delete) to {{max}} days",
     backupKeepRange: "the number of copies to keep must be between 0 and {{max}} (0 — keep them all)",
     badCron: "invalid schedule (cron): {{err}}",
+    badTelegramProxy: "invalid proxy address: {{err}}",
+    telegramProxyRequired: "enter the proxy address",
+    unknownTelegramProxyMode: "unknown proxy mode {{value}}",
     badResetPeriod: "invalid reset period {{value}}",
     buttonLinkScheme: "the link on the “{{label}}” button must start with http:// or https://",
     donorCertTooBig: "the donor certificate for {{host}} is too large ({{size}} B) — the REALITY handshake does not complete on this Xray version when the certificate record exceeds {{limit}} B (issue #6402). Pick a site with a smaller certificate, for example www.cloudflare.com, www.apple.com or dl.google.com",
@@ -1971,6 +1974,13 @@ const en: Dict = {
     testBackupSent: "Test backup sent",
     checkOk: "The check passed",
     checkOkDetailed: "All set: @{{bot}} is an administrator of “{{group}}”",
+    proxy: "Proxy to Telegram",
+    proxyHint:
+      "Everything the panel sends to Telegram goes through it: all three bots and the Mini App SDK download. Needed when the server cannot reach Telegram — without it the bots stay silent and the “open in app” buttons on the subscription page stop working. Empty means direct.",
+    proxyMode: "Connection",
+    proxyModeDirect: "Directly",
+    proxyModeCustom: "Own proxy",
+    proxyUrl: "Proxy address",
     adminBot: "Admin bot",
     adminBotHint:
       "User management and backups. Access only via a linking code from the panel.",

@@ -251,7 +251,7 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
-	client := telegram.NewClient(token)
+	client := telegram.NewClient(token, set.TelegramProxyURL())
 	rows := telegram.BroadcastButtonRows(b.Buttons)
 	var sendErr error
 	for _, chatID := range chats {

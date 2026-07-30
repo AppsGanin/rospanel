@@ -693,10 +693,15 @@ func (m *Manager) TelegramWebAppSDK() ([]byte, bool) {
 	return body, body != nil
 }
 
-// telegramSDKFetch performs the upstream GET. It's a var so tests can drive the
-// cache logic without a network (netguard rejects loopback, so httptest is out).
-var telegramSDKFetch = func(ctx context.Context) ([]byte, error) {
-	return netguard.Get(ctx, telegramSDKURL, telegramSDKMaxBytes)
+// telegramSDKFetch performs the upstream GET, through the operator's Telegram proxy
+// when one is set (empty = direct). It's a var so tests can drive the cache logic
+// without a network (netguard rejects loopback, so httptest is out).
+//
+// The proxy matters most precisely here. A server that cannot reach Telegram is the
+// only one that ever fails this fetch, and it is also the one whose operator has
+// configured a proxy to fix exactly that.
+var telegramSDKFetch = func(ctx context.Context, proxy string) ([]byte, error) {
+	return netguard.GetVia(ctx, telegramSDKURL, telegramSDKMaxBytes, proxy)
 }
 
 // refreshTelegramSDK refreshes a stale copy in the background (the only caller —
@@ -783,5 +788,12 @@ func (m *Manager) fetchTelegramSDK() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), telegramSDKBudget)
 	defer cancel()
-	b, err = telegramSDKFetch(ctx)
+	// Read fresh rather than caching the proxy on the Manager: this runs at most once
+	// per cooldown, so one settings read is nothing, and it means a just-saved proxy
+	// takes effect on the next page load instead of after a restart.
+	var proxy string
+	if set, serr := m.store.GetSettings(); serr == nil {
+		proxy = set.TelegramProxyURL()
+	}
+	b, err = telegramSDKFetch(ctx, proxy)
 }

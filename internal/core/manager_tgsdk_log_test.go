@@ -6,10 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // syncBuf collects log output. A plain bytes.Buffer would race: a background
@@ -50,7 +54,7 @@ func TestTelegramSDKFailureIsLogged(t *testing.T) {
 	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return nil, errors.New("dial tcp 149.154.167.99:443: i/o timeout")
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	if _, ok := m.TelegramWebAppSDK(); ok {
 		t.Fatal("expected the stubbed failure to report ok=false")
@@ -77,7 +81,7 @@ func TestTelegramSDKBadBodyLogsDistinctly(t *testing.T) {
 	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return blockPage, nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	if _, ok := m.TelegramWebAppSDK(); ok {
 		t.Fatal("a marker-less body must not be cached")
@@ -99,7 +103,7 @@ func TestTelegramSDKFailureLogIsRateLimited(t *testing.T) {
 	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
 		return nil, errors.New("connection refused")
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	// Ten failures, each one past the RETRY cooldown so the fetch really re-runs.
 	for i := 0; i < 10; i++ {
@@ -140,7 +144,7 @@ func TestTelegramSDKRecoveryIsLogged(t *testing.T) {
 		}
 		return []byte(fakeSDK), nil
 	})
-	m := &Manager{}
+	m := tgTestManager(t)
 
 	if _, ok := m.TelegramWebAppSDK(); ok {
 		t.Fatal("expected the first fetch to fail")
@@ -154,5 +158,58 @@ func TestTelegramSDKRecoveryIsLogged(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "reachable again") {
 		t.Errorf("recovery was not logged; got %q", logs.String())
+	}
+}
+
+// The Mini App SDK fetch must go through the operator's Telegram proxy. It is the
+// half of the setting nobody notices is missing: a proxy that fixes the bots but
+// not this leaves /tg.js empty, and the only symptom is dead "open in app" buttons
+// on the subscription page (#43).
+func TestTelegramSDKFetchUsesTheConfiguredProxy(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "tgproxy.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	if err := st.SetTelegramProxy(model.TGProxyCustom, "socks5://127.0.0.1:1080"); err != nil {
+		t.Fatalf("store the proxy: %v", err)
+	}
+
+	got := make(chan string, 1)
+	prev := telegramSDKFetch
+	telegramSDKFetch = func(_ context.Context, proxy string) ([]byte, error) {
+		got <- proxy
+		return []byte(fakeSDK), nil
+	}
+	t.Cleanup(func() { telegramSDKFetch = prev })
+
+	m := &Manager{store: st}
+	if _, ok := m.TelegramWebAppSDK(); !ok {
+		t.Fatal("expected the stubbed fetch to land")
+	}
+	select {
+	case proxy := <-got:
+		if proxy != "socks5://127.0.0.1:1080" {
+			t.Fatalf("fetch used proxy %q, want the configured one", proxy)
+		}
+	default:
+		t.Fatal("the fetch never ran")
+	}
+}
+
+// A panel that never had a problem must not narrate its own health — no "reachable
+// again" on a first successful fetch.
+func TestTelegramSDKQuietWhenHealthy(t *testing.T) {
+	logs := captureLogs(t)
+	stubTelegramSDKFetch(t, func(context.Context) ([]byte, error) {
+		return []byte(fakeSDK), nil
+	})
+	m := tgTestManager(t)
+
+	if _, ok := m.TelegramWebAppSDK(); !ok {
+		t.Fatal("expected the fetch to land")
+	}
+	if got := logs.String(); got != "" {
+		t.Errorf("a healthy fetch logged %q, want silence", got)
 	}
 }

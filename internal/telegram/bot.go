@@ -86,6 +86,7 @@ type Service struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	clientProxy string // proxy the cached client was built with; a change rebuilds it
 	offset      int64
 	pending     map[int64]string // chatID → awaited text input ("add"), guarded by mu
 
@@ -104,13 +105,14 @@ func New(panel Panel, st *store.Store, dataDir string) *Service {
 	}
 }
 
-// clientFor returns a cached client for token, rebuilding it when the token rotates.
-func (s *Service) clientFor(token string) *Client {
+// clientFor returns a cached client for token, rebuilding it when the token rotates
+// or the operator repoints the Telegram proxy.
+func (s *Service) clientFor(token, proxy string) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client == nil || s.clientToken != token {
-		s.client = NewClient(token)
-		s.clientToken = token
+	if s.client == nil || s.clientToken != token || s.clientProxy != proxy {
+		s.client = NewClient(token, proxy)
+		s.clientToken, s.clientProxy = token, proxy
 	}
 	return s.client
 }
@@ -161,7 +163,7 @@ func (s *Service) Run(ctx context.Context) {
 			log.Printf("telegram: admin notify dropped — no linked admin chats")
 			return
 		}
-		c := NewClient(strings.TrimSpace(set.TGBotToken))
+		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
 		for _, id := range chats {
 			// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
 			// revoked token fails per send, and with the error discarded the panel looked
@@ -187,7 +189,7 @@ func (s *Service) Run(ctx context.Context) {
 			{Text: i18n.T(lang, "admin.btnApprove"), CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
 			{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
 		}}
-		c := NewClient(strings.TrimSpace(set.TGBotToken))
+		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
 		for _, id := range set.TelegramChatIDs() {
 			if err := c.SendMenu(context.Background(), id, msg, rows); err != nil {
 				log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
@@ -205,7 +207,7 @@ func (s *Service) Run(ctx context.Context) {
 			}
 			continue
 		}
-		client := s.clientFor(strings.TrimSpace(set.TGBotToken))
+		client := s.clientFor(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
 		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
 		if err != nil {
 			if ctx.Err() != nil {

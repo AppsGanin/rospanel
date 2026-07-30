@@ -654,6 +654,14 @@ type Settings struct {
 	// each person's own Telegram language instead.
 	TGLang string `json:"-"`
 
+	// TGProxyMode / TGProxy route everything the panel sends to Telegram — all three
+	// bots plus the server-side fetch of the Mini App SDK — for servers that cannot
+	// reach Telegram directly. Mode is one of TGProxy* below; TGProxy is the URL used
+	// by TGProxyCustom. Read them through TelegramProxyURL, never separately. Telegram
+	// only; see the 0036 migration for why this is not a panel-wide egress setting.
+	TGProxyMode string `json:"-"`
+	TGProxy     string `json:"-"`
+
 	// Local scheduled backups, independent of Telegram: archives are written to
 	// <dataDir>/backups and the newest LocalBackupKeep are retained. Same 5-field
 	// cron dialect and operator timezone as TGBackupCron; empty = off.
@@ -925,6 +933,41 @@ func (s *Settings) OperaPortOr() int {
 		return s.OperaPort
 	}
 	return 18080
+}
+
+// Telegram proxy modes. Direct is the zero value so an install that never touched
+// the setting keeps behaving exactly as before.
+//
+// Deliberately only two. WARP and Opera are NOT modes here: they are egresses the
+// Routing page owns, and it publishes the loopback address of each one it has
+// running. An operator who wants Telegram to go
+// that way pastes the address as a custom proxy. Modelling them as Telegram modes
+// meant this setting had to know which egresses existed, whether they were up, and
+// had to regenerate the Xray config when it changed — three couplings for something
+// that is just an address.
+const (
+	TGProxyDirect = "direct"
+	TGProxyCustom = "custom"
+)
+
+// TGProxyModeOr returns the configured Telegram proxy mode, defaulting to direct.
+func (s *Settings) TGProxyModeOr() string {
+	switch s.TGProxyMode {
+	case TGProxyCustom:
+		return s.TGProxyMode
+	default:
+		return TGProxyDirect
+	}
+}
+
+// TelegramProxyURL returns the proxy URL the panel's HTTP clients use for
+// everything Telegram-bound; "" means direct. Every Telegram caller goes through
+// this, so "what the operator picked" turns into "where the bytes go" in one place.
+func (s *Settings) TelegramProxyURL() string {
+	if s.TGProxyModeOr() == TGProxyCustom {
+		return strings.TrimSpace(s.TGProxy)
+	}
+	return ""
 }
 
 // SubPathOr returns the subscription URL prefix, defaulting to "sub".

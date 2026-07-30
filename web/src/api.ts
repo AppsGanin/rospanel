@@ -908,6 +908,13 @@ export interface TelegramInfo {
   support_group_id: number // 0 = not configured
   support_greeting: string // shown on /start; empty = built-in text
   support_bot_username: string // resolved on save; empty ⇒ entry point stays hidden
+
+  // How everything Telegram-bound is routed — all three bots and the server-side
+  // fetch of the Mini App SDK. proxy is the URL the 'custom' mode uses; it survives a
+  // switch to 'direct' so a typed address is not lost. To send Telegram through WARP
+  // or Opera, paste the address the Routing page publishes for that lane.
+  proxy_mode: 'direct' | 'custom'
+  proxy: string
 }
 
 // Self-registration modes for the public user bot.
@@ -933,6 +940,8 @@ export const saveTelegram = (t: {
   support_token: string
   support_group_id: number
   support_greeting: string
+  proxy_mode: string
+  proxy: string
 }) =>
   api<{ ok: boolean }>('api/telegram', {
     method: 'POST',
