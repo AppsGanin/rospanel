@@ -25,6 +25,7 @@ type UserService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	clientProxy string // proxy the cached client was built with; a change rebuilds it
 	commandsFor string // token whose command menu was already published
 	offset      int64
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
@@ -73,12 +74,12 @@ func NewUser(panel Panel, st *store.Store) *UserService {
 	}
 }
 
-func (s *UserService) clientFor(token string) *Client {
+func (s *UserService) clientFor(token, proxy string) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client == nil || s.clientToken != token {
-		s.client = NewClient(token)
-		s.clientToken = token
+	if s.client == nil || s.clientToken != token || s.clientProxy != proxy {
+		s.client = NewClient(token, proxy)
+		s.clientToken, s.clientProxy = token, proxy
 		// Per-bot update ids: keeping the old offset across a token swap would ACK
 		// away the new bot's backlog and drop messages until it caught up.
 		s.offset = 0
@@ -131,7 +132,7 @@ func (s *UserService) Run(ctx context.Context) {
 		if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
 			return
 		}
-		_ = NewClient(strings.TrimSpace(set.TGUserBotToken)).SendMessage(context.Background(), chatID, html)
+		_ = NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL()).SendMessage(context.Background(), chatID, html)
 	})
 	for {
 		if ctx.Err() != nil {
@@ -145,7 +146,7 @@ func (s *UserService) Run(ctx context.Context) {
 			continue
 		}
 		token := strings.TrimSpace(set.TGUserBotToken)
-		client := s.clientFor(token)
+		client := s.clientFor(token, set.TelegramProxyURL())
 		s.publishCommands(ctx, client, token)
 		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
 		if err != nil {

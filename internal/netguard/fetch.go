@@ -17,6 +17,20 @@ const defaultFetchTimeout = 15 * time.Second
 // ValidateFetchURL ensures url is an https URL whose host does not resolve to
 // private/link-local/metadata addresses.
 func ValidateFetchURL(raw string) error {
+	if err := validateFetchURLShape(raw); err != nil {
+		return err
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	return rejectPrivateHost(u.Hostname())
+}
+
+// validateFetchURLShape is the half of ValidateFetchURL that judges the URL itself,
+// split out so a proxied fetch can still apply it. The other half resolves the host
+// and checks the address, which is meaningless when a proxy does the resolving.
+func validateFetchURLShape(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return fmt.Errorf("empty URL")
@@ -31,11 +45,10 @@ func ValidateFetchURL(raw string) error {
 	if u.User != nil {
 		return fmt.Errorf("credentials in the URL are not allowed")
 	}
-	host := u.Hostname()
-	if host == "" {
+	if u.Hostname() == "" {
 		return fmt.Errorf("no host given")
 	}
-	return rejectPrivateHost(host)
+	return nil
 }
 
 func rejectPrivateHost(host string) error {

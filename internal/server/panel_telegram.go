@@ -31,15 +31,17 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"token":              set.TGBotToken,
 		"backup_cron":        set.TGBackupCron,
 		"lang":               set.BotLang(),
+		"proxy":              set.TGProxy,
+		"proxy_mode":         set.TGProxyModeOr(),
 		"chat_ids":           chats,
 		"link_code":          set.TGLinkCode,
-		"bot_username":       botUsername(r.Context(), set.TGBotToken),
+		"bot_username":       botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL()),
 		"user_enabled":       set.TGUserBotEnabled,
 		"user_token":         set.TGUserBotToken,
 		"user_reg_enabled":   set.TGUserRegEnabled,
 		"user_reg_mode":      set.RegMode(),
 		"user_reg_code":      set.TGUserRegCode,
-		"user_bot_username":  botUsername(r.Context(), set.TGUserBotToken),
+		"user_bot_username":  botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
 		"admin_events":       rt.mgr.AdminEventPrefs(),
 		"user_events":        userEvents,
 		"user_expiring_days": expiringDays,
@@ -79,6 +81,11 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		// zero is a value the operator can never have meant.
 		UserExpiringDays *int `json:"user_expiring_days"`
 
+		// Proxy is panel-wide for Telegram, not per bot: it is the one setting that
+		// decides whether ANY of this is reachable.
+		Proxy     *string `json:"proxy"`
+		ProxyMode *string `json:"proxy_mode"`
+
 		SupportEnabled  *bool   `json:"support_enabled"`
 		SupportToken    *string `json:"support_token"`
 		SupportGroupID  *int64  `json:"support_group_id"`
@@ -93,11 +100,33 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	supportToken := or(req.SupportToken, cur.TGSupportBotToken)
+	proxy := or(req.Proxy, cur.TGProxy)
+	proxyMode := or(req.ProxyMode, cur.TGProxyModeOr())
+	// Resolve the route being SAVED, not the stored one: an operator fixing an
+	// unreachable panel picks the route and enters the bot tokens in one submit, and
+	// checking through the old (broken) route would fail the save that fixes it.
+	pending := *cur
+	pending.TGProxyMode, pending.TGProxy = proxyMode, proxy
+	proxyURL := pending.TelegramProxyURL()
+
 	// getMe only when there is something new to check. Re-resolving an unchanged
 	// token made every save depend on Telegram being reachable.
 	supportUser := cur.TGSupportBotUsername
-	if supportToken != cur.TGSupportBotToken || supportUser == "" {
-		supportUser = botUsername(r.Context(), supportToken)
+	switch {
+	case supportToken != cur.TGSupportBotToken || supportUser == "":
+		// A different bot, so whatever comes back is the truth — including "". Keeping
+		// the previous bot's @username would aim the support button at a stranger.
+		supportUser = botUsername(r.Context(), supportToken, proxyURL)
+	case proxyURL != cur.TelegramProxyURL():
+		// Same bot, new route: worth re-checking, but a failure must NOT clear a
+		// username we already have. A route just pointed at a local egress may need
+		// seconds before it carries anything — the WARP tunnel is not up the instant
+		// its address exists — and clearing on that would make the route impossible to
+		// save while support is on, since SaveTelegramSupport refuses an enabled relay
+		// with no username.
+		if u := botUsername(r.Context(), supportToken, proxyURL); u != "" {
+			supportUser = u
+		}
 	}
 
 	cfg := core.TelegramConfig{
@@ -105,6 +134,8 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		Token:       or(req.Token, cur.TGBotToken),
 		BackupCron:  or(req.BackupCron, cur.TGBackupCron),
 		Lang:        or(req.Lang, cur.TGLang),
+		Proxy:       proxy,
+		ProxyMode:   proxyMode,
 		UserEnabled: or(req.UserEnabled, cur.TGUserBotEnabled),
 		UserToken:   or(req.UserToken, cur.TGUserBotToken),
 		UserRegMode: or(req.UserRegMode, cur.RegMode()),
@@ -186,7 +217,7 @@ func (rt *Router) checkTelegramSupport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	client := telegram.NewClient(token)
+	client := telegram.NewClient(token, set.TelegramProxyURL())
 
 	me, err := client.GetMe(ctx)
 	if err != nil {
@@ -252,7 +283,7 @@ func (rt *Router) genTelegramLink(w http.ResponseWriter, r *http.Request) {
 	}
 	username := ""
 	if set, err := rt.mgr.Settings(); err == nil {
-		username = botUsername(r.Context(), set.TGBotToken)
+		username = botUsername(r.Context(), set.TGBotToken, set.TelegramProxyURL())
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": code, "bot_username": username})
 }
@@ -318,7 +349,7 @@ func (rt *Router) testTelegramBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	client := telegram.NewClient(set.TGBotToken)
+	client := telegram.NewClient(set.TGBotToken, set.TelegramProxyURL())
 	if err := telegram.SendBackup(ctx, client, chats, rt.dataDir, rt.mgr.BackupManifest(),
 		rt.mgr.Store().Checkpoint, i18n.T(rt.mgr.BotLang(), "bot.testBackup")); err != nil {
 		writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", err.Error())
@@ -329,14 +360,19 @@ func (rt *Router) testTelegramBackup(w http.ResponseWriter, r *http.Request) {
 
 // botUsername fetches the bot's @username (best-effort, short timeout) so the UI
 // can render a clickable t.me link. Returns "" when no token is set or the call
-// fails (e.g. an invalid token).
-func botUsername(ctx context.Context, token string) string {
+// fails (e.g. an invalid token, or Telegram being unreachable through proxy).
+//
+// proxy is the value being SAVED, not the stored one, on the save path: an operator
+// fixing an unreachable panel sets the proxy and the bot tokens in one submit, and
+// resolving the username through the old (direct, broken) route would fail the save
+// that was about to fix it.
+func botUsername(ctx context.Context, token, proxy string) string {
 	if token == "" {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if u, err := telegram.NewClient(token).GetMe(ctx); err == nil {
+	if u, err := telegram.NewClient(token, proxy).GetMe(ctx); err == nil {
 		return u.Username
 	}
 	return ""

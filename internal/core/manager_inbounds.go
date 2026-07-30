@@ -156,6 +156,11 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if set.OperaEnabled {
 		hold(set.OperaPortOr(), "Opera VPN")
 	}
+	// WARP's loopback entrance. Loopback-only, but it still occupies a port on the
+	// box, so a custom inbound must not be allowed to claim it.
+	if set.WarpEnabled && set.WarpRegistered() {
+		hold(model.PanelEgressPort, "WARP local entrance")
+	}
 	return r
 }
 
@@ -451,18 +456,6 @@ func inboundConflict(err error) error {
 		return invalidCode("err.inboundNameTakenHere", "название уже занято другим подключением на этом сервере")
 	}
 	return err
-}
-
-// hasHysteria reports whether any custom inbound is Hysteria2. Such an inbound
-// cannot have its users live-updated (QUIC authenticators are fixed at start), so
-// its presence is what makes a user change need a reconcile.
-func hasHysteria(list []model.Inbound) bool {
-	for _, in := range list {
-		if in.Protocol == model.InbHysteria {
-			return true
-		}
-	}
-	return false
 }
 
 // portNetwork is the transport-layer network an inbound listens on. Hysteria2 is

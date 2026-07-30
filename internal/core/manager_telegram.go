@@ -1,15 +1,19 @@
 package core
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/cron"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/netguard"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable
@@ -178,7 +182,12 @@ type TelegramConfig struct {
 	// Lang is the language the admin bot writes in. Panel-wide because the bot also
 	// pushes unprompted alerts, which carry no Telegram update to read a language
 	// from. Empty means the panel default.
-	Lang        string
+	Lang string
+	// ProxyMode/Proxy route every Telegram-bound request — all three bots and the
+	// Mini App SDK fetch — for servers that cannot reach Telegram. ProxyMode is one
+	// of model.TGProxy*; Proxy is the URL the custom mode uses.
+	ProxyMode   string
+	Proxy       string
 	UserEnabled bool
 	UserToken   string
 	UserRegMode string
@@ -205,7 +214,16 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 	if err := m.checkTelegramUserBot(c.UserEnabled, c.UserToken, c.UserRegMode, c.UserRegCode); err != nil {
 		return err
 	}
+	if _, err := checkTelegramProxy(c.ProxyMode, c.Proxy); err != nil {
+		return err
+	}
 	if err := m.checkTelegramSupportCfg(c); err != nil {
+		return err
+	}
+	// The proxy goes in first. It is what the other three are reached THROUGH, so a
+	// save that wrote the bots and then failed would leave them pointed down a route
+	// the operator had just replaced.
+	if err := m.SaveTelegramProxy(c.ProxyMode, c.Proxy); err != nil {
 		return err
 	}
 	if err := m.SaveTelegram(c.Enabled, c.Token, c.BackupCron, c.Lang); err != nil {
@@ -216,6 +234,129 @@ func (m *Manager) SaveTelegramConfig(c TelegramConfig) error {
 	}
 	return m.SaveTelegramSupport(c.SupportEnabled, c.SupportToken, c.SupportUsername,
 		c.SupportGroupID, c.SupportGreeting)
+}
+
+// SaveTelegramProxy validates and persists how Telegram is reached: the mode, and
+// the URL the custom mode uses.
+//
+// No reconcile. This setting does not change the generated Xray config — WARP's
+// loopback entrance exists whenever WARP does, regardless of who dials it — so an
+// unrelated Telegram save must not restart Xray and drop every live VPN connection.
+func (m *Manager) SaveTelegramProxy(mode, raw string) error {
+	raw = strings.TrimSpace(raw)
+	mode, err := checkTelegramProxy(mode, raw)
+	if err != nil {
+		return err
+	}
+	return m.store.SetTelegramProxy(mode, raw)
+}
+
+// telegramEgressWait bounds how long the bots hold off for a local egress. Xray needs
+// a couple of seconds past "process started" before its inbound accepts, and several
+// more before the WireGuard tunnel behind it carries anything.
+const telegramEgressWait = 30 * time.Second
+
+// telegramEgressProbe bounds one readiness probe. Short: it runs in a loop, and a
+// slow answer is indistinguishable from a tunnel that is not up yet.
+const telegramEgressProbe = 5 * time.Second
+
+// AwaitTelegramEgress blocks until Telegram is reachable through the configured
+// proxy — but only when that proxy is an egress this panel brings up itself.
+//
+// Startup launches Xray and the three bots back to back. An operator who pointed the
+// Telegram proxy at the WARP address the Routing page publishes has the bots dialling
+// 127.0.0.1:PanelEgressPort while Xray is still coming up: first connection refused,
+// then a tunnel that accepts but does not yet carry. They recover on their own, but
+// only after the retry backoff unwinds — ~40 s of silent bots on every restart, which
+// an operator reads as a broken panel.
+//
+// Anything else returns immediately. A proxy running elsewhere is not ours to wait on,
+// and blocking boot because it happens to be down would turn their outage into our
+// delay. A timeout is not fatal either: the bots retry regardless, so this only
+// removes the part of the wait we can predict.
+func (m *Manager) AwaitTelegramEgress(ctx context.Context) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return
+	}
+	if !set.IsLocalEgressProxy(set.TelegramProxyURL()) {
+		return
+	}
+	deadline := time.Now().Add(telegramEgressWait)
+	for {
+		if telegramEgressAlive(ctx, set.TelegramProxyURL()) {
+			return
+		}
+		if time.Now().After(deadline) {
+			// Worth a line: at this point the bots are about to start failing for a
+			// reason that has nothing to do with their tokens.
+			logWarn("telegram egress did not come up in time; the bots will start anyway and retry",
+				"proxy", set.TelegramProxyURL(), "waited", telegramEgressWait)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// telegramEgressAlive reports whether Telegram is actually reachable through proxy.
+//
+// It makes a real request rather than just connecting to the port, because for the
+// WARP route the port proves nothing: Xray's inbound accepts from the instant the
+// process starts, several seconds before the WireGuard handshake behind it finishes.
+// A bot started on "the port is open" still talks into a tunnel that silently
+// swallows its traffic, and pays a full retry backoff for it.
+//
+// A var so tests can drive AwaitTelegramEgress without a live proxy, the same way
+// telegramSDKFetch is stubbed.
+//
+// api.telegram.org is the target on purpose — it is the host the bots need, so this
+// answers the question that matters instead of a proxy one. No token, so any answer
+// at all (302 to the docs, 404, anything) means the path works; only a transport
+// failure counts as not-ready.
+var telegramEgressAlive = func(ctx context.Context, proxy string) bool {
+	ctx, cancel := context.WithTimeout(ctx, telegramEgressProbe)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://api.telegram.org/", nil)
+	if err != nil {
+		return false
+	}
+	client := &http.Client{Transport: netguard.ProxyTransport(proxy), Timeout: telegramEgressProbe}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
+}
+
+// checkTelegramProxy validates the mode/URL pair and returns the normalized mode.
+func checkTelegramProxy(mode, raw string) (string, error) {
+	switch mode {
+	case "", model.TGProxyDirect:
+		return model.TGProxyDirect, nil
+	case model.TGProxyCustom:
+		// Empty is checked first: ParseProxy accepts it (that is how "direct" is
+		// spelled everywhere else), so on its own it would let the custom mode save
+		// with no address and quietly behave as direct.
+		if raw == "" {
+			return "", invalidCode("err.telegramProxyRequired", "укажите адрес прокси")
+		}
+		// The plain-English reason from ParseProxy travels with the error: "invalid
+		// proxy" alone leaves the operator re-reading a URL that looks fine to them,
+		// when what's wrong is a missing port or an unsupported scheme.
+		if _, err := netguard.ParseProxy(raw); err != nil {
+			return "", invalidCode("err.badTelegramProxy", "неверный адрес прокси: {{err}}",
+				map[string]any{"err": err})
+		}
+		return mode, nil
+	default:
+		return "", invalidCode("err.unknownTelegramProxyMode", "неизвестный режим прокси {{value}}",
+			map[string]any{"value": mode})
+	}
 }
 
 // The check* helpers below are the validation halves of the Save* methods, reusable
