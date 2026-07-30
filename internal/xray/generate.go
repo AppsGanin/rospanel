@@ -216,6 +216,20 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		warpTag = "warp"
 	}
 
+	// The entrance to WARP for anything running ON this box — the panel itself, or
+	// whatever the operator points at it. WARP is a WireGuard outbound with no address
+	// of its own, so without this loopback SOCKS inbound there is simply no way for an
+	// ordinary HTTP client to reach it.
+	//
+	// Tied to WARP being available, nothing else. The Routing page publishes this
+	// address (model.Settings.WarpProxyURL) whenever it is up, so the inbound has to
+	// exist for as long as that address is advertised — not only while some particular
+	// consumer happens to be configured to use it.
+	panelEgressWarp := warpTag == "warp"
+	if panelEgressWarp {
+		inbounds = append(inbounds, panelEgressInbound())
+	}
+
 	// Opera VPN egress: an http outbound to the local helper. The lane is routed
 	// through a single-member balancer with an Observatory health-probe (below),
 	// so if the free VPN upstream goes unreachable the lane auto-falls-back to
@@ -290,7 +304,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, active),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, panelEgressWarp, active),
 		Observatory: observatory,
 	}, nil
 }
@@ -348,6 +362,27 @@ func proxyModeInbound(set *model.Settings, sniff *Sniffing) Inbound {
 		Protocol: proto,
 		Settings: settings,
 		Sniffing: sniff,
+	}
+}
+
+// panelEgressTag identifies local traffic entering the WARP tunnel in the routing rules.
+const panelEgressTag = "panel-egress-in"
+
+// panelEgressInbound builds the loopback SOCKS inbound that serves as WARP's address:
+// the tunnel is a WireGuard outbound, which nothing on the box can dial directly.
+//
+// Bound to 127.0.0.1, so unlike proxy mode it is not reachable from the network and
+// needs no credentials — anything that can connect to it is already running on the
+// box. No sniffing either: it is dispatched by inbound tag, not by domain, and the
+// SOCKS request carries the hostname anyway.
+func panelEgressInbound() Inbound {
+	return Inbound{
+		Tag:      panelEgressTag,
+		Listen:   "127.0.0.1",
+		Port:     model.PanelEgressPort,
+		Protocol: "socks",
+		// UDP off: the panel speaks HTTPS to Telegram over TCP and nothing else.
+		Settings: SocksInboundSettings{Auth: "noauth", UDP: false},
 	}
 }
 
@@ -652,16 +687,16 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 	allowBuiltin := func(userID int64, lane string) bool {
 		return model.AccessOf(access, userID).AllowsBuiltin(serverID, lane)
 	}
-	vc, hc, rc := protocolClients(set, users, allowBuiltin)
+	vc, _, rc := protocolClients(set, users, allowBuiltin)
 	// `xray api adu` parses each entry as a full InboundDetour, so a valid Port is
 	// required even though only the users are applied (matched by tag).
 	var in []Inbound
 	if len(vc) > 0 {
 		in = append(in, Inbound{Tag: TagVLESS, Port: set.VLESSPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: vc, Decryption: "none"}})
 	}
-	if len(hc) > 0 {
-		in = append(in, Inbound{Tag: TagHysteria, Port: set.HysteriaPort, Protocol: "hysteria", Settings: HysteriaInboundSettings{Version: 2, Users: hc}})
-	}
+	// Hysteria2 is deliberately absent: `xray api adu` rejects a QUIC inbound with
+	// "unsupported inbound type". Its user set is swapped by rebuilding the whole
+	// inbound instead — see HysteriaInbounds / Supervisor.ReplaceInbounds.
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
@@ -682,14 +717,30 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		case model.InbTrojan:
 			stub.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
 		case model.InbHysteria:
-			stub.Protocol = "hysteria"
-			stub.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+			// Same as the built-in lane above: rebuilt, not live-updated.
+			continue
 		default:
 			continue
 		}
 		in = append(in, stub)
 	}
 	return in
+}
+
+// HysteriaInbounds picks the generated inbounds whose users Xray cannot live-update,
+// so the caller can rebuild them through the API instead of restarting everything.
+//
+// Selected by protocol rather than by tag: the built-in lane and every operator
+// -defined Hysteria2 inbound have the same limitation, and testing only the built-in
+// one would leave a revoked user tunnelling through a custom QUIC inbound.
+func HysteriaInbounds(cfg *Config) []Inbound {
+	var out []Inbound
+	for _, in := range cfg.Inbounds {
+		if in.Protocol == "hysteria" {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
 // EnabledInboundTags lists the inbound tags that currently carry users (the targets
@@ -699,13 +750,16 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	if set.VLESSEnabled {
 		tags = append(tags, TagVLESS)
 	}
-	if set.HysteriaEnabled {
-		tags = append(tags, TagHysteria)
-	}
+	// Hysteria2 is NOT here. `xray api rmu` reports success on a QUIC inbound while
+	// removing nothing, so listing it would have the panel believe it revoked access
+	// it still grants. Its user set is swapped by rebuilding the inbound instead.
 	if set.RealityEnabled {
 		tags = append(tags, TagReality)
 	}
 	for _, c := range custom {
+		if c.Protocol == model.InbHysteria {
+			continue // rebuilt, not live-updated (see above)
+		}
 		tags = append(tags, c.Tag())
 	}
 	return tags
@@ -734,6 +788,19 @@ func warpOutbound(set *model.Settings) Outbound {
 			Address:   addrs,
 			Reserved:  reserved,
 			MTU:       1280,
+			// Userspace WireGuard, NOT a kernel TUN device. Xray picks kernel mode
+			// whenever it has CAP_NET_ADMIN — which our systemd unit grants it for
+			// nftables and the BBR sysctls — and that mode LEAKS: every Xray start
+			// adds an `ip -6 rule` pair and a routing table it never removes. The
+			// panel restarts Xray on each config change, so the leak grows all day
+			// until Xray dies on "failed to find available ipv6 table index" and
+			// refuses to start at all. That takes down every VPN lane, not just WARP.
+			// Observed on the test box: 30 stale rules and a dead Xray.
+			//
+			// Userspace mode is slower than kernel TUN, and that is the right trade:
+			// a WARP lane at reduced throughput beats a panel that stops serving
+			// after enough edits.
+			NoKernelTun: true,
 			Peers: []WireGuardPeer{{
 				PublicKey:  set.WarpPublicKey,
 				Endpoint:   set.WarpEndpoint,
@@ -790,7 +857,7 @@ var privateEgressCIDRs = []string{
 	"fe80::/10",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive bool, active map[string]bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive, panelEgressWarp bool, active map[string]bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
 	// the Observatory) routes to a live member, else falls back to direct.
@@ -820,6 +887,20 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	// and VLESS→panel loopback fallbacks happen inside Xray, not via this path, so
 	// normal proxying to public sites is unaffected.
 	addIPRule(out, "block", privateEgressCIDRs)
+
+	// Local traffic that asked for WARP by name, dispatched ahead of every operator
+	// rule: whoever dialled this inbound picked the tunnel deliberately, and a
+	// block/lane rule written for CLIENT traffic has no business redirecting it or
+	// black-holing it. It stays BELOW the private-address floor above on purpose — an
+	// entrance on loopback gets no more reach into the LAN through Xray than a VPN
+	// client does.
+	if panelEgressWarp {
+		out.Rules = append(out.Rules, RouteRule{
+			Type:        "field",
+			InboundTag:  []string{panelEgressTag},
+			OutboundTag: "warp",
+		})
+	}
 
 	// Block lane is always the highest priority.
 	if rc.BlockBittorrent {

@@ -55,7 +55,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_announce, user_autodelete_days, node_api_path, master_label,
 		       geo_refresh_hours, iplist_refresh_hours,
 		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
-		       tg_support_group_id, tg_support_greeting, tg_lang,
+		       tg_support_group_id, tg_support_greeting, tg_lang, tg_proxy, tg_proxy_mode,
 		       tg_user_events, tg_user_expiring_days,
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min
 		FROM settings WHERE id = 1`,
@@ -92,7 +92,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.SubAnnounce, &st.UserAutoDeleteDays, &st.NodeAPIPath, &st.MasterLabel,
 		&st.GeoRefreshHours, &st.IPListRefreshHours,
 		&tgSupportEn, &st.TGSupportBotToken, &st.TGSupportBotUsername,
-		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang,
+		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang, &st.TGProxy, &st.TGProxyMode,
 		&st.TGUserEvents, &st.TGUserExpiringDays,
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
 	)
@@ -133,6 +133,9 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
 	st.TGSupportBotToken = decField(st.TGSupportBotToken)
+	// The proxy URL is a secret like the tokens above it: it commonly carries
+	// user:pass credentials for the operator's proxy.
+	st.TGProxy = decField(st.TGProxy)
 	st.WarpPrivateKey = decField(st.WarpPrivateKey)
 	st.RealityPrivateKey = decField(st.RealityPrivateKey)
 	st.ProxyModePass = decField(st.ProxyModePass)
@@ -148,6 +151,26 @@ func (s *Store) SetTelegramBot(enabled bool, token, cron, lang string) error {
 		`UPDATE settings SET tg_bot_enabled = ?, tg_bot_token = ?, tg_backup_cron = ?,
 		        tg_lang = ?, updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(enabled), encField(token), cron, lang,
+	)
+	return err
+}
+
+// SetTelegramProxy persists how Telegram is reached: the mode (direct/warp/opera/
+// custom) and, for the custom mode, the URL. It gets its own setter rather than
+// riding along in SetTelegramBot because it is not the admin bot's: the user bot,
+// the support bot and the Mini App SDK fetch all read the same value.
+//
+// The URL is written whatever the mode, so switching to warp/opera and back leaves
+// the operator's hand-typed address still in the box instead of erasing it.
+//
+// Encrypted at rest — a proxy URL usually carries credentials. The mode is not: it
+// is one of four fixed words and encrypting it would only make the column
+// unreadable in a support session.
+func (s *Store) SetTelegramProxy(mode, raw string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET tg_proxy_mode = ?, tg_proxy = ?, updated_at = unixepoch()
+		 WHERE id = 1`,
+		mode, encField(raw),
 	)
 	return err
 }

@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/abuse"
+	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/autobackup"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/connguard"
@@ -228,16 +228,27 @@ func runServer(dataDir string) {
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot
 	// still gets automatic backups; idles until a cron is set in Settings.
 	go autobackup.New(mgr, st, dataDir).Run(context.Background())
-	// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
-	// enabled with a token in Settings → Telegram, re-reading config each cycle.
-	go telegram.New(mgr, st, dataDir).Run(context.Background())
-	// Telegram user bot: public self-service for VPN clients (registration,
-	// subscription, stats). Idles until enabled with its own token in Settings.
-	go telegram.NewUser(mgr, st).Run(context.Background())
-	// Telegram support bot: relays messages between a user's private chat and a
-	// per-user topic in the operator's forum supergroup. Idles until enabled with its
-	// own token and a group in Settings → Telegram.
-	go telegram.NewSupport(mgr, st).Run(context.Background())
+	// All three bots reach Telegram through the same egress, and in the WARP / Opera
+	// modes that egress is something this very startup brought up moments ago — Xray
+	// needs a couple of seconds past "process started" before its inbound accepts.
+	// Launched straight away they dial a refused port and then sit out their retry
+	// backoff, so the bots stay silent for ~40s after every restart. One bounded wait,
+	// shared by all three, off the startup path so the panel still serves meanwhile
+	// (it returns immediately for the direct and custom routes).
+	go func() {
+		ctx := context.Background()
+		mgr.AwaitTelegramEgress(ctx)
+		// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
+		// enabled with a token in Settings → Telegram, re-reading config each cycle.
+		go telegram.New(mgr, st, dataDir).Run(ctx)
+		// Telegram user bot: public self-service for VPN clients (registration,
+		// subscription, stats). Idles until enabled with its own token in Settings.
+		go telegram.NewUser(mgr, st).Run(ctx)
+		// Telegram support bot: relays messages between a user's private chat and a
+		// per-user topic in the operator's forum supergroup. Idles until enabled with
+		// its own token and a group in Settings → Telegram.
+		go telegram.NewSupport(mgr, st).Run(ctx)
+	}()
 	// Broadcast delivery. Polls the store rather than holding a queue, so a restart
 	// mid-run resumes from the remaining recipients instead of losing or repeating.
 	go telegram.NewBroadcast(st, dataDir).Run(context.Background())
@@ -410,7 +421,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
-		mgr.PurgeOldAbuse() // blocklist matches past their (short) window
+		mgr.PurgeOldAbuse()     // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()   // per-day traffic history past a year
 		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
 		mgr.PurgeDeletedNodes() // reclaim node tombstones past their grace window

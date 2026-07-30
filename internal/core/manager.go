@@ -101,6 +101,7 @@ type Manager struct {
 	tgSDKBody   []byte        // cached telegram.org telegram-web-app.js (nil until first fetch)
 	tgSDKAt     time.Time     // when tgSDKBody was fetched
 	tgSDKFailAt time.Time     // when the last fetch failed; suppresses inline retries for a cooldown
+	tgSDKLogAt  time.Time     // when the last fetch failure was logged; rate-limits that line
 	tgSDKWait   chan struct{} // non-nil while a fetch is in flight; closed when it lands (singleflight)
 
 	// userNotify pushes a message to a VPN user's Telegram chat (set by the user
@@ -567,20 +568,25 @@ func (m *Manager) syncUsers() error {
 	}
 	m.setApplied(users)
 	// Xray's HandlerService can't live-apply user changes to a Hysteria2 (QUIC)
-	// inbound — its authenticator is fixed when the inbound starts. The live adu/rmu
-	// above already made the TCP lanes reflect the change instantly; only Hysteria
-	// still needs a restart to pick it up. Defer that through the normal reconcile
-	// path instead of restarting inline: the reconcile debounce coalesces a burst of
-	// user changes into a SINGLE restart, and live traffic isn't dropped on every add
-	// when nothing but Hysteria membership needs the reload. Trade-off: a removed/
-	// disabled user keeps Hysteria access until this restart (~1 debounce cycle
-	// later) — acceptable, and the TCP lanes were already revoked live.
+	// inbound: `adu` rejects it outright, and `rmu` reports success while removing
+	// nothing — so a revoked user would keep their QUIC access. The live adu/rmu above
+	// therefore skip Hysteria entirely (see xray.UserInbounds / EnabledInboundTags),
+	// and its user set is swapped by REBUILDING the inbound through the API.
 	//
-	// A CUSTOM Hysteria2 inbound counts exactly the same. Testing only the built-in
-	// lane would leave a removed user tunnelling through a custom QUIC inbound until
-	// something unrelated happened to trigger a reconcile.
-	if set.HysteriaEnabled || hasHysteria(custom) {
-		m.TriggerReconcile()
+	// That rebuild replaces what used to be a full Xray restart. A restart dropped
+	// every other lane's connections and the panel's own (:443 is Xray's; the panel
+	// sits on its fallback) for a change confined to one inbound. Only the QUIC
+	// sessions of the rebuilt lane are lost now — the users whose set just changed.
+	//
+	// A CUSTOM Hysteria2 inbound counts exactly the same, which is why the list comes
+	// from the generated config by protocol rather than from the built-in lane alone.
+	if hy := xray.HysteriaInbounds(cfg); len(hy) > 0 {
+		if err := m.sup.ReplaceInbounds(apiAddr, hy); err != nil {
+			// rmi may already have landed, so that lane could be down. A full
+			// reconcile is the one thing guaranteed to put it back.
+			logWarn("xray: rebuilding the hysteria inbounds failed; falling back to a full reload", "err", err)
+			m.TriggerReconcile()
+		}
 	}
 	return m.store.MarkConfigApplied()
 }

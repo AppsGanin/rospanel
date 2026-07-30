@@ -59,7 +59,7 @@ func (s *Service) maybeBackup(ctx context.Context) {
 }
 
 func (s *Service) runScheduledBackup(ctx context.Context, set *model.Settings, chats []int64) {
-	client := s.clientFor(strings.TrimSpace(set.TGBotToken))
+	client := s.clientFor(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
 	if err := SendBackup(ctx, client, chats, s.dataDir, s.panel.BackupManifest(),
 		s.store.Checkpoint, i18n.T(s.lang(), "admin.backupAuto")); err != nil {
 		log.Printf("telegram: scheduled backup: %v", err)

@@ -216,6 +216,12 @@ func (rt *Router) getRouting(w http.ResponseWriter, _ *http.Request) {
 		"opera_country":   set.OperaCountryOr(),
 		"opera_running":   rt.mgr.OperaRunning(),
 		"opera_alive":     rt.mgr.OperaHealthy(),
+		// Where anything ON this box can dial to leave through each lane, empty when
+		// that lane is off. Published so an operator can point the Telegram proxy — or
+		// anything else — at an egress the panel already runs, without having to know
+		// its loopback port.
+		"warp_proxy_url":  set.WarpProxyURL(),
+		"opera_proxy_url": set.OperaProxyURL(),
 		"proxy_count":     rt.mgr.ProxyCount(),  // total across all lanes
 		"proxy_counts":    rt.mgr.ProxyCounts(), // per lane ID
 	})

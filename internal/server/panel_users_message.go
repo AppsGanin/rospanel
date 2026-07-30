@@ -87,7 +87,7 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	client := telegram.NewClient(token)
+	client := telegram.NewClient(token, set.TelegramProxyURL())
 	// Buttons ride along when a caller sends them, rather than being parsed and
 	// dropped: accepting a field and ignoring it answers 200 for a message that isn't
 	// what was asked for.
