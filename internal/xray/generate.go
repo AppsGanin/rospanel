@@ -216,6 +216,20 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		warpTag = "warp"
 	}
 
+	// The entrance to WARP for anything running ON this box — the panel itself, or
+	// whatever the operator points at it. WARP is a WireGuard outbound with no address
+	// of its own, so without this loopback SOCKS inbound there is simply no way for an
+	// ordinary HTTP client to reach it.
+	//
+	// Tied to WARP being available, nothing else. The Routing page publishes this
+	// address (model.Settings.WarpProxyURL) whenever it is up, so the inbound has to
+	// exist for as long as that address is advertised — not only while some particular
+	// consumer happens to be configured to use it.
+	panelEgressWarp := warpTag == "warp"
+	if panelEgressWarp {
+		inbounds = append(inbounds, panelEgressInbound())
+	}
+
 	// Opera VPN egress: an http outbound to the local helper. The lane is routed
 	// through a single-member balancer with an Observatory health-probe (below),
 	// so if the free VPN upstream goes unreachable the lane auto-falls-back to
@@ -290,7 +304,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, active),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, panelEgressWarp, active),
 		Observatory: observatory,
 	}, nil
 }
@@ -348,6 +362,27 @@ func proxyModeInbound(set *model.Settings, sniff *Sniffing) Inbound {
 		Protocol: proto,
 		Settings: settings,
 		Sniffing: sniff,
+	}
+}
+
+// panelEgressTag identifies local traffic entering the WARP tunnel in the routing rules.
+const panelEgressTag = "panel-egress-in"
+
+// panelEgressInbound builds the loopback SOCKS inbound that serves as WARP's address:
+// the tunnel is a WireGuard outbound, which nothing on the box can dial directly.
+//
+// Bound to 127.0.0.1, so unlike proxy mode it is not reachable from the network and
+// needs no credentials — anything that can connect to it is already running on the
+// box. No sniffing either: it is dispatched by inbound tag, not by domain, and the
+// SOCKS request carries the hostname anyway.
+func panelEgressInbound() Inbound {
+	return Inbound{
+		Tag:      panelEgressTag,
+		Listen:   "127.0.0.1",
+		Port:     model.PanelEgressPort,
+		Protocol: "socks",
+		// UDP off: the panel speaks HTTPS to Telegram over TCP and nothing else.
+		Settings: SocksInboundSettings{Auth: "noauth", UDP: false},
 	}
 }
 
@@ -790,7 +825,7 @@ var privateEgressCIDRs = []string{
 	"fe80::/10",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive bool, active map[string]bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive, panelEgressWarp bool, active map[string]bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
 	// the Observatory) routes to a live member, else falls back to direct.
@@ -820,6 +855,20 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	// and VLESS→panel loopback fallbacks happen inside Xray, not via this path, so
 	// normal proxying to public sites is unaffected.
 	addIPRule(out, "block", privateEgressCIDRs)
+
+	// Local traffic that asked for WARP by name, dispatched ahead of every operator
+	// rule: whoever dialled this inbound picked the tunnel deliberately, and a
+	// block/lane rule written for CLIENT traffic has no business redirecting it or
+	// black-holing it. It stays BELOW the private-address floor above on purpose — an
+	// entrance on loopback gets no more reach into the LAN through Xray than a VPN
+	// client does.
+	if panelEgressWarp {
+		out.Rules = append(out.Rules, RouteRule{
+			Type:        "field",
+			InboundTag:  []string{panelEgressTag},
+			OutboundTag: "warp",
+		})
+	}
 
 	// Block lane is always the highest priority.
 	if rc.BlockBittorrent {

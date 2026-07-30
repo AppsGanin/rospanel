@@ -940,7 +940,7 @@ func (s *Settings) OperaPortOr() int {
 //
 // Deliberately only two. WARP and Opera are NOT modes here: they are egresses the
 // Routing page owns, and it publishes the loopback address of each one it has
-// running. An operator who wants Telegram to go
+// running (see WarpProxyURL / OperaProxyURL). An operator who wants Telegram to go
 // that way pastes the address as a custom proxy. Modelling them as Telegram modes
 // meant this setting had to know which egresses existed, whether they were up, and
 // had to regenerate the Xray config when it changed — three couplings for something
@@ -949,6 +949,16 @@ const (
 	TGProxyDirect = "direct"
 	TGProxyCustom = "custom"
 )
+
+// PanelEgressPort is the loopback SOCKS inbound Xray exposes as the entrance to the
+// WARP tunnel, which otherwise has no address anything on the box could dial. It is
+// a constant rather than a setting because nothing outside the box can reach it —
+// Xray binds it to 127.0.0.1 — so there is no reason to make an operator choose a
+// number, and one less field is one less thing to misconfigure.
+//
+// It sits just above the Opera helper's default (18080) to keep the loopback
+// helpers together, and is registered with the port-conflict check like any other.
+const PanelEgressPort = 18081
 
 // TGProxyModeOr returns the configured Telegram proxy mode, defaulting to direct.
 func (s *Settings) TGProxyModeOr() string {
@@ -968,6 +978,39 @@ func (s *Settings) TelegramProxyURL() string {
 		return strings.TrimSpace(s.TGProxy)
 	}
 	return ""
+}
+
+// WarpProxyURL is the address anything on this box can dial to leave through the
+// WARP tunnel, or "" when WARP is not available. WARP is a WireGuard outbound with
+// no address of its own, so Xray carries a loopback SOCKS inbound for it (see
+// panelEgressInbound); this is that inbound's address, shown in the Routing page so
+// the operator can point the Telegram proxy — or anything else — at it.
+func (s *Settings) WarpProxyURL() string {
+	if !s.WarpEnabled || !s.WarpRegistered() {
+		return ""
+	}
+	return fmt.Sprintf("socks5://127.0.0.1:%d", PanelEgressPort)
+}
+
+// OperaProxyURL is the address of the local Opera VPN helper, or "" when it is off.
+// Unlike WARP this needs nothing generated: the helper is its own process and
+// already listens on loopback without credentials.
+func (s *Settings) OperaProxyURL() string {
+	if !s.OperaEnabled {
+		return ""
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", s.OperaPortOr())
+}
+
+// IsLocalEgressProxy reports whether raw points at an egress this panel brings up
+// itself, rather than one the operator runs elsewhere. Startup uses it to decide
+// whether waiting for that egress is our business — see AwaitTelegramEgress.
+func (s *Settings) IsLocalEgressProxy(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	return raw == s.WarpProxyURL() || raw == s.OperaProxyURL()
 }
 
 // SubPathOr returns the subscription URL prefix, defaulting to "sub".

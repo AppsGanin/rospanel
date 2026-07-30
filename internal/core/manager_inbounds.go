@@ -156,6 +156,11 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	if set.OperaEnabled {
 		hold(set.OperaPortOr(), "Opera VPN")
 	}
+	// WARP's loopback entrance. Loopback-only, but it still occupies a port on the
+	// box, so a custom inbound must not be allowed to claim it.
+	if set.WarpEnabled && set.WarpRegistered() {
+		hold(model.PanelEgressPort, "WARP local entrance")
+	}
 	return r
 }
 

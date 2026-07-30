@@ -763,6 +763,10 @@ export interface RoutingInfo {
   opera_enabled: boolean
   opera_country: string
   opera_running: boolean
+  // Loopback address anything on the box can dial to leave through that lane, "" when
+  // the lane is off. Paste-able into the Telegram proxy field (or anywhere else).
+  warp_proxy_url?: string
+  opera_proxy_url?: string
   opera_alive: boolean
   proxy_count: number // total live proxies across every lane
   proxy_counts: Record<string, number> // live proxies per lane id
