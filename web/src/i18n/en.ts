@@ -1976,7 +1976,7 @@ const en: Dict = {
     checkOkDetailed: "All set: @{{bot}} is an administrator of “{{group}}”",
     proxy: "Proxy to Telegram",
     proxyHint:
-      "Everything the panel sends to Telegram goes through it: all three bots and the Mini App SDK download. Needed when the server cannot reach Telegram — without it the bots stay silent and the “open in app” buttons on the subscription page stop working. Empty means direct.",
+      "Everything the panel sends to Telegram goes through it: all three bots and the Mini App SDK download.",
     proxyMode: "Connection",
     proxyModeDirect: "Directly",
     proxyModeCustom: "Own proxy",
