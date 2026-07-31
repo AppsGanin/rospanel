@@ -1002,6 +1002,11 @@ function MasterSettingsDialog({
   const [operaRunning, setOperaRunning] = useState(false);
   const [operaAlive, setOperaAlive] = useState(false);
   const [proxyCounts, setProxyCounts] = useState<Record<string, number>>({});
+  // Loopback entrances to the master's own egresses, shown so they can be pasted
+  // elsewhere (the Telegram proxy, most obviously). Master only: a node's addresses
+  // live on that node and mean nothing here.
+  const [warpProxyURL, setWarpProxyURL] = useState("");
+  const [operaProxyURL, setOperaProxyURL] = useState("");
   const [geoStatus, setGeoStatus] = useState<GeoFile[]>([]);
   const [ipListStatus, setIPListStatus] = useState<GeoFile[]>([]);
   const [geoCadence, setGeoCadence] = useState(0);
@@ -1036,6 +1041,8 @@ function MasterSettingsDialog({
         setOperaRunning(info.opera_running);
         setOperaAlive(info.opera_alive);
         setProxyCounts(info.proxy_counts ?? {});
+        setWarpProxyURL(info.warp_proxy_url ?? "");
+        setOperaProxyURL(info.opera_proxy_url ?? "");
       })
       .catch((e) => {
         // If the live routing fetch fails, fall back to the config the node list
@@ -1206,6 +1213,8 @@ function MasterSettingsDialog({
                 operaCountry={r.operaCountry}
                 setOperaCountry={r.setOperaCountry}
                 operaBadge={operaBadge}
+                warpProxyURL={warpProxyURL}
+                operaProxyURL={operaProxyURL}
                 proxyCounts={proxyCounts}
                 geosite={geo.geosite}
                 geoip={geo.geoip}

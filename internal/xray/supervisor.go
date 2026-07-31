@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,6 +57,11 @@ type Supervisor struct {
 	closed    bool       // panel is shutting down; do not (re)start, ever
 	restarts  int        // consecutive crash restarts (backoff exponent)
 	lastApply time.Time  // when the last Apply() succeeded (zero if never)
+	// appliedCfg is the config the RUNNING process was started with. Apply compares
+	// against this, not against the file: WriteConfig deliberately moves the file
+	// ahead of the process (see its doc), so a file comparison would read "nothing
+	// changed" for precisely the change that still needs a restart.
+	appliedCfg []byte
 	// suspended is Stop's reversible twin: Xray is meant to stay down until somebody
 	// deliberately starts it again. It has to be checked everywhere `closed` is,
 	// because the crash supervisor is otherwise perfectly happy to bring Xray back
@@ -215,6 +221,19 @@ func childTZ() string {
 	return name
 }
 
+// LastApply is when a config was last applied, whether or not that required a
+// restart. The UI waits on this: with Apply now able to be a no-op, waiting only for
+// a newer start time would leave the "applying…" modal spinning out its full timeout
+// every time a save turned out not to change the config.
+func (s *Supervisor) LastApply() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastApply.IsZero() {
+		return 0
+	}
+	return s.lastApply.Unix()
+}
+
 // Running reports whether the Xray child process is currently up. Reflects
 // reality: a crashed process clears s.cur until a restart succeeds. Callers that
 // drive logic (health decisions, auto-restart) want this exact instantaneous truth.
@@ -317,7 +336,17 @@ func (s *Supervisor) ValidateConfig(cfg *Config) error {
 }
 
 // Apply writes the config atomically (validating first when possible) and
-// restarts Xray.
+// restarts Xray — unless the config it generated is the one already running, in
+// which case it does nothing at all.
+//
+// That check matters far more than it looks. A restart drops EVERY live VPN
+// connection, and the panel itself is served through Xray (:443 → the VLESS
+// fallback → the loopback panel), so it also kills the admin's browser connection
+// mid-request. Meanwhile plenty of saves reach here without changing the generated
+// config: renaming a lane, switching a client fingerprint, toggling TLS fragment or
+// block-QUIC — all of those live only in the subscription links, never in this file.
+// Every one of them used to bounce every user off the VPN and hand the operator a
+// "Failed to fetch" for a save that had in fact succeeded.
 func (s *Supervisor) Apply(cfg *Config) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -326,6 +355,20 @@ func (s *Supervisor) Apply(cfg *Config) error {
 
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
+
+	// Already running exactly this: nothing to do. Compared against what the live
+	// process was started with — NOT the file on disk, which WriteConfig moves ahead
+	// of the process on purpose. Both halves are required: with Xray down this is how
+	// it gets started, so a match must not stop us.
+	s.mu.Lock()
+	sameAsRunning := s.cur != nil && s.appliedCfg != nil && bytes.Equal(s.appliedCfg, data)
+	if sameAsRunning {
+		s.lastApply = time.Now()
+	}
+	s.mu.Unlock()
+	if sameAsRunning {
+		return nil
+	}
 
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o700); err != nil {
 		return err
@@ -363,6 +406,9 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	}
 	s.mu.Lock()
 	s.lastApply = time.Now()
+	// Remember what the process now runs, so the next Apply can tell a real change
+	// from a re-application of the same thing.
+	s.appliedCfg = data
 	s.mu.Unlock()
 	return nil
 }
@@ -405,6 +451,10 @@ func (s *Supervisor) ApplyRaw(data []byte) error {
 	}
 	s.mu.Lock()
 	s.lastApply = time.Now()
+	// Keep the invariant Apply relies on: appliedCfg is whatever the running process
+	// was started with. Nodes only ever come through here, but leaving it stale would
+	// be a trap for the first caller that mixes the two paths.
+	s.appliedCfg = data
 	s.mu.Unlock()
 	return nil
 }
@@ -465,6 +515,8 @@ func (s *Supervisor) WriteConfig(cfg *Config) error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
+	// appliedCfg is deliberately NOT updated: the running process still has the old
+	// config, and that difference is what tells the next Apply it must restart.
 	return os.Rename(tmp, s.configPath)
 }
 
@@ -515,8 +567,111 @@ func (s *Supervisor) AddUsers(apiAddr string, inbounds []Inbound) error {
 	}
 	f.Close()
 
-	if _, err := s.runXray(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name()); err != nil {
+	out, err := s.runXray(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name())
+	if err != nil {
 		return fmt.Errorf("api adu: %w", err)
+	}
+	// `xray api adu` exits 0 even when it adds nobody: a rejected inbound prints its
+	// reason and the run still ends "Added N user(s) in total". Comparing N against
+	// what we asked for is the only reliable signal — matching on error text would
+	// miss a PARTIAL failure, where some inbounds took their users and one did not
+	// (that run still reports a non-zero N). A user silently missing from one lane
+	// until something unrelated regenerates the config is exactly what this catches.
+	if want := countInboundUsers(inbounds); reportedAdded(out) != want {
+		return fmt.Errorf("api adu added %d of %d user entries: %s",
+			reportedAdded(out), want, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
+// addedRe pulls N out of xray's closing "Added N user(s) in total." line.
+var addedRe = regexp.MustCompile(`Added (\d+) user\(s\)`)
+
+// reportedAdded is how many user entries xray says it added, or -1 when its output
+// carries no such line (an output shape we don't recognise is not a success).
+func reportedAdded(out []byte) int {
+	m := addedRe.FindSubmatch(out)
+	if m == nil {
+		return -1
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// countInboundUsers totals the user entries across inbounds — the number xray should
+// report back. Settings is an interface, so this enumerates the shapes AddUsers is
+// ever handed; an unrecognised one contributes nothing rather than guessing.
+func countInboundUsers(inbounds []Inbound) int {
+	n := 0
+	for _, in := range inbounds {
+		switch s := in.Settings.(type) {
+		case VLESSInboundSettings:
+			n += len(s.Clients)
+		case TrojanInboundSettings:
+			n += len(s.Clients)
+		case HysteriaInboundSettings:
+			n += len(s.Users)
+		}
+	}
+	return n
+}
+
+// ReplaceInbounds rebuilds whole inbounds in the running Xray: each one is removed
+// and re-added through the API, which reconstructs it from scratch — users included.
+//
+// This exists for Hysteria2. Xray's HandlerService cannot manage users on a QUIC
+// inbound: `adu` refuses outright ("unsupported inbound type") and, worse, `rmu`
+// reports success while doing nothing, so a revoked user keeps their access. The
+// only way to change that user set was a full Xray restart, which drops every OTHER
+// lane's connections and the panel's own (:443 is Xray's; the panel sits on its
+// fallback) for a change that concerns one inbound.
+//
+// Verified against Xray 26.6.27: rmi + adi swap the user set with the process
+// untouched — same pid, same listening socket.
+//
+// Failure is the caller's to handle: rmi may have already landed, leaving that lane
+// down, so a caller that cannot fix it must fall back to a full reconcile.
+func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
+	if s.bin == "" {
+		return fmt.Errorf("xray binary unavailable")
+	}
+	for _, in := range inbounds {
+		if in.Tag == "" {
+			return fmt.Errorf("inbound with no tag")
+		}
+		data, err := json.Marshal(map[string]any{"inbounds": []Inbound{in}})
+		if err != nil {
+			return err
+		}
+		f, err := os.CreateTemp("", "xray-adi-*.json")
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(data); err != nil {
+			f.Close()
+			os.Remove(f.Name())
+			return err
+		}
+		f.Close()
+
+		// A failed removal is not fatal on its own — an inbound that isn't there is
+		// exactly the state the add below wants. Only the add has to succeed.
+		if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, in.Tag); err != nil {
+			slog.Warn("xray: could not remove inbound before re-adding it", "tag", in.Tag, "err", err)
+		}
+		out, err := s.runXray(statsTimeout, "api", "adi", "--server="+apiAddr, f.Name())
+		os.Remove(f.Name())
+		if err != nil {
+			return fmt.Errorf("api adi tag=%s: %w", in.Tag, err)
+		}
+		// The CLI exits 0 even when it added nothing, so the output is the only
+		// evidence. Leaving that unchecked is how a lane could quietly stay down.
+		if bytes.Contains(out, []byte("failed to")) {
+			return fmt.Errorf("api adi tag=%s: %s", in.Tag, bytes.TrimSpace(out))
+		}
 	}
 	return nil
 }

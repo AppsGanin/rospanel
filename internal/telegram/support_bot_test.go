@@ -207,14 +207,14 @@ func TestClosedTopicIsDistinctFromDeleted(t *testing.T) {
 // bot's backlog and swallows messages until its counter catches up — silently.
 func TestTokenSwapResetsOffset(t *testing.T) {
 	s := supportService(t)
-	s.clientFor("111:AAA")
+	s.clientFor("111:AAA", "")
 	s.offset = 4000
-	s.clientFor("222:BBB")
+	s.clientFor("222:BBB", "")
 	if s.offset != 0 {
 		t.Fatalf("offset = %d after a token change, want 0", s.offset)
 	}
 	s.offset = 12
-	s.clientFor("222:BBB")
+	s.clientFor("222:BBB", "")
 	if s.offset != 12 {
 		t.Fatalf("offset reset on an unchanged token: %d", s.offset)
 	}

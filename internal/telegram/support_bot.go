@@ -30,7 +30,8 @@ type SupportService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
-	botID       int64 // getMe result for the current token, resolved once
+	clientProxy string // proxy the cached client was built with; a change rebuilds it
+	botID       int64  // getMe result for the current token, resolved once
 	offset      int64
 
 	rate *chatLimiter
@@ -95,12 +96,12 @@ func NewSupport(panel Panel, st *store.Store) *SupportService {
 	}
 }
 
-func (s *SupportService) clientFor(token string) *Client {
+func (s *SupportService) clientFor(token, proxy string) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client == nil || s.clientToken != token {
-		s.client = NewClient(token)
-		s.clientToken = token
+	if s.client == nil || s.clientToken != token || s.clientProxy != proxy {
+		s.client = NewClient(token, proxy)
+		s.clientToken, s.clientProxy = token, proxy
 		// Update ids are per-bot and a new bot starts from scratch. Carrying the old
 		// offset over would ACK away the new bot's whole backlog and swallow every
 		// message until its counter caught up — silently, with nothing logged.
@@ -143,7 +144,7 @@ func (s *SupportService) Run(ctx context.Context) {
 			}
 			continue
 		}
-		client := s.clientFor(strings.TrimSpace(set.TGSupportBotToken))
+		client := s.clientFor(strings.TrimSpace(set.TGSupportBotToken), set.TelegramProxyURL())
 		updates, err := client.GetUpdatesFor(ctx, s.offset, pollTimeout, supportAllowedUpdates)
 		if err != nil {
 			if ctx.Err() != nil {

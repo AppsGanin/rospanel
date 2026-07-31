@@ -323,6 +323,9 @@ const ru = {
     autodeleteRange: "срок хранения истёкших: от 0 (не удалять) до {{max}} дней",
     backupKeepRange: "число хранимых копий должно быть от 0 до {{max}} (0 — хранить все)",
     badCron: "неверное расписание (cron): {{err}}",
+    badTelegramProxy: "неверный адрес прокси: {{err}}",
+    telegramProxyRequired: "укажите адрес прокси",
+    unknownTelegramProxyMode: "неизвестный режим прокси {{value}}",
     badResetPeriod: "неверный период сброса {{value}}",
     buttonLinkScheme: "ссылка кнопки «{{label}}» должна начинаться с http:// или https://",
     donorCertTooBig: "сертификат донора {{host}} слишком большой ({{size}} Б) — REALITY-хендшейк не завершается на этой версии Xray, если запись сертификата больше {{limit}} Б (issue #6402). Выберите сайт с меньшим сертификатом, например www.cloudflare.com, www.apple.com или dl.google.com",
@@ -1977,6 +1980,13 @@ const ru = {
     testBackupSent: "Тестовый бэкап отправлен",
     checkOk: "Проверка прошла успешно",
     checkOkDetailed: "Всё готово: @{{bot}} — администратор группы «{{group}}»",
+    proxy: "Прокси до Telegram",
+    proxyHint:
+      "Через него идёт всё, что панель отправляет в Telegram: все три бота и загрузка SDK для мини-приложения.",
+    proxyMode: "Подключение",
+    proxyModeDirect: "Напрямую",
+    proxyModeCustom: "Свой прокси",
+    proxyUrl: "Адрес прокси",
     adminBot: "Админ-бот",
     adminBotHint:
       "Управление пользователями и бэкапы. Доступ только по коду привязки из панели.",

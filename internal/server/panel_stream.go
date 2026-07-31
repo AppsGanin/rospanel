@@ -16,7 +16,12 @@ import (
 // has finished restarting Xray (started_at advances on each reload).
 func (rt *Router) xrayStatus(w http.ResponseWriter, _ *http.Request) {
 	running, startedAt := rt.mgr.XrayStatus()
-	writeJSON(w, http.StatusOK, map[string]any{"running": running, "started_at": startedAt})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"running": running, "started_at": startedAt,
+		// Advances on every apply, including the ones that changed nothing and so
+		// did not restart — that is how the UI tells "done" from "still going".
+		"applied_at": rt.mgr.XrayAppliedAt(),
+	})
 }
 
 // xrayRestart bounces the Xray child from the config on disk. It drops every live
