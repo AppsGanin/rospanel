@@ -184,6 +184,9 @@ type WireGuardSettings struct {
 	Peers     []WireGuardPeer `json:"peers"`
 	Reserved  []int           `json:"reserved,omitempty"`
 	MTU       int             `json:"mtu,omitempty"`
+	// NoKernelTun forces the userspace (netstack) WireGuard implementation instead
+	// of a real kernel TUN device. See warpOutbound for why this is not optional.
+	NoKernelTun bool `json:"noKernelTun,omitempty"`
 }
 
 // WireGuardPeer is one WireGuard peer (Cloudflare's WARP endpoint).

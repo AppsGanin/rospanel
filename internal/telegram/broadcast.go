@@ -31,6 +31,7 @@ type BroadcastService struct {
 	mu          sync.Mutex
 	client      *Client
 	clientToken string
+	clientProxy string    // proxy the cached client was built with; a change rebuilds it
 	warnedAt    time.Time // last "stalled, bot is off" warning
 	sweptAt     time.Time // last attachment sweep
 	// poisoned parks runs whose outcomes cannot be recorded, keyed by id → expiry.
@@ -73,12 +74,12 @@ func NewBroadcast(st *store.Store, dataDir string) *BroadcastService {
 	return &BroadcastService{store: st, dataDir: dataDir, poisoned: map[int64]time.Time{}}
 }
 
-func (s *BroadcastService) clientFor(token string) *Client {
+func (s *BroadcastService) clientFor(token, proxy string) *Client {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.client == nil || s.clientToken != token {
-		s.client = NewClient(token)
-		s.clientToken = token
+	if s.client == nil || s.clientToken != token || s.clientProxy != proxy {
+		s.client = NewClient(token, proxy)
+		s.clientToken, s.clientProxy = token, proxy
 	}
 	return s.client
 }
@@ -131,7 +132,7 @@ func (s *BroadcastService) step(ctx context.Context) bool {
 		return s.finish(b)
 	}
 
-	client := s.clientFor(strings.TrimSpace(set.TGUserBotToken))
+	client := s.clientFor(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
 	// An attachment is uploaded once, to the first recipient, and every later send
 	// reuses the file_id — otherwise the same bytes go over the wire once per person.
 	if b.MediaKind != "" && b.MediaFileID == "" {

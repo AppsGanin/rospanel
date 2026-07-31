@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   cn,
+  Code,
   IconChevron,
   Select,
   SegmentedControl,
@@ -468,6 +469,19 @@ export function effectiveCfg(
 }
 
 // RoutingEditor is the controlled, container-agnostic routing/egress editor shared
+// LocalEgressAddress shows the loopback address that reaches this lane, so an
+// operator can send something else down it — the Telegram proxy field being the
+// reason it exists. Rendered only when the lane is actually up: an address for a
+// switched-off egress is a dead port dressed as an instruction.
+function LocalEgressAddress({ url }: { url?: string }) {
+  if (!url) return null;
+  return (
+    <Code copy block>
+      {url}
+    </Code>
+  );
+}
+
 // by the master's routing tab and every node's settings dialog. It owns NO state:
 // the parent holds cfg/laneSrc/WARP/Opera and drives saving (the master via a
 // SaveBar, a node via its dialog footer). Live lane/helper status is passed in via
@@ -486,6 +500,8 @@ export function RoutingEditor({
   operaCountry,
   setOperaCountry,
   operaBadge,
+  warpProxyURL,
+  operaProxyURL,
   proxyCounts,
   geosite,
   geoip,
@@ -505,6 +521,10 @@ export function RoutingEditor({
   operaCountry: string;
   setOperaCountry: (v: string) => void;
   operaBadge: StatusBadge;
+  // Loopback address that reaches this lane, "" when it is off or when this editor is
+  // showing a node (whose addresses are only dialable on that node).
+  warpProxyURL?: string;
+  operaProxyURL?: string;
   proxyCounts: Record<string, number>;
   geosite: string[];
   geoip: string[];
@@ -769,6 +789,7 @@ export function RoutingEditor({
           options={ipOpts(cfg.warp_ips)}
           placeholder={t("route.ipPlaceholder")}
         />
+        <LocalEgressAddress url={warpProxyURL} />
       </Section>
 
       {/* Opera VPN */}
@@ -808,6 +829,7 @@ export function RoutingEditor({
           options={ipOpts(cfg.opera_ips)}
           placeholder={t("route.ipPlaceholder")}
         />
+        <LocalEgressAddress url={operaProxyURL} />
       </Section>
 
       {/* Proxy lanes */}

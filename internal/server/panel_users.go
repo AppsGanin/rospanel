@@ -20,7 +20,7 @@ func (rt *Router) listUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.applyTLSHints(set)
-	bot := botUsername(r.Context(), set.TGUserBotToken)
+	bot := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())
 	custom := rt.localInbounds()
 	groupsMap, _ := rt.mgr.GroupsForAllUsers()
 	accessMap, _ := rt.mgr.Store().AccessMap()
@@ -56,7 +56,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusCreated, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
+	writeJSON(w, http.StatusCreated, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
 }
 
 // bulkUsers applies one action to a set of users in a single pass (one Xray sync),
@@ -128,7 +128,7 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken)))
+	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
 }
 
 // unlinkUserTelegram detaches a VPN user's linked Telegram chat (admin action).
@@ -148,7 +148,7 @@ func (rt *Router) genUserTelegramLink(w http.ResponseWriter, r *http.Request, id
 		writeManagerErr(w, err)
 		return
 	}
-	bot := botUsername(r.Context(), set.TGUserBotToken)
+	bot := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())
 	if !set.TGUserBotEnabled || bot == "" {
 		writeErrCode(w, http.StatusBadRequest, "err.userBotUnavailable", "пользовательский бот выключен или недоступен")
 		return
