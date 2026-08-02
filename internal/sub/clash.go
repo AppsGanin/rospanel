@@ -35,6 +35,14 @@ type clashProxy struct {
 }
 
 // clashProxies builds the enabled-lane Clash proxy entries for a user on one server.
+//
+// Every stream-based lane carries `udp: true`. Mihomo defaults a proxy's UDP support
+// to FALSE, and when a rule resolves to a proxy that can't take UDP it SKIPS that
+// rule and keeps matching — the packet falls through to DIRECT instead of the tunnel.
+// That is what broke Telegram calls on mihomo clients (Koala Clash, FlClashX): the
+// voice UDP left untunneled and the censor dropped it. Xray-core clients have no such
+// flag and were never affected, and Hysteria2 escaped it only because mihomo hardcodes
+// UDP support for that protocol — hence "calls work only on the Hysteria lane".
 func clashProxies(u model.User, srv Server) []clashProxy {
 	set := srv.Set
 	sv := "false" // skip-cert-verify: true only for a self-signed/IP cert
@@ -45,13 +53,13 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		n := link.Label(model.ProtoVLESS, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
+			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, udp: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
 			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
 	}
 	if set.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
 		n := link.Label(model.ProtoReality, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
+			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, udp: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
 			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityPathOr())})
 	}
 	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
@@ -108,7 +116,7 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 	} else {
 		fmt.Fprintf(&b, ", password: %q", u.Password)
 	}
-	fmt.Fprintf(&b, ", network: %s", o.Transport)
+	fmt.Fprintf(&b, ", network: %s, udp: true", o.Transport)
 
 	switch o.Security {
 	case model.SecTLS:
@@ -203,7 +211,7 @@ func ClashYAMLMulti(u model.User, servers []Server) string {
 		b.WriteString(p.line + "\n")
 		quoted[i] = fmt.Sprintf("%q", p.name)
 	}
-	group := SubTitle(u, local)
+	group := clashGroupName(u, local)
 	fmt.Fprintf(&b,
 		"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
 		group, strings.Join(quoted, ", "))
@@ -213,8 +221,22 @@ func ClashYAMLMulti(u model.User, servers []Server) string {
 		// TCP lanes; the browser falls back to TCP+H2 inside the tunnel.
 		b.WriteString("  - AND,((NETWORK,udp),(DST-PORT,443)),REJECT\n")
 	}
-	fmt.Fprintf(&b, "  - MATCH,%q\n", group)
+	// The WHOLE rule is one quoted YAML scalar, never `MATCH,%q`: a rule is a plain
+	// string that mihomo splits on commas itself, so quoting only the group name left
+	// the quotes IN the target and the profile was rejected outright with
+	// `rules[N] [MATCH,"..."] error: proxy ["..."] not found`. Quoting the whole line
+	// also keeps a title containing ": " from turning the list item into a YAML map.
+	fmt.Fprintf(&b, "  - %q\n", "MATCH,"+group)
 	return b.String()
+}
+
+// clashGroupName is the select-group name for the generated profile. Mihomo parses a
+// rule line by splitting on commas, so a comma in the operator's subscription title
+// (or the user name appended to it) would be read as a rule separator and shift the
+// MATCH target — strip it here, where both the group definition and the rule read the
+// same name.
+func clashGroupName(u model.User, set *model.Settings) string {
+	return strings.TrimSpace(strings.ReplaceAll(SubTitle(u, set), ",", " "))
 }
 
 // ClashWithTemplateMulti injects the user's proxies into a RoscomVPN-style Mihomo
