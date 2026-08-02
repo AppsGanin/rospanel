@@ -203,6 +203,10 @@ func (s *Store) SetGroupMembers(groupID int64, userIDs []int64) error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
+	viaPlan, err := planOwnedIn(tx, `SELECT user_id, via_plan FROM group_members WHERE group_id = ?`, groupID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM group_members WHERE group_id = ?`, groupID); err != nil {
 		return err
 	}
@@ -213,7 +217,8 @@ func (s *Store) SetGroupMembers(groupID int64, userIDs []int64) error {
 		}
 		seen[uid] = true
 		if _, err := tx.Exec(
-			`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, groupID, uid,
+			`INSERT INTO group_members (group_id, user_id, via_plan) VALUES (?, ?, ?)`,
+			groupID, uid, boolToInt(viaPlan[uid]),
 		); err != nil {
 			return err
 		}
@@ -228,6 +233,10 @@ func (s *Store) SetUserGroups(userID int64, groupIDs []int64) error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
+	viaPlan, err := planOwnedIn(tx, `SELECT group_id, via_plan FROM group_members WHERE user_id = ?`, userID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM group_members WHERE user_id = ?`, userID); err != nil {
 		return err
 	}
@@ -238,12 +247,83 @@ func (s *Store) SetUserGroups(userID int64, groupIDs []int64) error {
 		}
 		seen[gid] = true
 		if _, err := tx.Exec(
-			`INSERT INTO group_members (group_id, user_id) VALUES (?, ?)`, gid, userID,
+			`INSERT INTO group_members (group_id, user_id, via_plan) VALUES (?, ?, ?)`,
+			gid, userID, boolToInt(viaPlan[gid]),
 		); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// planOwnedIn reads the via_plan flag of the rows a replace-everything membership edit
+// is about to wipe, keyed by the id that varies (the user, or the group). Both editors
+// re-insert with the flag they found, so a hand edit that keeps a plan-granted row
+// keeps it plan-granted — otherwise saving the user card would quietly convert the
+// plan's own grants into manual ones and the next plan switch could not take them back.
+func planOwnedIn(tx *sql.Tx, query string, arg int64) (map[int64]bool, error) {
+	rows, err := tx.Query(query, arg)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		var via int
+		if err := rows.Scan(&id, &via); err != nil {
+			return nil, err
+		}
+		out[id] = via != 0
+	}
+	return out, rows.Err()
+}
+
+// ExistingGroupIDs filters ids down to the groups that still exist, de-duplicated and
+// in the caller's order. Its own query rather than a filter over Groups(): the caller
+// (saving a tariff plan) needs existence only, and Groups() drags every membership row
+// in the install along with it.
+func (s *Store) ExistingGroupIDs(ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(ids))
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		args = append(args, id)
+	}
+	if len(args) == 0 {
+		return nil, nil
+	}
+	q := `SELECT id FROM groups WHERE id IN (?` + strings.Repeat(",?", len(args)-1) + `)`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	live := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		live[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]int64, 0, len(args))
+	for _, id := range ids {
+		if live[id] {
+			delete(live, id) // keep the caller's order, drop duplicates
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 // GroupsForUser returns the groups a user belongs to (id + name), for the user views.

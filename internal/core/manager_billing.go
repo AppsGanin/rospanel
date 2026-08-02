@@ -59,11 +59,33 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.SortOrder < 0 {
 		p.SortOrder = 0
 	}
+	// Access groups the plan grants. Unknown ids are dropped rather than rejected: a
+	// group deleted while the editor was open would otherwise make the plan unsavable,
+	// and the FK would fail the whole write anyway.
+	groups, err := m.store.ExistingGroupIDs(p.GroupIDs)
+	if err != nil {
+		return err
+	}
+	p.GroupIDs = groups
+	// Whether the grant set moved decides if this save has to regenerate configs.
+	// Read before the write, and only for an existing plan — a new one has no users.
+	// A failed read counts as moved: the store re-syncs the plan's members either way,
+	// so guessing "unchanged" here would leave that with no config to apply it.
+	regroup := false
+	if p.ID > 0 {
+		prev, err := m.store.GetTariffPlan(p.ID)
+		regroup = err != nil || prev == nil || !sameIDs(prev.GroupIDs, p.GroupIDs)
+	}
 	if err := m.store.SaveTariffPlan(p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return invalidCode("err.planSlugTaken", "тариф с таким кодом уже существует")
 		}
 		return err
+	}
+	if regroup {
+		// The store moved everyone already on the plan into (or out of) those groups;
+		// the config has to be regenerated for that to mean anything.
+		m.applyAccessChange()
 	}
 	return nil
 }
@@ -420,7 +442,83 @@ func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset 
 		ResetPeriod: period,
 		ResetAnchor: now,
 		PlanID:      plan.ID,
+		GroupIDs:    plan.GroupIDs,
 	}
+}
+
+// planGroupsChanged reports whether writing w actually moves the user's group
+// membership — the only case that needs the full reconcile a gate change costs (a
+// renewal of the same plan doesn't). It asks the question the write will answer:
+// which rows does it DELETE (plan-owned, no longer granted) and which does it INSERT
+// (granted, not a member by any route yet). Comparing the plan-owned set with the new
+// one alone would keep reporting a change for a user whose hand-assigned membership
+// the plan also grants — that row is never converted, so every renewal would restart
+// Xray for nothing. On a read error it says yes: a needless restart is cheaper than a
+// user left with the lanes of the plan they just left.
+func (m *Manager) planGroupsChanged(w store.UserPlanWrite) bool {
+	owned, err := m.store.UserPlanGroups(w.UserID)
+	if err != nil {
+		return true
+	}
+	granted := make(map[int64]bool, len(w.GroupIDs))
+	for _, id := range w.GroupIDs {
+		granted[id] = true
+	}
+	for _, id := range owned {
+		if !granted[id] {
+			return true // this membership is about to be taken back
+		}
+	}
+	if len(granted) == 0 {
+		return false
+	}
+	current, err := m.store.GroupsForUser(w.UserID)
+	if err != nil {
+		return true
+	}
+	member := make(map[int64]bool, len(current))
+	for _, g := range current {
+		member[g.ID] = true
+	}
+	for id := range granted {
+		if !member[id] {
+			return true // a membership is about to be added
+		}
+	}
+	return false
+}
+
+// sameIDs compares two id lists as sets (order and duplicates don't matter).
+func sameIDs(a, b []int64) bool {
+	sa := make(map[int64]bool, len(a))
+	for _, id := range a {
+		sa[id] = true
+	}
+	sb := make(map[int64]bool, len(b))
+	for _, id := range b {
+		sb[id] = true
+	}
+	if len(sa) != len(sb) {
+		return false
+	}
+	for id := range sa {
+		if !sb[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// afterPlanWrite propagates a committed plan assignment. Limits alone are a live
+// user-sync (no restart); a change in the groups the plan grants is a change to WHICH
+// connections carry the user's credential, which only config generation can apply —
+// so that one reconciles and wakes the nodes, exactly like a group edit.
+func (m *Manager) afterPlanWrite(groupsChanged bool) {
+	if groupsChanged {
+		m.applyAccessChange()
+		return
+	}
+	m.TriggerUserSync()
 }
 
 // ApplyPlanToUser assigns a tariff and updates limits. extendFromCurrent stacks paid time.
@@ -446,10 +544,11 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 	if err != nil {
 		return err
 	}
+	groupsChanged := m.planGroupsChanged(w)
 	if err := m.store.ApplyUserPlan(w); err != nil {
 		return err
 	}
-	m.TriggerUserSync()
+	m.afterPlanWrite(groupsChanged)
 	m.auditPlan(ctx, userID, u.Name, action, prevPlan, planName, w.ExpireAt)
 	return nil
 }
@@ -553,11 +652,12 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (boo
 	if err != nil {
 		return false, err
 	}
+	groupsChanged := m.planGroupsChanged(w)
 	claimed, err := m.store.ConfirmPaymentOrder(order.ID, paidAt, w)
 	if err != nil || !claimed {
 		return false, err
 	}
-	m.TriggerUserSync()
+	m.afterPlanWrite(groupsChanged)
 	return true, nil
 }
 
@@ -615,7 +715,9 @@ func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 		return err
 	}
 	now := time.Now().Unix()
-	if err := m.store.ApplyUserPlan(store.UserPlanWrite{
+	// No GroupIDs: the cancelled plan's groups go with it, like any other move off a
+	// plan (a hand-assigned group stays — it was never the plan's to take).
+	w := store.UserPlanWrite{
 		UserID:      userID,
 		DataLimit:   u.DataLimit,
 		ExpireAt:    now, // expire immediately: there is no free plan to fall back to
@@ -623,10 +725,12 @@ func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 		ResetPeriod: "none",
 		ResetAnchor: now,
 		TrialUsed:   u.TrialUsed,
-	}); err != nil {
+	}
+	groupsChanged := m.planGroupsChanged(w)
+	if err := m.store.ApplyUserPlan(w); err != nil {
 		return err
 	}
-	m.TriggerUserSync()
+	m.afterPlanWrite(groupsChanged)
 	m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{"plan": cancelled})
 	return nil
 }
