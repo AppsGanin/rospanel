@@ -143,6 +143,11 @@ type TariffPlan struct {
 	DeviceLimit int    `json:"device_limit"`
 	SortOrder   int    `json:"sort_order"`
 	Enabled     bool   `json:"enabled"`
+	// GroupIDs are the access groups this plan grants: whoever is put on the plan is
+	// put into these groups, and loses them when they move off it. Empty (the default,
+	// and what every pre-existing plan has) means the plan says nothing about access —
+	// the user keeps whatever groups they were given by hand.
+	GroupIDs []int64 `json:"group_ids"`
 }
 
 // IsFree reports whether this is a free plan. A plan is free iff it has no price:

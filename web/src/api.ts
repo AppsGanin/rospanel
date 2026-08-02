@@ -1208,6 +1208,9 @@ export interface TariffPlan {
   device_limit: number
   sort_order: number
   enabled: boolean
+  // Access groups the plan grants: whoever is put on the plan joins these groups and
+  // leaves them when they move off it. Null/empty = the plan says nothing about access.
+  group_ids: number[] | null
 }
 
 export interface PaymentOrder {

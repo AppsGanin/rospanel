@@ -31,22 +31,77 @@ func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	return &plans[0], nil
 }
 
+// SaveTariffPlan writes the plan row and the access groups it grants together — the
+// groups are part of what the plan IS, so a half-saved plan (new limits, old groups)
+// would be applied to buyers until someone noticed.
 func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
-	if p.ID == 0 {
-		return s.db.QueryRow(
-			`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-			 is_free, sort_order, enabled)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+	// A rolled-back INSERT must not leave its id on the caller's struct: the plan row
+	// is gone, so a retry with that id would UPDATE nothing and report success, and the
+	// operator's plan would quietly not exist.
+	created := p.ID == 0
+	err := s.withTx(func(tx *sql.Tx) error {
+		if p.ID == 0 {
+			if err := tx.QueryRow(
+				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
+				 is_free, sort_order, enabled)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
+				boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
+			).Scan(&p.ID); err != nil {
+				return err
+			}
+		} else if _, err := tx.Exec(
+			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
+			 device_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-			boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
-		).Scan(&p.ID)
+			boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
+		); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM plan_groups WHERE plan_id = ?`, p.ID); err != nil {
+			return err
+		}
+		seen := map[int64]bool{}
+		for _, gid := range p.GroupIDs {
+			if gid == 0 || seen[gid] {
+				continue
+			}
+			seen[gid] = true
+			if _, err := tx.Exec(
+				`INSERT INTO plan_groups (plan_id, group_id) VALUES (?, ?)`, p.ID, gid,
+			); err != nil {
+				return err
+			}
+		}
+		// Everyone already on the plan moves with it: an operator who adds a group to a
+		// plan means "this tariff includes that connection", not "from the next payment
+		// on". Same transaction, so the plan and its members never disagree.
+		return syncPlanMembersOn(tx, p.ID)
+	})
+	if err != nil && created {
+		p.ID = 0
 	}
-	_, err := s.db.Exec(
-		`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
-		 device_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
-		p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-		boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
-	)
+	return err
+}
+
+// syncPlanMembersOn rewrites the plan-granted memberships of everyone currently on the
+// plan to match what the plan now grants. Manual memberships (via_plan = 0) are left
+// exactly as they are — see the migration.
+func syncPlanMembersOn(ex execer, planID int64) error {
+	if _, err := ex.Exec(`
+		DELETE FROM group_members
+		 WHERE via_plan = 1
+		   AND user_id IN (SELECT id FROM users WHERE plan_id = ?)
+		   AND group_id NOT IN (SELECT group_id FROM plan_groups WHERE plan_id = ?)`,
+		planID, planID); err != nil {
+		return err
+	}
+	_, err := ex.Exec(`
+		INSERT INTO group_members (group_id, user_id, via_plan)
+		SELECT pg.group_id, u.id, 1
+		  FROM plan_groups pg JOIN users u ON u.plan_id = pg.plan_id
+		 WHERE pg.plan_id = ?
+		    ON CONFLICT (group_id, user_id) DO NOTHING`, planID)
 	return err
 }
 
@@ -144,7 +199,30 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 	if out == nil {
 		out = []model.TariffPlan{}
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Grants in one pass over the (tiny) join table rather than a query per plan, the
+	// same shape Groups() uses for its tokens.
+	byID := make(map[int64]int, len(out))
+	for i := range out {
+		byID[out[i].ID] = i
+	}
+	grows, err := s.db.Query(`SELECT plan_id, group_id FROM plan_groups ORDER BY group_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer grows.Close()
+	for grows.Next() {
+		var planID, groupID int64
+		if err := grows.Scan(&planID, &groupID); err != nil {
+			return nil, err
+		}
+		if i, ok := byID[planID]; ok {
+			out[i].GroupIDs = append(out[i].GroupIDs, groupID)
+		}
+	}
+	return out, grows.Err()
 }
 
 func (s *Store) SetUserPlan(userID, planID int64, trialUsed bool) error {
@@ -172,6 +250,13 @@ type UserPlanWrite struct {
 	ResetAnchor int64 // last_reset_at: when the rolling quota cycle starts counting
 	PlanID      int64
 	TrialUsed   bool
+	// GroupIDs are the access groups the new plan grants — the user's plan-granted
+	// membership is replaced by exactly this set. It rides along here, rather than
+	// being a separate call after the plan lands, for the reason the rest of this
+	// struct exists: on the purchase path the plan is granted inside the order's paid
+	// claim, and a group write left outside it could be lost to a crash with the money
+	// already taken and nothing left pending to retry.
+	GroupIDs []int64
 }
 
 // ApplyUserPlan writes a plan assignment atomically.
@@ -186,7 +271,60 @@ func applyUserPlanOn(ex execer, p UserPlanWrite) error {
 	if err := setResetPeriodOn(ex, p.UserID, p.ResetPeriod, p.ResetAnchor); err != nil {
 		return err
 	}
-	return setUserPlanOn(ex, p.UserID, p.PlanID, p.TrialUsed)
+	if err := setUserPlanOn(ex, p.UserID, p.PlanID, p.TrialUsed); err != nil {
+		return err
+	}
+	return setPlanGroupsOn(ex, p.UserID, p.GroupIDs)
+}
+
+// setPlanGroupsOn replaces the user's PLAN-granted group membership with groupIDs,
+// leaving every hand-assigned membership alone. Called from inside the plan write, so
+// "which plan" and "which groups" can never land apart.
+func setPlanGroupsOn(ex execer, userID int64, groupIDs []int64) error {
+	if _, err := ex.Exec(
+		`DELETE FROM group_members WHERE user_id = ? AND via_plan = 1`, userID,
+	); err != nil {
+		return err
+	}
+	seen := map[int64]bool{}
+	for _, gid := range groupIDs {
+		if gid == 0 || seen[gid] {
+			continue
+		}
+		seen[gid] = true
+		// DO NOTHING, not REPLACE: an existing row is a manual one, and re-stamping it
+		// via_plan = 1 would hand the operator's own decision to the next plan switch
+		// to undo.
+		if _, err := ex.Exec(
+			`INSERT INTO group_members (group_id, user_id, via_plan) VALUES (?, ?, 1)
+			 ON CONFLICT (group_id, user_id) DO NOTHING`, gid, userID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UserPlanGroups returns the groups a user is in BECAUSE of their plan, so a caller
+// can tell whether a plan write actually changes access (and only then pay for the
+// full reconcile that a membership change needs).
+func (s *Store) UserPlanGroups(userID int64) ([]int64, error) {
+	rows, err := s.db.Query(
+		`SELECT group_id FROM group_members WHERE user_id = ? AND via_plan = 1 ORDER BY group_id`,
+		userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ConfirmPaymentOrder claims the pending→paid transition AND applies the plan that

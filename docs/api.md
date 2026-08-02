@@ -166,6 +166,12 @@ client will display.
 | `POST` | `/v1/billing/orders/{id}/confirm` | Mark an order paid (activates the plan). |
 | `POST` | `/v1/billing/orders/{id}/cancel` | Cancel an order. |
 
+A plan may name the access groups it grants (`"group_ids": [3]`): whoever is put on
+the plan — by a paid order, by `POST /v1/users/{id}/plan`, or at registration — joins
+those groups and leaves them when the plan changes. Memberships assigned directly
+through `POST /v1/users/{id}/groups` are kept; only what the plan granted is taken
+back. An empty list means the plan says nothing about access.
+
 **Create order** — body `{ "user_id": 5, "plan_id": 2 }`. The response carries the
 order and, when a payment provider is configured, a hosted `pay_url` to send the
 user to:

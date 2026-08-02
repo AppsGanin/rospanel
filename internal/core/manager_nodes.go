@@ -285,8 +285,12 @@ func (r *nodeRegistry) dropWaiter(nodeID int64) {
 }
 
 // wakeAll wakes every parked node — used after a user-set change that fans out to
-// all nodes.
+// all nodes. Nil-safe: a Manager assembled without a registry (tests) still has to
+// survive the paths that now reach here, and "no registry" means "no node to wake".
 func (r *nodeRegistry) wakeAll() {
+	if r == nil {
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, ch := range r.waits {

@@ -1761,6 +1761,10 @@ const en: Dict = {
     plansHint:
       "Create and configure plans: limits, price, duration. The free plan is for users after the trial period.",
     noPlans: "No plans yet. Press “Create” to add the first one.",
+    planGroups: "Access groups",
+    planGroupsHint:
+      "Whoever is put on this plan — by payment, by hand or at registration — joins the ticked groups, and leaves them when the plan changes. Groups assigned by hand in the user card are kept. Tick nothing and the plan says nothing about access.",
+    planGroupsNone: "No groups yet — create them under Users → Groups.",
     nUsers: "{{count}} users",
     afterTrial: "after the trial",
     trial: "trial",

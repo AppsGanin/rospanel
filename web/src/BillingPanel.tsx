@@ -4,11 +4,13 @@ import {
   deleteTariffPlan,
   getBilling,
   getPayments,
+  listGroups,
   migratePlanUsers,
   saveBilling,
   savePaymentProvider,
   saveTariffPlan,
   type BillingInfo,
+  type Group,
   type PaymentProvider,
   type TariffPlan,
 } from "./api";
@@ -20,6 +22,7 @@ import {
   Badge,
   Button,
   CenterLoader,
+  Checkbox,
   cn,
   Code,
   Modal,
@@ -247,6 +250,7 @@ const EMPTY_PLAN = (): TariffPlan => ({
   device_limit: 0,
   sort_order: 0,
   enabled: true,
+  group_ids: [],
 });
 
 
@@ -300,14 +304,17 @@ function PlanForm({
   onChange,
   isTrial,
   isFree,
+  groups,
 }: {
   plan: TariffPlan;
   onChange: (p: TariffPlan) => void;
   isTrial: boolean;
   isFree: boolean;
+  groups: Group[];
 }) {
   const { t } = useTranslation();
   const patch = (p: Partial<TariffPlan>) => onChange({ ...plan, ...p });
+  const selected = new Set(plan.group_ids ?? []);
   // A plan is free because it is designated free/trial in the pricing card — never
   // because someone typed 0 here. The server enforces both halves of that.
   const designated = isFree || isTrial;
@@ -385,6 +392,38 @@ function PlanForm({
           onChange={(v) => patch({ device_limit: Number(v) })}
         />
       </div>
+      {/* Access groups: the plan decides WHICH connections its users may reach, not
+          only how much traffic. Ticking nothing keeps the plan silent about access —
+          the historical behaviour, and what every existing plan has. */}
+      <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-ink">{t("bill.planGroups")}</span>
+          {selected.size > 0 && (
+            <Badge color="gray">{t("groups.nSelected", { count: selected.size })}</Badge>
+          )}
+        </div>
+        {groups.length === 0 ? (
+          <p className="text-xs text-ink-muted">{t("bill.planGroupsNone")}</p>
+        ) : (
+          <div className="flex max-h-44 flex-col gap-1.5 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
+            {groups.map((g) => (
+              <Checkbox
+                key={g.id}
+                checked={selected.has(g.id)}
+                onChange={(c) => {
+                  const next = new Set(selected);
+                  if (c) next.add(g.id);
+                  else next.delete(g.id);
+                  patch({ group_ids: [...next] });
+                }}
+                label={g.name}
+                hint={t("groups.nConnections", { count: g.grants?.length ?? 0 })}
+              />
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-ink-muted">{t("bill.planGroupsHint")}</p>
+      </div>
     </div>
   );
 }
@@ -396,6 +435,9 @@ export function BillingPanel() {
   const [saved, setSaved] = useState<BillingInfo | null>(null);
   const [plans, setPlans] = useState<TariffPlan[]>([]);
   const [planUsers, setPlanUsers] = useState<Record<string, number>>({});
+  // Access groups a plan can grant. Best-effort: if the list can't be read the editor
+  // just says there are none to pick, which is also the honest state for most installs.
+  const [groups, setGroups] = useState<Group[]>([]);
   const [editor, setEditor] = useState<TariffPlan | null>(null);
   const [migrateTo, setMigrateTo] = useState(0);
   const [loadErr, setLoadErr] = useState("");
@@ -420,6 +462,9 @@ export function BillingPanel() {
     getPayments()
       .then((d) => seedProviders(d.providers ?? []))
       .catch((e) => setPayErr(errMessage(e)));
+    listGroups()
+      .then(setGroups)
+      .catch(() => {});
   }, [seedProviders]);
 
   const patchProvider = (key: string, d: ProviderDraft) =>
@@ -643,6 +688,15 @@ export function BillingPanel() {
                       {cfg.trial_plan_id === p.id && (
                         <Badge color="orange">{t("bill.trial")}</Badge>
                       )}
+                      {/* The groups the plan hands out — the difference between two
+                          plans is often only this, so it belongs in the list. */}
+                      {groups
+                        .filter((g) => (p.group_ids ?? []).includes(g.id))
+                        .map((g) => (
+                          <Badge key={g.id} color="brand">
+                            {g.name}
+                          </Badge>
+                        ))}
                     </div>
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {planSummary(p)}
@@ -747,6 +801,7 @@ export function BillingPanel() {
               onChange={setEditor}
               isTrial={editor.id > 0 && cfg.trial_plan_id === editor.id}
               isFree={editor.id > 0 && cfg.free_plan_id === editor.id}
+              groups={groups}
             />
             {editor.id > 0 && (planUsers[String(editor.id)] ?? 0) > 0 && (
               <div className="accent-tint border-accent rounded-lg border p-3">
