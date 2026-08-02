@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.0](https://github.com/AppsGanin/rospanel/compare/v2.1.0...v2.2.0) (2026-08-02)
+
+
+### Features
+
+* **billing:** tie tariff plans to access groups ([b4c5607](https://github.com/AppsGanin/rospanel/commit/b4c560727c9a38b6170e331cf28e48d23e1125ae))
+
+
+### Bug Fixes
+
+* **sub:** add `udp: true` to all Clash proxy entries and fix rule quoting ([7b28b6b](https://github.com/AppsGanin/rospanel/commit/7b28b6b18c89893f29ba52d58aace23e57cb627f))
+
 ## [2.1.0](https://github.com/AppsGanin/rospanel/compare/v2.0.0...v2.1.0) (2026-07-30)
 
 
