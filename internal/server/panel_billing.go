@@ -85,10 +85,21 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 // set, and the webhook URL to paste into the provider's dashboard. Secret values
 // themselves are never returned — only whether they hold a value.
 func (rt *Router) getPayments(w http.ResponseWriter, _ *http.Request) {
-	descs, saved, err := rt.mgr.PaymentProviders()
+	out, err := rt.paymentProvidersView()
 	if err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
+}
+
+// paymentProvidersView builds that description. Shared with the external API so the
+// panel form and an integration's form are generated from one place — a provider
+// whose fields drifted between the two would be configurable in one and not the other.
+func (rt *Router) paymentProvidersView() ([]map[string]any, error) {
+	descs, saved, err := rt.mgr.PaymentProviders()
+	if err != nil {
+		return nil, err
 	}
 	out := make([]map[string]any, 0, len(descs))
 	for _, d := range descs {
@@ -142,7 +153,7 @@ func (rt *Router) getPayments(w http.ResponseWriter, _ *http.Request) {
 			"webhook_url": rt.mgr.PaymentWebhookURL(d.Key),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
+	return out, nil
 }
 
 func (rt *Router) savePayments(w http.ResponseWriter, r *http.Request) {

@@ -65,6 +65,25 @@ Error:
 Common codes: `bad_request` (400), `unauthorized` (401), `not_found` (404),
 `unsupported_media_type` (415), `internal` (500).
 
+Input the panel refuses carries two more fields — the reason it refused, and the
+parameters of that reason:
+
+```json
+{ "error": {
+    "code": "bad_request",
+    "key": "err.planHasUsers",
+    "message": "the plan is assigned to 12 users — move them to another plan first",
+    "args": { "count": 12 }
+} }
+```
+
+`code` stays the coarse class to branch on for retries; `key` is the specific,
+stable reason to branch on for behaviour — never match on `message`, which is
+free to be reworded. `message` is always English (the panel translates the same
+codes in the browser, in whichever language the admin chose); `args` lets a client
+render its own wording without parsing prose. Both are absent when the failure has
+no code behind it (a malformed body, an unknown path).
+
 ## Endpoints
 
 Base URL below is written as `$BASE` (e.g. `https://vpn.example.com/ab12cd34/v1`).
@@ -107,7 +126,29 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users/{id}/reset-period` | Set auto-reset period. |
 | `POST` | `/v1/users/{id}/rotate-sub` | Issue a new subscription URL (old link dies). |
 | `POST` | `/v1/users/{id}/plan` | Apply a tariff plan to the user. |
+| `POST` | `/v1/users/{id}/plan/cancel` | Cancel a paid subscription now. |
 | `GET` | `/v1/users/{id}/connections` | List the user's recent source IPs / devices. |
+| `GET` | `/v1/users/{id}/events` | The user's own journal (paged). |
+| `GET` | `/v1/users/{id}/abuse` | The user's blocklist matches (`limit`, default 20). |
+
+**Create** — `name` is required; everything else is optional and applied to the fresh
+account in the same call:
+
+```json
+{ "name": "alice", "data_limit": 0, "expire_at": 0,
+  "device_limit": 3, "plan_id": 2, "group_ids": [4] }
+```
+
+`plan_id` rewrites `data_limit` and `expire_at` with the plan's own — a plan *is* the
+limits — while an explicit `device_limit` is applied after it and wins. If one of the
+extras fails, the account is NOT rolled back (credentials may already be in someone's
+hands): the call returns the error and the user stays as far as it got. Responds `201`
+with the user as it actually ended up.
+
+**Cancel a subscription** — moves the user to the free plan immediately (losing the
+remaining paid time), or ends their access when no free plan is configured. Distinct
+from applying the free plan by hand: this is recorded as `plan.cancelled`, which is
+the event a billing integration reacts to.
 
 **List** — query params: `status` (`active` / `disabled` / `expired` / `limited`
 / `device_limited`), `search` (substring of the name), `limit`, `offset`
@@ -160,11 +201,18 @@ client will display.
 | `GET` | `/v1/billing/providers` | List the enabled payment methods (what a client can pay with). |
 | `GET` | `/v1/billing/plans?include_disabled=true` | List tariff plans. |
 | `POST` | `/v1/billing/plans` | Create (no `id`) or update (`id` set) a plan. |
-| `DELETE` | `/v1/billing/plans/{id}` | Delete a plan. |
+| `DELETE` | `/v1/billing/plans/{id}` | Delete a plan (refused while users are on it). |
+| `POST` | `/v1/billing/plans/{id}/migrate` | Move every user on this plan to another one. |
 | `GET` | `/v1/billing/orders?status=pending` | List payment orders (`status` optional). |
 | `POST` | `/v1/billing/orders` | Open an order for a user+plan. |
+| `GET` | `/v1/billing/orders/{id}` | Get one order (poll a payment's status). |
 | `POST` | `/v1/billing/orders/{id}/confirm` | Mark an order paid (activates the plan). |
 | `POST` | `/v1/billing/orders/{id}/cancel` | Cancel an order. |
+| `GET` | `/v1/billing/settings` | Billing configuration. |
+| `POST` | `/v1/billing/settings` | Replace it (whole object). |
+| `GET` | `/v1/billing/stats` | Revenue totals, per-provider split, pending backlog. |
+| `GET` | `/v1/payments` | Every payment provider with its settings form. |
+| `POST` | `/v1/payments` | Configure one provider. |
 
 A plan may name the access groups it grants (`"group_ids": [3]`): whoever is put on
 the plan — by a paid order, by `POST /v1/users/{id}/plan`, or at registration — joins
@@ -180,7 +228,31 @@ user to:
 { "data": { "order": { ... }, "pay_url": "https://..." } }
 ```
 
-A manual order returns an empty `pay_url` and waits for `/confirm`.
+A manual order returns an empty `pay_url` and waits for `/confirm`. Creating an order
+is **not** idempotent by key, but it does not stack duplicates either: a still-pending
+order for the same user, plan and provider is reused instead of a second one being
+opened, so a retried call returns the order that already exists.
+
+**Billing settings** — the whole object, replaced on write (there is no partial
+update: "no free plan" is a real state and must be distinguishable from "unspecified"):
+
+```json
+{ "enabled": true, "free_plan_id": 1, "trial_plan_id": 2, "payment_note": "card 1234" }
+```
+
+Designating a plan as the free or trial one also makes it free and re-applies it to
+everyone already on it — the same rule the panel enforces.
+
+**Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.
+Applies the target plan's limits, period and access groups to every user on the source
+plan. This is the only way to empty a plan before deleting it.
+
+**Providers** — `GET /v1/payments` returns each provider in the registry with its
+settings form: the fields it takes, their current values, which secrets are set (never
+their values) and the `webhook_url` to paste into the provider's dashboard. The field
+list is per provider and generated from the registry, so this payload is deliberately
+free-form. `POST /v1/payments` takes `{ "key": "yookassa", "enabled": true, "config":
+{...} }`; a secret left empty keeps its stored value.
 
 `GET /v1/billing/providers` is dynamic — it returns whatever payment methods you've
 enabled in the panel (cards, SBP, crypto, …), each with a `key`. That `key` is what you
@@ -246,6 +318,12 @@ silently dropped from Clash/sing-box subscriptions rather than emitted broken.
 An inbound is addressable by an access group via the `inbound:<id>` grant token (see
 **Groups**).
 
+`GET /v1/inbounds/catalog` publishes what can be combined with what — every protocol ×
+transport, the `security` modes each allows, which subscription formats cannot carry it,
+and the enum values the advanced fields accept. It is the same table the panel editor
+uses, so a client that builds inbounds from it cannot construct one the validator will
+reject.
+
 ### Groups
 
 Access groups gate which connections a user may use. A user in **no** group reaches
@@ -286,6 +364,23 @@ membership. An empty array removes the user from every group (→ unrestricted).
 Grants that reference a deleted inbound or node are swept automatically, and harmless
 until then.
 
+**Where the tokens come from** — `GET /v1/groups/targets` lists every server with the
+connections a group can grant, each with its ready-made token:
+
+```json
+{ "data": [
+  { "server_id": 0, "server_name": "Мастер",
+    "lanes": [ { "lane": "vless", "label": "VLESS-TCP-TLS",
+                 "token": "builtin:0:vless", "enabled": true } ],
+    "inbounds": [ { "id": 7, "name": "WS резерв",
+                    "token": "inbound:7", "enabled": true } ] }
+] }
+```
+
+Disabled lanes and inbounds are included, so a grant can be prepared before the
+connection is switched on. Assembling those tokens by hand works too — but a typo
+grants nothing, silently, which is exactly what this endpoint prevents.
+
 ### Stats
 
 ```
@@ -309,13 +404,89 @@ traffic rows outlive them).
 ] }
 ```
 
+```
+GET $BASE/v1/stats/abuse?limit=50   → recent blocklist matches across the fleet
+```
+
+### Journals
+
+Two read-only trails. **Events** is what happened to users; **admin audit** is what
+admins and API keys did to the panel — including everything done through this API,
+attributed to the key's name.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/events` | User events, filterable. |
+| `GET` | `/v1/events/catalog` | The event keys a row can carry. |
+| `GET` | `/v1/admin-audit` | The admin trail. |
+| `GET` | `/v1/admin-audit/catalog` | Its categories and the actions in each. |
+
+Both page **backwards**: pass `before=<id of the oldest row you hold>` and read
+`next_before` from the response — `0` means you have reached the end. Ids are
+monotonic, so the cursor stays stable while new rows land at the top.
+
+```json
+{ "data": { "events": [ { "id": 812, "user_id": 5, "action": "plan.cancelled", … } ],
+            "next_before": 780 } }
+```
+
+`/v1/events` takes `action` (one key from the catalog), `actor` (`admin` / `user` /
+`system` / `api`), `user_id` and the paging pair. `/v1/admin-audit` takes `category`
+(expands to the actions it holds), `action`, `actor` and the paging pair. An unknown
+`action` or `category` is a `400`, not an empty page — a filter that quietly matches
+nothing is indistinguishable from a quiet period.
+
+### Webhooks
+
+The push half of an integration, configurable from the integration itself.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/webhooks` | List the configured endpoints. |
+| `GET` | `/v1/webhooks/events` | The event keys a webhook can subscribe to. |
+| `POST` | `/v1/webhooks` | Add an endpoint. |
+| `POST` | `/v1/webhooks/{id}` | Update one (whole object). |
+| `DELETE` | `/v1/webhooks/{id}` | Delete one. |
+| `POST` | `/v1/webhooks/{id}/test` | Send a test delivery. |
+
+Body: `{ "url": "https://…", "events": ["user.created"], "enabled": true }`. An empty
+`events` array means **all** events. `enabled` is optional on create (defaults to on).
+The delivery format, signature and retry policy are described under **Webhooks** below.
+
+A test delivery answers `200` even when the endpoint fails — the call succeeded, the
+delivery is the result: `{ "data": { "status": 502, "ok": false, "error": "…" } }`.
+
+### Registrations
+
+The moderated signup queue (only meaningful while the user bot is in moderation mode —
+`moderation` says whether it is).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/v1/registrations` | Pending signups. |
+| `POST` | `/v1/registrations/{id}/approve` | Create the account and link its Telegram chat. |
+| `POST` | `/v1/registrations/{id}/reject` | Drop the request. |
+
 ### Monitoring
 
 ```
 GET $BASE/v1/summary          → users / online / traffic totals / xray + cert status
 GET $BASE/v1/system           → live CPU / RAM / disk / network / VPN throughput
 GET $BASE/v1/health/report    → full self-diagnostics (xray, config, TLS, geo, egress lanes)
+GET $BASE/v1/nodes/{id}/health → one server's diagnostics (id 0 = the master)
+GET $BASE/v1/nodes/{id}/logs   → a node's recent log lines
+GET $BASE/v1/backup/info       → what a backup taken now would contain
+GET $BASE/v1/backup            → download that backup (.tar.gz body, not JSON)
 ```
+
+`/v1/nodes/{id}/logs` is answered from the node's next long-poll, so a freshly-woken
+node may return the previous batch — `at` is the unix time the lines were collected.
+
+`/v1/backup` streams the archive itself (`Content-Type: application/gzip`), so it is
+the one endpoint outside the `{"data": …}` envelope — point a scheduler at it to keep
+copies off the box. **Restore is deliberately not exposed**: it is staged on disk and
+applied at the next start, so over an API it would be a request that silently replaces
+everything on the next restart.
 
 ## Examples
 
@@ -347,7 +518,8 @@ curl -sS -X DELETE "$BASE/v1/users/5" -H "Authorization: Bearer $KEY"
 
 Instead of polling the API, you can have the panel **push** lifecycle events to
 your own HTTP endpoint. Configure them in the panel → **Settings → API →
-Вебхуки**: add a receiver URL and tick the events you want (tick none = all).
+Webhooks** (add a receiver URL and tick the events you want — tick none = all), or
+over the API itself: `POST /v1/webhooks`.
 
 Webhook targets, unlike the API's outbound fetches, may be `http` **or** `https`
 and **may point at a private/localhost host** — the receiver is often the
