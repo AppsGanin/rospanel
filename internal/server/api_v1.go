@@ -32,6 +32,14 @@ type (
 		Name      string `json:"name"`
 		DataLimit int64  `json:"data_limit"` // bytes, 0 = unlimited
 		ExpireAt  int64  `json:"expire_at"`  // unix seconds, 0 = never
+		// The rest are optional and applied to the fresh account in one call, because
+		// the alternative was three: create, then set a device limit, then a plan. Each
+		// of those is a separate reconcile, and a caller that failed halfway left a user
+		// live on terms nobody chose. PlanID overrides DataLimit/ExpireAt with the
+		// plan's own — a plan IS the limits.
+		DeviceLimit int     `json:"device_limit,omitempty"` // 0 = unlimited
+		PlanID      int64   `json:"plan_id,omitempty"`      // 0 = no plan (manual limits)
+		GroupIDs    []int64 `json:"group_ids,omitempty"`    // access groups, by hand
 	}
 	// apiPatchUserReq fields are pointers: a nil field is left unchanged, so a
 	// caller can update just one attribute.
@@ -142,24 +150,39 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/reset-period", rt.apiSetResetPeriod)
 	id("POST /v1/users/{id}/rotate-sub", rt.apiRotateSub)
 	id("POST /v1/users/{id}/plan", rt.apiApplyPlan)
+	id("POST /v1/users/{id}/plan/cancel", rt.apiCancelUserPlan)
 	id("GET /v1/users/{id}/connections", rt.apiUserConnections)
+	id("GET /v1/users/{id}/events", rt.apiUserEvents)
+	id("GET /v1/users/{id}/abuse", rt.apiUserAbuse)
 
 	hf("GET /v1/billing/providers", rt.apiListProviders)
 	hf("GET /v1/billing/plans", rt.apiListPlans)
 	hf("POST /v1/billing/plans", rt.apiSavePlan)
 	id("DELETE /v1/billing/plans/{id}", rt.apiDeletePlan)
+	id("POST /v1/billing/plans/{id}/migrate", rt.apiMigratePlanUsers)
 	hf("GET /v1/billing/orders", rt.apiListOrders)
 	hf("POST /v1/billing/orders", rt.apiCreateOrder)
+	id("GET /v1/billing/orders/{id}", rt.apiGetOrder)
 	id("POST /v1/billing/orders/{id}/confirm", rt.apiConfirmOrder)
 	id("POST /v1/billing/orders/{id}/cancel", rt.apiCancelOrder)
+	hf("GET /v1/billing/stats", rt.apiPaymentStats)
 
 	hf("GET /v1/stats/series", rt.apiStatsSeries)
 	hf("GET /v1/stats/nodes", rt.apiStatsNodes)
 	hf("GET /v1/stats/users", rt.apiStatsUsers)
+	hf("GET /v1/stats/abuse", rt.apiStatsAbuse)
+
+	// The journals. Read-only, and the admin trail includes what this very key does.
+	hf("GET /v1/events", rt.apiEvents)
+	hf("GET /v1/events/catalog", rt.apiEventCatalog)
+	hf("GET /v1/admin-audit", rt.apiAdminAudit)
+	hf("GET /v1/admin-audit/catalog", rt.apiAdminAuditCatalog)
 
 	hf("GET /v1/summary", rt.apiSummary)
 	hf("GET /v1/system", rt.apiSystem)
 	hf("GET /v1/health/report", rt.apiHealthReport)
+	hf("GET /v1/backup", rt.apiBackup)
+	hf("GET /v1/backup/info", rt.apiBackupInfo)
 
 	// Node mutations over the external API must land in the admin audit trail too —
 	// the panel's audited-middleware wraps only the panel mux, not this one. idFn adds
@@ -187,20 +210,44 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/nodes/{id}/regen-join", "apiNodeRejoin", idFn(rt.apiRegenNodeJoin))
 	nodeAudit("POST /v1/nodes/{id}/update", "apiNodeUpdate", idFn(rt.apiUpdateNode))
 	nodeAudit("POST /v1/nodes/update-all", "apiNodesUpdateAll", rt.apiUpdateAllNodes)
+	id("GET /v1/nodes/{id}/health", rt.apiNodeHealth)
+	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
 
 	// Custom inbounds. Every mutation opens, changes or closes a public listener on a
 	// server, so all three are audited the same way node mutations are.
 	hf("GET /v1/groups", rt.apiListGroups)
+	hf("GET /v1/groups/targets", rt.apiGroupTargets)
 	nodeAudit("POST /v1/groups", "apiGroupAdded", rt.apiCreateGroup)
 	nodeAudit("POST /v1/groups/{id}", "apiGroupChanged", idFn(rt.apiUpdateGroup))
 	nodeAudit("DELETE /v1/groups/{id}", "apiGroupDeleted", idFn(rt.apiDeleteGroup))
 	nodeAudit("POST /v1/groups/{id}/members", "apiGroupMembers", idFn(rt.apiSetGroupMembers))
 	nodeAudit("POST /v1/users/{id}/groups", "apiUserGroups", idFn(rt.apiSetUserGroups))
 
+	hf("GET /v1/inbounds/catalog", rt.apiInboundCatalog)
 	id("GET /v1/servers/{id}/inbounds", rt.apiListInbounds)
 	nodeAudit("POST /v1/servers/{id}/inbounds", "apiInboundAdded", idFn(rt.apiCreateInbound))
 	nodeAudit("POST /v1/inbounds/{id}", "apiInboundChanged", idFn(rt.apiUpdateInbound))
 	nodeAudit("DELETE /v1/inbounds/{id}", "apiInboundDeleted", idFn(rt.apiDeleteInbound))
+
+	// Webhooks: where the panel pushes events. Mutations are audited — an endpoint
+	// added here starts receiving user and payment data.
+	hf("GET /v1/webhooks", rt.apiListWebhooks)
+	hf("GET /v1/webhooks/events", rt.apiWebhookEvents)
+	nodeAudit("POST /v1/webhooks", "apiWebhookAdded", rt.apiCreateWebhook)
+	nodeAudit("POST /v1/webhooks/{id}", "apiWebhookChanged", idFn(rt.apiUpdateWebhook))
+	nodeAudit("DELETE /v1/webhooks/{id}", "apiWebhookDeleted", idFn(rt.apiDeleteWebhook))
+	id("POST /v1/webhooks/{id}/test", rt.apiTestWebhook)
+
+	// Billing configuration and payment providers — the setup half of selling.
+	hf("GET /v1/billing/settings", rt.apiGetBillingSettings)
+	nodeAudit("POST /v1/billing/settings", "apiBillingSettings", rt.apiSaveBillingSettings)
+	hf("GET /v1/payments", rt.apiPaymentProviders)
+	nodeAudit("POST /v1/payments", "apiPaymentProvider", rt.apiSavePaymentProvider)
+
+	// The moderated signup queue.
+	hf("GET /v1/registrations", rt.apiListRegistrations)
+	nodeAudit("POST /v1/registrations/{id}/approve", "apiRegApproved", idFn(rt.apiApproveRegistration))
+	nodeAudit("POST /v1/registrations/{id}/reject", "apiRegRejected", idFn(rt.apiRejectRegistration))
 
 	// Any unmatched /v1 path (or a wrong method) returns a JSON 404 in-envelope
 	// rather than the default plain-text one.
@@ -304,12 +351,45 @@ func writeAPIErr(w http.ResponseWriter, status int, code, msg string) {
 	})
 }
 
+// writeAPIRejected writes a 400 for input the panel refused, in English, and keeps
+// what the panel knows about the refusal: `key` is the specific reason (stable, and
+// the thing to branch on — `code` stays the coarse "bad_request" every client already
+// switches on), `args` are its parameters, so a caller can render the same message in
+// its own language instead of parsing prose.
+func writeAPIRejected(w http.ResponseWriter, key, fallback string, args map[string]any) {
+	msg, ok := i18n.ErrorEN(key, args)
+	if !ok {
+		// No English text for this code: the panel's own fallback beats an empty
+		// message, even in the wrong language. TestAPIErrorsAreTranslated keeps this
+		// path from becoming the normal one.
+		msg = fallback
+	}
+	body := map[string]any{"code": "bad_request", "message": msg}
+	if key != "" {
+		body["key"] = key
+	}
+	if len(args) > 0 {
+		body["args"] = args
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]any{"error": body})
+}
+
 // writeAPIManagerErr maps a core.Manager error onto the API envelope: a
 // ValidationError (bad caller input) → 400 bad_request, anything else → 500.
 func writeAPIManagerErr(w http.ResponseWriter, err error) {
 	var ve *core.ValidationError
 	if errors.As(err, &ve) {
-		writeAPIErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		writeAPIRejected(w, ve.Code, ve.Msg, ve.Args)
+		return
+	}
+	// A model-level field error is a rejected input too. The manager converts those
+	// (fromFieldErr) so they used to arrive here already wrapped, but a handler that
+	// validates directly against model — as the webhook and branding surfaces do —
+	// hands over the raw one, and answering "500 internal" to a bad URL blames the
+	// server for the caller's typo.
+	var fe *model.FieldError
+	if errors.As(err, &fe) {
+		writeAPIRejected(w, fe.Code, fe.Msg, fe.Args)
 		return
 	}
 	writeAPIErr(w, http.StatusInternalServerError, "internal", err.Error())
@@ -334,13 +414,20 @@ func apiDecode(w http.ResponseWriter, r *http.Request, dst any) bool {
 // makeUserView so the API and panel expose identical fields. The Telegram user-bot
 // @username is left unresolved ("") — the API view doesn't surface bot deep links.
 func (rt *Router) apiUserView(w http.ResponseWriter, u model.User) {
+	rt.apiUserViewStatus(w, u, http.StatusOK)
+}
+
+// apiUserViewStatus is the same with an explicit status, so creation can answer the
+// 201 the published spec promises — it had been answering 200, which a client
+// generated from that spec is entitled to treat as an unexpected response.
+func (rt *Router) apiUserViewStatus(w http.ResponseWriter, u model.User, code int) {
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
 	rt.applyTLSHints(set)
-	writeAPIData(w, http.StatusOK, rt.userViewFor(u, set, ""))
+	writeAPIData(w, code, rt.userViewFor(u, set, ""))
 }
 
 // ---- handlers ----
@@ -476,7 +563,43 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	rt.apiUserView(w, *u)
+	// The optional extras. Each is reported as an error but does NOT undo the account:
+	// deleting a user someone may already have been handed credentials for, because a
+	// device limit was rejected, is the worse outcome. The response body is the user as
+	// it actually ended up, so a caller can see what landed.
+	if len(req.GroupIDs) > 0 {
+		if err := rt.mgr.SetUserGroups(u.ID, req.GroupIDs); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	// The plan goes on BEFORE the device limit and rewrites quota, expiry and devices
+	// with its own — so an explicit device_limit has to be re-applied on top, keeping
+	// the plan's freshly-written quota and expiry rather than the request's (which the
+	// plan just superseded). The other order silently dropped the caller's number.
+	if req.PlanID > 0 {
+		if err := rt.mgr.ApplyPlanToUser(r.Context(), u.ID, req.PlanID, false); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.DeviceLimit > 0 {
+		cur, err := rt.mgr.Store().GetUser(u.ID)
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		if err := rt.mgr.SetUserLimits(r.Context(), u.ID, cur.DataLimit, cur.ExpireAt, req.DeviceLimit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	fresh, err := rt.mgr.Store().GetUser(u.ID)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.apiUserViewStatus(w, *fresh, http.StatusCreated)
 }
 
 func (rt *Router) apiGetUser(w http.ResponseWriter, _ *http.Request, id int64) {

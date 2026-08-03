@@ -776,6 +776,7 @@ const ru = {
     // A settings row's target is stored as audit.sec.<key> so the journal reads in
     // the admin's language rather than the server's.
     sec: {
+      apiBillingSettings: "API · настройки биллинга",
       apiGroupAdded: "API · группа добавлена",
       apiGroupChanged: "API · группа изменена",
       apiGroupDeleted: "API · группа удалена",
@@ -790,7 +791,13 @@ const ru = {
       apiNodeToggled: "API · нода вкл/выкл",
       apiNodeUpdate: "API · нода · обновление",
       apiNodesUpdateAll: "API · обновление всех нод",
+      apiPaymentProvider: "API · платёжный провайдер",
+      apiRegApproved: "API · заявка одобрена",
+      apiRegRejected: "API · заявка отклонена",
       apiUserGroups: "API · группы пользователя",
+      apiWebhookAdded: "API · вебхук добавлен",
+      apiWebhookChanged: "API · вебхук изменён",
+      apiWebhookDeleted: "API · вебхук удалён",
       apiPath: "Адрес API",
       autodelete: "Автоудаление истёкших",
       billing: "Биллинг",

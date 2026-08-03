@@ -191,19 +191,33 @@ func (rt *Router) regenInboundReality(w http.ResponseWriter, _ *http.Request, id
 	writeJSON(w, http.StatusOK, v)
 }
 
-// inboundCatalog is the static "what can be combined with what" table the editor
-// drives its dropdowns from, so the UI and the server-side validator can never
-// disagree about which combinations exist (see model.InboundSecurities).
-func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
-	type combo struct {
-		Protocol   string   `json:"protocol"`
-		Transport  string   `json:"transport"`
-		Securities []string `json:"securities"`
-		// Unsupported names the subscription formats that cannot carry this
-		// combination, so the editor can warn before the operator commits to it.
-		Unsupported []string `json:"unsupported"`
-	}
-	var combos []combo
+// inboundCombo is one protocol × transport the panel accepts, with the security
+// modes it allows and the subscription formats that cannot carry it.
+type inboundCombo struct {
+	Protocol   string   `json:"protocol"`
+	Transport  string   `json:"transport"`
+	Securities []string `json:"securities"`
+	// Unsupported names the subscription formats that cannot carry this
+	// combination, so the editor can warn before the operator commits to it.
+	Unsupported []string `json:"unsupported"`
+}
+
+// inboundCatalogView is the static "what can be combined with what" table, shared by
+// the panel editor and the external API so neither can build an inbound the
+// server-side validator will reject (see model.InboundSecurities).
+type inboundCatalogView struct {
+	Protocols    []string       `json:"protocols"`
+	Combos       []inboundCombo `json:"combos"`
+	Fingerprints []string       `json:"fingerprints"`
+	XHTTPModes   []string       `json:"xhttp_modes"`
+	Max          int            `json:"max"` // inbounds per server
+	// Enums are the advanced-field dropdowns, straight from Xray's parser (see
+	// model), so the editor's options and the server's validation can't disagree.
+	Enums map[string][]string `json:"enums"`
+}
+
+func makeInboundCatalog() inboundCatalogView {
+	combos := []inboundCombo{}
 	for _, p := range model.InboundProtocols {
 		for _, tr := range model.InboundTransports(p) {
 			var unsupported []string
@@ -213,7 +227,7 @@ func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
 			if !model.SupportsSingBox(p, tr) {
 				unsupported = append(unsupported, "sing-box / Hiddify")
 			}
-			combos = append(combos, combo{
+			combos = append(combos, inboundCombo{
 				Protocol:    p,
 				Transport:   tr,
 				Securities:  model.InboundSecurities(p, tr),
@@ -221,15 +235,13 @@ func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
 			})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"protocols":    model.InboundProtocols,
-		"combos":       combos,
-		"fingerprints": model.Fingerprints,
-		"xhttp_modes":  []string{model.XHTTPAuto, model.XHTTPPacketUp, model.XHTTPStreamUp, model.XHTTPStreamOne},
-		"max":          model.MaxInboundsPerServer,
-		// The advanced-field dropdowns come straight from Xray's parser (see model),
-		// so the editor's options and the server's validation can't disagree.
-		"enums": map[string]any{
+	return inboundCatalogView{
+		Protocols:    model.InboundProtocols,
+		Combos:       combos,
+		Fingerprints: model.Fingerprints,
+		XHTTPModes:   []string{model.XHTTPAuto, model.XHTTPPacketUp, model.XHTTPStreamUp, model.XHTTPStreamOne},
+		Max:          model.MaxInboundsPerServer,
+		Enums: map[string][]string{
 			"placements":            model.XHTTPPlacements,
 			"uplink_methods":        model.XHTTPUplinkMethods,
 			"tproxy":                model.SockoptTProxy,
@@ -237,5 +249,9 @@ func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
 			"address_port_strategy": model.SockoptAddrPortStrats,
 			"tls_versions":          model.TLSVersions,
 		},
-	})
+	}
+}
+
+func (rt *Router) inboundCatalog(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, makeInboundCatalog())
 }

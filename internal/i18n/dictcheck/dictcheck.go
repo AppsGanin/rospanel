@@ -55,6 +55,37 @@ func repoRoot(dir string) (string, error) {
 	}
 }
 
+// ErrorsEN returns the English dictionary's whole `err` section, flattened to
+// "err.<code>" → text. Shared by the code generator (which lifts these into Go so a
+// running server can answer the external API in English) and by the test that keeps
+// the two in step.
+func ErrorsEN(dir string) (map[string]string, error) {
+	d, err := Load(dir, "en.ts")
+	if err != nil {
+		return nil, err
+	}
+	sub, ok := d["err"].(Dict)
+	if !ok {
+		return nil, fmt.Errorf("en.ts has no `err` section")
+	}
+	out := map[string]string{}
+	flatten("err", sub, out)
+	return out, nil
+}
+
+// flatten walks a subtree into dotted key → string pairs, ignoring anything that is
+// not a leaf string.
+func flatten(prefix string, d Dict, out map[string]string) {
+	for k, v := range d {
+		switch t := v.(type) {
+		case string:
+			out[prefix+"."+k] = t
+		case Dict:
+			flatten(prefix+"."+k, t, out)
+		}
+	}
+}
+
 // Resolve returns the value at a dotted path, and whether it resolved to a string.
 func (d Dict) Resolve(dotted string) (string, bool) {
 	var cur any = d

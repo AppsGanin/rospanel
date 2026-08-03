@@ -770,6 +770,7 @@ const en: Dict = {
     // A settings row's target is stored as audit.sec.<key> so the journal reads in
     // the admin's language rather than the server's.
     sec: {
+      apiBillingSettings: "API · billing settings",
       apiGroupAdded: "API · group added",
       apiGroupChanged: "API · group changed",
       apiGroupDeleted: "API · group deleted",
@@ -784,7 +785,13 @@ const en: Dict = {
       apiNodeToggled: "API · node on/off",
       apiNodeUpdate: "API · node · update",
       apiNodesUpdateAll: "API · update every node",
+      apiPaymentProvider: "API · payment provider",
+      apiRegApproved: "API · signup approved",
+      apiRegRejected: "API · signup rejected",
       apiUserGroups: "API · user groups",
+      apiWebhookAdded: "API · webhook added",
+      apiWebhookChanged: "API · webhook changed",
+      apiWebhookDeleted: "API · webhook deleted",
       apiPath: "API address",
       autodelete: "Auto-delete expired",
       billing: "Billing",

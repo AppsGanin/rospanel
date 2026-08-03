@@ -6,8 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -94,8 +96,20 @@ func apiSpecRoutes() []oaRoute {
 			resp: t(userView{})},
 		{method: "POST", path: "/v1/users/{id}/plan", tag: "Users", summary: "Apply a tariff plan",
 			req: t(apiApplyPlanReq{}), resp: t(userView{})},
+		{method: "POST", path: "/v1/users/{id}/plan/cancel", tag: "Users",
+			summary: "Cancel a paid subscription (drops to the free plan, or ends access)",
+			resp:    t(userView{})},
 		{method: "GET", path: "/v1/users/{id}/connections", tag: "Users", summary: "List the user's source IPs",
 			resp: t(model.Connection{}), list: true},
+		{method: "GET", path: "/v1/users/{id}/events", tag: "Users", summary: "One user's journal",
+			query: []oaParam{
+				{name: "limit", typ: "integer", desc: "page size"},
+				{name: "before", typ: "integer", desc: "id of the oldest row already held (paging cursor)"},
+			},
+			resp: t(apiEventsResp{})},
+		{method: "GET", path: "/v1/users/{id}/abuse", tag: "Users", summary: "One user's blocklist matches",
+			query: []oaParam{{name: "limit", typ: "integer", desc: "max rows (default 20, max 200)"}},
+			resp:  t(store.AbuseMatch{}), list: true},
 
 		{method: "GET", path: "/v1/billing/providers", tag: "Billing", summary: "List enabled payment providers",
 			resp: t(oaProviderResp{}), list: true},
@@ -105,13 +119,32 @@ func apiSpecRoutes() []oaRoute {
 		{method: "POST", path: "/v1/billing/plans", tag: "Billing", summary: "Create or update a plan",
 			req: t(model.TariffPlan{}), resp: t(model.TariffPlan{})},
 		{method: "DELETE", path: "/v1/billing/plans/{id}", tag: "Billing", summary: "Delete a plan"},
+		{method: "POST", path: "/v1/billing/plans/{id}/migrate", tag: "Billing",
+			summary: "Move every user on this plan to another one",
+			req:     t(apiMigratePlanReq{}), resp: t(apiMigratedResp{})},
 		{method: "GET", path: "/v1/billing/orders", tag: "Billing", summary: "List payment orders",
 			query: []oaParam{{name: "status", typ: "string", desc: "pending | paid | cancelled"}},
 			resp:  t(model.PaymentOrder{}), list: true},
 		{method: "POST", path: "/v1/billing/orders", tag: "Billing", summary: "Open a payment order",
 			req: t(apiCreateOrderReq{}), resp: t(oaOrderResp{}), status: 201},
+		{method: "GET", path: "/v1/billing/orders/{id}", tag: "Billing", summary: "Get one order",
+			resp: t(model.PaymentOrder{})},
 		{method: "POST", path: "/v1/billing/orders/{id}/confirm", tag: "Billing", summary: "Mark an order paid"},
 		{method: "POST", path: "/v1/billing/orders/{id}/cancel", tag: "Billing", summary: "Cancel an order"},
+		{method: "GET", path: "/v1/billing/settings", tag: "Billing",
+			summary: "Billing configuration (free/trial plan, manual payment note)",
+			resp:    t(apiBillingSettingsReq{})},
+		{method: "POST", path: "/v1/billing/settings", tag: "Billing",
+			summary: "Replace the billing configuration",
+			req:     t(apiBillingSettingsReq{}), resp: t(apiBillingSettingsReq{})},
+		{method: "GET", path: "/v1/billing/stats", tag: "Billing",
+			summary: "Revenue totals, per-provider split and the pending backlog",
+			resp:    t(model.PaymentStats{})},
+		{method: "GET", path: "/v1/payments", tag: "Billing",
+			summary: "Payment providers with their settings form (secret values are never returned)"},
+		{method: "POST", path: "/v1/payments", tag: "Billing",
+			summary: "Configure one payment provider (empty secrets keep their stored value)",
+			req:     t(apiSaveProviderReq{})},
 
 		{method: "GET", path: "/v1/stats/series", tag: "Stats", summary: "Daily traffic points",
 			query: []oaParam{
@@ -133,6 +166,35 @@ func apiSpecRoutes() []oaRoute {
 				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
 			},
 			resp: t(model.UserTotal{}), list: true},
+		{method: "GET", path: "/v1/stats/abuse", tag: "Stats", summary: "Recent blocklist matches across the fleet",
+			query: []oaParam{{name: "limit", typ: "integer", desc: "max rows (default 50, max 200)"}},
+			resp:  t(store.AbuseMatch{}), list: true},
+
+		// The journals. Both page backwards with ?before=<oldest id held>.
+		{method: "GET", path: "/v1/events", tag: "Journal", summary: "User events across the panel",
+			query: []oaParam{
+				{name: "action", typ: "string", desc: "one event key (see /v1/events/catalog)"},
+				{name: "actor", typ: "string", desc: "who caused it: admin | user | system | api"},
+				{name: "user_id", typ: "integer", desc: "restrict to one user"},
+				{name: "limit", typ: "integer", desc: "page size"},
+				{name: "before", typ: "integer", desc: "id of the oldest row already held (paging cursor)"},
+			},
+			resp: t(apiEventsResp{})},
+		{method: "GET", path: "/v1/events/catalog", tag: "Journal", summary: "Event keys a user event can carry",
+			resp: t(apiEventKey{}), list: true},
+		{method: "GET", path: "/v1/admin-audit", tag: "Journal",
+			summary: "Admin trail — including everything done through this API",
+			query: []oaParam{
+				{name: "category", typ: "string", desc: "expands to the actions it holds (see /v1/admin-audit/catalog)"},
+				{name: "action", typ: "string", desc: "one action key; ignored when category is set"},
+				{name: "actor", typ: "string", desc: "admin name or API key label"},
+				{name: "limit", typ: "integer", desc: "page size"},
+				{name: "before", typ: "integer", desc: "id of the oldest row already held (paging cursor)"},
+			},
+			resp: t(apiAdminAuditResp{})},
+		{method: "GET", path: "/v1/admin-audit/catalog", tag: "Journal",
+			summary: "Admin-audit categories and the actions in each",
+			resp:    t(apiAuditCatalogResp{})},
 
 		{method: "GET", path: "/v1/health", tag: "Monitoring", summary: "API reachability check",
 			resp: t(oaHealthResp{})},
@@ -145,6 +207,11 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/healthz", tag: "Monitoring", noAuth: true,
 			summary: "Liveness probe (no key; 503 when Xray is down)",
 			resp:    t(healthzResp{})},
+		{method: "GET", path: "/v1/backup", tag: "Monitoring",
+			summary: "Download a full backup — responds with a .tar.gz body, not the JSON envelope"},
+		{method: "GET", path: "/v1/backup/info", tag: "Monitoring",
+			summary: "What a backup taken now would contain",
+			resp:    t(backup.Manifest{})},
 
 		{method: "GET", path: "/v1/nodes", tag: "Nodes", summary: "List nodes (local server is node 0)",
 			resp: t(core.NodeView{}), list: true},
@@ -163,10 +230,18 @@ func apiSpecRoutes() []oaRoute {
 			resp: t(oaOKResp{})},
 		{method: "POST", path: "/v1/nodes/update-all", tag: "Nodes", summary: "Ask every connected node to self-update",
 			resp: t(oaNodeCountResp{})},
+		{method: "GET", path: "/v1/nodes/{id}/health", tag: "Nodes", summary: "One server's self-diagnostics",
+			resp: t(core.HealthReport{})},
+		{method: "GET", path: "/v1/nodes/{id}/logs", tag: "Nodes",
+			summary: "A node's recent log lines (collected on its next poll; `at` says how fresh)",
+			resp:    t(apiNodeLogsResp{})},
 
 		// Custom inbounds. {id} is a SERVER id on the list/create pair (0 = the panel's
 		// own server, a node id otherwise) and the INBOUND id on the rest — an inbound
 		// belongs to exactly one server, so its id already says which.
+		{method: "GET", path: "/v1/inbounds/catalog", tag: "Inbounds",
+			summary: "Which protocol × transport × security combinations exist, and what each enum accepts",
+			resp:    t(inboundCatalogView{})},
 		{method: "GET", path: "/v1/servers/{id}/inbounds", tag: "Inbounds",
 			summary: "List a server's custom inbounds (id 0 = the master)",
 			resp:    t(core.InboundView{}), list: true},
@@ -178,6 +253,9 @@ func apiSpecRoutes() []oaRoute {
 		{method: "DELETE", path: "/v1/inbounds/{id}", tag: "Inbounds", summary: "Delete a custom inbound"},
 
 		{method: "GET", path: "/v1/groups", tag: "Groups", summary: "List user groups", resp: t(model.Group{}), list: true},
+		{method: "GET", path: "/v1/groups/targets", tag: "Groups",
+			summary: "Grantable connections per server, each with the token to put in `grants`",
+			resp:    t(core.GroupTarget{}), list: true},
 		{method: "POST", path: "/v1/groups", tag: "Groups", summary: "Create a group",
 			req: t(groupReq{}), resp: t(model.Group{}), status: 201},
 		{method: "POST", path: "/v1/groups/{id}", tag: "Groups", summary: "Update a group", req: t(groupReq{})},
@@ -186,6 +264,27 @@ func apiSpecRoutes() []oaRoute {
 			req: t(oaGroupMembersReq{})},
 		{method: "POST", path: "/v1/users/{id}/groups", tag: "Users", summary: "Set a user's group membership",
 			req: t(oaUserGroupsReq{})},
+
+		{method: "GET", path: "/v1/webhooks", tag: "Webhooks", summary: "List webhook endpoints",
+			resp: t(model.Webhook{}), list: true},
+		{method: "GET", path: "/v1/webhooks/events", tag: "Webhooks", summary: "Event keys a webhook can subscribe to",
+			resp: t(apiEventKey{}), list: true},
+		{method: "POST", path: "/v1/webhooks", tag: "Webhooks", summary: "Add a webhook endpoint",
+			req: t(apiWebhookReq{}), resp: t(model.Webhook{}), status: 201},
+		{method: "POST", path: "/v1/webhooks/{id}", tag: "Webhooks", summary: "Update a webhook endpoint",
+			req: t(apiWebhookReq{}), resp: t(oaOKResp{})},
+		{method: "DELETE", path: "/v1/webhooks/{id}", tag: "Webhooks", summary: "Delete a webhook endpoint"},
+		{method: "POST", path: "/v1/webhooks/{id}/test", tag: "Webhooks",
+			summary: "Send a test delivery (200 with ok=false when the endpoint fails)",
+			resp:    t(apiWebhookTestResp{})},
+
+		{method: "GET", path: "/v1/registrations", tag: "Registrations",
+			summary: "Moderated signup queue", resp: t(apiRegistrationsResp{})},
+		{method: "POST", path: "/v1/registrations/{id}/approve", tag: "Registrations",
+			summary: "Approve a signup — creates the account and links its Telegram chat",
+			resp:    t(oaOKResp{})},
+		{method: "POST", path: "/v1/registrations/{id}/reject", tag: "Registrations",
+			summary: "Reject a signup", resp: t(oaOKResp{})},
 	}
 }
 
@@ -228,8 +327,23 @@ func buildOpenAPI(serverURL string) map[string]any {
 				"error": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"code":    map[string]any{"type": "string"},
-						"message": map[string]any{"type": "string"},
+						"code": map[string]any{
+							"type":        "string",
+							"description": "coarse class: bad_request | unauthorized | not_found | unsupported_media_type | internal",
+						},
+						"message": map[string]any{
+							"type":        "string",
+							"description": "human-readable English text, parameters already filled in",
+						},
+						"key": map[string]any{
+							"type":        "string",
+							"description": "stable identifier of the specific reason (e.g. err.planHasUsers) — branch on this, not on the text; absent when the panel raised no code",
+						},
+						"args": map[string]any{
+							"type":                 "object",
+							"additionalProperties": true,
+							"description":          "the message's parameters, so a client can render it in its own language; absent when there are none",
+						},
 					},
 				},
 			},
