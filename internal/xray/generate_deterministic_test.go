@@ -21,7 +21,9 @@ func TestGenerateIsDeterministic(t *testing.T) {
 	set.RealityEnabled, set.RealityPrivateKey = true, "priv"
 	set.RealityPublicKey, set.RealityShortID = "pub", "aabb"
 	set.RealityDest = "www.microsoft.com:443"
-	set.ProxyModeEnabled, set.ProxyModePort, set.ProxyModeType = true, 1080, "socks"
+	set.ProxySocksEnabled, set.ProxySocksPort = true, 1080
+	set.ProxyHTTPEnabled, set.ProxyHTTPPort = true, 3128
+	set.ProxyAccounts = []model.SystemProxyAccount{{User: "sys", Pass: "sys-pass"}}
 	set.XrayDNS = "1.1.1.1\n8.8.8.8"
 	set.Routing = model.RoutingConfig{
 		BlockAds:        true,

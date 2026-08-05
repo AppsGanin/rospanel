@@ -101,9 +101,9 @@ func TestNodeSettingsOverrides(t *testing.T) {
 		VLESSEnabled: true, HysteriaEnabled: true, RealityEnabled: true,
 		RealityPrivateKey: "panel-priv", RealityPublicKey: "panel-pub",
 		XrayDNS: "8.8.8.8",
-		// Master-only local proxy: must NEVER leak into a node's config.
-		ProxyModeEnabled: true, ProxyModeType: "socks", ProxyModePort: 1080,
-		ProxyModeUser: "master-user", ProxyModePass: "master-pass",
+		// The master's system proxy: must NEVER leak into a node's config.
+		ProxySocksEnabled: true, ProxySocksPort: 1080,
+		ProxyAccounts: []model.SystemProxyAccount{{User: "master-user", Pass: "master-pass"}},
 		Routing: model.RoutingConfig{
 			BlockAds:     true,
 			WarpDomains:  []string{"warp.example"},
@@ -160,7 +160,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 	}
 	// Proxy mode is master-only: the inbound and the master's credentials must never
 	// reach a node's config.
-	if ns.ProxyModeEnabled || ns.ProxyModePort != 0 || ns.ProxyModeUser != "" || ns.ProxyModePass != "" {
+	if ns.ProxySocksEnabled || ns.ProxySocksPort != 0 || len(ns.ProxyAccounts) != 0 {
 		t.Fatalf("master proxy mode leaked into node config: %+v", ns)
 	}
 

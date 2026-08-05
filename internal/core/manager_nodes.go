@@ -78,15 +78,14 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.OperaEnabled = n.OperaEnabled
 	ns.OperaCountry = n.OperaCountry
 
-	// Proxy mode is a master-ONLY local forward proxy: its inbound (and the master's
-	// credentials) must never be generated into a node's config — that would open a
-	// chainable proxy on the node's port and leak the master's proxy password onto
-	// every node's disk. Nodes never run it.
-	ns.ProxyModeEnabled = false
-	ns.ProxyModeType = ""
-	ns.ProxyModePort = 0
-	ns.ProxyModeUser = ""
-	ns.ProxyModePass = ""
+	// System proxies are the node's OWN, never the master's: inheriting would open a
+	// listener on every node the moment the master enabled one, and would write the
+	// master's proxy password onto every node's disk.
+	ns.ProxySocksEnabled = n.Proxy.SocksEnabled
+	ns.ProxySocksPort = n.Proxy.SocksPort
+	ns.ProxyHTTPEnabled = n.Proxy.HTTPEnabled
+	ns.ProxyHTTPPort = n.Proxy.HTTPPort
+	ns.ProxyAccounts = n.Proxy.Accounts
 
 	// DNS: the node's OWN (no inheritance). Unset ⇒ Xray's default resolver.
 	if n.XrayDNS != nil {
@@ -265,6 +264,9 @@ func (r *nodeRegistry) wakeChan(nodeID int64) chan struct{} {
 // nothing to wake until then — and not creating entries here keeps the map from
 // accumulating channels for nodes that never poll.
 func (r *nodeRegistry) wakeOne(nodeID int64) {
+	if r == nil {
+		return // no registry (tests) ⇒ no parked poll to wake
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if ch, ok := r.waits[nodeID]; ok {
@@ -346,6 +348,10 @@ type NodeView struct {
 	// editor edits the master.
 	Routing *model.RoutingConfig `json:"routing"`
 	XrayDNS *string              `json:"xray_dns"`
+	// Proxy is this server's system proxy (SOCKS/HTTP listeners for non-VPN traffic).
+	// Carries the account so the page can show a ready-to-paste address — it is an
+	// operator screen, and the password is the point of the feature.
+	Proxy model.SystemProxy `json:"proxy"`
 	// Egress backends (node's own, independent of the master; all off by default).
 	// WARP is native to Xray once registered; Opera runs a helper on the node.
 	WarpEnabled    bool   `json:"warp_enabled"`
@@ -413,6 +419,11 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityShortID:   set.RealityShortID,
 		RealityPath:      set.RealityPath,
 		GeoRefreshHours:  set.GeoRefreshHours,
+		Proxy: model.SystemProxy{
+			SocksEnabled: set.ProxySocksEnabled, SocksPort: set.ProxySocksPort,
+			HTTPEnabled: set.ProxyHTTPEnabled, HTTPPort: set.ProxyHTTPPort,
+			Accounts: set.ProxyAccounts,
+		},
 	}
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
@@ -453,6 +464,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			RealityPublicKey: n.RealityPublicKey,
 			RealityShortID:   n.RealityShortID,
 			RealityPath:      n.RealityPath,
+			Proxy:            n.Proxy,
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]

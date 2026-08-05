@@ -210,6 +210,7 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/nodes/{id}/regen-join", "apiNodeRejoin", idFn(rt.apiRegenNodeJoin))
 	nodeAudit("POST /v1/nodes/{id}/update", "apiNodeUpdate", idFn(rt.apiUpdateNode))
 	nodeAudit("POST /v1/nodes/update-all", "apiNodesUpdateAll", rt.apiUpdateAllNodes)
+	nodeAudit("POST /v1/nodes/{id}/proxy", "apiSystemProxy", idFn(rt.apiSetServerProxy))
 	id("GET /v1/nodes/{id}/health", rt.apiNodeHealth)
 	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
 

@@ -70,7 +70,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/decoy":           set("decoy"),
 	"POST /api/settings/subscription":    set("subscriptions"),
 	"POST /api/settings/dns":             set("dns"),
-	"POST /api/settings/proxy-mode":      set("proxyMode"),
+	"POST /api/nodes/{id}/proxy":         set("systemProxy"),
 	"POST /api/settings/local-backup":    set("localBackups"),
 	"POST /api/settings/autodelete":      set("autodelete"),
 	"POST /api/settings/abuse":           set("blocklists"),

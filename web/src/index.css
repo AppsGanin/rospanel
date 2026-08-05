@@ -217,6 +217,40 @@ body {
   border-color: color-mix(in srgb, #dc2626 45%, transparent);
 }
 
+/* Scrollbars.
+   Every scrolling area in the panel — dialog bodies, log tails, pickers, tables —
+   otherwise shows the OS default: a wide light-grey bar that looks pasted onto a
+   dark theme and eats horizontal room in narrow panes. These rules give all of them
+   one thin, rounded, translucent bar.
+   Built from --color-ink (the theme sets it per surface), so the thumb is dark on a
+   light panel and light on a dark one without a second set of rules. The track stays
+   transparent — the bar reads as part of the surface it scrolls, and no reserved gutter
+   appears next to content. .no-scrollbar (horizontal nav strips) still wins: it comes
+   after this and hides the bar outright. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-ink) 28%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* The border + background-clip is what makes the thumb look inset rather than
+     edge-to-edge: the visible pill is 6px inside a 10px lane. */
+  background-color: color-mix(in srgb, var(--color-ink) 28%, transparent);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--color-ink) 45%, transparent);
+}
+
 /* Hide scrollbars on horizontal nav strips. */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

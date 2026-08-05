@@ -67,11 +67,6 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"xray_dns":             set.XrayDNS,
 		"warp_enabled":         set.WarpEnabled,
 		"warp_registered":      set.WarpRegistered(),
-		"proxy_mode_enabled":   set.ProxyModeEnabled,
-		"proxy_mode_type":      set.ProxyModeType,
-		"proxy_mode_port":      set.ProxyModePort,
-		"proxy_mode_user":      set.ProxyModeUser,
-		"proxy_mode_pass":      set.ProxyModePass,
 		"local_backup_cron":    set.LocalBackupCron,
 		"local_backup_keep":    set.LocalBackupKeep,
 	})
@@ -94,19 +89,14 @@ func (rt *Router) setLocalBackup(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
-// setProxyMode toggles/configures the socks/http forward-proxy inbound.
-func (rt *Router) setProxyMode(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Enabled bool   `json:"enabled"`
-		Type    string `json:"type"`
-		Port    int    `json:"port"`
-		User    string `json:"user"`
-		Pass    string `json:"pass"`
-	}
+// setServerProxy configures one server's system proxy listeners — {id} 0 is the
+// panel's own machine, anything else a node.
+func (rt *Router) setServerProxy(w http.ResponseWriter, r *http.Request, id int64) {
+	var req model.SystemProxy
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SetProxyMode(req.Enabled, req.Type, req.Port, req.User, req.Pass); err != nil {
+	if err := rt.mgr.SetSystemProxy(id, req); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

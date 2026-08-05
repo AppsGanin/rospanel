@@ -406,8 +406,12 @@ const en: Dict = {
     portRange: "the port is outside 1–65535",
     portTakenHere: "the port is already used by another connection on this server — pick a different one",
     priceMustBePositive: "the price must be above 0 — a plan becomes free by being chosen as the free or trial plan under Pricing",
-    proxyNeedsCredentials: "proxy mode needs a username and a password",
-    proxyTypeInvalid: "the proxy type must be socks or http",
+    portTaken: "port {{port}} is already taken by {{who}}",
+    proxyNeedsCredentials: "the system proxy needs at least one user",
+    proxyTooManyAccounts: "no more than {{max}} proxy users",
+    proxyUserDuplicate: "the login {{value}} is used twice",
+    proxyPortsCollide: "the SOCKS and HTTP ports must differ",
+    proxyUserCharset: "the proxy login cannot contain a space or a colon",
     realityDestRequired: "give at least one REALITY masquerade domain",
     realityPortRange: "the REALITY port is outside 1–65535",
     requestNotFound: "request not found",
@@ -787,6 +791,7 @@ const en: Dict = {
       apiNodesUpdateAll: "API · update every node",
       apiPaymentProvider: "API · payment provider",
       apiRegApproved: "API · signup approved",
+      apiSystemProxy: "API · system proxy",
       apiRegRejected: "API · signup rejected",
       apiUserGroups: "API · user groups",
       apiWebhookAdded: "API · webhook added",
@@ -836,7 +841,7 @@ const en: Dict = {
       nodeXrayRestart: "Node · Xray restart",
       nodesUpdateAll: "Update all nodes",
       payments: "Payment acceptance",
-      proxyMode: "Proxy mode",
+      systemProxy: "System proxy",
       routing: "Routing",
       secretPath: "Secret path",
       setupFinish: "Initial setup",
@@ -2070,6 +2075,21 @@ const en: Dict = {
       "Backups are sent to every linked chat on a schedule (in the panel's time zone).",
     sendTestBackup: "Send a test backup",
     needTokenAndChat: "A token and at least one linked chat are required.",
+  },
+
+  // System proxy: this server's SOCKS/HTTP listeners for non-VPN traffic.
+  proxy: {
+    title: "System proxy",
+    hint:
+      "This server's SOCKS5 and HTTP proxies — for pushing something that isn't a VPN client through it: a script, a bot, somebody else's service. They have nothing to do with VPN users and never appear in a subscription. Traffic leaves under this server's routing.",
+    accounts: "Users",
+    addAccount: "Add",
+    noAccounts: "Nobody yet — add a user, or the proxy will not come up.",
+    user: "Username",
+    pass: "Password",
+    generate: "Generate",
+    authHint: "With no users the proxy does not start.",
+    addresses: "Addresses",
   },
 
   nodes: {

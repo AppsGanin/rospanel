@@ -269,7 +269,6 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/decoy", rt.setDecoyTemplate)
 	authed("POST /api/settings/subscription", rt.saveSubSettings)
 	authed("POST /api/settings/dns", rt.setXrayDNS)
-	authed("POST /api/settings/proxy-mode", rt.setProxyMode)
 	authed("POST /api/settings/local-backup", rt.setLocalBackup)
 	authed("POST /api/settings/autodelete", rt.setUserAutoDelete)
 	authed("GET /api/settings/abuse", rt.getAbuseSettings)
@@ -364,6 +363,8 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("PATCH /api/nodes/{id}", rt.updateNode)
 	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)
 	authedID("POST /api/nodes/{id}/dns", rt.setNodeDNS)
+	// System proxy, per server: {id} 0 is the master, anything else a node.
+	authedID("POST /api/nodes/{id}/proxy", rt.setServerProxy)
 	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)

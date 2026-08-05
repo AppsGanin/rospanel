@@ -397,23 +397,106 @@ func (m *Manager) SetIPListRefresh(hours int) error {
 	return nil
 }
 
-// SetProxyMode persists the forward-proxy inbound (proxy mode) and reloads Xray.
-func (m *Manager) SetProxyMode(enabled bool, typ string, port int, user, pass string) error {
-	if typ != "socks" && typ != "http" {
-		return invalidCode("err.proxyTypeInvalid", "тип прокси должен быть socks или http")
+// SetSystemProxy configures one server's forward-proxy listeners — serverID 0 is the
+// panel's own machine, anything else a node. One entry point for both because the
+// two differ only in where the row lives: the validation, the port collisions and the
+// consequence (this server's Xray gains or loses a public listener) are identical.
+func (m *Manager) SetSystemProxy(serverID int64, p model.SystemProxy) error {
+	p.Normalize()
+	if err := p.Validate(); err != nil {
+		return fromFieldErr(err)
 	}
-	if port < 1 || port > 65535 {
-		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
-	}
-	user = strings.TrimSpace(user)
-	if enabled && (user == "" || pass == "") {
-		return invalidCode("err.proxyNeedsCredentials", "для режима прокси нужны логин и пароль")
-	}
-	if err := m.store.SetProxyMode(enabled, typ, port, user, pass); err != nil {
+	set, err := m.serverSettings(serverID)
+	if err != nil {
 		return err
 	}
-	m.TriggerReconcile()
+	// Collisions are checked against THIS server's other listeners: a node's ports
+	// have nothing to do with the master's.
+	if err := checkProxyPorts(p, set, m.serverInbounds(serverID)); err != nil {
+		return err
+	}
+	if serverID == model.LocalNodeID {
+		if err := m.store.SetSystemProxy(p); err != nil {
+			return err
+		}
+		m.TriggerReconcile()
+		return nil
+	}
+	if err := m.store.SetNodeSystemProxy(serverID, p); err != nil {
+		return err
+	}
+	// A node applies whatever config the panel hands it on its next poll; waking it
+	// makes that now rather than up to 45s from now.
+	m.nodes.wakeOne(serverID)
 	return nil
+}
+
+// serverSettings materializes one server's effective settings (the master's own, or a
+// node's after nodeSettings), so callers can reason about a single server uniformly.
+func (m *Manager) serverSettings(serverID int64) (*model.Settings, error) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	if serverID == model.LocalNodeID {
+		return set, nil
+	}
+	n, err := m.store.GetNode(serverID)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, invalidCode("err.nodeNotFound", "сервер не найден")
+	}
+	return nodeSettings(set, n), nil
+}
+
+// serverInbounds is one server's custom inbounds, best-effort: a read failure here
+// costs a port-collision check, not the write.
+func (m *Manager) serverInbounds(serverID int64) []model.Inbound {
+	ins, err := m.store.Inbounds(serverID)
+	if err != nil {
+		return nil
+	}
+	return ins
+}
+
+// checkProxyPorts rejects a proxy port already held by one of this server's other
+// listeners — a built-in lane, a custom inbound, WARP's loopback entrance. Xray would
+// otherwise start, fail to bind the second listener, and take the whole config down
+// with it.
+func checkProxyPorts(p model.SystemProxy, set *model.Settings, custom []model.Inbound) error {
+	// Computed with the proxy's OWN ports stripped out, so re-saving an unchanged
+	// configuration doesn't report it colliding with itself.
+	reserved := otherListenerPorts(set, custom)
+	if p.SocksEnabled {
+		if who, taken := reserved[p.SocksPort]; taken {
+			return invalidCode("err.portTaken", "порт {{port}} уже занят: {{who}}",
+				map[string]any{"port": p.SocksPort, "who": who})
+		}
+	}
+	if p.HTTPEnabled {
+		if who, taken := reserved[p.HTTPPort]; taken {
+			return invalidCode("err.portTaken", "порт {{port}} уже занят: {{who}}",
+				map[string]any{"port": p.HTTPPort, "who": who})
+		}
+	}
+	return nil
+}
+
+// otherListenerPorts is this server's held ports — its built-in lanes, custom inbounds
+// and loopback machinery — WITHOUT the system proxy's own, which would otherwise make
+// every re-save of an unchanged configuration collide with itself.
+func otherListenerPorts(set *model.Settings, custom []model.Inbound) model.ReservedPorts {
+	stripped := *set
+	stripped.ProxySocksPort, stripped.ProxyHTTPPort = 0, 0
+	r := reservedPorts(&stripped)
+	for _, in := range custom {
+		if in.Port > 0 {
+			r[in.Port] = in.Name
+		}
+	}
+	return r
 }
 
 // ApplyRouting persists the routing config plus the WARP/Opera on/off state in

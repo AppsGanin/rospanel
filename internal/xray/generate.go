@@ -189,12 +189,10 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		inbounds = append(inbounds, customInbound(in, set, users, sniff, sharedCert, minTLS, opts))
 	}
 
-	// Proxy mode: a socks/http forward-proxy inbound other RosPanel servers chain
-	// through. Its traffic follows this server's routing (so it can itself egress
-	// via WARP / the proxy pool), defaulting to direct.
-	if set.ProxyModeEnabled {
-		inbounds = append(inbounds, proxyModeInbound(set, sniff))
-	}
+	// System proxies: this server's SOCKS/HTTP forward listeners, for traffic that
+	// isn't a VPN client. Their traffic follows this server's routing (so it can
+	// itself egress via WARP / Opera / the proxy pool), defaulting to direct.
+	inbounds = append(inbounds, systemProxyInbounds(set, sniff)...)
 
 	// Optional DNS block: upstream resolvers configured by the operator.
 	var dns *DNS
@@ -337,33 +335,65 @@ func probeProfile(host string) (url, interval string) {
 		fmt.Sprintf("%ds", 45+(n/uint64(len(probeTargets)))%45)
 }
 
-// proxyModeInbound builds the forward-proxy inbound (proxy mode): socks or http,
-// with optional username/password auth.
-func proxyModeInbound(set *model.Settings, sniff *Sniffing) Inbound {
-	hasAuth := set.ProxyModeUser != "" || set.ProxyModePass != ""
-	accounts := []ProxyUser{{User: set.ProxyModeUser, Pass: set.ProxyModePass}}
-
-	proto := "socks"
-	var settings any = SocksInboundSettings{Auth: "noauth", UDP: true}
-	if set.ProxyModeType == "http" {
-		proto = "http"
-		s := HTTPInboundSettings{}
-		if hasAuth {
-			s.Accounts = accounts
+// systemProxyInbounds builds this server's forward-proxy listeners — a SOCKS5 and/or
+// an HTTP inbound for traffic that is not a VPN client (a scraper, a bot, another
+// RosPanel chaining its egress here).
+//
+// Both carry the server's single account and nothing else: these listeners are public
+// and an unauthenticated one becomes somebody's spam relay within hours, with this
+// server's IP on it. A configuration without credentials is refused before it reaches
+// here (model.SystemProxy.Validate), so an account is always present.
+//
+// They sniff like the user-facing inbounds, so this traffic matches the same
+// domain-based routing rules — which is what makes "it leaves where the VPN leaves"
+// true, WARP and Opera lanes included.
+func systemProxyInbounds(set *model.Settings, sniff *Sniffing) []Inbound {
+	p := model.SystemProxy{
+		SocksEnabled: set.ProxySocksEnabled, SocksPort: set.ProxySocksPort,
+		HTTPEnabled: set.ProxyHTTPEnabled, HTTPPort: set.ProxyHTTPPort,
+		Accounts: set.ProxyAccounts,
+	}
+	accounts := make([]ProxyUser, 0, len(p.Accounts))
+	for _, a := range p.Accounts {
+		if a.User == "" || a.Pass == "" {
+			continue // a half-filled account would authenticate nobody
 		}
-		settings = s
-	} else if hasAuth {
-		settings = SocksInboundSettings{Auth: "password", Accounts: accounts, UDP: true}
+		accounts = append(accounts, ProxyUser{User: a.User, Pass: a.Pass})
 	}
-	return Inbound{
-		Tag:      "proxy-mode-in",
-		Listen:   "0.0.0.0",
-		Port:     set.ProxyModePort,
-		Protocol: proto,
-		Settings: settings,
-		Sniffing: sniff,
+	if len(accounts) == 0 {
+		return nil // never open an anonymous proxy, whatever the flags say
 	}
+	var out []Inbound
+	if p.SocksEnabled && p.SocksPort > 0 {
+		out = append(out, Inbound{
+			Tag:      systemSocksTag,
+			Listen:   "0.0.0.0",
+			Port:     p.SocksPort,
+			Protocol: "socks",
+			// UDP on: SOCKS5 clients that need it (DNS, QUIC, games) would otherwise
+			// fail in ways that look like the destination is down.
+			Settings: SocksInboundSettings{Auth: "password", Accounts: accounts, UDP: true},
+			Sniffing: sniff,
+		})
+	}
+	if p.HTTPEnabled && p.HTTPPort > 0 {
+		out = append(out, Inbound{
+			Tag:      systemHTTPTag,
+			Listen:   "0.0.0.0",
+			Port:     p.HTTPPort,
+			Protocol: "http",
+			Settings: HTTPInboundSettings{Accounts: accounts},
+			Sniffing: sniff,
+		})
+	}
+	return out
 }
+
+// The tags the system proxies' traffic carries into the routing rules.
+const (
+	systemSocksTag = "system-socks-in"
+	systemHTTPTag  = "system-http-in"
+)
 
 // panelEgressTag identifies local traffic entering the WARP tunnel in the routing rules.
 const panelEgressTag = "panel-egress-in"

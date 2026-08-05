@@ -12,7 +12,7 @@ import (
 // list so the fixture can encrypt exactly one at a time.
 var settingsCols = []string{
 	"tg_bot_token", "tg_user_bot_token", "tg_support_bot_token",
-	"reality_private_key", "warp_private_key", "proxy_mode_pass", "zerossl_eab_hmac",
+	"reality_private_key", "warp_private_key", "proxy_accounts", "zerossl_eab_hmac",
 }
 
 // writeDB builds a minimal panel database with one settings row, encrypting only
@@ -40,7 +40,14 @@ func writeDB(t *testing.T, encrypted string) string {
 		t.Fatalf("seed settings: %v", err)
 	}
 	if encrypted != "" {
-		if _, err := db.Exec(`UPDATE settings SET ` + encrypted + ` = 'enc:v1:deadbeef' WHERE id = 1`); err != nil {
+		// proxy_accounts is a JSON array whose PASSWORDS carry the envelope, so its
+		// ciphertext sits inside the value rather than being the whole of it — the
+		// guard has to find it either way.
+		val := "enc:v1:deadbeef"
+		if encrypted == "proxy_accounts" {
+			val = `[{"user":"u","pass":"enc:v1:deadbeef"}]`
+		}
+		if _, err := db.Exec(`UPDATE settings SET `+encrypted+` = ? WHERE id = 1`, val); err != nil {
 			t.Fatalf("encrypt %s: %v", encrypted, err)
 		}
 	}

@@ -70,6 +70,12 @@ type Node struct {
 	OperaEnabled   bool   `json:"opera_enabled"`
 	OperaCountry   string `json:"opera_country"`
 
+	// Proxy is this node's own system proxy (SOCKS/HTTP forward listeners for things
+	// that are not VPN clients). Never inherited from the master: inheriting would
+	// open a listener on every node the moment the master enabled one, and would put
+	// the master's password on every node's disk. Pass is encrypted at rest.
+	Proxy SystemProxy `json:"proxy"`
+
 	// Connections is the node's own transport override (nil ⇒ inherit the master's).
 	Connections *NodeConnections `json:"-"`
 
