@@ -1,11 +1,6 @@
 package model
 
-import (
-	"fmt"
-	"net"
-	"net/url"
-	"strings"
-)
+import "strings"
 
 // SystemProxyAccount is one login the system proxy accepts. Several exist so the
 // operator can hand a separate credential to each consumer — a scraper, a bot, a
@@ -118,34 +113,4 @@ func validProxyPort(port int) error {
 		return fieldErr("err.portRange", "порт вне диапазона 1–65535")
 	}
 	return nil
-}
-
-// SocksURL / HTTPURL are the ready-to-paste addresses for one account on a host, or
-// "" when that listener is off. The credentials are in the URL because that is the
-// form every client takes; the panel only ever shows them to an operator who can
-// already read them from this page.
-func (p SystemProxy) SocksURL(host string, a SystemProxyAccount) string {
-	if !p.SocksEnabled {
-		return ""
-	}
-	return proxyURL("socks5", a, host, p.SocksPort)
-}
-
-func (p SystemProxy) HTTPURL(host string, a SystemProxyAccount) string {
-	if !p.HTTPEnabled {
-		return ""
-	}
-	return proxyURL("http", a, host, p.HTTPPort)
-}
-
-func proxyURL(scheme string, a SystemProxyAccount, host string, port int) string {
-	if host == "" || port <= 0 || a.User == "" {
-		return ""
-	}
-	u := &url.URL{
-		Scheme: scheme,
-		Host:   net.JoinHostPort(host, fmt.Sprint(port)),
-		User:   url.UserPassword(a.User, a.Pass),
-	}
-	return u.String()
 }

@@ -22,7 +22,10 @@ func systemProxyManager(t *testing.T) (*Manager, *store.Store) {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return &Manager{store: st}, st
+	// PanelDest is what a real install always has; without it the panel's own port
+	// would not be reserved and the collision test below would pass for the wrong
+	// reason.
+	return &Manager{store: st, opts: xray.Options{PanelDest: "127.0.0.1:8080"}}, st
 }
 
 // The whole point of the feature: a server's proxy is ITS OWN. Enabling it on the
@@ -102,6 +105,13 @@ func TestSystemProxyRefusesUnsafeConfigs(t *testing.T) {
 		}},
 		{"port held by Xray's own API", model.SystemProxy{
 			SocksEnabled: true, SocksPort: xray.APIPort, Accounts: acc("u", "p"),
+		}},
+		// 8080 is the natural pick for an HTTP proxy AND where the panel itself
+		// listens. Taking it would leave Xray unable to bind and the panel unreachable
+		// behind its own fallback — the one collision an operator is most likely to
+		// walk into, and the one the custom-inbound path already guarded.
+		{"port held by the panel itself", model.SystemProxy{
+			HTTPEnabled: true, HTTPPort: 8080, Accounts: acc("u", "p"),
 		}},
 	}
 	for _, c := range cases {
