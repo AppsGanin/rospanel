@@ -107,28 +107,3 @@ func T(lang Lang, key string, args ...any) string {
 	}
 	return fmt.Sprintf(s, args...)
 }
-
-// Has reports whether a key exists in the reference catalog. Used by the tests
-// that check the two catalogs have not drifted apart.
-func Has(key string) bool {
-	_, ok := ru[key]
-	return ok
-}
-
-// Keys returns every key in the reference catalog, for the drift test.
-func Keys() []string {
-	out := make([]string, 0, len(ru))
-	for k := range ru {
-		out = append(out, k)
-	}
-	return out
-}
-
-// LangKeys returns every key present in lang's catalog.
-func LangKeys(lang Lang) []string {
-	out := make([]string, 0, len(catalogs[lang]))
-	for k := range catalogs[lang] {
-		out = append(out, k)
-	}
-	return out
-}

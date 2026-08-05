@@ -19,7 +19,6 @@ import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
-  Card,
   CenterLoader,
   IconButton,
   IconClose,

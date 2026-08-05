@@ -162,15 +162,6 @@ func RandomPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// RandomWSPath returns a random WebSocket path like "/3f9k2m".
-func RandomWSPath() (string, error) {
-	b := make([]byte, 6)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return "/" + strings.ToLower(secretPathEnc.EncodeToString(b)), nil
-}
-
 // RandomToken returns a 256-bit URL-safe opaque token (sessions).
 func RandomToken() (string, error) {
 	b := make([]byte, 32)
