@@ -32,12 +32,6 @@ func (r Range) normalize() (Range, bool) {
 	return r, r.Start <= r.End
 }
 
-// Ruleset returns the nftables ruleset that redirects UDP hopStart..hopEnd to
-// target. It lives in its own `inet rospanel_hop` table.
-func Ruleset(hopStart, hopEnd, target int) string {
-	return RulesetAll([]Range{{hopStart, hopEnd, target}})
-}
-
 // RulesetAll renders one table holding every funnel. All ranges live in a single
 // chain and are loaded in one `nft -f`, because the table is recreated wholesale on
 // each apply: rendering them separately would mean the last writer erased the rest.
@@ -50,12 +44,6 @@ func RulesetAll(ranges []Range) string {
 	}
 	b.WriteString("\t}\n}\n")
 	return b.String()
-}
-
-// Ensure (re)installs the hop rules for a single funnel. Kept for the built-in
-// Hysteria2 lane's callers; EnsureAll is the general form.
-func Ensure(hopStart, hopEnd, target int) error {
-	return EnsureAll([]Range{{hopStart, hopEnd, target}})
 }
 
 // EnsureAll (re)installs the hop rules for every funnel on this host — the built-in

@@ -163,27 +163,3 @@ func Decrypt(s string) (string, error) {
 	}
 	return string(pt), nil
 }
-
-// EncryptFile reads path and returns encrypted bytes (AES-GCM, random nonce prepended).
-func EncryptFile(path string) ([]byte, error) {
-	if key == nil {
-		return nil, errors.New("datasec: not initialised")
-	}
-	plain, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-	return gcm.Seal(nonce, nonce, plain, nil), nil
-}

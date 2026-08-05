@@ -1019,9 +1019,6 @@ export interface Broadcast {
 
 export const listBroadcasts = () => api<Broadcast[]>('api/broadcasts')
 
-export const getBroadcast = (id: number) =>
-  api<Broadcast>(`api/broadcasts/${id}`)
-
 // broadcastAudience previews how many recipients a filter resolves to right now.
 export const broadcastAudience = (audience: BroadcastAudience) =>
   api<{ count: number }>(

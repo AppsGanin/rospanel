@@ -32,7 +32,6 @@ import {
   Select,
   SettingCard,
   Spinner,
-  Switch,
   TextInput,
   useConfirm,
 } from "./ui";
