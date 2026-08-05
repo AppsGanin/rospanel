@@ -14,7 +14,7 @@ import (
 
 // telegramConfig is the bot configuration returned to the settings UI. The token
 // is returned in clear (admin-only, behind the secret path + auth + TLS — the same
-// treatment as proxy_mode_pass) so the form can round-trip it.
+// treatment as the system proxy's password) so the form can round-trip it.
 func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 	set, err := rt.mgr.Settings()
 	if err != nil {

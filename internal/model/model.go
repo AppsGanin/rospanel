@@ -533,13 +533,16 @@ type Settings struct {
 	RealityShortID    string `json:"-"` // hex shortId, in links (sid)
 	RealityPath       string `json:"-"` // gRPC service name
 
-	// Proxy mode: a socks/http forward-proxy inbound so other RosPanel servers can
-	// chain their egress through this one (point their proxy pool at host:port).
-	ProxyModeEnabled bool   `json:"-"`
-	ProxyModeType    string `json:"-"` // "socks" | "http"
-	ProxyModePort    int    `json:"-"`
-	ProxyModeUser    string `json:"-"`
-	ProxyModePass    string `json:"-"`
+	// System proxies: a SOCKS5 and/or HTTP forward proxy on this server, for
+	// proxying something that is not a VPN client — a scraper, a bot, another
+	// RosPanel chaining its egress here. No VPN user's credential opens them and no
+	// access group gates them; they carry the one account below. Per server: a node
+	// has its own (see model.Node), never the master's.
+	ProxySocksEnabled bool                 `json:"-"`
+	ProxySocksPort    int                  `json:"-"`
+	ProxyHTTPEnabled  bool                 `json:"-"`
+	ProxyHTTPPort     int                  `json:"-"`
+	ProxyAccounts     []SystemProxyAccount `json:"-"` // passwords encrypted at rest
 
 	// First-run wizard state. SetupDone gates the wizard; Timezone is the IANA
 	// zone anchoring the local-day boundary for stats (empty ⇒ server local).

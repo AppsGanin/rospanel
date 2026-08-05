@@ -150,9 +150,12 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 			hold(p, "HYSTERIA-UDP hop range")
 		}
 	}
-	if set.ProxyModeEnabled {
-		hold(set.ProxyModePort, "proxy mode")
-	}
+	// The system proxies' listeners, held whether or not they are currently on — for
+	// the same reason the built-in lanes are: the port comes back the moment the
+	// operator flips the switch, and discovering the collision then, as an Xray that
+	// won't start, is what this set exists to prevent.
+	hold(set.ProxySocksPort, "SOCKS-прокси")
+	hold(set.ProxyHTTPPort, "HTTP-прокси")
 	if set.OperaEnabled {
 		hold(set.OperaPortOr(), "Opera VPN")
 	}

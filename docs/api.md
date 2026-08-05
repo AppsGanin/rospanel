@@ -275,6 +275,9 @@ enabled node automatically, and each server can be edited independently.
 | `POST` | `/v1/nodes/{id}/regen-join` | Issue a fresh install command (revokes the node's current token). |
 | `POST` | `/v1/nodes/{id}/update` | Ask a node to self-update to the latest release. |
 | `POST` | `/v1/nodes/update-all` | Ask every connected node to self-update (sequentially). |
+| `POST` | `/v1/nodes/{id}/proxy` | Configure that server's system proxy (`id` 0 = the master). |
+| `GET` | `/v1/nodes/{id}/health` | One server's self-diagnostics. |
+| `GET` | `/v1/nodes/{id}/logs` | A node's recent log lines. |
 
 **Register a node** — body `{ "name": "NL #1", "host": "nl1.example.com" }`. The
 response carries the node id, the one-time join token and the ready-to-run install
@@ -291,6 +294,29 @@ command for a fresh Ubuntu server:
 ```
 
 The join token is embedded once and expires in 24h; `/regen-join` issues a new one.
+
+**System proxy** — a SOCKS5 and/or HTTP forward listener on that server, for traffic
+that is not a VPN client: a scraper, a bot, another panel chaining its egress here.
+No user credential opens it, no access group gates it, and it never appears in a
+subscription. Traffic leaves under that server's routing, so WARP, Opera and the proxy
+lanes apply exactly as they do for VPN clients.
+
+```json
+{ "socks_enabled": true, "socks_port": 1080,
+  "http_enabled": true,  "http_port": 3128,
+  "accounts": [ { "user": "scraper", "pass": "…" },
+                { "user": "bot",     "pass": "…" } ] }
+```
+
+`accounts` is the full list every time — the way to delete one is to send the list
+without it. Logins must be unique and carry no colon or space (a colon is the
+separator in `user:pass`), and at least one complete account is required whenever
+either listener is on: an open proxy on a public port is found by scanners within
+hours, and is then somebody else's spam relay with this server's IP on it. A protocol
+enabled without a port gets 1080 (SOCKS) / 3128 (HTTP). Each server has its OWN
+accounts and ports — a node never inherits the master's, so a leaked login opens one
+machine. The response is the stored configuration, so a caller that sent only
+`{"socks_enabled": true}` learns which port it got.
 
 ### Custom inbounds
 

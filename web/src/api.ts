@@ -687,11 +687,6 @@ export interface SettingsInfo extends SubSettings {
   xray_dns: string
   warp_enabled: boolean
   warp_registered: boolean
-  proxy_mode_enabled: boolean
-  proxy_mode_type: string
-  proxy_mode_port: number
-  proxy_mode_user: string
-  proxy_mode_pass: string
   local_backup_cron: string
   local_backup_keep: number
   user_autodelete_days: number
@@ -701,20 +696,6 @@ export const setUserAutoDelete = (days: number) =>
   api<{ ok: boolean }>('api/settings/autodelete', {
     method: 'POST',
     body: JSON.stringify({ user_autodelete_days: days }),
-  })
-
-export interface ProxyModeConfig {
-  enabled: boolean
-  type: string
-  port: number
-  user: string
-  pass: string
-}
-
-export const setProxyMode = (c: ProxyModeConfig) =>
-  api<{ ok: boolean }>('api/settings/proxy-mode', {
-    method: 'POST',
-    body: JSON.stringify(c),
   })
 
 export interface LocalBackupConfig {
@@ -1478,7 +1459,33 @@ export interface NodeView {
   reality_short_id: string
   reality_path: string
   master_label?: string // config-label name of the master (local node only)
+  proxy: SystemProxy // this server's system proxy (SOCKS/HTTP forward listeners)
 }
+
+// SystemProxy is one server's forward proxy: SOCKS5 and/or HTTP listeners for
+// traffic that is NOT a VPN client (a scraper, a bot, another panel chaining its
+// egress here). No user credential opens them and no access group gates them — they
+// carry the server's own account, and their traffic follows that server's routing.
+export interface SystemProxyAccount {
+  user: string
+  pass: string
+}
+
+export interface SystemProxy {
+  socks_enabled: boolean
+  socks_port: number
+  http_enabled: boolean
+  http_port: number
+  // Several logins, so each consumer can be given its own and revoked on its own.
+  accounts: SystemProxyAccount[] | null
+}
+
+// setServerProxy configures one server's system proxy (id 0 = the master).
+export const setServerProxy = (id: number, proxy: SystemProxy) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/proxy`, {
+    method: 'POST',
+    body: JSON.stringify(proxy),
+  })
 
 export const listNodes = () => api<{ nodes: NodeView[] }>('api/nodes')
 

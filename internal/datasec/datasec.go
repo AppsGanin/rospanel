@@ -88,19 +88,24 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		`SELECT tg_support_bot_token FROM settings WHERE id = 1`,
 		`SELECT reality_private_key FROM settings WHERE id = 1`,
 		`SELECT warp_private_key FROM settings WHERE id = 1`,
-		`SELECT proxy_mode_pass FROM settings WHERE id = 1`,
+		`SELECT proxy_accounts FROM settings WHERE proxy_accounts LIKE '%enc:v1:%' AND id = 1`,
 		`SELECT zerossl_eab_hmac FROM settings WHERE id = 1`,
 		`SELECT password FROM users WHERE password LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT reality_private_key FROM nodes WHERE reality_private_key LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT warp_private_key FROM nodes WHERE warp_private_key LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT zerossl_eab_hmac FROM nodes WHERE zerossl_eab_hmac LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT proxy_accounts FROM nodes WHERE proxy_accounts LIKE '%enc:v1:%' LIMIT 1`,
 	}
 	for _, q := range checks {
 		var v string
 		if err := db.QueryRow(q).Scan(&v); err != nil {
 			continue
 		}
-		if strings.HasPrefix(v, encPrefix) {
+		// Contains, not HasPrefix: most of these columns ARE one ciphertext, but
+		// proxy_accounts is a JSON array whose passwords each carry the envelope, so
+		// there the marker sits inside the value. The question this guard asks is
+		// "does anything stored here need the key", and that is true either way.
+		if strings.Contains(v, encPrefix) {
 			return true, nil
 		}
 	}

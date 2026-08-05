@@ -37,6 +37,35 @@ type (
 	}
 )
 
+// apiSetServerProxy configures one server's system proxy — {id} 0 is the panel's own
+// machine, anything else a node. Its own endpoint rather than a field on PATCH
+// /v1/nodes/{id} for one reason: the master has no row in `nodes` to patch, and this
+// listener is exactly as much the master's as a node's.
+func (rt *Router) apiSetServerProxy(w http.ResponseWriter, r *http.Request, id int64) {
+	var req model.SystemProxy
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetSystemProxy(id, req); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	// Answer with the stored state (ports defaulted, password as it now stands), so a
+	// caller that sent {"socks_enabled":true} learns which port it got.
+	views, err := rt.mgr.NodeViews()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	for _, v := range views {
+		if v.ID == id {
+			writeAPIData(w, http.StatusOK, v.Proxy)
+			return
+		}
+	}
+	writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+}
+
 func (rt *Router) apiListNodes(w http.ResponseWriter, _ *http.Request) {
 	views, err := rt.mgr.NodeViews()
 	if err != nil {

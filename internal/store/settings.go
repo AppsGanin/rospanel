@@ -14,7 +14,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var st model.Settings
 	var updated int64
 	var vlessEn, hysteriaEn, setupDone int
-	var realityEn, proxyModeEn int
+	var realityEn, proxySocksEn, proxyHTTPEn int
+	var proxyAccounts string
 	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
@@ -37,8 +38,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       vless_fp, reality_fp, hop_interval,
 		       reality_enabled, reality_port, reality_dest, reality_private_key,
 		       reality_public_key, reality_short_id, reality_path,
-		       proxy_mode_enabled, proxy_mode_type, proxy_mode_port,
-		       proxy_mode_user, proxy_mode_pass,
+		       proxy_socks_enabled, proxy_socks_port,
+		       proxy_http_enabled, proxy_http_port, proxy_accounts,
 		       tls_fragment, tls_min13, block_quic,
 		       reality_max_time_diff, sub_path,
 		       acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
@@ -74,8 +75,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.VLESSFp, &st.RealityFp, &st.HopInterval,
 		&realityEn, &st.RealityPort, &st.RealityDest, &st.RealityPrivateKey,
 		&st.RealityPublicKey, &st.RealityShortID, &st.RealityPath,
-		&proxyModeEn, &st.ProxyModeType, &st.ProxyModePort,
-		&st.ProxyModeUser, &st.ProxyModePass,
+		&proxySocksEn, &st.ProxySocksPort,
+		&proxyHTTPEn, &st.ProxyHTTPPort, &proxyAccounts,
 		&tlsFragment, &tlsMin13, &blockQUIC,
 		&st.RealityMaxTimeDiff, &st.SubPath,
 		&st.ACMEProvider, &st.ZeroSSLEABKID, &st.ZeroSSLEABHMAC,
@@ -113,7 +114,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.VLESSEnabled = vlessEn != 0
 	st.HysteriaEnabled = hysteriaEn != 0
 	st.RealityEnabled = realityEn != 0
-	st.ProxyModeEnabled = proxyModeEn != 0
+	st.ProxySocksEnabled = proxySocksEn != 0
+	st.ProxyHTTPEnabled = proxyHTTPEn != 0
 	st.SetupDone = setupDone != 0
 	st.SubBase64 = subBase64 != 0
 	st.SubNameInTitle = subNameInTitle != 0
@@ -138,7 +140,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGProxy = decField(st.TGProxy)
 	st.WarpPrivateKey = decField(st.WarpPrivateKey)
 	st.RealityPrivateKey = decField(st.RealityPrivateKey)
-	st.ProxyModePass = decField(st.ProxyModePass)
+	st.ProxyAccounts = decodeProxyAccounts(proxyAccounts)
 	st.ZeroSSLEABHMAC = decField(st.ZeroSSLEABHMAC)
 	return &st, nil
 }
@@ -463,17 +465,6 @@ func (s *Store) SetDecoyTemplate(name string) error { return s.setSetting("decoy
 func (s *Store) SetPanelName(name string) error { return s.setSetting("panel_name", name) }
 
 func (s *Store) SetPanelTheme(themeJSON string) error { return s.setSetting("panel_theme", themeJSON) }
-
-// SetProxyMode persists the forward-proxy inbound configuration.
-func (s *Store) SetProxyMode(enabled bool, typ string, port int, user, pass string) error {
-	_, err := s.db.Exec(
-		`UPDATE settings SET proxy_mode_enabled = ?, proxy_mode_type = ?,
-		        proxy_mode_port = ?, proxy_mode_user = ?, proxy_mode_pass = ?,
-		        updated_at = unixepoch() WHERE id = 1`,
-		enabled, typ, port, user, encField(pass),
-	)
-	return err
-}
 
 // SetRealityPorts persists the REALITY port and destination (SNI/serverName).
 func (s *Store) SetRealityPorts(port int, dest string) error {

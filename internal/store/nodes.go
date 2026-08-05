@@ -45,7 +45,9 @@ const nodeColumns = `id, name, host, enabled,
 	cert_sha256, cert_self_signed, config_hash, last_report_id, created_at,
 	join_expires_at, deleted_at,
 	cert_issuer, cert_expires_at, geo_refresh_hours,
-	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac`
+	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
+	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
+	proxy_accounts`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -61,6 +63,8 @@ func generateNodeToken() (string, error) {
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
+	var proxySocksEn, proxyHTTPEn int
+	var proxyAccounts string
 	var vlessEn, hysteriaEn, realityEn sql.NullBool
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
@@ -77,6 +81,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.JoinExpiresAt, &n.DeletedAt,
 		&n.CertIssuer, &n.CertExpiresAt, &n.GeoRefreshHours,
 		&n.ACMEEmail, &n.ACMEProvider, &n.ZeroSSLEABKID, &n.ZeroSSLEABHMAC,
+		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
+		&proxyAccounts,
 	); err != nil {
 		return nil, err
 	}
@@ -88,6 +94,9 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.WarpPrivateKey = decField(n.WarpPrivateKey)
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
 	n.ZeroSSLEABHMAC = decField(n.ZeroSSLEABHMAC)
+	n.Proxy.SocksEnabled = proxySocksEn != 0
+	n.Proxy.HTTPEnabled = proxyHTTPEn != 0
+	n.Proxy.Accounts = decodeProxyAccounts(proxyAccounts)
 	n.VLESSEnabled = nullBoolPtr(vlessEn)
 	n.HysteriaEnabled = nullBoolPtr(hysteriaEn)
 	n.RealityEnabled = nullBoolPtr(realityEn)
