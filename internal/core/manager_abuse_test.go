@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -142,7 +143,14 @@ func TestAbuseAlertMidnightStraddleNoDuplicate(t *testing.T) {
 
 	// Write both days' matches directly to the store so both cross the threshold,
 	// then hand alertAbuse a batch that references both days.
-	day1, day2 := "2026-07-20", "2026-07-21"
+	//
+	// The days are RELATIVE to now, not literals. alertAbuse prunes markers older than
+	// the match-retention window, so hard-coded dates work until the wall clock walks
+	// past them and then fail forever: the pruned day re-alerts on every call, and this
+	// test counted 100 instead of 2 the morning the window moved past them.
+	now := time.Now().In(m.loc())
+	day1 := now.AddDate(0, 0, -1).Format("2006-01-02")
+	day2 := now.Format("2006-01-02")
 	var hits []store.AbuseHit
 	for _, d := range []string{day1, day2} {
 		hits = append(hits, store.AbuseHit{

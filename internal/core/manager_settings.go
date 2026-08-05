@@ -412,7 +412,7 @@ func (m *Manager) SetSystemProxy(serverID int64, p model.SystemProxy) error {
 	}
 	// Collisions are checked against THIS server's other listeners: a node's ports
 	// have nothing to do with the master's.
-	if err := checkProxyPorts(p, set, m.serverInbounds(serverID)); err != nil {
+	if err := m.checkProxyPorts(p, set, m.serverInbounds(serverID)); err != nil {
 		return err
 	}
 	if serverID == model.LocalNodeID {
@@ -465,10 +465,11 @@ func (m *Manager) serverInbounds(serverID int64) []model.Inbound {
 // listeners — a built-in lane, a custom inbound, WARP's loopback entrance. Xray would
 // otherwise start, fail to bind the second listener, and take the whole config down
 // with it.
-func checkProxyPorts(p model.SystemProxy, set *model.Settings, custom []model.Inbound) error {
+func (m *Manager) checkProxyPorts(p model.SystemProxy, set *model.Settings, custom []model.Inbound) error {
 	// Computed with the proxy's OWN ports stripped out, so re-saving an unchanged
 	// configuration doesn't report it colliding with itself.
 	reserved := otherListenerPorts(set, custom)
+	m.holdPanelPort(reserved)
 	if p.SocksEnabled {
 		if who, taken := reserved[p.SocksPort]; taken {
 			return invalidCode("err.portTaken", "порт {{port}} уже занят: {{who}}",

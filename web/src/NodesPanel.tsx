@@ -229,10 +229,15 @@ function SystemProxyEditor({
 
   const setAccount = (i: number, a: Partial<SystemProxyAccount>) =>
     patch({ accounts: accounts.map((old, j) => (j === i ? { ...old, ...a } : old)) });
-  const addAccount = () =>
-    patch({
-      accounts: [...accounts, { user: `proxy${accounts.length + 1}`, pass: randomProxyPass() }],
-    });
+  // The suggested login is the first free proxyN, not "count + 1": deleting the
+  // first row and adding one would otherwise propose a name already in the list, and
+  // the save would come back with "the login is used twice".
+  const addAccount = () => {
+    const taken = new Set(accounts.map((a) => a.user));
+    let n = accounts.length + 1;
+    while (taken.has(`proxy${n}`)) n++;
+    patch({ accounts: [...accounts, { user: `proxy${n}`, pass: randomProxyPass() }] });
+  };
   const removeAccount = (i: number) =>
     patch({ accounts: accounts.filter((_, j) => j !== i) });
 

@@ -167,6 +167,29 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	return r
 }
 
+// holdPanelPort marks the panel's own loopback listener in a reserved set. Every
+// server runs one — the master's admin API, a node's decoy — and it is where the VLESS
+// fallback delivers non-VPN traffic, so anything else binding that port takes the panel
+// down with it. Xray's bind probe would catch it as an anonymous "port busy"; naming it
+// says what actually holds it.
+//
+// Shared by every listener check (custom inbounds AND the system proxy) because the
+// collision is the same one: it lived inline in the inbound path, so the proxy — where
+// 8080 is a downright natural choice — could claim the port unchallenged.
+func (m *Manager) holdPanelPort(reserved model.ReservedPorts) {
+	_, port, err := net.SplitHostPort(m.opts.PanelDest)
+	if err != nil {
+		return
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		return
+	}
+	if _, taken := reserved[p]; !taken {
+		reserved[p] = "panel internal port"
+	}
+}
+
 // CreateInbound validates and stores a new custom inbound, generating REALITY key
 // material when the combination needs it.
 func (m *Manager) CreateInbound(ctx context.Context, in model.Inbound) (*InboundView, error) {
@@ -325,17 +348,7 @@ func (m *Manager) validateAgainstSet(ctx context.Context, in model.Inbound, excl
 	}
 	next = append(next, in)
 	reserved := reservedPorts(set)
-	// The panel's own loopback listener. Every server runs one — the master's admin
-	// API, a node's decoy — on the same address, so binding it would take the port the
-	// VLESS fallback delivers non-VPN traffic to. The bind probe would catch it, but
-	// only as an anonymous "port busy"; naming it says what actually holds it.
-	if _, port, err := net.SplitHostPort(m.opts.PanelDest); err == nil {
-		if p, err := strconv.Atoi(port); err == nil {
-			if _, taken := reserved[p]; !taken {
-				reserved[p] = "panel internal port"
-			}
-		}
-	}
+	m.holdPanelPort(reserved)
 	if err := model.ValidateInboundSet(next, reserved, set.BuiltinLaneLabels()); err != nil {
 		return fromFieldErr(err)
 	}
