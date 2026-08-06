@@ -73,16 +73,23 @@ func (p SystemProxy) Validate() error {
 		return nil // fully off — the rest doesn't matter
 	}
 	if len(p.Accounts) == 0 {
-		return fieldErr("err.proxyNeedsCredentials", "для системного прокси нужен хотя бы один пользователь")
+		return fieldErr("err.proxyNeedsAccount", "добавьте хотя бы одного пользователя прокси")
 	}
 	if len(p.Accounts) > MaxSystemProxyAccounts {
 		return fieldErr("err.proxyTooManyAccounts", "не больше {{max}} пользователей прокси",
 			map[string]any{"max": MaxSystemProxyAccounts})
 	}
+	// Each incomplete row is reported as ITSELF, naming the login. "needs at least one
+	// user" for a row whose password is simply empty sent the operator looking for a
+	// missing user while the real one sat on screen with a blank field.
 	seen := make(map[string]bool, len(p.Accounts))
 	for _, a := range p.Accounts {
-		if a.User == "" || a.Pass == "" {
-			return fieldErr("err.proxyNeedsCredentials", "для системного прокси нужен хотя бы один пользователь")
+		if a.User == "" {
+			return fieldErr("err.proxyAccountNoUser", "у пользователя прокси не заполнен логин")
+		}
+		if a.Pass == "" {
+			return fieldErr("err.proxyAccountNoPass", "у пользователя {{value}} не заполнен пароль",
+				map[string]any{"value": a.User})
 		}
 		if strings.ContainsAny(a.User, ": ") {
 			return fieldErr("err.proxyUserCharset", "логин прокси не может содержать пробел или двоеточие")
