@@ -399,7 +399,9 @@ const en: Dict = {
     portTakenHere: "the port is already used by another connection on this server — pick a different one",
     priceMustBePositive: "the price must be above 0 — a plan becomes free by being chosen as the free or trial plan under Pricing",
     portTaken: "port {{port}} is already taken by {{who}}",
-    proxyNeedsCredentials: "the system proxy needs at least one user",
+    proxyAccountNoPass: "the {{value}} user has no password",
+    proxyAccountNoUser: "a proxy user has no login",
+    proxyNeedsAccount: "add at least one proxy user",
     proxyTooManyAccounts: "no more than {{max}} proxy users",
     proxyUserDuplicate: "the login {{value}} is used twice",
     proxyPortsCollide: "the SOCKS and HTTP ports must differ",
@@ -2079,7 +2081,6 @@ const en: Dict = {
     noAccounts: "Nobody yet — add a user, or the proxy will not come up.",
     user: "Username",
     pass: "Password",
-    authHint: "With no users the proxy does not start.",
   },
 
   nodes: {

@@ -145,11 +145,15 @@ function TabSaveBar({
   onReset,
   dirty,
   busy,
+  invalid,
 }: {
   onSave: () => void;
   onReset: () => void;
   dirty: boolean;
   busy: boolean;
+  // invalid blocks Save only. Cancel stays live on purpose: a form the panel refuses
+  // to save is exactly when the operator most needs a way back to the saved state.
+  invalid?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -166,12 +170,35 @@ function TabSaveBar({
         >
           {t("common.cancel")}
         </Button>
-        <Button onClick={onSave} loading={busy} disabled={!dirty}>
+        <Button onClick={onSave} loading={busy} disabled={!dirty || invalid}>
           {t("common.save")}
         </Button>
       </div>
     </div>
   );
+}
+
+// systemProxyIssue names why a proxy draft cannot be saved, or "" when it can. The
+// same rules the server enforces (model.SystemProxy.Validate) — checked here too so
+// the operator sees the reason next to the field instead of a toast after a round
+// trip, and so Save is not offered for a state that will bounce.
+function systemProxyIssue(p: SystemProxy): string {
+  if (!p.socks_enabled && !p.http_enabled) return "";
+  const accounts = p.accounts ?? [];
+  if (accounts.length === 0) return i18n.t("err.proxyNeedsAccount");
+  const seen = new Set<string>();
+  for (const a of accounts) {
+    const user = a.user.trim();
+    if (!user) return i18n.t("err.proxyAccountNoUser");
+    if (!a.pass.trim()) return i18n.t("err.proxyAccountNoPass", { value: user });
+    if (/[: ]/.test(user)) return i18n.t("err.proxyUserCharset");
+    if (seen.has(user)) return i18n.t("err.proxyUserDuplicate", { value: user });
+    seen.add(user);
+  }
+  if (p.socks_enabled && p.http_enabled && p.socks_port === p.http_port) {
+    return i18n.t("err.proxyPortsCollide");
+  }
+  return "";
 }
 
 // randomProxyPass mints a password for a first-time enable, so the operator never
@@ -345,7 +372,6 @@ function SystemProxyEditor({
               )}
             </div>
           ))}
-          <p className="text-xs text-ink-muted">{t("proxy.authHint")}</p>
         </div>
       )}
     </div>
@@ -1001,6 +1027,7 @@ function NodeSettingsDialog({
   const [proxy, setProxy] = useState<SystemProxy>(node.proxy);
   const [proxyBase, setProxyBase] = useState<SystemProxy>(node.proxy);
   const proxyDirty = JSON.stringify(proxy) !== JSON.stringify(proxyBase);
+  const proxyIssue = systemProxyIssue(proxy);
   const r = useServerRouting({
     cfg: node.routing ? hydrateRouting(node.routing) : nodeDefaultRouting(),
     warp: node.warp_enabled,
@@ -1134,6 +1161,7 @@ function NodeSettingsDialog({
             }}
             dirty={genDirty}
             busy={saving}
+            invalid={proxyIssue !== ""}
           />
         </div>
       )}
@@ -1238,6 +1266,7 @@ function MasterSettingsDialog({
   const [proxy, setProxy] = useState<SystemProxy>(node.proxy);
   const [proxyBase, setProxyBase] = useState<SystemProxy>(node.proxy);
   const proxyDirty = JSON.stringify(proxy) !== JSON.stringify(proxyBase);
+  const proxyIssue = systemProxyIssue(proxy);
   const [dns, setDns] = useState(canonicalDns(node.xray_dns ?? ""));
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const genDirty = name !== genBase.name || decoy !== genBase.decoy || proxyDirty;
@@ -1447,6 +1476,7 @@ function MasterSettingsDialog({
                 }}
                 dirty={genDirty}
                 busy={savingGeneral}
+                invalid={proxyIssue !== ""}
               />
             </div>
           )}
