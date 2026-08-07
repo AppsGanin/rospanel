@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.0](https://github.com/AppsGanin/rospanel/compare/v2.2.0...v2.3.0) (2026-08-06)
+
+
+### Features
+
+* **api:** add per-node system proxy endpoints (SOCKS/HTTP) ([031395c](https://github.com/AppsGanin/rospanel/commit/031395cb477cfc837171454b1616414b451a0ad9))
+
+
+### Bug Fixes
+
+* **core:** prevent system proxy from colliding with panel port ([aa6052f](https://github.com/AppsGanin/rospanel/commit/aa6052fed7c8570a07b0db49c70924037dd7e103))
+* **proxy:** clarify proxy user validation and prevent save on invalid state ([43be684](https://github.com/AppsGanin/rospanel/commit/43be684ebb2e9cda63921fe9637749ef4cf1f40d))
+
 ## [2.2.0](https://github.com/AppsGanin/rospanel/compare/v2.1.0...v2.2.0) (2026-08-02)
 
 
