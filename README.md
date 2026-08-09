@@ -156,6 +156,31 @@ separate unguessable segment for node sync (neither the panel path nor the REST 
 changing either one won't detach your nodes). If the panel runs on a bare IP (certificate not
 from a public CA), the panel adds `--insecure` to the command itself.
 
+**Option 1b — Docker.** Same image as the panel, run in node mode. `node install` writes a
+systemd unit a container has nowhere to put, so the join goes in the environment instead: it
+is used only when the volume has no `node.json` yet, so the container can be recreated at
+will and a spent token in the compose file changes nothing.
+
+```yaml
+services:
+  node:
+    image: ghcr.io/appsganin/rospanel:latest
+    command: node run
+    network_mode: host          # Xray binds 443/TCP, 80/TCP and the Hysteria2 UDP ports
+    cap_add: [NET_ADMIN]        # nftables: per-IP limits, port hopping
+    environment:
+      ROSPANEL_JOIN: 'https://<panel>/<node-api-path>/v1/join#<token>'
+      # ROSPANEL_JOIN_INSECURE: "1"   # only if the panel is still on a self-signed cert
+    volumes: [rospanel-node:/data]
+    restart: unless-stopped
+volumes:
+  rospanel-node:
+```
+
+The panel's **Update node** button swaps the binary inside the container and exits, so the
+restart brings back the image's version — update a Docker node with `docker pull` and a fresh
+container instead. The volume keeps the identity, so it does not re-join.
+
 **Option 2 — install over SSH.** The "Install over SSH" tab in the same dialog: the panel logs
 into the server itself (address, port, user + password **or** a PEM private key), uploads
 **its own** binary and installs the agent — with a live install log. The node version is
@@ -260,11 +285,14 @@ checked against the order. With no provider configured, an admin confirms paymen
 Roles: **owner** (can do everything, exactly one, cannot be deleted), **administrator**
 (everything except the admin list), **operator** (users, statistics, activity log). Permissions
 are checked server-side on every request; a new admin gets a temporary password that must be
-changed on first login. The **user log** records what was done to them and by whom (admin, API
-key, bot, the user themselves, the system) and survives their deletion. The **panel log**
-(visible to the owner) covers logins and **failed attempts with IPs**, settings changes and
-backups; only successful actions are written, request bodies never are. Both logs are kept for
-90 days.
+changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
+themselves — a code from an authenticator app (Google Authenticator, Aegis, 1Password) on top
+of the password, the secret encrypted in the database and never handed back out after setup;
+for a lost phone, `rospanel totp reset <login>` on the server. The **user log** records what was
+done to them and by whom (admin, API key, bot, the user themselves, the system) and survives
+their deletion. The **panel log** (visible to the owner) covers logins and **failed attempts
+with IPs**, second factors switched on and off, settings changes and backups; only successful
+actions are written, request bodies never are. Both logs are kept for 90 days.
 
 #### 🤖 Integrations
 
