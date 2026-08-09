@@ -289,6 +289,10 @@ const en: Dict = {
     sshHostUserRequired: "enter the server address and the SSH user",
     streamingUnsupported: "streaming is not supported",
     supportTokenRejected: "the support bot token was rejected: {{detail}}",
+    totpAlreadyOn: "two-factor authentication is already on",
+    totpInvalid: "wrong code",
+    totpNoSetup: "start the setup first",
+    totpRequired: "enter the code from your authenticator",
     tooManyAttempts: "too many attempts, try again later",
     tooManyStreams: "too many active streams",
     unauthorized: "not authorised",
@@ -436,6 +440,8 @@ const en: Dict = {
     username: "Username",
     password: "Password",
     submit: "Sign in",
+    badCode: "Wrong code",
+    code: "Code from your authenticator",
     badCredentials: "Wrong username or password",
   },
 
@@ -867,6 +873,8 @@ const en: Dict = {
       admin_deleted: "Administrator deleted",
       admin_role_changed: "Role changed",
       admin_password_reset: "Password reset",
+      admin_totp_enabled: "Two-factor authentication enabled",
+      admin_totp_disabled: "Two-factor authentication disabled",
       admin_password_changed: "Own password changed",
       admin_credentials_changed: "Own credentials changed",
       settings_changed: "Settings changed",
@@ -2072,6 +2080,22 @@ const en: Dict = {
   },
 
   // System proxy: this server's SOCKS/HTTP listeners for non-VPN traffic.
+  // Admin two-factor authentication (TOTP).
+  totp: {
+    title: "Two-factor authentication",
+    hint: "A one-time code from an authenticator app (Google Authenticator, Aegis, 1Password and others).",
+    on: "on",
+    off: "off",
+    needPassword: "Enter your current password above.",
+    turnOn: "Turn on",
+    turnOff: "Turn off",
+    scanHint: "Scan the code in your app, or type the key in by hand.",
+    enterCode: "Code from your app",
+    confirm: "Confirm",
+    enabled: "Two-factor authentication is on",
+    disabled: "Two-factor authentication is off",
+  },
+
   proxy: {
     title: "System proxy",
     hint:

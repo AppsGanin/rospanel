@@ -95,6 +95,7 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		`SELECT warp_private_key FROM nodes WHERE warp_private_key LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT zerossl_eab_hmac FROM nodes WHERE zerossl_eab_hmac LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT proxy_accounts FROM nodes WHERE proxy_accounts LIKE '%enc:v1:%' LIMIT 1`,
+		`SELECT totp_secret FROM admins WHERE totp_secret LIKE 'enc:v1:%' LIMIT 1`,
 	}
 	for _, q := range checks {
 		var v string

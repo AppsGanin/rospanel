@@ -250,6 +250,11 @@ func (rt *Router) panelMux() http.Handler {
 	authedAny("GET /api/me", rt.me)
 	authedAny("POST /api/setup/password", rt.setupPassword)
 	authedAny("POST /api/account/credentials", rt.updateCredentials)
+	// The caller's own second factor (no id in the path — see panel_totp.go).
+	authedAny("GET /api/account/totp", rt.totpStatus)
+	authedAny("POST /api/account/totp/start", rt.totpStart)
+	authedAny("POST /api/account/totp/enable", rt.totpEnable)
+	authedAny("POST /api/account/totp/disable", rt.totpDisable)
 	// The admin roster and its trail — owner only. Who signed in from where, who
 	// created or removed whom, who changed what setting: same tier as the roster
 	// itself.
@@ -433,6 +438,10 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// Code is the second factor. Absent on the first attempt: the panel asks for it
+		// only after the password checks out, so the field never tells an attacker
+		// whether an account exists or has 2FA.
+		Code string `json:"code"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -475,6 +484,57 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, http.StatusUnauthorized, "err.badCredentials", "неверный логин или пароль")
 		return
 	}
+	// Second factor, when this admin has one. Everything up to here has already
+	// established that the password is right; what remains is proving possession.
+	totp, err := rt.mgr.Store().AdminTOTPByID(id)
+	if err != nil {
+		slog.Error("login: could not read the second factor", "user", username, "err", err)
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+		return
+	}
+	if totp.Enabled() {
+		if strings.TrimSpace(req.Code) == "" {
+			// Not a failure in spirit — the password was right and the client simply has
+			// not been asked for a code yet — but it is still counted. Reaching here costs
+			// a full password hash, and this is exactly the attacker 2FA is for: one who
+			// HAS the password and is stopped by the code. Left uncounted, that attacker
+			// gets an unbounded loop of expensive hashes, which is a way to take the panel
+			// down rather than into. The legitimate flow pays nothing: the very next
+			// attempt carries the code, and a successful sign-in clears the counters.
+			rt.limiter.fail(ip, username)
+			writeErrCode(w, http.StatusUnauthorized, "err.totpRequired", "введите код из приложения")
+			return
+		}
+		step, ok := auth.VerifyTOTP(totp.Secret, req.Code, time.Now(), totp.LastStep)
+		if !ok {
+			// A wrong code counts against the lockout: six digits is a space worth
+			// brute-forcing when the password is already known.
+			rt.limiter.fail(ip, username)
+			slog.Warn("login: bad second factor", "user", username, "ip", ip)
+			auditLogin(model.AuditLoginFailed)
+			writeErrCode(w, http.StatusUnauthorized, "err.totpInvalid", "неверный код")
+			return
+		}
+		// Claim the code BEFORE anything is recorded as a success. Verification only
+		// READ the marker, so two requests holding the same code can both get this far;
+		// the row claim is what actually makes a code one-time, and whoever loses it is
+		// refused. Claiming before the session also means a crash between the two costs
+		// one sign-in — the other order would leave a spent code still working.
+		won, err := rt.mgr.Store().MarkAdminTOTPStep(id, step)
+		if err != nil {
+			slog.Error("login: could not record the second-factor step", "user", username, "err", err)
+			writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+			return
+		}
+		if !won {
+			rt.limiter.fail(ip, username)
+			slog.Warn("login: second-factor code already spent", "user", username, "ip", ip)
+			auditLogin(model.AuditLoginFailed)
+			writeErrCode(w, http.StatusUnauthorized, "err.totpInvalid", "неверный код")
+			return
+		}
+	}
+
 	rt.limiter.success(ip, username)
 	auditLogin(model.AuditLogin)
 

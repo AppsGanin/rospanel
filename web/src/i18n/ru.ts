@@ -292,6 +292,10 @@ const ru = {
     sshHostUserRequired: "укажите адрес сервера и SSH-пользователя",
     streamingUnsupported: "стриминг не поддерживается",
     supportTokenRejected: "токен бота поддержки не принят: {{detail}}",
+    totpAlreadyOn: "двухфакторная аутентификация уже включена",
+    totpInvalid: "неверный код",
+    totpNoSetup: "сначала начните подключение",
+    totpRequired: "введите код из приложения",
     tooManyAttempts: "слишком много попыток, повторите позже",
     tooManyStreams: "слишком много активных потоков",
     unauthorized: "не авторизован",
@@ -439,6 +443,8 @@ const ru = {
     username: "Логин",
     password: "Пароль",
     submit: "Войти",
+    badCode: "Неверный код",
+    code: "Код из приложения",
     badCredentials: "Неверный логин или пароль",
   },
 
@@ -873,6 +879,8 @@ const ru = {
       admin_deleted: "Администратор удалён",
       admin_role_changed: "Роль изменена",
       admin_password_reset: "Пароль сброшен",
+      admin_totp_enabled: "Включена двухфакторная аутентификация",
+      admin_totp_disabled: "Отключена двухфакторная аутентификация",
       admin_password_changed: "Смена своего пароля",
       admin_credentials_changed: "Смена своих учётных данных",
       settings_changed: "Изменение настроек",
@@ -2081,6 +2089,22 @@ const ru = {
   },
 
   // Системный прокси: SOCKS/HTTP-слушатели сервера для не-VPN трафика.
+  // Двухфакторная аутентификация администратора (TOTP).
+  totp: {
+    title: "Двухфакторная аутентификация",
+    hint: "Одноразовый код из приложения (Google Authenticator, Aegis, 1Password и другие).",
+    on: "включена",
+    off: "выключена",
+    needPassword: "Введите текущий пароль выше.",
+    turnOn: "Подключить",
+    turnOff: "Отключить",
+    scanHint: "Отсканируйте код в приложении или введите ключ вручную.",
+    enterCode: "Код из приложения",
+    confirm: "Подтвердить",
+    enabled: "Двухфакторная аутентификация включена",
+    disabled: "Двухфакторная аутентификация отключена",
+  },
+
   proxy: {
     title: "Системный прокси",
     hint:

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { updateCredentials } from './api'
 import { useAction } from './hooks'
 import { notifyError, notifySuccess } from './notify'
+import { TwoFactor } from './TwoFactor'
 import { Button, Modal, PasswordInput, TextInput } from './ui'
 
 export function Credentials({
@@ -77,6 +78,10 @@ export function Credentials({
         <Button loading={busy} onClick={submit}>
           {t('common.save')}
         </Button>
+        {/* The second factor lives in the same dialog as the password: both answer
+            "how do I get into this account", and an operator hardening their access
+            should not have to find two screens. It saves on its own. */}
+        <TwoFactor password={current} />
       </div>
     </Modal>
   )

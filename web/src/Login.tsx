@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { login } from './api'
+import { ApiError, login } from './api'
 import { LangPills } from './LangSwitch'
 import { BrandLogo } from './Logo'
-import { notifyError } from './notify'
+import { errMessage, notifyError } from './notify'
 import { Button, Card, PasswordInput, TextInput } from './ui'
 
 export function Login({
@@ -18,16 +18,38 @@ export function Login({
   const { t } = useTranslation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  // needCode appears only after the panel has said this account has a second factor,
+  // which it does only once the password is already right — so the field itself never
+  // tells an outsider whether an account exists or is protected.
+  const [needCode, setNeedCode] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
     try {
-      await login(username, password)
+      await login(username, password, needCode ? code : undefined)
       onSuccess()
-    } catch {
-      notifyError(t('login.badCredentials'))
+    } catch (err) {
+      const c = err instanceof ApiError ? err.code : undefined
+      if (c === 'err.totpRequired') {
+        setNeedCode(true)
+        setCode('')
+      } else if (c === 'err.totpInvalid') {
+        // Stay on the code step: the password is fine, only this code was not.
+        setNeedCode(true)
+        setCode('')
+        notifyError(t('login.badCode'))
+      } else if (!c || c === 'err.badCredentials') {
+        setNeedCode(false)
+        notifyError(t('login.badCredentials'))
+      } else {
+        // Anything the panel named for itself — the lockout above all — keeps its own
+        // wording and its place in the form. Telling someone who is throttled that
+        // their password is wrong sends them hunting for a problem they don't have.
+        notifyError(errMessage(err))
+      }
     } finally {
       setBusy(false)
     }
@@ -54,6 +76,16 @@ export function Login({
             value={password}
             onChange={setPassword}
           />
+          {needCode && (
+            <TextInput
+              label={t('login.code')}
+              value={code}
+              onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              autoFocus
+              mono
+            />
+          )}
           <Button type="submit" loading={busy} fullWidth>
             {t('login.submit')}
           </Button>

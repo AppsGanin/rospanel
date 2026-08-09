@@ -48,4 +48,8 @@ type Admin struct {
 	MustChangePassword bool   `json:"must_change_password"`
 	CreatedAt          int64  `json:"created_at"`
 	LastLoginAt        int64  `json:"last_login_at"` // 0 ⇒ never signed in
+	// TOTPEnabled says this admin has a confirmed second factor. The SECRET never
+	// leaves the server after setup — only this flag does, so the roster can show who
+	// is protected without handing anyone else the means to log in as them.
+	TOTPEnabled bool `json:"totp_enabled"`
 }

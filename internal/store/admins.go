@@ -36,7 +36,8 @@ func (s *Store) CreateAdmin(username, passwordHash, role string, mustChange bool
 // ListAdmins returns the roster, owner first, then by creation order.
 func (s *Store) ListAdmins() ([]model.Admin, error) {
 	rows, err := s.db.Query(`
-		SELECT id, username, role, must_change_password, created_at, last_login_at
+		SELECT id, username, role, must_change_password, created_at, last_login_at,
+		       totp_secret <> ''
 		FROM admins
 		ORDER BY (role = 'owner') DESC, id`)
 	if err != nil {
@@ -47,13 +48,14 @@ func (s *Store) ListAdmins() ([]model.Admin, error) {
 	var out []model.Admin
 	for rows.Next() {
 		var a model.Admin
-		var mustChange int
+		var mustChange, totp int
 		if err := rows.Scan(
-			&a.ID, &a.Username, &a.Role, &mustChange, &a.CreatedAt, &a.LastLoginAt,
+			&a.ID, &a.Username, &a.Role, &mustChange, &a.CreatedAt, &a.LastLoginAt, &totp,
 		); err != nil {
 			return nil, err
 		}
 		a.MustChangePassword = mustChange != 0
+		a.TOTPEnabled = totp != 0
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -62,15 +64,17 @@ func (s *Store) ListAdmins() ([]model.Admin, error) {
 // GetAdmin returns one admin by id, or ErrAdminNotFound.
 func (s *Store) GetAdmin(id int64) (model.Admin, error) {
 	var a model.Admin
-	var mustChange int
+	var mustChange, totp int
 	err := s.db.QueryRow(`
-		SELECT id, username, role, must_change_password, created_at, last_login_at
+		SELECT id, username, role, must_change_password, created_at, last_login_at,
+		       totp_secret <> ''
 		FROM admins WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Username, &a.Role, &mustChange, &a.CreatedAt, &a.LastLoginAt)
+	).Scan(&a.ID, &a.Username, &a.Role, &mustChange, &a.CreatedAt, &a.LastLoginAt, &totp)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, ErrAdminNotFound
 	}
 	a.MustChangePassword = mustChange != 0
+	a.TOTPEnabled = totp != 0
 	return a, err
 }
 
