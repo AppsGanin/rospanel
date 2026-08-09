@@ -49,6 +49,8 @@ Commands:
   host [-y] [domain|IP]
                      Show the current address, or change the domain/IP (reissues TLS).
   path               Show the panel URL and check secrets.key / the database.
+  totp reset <login> Remove an admin's two-factor authentication (lost phone).
+                     Without arguments: list who has it enabled.
   reset [-y]         Factory reset — wipes the entire database.
   version            Show the version.
   help               Show this help.
@@ -139,6 +141,65 @@ func runPath(dataDir string) {
 	fmt.Printf("Subscriptions: https://%s/%s/<token>\n", host, set.SubPathOr())
 	if strings.TrimSpace(set.TGBotToken) == "" && set.TGBotEnabled {
 		fmt.Println("WARNING: the admin bot is enabled but its token is empty (check secrets.key).")
+	}
+}
+
+// runTOTP is the way back in after a lost phone: no recovery codes to store next to
+// the password, just this. It needs the machine — and whoever has that already holds
+// the database and the key that decrypts it, so it hands out nothing new.
+//
+// With no arguments it lists who has a second factor, because the first thing an
+// operator does here is check whether they are looking at the right account.
+func runTOTP(dataDir string, args []string) {
+	// A missing or unusable key must not block this command: neither listing nor
+	// resetting reads a secret back (the reset writes empty columns), and this is the
+	// way back in when something IS wrong with the key — a panel that refuses the login
+	// because it can't decrypt a second factor is exactly when an operator runs it.
+	if err := datasec.Init(dataDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: secrets key unavailable (%v) — continuing, this command does not need it\n", err)
+	}
+	st, err := store.Open(filepath.Join(dataDir, "rospanel.db"))
+	if err != nil {
+		log.Fatalf("totp: open store: %v", err)
+	}
+	defer st.Close()
+
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "", "list", "status":
+		admins, err := st.ListAdmins()
+		if err != nil {
+			log.Fatalf("totp: %v", err)
+		}
+		for _, a := range admins {
+			state := "off"
+			if a.TOTPEnabled {
+				state = "ON"
+			}
+			fmt.Printf("  %-20s %s\n", a.Username, state)
+		}
+		fmt.Println("\nRemove one with: rospanel totp reset <login>")
+	case "reset", "off", "disable":
+		login := firstPositional(args[1:])
+		if login == "" {
+			fmt.Fprintln(os.Stderr, "usage: rospanel totp reset <login>")
+			os.Exit(1)
+		}
+		ok, err := st.DisableAdminTOTPByName(login)
+		if err != nil {
+			log.Fatalf("totp: %v", err)
+		}
+		if !ok {
+			fmt.Fprintf(os.Stderr, "no admin named %q\n", login)
+			os.Exit(1)
+		}
+		fmt.Printf("Two-factor authentication removed for %s — they sign in with the password alone now.\n", login)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown totp subcommand %q (try: list, reset <login>)\n", sub)
+		os.Exit(1)
 	}
 }
 

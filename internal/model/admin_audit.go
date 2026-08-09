@@ -42,6 +42,11 @@ const (
 	// Your own account.
 	AuditPasswordChanged    = "admin.password_changed"
 	AuditCredentialsChanged = "admin.credentials_changed"
+	// The second factor. Its own actions rather than a generic settings row: "who
+	// turned 2FA off on this account, and when" is the first question asked after an
+	// admin account is misused.
+	AuditTOTPEnabled  = "admin.totp_enabled"
+	AuditTOTPDisabled = "admin.totp_disabled"
 
 	// Settings — one action for all of them. Which section was touched goes in the
 	// row's Target ("Routing", "DNS", …), not into a key of its own: a filter
@@ -130,6 +135,8 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditAdminPasswordReset, AuditCatAdmins},
 	{AuditPasswordChanged, AuditCatAdmins},
 	{AuditCredentialsChanged, AuditCatAdmins},
+	{AuditTOTPEnabled, AuditCatAdmins},
+	{AuditTOTPDisabled, AuditCatAdmins},
 
 	{AuditSettings, AuditCatSettings},
 

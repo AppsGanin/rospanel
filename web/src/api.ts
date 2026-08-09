@@ -1093,10 +1093,44 @@ export const approveRegistration = (id: number) =>
 export const rejectRegistration = (id: number) =>
   api<{ ok: boolean }>(`api/registrations/${id}/reject`, { method: 'POST' })
 
-export const login = (username: string, password: string) =>
+// login sends the second factor when the panel has asked for one. The code is
+// optional because the first attempt deliberately does not carry it: the panel only
+// admits that an account has 2FA once the password is already right.
+export const login = (username: string, password: string, code?: string) =>
   api<{ ok: boolean }>('api/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, code }),
+  })
+
+// ---- The admin's own second factor (TOTP) ----------------------------------
+//
+// Every call acts on the CALLER; there is no id anywhere, so nobody manages anybody
+// else's 2FA through the panel. A lost phone is cleared on the server with
+// `rospanel totp reset <login>`.
+
+export interface TOTPStatus {
+  enabled: boolean
+}
+
+export const getTOTP = () => api<TOTPStatus>('api/account/totp')
+
+// startTOTP returns the secret ONCE, with the otpauth URI to render as a QR.
+export const startTOTP = (current_password: string) =>
+  api<{ secret: string; uri: string }>('api/account/totp/start', {
+    method: 'POST',
+    body: JSON.stringify({ current_password }),
+  })
+
+export const enableTOTP = (code: string) =>
+  api<{ ok: boolean }>('api/account/totp/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+
+export const disableTOTP = (current_password: string) =>
+  api<{ ok: boolean }>('api/account/totp/disable', {
+    method: 'POST',
+    body: JSON.stringify({ current_password }),
   })
 
 export const logout = () => api<{ ok: boolean }>('api/logout', { method: 'POST' })

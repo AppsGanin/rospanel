@@ -55,6 +55,12 @@ var auditActions = map[string]auditRoute{
 	// Your own account.
 	"POST /api/setup/password":      act(model.AuditPasswordChanged),
 	"POST /api/account/credentials": act(model.AuditCredentialsChanged),
+	// The second factor writes its own rows from the handlers (panel_totp.go), which
+	// know whether the change actually took: /start only stages a secret nobody has
+	// proved yet, and a row for it would read as "2FA enabled" in the journal.
+	"POST /api/account/totp/start":   {},
+	"POST /api/account/totp/enable":  {},
+	"POST /api/account/totp/disable": {},
 
 	// The roster.
 	"POST /api/admins":               act(model.AuditAdminCreated),

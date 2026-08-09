@@ -357,6 +357,7 @@ rospanel backup [file]       .tar.gz snapshot (DB + encryption key + certificate
 rospanel restore [-y] <file> restore from a snapshot (applied on start)
 rospanel host [-y] [domain|IP] show/change the address (reissues TLS)
 rospanel path                show the panel URL and check secrets.key / the DB
+rospanel totp reset <login>  remove an admin's two-factor auth (lost phone); bare totp lists
 rospanel reset [-y]          factory reset (wipes the DB)
 rospanel version             version
 rospanel help                full help

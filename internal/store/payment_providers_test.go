@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -35,14 +36,21 @@ func TestPaymentProviderRoundtrip(t *testing.T) {
 		t.Fatalf("roundtrip = %+v", got)
 	}
 
-	// The raw column is the encryption envelope (a no-op without a datasec key in
-	// tests, but the config must at least round-trip through encField/decField).
+	// Provider credentials are secrets: the column holds the encryption envelope, and
+	// only decrypting it gets the JSON back.
 	var raw string
 	if err := st.db.QueryRow(`SELECT config FROM payment_providers WHERE key = 'heleket'`).Scan(&raw); err != nil {
 		t.Fatalf("read raw config: %v", err)
 	}
-	if !strings.Contains(raw, "merchant_id") {
-		t.Fatalf("stored config not a JSON object: %q", raw)
+	if strings.Contains(raw, "secret-key") {
+		t.Fatalf("the api key is stored in clear: %q", raw)
+	}
+	plain, err := datasec.Decrypt(raw)
+	if err != nil {
+		t.Fatalf("decrypt config: %v", err)
+	}
+	if !strings.Contains(plain, "merchant_id") {
+		t.Fatalf("stored config not a JSON object: %q", plain)
 	}
 
 	// Upsert replaces enabled + config.

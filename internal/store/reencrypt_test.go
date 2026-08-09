@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -14,11 +13,6 @@ import (
 // skip that field — it silently stops re-encrypting every secret after it, and the
 // panel logs one warning at startup and carries on.
 func TestReencryptCoversItsColumns(t *testing.T) {
-	// At-rest encryption needs a key; without datasec.Init encField is a pass-through
-	// and the roundtrip half of this test would silently prove nothing.
-	if err := datasec.Init(t.TempDir()); err != nil {
-		t.Fatalf("datasec: %v", err)
-	}
 	st := newStore(t)
 	if err := st.ReencryptSensitiveFields(); err != nil {
 		t.Fatalf("reencrypt on a fresh database: %v", err)

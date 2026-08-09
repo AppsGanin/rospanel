@@ -70,7 +70,52 @@ func (s *Store) ReencryptSensitiveFields() error {
 			return err
 		}
 	}
+	if err := s.reencryptAdminTOTP(); err != nil {
+		return err
+	}
 	return s.reencryptPaymentProviders()
+}
+
+// reencryptAdminTOTP wraps any second-factor seed still stored as plaintext (a row
+// written before the field was encrypted, or restored from an old backup).
+func (s *Store) reencryptAdminTOTP() error {
+	type row struct {
+		id     int64
+		secret string
+	}
+	var rows []row
+	res, err := s.db.Query(`SELECT id, totp_secret FROM admins WHERE totp_secret <> ''`)
+	if err != nil {
+		return err
+	}
+	for res.Next() {
+		var r row
+		if err := res.Scan(&r.id, &r.secret); err != nil {
+			res.Close()
+			return err
+		}
+		rows = append(rows, r)
+	}
+	if err := res.Close(); err != nil {
+		return err
+	}
+	if err := res.Err(); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if strings.HasPrefix(r.secret, "enc:v1:") {
+			continue
+		}
+		enc := encField(r.secret)
+		if !secretRoundtripOK(enc) {
+			log.Printf("[ERROR] reencrypt: admin %d totp secret roundtrip failed — leaving plaintext", r.id)
+			continue
+		}
+		if _, err := s.db.Exec(`UPDATE admins SET totp_secret = ? WHERE id = ?`, enc, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reencryptPaymentProviders wraps any provider config still stored as plaintext

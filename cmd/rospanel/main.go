@@ -72,6 +72,8 @@ func main() {
 			runHost(dataDir, os.Args[2:])
 		case "path":
 			runPath(dataDir)
+		case "totp":
+			runTOTP(dataDir, os.Args[2:])
 		case "install":
 			runInstall()
 		case "uninstall":
