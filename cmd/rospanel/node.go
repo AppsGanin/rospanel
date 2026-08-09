@@ -63,13 +63,44 @@ func nodeDataDir() string {
 }
 
 // runNodeAgent runs the agent until SIGINT/SIGTERM (the systemd ExecStart entry).
+//
+// It joins first when ROSPANEL_JOIN is set and this data directory has no identity
+// yet. That is for containers: `node install` writes a systemd unit, which a
+// container has nowhere to put, so without this a Docker node needs a separate
+// one-off join before the real command — two steps to describe in every compose
+// file. With the join in the environment the node is one service that can be
+// destroyed and recreated at will: the variable is only consulted when there is no
+// node.json, so a restart re-reads the identity it already has and a spent join
+// token in a stale compose file changes nothing.
 func runNodeAgent(dataDir string) {
+	if joinURL := strings.TrimSpace(os.Getenv("ROSPANEL_JOIN")); joinURL != "" {
+		if _, err := nodeagent.LoadIdentity(dataDir); err != nil {
+			insecure := isTrue(os.Getenv("ROSPANEL_JOIN_INSECURE"))
+			log.Print("node: no identity yet — joining with ROSPANEL_JOIN")
+			ident, jerr := nodeagent.Join(dataDir, joinURL, insecure)
+			if jerr != nil {
+				log.Fatalf("node: join: %v", jerr)
+			}
+			log.Printf("node: joined as node #%d (panel %s)", ident.NodeID, ident.PanelURL)
+		}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := nodeagent.Run(ctx, dataDir); err != nil {
 		log.Fatalf("node: %v", err)
 	}
 	log.Print("node: stopped")
+}
+
+// isTrue reads the usual spellings of "yes" in an environment variable. Anything
+// else — including an empty value — is false, so a variable left in a compose file
+// as ROSPANEL_JOIN_INSECURE= does not quietly turn TLS verification off.
+func isTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // runNodeInstall joins the node to the panel and installs the systemd unit.
@@ -245,5 +276,12 @@ Usage:
   rospanel node uninstall [-y]                         remove the node service
 
 The --join URL comes from the panel's "Add node" dialog.
+
+Environment:
+  ROSPANEL_JOIN            join URL for "node run" to use when this data directory
+                           has no node.json yet (containers: no systemd to install)
+  ROSPANEL_JOIN_INSECURE   1/true/yes — skip TLS verification on that join, for a
+                           panel still on a self-signed certificate
+  ROSPANEL_DATA            where the node keeps its state (default `+nodeDefaultData+`)
 `)
 }
