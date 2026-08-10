@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/AppsGanin/rospanel/compare/v2.4.0...v2.4.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* **billing:** reset usage counters on plan change ([18f10e9](https://github.com/AppsGanin/rospanel/commit/18f10e9ea691b28455e949aca22e5b2d7eb554f8))
+
 ## [2.4.0](https://github.com/AppsGanin/rospanel/compare/v2.3.0...v2.4.0) (2026-08-10)
 
 
