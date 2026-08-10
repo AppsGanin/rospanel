@@ -56,6 +56,18 @@ type Store struct {
 // verifies the file's integrity, and runs pending migrations. A file SQLite can't
 // read, or one that fails the integrity check, comes back wrapped in ErrCorrupt.
 func Open(path string) (*Store, error) {
+	// A brand-new database costs one replay of every migration, and in a test binary
+	// that is by far the most expensive thing here: ~1.95s per store under -race
+	// against ~0.02s to reopen one that is already migrated. internal/core builds
+	// 130-odd of them, which is how that package walked into Go's 10-minute timeout.
+	// So the first replay is kept and every later fresh database starts as a copy of
+	// it, with nothing left for migrate() to do. See schemaTemplate.
+	fresh := isFreshPath(path)
+	seeded := false
+	if fresh {
+		seeded = seedFromTemplate(path)
+	}
+
 	dsn := fmt.Sprintf(
 		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)",
 		path,
@@ -79,6 +91,15 @@ func Open(path string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, corruptOr("migrate", err)
+	}
+	switch {
+	case seeded:
+		if err := restampSeeded(db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	case fresh:
+		keepSchemaTemplate(db)
 	}
 	return s, nil
 }
