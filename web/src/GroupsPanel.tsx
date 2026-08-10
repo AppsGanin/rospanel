@@ -89,7 +89,10 @@ export function GroupsPanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
+      {/* White, not the gray-50 tint used elsewhere: this tab renders straight onto the
+          page background, where that tint has nothing to sit against and the blocks
+          read as empty space. The tinted variant belongs inside a card or a modal. */}
+      <div className="rounded-xl border border-gray-200/80 bg-white p-4">
         <h3 className="mb-1 font-bold text-ink">{t("groups.title")}</h3>
         <p className="text-sm text-ink-muted">{t("groups.description")}</p>
       </div>
@@ -104,7 +107,7 @@ export function GroupsPanel() {
         {groups.map((g) => (
           <div
             key={g.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-gray-50/60 p-4"
+            className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-white p-4"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="font-medium text-ink">{g.name}</span>
@@ -165,7 +168,7 @@ export function GroupsPanel() {
             <div className="flex flex-col gap-3">
               <p className="text-sm text-ink-muted">{t("groups.grantsIntro")}</p>
               {targets.map((srv) => (
-                <div key={srv.server_id} className="rounded-lg border border-gray-200/80 bg-white/50 p-3">
+                <div key={srv.server_id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{srv.server_name}</p>
                   <div className="flex flex-col gap-1.5">
                     {srv.lanes.map((l) => (
@@ -280,7 +283,7 @@ function MembersPicker({
       {users.length === 0 ? (
         <p className="text-xs text-ink-muted">{t("groups.noUsers")}</p>
       ) : (
-        <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200/80 bg-white/50 p-2">
+        <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-200/80 bg-gray-50/60 p-2">
           <div className="flex flex-col gap-1.5">
             {filtered.map((u) => (
               <Checkbox
