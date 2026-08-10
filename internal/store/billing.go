@@ -257,6 +257,18 @@ type UserPlanWrite struct {
 	// claim, and a group write left outside it could be lost to a crash with the money
 	// already taken and nothing left pending to retry.
 	GroupIDs []int64
+
+	// ResetUsage zeroes the traffic counters as part of the same write: a new plan
+	// brings a new quota, and carrying the old usage into it starts the cycle already
+	// spent — which is how a user downgraded to a 1 GB free plan after burning 20 GB
+	// found themselves cut off until the next refill, thirty days later.
+	//
+	// LastUp/LastDown re-baseline the raw counters to what Xray is reporting for this
+	// user RIGHT NOW. Leaving them at zero is the trap store.ResetTraffic documents:
+	// the next stats poll reads the cumulative Xray total, subtracts a baseline of 0,
+	// and adds the user's whole lifetime traffic straight back.
+	ResetUsage       bool
+	LastUp, LastDown int64
 }
 
 // ApplyUserPlan writes a plan assignment atomically.
@@ -273,6 +285,14 @@ func applyUserPlanOn(ex execer, p UserPlanWrite) error {
 	}
 	if err := setUserPlanOn(ex, p.UserID, p.PlanID, p.TrialUsed); err != nil {
 		return err
+	}
+	if p.ResetUsage {
+		if _, err := ex.Exec(
+			`UPDATE users SET used_up = 0, used_down = 0, last_up = ?, last_down = ?
+			 WHERE id = ?`, p.LastUp, p.LastDown, p.UserID,
+		); err != nil {
+			return err
+		}
 	}
 	return setPlanGroupsOn(ex, p.UserID, p.GroupIDs)
 }

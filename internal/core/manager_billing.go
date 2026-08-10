@@ -594,6 +594,20 @@ func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent boo
 	}
 	w := planLimits(u.ID, plan, expire, freePlan, now)
 	w.TrialUsed = u.TrialUsed
+	// A different plan means a different quota, so the counter starts over. Without
+	// this the expiry path is a trap: EnforceBilling hands the user the free plan with
+	// a fresh 30-day cycle, the 20 GB they spent on the paid one stays on the counter,
+	// and a 1 GB allowance is over budget the moment it is granted — the user is cut
+	// off until the cycle rolls, a month later.
+	//
+	// Only on a real change of plan. Renewing the one you are already on tops up the
+	// time you had left (see extendFromCurrent) rather than starting a period, so it
+	// keeps the counter it was running. Manual mode (planID 0) grants no quota at all
+	// and is handled above.
+	if u.PlanID != plan.ID {
+		w.ResetUsage = true
+		w.LastUp, w.LastDown = m.liveCounter(u.ID)
+	}
 	return w, plan.Name, nil
 }
 

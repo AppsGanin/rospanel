@@ -160,7 +160,13 @@ func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 // liveCounter returns the user's current cumulative Xray uplink/downlink, or
 // (0,0) if Xray isn't reporting it. Used to re-baseline last_up/last_down on a
 // quota reset so the next PollStats delta starts from now.
+//
+// No supervisor is the same answer as no numbers: nothing is running to report a
+// total, so there is no baseline to carry over.
 func (m *Manager) liveCounter(id int64) (up, down int64) {
+	if m.sup == nil {
+		return 0, 0
+	}
 	stats, err := m.sup.QueryStats(m.sup.APIAddr())
 	if err != nil {
 		return 0, 0
