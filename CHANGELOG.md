@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.4.0](https://github.com/AppsGanin/rospanel/compare/v2.3.0...v2.4.0) (2026-08-10)
+
+
+### Features
+
+* **auth:** add TOTP two-factor authentication for admin logins ([8e0e191](https://github.com/AppsGanin/rospanel/commit/8e0e191bce786d077da5b5f9f903ddd805a8769b))
+* **node:** support join via ROSPANEL_JOIN env for containerized nodes ([0906546](https://github.com/AppsGanin/rospanel/commit/090654696bdd428be7f17a076e7f83de90967f2b))
+
+
+### Performance Improvements
+
+* **store:** cache schema for fresh databases to speed up tests ([e0e95d2](https://github.com/AppsGanin/rospanel/commit/e0e95d2bdef70ab50e3833eb08082d3a2fe69536))
+
 ## [2.3.0](https://github.com/AppsGanin/rospanel/compare/v2.2.0...v2.3.0) (2026-08-06)
 
 
