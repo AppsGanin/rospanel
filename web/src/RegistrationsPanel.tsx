@@ -4,10 +4,10 @@ import {
   rejectRegistration,
   type RegistrationRequest,
 } from "./api";
-import { useAction } from "./hooks";
+import { useAction, useShowMore } from "./hooks";
 import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Button, SettingCard } from "./ui";
+import { Button, SettingCard, ShowMore } from "./ui";
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
@@ -31,6 +31,9 @@ export function RegistrationsPanel({
 }) {
   const { t } = useTranslation();
   const { busy, run } = useAction();
+  // The queue is unbounded — nothing trims it but an operator working through it —
+  // so a backlog left alone for a week would otherwise render in full.
+  const page = useShowMore(requests);
 
   const decide = (id: number, approve: boolean) =>
     run(async () => {
@@ -48,7 +51,7 @@ export function RegistrationsPanel({
         <p className="text-sm text-ink-muted">{t("reg.empty")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {requests.map((r) => (
+          {page.shown.map((r) => (
             <li
               key={r.id}
               className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
@@ -81,6 +84,7 @@ export function RegistrationsPanel({
           ))}
         </ul>
       )}
+      <ShowMore rest={page.rest} onClick={page.showMore} className="mt-2" />
     </SettingCard>
   );
 }

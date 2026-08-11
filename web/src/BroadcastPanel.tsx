@@ -15,6 +15,7 @@ import {
   testBroadcast,
 } from "./api";
 import { HtmlEditor } from "./HtmlEditor";
+import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -24,6 +25,7 @@ import {
   IconClose,
   Select,
   SettingCard,
+  ShowMore,
   TextInput,
   useConfirm,
 } from "./ui";
@@ -89,6 +91,11 @@ export function BroadcastPanel() {
   const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
   const [list, setList] = useState<Broadcast[]>([]);
+  // The server returns the last 50 runs, each a multi-line row with a progress bar,
+  // so the history alone can be several screens. No reset key: a running broadcast
+  // re-polls this list, and collapsing it under the operator mid-read would be worse
+  // than carrying the expansion.
+  const history = useShowMore(list);
   const [text, setText] = useState("");
   const [audienceKind, setAudienceKind] = useState("all");
   const [audienceDays, setAudienceDays] = useState("7");
@@ -354,9 +361,10 @@ export function BroadcastPanel() {
           <p className="text-sm text-ink-muted">{t("bc.historyEmpty")}</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {list.map((b) => (
+            {history.shown.map((b) => (
               <BroadcastRow key={b.id} b={b} onControl={control} />
             ))}
+            <ShowMore rest={history.rest} onClick={history.showMore} />
           </div>
         )}
       </SettingCard>

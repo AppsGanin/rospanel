@@ -185,11 +185,17 @@ function eventQuery(f: EventFilter): string {
   return s ? `?${s}` : ''
 }
 
+// One page of the journal, sent explicitly rather than left to the API default (50,
+// core.EventPageLimit) so the panel's lists all open at the same depth. Here the
+// number is what actually travels per click — the button below the list fetches the
+// next page by cursor — unlike the client-side lists, which get everything at once.
+export const EVENT_PAGE = 20
+
 export const getUserEvents = (id: number, before = 0) =>
-  api<EventPage>(`api/users/${id}/events${eventQuery({ before })}`)
+  api<EventPage>(`api/users/${id}/events${eventQuery({ before, limit: EVENT_PAGE })}`)
 
 export const listEvents = (f: EventFilter = {}) =>
-  api<EventPage>(`api/events${eventQuery(f)}`)
+  api<EventPage>(`api/events${eventQuery({ limit: EVENT_PAGE, ...f })}`)
 
 export const getEventCatalog = () =>
   api<{ key: string; label: string }[]>('api/events/catalog')

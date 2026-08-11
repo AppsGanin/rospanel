@@ -38,7 +38,7 @@ import {
   resetPeriods,
   statusInfo,
 } from './format'
-import { useAction } from './hooks'
+import { useAction, useShowMore } from './hooks'
 import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
@@ -58,6 +58,7 @@ import {
   IconPencil,
   SegmentedControl,
   Select,
+  ShowMore,
   Switch,
   TextInput,
   useConfirm,
@@ -349,6 +350,11 @@ export function UserDetail({
   }
 
   const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
+  // Devices are the longest list in the card (the server hands over up to 20 IPs) and
+  // sit between two sections the operator scrolls to, so only the most recent few are
+  // open by default. Keyed on the user so reopening the card for someone else starts
+  // collapsed again.
+  const devices = useShowMore(conns, { first: 5, resetKey: user?.id })
 
   // A tariff owns the quota, the device cap and the reset cycle: applying or
   // renewing one overwrites all three at once (planWriteFor, core/manager_billing.go),
@@ -735,7 +741,7 @@ export function UserDetail({
           )}
 
           <Divider label={t('stats.blocklistMatches')} />
-          <AbuseList userId={user.id} />
+          <AbuseList userId={user.id} first={5} />
 
           <Divider label={t('userDetail.devices')} />
           <p className="text-sm text-ink-muted">
@@ -754,7 +760,7 @@ export function UserDetail({
             <p className="py-2 text-center text-sm text-ink-muted">{t('userDetail.noConnections')}</p>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {conns.map((c) => (
+              {devices.shown.map((c) => (
                 <div
                   key={c.ip}
                   className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
@@ -772,6 +778,7 @@ export function UserDetail({
                   </span>
                 </div>
               ))}
+              <ShowMore rest={devices.rest} onClick={devices.showMore} />
             </div>
           )}
 

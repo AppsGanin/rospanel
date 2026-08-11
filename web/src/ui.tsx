@@ -326,6 +326,35 @@ export function Button({
   );
 }
 
+// ShowMore is the tail of a chunked list (see useShowMore): one button that reveals
+// the next slice and says how many rows are still hidden, so the count is never a
+// mystery. Renders nothing once the list is fully shown, so call sites drop it in
+// unconditionally instead of repeating the same guard.
+export function ShowMore({
+  rest,
+  onClick,
+  className,
+}: {
+  rest: number;
+  onClick: () => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  if (rest <= 0) return null;
+  return (
+    <Button
+      variant="light"
+      color="gray"
+      size="sm"
+      fullWidth
+      className={className}
+      onClick={onClick}
+    >
+      {t("common.showMoreCount", { n: rest })}
+    </Button>
+  );
+}
+
 export function IconButton({
   children,
   onClick,

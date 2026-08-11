@@ -9,6 +9,7 @@ import {
   type PaymentOrder,
   type PaymentStats,
 } from "./api";
+import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -18,6 +19,7 @@ import {
   Modal,
   PasswordInput,
   SettingCard,
+  ShowMore,
 } from "./ui";
 
 const PROVIDER_META: Record<
@@ -245,11 +247,16 @@ export function PaymentsPage() {
     }
   };
 
-  if (loading) return <CenterLoader />;
-  if (!stats) return null;
-
+  // Derived (and chunked) above the early returns: hooks may not sit behind them.
+  // The server hands over the last 100 orders, which is a long scroll on a page
+  // whose useful part — the pending queue — is at the top.
   const pending = orders.filter((o) => o.status === "pending");
   const history = orders.filter((o) => o.status !== "pending");
+  const pendingPage = useShowMore(pending);
+  const historyPage = useShowMore(history);
+
+  if (loading) return <CenterLoader />;
+  if (!stats) return null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -314,7 +321,7 @@ export function PaymentsPage() {
           <p className="text-sm text-ink-muted">{t("pay.noPending")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {pending.map((o) => (
+            {pendingPage.shown.map((o) => (
               <PendingRow
                 key={o.id}
                 order={o}
@@ -325,6 +332,11 @@ export function PaymentsPage() {
             ))}
           </ul>
         )}
+        <ShowMore
+          rest={pendingPage.rest}
+          onClick={pendingPage.showMore}
+          className="mt-2"
+        />
       </SettingCard>
 
       <SettingCard title={t("pay.history")}>
@@ -332,11 +344,16 @@ export function PaymentsPage() {
           <p className="text-sm text-ink-muted">{t("pay.historyEmpty")}</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {history.map((o) => (
+            {historyPage.shown.map((o) => (
               <HistoryRow key={o.id} order={o} />
             ))}
           </ul>
         )}
+        <ShowMore
+          rest={historyPage.rest}
+          onClick={historyPage.showMore}
+          className="mt-2"
+        />
       </SettingCard>
 
       <Modal
