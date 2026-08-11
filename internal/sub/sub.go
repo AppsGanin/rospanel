@@ -86,6 +86,7 @@ func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
 	return []DeepLink{
 		{"Happ", allTV, template.URL("happ://add/" + subURL)},
 		{"INCY", allTV, template.URL("incy://import/" + subURL)},
+		{"v2RayTun", allTV, template.URL("v2raytun://import/" + subURL)},
 		{"Hiddify", all, template.URL("hiddify://import/" + subURL)},
 		{"Karing", allTV, template.URL("karing://install-config?url=" + enc)},
 		{"sing-box", all, template.URL("sing-box://import-remote-profile?url=" + enc)},
