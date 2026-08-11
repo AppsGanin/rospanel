@@ -446,9 +446,18 @@ func tlsLoop(mgr *core.Manager) {
 				log.Printf("tls: %v", err)
 			}
 			if changed {
+				// Restart, NOT Reconcile: only the cert FILE changed, and the config
+				// merely names its path — so the regenerated config is byte-identical
+				// and Apply short-circuits without restarting anything, leaving Xray
+				// serving the certificate it loaded at start. (Xray re-reads the file
+				// on its own hourly hot-reload, so this used to self-heal within an
+				// hour — long after the "renewed" notification went out.) Restart
+				// reloads config.json from disk, which WriteConfig keeps current, so
+				// the live user set survives. Same thing the node agent does in
+				// certLoop.
 				log.Print("tls: certificate updated — reloading Xray")
-				if err := mgr.Reconcile(); err != nil {
-					log.Printf("tls reconcile: %v", err)
+				if err := mgr.RestartXray(); err != nil {
+					log.Printf("tls reload: %v", err)
 				}
 			}
 		})
