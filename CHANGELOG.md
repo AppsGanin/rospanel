@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.5.0](https://github.com/AppsGanin/rospanel/compare/v2.4.1...v2.5.0) (2026-08-11)
+
+
+### Features
+
+* **sub:** add v2RayTun deep link support ([8473936](https://github.com/AppsGanin/rospanel/commit/8473936f789b71264ae01d5d2cfc674364db3bb3))
+* **ui:** add client-side pagination for long lists ([0a96691](https://github.com/AppsGanin/rospanel/commit/0a966919fec8e6375386c110aa956c6384fd39de))
+
+
+### Bug Fixes
+
+* **tls:** restart Xray on certificate update instead of reconcile ([a9b16b1](https://github.com/AppsGanin/rospanel/commit/a9b16b1bcc25da43fcd7d457a0c2690042d39fa1))
+* **web:** standardize background colors on groups panel cards ([1981c8c](https://github.com/AppsGanin/rospanel/commit/1981c8cd9c11e1dc12428cee807acfc0c6370012))
+
 ## [2.4.1](https://github.com/AppsGanin/rospanel/compare/v2.4.0...v2.4.1) (2026-08-10)
 
 
