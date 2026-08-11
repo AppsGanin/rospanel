@@ -9,7 +9,9 @@ import { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Badge, Button, Select, SettingCard, Skeleton } from "./ui";
 
-const PAGE = 50;
+// Same page size as the user journal (api.EVENT_PAGE) — two audit trails that read
+// the same way should not open at different depths.
+const PAGE = 20;
 
 function fmtTs(unix: number): string {
   return new Date(unix * 1000).toLocaleString(currentLang(), {

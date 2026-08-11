@@ -12,7 +12,7 @@ import {
   type GroupTarget,
   type User,
 } from "./api";
-import { useAction } from "./hooks";
+import { useAction, useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -20,6 +20,7 @@ import {
   CenterLoader,
   Checkbox,
   Modal,
+  ShowMore,
   TextInput,
 } from "./ui";
 
@@ -264,6 +265,12 @@ function MembersPicker({
     });
   }, [users, query, members]);
 
+  // Every user on the install lands here, so on a big panel this one picker used to
+  // mount thousands of checkboxes inside a 14rem scroll box. Selected members sort
+  // first, which is what makes a short first chunk usable: the current set is in it.
+  // A new search starts from the top again.
+  const page = useShowMore(filtered, { resetKey: query });
+
   const toggle = (id: number) => {
     const next = new Set(members);
     if (next.has(id)) next.delete(id);
@@ -285,7 +292,7 @@ function MembersPicker({
       ) : (
         <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-200/80 bg-gray-50/60 p-2">
           <div className="flex flex-col gap-1.5">
-            {filtered.map((u) => (
+            {page.shown.map((u) => (
               <Checkbox
                 key={u.id}
                 checked={members.has(u.id)}
@@ -294,6 +301,7 @@ function MembersPicker({
                 hint={u.system_email}
               />
             ))}
+            <ShowMore rest={page.rest} onClick={page.showMore} className="mt-1" />
             {filtered.length === 0 && (
               <p className="px-1 py-2 text-xs text-ink-muted">{t("common.nothingFound")}</p>
             )}

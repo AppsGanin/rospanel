@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { abuseCategoryLabel, getRecentAbuse, getUserAbuse, type AbuseMatch } from './api'
+import { useShowMore } from './hooks'
 import { currentLang } from './i18n'
-import { Badge } from './ui'
+import { Badge, ShowMore } from './ui'
 
 // AbuseList shows destinations that matched a threat, piracy or gambling blocklist
 // — for the whole fleet, or for one user when userId is given.
@@ -16,9 +17,21 @@ import { Badge } from './ui'
 // A match is a signal, not a verdict. Feeds carry false positives, an ad-adjacent
 // CDN can land in a threat list, and malware hits usually mean the user's device is
 // compromised rather than that the user is misbehaving. The empty state says so.
-export function AbuseList({ userId, limit }: { userId?: number; limit?: number }) {
+export function AbuseList({
+  userId,
+  limit,
+  first,
+}: {
+  userId?: number
+  limit?: number
+  first?: number
+}) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<AbuseMatch[] | null>(null)
+  // The poll replaces `rows` every minute, so the reset key is the subject of the
+  // list (which user), never the array itself — otherwise an expanded list would
+  // snap shut under the operator once a minute.
+  const page = useShowMore(rows ?? [], { first, resetKey: userId })
 
   useEffect(() => {
     let alive = true // guard against an out-of-order response after a prop change
@@ -46,7 +59,7 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
 
   return (
     <div className="flex flex-col gap-1.5">
-      {rows.map((r) => (
+      {page.shown.map((r) => (
         <div
           key={`${r.user_id}-${r.node_id}-${r.domain}-${r.day}`}
           className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
@@ -67,6 +80,7 @@ export function AbuseList({ userId, limit }: { userId?: number; limit?: number }
           </span>
         </div>
       ))}
+      <ShowMore rest={page.rest} onClick={page.showMore} />
     </div>
   )
 }

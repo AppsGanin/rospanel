@@ -70,3 +70,30 @@ export function useAction() {
   };
   return { busy: keys.size > 0, isBusy: (key: string) => keys.has(key), run };
 }
+
+// useShowMore renders a long list in chunks: `first` rows up front, `step` more per
+// click on the <ShowMore/> button that pairs with it. Client-side on purpose — the
+// lists that use it are already fully loaded (the server caps each response), so
+// what this buys is a card the operator can read past, not fewer requests.
+//
+// `resetKey` collapses back to `first` when the list starts being about something
+// else — another user's card, another search — instead of carrying one expansion
+// into the next. Without it a reopened modal would show the previous card's depth.
+export function useShowMore<T>(
+  items: T[],
+  {
+    first = 20,
+    step = 20,
+    resetKey,
+  }: { first?: number; step?: number; resetKey?: unknown } = {},
+) {
+  const [limit, setLimit] = useState(first);
+  useEffect(() => {
+    setLimit(first);
+  }, [resetKey, first]);
+  return {
+    shown: items.length > limit ? items.slice(0, limit) : items,
+    rest: Math.max(0, items.length - limit),
+    showMore: () => setLimit((n) => n + step),
+  };
+}

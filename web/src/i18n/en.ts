@@ -38,6 +38,7 @@ const en: Dict = {
     refresh: "Refresh",
     retry: "Retry",
     showMore: "Show more",
+    showMoreCount: "Show more ({{n}})",
     menu: "Menu",
     language: "Language",
     unsavedTitle: "You have unsaved changes",

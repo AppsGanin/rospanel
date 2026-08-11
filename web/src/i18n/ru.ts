@@ -41,6 +41,7 @@ const ru = {
     refresh: "Обновить",
     retry: "Повторить",
     showMore: "Показать ещё",
+    showMoreCount: "Показать ещё ({{n}})",
     menu: "Меню",
     language: "Язык",
     unsavedTitle: "Есть несохранённые изменения",
