@@ -8,6 +8,7 @@ import {
   revokeApiKey,
   setApiPath,
 } from "./api";
+import { useShowMore } from "./hooks";
 import i18n, { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -21,6 +22,7 @@ import {
   Modal,
   SaveBar,
   SettingCard,
+  ShowMore,
   Switch,
   TextInput,
   useConfirm,
@@ -165,6 +167,9 @@ export function ApiSettings() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ApiKey | null>(null);
+  // Ten at a time: the roster grows with every key ever minted (revoked ones stay
+  // as a record), and the card is a list to scan, not to scroll.
+  const shownKeys = useShowMore(info?.keys ?? [], { first: 10, step: 10 });
   // Draft of the enable toggle — applied via the bottom SaveBar (not instantly),
   // matching the other settings sections. Key create/revoke/rotate stay immediate.
   const [enabledDraft, setEnabledDraft] = useState(false);
@@ -311,6 +316,13 @@ export function ApiSettings() {
               subtitle={t("api.openapiHint")}
             />
           </div>
+          {/* The scrape target is a URL an operator pastes into a Prometheus config
+              rather than opens, so it's a copy field and not a tile. */}
+          <div className="pt-3">
+            <p className="mb-1 text-sm font-medium text-ink">{t("api.metrics")}</p>
+            <CopyField value={`${info.base_url}/v1/metrics`} />
+            <p className="mt-1 text-xs text-ink-muted">{t("api.metricsHint")}</p>
+          </div>
         </SettingCard>
       )}
 
@@ -334,9 +346,13 @@ export function ApiSettings() {
 
         {info.keys.length > 0 ? (
           <div className="mt-4 flex flex-col gap-2">
-            {info.keys.map((k) => (
+            {shownKeys.shown.map((k) => (
               <KeyRow key={k.id} k={k} onRevoke={revoke} />
             ))}
+            {/* Keys accumulate — a revoked one is kept as a record — so an install
+                that has been running for a while lists more of them than anybody
+                reads at once. */}
+            <ShowMore rest={shownKeys.rest} onClick={shownKeys.showMore} />
           </div>
         ) : (
           <p className="mt-4 text-center text-sm text-ink-muted">

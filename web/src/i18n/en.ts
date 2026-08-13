@@ -66,6 +66,11 @@ const en: Dict = {
     gb: "{{n}} GB",
   },
 
+  speed: {
+    unlimited: "Unlimited",
+    kbit: "{{n}} Kbit/s",
+    mbit: "{{n}} Mbit/s",
+  },
   devices: {
     unlimited: "Unlimited",
     count_one: "{{count}} device",
@@ -178,6 +183,9 @@ const en: Dict = {
     backupUnreadable: "could not read the archive: {{detail}}",
     badAuthority: "the authority {{value}} does not look like a domain",
     badColorAccent: "the accent colour must be #RRGGBB",
+    badValue: "invalid value",
+    deviceHWIDEmpty: "no device specified",
+    deviceNotFound: "device not found",
     badColorBg: "the background colour must be #RRGGBB",
     badColorMuted: "the muted-text colour must be #RRGGBB",
     badColorSurface: "the surface colour must be #RRGGBB",
@@ -615,6 +623,7 @@ const en: Dict = {
       user_enabled: "Enabled",
       user_disabled: "Disabled",
       user_limits_changed: "Limits changed",
+      user_speed_limit: "Speed limit",
       user_traffic_reset: "Traffic reset",
       user_quota_reset: "Quota auto-reset",
       user_reset_period: "Auto-reset period",
@@ -622,6 +631,9 @@ const en: Dict = {
       user_expired: "Subscription expired",
       user_limited: "Traffic used up",
       user_device_limited: "Device limit",
+      user_device_bound: "Device bound",
+      user_device_refused: "Device refused",
+      user_device_unbound: "Device unbound",
       user_telegram_linked: "Telegram linked",
       user_telegram_unlinked: "Telegram unlinked",
       plan_changed: "Plan changed",
@@ -733,6 +745,7 @@ const en: Dict = {
     online: "Online",
     trafficToday: "Traffic today",
     disk: "Disk",
+    noStats: "no data",
     uptime: "Uptime",
     system: "System",
     usage: "Usage",
@@ -847,6 +860,8 @@ const en: Dict = {
       secretPath: "Secret path",
       setupFinish: "Initial setup",
       subscriptions: "Subscriptions",
+      deviceBinding: "Device binding",
+      statusPage: "Status page",
       telegram: "Telegram",
       tgLink: "Telegram · linking",
       tgLinkCancel: "Telegram · linking cancelled",
@@ -902,6 +917,21 @@ const en: Dict = {
   },
 
   subs: {
+    showConfigs: "Individual configs on the page",
+    showConfigsHint:
+      "The card with a share link per protocol and copy buttons. Turn it off to hand out only the subscription link.",
+    hwid: "Device binding (HWID)",
+    hwidHint:
+      "Clients like Happ and v2RayTun send an install id when they refresh the subscription. A device takes a slot from the user's limit; once the slots are gone, a new device doesn't get the subscription.",
+    hwidRequire: "Require an id",
+    hwidRequireHint:
+      "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",
+    hwidFallback: "Default limit",
+    hwidFallbackHint:
+      "Applies to users with no device limit of their own. 0 means unlimited.",
+    hwidTTL: "Forget a device after, days",
+    hwidTTLHint:
+      "A device that hasn't refreshed for this long frees its slot. 0 never forgets.",
     saved: "Subscription settings saved",
     format: "Subscription format",
     path: "Subscription path",
@@ -1071,6 +1101,7 @@ const en: Dict = {
     planLimitsPrefix: "The plan sets the limits: traffic",
     planLimitsDevices: ", devices",
     planLimitsReset: ", auto-reset",
+    planLimitsSpeed: ", speed ",
     planLimitsSuffix: "To set them by hand, switch the plan to “Manual”.",
     noLimit: "unlimited",
     deviceLimit: "Device limit",
@@ -1104,6 +1135,21 @@ const en: Dict = {
     activeOfLimit: "{{active}} of {{limit}} active · {{total}} IPs total",
     activeTotal: "{{active}} active · {{total}} IPs total",
     noConnections: "No connections yet",
+    boundDevices: "Bound devices (HWID)",
+    speedLimit: "Speed limit",
+    speedLimitHint:
+      "A both-directions cap enforced by the kernel. It applies to the addresses the user is connected from, so everyone behind one NAT shares a cap.",
+    boundOfLimit: "{{count}} of {{limit}} bound",
+    boundTotal: "{{count}} bound · no limit",
+    noBoundDevices: "No devices yet",
+    unbind: "Unbind",
+    unbindAll: "Unbind all",
+    unbindTitle: "Unbind the device",
+    unbindBody:
+      "The device stops updating the subscription and frees its slot. It can bind again on its next refresh.",
+    unbindAllTitle: "Unbind every device",
+    unbindAllBody:
+      "Every device of {{name}} is unbound and may bind again on its next subscription refresh.",
     onlineWord: "online",
     traffic: "Traffic",
     messageTo: "Message to {{name}}",
@@ -1436,6 +1482,9 @@ const en: Dict = {
     description:
       "A REST API for managing users, plans and statistics from external systems. Every request is authorised with a key: the Authorization: Bearer <key> header.",
     baseUrl: "Base address",
+    metrics: "Prometheus metrics",
+    metricsHint:
+      "Scrape endpoint in the Prometheus text format. Same key: put it in authorization.credentials in your scrape_config.",
     rotateTitle: "Change the API address?",
     rotateBody:
       "The base URL changes — every integration will need updating. The keys themselves keep working at the new address.",
@@ -1469,6 +1518,15 @@ const en: Dict = {
   },
 
   general: {
+    statusPage: "Status page",
+    statusPageHint:
+      "A public page with server status and 90 days of uptime history. It shows server names and availability only — no addresses, no users, no traffic.",
+    statusPageOn: "Enable the public page",
+    statusPageOnHint:
+      "While it's off, that address serves the decoy site, like any other unknown path.",
+    statusPagePath: "Path",
+    statusPagePathHint: "The page will answer at /{{path}}",
+    statusPathBad: "letters, digits, hyphen and underscore only",
     saved: "Settings saved",
     never: "Never",
     daysAfterExpiry: "{{count}} days after expiry",

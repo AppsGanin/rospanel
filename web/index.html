@@ -7,9 +7,11 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"
     />
     <meta name="robots" content="noindex, nofollow" />
-    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon.ico" />
+    <!-- The operator's own mark, relative so it resolves under the injected
+         <base href="/<secret>/"> — an absolute "/favicon.svg" would be looked up at
+         the site root, where the decoy answers. The endpoint falls back to the
+         bundled mark when no logo has been uploaded, so this is never empty. -->
+    <link rel="icon" href="api/branding/logo" />
     <title>РосПанель</title>
   </head>
   <body>

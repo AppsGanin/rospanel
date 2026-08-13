@@ -14,7 +14,7 @@ import {
   type PaymentProvider,
   type TariffPlan,
 } from "./api";
-import { fmtBytes, gbToBytes, quotaOptions } from "./format";
+import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, speedLimitOptions } from "./format";
 import { useAction } from "./hooks";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -248,6 +248,7 @@ const EMPTY_PLAN = (): TariffPlan => ({
   period_days: 30,
   data_limit: 0,
   device_limit: 0,
+  speed_limit: 0,
   sort_order: 0,
   enabled: true,
   group_ids: [],
@@ -296,6 +297,9 @@ function planSummary(p: TariffPlan): string {
       ? i18n.t("bill.nDevices", { count: p.device_limit })
       : i18n.t("bill.infDevices"),
   );
+  // Only when the plan promises one: "unlimited speed" is the norm and would just
+  // make every summary longer.
+  if (p.speed_limit > 0) parts.push(fmtSpeed(p.speed_limit));
   return parts.join(" · ");
 }
 
@@ -390,6 +394,12 @@ function PlanForm({
           data={devices()}
           value={String(plan.device_limit)}
           onChange={(v) => patch({ device_limit: Number(v) })}
+        />
+        <Select
+          label={t("userDetail.speedLimit")}
+          data={speedLimitOptions()}
+          value={String(plan.speed_limit)}
+          onChange={(v) => patch({ speed_limit: Number(v) })}
         />
       </div>
       {/* Access groups: the plan decides WHICH connections its users may reach, not

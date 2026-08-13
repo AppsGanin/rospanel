@@ -13,10 +13,25 @@ import (
 // and its stylesheet is render-blocking, so pulling it from there delays paint for
 // exactly the users this panel serves — the same class of bug as the old
 // telegram.org <script>.
+// The tab icon is the operator's own mark, served off the same per-token route the
+// page header uses — a panel with a custom logo should look like itself in a pinned
+// tab, which is where a subscription page tends to live.
+func TestPageFaviconUsesTheBrandingLogo(t *testing.T) {
+	u := model.User{Name: "u", SubToken: "tok"}
+	html, err := Page(u, One(&model.Settings{Host: "vpn.example.com", SubPath: "sub"}),
+		Billing{}, Devices{}, true, i18n.RU)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(string(html), `rel="icon" href="https://vpn.example.com/sub/tok/logo.svg"`) {
+		t.Error("the page has no favicon pointing at the branding logo")
+	}
+}
+
 func TestPageSelfHostsFonts(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{}, i18n.RU)
+	html, err := Page(u, One(set), Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -43,7 +58,7 @@ func TestPageSelfHostsFonts(t *testing.T) {
 func TestPageFontURLsAreAllEmbedded(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{}, i18n.RU)
+	html, err := Page(u, One(set), Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

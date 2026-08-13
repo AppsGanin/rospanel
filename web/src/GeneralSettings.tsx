@@ -6,11 +6,14 @@ import {
   checkUpdate,
   getMe,
   getSettings,
+  getStatusPage,
   regenSecret,
+  saveStatusPage,
   setLocalBackup,
   setupTimezone,
   setUserAutoDelete,
   type SettingsInfo,
+  type StatusPageSettings,
   type UpdateInfo,
 } from "./api";
 import {
@@ -26,6 +29,7 @@ import { browserTimezone, tzOptions } from "./tz";
 import {
   Button,
   CenterLoader,
+  cn,
   Code,
   Modal,
   SaveBar,
@@ -33,6 +37,7 @@ import {
   SettingCard,
   Spinner,
   TextInput,
+  ToggleRow,
   useConfirm,
 } from "./ui";
 
@@ -42,6 +47,9 @@ import {
 type LocalBackup = { schedule: Schedule; keep: number };
 
 const EMPTY_BK: LocalBackup = { schedule: EMPTY_SCHEDULE, keep: 7 };
+
+// The status page is off with the conventional path until the panel says otherwise.
+const EMPTY_STATUS: StatusPageSettings = { enabled: false, path: "status" };
 
 // Grace period between a user's expiry date and their deletion. "Never" is the
 // default and is deliberately first: deleting paying customers because a dropdown
@@ -97,6 +105,8 @@ export function GeneralSettings() {
   const { isBusy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
   const [newSecret, setNewSecret] = useState("");
+  const [status, setStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
+  const [savedStatus, setSavedStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -116,6 +126,12 @@ export function GeneralSettings() {
           setTimezone(browserTimezone());
           setSavedTz(browserTimezone());
         }),
+      getStatusPage()
+        .then((s) => {
+          setStatus(s);
+          setSavedStatus(s);
+        })
+        .catch(() => {}),
       getSettings()
         .then((s) => {
           setSettings(s);
@@ -140,8 +156,17 @@ export function GeneralSettings() {
   const bkDirty =
     bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
   const adDirty = autoDel !== savedAutoDel;
-  const dirty = timezone !== savedTz || bkDirty || adDirty;
-  const saveBlocked = false;
+  const statusDirty =
+    status.enabled !== savedStatus.enabled || status.path !== savedStatus.path;
+  const dirty = timezone !== savedTz || bkDirty || adDirty || statusDirty;
+  // The path is a bare URL segment; the server refuses anything else (and any
+  // collision with the panel's other surfaces), but there is no reason to let the
+  // operator get that far with an obviously wrong value.
+  const statusPathErr =
+    status.enabled && !/^[A-Za-z0-9_-]+$/.test(status.path)
+      ? t("general.statusPathBad")
+      : "";
+  const saveBlocked = !!statusPathErr;
 
   // save persists whatever changed (timezone / backups / auto-delete) behind the
   // single bottom SaveBar. Update-check and secret regen stay immediate actions.
@@ -160,6 +185,10 @@ export function GeneralSettings() {
           await setUserAutoDelete(autoDel);
           setSavedAutoDel(autoDel);
         }
+        if (statusDirty) {
+          await saveStatusPage(status);
+          setSavedStatus(status);
+        }
         notifySuccess(t("general.saved"));
       },
       { key: "save" },
@@ -169,6 +198,7 @@ export function GeneralSettings() {
     setTimezone(savedTz);
     setBk(savedBk);
     setAutoDel(savedAutoDel);
+    setStatus(savedStatus);
   };
 
   const doRegenSecret = async () => {
@@ -341,6 +371,37 @@ export function GeneralSettings() {
         <p className="mt-3 text-xs text-warning">
           {t("general.backupWarn")}
         </p>
+      </SettingCard>
+
+      <SettingCard
+        title={t("general.statusPage")}
+        description={t("general.statusPageHint")}
+      >
+        <ToggleRow
+          label={t("general.statusPageOn")}
+          hint={t("general.statusPageOnHint")}
+          checked={status.enabled}
+          onChange={(enabled) => setStatus((s) => ({ ...s, enabled }))}
+        />
+        {status.enabled && (
+          <div className="mt-3">
+            <TextInput
+              label={t("general.statusPagePath")}
+              value={status.path}
+              onChange={(path) =>
+                setStatus((s) => ({ ...s, path: path.replace(/[^A-Za-z0-9_-]/g, "") }))
+              }
+            />
+            <p
+              className={cn(
+                "mt-1 text-xs",
+                statusPathErr ? "text-danger" : "text-ink-muted",
+              )}
+            >
+              {statusPathErr || t("general.statusPagePathHint", { path: status.path || "status" })}
+            </p>
+          </div>
+        )}
       </SettingCard>
 
       <SettingCard
