@@ -7,6 +7,8 @@ import {
   getBilling,
   getStatsSeries,
   getUserConnections,
+  getUserDevices,
+  unbindUserDevice,
   renameUser,
   resetUserTraffic,
   rotateSubToken,
@@ -20,6 +22,7 @@ import {
   listGroups,
   type Connection,
   type DailyPoint,
+  type DeviceList,
   type Group,
   type TariffPlan,
   type User,
@@ -29,11 +32,13 @@ import {
   fmtExpire,
   fmtLastSeen,
   fmtQuota,
+  fmtSpeed,
   gbToBytes,
   isOnline,
   localDay,
   deviceLimitOptions,
   quotaOptions,
+  speedLimitOptions,
   ranges,
   resetPeriods,
   statusInfo,
@@ -201,9 +206,13 @@ export function UserDetail({
   const { t } = useTranslation()
   const [series, setSeries] = useState<DailyPoint[]>([])
   const [conns, setConns] = useState<Connection[]>([])
+  // Bound installs (HWID). Null until the first load, and left empty when the
+  // operator hasn't switched device binding on — the whole block then stays hidden.
+  const [bound, setBound] = useState<DeviceList | null>(null)
   const [range, setRange] = useState('30')
   const [limitGb, setLimitGb] = useState('0')
   const [deviceLimit, setDeviceLimit] = useState('0')
+  const [speedLimit, setSpeedLimit] = useState('0')
   const [billingOn, setBillingOn] = useState(false)
   const [plans, setPlans] = useState<TariffPlan[]>([])
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
@@ -223,6 +232,7 @@ export function UserDetail({
   useEffect(() => {
     setLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
     setDeviceLimit(user ? String(user.device_limit ?? 0) : '0')
+    setSpeedLimit(user ? String(user.speed_limit ?? 0) : '0')
     setTgLink(null) // a one-time bind link is per-user; don't leak it across switches
     setEventsOpen(false) // ditto for the journal — never show one user's trail over another
     setSel(new Set((user?.groups ?? []).map((g) => g.id)))
@@ -274,6 +284,26 @@ export function UserDetail({
     }
   }, [user])
 
+  useEffect(() => {
+    if (!user) {
+      setBound(null)
+      return
+    }
+    let alive = true
+    const load = () =>
+      getUserDevices(user.id)
+        .then((d) => alive && setBound(d))
+        .catch(() => {})
+    load()
+    // Same cadence as the connection list: a device appears when its app refreshes
+    // the subscription, which is minutes apart, not seconds.
+    const t = setInterval(load, 30_000)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [user])
+
   // Tariffs (only meaningful when billing is enabled); loaded once the card opens.
   useEffect(() => {
     if (!user) return
@@ -293,14 +323,21 @@ export function UserDetail({
   const chart = series.map((p) => ({ day: p.day.slice(5), up: p.up, down: p.down }))
   const fail = (e: unknown) => notifyError(errMessage(e))
 
+  // A cap set through the API may not be one of the presets; keep it in the list so
+  // the select shows what the user actually has instead of falling back to the first
+  // option (which would read as "unlimited").
+  const speedData = speedLimitOptions().some((o) => o.value === speedLimit)
+    ? speedLimitOptions()
+    : [...speedLimitOptions(), { value: speedLimit, label: fmtSpeed(Number(speedLimit)) }]
+
   const quotaData = user
     ? quotaOptions().some((o) => o.value === limitGb)
       ? quotaOptions()
       : [...quotaOptions(), { value: limitGb, label: fmtBytes(user.data_limit) }]
     : quotaOptions()
 
-  const saveLimits = (dl: number, ea: number, dev: number) =>
-    setUserLimits(user!.id, dl, ea, dev).then(onChanged).catch(fail)
+  const saveLimits = (dl: number, ea: number, dev: number, speed?: number) =>
+    setUserLimits(user!.id, dl, ea, dev, speed).then(onChanged).catch(fail)
 
   // Group membership is applied on a button, not per chip: each save reconciles Xray,
   // so toggling several groups at once should be one restart, not several.
@@ -347,6 +384,26 @@ export function UserDetail({
       confirmLabel: t('common.edit'),
     })
     if (ok) apply()
+  }
+
+  // Unbinding frees a slot immediately — the device can rebind on its next fetch, so
+  // this is "let them re-add it", not a ban. Confirmed all the same: for the owner it
+  // means their app stops updating until it refetches.
+  const unbindDevice = async (hwid?: string) => {
+    if (!user) return
+    const ok = await confirm({
+      title: t(hwid ? 'userDetail.unbindTitle' : 'userDetail.unbindAllTitle'),
+      body: t(hwid ? 'userDetail.unbindBody' : 'userDetail.unbindAllBody', { name: user.name }),
+      confirmLabel: t('common.delete'),
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await unbindUserDevice(user.id, hwid ? { hwid } : { all: true })
+      setBound(await getUserDevices(user.id))
+    } catch (e) {
+      fail(e)
+    }
   }
 
   const activeConnCount = user ? conns.filter((c) => isOnline(c.last_seen)).length : 0
@@ -540,6 +597,12 @@ export function UserDetail({
               <span className="text-ink">
                 {user.device_limit > 0 ? user.device_limit : t('userDetail.noLimit')}
               </span>
+              {user.speed_limit > 0 && (
+                <>
+                  {t('userDetail.planLimitsSpeed')}{' '}
+                  <span className="text-ink">{fmtSpeed(user.speed_limit)}</span>
+                </>
+              )}
               {t('userDetail.planLimitsReset')}{' '}
               <span className="text-ink">{resetLabel(user.reset_period)}</span>.{' '}
               {t('userDetail.planLimitsSuffix')}
@@ -580,6 +643,30 @@ export function UserDetail({
               />
               <p className="-mt-1 text-xs text-ink-muted">
                 {t('userDetail.deviceLimitHint')}
+              </p>
+              <Select
+                label={t('userDetail.speedLimit')}
+                data={speedData}
+                value={speedLimit}
+                onChange={(v) =>
+                  confirmChange(
+                    t('userDetail.speedLimit'),
+                    optLabel(speedData, speedLimit),
+                    optLabel(speedData, v),
+                    () => {
+                      setSpeedLimit(v)
+                      saveLimits(
+                        user.data_limit,
+                        user.expire_at,
+                        user.device_limit,
+                        Number(v),
+                      )
+                    },
+                  )
+                }
+              />
+              <p className="-mt-1 text-xs text-ink-muted">
+                {t('userDetail.speedLimitHint')}
               </p>
               <Select
                 label={t('usersPanel.autoReset')}
@@ -780,6 +867,77 @@ export function UserDetail({
               ))}
               <ShowMore rest={devices.rest} onClick={devices.showMore} />
             </div>
+          )}
+
+          {bound?.enabled && (
+            <>
+              <Divider label={t('userDetail.boundDevices')} />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-ink-muted">
+                  {bound.limit > 0
+                    ? t('userDetail.boundOfLimit', {
+                        count: bound.devices.length,
+                        limit: bound.limit,
+                      })
+                    : t('userDetail.boundTotal', { count: bound.devices.length })}
+                </p>
+                {bound.devices.length > 0 && (
+                  <Button
+                    variant="subtle"
+                    color="red"
+                    size="xs"
+                    onClick={() => unbindDevice()}
+                  >
+                    {t('userDetail.unbindAll')}
+                  </Button>
+                )}
+              </div>
+              {bound.devices.length === 0 ? (
+                <p className="py-2 text-center text-sm text-ink-muted">
+                  {t('userDetail.noBoundDevices')}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {bound.devices.map((d) => (
+                    <div
+                      key={d.hwid}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {d.model || d.os || d.hwid}
+                        </div>
+                        <div className="truncate text-xs text-ink-muted">
+                          {[d.os, d.os_version, d.ip].filter(Boolean).join(' · ')}
+                        </div>
+                        {/* The id itself, because the line above doesn't identify
+                            anything: two identical phones are two identical rows, and
+                            "which one am I unbinding" has no answer without it. Full
+                            value in the tooltip and in the DOM, so it can be copied
+                            even though it's visually truncated. */}
+                        <div
+                          className="truncate font-mono text-[11px] text-ink-muted/70"
+                          title={d.hwid}
+                        >
+                          {d.hwid}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-xs text-ink-muted">{fmtLastSeen(d.last_seen)}</span>
+                        <Button
+                          variant="subtle"
+                          color="red"
+                          size="xs"
+                          onClick={() => unbindDevice(d.hwid)}
+                        >
+                          {t('userDetail.unbind')}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           <Divider label={t('userDetail.traffic')} />

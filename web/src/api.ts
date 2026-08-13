@@ -17,6 +17,7 @@ export interface User {
   last_seen: number
   device_limit: number
   active_devices: number
+  speed_limit: number // kbit/s, 0 = unlimited
   plan_id: number
   plan_name?: string
   telegram_linked?: boolean
@@ -62,6 +63,35 @@ export interface Connection {
 
 export const getUserConnections = (id: number) =>
   api<Connection[]>(`api/users/${id}/connections`)
+
+// Device is one client install bound to the account by the id it sends in the
+// x-hwid subscription header. Distinct from Connection above: that one is an IP the
+// tunnel was used from, this one is an app that fetched the subscription.
+export interface Device {
+  hwid: string
+  os: string
+  os_version: string
+  model: string
+  app: string
+  ip: string
+  first_seen: number
+  last_seen: number
+}
+
+export interface DeviceList {
+  devices: Device[]
+  limit: number // 0 = unlimited
+  enabled: boolean // device binding switched on panel-wide
+}
+
+export const getUserDevices = (id: number) => api<DeviceList>(`api/users/${id}/devices`)
+
+// Releases one device slot, or every one of them with all=true.
+export const unbindUserDevice = (id: number, body: { hwid?: string; all?: boolean }) =>
+  api<{ removed: number }>(`api/users/${id}/devices/unbind`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 
 
 // AbuseMatch is one destination that hit a blocklist. These are PERSISTED (a short
@@ -371,10 +401,13 @@ export const setUserLimits = (
   data_limit: number,
   expire_at: number,
   device_limit: number,
+  // Omitted leaves the speed cap untouched — the server reads a missing field as
+  // "no opinion", not as "unlimited".
+  speed_limit?: number,
 ) =>
   api<{ ok: boolean }>(`api/users/${id}/limits`, {
     method: 'POST',
-    body: JSON.stringify({ data_limit, expire_at, device_limit }),
+    body: JSON.stringify({ data_limit, expire_at, device_limit, speed_limit }),
   })
 export const setUserEnabled = (id: number, enabled: boolean) =>
   api<{ ok: boolean }>(`api/users/${id}/enabled`, {
@@ -684,7 +717,23 @@ export interface SubSettings {
   sub_routing_mihomo: string
   sub_update_interval: number
   sub_announce: string
+  // Render the "individual configs" card on the subscription page (the raw share
+  // link of every lane). On by default; off leaves the page offering the
+  // subscription link and the client buttons only.
+  sub_show_configs: boolean
 }
+
+// HWIDSettings gates device binding: which installs may fetch the subscription and
+// how long a silent one keeps its slot.
+export interface HWIDSettings {
+  enabled: boolean
+  require: boolean // refuse clients that send no x-hwid at all
+  fallback_limit: number // cap for users whose own device limit is 0
+  ttl_days: number // forget a device after N days of silence (0 = never)
+}
+
+export const saveHWIDSettings = (s: HWIDSettings) =>
+  api<{ ok: boolean }>('api/settings/hwid', { method: 'POST', body: JSON.stringify(s) })
 
 export interface SettingsInfo extends SubSettings {
   secret_path: string
@@ -696,7 +745,23 @@ export interface SettingsInfo extends SubSettings {
   local_backup_cron: string
   local_backup_keep: number
   user_autodelete_days: number
+  hwid: HWIDSettings
 }
+
+// StatusPageSettings controls the public status page: the one surface that answers
+// to a caller holding no token, so it is off until an operator turns it on.
+export interface StatusPageSettings {
+  enabled: boolean
+  path: string
+}
+
+export const getStatusPage = () => api<StatusPageSettings>('api/settings/status-page')
+
+export const saveStatusPage = (s: StatusPageSettings) =>
+  api<{ ok: boolean }>('api/settings/status-page', {
+    method: 'POST',
+    body: JSON.stringify(s),
+  })
 
 export const setUserAutoDelete = (days: number) =>
   api<{ ok: boolean }>('api/settings/autodelete', {
@@ -1224,6 +1289,7 @@ export interface TariffPlan {
   period_days: number
   data_limit: number
   device_limit: number
+  speed_limit: number // kbit/s, 0 = unlimited
   sort_order: number
   enabled: boolean
   // Access groups the plan grants: whoever is put on the plan joins these groups and
@@ -1481,6 +1547,18 @@ export interface NodeView {
   geo_refresh_hours: number // this server's own geo auto-refresh cadence (0 = never)
   traffic_up: number
   traffic_down: number
+  // The machine this server runs on, as it last reported it. has_host_stats is false
+  // for a node that never checked in (or an agent older than these fields) — read the
+  // rest as unknown then, not as an idle machine.
+  has_host_stats: boolean
+  cpu_percent: number
+  mem_used: number
+  mem_total: number
+  disk_used: number
+  disk_total: number
+  host_uptime: number
+  net_up: number
+  net_down: number
   routing: RoutingConfig | null // node's own routing, null = not configured (direct)
   xray_dns: string | null // node's own DNS, null = not configured (default resolver)
   // Per-node egress (independent of the master; all off by default). For the local

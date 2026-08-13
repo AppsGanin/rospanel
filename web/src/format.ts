@@ -45,6 +45,26 @@ export const deviceLimitOptions = () => [
   })),
 ]
 
+// Per-user speed caps, in kbit/s — the unit the server stores, so nothing has to be
+// converted on the way in or out. The labels are in Mbit/s because that is how the
+// speeds are sold; the one sub-megabit step exists because "512 Kbps" plans do too.
+export const speedLimitOptions = () => [
+  { value: '0', label: i18n.t('speed.unlimited') },
+  { value: '512', label: i18n.t('speed.kbit', { n: 512 }) },
+  ...[1, 2, 5, 10, 20, 50, 100, 200].map((n) => ({
+    value: String(n * 1000),
+    label: i18n.t('speed.mbit', { n }),
+  })),
+]
+
+// fmtSpeed renders a stored kbit/s cap the way the options above label it, for a
+// value that isn't one of the presets (set through the API, say).
+export const fmtSpeed = (kbps: number): string => {
+  if (kbps <= 0) return i18n.t('speed.unlimited')
+  if (kbps < 1000) return i18n.t('speed.kbit', { n: kbps })
+  return i18n.t('speed.mbit', { n: Math.round((kbps / 1000) * 10) / 10 })
+}
+
 // Automatic quota-reset period options, shared by the create form and the user
 // detail editor.
 export const resetPeriods = () => [

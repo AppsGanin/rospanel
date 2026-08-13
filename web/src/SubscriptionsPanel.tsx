@@ -3,7 +3,9 @@ import { Trans, useTranslation } from "react-i18next";
 import {
   ANNOUNCE_MAX,
   getSettings,
+  saveHWIDSettings,
   saveSubSettings,
+  type HWIDSettings,
   type SubSettings,
 } from "./api";
 import { useAction, useDirtyForm } from "./hooks";
@@ -35,6 +37,17 @@ const EMPTY_SUB: SubSettings = {
   sub_routing_mihomo: "",
   sub_update_interval: 1,
   sub_announce: "",
+  sub_show_configs: true,
+};
+
+// Requiring an id is the default: a cap a client can dodge by staying silent is not
+// a cap. The panel overwrites this with the saved settings on load; it only matters
+// for the moment before they arrive.
+const EMPTY_HWID: HWIDSettings = {
+  enabled: false,
+  require: true,
+  fallback_limit: 0,
+  ttl_days: 30,
 };
 
 // Subscription auto-update cadence (hours; "0" = never).
@@ -52,6 +65,14 @@ export function SubscriptionsPanel() {
   const [loaded, setLoaded] = useState(false);
   const { draft: s, setDraft: setS, isDirty: dirty, load, commit, reset } = useDirtyForm<SubSettings>(EMPTY_SUB);
   const [secret, setSecret] = useState("");
+  const {
+    draft: h,
+    setDraft: setH,
+    isDirty: hwidDirty,
+    load: loadHwid,
+    commit: commitHwid,
+    reset: resetHwid,
+  } = useDirtyForm<HWIDSettings>(EMPTY_HWID);
   const { busy, run } = useAction();
 
   useEffect(() => {
@@ -68,8 +89,10 @@ export function SubscriptionsPanel() {
           sub_routing_mihomo: d.sub_routing_mihomo,
           sub_update_interval: d.sub_update_interval,
           sub_announce: d.sub_announce,
+          sub_show_configs: d.sub_show_configs,
         };
         load(init);
+        loadHwid(d.hwid ?? EMPTY_HWID);
         setSecret(d.secret_path);
       })
       .catch(() => {})
@@ -83,10 +106,17 @@ export function SubscriptionsPanel() {
   const announceLen = [...s.sub_announce.trim()].length;
   const announceErr = announceLen > ANNOUNCE_MAX;
 
+  const patchHwid = (p: Partial<HWIDSettings>) => setH((cur) => ({ ...cur, ...p }));
+
+  // One save button for the page: the two blocks are separate endpoints (device
+  // binding doesn't touch the public path or the routing headers), but to the
+  // operator this is one settings page and one Save.
   const save = () =>
     run(async () => {
-      await saveSubSettings(s);
+      if (dirty) await saveSubSettings(s);
+      if (hwidDirty) await saveHWIDSettings(h);
       commit();
+      commitHwid();
       notifySuccess(t("subs.saved"));
     });
 
@@ -155,7 +185,58 @@ export function SubscriptionsPanel() {
               {t("subs.announceHint")} {announceLen}/{ANNOUNCE_MAX}
             </p>
           </div>
+          <ToggleRow
+            label={t("subs.showConfigs")}
+            hint={t("subs.showConfigsHint")}
+            checked={s.sub_show_configs}
+            onChange={(v) => patch({ sub_show_configs: v })}
+          />
         </div>
+      </Card>
+
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold text-ink">{t("subs.hwid")}</h3>
+            <p className="text-xs text-ink-muted">{t("subs.hwidHint")}</p>
+          </div>
+          <Switch
+            checked={h.enabled}
+            onChange={(v) => patchHwid({ enabled: v })}
+          />
+        </div>
+        {h.enabled && (
+          <div className="flex flex-col gap-4">
+            <ToggleRow
+              label={t("subs.hwidRequire")}
+              hint={t("subs.hwidRequireHint")}
+              checked={h.require}
+              onChange={(v) => patchHwid({ require: v })}
+            />
+            <div>
+              <TextInput
+                label={t("subs.hwidFallback")}
+                type="number"
+                value={String(h.fallback_limit)}
+                onChange={(v) =>
+                  patchHwid({ fallback_limit: Math.max(0, Number(v) || 0) })
+                }
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                {t("subs.hwidFallbackHint")}
+              </p>
+            </div>
+            <div>
+              <TextInput
+                label={t("subs.hwidTTL")}
+                type="number"
+                value={String(h.ttl_days)}
+                onChange={(v) => patchHwid({ ttl_days: Math.max(0, Number(v) || 0) })}
+              />
+              <p className="mt-1 text-xs text-ink-muted">{t("subs.hwidTTLHint")}</p>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card className="p-4">
@@ -217,11 +298,14 @@ export function SubscriptionsPanel() {
       </Card>
 
       <SaveBar
-        dirty={dirty}
+        dirty={dirty || hwidDirty}
         busy={busy}
         saveDisabled={!!pathErr || announceErr}
         onSave={save}
-        onCancel={reset}
+        onCancel={() => {
+          reset();
+          resetHwid();
+        }}
       />
     </div>
   );

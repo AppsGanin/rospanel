@@ -121,20 +121,23 @@ function FleetStrip({ nodes }: { nodes: NodeView[] }) {
   const { t } = useTranslation();
   const remote = nodes.filter((n) => !n.is_local);
   if (remote.length === 0) return null;
-  // The badge names the worst thing about the fleet, and says "all healthy" only
-  // when it is true of every server — a grey dot for a node that was never installed
-  // must not hide behind a green summary. "Serving", not "reachable": a server whose
+  // The badge names the worst thing about the NODES, and says "all healthy" only when
+  // it is true of every one of them — a grey dot for a node that was never installed
+  // must not hide behind a green summary. "Serving", not "reachable": a node whose
   // Xray is down counts as broken however promptly its agent answers.
+  //
+  // The master is deliberately absent from this card, counts included: the whole
+  // dashboard around it already describes the panel's own machine (the gauges, the
+  // uptime, the traffic), so a row for it here was the same server twice. Its Xray
+  // state lives on its own card in Servers.
   const offline = remote.filter((n) => n.enabled && n.joined && !n.online).length;
-  const dead = nodes.filter(
-    (n) => n.enabled && n.joined && (n.is_local || n.online) && !n.xray_running,
-  ).length;
+  const dead = remote.filter((n) => n.enabled && n.joined && n.online && !n.xray_running).length;
   const pending = remote.filter((n) => n.enabled && !n.joined).length;
   const disabled = remote.filter((n) => !n.enabled).length;
   return (
     <Card className="p-4" onClick={() => navigate("nodes")}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-bold text-ink">{t("nav.servers")}</h3>
+        <h3 className="font-bold text-ink">{t("health.nodes")}</h3>
         {offline > 0 ? (
           <Badge color="red" size="xs">{t("overview.nOffline", { count: offline })}</Badge>
         ) : dead > 0 ? (
@@ -151,18 +154,71 @@ function FleetStrip({ nodes }: { nodes: NodeView[] }) {
           <Badge color="green" size="xs">{t("overview.allHealthy")}</Badge>
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-2">
-        {nodes.map((n) => (
-          <span
-            key={n.id}
-            className="flex min-w-0 items-center gap-1.5 text-sm text-ink-muted"
-          >
-            <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot(n)}`} />
-            <span className="truncate">{serverName(n)}</span>
-          </span>
+      {/* One row per server with the same three numbers the panel shows for its own
+          machine. Before this the strip was a list of names and dots: it answered
+          "is anything down" and nothing else, so "which server is out of disk" meant
+          opening each card in turn. The master is included — on a fleet it is just
+          another server carrying traffic. */}
+      <div className="flex flex-col gap-1">
+        {remote.map((n) => (
+          <ServerRow key={n.id} n={n} />
         ))}
       </div>
     </Card>
+  );
+}
+
+// ServerRow is one server: what it is, and how loaded the machine under it is.
+function ServerRow({ n }: { n: NodeView }) {
+  const { t } = useTranslation();
+  const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
+  const traffic = (n.traffic_up ?? 0) + (n.traffic_down ?? 0);
+  return (
+    <div className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot(n)}`} />
+      {/* Name over address: the name is what the operator calls it, the address is
+          what they need when something is wrong and they are about to SSH in. */}
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm text-ink">{serverName(n)}</span>
+        {n.host && (
+          <span className="truncate font-mono text-[11px] text-ink-muted">{n.host}</span>
+        )}
+      </span>
+      {/* A server that has never reported says so, rather than showing three empty
+          bars that read as an idle machine. */}
+      {n.has_host_stats ? (
+        <div className="hidden items-center gap-3 sm:flex">
+          <MiniBar label="CPU" percent={n.cpu_percent} />
+          <MiniBar label="RAM" percent={pct(n.mem_used, n.mem_total)} />
+          <MiniBar label={t("overview.disk")} percent={pct(n.disk_used, n.disk_total)} />
+        </div>
+      ) : (
+        <span className="hidden text-xs text-ink-muted sm:inline">{t("overview.noStats")}</span>
+      )}
+      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-ink-muted">
+        {traffic > 0 ? fmtBytes(traffic) : "—"}
+      </span>
+    </div>
+  );
+}
+
+// MiniBar is the compact form of the Gauge above: same thresholds, a tenth of the
+// space, because a fleet row has room for a hint and not for a dial.
+function MiniBar({ label, percent }: { label: string; percent: number }) {
+  const p = Math.max(0, Math.min(100, percent || 0));
+  const color = p < 70 ? "bg-success" : p < 90 ? "bg-warning" : "bg-danger";
+  return (
+    <span className="flex w-24 items-center gap-1.5" title={`${label} ${Math.round(p)}%`}>
+      <span className="w-7 shrink-0 text-[10px] uppercase tracking-wide text-ink-muted">
+        {label}
+      </span>
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+        <span className={`block h-full rounded-full ${color}`} style={{ width: `${p}%` }} />
+      </span>
+      <span className="w-7 shrink-0 text-right text-[10px] tabular-nums text-ink-muted">
+        {Math.round(p)}%
+      </span>
+    </span>
   );
 }
 
@@ -270,8 +326,6 @@ export function OverviewPanel() {
         </div>
       </Card>
 
-      {isAdmin && <FleetStrip nodes={nodes} />}
-
       {/* Resource gauges. */}
       <Card className="p-4">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -327,6 +381,8 @@ export function OverviewPanel() {
             users.used_up/down went for a related reason: the quota reset zeroes it per
             user, so it added up a different period for everybody.) */}
       </div>
+
+      {isAdmin && <FleetStrip nodes={nodes} />}
 
       {/* No egress/routing card either — routing is per-server now and reads next to
           the server it belongs to, in Servers. Maintenance holds backup/restore, the
