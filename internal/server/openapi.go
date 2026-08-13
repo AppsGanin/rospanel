@@ -1,6 +1,7 @@
 package server
 
 import (
+	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -75,6 +76,17 @@ func t(v any) reflect.Type { return reflect.TypeOf(v) }
 
 // apiSpecRoutes is the single source for the generated paths. It is kept in the
 // same order and shape as apiMux so the two stay easy to diff by eye.
+// pageParams documents the window every list endpoint accepts. One helper rather
+// than the pair repeated per route: they must stay identical, and a copy that drifts
+// is a caller reading the wrong contract.
+func pageParams() []oaParam {
+	return []oaParam{
+		{name: "limit", typ: "integer",
+			desc: "page size (default 100, max 1000; <=0 means everything from offset)"},
+		{name: "offset", typ: "integer", desc: "rows to skip"},
+	}
+}
+
 func apiSpecRoutes() []oaRoute {
 	return []oaRoute{
 		{method: "GET", path: "/v1/users", tag: "Users", summary: "List users",
@@ -86,9 +98,10 @@ func apiSpecRoutes() []oaRoute {
 			},
 			resp: t(userView{}), list: true, meta: true},
 		{method: "POST", path: "/v1/users", tag: "Users", summary: "Create a user",
-			req: t(apiCreateUserReq{}), resp: t(userView{}), status: 201},
+			req: t(apiCreateUserReq{}), reqRequired: []string{"name"},
+			resp: t(userView{}), status: 201},
 		{method: "POST", path: "/v1/users/bulk", tag: "Users", summary: "Apply one action to many users",
-			req: t(apiBulkReq{}), resp: t(oaAffectedResp{})},
+			req: t(apiBulkReq{}), reqRequired: []string{"ids", "action"}, resp: t(oaAffectedResp{})},
 		{method: "GET", path: "/v1/users/{id}", tag: "Users", summary: "Get a user",
 			resp: t(userView{})},
 		{method: "PATCH", path: "/v1/users/{id}", tag: "Users", summary: "Update a user",
@@ -97,16 +110,22 @@ func apiSpecRoutes() []oaRoute {
 		{method: "POST", path: "/v1/users/{id}/reset", tag: "Users", summary: "Reset traffic counters",
 			resp: t(userView{})},
 		{method: "POST", path: "/v1/users/{id}/reset-period", tag: "Users", summary: "Set auto-reset period",
-			req: t(apiResetPeriodReq{}), resp: t(userView{})},
+			req: t(apiResetPeriodReq{}), reqRequired: []string{"period"}, resp: t(userView{})},
 		{method: "POST", path: "/v1/users/{id}/rotate-sub", tag: "Users", summary: "Issue a new subscription URL",
 			resp: t(userView{})},
 		{method: "POST", path: "/v1/users/{id}/plan", tag: "Users", summary: "Apply a tariff plan",
-			req: t(apiApplyPlanReq{}), resp: t(userView{})},
+			req: t(apiApplyPlanReq{}), reqRequired: []string{"plan_id"}, resp: t(userView{})},
 		{method: "POST", path: "/v1/users/{id}/plan/cancel", tag: "Users",
 			summary: "Cancel a paid subscription (drops to the free plan, or ends access)",
 			resp:    t(userView{})},
 		{method: "GET", path: "/v1/users/{id}/connections", tag: "Users", summary: "List the user's source IPs",
-			resp: t(model.Connection{}), list: true},
+			query: pageParams(), resp: t(model.Connection{}), list: true, meta: true},
+		{method: "GET", path: "/v1/users/{id}/devices", tag: "Users",
+			summary: "List the installs bound to the user by HWID, with the cap they count against",
+			query:   pageParams(), resp: t(apiDeviceList{}), meta: true},
+		{method: "POST", path: "/v1/users/{id}/devices/unbind", tag: "Users",
+			summary: "Release one bound device (or all of them), freeing the slot",
+			req:     t(apiUnbindDeviceReq{}), resp: t(apiUnbindResp{})},
 		{method: "GET", path: "/v1/users/{id}/events", tag: "Users", summary: "One user's journal",
 			query: []oaParam{
 				{name: "limit", typ: "integer", desc: "page size"},
@@ -123,16 +142,20 @@ func apiSpecRoutes() []oaRoute {
 			query: []oaParam{{name: "include_disabled", typ: "boolean", desc: "include disabled plans"}},
 			resp:  t(model.TariffPlan{}), list: true},
 		{method: "POST", path: "/v1/billing/plans", tag: "Billing", summary: "Create or update a plan",
-			req: t(model.TariffPlan{}), resp: t(model.TariffPlan{})},
+			// id is what picks between the two: omit it to create, pass it to update.
+			req: t(model.TariffPlan{}), reqRequired: []string{"name"}, resp: t(model.TariffPlan{})},
 		{method: "DELETE", path: "/v1/billing/plans/{id}", tag: "Billing", summary: "Delete a plan"},
 		{method: "POST", path: "/v1/billing/plans/{id}/migrate", tag: "Billing",
-			summary: "Move every user on this plan to another one",
-			req:     t(apiMigratePlanReq{}), resp: t(apiMigratedResp{})},
+			summary:     "Move every user on this plan to another one",
+			req:         t(apiMigratePlanReq{}),
+			reqRequired: []string{"to_plan_id"}, resp: t(apiMigratedResp{})},
 		{method: "GET", path: "/v1/billing/orders", tag: "Billing", summary: "List payment orders",
-			query: []oaParam{{name: "status", typ: "string", desc: "pending | paid | cancelled"}},
-			resp:  t(model.PaymentOrder{}), list: true},
+			query: append([]oaParam{{name: "status", typ: "string", desc: "pending | paid | cancelled"}},
+				pageParams()...),
+			resp: t(model.PaymentOrder{}), list: true, meta: true},
 		{method: "POST", path: "/v1/billing/orders", tag: "Billing", summary: "Open a payment order",
-			req: t(apiCreateOrderReq{}), resp: t(oaOrderResp{}), status: 201},
+			req: t(apiCreateOrderReq{}), reqRequired: []string{"user_id", "plan_id"},
+			resp: t(oaOrderResp{}), status: 201},
 		{method: "GET", path: "/v1/billing/orders/{id}", tag: "Billing", summary: "Get one order",
 			resp: t(model.PaymentOrder{})},
 		{method: "POST", path: "/v1/billing/orders/{id}/confirm", tag: "Billing", summary: "Mark an order paid"},
@@ -149,29 +172,40 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/payments", tag: "Billing",
 			summary: "Payment providers with their settings form (secret values are never returned)"},
 		{method: "POST", path: "/v1/payments", tag: "Billing",
-			summary: "Configure one payment provider (empty secrets keep their stored value)",
-			req:     t(apiSaveProviderReq{})},
+			summary:     "Configure one payment provider (empty secrets keep their stored value)",
+			req:         t(apiSaveProviderReq{}),
+			reqRequired: []string{"key"}},
 
-		{method: "GET", path: "/v1/stats/series", tag: "Stats", summary: "Daily traffic points",
+		{method: "GET", path: "/v1/stats/series", tag: "Stats",
+			summary: "Daily traffic across the fleet — every day in the range, zeros included",
 			query: []oaParam{
 				{name: "user_id", typ: "integer", desc: "restrict to one user (omit for panel-wide)"},
-				{name: "from", typ: "string", desc: "YYYY-MM-DD"},
-				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
+				{name: "from", typ: "string", desc: "YYYY-MM-DD (default: 29 days ago)"},
+				{name: "to", typ: "string", desc: "YYYY-MM-DD (default: today)"},
 			},
 			resp: t(model.DailyPoint{}), list: true},
-		{method: "GET", path: "/v1/stats/nodes", tag: "Stats", summary: "Traffic split by server",
+		{method: "GET", path: "/v1/stats/nodes", tag: "Stats",
+			summary: "Traffic totals per server over the period",
 			query: []oaParam{
 				{name: "user_id", typ: "integer", desc: "restrict to one user (omit for panel-wide)"},
-				{name: "from", typ: "string", desc: "YYYY-MM-DD"},
-				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
+				{name: "from", typ: "string", desc: "YYYY-MM-DD (default: 29 days ago)"},
+				{name: "to", typ: "string", desc: "YYYY-MM-DD (default: today)"},
 			},
 			resp: t(core.NodeTraffic{}), list: true},
-		{method: "GET", path: "/v1/stats/users", tag: "Stats", summary: "Per-user traffic totals",
+		{method: "GET", path: "/v1/stats/nodes/series", tag: "Stats",
+			summary: "Daily traffic per server — one row per day per server, zeros included",
 			query: []oaParam{
-				{name: "from", typ: "string", desc: "YYYY-MM-DD"},
-				{name: "to", typ: "string", desc: "YYYY-MM-DD"},
+				{name: "user_id", typ: "integer", desc: "restrict to one user (omit for panel-wide)"},
+				{name: "from", typ: "string", desc: "YYYY-MM-DD (default: 29 days ago)"},
+				{name: "to", typ: "string", desc: "YYYY-MM-DD (default: today)"},
 			},
-			resp: t(model.UserTotal{}), list: true},
+			resp: t(core.NodeDailyTraffic{}), list: true},
+		{method: "GET", path: "/v1/stats/users", tag: "Stats", summary: "Per-user traffic totals",
+			query: append(pageParams(),
+				oaParam{name: "from", typ: "string", desc: "YYYY-MM-DD"},
+				oaParam{name: "to", typ: "string", desc: "YYYY-MM-DD"},
+			),
+			resp: t(model.UserTotal{}), list: true, meta: true},
 		{method: "GET", path: "/v1/stats/abuse", tag: "Stats", summary: "Recent blocklist matches across the fleet",
 			query: []oaParam{{name: "limit", typ: "integer", desc: "max rows (default 50, max 200)"}},
 			resp:  t(store.AbuseMatch{}), list: true},
@@ -232,14 +266,15 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/nodes", tag: "Nodes", summary: "List nodes (local server is node 0)",
 			resp: t(core.NodeView{}), list: true},
 		{method: "POST", path: "/v1/nodes", tag: "Nodes", summary: "Register a node (returns the install command)",
-			req: t(apiCreateNodeReq{}), resp: t(oaNodeCreateResp{}), status: 201},
+			req: t(apiCreateNodeReq{}), reqRequired: []string{"name", "host"},
+			resp: t(oaNodeCreateResp{}), status: 201},
 		{method: "GET", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Get a node",
 			resp: t(model.Node{})},
 		{method: "PATCH", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Edit a node (name, host, protocol/routing/DNS overrides, WARP/Opera egress)",
 			req: t(apiPatchNodeReq{}), resp: t(oaOKResp{})},
 		{method: "DELETE", path: "/v1/nodes/{id}", tag: "Nodes", summary: "Delete a node"},
 		{method: "POST", path: "/v1/nodes/{id}/enabled", tag: "Nodes", summary: "Enable or disable a node",
-			req: t(apiSetNodeEnabledReq{}), resp: t(oaOKResp{})},
+			req: t(apiSetNodeEnabledReq{}), reqRequired: []string{"enabled"}, resp: t(oaOKResp{})},
 		{method: "POST", path: "/v1/nodes/{id}/regen-join", tag: "Nodes", summary: "Issue a fresh install command",
 			resp: t(oaNodeCreateResp{})},
 		{method: "POST", path: "/v1/nodes/{id}/update", tag: "Nodes", summary: "Ask a node to self-update to the latest release",
@@ -266,9 +301,12 @@ func apiSpecRoutes() []oaRoute {
 			resp:    t(core.InboundView{}), list: true},
 		{method: "POST", path: "/v1/servers/{id}/inbounds", tag: "Inbounds",
 			summary: "Add a custom inbound to a server (id 0 = the master)",
-			req:     t(inboundReq{}), resp: t(core.InboundView{}), status: 201},
+			req:         t(inboundReq{}),
+			reqRequired: []string{"name", "protocol", "port"},
+			resp:        t(core.InboundView{}), status: 201},
 		{method: "POST", path: "/v1/inbounds/{id}", tag: "Inbounds", summary: "Update a custom inbound",
-			req: t(inboundReq{}), resp: t(core.InboundView{})},
+			req: t(inboundReq{}), reqRequired: []string{"name", "protocol", "port"},
+			resp: t(core.InboundView{})},
 		{method: "DELETE", path: "/v1/inbounds/{id}", tag: "Inbounds", summary: "Delete a custom inbound"},
 
 		{method: "GET", path: "/v1/groups", tag: "Groups", summary: "List user groups", resp: t(model.Group{}), list: true},
@@ -276,22 +314,24 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Grantable connections per server, each with the token to put in `grants`",
 			resp:    t(core.GroupTarget{}), list: true},
 		{method: "POST", path: "/v1/groups", tag: "Groups", summary: "Create a group",
-			req: t(groupReq{}), resp: t(model.Group{}), status: 201},
-		{method: "POST", path: "/v1/groups/{id}", tag: "Groups", summary: "Update a group", req: t(groupReq{})},
+			req: t(groupReq{}), reqRequired: []string{"name"}, resp: t(model.Group{}), status: 201},
+		{method: "POST", path: "/v1/groups/{id}", tag: "Groups", summary: "Update a group",
+			req: t(groupReq{}), reqRequired: []string{"name"}},
 		{method: "DELETE", path: "/v1/groups/{id}", tag: "Groups", summary: "Delete a group"},
 		{method: "POST", path: "/v1/groups/{id}/members", tag: "Groups", summary: "Set a group's members",
-			req: t(oaGroupMembersReq{})},
+			req: t(oaGroupMembersReq{}), reqRequired: []string{"user_ids"}},
 		{method: "POST", path: "/v1/users/{id}/groups", tag: "Users", summary: "Set a user's group membership",
-			req: t(oaUserGroupsReq{})},
+			req: t(oaUserGroupsReq{}), reqRequired: []string{"group_ids"}},
 
 		{method: "GET", path: "/v1/webhooks", tag: "Webhooks", summary: "List webhook endpoints",
 			resp: t(model.Webhook{}), list: true},
 		{method: "GET", path: "/v1/webhooks/events", tag: "Webhooks", summary: "Event keys a webhook can subscribe to",
 			resp: t(apiEventKey{}), list: true},
 		{method: "POST", path: "/v1/webhooks", tag: "Webhooks", summary: "Add a webhook endpoint",
-			req: t(apiWebhookReq{}), resp: t(model.Webhook{}), status: 201},
+			req: t(apiWebhookReq{}), reqRequired: []string{"url", "events"},
+			resp: t(model.Webhook{}), status: 201},
 		{method: "POST", path: "/v1/webhooks/{id}", tag: "Webhooks", summary: "Update a webhook endpoint",
-			req: t(apiWebhookReq{}), resp: t(oaOKResp{})},
+			req: t(apiWebhookReq{}), reqRequired: []string{"url", "events"}, resp: t(oaOKResp{})},
 		{method: "DELETE", path: "/v1/webhooks/{id}", tag: "Webhooks", summary: "Delete a webhook endpoint"},
 		{method: "POST", path: "/v1/webhooks/{id}/test", tag: "Webhooks",
 			summary: "Send a test delivery (200 with ok=false when the endpoint fails)",
@@ -453,7 +493,7 @@ func buildOperation(r oaRoute, schemas map[string]any) map[string]any {
 		op["requestBody"] = map[string]any{
 			"required": true,
 			"content": map[string]any{
-				"application/json": map[string]any{"schema": schemaFor(r.req, schemas)},
+				"application/json": map[string]any{"schema": requestBodySchema(r, schemas)},
 			},
 		}
 	}
@@ -501,6 +541,41 @@ func buildOperation(r oaRoute, schemas map[string]any) map[string]any {
 		},
 	}
 	return op
+}
+
+// requestBodySchema renders a route's request body: the struct's own shape, but
+// with `required` replaced by what the HANDLER demands rather than what the Go
+// type happens to look like.
+//
+// The reflected list is a fact about Go — collectFields marks every field that is
+// neither a pointer nor omitempty — and for a request body that means "everything".
+// Published as-is it is not merely noise, it is wrong in a way that costs real
+// calls: a caller reading it must invent an `id` to create a plan and fill in all
+// 24 fields to add an inbound. A strict client refuses to call at all; a lenient
+// one makes the values up.
+//
+// The schema is expanded rather than referenced because the override belongs to
+// this operation: the same struct is often also a response (a tariff plan comes
+// back from GET /v1/billing/plans), where every field genuinely is always present.
+func requestBodySchema(r oaRoute, schemas map[string]any) map[string]any {
+	s := schemaFor(r.req, schemas)
+	if ref, ok := s["$ref"].(string); ok {
+		name := strings.TrimPrefix(ref, "#/components/schemas/")
+		target, ok := schemas[name].(map[string]any)
+		if !ok {
+			return s
+		}
+		s = maps.Clone(target)
+	}
+	delete(s, "required")
+	if len(r.reqRequired) > 0 {
+		req := make([]any, len(r.reqRequired))
+		for i, name := range r.reqRequired {
+			req[i] = name
+		}
+		s["required"] = req
+	}
+	return s
 }
 
 var timeType = reflect.TypeOf(time.Time{})
