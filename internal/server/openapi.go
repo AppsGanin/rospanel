@@ -34,11 +34,17 @@ type oaRoute struct {
 	method, path, tag, summary string
 	query                      []oaParam
 	req                        reflect.Type // request body type, nil if none
-	resp                       reflect.Type // response data type, nil ⇒ generic object
+	// reqRequired names the body fields the handler actually refuses to work
+	// without. Nil means none: every field has a zero value the handler already
+	// reads as "not set". It is declared per route rather than reflected because
+	// the struct cannot know — see requestBodySchema.
+	reqRequired []string
+	resp        reflect.Type // response data type, nil ⇒ generic object
 	list                       bool
 	meta                       bool
 	status                     int  // success status; 0 ⇒ 200
 	noAuth                     bool // key-free route; overrides the document-wide bearerAuth
+	noMCP                      bool // hide from the MCP tool list (a body no assistant can read)
 }
 
 // oaHealthResp is what GET /v1/health answers. Named rather than an inline map so
@@ -207,7 +213,11 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/healthz", tag: "Monitoring", noAuth: true,
 			summary: "Liveness probe (no key; 503 when Xray is down)",
 			resp:    t(healthzResp{})},
-		{method: "GET", path: "/v1/backup", tag: "Monitoring",
+		{method: "GET", path: "/v1/metrics", tag: "Monitoring",
+			summary: "Prometheus metrics — text exposition (0.0.4), not the JSON envelope"},
+		// Hidden from MCP: the body is a gzipped tarball, and the only thing an
+		// assistant can do with half a megabyte of it is spend a context window.
+		{method: "GET", path: "/v1/backup", tag: "Monitoring", noMCP: true,
 			summary: "Download a full backup — responds with a .tar.gz body, not the JSON envelope"},
 		{method: "GET", path: "/v1/backup/info", tag: "Monitoring",
 			summary: "What a backup taken now would contain",
