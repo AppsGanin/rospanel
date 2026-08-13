@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.6.0](https://github.com/AppsGanin/rospanel/compare/v2.5.0...v2.6.0) (2026-08-13)
+
+
+### Features
+
+* **api:** serve the panel API to assistants over MCP ([db89bec](https://github.com/AppsGanin/rospanel/commit/db89becf7325a04b9b4e466bd9f300445bf44be4))
+* **api:** window every list with limit and offset ([5b971d5](https://github.com/AppsGanin/rospanel/commit/5b971d5b8659dad896ac0af2c4572b2ff21ae7cf))
+* **devices:** bind installs by HWID and cap them per user ([3f0c320](https://github.com/AppsGanin/rospanel/commit/3f0c32023561918cbc69fe10d93bd4ff5005b8f5))
+* **monitoring:** add Prometheus metrics and a public status page ([f87452a](https://github.com/AppsGanin/rospanel/commit/f87452a1301fd3c83832a3aa308ac7662f1300bd))
+* **shaping:** cap per-user speed with kernel traffic shaping ([a45843e](https://github.com/AppsGanin/rospanel/commit/a45843ee8865f0dabdd0bd350a7eebb1ae9edb20))
+* **stats:** add a per-server daily series and fill quiet days ([5d9ba81](https://github.com/AppsGanin/rospanel/commit/5d9ba811bf0be1bd174e7693b39f600a8f54d4f0))
+* **store:** add schema for devices, speed limits, uptime and status page ([3c23a41](https://github.com/AppsGanin/rospanel/commit/3c23a411aa1a173233b01b8de4dad8ee6f016df8))
+* **ui:** surface devices, speed limits, nodes and the new settings ([dcc56fa](https://github.com/AppsGanin/rospanel/commit/dcc56fa0326ed93ab3d792dfad175d5f1b2c6db7))
+
+
+### Bug Fixes
+
+* **api:** honour enabled when creating a webhook ([82bf667](https://github.com/AppsGanin/rospanel/commit/82bf667cf2265da17c298bc801c989358f53616b))
+* **api:** reject unknown and read-only body fields ([64845a8](https://github.com/AppsGanin/rospanel/commit/64845a8d6647c30f2d204ca8926b9ac187d486e0))
+* **decoy:** serve every decoy asset from our own origin ([226c3f1](https://github.com/AppsGanin/rospanel/commit/226c3f17fe10101d9ccb336a4eb6e9bce83e2250))
+* **sub:** keep Telegram deep links working without the SDK ([a52d165](https://github.com/AppsGanin/rospanel/commit/a52d16545fec0e75ecc4451fe9e83f9667e82ee3))
+
 ## [2.5.0](https://github.com/AppsGanin/rospanel/compare/v2.4.1...v2.5.0) (2026-08-11)
 
 
