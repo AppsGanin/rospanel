@@ -3,8 +3,11 @@ package decoy
 import (
 	"bytes"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -296,5 +299,50 @@ func TestRandomTemplateIsBundled(t *testing.T) {
 	}
 	if _, err := New(RandomTemplate(), LoadStamp(t.TempDir())); err != nil {
 		t.Errorf("RandomTemplate returned an unusable slug: %v", err)
+	}
+}
+
+// No decoy may fetch anything from a third party.
+//
+// The decoy's whole job is to be an unremarkable site to whoever knocks on the door.
+// A page that pulls its font from Google and its hero image from Unsplash is not
+// unremarkable in the networks this panel is built for: those hosts are throttled or
+// blocked there, so the decoy renders half-drawn — a broken page is far more worth a
+// second look than a plain one. It also tells a third party the address of every
+// probe that ever landed here, which is a visitor list we have no business creating.
+//
+// Templates are third-party HTML that gets updated wholesale, so this is a test
+// rather than a note in a README: the next drop-in that arrives with a CDN link
+// fails here instead of in production.
+func TestDecoysLoadNothingExternal(t *testing.T) {
+	// Only what the browser fetches on its own: a src, a <link> (stylesheet, icon,
+	// preload), a CSS url() and an @import. A plain <a href> is deliberately not on
+	// the list — the nginx welcome page links to nginx.org, and a copy of it that
+	// didn't would be the odd one out.
+	external := regexp.MustCompile(`(?i)src\s*=\s*["']https?://` +
+		`|<link[^>]*href\s*=\s*["']https?://` +
+		`|url\(\s*["']?https?://` +
+		`|@import[^;]*["']https?://`)
+
+	err := fs.WalkDir(templatesFS, "templates", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		switch path.Ext(p) {
+		case ".html", ".css", ".js", ".webmanifest", ".json":
+		default:
+			return nil // fonts, images and the like carry no references
+		}
+		body, err := templatesFS.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		for _, hit := range external.FindAll(body, -1) {
+			t.Errorf("%s loads something external: %s…", p, hit)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk templates: %v", err)
 	}
 }
