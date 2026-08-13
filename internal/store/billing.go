@@ -7,10 +7,24 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
+// SetPlanUsersSpeedLimit stamps a plan's speed cap onto every user currently on it,
+// returning how many rows changed. Called when the plan's cap is edited — see
+// Manager.SaveTariffPlan for why this one limit is retroactive and the others aren't.
+func (s *Store) SetPlanUsersSpeedLimit(planID int64, kbps int) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE users SET speed_limit = ? WHERE plan_id = ? AND speed_limit != ?`,
+		kbps, planID, kbps)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             sort_order, enabled
+	             speed_limit, sort_order, enabled
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -21,7 +35,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
+		speed_limit, sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -43,18 +57,18 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 		if p.ID == 0 {
 			if err := tx.QueryRow(
 				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-				 is_free, sort_order, enabled)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				 speed_limit, is_free, sort_order, enabled)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-				boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
+				p.SpeedLimit, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
 			).Scan(&p.ID); err != nil {
 				return err
 			}
 		} else if _, err := tx.Exec(
 			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
-			 device_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
+			 device_limit=?, speed_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-			boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
+			p.SpeedLimit, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
 		); err != nil {
 			return err
 		}
@@ -189,7 +203,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 		var en int
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
-			&p.SortOrder, &en,
+			&p.SpeedLimit, &p.SortOrder, &en,
 		); err != nil {
 			return nil, err
 		}
@@ -246,6 +260,7 @@ type UserPlanWrite struct {
 	DataLimit   int64
 	ExpireAt    int64
 	DeviceLimit int
+	SpeedLimit  int // kbit/s cap the plan promises (0 = unlimited)
 	ResetPeriod string
 	ResetAnchor int64 // last_reset_at: when the rolling quota cycle starts counting
 	PlanID      int64
@@ -278,6 +293,11 @@ func (s *Store) ApplyUserPlan(p UserPlanWrite) error {
 
 func applyUserPlanOn(ex execer, p UserPlanWrite) error {
 	if err := setUserLimitsOn(ex, p.UserID, p.DataLimit, p.ExpireAt, p.DeviceLimit); err != nil {
+		return err
+	}
+	// The speed cap is part of what the plan sells, so it is overwritten with the
+	// rest of the limits — a user moved to a slower tariff must actually get slower.
+	if err := setUserSpeedLimitOn(ex, p.UserID, p.SpeedLimit); err != nil {
 		return err
 	}
 	if err := setResetPeriodOn(ex, p.UserID, p.ResetPeriod, p.ResetAnchor); err != nil {

@@ -25,6 +25,13 @@ type execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
+// queryer is the read half of the same idea: a single-row read that has to run both
+// standalone and inside a transaction — typically a count a write then decides on,
+// which is only meaningful when the two share the transaction.
+type queryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // withTx runs fn inside a transaction, rolling back on any error. Worth reaching
 // for whenever a change spans more than one row: the pool is a single connection
 // (see Open), so a sequence of bare Exec calls is not just non-atomic, it is also

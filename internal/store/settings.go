@@ -22,6 +22,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
 	var tgSupportEn int
 	var abuseEn int
+	var hwidEn, hwidRequire int
+	var subShowConfigs, statusEn int
 	var routingCfg string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -58,7 +60,9 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_support_enabled, tg_support_bot_token, tg_support_bot_username,
 		       tg_support_group_id, tg_support_greeting, tg_lang, tg_proxy, tg_proxy_mode,
 		       tg_user_events, tg_user_expiring_days,
-		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min
+		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
+		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
+		       sub_show_configs, status_enabled, status_path
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -96,6 +100,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang, &st.TGProxy, &st.TGProxyMode,
 		&st.TGUserEvents, &st.TGUserExpiringDays,
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
+		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
+		&subShowConfigs, &statusEn, &st.StatusPath,
 	)
 	if err != nil {
 		return nil, err
@@ -131,6 +137,10 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.TGSupportEnabled = tgSupportEn != 0
 	st.BillingEnabled = billingEn != 0
 	st.AbuseEnabled = abuseEn != 0
+	st.HWIDEnabled = hwidEn != 0
+	st.HWIDRequire = hwidRequire != 0
+	st.SubShowConfigs = subShowConfigs != 0
+	st.StatusEnabled = statusEn != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
@@ -346,13 +356,37 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_path = ?,
 			sub_base64 = ?, sub_email_in_name = ?, sub_title = ?, sub_routing = ?,
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
-			sub_update_interval = ?, sub_announce = ?,
+			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
 		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
-		st.SubUpdateInterval, st.SubAnnounce,
+		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
+	)
+	return err
+}
+
+// SetHWIDSettings persists the device-binding settings (Settings → Subscriptions).
+func (s *Store) SetHWIDSettings(st *model.Settings) error {
+	_, err := s.db.Exec(`
+		UPDATE settings SET
+			hwid_enabled = ?, hwid_require = ?,
+			hwid_fallback_limit = ?, hwid_ttl_days = ?,
+			updated_at = unixepoch()
+		WHERE id = 1`,
+		boolToInt(st.HWIDEnabled), boolToInt(st.HWIDRequire),
+		st.HWIDFallbackLimit, st.HWIDTTLDays,
+	)
+	return err
+}
+
+// SetStatusPage persists the public status page's on/off flag and URL segment.
+func (s *Store) SetStatusPage(enabled bool, path string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET status_enabled = ?, status_path = ?, updated_at = unixepoch()
+		 WHERE id = 1`,
+		boolToInt(enabled), path,
 	)
 	return err
 }

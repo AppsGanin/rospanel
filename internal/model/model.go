@@ -37,6 +37,16 @@ const DeviceOnlineWindow int64 = 120
 // accrues a row per IP indefinitely without a sweep.
 const ConnectionRetentionDays = 30
 
+// MaxShapedIPsPerUser bounds how many source addresses one capped account is shaped
+// on at once.
+//
+// Each address is a classifier the kernel walks for every packet, and nothing bounds
+// how many an account accumulates inside the shaping window: a phone that roams
+// between networks collects them honestly, and a shared account collects them
+// faster. Sixteen covers a household on two networks with room to spare; past that,
+// the newest addresses are the ones carrying the traffic worth shaping anyway.
+const MaxShapedIPsPerUser = 16
+
 // AbuseRetentionDays is how long a blocklist match is kept.
 //
 // Short on purpose. This is the most sensitive data the panel holds — it names what
@@ -94,6 +104,11 @@ type User struct {
 	DeviceLimit   int `json:"device_limit"`   // max concurrent devices (unique IPs), 0 = unlimited
 	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
 
+	// SpeedLimit caps how fast this user may move traffic, in kbit/s (0 = unlimited).
+	// Enforced by the kernel on the addresses they are connected from, not by Xray —
+	// see internal/shaper for what that does and does not guarantee.
+	SpeedLimit int `json:"speed_limit"`
+
 	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
 
 	TgLinkCode   string `json:"-"` // pending one-time Telegram bind code (replaces sub-token deep links)
@@ -141,6 +156,7 @@ type TariffPlan struct {
 	PeriodDays  int    `json:"period_days"`
 	DataLimit   int64  `json:"data_limit"`
 	DeviceLimit int    `json:"device_limit"`
+	SpeedLimit  int    `json:"speed_limit"` // kbit/s, 0 = unlimited
 	SortOrder   int    `json:"sort_order"`
 	Enabled     bool   `json:"enabled"`
 	// GroupIDs are the access groups this plan grants: whoever is put on the plan is
@@ -466,6 +482,28 @@ type Connection struct {
 	Count    int64  `json:"count"`
 }
 
+// UptimeDay is one server's liveness on one day: how many samples were taken and
+// how many found it up. NodeID 0 is the panel's own server.
+type UptimeDay struct {
+	NodeID int64  `json:"node_id"`
+	Day    string `json:"day"` // YYYY-MM-DD, operator-local
+	Up     int    `json:"up"`
+	Total  int    `json:"total"`
+}
+
+// UptimeRetentionDays is how much status-page history is kept. Ninety days is what
+// a status page shows and what an operator is ever asked about ("were you down last
+// quarter"); beyond that the rows answer nothing anyone asks.
+const UptimeRetentionDays = 90
+
+// StatusPathOr returns the status page's URL segment, defaulting to "status".
+func (s *Settings) StatusPathOr() string {
+	if p := strings.TrimSpace(s.StatusPath); p != "" {
+		return p
+	}
+	return "status"
+}
+
 // DailyPoint is one day's traffic total (for charts).
 type DailyPoint struct {
 	Day  string `json:"day"` // YYYY-MM-DD (UTC)
@@ -559,10 +597,39 @@ type Settings struct {
 	SubRoutingIncy    string `json:"-"` // INCY routing config URL
 	SubRoutingMihomo  string `json:"-"` // Mihomo (Clash Meta) routing config URL
 	SubUpdateInterval int    `json:"-"` // subscription auto-update interval (hours)
+	// SubShowConfigs renders the "individual configs" card on the page — the raw
+	// share link of every lane, each with a copy button. On by default (that is what
+	// the page has always done); turning it off leaves the page offering the
+	// subscription link, the QR and the client buttons, which is what an operator
+	// selling access usually wants handed out.
+	SubShowConfigs bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
 	SubAnnounce string `json:"-"`
+
+	// HWID device binding (Settings → Subscriptions). When enabled, a client that
+	// identifies itself with an x-hwid header is bound to the user on first fetch and
+	// counted against their device cap; once the cap is full, a NEW device is refused
+	// the subscription while already-bound ones keep updating.
+	//
+	// HWIDRequire decides what happens to a client that sends no id at all. On (the
+	// default) it is refused, because otherwise the cap is optional for anyone willing
+	// to switch clients; off, it is served and counted the old way, by address.
+	//
+	// This caps how many installs can FETCH the subscription — it is not a second
+	// gate on the tunnel itself. Someone who copies a link out of an admitted client
+	// still connects; that is what the IP-based count and the traffic quota are for.
+	// Every panel that offers HWID limiting works this way.
+	HWIDEnabled       bool `json:"-"`
+	HWIDRequire       bool `json:"-"` // refuse clients that send no x-hwid (default on)
+	HWIDFallbackLimit int  `json:"-"` // cap for users whose own device_limit is 0
+	HWIDTTLDays       int  `json:"-"` // forget a device after N days of silence (0 = never)
+
+	// Public status page (Settings → General). Off by default: it is the one surface
+	// that answers to strangers, so it exists only when an operator asks for it.
+	StatusEnabled bool   `json:"-"`
+	StatusPath    string `json:"-"` // URL segment; empty ⇒ "status"
 
 	// UserAutoDeleteDays deletes an expired user this many days after their expiry
 	// date. 0 ⇒ never (default): expired users pile up but nothing is ever destroyed

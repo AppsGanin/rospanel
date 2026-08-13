@@ -10,7 +10,7 @@ import (
 
 const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
-	reset_period, last_reset_at, last_seen, device_limit, tg_chat_id,
+	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at`
 
@@ -240,6 +240,98 @@ func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) 
 	return err
 }
 
+// SetUserSpeedLimit sets the per-user bandwidth cap in kbit/s (0 = unlimited).
+//
+// Its own setter rather than a fourth argument to SetUserLimits: that signature is
+// reached from the API, the bots and the plan machinery, and widening it would make
+// every caller state a speed they have no opinion about.
+func (s *Store) SetUserSpeedLimit(id int64, kbps int) error {
+	return setUserSpeedLimitOn(s.db, id, kbps)
+}
+
+func setUserSpeedLimitOn(ex execer, id int64, kbps int) error {
+	_, err := ex.Exec(`UPDATE users SET speed_limit = ? WHERE id = ?`, kbps, id)
+	return err
+}
+
+// ShapedUsers returns every user with a speed cap, paired with the source addresses
+// they have been seen on since `since` — everything internal/shaper needs, in one
+// query rather than one per user.
+//
+// A capped user with no recent address is returned with none: the caller drops them
+// (nothing to match on), and their absence from the result would otherwise be
+// indistinguishable from having no cap.
+//
+// Addresses come newest-first and are capped at MaxShapedIPsPerUser. Every address
+// becomes a classifier the kernel walks per packet, and the number of addresses one
+// account can accrue inside the window has no natural bound — a roaming phone
+// collects them honestly, and anyone sharing an account collects them faster. The
+// newest few are also the right ones: they are where the traffic being shaped is.
+func (s *Store) ShapedUsers(since int64) (map[int64]SpeedTarget, error) {
+	rows, err := s.db.Query(`
+		SELECT u.id, u.speed_limit, COALESCE(c.ip, '')
+		FROM users u
+		LEFT JOIN connections c ON c.user_id = u.id AND c.last_seen > ?
+		WHERE u.speed_limit > 0 AND u.enabled = 1
+		ORDER BY u.id, c.last_seen DESC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]SpeedTarget{}
+	for rows.Next() {
+		var id int64
+		var kbps int
+		var ip string
+		if err := rows.Scan(&id, &kbps, &ip); err != nil {
+			return nil, err
+		}
+		t := out[id]
+		t.Kbps = kbps
+		if ip != "" && len(t.IPs) < model.MaxShapedIPsPerUser {
+			t.IPs = append(t.IPs, ip)
+		}
+		out[id] = t
+	}
+	return out, rows.Err()
+}
+
+// CappedUsers returns the speed cap of every user who currently has one and can
+// actually connect, keyed by user id.
+//
+// Deliberately not WorkingUsers: this is read on every node's sync poll, and that
+// one loads every user row and decrypts every stored password (see decField) to
+// answer a question about a handful of them. The conditions below are the same ones
+// WorkingUsers applies, minus the device cap — a user over their device limit is
+// still worth shaping, since the limit is derived on read and they keep connecting.
+func (s *Store) CappedUsers(now int64) (map[int64]int, error) {
+	rows, err := s.db.Query(`
+		SELECT id, speed_limit FROM users
+		WHERE speed_limit > 0 AND enabled = 1
+		  AND (expire_at = 0 OR expire_at > ?)
+		  AND (data_limit = 0 OR used_up + used_down < data_limit)`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var kbps int
+		if err := rows.Scan(&id, &kbps); err != nil {
+			return nil, err
+		}
+		out[id] = kbps
+	}
+	return out, rows.Err()
+}
+
+// SpeedTarget is one user's cap and the addresses it applies to.
+type SpeedTarget struct {
+	Kbps int
+	IPs  []string
+}
+
 // SetUserName updates a user's display name.
 func (s *Store) SetUserName(id int64, name string) error {
 	_, err := s.db.Exec(`UPDATE users SET name = ? WHERE id = ?`, name, id)
@@ -465,7 +557,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
-			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.TgChatID,
+			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt,
 		); err != nil {
