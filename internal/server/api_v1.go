@@ -181,6 +181,7 @@ func (rt *Router) apiMux() http.Handler {
 
 	hf("GET /v1/stats/series", rt.apiStatsSeries)
 	hf("GET /v1/stats/nodes", rt.apiStatsNodes)
+	hf("GET /v1/stats/nodes/series", rt.apiStatsNodeSeries)
 	hf("GET /v1/stats/users", rt.apiStatsUsers)
 	hf("GET /v1/stats/abuse", rt.apiStatsAbuse)
 
@@ -859,7 +860,11 @@ func (rt *Router) apiStatsSeries(w http.ResponseWriter, r *http.Request) {
 		}
 		userID = v
 	}
-	series, err := rt.mgr.StatsSeries(userID, q.Get("from"), q.Get("to"))
+	from, to, ok := rt.apiDateRange(w, r)
+	if !ok {
+		return
+	}
+	series, err := rt.mgr.StatsSeries(userID, from, to)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -885,7 +890,11 @@ func (rt *Router) apiStatsNodes(w http.ResponseWriter, r *http.Request) {
 		}
 		userID = v
 	}
-	rows, err := rt.mgr.NodeTrafficBreakdown(userID, q.Get("from"), q.Get("to"))
+	from, to, ok := rt.apiDateRange(w, r)
+	if !ok {
+		return
+	}
+	rows, err := rt.mgr.NodeTrafficBreakdown(userID, from, to)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -896,17 +905,50 @@ func (rt *Router) apiStatsNodes(w http.ResponseWriter, r *http.Request) {
 	writeAPIData(w, http.StatusOK, rows)
 }
 
-func (rt *Router) apiStatsUsers(w http.ResponseWriter, r *http.Request) {
+// apiStatsNodeSeries is the two dimensions at once: a day column and a server
+// column. Without it, one line per server meant one call per day.
+func (rt *Router) apiStatsNodeSeries(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	totals, err := rt.mgr.StatsByUser(q.Get("from"), q.Get("to"))
+	var userID int64
+	if s := q.Get("user_id"); s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || v < 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid user_id")
+			return
+		}
+		userID = v
+	}
+	from, to, ok := rt.apiDateRange(w, r)
+	if !ok {
+		return
+	}
+	rows, err := rt.mgr.NodeTrafficSeries(userID, from, to)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if totals == nil {
-		totals = []model.UserTotal{}
+	if rows == nil {
+		rows = []core.NodeDailyTraffic{}
 	}
-	writeAPIData(w, http.StatusOK, totals)
+	writeAPIData(w, http.StatusOK, rows)
+}
+
+func (rt *Router) apiStatsUsers(w http.ResponseWriter, r *http.Request) {
+	// The same window every other stats route resolves. Reading the two parameters
+	// raw — as this one did — means an omitted range becomes `day BETWEEN '' AND ''`,
+	// so a caller asking "who used what" with no window gets an empty array rather
+	// than the last 30 days, and a malformed date is answered the same way instead of
+	// being rejected.
+	from, to, ok := rt.apiDateRange(w, r)
+	if !ok {
+		return
+	}
+	totals, err := rt.mgr.StatsByUser(from, to)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIPage(w, r, totals)
 }
 
 func (rt *Router) apiSummary(w http.ResponseWriter, _ *http.Request) {

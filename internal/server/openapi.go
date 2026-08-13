@@ -204,7 +204,13 @@ func apiSpecRoutes() []oaRoute {
 
 		{method: "GET", path: "/v1/health", tag: "Monitoring", summary: "API reachability check",
 			resp: t(oaHealthResp{})},
-		{method: "GET", path: "/v1/summary", tag: "Monitoring", summary: "Panel summary",
+		// The wording is load-bearing: total_up/total_down are the quota counters, so
+		// they drop to zero when traffic is reset and do NOT agree with the sum of
+		// /v1/stats/series over the same span. Reading them as lifetime totals is the
+		// obvious mistake, and it looks like a double-counting bug from the outside.
+		{method: "GET", path: "/v1/summary", tag: "Monitoring",
+			summary: "Panel summary — total_up/total_down are usage in the current quota period " +
+				"(reset with the counters), not lifetime; use /v1/stats/series for history",
 			resp: t(core.Summary{})},
 		{method: "GET", path: "/v1/system", tag: "Monitoring", summary: "Live system metrics",
 			resp: t(core.SystemStatus{})},
