@@ -13,6 +13,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/AppsGanin/rospanel/internal/version"
 )
 
 // persistState is the agent's durable state (state.json): the last config it
@@ -32,6 +33,16 @@ type persistState struct {
 	// successful sync says otherwise. If the panel happens to be unreachable from
 	// this node, "until" is forever, which makes disabling a node no guarantee at all.
 	Revoked bool `json:"revoked,omitempty"`
+	// AgentVersion is the binary that wrote this file.
+	//
+	// It exists to make an agent upgrade re-fetch the whole desired state. The state
+	// is persisted by re-marshalling it through THIS binary's structs, so any field a
+	// newer panel added is silently dropped by an older agent — while the HASH it
+	// keeps reporting is the panel's, computed over the complete state. The two then
+	// agree forever ("your config is current") over a config the node never actually
+	// had: exactly how a fleet ends up with a panel that pushed per-user speed caps
+	// and nodes that never applied any.
+	AgentVersion string `json:"agent_version,omitempty"`
 }
 
 func statePath(dataDir string) string { return filepath.Join(dataDir, "state.json") }
@@ -45,6 +56,17 @@ func loadState(dataDir string) *persistState {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return &persistState{}
 	}
+	// A binary change means the struct that wrote this file may not be the struct
+	// reading it. The config itself is kept — Xray must keep serving across an
+	// upgrade — but the hash is dropped, so the very first sync disagrees with the
+	// panel and pulls the complete, current state down again. One extra push per
+	// upgrade, in exchange for never running a config with fields quietly missing.
+	if s.LastConfig != nil && s.AgentVersion != version.Version {
+		slog.Info("node: agent version changed — re-fetching the full config",
+			"was", s.AgentVersion, "now", version.Version)
+		s.LastConfig.Hash = ""
+	}
+	s.AgentVersion = version.Version
 	return &s
 }
 
@@ -70,6 +92,7 @@ func (a *Agent) writeState() {
 func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
 	a.stateMu.Lock()
 	a.state.LastConfig = st
+	a.state.AgentVersion = version.Version
 	a.stateMu.Unlock()
 	a.writeState()
 }

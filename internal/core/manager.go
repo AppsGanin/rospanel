@@ -17,6 +17,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
+	"github.com/AppsGanin/rospanel/internal/shaper"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -152,6 +153,11 @@ type Manager struct {
 
 	guard *bruteGuard
 
+	// shaper installs the per-user speed caps on this machine; wan is the interface
+	// it acts on, resolved once (see manager_shaper.go).
+	shaper *shaper.Applier
+	wanMu  sync.Mutex
+	wan    string
 
 	// devNotice keeps a refused device quiet after its first report — a client that
 	// hit the device cap retries on its own schedule and would otherwise alert the
@@ -251,6 +257,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		applied:          make(map[int64]struct{}),
 		tz:               time.Local,
 		guard:            newBruteGuard(),
+		shaper:           shaper.New(),
 		devNotice:        newDeviceNotice(),
 		operaDir:         operaDir,
 		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
@@ -293,6 +300,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence
 	go m.ipListLoop() // ...and the iplist lists on their own, separate cadence
 	go m.bruteGuardLoop()
+	go m.shaperLoop()              // per-user speed caps follow the addresses users connect from
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
 	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
 	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first

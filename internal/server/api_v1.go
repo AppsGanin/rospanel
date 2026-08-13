@@ -38,6 +38,7 @@ type (
 		// live on terms nobody chose. PlanID overrides DataLimit/ExpireAt with the
 		// plan's own — a plan IS the limits.
 		DeviceLimit int     `json:"device_limit,omitempty"` // 0 = unlimited
+		SpeedLimit  int     `json:"speed_limit,omitempty"`  // kbit/s, 0 = unlimited
 		PlanID      int64   `json:"plan_id,omitempty"`      // 0 = no plan (manual limits)
 		GroupIDs    []int64 `json:"group_ids,omitempty"`    // access groups, by hand
 	}
@@ -49,6 +50,7 @@ type (
 		DataLimit   *int64  `json:"data_limit,omitempty"`
 		ExpireAt    *int64  `json:"expire_at,omitempty"`
 		DeviceLimit *int    `json:"device_limit,omitempty"`
+		SpeedLimit  *int    `json:"speed_limit,omitempty"` // kbit/s, 0 = unlimited
 	}
 	apiBulkReq struct {
 		IDs    []int64 `json:"ids"`
@@ -597,6 +599,14 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// After the plan, for the same reason the device limit is: a plan writes its own
+	// speed cap, and an explicit one in the request is the caller overriding it.
+	if req.SpeedLimit > 0 {
+		if err := rt.mgr.SetUserSpeedLimit(r.Context(), u.ID, req.SpeedLimit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
 	fresh, err := rt.mgr.Store().GetUser(u.ID)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -660,6 +670,12 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 			return
 		}
 		if err := rt.mgr.SetUserLimits(r.Context(), id, dataLimit, expireAt, deviceLimit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.SpeedLimit != nil {
+		if err := rt.mgr.SetUserSpeedLimit(r.Context(), id, *req.SpeedLimit); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
@@ -745,10 +761,7 @@ func (rt *Router) apiListOrders(w http.ResponseWriter, r *http.Request) {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if orders == nil {
-		orders = []model.PaymentOrder{}
-	}
-	writeAPIData(w, http.StatusOK, orders)
+	writeAPIPage(w, r, orders)
 }
 
 // apiSavePlan creates a plan (no id) or updates an existing one (id set). The

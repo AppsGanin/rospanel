@@ -18,6 +18,7 @@ func ipN(n int) string {
 func sitesAgent() *Agent {
 	return &Agent{
 		conns: map[string]nodeapi.ConnSample{},
+		seen:  newSeenAddrs(),
 		sites: map[siteKey]int64{},
 	}
 }

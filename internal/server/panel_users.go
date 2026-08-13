@@ -99,6 +99,11 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 		DataLimit   int64 `json:"data_limit"`
 		ExpireAt    int64 `json:"expire_at"`
 		DeviceLimit int   `json:"device_limit"`
+		// SpeedLimit is kbit/s (0 = unlimited). Pointer so a caller that doesn't
+		// mention it leaves the cap alone — the bots and older integrations post this
+		// body without it, and reading a missing field as 0 would silently lift
+		// everyone's cap the first time they change a quota.
+		SpeedLimit *int `json:"speed_limit"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -110,6 +115,12 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 	if err := rt.mgr.SetUserLimits(r.Context(), id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.SpeedLimit != nil {
+		if err := rt.mgr.SetUserSpeedLimit(r.Context(), id, *req.SpeedLimit); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	writeOK(w)
 }

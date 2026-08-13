@@ -30,6 +30,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
+	"github.com/AppsGanin/rospanel/internal/shaper"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
@@ -152,6 +153,15 @@ type Agent struct {
 	// connMu with conns: both are written from the same access-log callback.
 	sites map[siteKey]int64
 
+	// seen is the address view the speed shaper runs on, and wan/shaper are what
+	// installs it. Kept apart from `conns` above: that buffer is drained on every
+	// sync, while shaping needs a standing answer to "where is this user now"
+	// (see shaping.go).
+	seen   *seenAddrs
+	shaper *shaper.Applier
+	wanMu  sync.Mutex
+	wan    string
+
 	logsWanted atomic.Bool // panel asked for the log tail on the next sync
 
 	// probeResults holds port-probe answers between the response that asked for them
@@ -215,6 +225,7 @@ func Run(ctx context.Context, dataDir string) error {
 	go a.certLoop(ctx)  // retry ACME + reload Xray when the real cert lands
 	go a.geoLoop(ctx)   // auto-refresh geo databases on the panel-pushed cadence
 	go a.watchXray(ctx) // report an Xray that died (or came back) without waiting
+	go a.shapeLoop(ctx) // per-user speed caps, from this node's own address view
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -313,6 +324,9 @@ func (a *Agent) hostStats() *nodeapi.HostStats {
 	}
 	st := a.sys.Read()
 	return &nodeapi.HostStats{
+		CPUPercent: st.CPUPercent,
+		NetUp:      st.NetUp,
+		NetDown:    st.NetDown,
 		DiskUsed:   st.DiskUsed,
 		DiskTotal:  st.DiskTotal,
 		MemUsed:    st.MemUsed,
@@ -365,6 +379,8 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
 		conns:        map[string]nodeapi.ConnSample{},
 		sites:        map[siteKey]int64{},
+		seen:         newSeenAddrs(),
+		shaper:       shaper.New(),
 	}
 	// Resume report ids where the last run left off so the panel's forward-only
 	// watermark keeps accepting this node's traffic after a restart.
@@ -424,6 +440,9 @@ func (a *Agent) recordConn(email, ip, dest string) {
 	if len(a.conns) < 8192 {
 		a.conns[email+"\x00"+ip] = nodeapi.ConnSample{Email: email, IP: ip}
 	}
+	// The shaper's own view of the same sighting; it outlives the sync that drains
+	// the buffer above.
+	a.seen.note(email, ip, time.Now())
 	if dest == "" {
 		return
 	}
@@ -881,9 +900,22 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	a.syncOpera(m.OperaEnabled, m.OperaCountry, m.OperaPort)
 
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
-	if err := a.sup.ApplyRaw(substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath)); err != nil {
+	//
+	// IfChanged, not ApplyRaw: the desired state also carries host-level settings
+	// (certs, hop ranges, the connection guard, per-user speed caps) that change
+	// without the Xray config changing at all. Applying an identical config would
+	// restart Xray and drop every live connection on this node — an operator editing
+	// one user's speed limit would bounce the fleet.
+	changed, err := a.sup.ApplyRawIfChanged(substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath))
+	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
+	if !changed {
+		slog.Info("node: state applied without an Xray restart (config unchanged)")
+	}
+	// The panel may have changed who is capped; put it in force now rather than at
+	// the shaper's next tick.
+	go a.applyShaping()
 	return nil
 }
 

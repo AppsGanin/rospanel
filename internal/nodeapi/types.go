@@ -170,6 +170,14 @@ type PortProbeResult struct {
 
 // HostStats is a node's machine state as of its last sync.
 type HostStats struct {
+	// CPUPercent is the node's current CPU utilisation, and NetUp/NetDown its live
+	// interface throughput in bytes per second. Added after the first version of this
+	// struct, so an older agent simply reports zero — the panel shows those fields as
+	// unknown rather than as an idle machine.
+	CPUPercent float64 `json:"cpu_percent,omitempty"`
+	NetUp      int64   `json:"net_up,omitempty"`
+	NetDown    int64   `json:"net_down,omitempty"`
+
 	DiskUsed   int64 `json:"disk_used"`
 	DiskTotal  int64 `json:"disk_total"`
 	MemUsed    int64 `json:"mem_used"`
@@ -323,4 +331,13 @@ type NodeMeta struct {
 	// XrayPinnedVersion is the release the panel expects; the UI flags a node whose
 	// running Xray differs so version skew is visible.
 	XrayPinnedVersion string `json:"xray_pinned_version,omitempty"`
+
+	// SpeedLimits caps how fast individual users may move traffic on this node, in
+	// kbit/s, keyed by the Xray email tag ("u12"). Only capped users appear.
+	//
+	// The node shapes its OWN traffic from its OWN view of who is connected from
+	// where: the addresses a user reaches this node from are not the ones they reach
+	// the master from, and shipping the master's view would cap the wrong addresses.
+	// An older agent ignores the field and simply doesn't shape.
+	SpeedLimits map[string]int `json:"speed_limits,omitempty"`
 }
