@@ -97,8 +97,12 @@ type Summary struct {
 	Users        int   `json:"users"`
 	EnabledUsers int   `json:"enabled_users"`
 	OnlineUsers  int   `json:"online_users"` // connected within model.DeviceOnlineWindow
-	TotalUp      int64 `json:"total_up"`
-	TotalDown    int64 `json:"total_down"`
+	// TotalUp/TotalDown sum the users' QUOTA counters (used_up/used_down), which is
+	// what a data limit is measured against — so they fall to zero when traffic is
+	// reset or a plan rolls the period over. They are not lifetime totals and will
+	// not match traffic_daily over the same span; that history is StatsSeries.
+	TotalUp   int64 `json:"total_up"`
+	TotalDown int64 `json:"total_down"`
 	TrafficToday int64 `json:"traffic_today"` // up+down for the current local-time day
 	XrayRunning  bool  `json:"xray_running"`
 	CertDaysLeft int   `json:"cert_days_left"`
@@ -243,8 +247,117 @@ func (m *Manager) SystemStatus() (*SystemStatus, error) {
 
 // StatsSeries returns per-day traffic between from/to (YYYY-MM-DD); userID 0 = all.
 func (m *Manager) StatsSeries(userID int64, from, to string) ([]model.DailyPoint, error) {
-	return m.store.StatsSeries(userID, from, to)
+	pts, err := m.store.StatsSeries(userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return fillDays(pts, from, to), nil
 }
+
+// NodeDailyTraffic is one server's traffic on one day.
+type NodeDailyTraffic struct {
+	Day    string `json:"day"`     // YYYY-MM-DD, operator-local
+	NodeID int64  `json:"node_id"` // 0 = the panel's own server
+	Name   string `json:"name"`
+	Up     int64  `json:"up"`
+	Down   int64  `json:"down"`
+}
+
+// NodeTrafficSeries is the per-day, per-server breakdown: what NodeTrafficBreakdown
+// totals and StatsSeries splits by day, in one answer.
+//
+// It exists because the two together could not produce it: the totals endpoint has
+// no day dimension and the series endpoint has no server dimension, so plotting one
+// line per server meant one call per day. Every server that carried anything in the
+// window gets a full row per day, zeros included — a line with holes in it is not
+// the same shape as a line with zeros, and every moving average reads it wrong.
+func (m *Manager) NodeTrafficSeries(userID int64, from, to string) ([]NodeDailyTraffic, error) {
+	rows, err := m.store.NodeTrafficSeries(userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	names, _ := m.store.NodeNames() // best-effort: a failure just falls back to ids
+	if names == nil {
+		names = map[int64]string{}
+	}
+	names[model.LocalNodeID] = model.LocalNodeName
+
+	// Group by server, then fill each server's own line across the window.
+	perNode := map[int64][]model.DailyPoint{}
+	for _, r := range rows {
+		perNode[r.NodeID] = append(perNode[r.NodeID], model.DailyPoint{Day: r.Day, Up: r.Up, Down: r.Down})
+	}
+	ids := make([]int64, 0, len(perNode))
+	for id := range perNode {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	out := make([]NodeDailyTraffic, 0, len(rows))
+	for _, id := range ids {
+		name := names[id]
+		if name == "" {
+			name = fmt.Sprintf("server #%d", id) // purged tombstone: id is all that's left
+		}
+		for _, p := range fillDays(perNode[id], from, to) {
+			out = append(out, NodeDailyTraffic{
+				Day: p.Day, NodeID: id, Name: name, Up: p.Up, Down: p.Down,
+			})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Day != out[j].Day {
+			return out[i].Day < out[j].Day
+		}
+		return out[i].NodeID < out[j].NodeID
+	})
+	return out, nil
+}
+
+// fillDays returns one point per calendar day in [from, to], carrying zeros for the
+// days that hold no rows.
+//
+// A day with no traffic writes no row — the poller only records deltas — so the
+// stored series is not a time series at all, it is a list of days that happened to
+// be busy. Handing that to anything that averages over a window silently overstates
+// the quiet periods, and reading a gap as "the panel was down" is the other way to
+// be wrong about it. The dates are parsed rather than incremented as strings so
+// month and year boundaries are the calendar's problem, not this function's.
+func fillDays(pts []model.DailyPoint, from, to string) []model.DailyPoint {
+	start, err := time.Parse(dayFormat, from)
+	if err != nil {
+		return pts // an unparseable window is the caller's to reject; don't invent days
+	}
+	end, err := time.Parse(dayFormat, to)
+	if err != nil || end.Before(start) {
+		return pts
+	}
+	if end.Sub(start) > maxSeriesSpan {
+		return pts // a decade of zeros helps nobody; hand back what was stored
+	}
+	have := make(map[string]model.DailyPoint, len(pts))
+	for _, p := range pts {
+		have[p.Day] = p
+	}
+	out := make([]model.DailyPoint, 0, int(end.Sub(start)/(24*time.Hour))+1)
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		day := d.Format(dayFormat)
+		if p, ok := have[day]; ok {
+			out = append(out, p)
+			continue
+		}
+		out = append(out, model.DailyPoint{Day: day})
+	}
+	return out
+}
+
+const (
+	dayFormat = "2006-01-02"
+	// maxSeriesSpan bounds what zero-filling will materialise: five years of daily
+	// points is already an odd thing to ask a panel for, and beyond it the padding
+	// would dwarf the data.
+	maxSeriesSpan = 5 * 366 * 24 * time.Hour
+)
 
 // NodeTraffic is one server's share of the traffic over a period.
 type NodeTraffic struct {

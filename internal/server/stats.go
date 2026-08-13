@@ -15,28 +15,51 @@ func validDate(s string) bool {
 	return err == nil
 }
 
-// dateRange reads ?from=&to= (YYYY-MM-DD), defaulting to the last 30 days in the
-// operator's configured timezone. Malformed or reversed ranges get a 400 (rather
-// than silently returning empty/garbage results); on error it returns ok=false
-// after writing the response.
-func (rt *Router) dateRange(w http.ResponseWriter, r *http.Request) (from, to string, ok bool) {
+// statsWindow resolves ?from=&to= (YYYY-MM-DD) into a range, defaulting to the last
+// 30 days in the operator's configured timezone. The error it returns is an i18n
+// code and its Russian default, because the two surfaces that call it render errors
+// differently — the panel translates, the API answers in its envelope — and the
+// alternative was the v1 API doing none of this at all: it passed the raw strings
+// through, so an omitted `from` became `day BETWEEN '' AND ''` and the caller got an
+// empty array for a question the panel answers on its own dashboard.
+func (rt *Router) statsWindow(r *http.Request) (from, to string, errCode, errMsg string) {
 	now := time.Now().In(rt.mgr.Location())
 	to = r.URL.Query().Get("to")
 	from = r.URL.Query().Get("from")
 	if to == "" {
 		to = now.Format("2006-01-02")
 	} else if !validDate(to) {
-		writeErrCode(w, http.StatusBadRequest, "err.badTo", "неверный параметр to (ожидается YYYY-MM-DD)")
-		return "", "", false
+		return "", "", "err.badTo", "неверный параметр to (ожидается YYYY-MM-DD)"
 	}
 	if from == "" {
 		from = now.AddDate(0, 0, -29).Format("2006-01-02")
 	} else if !validDate(from) {
-		writeErrCode(w, http.StatusBadRequest, "err.badFrom", "неверный параметр from (ожидается YYYY-MM-DD)")
-		return "", "", false
+		return "", "", "err.badFrom", "неверный параметр from (ожидается YYYY-MM-DD)"
 	}
 	if from > to { // lexicographic ordering is correct for zero-padded YYYY-MM-DD
-		writeErrCode(w, http.StatusBadRequest, "err.fromAfterTo", "from не может быть позже to")
+		return "", "", "err.fromAfterTo", "from не может быть позже to"
+	}
+	return from, to, "", ""
+}
+
+// dateRange is statsWindow for the panel surface: on error it writes the response
+// and returns ok=false.
+func (rt *Router) dateRange(w http.ResponseWriter, r *http.Request) (from, to string, ok bool) {
+	from, to, code, msg := rt.statsWindow(r)
+	if code != "" {
+		writeErrCode(w, http.StatusBadRequest, code, msg)
+		return "", "", false
+	}
+	return from, to, true
+}
+
+// apiDateRange is statsWindow for the external API, which reports the same
+// rejection in its own envelope. The English wording comes from the shared error
+// catalog by key, like every other rejection on this surface.
+func (rt *Router) apiDateRange(w http.ResponseWriter, r *http.Request) (from, to string, ok bool) {
+	from, to, code, msg := rt.statsWindow(r)
+	if code != "" {
+		writeAPIRejected(w, code, msg, nil)
 		return "", "", false
 	}
 	return from, to, true
