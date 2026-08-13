@@ -221,10 +221,30 @@ no domain and no DNS**.
 #### 👤 Users
 
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
-**device limit** by unique IP. Traffic accounting via Xray Stats, online status, connection
+**device limit** by unique IP and a per-user **speed cap**. Traffic accounting via Xray Stats, online status, connection
 list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
 The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time.
+
+**Device binding (HWID).** Clients that follow the subscription-header convention (Happ,
+v2RayTun) send a stable install id; the panel binds it to the account on first fetch and
+counts it against the device limit. Once the limit is full a NEW device is refused the
+subscription while the bound ones keep updating — the check and the insert are one
+transaction, so two clients cannot both take the last slot. The devices are listed in the
+user card and **on the subscription page**, where the owner can release one themselves
+instead of writing to support; an idle device frees its slot after a configurable TTL, and
+rotating the subscription link releases them all. Off by default (*Settings →
+Subscriptions*); once on, a client that sends **no** id gets no subscription at all — a cap
+you can dodge by switching to a quieter app is not a cap — with a switch to serve those
+clients anyway (counted by address, as before) if some of your users are on them.
+
+**Speed limit.** A per-user cap in kbit/s, set by hand or by the tariff. Xray has no
+per-user bandwidth limit, so it is enforced below it — the kernel's own scheduler (HTB),
+keyed on the addresses that user is currently connected from, in both directions. That
+means it covers every protocol at once, that everyone behind one NAT address shares a cap,
+and that for Hysteria2 (whose congestion control ignores loss by design) hitting the cap
+looks like packet loss rather than a smooth slowdown. Nodes shape their own traffic from
+their own view of who is connected.
 
 **Access groups** decide which connections a user gets: built-in lanes and custom inbounds are
 ticked per server, a user with no group gets everything, a user in several groups gets the
@@ -240,6 +260,10 @@ in their card and in the list.
 popular clients (auto-routing headers for Happ / INCY / Mihomo), with your own node names. The
 link can be **reset** (token rotation) without changing UUIDs and passwords. An
 **announcement** inside the client (Happ, v2RayTun) puts a short text right in the app.
+
+The page carries what the account holder needs and nothing they shouldn't hand out: the
+**individual per-lane configs** card can be switched off, and with device binding on it lists **their own bound devices** with a
+button to release one — so a full device roster is self-service rather than a support ticket.
 
 #### 🧭 Routing and egress
 
@@ -313,8 +337,29 @@ by a recipient table, so an interrupted broadcast **resumes instead of restartin
 gets the message twice.
 
 **REST API** with named keys (`Authorization: Bearer`), **OpenAPI generated from the code** and
-Swagger UI; **webhooks** send HMAC-SHA256 signed events with retries. More in
-[docs/api.md](docs/api.md).
+Swagger UI; **webhooks** send HMAC-SHA256 signed events with retries. **Prometheus metrics**
+at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, host stats and
+one series per node. An **MCP server** hands the same API to an AI assistant, with the tool
+list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
+a URL and there is nothing to install anywhere. Write operations are off unless you ask for
+them (the `/write` address). More in [docs/api.md](docs/api.md).
+
+**Connecting an assistant** takes one URL and no local install. Create a key in
+*Settings → API*, take the base address from the same page, and paste one of:
+
+```text
+https://vpn.example.com/<api-path>/v1/mcp/<key>          read-only
+https://vpn.example.com/<api-path>/v1/mcp/<key>/write    plus everything that changes state
+```
+
+The address is the credential — as secret as the key inside it, and dead the moment that key
+is revoked. The two differ only in the toolbox they offer: the short one cannot delete a user
+even though the key behind it could, which is what makes handing an assistant the read-only
+URL a real decision rather than a hope.
+
+**Status page** — an optional public page (*Settings → General*) showing which
+servers are up and 90 days of uptime history. Names and availability only: no addresses, no
+users, no traffic, and no page at all until you switch it on.
 
 #### 🌍 Language (RU / EN)
 

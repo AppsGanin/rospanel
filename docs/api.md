@@ -84,6 +84,45 @@ codes in the browser, in whichever language the admin chose); `args` lets a clie
 render its own wording without parsing prose. Both are absent when the failure has
 no code behind it (a malformed body, an unknown path).
 
+## Request bodies
+
+A field the endpoint does not define is an error, not something to ignore:
+
+```json
+{ "error": {
+    "code": "bad_request",
+    "message": "unknown field \"groups\" — see GET /v1/openapi.json for the fields this endpoint accepts"
+} }
+```
+
+Accepting the body and quietly dropping the field is worse than refusing it: a
+caller that sends `{"groups": [2,4]}` to an endpoint expecting `group_ids` gets a
+success back and no membership change, and finds out whenever they next read the
+value. So check the spelling against the spec — it is generated from the code, so
+it cannot list a field the panel doesn't read.
+
+Only fields the endpoint genuinely requires are marked `required` there. Everything
+else may be omitted and keeps its documented default; you never have to send a full
+object to change one thing.
+
+## Paging
+
+Every list endpoint takes `?limit` and `?offset` and answers with a `meta` block:
+
+```json
+{ "data": [ … ], "meta": { "total": 1043, "offset": 0, "limit": 100 } }
+```
+
+`limit` defaults to **100** and is capped at **1000**; `limit=0` (or negative) means
+"everything from `offset`", which is a deliberate ask rather than the default — an
+unbounded default is how an integration works fine for a year and then times out on a
+panel that grew. `total` counts the rows after filtering and before the window, so a
+caller can page without guessing.
+
+The journals (`/v1/events`, `/v1/admin-audit`) page differently, by cursor
+(`?before=<oldest id held>`): their rows shift as new ones arrive, and an offset would
+skip or repeat entries.
+
 ## Endpoints
 
 Base URL below is written as `$BASE` (e.g. `https://vpn.example.com/ab12cd34/v1`).
@@ -120,7 +159,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users` | Create a user. |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
-| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry / device limit / enabled. |
+| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry / device limit / speed limit / enabled. |
 | `DELETE` | `/v1/users/{id}` | Delete a user. |
 | `POST` | `/v1/users/{id}/reset` | Reset the user's traffic counters. |
 | `POST` | `/v1/users/{id}/reset-period` | Set auto-reset period. |
@@ -128,6 +167,8 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users/{id}/plan` | Apply a tariff plan to the user. |
 | `POST` | `/v1/users/{id}/plan/cancel` | Cancel a paid subscription now. |
 | `GET` | `/v1/users/{id}/connections` | List the user's recent source IPs / devices. |
+| `GET` | `/v1/users/{id}/devices` | List the installs bound by HWID, with the cap they count against. |
+| `POST` | `/v1/users/{id}/devices/unbind` | Release one bound device (or all), freeing the slot. |
 | `GET` | `/v1/users/{id}/events` | The user's own journal (paged). |
 | `GET` | `/v1/users/{id}/abuse` | The user's blocklist matches (`limit`, default 20). |
 
@@ -136,8 +177,36 @@ account in the same call:
 
 ```json
 { "name": "alice", "data_limit": 0, "expire_at": 0,
-  "device_limit": 3, "plan_id": 2, "group_ids": [4] }
+  "device_limit": 3, "speed_limit": 20000, "plan_id": 2, "group_ids": [4] }
 ```
+
+**Devices** are the installs bound by the `x-hwid` subscription header (see the panel's
+*Settings → Subscriptions*). The list carries the cap alongside the roster, so one call
+answers "is this user full":
+
+```json
+{ "data": { "devices": [ { "hwid": "…", "os": "iOS", "os_version": "26.5.2",
+    "model": "iPhone 15 Pro Max", "app": "Happ/1.0", "ip": "203.0.113.7",
+    "first_seen": 1786500000, "last_seen": 1786568000 } ],
+  "limit": 3, "enabled": true } }
+```
+
+Unbinding takes either one id or the lot, and answers with how many slots were freed:
+
+```json
+{ "hwid": "…" }        →  { "data": { "removed": 1 } }
+{ "all": true }        →  { "data": { "removed": 3 } }
+```
+
+A device that was never bound is a `404`, not a silent success. The freed slot is
+immediately available: the next fetch from a new install is admitted.
+
+`speed_limit` is a per-user bandwidth cap in **kbit/s** (0 = unlimited), applied in both
+directions. It is enforced by the host kernel on the addresses the user is connected from,
+not by Xray — so everyone behind one NAT address shares a cap, and with Hysteria2 the cap
+manifests as packet loss rather than a smooth slowdown. A tariff plan carries its own
+`speed_limit` and overwrites the user's when it is applied, exactly as it does for the
+traffic and device limits.
 
 `plan_id` rewrites `data_limit` and `expire_at` with the plan's own — a plan *is* the
 limits — while an explicit `device_limit` is applied after it and wins. If one of the
@@ -337,6 +406,9 @@ target machine** (`xray -test` + a port-bind probe) before it's saved.
 (REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
 advanced blocks (XHTTP `extra`, TCP HTTP masquerade, `sockopt`, extra TLS keys). The
 full field list — and which combinations are valid — is in `openapi.json` / Swagger.
+Two formats the schema can only call `string`: `reality_dest` is a bare hostname
+(`www.microsoft.com` — a `host:port` form is rejected), and `hop_interval` is a range in
+seconds (`"5-10"`, not `"30"`).
 The response `data` is the saved inbound; a rejected config (port already bound, invalid
 combo, node offline) returns `400` with the reason. Inbounds a client can't represent are
 silently dropped from Clash/sing-box subscriptions rather than emitted broken.
@@ -410,13 +482,31 @@ grants nothing, silently, which is exactly what this endpoint prevents.
 ### Stats
 
 ```
-GET $BASE/v1/stats/series?user_id=5&from=2026-01-01&to=2026-01-31   → daily traffic points
-GET $BASE/v1/stats/nodes?user_id=5&from=2026-01-01&to=2026-01-31    → traffic split by server
-GET $BASE/v1/stats/users?from=2026-01-01&to=2026-01-31              → per-user totals
+GET $BASE/v1/stats/series?user_id=5&from=2026-01-01&to=2026-01-31        → daily traffic
+GET $BASE/v1/stats/nodes?user_id=5&from=2026-01-01&to=2026-01-31         → totals per server
+GET $BASE/v1/stats/nodes/series?user_id=5&from=2026-01-01&to=2026-01-31  → daily, per server
+GET $BASE/v1/stats/users?from=2026-01-01&to=2026-01-31                   → per-user totals
 ```
 
-`user_id` is optional on `series` and `nodes` (omit for a panel-wide figure).
-`from`/`to` are `YYYY-MM-DD` (in the panel's configured timezone).
+`user_id` narrows `series`, `nodes` and `nodes/series` to one account; omit it for a
+panel-wide figure. `users` has no `user_id` — it already answers per user.
+`from`/`to` are `YYYY-MM-DD` in the panel's configured timezone, and both default to
+the **last 30 days** — an omitted window is a window, not a request for nothing.
+A malformed or reversed range is a 400 rather than an empty answer.
+
+Every day in the range is present, including the ones that carried nothing:
+
+```json
+{ "data": [
+  { "day": "2026-01-01", "up": 52711616, "down": 3901246326 },
+  { "day": "2026-01-02", "up": 0, "down": 0 },
+  { "day": "2026-01-03", "up": 46059475, "down": 1488367869 }
+] }
+```
+
+A quiet day writes no row internally, so the stored history is a list of busy days
+rather than a series; these endpoints fill the gaps, because a hole and a zero are
+different shapes to anything computing a moving average.
 
 `nodes` breaks the same traffic down by the server that carried it, busiest first —
 `series` tells you how much, this tells you where. `node_id` is `0` for the panel's
@@ -429,6 +519,37 @@ traffic rows outlive them).
   { "node_id": 0, "name": "Мастер", "up": 52711616, "down": 3901246326 }
 ] }
 ```
+
+`nodes/series` is both dimensions at once — one row per day per server, so one call
+plots a line per server:
+
+```json
+{ "data": [
+  { "day": "2026-01-01", "node_id": 0, "name": "Мастер", "up": 52711616, "down": 3901246326 },
+  { "day": "2026-01-01", "node_id": 2, "name": "NL",     "up": 46059475, "down": 1488367869 },
+  { "day": "2026-01-02", "node_id": 0, "name": "Мастер", "up": 0,        "down": 0 },
+  { "day": "2026-01-02", "node_id": 2, "name": "NL",     "up": 12000000, "down": 340000000 }
+] }
+```
+
+Servers that carried nothing across the whole window are left out entirely; the ones
+that appear have a row for every day.
+
+### Which totals mean what
+
+Two families of counter exist and they answer different questions. Mixing them up
+looks exactly like a double-counting bug:
+
+| Number | Source | Reset by |
+|---|---|---|
+| `total_up` / `total_down` on `/v1/summary` | the users' quota counters | a traffic reset, or a plan rolling the period over |
+| `/v1/stats/series`, `/v1/stats/nodes` | the daily traffic history | nothing — it accumulates |
+
+So the summary's totals are **usage in the current quota period**, which is what a
+data limit is measured against, and they are routinely *smaller* than the history
+over the same span. That is not traffic going missing: it is one user's counters
+having been reset while their history stayed. Bill from the quota counters, report
+from the history, and don't expect the two to agree.
 
 ```
 GET $BASE/v1/stats/abuse?limit=50   → recent blocklist matches across the fleet
@@ -503,7 +624,37 @@ GET $BASE/v1/nodes/{id}/health → one server's diagnostics (id 0 = the master)
 GET $BASE/v1/nodes/{id}/logs   → a node's recent log lines
 GET $BASE/v1/backup/info       → what a backup taken now would contain
 GET $BASE/v1/backup            → download that backup (.tar.gz body, not JSON)
+GET $BASE/v1/metrics           → Prometheus exposition (text, not JSON)
 ```
+
+`/v1/metrics` is a scrape target for Prometheus, authenticated with the same API key:
+
+```yaml
+scrape_configs:
+  - job_name: rospanel
+    scheme: https
+    metrics_path: /<api-path>/v1/metrics
+    authorization:
+      credentials: rp_...
+    static_configs:
+      - targets: ["vpn.example.com"]
+```
+
+It publishes user counts, lifetime and daily traffic, live throughput, Xray and certificate
+state, and the panel host's own CPU/RAM/disk.
+
+Every server also gets its own series, labelled `node` and `node_id` (the master is
+`node_id="0"`): `rospanel_node_online`, `rospanel_node_enabled`,
+`rospanel_node_xray_running`, `rospanel_node_last_seen_seconds`,
+`rospanel_node_traffic_today_bytes{direction=…}`, plus the machine under it —
+`rospanel_node_cpu_percent`, `rospanel_node_memory_bytes{state=…}`,
+`rospanel_node_disk_bytes{state=…}` and `rospanel_node_host_uptime_seconds`. A node that
+has never reported (or whose agent predates these fields) simply has no samples, which is
+what a gap in a graph should mean — rather than a row of zeros that reads as an idle
+machine.
+
+There are deliberately **no per-user series**: a panel with a thousand users would produce
+a thousand time series per metric.
 
 `/v1/nodes/{id}/logs` is answered from the node's next long-poll, so a freshly-woken
 node may return the previous batch — `at` is the unix time the lines were collected.
@@ -513,6 +664,48 @@ the one endpoint outside the `{"data": …}` envelope — point a scheduler at i
 copies off the box. **Restore is deliberately not exposed**: it is staged on disk and
 applied at the next start, so over an API it would be a request that silently replaces
 everything on the next restart.
+
+## MCP (AI assistants)
+
+The panel serves this API to an assistant over the Model Context Protocol itself. There is
+nothing to install anywhere: an assistant that takes a URL:
+
+```
+$BASE/v1/mcp/<api-key>          read-only
+$BASE/v1/mcp/<api-key>/write    plus everything that changes state
+```
+
+The key rides in the path because those dialogs accept a URL and nothing else: **the address
+is the credential**, exactly as secret as the key inside it, and it stops working the moment
+that key is revoked. Build it by hand from the two values *Settings → API* gives you — the
+base address shown there, and a key at the moment you create it (it is never shown again).
+
+The two addresses are the same server with a different toolbox. The short one cannot delete a
+user even though the key behind it could — which is the point: an assistant acting on a
+misread sentence should not be able to, and the operator chooses that by which URL they paste.
+
+Transport is MCP's Streamable HTTP: one JSON-RPC message per `POST`, answered with
+`application/json`; notifications get `202` and no body; `GET` is `405` (this endpoint has no
+server-initiated stream). Calls are dispatched against the panel's own REST API in process, so
+they carry the same permissions, the same audit trail and the same error shapes as any other
+client of `/v1`.
+
+### Response size
+
+A list call with no `limit` gets **50 rows**, not the REST default of 100: an assistant pays
+for every row in context. Ask for more explicitly and you get it, `limit=0` (everything)
+included.
+
+Above that sits a hard ceiling of **512 KB per call**. A response over it is shortened by
+whole rows, and `meta` says so — `limit` becomes the count actually returned while `total`
+still reports how many exist, so paging on `limit`/`offset` reaches the rest. The result
+stays valid JSON. (`GET /v1/backup` is not offered as a tool at all: its body is a tarball.)
+
+The tool list is generated from the OpenAPI document above, so it never drifts from the API,
+and each tool carries the annotations a client uses to decide whether to ask its human first
+(`readOnlyHint`, `destructiveHint`). Answers come back as text and, when the panel replied
+with JSON, as `structuredContent` too; one answer is capped so a single call cannot fill the
+assistant's context — ask for a smaller page (`limit`/`offset`) rather than the lot.
 
 ## Examples
 
