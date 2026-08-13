@@ -140,6 +140,40 @@ func (s *Store) StatsSeriesNode(userID, nodeID int64, from, to string) ([]model.
 	return out, rows.Err()
 }
 
+// NodeDailyRow is one (day, node) bucket of the traffic table.
+type NodeDailyRow struct {
+	Day    string
+	NodeID int64
+	Up     int64
+	Down   int64
+}
+
+// NodeTrafficSeries returns per-day totals split by node between from and to.
+// userID 0 aggregates across users, matching StatsSeries.
+func (s *Store) NodeTrafficSeries(userID int64, from, to string) ([]NodeDailyRow, error) {
+	query := `SELECT day, node_id, SUM(up), SUM(down) FROM traffic_daily WHERE day BETWEEN ? AND ?`
+	args := []any{from, to}
+	if userID > 0 {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+	query += ` GROUP BY day, node_id ORDER BY day, node_id`
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []NodeDailyRow
+	for rows.Next() {
+		var r NodeDailyRow
+		if err := rows.Scan(&r.Day, &r.NodeID, &r.Up, &r.Down); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // NodeTrafficTotals returns each node's total up+down over the period, keyed by
 // node_id (0 = local server). Used by the Nodes UI.
 // userID 0 aggregates across all users, matching StatsSeries.
