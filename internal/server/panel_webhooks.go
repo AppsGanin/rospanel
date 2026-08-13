@@ -56,7 +56,7 @@ func (rt *Router) createWebhook(w http.ResponseWriter, r *http.Request) {
 	if !validateWebhook(w, req.URL, req.Events) {
 		return
 	}
-	h, err := rt.mgr.Store().CreateWebhook(req.URL, req.Events)
+	h, err := rt.mgr.Store().CreateWebhook(req.URL, req.Events, true)
 	if err != nil {
 		writeManagerErr(w, err)
 		return

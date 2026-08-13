@@ -44,7 +44,7 @@ func TestWebhookDeliverySigned(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	h, err := st.CreateWebhook(srv.URL, []string{model.WebhookUserCreated})
+	h, err := st.CreateWebhook(srv.URL, []string{model.WebhookUserCreated}, true)
 	if err != nil {
 		t.Fatalf("create webhook: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestWebhookNonSubscribed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := st.CreateWebhook(srv.URL, []string{model.WebhookPaymentPaid}); err != nil {
+	if _, err := st.CreateWebhook(srv.URL, []string{model.WebhookPaymentPaid}, true); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	m := &Manager{store: st, webhookCh: make(chan webhookJob, 8)}
