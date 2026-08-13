@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -408,22 +409,111 @@ func writeAPIManagerErr(w http.ResponseWriter, err error) {
 		writeAPIRejected(w, fe.Code, fe.Msg, fe.Args)
 		return
 	}
+	// An id that matches nothing is the caller's mistake, not the panel's. Several
+	// routes already checked for this by hand; the ones that forgot answered "500
+	// internal: sql: no rows in result set", which blames the server, leaks the
+	// storage layer, and tells an assistant retrying is worth a try. Handled here so
+	// the answer is the same on every route.
+	if errors.Is(err, sql.ErrNoRows) {
+		writeAPIErr(w, http.StatusNotFound, "not_found", "not found")
+		return
+	}
 	writeAPIErr(w, http.StatusInternalServerError, "internal", err.Error())
 }
 
 // apiDecode reads a size-limited JSON body into dst using the API envelope for
 // errors. Like decodeJSON it requires application/json.
+//
+// Unknown fields are rejected rather than ignored. Silently dropping them is the
+// worse failure by a distance: POST /v1/users/{id}/groups with {"groups": [2,4]}
+// used to answer {"ok": true} having set nothing, and the caller had no way to
+// learn that except by reading back. A 400 naming the field is a bug found in one
+// call. This is also what makes the generated spec load-bearing — a field name it
+// doesn't list is now an error instead of a no-op.
 func apiDecode(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
 		writeAPIErr(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "expected application/json")
 		return false
 	}
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Second))
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(dst); err != nil {
-		writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid request body")
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", decodeErrMessage(err, dst))
 		return false
 	}
 	return true
+}
+
+// decodeErrMessage turns a decoder error into something the caller can act on.
+//
+// The unknown field splits into two very different mistakes, and saying which one
+// it is saves the caller the guess:
+//
+//   - a name the API never accepts anywhere — a typo, like the `groups` that should
+//     have been `group_ids`;
+//   - a name this resource RETURNS but does not take, which is what "read the
+//     object, change a field, send it back" produces. Nothing is wrong with the
+//     caller's intent there; they just have to drop the server-owned keys.
+//
+// Both stay a 400. Quietly accepting the second kind would mean quietly accepting a
+// `member_ids` that changes no membership, and a caller who cannot tell an applied
+// field from an ignored one is back to the bug this strictness exists to prevent.
+func decodeErrMessage(err error, dst any) string {
+	const unknown = "json: unknown field "
+	msg := err.Error()
+	if !strings.HasPrefix(msg, unknown) {
+		return "invalid request body"
+	}
+	field := strings.Trim(strings.TrimPrefix(msg, unknown), `"`)
+	if readOnlyBodyFields[reflect.TypeOf(dst)][field] {
+		return "field " + strconv.Quote(field) + " is read-only here: this endpoint returns it but does not accept it" +
+			" — drop it from the body (see GET /v1/openapi.json)"
+	}
+	return "unknown field " + strconv.Quote(field) +
+		" — see GET /v1/openapi.json for the fields this endpoint accepts"
+}
+
+// readOnlyBodyFields maps a request-body type to the field names that the same
+// resource's RESPONSE carries but its request does not — the keys a round-trip
+// picks up. Derived from the route table by the same reflection that generates the
+// spec, so it cannot drift from either.
+var readOnlyBodyFields = buildReadOnlyBodyFields()
+
+func buildReadOnlyBodyFields() map[reflect.Type]map[string]bool {
+	out := map[reflect.Type]map[string]bool{}
+	for _, r := range apiSpecRoutes() {
+		if r.req == nil || r.resp == nil {
+			continue
+		}
+		// Keyed by the type a handler decodes INTO, which is what apiDecode holds.
+		key := reflect.PointerTo(r.req)
+		set := out[key]
+		if set == nil {
+			set = map[string]bool{}
+			out[key] = set
+		}
+		sent := jsonFieldNames(r.req)
+		for name := range jsonFieldNames(r.resp) {
+			if !sent[name] {
+				set[name] = true
+			}
+		}
+	}
+	return out
+}
+
+// jsonFieldNames is the set of top-level JSON keys a struct marshals to, following
+// the same embedded-struct promotion the spec generator uses.
+func jsonFieldNames(rt reflect.Type) map[string]bool {
+	props := map[string]any{}
+	var required []string
+	collectFields(rt, props, &required, map[string]any{})
+	out := make(map[string]bool, len(props))
+	for name := range props {
+		out[name] = true
+	}
+	return out
 }
 
 // apiUserView builds the share-link-carrying view for a user, reusing the panel's
