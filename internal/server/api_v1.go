@@ -481,30 +481,18 @@ func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		filtered = append(filtered, u)
 	}
-	total := len(filtered)
 
-	// Window the slice. limit<=0 means "all remaining from offset".
-	offset := clampNonNeg(atoiOr(q.Get("offset"), 0))
-	limit := atoiOr(q.Get("limit"), 0)
-	if offset > total {
-		offset = total
-	}
-	page := filtered[offset:]
-	if limit > 0 && limit < len(page) {
-		page = page[:limit]
-	}
+	// Window the slice — see api_v1_paging.go for what limit/offset mean.
+	window, meta := page(r, filtered)
 
 	custom := rt.localInbounds()
 	groupsMap, _ := rt.mgr.GroupsForAllUsers()
 	accessMap, _ := rt.mgr.Store().AccessMap()
-	views := make([]userView, 0, len(page))
-	for _, u := range page {
+	views := make([]userView, 0, len(window))
+	for _, u := range window {
 		views = append(views, makeUserView(u, set, "", custom, groupsMap[u.ID], model.AccessOf(accessMap, u.ID)))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"data": views,
-		"meta": map[string]int{"total": total, "offset": offset, "limit": limit},
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"data": views, "meta": meta})
 }
 
 // atoiOr parses s as an int, returning def on any failure (empty or malformed).
@@ -552,16 +540,13 @@ func (rt *Router) apiSetResetPeriod(w http.ResponseWriter, r *http.Request, id i
 	rt.apiUserView(w, *u)
 }
 
-func (rt *Router) apiUserConnections(w http.ResponseWriter, _ *http.Request, id int64) {
+func (rt *Router) apiUserConnections(w http.ResponseWriter, r *http.Request, id int64) {
 	conns, err := rt.mgr.Connections(id)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if conns == nil {
-		conns = []model.Connection{}
-	}
-	writeAPIData(w, http.StatusOK, conns)
+	writeAPIPage(w, r, conns)
 }
 
 func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
