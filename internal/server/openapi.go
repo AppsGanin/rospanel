@@ -331,6 +331,14 @@ type healthzResp struct {
 	XrayStartedAt int64  `json:"xray_started_at"`
 }
 
+// OpenAPISpec is the generated API description, exported so the MCP server
+// (cmd/rospanel mcp) can build its tool list from the same source the Swagger page
+// renders. Generating the tools from the spec rather than from a hand-kept list is
+// what stops the two from drifting: a route added without an OpenAPI entry already
+// fails TestAPISpecCoversEveryRoute, and now it also cannot silently go missing
+// from the assistant's toolbox.
+func OpenAPISpec(serverURL string) map[string]any { return buildOpenAPI(serverURL) }
+
 // buildOpenAPI assembles the full OpenAPI 3.0 document for the given server URL.
 func buildOpenAPI(serverURL string) map[string]any {
 	schemas := map[string]any{
@@ -408,6 +416,12 @@ func buildOperation(r oaRoute, schemas map[string]any) map[string]any {
 	// so Swagger UI doesn't demand a key for a route that never wanted one.
 	if r.noAuth {
 		op["security"] = []any{}
+	}
+	// A vendor extension rather than a list of paths inside the mcp package: that
+	// package builds its tools from this document and should not also have to know
+	// the panel's route table.
+	if r.noMCP {
+		op["x-mcp"] = false
 	}
 
 	var params []any
