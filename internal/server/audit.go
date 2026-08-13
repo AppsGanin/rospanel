@@ -75,6 +75,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/secret":          set("secretPath"),
 	"POST /api/settings/decoy":           set("decoy"),
 	"POST /api/settings/subscription":    set("subscriptions"),
+	"POST /api/settings/hwid":            set("deviceBinding"),
+	"POST /api/settings/status-page":     set("statusPage"),
 	"POST /api/settings/dns":             set("dns"),
 	"POST /api/nodes/{id}/proxy":         set("systemProxy"),
 	"POST /api/settings/local-backup":    set("localBackups"),
@@ -195,6 +197,7 @@ var auditActions = map[string]auditRoute{
 	// else records that it happened.
 	"POST /api/users/{id}/telegram/message": act(model.AuditUserMessaged),
 	"POST /api/users/{id}/reset-period":     skip,
+	"POST /api/users/{id}/devices/unbind":   skip,
 	"POST /api/users/{id}/plan":             skip,
 
 	// Sessions are audited inside their handlers: login has no session to read an

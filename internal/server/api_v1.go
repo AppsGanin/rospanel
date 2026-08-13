@@ -152,6 +152,8 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/plan", rt.apiApplyPlan)
 	id("POST /v1/users/{id}/plan/cancel", rt.apiCancelUserPlan)
 	id("GET /v1/users/{id}/connections", rt.apiUserConnections)
+	id("GET /v1/users/{id}/devices", rt.apiUserDevices)
+	id("POST /v1/users/{id}/devices/unbind", rt.apiUnbindDevice)
 	id("GET /v1/users/{id}/events", rt.apiUserEvents)
 	id("GET /v1/users/{id}/abuse", rt.apiUserAbuse)
 

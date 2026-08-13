@@ -121,6 +121,14 @@ type pageText struct {
 	OrderTitle     string
 	PayFailed      string
 	Error          string
+
+	Devices        string
+	DevicesHint    string
+	DevicesEmpty   string
+	DeviceRemove   string
+	DeviceConfirm  string
+	DeviceFailed   string
+	DeviceNeverUse string
 }
 
 func text(lang i18n.Lang) pageText {
@@ -157,6 +165,14 @@ func text(lang i18n.Lang) pageText {
 		OrderTitle:     t("sub.orderTitle"),
 		PayFailed:      t("sub.payFailed"),
 		Error:          t("sub.error"),
+
+		Devices:        t("sub.devices"),
+		DevicesHint:    t("sub.devicesHint"),
+		DevicesEmpty:   t("sub.devicesEmpty"),
+		DeviceRemove:   t("sub.deviceRemove"),
+		DeviceConfirm:  t("sub.deviceRemoveConfirm"),
+		DeviceFailed:   t("sub.deviceRemoveFailed"),
+		DeviceNeverUse: t("sub.deviceNeverSeen"),
 	}
 }
 
@@ -192,7 +208,34 @@ type pageData struct {
 	Online      bool
 	LastSeen    string
 
-	Billing Billing
+	Billing     Billing
+	Devices     Devices
+	ShowConfigs bool // render the raw per-lane share links
+	// ShowDownload renders the "download the Clash config" button. Off when the
+	// operator requires an HWID: the button fetches this same URL from the browser,
+	// which sends no id and would be refused — an offer the page cannot keep.
+	ShowDownload bool
+}
+
+// Devices is the "your devices" block, shown only when the operator turned device
+// binding on. Letting the person unbind their own old phone is what keeps the cap
+// from turning into a support queue: the alternative is every replaced device
+// becoming a message to the operator.
+type Devices struct {
+	Show       bool
+	List       []DeviceRow
+	Count      int
+	Limit      int    // 0 = unlimited
+	CountText  string // "2 / 3", or just the count when unlimited
+	UnbindPath string // POST target that releases one device (<SubURL>/devices/unbind)
+}
+
+// DeviceRow is one bound install as the page shows it.
+type DeviceRow struct {
+	HWID     string
+	Title    string // model, OS, or the raw id — whatever the client told us
+	Sub      string // OS + version, when known
+	LastSeen string // humanised "3 h ago"
 }
 
 // Billing is the optional "renew / pay" block on the subscription page. It's built
@@ -257,7 +300,7 @@ func subStatus(s string, lang i18n.Lang) (label, class string) {
 // list shows one labelled entry per protocol × server (with a single server it's
 // unchanged). sets[0] is the local server, used for the sub URL, branding and
 // billing.
-func Page(u model.User, servers []Server, billing Billing, lang i18n.Lang) ([]byte, error) {
+func Page(u model.User, servers []Server, billing Billing, devices Devices, showDownload bool, lang i18n.Lang) ([]byte, error) {
 	if len(servers) == 0 {
 		return nil, fmt.Errorf("no settings for subscription page")
 	}
@@ -302,30 +345,33 @@ func Page(u model.User, servers []Server, billing Billing, lang i18n.Lang) ([]by
 	}
 	theme := branding.ParseTheme(set.PanelTheme)
 	data := pageData{
-		L:           text(lang),
-		Name:        u.Name,
-		BrandName:   brandName,
-		Brand:       theme.Accent,
-		BrandDark:   branding.Darken(theme.Accent, 0.16),
-		AccentFg:    branding.Fg(theme.Accent, theme.Surface),
-		SuccessFg:   branding.Fg("#059669", theme.Surface),
-		WarningFg:   branding.Fg("#ea580c", theme.Surface),
-		DangerFg:    branding.Fg("#dc2626", theme.Surface),
-		Ink:         theme.Text,
-		Muted:       theme.Muted,
-		Bg:          theme.Bg,
-		Surface:     theme.Surface,
-		IsDefault:   isDefault,
-		SubURL:      subURL,
-		Links:       protoLinks,
-		DeepLinks:   DeepLinks(subURL, lang),
-		StatusLabel: statusLabel,
-		StatusClass: statusClass,
-		Used:        fmtBytes(used),
-		Limit:       "∞",
-		Expire:      i18n.T(lang, "sub.never"),
-		Online:      u.LastSeen > 0 && time.Now().Unix()-u.LastSeen < 120,
-		Billing:     billing,
+		L:            text(lang),
+		Name:         u.Name,
+		BrandName:    brandName,
+		Brand:        theme.Accent,
+		BrandDark:    branding.Darken(theme.Accent, 0.16),
+		AccentFg:     branding.Fg(theme.Accent, theme.Surface),
+		SuccessFg:    branding.Fg("#059669", theme.Surface),
+		WarningFg:    branding.Fg("#ea580c", theme.Surface),
+		DangerFg:     branding.Fg("#dc2626", theme.Surface),
+		Ink:          theme.Text,
+		Muted:        theme.Muted,
+		Bg:           theme.Bg,
+		Surface:      theme.Surface,
+		IsDefault:    isDefault,
+		SubURL:       subURL,
+		Links:        protoLinks,
+		DeepLinks:    DeepLinks(subURL, lang),
+		StatusLabel:  statusLabel,
+		StatusClass:  statusClass,
+		Used:         fmtBytes(used),
+		Limit:        "∞",
+		Expire:       i18n.T(lang, "sub.never"),
+		Online:       u.LastSeen > 0 && time.Now().Unix()-u.LastSeen < 120,
+		Billing:      billing,
+		Devices:      devices,
+		ShowConfigs:  set.SubShowConfigs,
+		ShowDownload: showDownload,
 	}
 	if u.DataLimit > 0 {
 		data.HasLimit = true
@@ -401,7 +447,17 @@ func fmtBytes(n int64) string {
 	return fmt.Sprintf("%.0f %s", v, u[i])
 }
 
+// RelTime renders an age in seconds as "3 h ago" in the reader's language. Exported
+// because the server builds the device rows (it holds the store) while the wording
+// belongs to the page.
+func RelTime(sec int64, lang i18n.Lang) string { return relTime(sec, lang) }
+
 func relTime(sec int64, lang i18n.Lang) string {
+	// A sighting stamped in the future — a device whose clock ran ahead, or a host
+	// whose clock was corrected backwards — would otherwise render as "-3 min ago".
+	if sec < 0 {
+		sec = 0
+	}
 	switch {
 	case sec < 3600:
 		return i18n.T(lang, "sub.minutesAgo", sec/60)

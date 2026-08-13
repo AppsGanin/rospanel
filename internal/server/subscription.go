@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -66,6 +67,12 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			return
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
+		// Device binding is checked here and not on the page: the page is a browser
+		// looking at an account, while this is an install asking for credentials — the
+		// thing the cap is about. A refusal ends the request.
+		if !rt.admitDevice(w, r, *u, set) {
+			return
+		}
 		// allServers spans the local server plus each enabled, connected node, so the
 		// payload carries one entry per protocol × server (single-server = local only).
 		allServers := rt.subServers(set, u.ID)
@@ -161,6 +168,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 
 	case "order":
 		rt.handleSubOrder(w, r, *u)
+
+	case "devices/unbind":
+		rt.handleSubDeviceUnbind(w, r, *u, set)
 
 	default:
 		// /app/<n> — deep-link hand-off page (opened in the external browser from the
@@ -395,7 +405,11 @@ func isBrowser(r *http.Request) bool {
 func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, lang i18n.Lang) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
-	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set, lang), lang)
+	// A required HWID means the browser cannot fetch the machine payload — so the
+	// page must not offer a download button that answers 403 to its own owner.
+	showDownload := !(set.HWIDEnabled && set.HWIDRequire)
+	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set, lang),
+		rt.buildDevices(u, set, lang), showDownload, lang)
 	if err != nil {
 		return err
 	}
@@ -425,6 +439,140 @@ func (rt *Router) telegramSupportURL(ctx context.Context, set *model.Settings, u
 		return telegram.UserBotLink(bot)
 	}
 	return telegram.UserDeepLink(bot, code)
+}
+
+// buildDevices assembles the page's device block. Empty (Show false) unless device
+// binding is on — with the feature off the rows are meaningless, and a user who
+// never had a cap has no reason to be shown a device roster.
+func (rt *Router) buildDevices(u model.User, set *model.Settings, lang i18n.Lang) sub.Devices {
+	if !set.HWIDEnabled {
+		return sub.Devices{}
+	}
+	list, err := rt.mgr.UserDevices(u.ID)
+	if err != nil {
+		// The page is worth more than this block: render without it rather than fail
+		// the whole request over a roster we couldn't read.
+		log.Printf("sub: device list for user %d: %v", u.ID, err)
+		return sub.Devices{}
+	}
+	capacity := set.DeviceCap(u)
+	d := sub.Devices{
+		Show:       true,
+		Count:      len(list),
+		Limit:      capacity,
+		UnbindPath: sub.URL(set, u.SubToken) + "/devices/unbind",
+		CountText:  strconv.Itoa(len(list)),
+	}
+	if capacity > 0 {
+		d.CountText = fmt.Sprintf("%d / %d", len(list), capacity)
+	}
+	now := time.Now().Unix()
+	for _, dev := range list {
+		d.List = append(d.List, sub.DeviceRow{
+			HWID:     dev.HWID,
+			Title:    subDeviceTitle(dev),
+			Sub:      subDeviceSub(dev),
+			LastSeen: sub.RelTime(now-dev.LastSeen, lang),
+		})
+	}
+	return d
+}
+
+// subDeviceTitle names a device the way its owner would recognise it: the model the
+// client reported, else the platform, else the raw id (which is all a minimal client
+// sends).
+func subDeviceTitle(d model.Device) string {
+	switch {
+	case d.Model != "":
+		return d.Model
+	case d.OS != "":
+		return d.OS
+	default:
+		return d.HWID
+	}
+}
+
+// subDeviceSub is the second line: platform and version, skipping whatever the
+// client didn't send and never repeating the title.
+func subDeviceSub(d model.Device) string {
+	parts := make([]string, 0, 2)
+	if d.OS != "" && d.OS != subDeviceTitle(d) {
+		parts = append(parts, d.OS)
+	}
+	if d.OSVersion != "" {
+		parts = append(parts, d.OSVersion)
+	}
+	return strings.Join(parts, " ")
+}
+
+// handleSubDeviceUnbind releases one of the caller's own devices. The sub token is
+// the authentication: it names exactly one account, and the handler only ever
+// touches that account's rows.
+func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
+	if r.Method != http.MethodPost {
+		rt.decoy.ServeHTTP(w, r)
+		return
+	}
+	if !set.HWIDEnabled {
+		// Nothing to unbind while the feature is off, and answering anything else
+		// would describe the panel's configuration to whoever holds the link.
+		writeErrCode(w, http.StatusNotFound, "err.deviceNotFound", "устройство не найдено")
+		return
+	}
+	var req struct {
+		HWID string `json:"hwid"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	hwid := model.CleanHWID(req.HWID)
+	if hwid == "" {
+		writeErrCode(w, http.StatusBadRequest, "err.deviceHWIDEmpty", "не указано устройство")
+		return
+	}
+	ok, err := rt.mgr.UnbindDevice(subActorCtx(r, u), u.ID, hwid)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if !ok {
+		writeErrCode(w, http.StatusNotFound, "err.deviceNotFound", "устройство не найдено")
+		return
+	}
+	writeOK(w)
+}
+
+// admitDevice runs the HWID device cap for one subscription fetch. It returns true
+// when the payload should be served; on a refusal it has already written the reply.
+//
+// The reply is a 403 with a human sentence rather than the decoy: the caller holds a
+// valid token, so there is nothing left to hide from them, and a client that shows
+// the body (or an operator reading a support screenshot) gets told which limit was
+// hit instead of "update failed".
+func (rt *Router) admitDevice(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) bool {
+	d := model.Device{
+		HWID:      model.CleanHWID(r.Header.Get(model.HeaderHWID)),
+		OS:        model.CleanDeviceField(r.Header.Get(model.HeaderDeviceOS)),
+		OSVersion: model.CleanDeviceField(r.Header.Get(model.HeaderOSVersion)),
+		Model:     model.CleanDeviceField(r.Header.Get(model.HeaderDeviceModel)),
+		App:       model.CleanDeviceApp(r.Header.Get("User-Agent")),
+		IP:        clientIP(r),
+		LastSeen:  time.Now().Unix(),
+	}
+	v := rt.mgr.AdmitDevice(subActorCtx(r, u), u, set, d)
+	if v.Allow {
+		return true
+	}
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	msg := i18n.T(lang, "sub.deviceRequired")
+	if d.HWID != "" {
+		msg = fmt.Sprintf(i18n.T(lang, "sub.deviceLimitReached"), v.Count, v.Cap)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(msg))
+	return false
 }
 
 // setSubHeaders adds the standard subscription headers every client reads:
