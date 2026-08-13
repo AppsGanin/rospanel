@@ -413,6 +413,27 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	return nil
 }
 
+// ApplyRawIfChanged writes and applies data only when it differs from the config
+// already on disk, reporting whether it did.
+//
+// This exists because the node's desired state carries more than the Xray config —
+// certificates, hop ranges, the connection guard, per-user speed caps — and ANY
+// change to it re-runs the whole apply. Routing an unchanged config through
+// ApplyRaw restarts Xray, which drops every live connection on that node: changing
+// one user's speed limit would bounce the whole fleet.
+//
+// The "config unchanged" shortcut is conditional on Xray actually running. A stopped
+// process with a matching config on disk still needs starting, and skipping that
+// would leave the node dark until something else happened to reload it.
+func (s *Supervisor) ApplyRawIfChanged(data []byte) (bool, error) {
+	if s.Running() {
+		if cur, err := os.ReadFile(s.configPath); err == nil && bytes.Equal(cur, data) {
+			return false, nil
+		}
+	}
+	return true, s.ApplyRaw(data)
+}
+
 // ApplyRaw is Apply for a config that is already marshaled JSON — used by the node
 // agent, which receives the exact config the panel generated and applies it
 // verbatim (after substituting its own cert paths) rather than round-tripping it

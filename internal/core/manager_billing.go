@@ -72,9 +72,13 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	// A failed read counts as moved: the store re-syncs the plan's members either way,
 	// so guessing "unchanged" here would leave that with no config to apply it.
 	regroup := false
+	// Whether the speed cap moved decides if the plan's existing subscribers have to
+	// be re-stamped — see below.
+	respeed := false
 	if p.ID > 0 {
 		prev, err := m.store.GetTariffPlan(p.ID)
 		regroup = err != nil || prev == nil || !sameIDs(prev.GroupIDs, p.GroupIDs)
+		respeed = err != nil || prev == nil || prev.SpeedLimit != p.SpeedLimit
 	}
 	if err := m.store.SaveTariffPlan(p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -86,6 +90,26 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 		// The store moved everyone already on the plan into (or out of) those groups;
 		// the config has to be regenerated for that to mean anything.
 		m.applyAccessChange()
+	}
+	if respeed {
+		// Push the new cap onto everyone already on this plan.
+		//
+		// The other plan limits (quota, expiry, devices) are deliberately NOT
+		// retroactive: rewriting them mid-cycle resets counters and moves the date a
+		// subscriber paid for, so they land only when the plan is (re)assigned. A speed
+		// cap has none of that baggage — it is a policy value with no side effects —
+		// and leaving it non-retroactive is what makes an operator edit a tariff, watch
+		// nothing happen, and report the feature as broken.
+		n, err := m.store.SetPlanUsersSpeedLimit(p.ID, p.SpeedLimit)
+		if err != nil {
+			logErr("billing: applying the plan's speed limit to its users failed",
+				"plan", p.ID, "err", err)
+		} else if n > 0 {
+			logInfo("billing: plan speed limit applied to existing users",
+				"plan", p.ID, "users", n, "kbps", p.SpeedLimit)
+			go m.ApplyShaping()
+			m.TriggerUserSync() // nodes shape from the limits in their sync payload
+		}
 	}
 	return nil
 }
@@ -439,6 +463,7 @@ func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset 
 		DataLimit:   plan.DataLimit,
 		ExpireAt:    expireAt,
 		DeviceLimit: plan.DeviceLimit,
+		SpeedLimit:  plan.SpeedLimit,
 		ResetPeriod: period,
 		ResetAnchor: now,
 		PlanID:      plan.ID,

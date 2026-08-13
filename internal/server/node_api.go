@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -175,9 +176,16 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, err := rt.mgr.NodeDesiredState(fresh)
-	if err == nil && state.Hash != req.ConfigHash {
+	if err != nil {
+		// Not silent: a desired state that cannot be built means this node stops
+		// receiving config for as long as the failure lasts, and nothing else in the
+		// panel would say so.
+		slog.Error("node: cannot build desired state", "node", fresh.ID, "err", err)
+	} else if state.Hash != req.ConfigHash {
 		out.Changed = true
 		out.State = state
+		slog.Info("node: pushing new state", "node", fresh.ID,
+			"hash", state.Hash[:12], "speed_limits", len(state.Meta.SpeedLimits))
 	}
 	rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, out)
 }

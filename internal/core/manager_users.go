@@ -367,6 +367,14 @@ func (m *Manager) RotateSubToken(ctx context.Context, id int64) (*model.User, er
 	if err != nil {
 		return nil, err
 	}
+	// The bound devices belonged to the token that was just revoked. Rotation is what
+	// an operator does when a link has leaked, so keeping the old installs bound would
+	// leave the leak holding the slots and lock the owner out of their own cap.
+	if n, err := m.store.DeleteDevices(id); err != nil {
+		logErr("devices: release on rotate failed", "user", id, "err", err)
+	} else if n > 0 {
+		m.audit(ctx, id, model.EventDeviceUnbound, map[string]any{"devices": n, "reason": "sub_rotated"})
+	}
 	logInfo("sub token rotated", "id", id)
 	m.TriggerUserSync()
 	m.audit(ctx, id, model.EventSubRotated, nil)
