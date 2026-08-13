@@ -704,25 +704,72 @@
       var SUB_URL = "{{.SubURL}}";
       // Telegram Mini App context: custom app schemes (happ://, v2rayng:// …) can't
       // be launched from inside Telegram's webview, so we detect it and route links
-      // to the external browser via WebApp.openLink instead.
+      // to the external browser instead.
       var TG = (window.Telegram && window.Telegram.WebApp) || null;
-      var INTG = !!(TG && TG.platform && TG.platform !== "unknown");
-      if (INTG) {
+      // Telegram says what it is in two ways that need no SDK: it appends tgWebApp*
+      // to the launch URL, and its mobile webviews inject a proxy object. Both are
+      // checked because the SDK may simply not be there — /tg.js is proxied from
+      // telegram.org and that fetch can fail, which is the entire reason it is
+      // proxied. Deciding on the SDK alone meant that a failed fetch made the page
+      // conclude it was an ordinary browser, and every "open in app" button went dead
+      // in the one place they cannot work by themselves.
+      var TGPROXY = !!(window.TelegramWebviewProxy && window.TelegramWebviewProxy.postEvent);
+      var TGLAUNCH = /[?&#]tgWebApp(Data|Platform|Version)=/.test(location.hash + location.search);
+      var INTG = !!(TG && TG.platform && TG.platform !== "unknown") || TGPROXY || TGLAUNCH;
+
+      // The few SDK calls this page makes, spoken to Telegram's host directly when
+      // the SDK is absent — the same messages telegram-web-app.js posts. Returns
+      // false when nothing is listening, so every caller can fall back to plain
+      // navigation rather than swallowing the tap.
+      function tgEvent(type, data) {
+        data = data || {};
         try {
-          TG.ready();
-          TG.expand();
+          if (TGPROXY) {
+            window.TelegramWebviewProxy.postEvent(type, JSON.stringify(data));
+            return true;
+          }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(
+              JSON.stringify({ eventType: type, eventData: data }),
+              "https://web.telegram.org"
+            );
+            return true;
+          }
         } catch (e) {}
+        return false;
       }
-      // Open a URL the right way: in Telegram use openLink/openTelegramLink (external
-      // browser); in a normal browser just navigate.
-      function openExternal(url) {
-        if (INTG) {
+      // Open a URL outside the webview, with the SDK if we have it and without if we
+      // don't. Reports whether anything took the request.
+      function tgOpen(url) {
+        if (TG) {
           try {
             if (url.indexOf("https://t.me/") === 0) TG.openTelegramLink(url);
             else TG.openLink(url);
-            return;
+            return true;
           } catch (e) {}
         }
+        if (url.indexOf("https://t.me/") === 0) {
+          var a = document.createElement("a");
+          a.href = url;
+          return tgEvent("web_app_open_tg_link", { path_full: a.pathname + a.search });
+        }
+        return tgEvent("web_app_open_link", { url: url });
+      }
+      if (INTG) {
+        if (TG) {
+          try {
+            TG.ready();
+            TG.expand();
+          } catch (e) {}
+        } else {
+          tgEvent("web_app_ready");
+          tgEvent("web_app_expand");
+        }
+      }
+      // Open a URL the right way: in Telegram hand it to the host (external browser);
+      // in a normal browser just navigate.
+      function openExternal(url) {
+        if (INTG && tgOpen(url)) return;
         window.location = url;
       }
       // Always show the app-picker modal in place (works inside Telegram too).
@@ -737,9 +784,11 @@
         if (!INTG) return true;
         e.preventDefault();
         document.getElementById("apps").classList.remove("show");
-        try {
-          TG.openLink(SUB_URL + "/app/" + e.currentTarget.getAttribute("data-i"));
-        } catch (_) {}
+        // Navigating there ourselves is the last resort rather than the plan: inside
+        // the webview the bounce page can't reach the scheme either. It is still
+        // better than a button that does nothing.
+        var bounce = SUB_URL + "/app/" + e.currentTarget.getAttribute("data-i");
+        if (!tgOpen(bounce)) window.location = bounce;
         return false;
       }
       function copy(t, el) {
