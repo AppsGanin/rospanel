@@ -90,6 +90,14 @@ func (rt *Router) apiHandler() http.Handler {
 		rt.apiRoutes = append(rt.apiRoutes, pattern)
 		mux.HandleFunc(pattern, h)
 	}
+	// The MCP endpoint authenticates from the path (see api_v1_mcp.go), so it is
+	// mounted before the bearer-authenticated catch-all. Deliberately NOT recorded in
+	// apiRoutes: it is a JSON-RPC transport rather than a REST resource, so there is
+	// nothing for the OpenAPI document to describe — and keeping it out of that
+	// document is also what stops the generated tool list from handing an assistant a
+	// tool that calls the tool server.
+	mux.HandleFunc(mcpPathPrefix+"{key}", rt.handleMCP)
+	mux.HandleFunc(mcpPathPrefix+"{key}/write", rt.handleMCP)
 	mux.Handle("/", rt.apiAuth(rt.apiMux()))
 	return mux
 }
