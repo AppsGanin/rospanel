@@ -307,6 +307,11 @@ func runServer(dataDir string) {
 	// anything is what keeps an ordinary restart from paging the operator.
 	sup.Stop()
 
+	// Drop the per-user speed caps. They live in the kernel's qdisc tree, which
+	// outlives this process until reboot — a panel that was stopped must not keep
+	// throttling anyone, least of all after the operator uninstalled it.
+	mgr.ResetShaping()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
@@ -421,8 +426,10 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
+		mgr.PurgeIdleDevices()  // bound devices gone quiet past their TTL
 		mgr.PurgeOldAbuse()     // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()   // per-day traffic history past a year
+		mgr.PurgeOldUptime()    // status-page history past its window
 		mgr.PurgeExpiredUsers() // no-op unless the operator set a grace period
 		mgr.PurgeDeletedNodes() // reclaim node tombstones past their grace window
 	}

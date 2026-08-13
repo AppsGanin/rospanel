@@ -77,6 +77,14 @@ func (m *Manager) nodeWatchLoop() {
 	for {
 		m.SweepNodeAlerts()
 		<-t.C
+		// The status page's history rides this tick: it needs the same "is each server
+		// up" question the sweep just answered, on the same cadence, and a second timer
+		// asking it again would only add writes.
+		//
+		// After the wait, not before it: at boot Xray has not started yet, so an
+		// immediate sample records an outage on every panel restart — the status page
+		// would show a red bar for the operator updating it.
+		m.SampleUptime()
 	}
 }
 

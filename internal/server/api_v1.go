@@ -182,6 +182,8 @@ func (rt *Router) apiMux() http.Handler {
 	hf("GET /v1/admin-audit", rt.apiAdminAudit)
 	hf("GET /v1/admin-audit/catalog", rt.apiAdminAuditCatalog)
 
+	// Prometheus scrape target. Text, not the JSON envelope — see metrics.go.
+	hf("GET /v1/metrics", rt.apiMetrics)
 	hf("GET /v1/summary", rt.apiSummary)
 	hf("GET /v1/system", rt.apiSystem)
 	hf("GET /v1/health/report", rt.apiHealthReport)

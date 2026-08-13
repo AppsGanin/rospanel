@@ -13,6 +13,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/decoy"
+	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -190,6 +191,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		DecoyTemplate:     n.DecoyTemplate,
 		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence
 		XrayPinnedVersion: xray.PinnedVersion,
+		SpeedLimits:       m.SpeedLimits(),
 	}
 	if ns.OperaEnabled {
 		meta.OperaEnabled = true
@@ -342,6 +344,20 @@ type NodeView struct {
 	GeoRefreshHours int   `json:"geo_refresh_hours"`
 	TrafficUp       int64 `json:"traffic_up"`   // today, this node
 	TrafficDown     int64 `json:"traffic_down"` // today, this node
+
+	// The machine this server runs on, as it last reported (the master fills these
+	// from its own sampler). HasHostStats is false when nothing has been reported
+	// yet — a node that never checked in, or an agent older than the fields — and the
+	// rest must then be read as unknown rather than as an idle machine.
+	HasHostStats bool    `json:"has_host_stats"`
+	CPUPercent   float64 `json:"cpu_percent"`
+	MemUsed      int64   `json:"mem_used"`
+	MemTotal     int64   `json:"mem_total"`
+	DiskUsed     int64   `json:"disk_used"`
+	DiskTotal    int64   `json:"disk_total"`
+	HostUptime   int64   `json:"host_uptime"`
+	NetUp        int64   `json:"net_up"`
+	NetDown      int64   `json:"net_down"`
 	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
 	// so the per-node routing+DNS editor can prefill and show inherit vs custom. For
 	// the local server (node 0) these carry the master's own routing/DNS so the same
@@ -428,6 +444,15 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
 	}
+	// The master samples its own machine directly rather than reporting to itself.
+	if m.sys != nil {
+		st := m.sys.Read()
+		local.HasHostStats = true
+		local.CPUPercent, local.NetUp, local.NetDown = st.CPUPercent, st.NetUp, st.NetDown
+		local.MemUsed, local.MemTotal = st.MemUsed, st.MemTotal
+		local.DiskUsed, local.DiskTotal = st.DiskUsed, st.DiskTotal
+		local.HostUptime = st.HostUptime
+	}
 	views = append(views, local)
 
 	for i := range nodes {
@@ -468,6 +493,14 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
+		}
+		// What the node last said about its own machine. Absent until it checks in.
+		if h, ok := m.NodeHostStats(n.ID); ok {
+			v.HasHostStats = true
+			v.CPUPercent, v.NetUp, v.NetDown = h.CPUPercent, h.NetUp, h.NetDown
+			v.MemUsed, v.MemTotal = h.MemUsed, h.MemTotal
+			v.DiskUsed, v.DiskTotal = h.DiskUsed, h.DiskTotal
+			v.HostUptime = h.HostUptime
 		}
 		views = append(views, v)
 	}
@@ -1068,16 +1101,50 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 // stops on its own when the operator navigates away).
 const nodeLogsWantWindow = 30 * time.Second
 
-// RequestNodeLogs marks that an operator is viewing a node's logs and wakes it, so
-// the node includes its log tail on the next sync. Returns the currently-stored
-// tail (may be from a previous fetch) for an immediate render.
+// nodeLogsWait is how long RequestNodeLogs waits for a woken node to deliver a
+// fresh tail before answering with whatever it has. Long enough for a round trip to
+// a node on another continent, short enough that a caller never wonders whether the
+// request hung.
+const nodeLogsWait = 3 * time.Second
+
+// RequestNodeLogs returns a server's recent log tail.
+//
+// For the panel's own machine that is simply the in-memory ring every log line goes
+// through. For a node it is a request: the panel marks that someone is watching,
+// wakes the node's held poll, and the tail arrives on the sync that follows.
+//
+// It waits briefly for that to happen rather than answering empty and expecting the
+// caller to ask again. The panel's own log viewer polls, so it never noticed; every
+// other caller — an integration, an assistant asking once "why did this node restart"
+// — got `{"lines":[],"at":0}` and no hint that asking twice was the protocol.
 func (m *Manager) RequestNodeLogs(id int64) ([]string, int64) {
+	if id == model.LocalNodeID {
+		// The master never syncs with itself; its logs are right here.
+		return logbuf.Default.Tail(), time.Now().Unix()
+	}
+
 	m.nodeLogsMu.Lock()
 	m.nodeLogsWanted[id] = time.Now().Unix()
 	e := m.nodeLogs[id]
 	m.nodeLogsMu.Unlock()
 	m.nodes.wakeOne(id) // return the held poll promptly so the tail comes back fast
-	return e.lines, e.at
+
+	deadline := time.Now().Add(nodeLogsWait)
+	for {
+		m.nodeLogsMu.Lock()
+		fresh := m.nodeLogs[id]
+		m.nodeLogsMu.Unlock()
+		// Newer than what we started with ⇒ the woken node answered.
+		if fresh.at > e.at {
+			return fresh.lines, fresh.at
+		}
+		if time.Now().After(deadline) {
+			// Whatever was already stored: a node that is offline or slow still gets
+			// its last known tail rendered, which beats an empty box.
+			return e.lines, e.at
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // WantNodeLogs reports (and is used by the sync handler to set WantLogs) whether an

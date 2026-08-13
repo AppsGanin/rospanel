@@ -50,12 +50,16 @@ type Router struct {
 
 	mu        sync.RWMutex
 	secret    string
-	subPath   string       // public subscription URL prefix (/<subPath>/<token>)
-	paySecret string       // random segment for the public payment-webhook path
-	apiPath   string       // external-API URL prefix (/<apiPath>/v1/...); "" = disabled
-	nodePath  string       // node sync API URL prefix (/<nodePath>/v1/{join,sync}); "" = no nodes
-	spaIndex  []byte       // index.html with <base href> injected for the secret
-	decoy     http.Handler // current decoy template handler
+	subPath   string // public subscription URL prefix (/<subPath>/<token>)
+	paySecret string // random segment for the public payment-webhook path
+	apiPath   string // external-API URL prefix (/<apiPath>/v1/...); "" = disabled
+	nodePath  string // node sync API URL prefix (/<nodePath>/v1/{join,sync}); "" = no nodes
+	// statusPath is the public status page's segment, "" while the page is off. Held
+	// as a routing decision rather than read from settings per request: an unrouted
+	// path costs nothing and the disabled page is then genuinely absent.
+	statusPath string
+	spaIndex   []byte       // index.html with <base href> injected for the secret
+	decoy      http.Handler // current decoy template handler
 }
 
 // New builds the masquerade router for the given secret path and decoy template.
@@ -74,7 +78,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	}
 
 	subPath := "sub"
-	var paySecret, apiPath, nodePath string
+	var paySecret, apiPath, nodePath, statusPath string
 	if set, err := mgr.Store().GetSettings(); err == nil {
 		if set.SubPath != "" {
 			subPath = set.SubPath
@@ -82,6 +86,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		paySecret = set.PaymentWebhookSecret
 		apiPath = set.APIPath
 		nodePath = set.NodeAPIPath
+		statusPath = statusPathOf(set.StatusEnabled, set.StatusPathOr())
 	}
 
 	rt := &Router{
@@ -100,6 +105,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		paySecret:  paySecret,
 		apiPath:    apiPath,
 		nodePath:   nodePath,
+		statusPath: statusPath,
 		spaIndex:   injectBase(indexRaw, "/"+secret+"/"),
 		decoy:      d,
 	}
@@ -147,6 +153,14 @@ func (rt *Router) setPaySecret(s string) {
 	rt.paySecret = s
 }
 
+// setStatusPath swaps the live status-page segment ("" takes the page off the
+// router entirely).
+func (rt *Router) setStatusPath(s string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.statusPath = s
+}
+
 // setAPIPath swaps the live external-API URL segment ("" disables the surface).
 func (rt *Router) setAPIPath(s string) {
 	rt.mu.Lock()
@@ -191,6 +205,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rt.mu.RLock()
 	secret, decoy, subPath, paySecret, apiPath, nodePath := rt.secret, rt.decoy, rt.subPath, rt.paySecret, rt.apiPath, rt.nodePath
+	statusPath := rt.statusPath
 	rt.mu.RUnlock()
 
 	// External REST API, mounted under its own stable, unguessable segment (kept
@@ -275,6 +290,24 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if secret != "" && subtle.ConstantTimeCompare([]byte(seg), []byte(secret)) == 1 {
 		r.URL.Path = rest
 		rt.panel.ServeHTTP(w, r)
+		return
+	}
+
+	// Public status page. The only surface that answers a caller holding nothing at
+	// all, which is why it exists only when an operator switched it on — and why it
+	// shows liveness and nothing else (see internal/status).
+	//
+	// Checked LAST of the public surfaces on purpose. Its path is operator-typed, and
+	// every other segment here is either a secret or something integrations depend on;
+	// a status path that happened to equal one of them must lose, not shadow it. The
+	// save handler already refuses the collisions it can see, but the other paths can
+	// change afterwards and this ordering is what makes that harmless.
+	if statusPath != "" && seg == statusPath {
+		if !rt.subLimiter.allow(clientIP(r)) {
+			decoy.ServeHTTP(w, r)
+			return
+		}
+		handleStatus(rt, w, r, rest)
 		return
 	}
 

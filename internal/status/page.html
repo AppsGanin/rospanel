@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- A status page is for customers, not for search engines: it names the
+         service and its servers, and there is no reason for that to be indexed. -->
+    <meta name="robots" content="noindex,nofollow" />
+    <title>{{.Title}}</title>
+    <!-- The operator's own mark. The page body carries no branding — a status page is
+         read for its state, not its letterhead — but a tab left open all day should
+         still say whose service it is. -->
+    {{if .LogoURL}}<link rel="icon" href="{{.LogoURL}}" />{{end}}
+    <style>
+      /* ── Normalize ────────────────────────────────────────────────────────────
+         Inlined rather than linked: this page must not fetch anything from another
+         host (a blocked CDN would hold up paint for exactly the users this panel
+         serves), and a full normalize.css is mostly rules for elements a status page
+         does not have. What is kept is the part that actually differs between
+         browsers here: box sizing, the default body margin, font inheritance in
+         form/heading elements, and image behaviour. */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        -moz-tab-size: 4;
+        tab-size: 4;
+      }
+      body,
+      h1,
+      p,
+      figure {
+        margin: 0;
+      }
+      h1 {
+        font-size: inherit;
+        font-weight: inherit;
+      }
+      img,
+      svg {
+        display: block;
+        max-width: 100%;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      /* Respect a reader who asked for less motion; the page has no animation today,
+         but a bar strip that gains one later should not surprise them. */
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      /* ── Page ─────────────────────────────────────────────────────────────── */
+      :root {
+        --brand: {{.Brand}};
+        --brand-dark: {{.BrandDark}};
+        --ink: {{.Ink}};
+        --muted: {{.Muted}};
+        --bg: {{.Bg}};
+        --surface: {{.Surface}};
+        --ok: {{.SuccessFg}};
+        --warn: {{.WarningFg}};
+        --bad: {{.DangerFg}};
+        --line: color-mix(in srgb, var(--ink) 12%, transparent);
+      }
+      body {
+        padding: 32px 16px 48px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      .wrap { max-width: 720px; margin: 0 auto; }
+      .muted { color: var(--muted); }
+      .banner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+      .dot.ok { background: var(--ok); }
+      .dot.bad { background: var(--bad); }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .name { font-weight: 700; overflow-wrap: anywhere; }
+      .state { font-size: 0.85rem; font-weight: 700; }
+      .state.ok { color: var(--ok); }
+      .state.bad { color: var(--bad); }
+      /* The strip always fits its card — it must never scroll.
+         It used to: 90 bars at a 4px floor overflowed a phone, and since today is the
+         RIGHTMOST bar, the one day anybody opens a status page to look at was the one
+         off screen. Bars shrink instead (flex-basis 0, no minimum): on a narrow screen
+         they become a texture, which still answers "was it green all month" at a
+         glance, and the exact day is a tap-and-hold away via the tooltip. */
+      .bars {
+        display: flex;
+        gap: 2px;
+      }
+      .bar {
+        flex: 1 1 0;
+        min-width: 0;
+        height: 30px;
+        border-radius: 2px;
+        background: var(--line);
+      }
+      @media (max-width: 640px) {
+        .bars {
+          gap: 1px;
+        }
+        .bar {
+          border-radius: 1px;
+        }
+      }
+      .bar.up { background: var(--ok); }
+      .bar.partial { background: var(--warn); }
+      .bar.down { background: var(--bad); }
+      .bar.none { background: var(--line); }
+      /* Today, set apart so the eye lands on it: it is the reason the page was
+         opened, and in a 90-column strip the last bar is otherwise just another bar.
+         A gap works at every width; the ring is desktop-only, because around a
+         2px-wide bar on a phone it would be a blob covering its neighbour. */
+      .bar:last-child {
+        margin-left: 5px;
+      }
+      @media (min-width: 641px) {
+        .bar:last-child {
+          box-shadow:
+            0 0 0 1.5px var(--surface),
+            0 0 0 3px color-mix(in srgb, var(--ink) 30%, transparent);
+        }
+      }
+      .legend {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.78rem;
+        margin-top: 6px;
+      }
+      footer { margin-top: 24px; font-size: 0.8rem; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="banner">
+        <span class="dot {{if .HeadlineOK}}ok{{else}}bad{{end}}"></span>
+        <span>{{if .HeadlineOK}}{{.L.AllUp}}{{else}}{{.L.SomeDown}}{{end}}</span>
+      </div>
+
+      {{range .Servers}}
+      <div class="card">
+        <div class="row">
+          <span class="name">{{.Name}}</span>
+          <span class="state {{if .Up}}ok{{else}}bad{{end}}"
+            >{{if .Up}}{{$.L.Up}}{{else}}{{$.L.Down}}{{end}}</span
+          >
+        </div>
+        <div class="bars">
+          {{range .Days}}<span class="bar {{.Class}}" title="{{.Title}}"></span>{{end}}
+        </div>
+        <div class="legend muted">
+          <span>{{$.L.Days}}</span>
+          <span>{{if .Uptime}}{{$.L.Uptime}} {{.Uptime}}{{else}}{{$.L.NoHistory}}{{end}}</span>
+        </div>
+      </div>
+      {{end}}
+
+      <footer class="muted">{{.L.Updated}} {{.UpdatedAt}}</footer>
+    </div>
+  </body>
+</html>

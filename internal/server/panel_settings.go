@@ -63,6 +63,8 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_routing_mihomo":   set.SubRoutingMihomo,
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
+		"sub_show_configs":     set.SubShowConfigs,
+		"hwid":                 hwidSettingsView(set),
 		"user_autodelete_days": set.UserAutoDeleteDays,
 		"xray_dns":             set.XrayDNS,
 		"warp_enabled":         set.WarpEnabled,
@@ -270,6 +272,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		RoutingMihomo  string `json:"sub_routing_mihomo"`
 		UpdateInterval int    `json:"sub_update_interval"`
 		Announce       string `json:"sub_announce"`
+		ShowConfigs    bool   `json:"sub_show_configs"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -289,6 +292,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubRoutingMihomo:  strings.TrimSpace(req.RoutingMihomo),
 		SubUpdateInterval: req.UpdateInterval,
 		SubAnnounce:       req.Announce,
+		SubShowConfigs:    req.ShowConfigs,
 	})
 	if err != nil {
 		writeManagerErr(w, err)
