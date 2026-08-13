@@ -286,12 +286,42 @@
         font-size: 1.02rem;
         overflow-wrap: anywhere;
       }
-      .plan {
+      .plan,
+      .dev {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
         padding: 12px 0;
+      }
+      .dev + .dev {
+        border-top: 1px solid var(--line);
+      }
+      .dev-info {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .dev-name {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .dev-sub {
+        font-size: 0.85rem;
+        margin-top: 2px;
+      }
+      .dev-id {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        margin-top: 2px;
+        opacity: 0.75;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dev .btn {
+        width: auto;
+        flex: 0 0 auto;
+        margin: 0;
       }
       .plan + .plan {
         border-top: 1px solid var(--line);
@@ -547,6 +577,7 @@
         >
           {{.L.OpenInApp}}
         </button>
+        {{if .ShowDownload}}
         <a
           class="btn alt"
           href="{{.SubURL}}?format=clash&amp;dl=1"
@@ -554,8 +585,38 @@
         >
           {{.L.DownloadClash}}
         </a>
+        {{end}}
       </div>
 
+      {{if .Devices.Show}}
+      <div class="card" id="devices-card">
+        <div class="lbl" style="margin-bottom: 8px">
+          {{.L.Devices}} <span class="muted">{{.Devices.CountText}}</span>
+        </div>
+        {{range .Devices.List}}
+        <div class="dev" data-hwid="{{.HWID}}">
+          <div class="dev-info">
+            <div class="dev-name">{{.Title}}</div>
+            <div class="muted dev-sub">
+              {{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}
+            </div>
+            <!-- The id the client sent. Two identical phones look identical without
+                 it, and the person deciding which to remove needs to tell them
+                 apart — it is also what they would quote to support. -->
+            <div class="muted dev-id" title="{{.HWID}}">{{.HWID}}</div>
+          </div>
+          <button class="btn alt dev-del" onclick="unbindDevice(this)">
+            {{$.L.DeviceRemove}}
+          </button>
+        </div>
+        {{else}}
+        <p class="muted" style="margin: 0">{{.L.DevicesEmpty}}</p>
+        {{end}}
+        <p class="muted" style="margin: 10px 0 0">{{.L.DevicesHint}}</p>
+      </div>
+      {{end}}
+
+      {{if .ShowConfigs}}
       <div class="card">
         <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
         {{range .Links}}
@@ -568,6 +629,7 @@
         </details>
         {{end}}
       </div>
+      {{end}}
 
     <div
       id="apps"
@@ -688,6 +750,39 @@
             el.textContent = o;
           }, 1200);
         });
+      }
+      // Unbinding your own device. The row is identified by the id the client sent,
+      // which is opaque text — so it travels in the body rather than the URL. A
+      // success reloads: the count in the header and the free-slot arithmetic both
+      // change, and re-rendering is cheaper than patching them by hand.
+      var UNBIND_PATH = "{{.Devices.UnbindPath}}";
+      function unbindDevice(el) {
+        if (!confirm({{.L.DeviceConfirm}})) return;
+        var row = el.closest(".dev");
+        var hwid = row ? row.getAttribute("data-hwid") : "";
+        if (!hwid) return;
+        var old = el.textContent;
+        el.textContent = "…";
+        el.disabled = true;
+        fetch(UNBIND_PATH, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hwid: hwid }),
+        })
+          .then(function (r) {
+            if (r.ok) {
+              location.reload();
+            } else {
+              alert({{.L.DeviceFailed}});
+              el.textContent = old;
+              el.disabled = false;
+            }
+          })
+          .catch(function () {
+            alert({{.L.NetworkError}});
+            el.textContent = old;
+            el.disabled = false;
+          });
       }
       var PAY_PATH = "{{.Billing.PayPath}}";
       var CANCEL_PATH = "{{.Billing.CancelPath}}";

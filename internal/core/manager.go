@@ -152,6 +152,12 @@ type Manager struct {
 
 	guard *bruteGuard
 
+
+	// devNotice keeps a refused device quiet after its first report — a client that
+	// hit the device cap retries on its own schedule and would otherwise alert the
+	// operator on every retry (see manager_devices.go).
+	devNotice *deviceNotice
+
 	// connGuardWanted records whether the operator asked for the per-IP connection
 	// guard (ROSPANEL_CONNLIMIT != off). Needed to tell "off on purpose" apart from
 	// "on, but nftables silently refused it" in the health report — the second is a
@@ -245,6 +251,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		applied:          make(map[int64]struct{}),
 		tz:               time.Local,
 		guard:            newBruteGuard(),
+		devNotice:        newDeviceNotice(),
 		operaDir:         operaDir,
 		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:        make(chan webhookJob, webhookQueueSize),

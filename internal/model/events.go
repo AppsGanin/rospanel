@@ -35,6 +35,7 @@ const (
 	EventUserEnabled    = "user.enabled"
 	EventUserDisabled   = "user.disabled"
 	EventUserLimits     = "user.limits_changed"
+	EventSpeedLimit     = "user.speed_limit"    // per-user bandwidth cap changed
 	EventTrafficReset   = "user.traffic_reset"  // admin zeroed the counters
 	EventQuotaReset     = "user.quota_reset"    // the automatic period rollover did
 	EventResetPeriod    = "user.reset_period"   // autoreset period changed
@@ -42,6 +43,9 @@ const (
 	EventUserExpired    = "user.expired"        // system: subscription lapsed
 	EventUserLimited    = "user.limited"        // system: quota exhausted
 	EventDeviceLimited  = "user.device_limited" // system: too many devices
+	EventDeviceBound    = "user.device_bound"   // a client install claimed a device slot
+	EventDeviceRefused  = "user.device_refused" // system: a new device hit the device cap
+	EventDeviceUnbound  = "user.device_unbound" // a device was released (admin, or token rotation)
 	EventTelegramLinked = "user.telegram_linked"
 	EventTelegramUnlink = "user.telegram_unlinked"
 
@@ -67,6 +71,7 @@ var UserEventCatalog = []string{
 	EventUserEnabled,
 	EventUserDisabled,
 	EventUserLimits,
+	EventSpeedLimit,
 	EventTrafficReset,
 	EventQuotaReset,
 	EventResetPeriod,
@@ -74,6 +79,9 @@ var UserEventCatalog = []string{
 	EventUserExpired,
 	EventUserLimited,
 	EventDeviceLimited,
+	EventDeviceBound,
+	EventDeviceRefused,
+	EventDeviceUnbound,
 	EventTelegramLinked,
 	EventTelegramUnlink,
 	EventPlanChanged,
