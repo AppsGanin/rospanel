@@ -14,7 +14,7 @@ func TestWebhookCRUD(t *testing.T) {
 	}
 	defer st.Close()
 
-	h, err := st.CreateWebhook("https://example.com/hook", []string{model.WebhookUserCreated})
+	h, err := st.CreateWebhook("https://example.com/hook", []string{model.WebhookUserCreated}, true)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestWebhookCRUD(t *testing.T) {
 	}
 
 	// Empty events set ⇒ subscribed to everything.
-	all, err := st.CreateWebhook("https://example.com/all", nil)
+	all, err := st.CreateWebhook("https://example.com/all", nil, true)
 	if err != nil {
 		t.Fatalf("create all: %v", err)
 	}

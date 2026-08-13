@@ -23,15 +23,19 @@ func splitEvents(csv string) []string {
 
 // CreateWebhook stores a new endpoint, generating a random HMAC signing secret
 // (encrypted at rest) and returning the record with the plaintext secret.
-func (s *Store) CreateWebhook(url string, events []string) (*model.Webhook, error) {
+// CreateWebhook registers an endpoint. enabled is a parameter rather than a
+// constant because the API accepts one on create: it was hard-coded to 1 here, so
+// POST /v1/webhooks with {"enabled": false} answered 201 with a LIVE endpoint and
+// started delivering to something the caller had asked to stage.
+func (s *Store) CreateWebhook(url string, events []string, enabled bool) (*model.Webhook, error) {
 	secret, err := auth.RandomToken()
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().Unix()
 	res, err := s.db.Exec(
-		`INSERT INTO webhooks (url, secret, events, enabled, created_at) VALUES (?, ?, ?, 1, ?)`,
-		url, encField(secret), joinEvents(events), now,
+		`INSERT INTO webhooks (url, secret, events, enabled, created_at) VALUES (?, ?, ?, ?, ?)`,
+		url, encField(secret), joinEvents(events), boolToInt(enabled), now,
 	)
 	if err != nil {
 		return nil, err
@@ -39,7 +43,7 @@ func (s *Store) CreateWebhook(url string, events []string) (*model.Webhook, erro
 	id, _ := res.LastInsertId()
 	return &model.Webhook{
 		ID: id, URL: url, Secret: secret, Events: events,
-		Enabled: true, CreatedAt: now,
+		Enabled: enabled, CreatedAt: now,
 	}, nil
 }
 

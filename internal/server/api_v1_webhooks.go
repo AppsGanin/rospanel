@@ -83,7 +83,10 @@ func (rt *Router) apiCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	if !apiValidateWebhook(w, req.URL, req.Events) {
 		return
 	}
-	h, err := rt.mgr.Store().CreateWebhook(req.URL, req.Events)
+	// Absent means on: the field is optional, and an endpoint you bothered to
+	// register is one you want delivering.
+	enabled := req.Enabled == nil || *req.Enabled
+	h, err := rt.mgr.Store().CreateWebhook(req.URL, req.Events, enabled)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
