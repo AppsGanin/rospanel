@@ -205,6 +205,8 @@ var errEN = map[string]string{
 	"err.setRealityDestFirst":      "set a REALITY masquerade domain on the Connections tab first",
 	"err.setSupportGroupFirst":     "set the support group id and save the settings first",
 	"err.setSupportTokenFirst":     "set the support bot token and save the settings first",
+	"err.ssKeyBad":                 "the Shadowsocks server key is missing or the wrong length for the method",
+	"err.ssMethodUnknown":          "unknown Shadowsocks method {{value}} (available: {{available}})",
 	"err.sshCredsRequired":         "enter an SSH password or a private key",
 	"err.sshHostUserRequired":      "enter the server address and the SSH user",
 	"err.streamingUnsupported":     "streaming is not supported",

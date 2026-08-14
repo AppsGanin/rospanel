@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -126,5 +127,84 @@ func TestEmojiNamesSurviveEveryFormat(t *testing.T) {
 	}
 	if !labelled {
 		t.Errorf("no share link is labelled %q:\n%s", name, strings.Join(links, "\n"))
+	}
+}
+
+// A Shadowsocks-2022 inbound has to come out consistent in all three client formats:
+// the ss:// link, the Clash proxy and the sing-box outbound. The password everywhere
+// is "serverKey:userKey", and the ss:// userinfo is that triple with the method,
+// base64url. A mismatch between any two would hand the user a config that fails to
+// authenticate on exactly one of their apps.
+func TestShadowsocksEveryFormat(t *testing.T) {
+	u := model.User{ID: 1, Name: "u", UUID: "uuid-ss", Password: "pw"}
+	set := testSet("panel.example.com")
+	in := model.Inbound{
+		ID: 9, Enabled: true, Name: "SS", Protocol: model.InbShadowsocks, Port: 9500,
+		Opts: model.InboundOpts{
+			Method: model.SS2022AES128, ShadowKey: base64.StdEncoding.EncodeToString(make([]byte, 16)),
+		},
+	}
+	in.Normalize()
+	servers := []Server{{Set: set, Custom: []model.Inbound{in}, Access: model.UnrestrictedAccess()}}
+
+	userKey := model.UserShadowKey(u.UUID, model.SS2022AES128)
+	wantPw := in.Opts.ShadowKey + ":" + userKey
+
+	// Clash: type ss, cipher = method, password = serverKey:userKey, udp on.
+	yaml := ClashYAMLMulti(u, servers)
+	if !strings.Contains(yaml, "type: ss") || !strings.Contains(yaml, "cipher: "+model.SS2022AES128) {
+		t.Errorf("clash SS entry missing or wrong:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, wantPw) {
+		t.Errorf("clash password is not serverKey:userKey:\n%s", yaml)
+	}
+
+	// sing-box: type shadowsocks, method + same password.
+	js := SingBoxJSONMulti(u, servers)
+	var doc struct {
+		Outbounds []struct {
+			Type     string `json:"type"`
+			Method   string `json:"method"`
+			Password string `json:"password"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(js), &doc); err != nil {
+		t.Fatalf("sing-box output invalid: %v", err)
+	}
+	found := false
+	for _, o := range doc.Outbounds {
+		if o.Type == "shadowsocks" {
+			found = true
+			if o.Method != model.SS2022AES128 || o.Password != wantPw {
+				t.Errorf("sing-box SS = method %q pw %q, want %q / %q",
+					o.Method, o.Password, model.SS2022AES128, wantPw)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("sing-box has no shadowsocks outbound:\n%s", js)
+	}
+
+	// ss:// link: userinfo decodes to method:serverKey:userKey.
+	var ssLink string
+	for _, l := range ShareLinksAll(u, servers) {
+		if strings.HasPrefix(l, "ss://") {
+			ssLink = l
+		}
+	}
+	if ssLink == "" {
+		t.Fatal("no ss:// link produced")
+	}
+	rest := strings.TrimPrefix(ssLink, "ss://")
+	userinfo, _, _ := strings.Cut(rest, "@")
+	raw, err := base64.RawURLEncoding.DecodeString(userinfo)
+	if err != nil {
+		t.Fatalf("ss userinfo is not base64url: %v", err)
+	}
+	if want := model.SS2022AES128 + ":" + in.Opts.ShadowKey + ":" + userKey; string(raw) != want {
+		t.Errorf("ss userinfo = %q, want %q", raw, want)
+	}
+	if !strings.Contains(ssLink, "@panel.example.com:9500#") {
+		t.Errorf("ss link host/port/label wrong: %s", ssLink)
 	}
 }

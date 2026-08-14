@@ -112,6 +112,16 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 		return out, tag, true
 	}
 
+	if in.Protocol == model.InbShadowsocks {
+		// sing-box's shadowsocks: method plus the server-key:user-key password. It
+		// relays UDP by default, so there is no udp flag to set as there is on Clash.
+		return map[string]any{
+			"type": "shadowsocks", "tag": tag, "server": set.Host, "server_port": in.Port,
+			"method":   o.Method,
+			"password": o.ShadowKey + ":" + model.UserShadowKey(u.UUID, o.Method),
+		}, tag, true
+	}
+
 	out := map[string]any{
 		"type": in.Protocol, "tag": tag, "server": set.Host, "server_port": in.Port,
 	}

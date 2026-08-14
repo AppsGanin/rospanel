@@ -54,6 +54,10 @@ func inboundView(in model.Inbound) InboundView {
 		TLSExtraForm:     model.DisassembleTLSExtra(in.Opts.TLSExtra),
 	}
 	v.Opts.RealityPrivateKey = ""
+	// The Shadowsocks server key is generated, not edited: the client gets it inside
+	// its share link, and the editor has no field for it, so keep it off the view the
+	// same way the REALITY private key is kept off.
+	v.Opts.ShadowKey = ""
 	// One representation of the advanced settings, not two: the forms above are the
 	// view's; the raw blobs would only be a second copy the client would have to
 	// reconcile.
@@ -235,6 +239,14 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 		in.Opts.RealityPublicKey = cur.Opts.RealityPublicKey
 		in.Opts.RealityShortID = cur.Opts.RealityShortID
 	}
+	// Same for the Shadowsocks server key: the UI never sees it, so it can't send it
+	// back. Carried forward and kept when the method's key size is unchanged; a switch
+	// to a different-sized method (aes-128 ⇄ aes-256) leaves it the wrong length, and
+	// prepareInbound re-keys it below — which does invalidate existing links, but a
+	// method change is exactly the case where they must be re-imported anyway.
+	if in.Protocol == model.InbShadowsocks {
+		in.Opts.ShadowKey = cur.Opts.ShadowKey
+	}
 	if err := m.prepareInbound(&in); err != nil {
 		return nil, err
 	}
@@ -301,8 +313,18 @@ func (m *Manager) DeleteInbound(id int64) error {
 }
 
 // prepareInbound fills in what the panel owns rather than the operator: REALITY key
-// material for a combination that needs it.
+// material, or a Shadowsocks server key, for a combination that needs it.
 func (m *Manager) prepareInbound(in *model.Inbound) error {
+	// A Shadowsocks inbound with no key yet — or one whose stored key is the wrong
+	// length because the operator switched methods (aes-128 ⇄ aes-256) — gets a fresh
+	// server key sized to the method. The per-user key is derived, not stored.
+	if in.NeedsShadowKey() {
+		key, err := auth.RandomShadowKey(model.SSKeyLen(in.Opts.Method))
+		if err != nil {
+			return err
+		}
+		in.Opts.ShadowKey = key
+	}
 	if !in.NeedsRealityKeys() {
 		return nil
 	}

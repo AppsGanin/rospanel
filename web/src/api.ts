@@ -1828,6 +1828,9 @@ export interface InboundOpts {
   hop_start?: number
   hop_end?: number
   hop_interval?: string
+  // Shadowsocks-2022: the AEAD method. The server key is generated and never sent to
+  // the client, so there is no field for it here.
+  method?: string
   // Advanced. header_* / authority / multi_mode are simple mirrored-into-links knobs.
   // The three JSON sections travel as typed forms, not on opts — see the *_form fields
   // on Inbound below (the server nils the raw blobs out of opts).
@@ -1954,6 +1957,8 @@ export interface InboundInput {
   header_paths: string[]
   authority: string
   multi_mode: boolean
+  // Shadowsocks-2022 method; ignored by the server for the other protocols.
+  method: string
   // The three advanced sections as typed forms; the server assembles them into the
   // JSON blob Xray reads and validates that.
   xhttp_extra: XHTTPExtraForm
@@ -1979,6 +1984,7 @@ export interface InboundEnums {
   domain_strategy: string[]
   address_port_strategy: string[]
   tls_versions: string[]
+  ss_methods: string[]
 }
 
 export interface InboundCatalog {

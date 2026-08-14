@@ -401,11 +401,14 @@ target machine** (`xray -test` + a port-bind probe) before it's saved.
 | `DELETE` | `/v1/inbounds/{id}` | Delete a custom inbound. |
 
 **Create / update** — the body mirrors the panel's inbound editor: `name`, `protocol`
-(`vless` / `trojan` / `hysteria2`), `transport` (`tcp` / `ws` / `xhttp` / `grpc` /
-`httpupgrade`), `port`, `security` (`none` / `tls` / `reality`) with the matching keys
-(REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
+(`vless` / `trojan` / `hysteria2` / `shadowsocks`), `transport` (`tcp` / `ws` / `xhttp` /
+`grpc` / `httpupgrade`), `port`, `security` (`none` / `tls` / `reality`) with the matching
+keys (REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
 advanced blocks (XHTTP `extra`, TCP HTTP masquerade, `sockopt`, extra TLS keys). The
 full field list — and which combinations are valid — is in `openapi.json` / Swagger.
+`shadowsocks` is Shadowsocks-2022 (`method` picks the AEAD; the server key is generated,
+the per-user key derived from the UUID) — multi-user, so per-user stats and quotas work,
+but only modern clients (sing-box, mihomo, v2rayN, Shadowrocket, Streisand) speak it.
 Two formats the schema can only call `string`: `reality_dest` is a bare hostname
 (`www.microsoft.com` — a `host:port` form is rejected), and `hop_interval` is a range in
 seconds (`"5-10"`, not `"30"`).

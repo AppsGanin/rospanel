@@ -105,6 +105,15 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 			n, set.Host, in.Port, u.Password, clashSNI(in, set), sv, hop)}, true
 	}
 
+	if in.Protocol == model.InbShadowsocks {
+		// mihomo's Shadowsocks-2022 shape: cipher is the method, and the password is
+		// the server key and the user key joined by a colon (the multi-user form).
+		pw := o.ShadowKey + ":" + model.UserShadowKey(u.UUID, o.Method)
+		return clashProxy{n, fmt.Sprintf(
+			"  - {name: %q, type: ss, server: %q, port: %d, cipher: %s, password: %q, udp: true}",
+			n, set.Host, in.Port, o.Method, pw)}, true
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "  - {name: %q, type: %s, server: %q, port: %d",
 		n, in.Protocol, set.Host, in.Port)

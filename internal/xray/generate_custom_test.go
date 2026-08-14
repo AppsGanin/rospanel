@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -436,5 +437,196 @@ func TestUserInboundsRespectsAccess(t *testing.T) {
 	all := UserInbounds(set, []model.Inbound{custom}, users, model.LocalNodeID, nil)
 	if len(all) < 3 {
 		t.Errorf("unrestricted user should be added to every lane, got %d stubs", len(all))
+	}
+}
+
+// A Shadowsocks-2022 custom inbound: the server key and method sit at the top of
+// settings, each admitted user carries their own derived key, UDP is relayed, and —
+// unlike every other custom inbound — there is no streamSettings, because SS-2022 is
+// raw TCP with its own AEAD and no TLS layer to configure.
+func TestCustomShadowsocksInbound(t *testing.T) {
+	users := []model.User{
+		{ID: 1, UUID: "uuid-1", Password: "pw1"},
+		{ID: 2, UUID: "uuid-2", Password: "pw2"},
+	}
+	ss := model.Inbound{
+		ID: 9, Enabled: true, Name: "SS", Protocol: model.InbShadowsocks, Port: 9500,
+		Opts: model.InboundOpts{
+			Method:    model.SS2022AES128,
+			ShadowKey: "AAAAAAAAAAAAAAAAAAAAAA==", // 16 bytes base64, the right length
+		},
+	}
+	ss.Normalize()
+
+	cfg, err := Generate(baseSettings(), users, Options{
+		PanelDest: "127.0.0.1:8080",
+		Custom:    []model.Inbound{ss},
+	}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got := findInbound(cfg, ss.Tag())
+	if got == nil {
+		t.Fatal("custom shadowsocks inbound missing")
+	}
+	if got.Protocol != "shadowsocks" || got.Port != 9500 {
+		t.Errorf("inbound = %s:%d, want shadowsocks:9500", got.Protocol, got.Port)
+	}
+	if got.StreamSettings != nil {
+		t.Errorf("shadowsocks must carry no streamSettings, got %+v", got.StreamSettings)
+	}
+	s, ok := got.Settings.(ShadowsocksInboundSettings)
+	if !ok {
+		t.Fatalf("settings type %T, want ShadowsocksInboundSettings", got.Settings)
+	}
+	if s.Method != model.SS2022AES128 {
+		t.Errorf("method = %q", s.Method)
+	}
+	if s.Password != ss.Opts.ShadowKey {
+		t.Errorf("server key = %q, want the inbound's stored key", s.Password)
+	}
+	if s.Network != "tcp,udp" {
+		t.Errorf("network = %q, want tcp,udp — UDP would be dropped otherwise", s.Network)
+	}
+	if len(s.Users) != 2 {
+		t.Fatalf("users = %d, want 2", len(s.Users))
+	}
+	// Each user's key is derived from their UUID, is the method's length, and is not
+	// the shared server key.
+	for i, u := range users {
+		c := s.Users[i]
+		if c.Email != model.UserEmail(u.ID) {
+			t.Errorf("client %d email = %q — per-user stats need it", i, c.Email)
+		}
+		want := model.UserShadowKey(u.UUID, model.SS2022AES128)
+		if c.Password != want {
+			t.Errorf("client %d key = %q, want the UUID-derived %q", i, c.Password, want)
+		}
+		if c.Password == s.Password {
+			t.Errorf("client %d key equals the server key — they must differ", i)
+		}
+		if raw, err := base64.StdEncoding.DecodeString(c.Password); err != nil || len(raw) != 16 {
+			t.Errorf("client %d key is not 16 base64 bytes: %v", i, err)
+		}
+	}
+	// The two users get different keys.
+	if s.Users[0].Password == s.Users[1].Password {
+		t.Error("two users share a Shadowsocks key")
+	}
+}
+
+// A Shadowsocks inbound that no user may use must NOT become an open door.
+//
+// Xray builds an SS-2022 inbound with an empty users list as a SINGLE-user server
+// whose access key is the top-level server key — and that key is in every client
+// link the inbound ever handed out. So revoking everyone (an emptied access group,
+// every user deleted) would flip "nobody" into "anybody who kept a link", with no
+// account and no quota. The generator must keep the users list non-empty with a key
+// no client knows, so Xray stays multi-user and authenticates no one.
+func TestShadowsocksEmptyUserListFailsClosed(t *testing.T) {
+	ss := model.Inbound{
+		ID: 3, Enabled: true, Name: "SS", Protocol: model.InbShadowsocks, Port: 9600,
+		Opts: model.InboundOpts{
+			Method: model.SS2022AES128, ShadowKey: base64.StdEncoding.EncodeToString(make([]byte, 16)),
+		},
+	}
+	ss.Normalize()
+
+	// No users at all — the worst case, and the one an operator reaches by revoking.
+	cfg, err := Generate(baseSettings(), nil, Options{
+		PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{ss},
+	}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	got := findInbound(cfg, ss.Tag())
+	if got == nil {
+		t.Fatal("inbound missing")
+	}
+	s := got.Settings.(ShadowsocksInboundSettings)
+	// The list stays non-empty, so Xray builds a multi-user server, not the single-
+	// user one keyed by the server key.
+	if len(s.Users) != 1 {
+		t.Fatalf("empty-access SS inbound has %d users, want exactly 1 locked placeholder", len(s.Users))
+	}
+	locked := s.Users[0]
+	// The placeholder key must NOT be the server key (that is the whole exposure), and
+	// must not be derivable as any user's key either.
+	if locked.Password == s.Password {
+		t.Error("placeholder key equals the server key — the door is still open")
+	}
+	if locked.Password != model.LockedShadowKey(ss.Opts.ShadowKey, model.SS2022AES128) {
+		t.Errorf("placeholder key = %q, not the locked derivation", locked.Password)
+	}
+	if raw, err := base64.StdEncoding.DecodeString(locked.Password); err != nil || len(raw) != 16 {
+		t.Errorf("placeholder key is not 16 base64 bytes: %v", err)
+	}
+	// Stable across regenerations, so an all-revoked inbound doesn't churn the config
+	// and restart Xray on every apply.
+	cfg2, _ := Generate(baseSettings(), nil, Options{
+		PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{ss},
+	}, nil)
+	s2 := findInbound(cfg2, ss.Tag()).Settings.(ShadowsocksInboundSettings)
+	if s2.Users[0].Password != locked.Password {
+		t.Error("placeholder key is not stable between generations — would thrash reloads")
+	}
+
+	// And the moment a real user is allowed, the placeholder is gone (not left behind
+	// as an extra credential).
+	cfg3, _ := Generate(baseSettings(), []model.User{{ID: 1, UUID: "uuid-1"}}, Options{
+		PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{ss},
+	}, nil)
+	s3 := findInbound(cfg3, ss.Tag()).Settings.(ShadowsocksInboundSettings)
+	if len(s3.Users) != 1 || s3.Users[0].Email != model.UserEmail(1) {
+		t.Errorf("with one real user the list should be just that user, got %+v", s3.Users)
+	}
+}
+
+// Shadowsocks-2022 must be covered by BOTH live-user paths, symmetrically. It
+// implements AddUser/RemoveUser (unlike Hysteria2), so `adu` and `rmu` both work on
+// it — and covering only one is worse than covering neither: it was listed for `rmu`
+// (revoked users dropped live) but missing from `adu` (newly allowed users never
+// added live), so a user's access lagged a full restart in exactly one direction.
+func TestLiveUserAPICoversShadowsocks(t *testing.T) {
+	set := baseSettings()
+	users := []model.User{{ID: 1, UUID: "uuid-1"}}
+	ss := model.Inbound{
+		ID: 8, Enabled: true, Name: "SS", Protocol: model.InbShadowsocks, Port: 9700,
+		Opts: model.InboundOpts{
+			Method: model.SS2022AES128, ShadowKey: base64.StdEncoding.EncodeToString(make([]byte, 16)),
+		},
+	}
+	ss.Normalize()
+
+	// rmu side: the tag must be a removal target.
+	if !contains(EnabledInboundTags(set, []model.Inbound{ss}), ss.Tag()) {
+		t.Error("Shadowsocks inbound is missing from the rmu targets")
+	}
+
+	// adu side: a full, parseable stub with the method/key/network Xray needs to build
+	// it, plus the user actually being added.
+	stubs := UserInbounds(set, []model.Inbound{ss}, users, model.LocalNodeID, nil)
+	var stub *Inbound
+	for i := range stubs {
+		if stubs[i].Tag == ss.Tag() {
+			stub = &stubs[i]
+		}
+	}
+	if stub == nil {
+		t.Fatalf("Shadowsocks inbound missing from the adu stubs %+v", stubs)
+	}
+	s, ok := stub.Settings.(ShadowsocksInboundSettings)
+	if !ok {
+		t.Fatalf("stub settings type %T", stub.Settings)
+	}
+	if stub.Port != 9700 || s.Method != model.SS2022AES128 || s.Password == "" {
+		t.Errorf("adu stub can't be parsed as a full SS inbound: port=%d method=%q key?%v",
+			stub.Port, s.Method, s.Password != "")
+	}
+	if len(s.Users) != 1 || s.Users[0].Email != model.UserEmail(1) {
+		t.Errorf("adu stub users = %+v, want the one allowed user", s.Users)
+	}
+	if s.Users[0].Password != model.UserShadowKey("uuid-1", model.SS2022AES128) {
+		t.Error("adu stub carries the wrong per-user key")
 	}
 }
