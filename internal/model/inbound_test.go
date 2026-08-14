@@ -307,3 +307,40 @@ func TestNormalizeClearsForeignAdvancedFields(t *testing.T) {
 		t.Error("gRPC fields should be dropped on a non-gRPC transport")
 	}
 }
+
+// A flag is how an operator labels a location, so the name charset has to carry one.
+//
+// It is not one character: a flag is a PAIR of regional indicator symbols, and the
+// rest of the emoji machinery — skin tones, ZWJ sequences, variation selectors —
+// lives in categories that letters-and-digits never reached. Pasting one used to
+// fail the save with "invalid name", which is a strange thing for a panel to have
+// an opinion about.
+func TestLaneNamesCarryEmoji(t *testing.T) {
+	for _, name := range []string{
+		"🇳🇱 Нидерланды",   // the reported case: flag + Cyrillic
+		"🇩🇪",               // a flag on its own
+		"🇷🇺 РФ 🚀",         // several, mixed with text
+		"VLESS-TCP-TLS",     // the default, still fine
+		"Node ①",            // a number form, category No
+		"👋🏽 hi",            // skin-tone modifier (category Sk)
+		"👨‍👩‍👧 family",        // a ZWJ sequence
+		"⚠️ backup",         // variation selector
+	} {
+		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,
+			Opts: InboundOpts{Transport: TrTCP, Security: SecTLS}}
+		in.Normalize()
+		if err := in.Validate(); err != nil {
+			t.Errorf("name %q rejected: %v", name, err)
+		}
+	}
+	// The point of the allowlist is unchanged: what breaks a sing-box tag or a Clash
+	// node name stays out.
+	for _, name := range []string{`say "hi"`, "a:b", "{tpl}", "a,b", "back\\slash", "new\nline"} {
+		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,
+			Opts: InboundOpts{Transport: TrTCP, Security: SecTLS}}
+		in.Normalize()
+		if err := in.Validate(); err == nil {
+			t.Errorf("name %q was accepted and would break a generated config", name)
+		}
+	}
+}
