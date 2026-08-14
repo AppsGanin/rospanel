@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/AppsGanin/rospanel/compare/v2.7.0...v2.7.1) (2026-08-14)
+
+
+### Bug Fixes
+
+* **docker:** bump build image to golang:1.26.6 ([f809173](https://github.com/AppsGanin/rospanel/commit/f8091738f63da83cca868d94f923a1c1234c1723))
+
 ## [2.7.0](https://github.com/AppsGanin/rospanel/compare/v2.6.0...v2.7.0) (2026-08-14)
 
 
