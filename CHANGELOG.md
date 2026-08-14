@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.7.0](https://github.com/AppsGanin/rospanel/compare/v2.6.0...v2.7.0) (2026-08-14)
+
+
+### Features
+
+* **decoy:** add a self-hosted Nextcloud login page ([15119b2](https://github.com/AppsGanin/rospanel/commit/15119b292f2980ea63107e73db1e97aa7c8b2ef6))
+* **inbounds:** add Shadowsocks-2022 as a custom inbound protocol ([1e6c6b6](https://github.com/AppsGanin/rospanel/commit/1e6c6b67f8e73ced48bef63a7fb4cf974dcaf8cd))
+* **inbounds:** allow emoji in connection and lane names ([9f10280](https://github.com/AppsGanin/rospanel/commit/9f102803e732c1040cce01effc0e9d52677fcf35))
+
+
+### Bug Fixes
+
+* **api:** self-host Swagger UI; add Dependabot for Go and actions ([383d171](https://github.com/AppsGanin/rospanel/commit/383d171210d5683adbe89c2666c3a4b5996ad5da))
+* **deps:** bump Go to 1.26.6 for stdlib security fixes ([609c4af](https://github.com/AppsGanin/rospanel/commit/609c4af1e28c540eb9595b726111152c6f0660f3))
+* **inbounds:** carry the Shadowsocks method through the request mapping ([5e0cb7c](https://github.com/AppsGanin/rospanel/commit/5e0cb7c2868f95556e48e91fd2c1d415d2f7f3ad))
+
 ## [2.6.0](https://github.com/AppsGanin/rospanel/compare/v2.5.0...v2.6.0) (2026-08-13)
 
 
