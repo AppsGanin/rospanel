@@ -47,6 +47,10 @@ type inboundReq struct {
 	HopEnd      int    `json:"hop_end"`
 	HopInterval string `json:"hop_interval"`
 
+	// Shadowsocks-2022 method. The server key is generated (prepareInbound), so it is
+	// deliberately not a request field.
+	Method string `json:"method"`
+
 	// Advanced. Each transport knob is its own typed field; the three JSON-blob
 	// sections (XHTTP extra, sockopt, extra TLS) arrive as structured forms that the
 	// server assembles into the blob Xray reads. Every form carries a Raw escape hatch
@@ -91,6 +95,7 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 			HeaderPaths: r.HeaderPaths,
 			Authority:   r.Authority,
 			MultiMode:   r.MultiMode,
+			Method:      r.Method,
 		},
 	}
 	if r.RealityAntiReplay {
