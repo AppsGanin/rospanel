@@ -61,14 +61,11 @@ func Available() ([]string, error) {
 // mismatch no amount of encryption hides. These templates are sites where large,
 // long-lived transfers are the whole point.
 //
-// The slugs are directory names, not brands: "YouTube" is a video-hosting layout
-// that presents itself as "Videolandia" and carries no third-party naming.
-//
 // Left out are the templates that contradict a busy box rather than explain it:
 // the placeholders (coming-soon), the maintenance pages (503-*, maintenance) and
 // the bare nginx page. All stay selectable by hand — an operator who actually
 // wants a site that looks parked can still say so.
-var busyTemplates = []string{"filecloud", "downloader", "converter", "speedtest", "10gag", "YouTube"}
+var busyTemplates = []string{"filecloud", "downloader", "converter", "speedtest", "10gag", "YouTube", "nextcloud"}
 
 // RandomTemplate returns a template slug for a fresh install. Choosing at random
 // keeps a fleet from sharing one recognisable front page — the body stamp (see
