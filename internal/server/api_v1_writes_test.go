@@ -364,6 +364,21 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 				}
 			},
 		},
+		{ // Shadowsocks-2022's chosen method — the field whose loss on this exact path
+			// (inboundReq had no `method`) made the whole protocol unreachable.
+			body: map[string]any{
+				"enabled": true, "name": "land-ss", "protocol": model.InbShadowsocks, "port": 21106,
+				"method": model.SS2022AES256,
+			},
+			assert: func(t *testing.T, in model.Inbound) {
+				eq(t, "method", model.SS2022AES256, in.Opts.Method)
+				// The panel-generated server key must have landed too, or the inbound
+				// can't authenticate anyone.
+				if in.Opts.ShadowKey == "" {
+					t.Error("shadow_key did not land: the server key is empty")
+				}
+			},
+		},
 	}
 
 	covered := map[string]bool{}
