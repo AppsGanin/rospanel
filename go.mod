@@ -1,6 +1,6 @@
 module github.com/AppsGanin/rospanel
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/go-acme/lego/v4 v4.35.2
