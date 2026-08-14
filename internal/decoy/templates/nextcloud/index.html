@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nextcloud – Login</title>
+    <!-- Icons are inline SVG: a decoy must not fetch anything from a third party. -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0b1a2e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .card {
+            max-width: 420px;
+            width: 100%;
+            background: #13273f;
+            border-radius: 16px;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+            padding: 40px 32px 32px;
+            transition: 0.2s;
+        }
+
+        /* Nextcloud logo */
+        .logo-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .logo-icon {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon svg {
+            width: 50px;
+            height: 50px;
+            filter: drop-shadow(0 2px 8px rgba(0, 130, 201, 0.3));
+        }
+
+        .logo-text {
+            font-weight: 700;
+            font-size: 26px;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            color: #0082c9;
+        }
+
+        .subhead {
+            font-size: 14px;
+            color: #8aa3c0;
+            margin-bottom: 28px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        .subhead i {
+            color: #0082c9;
+            margin-right: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #b0c8e0;
+            margin-bottom: 6px;
+            letter-spacing: 0.2px;
+        }
+
+        .form-group label i {
+            color: #0082c9;
+            margin-right: 6px;
+            width: 16px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 2px 14px;
+            transition: 0.2s;
+        }
+
+        .input-wrapper:focus-within {
+            border-color: #0082c9;
+            box-shadow: 0 0 0 3px rgba(0, 130, 201, 0.2);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .input-wrapper i {
+            color: #6a8aa8;
+            font-size: 15px;
+            width: 20px;
+        }
+
+        .input-wrapper input {
+            border: none;
+            background: transparent;
+            padding: 13px 10px;
+            font-size: 15px;
+            width: 100%;
+            outline: none;
+            color: #ffffff;
+            font-weight: 400;
+        }
+
+        .input-wrapper input::placeholder {
+            color: #5a7a98;
+            font-weight: 300;
+        }
+
+        .input-wrapper input:-webkit-autofill {
+            -webkit-box-shadow: 0 0 0 30px #13273f inset !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .error-message {
+            background: rgba(220, 50, 50, 0.15);
+            color: #ff7a7a;
+            font-size: 14px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            margin: 6px 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 4px solid #d95c5c;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .error-message.show {
+            display: flex;
+            opacity: 1;
+        }
+
+        .error-message i {
+            font-size: 16px;
+            color: #ff7a7a;
+        }
+
+        .login-btn {
+            width: 100%;
+            background: #0082c9;
+            border: none;
+            border-radius: 40px;
+            padding: 14px 20px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 6px;
+            box-shadow: 0 6px 20px rgba(0, 130, 201, 0.3);
+            position: relative;
+        }
+
+        .login-btn:hover:not(:disabled) {
+            background: #006fa8;
+            transform: scale(1.01);
+            box-shadow: 0 8px 24px rgba(0, 130, 201, 0.4);
+        }
+
+        .login-btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .login-btn i {
+            font-size: 16px;
+        }
+
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2.5px solid rgba(255, 255, 255, 0.3);
+            border-top: 2.5px solid white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .login-btn.loading .spinner {
+            display: inline-block;
+        }
+
+        .login-btn.loading .btn-text {
+            display: none;
+        }
+
+        .login-btn.loading i {
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 480px) {
+            .card {
+                padding: 28px 18px 24px;
+            }
+            .logo-text {
+                font-size: 22px;
+            }
+            .logo-icon svg {
+                width: 40px;
+                height: 40px;
+            }
+        }
+        .card i svg { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <!-- Nextcloud logo -->
+    <div class="logo-area">
+        <div class="logo-icon">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 10C35 10 22 20 18 34C8 36 0 45 0 56C0 68 10 78 22 78H76C88 78 98 68 98 56C98 45 90 36 80 34C76 20 63 10 50 10Z" fill="#0082c9"/>
+                <path d="M50 18C38 18 27 26 23 38C16 40 8 48 8 58C8 68 16 76 26 76H72C82 76 90 68 90 58C90 48 82 40 74 38C70 26 59 18 50 18Z" fill="#1a3a5a"/>
+                <path d="M50 26C41 26 33 32 30 42C25 44 18 50 18 58C18 66 25 72 33 72H67C75 72 82 66 82 58C82 50 75 44 69 42C66 32 58 26 50 26Z" fill="#0b1a2e"/>
+                <path d="M50 34C44 34 38 38 36 46C32 47 28 52 28 58C28 64 32 68 38 68H62C68 68 72 64 72 58C72 52 68 47 64 46C62 38 56 34 50 34Z" fill="#0082c9" opacity="0.8"/>
+                <circle cx="50" cy="50" r="8" fill="white" opacity="0.9"/>
+                <path d="M50 46L54 52L46 52L50 46Z" fill="#0082c9"/>
+            </svg>
+        </div>
+        <div class="logo-text">Next<span>cloud</span></div>
+    </div>
+
+    <div class="subhead">
+        <i><svg viewBox="0 0 448 512"><path d="M144 144v48h160v-48a80 80 0 1 0-160 0zM96 192v-48a128 128 0 0 1 256 0v48h16a64 64 0 0 1 64 64v160a64 64 0 0 1-64 64H80a64 64 0 0 1-64-64V256a64 64 0 0 1 64-64h16z"/></svg></i> Log in to your account
+    </div>
+
+    <form id="loginForm" autocomplete="off">
+        <div class="form-group">
+            <label for="account"><i><svg viewBox="0 0 448 512"><path d="M224 256A128 128 0 1 0 224 0a128 128 0 0 0 0 256zm-45 48C80 304 0 384 0 483a29 29 0 0 0 29 29h390a29 29 0 0 0 29-29c0-99-80-179-179-179h-90z"/></svg></i> Account name or email</label>
+            <div class="input-wrapper">
+                <i><svg viewBox="0 0 512 512"><path d="M48 64A48 48 0 0 0 19 150l218 164a32 32 0 0 0 38 0L493 150A48 48 0 0 0 464 64H48zM0 176V400a64 64 0 0 0 64 64h384a64 64 0 0 0 64-64V176L294 340a76 76 0 0 1-76 0L0 176z"/></svg></i>
+                <input type="text" id="account" placeholder="" value="">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="password"><i><svg viewBox="0 0 512 512"><path d="M336 352a176 176 0 1 0-172-217c3 11 4 23 4 35L9 366a24 24 0 0 0-9 23v99a24 24 0 0 0 24 24h96a24 24 0 0 0 24-24v-32h32a24 24 0 0 0 24-24v-32h32a30 30 0 0 0 22-10l35-35c11 3 23 4 35 4zm40-256a40 40 0 1 1 0 80 40 40 0 0 1 0-80z"/></svg></i> Password</label>
+            <div class="input-wrapper">
+                <i><svg viewBox="0 0 448 512"><path d="M144 144v48h160v-48a80 80 0 1 0-160 0zM96 192v-48a128 128 0 0 1 256 0v48h16a64 64 0 0 1 64 64v160a64 64 0 0 1-64 64H80a64 64 0 0 1-64-64V256a64 64 0 0 1 64-64h16z"/></svg></i>
+                <input type="password" id="password" placeholder="" value="">
+            </div>
+        </div>
+
+        <div id="errorBanner" class="error-message">
+            <i><svg viewBox="0 0 512 512"><path d="M256 0a256 256 0 1 0 0 512 256 256 0 0 0 0-512zm0 128a30 30 0 0 1 30 30v132a30 30 0 0 1-60 0V158a30 30 0 0 1 30-30zm0 224a32 32 0 1 1 0 64 32 32 0 0 1 0-64z"/></svg></i>
+            <span id="errorText">Wrong username or password</span>
+        </div>
+
+        <button type="submit" class="login-btn" id="loginBtn">
+            <i><svg viewBox="0 0 512 512"><path d="M217 361a24 24 0 0 0 34 34l96-96a24 24 0 0 0 0-34l-96-96a24 24 0 0 0-34 34l55 55H24a24 24 0 0 0 0 48h248l-55 55zM320 32a24 24 0 0 0 0 48h96a16 16 0 0 1 16 16v320a16 16 0 0 1-16 16h-96a24 24 0 0 0 0 48h96a64 64 0 0 0 64-64V96a64 64 0 0 0-64-64h-96z"/></svg></i>
+            <span class="btn-text">Log in</span>
+            <span class="spinner"></span>
+        </button>
+    </form>
+</div>
+
+<script>
+    (function() {
+        const form = document.getElementById('loginForm');
+        const accountInput = document.getElementById('account');
+        const passwordInput = document.getElementById('password');
+        const errorBanner = document.getElementById('errorBanner');
+        const errorText = document.getElementById('errorText');
+        const loginBtn = document.getElementById('loginBtn');
+
+        let timeoutId = null;
+
+        function clearPending() {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (loginBtn.classList.contains('loading')) {
+                loginBtn.classList.remove('loading');
+                loginBtn.disabled = false;
+            }
+        }
+
+        // Hide error on focus
+        accountInput.addEventListener('focus', function() {
+            errorBanner.classList.remove('show');
+            clearPending();
+        });
+
+        passwordInput.addEventListener('focus', function() {
+            errorBanner.classList.remove('show');
+            clearPending();
+        });
+
+        // Click on error banner to dismiss
+        errorBanner.addEventListener('click', function() {
+            errorBanner.classList.remove('show');
+            clearPending();
+        });
+
+        // Escape key to dismiss error
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                errorBanner.classList.remove('show');
+                clearPending();
+            }
+        });
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Clear any existing timeout
+            clearPending();
+
+            // Hide any previous error
+            errorBanner.classList.remove('show');
+
+            // Disable button and show spinner
+            loginBtn.disabled = true;
+            loginBtn.classList.add('loading');
+
+            // After 3 seconds, show error and re-enable button
+            timeoutId = setTimeout(function() {
+                errorText.textContent = 'Wrong username or password';
+                errorBanner.classList.add('show');
+
+                // Re-enable button
+                loginBtn.disabled = false;
+                loginBtn.classList.remove('loading');
+
+                // Shake animation
+                form.style.transition = '0.1s';
+                form.style.transform = 'translateX(4px)';
+                setTimeout(() => { form.style.transform = 'translateX(-4px)'; }, 80);
+                setTimeout(() => { form.style.transform = 'translateX(2px)'; }, 160);
+                setTimeout(() => { form.style.transform = 'translateX(0)'; }, 240);
+
+                timeoutId = null;
+            }, 3000);
+        });
+
+    })();
+</script>
+
+</body>
+</html>
