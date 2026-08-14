@@ -247,10 +247,26 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 	return nil
 }
 
-// inboundNameRe matches an inbound display name: the same charset the built-in
-// connection names allow, because both end up as a sing-box tag / Clash node name
-// and must not carry quotes, braces or colons that would break those documents.
-var inboundNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-]+$`)
+// LaneNameRe matches a connection's display name — a custom inbound's and a
+// built-in lane's alike, which is why it lives here rather than in two packages:
+// both become a sing-box tag and a Clash node name, and a charset that drifted
+// between them would let one surface accept what the other rejects.
+//
+// It is an allowlist, and what it keeps out is the punctuation that would break the
+// documents the name is embedded in: quotes, colons and braces. Emoji are none of
+// those and are explicitly in — a flag is how an operator labels a location, and
+// every format the name reaches handles it (Clash quotes with %q, sing-box goes
+// through encoding/json, and a share link percent-escapes its fragment).
+//
+// Flags are the reason for the ranges below: one is a PAIR of regional indicator
+// symbols, which are category So, and the rest of the emoji machinery — skin tones,
+// ZWJ sequences, variation selectors — is spread across categories that \p{So}
+// alone does not cover.
+var LaneNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-` +
+	`\p{So}` + // emoji proper, and both halves of a flag
+	`\x{1F3FB}-\x{1F3FF}` + // skin-tone modifiers (category Sk)
+	`\x{200D}\x{FE0E}\x{FE0F}\x{20E3}` + // ZWJ, variation selectors, keycap
+	`]+$`)
 
 // inboundPathRe matches a ws/httpupgrade/xhttp request path.
 var inboundPathRe = regexp.MustCompile(`^/[A-Za-z0-9_\-./]{0,64}$`)
@@ -459,8 +475,8 @@ func (in *Inbound) Validate() error {
 	if len([]rune(in.Name)) > 32 {
 		return fieldErr("err.inboundNameTooLong2", "название подключения не длиннее 32 символов")
 	}
-	if !inboundNameRe.MatchString(in.Name) {
-		return fieldErr("err.inboundNameCharset2", "недопустимое название {{name}} (буквы, цифры, пробел, . _ - ( ))", map[string]any{"name": in.Name})
+	if !LaneNameRe.MatchString(in.Name) {
+		return fieldErr("err.inboundNameCharset2", "недопустимое название {{name}} (буквы, цифры, эмодзи, пробел, . _ - ( ))", map[string]any{"name": in.Name})
 	}
 	if lower := strings.ToLower(in.Name); lower == "auto" || lower == "direct" {
 		return fieldErr("err.inboundNameReserved", "название {{name}} зарезервировано — выберите другое", map[string]any{"name": in.Name})

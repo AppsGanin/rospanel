@@ -1,7 +1,9 @@
 package sub
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -62,5 +64,67 @@ func TestClashMatchRuleNamesTheGroup(t *testing.T) {
 	}
 	if strings.Contains(yaml, `  - MATCH,"`) {
 		t.Fatalf("quotes leaked into the MATCH target:\n%s", yaml)
+	}
+}
+
+// An emoji name has to survive every format the panel emits, not just the save.
+//
+// The name is embedded three different ways — a Go-quoted Clash scalar, a JSON
+// string in sing-box, and a URL fragment in a share link — and each has its own way
+// of mangling a four-byte rune. Allowing flags in the editor while one of these
+// dropped them would be the worse bug, because it only shows up in the client.
+func TestEmojiNamesSurviveEveryFormat(t *testing.T) {
+	const name = "🇳🇱 Амстердам"
+	u := model.User{ID: 1, Name: "u", UUID: "uuid", Password: "pw"}
+	set := testSet("panel.example.com")
+	in := model.Inbound{
+		ID: 7, Enabled: true, Name: name, Protocol: model.InbTrojan, Port: 8080,
+		Opts: model.InboundOpts{Transport: model.TrWS, Security: model.SecTLS, Path: "/w"},
+	}
+	servers := []Server{{Set: set, Custom: []model.Inbound{in}, Access: model.UnrestrictedAccess()}}
+
+	// Clash: %q keeps a printable rune as itself inside a quoted scalar.
+	if yaml := ClashYAMLMulti(u, servers); !strings.Contains(yaml, name) {
+		t.Errorf("clash dropped the emoji name:\n%s", yaml)
+	}
+	// sing-box: encoding/json, so the tag must round-trip through a decode.
+	js := SingBoxJSONMulti(u, servers)
+	var doc struct {
+		Outbounds []struct {
+			Tag string `json:"tag"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(js), &doc); err != nil {
+		t.Fatalf("sing-box output is not valid JSON: %v", err)
+	}
+	found := false
+	for _, o := range doc.Outbounds {
+		if o.Tag == name {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("sing-box has no outbound tagged %q:\n%s", name, js)
+	}
+	// Share link: the fragment is percent-escaped, and must decode back.
+	links := ShareLinksAll(u, servers)
+	labelled := false
+	for _, l := range links {
+		_, frag, ok := strings.Cut(l, "#")
+		if !ok {
+			t.Errorf("link carries no label: %s", l)
+			continue
+		}
+		got, err := url.PathUnescape(frag)
+		if err != nil {
+			t.Errorf("fragment %q does not decode: %v", frag, err)
+			continue
+		}
+		if got == name {
+			labelled = true
+		}
+	}
+	if !labelled {
+		t.Errorf("no share link is labelled %q:\n%s", name, strings.Join(links, "\n"))
 	}
 }

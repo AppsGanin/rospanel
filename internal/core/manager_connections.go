@@ -165,11 +165,6 @@ func portFree(network string, port int) bool {
 // hopIntervalRe matches the port-hopping interval "min-max" (seconds).
 var hopIntervalRe = regexp.MustCompile(`^\d+-\d+$`)
 
-// connNameRe validates a custom connection display name: Latin/Cyrillic letters,
-// digits, spaces and a few safe punctuation marks — no quotes/braces/colons that
-// could break the sing-box JSON or Clash YAML the name is embedded in.
-var connNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-]+$`)
-
 // connNameKeys pairs each protocol toggle key with its default label, so custom
 // names resolve (and collision-check) against the same defaults used at render.
 var connNameKeys = []struct{ key, proto string }{
@@ -194,8 +189,8 @@ func validateConnNames(names map[string]string, taken []string) (map[string]stri
 		if len([]rune(raw)) > 32 {
 			return nil, invalidCode("err.inboundNameTooLong", "название подключения не длиннее 32 символов")
 		}
-		if raw != "" && !connNameRe.MatchString(raw) {
-			return nil, invalidCode("err.inboundNameCharset", "недопустимое название подключения {{value}} (буквы, цифры, пробел, . _ - ( ))", map[string]any{"value": raw})
+		if raw != "" && !model.LaneNameRe.MatchString(raw) {
+			return nil, invalidCode("err.inboundNameCharset", "недопустимое название подключения {{value}} (буквы, цифры, эмодзи, пробел, . _ - ( ))", map[string]any{"value": raw})
 		}
 		display := raw
 		if display == "" {
