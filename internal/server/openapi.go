@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"maps"
 	"net/http"
 	"reflect"
@@ -699,12 +700,35 @@ func (rt *Router) apiOpenAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildOpenAPI(apiBaseURL(r, apiPath)))
 }
 
-// apiDocs serves a Swagger UI page pointed at the generated spec. The UI shell is
-// loaded from a CDN (this page is a developer convenience, reached only by someone
-// who already knows the secret API path); the spec it renders is fully local.
+// swaggerAssets holds the Swagger UI shell (CSS + JS bundle), vendored so the docs
+// page loads entirely from our own origin — see apiDocs.
+//
+//go:embed swaggerui/swagger-ui.css swaggerui/swagger-ui-bundle.js
+var swaggerAssets embed.FS
+
+// apiDocs serves a Swagger UI page pointed at the generated spec. Both the shell and
+// the spec are local: a CDN link would render a half-drawn page where that CDN is
+// blocked (the networks this panel serves), and leak to a third party who opened it.
+// The links are relative to /v1/docs, so they resolve to /v1/swagger-ui* regardless
+// of the secret API path in front.
 func (rt *Router) apiDocs(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(swaggerHTML))
+}
+
+// swaggerAsset serves one embedded Swagger UI file with a long cache lifetime (the
+// bundle is versioned by its bytes and changes only on a rebuild).
+func (rt *Router) swaggerAsset(name, contentType string) http.HandlerFunc {
+	body, err := swaggerAssets.ReadFile("swaggerui/" + name)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err != nil {
+			http.Error(w, "asset unavailable", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(body)
+	}
 }
 
 const swaggerHTML = `<!doctype html>
@@ -713,11 +737,11 @@ const swaggerHTML = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RosPanel API</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <link rel="stylesheet" href="swagger-ui.css">
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
+  <script src="swagger-ui-bundle.js"></script>
   <script>
     window.ui = SwaggerUIBundle({
       url: "openapi.json",

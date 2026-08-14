@@ -91,6 +91,13 @@ func (rt *Router) apiHandler() http.Handler {
 		rt.apiRoutes = append(rt.apiRoutes, pattern)
 		mux.HandleFunc(pattern, h)
 	}
+	// The Swagger UI shell, served from our own origin rather than a CDN — the same
+	// reason the decoys and the subscription page carry their own assets: a jsdelivr
+	// link renders half a docs page where jsdelivr is blocked, and it tells a third
+	// party who opened them. Not recorded in apiRoutes: these are static assets, not
+	// REST resources the OpenAPI document should list.
+	mux.HandleFunc("GET /v1/swagger-ui.css", rt.swaggerAsset("swagger-ui.css", "text/css"))
+	mux.HandleFunc("GET /v1/swagger-ui-bundle.js", rt.swaggerAsset("swagger-ui-bundle.js", "text/javascript"))
 	// The MCP endpoint authenticates from the path (see api_v1_mcp.go), so it is
 	// mounted before the bearer-authenticated catch-all. Deliberately NOT recorded in
 	// apiRoutes: it is a JSON-RPC transport rather than a REST resource, so there is

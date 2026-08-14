@@ -1,0 +1,31 @@
+# Keeps the Go toolchain and the CI actions patched without waiting for someone to
+# notice a failing govulncheck. The `go` directive in go.mod is what CI resolves its
+# toolchain from (go-version-file: go.mod), so a Dependabot bump of it is exactly the
+# one-line fix a stdlib CVE needs — govulncheck in CI stays the backstop for anything
+# that lands between weekly runs.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    # One PR for the toolchain + all module bumps of a kind, rather than a swarm.
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      ci-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(ci)"
+    open-pull-requests-limit: 5
