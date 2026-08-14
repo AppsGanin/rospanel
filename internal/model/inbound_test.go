@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -342,5 +343,84 @@ func TestLaneNamesCarryEmoji(t *testing.T) {
 		if err := in.Validate(); err == nil {
 			t.Errorf("name %q was accepted and would break a generated config", name)
 		}
+	}
+}
+
+// Shadowsocks-2022 in the model: the method drives the key length, the per-user key
+// is derived from the UUID (so it moves with the credential), and validation rejects
+// an unknown method or a server key that is the wrong length for it.
+func TestShadowsocksModel(t *testing.T) {
+	// Key length per method.
+	for method, want := range map[string]int{
+		SS2022AES128: 16, SS2022AES256: 32, SS2022ChaCha: 32, "aes-256-gcm": 0,
+	} {
+		if got := SSKeyLen(method); got != want {
+			t.Errorf("SSKeyLen(%q) = %d, want %d", method, got, want)
+		}
+	}
+
+	// Derived per-user key: right length, stable for a UUID, different across UUIDs
+	// and across methods.
+	k1 := UserShadowKey("uuid-1", SS2022AES128)
+	if raw, err := base64.StdEncoding.DecodeString(k1); err != nil || len(raw) != 16 {
+		t.Errorf("aes-128 user key is not 16 bytes: %v", err)
+	}
+	if k1 != UserShadowKey("uuid-1", SS2022AES128) {
+		t.Error("user key is not stable for the same UUID")
+	}
+	if k1 == UserShadowKey("uuid-2", SS2022AES128) {
+		t.Error("two UUIDs share a user key")
+	}
+	if raw, _ := base64.StdEncoding.DecodeString(UserShadowKey("uuid-1", SS2022AES256)); len(raw) != 32 {
+		t.Error("aes-256 user key is not 32 bytes")
+	}
+
+	// Normalize defaults the method and strips the fields SS doesn't use.
+	in := Inbound{
+		Name: "ss", Protocol: InbShadowsocks, Port: 9000,
+		Opts: InboundOpts{Transport: TrWS, Security: SecTLS, SNI: "x.example", FP: "chrome", Path: "p"},
+	}
+	in.Normalize()
+	if in.Opts.Method != DefaultSSMethod {
+		t.Errorf("method not defaulted: %q", in.Opts.Method)
+	}
+	if in.Opts.Transport != TrShadowsocks || in.Opts.Security != SecNone {
+		t.Errorf("transport/security not normalized: %+v", in.Opts)
+	}
+	if in.Opts.SNI != "" || in.Opts.FP != "" || in.Opts.Path != "" {
+		t.Errorf("SS carried over TLS fields it does not use: %+v", in.Opts)
+	}
+
+	// Validation: a good inbound (after the panel filled the key) passes; a bad method
+	// and a wrong-length key both fail.
+	good := Inbound{Name: "ss", Protocol: InbShadowsocks, Port: 9000,
+		Opts: InboundOpts{Method: SS2022AES128, ShadowKey: base64.StdEncoding.EncodeToString(make([]byte, 16))}}
+	good.Normalize()
+	if err := good.Validate(); err != nil {
+		t.Errorf("valid SS inbound rejected: %v", err)
+	}
+	badMethod := good
+	badMethod.Opts.Method = "rc4-md5"
+	if badMethod.Validate() == nil {
+		t.Error("unknown SS method accepted")
+	}
+	shortKey := good
+	shortKey.Opts.ShadowKey = base64.StdEncoding.EncodeToString(make([]byte, 8)) // too short for aes-128
+	if shortKey.Validate() == nil {
+		t.Error("wrong-length SS server key accepted")
+	}
+
+	// NeedsShadowKey drives regeneration: missing key, or a key sized for a different
+	// method, both need one; a correct key does not.
+	if !(&Inbound{Protocol: InbShadowsocks, Opts: InboundOpts{Method: SS2022AES256}}).NeedsShadowKey() {
+		t.Error("a Shadowsocks inbound with no key should need one")
+	}
+	sized16 := &Inbound{Protocol: InbShadowsocks, Opts: InboundOpts{
+		Method: SS2022AES256, ShadowKey: base64.StdEncoding.EncodeToString(make([]byte, 16))}}
+	if !sized16.NeedsShadowKey() {
+		t.Error("a 16-byte key under a 32-byte method should need re-keying")
+	}
+	if good.NeedsShadowKey() {
+		t.Error("a correctly sized key should not need re-keying")
 	}
 }

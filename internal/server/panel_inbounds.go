@@ -248,6 +248,7 @@ func makeInboundCatalog() inboundCatalogView {
 			"domain_strategy":       model.SockoptDomainStrats,
 			"address_port_strategy": model.SockoptAddrPortStrats,
 			"tls_versions":          model.TLSVersions,
+			"ss_methods":            model.SSMethods,
 		},
 	}
 }

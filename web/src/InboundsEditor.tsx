@@ -38,6 +38,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   vless: "VLESS",
   trojan: "Trojan",
   hysteria2: "Hysteria2",
+  shadowsocks: "Shadowsocks",
 };
 
 const TRANSPORT_LABELS: Record<string, string> = {
@@ -93,6 +94,7 @@ const blank = (): InboundInput => ({
   header_paths: [],
   authority: "",
   multi_mode: false,
+  method: "2022-blake3-aes-128-gcm",
   xhttp_extra: {},
   sockopt: {},
   tls_extra: {},
@@ -125,6 +127,7 @@ function toInput(v: Inbound): InboundInput {
     header_paths: (o.header_paths ?? []).map((p) => p.replace(/^\/+/, "")),
     authority: o.authority ?? "",
     multi_mode: o.multi_mode ?? false,
+    method: o.method || "2022-blake3-aes-128-gcm",
     // The advanced sections come pre-disassembled from the server.
     xhttp_extra: v.xhttp_extra_form ?? {},
     sockopt: v.sockopt_form ?? {},
@@ -320,6 +323,11 @@ function InboundRow({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const o = v.opts;
+  const isSS = v.protocol === "shadowsocks";
+  // Shadowsocks-2022 is encrypted by its own AEAD, so "no TLS" would misread as
+  // insecure, and its transport slug just repeats the protocol. Show the method
+  // instead — dropping the "2022-blake3-" prefix every method shares.
+  const ssMethod = (o.method ?? "").replace("2022-blake3-", "");
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60">
       <button
@@ -333,9 +341,10 @@ function InboundRow({
           />
           <span className="font-medium text-ink">{v.name}</span>
           <Badge color="gray">{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Badge>
-          <Badge color="gray">{TRANSPORT_LABELS[o.transport] ?? o.transport}</Badge>
+          {!isSS && <Badge color="gray">{TRANSPORT_LABELS[o.transport] ?? o.transport}</Badge>}
+          {isSS && ssMethod && <Badge color="green">{ssMethod}</Badge>}
           {o.security === "reality" && <Badge color="green">REALITY</Badge>}
-          {o.security === "none" && <Badge color="orange">{t("inb.noTls")}</Badge>}
+          {o.security === "none" && !isSS && <Badge color="orange">{t("inb.noTls")}</Badge>}
           <Badge color="gray">{v.port}</Badge>
           {!v.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
         </div>
@@ -358,14 +367,20 @@ function InboundRow({
           )}
           <div className="flex flex-col gap-1 text-sm">
             <Row label={t("conn.port")} value={String(v.port)} />
-            <Row
-              label={t("conn.transport")}
-              value={TRANSPORT_LABELS[o.transport] ?? o.transport}
-            />
-            <Row
-              label={t("inb.security")}
-              value={securityLabels()[o.security] ?? o.security}
-            />
+            {isSS ? (
+              <Row label={t("inb.ssMethod")} value={o.method ?? ""} />
+            ) : (
+              <>
+                <Row
+                  label={t("conn.transport")}
+                  value={TRANSPORT_LABELS[o.transport] ?? o.transport}
+                />
+                <Row
+                  label={t("inb.security")}
+                  value={securityLabels()[o.security] ?? o.security}
+                />
+              </>
+            )}
             {o.path && <Row label={t("inb.path")} value={o.path} />}
             {o.service_name && <Row label={t("inb.grpcService")} value={o.service_name} />}
             {o.mode && <Row label={t("inb.xhttpMode")} value={o.mode} />}
@@ -828,6 +843,10 @@ function InboundForm({
   };
 
   const isHysteria = v.protocol === "hysteria2";
+  const isShadowsocks = v.protocol === "shadowsocks";
+  // Both protocols own their transport and security, so the editor shows neither
+  // control for them — the difference from every other protocol is just this flag.
+  const fixedTransport = isHysteria || isShadowsocks;
   const usesPath = ["ws", "xhttp", "httpupgrade"].includes(v.transport);
   const dests = v.reality_dest
     ? v.reality_dest.split(",").map((d) => d.trim()).filter(Boolean)
@@ -863,7 +882,7 @@ function InboundForm({
         />
       </div>
 
-      {!isHysteria && (
+      {!fixedTransport && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
             label={t("conn.transport")}
@@ -883,6 +902,18 @@ function InboundForm({
               label: securityLabels()[s] ?? s,
             }))}
           />
+        </div>
+      )}
+
+      {isShadowsocks && (
+        <div className="flex flex-col gap-2">
+          <Select
+            label={t("inb.ssMethod")}
+            value={v.method}
+            onChange={(x) => set("method", x)}
+            data={(catalog.enums.ss_methods ?? []).map((m) => ({ value: m, label: m }))}
+          />
+          <p className="text-xs text-ink-muted">{t("inb.ssHint")}</p>
         </div>
       )}
 
@@ -927,7 +958,7 @@ function InboundForm({
         />
       )}
 
-      {!isHysteria && v.security !== "reality" && (
+      {!fixedTransport && v.security !== "reality" && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextInput
             label={t("inb.sni")}
@@ -946,7 +977,7 @@ function InboundForm({
         </div>
       )}
 
-      {!isHysteria && (
+      {!fixedTransport && (
         <Select
           label="Fingerprint (uTLS)"
           value={v.fp || "firefox"}
@@ -1012,7 +1043,9 @@ function InboundForm({
         </div>
       )}
 
-      <AdvancedSection v={v} set={set} enums={catalog.enums} />
+      {/* Shadowsocks has no streamSettings, so none of the transport/TLS/masquerade
+          knobs in here apply to it. */}
+      {!isShadowsocks && <AdvancedSection v={v} set={set} enums={catalog.enums} />}
 
       <label className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
         <span className="text-sm">{t("common.enabled")}</span>

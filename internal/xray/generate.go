@@ -512,6 +512,13 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 	case model.InbHysteria:
 		out.Protocol = "hysteria"
 		out.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+	case model.InbShadowsocks:
+		out.Settings = ShadowsocksInboundSettings{
+			Method:   in.Opts.Method,
+			Password: in.Opts.ShadowKey,
+			Network:  "tcp,udp",
+			Users:    customShadowsocksClients(in, allowed),
+		}
 	}
 	out.StreamSettings = customStream(in, set, cert, minTLS)
 	return out
@@ -530,6 +537,13 @@ func allowedUsers(users []model.User, allow func(model.User) bool) []model.User 
 
 // customStream builds the streamSettings for one custom inbound.
 func customStream(in model.Inbound, set *model.Settings, cert []Certificate, minTLS string) *StreamSettings {
+	// Shadowsocks-2022 is raw TCP with its own AEAD and no TLS/REALITY layer, so it
+	// carries no streamSettings at all — the tcp+udp choice lives in its settings
+	// (see ShadowsocksInboundSettings.Network). A streamSettings with network
+	// "shadowsocks" would be a transport Xray doesn't know.
+	if in.Protocol == model.InbShadowsocks {
+		return nil
+	}
 	o := in.Opts
 	st := &StreamSettings{Network: o.Transport}
 
@@ -673,6 +687,37 @@ func customHysteriaClients(users []model.User) []HysteriaClient {
 	return out
 }
 
+// customShadowsocksClients builds a Shadowsocks-2022 inbound's client list. The key
+// is derived from the UUID rather than stored, so it moves with the credential the
+// panel already rotates (see model.UserShadowKey).
+//
+// The list is never allowed to be empty, and that is a security property, not a
+// tidiness one. Xray builds a Shadowsocks-2022 inbound in two very different ways: a
+// non-empty `users` list is a multi-user server where the top-level key only selects
+// a user, but an EMPTY list collapses to a SINGLE-user server whose access key IS
+// that top-level key — the server key that sits in every client link this inbound
+// ever issued. So "nobody may use this inbound" (an access group emptied, every user
+// revoked) would silently become "anybody who ever held a link may", with no account
+// behind it and no quota on it. When no real user is allowed we keep exactly one
+// locked entry instead, so Xray stays multi-user and the only key that authenticates
+// is one nobody has. Fail closed, like the empty client list on every other protocol.
+func customShadowsocksClients(in model.Inbound, users []model.User) []ShadowsocksClient {
+	out := make([]ShadowsocksClient, 0, len(users))
+	for _, u := range users {
+		out = append(out, ShadowsocksClient{
+			Password: model.UserShadowKey(u.UUID, in.Opts.Method),
+			Email:    model.UserEmail(u.ID),
+		})
+	}
+	if len(out) == 0 {
+		out = append(out, ShadowsocksClient{
+			Password: model.LockedShadowKey(in.Opts.ShadowKey, in.Opts.Method),
+			Email:    "ss-locked-" + in.Tag(),
+		})
+	}
+	return out
+}
+
 // protocolClients builds the client lists for the three BUILT-IN lanes (a disabled
 // one gets none, so nobody can authenticate against it). REALITY reuses the VLESS
 // UUID but with no flow — Vision is raw-TCP only, not XHTTP.
@@ -746,6 +791,20 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 			stub.Settings = VLESSInboundSettings{Clients: customVLESSClients(c, allowed), Decryption: "none"}
 		case model.InbTrojan:
 			stub.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
+		case model.InbShadowsocks:
+			// Shadowsocks-2022 DOES implement AddUser/RemoveUser, so `xray api adu`
+			// works on it — unlike Hysteria2. Leaving it in the default branch below was
+			// a live-update hole in one direction only: EnabledInboundTags lists it for
+			// `rmu` (which works), so a REVOKED user was dropped live, but a newly
+			// allowed user was never added live and couldn't connect until the next full
+			// restart. adu parses the whole entry, so method/key/network must be here for
+			// it to build, even though only the users are applied by tag.
+			stub.Settings = ShadowsocksInboundSettings{
+				Method:   c.Opts.Method,
+				Password: c.Opts.ShadowKey,
+				Network:  "tcp,udp",
+				Users:    customShadowsocksClients(c, allowed),
+			}
 		case model.InbHysteria:
 			// Same as the built-in lane above: rebuilt, not live-updated.
 			continue

@@ -1,6 +1,7 @@
 package link
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"strings"
@@ -29,6 +30,8 @@ func Custom(u model.User, in model.Inbound, set *model.Settings) string {
 		return customTrojan(u, in, set)
 	case model.InbHysteria:
 		return customHysteria(u, in, set)
+	case model.InbShadowsocks:
+		return customShadowsocks(u, in, set)
 	}
 	return ""
 }
@@ -175,4 +178,22 @@ func customHysteria(u model.User, in model.Inbound, set *model.Settings) string 
 		q.Set("fm", url.QueryEscape(hopParams(in.Port, in.Opts.HopEnd, in.Opts.HopIntervalOr())))
 	}
 	return customAssemble("hysteria2", url.QueryEscape(u.Password), in, q, set)
+}
+
+// customShadowsocks builds an ss:// link for a Shadowsocks-2022 inbound, in the
+// SIP002 form that mihomo, sing-box, v2rayN, Shadowrocket and Streisand parse:
+//
+//	ss://base64url(method:serverKey:userKey)@host:port#label
+//
+// The userinfo is the whole "method:serverKey:userKey" triple, base64url without
+// padding — the multi-user 2022 shape, where the password is the server key and the
+// user key joined by a colon. It is NOT percent-encoded like the other schemes: the
+// credential is the base64 blob itself, and a client splits it on the first colon.
+func customShadowsocks(u model.User, in model.Inbound, set *model.Settings) string {
+	o := in.Opts
+	userKey := model.UserShadowKey(u.UUID, o.Method)
+	userinfo := base64.RawURLEncoding.EncodeToString(
+		[]byte(o.Method + ":" + o.ShadowKey + ":" + userKey))
+	return fmt.Sprintf("ss://%s@%s:%d#%s",
+		userinfo, set.Host, in.Port, url.PathEscape(CustomLabel(in, set)))
 }

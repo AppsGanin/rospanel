@@ -356,6 +356,31 @@ type TrojanClient struct {
 	Email    string `json:"email,omitempty"`
 }
 
+// ShadowsocksInboundSettings is the "settings" object for a Shadowsocks-2022
+// multi-user inbound. Method and Password (the server key) sit at the top level;
+// each user carries its own key. Network "tcp,udp" is set explicitly so the inbound
+// relays UDP (DNS, QUIC, Telegram calls) as well as TCP — Xray's default for
+// Shadowsocks is TCP only, which would quietly drop every datagram.
+//
+// The per-user list is "users" (like Hysteria2, NOT "clients" like VLESS/Trojan).
+// Xray's parser accepts "clients" as an alias too, but "users" is the canonical name
+// its own docs use — depend on that, not on the alias surviving a future release.
+type ShadowsocksInboundSettings struct {
+	Method   string              `json:"method"`
+	Password string              `json:"password"` // server key
+	Network  string              `json:"network"`  // "tcp,udp"
+	Users    []ShadowsocksClient `json:"users"`
+}
+
+// ShadowsocksClient is one Shadowsocks-2022 user: their own key plus the email tag
+// that attributes traffic for per-user stats and access logging, exactly like the
+// other protocols' client structs. For a 2022 method Xray reads this as the user key
+// alone; the client is what joins it to the server key.
+type ShadowsocksClient struct {
+	Password string `json:"password"` // user key
+	Email    string `json:"email,omitempty"`
+}
+
 // HysteriaInboundSettings is the "settings" object for a Hysteria2 inbound.
 // Per Xray's schema the per-user list is "users" (NOT "clients" like Trojan/
 // VLESS) — using the wrong key leaves Xray with no users, so traffic isn't
