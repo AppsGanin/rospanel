@@ -590,9 +590,13 @@ func (rt *Router) logout(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = rt.mgr.Store().DeleteSession(c.Value)
 	}
+	// Match every attribute the session cookie was set with (see setSessionCookie),
+	// not just the name and path: a browser only overwrites a cookie when Secure and
+	// SameSite line up too, so a bare deletion can leave the Secure cookie in place —
+	// and it keeps this expiry off any accidental plaintext path all the same.
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: "", Path: rt.cookiePath(),
-		HttpOnly: true, MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1,
 	})
 	writeOK(w)
 }
