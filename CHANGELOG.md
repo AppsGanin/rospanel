@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.8.0](https://github.com/AppsGanin/rospanel/compare/v2.7.1...v2.8.0) (2026-08-15)
+
+
+### Features
+
+* **audit:** search, date-range filter and CSV export for the panel journal ([fdbfe89](https://github.com/AppsGanin/rospanel/commit/fdbfe8943b6b8ccea20ad99400fa21c2f8068104))
+* **cli:** add a rescue command to regain locked-out access ([c807b2b](https://github.com/AppsGanin/rospanel/commit/c807b2b9089f01be501d83092c420f883c8dbc64))
+* **nodes:** per-node traffic coefficient for quota ([0a13450](https://github.com/AppsGanin/rospanel/commit/0a134500cab43fd5018ad72f4443c99505c06b28))
+* **ops:** maintenance mode ([44571af](https://github.com/AppsGanin/rospanel/commit/44571af995084e914bece2a407019739f1daec21))
+* **routing:** config snapshots with one-click rollback ([d93d130](https://github.com/AppsGanin/rospanel/commit/d93d1301c2988899e45a069804a05acdf4e2dc4a))
+* **security:** detect IPs scanning for the hidden panel path ([8f5852a](https://github.com/AppsGanin/rospanel/commit/8f5852af9a6038124a1e15f0f85edbbe21acde21))
+* **stats:** connection geo map — source IPs by country ([3f8e15b](https://github.com/AppsGanin/rospanel/commit/3f8e15b8f9bed570128cec663d87b1ce5610f30e))
+* **sub:** response rules — force format or block by client/OS ([545698c](https://github.com/AppsGanin/rospanel/commit/545698cab569580a995e6073d970181dbac76d54))
+* **xray:** watchdog auto-recovers a wedged (alive but not serving) Xray ([f5bb172](https://github.com/AppsGanin/rospanel/commit/f5bb1728549598643d63fe85439e490b65f9676b))
+
+
+### Bug Fixes
+
+* **auth:** set Secure and SameSite on the session-clearing cookie ([3b7385b](https://github.com/AppsGanin/rospanel/commit/3b7385bcf4e9b7679de7ee67d033def13097fd5d))
+* harden geoip parser, probe miss-detection and CSV export (review) ([4de933e](https://github.com/AppsGanin/rospanel/commit/4de933e46ddfc3d8ad61842263001e2e5649153f))
+* post-review fixes for the three new features ([e4cc344](https://github.com/AppsGanin/rospanel/commit/e4cc344f884f2c656a6b972cefaac698a1ecb62c))
+
 ## [2.7.1](https://github.com/AppsGanin/rospanel/compare/v2.7.0...v2.7.1) (2026-08-14)
 
 
