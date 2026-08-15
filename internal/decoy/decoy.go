@@ -207,18 +207,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serve(w, r, a, http.StatusOK)
 }
 
-// Miss reports whether urlPath resolves to no asset this template ships — i.e. the
-// request would be served as a "not found" rather than a real page. Read-only; it
-// mirrors ServeHTTP's name resolution so probe detection sees exactly what the decoy
-// treats as a miss. A scanner guessing the hidden panel path hits misses; a browser
-// loading the decoy's own pages and assets does not.
+// Miss reports whether urlPath would be served as a genuine "not found" (a 404) rather
+// than a real page — mirroring what serveMiss actually does, so probe detection counts
+// exactly the requests the decoy treats as misses. A scanner guessing the hidden panel
+// path hits misses; a browser loading the decoy's own pages and assets does not.
+//
+// The subtlety is the single-page templates: they ship no 404 page and answer an
+// EXTENSIONLESS miss with the index under 200 (the `try_files $uri /index.html` case),
+// so that is NOT a miss — only a template with its own 404 page, or a missing asset
+// (a path with an extension), is. Counting extensionless SPA fallbacks would flag a
+// visitor following an internal client-route link as a scanner.
 func (h *Handler) Miss(urlPath string) bool {
 	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
 	if name == "" {
 		name = "index.html"
 	}
-	_, ok := h.files[name]
-	return !ok
+	if _, ok := h.files[name]; ok {
+		return false // a real page or asset the template ships
+	}
+	return h.notFound != nil || path.Ext(name) != ""
 }
 
 // serveMiss answers a path the template doesn't have.

@@ -76,3 +76,25 @@ func TestCountryLookup(t *testing.T) {
 		}
 	}
 }
+
+// A corrupt or truncated geoip.dat must fail cleanly, never panic — in particular a
+// length prefix ≥ 2^63 (which casts to a negative int) must not slip past the bounds
+// check and slice out of range.
+func TestCountryLookupMalformed(t *testing.T) {
+	dir := t.TempDir()
+	// Top-level entry tag 0x0A followed by an absurd length varint.
+	bad := binary.AppendUvarint([]byte{0x0A}, uint64(1)<<63)
+	if err := os.WriteFile(filepath.Join(dir, "geoip.dat"), bad, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadCountryLookup(dir); err == nil {
+		t.Error("expected an error for a malformed geoip.dat, got nil")
+	}
+
+	// A truncated valid-looking entry must also not panic.
+	trunc := geoipDat(geoEntry("US", cidrMsg([]byte{8, 8, 8, 0}, 24)))
+	if err := os.WriteFile(filepath.Join(dir, "geoip.dat"), trunc[:len(trunc)-3], 0o644); err != nil {
+		t.Fatalf("write trunc: %v", err)
+	}
+	_, _ = LoadCountryLookup(dir) // must not panic; result is don't-care
+}

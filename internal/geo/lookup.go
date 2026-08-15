@@ -47,7 +47,9 @@ func LoadCountryLookup(dir string) (*CountryLookup, error) {
 		}
 		data = data[n:]
 		msgLen, n := binary.Uvarint(data)
-		if n <= 0 || int(msgLen) > len(data[n:]) {
+		// Unsigned compare: a length varint ≥ 2^63 makes int(msgLen) negative, which
+		// would slip past a signed `> len` check and then panic on the slice.
+		if n <= 0 || msgLen > uint64(len(data[n:])) {
 			break
 		}
 		data = data[n:]
@@ -208,7 +210,9 @@ func readTag(msg []byte) (field uint64, wire byte, rest []byte, ok bool) {
 
 func readBytes(msg []byte) (b, rest []byte, ok bool) {
 	l, n := binary.Uvarint(msg)
-	if n <= 0 || int(l) > len(msg[n:]) {
+	// Unsigned compare so a huge (or overflow-to-negative-when-cast) length can't slip
+	// past the bound and panic the slice below.
+	if n <= 0 || l > uint64(len(msg[n:])) {
 		return nil, nil, false
 	}
 	return msg[n : n+int(l)], msg[n+int(l):], true

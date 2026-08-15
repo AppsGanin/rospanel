@@ -22,6 +22,21 @@ type adminAuditResponse struct {
 	NextBefore int64              `json:"next_before"`
 }
 
+// csvSafe neutralizes spreadsheet formula injection: a cell beginning with =, +, -, @,
+// or a leading tab/CR can execute as a formula when the export is opened in Excel or
+// Sheets. Prefixing a single quote makes the app treat it as text. Applied to the
+// fields that can carry free-form (potentially user-influenced) text.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 // adminAuditFilterFromQuery builds the store filter shared by the paged list and the
 // CSV export, so a search/date/actor/category filter can never mean one thing on
 // screen and another in the exported file. ok=false means the query named a category
@@ -104,7 +119,8 @@ func (rt *Router) exportAdminAudit(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			ts := time.Unix(ev.CreatedAt, 0).UTC().Format(time.RFC3339)
-			return cw.Write([]string{ts, ev.Action, ev.Target, ev.ActorKind, ev.ActorName, ev.IP, det})
+			return cw.Write([]string{ts, ev.Action,
+				csvSafe(ev.Target), ev.ActorKind, csvSafe(ev.ActorName), ev.IP, csvSafe(det)})
 		})
 		if err != nil {
 			// The 200 and header row are already on the wire, so there is nothing to

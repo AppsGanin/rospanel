@@ -156,19 +156,31 @@ func TestSPATemplateFallbackAndAssetMiss(t *testing.T) {
 	}
 }
 
-// Miss must agree with what ServeHTTP actually treats as a not-found: the site root
-// and the template's own assets are hits, guessed paths are misses. Probe detection
-// keys off this, so a disagreement would either miss scanners or flag real visitors.
-func TestMissAgreesWithServe(t *testing.T) {
+// Miss must agree with what serveMiss actually returns, since probe detection keys off
+// it. A single-page template (no 404 page) answers an extensionless miss with the
+// index under 200 — that is NOT a miss; only a missing asset (has an extension) is.
+func TestMissMatchesSPAServe(t *testing.T) {
 	h := newTestHandler(t, "filecloud")
 	if h.Miss("/") {
 		t.Error("root reported as a miss; a visitor loading the site must not count")
 	}
-	if !h.Miss("/definitely-not-a-real-path") {
-		t.Error("a guessed path reported as a hit; scanners would go unseen")
+	if h.Miss("/dashboard/files") {
+		t.Error("extensionless path is served the index under 200 — must not count as a miss")
 	}
 	if !h.Miss("/assets/nope.js") {
-		t.Error("a missing asset reported as a hit")
+		t.Error("a missing asset is a genuine 404 — must count as a miss")
+	}
+}
+
+// A classic template ships its own 404 page, so every miss IS a genuine 404 — a
+// guessed path there is the scan signal, extension or not.
+func TestMissMatchesClassicServe(t *testing.T) {
+	h := newTestHandler(t, "coming-soon")
+	if h.Miss("/") {
+		t.Error("root reported as a miss")
+	}
+	if !h.Miss("/definitely-not-a-real-path") {
+		t.Error("a guessed path on a 404-serving site must count as a miss")
 	}
 }
 
