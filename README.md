@@ -332,7 +332,9 @@ sign in at all. The **user log** records what was
 done to them and by whom (admin, API key, bot, the user themselves, the system) and survives
 their deletion. The **panel log** (visible to the owner) covers logins and **failed attempts
 with IPs**, second factors switched on and off, settings changes and backups; only successful
-actions are written, request bodies never are. Both logs are kept for 90 days.
+actions are written, request bodies never are. The panel log is **searchable** (free text over
+action, target, administrator and IP) and filterable by category and date range, and the
+current view **exports to CSV** in one click. Both logs are kept for 90 days.
 
 #### 🤖 Integrations
 

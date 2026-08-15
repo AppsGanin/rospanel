@@ -794,6 +794,11 @@ const en: Dict = {
       "Who signed in and what they changed: settings, plans, keys, backups, the administrator roster. Passwords and tokens never reach the journal. Kept for {{days}} days.",
     empty: "No events.",
     allEvents: "All events",
+    search: "Search",
+    searchHint: "Action, target, administrator, IP…",
+    from: "From",
+    to: "To",
+    export: "Export CSV",
     // A settings row's target is stored as audit.sec.<key> so the journal reads in
     // the admin's language rather than the server's.
     sec: {

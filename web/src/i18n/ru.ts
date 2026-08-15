@@ -800,6 +800,11 @@ const ru = {
       "Кто входил в панель и что менял: настройки, тарифы, ключи, бэкапы, состав администраторов. Пароли и токены в журнал не попадают. Хранится {{days}} дней.",
     empty: "Событий нет.",
     allEvents: "Все события",
+    search: "Поиск",
+    searchHint: "Действие, цель, администратор, IP…",
+    from: "С",
+    to: "По",
+    export: "Экспорт CSV",
     // A settings row's target is stored as audit.sec.<key> so the journal reads in
     // the admin's language rather than the server's.
     sec: {

@@ -1,17 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type AdminAudit,
+  type AdminAuditFilter,
+  adminAuditExportURL,
   getAdminAuditCatalog,
   listAdminAudit,
 } from "./api";
 import { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
-import { Badge, Button, Select, SettingCard, Skeleton } from "./ui";
+import { Badge, Button, Select, SettingCard, Skeleton, TextInput } from "./ui";
 
 // Same page size as the user journal (api.EVENT_PAGE) — two audit trails that read
 // the same way should not open at different depths.
 const PAGE = 20;
+
+// A YYYY-MM-DD date input → unix seconds at the local day's start (from) or end (to,
+// inclusive), or 0 when blank. Local time is what the operator picked, so that is
+// what the range means.
+function dayStart(d: string): number {
+  if (!d) return 0;
+  const t = new Date(`${d}T00:00:00`).getTime();
+  return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
+}
+function dayEnd(d: string): number {
+  if (!d) return 0;
+  const t = new Date(`${d}T23:59:59`).getTime();
+  return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
+}
 
 function fmtTs(unix: number): string {
   return new Date(unix * 1000).toLocaleString(currentLang(), {
@@ -100,6 +116,10 @@ export function AdminAuditPanel() {
   // journal follows the panel's language rather than the server's.
   const [categoryKeys, setCategoryKeys] = useState<string[]>([]);
   const [category, setCategory] = useState("");
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [next, setNext] = useState(0);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
@@ -110,6 +130,12 @@ export function AdminAuditPanel() {
       .catch(() => {}); // the journal still renders, just without the filter
   }, []);
 
+  // Debounce the search box so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(id);
+  }, [search]);
+
   const options = [
     { value: "", label: t("audit.allEvents") },
     ...categoryKeys.map((k) => ({ value: k, label: td(`audit.cat.${k}`) })),
@@ -118,17 +144,29 @@ export function AdminAuditPanel() {
   // Rows are titled by their exact action; the filter offers areas.
   const actionLabel = (action: string) => td(`audit.action.${slugKey(action)}`);
 
-  // Refetch from the top whenever the filter changes.
+  // The active filter, shared by the paged list and the CSV export so they can never
+  // show and download different things.
+  const filter = useMemo<AdminAuditFilter>(
+    () => ({
+      category: category || undefined,
+      search: debounced || undefined,
+      from: dayStart(from) || undefined,
+      to: dayEnd(to) || undefined,
+    }),
+    [category, debounced, from, to],
+  );
+
+  // Refetch from the top whenever any part of the filter changes.
   const load = useCallback(() => {
     setLoading(true);
-    listAdminAudit({ category, limit: PAGE })
+    listAdminAudit({ ...filter, limit: PAGE })
       .then((p) => {
         setEvents(p.events);
         setNext(p.next_before);
       })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
-  }, [category]);
+  }, [filter]);
 
   useEffect(() => {
     load();
@@ -137,7 +175,7 @@ export function AdminAuditPanel() {
   const loadMore = () => {
     if (!next) return;
     setMore(true);
-    listAdminAudit({ category, before: next, limit: PAGE })
+    listAdminAudit({ ...filter, before: next, limit: PAGE })
       .then((p) => {
         setEvents((prev) => [...prev, ...p.events]);
         setNext(p.next_before);
@@ -157,6 +195,26 @@ export function AdminAuditPanel() {
       }
       stackAction
     >
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <TextInput
+            label={t("audit.search")}
+            type="search"
+            value={search}
+            onChange={setSearch}
+            placeholder={t("audit.searchHint")}
+          />
+        </div>
+        <TextInput label={t("audit.from")} type="date" value={from} onChange={setFrom} />
+        <TextInput label={t("audit.to")} type="date" value={to} onChange={setTo} />
+        <a
+          href={adminAuditExportURL(filter)}
+          download="rospanel-audit.csv"
+          className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-ink hover:bg-gray-50"
+        >
+          {t("audit.export")}
+        </a>
+      </div>
       {loading ? (
         <div className="flex flex-col gap-2">
           {[0, 1, 2].map((i) => (
