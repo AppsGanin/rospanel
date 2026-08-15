@@ -898,6 +898,24 @@ export const saveSubSettings = (s: SubSettings) =>
     body: JSON.stringify(s),
   })
 
+// Subscription response rules: evaluated in order before format auto-detection.
+export interface SubRule {
+  field: 'user_agent' | 'device_os' | 'ver_os' | 'device_model'
+  op: 'contains' | 'equals' | 'prefix' | 'regex' | 'not_contains'
+  value: string
+  action: 'v2ray' | 'clash' | 'singbox' | 'block'
+  enabled: boolean
+}
+
+export const getSubRules = () =>
+  api<{ rules: SubRule[] }>('api/settings/sub-rules').then((r) => r.rules)
+
+export const saveSubRules = (rules: SubRule[]) =>
+  api<{ ok: boolean }>('api/settings/sub-rules', {
+    method: 'POST',
+    body: JSON.stringify({ rules }),
+  })
+
 export interface ThemeColors {
   accent: string // primary colour #rrggbb (drives the whole brand ramp)
   text: string // main text

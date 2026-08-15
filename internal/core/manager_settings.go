@@ -625,6 +625,28 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	return m.store.SetSubSettings(st)
 }
 
+// SubRules returns the stored subscription response rules.
+func (m *Manager) SubRules() ([]model.SubRule, error) {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	return set.SubRules, nil
+}
+
+// SaveSubRules validates and stores the subscription response rules. Every rule is
+// checked so a malformed one (bad regex, unknown field) is rejected up front rather
+// than sitting in the list never matching.
+func (m *Manager) SaveSubRules(rules []model.SubRule) error {
+	for i, r := range rules {
+		if err := r.Valid(); err != nil {
+			return err
+		}
+		rules[i].Value = strings.TrimSpace(r.Value)
+	}
+	return m.store.SetSubRules(rules)
+}
+
 type routingTmpl struct {
 	body string
 	at   time.Time

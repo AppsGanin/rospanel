@@ -79,7 +79,18 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
-		switch subFormat(r) {
+		// Operator response rules run before auto-detection: a rule can force a format
+		// for a specific client/OS/version, or block it (served the decoy, so a scraper
+		// learns nothing). No matching rule falls through to the User-Agent detection.
+		format := subFormat(r)
+		if action := model.EvalSubRules(set.SubRules, subRuleInput(r)); action != "" {
+			if action == model.SubActionBlock {
+				rt.decoy.ServeHTTP(w, r)
+				return
+			}
+			format = action
+		}
+		switch format {
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
@@ -635,6 +646,17 @@ func (rt *Router) setRoutingHeaders(w http.ResponseWriter, r *http.Request, set 
 	}
 	w.Header().Set("routing", strings.TrimSpace(deeplink))
 	w.Header().Set("routing-enable", "true")
+}
+
+// subRuleInput pulls the request attributes a response rule can test — the
+// User-Agent plus the HWID subscription headers.
+func subRuleInput(r *http.Request) model.SubRuleInput {
+	return model.SubRuleInput{
+		UserAgent:   r.Header.Get("User-Agent"),
+		DeviceOS:    r.Header.Get("x-device-os"),
+		VerOS:       r.Header.Get("x-ver-os"),
+		DeviceModel: r.Header.Get("x-device-model"),
+	}
 }
 
 // subFormat picks the subscription format: an explicit ?format= wins, otherwise
