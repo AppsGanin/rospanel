@@ -745,6 +745,7 @@ export interface SettingsInfo extends SubSettings {
   local_backup_cron: string
   local_backup_keep: number
   user_autodelete_days: number
+  maintenance_mode: boolean
   hwid: HWIDSettings
 }
 
@@ -914,6 +915,12 @@ export const saveSubRules = (rules: SubRule[]) =>
   api<{ ok: boolean }>('api/settings/sub-rules', {
     method: 'POST',
     body: JSON.stringify({ rules }),
+  })
+
+export const saveMaintenance = (enabled: boolean) =>
+  api<{ ok: boolean }>('api/settings/maintenance', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
   })
 
 export interface ThemeColors {

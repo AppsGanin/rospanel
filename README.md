@@ -270,6 +270,10 @@ matched against the request (User-Agent or an HWID header) — force a specific 
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
+**Maintenance mode** — one switch puts the public surfaces (subscription page, status page,
+decoy) on a "temporarily unavailable" page while the panel, API, node sync and the tunnels
+themselves keep running, so existing connections are untouched and the operator can still sign in.
+
 #### 🧭 Routing and egress
 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with

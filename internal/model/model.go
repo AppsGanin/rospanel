@@ -607,6 +607,10 @@ type Settings struct {
 	// SubRules are the subscription response rules, evaluated in order before the
 	// automatic format detection (see EvalSubRules). Stored as JSON in one column.
 	SubRules []SubRule `json:"-"`
+
+	// MaintenanceMode makes the public surfaces show a "temporarily unavailable"
+	// page; the panel, API, node sync and the tunnels themselves keep serving.
+	MaintenanceMode bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
