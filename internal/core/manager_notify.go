@@ -316,6 +316,23 @@ func (m *Manager) onXrayCrash(err error) {
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
 }
 
+// onXrayWedged reports that the watchdog found Xray alive but no longer answering its
+// API and restarted it. Unlike a crash this is self-resolving — the restart has
+// already run — so the message says so and there is no separate all-clear. Shares the
+// crash throttle so a process that keeps wedging can't spam the chat.
+func (m *Manager) onXrayWedged() {
+	m.throttleMu.Lock()
+	now := time.Now()
+	if now.Sub(m.lastCrashNotify) < crashNotifyThrottle {
+		m.throttleMu.Unlock()
+		return
+	}
+	m.lastCrashNotify = now
+	m.throttleMu.Unlock()
+	lang := m.botLang()
+	m.notifyAdminEvent(model.AdminEventXrayDown, i18n.T(lang, "notify.xrayWedged", model.LocalNodeName))
+}
+
 // onXrayRecover reports that Xray is back, but only when this panel actually raised
 // the alarm. An alert with no all-clear leaves the operator unable to tell "recovered
 // in two seconds" from "still down" — and an all-clear for an alarm that was

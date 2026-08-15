@@ -298,6 +298,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	}
 	m.sup.SetOnCrash(m.onXrayCrash)     // alert admins when Xray exits unexpectedly
 	m.sup.SetOnRecover(m.onXrayRecover) // ...and tell them when it is back
+	m.sup.SetOnWedged(m.onXrayWedged)   // ...and when the watchdog revives a hung one
+	m.sup.StartWatchdog()               // auto-restart a wedged (alive-but-not-serving) Xray
 	// The same two alerts for the remote nodes. They have no bot of their own, and a
 	// node that stops syncing altogether can only be noticed on a timer.
 	go m.nodeWatchLoop()
