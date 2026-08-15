@@ -32,6 +32,9 @@ type Panel interface {
 	ResetTraffic(ctx context.Context, id int64) error
 	BackupManifest() backup.Manifest
 	Location() *time.Location
+	// DeviceCount is the number of HWID-bound devices a user has, for the card's
+	// device line (only consulted when HWID binding is enabled).
+	DeviceCount(userID int64) int
 
 	// Billing (no-op surface unless tariffs are enabled).
 	ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error)
