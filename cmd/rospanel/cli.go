@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/datasec"
@@ -51,6 +52,8 @@ Commands:
   path               Show the panel URL and check secrets.key / the database.
   totp reset <login> Remove an admin's two-factor authentication (lost phone).
                      Without arguments: list who has it enabled.
+  rescue <sub>       Regain access when locked out: list, password <login>,
+                     unlock <login> (password + clear 2FA), owner <login>.
   reset [-y]         Factory reset — wipes the entire database.
   version            Show the version.
   help               Show this help.
@@ -561,4 +564,174 @@ func confirmTTY(prompt string) bool {
 		return true
 	}
 	return false
+}
+
+// runRescue is the way back in when an operator is locked out of the panel: a lost
+// password, a lost second factor, or an admin roster with no reachable owner. It runs
+// on the box with the data directory, which is the trust boundary — anyone who can
+// run it already has the database. It deliberately overlaps `totp reset` (which stays)
+// and adds the password and owner halves the web UI can't offer a locked-out admin.
+func runRescue(dataDir string, args []string) {
+	// The secrets key is not needed here — nothing reads a secret back, and a broken
+	// key is one of the reasons an admin is locked out — so a missing one only warns.
+	if err := datasec.Init(dataDir); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: secrets key unavailable (%v) — continuing, rescue does not need it\n", err)
+	}
+	st, err := store.Open(filepath.Join(dataDir, "rospanel.db"))
+	if err != nil {
+		log.Fatalf("rescue: open store: %v", err)
+	}
+	defer st.Close()
+
+	sub := ""
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "", "list", "status":
+		admins, err := st.ListAdmins()
+		if err != nil {
+			log.Fatalf("rescue: %v", err)
+		}
+		fmt.Printf("  %-20s %-9s %-4s %s\n", "LOGIN", "ROLE", "2FA", "LAST LOGIN")
+		for _, a := range admins {
+			twoFA := "off"
+			if a.TOTPEnabled {
+				twoFA = "ON"
+			}
+			last := "never"
+			if a.LastLoginAt > 0 {
+				last = time.Unix(a.LastLoginAt, 0).Format("2006-01-02 15:04")
+			}
+			fmt.Printf("  %-20s %-9s %-4s %s\n", a.Username, a.Role, twoFA, last)
+		}
+		fmt.Println("\n  rescue password <login>   set a new password (printed once)")
+		fmt.Println("  rescue unlock <login>     new password AND remove the second factor")
+		fmt.Println("  rescue owner <login>      create an owner, or promote+unlock an existing admin")
+
+	case "password":
+		login := firstPositional(args[1:])
+		if login == "" {
+			fmt.Fprintln(os.Stderr, "usage: rospanel rescue password <login>")
+			os.Exit(1)
+		}
+		rescueSetPassword(st, login, false)
+
+	case "unlock":
+		login := firstPositional(args[1:])
+		if login == "" {
+			fmt.Fprintln(os.Stderr, "usage: rospanel rescue unlock <login>")
+			os.Exit(1)
+		}
+		rescueSetPassword(st, login, true)
+
+	case "owner":
+		login := firstPositional(args[1:])
+		if login == "" {
+			fmt.Fprintln(os.Stderr, "usage: rospanel rescue owner <login>")
+			os.Exit(1)
+		}
+		rescueOwner(st, login)
+
+	default:
+		fmt.Fprintf(os.Stderr, "unknown rescue command %q\n", sub)
+		fmt.Fprintln(os.Stderr, "usage: rospanel rescue [list|password <login>|unlock <login>|owner <login>]")
+		os.Exit(2)
+	}
+}
+
+// rescueSetPassword resets one admin's password, printing the new one exactly once,
+// and (when unlock) removes the second factor too. must_change is set so the operator
+// picks their own password on the next sign-in and this one stops working.
+func rescueSetPassword(st *store.Store, login string, unlock bool) {
+	id, _, _, err := st.GetAdminAuth(login)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "no admin named %q\n", login)
+		os.Exit(1)
+	}
+	pw := rescueResetPassword(st, id)
+	if unlock {
+		if _, err := st.DisableAdminTOTPByName(login); err != nil {
+			log.Fatalf("rescue: clear 2FA: %v", err)
+		}
+	}
+	rescueAudit(st, model.AuditAdminPasswordReset, login, unlock)
+	printRescueCredentials(login, pw, unlock)
+}
+
+// rescueOwner promotes an existing admin to owner and unlocks them, or creates a new
+// owner when the login is unknown — the escape hatch for a roster with no way in.
+func rescueOwner(st *store.Store, login string) {
+	pw, err := auth.RandomPassword()
+	if err != nil {
+		log.Fatalf("rescue: generate password: %v", err)
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		log.Fatalf("rescue: hash password: %v", err)
+	}
+	if id, _, _, err := st.GetAdminAuth(login); err == nil {
+		// Exists: make them owner, reset the password, clear any second factor.
+		if err := st.SetAdminRole(id, model.RoleOwner); err != nil {
+			log.Fatalf("rescue: set role: %v", err)
+		}
+		if err := st.UpdateAdminPassword(id, hash, true); err != nil {
+			log.Fatalf("rescue: set password: %v", err)
+		}
+		if _, err := st.DisableAdminTOTPByName(login); err != nil {
+			log.Fatalf("rescue: clear 2FA: %v", err)
+		}
+		rescueAudit(st, model.AuditAdminPasswordReset, login, true)
+		fmt.Printf("promoted %q to owner and unlocked it\n", login)
+		printRescueCredentials(login, pw, true)
+		return
+	}
+	if _, err := st.CreateAdmin(login, hash, model.RoleOwner, true); err != nil {
+		log.Fatalf("rescue: create owner: %v", err)
+	}
+	rescueAudit(st, model.AuditAdminCreated, login, false)
+	fmt.Printf("created owner %q\n", login)
+	printRescueCredentials(login, pw, false)
+}
+
+// rescueResetPassword writes a fresh random password for one admin and returns it.
+func rescueResetPassword(st *store.Store, id int64) string {
+	pw, err := auth.RandomPassword()
+	if err != nil {
+		log.Fatalf("rescue: generate password: %v", err)
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		log.Fatalf("rescue: hash password: %v", err)
+	}
+	if err := st.UpdateAdminPassword(id, hash, true); err != nil {
+		log.Fatalf("rescue: set password: %v", err)
+	}
+	return pw
+}
+
+// rescueAudit records the rescue on the admin trail, so a password reset done from a
+// shell still shows up next to the ones done in the UI. Best-effort: a rescue must
+// not fail because the trail could not be written.
+func rescueAudit(st *store.Store, action, login string, twoFACleared bool) {
+	details := map[string]any{"via": "rescue-cli"}
+	if twoFACleared {
+		details["cleared_2fa"] = true
+	}
+	_ = st.AddAdminAudit(model.AdminAudit{
+		Action: action, Target: login, ActorKind: "system", ActorName: "rescue-cli",
+		Details: details,
+	})
+}
+
+// printRescueCredentials shows the new credentials once, with the must-change note.
+func printRescueCredentials(login, password string, unlocked bool) {
+	bar := strings.Repeat("=", 56)
+	extra := ""
+	if unlocked {
+		extra = "\n Two-factor : removed"
+	}
+	fmt.Printf("\n%s\n RESCUE CREDENTIALS (shown once — sign in and change them)\n%s\n"+
+		" Login      : %s\n Password   : %s%s\n%s\n",
+		bar, bar, login, password, extra, bar)
 }
