@@ -260,6 +260,7 @@ func (rt *Router) panelMux() http.Handler {
 	// itself.
 	authedOwner("GET /api/admin-audit", rt.adminAudit)
 	authedOwner("GET /api/admin-audit/catalog", rt.adminAuditCatalog)
+	authedOwner("GET /api/admin-audit/export", rt.exportAdminAudit)
 	authedOwner("GET /api/admins", rt.listAdmins)
 	authedOwner("POST /api/admins", rt.createAdmin)
 	authedOwnerID("POST /api/admins/{id}/role", rt.setAdminRole)

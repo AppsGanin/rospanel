@@ -640,21 +640,43 @@ export interface AdminAuditPage {
 // The journal filters by category ("Settings", "Administrators", …) rather than by
 // each of the two dozen actions: the actions stay precise on the rows, the filter
 // stays short.
-export const listAdminAudit = (params: {
+export interface AdminAuditFilter {
   category?: string
   action?: string
   actor?: string
-  before?: number
-  limit?: number
-}) => {
+  search?: string // free-text over action/target/actor/ip/details
+  from?: number // created_at >= this (unix seconds)
+  to?: number // created_at <= this (unix seconds)
+}
+
+// adminAuditQuery renders the shared filter into query params so the paged list and
+// the CSV export can never diverge on what "the current filter" means.
+function adminAuditQuery(f: AdminAuditFilter): URLSearchParams {
   const q = new URLSearchParams()
-  if (params.category) q.set('category', params.category)
-  if (params.action) q.set('action', params.action)
-  if (params.actor) q.set('actor', params.actor)
+  if (f.category) q.set('category', f.category)
+  if (f.action) q.set('action', f.action)
+  if (f.actor) q.set('actor', f.actor)
+  if (f.search) q.set('search', f.search)
+  if (f.from) q.set('from', String(f.from))
+  if (f.to) q.set('to', String(f.to))
+  return q
+}
+
+export const listAdminAudit = (
+  params: AdminAuditFilter & { before?: number; limit?: number },
+) => {
+  const q = adminAuditQuery(params)
   if (params.before) q.set('before', String(params.before))
   if (params.limit) q.set('limit', String(params.limit))
   const qs = q.toString()
   return api<AdminAuditPage>(`api/admin-audit${qs ? `?${qs}` : ''}`)
+}
+
+// adminAuditExportURL is the relative href for the CSV download (owner cookie auth,
+// so a plain <a download> works). Carries the same filter as the on-screen list.
+export const adminAuditExportURL = (f: AdminAuditFilter): string => {
+  const qs = adminAuditQuery(f).toString()
+  return `api/admin-audit/export${qs ? `?${qs}` : ''}`
 }
 
 export interface AdminAuditCatalog {

@@ -31,6 +31,21 @@ func (m *Manager) AdminAudit(f store.AdminAuditFilter) ([]model.AdminAudit, erro
 	return m.store.ListAdminAudit(f)
 }
 
+// adminAuditExportCap bounds a single CSV export. The trail is already retention-
+// swept, but a hard cap keeps one export from streaming an unbounded scan.
+const adminAuditExportCap = 100000
+
+// ExportAdminAudit streams the filtered trail (newest first) to fn, honouring every
+// filter except the page cursor — an export is the whole matching set, capped. The
+// caller supplies the same store.AdminAuditFilter used for the list, minus BeforeID.
+func (m *Manager) ExportAdminAudit(f store.AdminAuditFilter, fn func(model.AdminAudit) error) error {
+	f.BeforeID = 0
+	if f.Limit <= 0 || f.Limit > adminAuditExportCap {
+		f.Limit = adminAuditExportCap
+	}
+	return m.store.StreamAdminAudit(f, fn)
+}
+
 // PurgeOldAdminAudit drops trail rows past the retention window. Called from the
 // same slow timer as the user journal's sweep.
 func (m *Manager) PurgeOldAdminAudit() {
