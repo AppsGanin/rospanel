@@ -260,6 +260,34 @@ func (rt *Router) setXrayDNS(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// getSubRules returns the subscription response rules for the editor.
+func (rt *Router) getSubRules(w http.ResponseWriter, _ *http.Request) {
+	rules, err := rt.mgr.SubRules()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if rules == nil {
+		rules = []model.SubRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules})
+}
+
+// saveSubRules replaces the whole rule list (the editor sends the full set).
+func (rt *Router) saveSubRules(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Rules []model.SubRule `json:"rules"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SaveSubRules(req.Rules); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path           string `json:"sub_path"`

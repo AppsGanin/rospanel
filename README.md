@@ -265,6 +265,11 @@ The page carries what the account holder needs and nothing they shouldn't hand o
 **individual per-lane configs** card can be switched off, and with device binding on it lists **their own bound devices** with a
 button to release one — so a full device roster is self-service rather than a support ticket.
 
+**Response rules** override the automatic format detection: an ordered list of operator rules
+matched against the request (User-Agent or an HWID header) — force a specific format for a given
+client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
+served the decoy). The first matching rule wins; no match falls through to normal detection.
+
 #### 🧭 Routing and egress
 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
@@ -280,7 +285,9 @@ and install the agent — with a live install log. **The node reaches out to the
 (outbound HTTPS long-poll), so the panel needs no access to the nodes, and moving the panel
 doesn't detach them. Users, limits and plans roll out to every node; traffic and devices count
 against **shared** limits, while statistics and the user card show **how much traffic went
-through each server**.
+through each server**. Each node also has a **traffic multiplier** — a coefficient that scales
+how fast traffic through it spends a user's quota (2× on an expensive location, 0.5× on a promo
+one); it bends only the quota, never the per-node byte statistics.
 
 Every server is configured separately (protocols, egress, DNS, REALITY keys, domain and TLS,
 geo databases, decoy). A node is **the same binary** in node mode: the panel generates its
@@ -312,7 +319,9 @@ are checked server-side on every request; a new admin gets a temporary password 
 changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
 themselves — a code from an authenticator app (Google Authenticator, Aegis, 1Password) on top
 of the password, the secret encrypted in the database and never handed back out after setup;
-for a lost phone, `rospanel totp reset <login>` on the server. The **user log** records what was
+for a lost phone, `rospanel totp reset <login>` on the server; a fuller **`rospanel rescue`**
+resets a forgotten password, clears a second factor, or recreates an owner when no admin can
+sign in at all. The **user log** records what was
 done to them and by whom (admin, API key, bot, the user themselves, the system) and survives
 their deletion. The **panel log** (visible to the owner) covers logins and **failed attempts
 with IPs**, second factors switched on and off, settings changes and backups; only successful
@@ -431,6 +440,7 @@ rospanel restore [-y] <file> restore from a snapshot (applied on start)
 rospanel host [-y] [domain|IP] show/change the address (reissues TLS)
 rospanel path                show the panel URL and check secrets.key / the DB
 rospanel totp reset <login>  remove an admin's two-factor auth (lost phone); bare totp lists
+rospanel rescue <sub>        regain locked-out access: list | password | unlock | owner
 rospanel reset [-y]          factory reset (wipes the DB)
 rospanel version             version
 rospanel help                full help

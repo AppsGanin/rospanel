@@ -3,9 +3,12 @@ import { Trans, useTranslation } from "react-i18next";
 import {
   ANNOUNCE_MAX,
   getSettings,
+  getSubRules,
   saveHWIDSettings,
+  saveSubRules,
   saveSubSettings,
   type HWIDSettings,
+  type SubRule,
   type SubSettings,
 } from "./api";
 import { useAction, useDirtyForm } from "./hooks";
@@ -297,6 +300,8 @@ export function SubscriptionsPanel() {
         )}
       </Card>
 
+      <SubRulesEditor />
+
       <SaveBar
         dirty={dirty || hwidDirty}
         busy={busy}
@@ -308,5 +313,156 @@ export function SubscriptionsPanel() {
         }}
       />
     </div>
+  );
+}
+
+// SubRulesEditor edits the ordered response rules: each matches a request attribute
+// (User-Agent or an HWID header) and forces a subscription format or blocks the
+// client. It has its own load/save (its own endpoint), so it saves independently of
+// the settings above.
+function SubRulesEditor() {
+  const { t } = useTranslation();
+  const [rules, setRules] = useState<SubRule[]>([]);
+  const [base, setBase] = useState<SubRule[]>([]);
+  const { busy, run } = useAction();
+
+  useEffect(() => {
+    getSubRules()
+      .then((rs) => {
+        setRules(rs);
+        setBase(rs);
+      })
+      .catch(() => {});
+  }, []);
+
+  const dirty = JSON.stringify(rules) !== JSON.stringify(base);
+  const patchRule = (i: number, p: Partial<SubRule>) =>
+    setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const addRule = () =>
+    setRules((rs) => [
+      ...rs,
+      { field: "user_agent", op: "contains", value: "", action: "clash", enabled: true },
+    ]);
+  const removeRule = (i: number) => setRules((rs) => rs.filter((_, j) => j !== i));
+  const move = (i: number, d: -1 | 1) =>
+    setRules((rs) => {
+      const j = i + d;
+      if (j < 0 || j >= rs.length) return rs;
+      const out = [...rs];
+      [out[i], out[j]] = [out[j], out[i]];
+      return out;
+    });
+
+  const save = () =>
+    run(async () => {
+      await saveSubRules(rules);
+      setBase(rules);
+      notifySuccess(t("subs.rulesSaved"));
+    });
+
+  // Literal keys (not template strings) so the typed i18n accepts them.
+  const fieldOpts: { value: SubRule["field"]; label: string }[] = [
+    { value: "user_agent", label: t("subs.ruleField.user_agent") },
+    { value: "device_os", label: t("subs.ruleField.device_os") },
+    { value: "ver_os", label: t("subs.ruleField.ver_os") },
+    { value: "device_model", label: t("subs.ruleField.device_model") },
+  ];
+  const opOpts: { value: SubRule["op"]; label: string }[] = [
+    { value: "contains", label: t("subs.ruleOp.contains") },
+    { value: "not_contains", label: t("subs.ruleOp.not_contains") },
+    { value: "equals", label: t("subs.ruleOp.equals") },
+    { value: "prefix", label: t("subs.ruleOp.prefix") },
+    { value: "regex", label: t("subs.ruleOp.regex") },
+  ];
+  const actionOpts: { value: SubRule["action"]; label: string }[] = [
+    { value: "v2ray", label: t("subs.ruleAction.v2ray") },
+    { value: "clash", label: t("subs.ruleAction.clash") },
+    { value: "singbox", label: t("subs.ruleAction.singbox") },
+    { value: "block", label: t("subs.ruleAction.block") },
+  ];
+
+  return (
+    <Card className="p-4">
+      <h3 className="mb-1 font-bold text-ink">{t("subs.rules")}</h3>
+      <p className="mb-3 text-xs text-ink-muted">{t("subs.rulesHint")}</p>
+      <div className="flex flex-col gap-2">
+        {rules.map((r, i) => (
+          <div
+            key={i}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 p-2"
+          >
+            <Switch checked={r.enabled} onChange={(v) => patchRule(i, { enabled: v })} />
+            <Select
+              value={r.field}
+              onChange={(v) => patchRule(i, { field: v as SubRule["field"] })}
+              data={fieldOpts}
+            />
+            <Select
+              value={r.op}
+              onChange={(v) => patchRule(i, { op: v as SubRule["op"] })}
+              data={opOpts}
+            />
+            <TextInput
+              className="min-w-32 flex-1"
+              value={r.value}
+              onChange={(v) => patchRule(i, { value: v })}
+              placeholder={t("subs.ruleValue")}
+            />
+            <span className="text-ink-muted">→</span>
+            <Select
+              value={r.action}
+              onChange={(v) => patchRule(i, { action: v as SubRule["action"] })}
+              data={actionOpts}
+            />
+            <button
+              type="button"
+              className="px-1 text-ink-muted hover:text-ink"
+              onClick={() => move(i, -1)}
+              title="↑"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="px-1 text-ink-muted hover:text-ink"
+              onClick={() => move(i, 1)}
+              title="↓"
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="px-1 text-red-500 hover:text-red-700"
+              onClick={() => removeRule(i)}
+              title={t("common.delete")}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        {rules.length === 0 && (
+          <p className="text-sm text-ink-muted">{t("subs.rulesEmpty")}</p>
+        )}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+          onClick={addRule}
+        >
+          + {t("subs.ruleAdd")}
+        </button>
+        {dirty && (
+          <button
+            type="button"
+            className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            onClick={save}
+            disabled={busy}
+          >
+            {t("common.save")}
+          </button>
+        )}
+      </div>
+    </Card>
   );
 }

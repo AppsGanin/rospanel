@@ -603,6 +603,10 @@ type Settings struct {
 	// subscription link, the QR and the client buttons, which is what an operator
 	// selling access usually wants handed out.
 	SubShowConfigs bool `json:"-"`
+
+	// SubRules are the subscription response rules, evaluated in order before the
+	// automatic format detection (see EvalSubRules). Stored as JSON in one column.
+	SubRules []SubRule `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
