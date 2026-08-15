@@ -470,6 +470,16 @@ type PaymentStats struct {
 	ByProvider   []ProviderStat `json:"by_provider"`   // paid revenue split by provider
 }
 
+// ConfigSnapshot is a saved point-in-time copy of the routing/egress config, for
+// rolling back a change that broke the tunnels. The routing payload itself is not in
+// this view — the list only shows metadata; rollback fetches the JSON by id.
+type ConfigSnapshot struct {
+	ID        int64  `json:"id"`
+	CreatedAt int64  `json:"created_at"`
+	Label     string `json:"label"`
+	Auto      bool   `json:"auto"` // taken automatically before a change
+}
+
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
 // which appears in access logs, per-user stats, and every protocol's client
 // entry. This is the single source of that format.
