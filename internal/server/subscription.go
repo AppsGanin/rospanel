@@ -66,6 +66,19 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			}
 			return
 		}
+		// Operator response rules first — before the device cap and before format
+		// detection. A rule can force a format for a specific client/OS/version, or
+		// block it (served the decoy, so a scraper learns nothing). Blocking here, ahead
+		// of admitDevice, means a refused client never takes a device slot. No matching
+		// rule falls through to the User-Agent detection below.
+		format := subFormat(r)
+		if action := model.EvalSubRules(set.SubRules, subRuleInput(r)); action != "" {
+			if action == model.SubActionBlock {
+				rt.decoy.ServeHTTP(w, r)
+				return
+			}
+			format = action
+		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
 		// Device binding is checked here and not on the page: the page is a browser
 		// looking at an account, while this is an install asking for credentials — the
@@ -79,17 +92,6 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
-		// Operator response rules run before auto-detection: a rule can force a format
-		// for a specific client/OS/version, or block it (served the decoy, so a scraper
-		// learns nothing). No matching rule falls through to the User-Agent detection.
-		format := subFormat(r)
-		if action := model.EvalSubRules(set.SubRules, subRuleInput(r)); action != "" {
-			if action == model.SubActionBlock {
-				rt.decoy.ServeHTTP(w, r)
-				return
-			}
-			format = action
-		}
 		switch format {
 		case "clash":
 			// Mihomo/Clash ignores the routing header — inject the routing rules
