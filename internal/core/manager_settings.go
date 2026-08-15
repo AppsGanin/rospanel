@@ -625,6 +625,11 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	return m.store.SetSubSettings(st)
 }
 
+// SetMaintenanceMode toggles the public-surface maintenance page.
+func (m *Manager) SetMaintenanceMode(on bool) error {
+	return m.store.SetMaintenanceMode(on)
+}
+
 // SubRules returns the stored subscription response rules.
 func (m *Manager) SubRules() ([]model.SubRule, error) {
 	set, err := m.store.GetSettings()

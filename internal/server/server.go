@@ -57,9 +57,11 @@ type Router struct {
 	// statusPath is the public status page's segment, "" while the page is off. Held
 	// as a routing decision rather than read from settings per request: an unrouted
 	// path costs nothing and the disabled page is then genuinely absent.
-	statusPath string
-	spaIndex   []byte       // index.html with <base href> injected for the secret
-	decoy      http.Handler // current decoy template handler
+	statusPath  string
+	maintenance bool         // public surfaces show the maintenance page
+	maintDecoy  http.Handler // the 503 maintenance page (nil ⇒ fall back to decoy)
+	spaIndex    []byte       // index.html with <base href> injected for the secret
+	decoy       http.Handler // current decoy template handler
 }
 
 // New builds the masquerade router for the given secret path and decoy template.
@@ -79,6 +81,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 
 	subPath := "sub"
 	var paySecret, apiPath, nodePath, statusPath string
+	var maintenance bool
 	if set, err := mgr.Store().GetSettings(); err == nil {
 		if set.SubPath != "" {
 			subPath = set.SubPath
@@ -87,7 +90,14 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		apiPath = set.APIPath
 		nodePath = set.NodeAPIPath
 		statusPath = statusPathOf(set.StatusEnabled, set.StatusPathOr())
+		maintenance = set.MaintenanceMode
 	}
+
+	// The maintenance page is a dedicated 503-answering decoy, built once so toggling
+	// maintenance is a flag flip rather than a handler rebuild. If its template can't
+	// load, maintenance simply falls back to the normal decoy (never a hard failure on
+	// a surface whose whole job is to look ordinary).
+	maintDecoy, _ := decoy.New("maintenance", decoy.LoadStamp(dataDir))
 
 	rt := &Router{
 		mgr:        mgr,
@@ -105,9 +115,11 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		paySecret:  paySecret,
 		apiPath:    apiPath,
 		nodePath:   nodePath,
-		statusPath: statusPath,
-		spaIndex:   injectBase(indexRaw, "/"+secret+"/"),
-		decoy:      d,
+		statusPath:  statusPath,
+		spaIndex:    injectBase(indexRaw, "/"+secret+"/"),
+		decoy:       d,
+		maintenance: maintenance,
+		maintDecoy:  maintDecoy,
 	}
 	// The router live-swaps the node-API segment in when the first node is created.
 	mgr.SetNodeAPIPathCallback(rt.setNodePath)
@@ -206,7 +218,19 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rt.mu.RLock()
 	secret, decoy, subPath, paySecret, apiPath, nodePath := rt.secret, rt.decoy, rt.subPath, rt.paySecret, rt.apiPath, rt.nodePath
 	statusPath := rt.statusPath
+	maintenance := rt.maintenance
+	maintDecoy := rt.maintDecoy
 	rt.mu.RUnlock()
+
+	// In maintenance mode the public-facing surfaces show the unavailable page, but the
+	// infrastructure ones do not: the panel (so the operator can switch it off), the
+	// external API, node sync and payment webhooks all keep working, and so do the
+	// tunnels themselves — a maintenance banner is not an outage. maintDecoy is what the
+	// subscription/status/fallback branches below serve when this is set.
+	publicDecoy := decoy
+	if maintenance && maintDecoy != nil {
+		publicDecoy = maintDecoy
+	}
 
 	// External REST API, mounted under its own stable, unguessable segment (kept
 	// separate from the panel secret so rotating the secret never breaks
@@ -269,6 +293,10 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// path is just an obscurity prefix — the token is the real secret — so a plain
 	// compare is fine.
 	if subPath != "" && seg == subPath {
+		if maintenance && maintDecoy != nil {
+			publicDecoy.ServeHTTP(w, r)
+			return
+		}
 		// Light per-IP throttle: the token is the real secret (256-bit, unguessable),
 		// so this isn't about enumeration — it just stops a leaked token from being
 		// pulled in a tight loop (and the per-request routing-template fetch with it).
@@ -303,6 +331,10 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// save handler already refuses the collisions it can see, but the other paths can
 	// change afterwards and this ordering is what makes that harmless.
 	if statusPath != "" && seg == statusPath {
+		if maintenance && maintDecoy != nil {
+			publicDecoy.ServeHTTP(w, r)
+			return
+		}
 		if !rt.subLimiter.allow(clientIP(r)) {
 			decoy.ServeHTTP(w, r)
 			return
@@ -311,7 +343,14 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decoy.ServeHTTP(w, r)
+	publicDecoy.ServeHTTP(w, r)
+}
+
+// setMaintenance flips the public-surface maintenance page on or off, live.
+func (rt *Router) setMaintenance(on bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.maintenance = on
 }
 
 // cacheControl wraps h with a Cache-Control header. Content-hashed SPA assets get

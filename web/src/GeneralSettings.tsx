@@ -6,6 +6,7 @@ import {
   checkUpdate,
   getMe,
   getSettings,
+  saveMaintenance,
   getStatusPage,
   regenSecret,
   saveStatusPage,
@@ -107,6 +108,9 @@ export function GeneralSettings() {
   const [newSecret, setNewSecret] = useState("");
   const [status, setStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
   const [savedStatus, setSavedStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
+  // Maintenance is a live toggle (it takes effect the moment it's flipped), so it
+  // saves on change rather than riding the page's Save bar.
+  const [maintenance, setMaintenanceState] = useState(false);
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -144,6 +148,7 @@ export function GeneralSettings() {
           const ad = s.user_autodelete_days ?? 0;
           setAutoDel(ad);
           setSavedAutoDel(ad);
+          setMaintenanceState(s.maintenance_mode);
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
@@ -371,6 +376,24 @@ export function GeneralSettings() {
         <p className="mt-3 text-xs text-warning">
           {t("general.backupWarn")}
         </p>
+      </SettingCard>
+
+      <SettingCard
+        title={t("general.maintenance")}
+        description={t("general.maintenanceHint")}
+      >
+        <ToggleRow
+          label={t("general.maintenanceOn")}
+          hint={t("general.maintenanceOnHint")}
+          checked={maintenance}
+          onChange={(v) =>
+            run(async () => {
+              await saveMaintenance(v);
+              setMaintenanceState(v);
+              notifySuccess(v ? t("general.maintenanceEnabled") : t("general.maintenanceDisabled"));
+            })
+          }
+        />
       </SettingCard>
 
       <SettingCard

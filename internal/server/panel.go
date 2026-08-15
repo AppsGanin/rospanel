@@ -276,6 +276,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/settings/sub-rules", rt.getSubRules)
 	authed("POST /api/settings/sub-rules", rt.saveSubRules)
 	authed("POST /api/settings/hwid", rt.saveHWIDSettings)
+	authed("POST /api/settings/maintenance", rt.saveMaintenance)
 	authed("GET /api/settings/status-page", rt.getStatusPage)
 	authed("POST /api/settings/status-page", rt.saveStatusPage)
 	authed("POST /api/settings/dns", rt.setXrayDNS)

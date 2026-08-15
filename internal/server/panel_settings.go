@@ -64,6 +64,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
 		"sub_show_configs":     set.SubShowConfigs,
+		"maintenance_mode":     set.MaintenanceMode,
 		"hwid":                 hwidSettingsView(set),
 		"user_autodelete_days": set.UserAutoDeleteDays,
 		"xray_dns":             set.XrayDNS,
@@ -257,6 +258,22 @@ func (rt *Router) setXrayDNS(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
+	writeOK(w)
+}
+
+// saveMaintenance toggles the public-surface maintenance page and applies it live.
+func (rt *Router) saveMaintenance(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMaintenanceMode(req.Enabled); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.setMaintenance(req.Enabled) // swap the live routing immediately
 	writeOK(w)
 }
 
