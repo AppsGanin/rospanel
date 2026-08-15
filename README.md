@@ -227,7 +227,9 @@ Traffic and time limits with auto-disable and quota auto-reset (day/week/month/y
 **device limit** by unique IP and a per-user **speed cap**. Traffic accounting via Xray Stats, online status, connection
 list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
-The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time.
+The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time. A **connection
+map** breaks down where clients connect from — distinct source IPs per country, resolved
+from the same geoip database Xray routes with (no external service, no extra download).
 
 **Device binding (HWID).** Clients that follow the subscription-header convention (Happ,
 v2RayTun) send a stable install id; the panel binds it to the account on first fetch and

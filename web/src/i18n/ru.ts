@@ -751,6 +751,11 @@ const ru = {
     user: "Пользователь",
     total: "Всего",
     blocklistMatches: "Совпадения с блоклистами",
+    byCountry: "Подключения по странам",
+    countryTotal: "IP всего: {{n}}",
+    countryIps: "{{n}} IP",
+    unknownCountry: "Неизвестно",
+    noCountryData: "Данных о подключениях пока нет.",
     byServer: "По серверам",
   },
 

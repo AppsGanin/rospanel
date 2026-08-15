@@ -543,6 +543,15 @@ type UserTotal struct {
 	Down   int64  `json:"down"`
 }
 
+// CountryStat is one row of the connection geo breakdown: how many distinct source
+// IPs connected from a country and how active they were. Code is a lowercase 2-letter
+// country code, or "" for IPs no country range covers (private/unknown).
+type CountryStat struct {
+	Code string `json:"code"`
+	IPs  int64  `json:"ips"`
+	Hits int64  `json:"hits"`
+}
+
 // Settings is the singleton (id=1) panel configuration. The DB is the source of
 // truth; the Xray config.json is always derived from it.
 type Settings struct {

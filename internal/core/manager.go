@@ -142,6 +142,12 @@ type Manager struct {
 	geoIP     []string     // cached geoip category codes
 	geoGroups geo.GroupSet // cached iplist groups ("<source>/<group>" → rules)
 
+	// countryLookup resolves connection IPs to countries for the geo breakdown, built
+	// lazily from geoip.dat and rebuilt when the file changes (a geo refresh).
+	geoLookupMu  sync.Mutex
+	geoLookup    *geo.CountryLookup
+	geoLookupMod time.Time
+
 	proxyMu sync.Mutex
 	// proxies holds the local server's current egress proxies of each lane, keyed by
 	// lane ID.
