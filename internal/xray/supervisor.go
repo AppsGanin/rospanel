@@ -28,6 +28,12 @@ const (
 	restartBackoff  = time.Second      // base crash-restart delay (doubles, capped)
 	maxBackoff      = 30 * time.Second
 	healthyUptime   = 30 * time.Second // a run longer than this resets the backoff
+
+	// Wedged-process watchdog: the exit monitor restarts a process that DIES; this
+	// covers one that stays alive but stops serving (Xray's API stops answering).
+	watchdogInterval   = 30 * time.Second // how often to probe a running process
+	watchdogFailsToAct = 3                // consecutive failed probes before restarting (~90s wedged)
+	watchdogCooldown   = 5 * time.Minute  // min gap between watchdog restarts (anti-storm)
 )
 
 // proc is a single running Xray child. done is closed once Wait() has reaped it;
@@ -70,8 +76,16 @@ type Supervisor struct {
 	suspended  bool
 	restarting bool // a deliberate stop→start is in flight (the ~1s bounce)
 
+	// lastWatchdog is when the wedged-process watchdog last restarted Xray, for its
+	// anti-storm cooldown (zero until it fires).
+	lastWatchdog time.Time
+	// probe reports whether Xray is answering its API; defaults to apiResponsive and is
+	// swappable in tests so the watchdog decision can be exercised without a live Xray.
+	probe func() bool
+
 	onAccess func(email, ip, dest string) // called per access-log connection line
 	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
+	onWedged func()                        // called when the watchdog restarts a wedged process
 	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
 	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
 	// renewed certificate): those are routine, and reporting them as recovery would
@@ -142,6 +156,100 @@ func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
 
 // SetOnRecover registers a callback invoked when Xray comes back after a crash.
 func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
+
+// SetOnWedged registers a callback invoked when the watchdog restarts a wedged
+// process (alive but no longer serving). Used to alert the operator — this is an
+// outage the crash path never reported, because the process never exited.
+func (s *Supervisor) SetOnWedged(fn func()) { s.onWedged = fn }
+
+// StartWatchdog launches the wedged-process watchdog in the background: it probes a
+// running Xray and, if the process is alive but its API has stopped answering for
+// several checks in a row, restarts it. This is the gap the exit monitor cannot
+// cover — that one only sees a process that DIES. Idempotent-ish (call once); a
+// missing binary makes it a no-op. The loop exits when the supervisor is Stopped.
+func (s *Supervisor) StartWatchdog() {
+	if s.bin == "" {
+		return
+	}
+	go s.watchdogLoop()
+}
+
+func (s *Supervisor) watchdogLoop() {
+	if s.probe == nil {
+		s.probe = s.apiResponsive
+	}
+	t := time.NewTicker(watchdogInterval)
+	defer t.Stop()
+	fails := 0
+	for range t.C {
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if closed {
+			return
+		}
+		var act bool
+		fails, act = s.watchdogTick(fails)
+		if !act {
+			continue
+		}
+		slog.Error("xray watchdog: wedged (alive but not serving) — restarting")
+		if s.onWedged != nil {
+			go s.onWedged()
+		}
+		if err := s.Restart(); err != nil {
+			slog.Error("xray watchdog: restart failed", "err", err)
+		}
+	}
+}
+
+// watchdogTick evaluates one probe cycle and returns the updated consecutive-failure
+// count and whether a wedged process should be restarted now. The decision, minus the
+// ticker and the restart itself, so it is unit-testable without a live Xray:
+//   - a down / suspended / mid-bounce supervisor is never judged (a routine restart is
+//     not a wedge), and resets the counter;
+//   - a responsive process resets the counter;
+//   - only after watchdogFailsToAct failures in a row, and past the cooldown since the
+//     last watchdog restart, does it say to act (recording the restart time).
+func (s *Supervisor) watchdogTick(fails int) (int, bool) {
+	s.mu.Lock()
+	watch := s.cur != nil && !s.suspended && !s.restarting
+	s.mu.Unlock()
+	if !watch {
+		return 0, false
+	}
+	probe := s.probe
+	if probe == nil {
+		probe = s.apiResponsive
+	}
+	if probe() {
+		return 0, false
+	}
+	fails++
+	if fails < watchdogFailsToAct {
+		slog.Warn("xray watchdog: process alive but not answering its API", "fails", fails)
+		return fails, false
+	}
+	// Wedged for watchdogFailsToAct probes in a row. Honour a cooldown so a process
+	// that wedges again right after a restart can't spin us into a restart storm.
+	s.mu.Lock()
+	cooling := !s.lastWatchdog.IsZero() && time.Since(s.lastWatchdog) < watchdogCooldown
+	if !cooling {
+		s.lastWatchdog = time.Now()
+	}
+	s.mu.Unlock()
+	if cooling {
+		return fails, false // still wedged; hold off until the cooldown elapses
+	}
+	return 0, true
+}
+
+// apiResponsive reports whether the running Xray still answers its API — a failed,
+// timeout-bounded stats query is the "wedged" signal the exit monitor never sees.
+func (s *Supervisor) apiResponsive() bool {
+	_, err := s.QueryStats(s.APIAddr())
+	return err == nil
+}
 
 // recovered fires the recovery callback off the restart path, mirroring onCrash.
 func (s *Supervisor) recovered() {

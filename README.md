@@ -430,7 +430,10 @@ from the panel and the CLI.
 
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
 only then replaces itself, keeping the previous version next to it. The Xray core is pinned,
-and the supervisor restarts it if it crashes.
+and the supervisor restarts it if it crashes. A **watchdog** covers the harder case a crash
+handler can't see — a process that stays alive but stops serving: it probes Xray's API and, if
+it goes unresponsive for several checks in a row, restarts it (with a cooldown against restart
+storms) and alerts the operator. Runs on the master and every node.
 
 **Secrets in the database are encrypted** (AES-GCM). Session tokens and API keys are stored as
 hashes only — even with table access you can't reuse someone's session. Payment confirmation

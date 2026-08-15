@@ -250,6 +250,7 @@ var en = map[string]string{
 	"notify.userDeviceRefused":  "📵 <b>This device wasn't added</b>\n\nYou already have %d of %d devices. Remove one you no longer use, or ask support.",
 	"notify.userSuspended":      "🚫 <b>Access suspended</b>\n\nContact support if this is unexpected.",
 	"notify.xrayCrashed":        "⚠️ <b>Xray crashed</b>\nServer: %s\nThe process is being restarted automatically.",
+	"notify.xrayWedged":         "⚠️ <b>Xray was not responding</b>\nServer: %s\nThe watchdog restarted the process automatically.",
 	"notify.xrayBack":           "✅ <b>Xray is running again</b>\nServer: %s",
 	"notify.reason":             "Reason: %s",
 	"notify.downtime":           "Downtime: %s.",
