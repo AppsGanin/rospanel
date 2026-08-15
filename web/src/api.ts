@@ -768,6 +768,7 @@ export interface SettingsInfo extends SubSettings {
   local_backup_keep: number
   user_autodelete_days: number
   maintenance_mode: boolean
+  probe_detect: boolean
   hwid: HWIDSettings
 }
 
@@ -944,6 +945,24 @@ export const saveMaintenance = (enabled: boolean) =>
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })
+
+// Secret-path probe detection: record IPs that scan for the hidden panel.
+export const saveProbeDetect = (enabled: boolean) =>
+  api<{ ok: boolean }>('api/settings/probe-detect', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export interface ProbeHit {
+  ip: string
+  first_seen: number
+  last_seen: number
+  hits: number
+  paths: number
+}
+
+export const getProbes = () =>
+  api<{ probes: ProbeHit[] }>('api/security/probes').then((r) => r.probes)
 
 // Routing/egress config snapshots (undo a change that broke the tunnels).
 export interface ConfigSnapshot {

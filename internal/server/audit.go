@@ -78,6 +78,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/sub-rules":       set("subscriptions"),
 	"POST /api/settings/hwid":            set("deviceBinding"),
 	"POST /api/settings/maintenance":     set("maintenance"),
+	"POST /api/settings/probe-detect":    set("probeDetect"),
 	"POST /api/settings/status-page":     set("statusPage"),
 	"POST /api/settings/dns":             set("dns"),
 	"POST /api/nodes/{id}/proxy":         set("systemProxy"),

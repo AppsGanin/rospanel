@@ -37,6 +37,10 @@ const DeviceOnlineWindow int64 = 120
 // accrues a row per IP indefinitely without a sweep.
 const ConnectionRetentionDays = 30
 
+// ProbeRetentionDays is how long a scanning IP's row survives its last sighting. The
+// table is also hard-capped by row count; this ages out scanners that went quiet.
+const ProbeRetentionDays = 30
+
 // MaxShapedIPsPerUser bounds how many source addresses one capped account is shaped
 // on at once.
 //
@@ -480,6 +484,16 @@ type ConfigSnapshot struct {
 	Auto      bool   `json:"auto"` // taken automatically before a change
 }
 
+// ProbeHit is one IP caught scanning for the hidden panel path — requesting many
+// distinct paths the decoy site does not have. One row per IP (upserted).
+type ProbeHit struct {
+	IP        string `json:"ip"`
+	FirstSeen int64  `json:"first_seen"`
+	LastSeen  int64  `json:"last_seen"`
+	Hits      int64  `json:"hits"`  // times this IP crossed the scan threshold
+	Paths     int64  `json:"paths"` // largest distinct-miss burst seen
+}
+
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —
 // which appears in access logs, per-user stats, and every protocol's client
 // entry. This is the single source of that format.
@@ -621,6 +635,9 @@ type Settings struct {
 	// MaintenanceMode makes the public surfaces show a "temporarily unavailable"
 	// page; the panel, API, node sync and the tunnels themselves keep serving.
 	MaintenanceMode bool `json:"-"`
+	// ProbeDetect records IPs that scan for the hidden panel path (many distinct
+	// requests the decoy site doesn't have). Detection never changes the reply.
+	ProbeDetect bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.

@@ -156,6 +156,22 @@ func TestSPATemplateFallbackAndAssetMiss(t *testing.T) {
 	}
 }
 
+// Miss must agree with what ServeHTTP actually treats as a not-found: the site root
+// and the template's own assets are hits, guessed paths are misses. Probe detection
+// keys off this, so a disagreement would either miss scanners or flag real visitors.
+func TestMissAgreesWithServe(t *testing.T) {
+	h := newTestHandler(t, "filecloud")
+	if h.Miss("/") {
+		t.Error("root reported as a miss; a visitor loading the site must not count")
+	}
+	if !h.Miss("/definitely-not-a-real-path") {
+		t.Error("a guessed path reported as a hit; scanners would go unseen")
+	}
+	if !h.Miss("/assets/nope.js") {
+		t.Error("a missing asset reported as a hit")
+	}
+}
+
 // A maintenance decoy is down for everything — every path AND every method. The
 // nginx it imitates (`return 503` for the whole server) does not answer a POST
 // with 405 while its own page says the site is unavailable.

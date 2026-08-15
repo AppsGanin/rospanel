@@ -43,6 +43,7 @@ type Router struct {
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
 	apiKeys    *loginLimiter  // per-IP lockout after repeated invalid API keys
+	probes     *probeGuard    // flags IPs scanning for the hidden panel path
 	streams    *streamGate    // caps concurrent SSE streams
 	status     *statusFeed    // one dashboard-payload timer shared by every viewer
 	routes     []string       // panel route patterns, in registration order (audit exhaustiveness test)
@@ -60,6 +61,7 @@ type Router struct {
 	statusPath  string
 	maintenance bool         // public surfaces show the maintenance page
 	maintDecoy  http.Handler // the 503 maintenance page (nil ⇒ fall back to decoy)
+	probeDetect bool         // record IPs that scan for the hidden panel path
 	spaIndex    []byte       // index.html with <base href> injected for the secret
 	decoy       http.Handler // current decoy template handler
 }
@@ -81,7 +83,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 
 	subPath := "sub"
 	var paySecret, apiPath, nodePath, statusPath string
-	var maintenance bool
+	var maintenance, probeDetect bool
 	if set, err := mgr.Store().GetSettings(); err == nil {
 		if set.SubPath != "" {
 			subPath = set.SubPath
@@ -91,6 +93,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		nodePath = set.NodeAPIPath
 		statusPath = statusPathOf(set.StatusEnabled, set.StatusPathOr())
 		maintenance = set.MaintenanceMode
+		probeDetect = set.ProbeDetect
 	}
 
 	// The maintenance page is a dedicated 503-answering decoy, built once so toggling
@@ -108,6 +111,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		subLimiter: newIPRateLimiter(120, time.Minute),
 		apiLimiter: newIPRateLimiter(600, time.Minute),
 		apiKeys:    newAPIKeyGuard(),
+		probes:     newProbeGuard(),
 		streams:    newStreamGate(),
 		status:     newStatusFeed(mgr),
 		secret:     secret,
@@ -120,6 +124,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		decoy:       d,
 		maintenance: maintenance,
 		maintDecoy:  maintDecoy,
+		probeDetect: probeDetect,
 	}
 	// The router live-swaps the node-API segment in when the first node is created.
 	mgr.SetNodeAPIPathCallback(rt.setNodePath)
@@ -220,6 +225,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	statusPath := rt.statusPath
 	maintenance := rt.maintenance
 	maintDecoy := rt.maintDecoy
+	probeDetect := rt.probeDetect
 	rt.mu.RUnlock()
 
 	// In maintenance mode the public-facing surfaces show the unavailable page, but the
@@ -343,7 +349,35 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Nothing above matched: this is the decoy's own territory. If the request is for
+	// a path the decoy doesn't have, it may be a scan for the hidden panel — record
+	// the IP when it has guessed enough distinct dead paths to be one. This never
+	// changes the reply (the scanner still gets the same decoy), so the masquerade is
+	// untouched; it only makes the scanning visible to the operator.
+	if probeDetect {
+		if m, ok := decoy.(misser); ok && m.Miss(r.URL.Path) {
+			ip := clientIP(r)
+			if crossed, n := rt.probes.observe(ip, r.URL.Path); crossed {
+				go rt.mgr.RecordProbe(ip, n)
+			}
+		}
+	}
+
 	publicDecoy.ServeHTTP(w, r)
+}
+
+// misser is the read-only decoy capability the probe detector needs: whether a path
+// resolves to no asset (a miss). Kept as a local interface so ServeHTTP can use it
+// even though the `decoy` local variable shadows the decoy package name.
+type misser interface {
+	Miss(urlPath string) bool
+}
+
+// setProbeDetect flips secret-path probe detection on or off, live.
+func (rt *Router) setProbeDetect(on bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.probeDetect = on
 }
 
 // setMaintenance flips the public-surface maintenance page on or off, live.

@@ -207,6 +207,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serve(w, r, a, http.StatusOK)
 }
 
+// Miss reports whether urlPath resolves to no asset this template ships — i.e. the
+// request would be served as a "not found" rather than a real page. Read-only; it
+// mirrors ServeHTTP's name resolution so probe detection sees exactly what the decoy
+// treats as a miss. A scanner guessing the hidden panel path hits misses; a browser
+// loading the decoy's own pages and assets does not.
+func (h *Handler) Miss(urlPath string) bool {
+	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	if name == "" {
+		name = "index.html"
+	}
+	_, ok := h.files[name]
+	return !ok
+}
+
 // serveMiss answers a path the template doesn't have.
 func (h *Handler) serveMiss(w http.ResponseWriter, r *http.Request, name string) {
 	switch {

@@ -23,7 +23,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var tgSupportEn int
 	var abuseEn int
 	var hwidEn, hwidRequire int
-	var subShowConfigs, statusEn, maintenanceMode int
+	var subShowConfigs, statusEn, maintenanceMode, probeDetect int
 	var routingCfg, subRulesJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -62,7 +62,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_user_events, tg_user_expiring_days,
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
-		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode
+		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
+		       probe_detect
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -102,6 +103,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
+		&probeDetect,
 	)
 	if err != nil {
 		return nil, err
@@ -145,6 +147,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.SubShowConfigs = subShowConfigs != 0
 	st.StatusEnabled = statusEn != 0
 	st.MaintenanceMode = maintenanceMode != 0
+	st.ProbeDetect = probeDetect != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
@@ -391,6 +394,11 @@ func (s *Store) SetSubRules(rules []model.SubRule) error {
 // SetMaintenanceMode toggles the public-surface maintenance page.
 func (s *Store) SetMaintenanceMode(on bool) error {
 	return s.setSetting("maintenance_mode", on)
+}
+
+// SetProbeDetect toggles secret-path probe detection.
+func (s *Store) SetProbeDetect(on bool) error {
+	return s.setSetting("probe_detect", on)
 }
 
 // SetHWIDSettings persists the device-binding settings (Settings → Subscriptions).

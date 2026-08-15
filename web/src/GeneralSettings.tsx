@@ -5,14 +5,17 @@ import {
   applyUpdate,
   checkUpdate,
   getMe,
+  getProbes,
   getSettings,
   saveMaintenance,
+  saveProbeDetect,
   getStatusPage,
   regenSecret,
   saveStatusPage,
   setLocalBackup,
   setupTimezone,
   setUserAutoDelete,
+  type ProbeHit,
   type SettingsInfo,
   type StatusPageSettings,
   type UpdateInfo,
@@ -111,6 +114,16 @@ export function GeneralSettings() {
   // Maintenance is a live toggle (it takes effect the moment it's flipped), so it
   // saves on change rather than riding the page's Save bar.
   const [maintenance, setMaintenanceState] = useState(false);
+  // Probe detection is a live toggle too. The scanner list loads lazily when the
+  // card is open.
+  const [probeDetect, setProbeDetectState] = useState(false);
+  const [probes, setProbes] = useState<ProbeHit[] | null>(null);
+
+  const loadProbes = () => {
+    getProbes()
+      .then(setProbes)
+      .catch(() => setProbes([]));
+  };
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -149,6 +162,8 @@ export function GeneralSettings() {
           setAutoDel(ad);
           setSavedAutoDel(ad);
           setMaintenanceState(s.maintenance_mode);
+          setProbeDetectState(s.probe_detect);
+          if (s.probe_detect) loadProbes();
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
@@ -394,6 +409,62 @@ export function GeneralSettings() {
             })
           }
         />
+      </SettingCard>
+
+      <SettingCard
+        title={t("general.probeDetect")}
+        description={t("general.probeDetectHint")}
+      >
+        <ToggleRow
+          label={t("general.probeDetectOn")}
+          hint={t("general.probeDetectOnHint")}
+          checked={probeDetect}
+          onChange={(v) =>
+            run(async () => {
+              await saveProbeDetect(v);
+              setProbeDetectState(v);
+              if (v && probes === null) loadProbes();
+            })
+          }
+        />
+        {probeDetect && (
+          <div className="mt-3">
+            {probes === null ? (
+              <p className="text-sm text-ink-muted">{t("common.loading")}</p>
+            ) : probes.length === 0 ? (
+              <p className="text-sm text-ink-muted">{t("general.probeNone")}</p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                    {t("general.probeRecent")}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-xs text-brand hover:underline"
+                    onClick={loadProbes}
+                  >
+                    {t("common.refresh")}
+                  </button>
+                </div>
+                {probes.map((p) => (
+                  <div
+                    key={p.ip}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-1.5 text-sm"
+                  >
+                    <code className="font-mono text-ink">{p.ip}</code>
+                    <span className="text-xs text-ink-muted">
+                      {t("general.probePaths", { n: p.paths })}
+                    </span>
+                    <span className="ml-auto text-xs text-ink-muted">
+                      {new Date(p.last_seen * 1000).toLocaleString(i18n.language)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </SettingCard>
 
       <SettingCard
