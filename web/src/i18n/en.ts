@@ -876,6 +876,7 @@ const en: Dict = {
       subscriptions: "Subscriptions",
       deviceBinding: "Device binding",
       maintenance: "Maintenance mode",
+      probeDetect: "Probe detection",
       snapshotCreated: "Snapshot created",
       snapshotRollback: "Rolled back to snapshot",
       snapshotDeleted: "Snapshot deleted",
@@ -1599,6 +1600,14 @@ const en: Dict = {
     maintenanceOnHint: "Takes effect immediately. Existing connections are not dropped — new subscription configs are just not served.",
     maintenanceEnabled: "Maintenance mode on",
     maintenanceDisabled: "Maintenance mode off",
+    probeDetect: "Path probe detection",
+    probeDetectHint:
+      "Notices IPs that scan the address looking for the hidden panel (many requests for paths the decoy doesn't have). The reply never changes — a scanner still gets the same decoy, so the masquerade holds; you can then firewall the listed IPs.",
+    probeDetectOn: "Record scanners",
+    probeDetectOnHint: "Takes effect immediately. Recording only — no bans, no change to the reply.",
+    probeRecent: "Recent scanners",
+    probeNone: "No scanning seen yet.",
+    probePaths: "{{n}} paths",
     regenBody:
       "The panel's sign-in URL changes and the current session drops — you'll be moved to the new address. The old link stops working.",
     secretPathChanged: "Secret path changed",

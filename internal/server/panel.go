@@ -278,6 +278,8 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/sub-rules", rt.saveSubRules)
 	authed("POST /api/settings/hwid", rt.saveHWIDSettings)
 	authed("POST /api/settings/maintenance", rt.saveMaintenance)
+	authed("POST /api/settings/probe-detect", rt.saveProbeDetect)
+	authed("GET /api/security/probes", rt.listProbes)
 	authed("GET /api/settings/status-page", rt.getStatusPage)
 	authed("POST /api/settings/status-page", rt.saveStatusPage)
 	authed("POST /api/settings/dns", rt.setXrayDNS)

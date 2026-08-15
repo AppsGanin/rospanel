@@ -683,6 +683,24 @@ func (m *Manager) SetMaintenanceMode(on bool) error {
 	return m.store.SetMaintenanceMode(on)
 }
 
+// SetProbeDetect toggles secret-path probe detection.
+func (m *Manager) SetProbeDetect(on bool) error {
+	return m.store.SetProbeDetect(on)
+}
+
+// RecordProbe persists one detected scan (best-effort — a lost row must never affect
+// the request that triggered it). paths is how many distinct missing paths the IP hit.
+func (m *Manager) RecordProbe(ip string, paths int) {
+	if err := m.store.RecordProbe(ip, paths, time.Now().Unix()); err != nil {
+		logErr("probe: record failed", "ip", ip, "err", err)
+	}
+}
+
+// Probes returns the IPs caught scanning for the hidden panel, most recent first.
+func (m *Manager) Probes(limit int) ([]model.ProbeHit, error) {
+	return m.store.ListProbes(limit)
+}
+
 // SubRules returns the stored subscription response rules.
 func (m *Manager) SubRules() ([]model.SubRule, error) {
 	set, err := m.store.GetSettings()

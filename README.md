@@ -214,7 +214,10 @@ WebSocket, XHTTP, gRPC, HTTPUpgrade) with their own port, REALITY keys, hop rang
 fields) — as individual fields or raw JSON; the config is validated on the target machine
 itself (`xray -test` + port bind) before saving, and combinations a client can't handle are
 silently kept out of Clash/sing-box subscriptions. The panel hides behind a **secret path**;
-any other path serves a decoy site (11 templates). TLS out of the box — **ACME** (Let's
+any other path serves a decoy site (11 templates). **Probe detection** notices an IP that
+scans for the hidden panel — one that requests many distinct paths the decoy doesn't have —
+and records it for the operator to review and firewall; the reply never changes, so a scanner
+still sees only the decoy and the masquerade holds. TLS out of the box — **ACME** (Let's
 Encrypt / ZeroSSL) with auto-renewal; the certificate can also be issued **for a bare IP, with
 no domain and no DNS**.
 

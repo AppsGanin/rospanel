@@ -65,6 +65,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_announce":         set.SubAnnounce,
 		"sub_show_configs":     set.SubShowConfigs,
 		"maintenance_mode":     set.MaintenanceMode,
+		"probe_detect":         set.ProbeDetect,
 		"hwid":                 hwidSettingsView(set),
 		"user_autodelete_days": set.UserAutoDeleteDays,
 		"xray_dns":             set.XrayDNS,
@@ -275,6 +276,35 @@ func (rt *Router) saveMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 	rt.setMaintenance(req.Enabled) // swap the live routing immediately
 	writeOK(w)
+}
+
+// saveProbeDetect toggles secret-path probe detection.
+func (rt *Router) saveProbeDetect(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetProbeDetect(req.Enabled); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.setProbeDetect(req.Enabled) // swap the live flag immediately
+	writeOK(w)
+}
+
+// listProbes returns the IPs caught scanning for the hidden panel path.
+func (rt *Router) listProbes(w http.ResponseWriter, _ *http.Request) {
+	probes, err := rt.mgr.Probes(200)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if probes == nil {
+		probes = []model.ProbeHit{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"probes": probes})
 }
 
 // getSubRules returns the subscription response rules for the editor.

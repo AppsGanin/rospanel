@@ -106,3 +106,17 @@ func (m *Manager) PurgeOldConnections() {
 		logInfo("connections: stale rows purged", "count", n, "older_than_days", model.ConnectionRetentionDays)
 	}
 }
+
+// PurgeOldProbes drops scanning-IP rows past the retention window. Shares the audit
+// sweep's slow timer; safe to call repeatedly.
+func (m *Manager) PurgeOldProbes() {
+	cutoff := time.Now().AddDate(0, 0, -model.ProbeRetentionDays).Unix()
+	n, err := m.store.PurgeProbes(cutoff)
+	if err != nil {
+		logErr("probe: retention sweep failed", "err", err)
+		return
+	}
+	if n > 0 {
+		logInfo("probe: stale rows purged", "count", n, "older_than_days", model.ProbeRetentionDays)
+	}
+}
