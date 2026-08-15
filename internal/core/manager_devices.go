@@ -124,6 +124,17 @@ func (m *Manager) UserDevices(userID int64) ([]model.Device, error) {
 	return m.store.ListDevices(userID)
 }
 
+// DeviceCount returns how many HWID-bound devices a user currently has. Best-effort
+// (0 on error): it feeds a display line, not an enforcement decision.
+func (m *Manager) DeviceCount(userID int64) int {
+	n, err := m.store.CountDevices(userID)
+	if err != nil {
+		logErr("devices: count failed", "user", userID, "err", err)
+		return 0
+	}
+	return n
+}
+
 // UnbindDevice releases one device slot. Reports whether anything was bound under
 // that id, so the caller can answer 404 rather than pretend.
 func (m *Manager) UnbindDevice(ctx context.Context, userID int64, hwid string) (bool, error) {

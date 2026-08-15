@@ -627,13 +627,47 @@ func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang
 		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardTrafficUnlimited", used))
 	}
 
-	// Devices (only when limited).
-	if u.DeviceLimit > 0 {
+	// Devices. The panel counts two independent kinds of "device" and either can be
+	// in force: the IP-based limit (distinct source IPs, enforced when device_limit is
+	// set) and HWID binding (distinct installs, enforced when the feature is on). Show
+	// a line for each that applies, labelled so they don't read as one number — or, when
+	// only one is active, just that one.
+	ipLimited := u.DeviceLimit > 0
+	if ipLimited && set.HWIDEnabled {
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevicesIP", u.ActiveDevices, u.DeviceLimit))
+		writeHWIDDeviceLine(&b, set, u, panel, lang, true)
+	} else if ipLimited {
 		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardDevices", u.ActiveDevices, u.DeviceLimit))
+	} else if set.HWIDEnabled {
+		writeHWIDDeviceLine(&b, set, u, panel, lang, false)
 	}
 
 	b.WriteString(userOnlineLine(u, now, loc, lang))
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// writeHWIDDeviceLine appends the HWID-bound device count. labeled distinguishes it
+// as "(HWID)" when the IP line is shown alongside; on its own it reads as the plain
+// "Devices" line. A zero cap (HWID on but no limit set) drops the "of N".
+func writeHWIDDeviceLine(b *strings.Builder, set *model.Settings, u model.User, panel Panel, lang i18n.Lang, labeled bool) {
+	count := panel.DeviceCount(u.ID)
+	capacity := set.DeviceCap(u)
+	var key string
+	switch {
+	case labeled && capacity > 0:
+		key = "user.cardDevicesHWID"
+	case labeled:
+		key = "user.cardDevicesHWIDNoLimit"
+	case capacity > 0:
+		key = "user.cardDevices"
+	default:
+		key = "user.cardDevicesNoLimit"
+	}
+	if capacity > 0 {
+		fmt.Fprintf(b, "%s\n", i18n.T(lang, key, count, capacity))
+	} else {
+		fmt.Fprintf(b, "%s\n", i18n.T(lang, key, count))
+	}
 }
 
 // userStatusLine renders a friendly, emoji-led status for the user card.
