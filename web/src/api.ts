@@ -464,6 +464,16 @@ export const getStatsByUser = (from?: string, to?: string) => {
 }
 export const resetStats = () => api<{ ok: boolean }>('api/stats/reset', { method: 'POST' })
 
+// Connection geo breakdown: distinct source IPs per country over the connection
+// retention window. code is a lowercase 2-letter country code, "" = unknown/private.
+export interface CountryStat {
+  code: string
+  ips: number
+  hits: number
+}
+
+export const getStatsCountries = () => api<CountryStat[]>('api/stats/countries')
+
 // onUnauthorized is invoked whenever an API call returns 401 (the session expired
 // or was revoked server-side). App registers a handler that drops back to the
 // login screen, so an expired session can't leave the user stuck on a dashboard

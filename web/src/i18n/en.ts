@@ -746,6 +746,11 @@ const en: Dict = {
     user: "User",
     total: "Total",
     blocklistMatches: "Blocklist matches",
+    byCountry: "Connections by country",
+    countryTotal: "{{n}} IPs total",
+    countryIps: "{{n}} IPs",
+    unknownCountry: "Unknown",
+    noCountryData: "No connection data yet.",
     byServer: "By server",
   },
 

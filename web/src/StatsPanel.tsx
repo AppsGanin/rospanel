@@ -12,6 +12,7 @@ import { useAction } from './hooks'
 import { useIsAdmin } from './role'
 import { TrafficArea, TrafficDonut } from './charts'
 import { AbuseList } from './AbuseList'
+import { ConnectionCountries } from './CountryMap'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
@@ -180,6 +181,8 @@ export function StatsPanel() {
           </div>
         </div>
       </Card>
+
+      <ConnectionCountries />
 
       <Card className="p-4">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">

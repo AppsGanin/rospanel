@@ -135,6 +135,21 @@ func (rt *Router) statsByUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, totals)
 }
 
+// statsCountries returns the geo breakdown of recent client connections — distinct
+// source IPs per country — for the connection map. The window is the connection
+// retention window (not the ?from/?to traffic range), since it reflects live sources.
+func (rt *Router) statsCountries(w http.ResponseWriter, _ *http.Request) {
+	countries, err := rt.mgr.ConnectionCountries()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if countries == nil {
+		countries = []model.CountryStat{}
+	}
+	writeJSON(w, http.StatusOK, countries)
+}
+
 // sitesLimit reads ?limit=, clamped to a sane range. The view is a top-N by
 // definition, so an out-of-range value is clamped rather than rejected — there is
 // no correct answer to reject in favour of.

@@ -398,6 +398,34 @@ func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
 	return out, rows.Err()
 }
 
+// ConnectionIPStat is one source IP's activity across all users, for the geo
+// breakdown (the country is resolved from the IP in the manager, not stored).
+type ConnectionIPStat struct {
+	IP   string
+	Hits int64 // summed sighting count
+}
+
+// ConnectionIPStats aggregates the connections table by source IP for rows seen since
+// the cutoff (unix seconds). One row per distinct IP.
+func (s *Store) ConnectionIPStats(since int64) ([]ConnectionIPStat, error) {
+	rows, err := s.db.Query(
+		`SELECT ip, SUM(count) FROM connections
+		 WHERE last_seen >= ? GROUP BY ip`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ConnectionIPStat
+	for rows.Next() {
+		var st ConnectionIPStat
+		if err := rows.Scan(&st.IP, &st.Hits); err != nil {
+			return nil, err
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
 // PurgeConnections drops connection rows not seen since the cutoff (unix seconds),
 // returning how many were removed. Batched for the same reason PurgeUserEvents is:
 // the pool is a single connection, so one unbounded DELETE would stall every query

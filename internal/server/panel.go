@@ -368,6 +368,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedOp("GET /api/stats/nodes", rt.statsNodes)
 	authedOp("GET /api/stats/users", rt.statsByUser)
 	authedOp("GET /api/stats/abuse", rt.statsAbuse)
+	authedOp("GET /api/stats/countries", rt.statsCountries)
 	authed("POST /api/stats/reset", rt.statsReset)
 	authed("GET /api/tls", rt.tlsStatus)
 	authed("POST /api/tls", rt.setACME)
