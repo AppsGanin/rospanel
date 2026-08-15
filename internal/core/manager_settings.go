@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -516,6 +517,15 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	if err != nil {
 		return err
 	}
+	// Snapshot the routing we are about to replace, so this change is undoable. Auto,
+	// best-effort: a snapshot that can't be written must not block the change itself.
+	// Skip when the routing is unchanged (e.g. a WARP/Opera-only toggle) so those
+	// no-ops don't push real save-points out of the capped history.
+	if old, err := json.Marshal(set.Routing); err == nil {
+		if next, err2 := json.Marshal(cfg); err2 != nil || !bytes.Equal(old, next) {
+			_ = m.store.CreateConfigSnapshot("", true, string(old))
+		}
+	}
 	logInfo("routing: applying", "warp", warpEnabled, "opera", operaEnabled, "country", operaCountry, "lanes", len(cfg.Lanes))
 	set.WarpEnabled = warpEnabled
 	if warpEnabled && !set.WarpRegistered() {
@@ -623,6 +633,49 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 		return invalidCode("err.subPathSameAsPanel", "путь подписки не может совпадать с секретным путём панели")
 	}
 	return m.store.SetSubSettings(st)
+}
+
+// ConfigSnapshots lists the routing snapshots (newest first).
+func (m *Manager) ConfigSnapshots() ([]model.ConfigSnapshot, error) {
+	return m.store.ListConfigSnapshots()
+}
+
+// SnapshotRouting takes a manual save-point of the current routing config.
+func (m *Manager) SnapshotRouting(label string) error {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	blob, err := json.Marshal(set.Routing)
+	if err != nil {
+		return err
+	}
+	return m.store.CreateConfigSnapshot(strings.TrimSpace(label), false, string(blob))
+}
+
+// RollbackRouting restores the routing config from a snapshot and applies it — going
+// through ApplyRouting so it is validated and reconciled exactly like any edit (and
+// itself auto-snapshotted, so a rollback is undoable too). WARP/Opera keep their
+// current state; the snapshot only carries the routing config.
+func (m *Manager) RollbackRouting(id int64) error {
+	blob, err := m.store.ConfigSnapshotRouting(id)
+	if err != nil {
+		return invalidCode("err.snapshotNotFound", "снимок не найден")
+	}
+	var cfg model.RoutingConfig
+	if err := json.Unmarshal([]byte(blob), &cfg); err != nil {
+		return invalidCode("err.snapshotBad", "снимок повреждён")
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+	return m.ApplyRouting(cfg, set.WarpEnabled, set.OperaEnabled, set.OperaCountry)
+}
+
+// DeleteConfigSnapshot removes one snapshot.
+func (m *Manager) DeleteConfigSnapshot(id int64) error {
+	return m.store.DeleteConfigSnapshot(id)
 }
 
 // SetMaintenanceMode toggles the public-surface maintenance page.

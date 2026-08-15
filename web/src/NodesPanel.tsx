@@ -1537,6 +1537,7 @@ function MasterSettingsDialog({
                 geoip={geo.geoip}
                 iplist={geo.iplist}
                 applying={applying}
+                showSnapshots
               />
               <TabSaveBar
                 onSave={saveRoutingTab}

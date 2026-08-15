@@ -923,6 +923,26 @@ export const saveMaintenance = (enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   })
 
+// Routing/egress config snapshots (undo a change that broke the tunnels).
+export interface ConfigSnapshot {
+  id: number
+  created_at: number
+  label: string
+  auto: boolean
+}
+
+export const getConfigSnapshots = () =>
+  api<{ snapshots: ConfigSnapshot[] }>('api/config/snapshots').then((r) => r.snapshots)
+
+export const createConfigSnapshot = (label: string) =>
+  api<{ ok: boolean }>('api/config/snapshots', { method: 'POST', body: JSON.stringify({ label }) })
+
+export const rollbackConfigSnapshot = (id: number) =>
+  api<{ ok: boolean }>(`api/config/snapshots/${id}/rollback`, { method: 'POST' })
+
+export const deleteConfigSnapshot = (id: number) =>
+  api<{ ok: boolean }>(`api/config/snapshots/${id}`, { method: 'DELETE' })
+
 export interface ThemeColors {
   accent: string // primary colour #rrggbb (drives the whole brand ramp)
   text: string // main text
