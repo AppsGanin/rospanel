@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -500,4 +501,14 @@ func nonNeg(v int64) int64 {
 		return 0
 	}
 	return v
+}
+
+// scaleQuota returns bytes scaled by a node's traffic coefficient, rounded. Used to
+// charge the user's allowance more (coef>1) or less (coef<1) than the real transfer
+// on a given node, without touching the per-node byte statistics.
+func scaleQuota(bytes int64, coef float64) int64 {
+	if coef == 1 {
+		return bytes
+	}
+	return int64(math.Round(float64(bytes) * coef))
 }

@@ -2222,6 +2222,8 @@ const en: Dict = {
     iplistUpdated: "iplist lists updated",
     iplistCadenceSaved: "List auto-update saved",
     generalSaved: "General settings saved",
+    coefficient: "Traffic multiplier",
+    coefficientHint: "How fast traffic through this node spends the quota: 2 = twice as fast (expensive location), 0.5 = half as fast (promo). Does not affect the node statistics.",
     routingSaved: "Routing saved",
     dnsSaved: "DNS saved",
     settingsOf: "Settings — “{{name}}”",

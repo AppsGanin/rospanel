@@ -374,6 +374,9 @@ type NodeView struct {
 	WarpRegistered bool   `json:"warp_registered"`
 	OperaEnabled   bool   `json:"opera_enabled"`
 	OperaCountry   string `json:"opera_country"`
+	// TrafficCoefficient scales quota consumption on this server (1.0 = neutral). The
+	// master's row (node 0) always reports 1.0 — it has no coefficient of its own.
+	TrafficCoefficient float64 `json:"traffic_coefficient"`
 	// REALITY identity (per-server). RealityDest is this server's own donor ("" on a
 	// node ⇒ inherits the panel's); the public key/shortId/service are shown so the
 	// operator can see them and regenerate. The private key is never exposed.
@@ -429,6 +432,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		WarpRegistered: set.WarpRegistered(),
 		OperaEnabled:   set.OperaEnabled,
 		OperaCountry:   set.OperaCountryOr(),
+		// The master counts traffic at face value — no coefficient of its own.
+		TrafficCoefficient: 1.0,
 		// The master's own REALITY identity.
 		RealityDest:      set.RealityDest,
 		RealityPublicKey: set.RealityPublicKey,
@@ -458,32 +463,33 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	for i := range nodes {
 		n := &nodes[i]
 		v := NodeView{
-			ID:              n.ID,
-			Name:            n.Name,
-			Host:            n.Host,
-			Enabled:         n.Enabled,
-			Online:          n.Online(now),
-			Joined:          n.Joined(),
-			LastSeen:        n.LastSeen,
-			NodeVersion:     n.NodeVersion,
-			XrayVersion:     n.XrayVersion,
-			XrayRunning:     n.XrayRunning,
-			VersionSkew:     n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
-			XrayRestart:     m.NodeRestartState(n.ID),
-			VLESSEnabled:    derefBool(n.VLESSEnabled),
-			HysteriaEnabled: derefBool(n.HysteriaEnabled),
-			RealityEnabled:  derefBool(n.RealityEnabled),
-			DecoyTemplate:   n.DecoyTemplate,
-			CertSelfSigned:  n.CertSelfSigned,
-			CertIssuer:      n.CertIssuer,
-			CertExpiresAt:   n.CertExpiresAt,
-			GeoRefreshHours: n.GeoRefreshHours,
-			Routing:         n.Routing,
-			XrayDNS:         n.XrayDNS,
-			WarpEnabled:     n.WarpEnabled,
-			WarpRegistered:  n.WarpRegistered(),
-			OperaEnabled:    n.OperaEnabled,
-			OperaCountry:    n.OperaCountry,
+			ID:                 n.ID,
+			Name:               n.Name,
+			Host:               n.Host,
+			Enabled:            n.Enabled,
+			Online:             n.Online(now),
+			Joined:             n.Joined(),
+			LastSeen:           n.LastSeen,
+			NodeVersion:        n.NodeVersion,
+			XrayVersion:        n.XrayVersion,
+			XrayRunning:        n.XrayRunning,
+			VersionSkew:        n.XrayVersion != "" && !xray.VersionMatchesPinned(n.XrayVersion),
+			XrayRestart:        m.NodeRestartState(n.ID),
+			VLESSEnabled:       derefBool(n.VLESSEnabled),
+			HysteriaEnabled:    derefBool(n.HysteriaEnabled),
+			RealityEnabled:     derefBool(n.RealityEnabled),
+			DecoyTemplate:      n.DecoyTemplate,
+			CertSelfSigned:     n.CertSelfSigned,
+			CertIssuer:         n.CertIssuer,
+			CertExpiresAt:      n.CertExpiresAt,
+			GeoRefreshHours:    n.GeoRefreshHours,
+			Routing:            n.Routing,
+			XrayDNS:            n.XrayDNS,
+			WarpEnabled:        n.WarpEnabled,
+			WarpRegistered:     n.WarpRegistered(),
+			OperaEnabled:       n.OperaEnabled,
+			OperaCountry:       n.OperaCountry,
+			TrafficCoefficient: model.NodeCoefficientOr(n.TrafficCoefficient),
 			// The node's own REALITY identity (dest "" ⇒ inherits the panel's donor).
 			RealityDest:      n.RealityDest,
 			RealityPublicKey: n.RealityPublicKey,
@@ -1491,6 +1497,9 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		// this was three fsyncs each on the panel's single connection, every 45s, per
 		// node — the last write path whose cost still scaled with the user count.
 		today := now.In(m.loc()).Format("2006-01-02")
+		// The node's quota coefficient: real bytes go to the per-node stats, scaled
+		// bytes to the user's allowance (see store.TrafficDelta / model.Node).
+		coef := model.NodeCoefficientOr(n.TrafficCoefficient)
 		deltas := make([]store.TrafficDelta, 0, len(req.Traffic))
 		for _, d := range req.Traffic {
 			up, down := nonNeg(d.Up), nonNeg(d.Down)
@@ -1501,7 +1510,9 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 			// last_down belong to the master's own Xray counters.
 			deltas = append(deltas, store.TrafficDelta{
 				UserID: d.UserID, NodeID: n.ID, Day: today,
-				AddUp: up, AddDown: down, SeenAt: now.Unix(),
+				AddUp: up, AddDown: down,
+				QuotaUp: scaleQuota(up, coef), QuotaDown: scaleQuota(down, coef),
+				SeenAt: now.Unix(),
 			})
 		}
 		// Read before the write: enforceAfterTraffic wants the pre-ingest snapshot to

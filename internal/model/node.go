@@ -26,11 +26,35 @@ const NodeOnlineWindow int64 = 120
 // below — its own address, TLS/REALITY identity, protocol overrides, and its OWN
 // routing/DNS/egress (proxy lanes, WARP, Opera), independent of the master. See
 // core.nodeSettings, which materializes exactly that.
+// Node traffic-coefficient bounds. Below 0.1 a real transfer could round to zero
+// quota; above 10 is past any real differential-pricing need.
+const (
+	MinNodeCoefficient = 0.1
+	MaxNodeCoefficient = 10.0
+)
+
+// NodeCoefficientOr returns a usable coefficient: 1.0 for an unset/old row (stored 0)
+// or a negative value, clamped into [Min,Max] otherwise. Used at read time so a bad
+// stored number can never zero out or explode a user's quota accounting.
+func NodeCoefficientOr(c float64) float64 {
+	if c <= 0 {
+		return 1.0
+	}
+	return min(max(c, MinNodeCoefficient), MaxNodeCoefficient)
+}
+
 type Node struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
 	Host    string `json:"host"`
 	Enabled bool   `json:"enabled"`
+
+	// TrafficCoefficient scales how much of a user's quota is spent per real byte on
+	// this node: 2.0 makes an expensive location drain the allowance twice as fast,
+	// 0.5 makes a promo one drain it half as fast. It bends only the quota, never the
+	// per-node statistics, which stay the true byte count. Default 1.0; a zero read
+	// from an older row is normalized to 1.0 (see NodeCoefficientOr).
+	TrafficCoefficient float64 `json:"traffic_coefficient"`
 
 	// Per-node REALITY identity. RealityPrivateKey is encrypted at rest and never
 	// serialized to any client. RealityDest is the node's own masquerade donor SNI
