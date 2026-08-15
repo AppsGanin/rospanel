@@ -670,6 +670,24 @@ func rescueOwner(st *store.Store, login string) {
 	if err != nil {
 		log.Fatalf("rescue: hash password: %v", err)
 	}
+	// "Exactly one owner" is an invariant the panel relies on, so a rescue that grants
+	// ownership must also TAKE it from whoever holds it — otherwise two owners exist,
+	// which is a worse mess than the lockout being fixed. Demote the current owner (if
+	// it isn't the target) before promoting.
+	admins, err := st.ListAdmins()
+	if err != nil {
+		log.Fatalf("rescue: list admins: %v", err)
+	}
+	for _, a := range admins {
+		if a.Role == model.RoleOwner && !strings.EqualFold(a.Username, login) {
+			if err := st.SetAdminRole(a.ID, model.RoleAdmin); err != nil {
+				log.Fatalf("rescue: demote current owner: %v", err)
+			}
+			fmt.Printf("demoted the previous owner %q to administrator\n", a.Username)
+			rescueAudit(st, model.AuditAdminRoleChanged, a.Username, false)
+		}
+	}
+
 	if id, _, _, err := st.GetAdminAuth(login); err == nil {
 		// Exists: make them owner, reset the password, clear any second factor.
 		if err := st.SetAdminRole(id, model.RoleOwner); err != nil {

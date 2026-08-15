@@ -75,6 +75,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/secret":          set("secretPath"),
 	"POST /api/settings/decoy":           set("decoy"),
 	"POST /api/settings/subscription":    set("subscriptions"),
+	"POST /api/settings/sub-rules":       set("subscriptions"),
 	"POST /api/settings/hwid":            set("deviceBinding"),
 	"POST /api/settings/status-page":     set("statusPage"),
 	"POST /api/settings/dns":             set("dns"),
