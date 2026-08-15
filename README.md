@@ -224,24 +224,33 @@ no domain and no DNS**.
 #### 👤 Users
 
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
-**device limit** by unique IP and a per-user **speed cap**. Traffic accounting via Xray Stats, online status, connection
+**device limit** (see *Device binding* below for exactly what it counts) and a per-user
+**speed cap**. Traffic accounting via Xray Stats, online status, connection
 list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
 The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time. A **connection
 map** breaks down where clients connect from — distinct source IPs per country, resolved
 from the same geoip database Xray routes with (no external service, no extra download).
 
-**Device binding (HWID).** Clients that follow the subscription-header convention (Happ,
-v2RayTun) send a stable install id; the panel binds it to the account on first fetch and
-counts it against the device limit. Once the limit is full a NEW device is refused the
-subscription while the bound ones keep updating — the check and the insert are one
-transaction, so two clients cannot both take the last slot. The devices are listed in the
-user card and **on the subscription page**, where the owner can release one themselves
-instead of writing to support; an idle device frees its slot after a configurable TTL, and
-rotating the subscription link releases them all. Off by default (*Settings →
-Subscriptions*); once on, a client that sends **no** id gets no subscription at all — a cap
-you can dodge by switching to a quieter app is not a cap — with a switch to serve those
-clients anyway (counted by address, as before) if some of your users are on them.
+**The device limit — what it counts.** A user's device limit (or the one their plan sets) is
+a **single number enforced two ways**. On its own it caps **concurrent unique source IPs**: a
+user connecting from more distinct addresses than the limit within the online window is
+dropped from the tunnels until they fall back under it — counted across **every server**
+(master and nodes), not per-server. `0` means no IP cap.
+
+**Device binding (HWID).** Turn this on and the **same number** also caps distinct **installs**.
+Clients that follow the subscription-header convention (Happ, v2RayTun) send a stable install
+id; the panel binds it to the account on first fetch and counts it against the limit. Once the
+limit is full a NEW install is refused the subscription while the bound ones keep updating — the
+check and the insert are one transaction, so two clients cannot both take the last slot. (When a
+user's own limit is `0`, HWID uses a panel-wide fallback limit instead.) The devices are listed
+in the user card, in the **client bot** (as separate *by IP* and *by HWID* lines when both apply),
+and **on the subscription page**, where the owner can release one themselves instead of writing to
+support; an idle device frees its slot after a configurable TTL, and rotating the subscription
+link releases them all. Off by default (*Settings → Subscriptions*); once on, a client that sends
+**no** id gets no subscription at all — a cap you can dodge by switching to a quieter app is not a
+cap — with a switch to serve those clients anyway (counted by address, as before) if some of your
+users are on them.
 
 **Speed limit.** A per-user cap in kbit/s, set by hand or by the tariff. Xray has no
 per-user bandwidth limit, so it is enforced below it — the kernel's own scheduler (HTB),
