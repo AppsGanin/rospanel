@@ -74,6 +74,8 @@ func main() {
 			runPath(dataDir)
 		case "totp":
 			runTOTP(dataDir, os.Args[2:])
+		case "rescue":
+			runRescue(dataDir, os.Args[2:])
 		case "install":
 			runInstall()
 		case "uninstall":
