@@ -20,17 +20,18 @@ type (
 	// apiPatchNodeReq mirrors the panel edit. Pointer fields distinguish "inherit
 	// global" (nil) from an explicit value.
 	apiPatchNodeReq struct {
-		Name          *string              `json:"name,omitempty"`
-		Host          *string              `json:"host,omitempty"`
-		DecoyTemplate *string              `json:"decoy_template,omitempty"`
-		VLESS         *bool                `json:"vless_enabled,omitempty"`
-		Hysteria      *bool                `json:"hysteria_enabled,omitempty"`
-		Reality       *bool                `json:"reality_enabled,omitempty"`
-		Routing       *model.RoutingConfig `json:"routing,omitempty"`
-		XrayDNS       *string              `json:"xray_dns,omitempty"`
-		WarpEnabled   *bool                `json:"warp_enabled,omitempty"`
-		OperaEnabled  *bool                `json:"opera_enabled,omitempty"`
-		OperaCountry  *string              `json:"opera_country,omitempty"`
+		Name               *string              `json:"name,omitempty"`
+		Host               *string              `json:"host,omitempty"`
+		DecoyTemplate      *string              `json:"decoy_template,omitempty"`
+		VLESS              *bool                `json:"vless_enabled,omitempty"`
+		Hysteria           *bool                `json:"hysteria_enabled,omitempty"`
+		Reality            *bool                `json:"reality_enabled,omitempty"`
+		Routing            *model.RoutingConfig `json:"routing,omitempty"`
+		XrayDNS            *string              `json:"xray_dns,omitempty"`
+		WarpEnabled        *bool                `json:"warp_enabled,omitempty"`
+		OperaEnabled       *bool                `json:"opera_enabled,omitempty"`
+		OperaCountry       *string              `json:"opera_country,omitempty"`
+		TrafficCoefficient *float64             `json:"traffic_coefficient,omitempty"`
 	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
@@ -132,17 +133,18 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	// Patch semantics: an omitted field keeps the node's current value; an omitted
 	// override pointer keeps the node's current override state.
 	edit := store.NodeEdit{
-		Name:          node.Name,
-		Host:          node.Host,
-		DecoyTemplate: node.DecoyTemplate,
-		VLESS:         node.VLESSEnabled,
-		Hysteria:      node.HysteriaEnabled,
-		Reality:       node.RealityEnabled,
-		Routing:       node.Routing,
-		XrayDNS:       node.XrayDNS,
-		WarpEnabled:   node.WarpEnabled,
-		OperaEnabled:  node.OperaEnabled,
-		OperaCountry:  node.OperaCountry,
+		Name:               node.Name,
+		Host:               node.Host,
+		DecoyTemplate:      node.DecoyTemplate,
+		VLESS:              node.VLESSEnabled,
+		Hysteria:           node.HysteriaEnabled,
+		Reality:            node.RealityEnabled,
+		Routing:            node.Routing,
+		XrayDNS:            node.XrayDNS,
+		WarpEnabled:        node.WarpEnabled,
+		OperaEnabled:       node.OperaEnabled,
+		OperaCountry:       node.OperaCountry,
+		TrafficCoefficient: node.TrafficCoefficient,
 	}
 	if req.Name != nil {
 		edit.Name = strings.TrimSpace(*req.Name)
@@ -176,6 +178,9 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.OperaCountry != nil {
 		edit.OperaCountry = strings.TrimSpace(*req.OperaCountry)
+	}
+	if req.TrafficCoefficient != nil {
+		edit.TrafficCoefficient = *req.TrafficCoefficient
 	}
 	if edit.Name == "" || edit.Host == "" {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name and host must not be empty")

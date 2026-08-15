@@ -47,8 +47,18 @@ type TrafficDelta struct {
 	UserID  int64
 	NodeID  int64
 	Day     string // operator-local calendar day the traffic is booked against
-	AddUp   int64  // delta to add to the lifetime totals
+	AddUp   int64  // real bytes — booked to the per-node/day stats
 	AddDown int64
+	// QuotaUp/QuotaDown are the bytes charged to the USER'S quota, which is the real
+	// bytes scaled by the node's traffic coefficient (see model.Node.TrafficCoefficient).
+	// They are separate from AddUp/AddDown on purpose: the per-node statistics must stay
+	// the true byte count for infrastructure monitoring, while a coefficient of 2.0
+	// (expensive node) or 0.5 (promo node) only bends how fast the user's allowance
+	// drains. Left zero by callers that don't scale, in which case the real bytes are
+	// charged — see quotaBytes.
+	QuotaUp   int64
+	QuotaDown int64
+
 	// Baseline is the raw counters to remember as the next poll's reference point.
 	// Only the LOCAL poller has them: it reads Xray's cumulative counters and
 	// subtracts, so it must record where it read. A remote node subtracts on its own
@@ -57,6 +67,16 @@ type TrafficDelta struct {
 	// a node's numbers there would corrupt the next local poll's arithmetic.
 	Baseline *TrafficBaseline
 	SeenAt   int64 // stamp last_seen with this; 0 leaves it alone
+}
+
+// quotaBytes is the up/down charged to the user's quota: the scaled QuotaUp/QuotaDown
+// when a caller set them, else the real bytes (an unscaled path, e.g. the local
+// poller, or a test that predates the coefficient).
+func (d TrafficDelta) quotaBytes() (up, down int64) {
+	if d.QuotaUp != 0 || d.QuotaDown != 0 {
+		return d.QuotaUp, d.QuotaDown
+	}
+	return d.AddUp, d.AddDown
 }
 
 // ApplyTrafficDeltas books a whole poll cycle's traffic in one transaction.
@@ -75,11 +95,13 @@ func (s *Store) ApplyTrafficDeltas(deltas []TrafficDelta) error {
 
 func applyTrafficDeltasOn(ex execer, deltas []TrafficDelta) error {
 	for _, d := range deltas {
+		// Quota is charged the scaled bytes; the per-node/day stats get the real ones.
+		qUp, qDown := d.quotaBytes()
 		var err error
 		if d.Baseline != nil {
-			err = updateTrafficOn(ex, d.UserID, d.AddUp, d.AddDown, d.Baseline.Up, d.Baseline.Down)
+			err = updateTrafficOn(ex, d.UserID, qUp, qDown, d.Baseline.Up, d.Baseline.Down)
 		} else {
-			err = addUsedTrafficOn(ex, d.UserID, d.AddUp, d.AddDown)
+			err = addUsedTrafficOn(ex, d.UserID, qUp, qDown)
 		}
 		if err != nil {
 			return err

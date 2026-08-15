@@ -1567,6 +1567,7 @@ export interface NodeView {
   warp_registered: boolean
   opera_enabled: boolean
   opera_country: string
+  traffic_coefficient: number
   // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
   // donor. The public key / short id / XHTTP path are shown; private key is hidden.
   reality_dest: string
@@ -1680,6 +1681,7 @@ export interface NodePatch {
   vless_enabled?: boolean
   hysteria_enabled?: boolean
   reality_enabled?: boolean
+  traffic_coefficient?: number
 }
 
 export const updateNode = (id: number, patch: NodePatch) =>

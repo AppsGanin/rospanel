@@ -213,3 +213,62 @@ func TestNodeTrafficLeavesLocalBaseline(t *testing.T) {
 		t.Errorf("node traffic not accumulated: used_up = %d", u.UsedUp)
 	}
 }
+
+// The node traffic coefficient must scale the USER'S quota but not the per-node
+// statistics: a coefficient of 2 charges the allowance double while the byte counters
+// stay real (and 0.5 the reverse). If the two were ever charged the same value, either
+// billing would be wrong or the infrastructure stats would lie.
+func TestNodeCoefficientScalesQuotaNotStats(t *testing.T) {
+	st, n, ids := nodeReportFixture(t)
+	u := ids[0]
+	const up, down = 1000, 4000
+
+	// Charge quota at 2x, book stats at face value — the shape the manager produces.
+	deltas := []TrafficDelta{{
+		UserID: u, NodeID: n.ID, Day: "2026-01-01",
+		AddUp: up, AddDown: down,
+		QuotaUp: 2 * up, QuotaDown: 2 * down,
+		SeenAt: time.Now().Unix(),
+	}}
+	if _, err := st.ApplyNodeReport(n.ID, 1, deltas); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// Quota: the user's lifetime totals reflect the scaled bytes.
+	usr, err := st.GetUser(u)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if usr.UsedUp != 2*up || usr.UsedDown != 2*down {
+		t.Errorf("quota = %d/%d, want the doubled %d/%d", usr.UsedUp, usr.UsedDown, 2*up, 2*down)
+	}
+
+	// Per-node stats: the real bytes, unscaled.
+	totals, err := st.NodeTrafficTotals(u, "2026-01-01", "2026-01-01")
+	if err != nil {
+		t.Fatalf("node totals: %v", err)
+	}
+	if got := totals[n.ID]; got[0] != up || got[1] != down {
+		t.Errorf("per-node stats = %d/%d, want the real %d/%d (coefficient must not touch these)",
+			got[0], got[1], up, down)
+	}
+}
+
+// A delta with no explicit quota (the local poller, or any pre-coefficient caller)
+// charges the real bytes — the coefficient feature must not silently zero quota for
+// everyone who didn't set it.
+func TestTrafficDeltaWithoutQuotaChargesRealBytes(t *testing.T) {
+	st, n, ids := nodeReportFixture(t)
+	u := ids[0]
+	deltas := []TrafficDelta{{
+		UserID: u, NodeID: n.ID, Day: "2026-01-02",
+		AddUp: 500, AddDown: 700, SeenAt: time.Now().Unix(),
+	}}
+	if _, err := st.ApplyNodeReport(n.ID, 1, deltas); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	usr, _ := st.GetUser(u)
+	if usr.UsedUp != 500 || usr.UsedDown != 700 {
+		t.Errorf("quota = %d/%d, want the real 500/700 when no coefficient is set", usr.UsedUp, usr.UsedDown)
+	}
+}

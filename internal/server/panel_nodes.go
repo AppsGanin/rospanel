@@ -87,12 +87,13 @@ func (rt *Router) createNode(w http.ResponseWriter, r *http.Request) {
 // handler preserves the node's current value. Routing/DNS/egress are likewise
 // preserved: a name/decoy edit must never silently wipe a protocol or routing override.
 type nodePatchReq struct {
-	Name          string `json:"name"`
-	Host          string `json:"host"`
-	DecoyTemplate string `json:"decoy_template"`
-	VLESS         *bool  `json:"vless_enabled"`
-	Hysteria      *bool  `json:"hysteria_enabled"`
-	Reality       *bool  `json:"reality_enabled"`
+	Name               string  `json:"name"`
+	Host               string  `json:"host"`
+	DecoyTemplate      string  `json:"decoy_template"`
+	VLESS              *bool   `json:"vless_enabled"`
+	Hysteria           *bool   `json:"hysteria_enabled"`
+	Reality            *bool   `json:"reality_enabled"`
+	TrafficCoefficient float64 `json:"traffic_coefficient"`
 }
 
 // orBool returns a when set, else b — used to preserve a node's current protocol
@@ -136,11 +137,12 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		Reality:  orBool(req.Reality, node.RealityEnabled),
 		// Preserve the node's existing routing/DNS/egress config — this endpoint doesn't
 		// edit them, and sending zero values would clear them.
-		Routing:      node.Routing,
-		XrayDNS:      node.XrayDNS,
-		WarpEnabled:  node.WarpEnabled,
-		OperaEnabled: node.OperaEnabled,
-		OperaCountry: node.OperaCountry,
+		Routing:            node.Routing,
+		XrayDNS:            node.XrayDNS,
+		WarpEnabled:        node.WarpEnabled,
+		OperaEnabled:       node.OperaEnabled,
+		OperaCountry:       node.OperaCountry,
+		TrafficCoefficient: req.TrafficCoefficient,
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)
@@ -178,17 +180,18 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	edit := store.NodeEdit{
-		Name:          node.Name,
-		Host:          node.Host,
-		DecoyTemplate: node.DecoyTemplate,
-		VLESS:         node.VLESSEnabled,
-		Hysteria:      node.HysteriaEnabled,
-		Reality:       node.RealityEnabled,
-		Routing:       req.Routing,  // may be nil ⇒ inherit
-		XrayDNS:       node.XrayDNS, // preserve — DNS is edited on its own tab
-		WarpEnabled:   req.WarpEnabled,
-		OperaEnabled:  req.OperaEnabled,
-		OperaCountry:  req.OperaCountry,
+		Name:               node.Name,
+		Host:               node.Host,
+		DecoyTemplate:      node.DecoyTemplate,
+		VLESS:              node.VLESSEnabled,
+		Hysteria:           node.HysteriaEnabled,
+		Reality:            node.RealityEnabled,
+		Routing:            req.Routing,  // may be nil ⇒ inherit
+		XrayDNS:            node.XrayDNS, // preserve — DNS is edited on its own tab
+		WarpEnabled:        req.WarpEnabled,
+		OperaEnabled:       req.OperaEnabled,
+		OperaCountry:       req.OperaCountry,
+		TrafficCoefficient: node.TrafficCoefficient, // preserve — edited on the main form
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)

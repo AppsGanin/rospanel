@@ -446,6 +446,14 @@ function fmtSeen(unix: number): string {
 // Exported because the dashboard's fleet strip shows the same servers — two places
 // deciding independently what "up" looks like is how they end up disagreeing about
 // the same node.
+// clampCoefficient parses the traffic-multiplier field and holds it in the range the
+// server accepts (0.1–10), defaulting a blank or unparseable value to the neutral 1.
+function clampCoefficient(v: string): number {
+  const n = parseFloat(v);
+  if (!isFinite(n) || n <= 0) return 1;
+  return Math.min(Math.max(n, 0.1), 10);
+}
+
 export function statusDot(node: NodeView): string {
   if (!node.enabled || !node.joined) return "bg-gray-400";
   if (!node.is_local && !node.online) return "bg-red-500";
@@ -1019,9 +1027,16 @@ function NodeSettingsDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
+  // The per-node quota multiplier (1 = neutral). Kept as a string so the field can be
+  // cleared while typing; parsed on save.
+  const [coef, setCoef] = useState(String(node.traffic_coefficient || 1));
   // genBase / dnsBase are the last-saved snapshots powering dirty-tracking + revert on
   // the General and DNS tabs (routing carries its own inside useServerRouting).
-  const [genBase, setGenBase] = useState({ name: node.name, decoy: node.decoy_template });
+  const [genBase, setGenBase] = useState({
+    name: node.name,
+    decoy: node.decoy_template,
+    coef: String(node.traffic_coefficient || 1),
+  });
   // The system proxy is part of the General tab, so its draft lives here and rides
   // that tab's single save.
   const [proxy, setProxy] = useState<SystemProxy>(node.proxy);
@@ -1038,7 +1053,8 @@ function NodeSettingsDialog({
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
-  const genDirty = name !== genBase.name || decoy !== genBase.decoy || proxyDirty;
+  const genDirty =
+    name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || proxyDirty;
   const dnsDirty = dns !== dnsBase;
 
   // Status badges: WARP registration is known from the node's report; Opera runs
@@ -1063,6 +1079,7 @@ function NodeSettingsDialog({
         name: name.trim(),
         host: node.host, // domain is changed from the Domain tab
         decoy_template: decoy,
+        traffic_coefficient: clampCoefficient(coef),
         // Protocols are edited on the Connections tab; omitting them here tells the
         // panel to preserve the current values (never revert a just-made change).
       });
@@ -1072,7 +1089,7 @@ function NodeSettingsDialog({
         await setServerProxy(node.id, proxy);
         setProxyBase(proxy);
       }
-      setGenBase({ name, decoy });
+      setGenBase({ name, decoy, coef });
       notifySuccess(t("nodes.generalSaved"));
       onRefresh();
     } catch (e) {
@@ -1145,6 +1162,16 @@ function NodeSettingsDialog({
               onChange={setDecoy}
               data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
             />
+            <div className="flex flex-col gap-1">
+              <TextInput
+                label={t("nodes.coefficient")}
+                type="number"
+                value={coef}
+                onChange={setCoef}
+                placeholder="1.0"
+              />
+              <p className="text-xs text-ink-muted">{t("nodes.coefficientHint")}</p>
+            </div>
             <SystemProxyEditor
               host={node.host}
               value={proxy}
@@ -1157,6 +1184,7 @@ function NodeSettingsDialog({
             onReset={() => {
               setName(genBase.name);
               setDecoy(genBase.decoy);
+              setCoef(genBase.coef);
               setProxy(proxyBase);
             }}
             dirty={genDirty}

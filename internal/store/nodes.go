@@ -47,7 +47,7 @@ const nodeColumns = `id, name, host, enabled,
 	cert_issuer, cert_expires_at, geo_refresh_hours,
 	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
-	proxy_accounts`
+	proxy_accounts, traffic_coefficient`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -82,7 +82,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.CertIssuer, &n.CertExpiresAt, &n.GeoRefreshHours,
 		&n.ACMEEmail, &n.ACMEProvider, &n.ZeroSSLEABKID, &n.ZeroSSLEABHMAC,
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
-		&proxyAccounts,
+		&proxyAccounts, &n.TrafficCoefficient,
 	); err != nil {
 		return nil, err
 	}
@@ -392,6 +392,8 @@ type NodeEdit struct {
 	WarpEnabled  bool
 	OperaEnabled bool
 	OperaCountry string
+	// TrafficCoefficient scales quota consumption on this node (normalized on write).
+	TrafficCoefficient float64
 }
 
 // UpdateNode persists the operator-editable fields. Identity, tokens and reported
@@ -413,12 +415,14 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 		UPDATE nodes SET name = ?, host = ?, decoy_template = ?,
 			vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
 			routing_config = ?, xray_dns = ?,
-			warp_enabled = ?, opera_enabled = ?, opera_country = ?
+			warp_enabled = ?, opera_enabled = ?, opera_country = ?,
+			traffic_coefficient = ?
 		WHERE id = ?`,
 		e.Name, e.Host, e.DecoyTemplate,
 		boolToNull(e.VLESS), boolToNull(e.Hysteria), boolToNull(e.Reality),
 		routingJSON, dns,
 		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
+		model.NodeCoefficientOr(e.TrafficCoefficient),
 		id,
 	)
 	if isNameConflict(err) {
