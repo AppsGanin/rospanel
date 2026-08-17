@@ -18,8 +18,10 @@ import (
 const (
 	// maxASNDecompressed bounds how many bytes we inflate from the gzip so a
 	// decompression bomb (or a hostile upstream past the on-disk size cap) can't pin
-	// CPU/memory. Well above the real ip2asn-combined TSV (tens of MB).
-	maxASNDecompressed = 256 << 20
+	// CPU/memory. Well above the real ip2asn-combined TSV (tens of MB) and comfortably
+	// above what maxASNRows can produce, so the row cap is the one that normally binds
+	// (it errors cleanly) and this only ever catches a genuine bomb.
+	maxASNDecompressed = 512 << 20
 	// maxASNRows bounds the number of lines parsed, capping resident memory (the range
 	// slices) regardless of how many rows the stream carries. Several times the real
 	// table size (~500k rows today).
@@ -98,6 +100,13 @@ func LoadASNLookup(dir string) (*ASNLookup, error) {
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	// The scanner stops at EOF, and io.LimitReader fakes EOF at maxASNDecompressed. If
+	// the gzip stream still has bytes past that cap, we truncated it mid-file — refuse
+	// rather than silently install a partial table as if it were the whole thing (the
+	// row cap above errors cleanly; the byte cap must too, not swallow the tail).
+	if n, _ := gz.Read(make([]byte, 1)); n > 0 {
+		return nil, fmt.Errorf("%s in %s exceeds %d decompressed bytes", asnFile, dir, maxASNDecompressed)
 	}
 	if len(a.v4) == 0 && len(a.v6) == 0 {
 		return nil, fmt.Errorf("%s in %s has no ASN ranges", asnFile, dir)

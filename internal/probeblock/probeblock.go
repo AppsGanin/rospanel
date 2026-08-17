@@ -21,12 +21,17 @@ import (
 
 const tableName = "rospanel_probeblock"
 
-// mu serializes every nft mutation. RecordProbe fires BlockIP from a goroutine per
-// crossing IP, so without this two first-time blocks could both pass ensure's
-// check-then-act and load the ruleset twice — and `add rule` APPENDS (it is not
-// idempotent), so the drop rules would be duplicated. It also keeps Clear from racing an
-// in-flight BlockIP.
+// mu serializes every nft mutation and guards `armed`. RecordProbe fires BlockIP from a
+// goroutine per crossing IP, so without this two first-time blocks could both pass
+// ensure's check-then-act and load the ruleset twice — and `add rule` APPENDS (it is not
+// idempotent), so the drop rules would be duplicated.
 var mu sync.Mutex
+
+// armed gates BlockIP. Clear() (the operator switching auto-blocking off) disarms, so an
+// in-flight BlockIP that read a now-stale "enabled" setting can't ensure() the table back
+// into existence after it was torn down; Arm() (switching it on) re-arms. Default true so
+// a fresh boot with the feature on blocks immediately without an explicit Arm().
+var armed = true
 
 // ruleset creates the table, the two address sets, and an input-hook chain that drops
 // any source in them. The `add table`/`add set`/`add chain` statements are idempotent,
@@ -90,6 +95,9 @@ func BlockIP(ip string) error {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if !armed {
+		return nil // auto-blocking was switched off; don't resurrect the table
+	}
 	if err := ensure(); err != nil {
 		return err
 	}
@@ -123,11 +131,20 @@ func UnblockIP(ip string) error {
 // Clear removes the whole table (used when auto-blocking is switched off, so nothing
 // stays blocked at the firewall after the operator disables it).
 func Clear() error {
+	mu.Lock()
+	defer mu.Unlock()
+	armed = false // disarm first, so a racing in-flight BlockIP can't rebuild the table
 	if !available() {
 		return nil
 	}
-	mu.Lock()
-	defer mu.Unlock()
 	_ = exec.Command("nft", "delete", "table", "inet", tableName).Run()
 	return nil
+}
+
+// Arm re-enables blocking after a Clear(), called when the operator switches auto-blocking
+// back on. BlockIP stays a no-op between a Clear() and the next Arm().
+func Arm() {
+	mu.Lock()
+	armed = true
+	mu.Unlock()
 }
