@@ -329,8 +329,8 @@ func (m *Manager) probeDigestLoop() {
 	for {
 		time.Sleep(time.Hour)
 		set, err := m.store.GetSettings()
-		if err != nil || !set.ProbeDigest {
-			continue
+		if err != nil || !set.AdminEventEnabled(model.AdminEventProbe) {
+			continue // the digest rides the "Path scanners" alert category
 		}
 		now := time.Now().In(m.loc())
 		today := now.Format("2006-01-02")

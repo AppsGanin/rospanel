@@ -24,7 +24,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var abuseEn int
 	var hwidEn, hwidRequire int
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
-	var probeBlock, probeDigest int
+	var probeBlock int
 	var routingCfg, subRulesJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -64,7 +64,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
-		       probe_detect, watchdog_enabled, probe_block, probe_digest
+		       probe_detect, watchdog_enabled, probe_block
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -104,7 +104,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
-		&probeDetect, &watchdogEnabled, &probeBlock, &probeDigest,
+		&probeDetect, &watchdogEnabled, &probeBlock,
 	)
 	if err != nil {
 		return nil, err
@@ -151,7 +151,6 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.ProbeDetect = probeDetect != 0
 	st.WatchdogEnabled = watchdogEnabled != 0
 	st.ProbeBlock = probeBlock != 0
-	st.ProbeDigest = probeDigest != 0
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)
@@ -413,8 +412,6 @@ func (s *Store) SetWatchdogEnabled(on bool) error {
 // SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs.
 func (s *Store) SetProbeBlock(on bool) error { return s.setSetting("probe_block", on) }
 
-// SetProbeDigest toggles the daily scanner-summary notification.
-func (s *Store) SetProbeDigest(on bool) error { return s.setSetting("probe_digest", on) }
 
 // SetHWIDSettings persists the device-binding settings (Settings → Subscriptions).
 func (s *Store) SetHWIDSettings(st *model.Settings) error {

@@ -659,10 +659,10 @@ type Settings struct {
 	ProbeDetect bool `json:"-"`
 	// WatchdogEnabled turns the wedged-process auto-recovery on/off (default on).
 	WatchdogEnabled bool `json:"-"`
-	// ProbeBlock drops a flagged scanner's IP at the firewall; ProbeDigest sends the
-	// operator one daily summary of new scanners. Both default off.
-	ProbeBlock  bool `json:"-"`
-	ProbeDigest bool `json:"-"`
+	// ProbeBlock drops a flagged scanner's IP at the firewall (default off). The daily
+	// scanner digest has no setting of its own — it rides the AdminEventProbe alert
+	// category, like every other admin notification.
+	ProbeBlock bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
