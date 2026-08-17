@@ -29,7 +29,7 @@ func (rt *Router) createConfigSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SnapshotRouting(req.Label); err != nil {
+	if err := rt.mgr.SnapshotServerConfig(req.Label); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
@@ -37,7 +37,7 @@ func (rt *Router) createConfigSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *Router) rollbackConfigSnapshot(w http.ResponseWriter, r *http.Request, id int64) {
-	if err := rt.mgr.RollbackRouting(id); err != nil {
+	if err := rt.mgr.RollbackServerConfig(id); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
