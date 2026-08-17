@@ -943,6 +943,7 @@ const ru = {
       broadcast_user_messaged: "Сообщение пользователю в Telegram",
       panel_xray_restarted: "Перезапуск Xray",
       panel_watchdog_restart: "Авто-восстановление Xray (сторож)",
+      panel_watchdog_wedged: "Xray завис — авто-рестарт выключен (сторож)",
       panel_restarted: "Перезапуск панели",
       panel_stats_reset: "Сброс статистики",
       panel_backup_downloaded: "Бэкап скачан",

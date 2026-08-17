@@ -937,6 +937,7 @@ const en: Dict = {
       broadcast_user_messaged: "Message sent to a user on Telegram",
       panel_xray_restarted: "Xray restarted",
       panel_watchdog_restart: "Xray auto-recovered (watchdog)",
+      panel_watchdog_wedged: "Xray wedged — auto-recovery off (watchdog)",
       panel_restarted: "Panel restarted",
       panel_stats_reset: "Statistics reset",
       panel_backup_downloaded: "Backup downloaded",

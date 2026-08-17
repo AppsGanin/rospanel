@@ -91,7 +91,7 @@ type Supervisor struct {
 
 	onAccess func(email, ip, dest string) // called per access-log connection line
 	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
-	onWedged func()                       // called when the watchdog restarts a wedged process
+	onWedged func(restarted bool)         // called when the watchdog sees a wedged process; restarted=false when auto-recovery is off (alert only)
 	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
 	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
 	// renewed certificate): those are routine, and reporting them as recovery would
@@ -163,10 +163,11 @@ func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
 // SetOnRecover registers a callback invoked when Xray comes back after a crash.
 func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
 
-// SetOnWedged registers a callback invoked when the watchdog restarts a wedged
-// process (alive but no longer serving). Used to alert the operator — this is an
-// outage the crash path never reported, because the process never exited.
-func (s *Supervisor) SetOnWedged(fn func()) { s.onWedged = fn }
+// SetOnWedged registers a callback invoked when the watchdog detects a wedged process
+// (alive but no longer serving). Used to alert the operator — this is an outage the crash
+// path never reported, because the process never exited. It fires even when auto-recovery
+// is OFF (restarted=false), so disabling the auto-restart doesn't blind the operator.
+func (s *Supervisor) SetOnWedged(fn func(restarted bool)) { s.onWedged = fn }
 
 // SetWatchdogEnabled turns the wedged-process auto-recovery on or off, live. Off, the
 // loop keeps running (so it can be turned back on) but never restarts anything.
@@ -207,64 +208,73 @@ func (s *Supervisor) watchdogLoop() {
 		if closed {
 			return
 		}
-		var act bool
-		fails, act = s.watchdogTick(fails)
-		if !act {
+		var alert, restart bool
+		fails, alert, restart = s.watchdogTick(fails)
+		if !alert {
 			continue
 		}
-		slog.Error("xray watchdog: wedged (alive but not serving) — restarting")
-		if s.onWedged != nil {
-			go s.onWedged()
+		// A wedge was seen (past the cooldown). Tell the operator either way; only
+		// auto-restart when the toggle allows it.
+		if restart {
+			slog.Error("xray watchdog: wedged (alive but not serving) — restarting")
+		} else {
+			slog.Error("xray watchdog: wedged (alive but not serving) — auto-recovery off, not restarting")
 		}
-		if err := s.Restart(); err != nil {
-			slog.Error("xray watchdog: restart failed", "err", err)
+		if s.onWedged != nil {
+			go s.onWedged(restart)
+		}
+		if restart {
+			if err := s.Restart(); err != nil {
+				slog.Error("xray watchdog: restart failed", "err", err)
+			}
 		}
 	}
 }
 
 // watchdogTick evaluates one probe cycle and returns the updated consecutive-failure
-// count and whether a wedged process should be restarted now. The decision, minus the
-// ticker and the restart itself, so it is unit-testable without a live Xray:
+// count, whether to ALERT the operator to a wedge now, and whether to auto-RESTART now.
+// The decision, minus the ticker and the restart itself, so it is unit-testable without a
+// live Xray. Detection and alerting are independent of the auto-recovery toggle — a wedge
+// is always detected and reported once per cooldown; the toggle only gates the restart,
+// so disabling auto-recovery to debug a wedge by hand does not blind the operator:
 //   - a down / suspended / mid-bounce supervisor is never judged (a routine restart is
 //     not a wedge), and resets the counter;
 //   - a responsive process resets the counter;
 //   - only after watchdogFailsToAct failures in a row, and past the cooldown since the
-//     last watchdog restart, does it say to act (recording the restart time).
-func (s *Supervisor) watchdogTick(fails int) (int, bool) {
-	if s.watchdogDisabled.Load() {
-		return 0, false // auto-recovery switched off; loop keeps running so it can return
-	}
+//     last action, does it say to alert (recording the action time); restart piggybacks
+//     on that same signal but only when the toggle is on (and only then is it counted).
+func (s *Supervisor) watchdogTick(fails int) (count int, alert, restart bool) {
 	s.mu.Lock()
 	watch := s.cur != nil && !s.suspended && !s.restarting
 	s.mu.Unlock()
 	if !watch {
-		return 0, false
+		return 0, false, false
 	}
 	probe := s.probe
 	if probe == nil {
 		probe = s.apiResponsive
 	}
 	if probe() {
-		return 0, false
+		return 0, false, false
 	}
 	fails++
 	if fails < watchdogFailsToAct {
 		slog.Warn("xray watchdog: process alive but not answering its API", "fails", fails)
-		return fails, false
+		return fails, false, false
 	}
 	// Wedged for watchdogFailsToAct probes in a row. Honour a cooldown so a process
-	// that wedges again right after a restart can't spin us into a restart storm.
+	// that wedges again right after we act can't spin us into a restart/alert storm.
 	s.mu.Lock()
-	cooling := !s.lastWatchdog.IsZero() && time.Since(s.lastWatchdog) < watchdogCooldown
-	if !cooling {
-		s.lastWatchdog = time.Now()
-		s.watchdogRestarts++
+	defer s.mu.Unlock()
+	if !s.lastWatchdog.IsZero() && time.Since(s.lastWatchdog) < watchdogCooldown {
+		return fails, false, false // still wedged; hold off until the cooldown elapses
 	}
-	s.mu.Unlock()
-	if cooling {
-		return fails, false // still wedged; hold off until the cooldown elapses
+	s.lastWatchdog = time.Now()
+	restart = !s.watchdogDisabled.Load()
+	if restart {
+		s.watchdogRestarts++ // only actual restarts are counted for WatchdogStats
 	}
-	return 0, true
+	return 0, true, restart
 }
 
 // apiResponsive reports whether the running Xray still answers its API — a failed,
