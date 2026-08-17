@@ -350,16 +350,33 @@ func geoStale(dir string, maxAge time.Duration) bool {
 	return false
 }
 
+// syncTransport builds the transport for the node's long-poll. It forces HTTP/1.1.
+//
+// The sync is a 30-60s HELD request, reached through the panel's :443 — which is Xray
+// (VLESS-Vision), with the panel served behind its fallback. Over HTTP/2 that path
+// recycles the connection with a GOAWAY before the hold completes, so every poll ends
+// in "unexpected EOF": the node then treats each as a failure, backs off to the 60s
+// ceiling (slow-polling instead of long-polling), and every missed check-in past the
+// 2-minute window flaps a "node not responding" alert. A plain HTTP/1.1 held request
+// carries through the fallback intact. A non-nil (empty) TLSNextProto disables the
+// automatic h2 upgrade; ForceAttemptHTTP2=false keeps it off.
+func syncTransport(insecure bool) *http.Transport {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ForceAttemptHTTP2 = false
+	tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	if insecure {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in via --insecure
+	}
+	return tr
+}
+
 func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
 	}
 	bin := resolveNodeXrayBin(filepath.Join(dataDir, "bin"))
 	sup := xray.NewSupervisor(bin, filepath.Join(dataDir, "xray", "config.json"), filepath.Join(dataDir, "geo"))
-	client := &http.Client{Timeout: syncTimeout}
-	if ident.Insecure {
-		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // opt-in via --insecure
-	}
+	client := &http.Client{Timeout: syncTimeout, Transport: syncTransport(ident.Insecure)}
 	operaDir := filepath.Join(dataDir, "opera")
 	a := &Agent{
 		dataDir:      dataDir,
