@@ -6,12 +6,24 @@ import (
 	"compress/gzip"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+)
+
+const (
+	// maxASNDecompressed bounds how many bytes we inflate from the gzip so a
+	// decompression bomb (or a hostile upstream past the on-disk size cap) can't pin
+	// CPU/memory. Well above the real ip2asn-combined TSV (tens of MB).
+	maxASNDecompressed = 256 << 20
+	// maxASNRows bounds the number of lines parsed, capping resident memory (the range
+	// slices) regardless of how many rows the stream carries. Several times the real
+	// table size (~500k rows today).
+	maxASNRows = 4_000_000
 )
 
 // ASNLookup resolves an IP to its ASN (autonomous system number) and the operator's
@@ -48,9 +60,13 @@ func LoadASNLookup(dir string) (*ASNLookup, error) {
 	defer gz.Close()
 
 	a := &ASNLookup{org: map[uint32]string{}}
-	sc := bufio.NewScanner(gz)
+	sc := bufio.NewScanner(io.LimitReader(gz, maxASNDecompressed))
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	rows := 0
 	for sc.Scan() {
+		if rows++; rows > maxASNRows {
+			return nil, fmt.Errorf("%s in %s exceeds %d rows", asnFile, dir, maxASNRows)
+		}
 		// range_start \t range_end \t AS_number \t country \t AS_description
 		cols := strings.Split(sc.Text(), "\t")
 		if len(cols) < 5 {

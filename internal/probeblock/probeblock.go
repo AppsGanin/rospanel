@@ -16,13 +16,22 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 const tableName = "rospanel_probeblock"
 
+// mu serializes every nft mutation. RecordProbe fires BlockIP from a goroutine per
+// crossing IP, so without this two first-time blocks could both pass ensure's
+// check-then-act and load the ruleset twice — and `add rule` APPENDS (it is not
+// idempotent), so the drop rules would be duplicated. It also keeps Clear from racing an
+// in-flight BlockIP.
+var mu sync.Mutex
+
 // ruleset creates the table, the two address sets, and an input-hook chain that drops
-// any source in them. Uses only `add` (idempotent) so re-running it never duplicates a
-// rule; it is applied once, when the table doesn't exist yet.
+// any source in them. The `add table`/`add set`/`add chain` statements are idempotent,
+// but `add rule` appends — so it must be applied exactly once (guarded by mu + the
+// table-exists check in ensure), never re-run against an existing table.
 const ruleset = `add table inet rospanel_probeblock
 add set inet rospanel_probeblock blocked4 { type ipv4_addr; }
 add set inet rospanel_probeblock blocked6 { type ipv6_addr; }
@@ -79,6 +88,8 @@ func BlockIP(ip string) error {
 	if !ok {
 		return nil
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if err := ensure(); err != nil {
 		return err
 	}
@@ -99,6 +110,8 @@ func UnblockIP(ip string) error {
 	if !ok {
 		return nil
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	elem := fmt.Sprintf("{ %s }", addr.String())
 	out, err := exec.Command("nft", "delete", "element", "inet", tableName, set, elem).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "No such file") {
@@ -113,6 +126,8 @@ func Clear() error {
 	if !available() {
 		return nil
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	_ = exec.Command("nft", "delete", "table", "inet", tableName).Run()
 	return nil
 }

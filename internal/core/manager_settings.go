@@ -675,18 +675,11 @@ func (m *Manager) RollbackServerConfig(id int64) error {
 	// block the restore the operator asked for.
 	_ = m.snapshotCurrentConfig("", true)
 
-	if err := m.store.RestoreServerConfigSettings(cfg); err != nil {
+	// Settings + custom inbounds restore atomically (see store.RestoreServerConfig):
+	// inbounds keep their original ids so group grants survive, and a failure rolls the
+	// whole thing back rather than leaving a half-restored config.
+	if err := m.store.RestoreServerConfig(cfg); err != nil {
 		return err
-	}
-	// Replace the server's custom inbounds with the snapshot's set.
-	if err := m.store.DeleteServerInbounds(model.LocalNodeID); err != nil {
-		return err
-	}
-	for _, in := range cfg.Inbounds {
-		in.ServerID = model.LocalNodeID
-		if _, err := m.store.CreateInbound(in); err != nil {
-			logErr("snapshot: restoring inbound failed", "name", in.Name, "err", err)
-		}
 	}
 	m.TriggerReconcile()
 	return nil

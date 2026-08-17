@@ -6,8 +6,10 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// Routing/egress snapshots: undo a change that broke the tunnels. One is taken
-// automatically before every routing change (see manager.ApplyRouting); these
+// Server-config snapshots: undo a change that broke the server. A snapshot captures the
+// whole server config (protocols, ports, REALITY, routing, egress, DNS, decoy, inbounds)
+// minus the certificate/domain identity; one is taken automatically before every
+// rollback (see manager.RollbackServerConfig) so an undo is itself undoable. These
 // endpoints list them, take a manual save-point, roll back, and prune.
 
 func (rt *Router) listConfigSnapshots(w http.ResponseWriter, _ *http.Request) {

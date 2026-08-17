@@ -322,8 +322,9 @@ const probeDigestHour = 9
 
 // probeDigestLoop sends one summary a day of the IPs newly caught scanning for the
 // hidden panel — the opt-in alternative to per-event spam (a public IP is scanned by
-// bots constantly, so recording is silent by default and this rolls it up). Gated by
-// the probe_digest setting AND the AdminEventProbe notification bit.
+// bots constantly, so recording is silent by default and this rolls it up). Gated solely
+// by the "Path scanners" (AdminEventProbe) notification category: on → the digest is
+// sent, off → it isn't.
 func (m *Manager) probeDigestLoop() {
 	lastSent := "" // calendar day of the last digest, so it fires once per day
 	for {

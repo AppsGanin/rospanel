@@ -59,6 +59,12 @@ const (
 	asnFile      = "ip2asn.tsv.gz"
 )
 
+// maxPlainDownload caps an un-checksummed (verify:false) download. TLS authenticates
+// the host, but a compromised/hijacked upstream is otherwise trusted, so bound the bytes
+// it can stream to us — the largest legitimate list is tens of MB, so this leaves ample
+// room while stopping an unbounded body from filling the disk.
+const maxPlainDownload = 256 << 20
+
 // ipListFiles maps the name a routing rule references ("iplist:<src>/<group>")
 // to the cache file it is served from.
 var ipListFiles = map[string]string{
@@ -270,11 +276,17 @@ func downloadPlain(client *http.Client, url, dest string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(f, resp.Body)
+	// LimitReader+1 so an over-cap body is detected (n > cap) rather than silently
+	// written truncated; the previous good copy is left in place on rejection.
+	n, err := io.Copy(f, io.LimitReader(resp.Body, maxPlainDownload+1))
 	f.Close()
 	if err != nil {
 		os.Remove(tmp)
 		return err
+	}
+	if n > maxPlainDownload {
+		os.Remove(tmp)
+		return fmt.Errorf("%s: response exceeds %d bytes", url, maxPlainDownload)
 	}
 	return os.Rename(tmp, dest)
 }
