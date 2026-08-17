@@ -83,6 +83,7 @@ const (
 	AuditRestored        = "panel.restored"
 	AuditFactoryReset    = "panel.factory_reset"
 	AuditWatchdogRestart = "panel.watchdog_restart"
+	AuditWatchdogWedged  = "panel.watchdog_wedged" // wedge detected but auto-recovery off — alert only
 	AuditUpdated         = "panel.updated"
 )
 
@@ -164,6 +165,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditFactoryReset, AuditCatPanel},
 	{AuditUpdated, AuditCatPanel},
 	{AuditWatchdogRestart, AuditCatPanel},
+	{AuditWatchdogWedged, AuditCatPanel},
 }
 
 // AdminAuditKnown reports whether an action is in the catalog. The panel renders

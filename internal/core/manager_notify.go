@@ -368,11 +368,22 @@ func (m *Manager) sendProbeDigest(probes []model.ProbeHit) {
 // API and restarted it. Unlike a crash this is self-resolving — the restart has
 // already run — so the message says so and there is no separate all-clear. Shares the
 // crash throttle so a process that keeps wedging can't spam the chat.
-func (m *Manager) onXrayWedged() {
-	// Always record it on the panel journal — the watchdog acting is exactly the kind
-	// of "the panel did something on its own" event an operator needs to find later.
+// onXrayWedged is the watchdog callback. restarted tells whether auto-recovery actually
+// bounced Xray (true) or the toggle is off so we only detected+alerted (false) — the
+// journal row and the Telegram wording differ accordingly, but the operator is told
+// either way (turning off auto-restart must not mean turning off the outage alarm).
+func (m *Manager) onXrayWedged(restarted bool) {
+	action := model.AuditWatchdogRestart
+	msg := "notify.xrayWedged"
+	if !restarted {
+		action = model.AuditWatchdogWedged
+		msg = "notify.xrayWedgedNoRestart"
+	}
+	// Always record it on the panel journal — the watchdog acting (or flagging a wedge
+	// it was told not to fix) is exactly the kind of "the panel noticed something" event
+	// an operator needs to find later.
 	m.AddAdminAudit(model.AdminAudit{
-		Action:    model.AuditWatchdogRestart,
+		Action:    action,
 		Target:    model.LocalNodeName,
 		ActorKind: model.ActorSystem,
 		ActorName: "watchdog",
@@ -386,7 +397,7 @@ func (m *Manager) onXrayWedged() {
 	m.lastCrashNotify = now
 	m.throttleMu.Unlock()
 	lang := m.botLang()
-	m.notifyAdminEvent(model.AdminEventXrayDown, i18n.T(lang, "notify.xrayWedged", model.LocalNodeName))
+	m.notifyAdminEvent(model.AdminEventXrayDown, i18n.T(lang, msg, model.LocalNodeName))
 }
 
 // onXrayRecover reports that Xray is back, but only when this panel actually raised
