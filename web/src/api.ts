@@ -1629,6 +1629,9 @@ export interface NodeView {
   xray_version: string
   xray_running: boolean
   version_skew: boolean
+  // Node's last-reported count of sync failures in the past hour. Nonzero ⇒ its
+  // long-poll is limping (transport degraded) though it still looks online. 0 = local.
+  sync_fails: number
   // State of an operator-requested Xray bounce: 'pending' until the node proves it
   // happened, then 'done' (or 'timeout' if we gave up) for a few seconds, then gone.
   // Absent for the master, whose restart is synchronous.

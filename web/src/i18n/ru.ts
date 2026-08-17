@@ -2245,6 +2245,7 @@ const ru = {
     update: "Обновить",
     xrayRestarted: "Xray перезапущен",
     xrayDown: "Xray не запущен",
+    unstable: "нестабильна",
     on: "включён",
     willRegister: "будет зарегистрирован",
     notRegistered: "не зарегистрирован",

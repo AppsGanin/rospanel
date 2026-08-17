@@ -326,6 +326,11 @@ type NodeView struct {
 	XrayVersion string `json:"xray_version"`
 	XrayRunning bool   `json:"xray_running"`
 	VersionSkew bool   `json:"version_skew"` // running Xray differs from the pinned release
+	// SyncFails is the node's last-reported count of sync failures in the past hour.
+	// Nonzero means its long-poll to the panel is limping (transport degraded) even
+	// though last_seen keeps advancing and the node still looks online. 0 for the local
+	// server (it has no sync of its own).
+	SyncFails int `json:"sync_fails"`
 	// XrayRestart is the state of an operator-requested Xray bounce: "pending" while
 	// the node has yet to prove it happened, then "done" or "timeout" briefly, then
 	// "". Always "" for the master, whose restart is synchronous — nothing to wait for.
@@ -500,6 +505,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
 		}
+		v.SyncFails = m.NodeSyncFails(n.ID)
 		// What the node last said about its own machine. Absent until it checks in.
 		if h, ok := m.NodeHostStats(n.ID); ok {
 			v.HasHostStats = true
@@ -1314,6 +1320,14 @@ func (m *Manager) NodeHostStats(id int64) (nodeapi.HostStats, bool) {
 	return h, ok
 }
 
+// NodeSyncFails returns a node's last-reported sync-failure count for the past hour
+// (0 if it hasn't reported one).
+func (m *Manager) NodeSyncFails(id int64) int {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	return m.nodeSyncFails[id]
+}
+
 // SetNodeGeoRefresh sets a node's own geo auto-refresh cadence (hours; 0 ⇒ never) and
 // wakes it so the new cadence reaches its agent (via NodeMeta) promptly.
 func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
@@ -1462,16 +1476,17 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	if len(req.Logs) > 0 {
 		m.storeNodeLogs(n.ID, req.Logs)
 	}
-	if len(req.GeoFiles) > 0 || req.Host != nil {
-		m.nodeGeoMu.Lock()
-		if len(req.GeoFiles) > 0 {
-			m.nodeGeoFiles[n.ID] = req.GeoFiles
-		}
-		if req.Host != nil {
-			m.nodeHostStats[n.ID] = *req.Host
-		}
-		m.nodeGeoMu.Unlock()
+	m.nodeGeoMu.Lock()
+	if len(req.GeoFiles) > 0 {
+		m.nodeGeoFiles[n.ID] = req.GeoFiles
 	}
+	if req.Host != nil {
+		m.nodeHostStats[n.ID] = *req.Host
+	}
+	// Always refreshed (a healthy node reports 0), so the "limping" badge clears the
+	// moment the transport recovers rather than sticking on a stale count.
+	m.nodeSyncFails[n.ID] = req.SyncFails
+	m.nodeGeoMu.Unlock()
 	// The node's own TLS state, for the fleet-wide "TLS certificate" alert. Recorded
 	// here, raised by the node sweep — see manager_nodes_notify.go.
 	m.NoteNodeCertError(n.ID, req.CertError)

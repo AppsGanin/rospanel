@@ -489,8 +489,22 @@ function StatusChip({ node }: { node: NodeView }) {
   if (!node.xray_running) {
     return <Badge color="orange" size="xs">{i18n.t("nodes.xrayDown")}</Badge>;
   }
+  // Online and serving, yet its long-poll to the panel keeps dropping: last_seen
+  // still advances (it looks fine), but the transport is limping. Surfacing it is the
+  // whole point — this state hid for a month until it decayed into hard outages.
+  if (!node.is_local && node.sync_fails >= UNSTABLE_SYNC_FAILS) {
+    return (
+      <Badge color="orange" size="xs">
+        {i18n.t("nodes.unstable")}
+      </Badge>
+    );
+  }
   return null; // up and serving → the green dot already says so
 }
+
+// UNSTABLE_SYNC_FAILS is how many dropped syncs in the last hour a node reports before
+// it's flagged unstable — above the odd blip, below a genuinely limping transport.
+const UNSTABLE_SYNC_FAILS = 6;
 
 // serverName is what leads the row: the master shows its configured config-label, or
 // "Master" when none is set; a node shows its own name. Exported for the dashboard's

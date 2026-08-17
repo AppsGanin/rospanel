@@ -2236,6 +2236,7 @@ const en: Dict = {
     update: "Update",
     xrayRestarted: "Xray restarted",
     xrayDown: "Xray not running",
+    unstable: "unstable",
     on: "on",
     willRegister: "will be registered",
     notRegistered: "not registered",

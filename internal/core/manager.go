@@ -232,6 +232,9 @@ type Manager struct {
 	// nodeGeoFiles holds each node's last-reported geo database status.
 	nodeGeoMu    sync.Mutex
 	nodeGeoFiles map[int64][]nodeapi.GeoFile
+	// nodeSyncFails holds each node's last-reported count of sync failures in the past
+	// hour — the "limping transport" signal that a still-online node is degraded.
+	nodeSyncFails map[int64]int
 
 	// nodeAlerts is what admins were last told about each node's reachability, Xray
 	// and certificate — the fleet-wide half of the "Xray failure" / "TLS certificate"
@@ -277,6 +280,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeLogs:         map[int64]nodeLogEntry{},
 		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
 		nodeHostStats:    map[int64]nodeapi.HostStats{},
+		nodeSyncFails:    map[int64]int{},
 		nodeLogsWanted:   map[int64]int64{},
 		nodeAlerts:       map[int64]*nodeAlertState{},
 	}

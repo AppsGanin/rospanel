@@ -126,6 +126,14 @@ type SyncRequest struct {
 	// old to know the request simply omits this, which the panel reads as "couldn't
 	// check" rather than as a failure.
 	ProbeResults []PortProbeResult `json:"probe_results,omitempty"`
+
+	// SyncFails is how many sync attempts failed in the last hour, as the node counts
+	// them. The panel never sees these directly — a failed long-poll still lands the
+	// request (updating last_seen) and only the RESPONSE is lost — so a node can be
+	// retrying constantly while looking "online". Reporting the count lets the panel
+	// flag a node that is limping (transport degraded) before it decays into a hard
+	// "not responding" outage. An older agent omits it (reads as 0 = healthy).
+	SyncFails int `json:"sync_fails,omitempty"`
 }
 
 // ConfigCheckResult is the node's verdict on a candidate config. ID echoes the
