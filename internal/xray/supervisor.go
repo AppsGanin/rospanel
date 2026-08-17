@@ -266,6 +266,12 @@ func (s *Supervisor) watchdogTick(fails int) (count int, alert, restart bool) {
 	// that wedges again right after we act can't spin us into a restart/alert storm.
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// probe() ran with the lock released; re-check that the process is still one we should
+	// judge. An operator Suspend (or a restart) that landed during the probe must not be
+	// read as a wedge — that would over-count a restart and fire a spurious alert.
+	if s.cur == nil || s.suspended || s.restarting {
+		return 0, false, false
+	}
 	if !s.lastWatchdog.IsZero() && time.Since(s.lastWatchdog) < watchdogCooldown {
 		return fails, false, false // still wedged; hold off until the cooldown elapses
 	}

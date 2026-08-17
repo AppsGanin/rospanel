@@ -27,16 +27,16 @@ func (m *Manager) countryLookup() *geo.CountryLookup {
 
 	m.geoLookupMu.Lock()
 	defer m.geoLookupMu.Unlock()
-	if m.geoLookup != nil && fi.ModTime().Equal(m.geoLookupMod) {
-		return m.geoLookup
+	if fi.ModTime().Equal(m.geoLookupMod) {
+		return m.geoLookup // this file version already processed (table on success, unchanged on failure)
 	}
 	lk, err := geo.LoadCountryLookup(dir)
+	m.geoLookupMod = fi.ModTime() // mark processed either way, so a corrupt file isn't re-parsed every call
 	if err != nil {
 		logErr("geo map: country lookup build failed", "err", err)
 		return m.geoLookup // keep any previous table rather than losing the feature
 	}
 	m.geoLookup = lk
-	m.geoLookupMod = fi.ModTime()
 	return lk
 }
 
@@ -54,16 +54,16 @@ func (m *Manager) asnLookup() *geo.ASNLookup {
 	}
 	m.asnLookupMu.Lock()
 	defer m.asnLookupMu.Unlock()
-	if m.asnTable != nil && fi.ModTime().Equal(m.asnTableMod) {
-		return m.asnTable
+	if fi.ModTime().Equal(m.asnTableMod) {
+		return m.asnTable // this file version already processed (table on success, unchanged on failure)
 	}
 	lk, err := geo.LoadASNLookup(dir)
+	m.asnTableMod = fi.ModTime() // mark processed either way, so a corrupt file isn't re-parsed every call
 	if err != nil {
 		logErr("geo map: ASN lookup build failed", "err", err)
 		return m.asnTable
 	}
 	m.asnTable = lk
-	m.asnTableMod = fi.ModTime()
 	return lk
 }
 

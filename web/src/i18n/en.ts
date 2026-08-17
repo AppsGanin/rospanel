@@ -1943,6 +1943,7 @@ const en: Dict = {
     rollbackTitle: "Roll back the server config?",
     rollbackBody: "The server settings revert to this snapshot (except the certificate/domain) and Xray restarts. The current state is auto-snapshotted first, so the rollback is undoable.",
     rolledBack: "Config restored from the snapshot",
+    deleteConfirm: "Delete this snapshot? The restore point can't be recovered.",
   },
   route: {
     every30m: "Every 30 minutes",

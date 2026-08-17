@@ -17,14 +17,26 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 const tableName = "rospanel_probeblock"
 
-// mu serializes every nft mutation and guards `armed`. RecordProbe fires BlockIP from a
-// goroutine per crossing IP, so without this two first-time blocks could both pass
-// ensure's check-then-act and load the ruleset twice — and `add rule` APPENDS (it is not
-// idempotent), so the drop rules would be duplicated.
+// blockTTL is how long a blocked IP stays in the kernel set. The sets carry `flags
+// timeout` so each element self-expires, which bounds the set (a public IP is scanned by
+// a constant churn of distinct bots) instead of growing forever — a re-offending scanner
+// simply gets re-blocked when it next crosses the probe threshold.
+const blockTTL = "24h"
+
+// ensureRetryCooldown backs off ensure() after it fails, so a box where nft is present but
+// every command fails (non-root, no nf_tables module, netlink EPERM) doesn't fork+exec nft
+// and log an error once per crossing scanner IP — it would drown the log ring.
+const ensureRetryCooldown = 5 * time.Minute
+
+// mu serializes every nft mutation and guards `armed`/`ensureFailedAt`. RecordProbe fires
+// BlockIP from a goroutine per crossing IP, so without this two first-time blocks could
+// both pass ensure's check-then-act and load the ruleset twice — and `add rule` APPENDS
+// (it is not idempotent), so the drop rules would be duplicated.
 var mu sync.Mutex
 
 // armed gates BlockIP. Clear() (the operator switching auto-blocking off) disarms, so an
@@ -33,13 +45,18 @@ var mu sync.Mutex
 // a fresh boot with the feature on blocks immediately without an explicit Arm().
 var armed = true
 
+// ensureFailedAt is when the last nft operation failed; BlockIP backs off for
+// ensureRetryCooldown after a failure. Guarded by mu.
+var ensureFailedAt time.Time
+
 // ruleset creates the table, the two address sets, and an input-hook chain that drops
-// any source in them. The `add table`/`add set`/`add chain` statements are idempotent,
-// but `add rule` appends — so it must be applied exactly once (guarded by mu + the
-// table-exists check in ensure), never re-run against an existing table.
+// any source in them. The sets carry `flags timeout` so blocks self-expire (see blockTTL).
+// The `add table`/`add set`/`add chain` statements are idempotent, but `add rule` appends
+// — so it must be applied exactly once (guarded by mu + the table-exists check in ensure),
+// never re-run against an existing table.
 const ruleset = `add table inet rospanel_probeblock
-add set inet rospanel_probeblock blocked4 { type ipv4_addr; }
-add set inet rospanel_probeblock blocked6 { type ipv6_addr; }
+add set inet rospanel_probeblock blocked4 { type ipv4_addr; flags timeout; }
+add set inet rospanel_probeblock blocked6 { type ipv6_addr; flags timeout; }
 add chain inet rospanel_probeblock input { type filter hook input priority -5; policy accept; }
 add rule inet rospanel_probeblock input iif "lo" accept
 add rule inet rospanel_probeblock input ip saddr @blocked4 drop
@@ -55,10 +72,16 @@ func available() bool {
 }
 
 // ensure creates the table/sets/chain if the table isn't there yet. A no-op once it
-// exists, so it never re-adds the drop rules or disturbs the blocked set.
+// exists, so it never re-adds the drop rules or disturbs the blocked set — unless the
+// table predates the `flags timeout` sets (an older deploy), in which case it is rebuilt
+// once so blocks self-expire instead of accumulating forever.
 func ensure() error {
-	if exec.Command("nft", "list", "table", "inet", tableName).Run() == nil {
-		return nil // already installed
+	if out, err := exec.Command("nft", "list", "table", "inet", tableName).CombinedOutput(); err == nil {
+		if strings.Contains(string(out), "flags timeout") {
+			return nil // already installed with self-expiring sets
+		}
+		// Pre-timeout table from an older build — drop it so it comes back with timeouts.
+		_ = exec.Command("nft", "delete", "table", "inet", tableName).Run()
 	}
 	cmd := exec.Command("nft", "-f", "-")
 	cmd.Stdin = strings.NewReader(ruleset)
@@ -98,14 +121,20 @@ func BlockIP(ip string) error {
 	if !armed {
 		return nil // auto-blocking was switched off; don't resurrect the table
 	}
+	if !ensureFailedAt.IsZero() && time.Since(ensureFailedAt) < ensureRetryCooldown {
+		return nil // nft is failing on this box; back off instead of a per-scanner storm
+	}
 	if err := ensure(); err != nil {
+		ensureFailedAt = time.Now()
 		return err
 	}
-	elem := fmt.Sprintf("{ %s }", addr.String())
+	elem := fmt.Sprintf("{ %s timeout %s }", addr.String(), blockTTL)
 	out, err := exec.Command("nft", "add", "element", "inet", tableName, set, elem).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "File exists") {
+		ensureFailedAt = time.Now()
 		return fmt.Errorf("nft add element: %w\n%s", err, out)
 	}
+	ensureFailedAt = time.Time{} // a successful add proves nft works; clear the backoff
 	return nil
 }
 

@@ -1601,7 +1601,14 @@ function MasterSettingsDialog({
               on success), independent of this dialog's Save. */}
           {tab === "domain" && <TLSPanel />}
 
-          {tab === "snapshots" && <ServerSnapshots />}
+          {tab === "snapshots" && (
+            <ServerSnapshots
+              onRolledBack={() => {
+                onRefresh();
+                onClose();
+              }}
+            />
+          )}
         </>
       )}
       <ApplyingModal open={applying} />
