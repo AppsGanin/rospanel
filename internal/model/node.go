@@ -73,12 +73,16 @@ type Node struct {
 
 	DecoyTemplate string `json:"decoy_template"`
 
-	// Routing is the node's own routing override: nil ⇒ inherit the panel's routing.
+	// Routing is the node's own routing config. nil ⇒ the node gets an EMPTY routing
+	// config, NOT the master's (see manager.nodeSettings) — a node must never silently
+	// borrow the master's lanes, because those resolve against the master's proxy pool
+	// and would send this node's traffic somewhere its operator never configured.
 	// A node's egress lanes (proxy pools) live in Routing.Lanes and resolve against
 	// the node's OWN proxy pool; WARP/Opera below are the node's own too.
 	Routing *RoutingConfig `json:"routing,omitempty"`
 
-	// XrayDNS is the node's own upstream DNS override: nil ⇒ inherit the panel's DNS.
+	// XrayDNS is the node's own upstream DNS. nil ⇒ empty (Xray's default resolver),
+	// not the master's — same reasoning as Routing above.
 	XrayDNS *string `json:"xray_dns,omitempty"`
 
 	// Per-node egress backends (independent of the master; all off by default).

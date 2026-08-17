@@ -90,8 +90,14 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// them just bloats it — and a full DB copy is not small. Both separators matter:
 		// operators hand-roll these names, and a rule that only knew ".bak-" quietly let
 		// every ".bak.<date>" copy ride along in every backup.
+		// Also skipped: the pre-update snapshot the self-updater drops in the data dir
+		// root, and any quarantined database the recovery path set aside. Both are FULL
+		// copies of data already in this archive, so carrying them made every later
+		// backup a multiple of its real size — and with up to 90 local archives kept,
+		// that compounds.
 		if strings.HasSuffix(base, ".bak") || strings.Contains(base, ".bak-") ||
-			strings.Contains(base, ".bak.") || strings.HasSuffix(base, ".new") {
+			strings.Contains(base, ".bak.") || strings.HasSuffix(base, ".new") ||
+			strings.HasSuffix(base, ".tgz") || strings.Contains(base, ".corrupt-") {
 			return nil
 		}
 		rel, err := filepath.Rel(dataDir, path)

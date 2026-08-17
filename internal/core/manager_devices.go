@@ -22,25 +22,37 @@ import (
 // write an audit row and ping the operator every few minutes, forever.
 const deviceRefusalQuiet = 6 * time.Hour
 
-// deviceNotice remembers which refusals have already been reported. It is bounded by
-// the number of distinct (user, hwid) pairs that hit a full cap, and swept on the
-// same timer that expires them.
+// deviceNotice remembers which events have already been reported, so a condition that
+// repeats on a client's own retry timer is announced once per window rather than once
+// per attempt. Bounded by the number of distinct keys seen inside one window, and swept
+// on the same pass that expires them.
 type deviceNotice struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
+	mu    sync.Mutex
+	quiet time.Duration
+	seen  map[string]time.Time
 }
 
-func newDeviceNotice() *deviceNotice { return &deviceNotice{seen: map[string]time.Time{}} }
+func newDeviceNotice() *deviceNotice { return newNotice(deviceRefusalQuiet) }
+
+func newNotice(quiet time.Duration) *deviceNotice {
+	return &deviceNotice{quiet: quiet, seen: map[string]time.Time{}}
+}
 
 // should reports whether this refusal is worth reporting, and marks it reported.
 func (n *deviceNotice) should(key string, now time.Time) bool {
+	// Nil-safe: a Manager assembled field-by-field (tests, and any future path that
+	// skips New) has no notice, and "no throttle configured" must mean "report it",
+	// never a nil dereference on a payment or device path.
+	if n == nil {
+		return true
+	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if last, ok := n.seen[key]; ok && now.Sub(last) < deviceRefusalQuiet {
+	if last, ok := n.seen[key]; ok && now.Sub(last) < n.quiet {
 		return false
 	}
 	for k, t := range n.seen { // opportunistic sweep: the map is only ever walked here
-		if now.Sub(t) >= deviceRefusalQuiet {
+		if now.Sub(t) >= n.quiet {
 			delete(n.seen, k)
 		}
 	}
@@ -101,7 +113,7 @@ func (m *Manager) AdmitDevice(ctx context.Context, u model.User, set *model.Sett
 func (m *Manager) reportDeviceRefusal(
 	ctx context.Context, u model.User, set *model.Settings, d model.Device, capacity, count int,
 ) {
-	if !m.devNotice.should(deviceKey(u.ID, d.HWID), time.Now()) {
+	if !m.devNotice.should(deviceKey(u.ID), time.Now()) {
 		return
 	}
 	m.audit(ctx, u.ID, model.EventDeviceRefused, map[string]any{
@@ -181,9 +193,16 @@ func (m *Manager) PurgeIdleDevices() {
 	}
 }
 
-// deviceKey identifies one (user, device) pair for the refusal quiet period.
-func deviceKey(userID int64, hwid string) string {
-	return strconv.FormatInt(userID, 10) + "\x00" + hwid
+// deviceKey identifies the ACCOUNT a refusal belongs to for the quiet period.
+//
+// Deliberately not (user, device): the hwid half comes straight off the request, so a
+// client sending a fresh random id every time produced a brand-new key every time —
+// the quiet period never matched, and each request wrote an audit row, pinged the
+// operator on Telegram, notified the user and fired a webhook. Keyed on the account,
+// a flood is one notification per window no matter how many ids it invents, and a real
+// subscriber's second refused device simply rides the same window.
+func deviceKey(userID int64) string {
+	return strconv.FormatInt(userID, 10)
 }
 
 // deviceLabel renders a device for a human: the model and OS when the client sent

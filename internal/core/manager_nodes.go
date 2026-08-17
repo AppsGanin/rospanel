@@ -363,8 +363,9 @@ type NodeView struct {
 	HostUptime   int64   `json:"host_uptime"`
 	NetUp        int64   `json:"net_up"`
 	NetDown      int64   `json:"net_down"`
-	// Routing / XrayDNS carry the node's own override (nil ⇒ inherits the panel's),
-	// so the per-node routing+DNS editor can prefill and show inherit vs custom. For
+	// Routing / XrayDNS carry the node's own config (nil ⇒ the node runs with an EMPTY
+	// routing/DNS, never the master's — see nodeSettings and model.Node), so the
+	// per-node routing+DNS editor can prefill and show set vs unset. For
 	// the local server (node 0) these carry the master's own routing/DNS so the same
 	// editor edits the master.
 	Routing *model.RoutingConfig `json:"routing"`

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -225,5 +226,25 @@ func TestDeleteUserDropsDevices(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("%d device rows outlived their user", n)
+	}
+}
+
+// The device roster is written from an UNAUTHENTICATED subscription fetch carrying a
+// client-supplied x-hwid, and "no limit" is the shipped default (hwid_fallback_limit
+// starts at 0). Without a ceiling one token could insert a row per request forever.
+func TestUnlimitedDeviceRosterStillHasACeiling(t *testing.T) {
+	st, uid := deviceStore(t)
+	for i := 0; i < maxDevicesPerUser+25; i++ {
+		d := model.Device{HWID: fmt.Sprintf("hw-%d", i), LastSeen: 1700000000}
+		if _, err := st.RegisterDevice(uid, d, 0); err != nil { // 0 = "unlimited"
+			t.Fatalf("register %d: %v", i, err)
+		}
+	}
+	n, err := st.CountDevices(uid)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n > maxDevicesPerUser {
+		t.Errorf("roster grew to %d devices with no per-user limit, want at most %d", n, maxDevicesPerUser)
 	}
 }

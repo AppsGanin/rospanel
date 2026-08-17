@@ -93,6 +93,22 @@ func (m *Manager) PurgeOldEvents() {
 	}
 }
 
+// PurgeOldOrders drops cancelled orders past the retention window. Paid orders are the
+// financial record and are never swept; the unpaid tail is what grows, since every "pay"
+// press in the public bot mints an order and the 24h sweep cancels the abandoned ones.
+func (m *Manager) PurgeOldOrders() {
+	cutoff := time.Now().AddDate(0, 0, -model.CancelledOrderRetentionDays).Unix()
+	n, err := m.store.PurgeCancelledOrders(cutoff)
+	if err != nil {
+		logErr("billing: cancelled-order sweep failed", "err", err)
+		return
+	}
+	if n > 0 {
+		logInfo("billing: cancelled orders purged", "count", n,
+			"older_than_days", model.CancelledOrderRetentionDays)
+	}
+}
+
 // PurgeOldConnections drops connection rows whose IP hasn't been seen inside the
 // retention window. Shares the audit sweep's slow timer; safe to call repeatedly.
 func (m *Manager) PurgeOldConnections() {

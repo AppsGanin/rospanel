@@ -9,6 +9,7 @@ import (
 	"html"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -375,9 +376,16 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 			"order", order.ID, "provider", provider,
 			"expected_rub", order.AmountRub,
 			"got", fmt.Sprintf("%d.%02d %s", paid.AmountKopecks/100, paid.AmountKopecks%100, paid.Currency))
-		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payMismatch",
-			order.ID, escHTML(order.UserName), order.AmountRub,
-			paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
+		// Once per window, not once per poll. The order stays pending by design (a human
+		// has to settle it), and the 25s provider poll keeps finding it paid-at-provider
+		// — unthrottled that is thousands of identical alerts a day for a single order,
+		// and it is a NORMAL outcome for an overpayment (PayPalych OVERPAID sends a
+		// legitimately larger sum).
+		if m.payNotice.should(strconv.FormatInt(order.ID, 10), time.Now()) {
+			m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payMismatch",
+				order.ID, escHTML(order.UserName), order.AmountRub,
+				paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
+		}
 		return fmt.Errorf("payment amount does not match order %d", order.ID)
 	}
 	// Claim the pending→paid transition and grant the plan in one transaction. A
@@ -505,7 +513,23 @@ func (m *Manager) PollPendingPayments() {
 // A no-op — and no audit row — when someone else already resolved the order.
 func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
 	cancelled, err := m.store.CancelPaymentOrderIfPending(o.ID)
-	if err != nil || !cancelled {
+	if err != nil {
+		return
+	}
+	if !cancelled {
+		// The order was already delivered. Providers map a REFUND and a CHARGEBACK onto
+		// the same "cancelled" status, so this is money being clawed back AFTER the plan
+		// was granted — silently dropping it left the user subscribed on a payment that
+		// no longer exists, with nothing in the journal to explain the shortfall.
+		if o.Status == "paid" {
+			m.audit(context.Background(), o.UserID, model.EventPaymentCancelled, map[string]any{
+				"order_id": o.ID, "plan": o.PlanName, "amount_rub": o.AmountRub,
+				"reason": reason, "after_delivery": true,
+			})
+			m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
+				i18n.T(m.botLang(), "notify.payRefundedAfterDelivery"),
+				o.ID, escHTML(o.PlanName), o.AmountRub, escHTML(reason)))
+		}
 		return
 	}
 	m.audit(context.Background(), o.UserID, model.EventPaymentCancelled, map[string]any{

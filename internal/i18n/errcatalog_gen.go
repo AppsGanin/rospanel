@@ -168,6 +168,7 @@ var errEN = map[string]string{
 	"err.payMethodUnavailable":     "the payment method is unavailable",
 	"err.paymentCreateFailed":      "could not create the payment — try another method or try later",
 	"err.pickAnotherPlanToMigrate": "pick a different plan to migrate to",
+	"err.planHasPendingOrders":     "the plan has {{count}} unpaid orders — wait for them to settle or cancel them",
 	"err.planHasUsers":             "the plan is assigned to {{count}} users — move them to another plan first",
 	"err.planIsFree":               "this plan is free",
 	"err.planLimitsNegative":       "plan limits cannot be negative",

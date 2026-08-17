@@ -170,6 +170,19 @@ func (m *Manager) DeleteTariffPlan(id int64) error {
 	if n > 0 {
 		return invalidCode("err.planHasUsers", "тариф назначен {{count}} пользователям — сначала смените им тариф", map[string]any{"count": n})
 	}
+	// Orders still awaiting payment pin the plan too. The documented way to retire a
+	// plan is "migrate its users, then delete", which is exactly when in-flight orders
+	// exist — and every order read joins tariff_plans, so deleting it now would make
+	// those orders unresolvable by the webhook, the poller and the operator alike.
+	pending, err := m.store.CountPendingOrdersForPlan(id)
+	if err != nil {
+		return err
+	}
+	if pending > 0 {
+		return invalidCode("err.planHasPendingOrders",
+			"по тарифу есть {{count}} неоплаченных заказов — дождитесь оплаты или отмените их",
+			map[string]any{"count": pending})
+	}
 	return m.store.DeleteTariffPlan(id)
 }
 
@@ -733,11 +746,19 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (boo
 // only renewal or cancellation is allowed — not switching to another plan. A trial
 // or free plan (price 0) never counts, so upgrading from those stays open.
 func (m *Manager) ActivePaidPlan(u model.User) *model.TariffPlan {
-	if u.PlanID == 0 || u.ExpireAt <= time.Now().Unix() {
+	if u.PlanID == 0 {
 		return nil
 	}
 	plan, err := m.store.GetTariffPlan(u.PlanID)
 	if err != nil || plan == nil || plan.IsFree() {
+		return nil
+	}
+	// A paid plan sold with no duration ("бессрочно", period_days 0) never sets an
+	// expiry, so expire_at stays 0 — the same value an unlimited free account carries.
+	// Treating that as "expired" made a lifetime subscriber look like they had no plan
+	// at all: the purchase list offered them the plan they already own with no cancel
+	// button, and buying it again wrote nothing while the order was marked paid.
+	if plan.PeriodDays > 0 && u.ExpireAt <= time.Now().Unix() {
 		return nil
 	}
 	return plan

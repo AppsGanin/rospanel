@@ -348,6 +348,7 @@ const en: Dict = {
     panelNameTooLong: "the panel name must be at most {{max}} characters",
     passwordTooShort: "the password must be at least {{min}} characters long",
     planHasUsers: "the plan is assigned to {{count}} users — move them to another plan first",
+    planHasPendingOrders: "the plan has {{count}} unpaid orders — wait for them to settle or cancel them",
     planPeriodRange: "duration: between 0 and {{max}} days",
     planLimitsNegative: "plan limits cannot be negative",
     orderNotPending: "the order is already paid or cancelled — refresh the list",
