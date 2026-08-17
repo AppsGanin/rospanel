@@ -41,7 +41,7 @@ func nodeSyncHold() time.Duration {
 func (rt *Router) handleNodeAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	leaf, afterLeaf := firstSegment(rest) // rest "/v1/join" → leaf "v1", afterLeaf "/join"
 	if leaf != nodeapi.PathPrefix || r.Method != http.MethodPost {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	action, _ := firstSegment(afterLeaf) // "/join" → "join"
@@ -51,7 +51,7 @@ func (rt *Router) handleNodeAPI(w http.ResponseWriter, r *http.Request, rest str
 	case "sync":
 		rt.handleNodeSync(w, r)
 	default:
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 	}
 }
 
@@ -65,7 +65,7 @@ func (rt *Router) handleNodeJoin(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(30 * time.Second))
 	var req nodeapi.JoinRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	node, token, err := rt.mgr.Store().ConsumeJoinToken(req.JoinToken)
@@ -73,7 +73,7 @@ func (rt *Router) handleNodeJoin(w http.ResponseWriter, r *http.Request) {
 		// Unknown/expired token — or a transient store error (a JSON 500 here would
 		// fingerprint the endpoint to a prober who already knows the segment). Either
 		// way, look like an ordinary site; a legitimate node just retries.
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	rt.mu.RLock()
@@ -97,7 +97,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	if err != nil || node == nil {
 		// No valid token (or a transient store error) → look like an ordinary site,
 		// so an unauthenticated prober can't distinguish this from unknown hosting.
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 

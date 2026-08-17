@@ -57,30 +57,51 @@ func ensureHealthyDB(dbPath, dataDir string) error {
 		return fmt.Errorf("database is corrupt and could not be set aside for recovery: %w", qerr)
 	}
 
-	newest := filepath.Join(dataDir, backup.LocalBackupDir, archives[0])
-	if rerr := backup.Restore(newest, dataDir); rerr != nil {
-		// Restore may have written nothing, leaving dbPath absent. If we returned now,
-		// the next boot's store.Check would read the missing file as a fresh install
-		// and start blank with admin/admin — silently masking the corruption. Move the
-		// quarantined file back so the next boot re-detects the damage and re-alerts.
-		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-			_ = os.Rename(quarantine, dbPath)
+	// Walk the archives newest-first and stop at the first one that yields a READABLE
+	// database. Trying only the newest meant a single damaged archive doomed the box
+	// even with good older ones sitting next to it — and, because the process exits
+	// non-zero and systemd restarts it, that same broken archive was unpacked again on
+	// every boot, quarantining another multi-MB copy of the database each time until
+	// systemd's start limit gave up.
+	var lastErr error
+	for _, name := range archives {
+		path := filepath.Join(dataDir, backup.LocalBackupDir, name)
+		if rerr := backup.Restore(path, dataDir); rerr != nil {
+			lastErr = fmt.Errorf("restoring %s failed: %w", name, rerr)
+			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
+			continue
 		}
-		return fmt.Errorf("database is corrupt and restoring %s failed: %w "+
-			"(the damaged database is preserved at %s)", archives[0], rerr, quarantine)
+		// The archive could itself be damaged or truncated.
+		if cerr := store.Check(dbPath); cerr != nil {
+			lastErr = fmt.Errorf("restored %s but the database is still unusable: %w", name, cerr)
+			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
+			continue
+		}
+		log.Printf("[ALERT] database: recovered from backup %s — changes made after that backup are LOST", name)
+		log.Printf("[ALERT] database: the damaged file is preserved at %s", quarantine)
+		return nil
 	}
 
-	// The archive could itself be damaged or truncated. If what we just restored is
-	// also unreadable, stop: a boot loop that keeps unpacking a broken archive over
-	// the data dir is worse than a clean failure.
-	if cerr := store.Check(dbPath); cerr != nil {
-		return fmt.Errorf("restored %s but the database is still unusable: %w "+
-			"(the original damaged database is preserved at %s)", archives[0], cerr, quarantine)
-	}
+	// Nothing restored cleanly. Put the original back: a half-written or absent dbPath
+	// would otherwise read as a FRESH INSTALL on the next boot and come up blank on
+	// admin/admin, silently masking the corruption — and leaving the quarantine copy in
+	// place on every attempt is what grew the disk. Restoring it makes each boot fail
+	// identically and idempotently, which is the clean failure this is supposed to be.
+	restoreQuarantine(quarantine, dbPath)
+	return fmt.Errorf("database is corrupt and none of the %d local backups could be restored "+
+		"(last error: %v) — restore an off-box backup with `rospanel restore <file>`", len(archives), lastErr)
+}
 
-	log.Printf("[ALERT] database: recovered from backup %s — changes made after that backup are LOST", archives[0])
-	log.Printf("[ALERT] database: the damaged file is preserved at %s", quarantine)
-	return nil
+// restoreQuarantine moves a quarantined database (and its sidecars) back into place,
+// best-effort: it runs on a path that is already failing, and leaving the original where
+// the next boot will find it matters more than any single rename succeeding.
+func restoreQuarantine(quarantine, dbPath string) {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		_ = os.Remove(dbPath + suffix) // drop whatever a partial restore left behind
+		if _, err := os.Stat(quarantine + suffix); err == nil {
+			_ = os.Rename(quarantine+suffix, dbPath+suffix)
+		}
+	}
 }
 
 // quarantineDB moves the damaged database aside (with its WAL and shared-memory

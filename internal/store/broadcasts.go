@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -15,6 +16,11 @@ import (
 // targetBatch caps how many recipients one INSERT statement carries. SQLite's
 // variable limit is what's being respected here, not row count.
 const targetBatch = 400
+
+// maxKeptBroadcasts caps how many FINISHED broadcasts stay on disk. Each one carries a
+// row per recipient in broadcast_targets, so this is the bound on the largest
+// operator-driven table in the panel.
+const maxKeptBroadcasts = 50
 
 // CreateBroadcast inserts a broadcast, paused. It is started separately, once the
 // caller has finished putting everything in place — an attachment is written to disk
@@ -37,7 +43,27 @@ func (s *Store) CreateBroadcast(b *model.Broadcast, now int64) (int64, error) {
 		b.CreatedBy, b.Text, b.MediaKind, b.MediaName, buttons,
 		b.Audience, model.BroadcastPaused, now,
 	).Scan(&id)
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	// Trim the history. broadcast_targets materialises ONE ROW PER RECIPIENT per
+	// broadcast and nothing ever deleted them, so a weekly send to 50k subscribers
+	// added ~2.6M rows a year to a single-connection SQLite that every panel request
+	// queues behind. Only finished runs are dropped, so an in-flight or paused
+	// broadcast can never lose the snapshot its resume depends on; the targets go with
+	// them via ON DELETE CASCADE.
+	if _, terr := s.db.Exec(`
+		DELETE FROM broadcasts WHERE status IN (?, ?) AND id NOT IN (
+		  SELECT id FROM broadcasts WHERE status IN (?, ?)
+		  ORDER BY created_at DESC, id DESC LIMIT ?
+		)`,
+		model.BroadcastDone, model.BroadcastCancelled,
+		model.BroadcastDone, model.BroadcastCancelled, maxKeptBroadcasts,
+	); terr != nil {
+		// Best-effort: a failed trim must not fail the broadcast the operator just made.
+		log.Printf("[ERROR] broadcasts: trimming history failed: %v", terr)
+	}
+	return id, nil
 }
 
 // AddBroadcastTargets materialises the audience snapshot. Inserted in one
