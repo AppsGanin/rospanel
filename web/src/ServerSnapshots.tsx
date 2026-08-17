@@ -17,14 +17,19 @@ import { Button, TextInput, useConfirm } from "./ui";
 // (protocols, ports, REALITY, routing, egress, DNS, decoy, inbounds) and roll back to
 // one if a change broke something. The certificate/domain identity is deliberately not
 // part of a rollback — see the manager — so restoring never risks the live cert.
-export function ServerSnapshots() {
+export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void }) {
   const { t } = useTranslation();
   const [snaps, setSnaps] = useState<ConfigSnapshot[] | null>(null);
   const [label, setLabel] = useState("");
   const { busy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
 
-  const reload = () => getConfigSnapshots().then(setSnaps).catch(() => setSnaps([]));
+  // On the first load a failure shows the empty state; on a later reload (after an action)
+  // a transient GET blip keeps the list we already have rather than flashing "no snapshots".
+  const reload = () =>
+    getConfigSnapshots()
+      .then(setSnaps)
+      .catch(() => setSnaps((prev) => prev ?? []));
   useEffect(() => {
     reload();
   }, []);
@@ -82,6 +87,7 @@ export function ServerSnapshots() {
                       title: t("snapshot.rollbackTitle"),
                       body: t("snapshot.rollbackBody"),
                       confirmLabel: t("snapshot.rollback"),
+                      danger: true,
                     });
                     if (!ok) return;
                     run(async () => {
@@ -89,6 +95,11 @@ export function ServerSnapshots() {
                         await rollbackConfigSnapshot(sn.id);
                         await reload();
                         notifySuccess(t("snapshot.rolledBack"));
+                        // The rollback replaced the whole server config, so the sibling
+                        // settings tabs still hold pre-rollback values as their save
+                        // baseline — hand back to the parent to refresh/close rather than
+                        // let a later Save silently re-persist the superseded config.
+                        onRolledBack?.();
                       } catch (e) {
                         notifyError(errMessage(e));
                       }
@@ -101,12 +112,18 @@ export function ServerSnapshots() {
                   type="button"
                   className="text-red-500 hover:underline disabled:opacity-50"
                   disabled={busy}
-                  onClick={() =>
+                  onClick={async () => {
+                    const ok = await confirm({
+                      body: t("snapshot.deleteConfirm"),
+                      confirmLabel: t("common.delete"),
+                      danger: true,
+                    });
+                    if (!ok) return;
                     run(async () => {
                       await deleteConfigSnapshot(sn.id);
                       await reload();
-                    })
-                  }
+                    });
+                  }}
                 >
                   {t("common.delete")}
                 </button>
