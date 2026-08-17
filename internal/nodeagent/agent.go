@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net"
@@ -67,6 +69,8 @@ const (
 	xrayWatchGap = 5 * time.Second
 	// certErrMax bounds the TLS error text reported to the panel.
 	certErrMax = 300
+	// syncFailWindow is how far back the reported sync-failure count reaches.
+	syncFailWindow = time.Hour
 )
 
 // jitterPct is how far a recurring interval is spread around its nominal value.
@@ -104,6 +108,13 @@ type Agent struct {
 	// its request must never wait on that.
 	certErrMu sync.Mutex
 	certErr   string
+
+	// syncFailAt holds the unix-second times of sync attempts that failed in the last
+	// hour. Reported to the panel so it can flag a node whose transport is limping —
+	// invisible otherwise, because a failed long-poll still lands its request and only
+	// loses the response, so last_seen keeps advancing and the node looks online.
+	syncFailMu sync.Mutex
+	syncFailAt []int64
 
 	state   *persistState
 	stateMu sync.Mutex
@@ -603,6 +614,20 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			if a.syncInterrupted.Load() {
 				continue
 			}
+			a.noteSyncFail()
+			// A benign poll-cut (the response was lost but the request already landed —
+			// EOF / GOAWAY / reset, the class the :443 fallback produces) is not the panel
+			// being unreachable: re-poll promptly instead of escalating the backoff, which
+			// would drop the node into slow-polling and make it flap. Only a genuine
+			// can't-reach-the-panel error grows the backoff.
+			if benignPollCut(err) {
+				slog.Debug("node: long-poll cut, re-polling", "err", err)
+				backoff = backoffMin
+				if !sleepCtx(ctx, backoffMin) {
+					return
+				}
+				continue
+			}
 			slog.Warn("node: sync failed (keeping last config)", "err", err)
 			if !sleepCtx(ctx, backoff) {
 				return
@@ -760,6 +785,54 @@ func (a *Agent) syncOnce(ctx context.Context) (*nodeapi.SyncResponse, error) {
 	return &out, nil
 }
 
+// noteSyncFail records that a sync attempt failed just now, pruning the window.
+func (a *Agent) noteSyncFail() {
+	now := time.Now().Unix()
+	cutoff := now - int64(syncFailWindow.Seconds())
+	a.syncFailMu.Lock()
+	defer a.syncFailMu.Unlock()
+	kept := a.syncFailAt[:0]
+	for _, t := range a.syncFailAt {
+		if t >= cutoff {
+			kept = append(kept, t)
+		}
+	}
+	a.syncFailAt = append(kept, now)
+}
+
+// recentSyncFails returns how many sync attempts failed in the last window.
+func (a *Agent) recentSyncFails() int {
+	cutoff := time.Now().Unix() - int64(syncFailWindow.Seconds())
+	a.syncFailMu.Lock()
+	defer a.syncFailMu.Unlock()
+	n := 0
+	for _, t := range a.syncFailAt {
+		if t >= cutoff {
+			n++
+		}
+	}
+	return n
+}
+
+// benignPollCut reports whether a sync error is just the held long-poll being closed
+// after its request already landed — the response was lost, not the panel. Over the
+// panel's :443 (Xray Vision fallback) a held connection is recycled with an EOF or an
+// HTTP/2 GOAWAY; that is not unreachability, so it should re-poll promptly rather than
+// back off. A dial/refused/DNS/timeout error is the panel being unreachable and does
+// escalate.
+func benignPollCut(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "GOAWAY") ||
+		strings.Contains(s, "connection reset by peer") ||
+		strings.Contains(s, "server closed idle connection")
+}
+
 // buildSyncRequest snapshots the current applied hash, cert fingerprint and the
 // pending traffic deltas into a sync request, assigning a fresh report id.
 func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
@@ -830,6 +903,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		Host:           a.hostStats(),
 		ProbeResults:   a.takeProbeResults(),
 		ConfigCheck:    a.takeConfigCheck(),
+		SyncFails:      a.recentSyncFails(),
 	}
 	// Sites share the panel's 1 MB body cap with traffic, conns and logs, none of
 	// which this feature bounds. Sites are advisory, so they yield: measure the rest

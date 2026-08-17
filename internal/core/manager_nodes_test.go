@@ -23,11 +23,14 @@ func nodeTestManager(t *testing.T) *Manager {
 	}
 	t.Cleanup(func() { st.Close() })
 	return &Manager{
-		store:   st,
-		nodes:   newNodeRegistry(),
-		opts:    xray.Options{PanelDest: "127.0.0.1:8080"},
-		tz:      time.Local,
-		applied: map[int64]struct{}{},
+		store:         st,
+		nodes:         newNodeRegistry(),
+		opts:          xray.Options{PanelDest: "127.0.0.1:8080"},
+		tz:            time.Local,
+		applied:       map[int64]struct{}{},
+		nodeGeoFiles:  map[int64][]nodeapi.GeoFile{},
+		nodeHostStats: map[int64]nodeapi.HostStats{},
+		nodeSyncFails: map[int64]int{},
 	}
 }
 
