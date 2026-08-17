@@ -1,18 +1,7 @@
-import { useMemo, useState, useEffect, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import i18n, { currentLang } from "./i18n";
-import {
-  type EgressLane,
-  type GeoFile,
-  type RoutingConfig,
-  type ConfigSnapshot,
-  getConfigSnapshots,
-  createConfigSnapshot,
-  rollbackConfigSnapshot,
-  deleteConfigSnapshot,
-} from "./api";
-import { useAction } from "./hooks";
-import { notifySuccess } from "./notify";
+import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import {
   Badge,
@@ -519,7 +508,6 @@ export function RoutingEditor({
   iplist,
   applying,
   liveStatus = true,
-  showSnapshots = false,
 }: {
   cfg: RoutingConfig;
   onCfg: (patch: Partial<RoutingConfig>) => void;
@@ -543,9 +531,6 @@ export function RoutingEditor({
   iplist: string[];
   applying: boolean;
   liveStatus?: boolean;
-  // Master routing shows the snapshot/rollback history; a node's routing editor does not
-  // (snapshots track the master's routing config).
-  showSnapshots?: boolean;
 }) {
   const { t } = useTranslation();
   const set = onCfg;
@@ -971,89 +956,6 @@ export function RoutingEditor({
           />
         )}
       </Section>
-
-      {showSnapshots && <ConfigSnapshotsSection />}
     </div>
-  );
-}
-
-// ConfigSnapshotsSection lists the routing snapshots and offers rollback. A snapshot
-// is taken automatically before every routing change, so this is the undo history for
-// "an egress/block edit broke the tunnels".
-function ConfigSnapshotsSection() {
-  const { t } = useTranslation();
-  const [snaps, setSnaps] = useState<ConfigSnapshot[]>([]);
-  const { busy, run } = useAction();
-  const reload = () => getConfigSnapshots().then(setSnaps).catch(() => {});
-  useEffect(() => {
-    reload();
-  }, []);
-
-  const stamp = (sec: number) => new Date(sec * 1000).toLocaleString();
-
-  return (
-    <Section title={t("route.snapshots")} desc={t("route.snapshotsHint")}>
-      <div className="mb-3">
-        <Button
-          variant="light"
-          onClick={() =>
-            run(async () => {
-              await createConfigSnapshot("");
-              await reload();
-              notifySuccess(t("route.snapshotSaved"));
-            })
-          }
-          disabled={busy}
-        >
-          {t("route.snapshotSave")}
-        </Button>
-      </div>
-      {snaps.length === 0 ? (
-        <p className="text-sm text-ink-muted">{t("route.snapshotsEmpty")}</p>
-      ) : (
-        <div className="flex flex-col gap-1">
-          {snaps.map((sn) => (
-            <div
-              key={sn.id}
-              className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-2 text-sm"
-            >
-              <span className="text-ink-muted">{stamp(sn.created_at)}</span>
-              <span className="font-medium text-ink">
-                {sn.label || (sn.auto ? t("route.snapshotAuto") : t("route.snapshotManual"))}
-              </span>
-              <span className="ml-auto flex gap-2">
-                <button
-                  type="button"
-                  className="text-brand hover:underline disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await rollbackConfigSnapshot(sn.id);
-                      await reload();
-                      notifySuccess(t("route.snapshotRolledBack"));
-                    })
-                  }
-                >
-                  {t("route.snapshotRollback")}
-                </button>
-                <button
-                  type="button"
-                  className="text-red-500 hover:underline disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      await deleteConfigSnapshot(sn.id);
-                      await reload();
-                    })
-                  }
-                >
-                  {t("common.delete")}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Section>
   );
 }

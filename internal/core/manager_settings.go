@@ -524,15 +524,6 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	if err != nil {
 		return err
 	}
-	// Snapshot the routing we are about to replace, so this change is undoable. Auto,
-	// best-effort: a snapshot that can't be written must not block the change itself.
-	// Skip when the routing is unchanged (e.g. a WARP/Opera-only toggle) so those
-	// no-ops don't push real save-points out of the capped history.
-	if old, err := json.Marshal(set.Routing); err == nil {
-		if next, err2 := json.Marshal(cfg); err2 != nil || !bytes.Equal(old, next) {
-			_ = m.store.CreateConfigSnapshot("", true, string(old))
-		}
-	}
 	logInfo("routing: applying", "warp", warpEnabled, "opera", operaEnabled, "country", operaCountry, "lanes", len(cfg.Lanes))
 	set.WarpEnabled = warpEnabled
 	if warpEnabled && !set.WarpRegistered() {
@@ -642,42 +633,63 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	return m.store.SetSubSettings(st)
 }
 
-// ConfigSnapshots lists the routing snapshots (newest first).
+// ConfigSnapshots lists the server-config snapshots (newest first).
 func (m *Manager) ConfigSnapshots() ([]model.ConfigSnapshot, error) {
 	return m.store.ListConfigSnapshots()
 }
 
-// SnapshotRouting takes a manual save-point of the current routing config.
-func (m *Manager) SnapshotRouting(label string) error {
+// snapshotCurrentConfig captures the master's whole server config into a snapshot.
+func (m *Manager) snapshotCurrentConfig(label string, auto bool) error {
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return err
 	}
-	blob, err := json.Marshal(set.Routing)
+	inbounds, err := m.store.Inbounds(model.LocalNodeID)
 	if err != nil {
 		return err
 	}
-	return m.store.CreateConfigSnapshot(strings.TrimSpace(label), false, string(blob))
+	blob, err := json.Marshal(model.ServerConfigFrom(set, inbounds))
+	if err != nil {
+		return err
+	}
+	return m.store.CreateConfigSnapshot(strings.TrimSpace(label), auto, string(blob))
 }
 
-// RollbackRouting restores the routing config from a snapshot and applies it — going
-// through ApplyRouting so it is validated and reconciled exactly like any edit (and
-// itself auto-snapshotted, so a rollback is undoable too). WARP/Opera keep their
-// current state; the snapshot only carries the routing config.
-func (m *Manager) RollbackRouting(id int64) error {
-	blob, err := m.store.ConfigSnapshotRouting(id)
+// SnapshotServerConfig takes an operator's manual save-point of the whole server config.
+func (m *Manager) SnapshotServerConfig(label string) error {
+	return m.snapshotCurrentConfig(label, false)
+}
+
+// RollbackServerConfig restores a snapshot's server config: everything on the
+// server-settings tabs (protocols, ports, REALITY, routing, egress, DNS, decoy,
+// inbounds) EXCEPT the certificate/domain identity, which is left as-is so the live
+// cert is never broken by an undo. The current config is auto-snapshotted first, so a
+// rollback is itself undoable; the whole thing then reconciles (regenerate + validate
+// via xray -test), so a config the snapshot's values can't produce is caught.
+func (m *Manager) RollbackServerConfig(id int64) error {
+	cfg, err := m.store.ConfigSnapshot(id)
 	if err != nil {
 		return invalidCode("err.snapshotNotFound", "снимок не найден")
 	}
-	var cfg model.RoutingConfig
-	if err := json.Unmarshal([]byte(blob), &cfg); err != nil {
-		return invalidCode("err.snapshotBad", "снимок повреждён")
-	}
-	set, err := m.store.GetSettings()
-	if err != nil {
+	// Undo point for the rollback itself. Best-effort — a failed pre-snapshot must not
+	// block the restore the operator asked for.
+	_ = m.snapshotCurrentConfig("", true)
+
+	if err := m.store.RestoreServerConfigSettings(cfg); err != nil {
 		return err
 	}
-	return m.ApplyRouting(cfg, set.WarpEnabled, set.OperaEnabled, set.OperaCountry)
+	// Replace the server's custom inbounds with the snapshot's set.
+	if err := m.store.DeleteServerInbounds(model.LocalNodeID); err != nil {
+		return err
+	}
+	for _, in := range cfg.Inbounds {
+		in.ServerID = model.LocalNodeID
+		if _, err := m.store.CreateInbound(in); err != nil {
+			logErr("snapshot: restoring inbound failed", "name", in.Name, "err", err)
+		}
+	}
+	m.TriggerReconcile()
+	return nil
 }
 
 // DeleteConfigSnapshot removes one snapshot.

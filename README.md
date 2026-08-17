@@ -297,9 +297,12 @@ themselves keep running, so existing connections are untouched and the operator 
 automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
 **Opera VPN** with region selection. **Proxy lanes** are independent egresses, each with its
 own socks5/http upstreams and zone rules, balanced across whatever is alive (Observatory).
-**Routing snapshots** give an undo history: the panel saves a snapshot before every routing
-change (and you can save one by hand), so if an egress or block edit breaks the tunnels you
-roll back to the last working config in one click.
+**Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
+**whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
+save a restore point by hand, and roll back to it if an edit breaks something. A rollback
+re-validates through `xray -test` and auto-snapshots the current state first (so it's itself
+undoable), and it deliberately leaves the **certificate and domain** untouched, so an undo
+never risks live access.
 
 #### 🌐 Server network (multi-node)
 

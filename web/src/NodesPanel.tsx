@@ -49,6 +49,7 @@ import {
 import { ApplyingModal, useXrayApply } from "./apply";
 import { ConnectionsEditor } from "./ConnectionsEditor";
 import { InboundsEditor } from "./InboundsEditor";
+import { ServerSnapshots } from "./ServerSnapshots";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./egress";
 import { fmtBytes } from "./format";
@@ -1484,6 +1485,7 @@ function MasterSettingsDialog({
               { value: "geo", label: "Geo" },
               { value: "iplist", label: t("nodes.tabLists") },
               { value: "domain", label: t("restore.domain") },
+              { value: "snapshots", label: t("nodes.tabSnapshots") },
             ]}
           />
 
@@ -1551,7 +1553,6 @@ function MasterSettingsDialog({
                 geoip={geo.geoip}
                 iplist={geo.iplist}
                 applying={applying}
-                showSnapshots
               />
               <TabSaveBar
                 onSave={saveRoutingTab}
@@ -1599,6 +1600,8 @@ function MasterSettingsDialog({
           {/* Domain / TLS — its own load + change-domain button (page redirects
               on success), independent of this dialog's Save. */}
           {tab === "domain" && <TLSPanel />}
+
+          {tab === "snapshots" && <ServerSnapshots />}
         </>
       )}
       <ApplyingModal open={applying} />

@@ -1,8 +1,11 @@
 package store
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 func snapStore(t *testing.T) *Store {
@@ -19,10 +22,11 @@ func TestConfigSnapshots(t *testing.T) {
 	st := snapStore(t)
 
 	// Create a manual and an auto snapshot; the list is newest-first with metadata.
-	if err := st.CreateConfigSnapshot("before egress edit", false, `{"block_ads":true}`); err != nil {
+	manual, _ := json.Marshal(model.ServerConfigSnapshot{VLESSPort: 443, RealityPrivateKey: "secret-key"})
+	if err := st.CreateConfigSnapshot("before egress edit", false, string(manual)); err != nil {
 		t.Fatalf("create manual: %v", err)
 	}
-	if err := st.CreateConfigSnapshot("", true, `{"block_ads":false}`); err != nil {
+	if err := st.CreateConfigSnapshot("", true, `{"vless_port":8443}`); err != nil {
 		t.Fatalf("create auto: %v", err)
 	}
 	snaps, err := st.ListConfigSnapshots()
@@ -36,10 +40,19 @@ func TestConfigSnapshots(t *testing.T) {
 		t.Errorf("manual snapshot metadata wrong: %+v", snaps[1])
 	}
 
-	// The payload round-trips by id, and delete removes it.
-	routing, err := st.ConfigSnapshotRouting(snaps[1].ID)
-	if err != nil || routing != `{"block_ads":true}` {
-		t.Errorf("payload = %q (%v)", routing, err)
+	// The (encrypted-at-rest) payload round-trips by id, and delete removes it.
+	cfg, err := st.ConfigSnapshot(snaps[1].ID)
+	if err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	if cfg.VLESSPort != 443 || cfg.RealityPrivateKey != "secret-key" {
+		t.Errorf("payload round-trip wrong: %+v", cfg)
+	}
+	// The stored blob must be encrypted, not plaintext JSON.
+	var raw string
+	_ = st.db.QueryRow(`SELECT config_json FROM config_snapshots WHERE id = ?`, snaps[1].ID).Scan(&raw)
+	if raw == string(manual) {
+		t.Error("config_json is stored as plaintext; it should be encrypted at rest")
 	}
 	if err := st.DeleteConfigSnapshot(snaps[1].ID); err != nil {
 		t.Fatalf("delete: %v", err)
