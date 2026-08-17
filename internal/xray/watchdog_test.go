@@ -51,3 +51,30 @@ func TestWatchdogTick(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchdogDisabledDoesNotAct(t *testing.T) {
+	s := &Supervisor{cur: &proc{started: time.Now()}}
+	s.probe = func() bool { return false } // wedged
+	s.SetWatchdogEnabled(false)
+	fails := 0
+	for range watchdogFailsToAct + 2 {
+		var act bool
+		if fails, act = s.watchdogTick(fails); act {
+			t.Fatal("watchdog acted while disabled")
+		}
+	}
+	// Re-enabling lets it act again.
+	s.SetWatchdogEnabled(true)
+	fails = 0
+	acted := false
+	for range watchdogFailsToAct {
+		_, acted = s.watchdogTick(fails)
+		fails++
+	}
+	if !acted {
+		t.Fatal("watchdog did not act after being re-enabled")
+	}
+	if _, n, _ := s.WatchdogStats(); n != 1 {
+		t.Fatalf("WatchdogStats restarts = %d, want 1", n)
+	}
+}

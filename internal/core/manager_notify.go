@@ -321,6 +321,14 @@ func (m *Manager) onXrayCrash(err error) {
 // already run — so the message says so and there is no separate all-clear. Shares the
 // crash throttle so a process that keeps wedging can't spam the chat.
 func (m *Manager) onXrayWedged() {
+	// Always record it on the panel journal — the watchdog acting is exactly the kind
+	// of "the panel did something on its own" event an operator needs to find later.
+	m.AddAdminAudit(model.AdminAudit{
+		Action:    model.AuditWatchdogRestart,
+		Target:    model.LocalNodeName,
+		ActorKind: model.ActorSystem,
+		ActorName: "watchdog",
+	})
 	m.throttleMu.Lock()
 	now := time.Now()
 	if now.Sub(m.lastCrashNotify) < crashNotifyThrottle {

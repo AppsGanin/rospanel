@@ -688,6 +688,34 @@ func (m *Manager) SetProbeDetect(on bool) error {
 	return m.store.SetProbeDetect(on)
 }
 
+// SetWatchdog toggles the wedged-process auto-recovery, persisting it and applying it
+// to the running supervisor live.
+func (m *Manager) SetWatchdog(on bool) error {
+	if err := m.store.SetWatchdogEnabled(on); err != nil {
+		return err
+	}
+	m.sup.SetWatchdogEnabled(on)
+	return nil
+}
+
+// WatchdogInfo is the operator-facing state of the auto-recovery: on/off, how many
+// times it has restarted a wedged Xray, and when it last did (0 = never).
+type WatchdogInfo struct {
+	Enabled  bool  `json:"enabled"`
+	Restarts int   `json:"restarts"`
+	LastAt   int64 `json:"last_at"`
+}
+
+// Watchdog returns the current auto-recovery state for the settings page.
+func (m *Manager) Watchdog() WatchdogInfo {
+	enabled, restarts, last := m.sup.WatchdogStats()
+	var lastAt int64
+	if !last.IsZero() {
+		lastAt = last.Unix()
+	}
+	return WatchdogInfo{Enabled: enabled, Restarts: restarts, LastAt: lastAt}
+}
+
 // RecordProbe persists one detected scan (best-effort — a lost row must never affect
 // the request that triggered it). paths is how many distinct missing paths the IP hit.
 func (m *Manager) RecordProbe(ip string, paths int) {

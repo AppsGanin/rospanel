@@ -779,7 +779,15 @@ export interface SettingsInfo extends SubSettings {
   user_autodelete_days: number
   maintenance_mode: boolean
   probe_detect: boolean
+  watchdog: WatchdogInfo
   hwid: HWIDSettings
+}
+
+// WatchdogInfo is the wedged-Xray auto-recovery state (master).
+export interface WatchdogInfo {
+  enabled: boolean
+  restarts: number
+  last_at: number // unix seconds, 0 = never fired
 }
 
 // StatusPageSettings controls the public status page: the one surface that answers
@@ -959,6 +967,13 @@ export const saveMaintenance = (enabled: boolean) =>
 // Secret-path probe detection: record IPs that scan for the hidden panel.
 export const saveProbeDetect = (enabled: boolean) =>
   api<{ ok: boolean }>('api/settings/probe-detect', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+// Wedged-process auto-recovery toggle.
+export const saveWatchdog = (enabled: boolean) =>
+  api<{ ok: boolean }>('api/settings/watchdog', {
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })
