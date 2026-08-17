@@ -552,6 +552,16 @@ type CountryStat struct {
 	Hits int64  `json:"hits"`
 }
 
+// ASNStat is one row of the connection breakdown by network operator: how many
+// distinct source IPs connected from an ASN. ASN is 0 / Org "" for IPs no range
+// covers (private/unknown).
+type ASNStat struct {
+	ASN  uint32 `json:"asn"`
+	Org  string `json:"org"`
+	IPs  int64  `json:"ips"`
+	Hits int64  `json:"hits"`
+}
+
 // Settings is the singleton (id=1) panel configuration. The DB is the source of
 // truth; the Xray config.json is always derived from it.
 type Settings struct {

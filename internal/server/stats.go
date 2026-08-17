@@ -150,6 +150,20 @@ func (rt *Router) statsCountries(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, countries)
 }
 
+// statsASNs returns the breakdown of recent client connections by network operator
+// (ASN) — the "who" behind the country map. Same connection-retention window.
+func (rt *Router) statsASNs(w http.ResponseWriter, _ *http.Request) {
+	asns, err := rt.mgr.ConnectionASNs()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if asns == nil {
+		asns = []model.ASNStat{}
+	}
+	writeJSON(w, http.StatusOK, asns)
+}
+
 // sitesLimit reads ?limit=, clamped to a sane range. The view is a top-N by
 // definition, so an out-of-range value is clamped rather than rejected — there is
 // no correct answer to reject in favour of.

@@ -752,6 +752,8 @@ const ru = {
     total: "Всего",
     blocklistMatches: "Совпадения с блоклистами",
     byCountry: "Подключения по странам",
+    byCountryTab: "Страны",
+    byAsnTab: "Провайдеры",
     countryTotal: "IP всего: {{n}}",
     countryIps: "{{n}} IP",
     unknownCountry: "Неизвестно",

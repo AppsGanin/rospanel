@@ -339,6 +339,12 @@ func (m *Manager) geoLoop() {
 func (m *Manager) ipListLoop() {
 	refreshLoop("iplist", m.currentIPListRefresh, m.ipListStale, func() error {
 		_, err := m.RefreshIPLists()
+		// The IP→ASN table is panel-only on a similar clock; refresh it on the same tick
+		// rather than giving it a cadence of its own. Best-effort — a stale ASN table
+		// still resolves, it just misses recently-reassigned ranges.
+		if e := geo.RefreshASN(m.assetDir()); e != nil {
+			logWarn("asn: auto-refresh failed", "err", e)
+		}
 		return err
 	})
 }

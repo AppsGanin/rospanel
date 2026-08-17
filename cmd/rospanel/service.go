@@ -213,6 +213,15 @@ func runServer(dataDir string) {
 		mgr.TriggerReconcile()
 	}()
 
+	// Fetch the IP→ASN table if missing (panel-only, for the connection map's provider
+	// breakdown). Backgrounded and best-effort — the map degrades to country-only until
+	// it lands, and nothing else depends on it.
+	go func() {
+		if err := geo.EnsureASN(geoDir); err != nil {
+			log.Printf("asn: %v", err)
+		}
+	}()
+
 	// Daily TLS check: renews ACME certs near expiry and reloads Xray on change.
 	go tlsLoop(mgr)
 	// Periodic traffic accounting + quota/expiry enforcement.
