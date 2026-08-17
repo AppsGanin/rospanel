@@ -1,6 +1,8 @@
 package xray
 
 import (
+	"net"
+	"slices"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -160,4 +162,63 @@ func TestWarpOutboundStaysOutOfTheKernel(t *testing.T) {
 		return
 	}
 	t.Fatal("no warp outbound generated")
+}
+
+// The security floor must block the loopback by NAME as well as by IP. The "direct"
+// outbound is a bare freedom that dials the hostname through the OS resolver, so under
+// DomainStrategy IPIfNonMatch a name the configured DNS fails to resolve (a public
+// resolver has no answer for "localhost") matches no IP rule and falls through to direct,
+// which then reaches 127.0.0.1:10085 — the Xray control API that can add and remove users.
+func TestPrivateEgressFloorBlocksLoopbackByName(t *testing.T) {
+	cfg, err := Generate(warpSettings(), nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	ipAt, domainAt, laneAt := -1, -1, -1
+	var blocked []string
+	for i, r := range cfg.Routing.Rules {
+		switch {
+		case r.OutboundTag == "block" && len(r.IP) > 0 && ipAt < 0:
+			ipAt = i
+		case r.OutboundTag == "block" && len(r.Domain) > 0 && domainAt < 0:
+			domainAt, blocked = i, r.Domain
+		}
+		// The first rule that sends client traffic OUT is where the floor stops applying.
+		if laneAt < 0 && (r.OutboundTag == "direct" || r.OutboundTag == "warp") && len(r.InboundTag) == 0 {
+			laneAt = i
+		}
+	}
+	if ipAt < 0 || domainAt < 0 {
+		t.Fatalf("floor rules not found (ip=%d, domain=%d)", ipAt, domainAt)
+	}
+	if laneAt >= 0 && domainAt > laneAt {
+		t.Errorf("the loopback-name block is at %d, after an egress lane at %d", domainAt, laneAt)
+	}
+	for _, want := range []string{"full:localhost", "full:metadata.google.internal"} {
+		if !slices.Contains(blocked, want) {
+			t.Errorf("%q is not blocked by name: %v", want, blocked)
+		}
+	}
+}
+
+// Every CIDR in the security floor must be one Xray will actually accept, because a
+// routing config it refuses to build is not a degraded config — a panel restart stops
+// Xray before the new config is validated, so Xray simply never comes back and the box
+// serves nothing. Xray parses an IPv4-mapped literal (::ffff:a.b.c.d) back to a 4-byte
+// address and then caps the prefix at 32, which is how "::ffff:0:0/96" took a live master
+// down: it looks like a reasonable IPv6 row and is rejected as an illegal IPv4 one.
+func TestPrivateEgressCIDRsAreValid(t *testing.T) {
+	for _, entry := range privateEgressCIDRs {
+		ip, netw, err := net.ParseCIDR(entry)
+		if err != nil {
+			t.Errorf("%s: not a CIDR: %v", entry, err)
+			continue
+		}
+		ones, _ := netw.Mask.Size()
+		// To4() is non-nil for a dotted address AND for the ::ffff: mapped form — the
+		// same test Xray applies before enforcing its 32-bit ceiling.
+		if ip.To4() != nil && ones > 32 {
+			t.Errorf("%s: Xray reads this as IPv4 and rejects a /%d (max /32)", entry, ones)
+		}
+	}
 }

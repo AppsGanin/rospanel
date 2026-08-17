@@ -88,12 +88,23 @@ func (g *bruteGuard) cleanupLoop() {
 	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
+		cutoff := now.Add(-bruteWindow)
 		var expired []string
 		g.mu.Lock()
 		for ip, exp := range g.banned {
 			if now.After(exp) {
 				delete(g.banned, ip)
 				expired = append(expired, ip)
+			}
+		}
+		// Sweep stale attempt lists too. An entry is otherwise pruned only when that
+		// same IP tries again or crosses the threshold, so a source that stops one try
+		// short of a ban leaves its entry behind forever — and the feed is public (the
+		// system SOCKS/HTTP inbounds bind 0.0.0.0), where one host with an IPv6 /64 can
+		// mint millions of distinct addresses.
+		for ip, tries := range g.attempts {
+			if len(tries) == 0 || tries[len(tries)-1].Before(cutoff) {
+				delete(g.attempts, ip)
 			}
 		}
 		g.mu.Unlock()

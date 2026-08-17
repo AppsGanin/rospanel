@@ -142,3 +142,54 @@ func TestSamePlanKeepsUsage(t *testing.T) {
 		t.Errorf("renewing the same plan changed the counter: %d → %d", before, used)
 	}
 }
+
+// The money bug this guards: a paid plan's quota has no rolling refill (planLimits gives
+// paid plans ResetPeriod "none"), and re-assigning the same plan deliberately keeps the
+// counter. Together that made the ONE path that never refills the one the user pays for —
+// burn the quota mid-period, press "продлить", and the payment bought fresh time on a
+// spent counter, so WorkingUsers kept filtering the user out with the money taken.
+// A PURCHASED period refills; an operator re-assign still does not (TestSamePlanKeepsUsage).
+func TestPaidRenewalRefillsTheQuota(t *testing.T) {
+	m, st, u, _, _ := planUsageFixture(t)
+	ctx := context.Background()
+
+	quota := &model.TariffPlan{
+		Slug: "usage-capped", Name: "Capped", PriceRub: 199, PeriodDays: 30,
+		DataLimit: 10 << 30, Enabled: true,
+	}
+	if err := st.SaveTariffPlan(quota); err != nil {
+		t.Fatalf("save plan: %v", err)
+	}
+	if err := m.ApplyPlanToUser(ctx, u.ID, quota.ID, false); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	// Spend the whole allowance: the user is now cut out of the generated config.
+	addUsage(t, st, u.ID, 4<<30, 7<<30)
+	before, err := st.GetUser(u.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if before.UsedUp+before.UsedDown < before.DataLimit {
+		t.Fatalf("setup: user is not over quota (%d/%d)", before.UsedUp+before.UsedDown, before.DataLimit)
+	}
+
+	// Renew the plan they are already on, the way a confirmed payment does.
+	w, _, err := m.planWriteFor(*before, quota.ID, true, true)
+	if err != nil {
+		t.Fatalf("planWriteFor: %v", err)
+	}
+	if err := st.ApplyUserPlan(w); err != nil {
+		t.Fatalf("apply plan write: %v", err)
+	}
+
+	after, err := st.GetUser(u.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if used := after.UsedUp + after.UsedDown; used != 0 {
+		t.Errorf("paid renewal left %d bytes on the counter — the user paid and stays blocked", used)
+	}
+	if after.ExpireAt <= before.ExpireAt {
+		t.Errorf("renewal did not extend the period: %d → %d", before.ExpireAt, after.ExpireAt)
+	}
+}

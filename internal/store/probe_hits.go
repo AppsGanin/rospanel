@@ -82,11 +82,24 @@ func (s *Store) ProbesSince(cutoff int64) ([]model.ProbeHit, error) {
 }
 
 // PurgeProbes drops scanner rows last seen before the cutoff (unix seconds).
+// Batched like every other sweep: the pool is a single connection, so one unbounded
+// DELETE would stall every query behind it. This table is one row per scanning source
+// IP, so an internet-wide scan is exactly what inflates it — the sweep must not seize
+// the connection precisely when the box is under load.
 func (s *Store) PurgeProbes(before int64) (int64, error) {
-	res, err := s.db.Exec(`DELETE FROM probe_hits WHERE last_seen < ?`, before)
-	if err != nil {
-		return 0, err
+	var total int64
+	for {
+		res, err := s.db.Exec(
+			`DELETE FROM probe_hits WHERE rowid IN (
+				SELECT rowid FROM probe_hits WHERE last_seen < ? LIMIT ?
+			)`, before, purgeBatch)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < purgeBatch {
+			return total, nil
+		}
 	}
-	n, _ := res.RowsAffected()
-	return n, nil
 }

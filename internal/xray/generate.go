@@ -941,9 +941,37 @@ var privateEgressCIDRs = []string{
 	"169.254.0.0/16",
 	"172.16.0.0/12",
 	"192.168.0.0/16",
+	"::/128",
 	"::1/128",
 	"fc00::/7",
 	"fe80::/10",
+	// NB: do NOT add "::ffff:0:0/96" here. Xray parses an IPv4-mapped literal back to
+	// a 4-byte address and then rejects any prefix over 32, so the whole routing config
+	// fails to build — and since a panel restart stops Xray BEFORE the new config is
+	// validated, that is a full outage, not a no-op. Xray already normalises v4-in-v6
+	// to IPv4, so the IPv4 rows above cover the mapped form. TestPrivateEgressCIDRsAreValid
+	// pins this.
+}
+
+// privateEgressDomains closes the NAME half of the same floor. The CIDR list above only
+// matches once a destination is an IP, and the "direct" outbound is a bare freedom that
+// dials the HOSTNAME through the OS resolver. Under DomainStrategy IPIfNonMatch, a name
+// Xray's own DNS fails to resolve (a public resolver returns NXDOMAIN for "localhost",
+// and a custom DNS server is a first-class panel setting) matches no IP rule at all and
+// falls through to direct — which then resolves it via /etc/hosts and connects. That is a
+// tunnel straight to the Xray gRPC control API on 127.0.0.1:10085, whose HandlerService
+// can add and remove users on the live proxy. Blocking the names as well means the rule
+// hits before any resolution, so neither a DNS miss nor a rebinding answer can slip past.
+var privateEgressDomains = []string{
+	"full:localhost",
+	"full:localhost.localdomain",
+	"full:ip6-localhost",
+	"full:ip6-loopback",
+	`regexp:\.localhost$`, // RFC 6761 reserves .localhost for loopback
+	// Cloud metadata by name — the IP (169.254.169.254) is already blocked above, and
+	// these are the hostnames that resolve to it.
+	"full:metadata.google.internal",
+	"full:instance-data.ec2.internal",
 }
 
 func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive, panelEgressWarp bool, active map[string]bool) *Routing {
@@ -976,6 +1004,10 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	// and VLESS→panel loopback fallbacks happen inside Xray, not via this path, so
 	// normal proxying to public sites is unaffected.
 	addIPRule(out, "block", privateEgressCIDRs)
+	// The name half of the same floor — see privateEgressDomains. Must stay adjacent to
+	// (and as early as) the CIDR rule: a domain rule matches before any DNS resolution,
+	// which is exactly the gap the IP list cannot cover.
+	addDomainRule(out, "block", privateEgressDomains)
 
 	// Local traffic that asked for WARP by name, dispatched ahead of every operator
 	// rule: whoever dialled this inbound picked the tunnel deliberately, and a
