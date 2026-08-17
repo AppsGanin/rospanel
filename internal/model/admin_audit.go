@@ -76,13 +76,14 @@ const (
 	AuditUserMessaged     = "broadcast.user_messaged"
 
 	// The panel itself.
-	AuditXrayRestarted  = "panel.xray_restarted"
-	AuditPanelRestarted = "panel.restarted"
-	AuditStatsReset     = "panel.stats_reset"
-	AuditBackupTaken    = "panel.backup_downloaded"
-	AuditRestored       = "panel.restored"
-	AuditFactoryReset   = "panel.factory_reset"
-	AuditUpdated        = "panel.updated"
+	AuditXrayRestarted   = "panel.xray_restarted"
+	AuditPanelRestarted  = "panel.restarted"
+	AuditStatsReset      = "panel.stats_reset"
+	AuditBackupTaken     = "panel.backup_downloaded"
+	AuditRestored        = "panel.restored"
+	AuditFactoryReset    = "panel.factory_reset"
+	AuditWatchdogRestart = "panel.watchdog_restart"
+	AuditUpdated         = "panel.updated"
 )
 
 // Audit categories. What the journal is FILTERED by — a handful of areas instead of
@@ -162,6 +163,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditRestored, AuditCatPanel},
 	{AuditFactoryReset, AuditCatPanel},
 	{AuditUpdated, AuditCatPanel},
+	{AuditWatchdogRestart, AuditCatPanel},
 }
 
 // AdminAuditKnown reports whether an action is in the catalog. The panel renders

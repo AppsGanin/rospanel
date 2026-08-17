@@ -647,6 +647,8 @@ type Settings struct {
 	// ProbeDetect records IPs that scan for the hidden panel path (many distinct
 	// requests the decoy site doesn't have). Detection never changes the reply.
 	ProbeDetect bool `json:"-"`
+	// WatchdogEnabled turns the wedged-process auto-recovery on/off (default on).
+	WatchdogEnabled bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.

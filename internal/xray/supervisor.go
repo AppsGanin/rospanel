@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -77,15 +78,20 @@ type Supervisor struct {
 	restarting bool // a deliberate stop→start is in flight (the ~1s bounce)
 
 	// lastWatchdog is when the wedged-process watchdog last restarted Xray, for its
-	// anti-storm cooldown (zero until it fires).
-	lastWatchdog time.Time
+	// anti-storm cooldown (zero until it fires). watchdogRestarts counts how many times
+	// it has fired, for the operator-facing "auto-recovery" indicator.
+	lastWatchdog     time.Time
+	watchdogRestarts int
+	// watchdogDisabled turns the auto-recovery off. Zero value = enabled, so a bare
+	// Supervisor watches by default; an operator can switch it off (master only).
+	watchdogDisabled atomic.Bool
 	// probe reports whether Xray is answering its API; defaults to apiResponsive and is
 	// swappable in tests so the watchdog decision can be exercised without a live Xray.
 	probe func() bool
 
 	onAccess func(email, ip, dest string) // called per access-log connection line
 	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
-	onWedged func()                        // called when the watchdog restarts a wedged process
+	onWedged func()                       // called when the watchdog restarts a wedged process
 	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
 	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
 	// renewed certificate): those are routine, and reporting them as recovery would
@@ -162,6 +168,19 @@ func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
 // outage the crash path never reported, because the process never exited.
 func (s *Supervisor) SetOnWedged(fn func()) { s.onWedged = fn }
 
+// SetWatchdogEnabled turns the wedged-process auto-recovery on or off, live. Off, the
+// loop keeps running (so it can be turned back on) but never restarts anything.
+func (s *Supervisor) SetWatchdogEnabled(on bool) { s.watchdogDisabled.Store(!on) }
+
+// WatchdogStats reports the auto-recovery state for the operator: whether it is
+// enabled, how many times it has restarted a wedged Xray, and when it last did (zero
+// if never).
+func (s *Supervisor) WatchdogStats() (enabled bool, restarts int, last time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.watchdogDisabled.Load(), s.watchdogRestarts, s.lastWatchdog
+}
+
 // StartWatchdog launches the wedged-process watchdog in the background: it probes a
 // running Xray and, if the process is alive but its API has stopped answering for
 // several checks in a row, restarts it. This is the gap the exit monitor cannot
@@ -212,6 +231,9 @@ func (s *Supervisor) watchdogLoop() {
 //   - only after watchdogFailsToAct failures in a row, and past the cooldown since the
 //     last watchdog restart, does it say to act (recording the restart time).
 func (s *Supervisor) watchdogTick(fails int) (int, bool) {
+	if s.watchdogDisabled.Load() {
+		return 0, false // auto-recovery switched off; loop keeps running so it can return
+	}
 	s.mu.Lock()
 	watch := s.cur != nil && !s.suspended && !s.restarting
 	s.mu.Unlock()
@@ -236,6 +258,7 @@ func (s *Supervisor) watchdogTick(fails int) (int, bool) {
 	cooling := !s.lastWatchdog.IsZero() && time.Since(s.lastWatchdog) < watchdogCooldown
 	if !cooling {
 		s.lastWatchdog = time.Now()
+		s.watchdogRestarts++
 	}
 	s.mu.Unlock()
 	if cooling {

@@ -9,6 +9,8 @@ import {
   getSettings,
   saveMaintenance,
   saveProbeDetect,
+  saveWatchdog,
+  type WatchdogInfo,
   getStatusPage,
   regenSecret,
   saveStatusPage,
@@ -118,6 +120,8 @@ export function GeneralSettings() {
   // card is open.
   const [probeDetect, setProbeDetectState] = useState(false);
   const [probes, setProbes] = useState<ProbeHit[] | null>(null);
+  // Watchdog: a live toggle plus the read-only auto-recovery counters.
+  const [watchdog, setWatchdog] = useState<WatchdogInfo | null>(null);
 
   const loadProbes = () => {
     getProbes()
@@ -164,6 +168,7 @@ export function GeneralSettings() {
           setMaintenanceState(s.maintenance_mode);
           setProbeDetectState(s.probe_detect);
           if (s.probe_detect) loadProbes();
+          setWatchdog(s.watchdog);
         })
         .catch(() => {}),
     ]).finally(() => setLoaded(true));
@@ -466,6 +471,33 @@ export function GeneralSettings() {
           </div>
         )}
       </SettingCard>
+
+      {watchdog && (
+        <SettingCard
+          title={t("general.watchdog")}
+          description={t("general.watchdogHint")}
+        >
+          <ToggleRow
+            label={t("general.watchdogOn")}
+            hint={t("general.watchdogOnHint")}
+            checked={watchdog.enabled}
+            onChange={(v) =>
+              run(async () => {
+                await saveWatchdog(v);
+                setWatchdog((w) => (w ? { ...w, enabled: v } : w));
+              })
+            }
+          />
+          <p className="mt-3 text-sm text-ink-muted">
+            {watchdog.restarts === 0
+              ? t("general.watchdogNone")
+              : t("general.watchdogCount", {
+                  n: watchdog.restarts,
+                  when: new Date(watchdog.last_at * 1000).toLocaleString(i18n.language),
+                })}
+          </p>
+        </SettingCard>
+      )}
 
       <SettingCard
         title={t("general.statusPage")}

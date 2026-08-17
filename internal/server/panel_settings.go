@@ -66,6 +66,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_show_configs":     set.SubShowConfigs,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
+		"watchdog":             rt.mgr.Watchdog(),
 		"hwid":                 hwidSettingsView(set),
 		"user_autodelete_days": set.UserAutoDeleteDays,
 		"xray_dns":             set.XrayDNS,
@@ -291,6 +292,21 @@ func (rt *Router) saveProbeDetect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.setProbeDetect(req.Enabled) // swap the live flag immediately
+	writeOK(w)
+}
+
+// saveWatchdog toggles the wedged-process auto-recovery.
+func (rt *Router) saveWatchdog(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetWatchdog(req.Enabled); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
 	writeOK(w)
 }
 
