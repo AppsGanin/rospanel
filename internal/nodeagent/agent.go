@@ -71,6 +71,14 @@ const (
 	certErrMax = 300
 	// syncFailWindow is how far back the reported sync-failure count reaches.
 	syncFailWindow = time.Hour
+	// minHeldPoll is how long a long-poll must have been in flight for a poll-cut
+	// (EOF/GOAWAY/reset) to count as the panel merely recycling a HELD request rather
+	// than an actual failure. The panel holds a no-change poll 30–60s, so a benign-
+	// looking error that returns well inside that (well under this threshold) means the
+	// request never landed — the panel process is down while its Xray :443 stays up, or
+	// a middlebox reset the connection — and must escalate the backoff, not re-poll at
+	// the floor. Kept comfortably below the 30s minimum hold.
+	minHeldPoll = 20 * time.Second
 )
 
 // jitterPct is how far a recurring interval is spread around its nominal value.
@@ -604,6 +612,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		}
 		// Cleared per attempt so the flag only ever describes the request in flight.
 		a.syncInterrupted.Store(false)
+		pollStart := time.Now()
 		resp, err := a.syncOnce(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -618,9 +627,12 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			// A benign poll-cut (the response was lost but the request already landed —
 			// EOF / GOAWAY / reset, the class the :443 fallback produces) is not the panel
 			// being unreachable: re-poll promptly instead of escalating the backoff, which
-			// would drop the node into slow-polling and make it flap. Only a genuine
-			// can't-reach-the-panel error grows the backoff.
-			if benignPollCut(err) {
+			// would drop the node into slow-polling and make it flap. Only count it as
+			// benign if the poll was actually HELD close to the panel's hold window: the
+			// same errors returning almost immediately mean the request never landed (panel
+			// down behind a live Xray :443, or a middlebox resetting the connection), so
+			// fall through to escalate the backoff instead of hammering an unhealthy box.
+			if benignPollCut(err) && time.Since(pollStart) >= minHeldPoll {
 				slog.Debug("node: long-poll cut, re-polling", "err", err)
 				backoff = backoffMin
 				if !sleepCtx(ctx, backoffMin) {

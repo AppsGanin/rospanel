@@ -62,6 +62,71 @@ func TestConfigSnapshots(t *testing.T) {
 	}
 }
 
+// A rollback must recreate the server's custom inbounds with their ORIGINAL ids, so a
+// group grant (keyed on the opaque token inbound:<id>) keeps resolving and grouped users
+// don't silently lose the lane. Inbounds that existed before but aren't in the snapshot
+// get their now-dangling grants swept.
+func TestRestoreServerConfigKeepsInboundIDsAndGrants(t *testing.T) {
+	st := snapStore(t)
+
+	inA, err := st.CreateInbound(model.Inbound{
+		ServerID: model.LocalNodeID, Enabled: true, Name: "A", Protocol: "vless", Port: 10001,
+	})
+	if err != nil {
+		t.Fatalf("create A: %v", err)
+	}
+	inB, err := st.CreateInbound(model.Inbound{
+		ServerID: model.LocalNodeID, Enabled: true, Name: "B", Protocol: "vless", Port: 10002,
+	})
+	if err != nil {
+		t.Fatalf("create B: %v", err)
+	}
+	grp, err := st.CreateGroup("VIP", []string{
+		model.InboundToken(inA.ID), model.InboundToken(inB.ID),
+	})
+	if err != nil {
+		t.Fatalf("group: %v", err)
+	}
+
+	// A snapshot taken back when only A existed (B was added afterwards).
+	cfg := &model.ServerConfigSnapshot{Inbounds: []model.Inbound{*inA}}
+	if err := st.RestoreServerConfig(cfg); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	// A is back at its original id — not a fresh autoincrement one.
+	got, err := st.GetInbound(inA.ID)
+	if err != nil || got.Name != "A" {
+		t.Fatalf("inbound A not restored at id %d: %+v (%v)", inA.ID, got, err)
+	}
+	// B is gone (not in the snapshot).
+	left, err := st.Inbounds(model.LocalNodeID)
+	if err != nil || len(left) != 1 || left[0].ID != inA.ID {
+		t.Fatalf("expected only inbound A(%d) after restore, got %+v (%v)", inA.ID, left, err)
+	}
+
+	// A's grant still resolves; B's dangling grant was swept.
+	grants, err := st.groupGrants(grp.ID)
+	if err != nil {
+		t.Fatalf("grants: %v", err)
+	}
+	hasA, hasB := false, false
+	for _, g := range grants {
+		if g == model.InboundToken(inA.ID) {
+			hasA = true
+		}
+		if g == model.InboundToken(inB.ID) {
+			hasB = true
+		}
+	}
+	if !hasA {
+		t.Errorf("grant for restored inbound A(%d) was lost: %v", inA.ID, grants)
+	}
+	if hasB {
+		t.Errorf("dangling grant for removed inbound B(%d) was not swept: %v", inB.ID, grants)
+	}
+}
+
 // The history is capped so an auto-snapshot on every routing change can't grow the DB
 // without bound.
 func TestConfigSnapshotsCapped(t *testing.T) {

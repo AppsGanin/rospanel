@@ -75,42 +75,112 @@ func (s *Store) DeleteConfigSnapshot(id int64) error {
 	return err
 }
 
-// RestoreServerConfigSettings writes a snapshot's settings back to the singleton row —
-// everything EXCEPT the certificate/domain identity (see ServerConfigSnapshot). The
-// two secret columns are re-encrypted on the way in, matching how GetSettings decrypts
-// them on the way out. Inbounds are restored separately by the caller.
-func (s *Store) RestoreServerConfigSettings(c *model.ServerConfigSnapshot) error {
+// RestoreServerConfig writes a snapshot back onto the master in ONE transaction: the
+// settings singleton (everything EXCEPT the certificate/domain identity — see
+// ServerConfigSnapshot) plus the server's custom inbounds. Doing it atomically means a
+// crash or a validation failure can never leave settings restored with inbounds half
+// wiped, and a concurrent reconcile never observes an empty inbound set mid-restore.
+//
+// Inbounds are recreated with their ORIGINAL ids so group grants — which reference a
+// custom inbound by the opaque token inbound:<id> — keep resolving; recreating them with
+// fresh autoincrement ids would silently strip access from every grouped user of that
+// lane. Grants for inbounds that existed before the rollback but aren't in the snapshot
+// are swept, matching what DeleteInbound does, so no dangling tokens are left behind.
+//
+// The two secret columns are re-encrypted on the way in, matching how GetSettings
+// decrypts them on the way out.
+func (s *Store) RestoreServerConfig(c *model.ServerConfigSnapshot) error {
 	routingJSON, err := json.Marshal(c.Routing)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`UPDATE settings SET
-		vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
-		vless_port = ?, hysteria_port = ?, hop_start = ?, hop_end = ?, hop_interval = ?,
-		reality_port = ?, reality_dest = ?, reality_private_key = ?, reality_public_key = ?,
-		reality_short_id = ?, reality_path = ?, reality_max_time_diff = ?,
-		vless_fp = ?, reality_fp = ?,
-		vless_name = ?, reality_name = ?, hysteria_name = ?,
-		tls_fragment = ?, tls_min13 = ?, block_quic = ?,
-		routing_config = ?,
-		warp_enabled = ?, warp_private_key = ?, warp_public_key = ?, warp_endpoint = ?,
-		warp_address_v4 = ?, warp_address_v6 = ?, warp_reserved = ?,
-		opera_enabled = ?, opera_country = ?, opera_port = ?,
-		xray_dns = ?, decoy_template = ?,
-		updated_at = unixepoch()
-		WHERE id = 1`,
-		boolToInt(c.VLESSEnabled), boolToInt(c.HysteriaEnabled), boolToInt(c.RealityEnabled),
-		c.VLESSPort, c.HysteriaPort, c.HopStart, c.HopEnd, c.HopInterval,
-		c.RealityPort, c.RealityDest, encField(c.RealityPrivateKey), c.RealityPublicKey,
-		c.RealityShortID, c.RealityPath, c.RealityMaxTimeDiff,
-		c.VLESSFp, c.RealityFp,
-		c.VLESSName, c.RealityName, c.HysteriaName,
-		boolToInt(c.TLSFragment), boolToInt(c.TLSMin13), boolToInt(c.BlockQUIC),
-		string(routingJSON),
-		boolToInt(c.WarpEnabled), encField(c.WarpPrivateKey), c.WarpPublicKey, c.WarpEndpoint,
-		c.WarpAddressV4, c.WarpAddressV6, c.WarpReserved,
-		boolToInt(c.OperaEnabled), c.OperaCountry, c.OperaPort,
-		c.XrayDNS, c.DecoyTemplate,
-	)
-	return err
+	return s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`UPDATE settings SET
+			vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
+			vless_port = ?, hysteria_port = ?, hop_start = ?, hop_end = ?, hop_interval = ?,
+			reality_port = ?, reality_dest = ?, reality_private_key = ?, reality_public_key = ?,
+			reality_short_id = ?, reality_path = ?, reality_max_time_diff = ?,
+			vless_fp = ?, reality_fp = ?,
+			vless_name = ?, reality_name = ?, hysteria_name = ?,
+			tls_fragment = ?, tls_min13 = ?, block_quic = ?,
+			routing_config = ?,
+			warp_enabled = ?, warp_private_key = ?, warp_public_key = ?, warp_endpoint = ?,
+			warp_address_v4 = ?, warp_address_v6 = ?, warp_reserved = ?,
+			opera_enabled = ?, opera_country = ?, opera_port = ?,
+			xray_dns = ?, decoy_template = ?,
+			updated_at = unixepoch()
+			WHERE id = 1`,
+			boolToInt(c.VLESSEnabled), boolToInt(c.HysteriaEnabled), boolToInt(c.RealityEnabled),
+			c.VLESSPort, c.HysteriaPort, c.HopStart, c.HopEnd, c.HopInterval,
+			c.RealityPort, c.RealityDest, encField(c.RealityPrivateKey), c.RealityPublicKey,
+			c.RealityShortID, c.RealityPath, c.RealityMaxTimeDiff,
+			c.VLESSFp, c.RealityFp,
+			c.VLESSName, c.RealityName, c.HysteriaName,
+			boolToInt(c.TLSFragment), boolToInt(c.TLSMin13), boolToInt(c.BlockQUIC),
+			string(routingJSON),
+			boolToInt(c.WarpEnabled), encField(c.WarpPrivateKey), c.WarpPublicKey, c.WarpEndpoint,
+			c.WarpAddressV4, c.WarpAddressV6, c.WarpReserved,
+			boolToInt(c.OperaEnabled), c.OperaCountry, c.OperaPort,
+			c.XrayDNS, c.DecoyTemplate,
+		); err != nil {
+			return err
+		}
+
+		// The inbound ids present before the restore — any not brought back by the
+		// snapshot loses its group grants below.
+		rows, err := tx.Query(`SELECT id FROM inbounds WHERE server_id = ?`, model.LocalNodeID)
+		if err != nil {
+			return err
+		}
+		var existing []int64
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			existing = append(existing, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+
+		if _, err := tx.Exec(`DELETE FROM inbounds WHERE server_id = ?`, model.LocalNodeID); err != nil {
+			return err
+		}
+
+		kept := make(map[int64]bool, len(c.Inbounds))
+		for _, in := range c.Inbounds {
+			opts, err := marshalInboundOpts(in.Opts)
+			if err != nil {
+				return err
+			}
+			// Preserve the original id (nil → autoincrement only for the degenerate
+			// id-0 case that captured inbounds never actually hit).
+			var idArg any
+			if in.ID != 0 {
+				idArg = in.ID
+				kept[in.ID] = true
+			}
+			if _, err := tx.Exec(`
+				INSERT INTO inbounds (id, server_id, enabled, sort, name, protocol, port, opts, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, 0), unixepoch()))`,
+				idArg, model.LocalNodeID, boolToInt(in.Enabled), in.Sort, in.Name,
+				in.Protocol, in.Port, opts, in.CreatedAt); err != nil {
+				return mapInboundConflict(err)
+			}
+		}
+
+		for _, id := range existing {
+			if !kept[id] {
+				if _, err := tx.Exec(
+					`DELETE FROM group_grants WHERE token = ?`, model.InboundToken(id)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }
