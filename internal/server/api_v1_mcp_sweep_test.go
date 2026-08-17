@@ -241,14 +241,18 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		},
 	})
 
-	confirm := newID("post_billing_orders", call("post_billing_orders", map[string]any{
-		"body": map[string]any{"user_id": created, "plan_id": made},
-	}))
+	// A manual order is REUSED while it is still pending (see manager.manualOrder), so
+	// asking twice hands back the same id. Cancel that one first and let the second call
+	// mint a fresh order to confirm — each tool then acts on an order in the state it
+	// actually accepts, instead of cancelling one that was already paid.
 	cancel := newID("post_billing_orders", call("post_billing_orders", map[string]any{
 		"body": map[string]any{"user_id": created, "plan_id": made},
 	}))
-	call("post_billing_orders_by_id_confirm", map[string]any{"id": confirm})
 	call("post_billing_orders_by_id_cancel", map[string]any{"id": cancel})
+	confirm := newID("post_billing_orders", call("post_billing_orders", map[string]any{
+		"body": map[string]any{"user_id": created, "plan_id": made},
+	}))
+	call("post_billing_orders_by_id_confirm", map[string]any{"id": confirm})
 
 	// The event key comes from the catalog rather than a literal: a webhook that
 	// subscribes to an event the panel doesn't have is rejected, and hard-coding one

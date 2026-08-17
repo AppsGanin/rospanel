@@ -181,6 +181,12 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 	if err := validateUserLimits(dataLimit, expireAt, deviceLimit); err != nil {
 		return err
 	}
+	// The panel posts the whole limits triple back from the form, so this WRITES
+	// expire_at — take the lock every plan/payment write holds. Without it an admin who
+	// opened the user card before a renewal landed saves the stale expiry over the paid
+	// period, and the only trace is a user.limits audit row.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
 	// store.SetUserLimits recomputes status from the new limit/expiry/devices.
 	err := m.mutateUser(fmt.Sprintf("user %d limits updated: limit=%d expire=%d devices=%d", id, dataLimit, expireAt, deviceLimit),
 		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt, deviceLimit) })
@@ -331,6 +337,11 @@ func (m *Manager) bulkResetTraffic(ids []int64) []int64 {
 // it. Users with no expiry (0 = never) are skipped. It returns each extended user's
 // new expiry.
 func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
+	// expire_at is read-modify-written here, so it takes the same lock every plan and
+	// payment write holds — otherwise a purchase confirming concurrently is extended
+	// from a baseline this loop already read, and one of the two periods is lost.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
 	now := time.Now().Unix()
 	add := int64(days) * 86400
 	out := map[int64]int64{}

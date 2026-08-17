@@ -28,6 +28,11 @@ import (
 // build. Change it here if the project moves.
 const Repo = "AppsGanin/rospanel"
 
+// maxAssetBytes bounds a downloaded release binary. The real asset is ~25 MB, so this
+// leaves ample room while keeping a hostile or broken host from filling the disk before
+// the checksum is checked.
+const maxAssetBytes = 256 << 20
+
 // AssetName is the release asset this build updates from, e.g. "rospanel-linux-amd64".
 var AssetName = fmt.Sprintf("rospanel-%s-%s", runtime.GOOS, runtime.GOARCH)
 
@@ -260,7 +265,17 @@ func download(ctx context.Context, url, dst string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(f, resp.Body)
+	// Capped like the manifest and checksum reads above. The checksum is only verified
+	// AFTER the body has landed on disk, and this writes into /usr/local/bin on the root
+	// filesystem — so an unbounded body from a hijacked or misbehaving release host
+	// fills the disk (taking every SQLite write down with it) long before the bytes are
+	// ever authenticated. +1 so an over-cap asset is detected rather than silently
+	// truncated into a binary that would then fail the checksum anyway.
+	var n int64
+	n, err = io.Copy(f, io.LimitReader(resp.Body, maxAssetBytes+1))
+	if err == nil && n > maxAssetBytes {
+		err = fmt.Errorf("release asset exceeds %d bytes", maxAssetBytes)
+	}
 	if err == nil {
 		err = f.Sync() // durably flush before the swap/exec relies on the bytes
 	}

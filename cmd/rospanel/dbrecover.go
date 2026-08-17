@@ -93,6 +93,13 @@ func quarantineDB(dbPath string) (string, error) {
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
 		if err := os.Rename(dbPath+suffix, dst+suffix); err != nil && !os.IsNotExist(err) {
+			// The main DB is already moved aside. Returning now would leave no file at
+			// dbPath, and store.Check reads a missing DB as a FRESH INSTALL — the next
+			// boot would come up blank on admin/admin at the default secret path, with
+			// the real data sitting in the quarantine copy. Put it back and fail loudly
+			// instead. (The trigger is plausible: the same disk-full that corrupted the
+			// DB also fails these renames, whose names are longer.)
+			_ = os.Rename(dst, dbPath)
 			return "", err
 		}
 	}

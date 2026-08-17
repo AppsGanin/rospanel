@@ -15,6 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// maxPlanPeriodDays bounds a plan's duration. Generous (100 years) — it exists to keep
+// int64(PeriodDays)*86400 far from overflowing into a negative expiry, not to second-guess
+// the operator's pricing.
+const maxPlanPeriodDays = 36500
+
 // ListTariffPlans returns tariff plans for admin UI.
 func (m *Manager) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	return m.store.ListTariffPlans(includeDisabled)
@@ -58,6 +63,17 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	}
 	if p.SortOrder < 0 {
 		p.SortOrder = 0
+	}
+	// The numeric limits reach this straight off the /v1 API's JSON decode, so they are
+	// not bounded by the editor's inputs. A negative period is the dangerous one: it
+	// makes expire = now - N, i.e. money taken for a subscription that is already over
+	// (EnforceBilling then downgrades the user), and an absurd value overflows the
+	// int64(PeriodDays)*86400 into a negative expiry just the same.
+	if p.PeriodDays < 0 || p.PeriodDays > maxPlanPeriodDays {
+		return invalidCode("err.planPeriodRange", "срок действия: от 0 до {{max}} дней", map[string]any{"max": maxPlanPeriodDays})
+	}
+	if p.DataLimit < 0 || p.DeviceLimit < 0 || p.SpeedLimit < 0 {
+		return invalidCode("err.planLimitsNegative", "лимиты тарифа не могут быть отрицательными")
 	}
 	// Access groups the plan grants. Unknown ids are dropped rather than rejected: a
 	// group deleted while the editor was open would otherwise make the plan unsavable,
@@ -565,7 +581,7 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 		return err
 	}
 	prevPlan := m.PlanName(u.PlanID)
-	w, planName, err := m.planWriteFor(*u, planID, extendFromCurrent)
+	w, planName, err := m.planWriteFor(*u, planID, extendFromCurrent, false)
 	if err != nil {
 		return err
 	}
@@ -586,7 +602,10 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 // read-modify-write of the user's current expire_at.
 //
 // planID 0 means manual mode: no plan link, no limits, no reset cycle.
-func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent bool) (store.UserPlanWrite, string, error) {
+// paidPeriod marks a period the user actually bought (the purchase path), which is
+// what entitles them to a fresh quota on a plan they already hold — see the ResetUsage
+// decision below.
+func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, paidPeriod bool) (store.UserPlanWrite, string, error) {
 	now := time.Now().Unix()
 	if planID == 0 {
 		return store.UserPlanWrite{
@@ -625,11 +644,20 @@ func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent boo
 	// and a 1 GB allowance is over budget the moment it is granted — the user is cut
 	// off until the cycle rolls, a month later.
 	//
-	// Only on a real change of plan. Renewing the one you are already on tops up the
-	// time you had left (see extendFromCurrent) rather than starting a period, so it
-	// keeps the counter it was running. Manual mode (planID 0) grants no quota at all
-	// and is handled above.
-	if u.PlanID != plan.ID {
+	// Only on a real change of plan, or on a period the user PAID for. An operator
+	// re-assigning the same plan tops up the time left rather than starting a period,
+	// so it keeps the counter it was running — re-assigning must not silently hand out
+	// a free refill (see TestSamePlanKeepsUsage). Manual mode (planID 0) grants no
+	// quota at all and is handled above.
+	//
+	// A purchase is different, and paidPeriod marks it: a paid plan carries no rolling
+	// refill (planLimits gives it ResetPeriod "none"), so its quota is tied to the
+	// period the money buys. Without this the one path that never refills is the one
+	// the user pays for — burn the quota mid-period, press "продлить", and the payment
+	// buys fresh time on a spent counter, leaving WorkingUsers to filter the user out
+	// (used >= data_limit) with the money taken. A free plan is excluded: its days:N
+	// cycle already refills it.
+	if u.PlanID != plan.ID || (paidPeriod && !freePlan && plan.DataLimit > 0) {
 		w.ResetUsage = true
 		w.LastUp, w.LastDown = m.liveCounter(u.ID)
 	}
@@ -687,7 +715,7 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (boo
 	}
 	// Extend from the current expiry only for a renewal of the active paid plan;
 	// buying from trial/free/expired starts from now (no inherited time).
-	w, _, err := m.planWriteFor(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID))
+	w, _, err := m.planWriteFor(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true)
 	if err != nil {
 		return false, err
 	}
@@ -890,8 +918,18 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 }
 
 func (m *Manager) CancelPayment(ctx context.Context, orderID int64) error {
-	if err := m.store.SetPaymentOrderStatus(orderID, "cancelled", 0); err != nil {
+	// Only a PENDING order may be cancelled. The unconditional write this used to do
+	// would happily rewrite an order that was already paid — zeroing paid_at (the
+	// payment vanishes from the revenue reports), emitting a payment.cancelled webhook
+	// for money that was actually taken, and leaving the user holding the plan it
+	// bought. It also races a confirming webhook: the admin cancels what the UI still
+	// shows as pending at the moment the claim commits.
+	cancelled, err := m.store.CancelPaymentOrderIfPending(orderID)
+	if err != nil {
 		return err
+	}
+	if !cancelled {
+		return invalidCode("err.orderNotPending", "заказ уже оплачен или отменён — обновите список")
 	}
 	// Best-effort payload enrichment: re-read the (now cancelled) order.
 	if order, err := m.store.GetPaymentOrder(orderID); err == nil {
