@@ -744,17 +744,19 @@ func (m *Manager) RecordProbe(ip string, paths int) {
 }
 
 // SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs. Turning it off
-// tears down the block table so nothing stays blocked after the operator disables it.
+// tears down the block table (and disarms, so a racing in-flight block can't rebuild it)
+// so nothing stays blocked after the operator disables it; turning it on re-arms.
 func (m *Manager) SetProbeBlock(on bool) error {
 	if err := m.store.SetProbeBlock(on); err != nil {
 		return err
 	}
-	if !on {
+	if on {
+		probeblock.Arm()
+	} else {
 		_ = probeblock.Clear()
 	}
 	return nil
 }
-
 
 // Probes returns the IPs caught scanning for the hidden panel, most recent first.
 func (m *Manager) Probes(limit int) ([]model.ProbeHit, error) {
