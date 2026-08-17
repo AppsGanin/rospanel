@@ -131,6 +131,44 @@ func (s *Store) CountUsersOnPlan(planID int64) (int, error) {
 	return n, err
 }
 
+// PurgeCancelledOrders drops cancelled/abandoned orders past the retention window.
+//
+// Deliberately NOT paid ones: those are the financial record and are kept. What grows
+// without bound is the unpaid tail — every "pay" press in the public bot mints an order,
+// and the 24h sweep cancels the ones that were never completed. Batched like every other
+// sweep, because the pool is a single connection.
+func (s *Store) PurgeCancelledOrders(before int64) (int64, error) {
+	var total int64
+	for {
+		res, err := s.db.Exec(
+			`DELETE FROM payment_orders WHERE id IN (
+				SELECT id FROM payment_orders
+				WHERE status = 'cancelled' AND created_at < ? LIMIT ?
+			)`, before, purgeBatch)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < purgeBatch {
+			return total, nil
+		}
+	}
+}
+
+// CountPendingOrdersForPlan returns how many orders are still awaiting payment for a
+// plan. Every order read inner-joins tariff_plans, so deleting a plan out from under a
+// pending order makes that order invisible to the webhook handler, the poller, the
+// orders list and the cancel path alike — the money can still be captured at the
+// provider with nothing left on this side able to see it, report it, or refund it.
+func (s *Store) CountPendingOrdersForPlan(planID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(1) FROM payment_orders WHERE plan_id = ? AND status = 'pending'`,
+		planID).Scan(&n)
+	return n, err
+}
+
 // UserIDsOnPlan returns the ids of users currently assigned to a plan (used to
 // migrate them when a plan is retired).
 func (s *Store) UserIDsOnPlan(planID int64) ([]int64, error) {

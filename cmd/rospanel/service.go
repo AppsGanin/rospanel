@@ -436,6 +436,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
 		mgr.PurgeOldProbes()    // scanning IPs past their retention window
+		mgr.PurgeOldOrders()    // cancelled (never-paid) orders past their retention window
 		mgr.PurgeIdleDevices()  // bound devices gone quiet past their TTL
 		mgr.PurgeOldAbuse()     // blocklist matches past their (short) window
 		mgr.PurgeOldTraffic()   // per-day traffic history past a year

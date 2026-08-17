@@ -173,6 +173,10 @@ type Manager struct {
 	// hit the device cap retries on its own schedule and would otherwise alert the
 	// operator on every retry (see manager_devices.go).
 	devNotice *deviceNotice
+	// payNotice keeps a stuck payment quiet after its first report. The provider poll
+	// re-reads an unresolved order every 25s, so an alert with no throttle is thousands
+	// of identical Telegram messages a day for one order.
+	payNotice *deviceNotice
 
 	// connGuardWanted records whether the operator asked for the per-IP connection
 	// guard (ROSPANEL_CONNLIMIT != off). Needed to tell "off on purpose" apart from
@@ -272,6 +276,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		guard:            newBruteGuard(),
 		shaper:           shaper.New(),
 		devNotice:        newDeviceNotice(),
+		payNotice:        newNotice(6 * time.Hour),
 		operaDir:         operaDir,
 		operaSup:         opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:        make(chan webhookJob, webhookQueueSize),

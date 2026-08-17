@@ -40,6 +40,10 @@ type Router struct {
 	assets     http.Handler
 	indexRaw   []byte // index.html before <base href> injection
 	limiter    *loginLimiter
+	// statusCache memoizes the rendered public status page per language; see statusBody.
+	statusMu    sync.Mutex
+	statusCache map[string]statusPageCache
+
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
 	apiKeys    *loginLimiter  // per-IP lockout after repeated invalid API keys

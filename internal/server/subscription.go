@@ -442,10 +442,16 @@ func (rt *Router) telegramSupportURL(ctx context.Context, set *model.Settings, u
 	if bot == "" {
 		return ""
 	}
-	// Already linked: just point at the bot (no bind needed). Otherwise mint a
-	// fresh one-time bind code so the subscription page's link binds this account.
+	// Already linked: just point at the bot (no bind needed).
 	if u.TgChatID != 0 {
 		return telegram.UserBotLink(bot)
+	}
+	// Reuse the bind code while it is still valid instead of minting one per fetch.
+	// This runs on the public subscription path, so a fresh code meant an UPDATE on
+	// users for every request a client made — and it invalidated the code handed out
+	// moments earlier, so a support-url a user had just been shown stopped working.
+	if u.UserTgLinkCodeValid() {
+		return telegram.UserDeepLink(bot, u.TgLinkCode)
 	}
 	code, err := rt.mgr.GenerateUserTgLinkCode(u.ID)
 	if err != nil {

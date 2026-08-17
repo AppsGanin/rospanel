@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/branding"
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -38,16 +39,11 @@ func handleStatus(rt *Router, w http.ResponseWriter, r *http.Request, rest strin
 		rt.serveStatusLogo(w)
 		return
 	}
-	rep, err := rt.mgr.StatusPageData(statusWindowDays)
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	body, err := rt.statusBody(set, lang)
 	if err != nil {
 		// Same rule as the subscription surface: never 500 in public. A real site
 		// wouldn't, and the error text would confirm what is running here.
-		rt.currentDecoy().ServeHTTP(w, r)
-		return
-	}
-	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
-	body, err := status.Render(statusData(rep, set, lang))
-	if err != nil {
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
@@ -207,4 +203,42 @@ func statusPathOf(enabled bool, path string) string {
 		return "status"
 	}
 	return path
+}
+
+
+// statusBody renders the status page, memoized per language for statusCacheTTL.
+//
+// This is the one surface a caller reaches holding NOTHING — no token, no session — and
+// each render costs a settings read, a node list and a 90-day uptime scan across every
+// server, against the single SQLite connection every panel request, node sync and stats
+// write queues behind. The Cache-Control header buys nothing here (Xray terminates TLS
+// itself; there is no CDN in front), so the cache has to live on this side. A page that
+// lags half a minute is exactly what the header already promises.
+func (rt *Router) statusBody(set *model.Settings, lang i18n.Lang) ([]byte, error) {
+	rt.statusMu.Lock()
+	defer rt.statusMu.Unlock()
+	if c, ok := rt.statusCache[string(lang)]; ok && time.Since(c.at) < statusCacheTTL {
+		return c.body, nil
+	}
+	rep, err := rt.mgr.StatusPageData(statusWindowDays)
+	if err != nil {
+		return nil, err
+	}
+	body, err := status.Render(statusData(rep, set, lang))
+	if err != nil {
+		return nil, err
+	}
+	if rt.statusCache == nil {
+		rt.statusCache = map[string]statusPageCache{}
+	}
+	rt.statusCache[string(lang)] = statusPageCache{body: body, at: time.Now()}
+	return body, nil
+}
+
+// statusCacheTTL matches the Cache-Control max-age the page advertises.
+const statusCacheTTL = 30 * time.Second
+
+type statusPageCache struct {
+	body []byte
+	at   time.Time
 }

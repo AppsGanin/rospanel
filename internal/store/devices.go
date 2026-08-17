@@ -25,7 +25,21 @@ type DeviceAdmission struct {
 //
 // limit 0 means unlimited. An already-bound device always passes: the cap governs
 // how many devices exist, not how often they refresh.
+// maxDevicesPerUser is the ceiling applied when no per-user device limit is set. High
+// enough that no real subscriber meets it, low enough that a token replayed with random
+// hardware ids cannot grow the table without bound.
+const maxDevicesPerUser = 50
+
 func (s *Store) RegisterDevice(userID int64, d model.Device, limit int) (DeviceAdmission, error) {
+	// "Unlimited" (limit 0) still gets a hard ceiling. The roster is written from an
+	// UNAUTHENTICATED fetch carrying an attacker-chosen x-hwid, and the shipped default
+	// is exactly this case (hwid_fallback_limit defaults to 0) — so without a ceiling one
+	// subscription token can insert a row per request, forever, on a single-connection
+	// SQLite. An operator's explicit number is honoured as-is; this only bounds "no
+	// number given".
+	if limit <= 0 {
+		limit = maxDevicesPerUser
+	}
 	var out DeviceAdmission
 	err := s.withTx(func(tx *sql.Tx) error {
 		// Refresh first. The overwhelming majority of fetches are a known device

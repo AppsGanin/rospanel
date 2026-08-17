@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -366,14 +367,58 @@ func (rt *Router) testTelegramBackup(w http.ResponseWriter, r *http.Request) {
 // fixing an unreachable panel sets the proxy and the bot tokens in one submit, and
 // resolving the username through the old (direct, broken) route would fail the save
 // that was about to fix it.
+// botUsernameTTL is how long a resolved @username is trusted. A bot's username changes
+// only when the operator renames it in BotFather, so this is generous on purpose.
+const botUsernameTTL = 30 * time.Minute
+
+// botUsernameFailTTL is the (much shorter) cooldown after a failed lookup, so a blocked
+// or down api.telegram.org costs one attempt per minute instead of one per request.
+const botUsernameFailTTL = time.Minute
+
+var (
+	botNameMu    sync.Mutex
+	botNameCache = map[string]botNameEntry{}
+)
+
+type botNameEntry struct {
+	name string
+	at   time.Time
+}
+
+// botUsername resolves a bot token to its @username, cached.
+//
+// The cache is the point: this is called on the SUBSCRIPTION path, which is public and
+// hit by every client install on every refresh. Uncached it built a fresh HTTP client
+// (new TLS handshake, no pooling) and made a live getMe per request — and on a Russian
+// box, where api.telegram.org is blocked and no proxy is set, that is 5 seconds of
+// pinned goroutine for every subscription fetch. Failures are cached too, briefly, so an
+// unreachable Telegram does not reintroduce the same stall.
 func botUsername(ctx context.Context, token, proxy string) string {
 	if token == "" {
 		return ""
 	}
+	key := token + "\x00" + proxy
+	botNameMu.Lock()
+	if e, ok := botNameCache[key]; ok {
+		ttl := botUsernameTTL
+		if e.name == "" {
+			ttl = botUsernameFailTTL
+		}
+		if time.Since(e.at) < ttl {
+			botNameMu.Unlock()
+			return e.name
+		}
+	}
+	botNameMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	name := ""
 	if u, err := telegram.NewClient(token, proxy).GetMe(ctx); err == nil {
-		return u.Username
+		name = u.Username
 	}
-	return ""
+	botNameMu.Lock()
+	botNameCache[key] = botNameEntry{name: name, at: time.Now()}
+	botNameMu.Unlock()
+	return name
 }

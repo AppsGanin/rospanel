@@ -37,6 +37,10 @@ const DeviceOnlineWindow int64 = 120
 // accrues a row per IP indefinitely without a sweep.
 const ConnectionRetentionDays = 30
 
+// CancelledOrderRetentionDays is how long a cancelled (never-paid) order is kept. Paid
+// orders are never swept — they are the financial record.
+const CancelledOrderRetentionDays = 180
+
 // ProbeRetentionDays is how long a scanning IP's row survives its last sighting. The
 // table is also hard-capped by row count; this ages out scanners that went quiet.
 const ProbeRetentionDays = 30
