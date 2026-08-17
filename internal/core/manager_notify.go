@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
@@ -314,6 +315,52 @@ func (m *Manager) onXrayCrash(err error) {
 		msg += "\n" + i18n.T(lang, "notify.reason", escHTML(err.Error()))
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+}
+
+// probeDigestHour is the local hour the daily scanner summary is sent at.
+const probeDigestHour = 9
+
+// probeDigestLoop sends one summary a day of the IPs newly caught scanning for the
+// hidden panel — the opt-in alternative to per-event spam (a public IP is scanned by
+// bots constantly, so recording is silent by default and this rolls it up). Gated by
+// the probe_digest setting AND the AdminEventProbe notification bit.
+func (m *Manager) probeDigestLoop() {
+	lastSent := "" // calendar day of the last digest, so it fires once per day
+	for {
+		time.Sleep(time.Hour)
+		set, err := m.store.GetSettings()
+		if err != nil || !set.ProbeDigest {
+			continue
+		}
+		now := time.Now().In(m.loc())
+		today := now.Format("2006-01-02")
+		if now.Hour() != probeDigestHour || today == lastSent {
+			continue
+		}
+		lastSent = today
+		probes, err := m.store.ProbesSince(now.Add(-24 * time.Hour).Unix())
+		if err != nil || len(probes) == 0 {
+			continue // nothing new — don't send an empty digest
+		}
+		m.sendProbeDigest(probes)
+	}
+}
+
+// sendProbeDigest formats and sends the daily scanner summary.
+func (m *Manager) sendProbeDigest(probes []model.ProbeHit) {
+	lang := m.botLang()
+	var b strings.Builder
+	b.WriteString(i18n.T(lang, "notify.probeDigest", len(probes)))
+	// A few of the noisiest, so the operator has something concrete to firewall.
+	const show = 10
+	for i, p := range probes {
+		if i >= show {
+			b.WriteString("\n" + i18n.T(lang, "notify.probeDigestMore", len(probes)-show))
+			break
+		}
+		fmt.Fprintf(&b, "\n• <code>%s</code> — %d", escHTML(p.IP), p.Paths)
+	}
+	m.notifyAdminEvent(model.AdminEventProbe, b.String())
 }
 
 // onXrayWedged reports that the watchdog found Xray alive but no longer answering its

@@ -265,6 +265,8 @@ var ru = map[string]string{
 	"notify.userSuspended":      "🚫 <b>Доступ приостановлен</b>\n\nОбратитесь в поддержку, если это неожиданно.",
 	"notify.xrayCrashed":        "⚠️ <b>Xray аварийно завершился</b>\nСервер: %s\nПроцесс перезапускается автоматически.",
 	"notify.xrayWedged":         "⚠️ <b>Xray перестал отвечать</b>\nСервер: %s\nСторож перезапустил процесс автоматически.",
+	"notify.probeDigest":        "🔍 <b>Сканеры панели за сутки</b>\n%d новых IP щупали скрытый путь:",
+	"notify.probeDigestMore":    "…и ещё %d.",
 	"notify.xrayBack":           "✅ <b>Xray снова работает</b>\nСервер: %s",
 	"notify.reason":             "Причина: %s",
 	"notify.downtime":           "Простой: %s.",

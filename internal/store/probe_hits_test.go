@@ -73,3 +73,21 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+func TestProbesSince(t *testing.T) {
+	st := newStore(t)
+	// first_seen: old=100, mid=5000, new=9000
+	_ = st.RecordProbe("1.1.1.1", 10, 100)
+	_ = st.RecordProbe("2.2.2.2", 10, 5000)
+	_ = st.RecordProbe("3.3.3.3", 10, 9000)
+	got, err := st.ProbesSince(5000)
+	if err != nil {
+		t.Fatalf("since: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ProbesSince(5000) = %d rows, want 2 (first_seen >= 5000)", len(got))
+	}
+	if got[0].IP != "3.3.3.3" {
+		t.Errorf("order = %+v, want newest-first (3.3.3.3)", got)
+	}
+}

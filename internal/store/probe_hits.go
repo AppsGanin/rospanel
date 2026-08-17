@@ -59,6 +59,28 @@ func (s *Store) ListProbes(limit int) ([]model.ProbeHit, error) {
 	return out, rows.Err()
 }
 
+// ProbesSince returns scanners whose FIRST sighting is at or after the cutoff — i.e.
+// the IPs newly seen in a window, for the daily digest (not the ones merely still
+// active). Newest first.
+func (s *Store) ProbesSince(cutoff int64) ([]model.ProbeHit, error) {
+	rows, err := s.db.Query(
+		`SELECT ip, first_seen, last_seen, hits, paths FROM probe_hits
+		 WHERE first_seen >= ? ORDER BY first_seen DESC, ip DESC`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ProbeHit
+	for rows.Next() {
+		var p model.ProbeHit
+		if err := rows.Scan(&p.IP, &p.FirstSeen, &p.LastSeen, &p.Hits, &p.Paths); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // PurgeProbes drops scanner rows last seen before the cutoff (unix seconds).
 func (s *Store) PurgeProbes(before int64) (int64, error) {
 	res, err := s.db.Exec(`DELETE FROM probe_hits WHERE last_seen < ?`, before)

@@ -659,6 +659,10 @@ type Settings struct {
 	ProbeDetect bool `json:"-"`
 	// WatchdogEnabled turns the wedged-process auto-recovery on/off (default on).
 	WatchdogEnabled bool `json:"-"`
+	// ProbeBlock drops a flagged scanner's IP at the firewall; ProbeDigest sends the
+	// operator one daily summary of new scanners. Both default off.
+	ProbeBlock  bool `json:"-"`
+	ProbeDigest bool `json:"-"`
 	// SubAnnounce is a short broadcast shown inside the VPN client itself (Happ,
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
@@ -906,6 +910,7 @@ const (
 	AdminEventCert          int64 = 1 << 5 // TLS certificate renewed or renewal failed
 	AdminEventPayment       int64 = 1 << 6 // payment lifecycle (order created / paid)
 	AdminEventAbuse         int64 = 1 << 7 // a user's traffic hit a threat/piracy/gambling list
+	AdminEventProbe         int64 = 1 << 8 // daily summary of IPs scanning for the hidden panel
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -922,6 +927,7 @@ var AdminEventCatalog = []struct {
 	{"cert", AdminEventCert},
 	{"payment", AdminEventPayment},
 	{"abuse", AdminEventAbuse},
+	{"probe", AdminEventProbe},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.

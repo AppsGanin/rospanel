@@ -17,6 +17,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
+	"github.com/AppsGanin/rospanel/internal/probeblock"
 	"github.com/AppsGanin/rospanel/internal/warp"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -728,6 +729,30 @@ func (m *Manager) RecordProbe(ip string, paths int) {
 	if err := m.store.RecordProbe(ip, paths, time.Now().Unix()); err != nil {
 		logErr("probe: record failed", "ip", ip, "err", err)
 	}
+	// If auto-blocking is on, drop the scanner at the firewall too. Best-effort and
+	// gated so recording stays the default; a lost block must not affect the request.
+	if set, err := m.store.GetSettings(); err == nil && set.ProbeBlock {
+		if err := probeblock.BlockIP(ip); err != nil {
+			logErr("probe: firewall block failed", "ip", ip, "err", err)
+		}
+	}
+}
+
+// SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs. Turning it off
+// tears down the block table so nothing stays blocked after the operator disables it.
+func (m *Manager) SetProbeBlock(on bool) error {
+	if err := m.store.SetProbeBlock(on); err != nil {
+		return err
+	}
+	if !on {
+		_ = probeblock.Clear()
+	}
+	return nil
+}
+
+// SetProbeDigest toggles the daily scanner-summary notification.
+func (m *Manager) SetProbeDigest(on bool) error {
+	return m.store.SetProbeDigest(on)
 }
 
 // Probes returns the IPs caught scanning for the hidden panel, most recent first.
