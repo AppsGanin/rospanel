@@ -40,7 +40,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 
 	u, err := rt.mgr.Store().GetUserBySubToken(token)
 	if err != nil {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	set, err := rt.mgr.Store().GetSettings()
@@ -48,7 +48,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// Never surface an internal error on the public subscription surface — a
 		// real static site wouldn't 500 with a JSON body, which would confirm the
 		// panel is here and leak the error text. Fall through to the decoy instead.
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	rt.applyTLSHints(set)
@@ -62,7 +62,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 			if err := rt.servePage(w, *u, set, lang); err != nil {
-				rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on render errors
+				rt.currentDecoy().ServeHTTP(w, r) // keep the masquerade intact on render errors
 			}
 			return
 		}
@@ -74,7 +74,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		format := subFormat(r)
 		if action := model.EvalSubRules(set.SubRules, subRuleInput(r)); action != "" {
 			if action == model.SubActionBlock {
-				rt.decoy.ServeHTTP(w, r)
+				rt.currentDecoy().ServeHTTP(w, r)
 				return
 			}
 			format = action
@@ -166,7 +166,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	case "qr.png":
 		png, err := qrcode.Encode(sub.URL(set, u.SubToken), qrcode.Medium, 512)
 		if err != nil {
-			rt.decoy.ServeHTTP(w, r) // keep the masquerade intact on internal errors
+			rt.currentDecoy().ServeHTTP(w, r) // keep the masquerade intact on internal errors
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
@@ -200,7 +200,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		if name, ok := strings.CutPrefix(leaf, "font/"); ok {
 			b, ok := sub.Font(name)
 			if !ok {
-				rt.decoy.ServeHTTP(w, r) // unknown font ⇒ behave like any other 404
+				rt.currentDecoy().ServeHTTP(w, r) // unknown font ⇒ behave like any other 404
 				return
 			}
 			w.Header().Set("Content-Type", "font/woff2")
@@ -208,7 +208,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			_, _ = w.Write(b)
 			return
 		}
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 	}
 }
 
@@ -217,18 +217,18 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings, idxStr string) {
 	n, err := strconv.Atoi(idxStr)
 	if err != nil {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	links := sub.DeepLinks(sub.URL(set, u.SubToken), lang)
 	if n < 0 || n >= len(links) {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	html, err := sub.AppRedirect(links[n].Href, lang)
 	if err != nil {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -523,7 +523,7 @@ func subDeviceSub(d model.Device) string {
 // touches that account's rows.
 func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
 	if r.Method != http.MethodPost {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	if !set.HWIDEnabled {

@@ -215,6 +215,17 @@ func (rt *Router) index(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(idx)
 }
 
+// currentDecoy returns the live decoy handler under the read lock. The handler is
+// swapped at runtime (the operator can change the masquerade template), and an interface
+// value is two words — reading it unlocked while SetDecoy writes it is a real data race
+// that can hand a request a torn handler. ServeHTTP snapshots it once for its own use;
+// every other handler goes through here.
+func (rt *Router) currentDecoy() http.Handler {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return rt.decoy
+}
+
 // ServeHTTP routes by the first path segment: the secret unlocks the panel,
 // anything else falls through to the decoy.
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +292,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// random unguessable segment so providers can POST to a fixed URL without
 	// revealing the hidden panel. The webhook itself verifies the payload (signature
 	// / re-fetch); an unknown provider leaf falls through to the decoy.
-	if paySecret != "" && seg == paySecret {
+	if paySecret != "" && subtle.ConstantTimeCompare([]byte(seg), []byte(paySecret)) == 1 {
 		// Throttle per-IP: signature-less providers (e.g. YooKassa) re-fetch from the
 		// provider on callback, so an amplification/flood is possible if the secret leaks.
 		// Over the limit the answer is the decoy — see the subscription surface below

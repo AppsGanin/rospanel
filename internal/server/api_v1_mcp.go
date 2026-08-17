@@ -69,7 +69,7 @@ func (rt *Router) handleMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	key, err := url.PathUnescape(strings.Trim(rest, "/"))
 	if err != nil || key == "" || strings.Contains(key, "/") {
-		rt.decoy.ServeHTTP(w, r) // a malformed URL is not a caller we owe an answer
+		rt.currentDecoy().ServeHTTP(w, r) // a malformed URL is not a caller we owe an answer
 		return
 	}
 

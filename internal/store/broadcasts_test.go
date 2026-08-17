@@ -213,3 +213,46 @@ func TestBroadcastTargetsCascade(t *testing.T) {
 		t.Fatalf("%d orphan target rows survived", n)
 	}
 }
+
+// broadcast_targets holds one row per recipient per broadcast and nothing ever deleted
+// them: a weekly send to a large audience grew the biggest table in the panel without
+// bound, on a single-connection SQLite every request queues behind. Finished runs are
+// now trimmed — and an unfinished one must survive, because its snapshot is what a
+// resume replays.
+func TestFinishedBroadcastsAreTrimmed(t *testing.T) {
+	st := bcStore(t)
+
+	// One paused (unfinished) broadcast with recipients, created first so it is oldest.
+	keep := newBroadcast(t, st, 100, 101)
+
+	for i := 0; i < maxKeptBroadcasts+10; i++ {
+		id := newBroadcast(t, st, int64(1000+i))
+		if err := st.SetBroadcastStatus(id, model.BroadcastDone, 1700000001); err != nil {
+			t.Fatalf("finish %d: %v", id, err)
+		}
+	}
+
+	var done int
+	if err := st.db.QueryRow(
+		`SELECT COUNT(*) FROM broadcasts WHERE status = ?`, model.BroadcastDone,
+	).Scan(&done); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	// The trim runs when a broadcast is CREATED, so the most recent one — finished after
+	// the last trim — is still around: the steady state is the cap plus that one.
+	if done > maxKeptBroadcasts+1 {
+		t.Errorf("kept %d finished broadcasts, want at most %d", done, maxKeptBroadcasts+1)
+	}
+
+	// The unfinished one is untouched, targets included (ON DELETE CASCADE would have
+	// taken them with it).
+	var alive, targets int
+	_ = st.db.QueryRow(`SELECT COUNT(*) FROM broadcasts WHERE id = ?`, keep).Scan(&alive)
+	_ = st.db.QueryRow(`SELECT COUNT(*) FROM broadcast_targets WHERE broadcast_id = ?`, keep).Scan(&targets)
+	if alive != 1 {
+		t.Error("the unfinished broadcast was trimmed — a resume would have nothing to replay")
+	}
+	if targets != 2 {
+		t.Errorf("unfinished broadcast kept %d targets, want 2", targets)
+	}
+}

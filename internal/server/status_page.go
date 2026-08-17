@@ -26,12 +26,12 @@ func handleStatus(rt *Router, w http.ResponseWriter, r *http.Request, rest strin
 	// the panel, so every other leaf falls through to the decoy.
 	leaf := strings.Trim(rest, "/")
 	if leaf != "" && leaf != statusLogoFile {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil || !set.StatusEnabled {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	if leaf == statusLogoFile {
@@ -42,13 +42,13 @@ func handleStatus(rt *Router, w http.ResponseWriter, r *http.Request, rest strin
 	if err != nil {
 		// Same rule as the subscription surface: never 500 in public. A real site
 		// wouldn't, and the error text would confirm what is running here.
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 	body, err := status.Render(statusData(rep, set, lang))
 	if err != nil {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

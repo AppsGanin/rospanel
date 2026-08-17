@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -275,4 +276,68 @@ func (s *Store) migrate() error {
 		}
 	}
 	return nil
+}
+
+// migrationNumber pulls the leading 4-digit ordinal out of a migration filename
+// ("0053_full_config_snapshots.sql" → 53). Names are zero-padded by convention, so a
+// numeric compare and a string compare agree; the number is what travels in a DB.
+func migrationNumber(name string) int {
+	cut := strings.IndexByte(name, '_')
+	if cut < 0 {
+		cut = len(name)
+	}
+	n, err := strconv.Atoi(name[:cut])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// SchemaVersion is the newest migration THIS BINARY carries. Paired with
+// DBSchemaVersion it answers the only question a restore really has to ask: was this
+// archive written by a panel newer than the one being restored into?
+func SchemaVersion() int {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return 0
+	}
+	newest := 0
+	for _, e := range entries {
+		if n := migrationNumber(e.Name()); n > newest {
+			newest = n
+		}
+	}
+	return newest
+}
+
+// DBSchemaVersion reports the newest migration recorded in a database file. Read-only
+// and non-destructive: it is used to vet an archive BEFORE anything is staged.
+//
+// This is what stops the unrecoverable restore. The migration runner skips any version
+// already in schema_migrations, so restoring a NEWER database into an OLDER binary
+// applies nothing and leaves the panel reading columns the schema no longer has (this
+// codebase does drop columns) — GetSettings then fails on every boot, which is a crash
+// loop with no way out but finding the newer binary again.
+func DBSchemaVersion(path string) (int, error) {
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`SELECT version FROM schema_migrations`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	newest := 0
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return 0, err
+		}
+		if n := migrationNumber(v); n > newest {
+			newest = n
+		}
+	}
+	return newest, rows.Err()
 }

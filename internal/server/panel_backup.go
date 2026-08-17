@@ -135,24 +135,8 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract to a throwaway dir and validate the embedded database.
-	// issue is a dictionary key, not a sentence: the restore screen is the panel's,
-	// and its language is the admin's choice.
-	valid, issue, dbUsers, dbAdmins := true, "", 0, 0
-	dir, err := os.MkdirTemp("", "rospanel-inspect-*")
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer os.RemoveAll(dir)
-	if err := backup.Restore(tmp.Name(), dir); err != nil {
-		valid, issue = false, "restore.archiveCorrupt"
-	} else if u, a, _, err := store.InspectDB(filepath.Join(dir, "rospanel.db")); err != nil {
-		valid, issue = false, "restore.dbUnreadable"
-	} else if a == 0 {
-		valid, issue, dbUsers, dbAdmins = false, "restore.noAdmin", u, a
-	} else {
-		dbUsers, dbAdmins = u, a
-	}
+	issue, dbUsers, dbAdmins := inspectArchive(tmp.Name())
+	valid := issue == ""
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"manifest":  m,
@@ -197,6 +181,16 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	tmp.Close()
 
+	// Vet the archive HERE, not only in the inspect call the SPA makes first: this
+	// endpoint is reachable by any API/MCP client and by a hand-crafted request, and
+	// staging is the point of no return (ApplyPending replaces only the entries the
+	// archive HAS, so one carrying secrets.key but no database swaps the encryption key
+	// out from under an unchanged DB, and every secret then decrypts to "").
+	if issue, _, _ := inspectArchive(tmp.Name()); issue != "" {
+		writeErrCode(w, http.StatusBadRequest, archiveIssueErr[issue], "архив не прошёл проверку")
+		return
+	}
+
 	// Stage the restore and apply it on the next boot (before the DB is opened),
 	// so the live process's WAL can't checkpoint stale data over the restored DB.
 	if err := backup.StageRestore(tmp.Name(), rt.dataDir); err != nil {
@@ -206,4 +200,46 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 	scheduleRestart() // restart applies the staged restore
+}
+
+// archiveIssueErr maps an inspect issue (a restore-screen dictionary key) to the error
+// code the restore endpoint answers with, so both surfaces name the same problem.
+var archiveIssueErr = map[string]string{
+	"restore.archiveCorrupt": "err.backupCorrupt",
+	"restore.dbUnreadable":   "err.backupDbUnreadable",
+	"restore.noAdmin":        "err.backupNoAdmin",
+	"restore.schemaTooNew":   "err.backupSchemaTooNew",
+}
+
+// inspectArchive extracts a backup to a throwaway dir and reports whether it can be
+// restored into THIS binary. issue is a dictionary key, not a sentence: the restore
+// screen is the panel's, and its language is the admin's choice. Empty issue = usable.
+//
+// Shared by the inspect call and the restore itself — the SPA asks first, but the
+// restore endpoint must not depend on a client having done so.
+func inspectArchive(path string) (issue string, users, admins int) {
+	dir, err := os.MkdirTemp("", "rospanel-inspect-*")
+	if err != nil {
+		return "restore.archiveCorrupt", 0, 0
+	}
+	defer os.RemoveAll(dir)
+
+	if err := backup.Restore(path, dir); err != nil {
+		return "restore.archiveCorrupt", 0, 0
+	}
+	dbPath := filepath.Join(dir, "rospanel.db")
+	u, a, _, err := store.InspectDB(dbPath)
+	if err != nil {
+		return "restore.dbUnreadable", 0, 0
+	}
+	if a == 0 {
+		return "restore.noAdmin", u, a
+	}
+	// A database from a NEWER panel cannot be restored into this one: the migration
+	// runner skips versions already recorded, so nothing would run and the binary would
+	// read columns its schema lacks — a boot loop with no way out from inside the panel.
+	if v, err := store.DBSchemaVersion(dbPath); err == nil && v > store.SchemaVersion() {
+		return "restore.schemaTooNew", u, a
+	}
+	return "", u, a
 }

@@ -15,11 +15,11 @@ import (
 // the decoy, exactly like any other unrecognised path.
 func handlePaymentWebhook(rt *Router, w http.ResponseWriter, r *http.Request, leaf string) {
 	if r.Method != http.MethodPost {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	if _, known := payments.Get(leaf); !known {
-		rt.decoy.ServeHTTP(w, r)
+		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
