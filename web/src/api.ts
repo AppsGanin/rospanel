@@ -789,6 +789,8 @@ export interface SettingsInfo extends SubSettings {
   user_autodelete_days: number
   maintenance_mode: boolean
   probe_detect: boolean
+  probe_block: boolean
+  probe_digest: boolean
   watchdog: WatchdogInfo
   hwid: HWIDSettings
 }
@@ -977,6 +979,20 @@ export const saveMaintenance = (enabled: boolean) =>
 // Secret-path probe detection: record IPs that scan for the hidden panel.
 export const saveProbeDetect = (enabled: boolean) =>
   api<{ ok: boolean }>('api/settings/probe-detect', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+// Drop flagged scanner IPs at the firewall (nftables).
+export const saveProbeBlock = (enabled: boolean) =>
+  api<{ ok: boolean }>('api/settings/probe-block', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+// Daily scanner-summary notification.
+export const saveProbeDigest = (enabled: boolean) =>
+  api<{ ok: boolean }>('api/settings/probe-digest', {
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })

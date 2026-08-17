@@ -9,6 +9,8 @@ import {
   getSettings,
   saveMaintenance,
   saveProbeDetect,
+  saveProbeBlock,
+  saveProbeDigest,
   saveWatchdog,
   type WatchdogInfo,
   getStatusPage,
@@ -119,6 +121,8 @@ export function GeneralSettings() {
   // Probe detection is a live toggle too. The scanner list loads lazily when the
   // card is open.
   const [probeDetect, setProbeDetectState] = useState(false);
+  const [probeBlock, setProbeBlockState] = useState(false);
+  const [probeDigest, setProbeDigestState] = useState(false);
   const [probes, setProbes] = useState<ProbeHit[] | null>(null);
   // Watchdog: a live toggle plus the read-only auto-recovery counters.
   const [watchdog, setWatchdog] = useState<WatchdogInfo | null>(null);
@@ -167,6 +171,8 @@ export function GeneralSettings() {
           setSavedAutoDel(ad);
           setMaintenanceState(s.maintenance_mode);
           setProbeDetectState(s.probe_detect);
+          setProbeBlockState(s.probe_block);
+          setProbeDigestState(s.probe_digest);
           if (s.probe_detect) loadProbes();
           setWatchdog(s.watchdog);
         })
@@ -432,6 +438,32 @@ export function GeneralSettings() {
             })
           }
         />
+        {probeDetect && (
+          <div className="mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3">
+            <ToggleRow
+              label={t("general.probeBlock")}
+              hint={t("general.probeBlockHint")}
+              checked={probeBlock}
+              onChange={(v) =>
+                run(async () => {
+                  await saveProbeBlock(v);
+                  setProbeBlockState(v);
+                })
+              }
+            />
+            <ToggleRow
+              label={t("general.probeDigest")}
+              hint={t("general.probeDigestHint")}
+              checked={probeDigest}
+              onChange={(v) =>
+                run(async () => {
+                  await saveProbeDigest(v);
+                  setProbeDigestState(v);
+                })
+              }
+            />
+          </div>
+        )}
         {probeDetect && (
           <div className="mt-3">
             {probes === null ? (

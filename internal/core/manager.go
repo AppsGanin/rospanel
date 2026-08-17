@@ -316,8 +316,9 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	go m.nodeWatchLoop()
 	go m.reconcileLoop()
 	go m.proxyLoop()
-	go m.geoLoop()    // auto-refresh geo databases on the operator's cadence
-	go m.ipListLoop() // ...and the iplist lists on their own, separate cadence
+	go m.geoLoop()         // auto-refresh geo databases on the operator's cadence
+	go m.ipListLoop()      // ...and the iplist lists on their own, separate cadence
+	go m.probeDigestLoop() // once-a-day summary of new secret-path scanners (opt-in)
 	go m.bruteGuardLoop()
 	go m.shaperLoop()              // per-user speed caps follow the addresses users connect from
 	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI

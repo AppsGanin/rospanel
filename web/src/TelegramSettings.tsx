@@ -64,6 +64,11 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
     label: "tg.evAbuseLabel",
     desc: "tg.evAbuseDesc",
   },
+  {
+    key: "probe",
+    label: "tg.evProbeLabel",
+    desc: "tg.evProbeDesc",
+  },
 ];
 
 // USER_EVENTS are what the user bot tells the person themselves. Keys must match
