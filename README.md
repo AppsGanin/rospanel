@@ -229,8 +229,9 @@ Traffic and time limits with auto-disable and quota auto-reset (day/week/month/y
 list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
 The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time. A **connection
-map** breaks down where clients connect from — distinct source IPs per country, resolved
-from the same geoip database Xray routes with (no external service, no extra download).
+map** breaks down where clients connect from — distinct source IPs per **country** (from the
+same geoip database Xray routes with) and per **network operator / ASN** (from a free
+iptoasn table the panel fetches itself); no external service.
 
 **The device limit — what it counts.** A user's device limit (or the one their plan sets) is
 a **single number enforced two ways**. On its own it caps **concurrent unique source IPs**: a

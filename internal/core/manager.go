@@ -147,6 +147,10 @@ type Manager struct {
 	geoLookupMu  sync.Mutex
 	geoLookup    *geo.CountryLookup
 	geoLookupMod time.Time
+	// asnTable mirrors geoLookup for the IP→ASN (provider) table.
+	asnLookupMu sync.Mutex
+	asnTable    *geo.ASNLookup
+	asnTableMod time.Time
 
 	proxyMu sync.Mutex
 	// proxies holds the local server's current egress proxies of each lane, keyed by

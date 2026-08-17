@@ -46,11 +46,17 @@ var sources = map[string]source{
 	// their pre-aggregated CIDRs in a single pass.
 	ipListGlobal: {urls: []string{"https://iplist.my-handbook.ru/?format=json"}},
 	ipListRussia: {urls: []string{"https://russia.iplist.opencck.org/?format=json"}},
+	// iptoasn's free IP→ASN table (gzipped TSV: range_start range_end asn cc org). No
+	// checksum published (verify:false), stored gzipped and decompressed at parse time.
+	// Panel-only, like the iplists: it resolves connection IPs to a provider for the
+	// geo map and is never read by Xray.
+	asnFile: {urls: []string{"https://iptoasn.com/data/ip2asn-combined.tsv.gz"}},
 }
 
 const (
 	ipListGlobal = "iplist-global.json"
 	ipListRussia = "iplist-russia.json"
+	asnFile      = "ip2asn.tsv.gz"
 )
 
 // ipListFiles maps the name a routing rule references ("iplist:<src>/<group>")
@@ -72,6 +78,10 @@ var dbNames = []string{"geoip.dat", "geosite.dat"}
 // Refresh/Ensure/Status stays on the .dat files alone and does not pull ~2.7 MB
 // of JSON it would never read.
 var ipListNames = []string{ipListGlobal, ipListRussia}
+
+// asnNames is the ASN table, on its own panel-only refresh (like the iplists, not the
+// Xray .dat files). One entry, but the same download/status machinery.
+var asnNames = []string{asnFile}
 
 // FileInfo is the on-disk state of one geo database (for the settings UI).
 type FileInfo struct {
@@ -111,6 +121,9 @@ func Refresh(dir string) error { return refresh(dir, dbNames, "geo") }
 // RefreshLists re-downloads the iplist databases (panel only).
 func RefreshLists(dir string) error { return refresh(dir, ipListNames, "iplist") }
 
+// RefreshASN downloads the IP→ASN table (panel only).
+func RefreshASN(dir string) error { return refresh(dir, asnNames, "asn") }
+
 // refresh downloads names into dir, logging under tag ("geo" / "iplist") so the
 // panel log tells the two independent databases — and their separate refresh
 // cadences — apart.
@@ -138,6 +151,9 @@ func Ensure(dir string) error { return ensure(dir, dbNames, "geo") }
 
 // EnsureLists downloads any missing iplist database (panel only, best-effort).
 func EnsureLists(dir string) error { return ensure(dir, ipListNames, "iplist") }
+
+// EnsureASN downloads the IP→ASN table if it is missing (panel only).
+func EnsureASN(dir string) error { return ensure(dir, asnNames, "asn") }
 
 func ensure(dir string, names []string, tag string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {

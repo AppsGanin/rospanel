@@ -40,6 +40,73 @@ func (m *Manager) countryLookup() *geo.CountryLookup {
 	return lk
 }
 
+// asnLookup returns an IP→ASN resolver built from ip2asn.tsv.gz, cached and rebuilt
+// only when the file changes. Returns nil when the table isn't downloaded yet.
+func (m *Manager) asnLookup() *geo.ASNLookup {
+	dir := m.assetDir()
+	if dir == "" {
+		return nil
+	}
+	path := filepath.Join(dir, "ip2asn.tsv.gz")
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	m.asnLookupMu.Lock()
+	defer m.asnLookupMu.Unlock()
+	if m.asnTable != nil && fi.ModTime().Equal(m.asnTableMod) {
+		return m.asnTable
+	}
+	lk, err := geo.LoadASNLookup(dir)
+	if err != nil {
+		logErr("geo map: ASN lookup build failed", "err", err)
+		return m.asnTable
+	}
+	m.asnTable = lk
+	m.asnTableMod = fi.ModTime()
+	return lk
+}
+
+// ConnectionASNs returns the breakdown of recent client connections by network
+// operator (ASN): per ASN, how many distinct source IPs connected and how active they
+// were. IPs no ASN range covers fall into the 0/"" bucket. Sorted by distinct IPs.
+func (m *Manager) ConnectionASNs() ([]model.ASNStat, error) {
+	lookup := m.asnLookup()
+	since := time.Now().AddDate(0, 0, -model.ConnectionRetentionDays).Unix()
+	stats, err := m.store.ConnectionIPStats(since)
+	if err != nil {
+		return nil, err
+	}
+	agg := make(map[uint32]*model.ASNStat)
+	for _, s := range stats {
+		var asn uint32
+		var org string
+		if lookup != nil {
+			if addr, err := netip.ParseAddr(s.IP); err == nil {
+				asn, org, _ = lookup.Lookup(addr)
+			}
+		}
+		row := agg[asn]
+		if row == nil {
+			row = &model.ASNStat{ASN: asn, Org: org}
+			agg[asn] = row
+		}
+		row.IPs++
+		row.Hits += s.Hits
+	}
+	out := make([]model.ASNStat, 0, len(agg))
+	for _, row := range agg {
+		out = append(out, *row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].IPs != out[j].IPs {
+			return out[i].IPs > out[j].IPs
+		}
+		return out[i].ASN < out[j].ASN
+	})
+	return out, nil
+}
+
 // ConnectionCountries returns the geo breakdown of recent client connections: per
 // country, how many distinct source IPs connected and how active they were. IPs no
 // country range covers (private/unknown) fall into the "" bucket. Sorted by distinct

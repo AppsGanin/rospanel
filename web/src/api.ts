@@ -474,6 +474,16 @@ export interface CountryStat {
 
 export const getStatsCountries = () => api<CountryStat[]>('api/stats/countries')
 
+// Connection breakdown by network operator (ASN). asn 0 / org '' = unknown/private.
+export interface ASNStat {
+  asn: number
+  org: string
+  ips: number
+  hits: number
+}
+
+export const getStatsASNs = () => api<ASNStat[]>('api/stats/asns')
+
 // onUnauthorized is invoked whenever an API call returns 401 (the session expired
 // or was revoked server-side). App registers a handler that drops back to the
 // login screen, so an expired session can't leave the user stuck on a dashboard

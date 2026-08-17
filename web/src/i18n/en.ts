@@ -747,6 +747,8 @@ const en: Dict = {
     total: "Total",
     blocklistMatches: "Blocklist matches",
     byCountry: "Connections by country",
+    byCountryTab: "Countries",
+    byAsnTab: "Providers",
     countryTotal: "{{n}} IPs total",
     countryIps: "{{n}} IPs",
     unknownCountry: "Unknown",
