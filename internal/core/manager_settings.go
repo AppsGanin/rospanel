@@ -750,10 +750,6 @@ func (m *Manager) SetProbeBlock(on bool) error {
 	return nil
 }
 
-// SetProbeDigest toggles the daily scanner-summary notification.
-func (m *Manager) SetProbeDigest(on bool) error {
-	return m.store.SetProbeDigest(on)
-}
 
 // Probes returns the IPs caught scanning for the hidden panel, most recent first.
 func (m *Manager) Probes(limit int) ([]model.ProbeHit, error) {

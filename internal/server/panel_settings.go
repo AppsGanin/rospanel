@@ -67,7 +67,6 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,
-		"probe_digest":         set.ProbeDigest,
 		"watchdog":             rt.mgr.Watchdog(),
 		"hwid":                 hwidSettingsView(set),
 		"user_autodelete_days": set.UserAutoDeleteDays,
@@ -321,21 +320,6 @@ func (rt *Router) saveProbeBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.mgr.SetProbeBlock(req.Enabled); err != nil {
-		writeManagerErr(w, err)
-		return
-	}
-	writeOK(w)
-}
-
-// saveProbeDigest toggles the daily scanner-summary notification.
-func (rt *Router) saveProbeDigest(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if err := rt.mgr.SetProbeDigest(req.Enabled); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

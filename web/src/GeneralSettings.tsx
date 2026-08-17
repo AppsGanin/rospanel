@@ -10,7 +10,6 @@ import {
   saveMaintenance,
   saveProbeDetect,
   saveProbeBlock,
-  saveProbeDigest,
   saveWatchdog,
   type WatchdogInfo,
   getStatusPage,
@@ -122,7 +121,6 @@ export function GeneralSettings() {
   // card is open.
   const [probeDetect, setProbeDetectState] = useState(false);
   const [probeBlock, setProbeBlockState] = useState(false);
-  const [probeDigest, setProbeDigestState] = useState(false);
   const [probes, setProbes] = useState<ProbeHit[] | null>(null);
   // Watchdog: a live toggle plus the read-only auto-recovery counters.
   const [watchdog, setWatchdog] = useState<WatchdogInfo | null>(null);
@@ -172,7 +170,6 @@ export function GeneralSettings() {
           setMaintenanceState(s.maintenance_mode);
           setProbeDetectState(s.probe_detect);
           setProbeBlockState(s.probe_block);
-          setProbeDigestState(s.probe_digest);
           if (s.probe_detect) loadProbes();
           setWatchdog(s.watchdog);
         })
@@ -448,17 +445,6 @@ export function GeneralSettings() {
                 run(async () => {
                   await saveProbeBlock(v);
                   setProbeBlockState(v);
-                })
-              }
-            />
-            <ToggleRow
-              label={t("general.probeDigest")}
-              hint={t("general.probeDigestHint")}
-              checked={probeDigest}
-              onChange={(v) =>
-                run(async () => {
-                  await saveProbeDigest(v);
-                  setProbeDigestState(v);
                 })
               }
             />

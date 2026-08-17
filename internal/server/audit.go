@@ -80,7 +80,6 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/maintenance":     set("maintenance"),
 	"POST /api/settings/probe-detect":    set("probeDetect"),
 	"POST /api/settings/probe-block":     set("probeBlock"),
-	"POST /api/settings/probe-digest":    set("probeDigest"),
 	"POST /api/settings/watchdog":        set("watchdog"),
 	"POST /api/settings/status-page":     set("statusPage"),
 	"POST /api/settings/dns":             set("dns"),

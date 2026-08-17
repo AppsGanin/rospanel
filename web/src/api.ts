@@ -790,7 +790,6 @@ export interface SettingsInfo extends SubSettings {
   maintenance_mode: boolean
   probe_detect: boolean
   probe_block: boolean
-  probe_digest: boolean
   watchdog: WatchdogInfo
   hwid: HWIDSettings
 }
@@ -986,13 +985,6 @@ export const saveProbeDetect = (enabled: boolean) =>
 // Drop flagged scanner IPs at the firewall (nftables).
 export const saveProbeBlock = (enabled: boolean) =>
   api<{ ok: boolean }>('api/settings/probe-block', {
-    method: 'POST',
-    body: JSON.stringify({ enabled }),
-  })
-
-// Daily scanner-summary notification.
-export const saveProbeDigest = (enabled: boolean) =>
-  api<{ ok: boolean }>('api/settings/probe-digest', {
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })
