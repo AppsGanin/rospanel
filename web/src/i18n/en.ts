@@ -1907,7 +1907,7 @@ const en: Dict = {
     noPlans: "No plans yet. Press “Create” to add the first one.",
     planGroups: "Access groups",
     planGroupsHint:
-      "Whoever is put on this plan — by payment, by hand or at registration — joins the ticked groups, and leaves them when the plan changes. Groups assigned by hand in the user card are kept. Tick nothing and the plan grants no groups — and moving someone onto it takes away the ones their previous plan granted. Note that a user left with no groups at all regains access to every connection, so the free plan usually needs groups ticked too.",
+      "Whoever is put on this plan — by payment, by hand or at registration — joins the ticked groups, and leaves them when the plan changes. Groups assigned by hand in the user card are kept. Tick nothing and the plan grants no groups — and moving someone onto it takes away the ones their previous plan granted.",
     planGroupsNone: "No groups yet — create them under Users → Groups.",
     nUsers: "{{count}} users",
     afterTrial: "after the trial",
