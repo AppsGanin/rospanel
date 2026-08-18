@@ -121,16 +121,52 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "values cannot be negative")
 		return
 	}
+	// The decoy is validated BEFORE anything is written, the way the panel does it: the
+	// template name is a slug that has to exist, and storing one that doesn't would
+	// leave the panel unable to build its masquerade on the next boot.
+	var newDecoy http.Handler
+	if req.DecoyTemplate != nil {
+		h, err := decoy.New(*req.DecoyTemplate, decoy.LoadStamp(rt.dataDir))
+		if err != nil {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "unknown decoy template")
+			return
+		}
+		newDecoy = h
+	}
 	// Each apply is the manager method the panel screen calls, so validation, audit
 	// rows and the Xray reconcile that some of them trigger all behave identically.
+	//
+	// Three of these ALSO have a live side the manager does not own — the decoy
+	// handler, the probe-detection flag and the maintenance switch are fields on this
+	// Router, read per request. Writing only the database would store the new value and
+	// keep serving the old behaviour until the next restart, which is the kind of
+	// "it didn't work" an operator cannot debug.
 	apply := []struct {
 		set bool
 		fn  func() error
 	}{
 		{req.XrayDNS != nil, func() error { return rt.mgr.SetXrayDNS(*req.XrayDNS) }},
-		{req.DecoyTemplate != nil, func() error { return rt.mgr.SetDecoyTemplate(*req.DecoyTemplate) }},
-		{req.MaintenanceMode != nil, func() error { return rt.mgr.SetMaintenanceMode(*req.MaintenanceMode) }},
-		{req.ProbeDetect != nil, func() error { return rt.mgr.SetProbeDetect(*req.ProbeDetect) }},
+		{req.DecoyTemplate != nil, func() error {
+			if err := rt.mgr.SetDecoyTemplate(*req.DecoyTemplate); err != nil {
+				return err
+			}
+			rt.setDecoy(newDecoy)
+			return nil
+		}},
+		{req.MaintenanceMode != nil, func() error {
+			if err := rt.mgr.SetMaintenanceMode(*req.MaintenanceMode); err != nil {
+				return err
+			}
+			rt.setMaintenance(*req.MaintenanceMode)
+			return nil
+		}},
+		{req.ProbeDetect != nil, func() error {
+			if err := rt.mgr.SetProbeDetect(*req.ProbeDetect); err != nil {
+				return err
+			}
+			rt.setProbeDetect(*req.ProbeDetect)
+			return nil
+		}},
 		{req.ProbeBlock != nil, func() error { return rt.mgr.SetProbeBlock(*req.ProbeBlock) }},
 		{req.WatchdogEnabled != nil, func() error { return rt.mgr.SetWatchdog(*req.WatchdogEnabled) }},
 		{req.UserAutoDeleteDays != nil, func() error { return rt.mgr.SetUserAutoDelete(*req.UserAutoDeleteDays) }},

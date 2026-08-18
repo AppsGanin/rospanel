@@ -523,3 +523,47 @@ func TestAPIServerRoutingRoundTrip(t *testing.T) {
 		t.Errorf("GET routing for a missing server = %d, want 404", code)
 	}
 }
+
+// Three settings have a live side the manager does not own: the decoy handler, the
+// probe-detection flag and the maintenance switch are fields on the Router, read on
+// every request. An API that wrote only the database would store the new value and keep
+// serving the old behaviour until the next restart — the panel swaps them immediately,
+// and so must /v1, or the two surfaces disagree about what "applied" means.
+func TestAPISettingsTakeEffectLive(t *testing.T) {
+	rt, _ := apiTestRouter(t)
+	rt.decoy = http.NotFoundHandler() // a sentinel the swap must replace
+
+	before := rt.currentDecoy()
+	code, data := apiCall(t, rt, "PATCH", "/v1/settings",
+		`{"decoy_template":"coming-soon","maintenance_mode":true,"probe_detect":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("PATCH = %d: %s", code, data)
+	}
+
+	rt.mu.RLock()
+	maintenance, probes := rt.maintenance, rt.probeDetect
+	rt.mu.RUnlock()
+	if !maintenance {
+		t.Error("maintenance_mode was stored but the live switch was not flipped")
+	}
+	if !probes {
+		t.Error("probe_detect was stored but the live flag was not flipped")
+	}
+	if rt.currentDecoy() == before {
+		t.Error("decoy_template was stored but the live decoy handler was not swapped")
+	}
+
+	// An unknown template is refused before anything is written, so the panel can still
+	// build its masquerade after a restart.
+	code, _ = apiCall(t, rt, "PATCH", "/v1/settings", `{"decoy_template":"no-such-template"}`)
+	if code != http.StatusBadRequest {
+		t.Errorf("unknown decoy template = %d, want 400", code)
+	}
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if set.DecoyTemplate == "no-such-template" {
+		t.Error("an unknown decoy template was stored")
+	}
+}
