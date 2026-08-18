@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.9.0](https://github.com/AppsGanin/rospanel/compare/v2.8.0...v2.9.0) (2026-08-18)
+
+
+### Features
+
+* **api:** publish the configuration surface over /v1 (and therefore MCP) ([7959249](https://github.com/AppsGanin/rospanel/commit/79592490a1d96b275c6d97f71d7f397849b6fb36))
+* **config:** snapshot/rollback the whole server config, not just routing ([e39bcbb](https://github.com/AppsGanin/rospanel/commit/e39bcbb82919bd450ccd936839e64ffcf3d61cef))
+* **node:** surface sync-quality + smart backoff for a limping transport ([022ef8b](https://github.com/AppsGanin/rospanel/commit/022ef8ba06950276fea7be2462343be0b7aaddca))
+* **ops:** make the Xray watchdog operator-visible and toggleable ([5a723d8](https://github.com/AppsGanin/rospanel/commit/5a723d8379a02084f8ac91601f58d4476f6a5f13))
+* **security:** probe detection — optional firewall auto-block + daily digest ([6bc6bcc](https://github.com/AppsGanin/rospanel/commit/6bc6bcc87baabcbda8bf3a72dd25eb14cccb9d89))
+* **stats:** connection map by network operator (ASN), not just country ([2df16d7](https://github.com/AppsGanin/rospanel/commit/2df16d7ecc4f4a54f4c9d88d79e942ef6636ade9))
+* step-up on reset/restore; widen egress floor; fix misleading hint ([302cb98](https://github.com/AppsGanin/rospanel/commit/302cb982ad5ed15db913a479b68164a66d33eb78))
+* **tg:** split the client-bot device line into IP and HWID counts ([b4b5e14](https://github.com/AppsGanin/rospanel/commit/b4b5e14ad6f5d65623e9dabb07c930e19860d473))
+
+
+### Bug Fixes
+
+* act on the three-agent review of the new API surface ([c162af9](https://github.com/AppsGanin/rospanel/commit/c162af9b8061f87b03ee7c1c433862c164c9d219))
+* **api:** apply the live half of the settings a PATCH changes ([fbdefab](https://github.com/AppsGanin/rospanel/commit/fbdefab44efa6ab2bd90d7d1725b83b35ee7e502))
+* bound device roster, cache public pages, close billing gaps ([5e2a84a](https://github.com/AppsGanin/rospanel/commit/5e2a84a812447bde797b584ed9b5512292486fe0))
+* bound probeblock set, quiet nft failures, snapshot-rollback UX, geo re-parse ([6fe3f86](https://github.com/AppsGanin/rospanel/commit/6fe3f86b652f02dd13728f494f10143ca67e40f7))
+* error on ASN byte-cap truncation; close probeblock disarm race ([028cad5](https://github.com/AppsGanin/rospanel/commit/028cad5c4ef7673e2c18f0cbf3c5ded200c89811))
+* guard restores against a newer schema, unlock decoy reads, bound broadcasts ([032e0b7](https://github.com/AppsGanin/rospanel/commit/032e0b7067a9402b7702da4cd61cad615bee8644))
+* harden snapshot rollback, node backoff, probeblock, ASN parsing ([ef2f1bc](https://github.com/AppsGanin/rospanel/commit/ef2f1bc98a3497f3fe4adf3282a364cc1fdd01d8))
+* **node:** force HTTP/1.1 for the sync long-poll (stop GOAWAY flapping) ([c01a9c9](https://github.com/AppsGanin/rospanel/commit/c01a9c900197f00edf73da226787610a5f40143c))
+* paid-renewal quota, tunnel→control-API escape, order cancel guard ([4e1664d](https://github.com/AppsGanin/rospanel/commit/4e1664dc749385e6982b56e96a3964f2b010483d))
+* support impersonation, resurrected nodes, half-applied rollbacks ([53b9b7d](https://github.com/AppsGanin/rospanel/commit/53b9b7d880929a6fa24c92c2efaa33edbaf3dc78))
+* the rest of the three-agent sweep ([daa530e](https://github.com/AppsGanin/rospanel/commit/daa530e2f188af99f345bc03d1755633326b349c))
+* **watchdog:** still detect+alert a wedged Xray when auto-recovery is off ([6aeeab4](https://github.com/AppsGanin/rospanel/commit/6aeeab4fff937e94f8074e5e0d69b1cbe33e507a))
+
 ## [2.8.0](https://github.com/AppsGanin/rospanel/compare/v2.7.1...v2.8.0) (2026-08-15)
 
 
