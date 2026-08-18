@@ -821,7 +821,14 @@ included.
 Above that sits a hard ceiling of **512 KB per call**. A response over it is shortened by
 whole rows, and `meta` says so — `limit` becomes the count actually returned while `total`
 still reports how many exist, so paging on `limit`/`offset` reaches the rest. The result
-stays valid JSON. (`GET /v1/backup` is not offered as a tool at all: its body is a tarball.)
+stays valid JSON.
+
+**The backup surface is not offered as a tool at all.** `GET /v1/backup` because its body is
+a tarball an assistant cannot read, and `GET /v1/backup/info` because knowing what a dump
+would contain is only useful to somebody about to take one — an operator's job, done from the
+panel where the file actually lands somewhere. Restoring is not in `/v1` in any form: it lives
+in the panel behind a session and a re-entered password, so no key, and no assistant holding
+one, can put a backup back.
 
 The tool list is generated from the OpenAPI document above, so it never drifts from the API:
 an endpoint added to `/v1` becomes a tool with no one remembering to register it, and a

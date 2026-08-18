@@ -111,10 +111,20 @@ func TestMCPWindowAndToolOptOut(t *testing.T) {
 		t.Error("a non-list tool was given a limit it does not accept")
 	}
 
-	if _, ok := byName["get_backup"]; ok {
-		t.Error("the .tar.gz download is offered as a tool")
+	// The whole backup surface is kept away from assistants: the download because its
+	// body is a tarball an assistant cannot read, and the manifest because describing
+	// what a dump would contain is only useful to somebody about to take one — which is
+	// an operator's job, done from the panel where the file actually goes somewhere.
+	for _, name := range []string{"get_backup", "get_backup_info"} {
+		if _, ok := byName[name]; ok {
+			t.Errorf("%s is offered as a tool", name)
+		}
 	}
-	if _, ok := byName["get_backup_info"]; !ok {
-		t.Error("the opt-out took the neighbouring JSON route with it")
+	// The opt-out has to stay per-route: neighbouring Monitoring endpoints are exactly
+	// what an assistant is for, and an opt-out that swept the tag would take them too.
+	for _, name := range []string{"get_system", "get_metrics", "get_summary"} {
+		if _, ok := byName[name]; !ok {
+			t.Errorf("%s went missing — the opt-out took a neighbouring route with it", name)
+		}
 	}
 }
