@@ -91,8 +91,12 @@ func (u *ChatMemberUpdated) IsAdmin() bool {
 // the forum topic a group message belongs to — the support relay keys on it to tell
 // which user's thread an admin is answering in.
 type Message struct {
-	MessageID       int64       `json:"message_id"`
-	From            *User       `json:"from"`
+	MessageID int64 `json:"message_id"`
+	From      *User `json:"from"`
+	// SenderChat is set instead of From when a message is posted AS a chat rather than
+	// a person: an anonymous group admin, or a linked channel. Only administrators can
+	// send that way, which is why the support relay accepts it.
+	SenderChat      *Chat       `json:"sender_chat"`
 	Chat            Chat        `json:"chat"`
 	Text            string      `json:"text"`
 	MessageThreadID int64       `json:"message_thread_id"`
@@ -171,6 +175,7 @@ type CallbackQuery struct {
 // User / Chat carry only the identifiers the bot needs.
 type User struct {
 	ID        int64  `json:"id"`
+	IsBot     bool   `json:"is_bot"`
 	Username  string `json:"username"`
 	FirstName string `json:"first_name"`
 	// LangCode is the IETF tag of the client's interface language. Nothing reads it

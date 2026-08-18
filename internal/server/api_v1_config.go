@@ -444,6 +444,7 @@ func (rt *Router) apiCreateConfigSnapshot(w http.ResponseWriter, r *http.Request
 // apiRollbackConfigSnapshot restores the whole server config from a snapshot. Xray is
 // regenerated and restarted fleet-wide, because nodes inherit the master's fields.
 func (rt *Router) apiRollbackConfigSnapshot(w http.ResponseWriter, _ *http.Request, id int64) {
+	defer rt.syncDecoyFromSettings() // a snapshot can restore a different masquerade
 	if err := rt.mgr.RollbackServerConfig(id); err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -548,4 +549,23 @@ func storeNodeEditFrom(n *model.Node) store.NodeEdit {
 		OperaCountry:       n.OperaCountry,
 		TrafficCoefficient: n.TrafficCoefficient,
 	}
+}
+
+
+// syncDecoyFromSettings rebuilds the live decoy handler from the stored template.
+//
+// The masquerade is a handler held by the router, not a value the manager can reach, so
+// any path that changes decoy_template WITHOUT going through the settings write — a
+// config-snapshot rollback restores it along with everything else — has to re-swap it
+// here, or the panel keeps serving the previous site until it restarts.
+func (rt *Router) syncDecoyFromSettings() {
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		return
+	}
+	h, err := decoy.New(set.DecoyTemplate, decoy.LoadStamp(rt.dataDir))
+	if err != nil {
+		return // an unknown template: keep serving the one that works
+	}
+	rt.setDecoy(h)
 }

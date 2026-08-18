@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -870,6 +871,9 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 // SetNodeEnabled toggles a node and wakes it (a disabled node is told to stop).
 func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 	if err := m.store.SetNodeEnabled(id, enabled); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalidCode("err.nodeNotFound", "нода не найдена")
+		}
 		return err
 	}
 	// Resolve (on enable) or drop (on disable) this node's lane proxies in the

@@ -985,10 +985,15 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	// panel's complete list (built-in lane + every custom Hysteria2 inbound that asks
 	// for hopping); a panel too old to send it falls back to the three scalar fields,
 	// which describe exactly the built-in lane.
-	if ranges := hopRanges(m); len(ranges) > 0 {
-		if err := hop.EnsureAll(ranges); err != nil {
-			slog.Warn("node: port-hopping setup failed", "err", err)
-		}
+	// Called unconditionally, empty list included: EnsureAll with nothing to funnel IS
+	// the teardown, and the panel sends nothing precisely to ask for one (see
+	// nodeHopMeta). Guarding on len(ranges) > 0 meant a node that stopped hopping —
+	// Hysteria2 switched off, or its last hopping inbound deleted — kept redirecting the
+	// whole old UDP range onto the old target, while the panel's reserved-port set no
+	// longer knew about it, so a later custom UDP inbound placed in that range was
+	// silently swallowed.
+	if err := hop.EnsureAll(hopRanges(m)); err != nil {
+		slog.Warn("node: port-hopping setup failed", "err", err)
 	}
 	// Per-IP connection guard on the public TCP ports.
 	if len(m.ConnGuardPorts) > 0 {
