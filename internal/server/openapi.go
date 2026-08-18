@@ -46,7 +46,11 @@ type oaRoute struct {
 	meta        bool
 	status      int  // success status; 0 ⇒ 200
 	noAuth      bool // key-free route; overrides the document-wide bearerAuth
-	noMCP       bool // hide from the MCP tool list (a body no assistant can read)
+	// noMCP keeps a route out of the MCP tool list. Two reasons, both deliberate: a
+	// body no assistant can read (a tarball), and an operation an assistant should not
+	// be able to reach at all — restoring state is a human decision, and the whole
+	// point of handing an assistant a key is that its reach is narrower than the key's.
+	noMCP bool
 	// destructive marks a write an assistant should ask a human about. It is declared
 	// here rather than guessed from the summary: the guess reads English words out of
 	// the prose, so rewording a sentence silently changes how a tool is presented, and
@@ -300,7 +304,7 @@ func apiSpecRoutes() []oaRoute {
 		// assistant can do with half a megabyte of it is spend a context window.
 		{method: "GET", path: "/v1/backup", tag: "Monitoring", noMCP: true,
 			summary: "Download a full backup — responds with a .tar.gz body, not the JSON envelope"},
-		{method: "GET", path: "/v1/backup/info", tag: "Monitoring",
+		{method: "GET", path: "/v1/backup/info", tag: "Monitoring", noMCP: true,
 			summary: "What a backup taken now would contain",
 			resp:    t(backup.Manifest{})},
 

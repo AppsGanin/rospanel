@@ -307,7 +307,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	}))
 	call("post_config_snapshots_by_id_rollback", map[string]any{"id": snap})
 	// Rolling back takes an auto-snapshot of its own, so this deletes a save-point that
-	// is definitely not the one just restored from.
+	// still exists rather than the one just restored from.
 	call("delete_config_snapshots_by_id", map[string]any{"id": snap})
 
 	added := newID("post_nodes", call("post_nodes", map[string]any{
