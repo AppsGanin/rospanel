@@ -150,6 +150,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"get_nodes_by_id_health":      node.ID,
 		"get_nodes_by_id_logs":        model.LocalNodeID,
 		"get_servers_by_id_inbounds":  model.LocalNodeID,
+		"get_servers_by_id_routing":   model.LocalNodeID,
 		"get_billing_orders_by_id":    order.ID,
 	}
 	tools := mcp.BuildTools(OpenAPISpec(base), true)
@@ -283,6 +284,31 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 			"transport": model.TrWS, "security": model.SecTLS, "path": "/sweep",
 		},
 	})
+
+	// The configuration surface. Settings is a partial update, so one field is enough
+	// to prove the shape; routing is a full replace against the master (server 0).
+	call("patch_settings", map[string]any{
+		"body": map[string]any{"user_autodelete_days": 7},
+	})
+	call("post_servers_by_id_routing", map[string]any{
+		"id": model.LocalNodeID,
+		"body": map[string]any{
+			"routing":       map[string]any{"block_ads": true},
+			"xray_dns":      "1.1.1.1",
+			"warp_enabled":  false,
+			"opera_enabled": false,
+			"opera_country": "EU",
+		},
+	})
+	call("post_servers_by_id_xray_restart", map[string]any{"id": model.LocalNodeID})
+
+	snap := newID("post_config_snapshots", call("post_config_snapshots", map[string]any{
+		"body": map[string]any{"label": "sweep"},
+	}))
+	call("post_config_snapshots_by_id_rollback", map[string]any{"id": snap})
+	// Rolling back takes an auto-snapshot of its own, so this deletes a save-point that
+	// is definitely not the one just restored from.
+	call("delete_config_snapshots_by_id", map[string]any{"id": snap})
 
 	added := newID("post_nodes", call("post_nodes", map[string]any{
 		"body": map[string]any{"name": "sweep-added", "host": "added.example.com"},

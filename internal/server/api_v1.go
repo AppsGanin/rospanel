@@ -192,6 +192,8 @@ func (rt *Router) apiMux() http.Handler {
 	hf("GET /v1/stats/nodes/series", rt.apiStatsNodeSeries)
 	hf("GET /v1/stats/users", rt.apiStatsUsers)
 	hf("GET /v1/stats/abuse", rt.apiStatsAbuse)
+	hf("GET /v1/stats/countries", rt.apiStatsCountries)
+	hf("GET /v1/stats/asns", rt.apiStatsASNs)
 
 	// The journals. Read-only, and the admin trail includes what this very key does.
 	hf("GET /v1/events", rt.apiEvents)
@@ -252,6 +254,19 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/servers/{id}/inbounds", "apiInboundAdded", idFn(rt.apiCreateInbound))
 	nodeAudit("POST /v1/inbounds/{id}", "apiInboundChanged", idFn(rt.apiUpdateInbound))
 	nodeAudit("DELETE /v1/inbounds/{id}", "apiInboundDeleted", idFn(rt.apiDeleteInbound))
+
+	// The configuration surface. Everything below changes how the servers RUN, so each
+	// mutation is audited exactly like a node change — see api_v1_config.go for what is
+	// deliberately absent (the admin roster, API keys, the panel's secret path).
+	hf("GET /v1/settings", rt.apiGetSettings)
+	nodeAudit("PATCH /v1/settings", "apiSettings", rt.apiPatchSettings)
+	id("GET /v1/servers/{id}/routing", rt.apiGetServerRouting)
+	nodeAudit("POST /v1/servers/{id}/routing", "apiRouting", idFn(rt.apiSetServerRouting))
+	nodeAudit("POST /v1/servers/{id}/xray-restart", "apiXrayRestart", idFn(rt.apiXrayRestart))
+	hf("GET /v1/config/snapshots", rt.apiConfigSnapshots)
+	nodeAudit("POST /v1/config/snapshots", "apiSnapshotTaken", rt.apiCreateConfigSnapshot)
+	nodeAudit("POST /v1/config/snapshots/{id}/rollback", "apiSnapshotRollback", idFn(rt.apiRollbackConfigSnapshot))
+	nodeAudit("DELETE /v1/config/snapshots/{id}", "apiSnapshotDeleted", idFn(rt.apiDeleteConfigSnapshot))
 
 	// Webhooks: where the panel pushes events. Mutations are audited — an endpoint
 	// added here starts receiving user and payment data.
