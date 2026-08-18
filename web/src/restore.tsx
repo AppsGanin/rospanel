@@ -102,11 +102,13 @@ export function useRestore() {
     }
   };
 
-  const restore = async () => {
+  // password is the step-up the panel requires: a restore replaces the admin roster
+  // this session authenticates against, so a session cookie alone must not be enough.
+  const restore = async (password: string) => {
     if (!file) return;
     setRestoring(true);
     try {
-      await restoreBackup(file);
+      await restoreBackup(file, password);
       setDone(inspection?.manifest ?? null);
     } catch (e) {
       notifyError(errMessage(e));

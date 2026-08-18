@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -218,5 +220,62 @@ func TestRosterMutationsRequireStepUp(t *testing.T) {
 	}
 	if admins, _ = st.ListAdmins(); len(admins) != 2 {
 		t.Fatalf("roster = %d after a successful create, want 2", len(admins))
+	}
+}
+
+// Factory reset wipes every user, the admin roster, the TLS identity and the secret
+// path, and a restore replaces the whole data directory including the roster this
+// session authenticates against. Both are irreversible, so both re-ask for the
+// password — a stolen session cookie must not be enough to trigger either. (Changing
+// a payment key already re-prompts; these are strictly more destructive.)
+func TestDestructiveOpsRequireStepUp(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+
+	// verifyStepUp waives the check until the first-run wizard is done, so mark setup
+	// complete — otherwise these would pass with no password at all, by design.
+	if err := st.SetSetupDone(true); err != nil {
+		t.Fatalf("setup done: %v", err)
+	}
+
+	post := func(body string) int {
+		req := httptest.NewRequest("POST", "/api/reset", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(admin)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := post(`{}`); got != http.StatusForbidden {
+		t.Errorf("reset with no step-up password = %d, want 403", got)
+	}
+	if got := post(`{"current_password":"not-it"}`); got != http.StatusForbidden {
+		t.Errorf("reset with a wrong step-up password = %d, want 403", got)
+	}
+	// The database must still be there: a refused reset must not have wiped anything.
+	if _, err := st.GetSettings(); err != nil {
+		t.Fatalf("settings unreadable after a refused reset: %v", err)
+	}
+
+	// The restore endpoint carries the password as a form field (it is multipart).
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("backup", "b.tar.gz")
+	if err != nil {
+		t.Fatalf("form file: %v", err)
+	}
+	_, _ = fw.Write([]byte("not a real archive"))
+	_ = mw.WriteField("current_password", "not-it")
+	mw.Close()
+
+	req := httptest.NewRequest("POST", "/api/restore", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(admin)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("restore with a wrong step-up password = %d, want 403", rec.Code)
 	}
 }
