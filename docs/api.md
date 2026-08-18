@@ -482,6 +482,103 @@ Disabled lanes and inbounds are included, so a grant can be prepared before the
 connection is switched on. Assembling those tokens by hand works too — but a typo
 grants nothing, silently, which is exactly what this endpoint prevents.
 
+### Server configuration
+
+The endpoints above operate a panel; these configure one. Everything here mirrors a
+screen in the panel and calls the same code behind it, so a value the UI refuses is
+refused here too.
+
+Two things are deliberately absent. **Administrators and API keys** have no endpoints:
+a key able to mint keys turns one leak into permanent, self-renewing access, and that
+decision belongs behind a session with a password prompt. **The panel's secret path**
+is never returned by any `/v1` route — it is the obscurity layer in front of the panel,
+not a setting to read out.
+
+```
+GET   $BASE/v1/settings                        → the operational knobs
+PATCH $BASE/v1/settings                        → change some of them
+GET   $BASE/v1/servers/{id}/routing            → routing, DNS and egress backends
+POST  $BASE/v1/servers/{id}/routing            → change them
+POST  $BASE/v1/servers/{id}/xray-restart       → restart that server's Xray
+GET   $BASE/v1/config/snapshots                → config save-points
+POST  $BASE/v1/config/snapshots                → take one
+POST  $BASE/v1/config/snapshots/{id}/rollback  → restore the server config from one
+DELETE $BASE/v1/config/snapshots/{id}          → forget one
+```
+
+`PATCH /v1/settings` applies **only the fields the body carries**. Everything absent is
+left as it is, which is what makes it safe to read the object, change one value and send
+that one value back — re-posting the whole thing would also re-apply whatever another
+operator changed in between. The grouped fields (`hwid_*`, `local_backup_*`) are stored
+by a single write internally, so they overlay onto the current row rather than resetting
+their siblings to zero.
+
+```bash
+curl -X PATCH $BASE/v1/settings -H "Authorization: Bearer $KEY" \
+     -H 'Content-Type: application/json' -d '{"maintenance_mode":true}'
+```
+
+```json
+{ "data": {
+  "xray_dns": "https://dns.example/dns-query\n1.1.1.1",
+  "decoy_template": "coming-soon",
+  "decoy_templates": ["coming-soon", "YouTube", "…"],
+  "maintenance_mode": true,
+  "probe_detect": true, "probe_block": false,
+  "watchdog_enabled": true, "watchdog_restarts": 0,
+  "user_autodelete_days": 0,
+  "hwid_enabled": false, "hwid_require": true,
+  "hwid_fallback_limit": 0, "hwid_ttl_days": 30,
+  "local_backup_cron": "", "local_backup_keep": 7,
+  "sub_path": "sub", "warp_enabled": false, "warp_registered": true
+} }
+```
+
+Three of these have an effect the database alone does not carry — the masquerade
+template, scanner detection and maintenance mode are consulted on every request — so the
+API swaps them live exactly as the panel does. An unknown `decoy_template` is refused
+before anything is written; a `xray_dns` entry that is not an IP, `host:port`, URL or
+`localhost` is refused the same way the panel refuses it, because a DNS server Xray
+cannot parse makes every later config regeneration fail.
+
+**Routing** is per server, and server `0` is the panel's own machine — the same numbering
+`/v1/servers/{id}/inbounds` uses. A `GET` and a `POST` speak the same shape:
+
+```json
+{ "data": {
+  "routing": { "block_ads": true, "block_bittorrent": false, "lanes": [], "…": null },
+  "xray_dns": "1.1.1.1",
+  "warp_enabled": false,
+  "opera_enabled": false,
+  "opera_country": "EU"
+} }
+```
+
+An omitted field is **left unchanged**; `routing`, when present, replaces the rule set
+wholesale. The split is deliberate: merging rule *lists* has no meaning a caller could
+predict (does a shorter list delete rules or leave them?), while silently switching an
+egress backend off because a body did not mention it is how tunnelled traffic starts
+leaving from the server's own IP. So send `routing` to change rules, and name only the
+backends you actually mean to move.
+
+**Snapshots** capture the whole server config — protocols, ports, REALITY, routing,
+egress, DNS, decoy and the custom inbounds — as one save-point. A rollback restores all
+of it *except* the certificate and domain, so an undo can never break the live cert, and
+takes an automatic save-point of the current state first, so the rollback is itself
+undoable. It regenerates and restarts Xray; because nodes inherit the master's fields,
+that restart is fleet-wide and every live connection drops.
+
+```bash
+curl -X POST $BASE/v1/config/snapshots -H "Authorization: Bearer $KEY" \
+     -H 'Content-Type: application/json' -d '{"label":"before the egress change"}'
+```
+
+The answer carries the save-point that call made, by id — not "the newest one", which
+would be somebody else's snapshot if a create landed in between.
+
+`xray-restart` is direct for server `0` and queued for a node, which picks it up on its
+next sync — a `200` there means *accepted*, not *done*.
+
 ### Stats
 
 ```
@@ -537,6 +634,28 @@ plots a line per server:
 
 Servers that carried nothing across the whole window are left out entirely; the ones
 that appear have a row for every day.
+
+Where the connections came from, rather than how much they carried:
+
+```
+GET $BASE/v1/stats/countries  → recent connections grouped by country
+GET $BASE/v1/stats/asns       → the same, grouped by network operator
+```
+
+Both count **distinct source IPs** and their activity over the connection retention
+window, busiest first. `asn` is `0` and `org` empty for an address no routing table
+covers (a private or unrouted one):
+
+```json
+{ "data": [
+  { "asn": 15169, "org": "GOOGLE", "ips": 23, "hits": 2548 },
+  { "asn": 13335, "org": "CLOUDFLARENET", "ips": 4, "hits": 61 }
+] }
+```
+
+Each answer is computed from the whole connections table, so both are memoized for
+about half a minute — two calls a second get the same figures, and the panel keeps its
+one database connection for everything else.
 
 ### Which totals mean what
 
@@ -704,9 +823,17 @@ whole rows, and `meta` says so — `limit` becomes the count actually returned w
 still reports how many exist, so paging on `limit`/`offset` reaches the rest. The result
 stays valid JSON. (`GET /v1/backup` is not offered as a tool at all: its body is a tarball.)
 
-The tool list is generated from the OpenAPI document above, so it never drifts from the API,
-and each tool carries the annotations a client uses to decide whether to ask its human first
-(`readOnlyHint`, `destructiveHint`). Answers come back as text and, when the panel replied
+The tool list is generated from the OpenAPI document above, so it never drifts from the API:
+an endpoint added to `/v1` becomes a tool with no one remembering to register it, and a
+removed one disappears. That includes the configuration half — an assistant on the `/write`
+address can read and change settings, rewrite a server's routing, take and roll back config
+save-points and restart Xray.
+
+Each tool carries the annotations a client uses to decide whether to ask its human first
+(`readOnlyHint`, `destructiveHint`). Which writes count as destructive is **declared by the
+route**, not guessed from its wording — a rewritten sentence must not be able to turn a
+warning off, and the calls that reroute traffic, restart Xray, roll the config back or take
+the panel into maintenance are all flagged. Answers come back as text and, when the panel replied
 with JSON, as `structuredContent` too; one answer is capped so a single call cannot fill the
 assistant's context — ask for a smaller page (`limit`/`offset`) rather than the lot.
 

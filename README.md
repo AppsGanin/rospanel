@@ -375,7 +375,10 @@ by a recipient table, so an interrupted broadcast **resumes instead of restartin
 gets the message twice.
 
 **REST API** with named keys (`Authorization: Bearer`), **OpenAPI generated from the code** and
-Swagger UI; **webhooks** send HMAC-SHA256 signed events with retries. **Prometheus metrics**
+Swagger UI. It covers both halves of the panel: the users, plans, orders and servers you
+operate, and the configuration behind them — settings, per-server routing and DNS, config
+save-points with rollback. Administrators, API keys and the panel's secret path are
+deliberately not exposed. **Webhooks** send HMAC-SHA256 signed events with retries. **Prometheus metrics**
 at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, host stats and
 one series per node. An **MCP server** hands the same API to an AI assistant, with the tool
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes

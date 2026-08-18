@@ -105,3 +105,34 @@ func containsRef(v any) bool {
 	}
 	return false
 }
+
+// A tool that can reroute every user's traffic, restart Xray, roll the whole server
+// config back or take the panel into maintenance must reach the assistant marked
+// destructive, so its client asks a human first.
+//
+// The generic rule matches English words in the path and summary, which is exactly why
+// this test exists: the routing write contains none of them, and the rollback matched
+// only because its summary happened to say "restarts". Rewording either sentence used to
+// turn the warning off with nothing to notice.
+func TestDestructiveToolsAreFlagged(t *testing.T) {
+	tools := mcp.BuildTools(server.OpenAPISpec("https://panel.example/api"), true)
+	byName := map[string]mcp.Tool{}
+	for _, tl := range tools {
+		byName[tl.Name] = tl
+	}
+	for _, name := range []string{
+		"post_servers_by_id_routing",
+		"post_servers_by_id_xray_restart",
+		"post_config_snapshots_by_id_rollback",
+		"patch_settings",
+	} {
+		tl, ok := byName[name]
+		if !ok {
+			t.Errorf("%s is missing from the tool list", name)
+			continue
+		}
+		if hint, _ := tl.Annotations["destructiveHint"].(bool); !hint {
+			t.Errorf("%s is not flagged destructive — an assistant will call it without asking", name)
+		}
+	}
+}

@@ -42,11 +42,16 @@ type oaRoute struct {
 	// the struct cannot know — see requestBodySchema.
 	reqRequired []string
 	resp        reflect.Type // response data type, nil ⇒ generic object
-	list                       bool
-	meta                       bool
-	status                     int  // success status; 0 ⇒ 200
-	noAuth                     bool // key-free route; overrides the document-wide bearerAuth
-	noMCP                      bool // hide from the MCP tool list (a body no assistant can read)
+	list        bool
+	meta        bool
+	status      int  // success status; 0 ⇒ 200
+	noAuth      bool // key-free route; overrides the document-wide bearerAuth
+	noMCP       bool // hide from the MCP tool list (a body no assistant can read)
+	// destructive marks a write an assistant should ask a human about. It is declared
+	// here rather than guessed from the summary: the guess reads English words out of
+	// the prose, so rewording a sentence silently changes how a tool is presented, and
+	// a call that reroutes every user's traffic reads as an ordinary update.
+	destructive bool
 }
 
 // oaHealthResp is what GET /v1/health answers. Named rather than an inline map so
@@ -224,16 +229,16 @@ func apiSpecRoutes() []oaRoute {
 			resp:    t(apiSettingsView{})},
 		{method: "PATCH", path: "/v1/settings", tag: "Settings",
 			summary: "Update settings — only the fields present in the body are applied",
-			req:     t(apiSettingsReq{}), resp: t(apiSettingsView{})},
+			req:     t(apiSettingsReq{}), resp: t(apiSettingsView{}), destructive: true},
 		{method: "GET", path: "/v1/servers/{id}/routing", tag: "Routing",
 			summary: "Read a server's routing, DNS and egress backends (server 0 is the master)",
 			resp:    t(apiServerRouting{})},
 		{method: "POST", path: "/v1/servers/{id}/routing", tag: "Routing",
 			summary: "Update a server's routing, DNS and egress backends — omitted fields are left as they are, `routing` replaces the rule set wholesale",
-			req:     t(apiServerRoutingReq{}), resp: t(apiServerRouting{})},
+			req:     t(apiServerRoutingReq{}), resp: t(apiServerRouting{}), destructive: true},
 		{method: "POST", path: "/v1/servers/{id}/xray-restart", tag: "Routing",
 			summary: "Restart a server's Xray (queued for a node; drops its live connections)",
-			resp:    t(oaOKResp{})},
+			resp:    t(oaOKResp{}), destructive: true},
 		{method: "GET", path: "/v1/config/snapshots", tag: "Settings",
 			summary: "List the master's config save-points",
 			query:   pageParams(), resp: t(model.ConfigSnapshot{}), list: true, meta: true},
@@ -242,7 +247,7 @@ func apiSpecRoutes() []oaRoute {
 			req:     t(apiSnapshotReq{}), resp: t(model.ConfigSnapshot{}), status: 201},
 		{method: "POST", path: "/v1/config/snapshots/{id}/rollback", tag: "Settings",
 			summary: "Restore the whole server config from a save-point (restarts Xray fleet-wide)",
-			resp:    t(oaOKResp{})},
+			resp:    t(oaOKResp{}), destructive: true},
 		{method: "DELETE", path: "/v1/config/snapshots/{id}", tag: "Settings",
 			summary: "Delete a save-point", resp: t(oaOKResp{})},
 
@@ -336,7 +341,7 @@ func apiSpecRoutes() []oaRoute {
 			summary: "List a server's custom inbounds (id 0 = the master)",
 			resp:    t(core.InboundView{}), list: true},
 		{method: "POST", path: "/v1/servers/{id}/inbounds", tag: "Inbounds",
-			summary: "Add a custom inbound to a server (id 0 = the master)",
+			summary:     "Add a custom inbound to a server (id 0 = the master)",
 			req:         t(inboundReq{}),
 			reqRequired: []string{"name", "protocol", "port"},
 			resp:        t(core.InboundView{}), status: 201},
@@ -502,6 +507,9 @@ func buildOperation(r oaRoute, schemas map[string]any) map[string]any {
 	// A vendor extension rather than a list of paths inside the mcp package: that
 	// package builds its tools from this document and should not also have to know
 	// the panel's route table.
+	if r.destructive {
+		op["x-destructive"] = true
+	}
 	if r.noMCP {
 		op["x-mcp"] = false
 	}

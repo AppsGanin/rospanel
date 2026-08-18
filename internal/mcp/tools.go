@@ -100,11 +100,12 @@ func BuildTools(spec map[string]any, allowWrite bool) []Tool {
 // buildTool renders one operation as a tool.
 func buildTool(method, path string, op map[string]any, defs map[string]any) Tool {
 	summary, _ := op["summary"].(string)
+	declared, _ := op["x-destructive"].(bool)
 	t := Tool{
 		Name:        toolName(method, path),
 		Title:       summary,
 		Description: description(method, path, op),
-		Annotations: annotations(method, path, summary),
+		Annotations: annotations(method, path, summary, declared),
 		method:      method,
 		path:        path,
 		InputSchema: map[string]any{
@@ -305,12 +306,17 @@ var destructiveVerbs = []string{
 }
 
 // annotations describes a tool's disposition to the client.
-func annotations(method, path, summary string) map[string]any {
+//
+// declared is the operation's own x-destructive flag. It WINS over the word match below:
+// the match reads English prose, so it calls a routing rewrite an ordinary update (none
+// of its words appear in the list) while flagging a rollback only because its summary
+// happens to say "restarts" — reword that sentence and the warning disappears with it.
+func annotations(method, path, summary string, declared bool) map[string]any {
 	readOnly := method == http.MethodGet
 	destructive := false
 	if !readOnly {
 		hay := strings.ToLower(path + " " + summary)
-		destructive = method == http.MethodDelete
+		destructive = declared || method == http.MethodDelete
 		for _, v := range destructiveVerbs {
 			if strings.Contains(hay, v) {
 				destructive = true
