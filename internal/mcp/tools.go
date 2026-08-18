@@ -307,7 +307,9 @@ var destructiveVerbs = []string{
 
 // annotations describes a tool's disposition to the client.
 //
-// declared is the operation's own x-destructive flag. It WINS over the word match below:
+// declared is the operation's own x-destructive flag. It ADDS to the word match below —
+// a route can mark itself destructive when its wording gives no hint, which is the case
+// that matters:
 // the match reads English prose, so it calls a routing rewrite an ordinary update (none
 // of its words appear in the list) while flagging a rollback only because its summary
 // happens to say "restarts" — reword that sentence and the warning disappears with it.

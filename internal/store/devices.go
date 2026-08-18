@@ -32,7 +32,8 @@ type DeviceAdmission struct {
 const maxDevicesPerUser = model.MaxDevicesPerUser
 
 func (s *Store) RegisterDevice(userID int64, d model.Device, limit int) (DeviceAdmission, error) {
-	// "Unlimited" (limit 0) still gets a hard ceiling. The roster is written from an
+	// "No limit given" gets the default cap. An explicit number is honoured as-is —
+	// this is a floor, not a clamp. The roster is written from an
 	// UNAUTHENTICATED fetch carrying an attacker-chosen x-hwid, and the shipped default
 	// is exactly this case (hwid_fallback_limit defaults to 0) — so without a ceiling one
 	// subscription token can insert a row per request, forever, on a single-connection

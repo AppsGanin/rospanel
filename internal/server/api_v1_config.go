@@ -1,8 +1,8 @@
 package server
 
 import (
+	"errors"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -276,10 +276,13 @@ type apiServerRoutingReq struct {
 // serverRouting reads one server's routing view. Shared by the GET and the PATCH-style
 // write, so "what a caller reads" and "what an omitted field keeps" are the same value
 // by construction rather than by two functions agreeing.
-func (rt *Router) serverRouting(id int64) (apiServerRouting, bool) {
+func (rt *Router) serverRouting(id int64) (apiServerRouting, error) {
 	views, err := rt.mgr.NodeViews()
 	if err != nil {
-		return apiServerRouting{}, false
+		// Deliberately NOT folded into "no such server": this runs again after a
+		// successful write to build the response, and answering 404 there tells the
+		// caller their change was rejected when it was applied.
+		return apiServerRouting{}, err
 	}
 	for _, v := range views {
 		if v.ID != id {
@@ -291,7 +294,7 @@ func (rt *Router) serverRouting(id int64) (apiServerRouting, bool) {
 			// The master's view already carries the effective country; a node's carries
 			// the raw column, which is empty until someone picks one. Reporting the
 			// effective value for both means one documented shape has one meaning.
-			OperaCountry: operaCountryOr(v.OperaCountry),
+			OperaCountry: model.OperaCountryOr(v.OperaCountry),
 		}
 		if v.Routing != nil {
 			out.Routing = *v.Routing
@@ -299,23 +302,22 @@ func (rt *Router) serverRouting(id int64) (apiServerRouting, bool) {
 		if v.XrayDNS != nil {
 			out.XrayDNS = *v.XrayDNS
 		}
-		return out, true
+		return out, nil
 	}
-	return apiServerRouting{}, false
+	return apiServerRouting{}, errNoSuchServer
 }
 
-// operaCountryOr mirrors Settings.OperaCountryOr for a node's raw column.
-func operaCountryOr(c string) string {
-	if slices.Contains(model.OperaCountries, c) {
-		return c
-	}
-	return "EU"
-}
+// errNoSuchServer separates "this id does not exist" from "the lookup failed".
+var errNoSuchServer = errors.New("no such server")
 
 func (rt *Router) apiGetServerRouting(w http.ResponseWriter, _ *http.Request, id int64) {
-	out, ok := rt.serverRouting(id)
-	if !ok {
+	out, err := rt.serverRouting(id)
+	if errors.Is(err, errNoSuchServer) {
 		writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+		return
+	}
+	if err != nil {
+		writeAPIManagerErr(w, err)
 		return
 	}
 	writeAPIData(w, http.StatusOK, out)
@@ -327,9 +329,13 @@ func (rt *Router) apiSetServerRouting(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	// Read the server as it stands, so an absent field keeps the value it already had.
-	cur, ok := rt.serverRouting(id)
-	if !ok {
+	cur, err := rt.serverRouting(id)
+	if errors.Is(err, errNoSuchServer) {
 		writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+		return
+	}
+	if err != nil {
+		writeAPIManagerErr(w, err)
 		return
 	}
 	routing := cur.Routing
@@ -356,9 +362,14 @@ func (rt *Router) apiSetServerRouting(w http.ResponseWriter, r *http.Request, id
 		// global one — the same two calls the panel's routing screen makes. DNS is
 		// applied FIRST so a rejected value (see Manager.SetXrayDNS) fails before any
 		// routing is committed, rather than leaving half the request applied.
-		if err := rt.mgr.SetXrayDNS(dns); err != nil {
-			writeAPIManagerErr(w, err)
-			return
+		// Only when the body carried it: re-validating the stored value on every call
+		// would let one bad value (restored from an old snapshot, say) lock every later
+		// routing edit out of this endpoint.
+		if req.XrayDNS != nil {
+			if err := rt.mgr.SetXrayDNS(dns); err != nil {
+				writeAPIManagerErr(w, err)
+				return
+			}
 		}
 		if err := rt.mgr.ApplyRouting(routing, warp, opera, country); err != nil {
 			writeAPIManagerErr(w, err)

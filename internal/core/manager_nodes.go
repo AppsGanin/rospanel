@@ -605,6 +605,17 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 	} else if taken {
 		return invalidCode("err.nodeNameTaken", "нода с таким названием уже есть — имя должно быть уникальным")
 	}
+	// The node's DNS goes into the config the panel GENERATES for it, and the node's
+	// own Xray refuses a config it cannot parse — leaving that node frozen on its last
+	// good config while the panel reports it online and answers 200. Same check the
+	// master's DNS gets, for the same reason.
+	if err := validateDNSList(e.XrayDNS); err != nil {
+		return err
+	}
+	// A region the helper doesn't know is silently replaced by the default on the
+	// master; storing it raw on a node made the two disagree and handed opera-proxy a
+	// country it would reject.
+	e.OperaCountry = model.OperaCountryOr(e.OperaCountry)
 	if e.Routing != nil {
 		if err := e.Routing.ValidateLanes(); err != nil {
 			return fromFieldErr(err)
@@ -637,6 +648,9 @@ func (m *Manager) UpdateNode(id int64, e store.NodeEdit) error {
 // touching routing/egress, and wakes the node so it pulls the new config. The DNS tab
 // saves through here, independent of the routing tab.
 func (m *Manager) SetNodeDNS(id int64, dns *string) error {
+	if err := validateDNSList(dns); err != nil {
+		return err
+	}
 	if err := m.store.SetNodeDNS(id, dns); err != nil {
 		return err
 	}
@@ -1632,4 +1646,21 @@ func (m *Manager) SetNodeAPIPathCallback(cb func(string)) {
 // reusing the same generator as the panel secret path.
 func randomPathSegment() (string, error) {
 	return auth.RandomSecretPath()
+}
+
+
+// validateDNSList refuses a DNS setting the generated Xray config could not parse. nil
+// (inherit / leave alone) and an empty string are both fine.
+func validateDNSList(dns *string) error {
+	if dns == nil {
+		return nil
+	}
+	for _, e := range strings.FieldsFunc(*dns, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' '
+	}) {
+		if !validDNSServer(e) {
+			return invalidCode("err.badDNS", "неверный DNS-адрес: {{detail}}", map[string]any{"detail": e})
+		}
+	}
+	return nil
 }

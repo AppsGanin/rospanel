@@ -103,7 +103,7 @@ func runRestore(dataDir string, args []string) {
 	// versions already recorded, so nothing runs — and the result is a boot loop with no
 	// way out from inside the panel. Refusing here costs one message; not refusing costs
 	// an SSH session and a newer binary.
-	if err := checkRestoreSchema(src); err != nil {
+	if err := checkRestoreArchive(src, dataDir); err != nil {
 		log.Fatalf("restore refused: %v", err)
 	}
 	if err := backup.StageRestore(src, dataDir); err != nil {
@@ -762,11 +762,13 @@ func printRescueCredentials(login, password string, unlocked bool) {
 		bar, bar, login, password, extra, bar)
 }
 
-// checkRestoreSchema unpacks an archive to a throwaway directory and refuses it when its
-// database was written by a panel newer than this binary. Fails closed: a schema it
-// cannot read is not one to take a chance on.
-func checkRestoreSchema(src string) error {
-	dir, err := os.MkdirTemp("", "rospanel-restore-check-*")
+// checkRestoreArchive refuses an archive that cannot be restored into THIS binary.
+//
+// Staged inside the data directory, not $TMPDIR: /tmp is a small tmpfs on plenty of
+// boxes, and this is the SSH escape hatch the panel's own refusal points operators at —
+// failing it with ENOSPC on a perfectly good backup would close the last door.
+func checkRestoreArchive(src, dataDir string) error {
+	dir, err := os.MkdirTemp(dataDir, ".restore-check-*")
 	if err != nil {
 		return err
 	}
@@ -774,7 +776,17 @@ func checkRestoreSchema(src string) error {
 	if err := backup.Restore(src, dir); err != nil {
 		return fmt.Errorf("archive is unreadable: %w", err)
 	}
-	v, err := store.DBSchemaVersion(filepath.Join(dir, "rospanel.db"))
+	db := filepath.Join(dir, "rospanel.db")
+	if _, serr := os.Stat(db); serr != nil {
+		return fmt.Errorf("the archive contains no database")
+	}
+	// Same two gates the panel's upload applies, so both surfaces answer alike.
+	if _, admins, _, err := store.InspectDB(db); err != nil {
+		return fmt.Errorf("the database in the archive is unreadable: %w", err)
+	} else if admins == 0 {
+		return fmt.Errorf("the archive holds no administrator — there would be nothing to log in with")
+	}
+	v, err := store.DBSchemaVersion(db)
 	if err != nil {
 		return fmt.Errorf("could not read the archive's schema version: %w", err)
 	}

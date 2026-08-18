@@ -508,11 +508,27 @@ func (s *Store) DeleteUsers(ids []int64) (int64, error) {
 	for i, id := range ids {
 		args[i] = id
 	}
-	res, err := s.db.Exec(`DELETE FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
+	var n int64
+	err := s.withTx(func(tx *sql.Tx) error {
+		// Detach the Telegram subscribers first, exactly as the single-user delete does
+		// and for the same reason: tg_subscribers.user_id has no foreign key, so a row
+		// deleted out from under it keeps pointing at an id that no longer exists — and
+		// ids are AUTOINCREMENT, so nothing reclaims it. This path (bulk delete and the
+		// retention sweep) removes the most users of any.
+		if _, err := tx.Exec(
+			`UPDATE tg_subscribers SET user_id = NULL WHERE user_id IN (`+placeholders(len(ids))+`)`,
+			args...,
+		); err != nil {
+			return err
+		}
+		res, err := tx.Exec(`DELETE FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+		if err != nil {
+			return err
+		}
+		n, _ = res.RowsAffected()
+		return nil
+	})
+	return n, err
 }
 
 // placeholders returns "?,?,…" with n terms for an IN clause.

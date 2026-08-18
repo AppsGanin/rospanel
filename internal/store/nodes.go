@@ -525,12 +525,24 @@ func (s *Store) SetNodeEnabled(id int64, enabled bool) error {
 // UpdateNodeStatus records what a node reported on a sync: liveness, versions,
 // live cert fingerprint, and the desired-state hash it has applied.
 func (s *Store) UpdateNodeStatus(id int64, st model.NodeStatusUpdate) error {
+	// The cert columns keep their stored value when the node reports an EMPTY
+	// fingerprint. A node that merely failed to read its own certificate this once
+	// reports ("", self-signed), and taking that at face value drops the server out of
+	// every user's subscription — NodeLinkSettings skips a node with no fingerprint —
+	// while its pushed Xray config still carries all their credentials. A node that
+	// genuinely has a new certificate always reports a non-empty one.
 	_, err := s.db.Exec(`
 		UPDATE nodes SET last_seen = ?, node_version = ?, xray_version = ?, xray_running = ?,
-			cert_sha256 = ?, cert_self_signed = ?, cert_issuer = ?, cert_expires_at = ?,
+			cert_sha256      = CASE WHEN ? <> '' THEN ? ELSE cert_sha256      END,
+			cert_self_signed = CASE WHEN ? <> '' THEN ? ELSE cert_self_signed END,
+			cert_issuer      = CASE WHEN ? <> '' THEN ? ELSE cert_issuer      END,
+			cert_expires_at  = CASE WHEN ? <> '' THEN ? ELSE cert_expires_at  END,
 			config_hash = ? WHERE id = ?`,
 		st.LastSeen, st.NodeVersion, st.XrayVersion, boolToInt(st.XrayRunning),
-		st.CertSHA256, boolToInt(st.CertSelfSigned), st.CertIssuer, st.CertExpiresAt,
+		st.CertSHA256, st.CertSHA256,
+		st.CertSHA256, boolToInt(st.CertSelfSigned),
+		st.CertSHA256, st.CertIssuer,
+		st.CertSHA256, st.CertExpiresAt,
 		st.ConfigHash, id,
 	)
 	return err

@@ -93,6 +93,13 @@ type Service struct {
 	offset      int64
 	pending     map[int64]string // chatID → awaited text input ("add"), guarded by mu
 
+	// rate throttles inbound updates per chat. The bot is reachable by @username, so a
+	// stranger can message it; every update is handled SYNCHRONOUSLY in the single poll
+	// loop and each reply waits for that chat's outbound slot, so one unauthenticated
+	// chat sending steadily was enough to park the loop and stop the real operator's
+	// buttons from responding.
+	rate *chatLimiter
+
 	lastFired   time.Time // last scheduled-backup minute (operator TZ); seeded in New
 	lastPollErr string    // last getUpdates error (dedups log spam on a bad token)
 }
@@ -104,6 +111,7 @@ func New(panel Panel, st *store.Store, dataDir string) *Service {
 		store:     st,
 		dataDir:   dataDir,
 		pending:   map[int64]string{},
+		rate:      newChatLimiter(adminRateWindow, maxAdminPerWindow),
 		lastFired: time.Now().In(panel.Location()).Truncate(time.Minute),
 	}
 }
@@ -237,6 +245,14 @@ func (s *Service) Run(ctx context.Context) {
 		}
 	}
 }
+
+// adminRateWindow / maxAdminPerWindow bound one chat's inbound updates. Generous — an
+// operator clicking through the user list is a burst of callbacks — but low enough that
+// a stranger cannot hold the single poll loop.
+const (
+	adminRateWindow   = time.Minute
+	maxAdminPerWindow = 60
+)
 
 // handle dispatches one update, recovering from a panic so a single malformed
 // update can't tear down the poll loop.

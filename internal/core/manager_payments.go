@@ -320,7 +320,7 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 		// generic message to the end user.
 		logErr("payment: create failed", "provider", provider, "order", order.ID, "err", err)
 		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payNotCreated",
-			order.ID, m.methodLabel(adminLang, provider)))
+			order.ID, escHTML(m.methodLabel(adminLang, provider))))
 		return nil, invalidCode("err.paymentCreateFailed", "не удалось создать платёж — попробуйте другой способ или позже")
 	}
 	if err := m.store.SetPaymentOrderProvider(order.ID, provider, providerID, payURL); err != nil {
@@ -328,7 +328,7 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 	}
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payStarted",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, m.methodLabel(adminLang, provider)))
+		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, escHTML(m.methodLabel(adminLang, provider))))
 	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
 		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": provider,
 	})
@@ -410,12 +410,12 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 		// off does not still have the bot writing to people.
 		if set, err := m.store.GetSettings(); err == nil {
 			m.notifyUserEvent(set, *u, model.UserNotifyPayment,
-				i18n.T(m.userLang(u.TgChatID), "notify.userPaid", m.PlanName(order.PlanID)))
+				i18n.T(m.userLang(u.TgChatID), "notify.userPaid", escHTML(m.PlanName(order.PlanID))))
 		}
 	}
 	adminLang := m.botLang()
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paid",
-		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, m.methodLabel(adminLang, provider)))
+		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, escHTML(m.methodLabel(adminLang, provider))))
 	order.Status = "paid"
 	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
 		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": provider,

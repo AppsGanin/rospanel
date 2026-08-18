@@ -66,24 +66,24 @@ func ensureHealthyDB(dbPath, dataDir string) error {
 	var lastErr error
 	for _, name := range archives {
 		path := filepath.Join(dataDir, backup.LocalBackupDir, name)
+		// VET THE ARCHIVE IN A SCRATCH DIRECTORY FIRST. Extracting straight over the
+		// data dir and judging afterwards meant a rejected archive still left everything
+		// that is not the database behind — and a backup carries secrets.key, so the box
+		// ended up with one archive's encryption key beside another archive's (or the
+		// quarantined) database, which decrypts every stored secret to garbage.
+		if err := vetArchive(path); err != nil {
+			lastErr = fmt.Errorf("%s: %w", name, err)
+			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
+			continue
+		}
 		if rerr := backup.Restore(path, dataDir); rerr != nil {
 			lastErr = fmt.Errorf("restoring %s failed: %w", name, rerr)
 			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
 			continue
 		}
-		// The archive could itself be damaged or truncated.
+		// It passed in the scratch copy; confirm the copy that actually landed.
 		if cerr := store.Check(dbPath); cerr != nil {
 			lastErr = fmt.Errorf("restored %s but the database is still unusable: %w", name, cerr)
-			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
-			continue
-		}
-		// ...and it could be from a NEWER panel. After a binary rollback the newest
-		// local archive usually is, and restoring it here would produce exactly the boot
-		// loop the upload path refuses: the migration runner skips versions already
-		// recorded, so this binary would then read columns its schema lacks. Fails
-		// closed, for the same reason it does there.
-		if v, verr := store.DBSchemaVersion(dbPath); verr != nil || v > store.SchemaVersion() {
-			lastErr = fmt.Errorf("%s was written by a newer panel (schema %d > %d): %v", name, v, store.SchemaVersion(), verr)
 			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
 			continue
 		}
@@ -135,4 +135,36 @@ func quarantineDB(dbPath string) (string, error) {
 		}
 	}
 	return dst, nil
+}
+
+// vetArchive unpacks a backup somewhere harmless and reports why it cannot be used, or
+// nil when it can. Everything it checks is checked BEFORE the archive is allowed near
+// the live data directory.
+func vetArchive(path string) error {
+	dir, err := os.MkdirTemp("", "rospanel-recover-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	if err := backup.Restore(path, dir); err != nil {
+		return fmt.Errorf("archive is unreadable: %w", err)
+	}
+	db := filepath.Join(dir, "rospanel.db")
+	if err := store.Check(db); err != nil {
+		return fmt.Errorf("the database in it is unusable: %w", err)
+	}
+	// store.Check reads a MISSING file as "fresh install", so absence has to be its own
+	// check — an archive with no database would otherwise pass and boot the panel blank.
+	if _, serr := os.Stat(db); serr != nil {
+		return fmt.Errorf("it contains no database")
+	}
+	v, err := store.DBSchemaVersion(db)
+	if err != nil {
+		return fmt.Errorf("its schema version is unreadable: %w", err)
+	}
+	if v > store.SchemaVersion() {
+		return fmt.Errorf("it was written by a newer panel (schema %d, this build knows %d)",
+			v, store.SchemaVersion())
+	}
+	return nil
 }
