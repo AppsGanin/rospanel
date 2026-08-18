@@ -39,6 +39,7 @@ func (rt *Router) createConfigSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *Router) rollbackConfigSnapshot(w http.ResponseWriter, r *http.Request, id int64) {
+	defer rt.syncDecoyFromSettings() // a snapshot can restore a different masquerade
 	if err := rt.mgr.RollbackServerConfig(id); err != nil {
 		writeManagerErr(w, err)
 		return

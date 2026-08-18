@@ -716,6 +716,27 @@ func (m *Manager) RollbackServerConfig(id int64) error {
 	if err := m.store.RestoreServerConfig(cfg); err != nil {
 		return err
 	}
+
+	// A snapshot restores ports, hop ranges, the Opera backend and the decoy — and every
+	// one of those has a HOST-level half that lives outside the Xray config. Regenerating
+	// alone left the box in the state the panel could not explain: nftables still
+	// funnelling the old UDP range onto the old port, the per-IP flood guard still
+	// protecting the old port set (a re-enabled REALITY port coming up unguarded), Opera
+	// enabled in the config with no helper listening — or still running after being
+	// switched off — and the panel serving the pre-rollback masquerade. Each of these is
+	// what the ordinary write path for that setting does after saving it.
+	if err := EnsureHostHops(m.store); err != nil {
+		logErr("snapshot: re-applying port hops after a rollback failed", "err", err)
+	}
+	m.ensureLocalConnGuard()
+	set, err := m.store.GetSettings()
+	if err == nil {
+		if oerr := m.syncOpera(set.OperaEnabled, set.OperaCountryOr(), set.OperaPortOr()); oerr != nil {
+			logErr("snapshot: re-applying the Opera backend after a rollback failed", "err", oerr)
+		}
+	}
+	// The live decoy handler belongs to the HTTP router, which the manager cannot reach;
+	// the handlers call OnDecoyChange after this returns.
 	m.TriggerReconcile()
 	return nil
 }

@@ -499,9 +499,27 @@ func (s *Store) SetNodeConnections(id int64, c *model.NodeConnections) error {
 }
 
 // SetNodeEnabled toggles whether a node serves traffic and appears in links.
+// SetNodeEnabled switches a node on or off. Returns sql.ErrNoRows for an id that is
+// gone, so a caller can say so instead of reporting success.
+//
+// The deleted_at guard is load-bearing. A tombstoned node keeps its token hash (the
+// grace period exists so a re-added box can rejoin), and LookupNodeByToken does not
+// filter tombstones — so enabling a deleted id put the fleet in a state the panel could
+// not show: IngestNodeSync saw enabled=true and pushed it a full desired state, the
+// agent resumed and started serving users again, and the next poll's GetNode (which DOES
+// filter) revoked it — a serve/suspend flap once a minute, on a server absent from the
+// Nodes page entirely. Reachable from a stale list: delete a node in one tab, toggle it
+// in another.
 func (s *Store) SetNodeEnabled(id int64, enabled bool) error {
-	_, err := s.db.Exec(`UPDATE nodes SET enabled = ? WHERE id = ?`, boolToInt(enabled), id)
-	return err
+	res, err := s.db.Exec(
+		`UPDATE nodes SET enabled = ? WHERE id = ? AND deleted_at = 0`, boolToInt(enabled), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // UpdateNodeStatus records what a node reported on a sync: liveness, versions,

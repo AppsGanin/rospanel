@@ -203,6 +203,13 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 		// audit log tells self-service apart from an admin doing it for them.
 		s.handleCallback(selfActorCtx(ctx, u.Callback.From), client, u.Callback)
 	case u.Message != nil && strings.TrimSpace(u.Message.Text) != "":
+		// Private chats only. Added to a group, this bot would bind a VPN account to the
+		// GROUP's chat id — every member would then see the card and be able to cancel
+		// the plan or start a purchase on it. The Mini App button is invalid outside a
+		// private chat anyway, so the menu could never arrive there.
+		if u.Message.Chat.Type != "" && u.Message.Chat.Type != "private" {
+			return
+		}
 		s.trackSubscriber(u.Message.From, u.Message.Chat.ID)
 		s.handleMessage(selfActorCtx(ctx, u.Message.From), client, u.Message)
 	}
@@ -374,11 +381,15 @@ func tgDisplayName(from *User, fallbackID int64) string {
 }
 
 func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *CallbackQuery) {
-	lang := s.lang(cb.Message.Chat.ID)
-	_ = client.AnswerCallback(ctx, cb.ID, "")
+	// The nil check comes FIRST: a callback can arrive without a message (an inline
+	// result has no chat), and the language lookup below dereferences it. The panic was
+	// caught by the loop's recover, so the only symptom was a dropped update.
 	if cb.Message == nil {
+		_ = client.AnswerCallback(ctx, cb.ID, "")
 		return
 	}
+	lang := s.lang(cb.Message.Chat.ID)
+	_ = client.AnswerCallback(ctx, cb.ID, "")
 	chatID := cb.Message.Chat.ID
 	msgID := cb.Message.MessageID
 	set, err := s.store.GetSettings()

@@ -29,20 +29,27 @@ func supportService(t *testing.T) *SupportService {
 // stubAPI records which Bot API methods were called, so a test can assert what did
 // NOT happen — the point of these guards is that nothing reaches the customer.
 type stubAPI struct {
-	mu     sync.Mutex
-	calls  map[string]int
-	server *httptest.Server
+	memberStatus string // what getChatMember reports for the sender
+	mu           sync.Mutex
+	calls        map[string]int
+	server       *httptest.Server
 }
 
 func newStubAPI(t *testing.T) *stubAPI {
 	t.Helper()
-	st := &stubAPI{calls: map[string]int{}}
+	st := &stubAPI{calls: map[string]int{}, memberStatus: "administrator"}
 	st.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(r.URL.Path, "/")
+		method := parts[len(parts)-1]
 		st.mu.Lock()
-		st.calls[parts[len(parts)-1]]++
+		st.calls[method]++
+		status := st.memberStatus
 		st.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		if method == "getChatMember" {
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"status":"` + status + `"}}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
 	}))
 	t.Cleanup(st.server.Close)
@@ -82,12 +89,12 @@ func TestAdminReplyRouting(t *testing.T) {
 			// Silence here is what makes a dead thread indistinguishable from a
 			// delivered answer, so this one must speak up.
 			name:       "topic belongs to nobody",
-			msg:        &Message{Chat: group, MessageID: 3, MessageThreadID: 42, Text: "заметка"},
+			msg:        &Message{From: &User{ID: 77}, Chat: group, MessageID: 3, MessageThreadID: 42, Text: "заметка"},
 			wantNotice: true,
 		},
 		{
 			name: "internal note stays between admins",
-			msg: &Message{Chat: group, MessageID: 4, MessageThreadID: 7,
+			msg: &Message{From: &User{ID: 77}, Chat: group, MessageID: 4, MessageThreadID: 7,
 				Text: internalNotePrefix + " он писал на прошлой неделе"},
 			wantNotice: true,
 		},
@@ -95,13 +102,13 @@ func TestAdminReplyRouting(t *testing.T) {
 			// The whole message is internal, not just the marked line — copyMessage
 			// cannot edit — so the admin has to be told, or their answer vanishes.
 			name: "note below an answer withholds the whole message",
-			msg: &Message{Chat: group, MessageID: 5, MessageThreadID: 7,
+			msg: &Message{From: &User{ID: 77}, Chat: group, MessageID: 5, MessageThreadID: 7,
 				Text: "Здравствуйте, ключ обновлён\n" + internalNotePrefix + " напомнить про оплату"},
 			wantNotice: true,
 		},
 		{
 			name: "note in a caption counts too",
-			msg: &Message{Chat: group, MessageID: 6, MessageThreadID: 7,
+			msg: &Message{From: &User{ID: 77}, Chat: group, MessageID: 6, MessageThreadID: 7,
 				Caption: internalNotePrefix + " клиент врёт",
 				Photo:   []PhotoSize{{FileID: "x", Width: 90, Height: 90}}},
 			wantNotice: true,
@@ -136,7 +143,7 @@ func TestAdminReplyIsDelivered(t *testing.T) {
 	api := newStubAPI(t)
 	s.handleAdminReply(context.Background(), api.client(),
 		&model.Settings{TGSupportGroupID: -100999},
-		&Message{Chat: Chat{ID: -100999, Type: "supergroup", IsForum: true},
+		&Message{From: &User{ID: 77}, Chat: Chat{ID: -100999, Type: "supergroup", IsForum: true},
 			MessageID: 9, MessageThreadID: 7, Text: "Здравствуйте, ключ обновлён"})
 
 	if n := api.count("copyMessage"); n != 1 {
@@ -356,5 +363,50 @@ func TestErrorClassification(t *testing.T) {
 	// mistaken for a user who blocked the bot.
 	if isBlockedByUser(apiErr(500, "Internal Server Error: chat not found")) {
 		t.Error("a transient server error must not count as blocked")
+	}
+}
+
+// Being IN the support group is not permission to answer FROM it. The group is a place
+// operators invite people to — a customer to look at a screenshot, a colleague who later
+// leaves — and every one of them can post in any topic. Without an author check, that
+// post is copied to the topic's owner with no "forwarded from" marker, so picking a
+// thread picks whom to impersonate.
+func TestAdminReplyRequiresAnAdminSender(t *testing.T) {
+	set := &model.Settings{TGSupportGroupID: -100999}
+	group := Chat{ID: -100999, Type: "supergroup", IsForum: true}
+
+	for _, c := range []struct {
+		name    string
+		status  string
+		from    *User
+		sender  *Chat
+		relayed bool
+	}{
+		{name: "administrator", status: "administrator", from: &User{ID: 77}, relayed: true},
+		{name: "creator", status: "creator", from: &User{ID: 78}, relayed: true},
+		{name: "ordinary member", status: "member", from: &User{ID: 79}},
+		{name: "restricted member", status: "restricted", from: &User{ID: 80}},
+		// Posted as the group itself: only administrators may send that way.
+		{name: "anonymous admin", sender: &Chat{ID: -100999}, relayed: true},
+		{name: "another chat's identity", sender: &Chat{ID: -100777}},
+		// The bot's own messages come back on the same stream.
+		{name: "the bot itself", status: "administrator", from: &User{ID: 81, IsBot: true}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := supportService(t)
+			if err := s.store.SetSupportTopic(-100999, 555, 7, time.Now().Unix()); err != nil {
+				t.Fatalf("SetSupportTopic: %v", err)
+			}
+			api := newStubAPI(t)
+			api.memberStatus = c.status
+			s.handleAdminReply(context.Background(), api.client(), set, &Message{
+				From: c.from, SenderChat: c.sender, Chat: group,
+				MessageID: 11, MessageThreadID: 7, Text: "Здравствуйте",
+			})
+			got := api.count("copyMessage") > 0
+			if got != c.relayed {
+				t.Errorf("relayed to the customer = %v, want %v", got, c.relayed)
+			}
+		})
 	}
 }

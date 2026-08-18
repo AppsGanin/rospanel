@@ -36,6 +36,10 @@ type SupportService struct {
 
 	rate *chatLimiter
 
+	// replyRights caches whether a given account may answer FROM the support group.
+	// Being in the group is not permission to speak for support — see senderMayReply.
+	replyRights map[replyRightKey]replyRight
+
 	// orphanWarned remembers which dead topics were already flagged, so a thread
 	// nobody owns doesn't collect a warning per message.
 	orphanWarned map[int64]bool
@@ -381,6 +385,14 @@ func (s *SupportService) handleAdminReply(ctx context.Context, client *Client, s
 		s.warnWithheld(ctx, client, set, m)
 		return
 	}
+	// Being IN the support group is not permission to answer FROM it. Without this,
+	// any member — a customer invited to look at something, a former colleague still
+	// in the roster, anyone at all if the group was ever public — could post in a
+	// topic and have it copied to that customer verbatim, with no "forwarded from"
+	// marker to give it away. Picking the thread picks whom to impersonate.
+	if !s.senderMayReply(ctx, client, set.TGSupportGroupID, m) {
+		return
+	}
 	chatID, err := s.store.SupportChatByTopic(set.TGSupportGroupID, m.MessageThreadID)
 	if err != nil {
 		log.Printf("telegram support: topic %d lookup: %v", m.MessageThreadID, err)
@@ -578,4 +590,58 @@ func isBlockedByUser(err error) bool {
 	return strings.Contains(d, "bot was blocked") ||
 		strings.Contains(d, "user is deactivated") ||
 		strings.Contains(d, "chat not found")
+}
+
+
+// senderMayReply reports whether this message's author may speak for support.
+//
+// Cached per (group, user) for rightsRecheckEvery: the check is a synchronous Telegram
+// round trip inside the single poll loop, and a busy group would otherwise pay for it on
+// every message. A lookup that fails is a NO — an answer that reaches a customer is not
+// the place to give an unverified sender the benefit of the doubt.
+func (s *SupportService) senderMayReply(ctx context.Context, client *Client, groupID int64, m *Message) bool {
+	// Posted as the group itself (anonymous admins, channel-linked posts): that identity
+	// is only available to administrators, so it is one.
+	if m.From == nil {
+		return m.SenderChat != nil && m.SenderChat.ID == groupID
+	}
+	// The bot's own messages come back on the same stream; relaying them would echo.
+	if m.From.IsBot {
+		return false
+	}
+	key := replyRightKey{group: groupID, user: m.From.ID}
+	now := time.Now()
+	s.mu.Lock()
+	if r, ok := s.replyRights[key]; ok && now.Sub(r.at) < rightsRecheckEvery {
+		s.mu.Unlock()
+		return r.allowed
+	}
+	s.mu.Unlock()
+
+	member, err := client.GetChatMember(ctx, groupID, m.From.ID)
+	allowed := err == nil && (member.Status == "administrator" || member.Status == "creator")
+	if err != nil {
+		log.Printf("telegram support: rights of %d in %d: %v", m.From.ID, groupID, err)
+	}
+	s.mu.Lock()
+	if s.replyRights == nil {
+		s.replyRights = map[replyRightKey]replyRight{}
+	}
+	s.replyRights[key] = replyRight{allowed: allowed, at: now}
+	// The map is keyed by real Telegram accounts in one group, so it is small by
+	// construction; sweep the stale half anyway rather than let it only ever grow.
+	for k, r := range s.replyRights {
+		if now.Sub(r.at) >= rightsRecheckEvery {
+			delete(s.replyRights, k)
+		}
+	}
+	s.mu.Unlock()
+	return allowed
+}
+
+type replyRightKey struct{ group, user int64 }
+
+type replyRight struct {
+	allowed bool
+	at      time.Time
 }
