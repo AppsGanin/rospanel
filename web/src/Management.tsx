@@ -11,7 +11,7 @@ import {
   useRestore,
   ValidationNote,
 } from "./restore";
-import { Button, Card, cn, Modal } from "./ui";
+import { Button, Card, cn, Modal, PasswordInput } from "./ui";
 
 /* ----------------------------------------------------------------- icons */
 function IconList() {
@@ -114,6 +114,8 @@ export function ManagementCard() {
   const [logsOpen, setLogsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [resetPw, setResetPw] = useState("");
+  const [restorePw, setRestorePw] = useState("");
   const [resetting, setResetting] = useState(false);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -122,11 +124,16 @@ export function ManagementCard() {
   const { fileRef, inspection, manifest, inspecting, restoring, done, pick, restore } =
     useRestore();
 
+  const closeReset = () => {
+    setResetOpen(false);
+    setResetPw("");
+  };
+
   const doReset = async () => {
     setResetting(true);
     try {
-      const { url } = await resetPanel();
-      setResetOpen(false);
+      const { url } = await resetPanel(resetPw);
+      closeReset();
       setResetUrl(url || `${window.location.origin}/rospanel/`);
     } catch (e) {
       notifyError(errMessage(e));
@@ -232,8 +239,27 @@ export function ManagementCard() {
                 {t("manage.restoreWarn")}
               </p>
             )}
+            {/* A restore replaces the admin roster this session is authenticated
+                against, so the panel re-asks for the password before staging it. */}
+            {inspection?.valid && (
+              <div className="mt-3">
+                <PasswordInput
+                  label={t("creds.currentPassword")}
+                  value={restorePw}
+                  onChange={setRestorePw}
+                />
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" color="gray" size="sm" onClick={() => pick(null)}>
+              <Button
+                variant="outline"
+                color="gray"
+                size="sm"
+                onClick={() => {
+                  setRestorePw("");
+                  pick(null);
+                }}
+              >
                 {t("common.back")}
               </Button>
               <Button
@@ -241,8 +267,8 @@ export function ManagementCard() {
                 color="red"
                 size="sm"
                 loading={restoring}
-                disabled={!inspection?.valid}
-                onClick={restore}
+                disabled={!inspection?.valid || !restorePw}
+                onClick={() => restore(restorePw)}
               >
                 {t("manage.restore")}
               </Button>
@@ -267,18 +293,34 @@ export function ManagementCard() {
       </Modal>
 
       {/* Reset */}
-      <Modal open={resetOpen} onClose={() => setResetOpen(false)} title={t("manage.resetTitle")}>
+      <Modal open={resetOpen} onClose={closeReset} title={t("manage.resetTitle")}>
         <p className="text-sm text-danger">
           <Trans
             i18nKey="manage.resetBody"
             components={{ c: <code /> }}
           />
         </p>
+        {/* The panel re-asks for the password: a reset is irreversible, so a session
+            cookie alone must not be enough to trigger it. */}
+        <div className="mt-3">
+          <PasswordInput
+            label={t("creds.currentPassword")}
+            value={resetPw}
+            onChange={setResetPw}
+          />
+        </div>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="outline" color="gray" size="sm" onClick={() => setResetOpen(false)}>
+          <Button variant="outline" color="gray" size="sm" onClick={closeReset}>
             {t("common.cancel")}
           </Button>
-          <Button variant="filled" color="red" size="sm" loading={resetting} onClick={doReset}>
+          <Button
+            variant="filled"
+            color="red"
+            size="sm"
+            loading={resetting}
+            disabled={!resetPw}
+            onClick={doReset}
+          >
             {t("manage.resetConfirm")}
           </Button>
         </div>

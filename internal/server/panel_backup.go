@@ -44,7 +44,19 @@ func (rt *Router) restartPanel(w http.ResponseWriter, _ *http.Request) {
 // reverts to the auto-detected public IP and the default secret path, which can
 // differ from where the admin is now (e.g. a custom domain) — so the client must
 // redirect to this URL, not its current origin, to avoid a cert mismatch.
-func (rt *Router) factoryReset(w http.ResponseWriter, _ *http.Request) {
+func (rt *Router) factoryReset(w http.ResponseWriter, r *http.Request) {
+	// Re-authenticate. This wipes every user, the admin roster, the TLS identity and the
+	// secret path, with no undo — a stolen session cookie must not be enough on its own.
+	// Changing a payment key already re-prompts; this is strictly more destructive.
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
+		return
+	}
 	for _, name := range []string{"rospanel.db", "rospanel.db-wal", "rospanel.db-shm"} {
 		_ = os.Remove(filepath.Join(rt.dataDir, name))
 	}
@@ -158,6 +170,12 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeErrCode(w, http.StatusBadRequest, "err.uploadParseError", "ошибка разбора загрузки")
+		return
+	}
+	// Re-authenticate: a restore replaces the whole data directory, including the admin
+	// roster the caller is authenticated against, and it is applied on the next boot
+	// with no undo. Carried as a form field because this endpoint is multipart, not JSON.
+	if !rt.verifyStepUp(w, r, r.FormValue("current_password")) {
 		return
 	}
 	f, _, err := r.FormFile("backup")

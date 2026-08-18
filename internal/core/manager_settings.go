@@ -697,7 +697,24 @@ func (m *Manager) SetMaintenanceMode(on bool) error {
 
 // SetProbeDetect toggles secret-path probe detection.
 func (m *Manager) SetProbeDetect(on bool) error {
-	return m.store.SetProbeDetect(on)
+	if err := m.store.SetProbeDetect(on); err != nil {
+		return err
+	}
+	// Auto-blocking rides on detection: with detection off nothing new is ever flagged,
+	// so leaving the firewall table in place would keep dropping every IP blocked
+	// earlier — permanently, and with no way back, because the panel hides the
+	// auto-block switch (the only thing that calls Clear) whenever detection is off. An
+	// operator who turns the feature off is entitled to assume it stopped acting.
+	if !on {
+		_ = probeblock.Clear()
+		return nil
+	}
+	// Back on: re-arm only if auto-blocking itself is still switched on, since Clear
+	// disarmed it above.
+	if set, err := m.store.GetSettings(); err == nil && set.ProbeBlock {
+		probeblock.Arm()
+	}
+	return nil
 }
 
 // SetWatchdog toggles the wedged-process auto-recovery, persisting it and applying it

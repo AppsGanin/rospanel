@@ -55,7 +55,9 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
             color="red"
             loading={restoring}
             disabled={!inspection?.valid}
-            onClick={restore}
+            // First run: there is no admin password to step up against yet, and the
+            // panel's verifyStepUp waives the check until setup is done.
+            onClick={() => restore('')}
           >
             {t('wizard.restoreAndRestart')}
           </Button>
