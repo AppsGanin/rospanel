@@ -25,10 +25,11 @@ type DeviceAdmission struct {
 //
 // limit 0 means unlimited. An already-bound device always passes: the cap governs
 // how many devices exist, not how often they refresh.
-// maxDevicesPerUser is the ceiling applied when no per-user device limit is set. High
-// enough that no real subscriber meets it, low enough that a token replayed with random
-// hardware ids cannot grow the table without bound.
-const maxDevicesPerUser = 50
+// maxDevicesPerUser mirrors model.MaxDevicesPerUser. It is applied here as well as in
+// Settings.DeviceCap so a direct store caller (a test, a future job) cannot bypass the
+// ceiling by passing 0 — the roster is written from an unauthenticated fetch, so this is
+// the last line rather than the only one.
+const maxDevicesPerUser = model.MaxDevicesPerUser
 
 func (s *Store) RegisterDevice(userID int64, d model.Device, limit int) (DeviceAdmission, error) {
 	// "Unlimited" (limit 0) still gets a hard ceiling. The roster is written from an

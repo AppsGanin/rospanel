@@ -85,5 +85,7 @@ func TestMigrationsAreAppendOnly(t *testing.T) {
 		t.Errorf("%s was REMOVED or RENAMED: a rename re-runs on every existing box and "+
 			"fails at boot (duplicate column), while CI's fresh databases stay green.", name)
 	}
-	t.Logf("if this is a genuinely new migration, update %s (append only)", golden)
+	// Reported, not logged: a NEW migration that nobody pinned is exactly the one the
+	// silent-edit failure mode would go unnoticed on next.
+	t.Errorf("if these are genuinely new migrations, append them to %s", golden)
 }

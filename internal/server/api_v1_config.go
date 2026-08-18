@@ -2,6 +2,9 @@ package server
 
 import (
 	"net/http"
+	"slices"
+	"sync"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -253,11 +256,30 @@ type apiServerRouting struct {
 	OperaCountry string              `json:"opera_country"`
 }
 
-func (rt *Router) apiGetServerRouting(w http.ResponseWriter, _ *http.Request, id int64) {
+// apiServerRoutingReq is the write shape. Every field is optional and an absent one is
+// LEFT ALONE — only `routing` itself replaces wholesale, because merging rule lists has
+// no meaning a caller could predict.
+//
+// The scalars are pointers for a reason that is not cosmetic. With plain values, a body
+// carrying only `routing` also sent warp_enabled=false, and turning WARP off makes the
+// generator alias the warp outbound to `direct` — so traffic the operator had
+// deliberately routed through the tunnel started leaving from the server's own IP, on a
+// 200 OK, with an audit row that says nothing more than "server routing".
+type apiServerRoutingReq struct {
+	Routing      *model.RoutingConfig `json:"routing"`
+	XrayDNS      *string              `json:"xray_dns"`
+	WarpEnabled  *bool                `json:"warp_enabled"`
+	OperaEnabled *bool                `json:"opera_enabled"`
+	OperaCountry *string              `json:"opera_country"`
+}
+
+// serverRouting reads one server's routing view. Shared by the GET and the PATCH-style
+// write, so "what a caller reads" and "what an omitted field keeps" are the same value
+// by construction rather than by two functions agreeing.
+func (rt *Router) serverRouting(id int64) (apiServerRouting, bool) {
 	views, err := rt.mgr.NodeViews()
 	if err != nil {
-		writeAPIManagerErr(w, err)
-		return
+		return apiServerRouting{}, false
 	}
 	for _, v := range views {
 		if v.ID != id {
@@ -266,7 +288,10 @@ func (rt *Router) apiGetServerRouting(w http.ResponseWriter, _ *http.Request, id
 		out := apiServerRouting{
 			WarpEnabled:  v.WarpEnabled,
 			OperaEnabled: v.OperaEnabled,
-			OperaCountry: v.OperaCountry,
+			// The master's view already carries the effective country; a node's carries
+			// the raw column, which is empty until someone picks one. Reporting the
+			// effective value for both means one documented shape has one meaning.
+			OperaCountry: operaCountryOr(v.OperaCountry),
 		}
 		if v.Routing != nil {
 			out.Routing = *v.Routing
@@ -274,36 +299,75 @@ func (rt *Router) apiGetServerRouting(w http.ResponseWriter, _ *http.Request, id
 		if v.XrayDNS != nil {
 			out.XrayDNS = *v.XrayDNS
 		}
-		writeAPIData(w, http.StatusOK, out)
-		return
+		return out, true
 	}
-	writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+	return apiServerRouting{}, false
 }
 
-// apiSetServerRouting replaces a server's routing config and egress backends.
-//
-// This is a full replace, not a merge: routing is a rule LIST, and merging lists has no
-// meaning a caller could predict (does a shorter list delete rules or leave them?). Read
-// it, change it, send the whole thing back.
+// operaCountryOr mirrors Settings.OperaCountryOr for a node's raw column.
+func operaCountryOr(c string) string {
+	if slices.Contains(model.OperaCountries, c) {
+		return c
+	}
+	return "EU"
+}
+
+func (rt *Router) apiGetServerRouting(w http.ResponseWriter, _ *http.Request, id int64) {
+	out, ok := rt.serverRouting(id)
+	if !ok {
+		writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+		return
+	}
+	writeAPIData(w, http.StatusOK, out)
+}
+
 func (rt *Router) apiSetServerRouting(w http.ResponseWriter, r *http.Request, id int64) {
-	var req apiServerRouting
+	var req apiServerRoutingReq
 	if !apiDecode(w, r, &req) {
 		return
 	}
+	// Read the server as it stands, so an absent field keeps the value it already had.
+	cur, ok := rt.serverRouting(id)
+	if !ok {
+		writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+		return
+	}
+	routing := cur.Routing
+	if req.Routing != nil {
+		routing = *req.Routing
+	}
+	dns := cur.XrayDNS
+	if req.XrayDNS != nil {
+		dns = *req.XrayDNS
+	}
+	warp, opera, country := cur.WarpEnabled, cur.OperaEnabled, cur.OperaCountry
+	if req.WarpEnabled != nil {
+		warp = *req.WarpEnabled
+	}
+	if req.OperaEnabled != nil {
+		opera = *req.OperaEnabled
+	}
+	if req.OperaCountry != nil {
+		country = *req.OperaCountry
+	}
+
 	if id == model.LocalNodeID {
-		// The master keeps its routing in the settings singleton, and its DNS is the
-		// global one — the same two calls the panel's routing screen makes.
-		if err := rt.mgr.ApplyRouting(req.Routing, req.WarpEnabled, req.OperaEnabled, req.OperaCountry); err != nil {
+		// The master keeps its routing in the settings singleton and its DNS is the
+		// global one — the same two calls the panel's routing screen makes. DNS is
+		// applied FIRST so a rejected value (see Manager.SetXrayDNS) fails before any
+		// routing is committed, rather than leaving half the request applied.
+		if err := rt.mgr.SetXrayDNS(dns); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
-		if err := rt.mgr.SetXrayDNS(req.XrayDNS); err != nil {
+		if err := rt.mgr.ApplyRouting(routing, warp, opera, country); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}
 		rt.apiGetServerRouting(w, r, id)
 		return
 	}
+
 	node, err := rt.mgr.GetNode(id)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -315,19 +379,17 @@ func (rt *Router) apiSetServerRouting(w http.ResponseWriter, r *http.Request, id
 	}
 	// Everything not on this screen is carried over from the stored node, so a routing
 	// change cannot silently reset the name, host, protocols or traffic coefficient.
-	routing := req.Routing
+	//
+	// DNS rides the SAME edit rather than a second SetNodeDNS call: two writes meant the
+	// node could be woken by the first one and pull the new routing with the old DNS,
+	// and a failure in between left the routing live with nothing in the audit trail.
 	edit := storeNodeEditFrom(node)
 	edit.Routing = &routing
-	edit.WarpEnabled = req.WarpEnabled
-	edit.OperaEnabled = req.OperaEnabled
-	edit.OperaCountry = req.OperaCountry
+	edit.XrayDNS = &dns
+	edit.WarpEnabled = warp
+	edit.OperaEnabled = opera
+	edit.OperaCountry = country
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
-		writeAPIManagerErr(w, err)
-		return
-	}
-	// DNS is stored on the node row but edited separately, so it gets its own call.
-	dns := req.XrayDNS
-	if err := rt.mgr.SetNodeDNS(id, &dns); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
@@ -356,20 +418,27 @@ func (rt *Router) apiCreateConfigSnapshot(w http.ResponseWriter, r *http.Request
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SnapshotServerConfig(req.Label); err != nil {
+	id, err := rt.mgr.SnapshotServerConfig(req.Label)
+	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
+	// Answer with the save-point this call made, found by id. Returning "the newest one"
+	// instead would hand the caller someone else's snapshot whenever a concurrent create
+	// — or the auto-snapshot a rollback takes — landed in between, and the id is what a
+	// later rollback or delete is aimed at.
 	snaps, err := rt.mgr.ConfigSnapshots()
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if len(snaps) == 0 {
-		writeAPIErr(w, http.StatusInternalServerError, "internal", "snapshot was not stored")
-		return
+	for _, sn := range snaps {
+		if sn.ID == id {
+			writeAPIData(w, http.StatusCreated, sn)
+			return
+		}
 	}
-	writeAPIData(w, http.StatusCreated, snaps[0]) // newest first
+	writeAPIErr(w, http.StatusInternalServerError, "internal", "snapshot was not stored")
 }
 
 // apiRollbackConfigSnapshot restores the whole server config from a snapshot. Xray is
@@ -387,12 +456,42 @@ func (rt *Router) apiDeleteConfigSnapshot(w http.ResponseWriter, _ *http.Request
 		writeAPIManagerErr(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// 200 with the envelope, like every other /v1 delete — a caller that unwraps `data`
+	// must not have to special-case this one route.
+	writeAPIData(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// geoStatsTTL is how long a connection breakdown is reused. Both aggregate the WHOLE
+// connections table over its retention window and then do a per-row geo lookup, against
+// the single SQLite connection every other request queues behind — and the API limiter
+// allows 600 calls a minute. The public status page memoizes for exactly this reason;
+// these are the same shape of work behind a key instead of behind nothing.
+const geoStatsTTL = 30 * time.Second
+
+type geoStatsCache[T any] struct {
+	mu   sync.Mutex
+	rows []T
+	at   time.Time
+}
+
+// get returns the cached rows, refreshing them when the window has passed.
+func (c *geoStatsCache[T]) get(load func() ([]T, error)) ([]T, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.rows != nil && time.Since(c.at) < geoStatsTTL {
+		return c.rows, nil
+	}
+	rows, err := load()
+	if err != nil {
+		return nil, err
+	}
+	c.rows, c.at = rows, time.Now()
+	return rows, nil
 }
 
 // apiStatsCountries is the connection breakdown by country the map draws.
 func (rt *Router) apiStatsCountries(w http.ResponseWriter, r *http.Request) {
-	rows, err := rt.mgr.ConnectionCountries()
+	rows, err := rt.countryStats.get(rt.mgr.ConnectionCountries)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -402,7 +501,7 @@ func (rt *Router) apiStatsCountries(w http.ResponseWriter, r *http.Request) {
 
 // apiStatsASNs is the same breakdown by network operator.
 func (rt *Router) apiStatsASNs(w http.ResponseWriter, r *http.Request) {
-	rows, err := rt.mgr.ConnectionASNs()
+	rows, err := rt.asnStats.get(rt.mgr.ConnectionASNs)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

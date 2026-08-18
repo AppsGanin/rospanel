@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
@@ -491,10 +492,27 @@ func TestAPISettingsPartialUpdateKeepsTheRest(t *testing.T) {
 // changes a rule and writes it back must get exactly what it sent, or it cannot be used
 // to manage a server at all.
 func TestAPIServerRoutingRoundTrip(t *testing.T) {
-	rt, _ := apiTestRouter(t)
+	rt, st := apiTestRouter(t)
 
+	// Pre-register WARP in the store. Turning it on otherwise makes the manager register
+	// a real Cloudflare account over the network; with an account already present that
+	// path is skipped. WARP is the flag this test most needs to move, because its silent
+	// reset is what sends user traffic out of the server's own IP. Opera stays off for
+	// the mirror-image reason: enabling it starts a real helper process.
+	set, err := st.GetSettings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	set.WarpPrivateKey, set.WarpPublicKey = "k", "pub"
+	set.WarpEndpoint, set.WarpAddressV4 = "engage.cloudflareclient.com:2408", "172.16.0.2/32"
+	if err := st.SetWarp(set); err != nil {
+		t.Fatalf("seed warp: %v", err)
+	}
+
+	// Non-default values on purpose: with the fixture's own defaults the assertions
+	// would pass even if the handler dropped these arguments entirely.
 	const body = `{"routing":{"block_ads":true,"block_bittorrent":true,"block_domains":["ads.example.com"]},` +
-		`"xray_dns":"1.1.1.1","warp_enabled":false,"opera_enabled":false,"opera_country":"EU"}`
+		`"xray_dns":"1.1.1.1","warp_enabled":true,"opera_enabled":false,"opera_country":"AS"}`
 	code, data := apiCall(t, rt, "POST", "/v1/servers/0/routing", body)
 	if code != http.StatusOK {
 		t.Fatalf("POST routing = %d: %s", code, data)
@@ -517,10 +535,90 @@ func TestAPIServerRoutingRoundTrip(t *testing.T) {
 	if got.XrayDNS != "1.1.1.1" {
 		t.Errorf("xray_dns = %q, want 1.1.1.1", got.XrayDNS)
 	}
+	if !got.WarpEnabled || got.OperaCountry != "AS" {
+		t.Errorf("egress backends did not survive: warp=%v country=%q (want AS)",
+			got.WarpEnabled, got.OperaCountry)
+	}
+
+	// An omitted field is LEFT ALONE. This is the one that matters: with plain values a
+	// body carrying only `routing` also sent warp_enabled=false, and turning WARP off
+	// aliases the warp outbound to direct — traffic the operator routed through the
+	// tunnel starts leaving from the server's own IP, on a 200.
+	code, data = apiCall(t, rt, "POST", "/v1/servers/0/routing", `{"routing":{"block_ads":false}}`)
+	if code != http.StatusOK {
+		t.Fatalf("partial POST = %d: %s", code, data)
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode: %v (%s)", err, data)
+	}
+	if got.Routing.BlockAds {
+		t.Error("the routing replace did not take effect")
+	}
+	if !got.WarpEnabled || got.OperaCountry != "AS" || got.XrayDNS != "1.1.1.1" {
+		t.Errorf("omitted fields were reset: warp=%v country=%q dns=%q",
+			got.WarpEnabled, got.OperaCountry, got.XrayDNS)
+	}
 
 	// An unknown server is a 404, not a silent success against the master.
 	if code, _ := apiCall(t, rt, "GET", "/v1/servers/9999/routing", ""); code != http.StatusNotFound {
 		t.Errorf("GET routing for a missing server = %d, want 404", code)
+	}
+	if code, _ := apiCall(t, rt, "POST", "/v1/servers/9999/routing", `{}`); code != http.StatusNotFound {
+		t.Errorf("POST routing for a missing server = %d, want 404", code)
+	}
+}
+
+// The node branch is a different code path — it carries the rest of the node row through
+// store.NodeEdit, and a field forgotten there is silently zeroed. Server 0 exercises none
+// of it, which is why this case exists.
+func TestAPINodeRoutingKeepsTheRestOfTheNode(t *testing.T) {
+	rt, _ := apiTestRouter(t)
+	node, err := rt.mgr.CreateNode("routing-node", "node.example.com")
+	if err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	// A distinctive coefficient, stored the way the panel stores it (UpdateNode
+	// normalises, so reading it back is what "unchanged" has to be measured against).
+	edit := storeNodeEditFrom(node)
+	edit.TrafficCoefficient = 2.5
+	if err := rt.mgr.UpdateNode(node.ID, edit); err != nil {
+		t.Fatalf("seed coefficient: %v", err)
+	}
+	before, err := rt.mgr.GetNode(node.ID)
+	if err != nil || before == nil {
+		t.Fatalf("read back: %v", err)
+	}
+	path := "/v1/servers/" + strconv.FormatInt(node.ID, 10) + "/routing"
+
+	code, data := apiCall(t, rt, "POST", path,
+		`{"routing":{"block_ads":true},"xray_dns":"9.9.9.9","warp_enabled":true}`)
+	if code != http.StatusOK {
+		t.Fatalf("POST node routing = %d: %s", code, data)
+	}
+
+	after, err := rt.mgr.GetNode(node.ID)
+	if err != nil || after == nil {
+		t.Fatalf("get node: %v", err)
+	}
+	if after.Name != "routing-node" || after.Host != "node.example.com" {
+		t.Errorf("identity was reset by a routing write: name=%q host=%q", after.Name, after.Host)
+	}
+	if after.VLESSEnabled != before.VLESSEnabled || after.HysteriaEnabled != before.HysteriaEnabled ||
+		after.RealityEnabled != before.RealityEnabled {
+		t.Error("protocol toggles were reset by a routing write")
+	}
+	if after.TrafficCoefficient != before.TrafficCoefficient {
+		t.Errorf("traffic coefficient was reset: %v → %v", before.TrafficCoefficient, after.TrafficCoefficient)
+	}
+	// DNS rides the same write, so it must be there without a second call.
+	if after.XrayDNS == nil || *after.XrayDNS != "9.9.9.9" {
+		t.Errorf("xray_dns did not land on the node: %v", after.XrayDNS)
+	}
+	if after.Routing == nil || !after.Routing.BlockAds {
+		t.Errorf("routing did not land on the node: %+v", after.Routing)
+	}
+	if !after.WarpEnabled {
+		t.Error("warp_enabled did not land on the node")
 	}
 }
 
@@ -566,4 +664,55 @@ func TestAPISettingsTakeEffectLive(t *testing.T) {
 	if set.DecoyTemplate == "no-such-template" {
 		t.Error("an unknown decoy template was stored")
 	}
+}
+
+// The two connection breakdowns aggregate the whole connections table and then do a
+// per-row geo lookup, against the single SQLite connection every other request queues
+// behind — and the API limiter allows 600 calls a minute. They are memoized for the same
+// reason the public status page is; without it a key holder can stall the panel by
+// looping a GET.
+func TestAPIGeoStatsAreMemoized(t *testing.T) {
+	rt, st := apiTestRouter(t)
+	u, err := rt.mgr.CreateUser(t.Context(), "geo", 0, 0)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := st.AddConnection(u.ID, "8.8.8.8", time.Now().Unix()); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+
+	if code, _ := apiCall(t, rt, "GET", "/v1/stats/countries", ""); code != http.StatusOK {
+		t.Fatalf("countries = %d", code)
+	}
+	// A row added after the first call must NOT appear while the window is open: that is
+	// what proves the second call was served from the cache rather than re-aggregating.
+	if err := st.AddConnection(u.ID, "1.1.1.1", time.Now().Unix()); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	_, data := apiCall(t, rt, "GET", "/v1/stats/countries", "")
+	var first []model.CountryStat
+	if err := json.Unmarshal(data, &first); err != nil {
+		t.Fatalf("decode: %v (%s)", err, data)
+	}
+
+	// Expire the window and the fresh row shows up.
+	rt.countryStats.mu.Lock()
+	rt.countryStats.at = time.Now().Add(-2 * geoStatsTTL)
+	rt.countryStats.mu.Unlock()
+	_, data = apiCall(t, rt, "GET", "/v1/stats/countries", "")
+	var second []model.CountryStat
+	if err := json.Unmarshal(data, &second); err != nil {
+		t.Fatalf("decode: %v (%s)", err, data)
+	}
+	if totalIPs(second) <= totalIPs(first) {
+		t.Errorf("the cache never refreshed: %d IPs before, %d after the TTL", totalIPs(first), totalIPs(second))
+	}
+}
+
+func totalIPs(rows []model.CountryStat) int64 {
+	var n int64
+	for _, r := range rows {
+		n += r.IPs
+	}
+	return n
 }

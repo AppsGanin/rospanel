@@ -3,9 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -18,26 +16,6 @@ import (
 	"github.com/AppsGanin/rospanel/internal/telegram"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
-
-// validDNSServer reports whether s is an acceptable Xray DNS server: "localhost",
-// a scheme URL (https://, tcp://, quic://…), a bare IP, or IP:port.
-func validDNSServer(s string) bool {
-	s = strings.TrimSpace(s)
-	switch {
-	case s == "":
-		return false
-	case s == "localhost":
-		return true
-	case strings.Contains(s, "://"):
-		u, err := url.Parse(s)
-		return err == nil && u.Host != ""
-	case net.ParseIP(s) != nil:
-		return true
-	default:
-		host, _, err := net.SplitHostPort(s)
-		return err == nil && net.ParseIP(host) != nil
-	}
-}
 
 // userView is a user plus its derived share links (one credential set, three
 // protocols).

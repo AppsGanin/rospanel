@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -130,12 +132,43 @@ func (m *Manager) SetDecoyTemplate(name string) error {
 }
 
 // SetXrayDNS persists the Xray DNS servers and reloads Xray with the new config.
+//
+// The entries are validated HERE rather than in the panel handler that used to own the
+// check: /v1 reaches this too, and a DNS server only the panel refused would be stored
+// by the API and then reconciled against — Xray would take a config the operator could
+// not have produced through the UI.
 func (m *Manager) SetXrayDNS(dns string) error {
+	for _, e := range strings.FieldsFunc(dns, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' '
+	}) {
+		if !validDNSServer(e) {
+			return invalidCode("err.badDNS", "неверный DNS-адрес: {{detail}}", map[string]any{"detail": e})
+		}
+	}
 	if err := m.store.SetXrayDNS(strings.TrimSpace(dns)); err != nil {
 		return err
 	}
 	m.TriggerReconcile()
 	return nil
+}
+
+// validDNSServer accepts a plain IP, an ip:port, a DoH/DoT URL, or "localhost".
+func validDNSServer(s string) bool {
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "":
+		return false
+	case s == "localhost":
+		return true
+	case strings.Contains(s, "://"):
+		u, err := url.Parse(s)
+		return err == nil && u.Host != ""
+	case net.ParseIP(s) != nil:
+		return true
+	default:
+		host, _, err := net.SplitHostPort(s)
+		return err == nil && net.ParseIP(host) != nil
+	}
 }
 
 // Settings returns the current settings row (read-only handlers).
@@ -639,24 +672,26 @@ func (m *Manager) ConfigSnapshots() ([]model.ConfigSnapshot, error) {
 }
 
 // snapshotCurrentConfig captures the master's whole server config into a snapshot.
-func (m *Manager) snapshotCurrentConfig(label string, auto bool) error {
+func (m *Manager) snapshotCurrentConfig(label string, auto bool) (int64, error) {
 	set, err := m.store.GetSettings()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	inbounds, err := m.store.Inbounds(model.LocalNodeID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	blob, err := json.Marshal(model.ServerConfigFrom(set, inbounds))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return m.store.CreateConfigSnapshot(strings.TrimSpace(label), auto, string(blob))
 }
 
-// SnapshotServerConfig takes an operator's manual save-point of the whole server config.
-func (m *Manager) SnapshotServerConfig(label string) error {
+// SnapshotServerConfig takes an operator's manual save-point of the whole server config
+// and returns its id, so a caller can name the save-point it just made rather than
+// guessing at "the newest one".
+func (m *Manager) SnapshotServerConfig(label string) (int64, error) {
 	return m.snapshotCurrentConfig(label, false)
 }
 
@@ -673,7 +708,7 @@ func (m *Manager) RollbackServerConfig(id int64) error {
 	}
 	// Undo point for the rollback itself. Best-effort — a failed pre-snapshot must not
 	// block the restore the operator asked for.
-	_ = m.snapshotCurrentConfig("", true)
+	_, _ = m.snapshotCurrentConfig("", true)
 
 	// Settings + custom inbounds restore atomically (see store.RestoreServerConfig):
 	// inbounds keep their original ids so group grants survive, and a failure rolls the

@@ -117,7 +117,7 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	case supportToken != cur.TGSupportBotToken || supportUser == "":
 		// A different bot, so whatever comes back is the truth — including "". Keeping
 		// the previous bot's @username would aim the support button at a stranger.
-		supportUser = botUsername(r.Context(), supportToken, proxyURL)
+		supportUser = botUsernameFresh(r.Context(), supportToken, proxyURL)
 	case proxyURL != cur.TelegramProxyURL():
 		// Same bot, new route: worth re-checking, but a failure must NOT clear a
 		// username we already have. A route just pointed at a local egress may need
@@ -125,7 +125,7 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 		// its address exists — and clearing on that would make the route impossible to
 		// save while support is on, since SaveTelegramSupport refuses an enabled relay
 		// with no username.
-		if u := botUsername(r.Context(), supportToken, proxyURL); u != "" {
+		if u := botUsernameFresh(r.Context(), supportToken, proxyURL); u != "" {
 			supportUser = u
 		}
 	}
@@ -411,14 +411,33 @@ func botUsername(ctx context.Context, token, proxy string) string {
 	}
 	botNameMu.Unlock()
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// The lookup gets its OWN deadline rather than inheriting the caller's context. On
+	// the subscription path the caller is an HTTP request from a phone, and a client that
+	// walks out of signal cancels it — caching that as "this bot has no username" would
+	// blank the support link and the deep link for EVERY user until the entry expired.
+	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	u, err := telegram.NewClient(token, proxy).GetMe(lookupCtx)
 	name := ""
-	if u, err := telegram.NewClient(token, proxy).GetMe(ctx); err == nil {
+	if err == nil {
 		name = u.Username
 	}
 	botNameMu.Lock()
 	botNameCache[key] = botNameEntry{name: name, at: time.Now()}
 	botNameMu.Unlock()
 	return name
+}
+
+// botUsernameFresh resolves the @username bypassing the cache, for the paths where a
+// stale negative answer is the difference between saving a setting and refusing it: the
+// support-token save refuses a token whose bot it cannot see, and an operator who fixes
+// the network and presses save again must not be answered out of a minute-old failure.
+func botUsernameFresh(ctx context.Context, token, proxy string) string {
+	if token == "" {
+		return ""
+	}
+	botNameMu.Lock()
+	delete(botNameCache, token+"\x00"+proxy)
+	botNameMu.Unlock()
+	return botUsername(ctx, token, proxy)
 }

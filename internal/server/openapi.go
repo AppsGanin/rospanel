@@ -212,10 +212,10 @@ func apiSpecRoutes() []oaRoute {
 			resp:  t(store.AbuseMatch{}), list: true},
 		{method: "GET", path: "/v1/stats/countries", tag: "Stats",
 			summary: "Recent connections grouped by country",
-			resp:    t(model.CountryStat{}), list: true},
+			query:   pageParams(), resp: t(model.CountryStat{}), list: true, meta: true},
 		{method: "GET", path: "/v1/stats/asns", tag: "Stats",
 			summary: "Recent connections grouped by network operator (ASN)",
-			resp:    t(model.ASNStat{}), list: true},
+			query:   pageParams(), resp: t(model.ASNStat{}), list: true, meta: true},
 
 		// Configuration. These change how the servers RUN, which is why every mutation
 		// below is audited like a node change.
@@ -229,14 +229,14 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Read a server's routing, DNS and egress backends (server 0 is the master)",
 			resp:    t(apiServerRouting{})},
 		{method: "POST", path: "/v1/servers/{id}/routing", tag: "Routing",
-			summary: "Replace a server's routing, DNS and egress backends",
-			req:     t(apiServerRouting{}), resp: t(apiServerRouting{})},
+			summary: "Update a server's routing, DNS and egress backends — omitted fields are left as they are, `routing` replaces the rule set wholesale",
+			req:     t(apiServerRoutingReq{}), resp: t(apiServerRouting{})},
 		{method: "POST", path: "/v1/servers/{id}/xray-restart", tag: "Routing",
 			summary: "Restart a server's Xray (queued for a node; drops its live connections)",
 			resp:    t(oaOKResp{})},
 		{method: "GET", path: "/v1/config/snapshots", tag: "Settings",
 			summary: "List the master's config save-points",
-			resp:    t(model.ConfigSnapshot{}), list: true},
+			query:   pageParams(), resp: t(model.ConfigSnapshot{}), list: true, meta: true},
 		{method: "POST", path: "/v1/config/snapshots", tag: "Settings",
 			summary: "Take a config save-point",
 			req:     t(apiSnapshotReq{}), resp: t(model.ConfigSnapshot{}), status: 201},
@@ -244,7 +244,7 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Restore the whole server config from a save-point (restarts Xray fleet-wide)",
 			resp:    t(oaOKResp{})},
 		{method: "DELETE", path: "/v1/config/snapshots/{id}", tag: "Settings",
-			summary: "Delete a save-point"},
+			summary: "Delete a save-point", resp: t(oaOKResp{})},
 
 		// The journals. Both page backwards with ?before=<oldest id held>.
 		{method: "GET", path: "/v1/events", tag: "Journal", summary: "User events across the panel",

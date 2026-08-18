@@ -23,10 +23,10 @@ func TestConfigSnapshots(t *testing.T) {
 
 	// Create a manual and an auto snapshot; the list is newest-first with metadata.
 	manual, _ := json.Marshal(model.ServerConfigSnapshot{VLESSPort: 443, RealityPrivateKey: "secret-key"})
-	if err := st.CreateConfigSnapshot("before egress edit", false, string(manual)); err != nil {
+	if _, err := st.CreateConfigSnapshot("before egress edit", false, string(manual)); err != nil {
 		t.Fatalf("create manual: %v", err)
 	}
-	if err := st.CreateConfigSnapshot("", true, `{"vless_port":8443}`); err != nil {
+	if _, err := st.CreateConfigSnapshot("", true, `{"vless_port":8443}`); err != nil {
 		t.Fatalf("create auto: %v", err)
 	}
 	snaps, err := st.ListConfigSnapshots()
@@ -132,7 +132,7 @@ func TestRestoreServerConfigKeepsInboundIDsAndGrants(t *testing.T) {
 func TestConfigSnapshotsCapped(t *testing.T) {
 	st := snapStore(t)
 	for i := 0; i < maxConfigSnapshots+15; i++ {
-		if err := st.CreateConfigSnapshot("", true, `{}`); err != nil {
+		if _, err := st.CreateConfigSnapshot("", true, `{}`); err != nil {
 			t.Fatalf("create %d: %v", i, err)
 		}
 	}

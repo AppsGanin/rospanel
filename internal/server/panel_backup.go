@@ -256,7 +256,12 @@ func inspectArchive(path string) (issue string, users, admins int) {
 	// A database from a NEWER panel cannot be restored into this one: the migration
 	// runner skips versions already recorded, so nothing would run and the binary would
 	// read columns its schema lacks — a boot loop with no way out from inside the panel.
-	if v, err := store.DBSchemaVersion(dbPath); err == nil && v > store.SchemaVersion() {
+	//
+	// Fails CLOSED. An archive whose schema_migrations cannot be read is not one to take
+	// a chance on: the whole point of the check is that the failure it prevents is
+	// unrecoverable from inside the panel.
+	v, err := store.DBSchemaVersion(dbPath)
+	if err != nil || v > store.SchemaVersion() {
 		return "restore.schemaTooNew", u, a
 	}
 	return "", u, a

@@ -15,21 +15,29 @@ const maxConfigSnapshots = 30
 // cap. The JSON is encrypted at rest (it carries the REALITY/WARP private keys), like
 // the token fields in the settings row. auto marks the ones taken automatically (e.g.
 // before a rollback) vs. an operator's manual save-point.
-func (s *Store) CreateConfigSnapshot(label string, auto bool, configJSON string) error {
-	return s.withTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(
+func (s *Store) CreateConfigSnapshot(label string, auto bool, configJSON string) (int64, error) {
+	var id int64
+	err := s.withTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec(
 			`INSERT INTO config_snapshots (created_at, label, auto, config_json)
 			 VALUES (unixepoch(), ?, ?, ?)`,
 			label, boolToInt(auto), encField(configJSON),
-		); err != nil {
+		)
+		if err != nil {
 			return err
 		}
-		_, err := tx.Exec(
+		// The id is returned rather than left to the caller to guess from "newest
+		// first": created_at is whole seconds, so a concurrent create — or the
+		// auto-snapshot a rollback takes — can land between the insert and the list and
+		// hand the caller someone else's save-point to roll back to.
+		id, _ = res.LastInsertId()
+		_, err = tx.Exec(
 			`DELETE FROM config_snapshots WHERE id NOT IN (
 			   SELECT id FROM config_snapshots ORDER BY created_at DESC, id DESC LIMIT ?
 			 )`, maxConfigSnapshots)
 		return err
 	})
+	return id, err
 }
 
 // ListConfigSnapshots returns the snapshots newest first, without the payload.

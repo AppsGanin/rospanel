@@ -75,15 +75,29 @@ func cleanDeviceField(s string, max int) string {
 // byte).
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
-// DeviceCap is the number of devices this user may bind: their own limit when they
-// have one, otherwise the panel-wide fallback. 0 means unlimited.
+// MaxDevicesPerUser is the ceiling the device roster is ALWAYS held to, including when
+// no operator limit is set. The roster is written from an unauthenticated subscription
+// fetch carrying a client-supplied hardware id, so "no limit" cannot mean "unbounded" —
+// one token would otherwise insert a row per request forever.
+const MaxDevicesPerUser = 50
+
+// DeviceCap is the number of devices this user may bind: their own limit when they have
+// one, otherwise the panel-wide fallback, and never more than MaxDevicesPerUser.
 //
-// It reuses users.device_limit deliberately — an operator sets "three devices" once
-// and both counters honour it, rather than the account carrying two limits that can
-// disagree.
+// It reuses users.device_limit deliberately — an operator sets "three devices" once and
+// both counters honour it, rather than the account carrying two limits that can disagree.
+//
+// It never returns 0. The enforced number and the displayed number have to be the SAME
+// number: while this returned 0 for "unlimited", the store still refused the 51st device
+// and the refused user was told "51 / 0", with the operator's roster and the API both
+// reporting the limit as unlimited.
 func (s *Settings) DeviceCap(u User) int {
+	cap := s.HWIDFallbackLimit
 	if u.DeviceLimit > 0 {
-		return u.DeviceLimit
+		cap = u.DeviceLimit
 	}
-	return s.HWIDFallbackLimit
+	if cap <= 0 || cap > MaxDevicesPerUser {
+		return MaxDevicesPerUser
+	}
+	return cap
 }
