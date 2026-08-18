@@ -31,7 +31,7 @@ func (rt *Router) createConfigSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.SnapshotServerConfig(req.Label); err != nil {
+	if _, err := rt.mgr.SnapshotServerConfig(req.Label); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

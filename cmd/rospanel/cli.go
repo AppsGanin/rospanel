@@ -98,6 +98,14 @@ func runRestore(dataDir string, args []string) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		log.Fatalf("restore: %v", err)
 	}
+	// Same schema gate the upload path applies. Restoring an archive from a NEWER panel
+	// leaves this binary reading columns its schema lacks — the migration runner skips
+	// versions already recorded, so nothing runs — and the result is a boot loop with no
+	// way out from inside the panel. Refusing here costs one message; not refusing costs
+	// an SSH session and a newer binary.
+	if err := checkRestoreSchema(src); err != nil {
+		log.Fatalf("restore refused: %v", err)
+	}
 	if err := backup.StageRestore(src, dataDir); err != nil {
 		log.Fatalf("restore failed: %v", err)
 	}
@@ -752,4 +760,27 @@ func printRescueCredentials(login, password string, unlocked bool) {
 	fmt.Printf("\n%s\n RESCUE CREDENTIALS (shown once — sign in and change them)\n%s\n"+
 		" Login      : %s\n Password   : %s%s\n%s\n",
 		bar, bar, login, password, extra, bar)
+}
+
+// checkRestoreSchema unpacks an archive to a throwaway directory and refuses it when its
+// database was written by a panel newer than this binary. Fails closed: a schema it
+// cannot read is not one to take a chance on.
+func checkRestoreSchema(src string) error {
+	dir, err := os.MkdirTemp("", "rospanel-restore-check-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	if err := backup.Restore(src, dir); err != nil {
+		return fmt.Errorf("archive is unreadable: %w", err)
+	}
+	v, err := store.DBSchemaVersion(filepath.Join(dir, "rospanel.db"))
+	if err != nil {
+		return fmt.Errorf("could not read the archive's schema version: %w", err)
+	}
+	if v > store.SchemaVersion() {
+		return fmt.Errorf("the backup was written by a newer panel (schema %d, this build knows %d) — "+
+			"update the panel first", v, store.SchemaVersion())
+	}
+	return nil
 }

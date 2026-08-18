@@ -249,14 +249,8 @@ func (rt *Router) setXrayDNS(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	for _, e := range strings.FieldsFunc(req.DNS, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == ',' || r == ' '
-	}) {
-		if !validDNSServer(e) {
-			writeErrDetail(w, http.StatusBadRequest, "err.badDNS", "неверный DNS-адрес: ", e)
-			return
-		}
-	}
+	// Validation lives in the manager now, so this surface and /v1 refuse the same
+	// values; the error carries the offending entry back as a translated key.
 	if err := rt.mgr.SetXrayDNS(req.DNS); err != nil {
 		writeManagerErr(w, err)
 		return

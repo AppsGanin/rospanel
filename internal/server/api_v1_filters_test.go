@@ -76,6 +76,12 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 			t.Fatalf("device: %v", err)
 		}
 	}
+	// Two config save-points, so the snapshot list has a second page to skip to.
+	for _, label := range []string{"first", "second"} {
+		if _, err := st.CreateConfigSnapshot(label, false, `{}`); err != nil {
+			t.Fatalf("snapshot %s: %v", label, err)
+		}
+	}
 	if err := st.AddAbuseMatches([]store.AbuseHit{
 		{UserID: alpha.ID, Domain: "a.example", Category: "ads", Day: day(1), Count: 1, SeenAt: now.Unix()},
 		{UserID: alpha.ID, Domain: "b.example", Category: "ads", Day: day(2), Count: 1, SeenAt: now.Unix()},
@@ -153,6 +159,13 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 		"/v1/stats/nodes/series?from":        "from=" + day(1),
 		"/v1/stats/nodes/series?to":          "to=" + day(2),
 		"/v1/stats/nodes/series?user_id":     "user_id=" + itoa64(alpha.ID),
+		// The configuration lists page like every other list.
+		"/v1/config/snapshots?limit":  "limit=1",
+		"/v1/config/snapshots?offset": "offset=1",
+		"/v1/stats/countries?limit":   "limit=1",
+		"/v1/stats/countries?offset":  "offset=1",
+		"/v1/stats/asns?limit":        "limit=1",
+		"/v1/stats/asns?offset":       "offset=1",
 	}
 
 	// ---- walk the published spec, so nothing can be added untested -----------

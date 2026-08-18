@@ -77,6 +77,16 @@ func ensureHealthyDB(dbPath, dataDir string) error {
 			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
 			continue
 		}
+		// ...and it could be from a NEWER panel. After a binary rollback the newest
+		// local archive usually is, and restoring it here would produce exactly the boot
+		// loop the upload path refuses: the migration runner skips versions already
+		// recorded, so this binary would then read columns its schema lacks. Fails
+		// closed, for the same reason it does there.
+		if v, verr := store.DBSchemaVersion(dbPath); verr != nil || v > store.SchemaVersion() {
+			lastErr = fmt.Errorf("%s was written by a newer panel (schema %d > %d): %v", name, v, store.SchemaVersion(), verr)
+			log.Printf("[ALERT] database: %v — trying an older backup", lastErr)
+			continue
+		}
 		log.Printf("[ALERT] database: recovered from backup %s — changes made after that backup are LOST", name)
 		log.Printf("[ALERT] database: the damaged file is preserved at %s", quarantine)
 		return nil

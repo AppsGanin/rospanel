@@ -22,6 +22,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/decoy"
+	"github.com/AppsGanin/rospanel/internal/model"
 	webui "github.com/AppsGanin/rospanel/web"
 )
 
@@ -33,16 +34,20 @@ const (
 // Router is the top-level HTTP handler. The secret path, SPA shell and decoy can
 // be swapped at runtime (from the settings page) without restarting.
 type Router struct {
-	mgr        *core.Manager
-	dataDir    string
-	panel      http.Handler
-	api        http.Handler // external REST API mux (key-authenticated), mounted under apiPath
-	assets     http.Handler
-	indexRaw   []byte // index.html before <base href> injection
-	limiter    *loginLimiter
+	mgr      *core.Manager
+	dataDir  string
+	panel    http.Handler
+	api      http.Handler // external REST API mux (key-authenticated), mounted under apiPath
+	assets   http.Handler
+	indexRaw []byte // index.html before <base href> injection
+	limiter  *loginLimiter
 	// statusCache memoizes the rendered public status page per language; see statusBody.
 	statusMu    sync.Mutex
 	statusCache map[string]statusPageCache
+
+	// The two connection breakdowns, memoized for the same reason — see geoStatsTTL.
+	countryStats geoStatsCache[model.CountryStat]
+	asnStats     geoStatsCache[model.ASNStat]
 
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
@@ -107,22 +112,22 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 	maintDecoy, _ := decoy.New("maintenance", decoy.LoadStamp(dataDir))
 
 	rt := &Router{
-		mgr:        mgr,
-		dataDir:    dataDir,
-		assets:     http.FileServer(http.FS(spa)),
-		indexRaw:   indexRaw,
-		limiter:    newLoginLimiter(),
-		subLimiter: newIPRateLimiter(120, time.Minute),
-		apiLimiter: newIPRateLimiter(600, time.Minute),
-		apiKeys:    newAPIKeyGuard(),
-		probes:     newProbeGuard(),
-		streams:    newStreamGate(),
-		status:     newStatusFeed(mgr),
-		secret:     secret,
-		subPath:    subPath,
-		paySecret:  paySecret,
-		apiPath:    apiPath,
-		nodePath:   nodePath,
+		mgr:         mgr,
+		dataDir:     dataDir,
+		assets:      http.FileServer(http.FS(spa)),
+		indexRaw:    indexRaw,
+		limiter:     newLoginLimiter(),
+		subLimiter:  newIPRateLimiter(120, time.Minute),
+		apiLimiter:  newIPRateLimiter(600, time.Minute),
+		apiKeys:     newAPIKeyGuard(),
+		probes:      newProbeGuard(),
+		streams:     newStreamGate(),
+		status:      newStatusFeed(mgr),
+		secret:      secret,
+		subPath:     subPath,
+		paySecret:   paySecret,
+		apiPath:     apiPath,
+		nodePath:    nodePath,
 		statusPath:  statusPath,
 		spaIndex:    injectBase(indexRaw, "/"+secret+"/"),
 		decoy:       d,
