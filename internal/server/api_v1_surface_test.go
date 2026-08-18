@@ -429,3 +429,97 @@ func TestAPICatalogsArePublished(t *testing.T) {
 
 // id64 keeps the request bodies above readable.
 func id64(v int64) string { return strconv.FormatInt(v, 10) }
+
+// PATCH /v1/settings is a PARTIAL update. The trap it has to avoid is the one the HWID
+// group makes easy: those four fields are stored by a single call, so a naive handler
+// that reads the request struct and writes all four would reset the limit and the TTL
+// every time a caller flipped `hwid_enabled` alone — silently, and only visibly later
+// when devices stopped being refused.
+func TestAPISettingsPartialUpdateKeepsTheRest(t *testing.T) {
+	rt, st := apiTestRouter(t)
+
+	// Establish a known starting point through the store, the way an operator would
+	// have set it up in the panel.
+	set, err := st.GetSettings()
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	set.HWIDEnabled, set.HWIDRequire = true, true
+	set.HWIDFallbackLimit, set.HWIDTTLDays = 5, 14
+	if err := st.SetHWIDSettings(set); err != nil {
+		t.Fatalf("seed hwid: %v", err)
+	}
+	if err := rt.mgr.SetUserAutoDelete(30); err != nil {
+		t.Fatalf("seed autodelete: %v", err)
+	}
+
+	// Touch exactly one HWID field and one unrelated one.
+	code, data := apiCall(t, rt, "PATCH", "/v1/settings", `{"hwid_enabled":false}`)
+	if code != http.StatusOK {
+		t.Fatalf("PATCH /v1/settings = %d: %s", code, data)
+	}
+	var view apiSettingsView
+	if err := json.Unmarshal(data, &view); err != nil {
+		t.Fatalf("decode: %v (%s)", err, data)
+	}
+	if view.HWIDEnabled {
+		t.Error("hwid_enabled was not applied")
+	}
+	if view.HWIDFallbackLimit != 5 || view.HWIDTTLDays != 14 || !view.HWIDRequire {
+		t.Errorf("the rest of the HWID group was reset: limit=%d ttl=%d require=%v, want 5/14/true",
+			view.HWIDFallbackLimit, view.HWIDTTLDays, view.HWIDRequire)
+	}
+	if view.UserAutoDeleteDays != 30 {
+		t.Errorf("an untouched setting changed: user_autodelete_days=%d, want 30", view.UserAutoDeleteDays)
+	}
+
+	// Negative values are refused rather than stored.
+	if code, _ := apiCall(t, rt, "PATCH", "/v1/settings", `{"hwid_ttl_days":-1}`); code != http.StatusBadRequest {
+		t.Errorf("negative ttl = %d, want 400", code)
+	}
+
+	// The panel's own secret path must never travel over /v1 — it is the obscurity
+	// layer in front of the panel, not a setting to hand out.
+	_, raw := apiCall(t, rt, "GET", "/v1/settings", "")
+	if secret, _ := st.GetSettings(); secret != nil && secret.PanelSecretPath != "" &&
+		strings.Contains(string(raw), secret.PanelSecretPath) {
+		t.Error("GET /v1/settings leaked the panel secret path")
+	}
+}
+
+// The master's routing has to round-trip through /v1: an integration that reads it,
+// changes a rule and writes it back must get exactly what it sent, or it cannot be used
+// to manage a server at all.
+func TestAPIServerRoutingRoundTrip(t *testing.T) {
+	rt, _ := apiTestRouter(t)
+
+	const body = `{"routing":{"block_ads":true,"block_bittorrent":true,"block_domains":["ads.example.com"]},` +
+		`"xray_dns":"1.1.1.1","warp_enabled":false,"opera_enabled":false,"opera_country":"EU"}`
+	code, data := apiCall(t, rt, "POST", "/v1/servers/0/routing", body)
+	if code != http.StatusOK {
+		t.Fatalf("POST routing = %d: %s", code, data)
+	}
+
+	code, data = apiCall(t, rt, "GET", "/v1/servers/0/routing", "")
+	if code != http.StatusOK {
+		t.Fatalf("GET routing = %d: %s", code, data)
+	}
+	var got apiServerRouting
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode: %v (%s)", err, data)
+	}
+	if !got.Routing.BlockAds || !got.Routing.BlockBittorrent {
+		t.Errorf("block flags did not survive: %+v", got.Routing)
+	}
+	if len(got.Routing.BlockDomains) != 1 || got.Routing.BlockDomains[0] != "ads.example.com" {
+		t.Errorf("block_domains did not survive: %v", got.Routing.BlockDomains)
+	}
+	if got.XrayDNS != "1.1.1.1" {
+		t.Errorf("xray_dns = %q, want 1.1.1.1", got.XrayDNS)
+	}
+
+	// An unknown server is a 404, not a silent success against the master.
+	if code, _ := apiCall(t, rt, "GET", "/v1/servers/9999/routing", ""); code != http.StatusNotFound {
+		t.Errorf("GET routing for a missing server = %d, want 404", code)
+	}
+}
