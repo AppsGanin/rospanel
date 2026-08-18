@@ -96,7 +96,10 @@ func (s *Settings) DeviceCap(u User) int {
 	if u.DeviceLimit > 0 {
 		cap = u.DeviceLimit
 	}
-	if cap <= 0 || cap > MaxDevicesPerUser {
+	// Only "no number given" is replaced by the ceiling. An operator who deliberately
+	// allows 100 devices gets 100 — capping their explicit choice would be a silent
+	// policy change, and it is the UNSET case that was unbounded, not the set one.
+	if cap <= 0 {
 		return MaxDevicesPerUser
 	}
 	return cap
