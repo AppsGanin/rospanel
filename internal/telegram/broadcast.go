@@ -34,6 +34,8 @@ type BroadcastService struct {
 	clientProxy string    // proxy the cached client was built with; a change rebuilds it
 	warnedAt    time.Time // last "stalled, bot is off" warning
 	sweptAt     time.Time // last attachment sweep
+	// textRejects counts consecutive message-level refusals per run — see record.
+	textRejects map[int64]int
 	// poisoned parks runs whose outcomes cannot be recorded, keyed by id → expiry.
 	// In memory on purpose: the condition it guards against is the database being
 	// unwritable, so a database-backed flag would fail in the same breath.
@@ -380,6 +382,7 @@ func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) erro
 	state, msg := model.TargetSent, ""
 	switch {
 	case sendErr == nil:
+		s.clearTextRejections(broadcastID)
 	case isBlockedByUser(sendErr):
 		state, msg = model.TargetBlocked, sendErr.Error()
 		if err := s.store.SetSubscriberBlocked(chatID, now); err != nil {
@@ -387,6 +390,19 @@ func (s *BroadcastService) record(broadcastID, chatID int64, sendErr error) erro
 		}
 	default:
 		state, msg = model.TargetFailed, sendErr.Error()
+		// A 400 that is not a block is the MESSAGE being refused, not the recipient —
+		// malformed operator HTML ("<3", an unclosed <b>) fails identically for every
+		// single person. The attachment path already stops for this reason; without the
+		// same guard here a 50k run spends half an hour delivering nothing. Counted
+		// consecutively, so an isolated 400 still just costs one recipient.
+		if isFileRejected(sendErr) {
+			if n := s.noteTextRejected(broadcastID); n >= maxTextRejections {
+				log.Printf("telegram broadcast %d: %d consecutive rejections: %v", broadcastID, n, sendErr)
+				s.pause(broadcastID, "Telegram rejected the message text: "+sendErr.Error())
+			}
+		} else {
+			s.clearTextRejections(broadcastID)
+		}
 	}
 	if err := s.store.MarkTarget(broadcastID, chatID, state, msg, now); err != nil {
 		log.Printf("telegram broadcast %d: mark %d: %v", broadcastID, chatID, err)
@@ -454,4 +470,26 @@ func broadcastRows(buttons []model.BroadcastButton) [][]InlineButton {
 		rows = append(rows, []InlineButton{{Text: b.Text, URL: b.URL}})
 	}
 	return rows
+}
+
+// maxTextRejections is how many recipients in a row may be refused for the message
+// itself before the run is paused for the operator to look at.
+const maxTextRejections = 5
+
+// noteTextRejected counts one consecutive message-level rejection and returns the run's
+// total; clearTextRejections resets it after anything that worked.
+func (s *BroadcastService) noteTextRejected(broadcastID int64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.textRejects == nil {
+		s.textRejects = map[int64]int{}
+	}
+	s.textRejects[broadcastID]++
+	return s.textRejects[broadcastID]
+}
+
+func (s *BroadcastService) clearTextRejections(broadcastID int64) {
+	s.mu.Lock()
+	delete(s.textRejects, broadcastID)
+	s.mu.Unlock()
 }

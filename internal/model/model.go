@@ -1059,10 +1059,16 @@ var OperaCountries = []string{"EU", "AS", "AM"}
 
 // OperaCountryOr returns the configured Opera VPN region, defaulting to "EU"
 // for an empty or unknown value.
-func (s *Settings) OperaCountryOr() string {
-	for _, c := range OperaCountries {
-		if s.OperaCountry == c {
-			return c
+func (s *Settings) OperaCountryOr() string { return OperaCountryOr(s.OperaCountry) }
+
+// OperaCountryOr coerces a region to one the helper actually knows, defaulting to "EU".
+// Shared so a node's column and the master's setting cannot disagree about what an
+// unknown value means — the master coerced on write, a node stored it raw, and the read
+// side then reported two different answers for the same state.
+func OperaCountryOr(c string) string {
+	for _, known := range OperaCountries {
+		if c == known {
+			return known
 		}
 	}
 	return "EU"

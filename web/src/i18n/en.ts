@@ -974,7 +974,7 @@ const en: Dict = {
       "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",
     hwidFallback: "Default limit",
     hwidFallbackHint:
-      "Applies to users with no device limit of their own. 0 means unlimited.",
+      "Applies to users with no device limit of their own. 0 falls back to the built-in cap of 50 devices.",
     hwidTTL: "Forget a device after, days",
     hwidTTLHint:
       "A device that hasn't refreshed for this long frees its slot. 0 never forgets.",

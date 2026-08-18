@@ -456,6 +456,10 @@ func (m *Manager) SetMasterProtocols(vless, hysteria, reality bool) error {
 			}
 		}
 	}
+	// Toggling REALITY on opens a new public listener; the per-IP flood guard covers a
+	// fixed port set and has to be recomputed, or that port comes up unprotected until
+	// some unrelated edit happens to refresh it. ApplyConnections already does this.
+	m.ensureLocalConnGuard()
 	m.TriggerReconcile()
 	return nil
 }

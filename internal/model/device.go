@@ -75,14 +75,13 @@ func cleanDeviceField(s string, max int) string {
 // byte).
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
-// MaxDevicesPerUser is the ceiling the device roster is ALWAYS held to, including when
-// no operator limit is set. The roster is written from an unauthenticated subscription
+// MaxDevicesPerUser is the DEFAULT cap, applied when no operator limit is set. The roster is written from an unauthenticated subscription
 // fetch carrying a client-supplied hardware id, so "no limit" cannot mean "unbounded" —
 // one token would otherwise insert a row per request forever.
 const MaxDevicesPerUser = 50
 
 // DeviceCap is the number of devices this user may bind: their own limit when they have
-// one, otherwise the panel-wide fallback, and never more than MaxDevicesPerUser.
+// one, the panel-wide fallback when that is set, and MaxDevicesPerUser when neither is.
 //
 // It reuses users.device_limit deliberately — an operator sets "three devices" once and
 // both counters honour it, rather than the account carrying two limits that can disagree.
