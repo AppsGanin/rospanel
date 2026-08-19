@@ -323,6 +323,11 @@ type NodeView struct {
 	Online      bool   `json:"online"`
 	Joined      bool   `json:"joined"`
 	LastSeen    int64  `json:"last_seen"`
+	// CreatedAt is when the node was registered. Carried because GET /v1/nodes/{id}
+	// used to answer the raw nodes row, which published it — switching that route to
+	// this view would otherwise have quietly dropped a documented field. 0 for the
+	// local server, which was never registered.
+	CreatedAt int64 `json:"created_at"`
 	NodeVersion string `json:"node_version"`
 	XrayVersion string `json:"xray_version"`
 	XrayRunning bool   `json:"xray_running"`
@@ -477,6 +482,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			Online:             n.Online(now),
 			Joined:             n.Joined(),
 			LastSeen:           n.LastSeen,
+			CreatedAt:          n.CreatedAt,
 			NodeVersion:        n.NodeVersion,
 			XrayVersion:        n.XrayVersion,
 			XrayRunning:        n.XrayRunning,

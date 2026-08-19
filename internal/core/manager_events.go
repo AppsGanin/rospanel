@@ -112,6 +112,12 @@ func (m *Manager) PurgeOldOrders() {
 // PurgeOldNodeCommands drops one-shot node commands nobody came back for. The take path
 // clears the ones whose node returns; this covers a node that never does.
 func (m *Manager) PurgeOldNodeCommands() {
+	// Under the same lock every other reader and writer of this table holds. Without
+	// it the sweep can delete a row between takeCmd reading it and marking it sent —
+	// the mark then updates nothing, returns no error, and a command judged expired
+	// ships anyway.
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
 	cutoff := time.Now().Add(-nodeCmdTTL).Unix()
 	if n, err := m.store.PurgeNodeCommands(cutoff); err != nil {
 		logErr("nodes: command sweep failed", "err", err)
