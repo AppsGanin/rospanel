@@ -7,6 +7,7 @@
 **Self-hosted панель управления VPN на Xray-core — от одного личного сервера до сети нод.**
 
 ![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=версия&sort=semver&color=2ea44f)
+![Downloads](https://img.shields.io/github/downloads/AppsGanin/rospanel/total?label=скачиваний&color=6f42c1)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
