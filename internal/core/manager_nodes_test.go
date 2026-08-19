@@ -438,41 +438,67 @@ func TestNodeWakeRegistry(t *testing.T) {
 }
 
 // A one-shot node command (self-update, geo refresh) used to be deleted the moment it
-// was handed to the node — before the response was even written. A response lost in
-// flight therefore took the request with it, and nothing anywhere recorded that the
-// node never got it. It now survives the handover and is cleared only when that node
-// comes back, which is the available proof that the response landed.
-func TestNodeCommandSurvivesHandoverUntilTheNodeReturns(t *testing.T) {
-	cmds := map[int64]*nodeCmdReq{}
-	now := time.Now()
-	cmds[7] = &nodeCmdReq{at: now}
+// was handed to the node — before the response was even written — and it lived in a map,
+// so a panel restart dropped every pending one silently. It now lives in node_commands
+// and is cleared only when that node comes back, which is the available proof that the
+// response landed.
+func TestNodeCommandSurvivesHandoverAndRestart(t *testing.T) {
+	st := nodeCmdStore(t)
+	const id, kind = int64(7), "update"
+	now := time.Now().Unix()
 
-	if !takeCmd(cmds, 7, now) {
-		t.Fatal("the command was not delivered on the first sync")
+	if err := st.SetNodeCommand(id, kind, now); err != nil {
+		t.Fatalf("record: %v", err)
 	}
-	if cmds[7] == nil {
-		t.Fatal("the command was consumed as it went out — a lost response loses it")
+
+	// A panel restart is a fresh Manager over the same store: the command must still be
+	// there. This is the case that mattered most — the restart that used to drop it is
+	// most often the panel's own self-update.
+	m := &Manager{store: st}
+	if !m.takeCmd(id, kind) {
+		t.Fatal("the command did not survive a restart")
 	}
-	// The node came back: the response reached it, so the request is done and must not
-	// be delivered a second time.
-	if takeCmd(cmds, 7, now.Add(time.Second)) {
+	c, err := st.NodeCommand(id, kind)
+	if err != nil || c == nil {
+		t.Fatalf("the command was consumed as it went out — a lost response loses it (%v)", err)
+	}
+	if !c.Sent {
+		t.Error("handover was not recorded")
+	}
+
+	// The node came back: the response reached it, so it is done and must not be sent
+	// a second time.
+	if m.takeCmd(id, kind) {
 		t.Error("the command was delivered twice")
 	}
-	if cmds[7] != nil {
+	if c, _ := st.NodeCommand(id, kind); c != nil {
 		t.Error("the command was not cleared once the node returned")
 	}
 }
 
 // A node that never comes back must not act on an order the operator gave up on.
 func TestNodeCommandExpires(t *testing.T) {
-	cmds := map[int64]*nodeCmdReq{}
-	now := time.Now()
-	cmds[7] = &nodeCmdReq{at: now}
-
-	if takeCmd(cmds, 7, now.Add(nodeCmdTTL+time.Minute)) {
+	st := nodeCmdStore(t)
+	const id, kind = int64(7), "geo"
+	stale := time.Now().Add(-nodeCmdTTL - time.Minute).Unix()
+	if err := st.SetNodeCommand(id, kind, stale); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	m := &Manager{store: st}
+	if m.takeCmd(id, kind) {
 		t.Error("an expired command was still delivered")
 	}
-	if cmds[7] != nil {
-		t.Error("an expired command was left in the map")
+	if c, _ := st.NodeCommand(id, kind); c != nil {
+		t.Error("an expired command was left behind")
 	}
+}
+
+func nodeCmdStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "cmd.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return st
 }

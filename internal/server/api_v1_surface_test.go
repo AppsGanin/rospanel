@@ -716,3 +716,51 @@ func totalIPs(rows []model.CountryStat) int64 {
 	}
 	return n
 }
+
+// A list row and the same object fetched by id must be the same object. They were not:
+// the list returned NodeView (online, is_local, proxy, reality_public_key) and the get
+// returned the raw nodes row, so a client generated from the spec broke the moment it
+// re-fetched. And the master, which the list includes as id 0, could not be fetched at
+// all — it is not a nodes row.
+func TestAPINodeGetMatchesTheListShape(t *testing.T) {
+	h, _, st := nodeAPITestServer(t)
+	base, key := apiFixture(t, h, st)
+
+	get := func(path string, out any) {
+		t.Helper()
+		rec := apiGet(t, h, base+path, key)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+	}
+
+	var list struct {
+		Data []map[string]any `json:"data"`
+	}
+	get("/v1/nodes", &list)
+	if len(list.Data) == 0 {
+		t.Fatal("the node list is empty — the local server should always be in it")
+	}
+	row := list.Data[0]
+	id, _ := row["id"].(float64)
+	if id != 0 {
+		t.Fatalf("first row is node %v, expected the local server (0)", id)
+	}
+
+	var one struct {
+		Data map[string]any `json:"data"`
+	}
+	get("/v1/nodes/0", &one)
+	if len(one.Data) == 0 {
+		t.Fatal("GET /v1/nodes/0 returned nothing — the master is in the list but not fetchable")
+	}
+	// Every field the list publishes must be present on the single-node read too.
+	for k := range row {
+		if _, ok := one.Data[k]; !ok {
+			t.Errorf("the list row has %q but the by-id read does not", k)
+		}
+	}
+}

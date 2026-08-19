@@ -963,8 +963,13 @@ func (m *Manager) RequestNodeUpdate(id int64) error {
 		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
-	m.nodeUpdateWanted[id] = &nodeCmdReq{at: time.Now()}
+	err = m.store.SetNodeCommand(id, nodeCmdUpdate, time.Now().Unix())
 	m.nodeUpdateMu.Unlock()
+	if err != nil {
+		// Report it: the whole point of putting the command on disk is that the
+		// operator is told whether it was actually recorded.
+		return err
+	}
 	m.nodes.wakeOne(id)
 	return nil
 }
@@ -998,34 +1003,43 @@ const (
 // its own the moment it comes back.
 const nodeCmdTTL = 15 * time.Minute
 
-// nodeCmdReq is one such command. It survives being handed to the node and is cleared on
-// that node's NEXT sync, which is the only evidence available here that the response was
-// actually received — the alternative, deleting it as it goes out, loses the request
-// whenever the response does, with nothing anywhere to say so.
-type nodeCmdReq struct {
-	at   time.Time // when the operator asked (drives the TTL)
-	sent bool      // handed to the node in a sync response
-}
-
-// live reports whether the request is still worth delivering.
-func (c *nodeCmdReq) live(now time.Time) bool {
-	return c != nil && now.Sub(c.at) < nodeCmdTTL
-}
+// The kinds of one-shot command a node can be carrying. Stored as-is in node_commands.
+const (
+	nodeCmdUpdate = "update"
+	nodeCmdGeo    = "geo"
+)
 
 // takeCmd is the shared handover: deliver once, then keep the request until the node
 // returns. Reports whether the command should ride this response.
-func takeCmd(m map[int64]*nodeCmdReq, id int64, now time.Time) bool {
-	c := m[id]
-	if !c.live(now) {
-		delete(m, id) // absent or expired
+//
+// Backed by the store rather than a map so a panel restart does not drop what an
+// operator asked for — and the restart that used to drop it is most often the panel's
+// own self-update, i.e. exactly when the fleet is asked to update too.
+func (m *Manager) takeCmd(id int64, kind string) bool {
+	m.nodeUpdateMu.Lock()
+	defer m.nodeUpdateMu.Unlock()
+	c, err := m.store.NodeCommand(id, kind)
+	if err != nil || c == nil {
+		if err != nil {
+			logErr("node command: read failed", "node", id, "kind", kind, "err", err)
+		}
 		return false
 	}
-	if c.sent {
+	if time.Since(time.Unix(c.At, 0)) >= nodeCmdTTL {
+		// Aged out. A node that was offline must not act on an order the operator gave
+		// up on minutes ago.
+		_ = m.store.DeleteNodeCommand(id, kind)
+		return false
+	}
+	if c.Sent {
 		// The node is back after being told — the response landed. Done.
-		delete(m, id)
+		_ = m.store.DeleteNodeCommand(id, kind)
 		return false
 	}
-	c.sent = true
+	if err := m.store.MarkNodeCommandSent(id, kind); err != nil {
+		logErr("node command: marking sent failed", "node", id, "kind", kind, "err", err)
+		return false // don't send what we cannot record, or it is delivered forever
+	}
 	return true
 }
 
@@ -1157,12 +1171,19 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 		return 0, err
 	}
 	n := 0
+	now := time.Now().Unix()
 	m.nodeUpdateMu.Lock()
 	for i := range nodes {
-		if nodes[i].Enabled && nodes[i].LastSeen > 0 {
-			m.nodeUpdateWanted[nodes[i].ID] = &nodeCmdReq{at: time.Now()}
-			n++
+		if !nodes[i].Enabled || nodes[i].LastSeen == 0 {
+			continue
 		}
+		// Count what was actually recorded. The returned number is the operator's only
+		// receipt, so a node whose row failed to write must not be in it.
+		if err := m.store.SetNodeCommand(nodes[i].ID, nodeCmdUpdate, now); err != nil {
+			logErr("node update-all: recording the command failed", "node", nodes[i].ID, "err", err)
+			continue
+		}
+		n++
 	}
 	m.nodeUpdateMu.Unlock()
 	m.notifyNodes()
@@ -1239,11 +1260,10 @@ func (m *Manager) storeNodeLogs(id int64, lines []string) {
 	m.nodeLogsMu.Unlock()
 }
 
-// TakeNodeUpdate consumes (and clears) a node's pending self-update flag.
+// TakeNodeUpdate hands over a node's pending self-update, if it has one. The lock lives
+// in takeCmd — taking it here too self-deadlocks, since Go mutexes do not re-enter.
 func (m *Manager) TakeNodeUpdate(id int64) bool {
-	m.nodeUpdateMu.Lock()
-	defer m.nodeUpdateMu.Unlock()
-	return takeCmd(m.nodeUpdateWanted, id, time.Now())
+	return m.takeCmd(id, nodeCmdUpdate)
 }
 
 // RequestNodeGeoRefresh flags a node to re-download its geo databases on its next
@@ -1257,8 +1277,13 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
-	m.nodeGeoWanted[id] = &nodeCmdReq{at: time.Now()}
+	err = m.store.SetNodeCommand(id, nodeCmdGeo, time.Now().Unix())
 	m.nodeUpdateMu.Unlock()
+	if err != nil {
+		// Report it: the whole point of putting the command on disk is that the
+		// operator is told whether it was actually recorded.
+		return err
+	}
 	m.nodes.wakeOne(id)
 	return nil
 }
@@ -1404,9 +1429,7 @@ func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
 
 // TakeNodeGeoRefresh consumes (and clears) a node's pending geo-refresh flag.
 func (m *Manager) TakeNodeGeoRefresh(id int64) bool {
-	m.nodeUpdateMu.Lock()
-	defer m.nodeUpdateMu.Unlock()
-	return takeCmd(m.nodeGeoWanted, id, time.Now())
+	return m.takeCmd(id, nodeCmdGeo)
 }
 
 // nodeTombstoneGrace is how long a deleted node's row is kept so it can still be
