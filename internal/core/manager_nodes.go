@@ -547,7 +547,12 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 	for i := range nodes {
 		n := &nodes[i]
 		if !n.Enabled || n.LastSeen == 0 {
-			continue // disabled, or never installed → don't hand clients a dead link
+			// Disabled, or never installed. Deliberately NOT "currently offline": a node
+			// bounces on every deploy and cert renewal, and yanking its links on a
+			// two-minute blip would strand every client whose next refresh is hours
+			// away, for a server that is already back. A client meeting a dead endpoint
+			// fails over on its own; a client missing the entry cannot.
+			continue
 		}
 		// A self-signed node that hasn't reported its cert fingerprint yet can't be
 		// pinned, so its VLESS/Trojan/Hysteria links would fail silently in a modern
@@ -958,7 +963,7 @@ func (m *Manager) RequestNodeUpdate(id int64) error {
 		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
-	m.nodeUpdateWanted[id] = true
+	m.nodeUpdateWanted[id] = &nodeCmdReq{at: time.Now()}
 	m.nodeUpdateMu.Unlock()
 	m.nodes.wakeOne(id)
 	return nil
@@ -986,6 +991,43 @@ const (
 	// again. Long enough to be read, short enough not to linger as stale news.
 	nodeRestartShow = 5 * time.Second
 )
+
+// nodeCmdTTL bounds how long a one-shot node command (self-update, geo refresh) stays
+// pending. Past it the request is dropped rather than delivered: an operator who asked a
+// node to update half an hour ago, gave up and walked away should not have it update on
+// its own the moment it comes back.
+const nodeCmdTTL = 15 * time.Minute
+
+// nodeCmdReq is one such command. It survives being handed to the node and is cleared on
+// that node's NEXT sync, which is the only evidence available here that the response was
+// actually received — the alternative, deleting it as it goes out, loses the request
+// whenever the response does, with nothing anywhere to say so.
+type nodeCmdReq struct {
+	at   time.Time // when the operator asked (drives the TTL)
+	sent bool      // handed to the node in a sync response
+}
+
+// live reports whether the request is still worth delivering.
+func (c *nodeCmdReq) live(now time.Time) bool {
+	return c != nil && now.Sub(c.at) < nodeCmdTTL
+}
+
+// takeCmd is the shared handover: deliver once, then keep the request until the node
+// returns. Reports whether the command should ride this response.
+func takeCmd(m map[int64]*nodeCmdReq, id int64, now time.Time) bool {
+	c := m[id]
+	if !c.live(now) {
+		delete(m, id) // absent or expired
+		return false
+	}
+	if c.sent {
+		// The node is back after being told — the response landed. Done.
+		delete(m, id)
+		return false
+	}
+	c.sent = true
+	return true
+}
 
 // nodeRestartReq is one operator-requested Xray restart, tracked from the click
 // until the node proves it happened — and then a little longer, so the answer is
@@ -1118,7 +1160,7 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 	m.nodeUpdateMu.Lock()
 	for i := range nodes {
 		if nodes[i].Enabled && nodes[i].LastSeen > 0 {
-			m.nodeUpdateWanted[nodes[i].ID] = true
+			m.nodeUpdateWanted[nodes[i].ID] = &nodeCmdReq{at: time.Now()}
 			n++
 		}
 	}
@@ -1201,11 +1243,7 @@ func (m *Manager) storeNodeLogs(id int64, lines []string) {
 func (m *Manager) TakeNodeUpdate(id int64) bool {
 	m.nodeUpdateMu.Lock()
 	defer m.nodeUpdateMu.Unlock()
-	if m.nodeUpdateWanted[id] {
-		delete(m.nodeUpdateWanted, id)
-		return true
-	}
-	return false
+	return takeCmd(m.nodeUpdateWanted, id, time.Now())
 }
 
 // RequestNodeGeoRefresh flags a node to re-download its geo databases on its next
@@ -1219,7 +1257,7 @@ func (m *Manager) RequestNodeGeoRefresh(id int64) error {
 		return invalidCode("err.nodeNotFound", "нода не найдена")
 	}
 	m.nodeUpdateMu.Lock()
-	m.nodeGeoWanted[id] = true
+	m.nodeGeoWanted[id] = &nodeCmdReq{at: time.Now()}
 	m.nodeUpdateMu.Unlock()
 	m.nodes.wakeOne(id)
 	return nil
@@ -1368,11 +1406,7 @@ func (m *Manager) SetNodeGeoRefresh(id int64, hours int) error {
 func (m *Manager) TakeNodeGeoRefresh(id int64) bool {
 	m.nodeUpdateMu.Lock()
 	defer m.nodeUpdateMu.Unlock()
-	if m.nodeGeoWanted[id] {
-		delete(m.nodeGeoWanted, id)
-		return true
-	}
-	return false
+	return takeCmd(m.nodeGeoWanted, id, time.Now())
 }
 
 // nodeTombstoneGrace is how long a deleted node's row is kept so it can still be

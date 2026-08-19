@@ -134,12 +134,19 @@ func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
 }
 
 // subServers is subSettings paired with each server's custom inbounds and the
-// requesting user's access — the shape every subscription builder consumes. One query
-// covers the whole fleet; a read failure degrades to built-in lanes only rather than
-// failing the subscription, because a user who can't fetch a config has no way back
-// in. An access read failure degrades to unrestricted for the same reason — a broken
-// group query should hide nothing rather than lock the user out.
-func (rt *Router) subServers(local *model.Settings, userID int64) []sub.Server {
+// requesting user's access — the shape every subscription builder consumes.
+//
+// A custom-inbound read failure degrades to built-in lanes only rather than failing the
+// whole subscription: that direction hands out LESS than the user is entitled to, and a
+// user who can't fetch a config has no way back in.
+//
+// An access read failure is the opposite direction and is refused. Degrading to
+// unrestricted used to look like the same kindness, but it hands a restricted user the
+// addresses of every lane on every server — while config generation treats the identical
+// failure as fatal (see genOptsFor), so the credential is withheld and the links cannot
+// work anyway. Failing the fetch locks nobody out: a client that cannot refresh keeps the
+// config it already has and tries again later.
+func (rt *Router) subServers(local *model.Settings, userID int64) ([]sub.Server, error) {
 	sets := rt.subSettings(local)
 	custom, err := rt.mgr.Store().AllInbounds()
 	if err != nil {
@@ -147,9 +154,9 @@ func (rt *Router) subServers(local *model.Settings, userID int64) []sub.Server {
 	}
 	access, err := rt.mgr.Store().UserAccess(userID)
 	if err != nil {
-		access = model.UnrestrictedAccess()
+		return nil, err
 	}
-	return sub.Servers(sets, custom, access)
+	return sub.Servers(sets, custom, access), nil
 }
 
 // localInbounds is the master's own custom inbounds, or none when they can't be

@@ -215,11 +215,14 @@ type Manager struct {
 	// node creates converge on one segment.
 	nodeEnsureMu sync.Mutex
 	// nodeUpdateWanted holds node IDs the operator asked to self-update; nodeGeoWanted
-	// holds ones asked to refresh geo now. Both are consumed (sent once) on the node's
-	// next sync, under nodeUpdateMu.
+	// holds ones asked to refresh geo now. Both are handed over on the node's next sync
+	// and stay pending until that node syncs AGAIN, which is what proves the response
+	// reached it — deleting on handover meant a response lost in flight took the
+	// request with it, silently. A node that never comes back drops its request at
+	// nodeCmdTTL rather than acting on it whenever it reappears. Under nodeUpdateMu.
 	nodeUpdateMu     sync.Mutex
-	nodeUpdateWanted map[int64]bool
-	nodeGeoWanted    map[int64]bool
+	nodeUpdateWanted map[int64]*nodeCmdReq
+	nodeGeoWanted    map[int64]*nodeCmdReq
 	// nodeRestart holds Xray-restart requests that have not been confirmed yet. Unlike
 	// the two flags above, a restart is not done when it is sent: the operator needs to
 	// know it actually happened, so the request outlives its delivery and is only
@@ -283,8 +286,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodes:            newNodeRegistry(),
 		probes:           newProbeRegistry(),
 		checks:           newCheckRegistry(),
-		nodeUpdateWanted: map[int64]bool{},
-		nodeGeoWanted:    map[int64]bool{},
+		nodeUpdateWanted: map[int64]*nodeCmdReq{},
+		nodeGeoWanted:    map[int64]*nodeCmdReq{},
 		nodeRestart:      map[int64]*nodeRestartReq{},
 		nodeLogs:         map[int64]nodeLogEntry{},
 		nodeGeoFiles:     map[int64][]nodeapi.GeoFile{},
