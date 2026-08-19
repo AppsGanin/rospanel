@@ -751,15 +751,36 @@ func rescueAudit(st *store.Store, action, login string, twoFACleared bool) {
 }
 
 // printRescueCredentials shows the new credentials once, with the must-change note.
+//
+// Printing a freshly minted password is the whole point of the rescue command, and it
+// goes to the operator's own terminal — not a log sink, and not the audit row, which
+// keeps only the action and the login. The one case where that stops being true is a
+// caller who redirects stdout, because then the password lands in whatever caught it and
+// outlives the moment it was needed. Say so when stdout is not a terminal: the operator
+// can still use the credentials, but they now know there is a copy to go and delete.
 func printRescueCredentials(login, password string, unlocked bool) {
 	bar := strings.Repeat("=", 56)
 	extra := ""
 	if unlocked {
 		extra = "\n Two-factor : removed"
 	}
+	if !stdoutIsTerminal() {
+		extra += "\n WARNING    : stdout is not a terminal — this password has been written\n" +
+			"              to a file or a pipe. Delete it once you have signed in."
+	}
 	fmt.Printf("\n%s\n RESCUE CREDENTIALS (shown once — sign in and change them)\n%s\n"+
 		" Login      : %s\n Password   : %s%s\n%s\n",
 		bar, bar, login, password, extra, bar)
+}
+
+// stdoutIsTerminal reports whether stdout is an interactive terminal rather than a file
+// or a pipe. Used to warn that a one-time secret just outlived its moment.
+func stdoutIsTerminal() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false // unknown is treated as "not a terminal": warning costs nothing
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // checkRestoreArchive refuses an archive that cannot be restored into THIS binary.
