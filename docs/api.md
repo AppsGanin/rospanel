@@ -105,6 +105,19 @@ Only fields the endpoint genuinely requires are marked `required` there. Everyth
 else may be omitted and keeps its documented default; you never have to send a full
 object to change one thing.
 
+### Concurrent edits
+
+There is no version or `If-Match` on writes: two callers changing the same object
+resolve last-write-wins, and neither is told. This matters most where a write carries
+fields it did not intend to change — a node edit re-sends the whole node, so a routing
+change written from here can overwrite a name someone set in the panel a second
+earlier.
+
+In practice it bites rarely, because the endpoints that patch (`PATCH /v1/settings`,
+`PATCH /v1/users/{id}`) apply only the fields the body carries, so two callers touching
+*different* fields do not collide. If you automate edits to the same object from more
+than one place, read it back after writing rather than assuming your value stuck.
+
 ## Paging
 
 Every list endpoint takes `?limit` and `?offset` and answers with a `meta` block:
