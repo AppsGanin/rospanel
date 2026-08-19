@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.9.1](https://github.com/AppsGanin/rospanel/compare/v2.9.0...v2.9.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* a re-ask no longer re-arms a node command already delivered ([820dc86](https://github.com/AppsGanin/rospanel/commit/820dc86e3d575bdec5d2224c50507fcb25e26fc7))
+* a refused subscription must not look like an empty one ([a1375b3](https://github.com/AppsGanin/rospanel/commit/a1375b3e453ce253ca089cf2e0878ba91c4eba2e))
+* bound a bulk user action ([435aaed](https://github.com/AppsGanin/rospanel/commit/435aaedd9521f252828bb5fffda2619c3075f2e1))
+* **mcp:** keep the whole backup surface out of the assistant's toolbox ([3c11034](https://github.com/AppsGanin/rospanel/commit/3c110344dbf0dd1739ad10677f9fecdafb3ba761))
+* node commands survive handover; subscription access fails closed ([9ac057c](https://github.com/AppsGanin/rospanel/commit/9ac057c8ae5d8a436d7dc1964529893a63e83fc3))
+* persist node commands; make GET /v1/nodes/{id} match the list ([66ffe8f](https://github.com/AppsGanin/rospanel/commit/66ffe8f29572ffae0ade60af476be65da134f975))
+
+
+### Performance Improvements
+
+* write a fleet-wide node command in one transaction ([de92428](https://github.com/AppsGanin/rospanel/commit/de92428e00873fc1ded9201ce87f14ce6affaac0))
+
 ## [2.9.0](https://github.com/AppsGanin/rospanel/compare/v2.8.0...v2.9.0) (2026-08-18)
 
 
