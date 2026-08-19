@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -717,14 +718,21 @@ func totalIPs(rows []model.CountryStat) int64 {
 	return n
 }
 
-// A list row and the same object fetched by id must be the same object. They were not:
-// the list returned NodeView (online, is_local, proxy, reality_public_key) and the get
-// returned the raw nodes row, so a client generated from the spec broke the moment it
-// re-fetched. And the master, which the list includes as id 0, could not be fetched at
-// all — it is not a nodes row.
+// A list row and the same object fetched by id must be the same object, VALUE for value.
+// They were not: the list returned NodeView (online, is_local, proxy, reality_public_key)
+// while the get returned the raw nodes row, so a client generated from the spec broke the
+// moment it re-fetched a row it had just listed — and the master, which the list carries
+// as id 0, could not be fetched at all because it is not a nodes row.
+//
+// This asserts against a REMOTE node, not just id 0. Comparing only the master would pass
+// even if the handler still special-cased it, and comparing only key presence would pass
+// even if the handler returned the wrong node entirely.
 func TestAPINodeGetMatchesTheListShape(t *testing.T) {
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
+	if _, err := st.CreateNode("berlin", "10.9.9.9", "tok-berlin"); err != nil {
+		t.Fatalf("create node: %v", err)
+	}
 
 	get := func(path string, out any) {
 		t.Helper()
@@ -741,26 +749,31 @@ func TestAPINodeGetMatchesTheListShape(t *testing.T) {
 		Data []map[string]any `json:"data"`
 	}
 	get("/v1/nodes", &list)
-	if len(list.Data) == 0 {
-		t.Fatal("the node list is empty — the local server should always be in it")
-	}
-	row := list.Data[0]
-	id, _ := row["id"].(float64)
-	if id != 0 {
-		t.Fatalf("first row is node %v, expected the local server (0)", id)
+	if len(list.Data) < 2 {
+		t.Fatalf("expected the local server plus the node, got %d rows", len(list.Data))
 	}
 
-	var one struct {
-		Data map[string]any `json:"data"`
-	}
-	get("/v1/nodes/0", &one)
-	if len(one.Data) == 0 {
-		t.Fatal("GET /v1/nodes/0 returned nothing — the master is in the list but not fetchable")
-	}
-	// Every field the list publishes must be present on the single-node read too.
-	for k := range row {
-		if _, ok := one.Data[k]; !ok {
-			t.Errorf("the list row has %q but the by-id read does not", k)
+	for _, row := range list.Data {
+		id, _ := row["id"].(float64)
+		var one struct {
+			Data map[string]any `json:"data"`
+		}
+		get(fmt.Sprintf("/v1/nodes/%d", int64(id)), &one)
+		if len(one.Data) == 0 {
+			t.Fatalf("GET /v1/nodes/%d returned nothing", int64(id))
+		}
+		// The same object: every field the list published, with the same value. Value
+		// equality is what catches "returns a different node" and "returns a different
+		// shape" alike; key presence alone catches neither.
+		for k, want := range row {
+			got, ok := one.Data[k]
+			if !ok {
+				t.Errorf("node %d: the list has %q but the by-id read does not", int64(id), k)
+				continue
+			}
+			if fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("node %d: %q = %v by id, %v in the list", int64(id), k, got, want)
+			}
 		}
 	}
 }

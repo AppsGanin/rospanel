@@ -11,12 +11,20 @@ type NodeCommand struct {
 	Sent bool
 }
 
-// SetNodeCommand records (or re-records) a command for a node. Re-asking restarts the
-// clock and clears `sent`, which is what an operator pressing the button again means.
+// SetNodeCommand records (or re-records) a command for a node. Re-asking extends the
+// deadline; it deliberately does NOT clear `sent`.
+//
+// Clearing it re-arms a command the node has already been given. That was survivable
+// while these lived in a map — a panel restart wiped them, so the fleet always started
+// from empty — but the rows outlive a restart now, and RequestAllNodesUpdate re-records
+// for every eligible node unconditionally. So "panel self-updates, operator then runs
+// update-all" would tell nodes that had already updated to update again, fleet-wide:
+// exactly the workflow persisting these was meant to fix. A command whose node HAS come
+// back is deleted rather than left at sent=1, so a genuine retry still starts fresh.
 func (s *Store) SetNodeCommand(nodeID int64, kind string, at int64) error {
 	_, err := s.db.Exec(`
 		INSERT INTO node_commands (node_id, kind, at, sent) VALUES (?, ?, ?, 0)
-		ON CONFLICT (node_id, kind) DO UPDATE SET at = excluded.at, sent = 0`,
+		ON CONFLICT (node_id, kind) DO UPDATE SET at = excluded.at`,
 		nodeID, kind, at)
 	return err
 }
