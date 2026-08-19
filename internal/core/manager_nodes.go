@@ -1176,22 +1176,22 @@ func (m *Manager) RequestAllNodesUpdate() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	n := 0
-	now := time.Now().Unix()
-	m.nodeUpdateMu.Lock()
+	ids := make([]int64, 0, len(nodes))
 	for i := range nodes {
-		if !nodes[i].Enabled || nodes[i].LastSeen == 0 {
-			continue
+		if nodes[i].Enabled && nodes[i].LastSeen > 0 {
+			ids = append(ids, nodes[i].ID)
 		}
-		// Count what was actually recorded. The returned number is the operator's only
-		// receipt, so a node whose row failed to write must not be in it.
-		if err := m.store.SetNodeCommand(nodes[i].ID, nodeCmdUpdate, now); err != nil {
-			logErr("node update-all: recording the command failed", "node", nodes[i].ID, "err", err)
-			continue
-		}
-		n++
 	}
+	// One transaction, so the lock is held for a single round trip rather than one per
+	// node: every node's sync and the panel's Nodes page queue behind it otherwise. The
+	// count is what actually landed — the operator's only receipt — so a failed write
+	// reports zero rather than a number nobody honoured.
+	m.nodeUpdateMu.Lock()
+	n, err := m.store.SetNodeCommands(ids, nodeCmdUpdate, time.Now().Unix())
 	m.nodeUpdateMu.Unlock()
+	if err != nil {
+		return 0, err
+	}
 	m.notifyNodes()
 	return n, nil
 }
