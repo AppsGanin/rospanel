@@ -109,6 +109,17 @@ func (m *Manager) PurgeOldOrders() {
 	}
 }
 
+// PurgeOldNodeCommands drops one-shot node commands nobody came back for. The take path
+// clears the ones whose node returns; this covers a node that never does.
+func (m *Manager) PurgeOldNodeCommands() {
+	cutoff := time.Now().Add(-nodeCmdTTL).Unix()
+	if n, err := m.store.PurgeNodeCommands(cutoff); err != nil {
+		logErr("nodes: command sweep failed", "err", err)
+	} else if n > 0 {
+		logInfo("nodes: stale commands purged", "count", n)
+	}
+}
+
 // PurgeOldConnections drops connection rows whose IP hasn't been seen inside the
 // retention window. Shares the audit sweep's slow timer; safe to call repeatedly.
 func (m *Manager) PurgeOldConnections() {

@@ -76,17 +76,26 @@ func (rt *Router) apiListNodes(w http.ResponseWriter, _ *http.Request) {
 	writeAPIData(w, http.StatusOK, views)
 }
 
+// apiGetNode answers with the SAME shape the list does.
+//
+// It used to return the raw nodes row, which was a different object under the same
+// documented name: no online/is_local/proxy/reality_public_key, and a client generated
+// from the spec that read a list row then re-fetched it by id got something else back.
+// Sharing NodeViews also makes /v1/nodes/0 work — the master is not a nodes row, so
+// looking it up by id answered "no such node" while the list happily included it.
 func (rt *Router) apiGetNode(w http.ResponseWriter, _ *http.Request, id int64) {
-	node, err := rt.mgr.GetNode(id)
+	views, err := rt.mgr.NodeViews()
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	if node == nil {
-		writeAPIErr(w, http.StatusNotFound, "not_found", "no such node")
-		return
+	for _, v := range views {
+		if v.ID == id {
+			writeAPIData(w, http.StatusOK, v)
+			return
+		}
 	}
-	writeAPIData(w, http.StatusOK, node)
+	writeAPIErr(w, http.StatusNotFound, "not_found", "no such node")
 }
 
 func (rt *Router) apiCreateNode(w http.ResponseWriter, r *http.Request) {
