@@ -94,15 +94,15 @@ func (m *Manager) enforceAfterTraffic(users []model.User) error {
 
 // Summary is the dashboard overview.
 type Summary struct {
-	Users        int   `json:"users"`
-	EnabledUsers int   `json:"enabled_users"`
-	OnlineUsers  int   `json:"online_users"` // connected within model.DeviceOnlineWindow
+	Users        int `json:"users"`
+	EnabledUsers int `json:"enabled_users"`
+	OnlineUsers  int `json:"online_users"` // connected within model.DeviceOnlineWindow
 	// TotalUp/TotalDown sum the users' QUOTA counters (used_up/used_down), which is
 	// what a data limit is measured against — so they fall to zero when traffic is
 	// reset or a plan rolls the period over. They are not lifetime totals and will
 	// not match traffic_daily over the same span; that history is StatsSeries.
-	TotalUp   int64 `json:"total_up"`
-	TotalDown int64 `json:"total_down"`
+	TotalUp      int64 `json:"total_up"`
+	TotalDown    int64 `json:"total_down"`
 	TrafficToday int64 `json:"traffic_today"` // up+down for the current local-time day
 	XrayRunning  bool  `json:"xray_running"`
 	CertDaysLeft int   `json:"cert_days_left"`

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -62,7 +63,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 			if err := rt.servePage(w, *u, set, lang); err != nil {
-				rt.currentDecoy().ServeHTTP(w, r) // keep the masquerade intact on render errors
+				// Render errors keep the masquerade; an access read that failed is a
+				// different thing and must not look like a successful, empty answer.
+				if errors.Is(err, errSubUnavailable) {
+					rt.subUnavailable(w, u.ID, err)
+				} else {
+					rt.currentDecoy().ServeHTTP(w, r)
+				}
 			}
 			return
 		}
@@ -90,10 +97,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// payload carries one entry per protocol × server (single-server = local only).
 		allServers, err := rt.subServers(set, u.ID)
 		if err != nil {
-			// Never 500 in public, and never hand out a payload built on an access read
-			// that failed — the decoy answers and the client keeps what it has.
-			log.Printf("sub: access for user %d: %v", u.ID, err)
-			rt.currentDecoy().ServeHTTP(w, r)
+			rt.subUnavailable(w, u.ID, err)
 			return
 		}
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
@@ -430,7 +434,7 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 	showDownload := !(set.HWIDEnabled && set.HWIDRequire)
 	servers, err := rt.subServers(set, u.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errSubUnavailable, err)
 	}
 	html, err := sub.Page(u, servers, rt.buildBilling(u, set, lang),
 		rt.buildDevices(u, set, lang), showDownload, lang)
@@ -698,4 +702,27 @@ func subFormat(r *http.Request) string {
 		}
 	}
 	return "v2ray"
+}
+
+// errSubUnavailable marks a subscription that could not be built from a read the panel
+// refuses to guess at — currently the per-user access map.
+var errSubUnavailable = errors.New("subscription temporarily unavailable")
+
+// subUnavailable answers a subscription the panel would not serve honestly.
+//
+// It must be a NON-2xx, and that is the whole point. Falling through to the decoy looks
+// right and is not: for an extensionless path (which every subscription URL is) the decoy
+// answers 200 with its index page — nine of the twelve bundled templates ship no 404.html
+// — so a client refreshing would see a SUCCESSFUL fetch whose body parses to zero
+// proxies, and a client that replaces its profile on 2xx would wipe the user's servers.
+// A 503 is what a static host having a bad moment returns, it stays inside the
+// masquerade's own vocabulary (two of the bundled templates are 503 pages), and every
+// client treats it as a failed refresh and keeps the config it already has.
+func (rt *Router) subUnavailable(w http.ResponseWriter, userID int64, err error) {
+	// Logged on BOTH paths: an operator whose users report a broken subscription needs
+	// evidence, and the page path used to produce none.
+	log.Printf("sub: cannot build subscription for user %d: %v", userID, err)
+	w.Header().Set("Content-Length", "0")
+	w.Header().Set("Retry-After", "30")
+	w.WriteHeader(http.StatusServiceUnavailable)
 }

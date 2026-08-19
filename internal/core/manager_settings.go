@@ -241,8 +241,9 @@ func (m *Manager) genOpts() xray.Options {
 // from which lanes, so generating without it would write every restricted user's
 // credential into every lane — a security regression baked into the live config until
 // the next reconcile. Failing the reconcile instead keeps the previous, correctly
-// gated config in force. (The subscription path reads per-user and can fail soft — it
-// is read-only and self-corrects on the next fetch; here we are about to persist.)
+// gated config in force. The subscription path now refuses for the same reason rather
+// than degrading to unrestricted (see server.subServers): a read-only surface that hands
+// out the address of every lane is still handing out what the reader may not have.
 func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 	opts := m.genOpts()
 	opts.ServerID = serverID

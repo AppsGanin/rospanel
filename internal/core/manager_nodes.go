@@ -315,19 +315,19 @@ func (m *Manager) notifyNodes() { m.nodes.wakeAll() }
 // effective (override-resolved) protocol toggles and today's traffic. The local
 // server appears as node 0 (IsLocal) so the UI lists every server uniformly.
 type NodeView struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Host        string `json:"host"`
-	Enabled     bool   `json:"enabled"`
-	IsLocal     bool   `json:"is_local"`
-	Online      bool   `json:"online"`
-	Joined      bool   `json:"joined"`
-	LastSeen    int64  `json:"last_seen"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Enabled  bool   `json:"enabled"`
+	IsLocal  bool   `json:"is_local"`
+	Online   bool   `json:"online"`
+	Joined   bool   `json:"joined"`
+	LastSeen int64  `json:"last_seen"`
 	// CreatedAt is when the node was registered. Carried because GET /v1/nodes/{id}
 	// used to answer the raw nodes row, which published it — switching that route to
 	// this view would otherwise have quietly dropped a documented field. 0 for the
 	// local server, which was never registered.
-	CreatedAt int64 `json:"created_at"`
+	CreatedAt   int64  `json:"created_at"`
 	NodeVersion string `json:"node_version"`
 	XrayVersion string `json:"xray_version"`
 	XrayRunning bool   `json:"xray_running"`
@@ -1710,7 +1710,6 @@ func (m *Manager) SetNodeAPIPathCallback(cb func(string)) {
 func randomPathSegment() (string, error) {
 	return auth.RandomSecretPath()
 }
-
 
 // validateDNSList refuses a DNS setting the generated Xray config could not parse. nil
 // (inherit / leave alone) and an empty string are both fine.
