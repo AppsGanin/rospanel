@@ -405,6 +405,7 @@ const en: Dict = {
     loginCharset: "username: 3–32 characters, Latin letters, digits, dot, hyphen or underscore",
     nameRequired: "enter a name",
     noFailedToRetry: "there are no failed deliveries to retry",
+    tooManyUsersSelected: "at most {{max}} users can be processed in one call",
     noUsersSelected: "no users selected",
     nothingToSend: "nothing to send — add text or an attachment",
     nothingToUpdate: "nothing to update",

@@ -198,6 +198,11 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 	return err
 }
 
+// maxBulkUsers caps one bulk action. High enough that no operator meets it working
+// through the panel, low enough that a single call cannot monopolise the one DB
+// connection or overrun the webhook queue.
+const maxBulkUsers = 1000
+
 // BulkUserAction applies one action to many users with a SINGLE config sync at the
 // end (instead of one per user), returning how many users were actually affected.
 // Actions: "enable", "disable", "delete", "reset" (traffic), "extend" (push expiry
@@ -206,6 +211,16 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string, days int) (int, error) {
 	if len(ids) == 0 {
 		return 0, invalidCode("err.noUsersSelected", "не выбрано ни одного пользователя")
+	}
+	// A bound, because nothing upstream provides one: the id list arrives straight off a
+	// JSON decode from the panel, /v1 and the post_users_bulk MCP tool. Every id costs a
+	// row read, and a delete costs a webhook delivery per subscriber on a 512-slot queue
+	// that drops when full — so an unbounded list quietly loses the very notifications it
+	// generates, and holds the single DB connection for as long as it takes.
+	if len(ids) > maxBulkUsers {
+		return 0, invalidCode("err.tooManyUsersSelected",
+			"за один раз можно обработать не больше {{max}} пользователей",
+			map[string]any{"max": maxBulkUsers})
 	}
 	// Snapshot the users up front. The audit rows for a bulk DELETE can't look their
 	// names up afterwards; an id that isn't in the snapshot doesn't exist (so this
