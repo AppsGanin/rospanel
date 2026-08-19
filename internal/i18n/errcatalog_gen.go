@@ -244,6 +244,7 @@ var errEN = map[string]string{
 	"err.tooManyButtons":           "too many buttons (at most {{max}})",
 	"err.tooManyInbounds":          "too many connections: at most {{max}}",
 	"err.tooManyStreams":           "too many active streams",
+	"err.tooManyUsersSelected":     "at most {{max}} users can be processed in one call",
 	"err.topicsOff":                "Topics are off in that group — turn them on in the group settings, or conversations cannot be separated",
 	"err.totpAlreadyOn":            "two-factor authentication is already on",
 	"err.totpInvalid":              "wrong code",
