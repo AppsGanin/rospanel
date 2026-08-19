@@ -29,6 +29,35 @@ func (s *Store) SetNodeCommand(nodeID int64, kind string, at int64) error {
 	return err
 }
 
+// SetNodeCommands records the same command for many nodes in one transaction.
+//
+// One statement per node under the manager's lock meant a fleet-wide "update all" held
+// that lock across N round trips on the single connection, stalling every node's sync
+// and the panel's own Nodes page for the duration. Returns how many rows it wrote, which
+// is what the caller reports back as its receipt.
+func (s *Store) SetNodeCommands(nodeIDs []int64, kind string, at int64) (int, error) {
+	if len(nodeIDs) == 0 {
+		return 0, nil
+	}
+	n := 0
+	err := s.withTx(func(tx *sql.Tx) error {
+		for _, id := range nodeIDs {
+			if _, err := tx.Exec(`
+				INSERT INTO node_commands (node_id, kind, at, sent) VALUES (?, ?, ?, 0)
+				ON CONFLICT (node_id, kind) DO UPDATE SET at = excluded.at`,
+				id, kind, at); err != nil {
+				return err
+			}
+			n++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // NodeCommand returns a node's pending command of this kind, or nil.
 func (s *Store) NodeCommand(nodeID int64, kind string) (*NodeCommand, error) {
 	var c NodeCommand
