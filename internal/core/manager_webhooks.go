@@ -111,6 +111,45 @@ func (m *Manager) EmitWebhook(event string, data any) {
 	}
 }
 
+// EmitWebhookEach emits one delivery per item, looking the subscribers up ONCE.
+//
+// A bulk action emitting through EmitWebhook ran that lookup per user — N queries on the
+// single DB connection, inside the request that is already holding it. The deliveries
+// themselves still go out one per item per hook, because that is the contract: an
+// integration mirroring the roster needs a row per user, not a summary.
+//
+// The queue still drops on overflow (see enqueueWebhook), so a bulk action larger than
+// the queue loses the tail. That is inherited rather than introduced here, and the honest
+// bound is on the caller's id list.
+func (m *Manager) EmitWebhookEach(event string, items []any) {
+	if m.webhookCh == nil || len(items) == 0 {
+		return
+	}
+	hooks, err := m.store.EnabledWebhooksForEvent(event)
+	if err != nil {
+		logErr("webhook: lookup failed", "event", event, "err", err)
+		return
+	}
+	if len(hooks) == 0 {
+		return
+	}
+	for _, data := range items {
+		body, err := json.Marshal(webhookPayload{
+			ID: randomHex(16), Event: event, CreatedAt: time.Now().Unix(), Data: data,
+		})
+		if err != nil {
+			logErr("webhook: marshal failed", "event", event, "err", err)
+			continue
+		}
+		for _, h := range hooks {
+			m.enqueueWebhook(webhookJob{
+				hookID: h.ID, url: h.URL, secret: h.Secret,
+				event: event, body: body, attempt: 1,
+			})
+		}
+	}
+}
+
 // enqueueWebhook pushes a job onto the queue without blocking; a full queue drops
 // the delivery (logged) rather than stalling the emitting goroutine.
 func (m *Manager) enqueueWebhook(job webhookJob) {

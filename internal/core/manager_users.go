@@ -230,9 +230,13 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 			// One event per user, exactly as DeleteUser and the retention sweep emit —
 			// an integration mirroring the roster otherwise drifts silently, and only
 			// after a BULK delete: the same users removed one at a time are reported.
+			// EmitWebhookEach looks the subscribers up once rather than per user, which
+			// per-user meant N queries on the single connection inside this request.
+			items := make([]any, 0, len(before))
 			for _, u := range before {
-				m.EmitWebhook(model.WebhookUserDeleted, userEventData(u))
+				items = append(items, userEventData(u))
 			}
+			m.EmitWebhookEach(model.WebhookUserDeleted, items)
 		}
 	case "reset":
 		reset := m.bulkResetTraffic(ids)
