@@ -436,3 +436,43 @@ func TestNodeWakeRegistry(t *testing.T) {
 	default:
 	}
 }
+
+// A one-shot node command (self-update, geo refresh) used to be deleted the moment it
+// was handed to the node — before the response was even written. A response lost in
+// flight therefore took the request with it, and nothing anywhere recorded that the
+// node never got it. It now survives the handover and is cleared only when that node
+// comes back, which is the available proof that the response landed.
+func TestNodeCommandSurvivesHandoverUntilTheNodeReturns(t *testing.T) {
+	cmds := map[int64]*nodeCmdReq{}
+	now := time.Now()
+	cmds[7] = &nodeCmdReq{at: now}
+
+	if !takeCmd(cmds, 7, now) {
+		t.Fatal("the command was not delivered on the first sync")
+	}
+	if cmds[7] == nil {
+		t.Fatal("the command was consumed as it went out — a lost response loses it")
+	}
+	// The node came back: the response reached it, so the request is done and must not
+	// be delivered a second time.
+	if takeCmd(cmds, 7, now.Add(time.Second)) {
+		t.Error("the command was delivered twice")
+	}
+	if cmds[7] != nil {
+		t.Error("the command was not cleared once the node returned")
+	}
+}
+
+// A node that never comes back must not act on an order the operator gave up on.
+func TestNodeCommandExpires(t *testing.T) {
+	cmds := map[int64]*nodeCmdReq{}
+	now := time.Now()
+	cmds[7] = &nodeCmdReq{at: now}
+
+	if takeCmd(cmds, 7, now.Add(nodeCmdTTL+time.Minute)) {
+		t.Error("an expired command was still delivered")
+	}
+	if cmds[7] != nil {
+		t.Error("an expired command was left in the map")
+	}
+}

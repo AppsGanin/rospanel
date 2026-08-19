@@ -88,7 +88,14 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 		// allServers spans the local server plus each enabled, connected node, so the
 		// payload carries one entry per protocol × server (single-server = local only).
-		allServers := rt.subServers(set, u.ID)
+		allServers, err := rt.subServers(set, u.ID)
+		if err != nil {
+			// Never 500 in public, and never hand out a payload built on an access read
+			// that failed — the decoy answers and the client keeps what it has.
+			log.Printf("sub: access for user %d: %v", u.ID, err)
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
 		supportURL := rt.telegramSupportURL(r.Context(), set, *u)
 		setSubHeaders(w, *u, set, supportURL)
 		rt.setRoutingHeaders(w, r, set)
@@ -421,7 +428,11 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 	// A required HWID means the browser cannot fetch the machine payload — so the
 	// page must not offer a download button that answers 403 to its own owner.
 	showDownload := !(set.HWIDEnabled && set.HWIDRequire)
-	html, err := sub.Page(u, rt.subServers(set, u.ID), rt.buildBilling(u, set, lang),
+	servers, err := rt.subServers(set, u.ID)
+	if err != nil {
+		return err
+	}
+	html, err := sub.Page(u, servers, rt.buildBilling(u, set, lang),
 		rt.buildDevices(u, set, lang), showDownload, lang)
 	if err != nil {
 		return err

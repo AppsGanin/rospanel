@@ -227,6 +227,12 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		affected, err = m.store.DeleteUsers(ids)
 		if err == nil {
 			m.auditBulk(ctx, names(before), model.EventUserDeleted, nil)
+			// One event per user, exactly as DeleteUser and the retention sweep emit —
+			// an integration mirroring the roster otherwise drifts silently, and only
+			// after a BULK delete: the same users removed one at a time are reported.
+			for _, u := range before {
+				m.EmitWebhook(model.WebhookUserDeleted, userEventData(u))
+			}
 		}
 	case "reset":
 		reset := m.bulkResetTraffic(ids)
