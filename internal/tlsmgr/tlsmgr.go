@@ -25,7 +25,13 @@ func Ensure(set *model.Settings, certPath, keyPath, acmeDir string, force bool) 
 	}
 	// ACME failed. Keep any usable cert already on disk; otherwise self-sign so
 	// Xray/the panel can still serve TLS until ACME succeeds.
-	if _, rerr := tlsutil.ReadCertInfo(certPath); rerr != nil {
+	// "Usable", not "parseable". An EXPIRED cert reads back fine, and treating that as
+	// something worth keeping is how the fallback declined the one situation it exists
+	// for: ACME broken long enough that the cert died. Xray then serves a cert every
+	// client rejects, and the panel behind :443 goes with it — recoverable only over SSH.
+	// A self-signed cert keeps clients working, because the subscription pins its
+	// fingerprint (see applyTLSHints).
+	if !tlsutil.Usable(certPath) {
 		cert, key, gerr := tlsutil.GenerateSelfSigned(set.Host)
 		if gerr != nil {
 			return fmt.Errorf("acme failed (%w); self-signed fallback failed: %v", err, gerr)
@@ -58,7 +64,12 @@ func ensureACME(set *model.Settings, certPath, keyPath, acmeDir string, force bo
 	if !force {
 		if info, err := tlsutil.ReadCertInfo(certPath); err == nil {
 			caIssued := info.Issuer != "" && info.Issuer != info.Subject
-			if caIssued && !needsRenewal(info) {
+			// The host check is not decoration. Without it, changing the panel's domain
+			// leaves the OLD cert in place — CA-issued and fresh, so this returns early
+			// forever — while the generated config starts demanding the NEW name. On a
+			// domain, rejectUnknownSni then refuses both names and :443 is dead with the
+			// panel behind it. Nothing retries, because nothing ever noticed.
+			if caIssued && !needsRenewal(info) && tlsutil.CertCovers(certPath, set.Host) {
 				return nil
 			}
 		}

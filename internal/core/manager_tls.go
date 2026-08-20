@@ -101,13 +101,41 @@ func (m *Manager) SetACMETarget(target, email, provider, eabKID, eabHMAC string)
 	}
 	// force=true: issue a real cert now for the new target.
 	logInfo("tls: issuing certificate", "target", target, "provider", provider)
-	if err := tlsmgr.Ensure(set, m.tls.CertPath, m.tls.KeyPath, m.tls.ACMEDir, true); err != nil {
+	if err := m.ensureCert(set, true); err != nil {
 		logErr("tls: certificate issuance failed", "target", target, "err", err)
+		// Put the host and SNI back. They were persisted before the attempt, and the
+		// generated config takes its ServerName from them — so leaving them pointing at
+		// a name the cert on disk cannot prove means the next reconcile (any user add)
+		// tells Xray to demand an SNI it cannot serve, and rejectUnknownSni closes :443
+		// with the panel behind it. The operator's change simply did not happen.
+		if rerr := m.store.SetTLSMode(cur.TLSMode, cur.Host, cur.SNI, cur.ACMEEmail); rerr != nil {
+			logErr("tls: could not restore the previous target after a failed issue", "err", rerr)
+		}
 		return err
 	}
 	logInfo("tls: certificate issued", "target", target)
+	// A restart, not just a reconcile. The cert PATH is what lives in the config, so a
+	// re-issue regenerates a byte-identical file and Supervisor.Apply short-circuits
+	// before restarting — Xray would keep presenting the previous certificate for up to
+	// an hour while the panel reports success. This is the same trap tlsLoop and the
+	// node's certLoop already guard against.
 	m.TriggerReconcile()
+	if err := m.RestartXray(); err != nil {
+		logErr("tls: restarting Xray after issuing a certificate failed", "err", err)
+	}
 	return nil
+}
+
+// ensureCert serializes certificate writes. tlsLoop retries every few minutes while no CA
+// cert exists, and the operator can trigger an issue from the panel at the same moment;
+// two concurrent writers share fixed staging filenames and rename cert and key
+// separately, so an overlap can pair one issuance's certificate with another's key —
+// which Xray cannot serve and no health check notices. The node path already had this
+// lock; the master did not.
+func (m *Manager) ensureCert(set *model.Settings, force bool) error {
+	m.certMu.Lock()
+	defer m.certMu.Unlock()
+	return tlsmgr.Ensure(set, m.tls.CertPath, m.tls.KeyPath, m.tls.ACMEDir, force)
 }
 
 // HasValidCert reports whether a non-expired, CA-issued certificate is present.
@@ -140,7 +168,7 @@ func (m *Manager) RenewTLSIfNeeded() (bool, error) {
 		return false, nil
 	}
 	before, _ := tlsutil.ReadCertInfo(m.tls.CertPath)
-	if err := tlsmgr.Ensure(set, m.tls.CertPath, m.tls.KeyPath, m.tls.ACMEDir, false); err != nil {
+	if err := m.ensureCert(set, false); err != nil {
 		m.notifyCertError(set.Host, err)
 		return false, err
 	}

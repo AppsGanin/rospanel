@@ -123,6 +123,13 @@ type Manager struct {
 	crashAlerted      bool
 	lastCertErrNotify time.Time
 
+	// certMu serializes certificate writes. tlsLoop retries while no CA cert exists and
+	// the operator can issue one from the panel at the same moment; the two share fixed
+	// staging filenames and rename cert and key separately, so an overlap can leave one
+	// issuance's certificate beside another's key — unserveable, and invisible to every
+	// health check. See Manager.ensureCert.
+	certMu sync.Mutex
+
 	// applyPlanMu serializes ApplyPlanToUser so the read-modify-write of expire_at
 	// (base = current expiry, expire = base + period) can't be raced by two
 	// concurrent confirmers — a webhook + the poll fallback, or two orders for the

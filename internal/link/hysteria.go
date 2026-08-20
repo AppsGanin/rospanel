@@ -42,7 +42,7 @@ func Hysteria2(u model.User, set *model.Settings) string {
 			interval = "5-10"
 		}
 		// Encode() escapes once more → double-encoded, which is what the client wants.
-		q.Set("fm", url.QueryEscape(hopParams(set.HysteriaPort, set.HopEnd, interval)))
+		q.Set("fm", url.QueryEscape(hopParams(model.HopAdvertised(set.HysteriaPort, set.HopStart), set.HopEnd, interval)))
 	}
 	return assemble("hysteria2", url.QueryEscape(u.Password), set.HysteriaPort, q, model.ProtoHysteria, u, set)
 }

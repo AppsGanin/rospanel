@@ -1057,6 +1057,22 @@ func (s *Settings) RegistrationActivates() bool {
 // OperaCountries are the Opera VPN regions opera-proxy accepts.
 var OperaCountries = []string{"EU", "AS", "AM"}
 
+// HopAdvertised is the port range a CLIENT should hop over, given the base port the
+// listener is on and the operator's configured hop window.
+//
+// It is max(hopStart, base) — not the base port — because the firewall only funnels
+// hopStart..hopEnd back to the listener (see internal/hop). Advertising base..hopEnd
+// while the redirect starts higher hands the client a window of ports where nothing
+// answers: it rolls onto one, stalls for a whole hop interval, and the lane reads as
+// "Hysteria randomly dies every few seconds". With hopStart unset (0) this is the base
+// port, which is what the firewall's own normalisation assumes.
+func HopAdvertised(base, hopStart int) int {
+	if hopStart > base {
+		return hopStart
+	}
+	return base
+}
+
 // OperaCountryOr returns the configured Opera VPN region, defaulting to "EU"
 // for an empty or unknown value.
 func (s *Settings) OperaCountryOr() string { return OperaCountryOr(s.OperaCountry) }

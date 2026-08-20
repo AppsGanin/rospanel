@@ -175,7 +175,7 @@ func customHysteria(u model.User, in model.Inbound, set *model.Settings) string 
 	q.Set("alpn", "h3")
 	pinSelfSigned(q, set)
 	if in.UsesHopping() {
-		q.Set("fm", url.QueryEscape(hopParams(in.Port, in.Opts.HopEnd, in.Opts.HopIntervalOr())))
+		q.Set("fm", url.QueryEscape(hopParams(model.HopAdvertised(in.Port, in.Opts.HopStart), in.Opts.HopEnd, in.Opts.HopIntervalOr())))
 	}
 	return customAssemble("hysteria2", url.QueryEscape(u.Password), in, q, set)
 }

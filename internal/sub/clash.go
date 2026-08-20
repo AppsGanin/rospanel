@@ -65,7 +65,7 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		hop := ""
 		if set.HopEnd > set.HysteriaPort {
-			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", set.HysteriaPort, set.HopEnd))
+			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", model.HopAdvertised(set.HysteriaPort, set.HopStart), set.HopEnd))
 		}
 		n := link.Label(model.ProtoHysteria, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
@@ -98,7 +98,7 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 	if in.Protocol == model.InbHysteria {
 		hop := ""
 		if in.UsesHopping() {
-			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", in.Port, o.HopEnd))
+			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", model.HopAdvertised(in.Port, o.HopStart), o.HopEnd))
 		}
 		return clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
@@ -221,6 +221,15 @@ func ClashYAMLMulti(u model.User, servers []Server) string {
 		quoted[i] = fmt.Sprintf("%q", p.name)
 	}
 	group := clashGroupName(u, local)
+	// A user whose groups grant nothing has no proxies at all. A select group with no
+	// members is a LOAD ERROR in mihomo, so emitting one makes the client reject the
+	// whole document — the account looks broken rather than empty. Reachable without
+	// misconfiguration: any membership row restricts the user, so a group that grants
+	// nothing yet, or whose only grants were a deleted node's lanes, lands here.
+	if len(proxies) == 0 {
+		b.WriteString("rules:\n  - \"MATCH,DIRECT\"\n")
+		return b.String()
+	}
 	fmt.Fprintf(&b,
 		"proxy-groups:\n  - {name: %q, type: select, proxies: [%s]}\n",
 		group, strings.Join(quoted, ", "))
