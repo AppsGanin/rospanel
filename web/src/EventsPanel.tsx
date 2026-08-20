@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getEventCatalog, listEvents } from "./api";
 import { actionMeta, actorOptions, EventList } from "./events";
+import { useViewMode } from "./hooks";
 import { errMessage, notifyError } from "./notify";
-import { Select, SettingCard } from "./ui";
+import { Select, SettingCard, ViewSwitch } from "./ui";
 
 // The global audit trail: every recorded action across all users, newest first,
 // filterable by action and by who performed it.
 export function EventsPanel() {
   const { t } = useTranslation();
+  const [view, setView] = useViewMode("events");
   const [keys, setKeys] = useState<string[]>([]);
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
@@ -39,6 +41,15 @@ export function EventsPanel() {
     <SettingCard
       title={t("events.title")}
       description={t("events.description", { days: RETENTION_DAYS })}
+      action={
+        <ViewSwitch
+          value={view}
+          onChange={setView}
+          tableLabel={t("usersPanel.viewTable")}
+          cardsLabel={t("usersPanel.viewCards")}
+        />
+      }
+      stackAction
     >
       <div className="flex flex-col gap-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -55,7 +66,7 @@ export function EventsPanel() {
             data={actorOptions()}
           />
         </div>
-        <EventList load={load} showUser />
+        <EventList load={load} showUser table={view === "table"} />
       </div>
     </SettingCard>
   );
