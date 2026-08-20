@@ -4,7 +4,7 @@ import type { EventPage, UserEvent } from "./api";
 import { fmtBytes } from "./format";
 import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
-import { Badge, Button, CenterLoader } from "./ui";
+import { Badge, Button, CenterLoader, TableShell, TD, THead, TR } from "./ui";
 
 // The audit-log rendering shared by the per-user journal modal and the global
 // journal page: how each action is labelled and coloured, how its details read,
@@ -268,10 +268,15 @@ export function EventList({
   load,
   showUser,
   empty,
+  table,
 }: {
   load: (before: number) => Promise<EventPage>;
   showUser?: boolean;
   empty?: string;
+  // table renders the trail as columns instead of stacked cards. Used by the global
+  // journal, where every row has the same four facts and scanning down a column is the
+  // point; the per-user trail inside a modal keeps the cards, which read better narrow.
+  table?: boolean;
 }) {
   const { t } = useTranslation();
   const [events, setEvents] = useState<UserEvent[]>([]);
@@ -323,16 +328,82 @@ export function EventList({
 
   return (
     <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-2">
-        {events.map((e) => (
-          <EventRow key={e.id} event={e} showUser={showUser} />
-        ))}
-      </ul>
+      {table ? (
+        <EventTable events={events} showUser={showUser} />
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {events.map((e) => (
+            <EventRow key={e.id} event={e} showUser={showUser} />
+          ))}
+        </ul>
+      )}
       {next > 0 && (
         <Button variant="light" fullWidth loading={more} onClick={loadMore}>
           {t("common.showMore")}
         </Button>
       )}
     </div>
+  );
+}
+
+// EventTable is the journal as columns: what happened, to whom, the details, who did it
+// and when. Same data as EventRow — the card stacks it, this lines it up so a column can
+// be read down.
+function EventTable({
+  events,
+  showUser,
+}: {
+  events: UserEvent[];
+  showUser?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TableShell>
+      <THead
+        cols={[
+          { label: t("events.colAction") },
+          ...(showUser ? [{ label: t("events.colUser") }] : []),
+          { label: t("events.colDetails"), className: "hidden md:table-cell" },
+          { label: t("events.colActor"), className: "hidden sm:table-cell" },
+          { label: t("events.colWhen") },
+        ]}
+      />
+      <tbody>
+        {events.map((e) => {
+          const meta = actionMeta(e.action);
+          const details = eventDetails(e);
+          return (
+            <TR key={e.id}>
+              <TD>
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <Badge color={meta.color} size="xs">
+                    {meta.label}
+                  </Badge>
+                  {e.details?.bulk === true && (
+                    <Badge color="gray" size="xs">
+                      {t("events.bulk")}
+                    </Badge>
+                  )}
+                </div>
+              </TD>
+              {showUser && (
+                <TD className="max-w-[12rem] truncate font-medium text-ink">
+                  {e.user_name || `#${e.user_id}`}
+                </TD>
+              )}
+              <TD className="hidden max-w-[22rem] truncate md:table-cell" >
+                {details ? <span title={details}>{details}</span> : <span className="text-ink-muted">—</span>}
+              </TD>
+              <TD className="hidden whitespace-nowrap text-ink-muted sm:table-cell">
+                {actorLabel(e)}
+              </TD>
+              <TD className="whitespace-nowrap text-ink-muted">
+                {fmtDateTime(e.created_at)}
+              </TD>
+            </TR>
+          );
+        })}
+      </tbody>
+    </TableShell>
   );
 }

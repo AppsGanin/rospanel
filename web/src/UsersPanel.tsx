@@ -10,7 +10,7 @@ import {
   setUserEnabled,
   type User,
 } from "./api";
-import { useAction } from "./hooks";
+import { useAction, useViewMode } from "./hooks";
 import i18n, { currentLang } from "./i18n";
 import {
   fmtExpire,
@@ -31,12 +31,22 @@ import {
   DatePicker,
   IconCheck,
   Modal,
+  IconButton,
+  IconCards,
+  IconExternal,
+  IconEye,
+  IconTable,
   Select,
+  SegmentedControl,
   Skeleton,
   Switch,
   TextInput,
   useConfirm,
   useCopy,
+  TableShell,
+  THead,
+  TR,
+  ViewSwitch,
 } from "./ui";
 import { UserDetail } from "./UserDetail";
 
@@ -101,6 +111,10 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
   const [sort, setSort] = useState("new");
   const [page, setPage] = useState(1);
 
+  // How the list is drawn. The table is the default: it is the denser view and the one
+  // an operator scanning a fleet of accounts asks for. Remembered per browser, because
+  // this is a working preference, not a per-visit choice.
+  const [view, changeView] = useViewMode("users");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   // pending is the bulk action currently in flight (null = none). Tracking the
   // specific action lets only the clicked button show a spinner, and keeps the
@@ -311,6 +325,14 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
         <div className="sm:w-48 sm:shrink-0">
           <Select value={sort} onChange={setSort} data={sorts()} />
         </div>
+        <div className="sm:shrink-0">
+          <ViewSwitch
+            value={view}
+            onChange={changeView}
+            tableLabel={t("usersPanel.viewTable")}
+            cardsLabel={t("usersPanel.viewCards")}
+          />
+        </div>
       </div>
 
       <div className="mb-3 flex items-center justify-between gap-3 text-sm text-ink-muted">
@@ -335,6 +357,18 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
         <p className="py-12 text-center text-ink-muted">
           {t("usersPanel.noneMatch")}
         </p>
+      ) : view === "table" ? (
+        <UsersTable
+          rows={paged}
+          selected={selected}
+          onToggleOne={toggleOne}
+          onSetEnabled={(id, v) =>
+            setUserEnabled(id, v)
+              .then(refresh)
+              .catch((e) => notifyError(errMessage(e)))
+          }
+          onDetail={setDetail}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {paged.map((u) => {
@@ -480,7 +514,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
               <span className="shrink-0 text-sm font-medium text-ink">
                 {t("usersPanel.selectedN", { count: selected.size })}
               </span>
-              <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-0.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2 justify-center overflow-x-auto py-0.5">
                 {renderBulkActions(false)}
               </div>
               <Button
@@ -789,5 +823,161 @@ function AddUser({
         </div>
       )}
     </Modal>
+  );
+}
+
+
+
+// UsersTable is the dense view: one row per user, the same controls the card carries.
+//
+// Narrow screens keep the columns that decide whether an account is healthy (name,
+// status, traffic) and drop the rest — a horizontal scrollbar on a phone is worse than
+// three fewer columns, and everything hidden here is one tap away in the detail sheet.
+function UsersTable({
+  rows,
+  selected,
+  onToggleOne,
+  onSetEnabled,
+  onDetail,
+}: {
+  rows: User[];
+  selected: Set<number>;
+  onToggleOne: (id: number, v: boolean) => void;
+  onSetEnabled: (id: number, v: boolean) => void;
+  onDetail: (u: User) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TableShell>
+      <THead
+        cols={[
+          { srOnly: t("usersPanel.colSelect"), className: "w-10" },
+          { label: t("usersPanel.colUser") },
+          { label: t("usersPanel.colStatus") },
+          { label: t("usersPanel.colOnline"), className: "hidden sm:table-cell" },
+          { label: t("usersPanel.colTraffic") },
+          { label: t("usersPanel.colExpires"), className: "hidden md:table-cell" },
+          { label: t("usersPanel.colDevices"), className: "hidden lg:table-cell" },
+          { label: t("usersPanel.colGroups"), className: "hidden lg:table-cell" },
+          { label: t("usersPanel.colActions") },
+        ]}
+      />
+        <tbody>
+          {rows.map((u) => {
+            const st = statusInfo(u.status);
+            const checked = selected.has(u.id);
+            return (
+              <TR key={u.id} selected={checked}>
+                <td className="py-2 px-3 align-middle">
+                  <SelectCheck
+                    checked={checked}
+                    onChange={(v) => onToggleOne(u.id, v)}
+                    label={t("usersPanel.selectUser", { name: u.name })}
+                  />
+                </td>
+                <td className="py-2 pr-3 align-middle">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Switch checked={u.enabled} onChange={(v) => onSetEnabled(u.id, v)} />
+                    <button
+                      type="button"
+                      onClick={() => onDetail(u)}
+                      className={`truncate text-left font-medium hover:underline ${
+                        u.status === "active" ? "text-ink" : "text-ink-muted"
+                      }`}
+                    >
+                      {u.name}
+                    </button>
+                  </div>
+                </td>
+                <td className="py-2 pr-3 align-middle">
+                  <Badge color={st.color as never}>{st.label}</Badge>
+                </td>
+                <td className="hidden py-2 pr-3 align-middle sm:table-cell">
+                  <Badge color={isOnline(u.last_seen) ? "greenSolid" : "gray"}>
+                    {isOnline(u.last_seen) ? t("usersPanel.online") : t("usersPanel.offline")}
+                  </Badge>
+                </td>
+                <td className="whitespace-nowrap py-2 pr-3 align-middle">
+                  {fmtQuota(u.used_up + u.used_down, u.data_limit)}
+                </td>
+                <td className="hidden whitespace-nowrap py-2 pr-3 align-middle text-ink-muted md:table-cell">
+                  {u.expire_at > 0 ? fmtExpire(u.expire_at) : "—"}
+                </td>
+                <td className="hidden whitespace-nowrap py-2 pr-3 align-middle lg:table-cell">
+                  {u.device_limit > 0 ? (
+                    <span className={u.status === "device_limited" ? "text-warning" : ""}>
+                      {t("usersPanel.devicesShort", {
+                        active: u.active_devices,
+                        limit: u.device_limit,
+                      })}
+                    </span>
+                  ) : (
+                    <span className="text-ink-muted">—</span>
+                  )}
+                </td>
+                <td className="hidden py-2 pr-3 align-middle lg:table-cell">
+                  <GroupCell groups={u.groups ?? []} />
+                </td>
+                <td className="py-2 pr-3 align-middle">
+                  {/* Below sm only the subscription link rides here: two buttons push the
+                      row past a phone's width, and the wrapper would answer with the
+                      horizontal scrollbar this layout exists to avoid. Details stays
+                      reachable — the name is the button that opens it. */}
+                  {/* Icons, not words: two labelled buttons per row is most of the
+                      row's width for the two things every row repeats. The words live
+                      on as the accessible name and the hover title. */}
+                  <div className="flex gap-1">
+                    <IconButton
+                      href={u.sub_url}
+                      target="_blank"
+                      color="brand"
+                      title={t("usersPanel.subscription")}
+                    >
+                      <IconExternal size={16} />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => onDetail(u)}
+                      title={t("usersPanel.details")}
+                    >
+                      <IconEye size={16} />
+                    </IconButton>
+                  </div>
+                </td>
+              </TR>
+            );
+          })}
+      </tbody>
+    </TableShell>
+  );
+}
+
+// groupsShown is how many group badges a table cell renders before collapsing the rest
+// into a count. One, because the column is the widest thing in the row that nobody reads
+// most of the time: a user in four groups would otherwise stretch every row on the page
+// to fit the account with the longest list.
+const groupsShown = 1;
+
+// GroupCell renders a user's groups compactly: the first, then "+N" carrying the rest as
+// hover text. Native title, like every other hint in this panel — there is no tooltip
+// component here, and inventing one for a count would be the odd thing out.
+function GroupCell({ groups }: { groups: { id: number; name: string }[] }) {
+  if (groups.length === 0) {
+    return <span className="text-ink-muted">—</span>;
+  }
+  const shown = groups.slice(0, groupsShown);
+  const rest = groups.slice(groupsShown);
+  return (
+    <div className="flex items-center gap-1 whitespace-nowrap">
+      {shown.map((g) => (
+        <Badge key={g.id} color="brand" title={g.name}>
+          {g.name}
+        </Badge>
+      ))}
+      {rest.length > 0 && (
+        <Badge color="gray" title={rest.map((g) => g.name).join(", ")}>
+          +{rest.length}
+        </Badge>
+      )}
+    </div>
   );
 }

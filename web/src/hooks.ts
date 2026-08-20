@@ -97,3 +97,34 @@ export function useShowMore<T>(
     showMore: () => setLimit((n) => n + step),
   };
 }
+
+// ViewMode is how a list is drawn. The table is the default everywhere: it is the denser
+// form, and these are lists whose rows all carry the same facts.
+export type ViewMode = "table" | "cards";
+
+// useViewMode remembers the operator's choice per list, in this browser.
+//
+// It is a working preference, not a per-visit one — an operator who prefers cards should
+// not have to say so on every page load. Storage can throw (Safari in private mode denies
+// access outright), and a preference is never worth failing a render over, so every touch
+// is guarded and an unreadable store simply means "the default".
+export function useViewMode(key: string): [ViewMode, (v: string) => void] {
+  const storageKey = `rospanel.view.${key}`;
+  const [view, setView] = useState<ViewMode>(() => {
+    try {
+      return localStorage.getItem(storageKey) === "cards" ? "cards" : "table";
+    } catch {
+      return "table";
+    }
+  });
+  const change = (v: string) => {
+    const next: ViewMode = v === "cards" ? "cards" : "table";
+    setView(next);
+    try {
+      localStorage.setItem(storageKey, next);
+    } catch {
+      // Not remembered; the session still works.
+    }
+  };
+  return [view, change];
+}

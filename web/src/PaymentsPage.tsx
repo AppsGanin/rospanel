@@ -9,7 +9,7 @@ import {
   type PaymentOrder,
   type PaymentStats,
 } from "./api";
-import { useShowMore } from "./hooks";
+import { useShowMore, useViewMode } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
@@ -20,6 +20,11 @@ import {
   PasswordInput,
   SettingCard,
   ShowMore,
+  TableShell,
+  TD,
+  THead,
+  TR,
+  ViewSwitch,
 } from "./ui";
 
 const PROVIDER_META: Record<
@@ -112,86 +117,12 @@ function StatTile({
   );
 }
 
-// PendingRow is an actionable order awaiting payment.
-function PendingRow({
-  order,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  order: PaymentOrder;
-  busy: boolean;
-  onConfirm: (id: number) => void;
-  onCancel: (id: number) => void;
-}) {
-  const { t } = useTranslation();
-  const prov = providerMeta(order.provider);
-  const auto = order.provider !== "";
-  return (
-    <li className="flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-ink">
-          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-          {order.plan_name} · {order.amount_rub} ₽
-        </span>
-        <span className="flex gap-2">
-          <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
-            {t("common.confirm")}
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            color="red"
-            onClick={() => onCancel(order.id)}
-            disabled={busy}
-          >
-            {t("common.cancel")}
-          </Button>
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-        <Badge color={prov.color} size="xs">
-          {prov.label}
-        </Badge>
-        <span>· {t("pay.createdAt", { when: fmtDateTime(order.created_at) })}</span>
-        {auto && <span>· {t("pay.autoConfirm")}</span>}
-      </div>
-    </li>
-  );
-}
 
-// HistoryRow is a read-only completed order.
-function HistoryRow({ order }: { order: PaymentOrder }) {
-  const { t } = useTranslation();
-  const prov = providerMeta(order.provider);
-  const st = statusMeta(order.status);
-  return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
-      <div className="min-w-0">
-        <div className="truncate font-medium text-ink">
-          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-          {order.plan_name}
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-          <Badge color={prov.color} size="xs">
-            {prov.label}
-          </Badge>
-          <span>
-            · {t(order.status === "paid" ? "pay.paidWord" : "pay.createdWord")}{" "}
-            {fmtDateTime(order.status === "paid" ? order.paid_at : order.created_at)}
-          </span>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="font-semibold text-ink">{order.amount_rub} ₽</span>
-        <Badge color={st.color}>{st.label}</Badge>
-      </div>
-    </li>
-  );
-}
 
 export function PaymentsPage() {
   const { t } = useTranslation();
+  const [pendingView, setPendingView] = useViewMode("payments.pending");
+  const [historyView, setHistoryView] = useViewMode("payments.history");
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -312,13 +243,26 @@ export function PaymentsPage() {
       <SettingCard
         title={t("pay.awaiting")}
         action={
-          pending.length > 0 ? (
-            <Badge color="orange">{pending.length}</Badge>
-          ) : undefined
+          <span className="flex items-center gap-2">
+            {pending.length > 0 && <Badge color="orange">{pending.length}</Badge>}
+            <ViewSwitch
+              value={pendingView}
+              onChange={setPendingView}
+              tableLabel={t("usersPanel.viewTable")}
+              cardsLabel={t("usersPanel.viewCards")}
+            />
+          </span>
         }
       >
         {pending.length === 0 ? (
           <p className="text-sm text-ink-muted">{t("pay.noPending")}</p>
+        ) : pendingView === "table" ? (
+          <PendingTable
+            orders={pendingPage.shown}
+            busy={busy}
+            onConfirm={setConfirmId}
+            onCancel={setCancelId}
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {pendingPage.shown.map((o) => (
@@ -339,9 +283,21 @@ export function PaymentsPage() {
         />
       </SettingCard>
 
-      <SettingCard title={t("pay.history")}>
+      <SettingCard
+        title={t("pay.history")}
+        action={
+          <ViewSwitch
+            value={historyView}
+            onChange={setHistoryView}
+            tableLabel={t("usersPanel.viewTable")}
+            cardsLabel={t("usersPanel.viewCards")}
+          />
+        }
+      >
         {history.length === 0 ? (
           <p className="text-sm text-ink-muted">{t("pay.historyEmpty")}</p>
+        ) : historyView === "table" ? (
+          <HistoryTable orders={historyPage.shown} />
         ) : (
           <ul className="flex flex-col gap-2">
             {historyPage.shown.map((o) => (
@@ -402,5 +358,210 @@ export function PaymentsPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+// orderWho is the account an order belongs to, by name when the row still has one.
+function orderWho(o: PaymentOrder): string {
+  return o.user_name ?? `user ${o.user_id}`;
+}
+
+// PendingTable lists orders awaiting payment. Every row carries the same six facts and
+// the same two decisions, which is exactly what a table is for — the card version spent a
+// line per order on punctuation.
+function PendingTable({
+  orders,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  orders: PaymentOrder[];
+  busy: boolean;
+  onConfirm: (id: number) => void;
+  onCancel: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TableShell>
+      <THead
+        cols={[
+          { label: t("pay.colOrder") },
+          { label: t("pay.colUser") },
+          { label: t("pay.colPlan"), className: "hidden sm:table-cell" },
+          { label: t("pay.colAmount") },
+          { label: t("pay.colMethod"), className: "hidden md:table-cell" },
+          { label: t("pay.colCreated"), className: "hidden lg:table-cell" },
+          { srOnly: t("pay.colActions") },
+        ]}
+      />
+      <tbody>
+        {orders.map((o) => {
+          const prov = providerMeta(o.provider);
+          return (
+            <TR key={o.id}>
+              <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
+              <TD className="max-w-[12rem] truncate">{orderWho(o)}</TD>
+              <TD className="hidden max-w-[12rem] truncate sm:table-cell">{o.plan_name}</TD>
+              <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
+              <TD className="hidden whitespace-nowrap md:table-cell">
+                <Badge color={prov.color} size="xs">
+                  {prov.label}
+                </Badge>
+                {/* An order made through a provider confirms itself when the money
+                    lands; the buttons are for the ones that cannot. */}
+                {o.provider !== "" && (
+                  <span className="ml-1 text-xs text-ink-muted">{t("pay.autoConfirm")}</span>
+                )}
+              </TD>
+              <TD className="hidden whitespace-nowrap text-ink-muted lg:table-cell">
+                {fmtDateTime(o.created_at)}
+              </TD>
+              <TD>
+                <div className="flex justify-end gap-2 whitespace-nowrap">
+                  <Button size="sm" onClick={() => onConfirm(o.id)} disabled={busy}>
+                    {t("common.confirm")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    color="red"
+                    onClick={() => onCancel(o.id)}
+                    disabled={busy}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              </TD>
+            </TR>
+          );
+        })}
+      </tbody>
+    </TableShell>
+  );
+}
+
+// HistoryTable is the settled orders, read-only.
+function HistoryTable({ orders }: { orders: PaymentOrder[] }) {
+  const { t } = useTranslation();
+  return (
+    <TableShell>
+      <THead
+        cols={[
+          { label: t("pay.colOrder") },
+          { label: t("pay.colUser") },
+          { label: t("pay.colPlan"), className: "hidden sm:table-cell" },
+          { label: t("pay.colAmount") },
+          { label: t("pay.colMethod"), className: "hidden md:table-cell" },
+          { label: t("pay.colStatus") },
+          { label: t("pay.colWhen"), className: "hidden lg:table-cell" },
+        ]}
+      />
+      <tbody>
+        {orders.map((o) => {
+          const prov = providerMeta(o.provider);
+          const st = statusMeta(o.status);
+          const paid = o.status === "paid";
+          return (
+            <TR key={o.id}>
+              <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
+              <TD className="max-w-[12rem] truncate">{orderWho(o)}</TD>
+              <TD className="hidden max-w-[12rem] truncate sm:table-cell">{o.plan_name}</TD>
+              <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
+              <TD className="hidden whitespace-nowrap md:table-cell">
+                <Badge color={prov.color} size="xs">
+                  {prov.label}
+                </Badge>
+              </TD>
+              <TD className="whitespace-nowrap">
+                <Badge color={st.color}>{st.label}</Badge>
+              </TD>
+              <TD className="hidden whitespace-nowrap text-ink-muted lg:table-cell">
+                {/* A settled order is dated by when it settled; one that never did keeps
+                    the date it was raised. */}
+                {fmtDateTime(paid ? o.paid_at : o.created_at)}
+              </TD>
+            </TR>
+          );
+        })}
+      </tbody>
+    </TableShell>
+  );
+}
+
+// PendingRow is an actionable order awaiting payment.
+function PendingRow({
+  order,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  order: PaymentOrder;
+  busy: boolean;
+  onConfirm: (id: number) => void;
+  onCancel: (id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const prov = providerMeta(order.provider);
+  const auto = order.provider !== "";
+  return (
+    <li className="flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-ink">
+          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
+          {order.plan_name} · {order.amount_rub} ₽
+        </span>
+        <span className="flex gap-2">
+          <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
+            {t("common.confirm")}
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            color="red"
+            onClick={() => onCancel(order.id)}
+            disabled={busy}
+          >
+            {t("common.cancel")}
+          </Button>
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+        <Badge color={prov.color} size="xs">
+          {prov.label}
+        </Badge>
+        <span>· {t("pay.createdAt", { when: fmtDateTime(order.created_at) })}</span>
+        {auto && <span>· {t("pay.autoConfirm")}</span>}
+      </div>
+    </li>
+  );
+}
+
+// HistoryRow is a read-only completed order.
+function HistoryRow({ order }: { order: PaymentOrder }) {
+  const { t } = useTranslation();
+  const prov = providerMeta(order.provider);
+  const st = statusMeta(order.status);
+  return (
+    <li className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
+      <div className="min-w-0">
+        <div className="truncate font-medium text-ink">
+          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
+          {order.plan_name}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+          <Badge color={prov.color} size="xs">
+            {prov.label}
+          </Badge>
+          <span>
+            · {t(order.status === "paid" ? "pay.paidWord" : "pay.createdWord")}{" "}
+            {fmtDateTime(order.status === "paid" ? order.paid_at : order.created_at)}
+          </span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="font-semibold text-ink">{order.amount_rub} ₽</span>
+        <Badge color={st.color}>{st.label}</Badge>
+      </div>
+    </li>
   );
 }

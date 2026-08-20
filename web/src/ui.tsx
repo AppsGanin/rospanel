@@ -48,6 +48,38 @@ export const IconBurger = ({ size = 22, className }: IconProps) =>
       <path d="M3 18h18" />
     </>,
   );
+export const IconExternal = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+    </>,
+  );
+export const IconTable = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18" />
+      <path d="M3 15h18" />
+      <path d="M9 10v10" />
+    </>,
+  );
+export const IconCards = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <rect x="3" y="4" width="7" height="7" rx="1.5" />
+      <rect x="14" y="4" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>,
+  );
 export const IconCheck = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M20 6 9 17l-5-5" />);
 export const IconPencil = ({ size = 16, className }: IconProps) =>
@@ -358,6 +390,8 @@ export function ShowMore({
 export function IconButton({
   children,
   onClick,
+  href,
+  target,
   color = "gray",
   disabled,
   className,
@@ -365,26 +399,159 @@ export function IconButton({
 }: {
   children: ReactNode;
   onClick?: () => void;
+  // href renders an anchor instead of a button — same shape, same hit area. A control
+  // that navigates has to BE a link: middle-click, "open in new tab" and the status bar
+  // all come from the element, not from the click handler.
+  href?: string;
+  target?: string;
   color?: Color;
   disabled?: boolean;
   className?: string;
   title?: string;
 }) {
+  const cls = cn(
+    "inline-flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-90",
+    BTN.subtle[color],
+    "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+    className,
+  );
+  // title alone is not an accessible name for an icon-only control — a screen reader
+  // announces nothing without aria-label, and hover text never reaches a touch device.
+  if (href) {
+    return (
+      <a
+        href={href}
+        target={target}
+        rel={target === "_blank" ? "noopener noreferrer" : undefined}
+        title={title}
+        aria-label={title}
+        className={cls}
+      >
+        {children}
+      </a>
+    );
+  }
   return (
     <button
       type="button"
       title={title}
+      aria-label={title}
       onClick={onClick}
       disabled={disabled}
+      className={cls}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ViewSwitch is the table/cards toggle every list view carries. Icons rather than words:
+// it repeats on several screens and the words would be the widest thing in a toolbar that
+// already holds a search box and two selects. The words stay as the accessible name and
+// the hover title (see SegmentedControl).
+export function ViewSwitch({
+  value,
+  onChange,
+  tableLabel,
+  cardsLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  tableLabel: string;
+  cardsLabel: string;
+}) {
+  return (
+    <SegmentedControl
+      value={value}
+      onChange={onChange}
+      data={[
+        { value: "table", label: <IconTable size={18} />, title: tableLabel },
+        { value: "cards", label: <IconCards size={18} />, title: cardsLabel },
+      ]}
+    />
+  );
+}
+
+/* ------------------------------------------------------------------- table */
+
+// TableShell is the surface every data table in the panel sits on — the same white card
+// the list views use, so a table and a card read as one material rather than two. It also
+// owns the horizontal scroll, which is the fallback when a caller cannot drop enough
+// columns on a narrow screen.
+export function TableShell({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-90",
-        BTN.subtle[color],
-        "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
+        "overflow-x-auto rounded-2xl border border-brand-600/6 bg-white shadow-sm",
+        className,
+      )}
+    >
+      <table className="w-full text-sm">{children}</table>
+    </div>
+  );
+}
+
+// TableCol describes one header cell. className carries the responsive hiding
+// (`hidden md:table-cell`), so which columns survive a narrow screen is the caller's
+// decision and lives next to the cells it matches. srOnly labels a column whose header is
+// visually empty (a checkbox or an actions column) — it still needs a name for a screen
+// reader, which reads the header when announcing each cell.
+export type TableCol = { label?: ReactNode; className?: string; srOnly?: string };
+
+export function THead({ cols }: { cols: TableCol[] }) {
+  return (
+    <thead className="border-b border-gray-100 bg-gray-50/70 text-left text-ink-muted">
+      <tr>
+        {cols.map((c, i) => (
+          <th key={i} className={cn("py-2 pr-3 font-medium first:pl-3", c.className)}>
+            {c.srOnly ? <span className="sr-only">{c.srOnly}</span> : c.label}
+          </th>
+        ))}
+      </tr>
+    </thead>
+  );
+}
+
+// TR is one body row, highlighted when selected.
+export function TR({
+  children,
+  selected,
+  className,
+}: {
+  children: ReactNode;
+  selected?: boolean;
+  className?: string;
+}) {
+  return (
+    <tr
+      className={cn(
+        "border-t border-gray-100",
+        selected && "bg-brand-50/60",
         className,
       )}
     >
       {children}
-    </button>
+    </tr>
+  );
+}
+
+// TD is one body cell. Padding matches THead so columns line up without each caller
+// repeating the numbers.
+export function TD({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <td className={cn("py-2 pr-3 align-middle first:pl-3", className)}>{children}</td>
   );
 }
 
@@ -1202,14 +1369,18 @@ export function Badge({
   color = "brand",
   size = "sm",
   className,
+  title,
 }: {
   children: ReactNode;
   color?: keyof typeof BADGE;
   size?: "xs" | "sm";
   className?: string;
+  // Hover text, for a badge that stands in for something longer (an overflow count).
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex items-center rounded-md font-medium whitespace-nowrap",
         size === "xs" ? "px-1.5 py-0.5 text-xs" : "px-2 py-0.5 text-sm",
@@ -1277,7 +1448,9 @@ export function SegmentedControl({
   onChange,
   fullWidth,
 }: {
-  data: { value: string; label: string }[];
+  // label may be an icon. When it is, pass title too: an icon-only button has no
+  // accessible name of its own, and a screen reader would announce nothing at all.
+  data: { value: string; label: ReactNode; title?: string }[];
   value: string;
   onChange: (v: string) => void;
   fullWidth?: boolean;
@@ -1294,6 +1467,9 @@ export function SegmentedControl({
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
+          title={o.title}
+          aria-label={o.title}
+          aria-pressed={value === o.value}
           className={cn(
             "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
             fullWidth && "flex-1",
