@@ -9,7 +9,9 @@ package datasec
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -111,6 +113,25 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// Derive returns a deterministic secret for label, bound to THIS install's key.
+//
+// The key lives in dataDir/secrets.key and is never sent anywhere, so a value derived
+// here is stable across restarts (no config churn) yet cannot be reproduced by anyone
+// holding only data the panel hands out. That is the difference that matters for
+// placeholder credentials: hashing a value clients already possess makes the result a
+// public formula, not a secret.
+//
+// ok is false when the install has no key (encryption disabled); the caller must then
+// decide for itself, because there is nothing here to keep a secret with.
+func Derive(label string) ([]byte, bool) {
+	if key == nil {
+		return nil, false
+	}
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(label))
+	return m.Sum(nil), true
 }
 
 // Encrypt returns s unchanged when empty; otherwise an enc:v1:… blob.

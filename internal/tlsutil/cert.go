@@ -87,6 +87,44 @@ type CertInfo struct {
 	DaysLeft  int       `json:"days_left"`
 }
 
+// CertCovers reports whether the certificate at path is valid for host — the same check
+// a client performs, including SAN entries and IP addresses, not just the common name.
+//
+// It exists because "is there a CA cert on disk that has not expired" is not the question
+// that matters when the operator changes the panel's domain: the OLD cert is CA-issued
+// and fresh, so a freshness check alone declares everything fine while Xray is about to
+// be told to serve the NEW name it cannot prove.
+func CertCovers(path, host string) bool {
+	if host == "" {
+		return false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	return cert.VerifyHostname(host) == nil
+}
+
+// Usable reports whether the cert is present, parseable and within its validity window.
+// NotBefore matters as much as NotAfter: a box whose clock is behind can hold a cert that
+// is not valid YET, and serving it fails in a client exactly like an expired one.
+func Usable(path string) bool {
+	info, err := ReadCertInfo(path)
+	if err != nil {
+		return false
+	}
+	now := time.Now()
+	return now.After(info.NotBefore) && now.Before(info.NotAfter)
+}
+
 // ReadCertInfo parses the leaf certificate at path for display.
 func ReadCertInfo(path string) (*CertInfo, error) {
 	raw, err := os.ReadFile(path)

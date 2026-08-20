@@ -40,7 +40,7 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 	}
 	if set.HopEnd > set.HysteriaPort {
 		// Port hopping: a range replaces the single server_port.
-		hy2["server_ports"] = []string{fmt.Sprintf("%d:%d", set.HysteriaPort, set.HopEnd)}
+		hy2["server_ports"] = []string{fmt.Sprintf("%d:%d", model.HopAdvertised(set.HysteriaPort, set.HopStart), set.HopEnd)}
 		hy2["hop_interval"] = "10s"
 		delete(hy2, "server_port")
 	}
@@ -105,7 +105,7 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 			},
 		}
 		if in.UsesHopping() {
-			out["server_ports"] = []string{fmt.Sprintf("%d:%d", in.Port, o.HopEnd)}
+			out["server_ports"] = []string{fmt.Sprintf("%d:%d", model.HopAdvertised(in.Port, o.HopStart), o.HopEnd)}
 			out["hop_interval"] = "10s"
 			delete(out, "server_port")
 		}
@@ -187,6 +187,21 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 	}
 
 	group := SubTitle(u, local)
+	// Nothing allowed ⇒ no tags. A urltest with an empty outbound list and a selector
+	// pointing at it are load errors in sing-box, so the client would refuse the entire
+	// profile instead of showing an account with no servers. Answer a direct-only
+	// config: valid, honest, and it starts working the moment access is granted.
+	if len(tags) == 0 {
+		out, err := json.MarshalIndent(map[string]any{
+			"log":       map[string]any{"level": "warn"},
+			"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+			"route":     map[string]any{"final": "direct"},
+		}, "", "  ")
+		if err != nil {
+			return "{}"
+		}
+		return string(out)
+	}
 	outbounds := []any{
 		map[string]any{"type": "selector", "tag": group, "outbounds": append([]string{"auto"}, tags...), "default": "auto"},
 		map[string]any{"type": "urltest", "tag": "auto", "outbounds": tags,

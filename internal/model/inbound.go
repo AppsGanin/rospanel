@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/datasec"
 	"regexp"
 	"sort"
 	"strings"
@@ -420,16 +421,36 @@ func UserShadowKey(uuid, method string) string {
 	return base64.StdEncoding.EncodeToString(sum[:n])
 }
 
-// LockedShadowKey is the key of the placeholder user kept on a Shadowsocks inbound
-// that no real user may use — the one that stops Xray collapsing an empty list into
-// a single-user server keyed by the (widely-known) server key. It is derived from
-// the server key so it is stable (it does not churn the config and trigger reloads),
-// the right length for the method, and known to no client, since the server key is
-// hashed under a different domain than any user's and never handed out on its own.
+// LockedShadowKey is the key of the placeholder user kept on a Shadowsocks inbound that
+// no real user may use — the one that stops Xray collapsing an empty user list into a
+// single-user server keyed by the server key.
+//
+// It is bound to THIS install's secret key, not to the server key. The old derivation
+// hashed the server key under a private-looking domain string and claimed the result was
+// "known to no client" — but SS2022 multi-user REQUIRES the server key inside every
+// client credential (the link is base64(method:serverKey:userKey)), so every user who
+// ever held a link for this inbound has the input, and the domain string is in public
+// source. Anyone who was ever granted the lane could therefore compute this key and
+// authenticate as the placeholder — with no account and no quota behind the traffic —
+// in exactly the state the placeholder exists to close.
+//
+// Deriving from the install key keeps the property that actually mattered: stable across
+// restarts, so the generated config does not churn and bounce Xray.
+//
+// Without an install key (encryption disabled) there is no secret to build on, so it
+// falls back to the old derivation. That mode already keeps every secret in the clear on
+// disk, so this is not the weakest link there.
+// deriveProbe reports whether this install has a key to derive placeholder secrets from.
+// Used by tests to tell the secure path from the documented fallback.
+func deriveProbe() ([]byte, bool) { return datasec.Derive("probe") }
+
 func LockedShadowKey(serverKey, method string) string {
 	n := SSKeyLen(method)
 	if n == 0 {
 		return ""
+	}
+	if secret, ok := datasec.Derive("ss2022-locked|" + serverKey); ok {
+		return base64.StdEncoding.EncodeToString(secret[:n])
 	}
 	sum := sha256.Sum256([]byte("rospanel-ss2022-locked|" + serverKey))
 	return base64.StdEncoding.EncodeToString(sum[:n])
