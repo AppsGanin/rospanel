@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.10.0](https://github.com/AppsGanin/rospanel/compare/v2.9.1...v2.10.0) (2026-08-22)
+
+
+### Features
+
+* **ui:** table views for users, the journal and both payment lists ([fd21de9](https://github.com/AppsGanin/rospanel/commit/fd21de940524e91f5113ea6067a93702450a1d24))
+
+
+### Bug Fixes
+
+* **cli:** say so when a rescue password is redirected out of the terminal ([56e88cb](https://github.com/AppsGanin/rospanel/commit/56e88cb1c291840b1df57b06799aad69b78a63b9))
+* TLS lifecycle and subscription rendering defects ([ec41ee2](https://github.com/AppsGanin/rospanel/commit/ec41ee2f303a6186638f0da89ed8c2bd57981b67))
+
 ## [2.9.1](https://github.com/AppsGanin/rospanel/compare/v2.9.0...v2.9.1) (2026-08-19)
 
 
