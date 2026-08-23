@@ -280,7 +280,7 @@ export function Dashboard({
           </button>
         </div>
         <a
-          href="https://github.com/AppsGanin/rospanel"
+          href="https://github.com/Shu1t3/rospanel-shu1t3"
           target="_blank"
           rel="noreferrer"
           aria-label="GitHub"

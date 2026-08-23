@@ -6,8 +6,8 @@
 
 **Self-hosted VPN control panel built on Xray-core — from a single personal server to a network of nodes.**
 
-![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=release&sort=semver&color=2ea44f)
-![Downloads](https://img.shields.io/github/downloads/AppsGanin/rospanel/total?label=downloads&color=6f42c1)
+![Release](https://img.shields.io/github/v/release/Shu1t3/rospanel-shu1t3?label=release&sort=semver&color=2ea44f)
+![Downloads](https://img.shields.io/github/downloads/Shu1t3/rospanel-shu1t3/total?label=downloads&color=6f42c1)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
@@ -72,7 +72,7 @@ Thanks to everyone who signs up through them 🙏
 One command: downloads the release, installs a systemd service, starts it and prints the login.
 
 ```bash
-curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash
+curl -Ls https://raw.githubusercontent.com/Shu1t3/rospanel-shu1t3/main/install.sh | sudo bash
 ```
 
 **A domain is optional.** The script will ask for one: if you have a domain, enter it; if you
@@ -88,7 +88,7 @@ You can set the domain up front and skip the question:
 ```bash
 # download the latest release (replace amd64 with arm64 for ARM servers)
 curl -fsSL -o rospanel \
-  https://github.com/AppsGanin/rospanel/releases/latest/download/rospanel-linux-amd64
+  https://github.com/Shu1t3/rospanel-shu1t3/releases/latest/download/rospanel-linux-amd64
 chmod +x rospanel
 
 # install as a service (copies the binary to /usr/local/bin, writes a systemd unit, starts it)
@@ -106,7 +106,7 @@ docker run -d --name rospanel \
   --network host \
   --cap-add NET_ADMIN \
   -v rospanel-data:/data \
-  ghcr.io/appsganin/rospanel:latest
+  ghcr.io/shu1t3/rospanel-shu1t3:latest
 
 docker logs rospanel | grep -A6 FIRST-RUN
 ```
@@ -147,7 +147,7 @@ have two options.
 as root:
 
 ```bash
-curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh \
+curl -Ls https://raw.githubusercontent.com/Shu1t3/rospanel-shu1t3/main/install.sh \
   | sudo bash -s -- --join 'https://<panel>/<node-api-path>/v1/join#<token>'
 ```
 
@@ -165,7 +165,7 @@ will and a spent token in the compose file changes nothing.
 ```yaml
 services:
   node:
-    image: ghcr.io/appsganin/rospanel:latest
+    image: ghcr.io/shu1t3/rospanel-shu1t3:latest
     command: node run
     network_mode: host          # Xray binds 443/TCP, 80/TCP and the Hysteria2 UDP ports
     cap_add: [NET_ADMIN]        # nftables: per-IP limits, port hopping
@@ -335,7 +335,7 @@ checked against the order. With no provider configured, an admin confirms paymen
 
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected
-> one of them, please [open an issue](https://github.com/AppsGanin/rospanel/issues) and say
+> one of them, please [open an issue](https://github.com/Shu1t3/rospanel-shu1t3/issues) and say
 > whether it works (which provider, what worked, what broke). That's what lets verified
 > providers be marked as such and the rest get fixed.
 

@@ -6,8 +6,8 @@
 
 **Self-hosted панель управления VPN на Xray-core — от одного личного сервера до сети нод.**
 
-![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=версия&sort=semver&color=2ea44f)
-![Downloads](https://img.shields.io/github/downloads/AppsGanin/rospanel/total?label=скачиваний&color=6f42c1)
+![Release](https://img.shields.io/github/v/release/Shu1t3/rospanel-shu1t3?label=версия&sort=semver&color=2ea44f)
+![Downloads](https://img.shields.io/github/downloads/Shu1t3/rospanel-shu1t3/total?label=скачиваний&color=6f42c1)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
@@ -71,7 +71,7 @@
 Одной командой: скачает релиз, поставит systemd-сервис, запустит и покажет логин.
 
 ```bash
-curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash
+curl -Ls https://raw.githubusercontent.com/Shu1t3/rospanel-shu1t3/main/install.sh | sudo bash
 ```
 
 **Домен не обязателен.** Скрипт спросит про него: есть домен — введите, нет —
@@ -87,7 +87,7 @@ curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | 
 ```bash
 # скачать последний релиз (замените amd64 на arm64 для ARM-серверов)
 curl -fsSL -o rospanel \
-  https://github.com/AppsGanin/rospanel/releases/latest/download/rospanel-linux-amd64
+  https://github.com/Shu1t3/rospanel-shu1t3/releases/latest/download/rospanel-linux-amd64
 chmod +x rospanel
 
 # установить как сервис (копирует бинарь в /usr/local/bin, пишет systemd-юнит, стартует)
@@ -105,7 +105,7 @@ docker run -d --name rospanel \
   --network host \
   --cap-add NET_ADMIN \
   -v rospanel-data:/data \
-  ghcr.io/appsganin/rospanel:latest
+  ghcr.io/shu1t3/rospanel-shu1t3:latest
 
 docker logs rospanel | grep -A6 FIRST-RUN
 ```
@@ -146,7 +146,7 @@ docker logs rospanel | grep -A6 FIRST-RUN
 выполните её на сервере ноды от root:
 
 ```bash
-curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh \
+curl -Ls https://raw.githubusercontent.com/Shu1t3/rospanel-shu1t3/main/install.sh \
   | sudo bash -s -- --join 'https://<панель>/<node-api-path>/v1/join#<токен>'
 ```
 
@@ -165,7 +165,7 @@ curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh \
 ```yaml
 services:
   node:
-    image: ghcr.io/appsganin/rospanel:latest
+    image: ghcr.io/shu1t3/rospanel-shu1t3:latest
     command: node run
     network_mode: host          # Xray слушает 443/TCP, 80/TCP и UDP-порты Hysteria2
     cap_add: [NET_ADMIN]        # nftables: лимиты по IP, port hopping
@@ -330,7 +330,7 @@ geo-базы, заглушка). Нода — **тот же бинарник** �
 обработка идемпотентна, сумма сверяется с заказом. Без провайдеров оплату подтверждает админ.
 
 > [!WARNING]
-> **Провайдеры оплаты пока не проверены на боевых аккаунтах.** Если вы подключили какой-то из них — пожалуйста, [сообщите в issue](https://github.com/AppsGanin/rospanel/issues), работает он или нет (какой провайдер, что получилось, что сломалось). Это поможет отметить проверенные провайдеры и починить остальные.
+> **Провайдеры оплаты пока не проверены на боевых аккаунтах.** Если вы подключили какой-то из них — пожалуйста, [сообщите в issue](https://github.com/Shu1t3/rospanel-shu1t3/issues), работает он или нет (какой провайдер, что получилось, что сломалось). Это поможет отметить проверенные провайдеры и починить остальные.
 
 #### 👥 Доступ, роли и аудит
 
