@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.11.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.10.0...v2.11.0) (2026-08-23)
+
+
+### Features
+
+* add shell installer script and update gitignore to include it ([ffc846f](https://github.com/Shu1t3/rospanel-shu1t3/commit/ffc846f45e329c193bf4a77f70c0fe9f7f2455e3))
+* implement ActiveDeviceCountForUser and expand re-encryption coverage to all sensitive table fields ([81766cd](https://github.com/Shu1t3/rospanel-shu1t3/commit/81766cd5f171de656a7a7a0bc4ff656db99971a0))
+
 ## [2.10.0](https://github.com/AppsGanin/rospanel/compare/v2.9.1...v2.10.0) (2026-08-22)
 
 
