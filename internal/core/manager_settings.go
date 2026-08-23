@@ -664,6 +664,18 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 	if strings.EqualFold(st.SubPath, cur.PanelSecretPath) {
 		return invalidCode("err.subPathSameAsPanel", "путь подписки не может совпадать с секретным путём панели")
 	}
+	if cur.APIPath != "" && strings.EqualFold(st.SubPath, cur.APIPath) {
+		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» уже занят API панели — выберите другой", map[string]any{"path": st.SubPath})
+	}
+	if cur.NodeAPIPath != "" && strings.EqualFold(st.SubPath, cur.NodeAPIPath) {
+		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» уже занят синхронизацией нод — выберите другой", map[string]any{"path": st.SubPath})
+	}
+	if statusPath := cur.StatusPathOr(); statusPath != "" && strings.EqualFold(st.SubPath, statusPath) {
+		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» уже занят страницей статуса — выберите другой", map[string]any{"path": st.SubPath})
+	}
+	if cur.PaymentWebhookSecret != "" && strings.EqualFold(st.SubPath, cur.PaymentWebhookSecret) {
+		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» уже занят вебхуками платежей — выберите другой", map[string]any{"path": st.SubPath})
+	}
 	return m.store.SetSubSettings(st)
 }
 

@@ -55,6 +55,7 @@ type Router struct {
 	probes     *probeGuard    // flags IPs scanning for the hidden panel path
 	streams    *streamGate    // caps concurrent SSE streams
 	status     *statusFeed    // one dashboard-payload timer shared by every viewer
+	authSem    chan struct{}  // caps concurrent Argon2id password verifications
 	routes     []string       // panel route patterns, in registration order (audit exhaustiveness test)
 	apiRoutes  []string       // /v1 route patterns (OpenAPI coverage test)
 
@@ -123,6 +124,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		probes:      newProbeGuard(),
 		streams:     newStreamGate(),
 		status:      newStatusFeed(mgr),
+		authSem:     make(chan struct{}, 4),
 		secret:      secret,
 		subPath:     subPath,
 		paySecret:   paySecret,

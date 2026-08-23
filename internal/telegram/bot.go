@@ -174,15 +174,17 @@ func (s *Service) Run(ctx context.Context) {
 			log.Printf("telegram: admin notify dropped — no linked admin chats")
 			return
 		}
-		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		for _, id := range chats {
-			// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
-			// revoked token fails per send, and with the error discarded the panel looked
-			// exactly like a panel that had nothing to say.
-			if err := c.SendMessage(context.Background(), id, html); err != nil {
-				log.Printf("telegram: admin notify to %d failed: %v", id, err)
+		c := NewClient(token, set.TelegramProxyURL())
+		go func(client *Client, chatIDs []int64, text string) {
+			for _, id := range chatIDs {
+				// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
+				// revoked token fails per send, and with the error discarded the panel looked
+				// exactly like a panel that had nothing to say.
+				if err := client.SendMessage(context.Background(), id, text); err != nil {
+					log.Printf("telegram: admin notify to %d failed: %v", id, err)
+				}
 			}
-		}
+		}(c, chats, html)
 	})
 	// A signup awaiting moderation: post it with approve/reject buttons.
 	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
@@ -201,11 +203,14 @@ func (s *Service) Run(ctx context.Context) {
 			{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
 		}}
 		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		for _, id := range set.TelegramChatIDs() {
-			if err := c.SendMenu(context.Background(), id, msg, rows); err != nil {
-				log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+		chatIDs := set.TelegramChatIDs()
+		go func(client *Client, chats []int64, text string, btns [][]InlineButton) {
+			for _, id := range chats {
+				if err := client.SendMenu(context.Background(), id, text, btns); err != nil {
+					log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+				}
 			}
-		}
+		}(c, chatIDs, msg, rows)
 	})
 	for {
 		if ctx.Err() != nil {

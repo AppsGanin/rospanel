@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -368,7 +369,23 @@ func touchLastSeenOn(ex execer, userID, ts int64) error {
 	return err
 }
 
+// ActiveDeviceCountForUser returns how many distinct source IPs were seen for a
+// single user since the cutoff (unix seconds).
+func (s *Store) ActiveDeviceCountForUser(userID int64, since int64) (int, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(DISTINCT ip) FROM connections INDEXED BY idx_connections_last_seen
+		 WHERE user_id = ? AND last_seen > ?`,
+		userID, since,
+	).Scan(&count)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	return count, nil
+}
+
 // ActiveDeviceCounts returns how many distinct source IPs were seen per user
+
 // since the given unix timestamp (typically now - DeviceOnlineWindow).
 // INDEXED BY is deliberate. Left alone, SQLite picks the (user_id, ip) primary key
 // so GROUP BY needs no sort, and scans the whole table — which grows a row per

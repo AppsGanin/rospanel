@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -941,8 +942,16 @@ func (s *Supervisor) stopProc() {
 	s.restarts = 0
 	s.mu.Unlock()
 
-	_ = p.cmd.Process.Kill()
-	<-p.done // monitor's Wait() returned → process fully reaped
+	// Graceful termination: send SIGTERM first, fallback to SIGKILL if not reaped in time.
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	select {
+	case <-p.done: // monitor's Wait() returned → process fully reaped
+	case <-time.After(1 * time.Second):
+		_ = p.cmd.Process.Kill()
+		<-p.done
+	}
 }
 
 // monitor waits for p to exit. An intentional stop (or a process already

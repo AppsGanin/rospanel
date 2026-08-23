@@ -11,7 +11,7 @@ import (
 // settingsCols are the encrypted settings columns the guard knows about. Kept as a
 // list so the fixture can encrypt exactly one at a time.
 var settingsCols = []string{
-	"tg_bot_token", "tg_user_bot_token", "tg_support_bot_token",
+	"tg_bot_token", "tg_user_bot_token", "tg_support_bot_token", "tg_proxy",
 	"reality_private_key", "warp_private_key", "proxy_accounts", "zerossl_eab_hmac",
 }
 
@@ -72,6 +72,89 @@ func TestGuardSeesEveryEncryptedColumn(t *testing.T) {
 			if !got {
 				t.Fatalf("settings.%s holds ciphertext but the guard reports no secrets — "+
 					"a boot without the key would mint a new one and orphan it", col)
+			}
+		})
+	}
+}
+
+// TestGuardSeesOtherTables verifies that encrypted fields in auxiliary tables
+// (webhooks, payment_providers, inbounds, config_snapshots, admins, nodes) are detected.
+func TestGuardSeesOtherTables(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(db *sql.DB) error
+	}{
+		{
+			name: "admins.totp_pending",
+			setup: func(db *sql.DB) error {
+				if _, err := db.Exec(`CREATE TABLE admins (id INTEGER PRIMARY KEY, totp_pending TEXT NOT NULL DEFAULT '')`); err != nil {
+					return err
+				}
+				_, err := db.Exec(`INSERT INTO admins (id, totp_pending) VALUES (1, 'enc:v1:totp')`)
+				return err
+			},
+		},
+		{
+			name: "webhooks.secret",
+			setup: func(db *sql.DB) error {
+				if _, err := db.Exec(`CREATE TABLE webhooks (id INTEGER PRIMARY KEY, secret TEXT NOT NULL DEFAULT '')`); err != nil {
+					return err
+				}
+				_, err := db.Exec(`INSERT INTO webhooks (id, secret) VALUES (1, 'enc:v1:hooksec')`)
+				return err
+			},
+		},
+		{
+			name: "payment_providers.config",
+			setup: func(db *sql.DB) error {
+				if _, err := db.Exec(`CREATE TABLE payment_providers (id INTEGER PRIMARY KEY, config TEXT NOT NULL DEFAULT '')`); err != nil {
+					return err
+				}
+				_, err := db.Exec(`INSERT INTO payment_providers (id, config) VALUES (1, 'enc:v1:paycfg')`)
+				return err
+			},
+		},
+		{
+			name: "inbounds.opts",
+			setup: func(db *sql.DB) error {
+				if _, err := db.Exec(`CREATE TABLE inbounds (id INTEGER PRIMARY KEY, opts TEXT NOT NULL DEFAULT '')`); err != nil {
+					return err
+				}
+				_, err := db.Exec(`INSERT INTO inbounds (id, opts) VALUES (1, '{"reality_private_key":"enc:v1:privkey"}')`)
+				return err
+			},
+		},
+		{
+			name: "config_snapshots.config_json",
+			setup: func(db *sql.DB) error {
+				if _, err := db.Exec(`CREATE TABLE config_snapshots (id INTEGER PRIMARY KEY, config_json TEXT NOT NULL DEFAULT '')`); err != nil {
+					return err
+				}
+				_, err := db.Exec(`INSERT INTO config_snapshots (id, config_json) VALUES (1, '{"reality_private_key":"enc:v1:snapkey"}')`)
+				return err
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "aux.db")
+			db, err := sql.Open("sqlite", "file:"+path)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			if err := tc.setup(db); err != nil {
+				db.Close()
+				t.Fatalf("setup %s: %v", tc.name, err)
+			}
+			db.Close()
+
+			got, err := dbHasEncryptedSecrets(path)
+			if err != nil {
+				t.Fatalf("guard: %v", err)
+			}
+			if !got {
+				t.Fatalf("%s holds ciphertext but guard reported false", tc.name)
 			}
 		})
 	}

@@ -598,6 +598,16 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 	if len(users) == 0 {
 		return
 	}
+	if len(users) == 1 {
+		u := &users[0]
+		active, _ := s.ActiveDeviceCountForUser(u.ID, now-model.DeviceOnlineWindow)
+		u.ActiveDevices = active
+		u.Status = deriveStatus(
+			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
+			active, u.DeviceLimit,
+		)
+		return
+	}
 	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
 	for i := range users {
 		u := &users[i]

@@ -132,7 +132,12 @@ func (s *UserService) Run(ctx context.Context) {
 		if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
 			return
 		}
-		_ = NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL()).SendMessage(context.Background(), chatID, html)
+		c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
+		go func(client *Client, id int64, text string) {
+			if err := client.SendMessage(context.Background(), id, text); err != nil {
+				log.Printf("telegram: user notify to %d failed: %v", id, err)
+			}
+		}(c, chatID, html)
 	})
 	for {
 		if ctx.Err() != nil {

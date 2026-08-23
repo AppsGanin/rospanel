@@ -471,6 +471,17 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	if rt.authSem != nil {
+		select {
+		case rt.authSem <- struct{}{}:
+			defer func() { <-rt.authSem }()
+		default:
+			slog.Warn("login: auth queue saturated", "ip", ip)
+			writeErrCode(w, http.StatusTooManyRequests, "err.tooManyAttempts", "слишком много попыток, повторите позже")
+			return
+		}
+	}
+
 	id, hash, role, err := rt.mgr.Store().GetAdminAuth(username)
 	if err != nil {
 		// Unknown user: equalize timing against the real verify path.

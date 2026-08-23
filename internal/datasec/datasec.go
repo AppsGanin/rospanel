@@ -88,6 +88,7 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		`SELECT tg_bot_token FROM settings WHERE id = 1`,
 		`SELECT tg_user_bot_token FROM settings WHERE id = 1`,
 		`SELECT tg_support_bot_token FROM settings WHERE id = 1`,
+		`SELECT tg_proxy FROM settings WHERE id = 1`,
 		`SELECT reality_private_key FROM settings WHERE id = 1`,
 		`SELECT warp_private_key FROM settings WHERE id = 1`,
 		`SELECT proxy_accounts FROM settings WHERE proxy_accounts LIKE '%enc:v1:%' AND id = 1`,
@@ -98,6 +99,11 @@ func dbHasEncryptedSecrets(dbPath string) (bool, error) {
 		`SELECT zerossl_eab_hmac FROM nodes WHERE zerossl_eab_hmac LIKE 'enc:v1:%' LIMIT 1`,
 		`SELECT proxy_accounts FROM nodes WHERE proxy_accounts LIKE '%enc:v1:%' LIMIT 1`,
 		`SELECT totp_secret FROM admins WHERE totp_secret LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT totp_pending FROM admins WHERE totp_pending LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT secret FROM webhooks WHERE secret LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT config FROM payment_providers WHERE config LIKE 'enc:v1:%' LIMIT 1`,
+		`SELECT opts FROM inbounds WHERE opts LIKE '%enc:v1:%' LIMIT 1`,
+		`SELECT config_json FROM config_snapshots WHERE config_json LIKE '%enc:v1:%' LIMIT 1`,
 	}
 	for _, q := range checks {
 		var v string
