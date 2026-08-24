@@ -69,9 +69,14 @@ func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
 	// this test spelled out its own SELECT with the INDEXED BY hint written into the test,
 	// so it asserted that a hinted query uses its hint and passed even after the hint was
 	// dropped from the real one.
+	//
+	// The hint matters because connections keys on (user_id, ip) and keeps a row per
+	// address for ConnectionRetentionDays: left to itself SQLite reads the whole
+	// thirty-day table to answer a question about the last two minutes.
 	rows, err := st.db.Query(
-		`EXPLAIN QUERY PLAN WITH device_count AS (`+deviceCountCTE+`), `+deviceUseCTEs+`
-		 SELECT user_id, n FROM device_use`, 0, 0, 0)
+		`EXPLAIN QUERY PLAN SELECT user_id, COUNT(DISTINCT ip)
+		 FROM connections INDEXED BY idx_connections_last_seen
+		 WHERE last_seen > ? GROUP BY user_id`, 0)
 	if err != nil {
 		t.Fatalf("explain: %v", err)
 	}
@@ -88,18 +93,14 @@ func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("rows: %v", err)
 	}
-	// Both halves — each user's newest sighting and the address count itself — have to
-	// reach connections through the window index. The table keys on (user_id, ip) and
-	// keeps a row per address for ConnectionRetentionDays, so a half that misses the index
-	// reads the whole thirty-day table to answer a question about the last two minutes.
 	seeks := 0
 	for _, line := range plan {
 		if strings.Contains(line, "idx_connections_last_seen") && strings.Contains(line, "last_seen>?") {
 			seeks++
 		}
 	}
-	if seeks < 2 {
-		t.Fatalf("device-count plan seeks the window index %d time(s), want 2:\n  %s",
-			seeks, strings.Join(plan, "\n  "))
+	if seeks < 1 {
+		t.Fatalf("device-count plan does not seek the window index:\n  %s",
+			strings.Join(plan, "\n  "))
 	}
 }

@@ -114,10 +114,10 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
-	// hwid_require now feeds the device-count rule, so the working set has to be
-	// recomputed — otherwise an operator turning it off leaves over-limit users
-	// connected until something else happens to trigger a sync.
-	rt.mgr.TriggerUserSync()
+	// Deliberately no user sync: none of these settings reach the proxy config. They
+	// govern who may FETCH a subscription, which is decided per request against the
+	// stored row. Syncing here rewrote config.json and woke every node for a change
+	// none of them can see.
 	writeOK(w)
 }
 

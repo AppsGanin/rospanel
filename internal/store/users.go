@@ -138,54 +138,15 @@ func (s *Store) ipCountsAsDevice() bool {
 	return n != 0
 }
 
-// deviceCountCTE yields one row with the two decisions the device limit rests on:
-// ip_counts, whether distinct source addresses still enforce users.device_limit, and
-// handover_grace, whether an address the device has already moved off is forgiven.
-// It mirrors model.Settings.CountsIPAsDevice and CountsHandoverGrace exactly; the two
+// deviceCountCTE yields one row, ip_counts, saying whether distinct source addresses
+// enforce users.device_limit. It mirrors model.Settings.CountsIPAsDevice exactly; the two
 // exist because the decision is needed on both sides of the wire, and any change has to
 // land in both (a test pins that they agree).
 const deviceCountCTE = `SELECT CASE
 	WHEN device_count_mode = 'hwid' THEN 0
 	ELSE 1
-	END AS ip_counts,
-	CASE
-	WHEN device_count_mode = 'both' THEN 0
-	ELSE 1
-	END AS handover_grace
+	END AS ip_counts
 	FROM settings WHERE id = 1`
-
-// deviceUseCTEs count, in ONE grouped pass over connections, how many distinct source
-// addresses each user is currently using. Bound: since, since, model.DeviceHandoverGrace.
-// Requires a device_count CTE to already be in scope.
-//
-// device_peak is deliberately a grouped pass and not a correlated MAX per user. Written
-// the obvious way it lands inside the WHERE of the address count, which is itself
-// correlated — so SQLite re-evaluates it once per scanned connection row rather than once
-// per user, and each evaluation walks that user's whole PK range. At 500 users and 50k
-// rows that measured 780ms against 9ms before the grace existed, and it is paid on every
-// reconcile, on the one connection every writer queues behind.
-//
-// device_peak is each user's newest sighting; restricting it to the window costs nothing,
-// since an address older than the window is excluded by the count's own predicate anyway.
-//
-// Both halves are pinned to the window index. connections keys on (user_id, ip) and keeps
-// a row per address for ConnectionRetentionDays, so left to itself SQLite reads the whole
-// thirty-day table to answer a question about the last two minutes — 302k rows scanned for
-// the 2k that are in the window. idx_connections_last_seen leads on last_seen and carries
-// user_id and ip, so it answers both halves from a range seek.
-const deviceUseCTEs = `device_peak AS (
-		SELECT user_id, MAX(last_seen) AS seen
-		FROM connections INDEXED BY idx_connections_last_seen
-		WHERE last_seen > ? GROUP BY user_id
-	), device_use AS (
-		SELECT c.user_id AS user_id, COUNT(DISTINCT c.ip) AS n
-		FROM connections c INDEXED BY idx_connections_last_seen
-		JOIN device_peak p ON p.user_id = c.user_id
-		WHERE c.last_seen > ?
-		  AND (NOT (SELECT handover_grace FROM device_count)
-		       OR c.last_seen > p.seen - ?)
-		GROUP BY c.user_id
-	)`
 
 // WorkingUsers returns users that should be in the proxy config right now:
 // manually enabled AND not expired AND within their data limit AND within their
@@ -197,25 +158,16 @@ func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 	// same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
 	// this query and the status derivation agree without threading a flag through six of
 	// them. See migration 0055 and issue #66.
-	// Handover grace (device_use above): an address the device has already moved off
-	// stops appearing in the access log at once, while its last_seen sits inside the
-	// window for up to two minutes. Counting it made a phone switching from mobile data
-	// to Wi-Fi look like two devices (issue #66). Measuring each address against the
-	// NEWEST sighting for this user instead of against the clock drops the abandoned one
-	// within seconds, while devices in genuine simultaneous use all keep their sightings
-	// current and still count.
-	//
-	// A user with no sightings at all has no device_use row: COALESCE reads that as zero
-	// addresses, not as an unknown that would drop them from the config.
-	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`), `+deviceUseCTEs+`
+	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
 		SELECT `+userCols+` FROM users
 		WHERE enabled = 1
 		  AND (expire_at = 0 OR expire_at > ?)
 		  AND (data_limit = 0 OR used_up + used_down < data_limit)
-		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
-		       OR COALESCE((SELECT n FROM device_use WHERE device_use.user_id = users.id), 0)
-		          <= device_limit)
-		ORDER BY id ASC`, since, since, model.DeviceHandoverGrace, now)
+		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count) OR (
+		    SELECT COUNT(DISTINCT c.ip) FROM connections c
+		    WHERE c.user_id = users.id AND c.last_seen > ?
+		  ) <= device_limit)
+		ORDER BY id ASC`, now, since)
 }
 
 // GetUser returns one user by id.
@@ -675,11 +627,10 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 	}
 	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
 	// The displayed count stays honest — it is how many addresses were seen — but it only
-	// DRIVES the status while addresses are what enforces the limit. Otherwise a phone
-	// changing network read as "device limit exceeded" (issue #66), and the bot said so,
-	// while the HWID roster it is actually capped by showed one device.
-	// The count already honours the handover grace; this only has to respect an operator
-	// who switched the address counter off entirely.
+	// DRIVES the status while addresses are what enforces the limit. In "hwid" mode they
+	// do not, and a phone changing network still read as "device limit exceeded" (issue
+	// #66), the bot said so, and the HWID roster it is actually capped by showed one
+	// device. Showing the number and enforcing it are separate decisions.
 	countIP := s.ipCountsAsDevice()
 	for i := range users {
 		u := &users[i]

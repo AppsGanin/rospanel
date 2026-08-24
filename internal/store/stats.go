@@ -377,16 +377,13 @@ func touchLastSeenOn(ex execer, userID, ts int64) error {
 // beats scanning everything, and the planner's row estimates (we never ANALYZE)
 // don't know it. The clause also fails loudly if a migration ever drops the index.
 func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
-	// Literally the same CTEs WorkingUsers enforces with, so the two counts cannot
-	// disagree — one is what cuts the user off, the other is what tells them why. That
-	// includes the handover grace: an address a device has already moved off keeps a
-	// fresh last_seen for the rest of the window, and counting it here made the panel and
-	// the bot report a device limit exceeded for a phone that merely changed network.
+	// Pinned to the window index: connections keys on (user_id, ip) and keeps a row per
+	// address for ConnectionRetentionDays, so left to itself SQLite reads the whole
+	// thirty-day table to answer a question about the last two minutes.
 	rows, err := s.db.Query(
-		`WITH device_count AS (`+deviceCountCTE+`), `+deviceUseCTEs+`
-		 SELECT user_id, n FROM device_use`,
-		since, since, model.DeviceHandoverGrace,
-	)
+		`SELECT user_id, COUNT(DISTINCT ip)
+		 FROM connections INDEXED BY idx_connections_last_seen
+		 WHERE last_seen > ? GROUP BY user_id`, since)
 	if err != nil {
 		return nil, err
 	}
