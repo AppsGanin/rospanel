@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -671,15 +672,64 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name is required")
 		return
 	}
+	if req.DataLimit < 0 {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "data_limit must not be negative")
+		return
+	}
+	if req.ExpireAt < 0 {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "expire_at must not be negative")
+		return
+	}
+	if req.DeviceLimit < 0 {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "device_limit must not be negative")
+		return
+	}
+	if req.SpeedLimit < 0 {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "speed_limit must not be negative")
+		return
+	}
+	if req.PlanID < 0 {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "plan_id must not be negative")
+		return
+	}
+	if req.PlanID > 0 {
+		if _, err := rt.mgr.Store().GetTariffPlan(req.PlanID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeAPIErr(w, http.StatusBadRequest, "bad_request", "plan not found")
+				return
+			}
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if len(req.GroupIDs) > 0 {
+		for _, gid := range req.GroupIDs {
+			grp, err := rt.mgr.Store().GetGroup(gid)
+			if err != nil {
+				writeAPIManagerErr(w, err)
+				return
+			}
+			if grp == nil {
+				writeAPIErr(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("group %d not found", gid))
+				return
+			}
+		}
+	}
+
 	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	// The optional extras. Each is reported as an error but does NOT undo the account:
-	// deleting a user someone may already have been handed credentials for, because a
-	// device limit was rejected, is the worse outcome. The response body is the user as
-	// it actually ended up, so a caller can see what landed.
+
+	// Compensation rollback in case any subsequent configuration step fails
+	var success bool
+	defer func() {
+		if !success && u != nil {
+			_ = rt.mgr.DeleteUser(r.Context(), u.ID)
+		}
+	}()
+
 	if len(req.GroupIDs) > 0 {
 		if err := rt.mgr.SetUserGroups(u.ID, req.GroupIDs); err != nil {
 			writeAPIManagerErr(w, err)
@@ -720,6 +770,7 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIManagerErr(w, err)
 		return
 	}
+	success = true
 	rt.apiUserViewStatus(w, *fresh, http.StatusCreated)
 }
 

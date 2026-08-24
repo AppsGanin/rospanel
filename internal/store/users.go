@@ -194,6 +194,19 @@ func (s *Store) GetUser(id int64) (*model.User, error) {
 	return &users[0], nil
 }
 
+// GetUsersByIDs returns users matching the given ids in a single query.
+// Missing or non-existent ids are simply omitted from the returned slice.
+func (s *Store) GetUsersByIDs(ids []int64) ([]model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return s.queryUsers(`SELECT `+userCols+` FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+}
+
 // GetUserByTgLinkCode resolves a pending one-time Telegram bind code to its user,
 // rejecting codes that are blank, unknown, or expired.
 func (s *Store) GetUserByTgLinkCode(code string) (*model.User, error) {
@@ -277,6 +290,26 @@ func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) 
 		dataLimit, expireAt, deviceLimit, id,
 	)
 	return err
+}
+
+// BulkSetUserExpiry updates expire_at for multiple users in a single transaction.
+func (s *Store) BulkSetUserExpiry(updates map[int64]int64) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`UPDATE users SET expire_at = ? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for id, exp := range updates {
+			if _, err := stmt.Exec(exp, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // SetUserSpeedLimit sets the per-user bandwidth cap in kbit/s (0 = unlimited).
@@ -470,6 +503,29 @@ func (s *Store) ResetTraffic(id, lastUp, lastDown int64) error {
 		lastUp, lastDown, id,
 	)
 	return err
+}
+
+// BulkResetTraffic zeroes usage and re-baselines raw counters for multiple users
+// in a single transaction.
+func (s *Store) BulkResetTraffic(resets map[int64][2]int64) error {
+	if len(resets) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(
+			`UPDATE users SET used_up=0, used_down=0, last_up=?, last_down=? WHERE id = ?`,
+		)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for id, t := range resets {
+			if _, err := stmt.Exec(t[0], t[1], id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // SetNotifiedExpireAt records the expiry a "runs out soon" warning was sent for.

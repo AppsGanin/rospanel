@@ -285,10 +285,15 @@ func (s *Supervisor) watchdogTick(fails int) (count int, alert, restart bool) {
 }
 
 // apiResponsive reports whether the running Xray still answers its API — a failed,
-// timeout-bounded stats query is the "wedged" signal the exit monitor never sees.
+// timeout-bounded probe is the "wedged" signal the exit monitor never sees.
 func (s *Supervisor) apiResponsive() bool {
-	_, err := s.QueryStats(s.APIAddr())
-	return err == nil
+	return s.PingAPI(s.APIAddr()) == nil
+}
+
+// PingAPI performs a lightweight liveness check on Xray's API without querying heavy per-user stats.
+func (s *Supervisor) PingAPI(apiAddr string) error {
+	_, err := s.runXray(statsTimeout, "api", "statsquery", "--server="+apiAddr, "inbound>>>")
+	return err
 }
 
 // recovered fires the recovery callback off the restart path, mirroring onCrash.
@@ -819,9 +824,10 @@ func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
 		if err != nil {
 			return err
 		}
+		tmpName := f.Name()
 		if _, err := f.Write(data); err != nil {
 			f.Close()
-			os.Remove(f.Name())
+			_ = os.Remove(tmpName)
 			return err
 		}
 		f.Close()
@@ -831,8 +837,8 @@ func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
 		if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, in.Tag); err != nil {
 			slog.Warn("xray: could not remove inbound before re-adding it", "tag", in.Tag, "err", err)
 		}
-		out, err := s.runXray(statsTimeout, "api", "adi", "--server="+apiAddr, f.Name())
-		os.Remove(f.Name())
+		out, err := s.runXray(statsTimeout, "api", "adi", "--server="+apiAddr, tmpName)
+		_ = os.Remove(tmpName)
 		if err != nil {
 			return fmt.Errorf("api adi tag=%s: %w", in.Tag, err)
 		}

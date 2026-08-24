@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/google/uuid"
@@ -264,16 +265,30 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		if days > maxExtendDays {
 			return 0, invalidCode("err.extendTooLong", "слишком большой срок продления (макс. {{max}} дней)", map[string]any{"max": maxExtendDays})
 		}
-		extended := m.bulkExtendExpiry(ids, days)
+		extended := m.bulkExtendExpiry(ids, days, before)
 		affected = int64(len(extended))
-		for id, expire := range extended {
-			u := before[id]
-			// Carry the untouched limits too: the row renders as a full "limits changed"
-			// statement, and omitting them would make it claim the user has none.
-			m.auditNamed(ctx, id, u.Name, model.EventUserLimits, map[string]any{
-				"data_limit": u.DataLimit, "device_limit": u.DeviceLimit,
-				"expire_at": expire, "extended_days": days, "bulk": true,
-			})
+		if len(extended) > 0 {
+			a := actor.From(ctx)
+			now := time.Now().Unix()
+			evs := make([]model.UserEvent, 0, len(extended))
+			for id, expire := range extended {
+				u := before[id]
+				evs = append(evs, model.UserEvent{
+					UserID:    id,
+					UserName:  u.Name,
+					Action:    model.EventUserLimits,
+					ActorKind: a.Kind,
+					ActorName: a.Name,
+					Details: map[string]any{
+						"data_limit": u.DataLimit, "device_limit": u.DeviceLimit,
+						"expire_at": expire, "extended_days": days, "bulk": true,
+					},
+					CreatedAt: now,
+				})
+			}
+			if err := m.store.AddUserEvents(evs); err != nil {
+				logErr("audit: bulk extend write failed", "err", err)
+			}
 		}
 	default:
 		return 0, invalidCode("err.unknownAction", "неизвестное действие {{value}}", map[string]any{"value": action})
@@ -287,13 +302,18 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 	return int(affected), nil
 }
 
-// snapshotUsers reads each id that still exists. Ids with no row are simply absent.
+// snapshotUsers reads each id that still exists in a single batch query.
 func (m *Manager) snapshotUsers(ids []int64) map[int64]model.User {
-	out := make(map[int64]model.User, len(ids))
-	for _, id := range ids {
-		if u, err := m.store.GetUser(id); err == nil {
-			out[id] = *u
-		}
+	if len(ids) == 0 {
+		return map[int64]model.User{}
+	}
+	users, err := m.store.GetUsersByIDs(ids)
+	if err != nil {
+		return map[int64]model.User{}
+	}
+	out := make(map[int64]model.User, len(users))
+	for _, u := range users {
+		out[u.ID] = u
 	}
 	return out
 }
@@ -330,61 +350,86 @@ func pick(names map[int64]string, ids []int64) map[int64]string {
 	return out
 }
 
-// auditBulk writes one audit row per user in names, flagged as part of a bulk action
-// so the journal can tell a hand-picked change from a mass one.
+// auditBulk writes audit rows in a single batch transaction, flagged as part of a
+// bulk action so the journal can tell a hand-picked change from a mass one.
 func (m *Manager) auditBulk(ctx context.Context, names map[int64]string, action string, details map[string]any) {
+	if len(names) == 0 {
+		return
+	}
+	a := actor.From(ctx)
+	now := time.Now().Unix()
+	evs := make([]model.UserEvent, 0, len(names))
 	for id, name := range names {
 		d := map[string]any{"bulk": true}
 		for k, v := range details {
 			d[k] = v
 		}
-		m.auditNamed(ctx, id, name, action, d)
+		evs = append(evs, model.UserEvent{
+			UserID:    id,
+			UserName:  name,
+			Action:    action,
+			ActorKind: a.Kind,
+			ActorName: a.Name,
+			Details:   detailsOrNil(d),
+			CreatedAt: now,
+		})
+	}
+	if err := m.store.AddUserEvents(evs); err != nil {
+		logErr("audit: bulk write failed", "action", action, "count", len(evs), "err", err)
 	}
 }
 
-// bulkResetTraffic zeroes usage for many users, re-baselining each one's raw
-// counters to the live Xray value fetched once up front (see store.ResetTraffic).
+// bulkResetTraffic zeroes usage for many users in a single transaction,
+// re-baselining each one's raw counters to the live Xray value fetched once up front.
 // It returns the ids it actually reset.
 func (m *Manager) bulkResetTraffic(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
 	stats, _ := m.sup.QueryStats(m.sup.APIAddr()) // nil map on error → (0,0) baselines
+	resets := make(map[int64][2]int64, len(ids))
 	var done []int64
 	for _, id := range ids {
 		t := stats[fmt.Sprintf("u%d", id)]
-		if err := m.store.ResetTraffic(id, t.Up, t.Down); err == nil {
-			done = append(done, id)
-		}
+		resets[id] = [2]int64{t.Up, t.Down}
+		done = append(done, id)
+	}
+	if err := m.store.BulkResetTraffic(resets); err != nil {
+		logErr("bulk reset traffic failed", "err", err)
+		return nil
 	}
 	return done
 }
 
-// bulkExtendExpiry pushes each selected user's expiry out by `days`, anchored at the
-// later of now and their current expiry so stacking adds time rather than resetting
-// it. Users with no expiry (0 = never) are skipped. It returns each extended user's
-// new expiry.
-func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
-	// expire_at is read-modify-written here, so it takes the same lock every plan and
-	// payment write holds — otherwise a purchase confirming concurrently is extended
-	// from a baseline this loop already read, and one of the two periods is lost.
+// bulkExtendExpiry pushes each selected user's expiry out by `days` in a single
+// transaction, anchored at the later of now and their current expiry so stacking adds
+// time rather than resetting it. Users with no expiry (0 = never) are skipped.
+// It returns each extended user's new expiry.
+func (m *Manager) bulkExtendExpiry(ids []int64, days int, before map[int64]model.User) map[int64]int64 {
 	m.applyPlanMu.Lock()
 	defer m.applyPlanMu.Unlock()
 	now := time.Now().Unix()
 	add := int64(days) * 86400
-	out := map[int64]int64{}
+	updates := map[int64]int64{}
 	for _, id := range ids {
-		u, err := m.store.GetUser(id)
-		if err != nil || u.ExpireAt == 0 {
+		u, ok := before[id]
+		if !ok || u.ExpireAt == 0 {
 			continue
 		}
 		base := now
 		if u.ExpireAt > now {
 			base = u.ExpireAt
 		}
-		expire := base + add
-		if err := m.store.SetUserLimits(id, u.DataLimit, expire, u.DeviceLimit); err == nil {
-			out[id] = expire
-		}
+		updates[id] = base + add
 	}
-	return out
+	if len(updates) == 0 {
+		return map[int64]int64{}
+	}
+	if err := m.store.BulkSetUserExpiry(updates); err != nil {
+		logErr("bulk extend expiry failed", "err", err)
+		return map[int64]int64{}
+	}
+	return updates
 }
 
 // RotateSubToken issues a new subscription URL token for a user. Protocol

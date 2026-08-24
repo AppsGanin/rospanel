@@ -196,3 +196,28 @@ func TestUserEventsOutliveTheUser(t *testing.T) {
 		t.Errorf("denormalized name lost: %+v", events[0])
 	}
 }
+
+func TestAddUserEventsBatch(t *testing.T) {
+	s := openTestStore(t)
+	evs := []model.UserEvent{
+		{UserID: 1, UserName: "user1", Action: model.EventUserCreated, ActorKind: model.ActorAdmin, ActorName: "root", Details: map[string]any{"key": "val1"}},
+		{UserID: 2, UserName: "user2", Action: model.EventUserCreated, ActorKind: model.ActorAdmin, ActorName: "root", Details: map[string]any{"key": "val2"}},
+		{UserID: 3, UserName: "user3", Action: model.EventUserCreated, ActorKind: model.ActorAdmin, ActorName: "root"},
+	}
+	if err := s.AddUserEvents(evs); err != nil {
+		t.Fatalf("AddUserEvents: %v", err)
+	}
+
+	for _, ev := range evs {
+		list, err := s.ListUserEvents(ev.UserID, 10, 0)
+		if err != nil {
+			t.Fatalf("list for user %d: %v", ev.UserID, err)
+		}
+		if len(list) != 1 {
+			t.Fatalf("expected 1 event for user %d, got %d", ev.UserID, len(list))
+		}
+		if list[0].UserName != ev.UserName {
+			t.Errorf("user %d name = %s, want %s", ev.UserID, list[0].UserName, ev.UserName)
+		}
+	}
+}

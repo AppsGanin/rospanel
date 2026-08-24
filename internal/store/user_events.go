@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -28,6 +29,42 @@ func (s *Store) AddUserEvent(ev model.UserEvent) error {
 		ev.UserID, ev.UserName, ev.Action, ev.ActorKind, ev.ActorName, raw, ev.CreatedAt,
 	)
 	return err
+}
+
+// AddUserEvents appends multiple audit rows within a single transaction.
+func (s *Store) AddUserEvents(evs []model.UserEvent) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(
+			`INSERT INTO user_events (user_id, user_name, action, actor_kind, actor_name, details, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		now := time.Now().Unix()
+		for _, ev := range evs {
+			raw := ""
+			if ev.Details != nil {
+				if b, err := json.Marshal(ev.Details); err == nil {
+					raw = string(b)
+				}
+			}
+			createdAt := ev.CreatedAt
+			if createdAt == 0 {
+				createdAt = now
+			}
+			if _, err := stmt.Exec(
+				ev.UserID, ev.UserName, ev.Action, ev.ActorKind, ev.ActorName, raw, createdAt,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // scanUserEvents runs a query and decodes rows, unmarshalling the details JSON back

@@ -537,7 +537,12 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   })
   if (res.status === 401) onUnauthorized?.()
   const text = await res.text()
-  const data = text ? JSON.parse(text) : {}
+  let data: Record<string, unknown> = {}
+  try {
+    data = text ? JSON.parse(text) : {}
+  } catch {
+    data = { error: text || `HTTP ${res.status}` }
+  }
   if (!res.ok) throw apiError(data, res.status)
   return data as T
 }
@@ -553,7 +558,12 @@ async function apiForm<T>(path: string, body: FormData): Promise<T> {
   })
   if (res.status === 401) onUnauthorized?.()
   const text = await res.text()
-  const data = text ? JSON.parse(text) : {}
+  let data: Record<string, unknown> = {}
+  try {
+    data = text ? JSON.parse(text) : {}
+  } catch {
+    data = { error: text || `HTTP ${res.status}` }
+  }
   if (!res.ok) throw apiError(data, res.status)
   return data as T
 }

@@ -1,25 +1,41 @@
 package core
 
 import (
+	"fmt"
 	"net"
+	"net/netip"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	bruteWindow   = 60 * time.Second // sliding window for counting attempts
-	bruteMaxTries = 5                // attempts within window trigger a ban
-	bruteBanTime  = time.Hour        // how long the ban lasts
+	bruteWindow    = 60 * time.Second // sliding window for counting attempts
+	bruteMaxTries  = 5                // attempts within window trigger a ban
+	bruteBanTime   = time.Hour        // how long the ban lasts
+	bruteBanTTL    = "1h"             // kernel timeout string
+	bruteTableName = "rospanel_bruteguard"
 )
 
+const bruteRuleset = `add table inet rospanel_bruteguard
+add set inet rospanel_bruteguard banned4 { type ipv4_addr; flags timeout; }
+add set inet rospanel_bruteguard banned6 { type ipv6_addr; flags timeout; }
+add chain inet rospanel_bruteguard input { type filter hook input priority -6; policy accept; }
+add rule inet rospanel_bruteguard input iif "lo" accept
+add rule inet rospanel_bruteguard input ip saddr @banned4 drop
+add rule inet rospanel_bruteguard input ip6 saddr @banned6 drop
+`
+
 // bruteGuard counts failed SOCKS/HTTP-proxy auth attempts per source IP and
-// bans repeat offenders via iptables for bruteBanTime.
+// bans repeat offenders via nftables for bruteBanTime.
 type bruteGuard struct {
-	mu       sync.Mutex
-	attempts map[string][]time.Time
-	banned   map[string]time.Time // ip → expiry
+	mu             sync.Mutex
+	attempts       map[string][]time.Time
+	banned         map[string]time.Time // ip → expiry
+	nftMu          sync.Mutex
+	ensureFailedAt time.Time
 }
 
 func newBruteGuard() *bruteGuard {
@@ -29,6 +45,42 @@ func newBruteGuard() *bruteGuard {
 	}
 	go g.cleanupLoop()
 	return g
+}
+
+func bruteNFTAvailable() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	_, err := exec.LookPath("nft")
+	return err == nil
+}
+
+func (g *bruteGuard) ensureNFT() error {
+	if out, err := exec.Command("nft", "list", "table", "inet", bruteTableName).CombinedOutput(); err == nil {
+		if strings.Contains(string(out), "flags timeout") {
+			return nil
+		}
+		_ = exec.Command("nft", "delete", "table", "inet", bruteTableName).Run()
+	}
+	cmd := exec.Command("nft", "-f", "-")
+	cmd.Stdin = strings.NewReader(bruteRuleset)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("nft install bruteguard table: %w\n%s", err, out)
+	}
+	logInfo("bruteguard: nftables drop table installed", "table", bruteTableName)
+	return nil
+}
+
+func bruteSetFor(ip string) (string, netip.Addr, bool) {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return "", netip.Addr{}, false
+	}
+	addr = addr.Unmap()
+	if addr.Is4() {
+		return "banned4", addr, true
+	}
+	return "banned6", addr, true
 }
 
 // record notes one failed attempt from ip and returns true the first time the
@@ -59,27 +111,53 @@ func (g *bruteGuard) record(ip string) bool {
 }
 
 func (g *bruteGuard) ban(ip string) {
-	tool := iptoolFor(ip)
-	if tool == "" {
+	if !bruteNFTAvailable() {
+		logWarn("brute-guard: banned (memory-only, nft not available)", "ip", ip, "duration", bruteBanTime)
 		return
 	}
-	if err := exec.Command(tool, "-I", "INPUT", "1", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: ban failed", "tool", tool, "ip", ip, "err", err)
-	} else {
-		logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
+	set, addr, ok := bruteSetFor(ip)
+	if !ok {
+		return
 	}
+	g.nftMu.Lock()
+	defer g.nftMu.Unlock()
+	if !g.ensureFailedAt.IsZero() && time.Since(g.ensureFailedAt) < 5*time.Minute {
+		return
+	}
+	if err := g.ensureNFT(); err != nil {
+		g.ensureFailedAt = time.Now()
+		logErr("brute-guard: nft ensure failed", "err", err)
+		return
+	}
+	elem := fmt.Sprintf("{ %s timeout %s }", addr.String(), bruteBanTTL)
+	out, err := exec.Command("nft", "add", "element", "inet", bruteTableName, set, elem).CombinedOutput()
+	if err != nil && !strings.Contains(string(out), "File exists") {
+		g.ensureFailedAt = time.Now()
+		logErr("brute-guard: ban failed", "ip", ip, "err", err, "out", string(out))
+		return
+	}
+	g.ensureFailedAt = time.Time{}
+	logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
 }
 
 func (g *bruteGuard) unban(ip string) {
-	tool := iptoolFor(ip)
-	if tool == "" {
+	if !bruteNFTAvailable() {
+		logInfo("brute-guard: unbanned", "ip", ip)
 		return
 	}
-	if err := exec.Command(tool, "-D", "INPUT", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: unban failed", "tool", tool, "ip", ip, "err", err)
-	} else {
-		logInfo("brute-guard: unbanned", "ip", ip)
+	set, addr, ok := bruteSetFor(ip)
+	if !ok {
+		return
 	}
+	g.nftMu.Lock()
+	defer g.nftMu.Unlock()
+	elem := fmt.Sprintf("{ %s }", addr.String())
+	out, err := exec.Command("nft", "delete", "element", "inet", bruteTableName, set, elem).CombinedOutput()
+	if err != nil && !strings.Contains(string(out), "No such file") {
+		logErr("brute-guard: unban failed", "ip", ip, "err", err, "out", string(out))
+		return
+	}
+	logInfo("brute-guard: unbanned", "ip", ip)
 }
 
 // cleanupLoop checks every minute for expired bans and removes them.
@@ -112,19 +190,6 @@ func (g *bruteGuard) cleanupLoop() {
 			g.unban(ip)
 		}
 	}
-}
-
-// iptoolFor returns "iptables" for IPv4, "ip6tables" for IPv6, or "" for
-// unparseable addresses (so we never shell out with untrusted input).
-func iptoolFor(ip string) string {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return ""
-	}
-	if parsed.To4() != nil {
-		return "iptables"
-	}
-	return "ip6tables"
 }
 
 // bruteGuardLoop subscribes to the Xray log stream and feeds failed-auth lines
