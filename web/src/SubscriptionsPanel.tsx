@@ -220,12 +220,14 @@ export function SubscriptionsPanel() {
             <div>
               <Select
                 label={t("subs.countMode")}
-                value={h.count_mode || "auto"}
+                // "both" is a stored value from before the handover grace was removed.
+                // It now behaves exactly as "auto", so it shows as "auto" rather than as
+                // a third choice that does the same thing under a different name.
+                value={h.count_mode === "hwid" ? "hwid" : "auto"}
                 onChange={(v) => patchHwid({ count_mode: v })}
                 data={[
                   { value: "auto", label: t("subs.countModeAuto") },
                   { value: "hwid", label: t("subs.countModeHWID") },
-                  { value: "both", label: t("subs.countModeBoth") },
                 ]}
               />
               <p className="mt-1 text-xs text-ink-muted">{t("subs.countModeHint")}</p>

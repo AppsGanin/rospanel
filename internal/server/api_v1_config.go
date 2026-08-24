@@ -235,9 +235,7 @@ func (rt *Router) apiApplyHWID(req apiSettingsReq) error {
 	if err := rt.mgr.Store().SetHWIDSettings(set); err != nil {
 		return err
 	}
-	// hwid_require feeds the device-count rule, so the working set has to be recomputed
-	// — see the panel path for the same reason.
-	rt.mgr.TriggerUserSync()
+	// No user sync — see the panel path for why these settings do not reach the config.
 	return nil
 }
 

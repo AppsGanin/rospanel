@@ -242,6 +242,15 @@ user connecting from more distinct addresses than the limit within the online wi
 dropped from the tunnels until they fall back under it — counted across **every server**
 (master and nodes), not per-server. `0` means no IP cap.
 
+The IP half has one known false positive, and *Settings → Subscriptions → Count devices by*
+is where you decide what to do about it. An address a device has just moved off keeps a
+fresh sighting until it leaves the two-minute window, so a phone switching from mobile data
+to Wi-Fi briefly looks like two devices, and a subscriber already on their full allowance
+can lose access until it ages out. It clears itself, with no operator action. Choosing
+**HWID only** removes the address count and that false positive with it — at the price of
+the only thing that caps how many places one link is used at *once*, since HWID caps who
+may fetch the subscription, not who may connect. The default counts both.
+
 **Device binding (HWID).** Turn this on and the **same number** also caps distinct **installs**.
 Clients that follow the subscription-header convention (Happ, v2RayTun) send a stable install
 id; the panel binds it to the account on first fetch and counts it against the limit. Once the

@@ -977,11 +977,10 @@ const en: Dict = {
     hwidHint:
       "Clients like Happ and v2RayTun send an install id when they refresh the subscription. A device takes a slot from the user's limit; once the slots are gone, a new device doesn't get the subscription.",
     countMode: "Count devices by",
-    countModeAuto: "Automatic (recommended)",
+    countModeAuto: "Addresses and HWID (recommended)",
     countModeHWID: "HWID only",
-    countModeBoth: "HWID and address",
     countModeHint:
-      "The device limit is counted from distinct IP addresses seen in the last two minutes. “Automatic” forgives an address a device has just moved off: switching from mobile data to Wi-Fi leaves the old one alive, so one device counted as two. “HWID only” stops counting addresses altogether — note that one link can then be used from any number of devices at once: HWID caps who may fetch the subscription, not simultaneous use. “HWID and address” is the previous, strict behaviour.",
+      "The device limit is counted from distinct IP addresses seen in the last two minutes — the only thing that caps how many places one link is used at once. It has a known false positive: an address a device has just moved off stays alive for up to two minutes, so switching from mobile data to Wi-Fi can lock out a subscriber who is already on their full allowance until it ages out. It clears itself. “HWID only” drops the address count and that false positive with it, but one link can then be used from any number of devices at once: HWID caps who may fetch the subscription, not simultaneous use.",
     hwidRequire: "Require an id",
     hwidRequireHint:
       "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",
