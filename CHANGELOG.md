@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.13.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.0...v2.13.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **core:** resolve sqlite lock starvation, api user creation state inconsistency, and watchdog false positives ([d52ee0c](https://github.com/Shu1t3/rospanel-shu1t3/commit/d52ee0cde1b3fad6663fa602de8d87c65cc00077))
+
+
+### Refactoring
+
+* switch brute-guard to nftables, add bulk user store methods, and improve API error parsing. ([f49ce00](https://github.com/Shu1t3/rospanel-shu1t3/commit/f49ce0040ff15678ccd0799d6c552876137d21f5))
+
 ## [2.13.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.12.0...v2.13.0) (2026-08-24)
 
 
