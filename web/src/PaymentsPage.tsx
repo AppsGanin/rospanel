@@ -250,6 +250,7 @@ export function PaymentsPage() {
               onChange={setPendingView}
               tableLabel={t("usersPanel.viewTable")}
               cardsLabel={t("usersPanel.viewCards")}
+              label={t("pay.awaiting")}
             />
           </span>
         }
@@ -291,6 +292,7 @@ export function PaymentsPage() {
             onChange={setHistoryView}
             tableLabel={t("usersPanel.viewTable")}
             cardsLabel={t("usersPanel.viewCards")}
+            label={t("pay.history")}
           />
         }
       >
@@ -382,7 +384,7 @@ function PendingTable({
 }) {
   const { t } = useTranslation();
   return (
-    <TableShell>
+    <TableShell bare>
       <THead
         cols={[
           { label: t("pay.colOrder") },
@@ -400,8 +402,8 @@ function PendingTable({
           return (
             <TR key={o.id}>
               <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
-              <TD className="max-w-[12rem] truncate">{orderWho(o)}</TD>
-              <TD className="hidden max-w-[12rem] truncate sm:table-cell">{o.plan_name}</TD>
+              <TD className=""><div className="max-w-[12rem] truncate">{orderWho(o)}</div></TD>
+              <TD className="hidden  sm:table-cell"><div className="max-w-[12rem] truncate">{o.plan_name}</div></TD>
               <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
               <TD className="hidden whitespace-nowrap md:table-cell">
                 <Badge color={prov.color} size="xs">
@@ -444,7 +446,7 @@ function PendingTable({
 function HistoryTable({ orders }: { orders: PaymentOrder[] }) {
   const { t } = useTranslation();
   return (
-    <TableShell>
+    <TableShell bare>
       <THead
         cols={[
           { label: t("pay.colOrder") },
@@ -464,8 +466,8 @@ function HistoryTable({ orders }: { orders: PaymentOrder[] }) {
           return (
             <TR key={o.id}>
               <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
-              <TD className="max-w-[12rem] truncate">{orderWho(o)}</TD>
-              <TD className="hidden max-w-[12rem] truncate sm:table-cell">{o.plan_name}</TD>
+              <TD className=""><div className="max-w-[12rem] truncate">{orderWho(o)}</div></TD>
+              <TD className="hidden  sm:table-cell"><div className="max-w-[12rem] truncate">{o.plan_name}</div></TD>
               <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
               <TD className="hidden whitespace-nowrap md:table-cell">
                 <Badge color={prov.color} size="xs">
@@ -478,7 +480,9 @@ function HistoryTable({ orders }: { orders: PaymentOrder[] }) {
               <TD className="hidden whitespace-nowrap text-ink-muted lg:table-cell">
                 {/* A settled order is dated by when it settled; one that never did keeps
                     the date it was raised. */}
-                {fmtDateTime(paid ? o.paid_at : o.created_at)}
+                <span title={t(paid ? "pay.paidWord" : "pay.createdWord")}>
+                  {fmtDateTime(paid ? o.paid_at : o.created_at)}
+                </span>
               </TD>
             </TR>
           );

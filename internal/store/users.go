@@ -141,13 +141,22 @@ func (s *Store) ipCountsAsDevice() bool {
 	return n != 0
 }
 
+// deviceHandoverGraceSQL is the handover-grace half of the rule as a bare scalar, for the
+// queries that need only that (see ActiveDeviceCounts). Kept beside the CTE so the two
+// cannot drift.
+const deviceHandoverGraceSQL = `SELECT CASE WHEN device_count_mode = 'both' THEN 0 ELSE 1 END
+	FROM settings WHERE id = 1`
+
 // has to land in both (a test pins that they agree).
 const deviceCountCTE = `SELECT CASE
 	WHEN device_count_mode = 'hwid' THEN 0
-	WHEN device_count_mode = 'both' THEN 1
-	WHEN hwid_enabled = 1 AND hwid_require = 1 THEN 0
 	ELSE 1
-	END AS ip_counts FROM settings WHERE id = 1`
+	END AS ip_counts,
+	CASE
+	WHEN device_count_mode = 'both' THEN 0
+	ELSE 1
+	END AS handover_grace
+	FROM settings WHERE id = 1`
 
 // WorkingUsers returns users that should be in the proxy config right now:
 // manually enabled AND not expired AND within their data limit AND within their
@@ -167,8 +176,20 @@ func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count) OR (
 		    SELECT COUNT(DISTINCT c.ip) FROM connections c
 		    WHERE c.user_id = users.id AND c.last_seen > ?
+		      -- Handover grace: an address the device already moved off stops appearing
+		      -- in the access log at once, while its last_seen sits inside the window
+		      -- for up to two minutes. Counting it made a phone switching from mobile
+		      -- data to Wi-Fi look like two devices (issue #66). Measuring each address
+		      -- against the NEWEST sighting for this user instead of against the clock
+		      -- drops the abandoned one within seconds, while devices in genuine
+		      -- simultaneous use all keep their sightings current and still count.
+		      AND (NOT (SELECT handover_grace FROM device_count)
+		           OR c.last_seen > (
+		             SELECT MAX(c2.last_seen) FROM connections c2
+		             WHERE c2.user_id = users.id
+		           ) - ?)
 		  ) <= device_limit)
-		ORDER BY id ASC`, now, since)
+		ORDER BY id ASC`, now, since, model.DeviceHandoverGrace)
 }
 
 // GetUser returns one user by id.
@@ -631,6 +652,8 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 	// DRIVES the status while addresses are what enforces the limit. Otherwise a phone
 	// changing network read as "device limit exceeded" (issue #66), and the bot said so,
 	// while the HWID roster it is actually capped by showed one device.
+	// The count already honours the handover grace; this only has to respect an operator
+	// who switched the address counter off entirely.
 	countIP := s.ipCountsAsDevice()
 	for i := range users {
 		u := &users[i]
@@ -638,7 +661,7 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 		u.ActiveDevices = active
 		limit := u.DeviceLimit
 		if !countIP {
-			limit = 0 // not enforced by this counter
+			limit = 0 // this counter does not enforce in "hwid" mode
 		}
 		u.Status = deriveStatus(
 			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,

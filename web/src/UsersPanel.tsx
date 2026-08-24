@@ -32,12 +32,9 @@ import {
   IconCheck,
   Modal,
   IconButton,
-  IconCards,
   IconExternal,
   IconEye,
-  IconTable,
   Select,
-  SegmentedControl,
   Skeleton,
   Switch,
   TextInput,
@@ -47,6 +44,7 @@ import {
   THead,
   TR,
   ViewSwitch,
+  TD,
 } from "./ui";
 import { UserDetail } from "./UserDetail";
 
@@ -331,6 +329,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             onChange={changeView}
             tableLabel={t("usersPanel.viewTable")}
             cardsLabel={t("usersPanel.viewCards")}
+            label={t("nav.users")}
           />
         </div>
       </div>
@@ -868,14 +867,14 @@ function UsersTable({
             const checked = selected.has(u.id);
             return (
               <TR key={u.id} selected={checked}>
-                <td className="py-2 px-3 align-middle">
+                <TD>
                   <SelectCheck
                     checked={checked}
                     onChange={(v) => onToggleOne(u.id, v)}
                     label={t("usersPanel.selectUser", { name: u.name })}
                   />
-                </td>
-                <td className="py-2 pr-3 align-middle">
+                </TD>
+                <TD>
                   <div className="flex min-w-0 items-center gap-2">
                     <Switch checked={u.enabled} onChange={(v) => onSetEnabled(u.id, v)} />
                     <button
@@ -888,22 +887,22 @@ function UsersTable({
                       {u.name}
                     </button>
                   </div>
-                </td>
-                <td className="py-2 pr-3 align-middle">
+                </TD>
+                <TD>
                   <Badge color={st.color as never}>{st.label}</Badge>
-                </td>
-                <td className="hidden py-2 pr-3 align-middle sm:table-cell">
+                </TD>
+                <TD className="hidden sm:table-cell">
                   <Badge color={isOnline(u.last_seen) ? "greenSolid" : "gray"}>
                     {isOnline(u.last_seen) ? t("usersPanel.online") : t("usersPanel.offline")}
                   </Badge>
-                </td>
-                <td className="whitespace-nowrap py-2 pr-3 align-middle">
+                </TD>
+                <TD className="whitespace-nowrap">
                   {fmtQuota(u.used_up + u.used_down, u.data_limit)}
-                </td>
-                <td className="hidden whitespace-nowrap py-2 pr-3 align-middle text-ink-muted md:table-cell">
+                </TD>
+                <TD className="hidden whitespace-nowrap text-ink-muted md:table-cell">
                   {u.expire_at > 0 ? fmtExpire(u.expire_at) : "—"}
-                </td>
-                <td className="hidden whitespace-nowrap py-2 pr-3 align-middle lg:table-cell">
+                </TD>
+                <TD className="hidden whitespace-nowrap lg:table-cell">
                   {u.device_limit > 0 ? (
                     <span className={u.status === "device_limited" ? "text-warning" : ""}>
                       {t("usersPanel.devicesShort", {
@@ -914,18 +913,19 @@ function UsersTable({
                   ) : (
                     <span className="text-ink-muted">—</span>
                   )}
-                </td>
-                <td className="hidden py-2 pr-3 align-middle lg:table-cell">
+                </TD>
+                <TD className="hidden lg:table-cell">
                   <GroupCell groups={u.groups ?? []} />
-                </td>
-                <td className="py-2 pr-3 align-middle">
+                </TD>
+                <TD>
                   {/* Below sm only the subscription link rides here: two buttons push the
                       row past a phone's width, and the wrapper would answer with the
                       horizontal scrollbar this layout exists to avoid. Details stays
                       reachable — the name is the button that opens it. */}
-                  {/* Icons, not words: two labelled buttons per row is most of the
-                      row's width for the two things every row repeats. The words live
-                      on as the accessible name and the hover title. */}
+                  {/* Icons, not words: two labelled buttons per row was most of the
+                      row's width for the two things every row repeats. Two 32px icons
+                      fit at every width, so neither hides on a phone. The words live on
+                      as the accessible name and the hover title. */}
                   <div className="flex gap-1">
                     <IconButton
                       href={u.sub_url}
@@ -942,7 +942,7 @@ function UsersTable({
                       <IconEye size={16} />
                     </IconButton>
                   </div>
-                </td>
+                </TD>
               </TR>
             );
           })}
@@ -969,13 +969,16 @@ function GroupCell({ groups }: { groups: { id: number; name: string }[] }) {
   return (
     <div className="flex items-center gap-1 whitespace-nowrap">
       {shown.map((g) => (
-        <Badge key={g.id} color="brand" title={g.name}>
+        <Badge key={g.id} color="brand">
           {g.name}
         </Badge>
       ))}
       {rest.length > 0 && (
         <Badge color="gray" title={rest.map((g) => g.name).join(", ")}>
           +{rest.length}
+          {/* A native title on a span reaches neither the keyboard nor a screen reader,
+              and this column only shows on desktop — where keyboard users are. */}
+          <span className="sr-only">{rest.map((g) => g.name).join(", ")}</span>
         </Badge>
       )}
     </div>

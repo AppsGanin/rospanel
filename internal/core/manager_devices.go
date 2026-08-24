@@ -220,7 +220,6 @@ func deviceLabel(d model.Device) string {
 	}
 }
 
-
 // SetDeviceCountMode picks which counter enforces a user's device limit. Validated here
 // so the panel, /v1 and the MCP tool built from it all refuse the same values — an
 // unknown mode would otherwise fall through to "auto" silently and the operator would
@@ -236,8 +235,9 @@ func (m *Manager) SetDeviceCountMode(mode string) error {
 	if err := m.store.SetDeviceCountMode(mode); err != nil {
 		return err
 	}
-	// The limit is enforced from the generated config, so the change only takes effect
-	// once it is regenerated.
-	m.TriggerReconcile()
+	// A user sync, not a reconcile: this changes WHO is in the user set, which Xray takes
+	// live over its API. TriggerReconcile would regenerate and RESTART Xray, dropping
+	// every session on the box because an operator picked an item from a dropdown.
+	m.TriggerUserSync()
 	return nil
 }

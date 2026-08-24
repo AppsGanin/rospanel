@@ -77,9 +77,14 @@ func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
 // Device-count modes. The value decides which counter enforces DeviceLimit.
 const (
-	DeviceCountAuto = "auto" // IP counter only while HWID is not authoritative
-	DeviceCountHWID = "hwid" // HWID roster only, always
-	DeviceCountBoth = "both" // both, whichever is stricter — the historical behaviour
+	// DeviceCountAuto counts addresses, forgiving one a device has just moved off.
+	DeviceCountAuto = "auto"
+	// DeviceCountHWID stops counting addresses entirely. This gives up concurrency
+	// enforcement — see CountsIPAsDevice — and is an operator's explicit choice.
+	DeviceCountHWID = "hwid"
+	// DeviceCountBoth counts every address inside the window, handover included. The
+	// historical behaviour, and the strictest.
+	DeviceCountBoth = "both"
 )
 
 // DeviceCountModeOr is the stored mode, or "auto" for a row that predates the column.
@@ -94,24 +99,23 @@ func (s *Settings) DeviceCountModeOr() string {
 
 // CountsIPAsDevice reports whether distinct source addresses still enforce DeviceLimit.
 //
-// They should not while every served client is identified by hardware id: with HWID
-// binding REQUIRED, a client that sends no id is refused outright, so the address count
-// adds no protection and plenty of false positives — a phone moving from mobile data to
-// Wi-Fi keeps its old address inside the two-minute window and counts as two devices,
-// which drops the user out of the generated config until it ages out (issue #66).
+// Only "hwid" switches them off, and that is deliberately NOT the default. HWID caps who
+// may FETCH a subscription; addresses cap how many places a credential is USED at once.
+// They are not interchangeable: a share link copied by hand to another device never
+// touches the subscription endpoint, so the HWID roster cannot see it, while the address
+// count could. Turning the address count off by default would have quietly removed the
+// only thing standing between one paid account and any number of simultaneous users.
 //
-// With binding on but not required, silent clients are still served and the address count
-// is the only cap they face, so it stays on: turning it off there would hand anyone a way
-// past the limit by switching to a client that says nothing.
+// The false positive that started this (issue #66) is handled where it belongs — see
+// DeviceHandoverGrace — rather than by giving up the counter.
 func (s *Settings) CountsIPAsDevice() bool {
-	switch s.DeviceCountMode {
-	case DeviceCountHWID:
-		return false
-	case DeviceCountBoth:
-		return true
-	default: // auto, and any value an older row might hold
-		return !(s.HWIDEnabled && s.HWIDRequire)
-	}
+	return s.DeviceCountModeOr() != DeviceCountHWID
+}
+
+// CountsHandoverGrace reports whether an address the device has already moved off is
+// forgiven. "both" is the historical behaviour, where it is not.
+func (s *Settings) CountsHandoverGrace() bool {
+	return s.DeviceCountModeOr() != DeviceCountBoth
 }
 
 // MaxDevicesPerUser is the DEFAULT cap, applied when no operator limit is set. The roster is written from an unauthenticated subscription

@@ -27,6 +27,16 @@ const (
 	ProtoHysteria = "HYSTERIA-UDP"
 )
 
+// DeviceHandoverGrace is how far behind a user's newest sighting an address may fall
+// before it stops counting as a device.
+//
+// It exists because a phone changing network abandons its old address instantly, while
+// that address keeps a fresh last_seen for the rest of DeviceOnlineWindow — so one device
+// counted as two and the user was dropped from the config for up to two minutes (issue
+// #66). Devices in genuine simultaneous use all keep their sightings current, so they
+// stay well inside this and still count.
+const DeviceHandoverGrace int64 = 30
+
 // DeviceOnlineWindow is how long (seconds) a source IP counts as an active device.
 // Matches the panel's online indicator (stats poll ~60s + access-log writes).
 const DeviceOnlineWindow int64 = 120

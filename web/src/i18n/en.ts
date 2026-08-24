@@ -980,7 +980,8 @@ const en: Dict = {
     countModeAuto: "Automatic (recommended)",
     countModeHWID: "HWID only",
     countModeBoth: "HWID and address",
-    countModeHint: "A device limit can be counted two ways: by HWID bindings, and by distinct IP addresses seen in the last two minutes. The second is wrong about phones — moving from mobile data to Wi-Fi leaves the old address alive, so one device counts as two. “Automatic” stops counting addresses once HWID is required and every client is identified.",
+    countModeHint:
+      "The device limit is counted from distinct IP addresses seen in the last two minutes. “Automatic” forgives an address a device has just moved off: switching from mobile data to Wi-Fi leaves the old one alive, so one device counted as two. “HWID only” stops counting addresses altogether — note that one link can then be used from any number of devices at once: HWID caps who may fetch the subscription, not simultaneous use. “HWID and address” is the previous, strict behaviour.",
     hwidRequire: "Require an id",
     hwidRequireHint:
       "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",

@@ -232,7 +232,13 @@ func (rt *Router) apiApplyHWID(req apiSettingsReq) error {
 	if req.HWIDTTLDays != nil {
 		set.HWIDTTLDays = *req.HWIDTTLDays
 	}
-	return rt.mgr.Store().SetHWIDSettings(set)
+	if err := rt.mgr.Store().SetHWIDSettings(set); err != nil {
+		return err
+	}
+	// hwid_require feeds the device-count rule, so the working set has to be recomputed
+	// — see the panel path for the same reason.
+	rt.mgr.TriggerUserSync()
+	return nil
 }
 
 // apiApplyLocalBackup writes the scheduled-backup pair, same overlay reasoning as HWID:
@@ -570,7 +576,6 @@ func storeNodeEditFrom(n *model.Node) store.NodeEdit {
 		TrafficCoefficient: n.TrafficCoefficient,
 	}
 }
-
 
 // syncDecoyFromSettings rebuilds the live decoy handler from the stored template.
 //

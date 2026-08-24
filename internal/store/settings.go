@@ -414,7 +414,6 @@ func (s *Store) SetWatchdogEnabled(on bool) error {
 // SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs.
 func (s *Store) SetProbeBlock(on bool) error { return s.setSetting("probe_block", on) }
 
-
 // SetDeviceCountMode picks which counter enforces a user's device limit.
 func (s *Store) SetDeviceCountMode(mode string) error {
 	return s.setSetting("device_count_mode", mode)
