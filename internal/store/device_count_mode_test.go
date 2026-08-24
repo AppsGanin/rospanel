@@ -35,6 +35,18 @@ func dcUser(t *testing.T, st *Store, name string, hits ...ConnectionHit) model.U
 	return *u
 }
 
+// dcCut reports whether the user is out of the config with the device grace already
+// expired — the state an operator would call "cut off". Stamped from before the grace so
+// these cases test what the limit does, not how long it waits (that is
+// TestSustainedSharingIsStillCut's job).
+func dcCut(t *testing.T, st *Store, id int64, now int64) bool {
+	t.Helper()
+	if err := st.StampDeviceOverLimit(now - model.DeviceLimitGrace - 10); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	return !dcWorking(t, st, id, now)
+}
+
 func dcWorking(t *testing.T, st *Store, id int64, now int64) bool {
 	t.Helper()
 	us, err := st.WorkingUsers(now)
@@ -64,7 +76,7 @@ func TestQuietAddressesStillCountInsideTheWindow(t *testing.T) {
 		ConnectionHit{IP: "10.0.0.9", SeenAt: now - 40},
 		ConnectionHit{IP: "203.0.113.7", SeenAt: now},
 	)
-	if dcWorking(t, st, shared.ID, now) {
+	if !dcCut(t, st, shared.ID, now) {
 		t.Error("a device quiet for 40s stopped counting: two addresses no longer trip " +
 			"a one-device limit")
 	}
@@ -78,7 +90,7 @@ func TestQuietAddressesStillCountInsideTheWindow(t *testing.T) {
 		ConnectionHit{IP: "10.1.0.4", SeenAt: now - 25},
 		ConnectionHit{IP: "10.1.0.5", SeenAt: now},
 	)
-	if dcWorking(t, st, ring.ID, now) {
+	if !dcCut(t, st, ring.ID, now) {
 		t.Error("five addresses taking turns passed a one-device limit")
 	}
 	got, err := st.GetUser(ring.ID)
@@ -91,30 +103,28 @@ func TestQuietAddressesStillCountInsideTheWindow(t *testing.T) {
 	}
 }
 
-// The known false positive from issue #66, pinned deliberately rather than left to be
-// rediscovered: a phone changing network abandons its old address, but that address keeps
-// a fresh last_seen until it leaves the window, so a user on exactly their allowance is
-// cut for up to DeviceOnlineWindow.
+// The abandoned address keeps counting until it ages out of the window — this is the
+// counter being honest, and it is deliberately NOT solved by teaching the counter to
+// forgive (see TestQuietAddressesStillCountInsideTheWindow for what that costs).
 //
-// This is a documented trade, not an oversight. Forgiving the stale address cannot be
-// done from this table: cutting the user is what stops their sightings, so any reference
-// the forgiveness measures against freezes at the moment of the cut. An operator who
-// wants it gone chooses "hwid" and gives up the concurrency counter with it — see the
-// mode test below.
-func TestHandoverIsStillCountedInAutoMode(t *testing.T) {
+// What stops it becoming an outage is DeviceLimitGrace, which outlasts the window, so
+// in practice the cut asserted here never arrives: TestAbandonedAddressNeverCutsTheUser
+// runs the same handover forward in time and the user is never dropped. This test forces
+// the grace to have expired, which is why it can see the count at all.
+func TestAbandonedAddressStillCountsUntilItAgesOut(t *testing.T) {
 	st := dcStore(t)
 	now := time.Now().Unix()
 	phone := dcUser(t, st, "phone",
 		ConnectionHit{IP: "10.0.0.1", SeenAt: now - 60},
 		ConnectionHit{IP: "192.168.1.5", SeenAt: now},
 	)
-	if dcWorking(t, st, phone.ID, now) {
+	if !dcCut(t, st, phone.ID, now) {
 		t.Error("the address a phone moved off no longer counts — if this is deliberate, " +
 			"check it against TestQuietAddressesStillCountInsideTheWindow first")
 	}
 	// It clears itself once the abandoned address leaves the window, without anyone
 	// intervening.
-	if !dcWorking(t, st, phone.ID, now+model.DeviceOnlineWindow) {
+	if dcCut(t, st, phone.ID, now+model.DeviceOnlineWindow) {
 		t.Error("the handover never clears on its own")
 	}
 }
@@ -133,7 +143,7 @@ func TestDeviceCountModesBehaveAsDocumented(t *testing.T) {
 	if err := st.SetDeviceCountMode(model.DeviceCountBoth); err != nil {
 		t.Fatalf("both: %v", err)
 	}
-	if dcWorking(t, st, phone.ID, now) {
+	if !dcCut(t, st, phone.ID, now) {
 		t.Error(`"both" must count every address in the window, exactly as "auto" does`)
 	}
 

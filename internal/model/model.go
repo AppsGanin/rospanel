@@ -31,6 +31,17 @@ const (
 // Matches the panel's online indicator (stats poll ~60s + access-log writes).
 const DeviceOnlineWindow int64 = 120
 
+// DeviceLimitGrace is how long a user must stay over their device limit before the
+// limit actually cuts them off.
+//
+// Longer than DeviceOnlineWindow on purpose, and that is the whole point: the two
+// commonest ways to exceed the limit are a phone changing network and a mobile carrier
+// rotating its address, both of which leave one address behind that keeps a fresh
+// sighting until the window drops it. Waiting past the window means such an address is
+// always gone before the cut lands, so neither costs the user their connection, while
+// addresses that are genuinely still in use are all still there when the grace expires.
+const DeviceLimitGrace int64 = DeviceOnlineWindow + 30
+
 // ConnectionRetentionDays is how long a connections row outlives its last sighting.
 // Only DeviceOnlineWindow matters for the device limit; the rest of the history
 // exists purely for the per-user IP list in the UI, and a roaming mobile client
@@ -111,6 +122,13 @@ type User struct {
 
 	DeviceLimit   int `json:"device_limit"`   // max concurrent devices (unique IPs), 0 = unlimited
 	ActiveDevices int `json:"active_devices"` // computed: distinct IPs seen within DeviceOnlineWindow
+
+	// DeviceOverSince is when this user first went over their device limit (0 = not
+	// over it). The limit only cuts them off once they have been over it for
+	// DeviceLimitGrace, so that an address left behind by a network change or a
+	// carrier's address rotation is gone before anything happens. Internal state, not
+	// part of the API surface.
+	DeviceOverSince int64 `json:"-"`
 
 	// SpeedLimit caps how fast this user may move traffic, in kbit/s (0 = unlimited).
 	// Enforced by the kernel on the addresses they are connected from, not by Xray —
