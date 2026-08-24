@@ -732,7 +732,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			}
 		}
 		if resp.Update {
-			if a.selfUpdate(ctx) {
+			if a.selfUpdate(ctx, resp.UpdateRepo) {
 				return // binary swapped; exit so systemd restarts the new one
 			}
 		}
@@ -1231,15 +1231,26 @@ func (a *Agent) syncOpera(enabled bool, country string, port int) {
 	slog.Info("node: Opera egress started", "country", country, "port", port)
 }
 
+// resolveUpdateRepo returns the GitHub repository to self-update from, prioritizing:
+// 1. ROSPANEL_REPO environment variable (explicit host override)
+// 2. updateRepo pushed by the panel in SyncResponse
+// 3. updater.Repo (baked-in build default)
+func resolveUpdateRepo(updateRepo string) string {
+	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
+		return r
+	}
+	if r := strings.TrimSpace(updateRepo); r != "" {
+		return r
+	}
+	return updater.Repo
+}
+
 // selfUpdate downloads + verifies the latest release and swaps the node binary,
 // then stops Xray and returns true so Run exits — systemd (Restart=always) starts
 // the new binary, which re-applies the saved config. Returns false (and keeps
 // running the current version) if there's nothing newer or the update fails.
-func (a *Agent) selfUpdate(parent context.Context) bool {
-	repo := updater.Repo
-	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
-		repo = r
-	}
+func (a *Agent) selfUpdate(parent context.Context, updateRepo string) bool {
+	repo := resolveUpdateRepo(updateRepo)
 	// Derived from the agent context so a shutdown cancels an in-flight download
 	// promptly instead of blocking up to the full timeout.
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)

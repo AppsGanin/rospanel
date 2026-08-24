@@ -309,7 +309,7 @@ func runInstall() {
 		"Environment=ROSPANEL_ADMIN_ADDR=127.0.0.1:8080",
 	}
 	// Carry through optional config the operator passed when running install.
-	for _, k := range []string{"ROSPANEL_HOST", "ROSPANEL_ACME_EMAIL", "XRAY_BIN"} {
+	for _, k := range []string{"ROSPANEL_HOST", "ROSPANEL_ACME_EMAIL", "XRAY_BIN", "ROSPANEL_REPO"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			envLines = append(envLines, "Environment="+k+"="+v)
 		}
@@ -485,9 +485,15 @@ func runUpdate(args []string) {
 	}
 
 	fmt.Println("Restarting the service…")
-	if err := exec.Command("systemctl", "restart", "rospanel").Run(); err != nil {
+	serviceName := "rospanel"
+	if _, err := os.Stat(nodeUnitPath); err == nil {
+		if _, err := os.Stat(systemdUnitPath); os.IsNotExist(err) {
+			serviceName = "rospanel-node"
+		}
+	}
+	if err := exec.Command("systemctl", "restart", serviceName).Run(); err != nil {
 		fmt.Fprintf(os.Stderr,
-			"The binary was updated but the restart failed: %v\nRun it manually: systemctl restart rospanel\n", err)
+			"The binary was updated but the restart failed: %v\nRun it manually: systemctl restart %s\n", err, serviceName)
 		os.Exit(1)
 	}
 	fmt.Printf("Done — updated to v%s.\n", rel.Version)

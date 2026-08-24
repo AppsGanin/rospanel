@@ -201,6 +201,7 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, 
 	if !resp.Revoked {
 		if rt.mgr.TakeNodeUpdate(nodeID) {
 			resp.Update = true
+			resp.UpdateRepo = updateRepo()
 		}
 		if rt.mgr.TakeNodeGeoRefresh(nodeID) {
 			resp.RefreshGeo = true

@@ -88,7 +88,8 @@ if [ -z "$JOIN_URL" ] && [ -z "${ROSPANEL_HOST:-}" ] && { exec 3</dev/tty; } 2>/
 	fi
 	exec 3<&-
 fi
-export ROSPANEL_HOST ROSPANEL_ACME_EMAIL
+ROSPANEL_REPO="${ROSPANEL_REPO:-$REPO}"
+export ROSPANEL_HOST ROSPANEL_ACME_EMAIL ROSPANEL_REPO
 
 # --- resolve download URL ---------------------------------------------------
 if [ "$VERSION" = "latest" ]; then

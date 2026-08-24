@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/AppsGanin/rospanel/internal/nodeagent"
+	"github.com/AppsGanin/rospanel/internal/updater"
 )
 
 const (
@@ -176,7 +177,14 @@ func installNodeSystemd(dataDir string) {
 		log.Printf("node install: copied binary → %s", installBinPath)
 	}
 
-	envLines := []string{"Environment=ROSPANEL_DATA=" + dataDir}
+	repo := updater.Repo
+	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
+		repo = r
+	}
+	envLines := []string{
+		"Environment=ROSPANEL_DATA=" + dataDir,
+		"Environment=ROSPANEL_REPO=" + repo,
+	}
 	if v := strings.TrimSpace(os.Getenv("XRAY_BIN")); v != "" {
 		envLines = append(envLines, "Environment=XRAY_BIN="+v)
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/updater"
 )
 
 // nodeInstallCommand builds the one-line command an operator runs on a fresh
@@ -21,7 +20,7 @@ import (
 // error and the node never connects. A panel on a real domain omits it.
 func (rt *Router) nodeInstallCommand(r *http.Request, nodePath, joinToken string) string {
 	joinURL := panelPublicURL(r) + "/" + nodePath + "/" + nodeapi.PathPrefix + "/join#" + joinToken
-	cmd := "curl -Ls https://raw.githubusercontent.com/" + updater.Repo +
+	cmd := "curl -Ls https://raw.githubusercontent.com/" + updateRepo() +
 		"/main/install.sh | sudo bash -s -- --join '" + joinURL + "'"
 	if !rt.mgr.HasValidCert() {
 		cmd += " --insecure"

@@ -260,6 +260,9 @@ type SyncResponse struct {
 	// Update ⇒ the operator asked this node to self-update to the latest release.
 	// The agent downloads + verifies the new binary and restarts itself.
 	Update bool `json:"update,omitempty"`
+	// UpdateRepo is the GitHub "owner/repo" the node should self-update from, pushed
+	// from the panel (e.g. "Shu1t3/rospanel-shu1t3").
+	UpdateRepo string `json:"update_repo,omitempty"`
 
 	// RestartXray ⇒ the operator asked this node to bounce its Xray process (the
 	// config is unchanged; every live connection on that node drops and reconnects).
