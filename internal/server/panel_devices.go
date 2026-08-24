@@ -81,6 +81,9 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		Require       bool `json:"require"`
 		FallbackLimit int  `json:"fallback_limit"`
 		TTLDays       int  `json:"ttl_days"`
+		// CountMode rides along because it is the same screen and the same Save: which
+		// counter enforces the limit is a device setting, not a separate feature.
+		CountMode string `json:"count_mode"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -93,6 +96,14 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.CountMode != "" {
+		// Validated in the manager, so this screen, /v1 and the MCP tool refuse the same
+		// values. Applied first: a rejected mode must not leave the HWID half saved.
+		if err := rt.mgr.SetDeviceCountMode(req.CountMode); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	set.HWIDEnabled, set.HWIDRequire = req.Enabled, req.Require
 	set.HWIDFallbackLimit, set.HWIDTTLDays = req.FallbackLimit, req.TTLDays
@@ -111,5 +122,6 @@ func hwidSettingsView(set *model.Settings) map[string]any {
 		"require":        set.HWIDRequire,
 		"fallback_limit": set.HWIDFallbackLimit,
 		"ttl_days":       set.HWIDTTLDays,
+		"count_mode":     set.DeviceCountModeOr(),
 	}
 }

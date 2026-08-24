@@ -63,6 +63,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_user_events, tg_user_expiring_days,
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
+		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
 		       probe_detect, watchdog_enabled, probe_block
 		FROM settings WHERE id = 1`,
@@ -103,6 +104,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.TGUserEvents, &st.TGUserExpiringDays,
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
+		&st.DeviceCountMode,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock,
 	)
@@ -412,6 +414,11 @@ func (s *Store) SetWatchdogEnabled(on bool) error {
 // SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs.
 func (s *Store) SetProbeBlock(on bool) error { return s.setSetting("probe_block", on) }
 
+
+// SetDeviceCountMode picks which counter enforces a user's device limit.
+func (s *Store) SetDeviceCountMode(mode string) error {
+	return s.setSetting("device_count_mode", mode)
+}
 
 // SetHWIDSettings persists the device-binding settings (Settings → Subscriptions).
 func (s *Store) SetHWIDSettings(st *model.Settings) error {

@@ -45,6 +45,7 @@ type apiSettingsView struct {
 	HWIDRequire        bool     `json:"hwid_require"`
 	HWIDFallbackLimit  int      `json:"hwid_fallback_limit"`
 	HWIDTTLDays        int      `json:"hwid_ttl_days"`
+	DeviceCountMode    string   `json:"device_count_mode"`
 	LocalBackupCron    string   `json:"local_backup_cron"`
 	LocalBackupKeep    int      `json:"local_backup_keep"`
 	SubPath            string   `json:"sub_path"`
@@ -68,6 +69,7 @@ type apiSettingsReq struct {
 	HWIDRequire        *bool   `json:"hwid_require"`
 	HWIDFallbackLimit  *int    `json:"hwid_fallback_limit"`
 	HWIDTTLDays        *int    `json:"hwid_ttl_days"`
+	DeviceCountMode    *string `json:"device_count_mode"`
 	LocalBackupCron    *string `json:"local_backup_cron"`
 	LocalBackupKeep    *int    `json:"local_backup_keep"`
 }
@@ -92,6 +94,7 @@ func (rt *Router) apiSettingsPayload() (*apiSettingsView, error) {
 		HWIDEnabled:        set.HWIDEnabled,
 		HWIDRequire:        set.HWIDRequire,
 		HWIDFallbackLimit:  set.HWIDFallbackLimit,
+		DeviceCountMode:    set.DeviceCountModeOr(),
 		HWIDTTLDays:        set.HWIDTTLDays,
 		LocalBackupCron:    set.LocalBackupCron,
 		LocalBackupKeep:    set.LocalBackupKeep,
@@ -179,6 +182,12 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := a.fn(); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.DeviceCountMode != nil {
+		if err := rt.mgr.SetDeviceCountMode(*req.DeviceCountMode); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}

@@ -778,6 +778,9 @@ export interface HWIDSettings {
   require: boolean // refuse clients that send no x-hwid at all
   fallback_limit: number // cap for users whose own device limit is 0
   ttl_days: number // forget a device after N days of silence (0 = never)
+  // Which counter enforces the device limit: "auto" (addresses only while HWID is not
+  // authoritative), "hwid" or "both".
+  count_mode: string
 }
 
 export const saveHWIDSettings = (s: HWIDSettings) =>
