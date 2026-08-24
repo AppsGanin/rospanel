@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.10.1](https://github.com/AppsGanin/rospanel/compare/v2.10.0...v2.10.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* count devices by HWID when HWID is what identifies them ([#66](https://github.com/AppsGanin/rospanel/issues/66)) ([38a51ea](https://github.com/AppsGanin/rospanel/commit/38a51ea0cd8014cc8f74934f1d9856bc841a327a))
+* forgive a network handover instead of giving up the device limit ([84afd47](https://github.com/AppsGanin/rospanel/commit/84afd476a07faefd459141f71fb99ef4f9b72d78))
+* wait out a network change before the device limit cuts anyone ([6fa0043](https://github.com/AppsGanin/rospanel/commit/6fa00438c696977a70f452d2b37815d345713446))
+
+
+### Performance Improvements
+
+* count devices in one pass instead of once per connection row ([3674986](https://github.com/AppsGanin/rospanel/commit/3674986d7b619aa7c0a1212e02b7283207a95408))
+
+
+### Reverts
+
+* drop the handover grace, it did not work and cost enforcement ([33f8745](https://github.com/AppsGanin/rospanel/commit/33f8745dda581c4870d16389d8aa1ed7248d74ff))
+
 ## [2.10.0](https://github.com/AppsGanin/rospanel/compare/v2.9.1...v2.10.0) (2026-08-22)
 
 
