@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.12.0...v2.13.0) (2026-08-24)
+
+
+### Features
+
+* implement customizable update repository source via ROSPANEL_REPO environment variable and sync response injection ([af8e874](https://github.com/Shu1t3/rospanel-shu1t3/commit/af8e8749d0e4749d21cf2b7f056ae628e80d50a8))
+
 ## [2.12.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.11.0...v2.12.0) (2026-08-24)
 
 
