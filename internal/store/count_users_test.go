@@ -87,6 +87,13 @@ func TestCountUsersMatchesDeriveStatus(t *testing.T) {
 		wantDown += sp.usedDown
 	}
 
+	// Stamp the over-limit users as having been over since before DeviceLimitGrace
+	// expired, so the device dimension is actually exercised here: without it nobody is
+	// cut yet and this test would agree with itself for the wrong reason.
+	if err := st.StampDeviceOverLimit(now - model.DeviceLimitGrace - 10); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+
 	got, err := st.CountUsers(now)
 	if err != nil {
 		t.Fatalf("count: %v", err)

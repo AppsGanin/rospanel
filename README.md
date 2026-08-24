@@ -242,14 +242,21 @@ user connecting from more distinct addresses than the limit within the online wi
 dropped from the tunnels until they fall back under it — counted across **every server**
 (master and nodes), not per-server. `0` means no IP cap.
 
-The IP half has one known false positive, and *Settings → Subscriptions → Count devices by*
-is where you decide what to do about it. An address a device has just moved off keeps a
-fresh sighting until it leaves the two-minute window, so a phone switching from mobile data
-to Wi-Fi briefly looks like two devices, and a subscriber already on their full allowance
-can lose access until it ages out. It clears itself, with no operator action. Choosing
-**HWID only** removes the address count and that false positive with it — at the price of
-the only thing that caps how many places one link is used at *once*, since HWID caps who
-may fetch the subscription, not who may connect. The default counts both.
+**The cut is not immediate.** The limit has to stay exceeded for two and a half minutes, a
+little longer than the online window. That is because the two commonest ways to exceed it
+are not sharing at all: a phone changing network abandons its old address while that address
+keeps a fresh sighting until the window drops it, and a mobile carrier rotates the public
+address inside its own pool with no user action whatsoever (one live account shows seven
+addresses in a single `176.15.0.0/16` over a month). The only way to tell either from a
+second device is to watch whether the old address keeps being used — which means not cutting
+the user, because cutting is what stops the traffic being judged. So the limit waits, and an
+abandoned address leaves the window on its own. Addresses in genuine simultaneous use are
+all still there when the wait is over, and the cut lands as before.
+
+*Settings → Subscriptions → Count devices by* → **HWID only** drops the address count
+altogether — at the price of the only thing that caps how many places one link is used at
+*once*, since HWID caps who may fetch the subscription, not who may connect. The default
+counts both.
 
 **Device binding (HWID).** Turn this on and the **same number** also caps distinct **installs**.
 Clients that follow the subscription-header convention (Happ, v2RayTun) send a stable install

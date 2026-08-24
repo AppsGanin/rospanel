@@ -477,10 +477,17 @@ func (m *Manager) FlushAccess() {
 		logErr("access: flush failed, sightings requeued", "sightings", len(hits), "err", err)
 		return
 	}
+	now := time.Now().Unix()
+	// Stamp who is over their device limit before asking who should be in the config:
+	// the cut waits out model.DeviceLimitGrace, and the grace measures from this stamp.
+	// Sightings have just landed, so this is the moment the answer can change.
+	if err := m.store.StampDeviceOverLimit(now); err != nil {
+		logErr("access: device-limit stamp failed", "err", err)
+	}
 	// A new device (source IP) may push the user over their device cap — re-check
 	// the working set and sync promptly so the over-limit user drops out, instead
 	// of waiting for the next periodic reconcile.
-	if working, err := m.store.WorkingUsers(time.Now().Unix()); err == nil && m.workingChanged(working) {
+	if working, err := m.store.WorkingUsers(now); err == nil && m.workingChanged(working) {
 		m.TriggerUserSync()
 	}
 }

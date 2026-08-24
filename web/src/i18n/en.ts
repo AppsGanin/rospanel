@@ -980,7 +980,7 @@ const en: Dict = {
     countModeAuto: "Addresses and HWID (recommended)",
     countModeHWID: "HWID only",
     countModeHint:
-      "The device limit is counted from distinct IP addresses seen in the last two minutes — the only thing that caps how many places one link is used at once. It has a known false positive: an address a device has just moved off stays alive for up to two minutes, so switching from mobile data to Wi-Fi can lock out a subscriber who is already on their full allowance until it ages out. It clears itself. “HWID only” drops the address count and that false positive with it, but one link can then be used from any number of devices at once: HWID caps who may fetch the subscription, not simultaneous use.",
+      "The device limit is counted from distinct IP addresses seen in the last two minutes — the only thing that caps how many places one link is used at once. The cut is not immediate: the limit has to stay exceeded for two and a half minutes. That is long enough for a network change or a mobile carrier rotating its address to pass without touching the subscriber, since the abandoned address leaves the window on its own, while addresses that are genuinely still in use are cut as before. “HWID only” drops the address count altogether, but one link can then be used from any number of devices at once: HWID caps who may fetch the subscription, not simultaneous use.",
     hwidRequire: "Require an id",
     hwidRequireHint:
       "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",

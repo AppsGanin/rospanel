@@ -1,0 +1,14 @@
+-- When a user first went over their device limit, or 0 when they are not over it.
+--
+-- The limit counts distinct source addresses, and the two commonest ways to exceed it
+-- are not sharing at all: a phone changing network abandons its old address instantly
+-- while that address keeps a fresh sighting until it leaves the online window, and a
+-- mobile carrier rotates the public address inside its own pool with no user action at
+-- all (one real account showed seven addresses in a single /16 over a month).
+--
+-- Both look the same as a second device for as long as the abandoned address lingers,
+-- and telling them apart needs one thing: whether the old address keeps being used.
+-- Observing that means NOT cutting the user yet — cutting is what stops their traffic,
+-- and with it the evidence. So the cut waits out model.DeviceLimitGrace, by which time
+-- an abandoned address has left the window on its own and the count has fallen back.
+ALTER TABLE users ADD COLUMN device_over_since INTEGER NOT NULL DEFAULT 0;
