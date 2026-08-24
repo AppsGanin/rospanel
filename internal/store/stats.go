@@ -377,10 +377,21 @@ func touchLastSeenOn(ex execer, userID, ts int64) error {
 // beats scanning everything, and the planner's row estimates (we never ANALYZE)
 // don't know it. The clause also fails loudly if a migration ever drops the index.
 func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
+	// The same handover grace the enforcement query applies (see deviceCountCTE): an
+	// address a device has already moved off keeps a fresh last_seen for the rest of the
+	// window, and counting it here made the panel and the bot report a device limit
+	// exceeded for a phone that merely changed network. The two counts have to agree —
+	// one is what cuts the user off, the other is what tells them why.
 	rows, err := s.db.Query(
-		`SELECT user_id, COUNT(DISTINCT ip) FROM connections INDEXED BY idx_connections_last_seen
-		 WHERE last_seen > ? GROUP BY user_id`,
-		since,
+		`SELECT c.user_id, COUNT(DISTINCT c.ip)
+		 FROM connections c INDEXED BY idx_connections_last_seen
+		 WHERE c.last_seen > ?
+		   AND (NOT (`+deviceHandoverGraceSQL+`)
+		        OR c.last_seen > (
+		          SELECT MAX(c2.last_seen) FROM connections c2 WHERE c2.user_id = c.user_id
+		        ) - ?)
+		 GROUP BY c.user_id`,
+		since, model.DeviceHandoverGrace,
 	)
 	if err != nil {
 		return nil, err

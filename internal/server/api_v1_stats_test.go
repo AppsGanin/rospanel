@@ -47,7 +47,7 @@ func statsFixture(t *testing.T) (h http.Handler, base, key string, days [3]strin
 }
 
 // Omitting the window used to answer with an empty array: the raw strings went
-// straight into `day BETWEEN '' AND ''`. The panel's own dashboard defaulted to the
+// straight into `day BETWEEN ” AND ”`. The panel's own dashboard defaulted to the
 // last 30 days all along — the external surface just never called that code.
 func TestAPIStatsDefaultsToTheLastThirtyDays(t *testing.T) {
 	h, base, key, days := statsFixture(t)

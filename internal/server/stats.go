@@ -20,7 +20,7 @@ func validDate(s string) bool {
 // code and its Russian default, because the two surfaces that call it render errors
 // differently — the panel translates, the API answers in its envelope — and the
 // alternative was the v1 API doing none of this at all: it passed the raw strings
-// through, so an omitted `from` became `day BETWEEN '' AND ''` and the caller got an
+// through, so an omitted `from` became `day BETWEEN ” AND ”` and the caller got an
 // empty array for a question the panel answers on its own dashboard.
 func (rt *Router) statsWindow(r *http.Request) (from, to string, errCode, errMsg string) {
 	now := time.Now().In(rt.mgr.Location())

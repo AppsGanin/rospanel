@@ -205,7 +205,6 @@ func statusPathOf(enabled bool, path string) string {
 	return path
 }
 
-
 // statusBody renders the status page, memoized per language for statusCacheTTL.
 //
 // This is the one surface a caller reaches holding NOTHING — no token, no session — and

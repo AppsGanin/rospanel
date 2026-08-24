@@ -16,7 +16,7 @@ func lenDelim(tag byte, body []byte) []byte {
 }
 
 func cidrMsg(ip []byte, prefix int) []byte {
-	body := lenDelim(0x0A, ip)                                // field 1: ip bytes
+	body := lenDelim(0x0A, ip)                                      // field 1: ip bytes
 	body = binary.AppendUvarint(append(body, 0x10), uint64(prefix)) // field 2: prefix varint
 	return body
 }
@@ -60,14 +60,14 @@ func TestCountryLookup(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{"8.8.8.8", "us", true},   // inside 8.8.8.0/24
-		{"8.8.9.1", "", false},    // just outside the /24
-		{"1.2.3.4", "us", true},   // inside 1.2.0.0/16
+		{"8.8.8.8", "us", true},    // inside 8.8.8.0/24
+		{"8.8.9.1", "", false},     // just outside the /24
+		{"1.2.3.4", "us", true},    // inside 1.2.0.0/16
 		{"5.45.200.1", "ru", true}, // inside 5.45.0.0/16
-		{"10.1.2.3", "", false},   // private/8 was excluded (code not 2 letters)
-		{"9.9.9.9", "", false},    // unmapped
-		{"2a01::5", "de", true},   // inside 2a01::/32
-		{"2a02::1", "", false},    // outside the v6 range
+		{"10.1.2.3", "", false},    // private/8 was excluded (code not 2 letters)
+		{"9.9.9.9", "", false},     // unmapped
+		{"2a01::5", "de", true},    // inside 2a01::/32
+		{"2a02::1", "", false},     // outside the v6 range
 	}
 	for _, tc := range cases {
 		got, ok := c.Lookup(netip.MustParseAddr(tc.ip))

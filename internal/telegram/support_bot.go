@@ -592,7 +592,6 @@ func isBlockedByUser(err error) bool {
 		strings.Contains(d, "chat not found")
 }
 
-
 // senderMayReply reports whether this message's author may speak for support.
 //
 // Cached per (group, user) for rightsRecheckEvery: the check is a synchronous Telegram

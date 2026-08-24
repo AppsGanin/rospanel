@@ -345,32 +345,39 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 	}
 	theme := branding.ParseTheme(set.PanelTheme)
 	data := pageData{
-		L:            text(lang),
-		Name:         u.Name,
-		BrandName:    brandName,
-		Brand:        theme.Accent,
-		BrandDark:    branding.Darken(theme.Accent, 0.16),
-		AccentFg:     branding.Fg(theme.Accent, theme.Surface),
-		SuccessFg:    branding.Fg("#059669", theme.Surface),
-		WarningFg:    branding.Fg("#ea580c", theme.Surface),
-		DangerFg:     branding.Fg("#dc2626", theme.Surface),
-		Ink:          theme.Text,
-		Muted:        theme.Muted,
-		Bg:           theme.Bg,
-		Surface:      theme.Surface,
-		IsDefault:    isDefault,
-		SubURL:       subURL,
-		Links:        protoLinks,
-		DeepLinks:    DeepLinks(subURL, lang),
-		StatusLabel:  statusLabel,
-		StatusClass:  statusClass,
-		Used:         fmtBytes(used),
-		Limit:        "∞",
-		Expire:       i18n.T(lang, "sub.never"),
-		Online:       u.LastSeen > 0 && time.Now().Unix()-u.LastSeen < 120,
-		Billing:      billing,
-		Devices:      devices,
-		ShowConfigs:  set.SubShowConfigs,
+		L:           text(lang),
+		Name:        u.Name,
+		BrandName:   brandName,
+		Brand:       theme.Accent,
+		BrandDark:   branding.Darken(theme.Accent, 0.16),
+		AccentFg:    branding.Fg(theme.Accent, theme.Surface),
+		SuccessFg:   branding.Fg("#059669", theme.Surface),
+		WarningFg:   branding.Fg("#ea580c", theme.Surface),
+		DangerFg:    branding.Fg("#dc2626", theme.Surface),
+		Ink:         theme.Text,
+		Muted:       theme.Muted,
+		Bg:          theme.Bg,
+		Surface:     theme.Surface,
+		IsDefault:   isDefault,
+		SubURL:      subURL,
+		Links:       protoLinks,
+		DeepLinks:   DeepLinks(subURL, lang),
+		StatusLabel: statusLabel,
+		StatusClass: statusClass,
+		Used:        fmtBytes(used),
+		Limit:       "∞",
+		Expire:      i18n.T(lang, "sub.never"),
+		Online:      u.LastSeen > 0 && time.Now().Unix()-u.LastSeen < 120,
+		Billing:     billing,
+		Devices:     devices,
+		// Gated by showDownload for the same reason the download button is, and it is the
+		// sharper of the two: the browser path renders this page WITHOUT running the
+		// device cap (see subscription.go — it returns before admitDevice), so printing
+		// the raw share links here handed every credential to a client that never
+		// identified itself. Anyone holding the subscription URL could fetch the page
+		// with a browser Accept header, copy the links and use them from any number of
+		// devices, with no slot consumed and the HWID roster none the wiser.
+		ShowConfigs:  set.SubShowConfigs && showDownload,
 		ShowDownload: showDownload,
 	}
 	if u.DataLimit > 0 {

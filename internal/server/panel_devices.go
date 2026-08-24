@@ -83,7 +83,10 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		TTLDays       int  `json:"ttl_days"`
 		// CountMode rides along because it is the same screen and the same Save: which
 		// counter enforces the limit is a device setting, not a separate feature.
-		CountMode string `json:"count_mode"`
+		// Pointer, so "absent" and "empty" are distinguishable and this surface refuses
+		// exactly what /v1 refuses. A bare "" used to mean "leave alone" here and
+		// "invalid" there.
+		CountMode *string `json:"count_mode"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -97,10 +100,10 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
-	if req.CountMode != "" {
+	if req.CountMode != nil {
 		// Validated in the manager, so this screen, /v1 and the MCP tool refuse the same
 		// values. Applied first: a rejected mode must not leave the HWID half saved.
-		if err := rt.mgr.SetDeviceCountMode(req.CountMode); err != nil {
+		if err := rt.mgr.SetDeviceCountMode(*req.CountMode); err != nil {
 			writeManagerErr(w, err)
 			return
 		}
@@ -111,6 +114,10 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
+	// hwid_require now feeds the device-count rule, so the working set has to be
+	// recomputed — otherwise an operator turning it off leaves over-limit users
+	// connected until something else happens to trigger a sync.
+	rt.mgr.TriggerUserSync()
 	writeOK(w)
 }
 

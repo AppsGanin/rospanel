@@ -454,13 +454,18 @@ export function ViewSwitch({
   onChange,
   tableLabel,
   cardsLabel,
+  label,
 }: {
   value: string;
   onChange: (v: string) => void;
   tableLabel: string;
   cardsLabel: string;
+  // label names WHICH list this switch drives. Two of them on one page otherwise present
+  // four buttons all called "Table"/"Cards", and nothing says which pair is which.
+  label?: string;
 }) {
   return (
+    <div role="group" aria-label={label}>
     <SegmentedControl
       value={value}
       onChange={onChange}
@@ -469,6 +474,7 @@ export function ViewSwitch({
         { value: "cards", label: <IconCards size={18} />, title: cardsLabel },
       ]}
     />
+    </div>
   );
 }
 
@@ -481,14 +487,20 @@ export function ViewSwitch({
 export function TableShell({
   children,
   className,
+  bare,
 }: {
   children: ReactNode;
   className?: string;
+  // bare drops the surface for a table that already sits inside a Card or SettingCard.
+  // Without it the operator sees a white rounded panel with its own border and shadow
+  // nested 16px inside an identical one.
+  bare?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "overflow-x-auto rounded-2xl border border-brand-600/6 bg-white shadow-sm",
+        "overflow-x-auto",
+        !bare && "rounded-2xl border border-brand-600/6 bg-white shadow-sm",
         className,
       )}
     >
