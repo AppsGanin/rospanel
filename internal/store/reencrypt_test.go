@@ -128,4 +128,3 @@ func TestReencryptAllTables(t *testing.T) {
 		t.Errorf("node secrets did not decrypt properly: %+v", node)
 	}
 }
-

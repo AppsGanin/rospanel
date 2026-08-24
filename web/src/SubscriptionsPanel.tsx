@@ -51,6 +51,7 @@ const EMPTY_HWID: HWIDSettings = {
   require: true,
   fallback_limit: 0,
   ttl_days: 30,
+  count_mode: "auto",
 };
 
 // Subscription auto-update cadence (hours; "0" = never).
@@ -216,6 +217,18 @@ export function SubscriptionsPanel() {
               checked={h.require}
               onChange={(v) => patchHwid({ require: v })}
             />
+            <div>
+              <Select
+                label={t("subs.countMode")}
+                value={h.count_mode || "auto"}
+                onChange={(v) => patchHwid({ count_mode: v })}
+                data={[
+                  { value: "auto", label: t("subs.countModeAuto") },
+                  { value: "hwid", label: t("subs.countModeHWID") },
+                ]}
+              />
+              <p className="mt-1 text-xs text-ink-muted">{t("subs.countModeHint")}</p>
+            </div>
             <div>
               <TextInput
                 label={t("subs.hwidFallback")}

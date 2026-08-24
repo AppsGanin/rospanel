@@ -385,7 +385,6 @@ func (s *Store) ActiveDeviceCountForUser(userID int64, since int64) (int, error)
 }
 
 // ActiveDeviceCounts returns how many distinct source IPs were seen per user
-
 // since the given unix timestamp (typically now - DeviceOnlineWindow).
 // INDEXED BY is deliberate. Left alone, SQLite picks the (user_id, ip) primary key
 // so GROUP BY needs no sort, and scans the whole table — which grows a row per
@@ -394,11 +393,13 @@ func (s *Store) ActiveDeviceCountForUser(userID int64, since int64) (int, error)
 // beats scanning everything, and the planner's row estimates (we never ANALYZE)
 // don't know it. The clause also fails loudly if a migration ever drops the index.
 func (s *Store) ActiveDeviceCounts(since int64) (map[int64]int, error) {
+	// Pinned to the window index: connections keys on (user_id, ip) and keeps a row per
+	// address for ConnectionRetentionDays, so left to itself SQLite reads the whole
+	// thirty-day table to answer a question about the last two minutes.
 	rows, err := s.db.Query(
-		`SELECT user_id, COUNT(DISTINCT ip) FROM connections INDEXED BY idx_connections_last_seen
-		 WHERE last_seen > ? GROUP BY user_id`,
-		since,
-	)
+		`SELECT user_id, COUNT(DISTINCT ip)
+		 FROM connections INDEXED BY idx_connections_last_seen
+		 WHERE last_seen > ? GROUP BY user_id`, since)
 	if err != nil {
 		return nil, err
 	}

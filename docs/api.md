@@ -542,10 +542,25 @@ curl -X PATCH $BASE/v1/settings -H "Authorization: Bearer $KEY" \
   "user_autodelete_days": 0,
   "hwid_enabled": false, "hwid_require": true,
   "hwid_fallback_limit": 0, "hwid_ttl_days": 30,
+  "device_count_mode": "auto",
   "local_backup_cron": "", "local_backup_keep": 7,
   "sub_path": "sub", "warp_enabled": false, "warp_registered": true
 } }
 ```
+
+`device_count_mode` decides what a user's device limit counts. `auto` (the default) counts
+distinct source addresses seen in the last two minutes — the only thing that caps how many
+places one subscription is used at *once* — and cuts a user off only once they have been over
+the limit continuously for two and a half minutes, so that a network change or a carrier's
+address rotation passes without touching them. `hwid` stops counting addresses entirely,
+leaving the bound-install roster as the only limit, and gives up concurrency enforcement to
+do it: HWID caps who may fetch a subscription rather than who may connect. `both` is accepted
+for rows written before the two modes collapsed and behaves as `auto`. Anything else is
+refused rather than silently falling through to the default.
+
+`active_devices` on a user is the raw number of addresses seen in the window and is reported
+whether or not anything is being enforced; `status` becomes `device_limited` only once the
+cut has actually landed.
 
 Three of these have an effect the database alone does not carry — the masquerade
 template, scanner detection and maintenance mode are consulted on every request — so the

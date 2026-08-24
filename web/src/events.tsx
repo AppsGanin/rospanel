@@ -358,7 +358,7 @@ function EventTable({
 }) {
   const { t } = useTranslation();
   return (
-    <TableShell>
+    <TableShell bare>
       <THead
         cols={[
           { label: t("events.colAction") },
@@ -387,12 +387,18 @@ function EventTable({
                 </div>
               </TD>
               {showUser && (
-                <TD className="max-w-[12rem] truncate font-medium text-ink">
-                  {e.user_name || `#${e.user_id}`}
+                <TD className="font-medium text-ink">
+                  <div className="max-w-[12rem] truncate">{e.user_name || `#${e.user_id}`}</div>
                 </TD>
               )}
-              <TD className="hidden max-w-[22rem] truncate md:table-cell" >
-                {details ? <span title={details}>{details}</span> : <span className="text-ink-muted">—</span>}
+              <TD className="hidden md:table-cell">
+                {details ? (
+                  <div className="max-w-[22rem] truncate" title={details}>
+                    {details}
+                  </div>
+                ) : (
+                  <span className="text-ink-muted">—</span>
+                )}
               </TD>
               <TD className="hidden whitespace-nowrap text-ink-muted sm:table-cell">
                 {actorLabel(e)}

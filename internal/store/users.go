@@ -12,7 +12,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
-	notified_expire_at, notified_quota_at`
+	notified_expire_at, notified_quota_at, device_over_since`
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -98,7 +98,11 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		       COALESCE(SUM(CASE WHEN u.enabled != 0
 		            AND (u.expire_at = 0 OR u.expire_at > ?)
 		            AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
-		            AND (u.device_limit = 0 OR COALESCE(d.n, 0) <= u.device_limit)
+		            AND (u.device_limit = 0
+		                 OR NOT (SELECT ip_counts FROM (`+deviceCountCTE+`))
+		                 OR COALESCE(d.n, 0) <= u.device_limit
+		                 OR u.device_over_since = 0
+		                 OR u.device_over_since > ?)
 		           THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN COALESCE(d.n, 0) > 0 THEN 1 ELSE 0 END), 0)
 		FROM users u
@@ -107,7 +111,7 @@ func (s *Store) CountUsers(now int64) (UserCounts, error) {
 		    FROM connections INDEXED BY idx_connections_last_seen
 		    WHERE last_seen > ? GROUP BY user_id
 		) d ON d.user_id = u.id`,
-		now, now-model.DeviceOnlineWindow,
+		now, now-model.DeviceLimitGrace, now-model.DeviceOnlineWindow,
 	).Scan(&c.Total, &c.TotalUp, &c.TotalDown, &c.Active, &c.Online)
 	return c, err
 }
@@ -126,21 +130,56 @@ func (s *Store) ExpiredUsersBefore(cutoff int64) ([]model.User, error) {
 		ORDER BY id ASC`, cutoff)
 }
 
+// ipCountsAsDevice answers, for Go-side callers, the same question deviceCountCTE
+// answers in SQL. A read failure keeps the historical answer: enforcing a limit the
+// operator set is the safer side of an unreadable settings row.
+func (s *Store) ipCountsAsDevice() bool {
+	var n int
+	if err := s.db.QueryRow(`WITH device_count AS (` + deviceCountCTE + `)
+		SELECT ip_counts FROM device_count`).Scan(&n); err != nil {
+		return true
+	}
+	return n != 0
+}
+
+// deviceCountCTE yields one row, ip_counts, saying whether distinct source addresses
+// enforce users.device_limit. It mirrors model.Settings.CountsIPAsDevice exactly; the two
+// exist because the decision is needed on both sides of the wire, and any change has to
+// land in both (a test pins that they agree).
+const deviceCountCTE = `SELECT CASE
+	WHEN device_count_mode = 'hwid' THEN 0
+	ELSE 1
+	END AS ip_counts
+	FROM settings WHERE id = 1`
+
 // WorkingUsers returns users that should be in the proxy config right now:
 // manually enabled AND not expired AND within their data limit AND within their
 // device limit. enabled is an independent manual flag — expiry/quota/devices
 // never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 	since := now - model.DeviceOnlineWindow
-	return s.queryUsers(`SELECT `+userCols+` FROM users
+	// device_count decides, once, whether source addresses still enforce the limit — the
+	// same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
+	// this query and the status derivation agree without threading a flag through six of
+	// them. See migration 0055 and issue #66.
+	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT `+userCols+` FROM users
 		WHERE enabled = 1
 		  AND (expire_at = 0 OR expire_at > ?)
 		  AND (data_limit = 0 OR used_up + used_down < data_limit)
-		  AND (device_limit = 0 OR (
-		    SELECT COUNT(DISTINCT c.ip) FROM connections c
-		    WHERE c.user_id = users.id AND c.last_seen > ?
-		  ) <= device_limit)
-		ORDER BY id ASC`, now, since)
+		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
+		       -- Not over the limit right now. Checked as well as the stamp, not instead
+		       -- of it, so a user who has fallen back under is admitted even if nothing
+		       -- has run to clear their stamp yet: an out-of-date stamp must never be
+		       -- able to hold someone out.
+		       OR (SELECT COUNT(DISTINCT c.ip) FROM connections c
+		           WHERE c.user_id = users.id AND c.last_seen > ?) <= device_limit
+		       -- Over, but not for long enough yet. See DeviceLimitGrace: an address
+		       -- left behind by a network change or a carrier's address rotation leaves
+		       -- the window before this expires, so it never costs anyone a cut.
+		       OR device_over_since = 0
+		       OR device_over_since > ?)
+		ORDER BY id ASC`, now, since, now-model.DeviceLimitGrace)
 }
 
 // GetUser returns one user by id.
@@ -575,7 +614,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
-			&u.NotifiedExpireAt, &u.NotifiedQuotaAt,
+			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince,
 		); err != nil {
 			return nil, err
 		}
@@ -598,24 +637,123 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 	if len(users) == 0 {
 		return
 	}
+	countIP := s.ipCountsAsDevice()
 	if len(users) == 1 {
 		u := &users[0]
 		active, _ := s.ActiveDeviceCountForUser(u.ID, now-model.DeviceOnlineWindow)
 		u.ActiveDevices = active
+		limit := u.DeviceLimit
+		switch {
+		case !countIP:
+			limit = 0
+		case u.DeviceOverSince == 0 || u.DeviceOverSince > now-model.DeviceLimitGrace:
+			limit = 0
+		}
 		u.Status = deriveStatus(
 			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			active, u.DeviceLimit,
+			active, limit,
 		)
 		return
 	}
 	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	// The displayed count stays honest — it is how many addresses were seen — but it only
+	// DRIVES the status while addresses are what enforces the limit. In "hwid" mode they
+	// do not, and a phone changing network still read as "device limit exceeded" (issue
+	// #66), the bot said so, and the HWID roster it is actually capped by showed one
+	// device. Showing the number and enforcing it are separate decisions.
 	for i := range users {
 		u := &users[i]
 		active := counts[u.ID]
 		u.ActiveDevices = active
+		limit := u.DeviceLimit
+		switch {
+		case !countIP:
+			limit = 0 // this counter does not enforce in "hwid" mode
+		case u.DeviceOverSince == 0 || u.DeviceOverSince > now-model.DeviceLimitGrace:
+			// Over the limit, but the grace has not run out, so nothing has happened to
+			// them yet — and it usually never will, because this is what a network
+			// change looks like. Saying "device limit exceeded" here would put the
+			// panel, the API and the bot in the position of announcing a cut that the
+			// enforcement query is not making.
+			limit = 0
+		}
 		u.Status = deriveStatus(
 			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			active, u.DeviceLimit,
+			active, limit,
 		)
 	}
+}
+
+// StampDeviceOverLimit records, for every user, when they first went over their device
+// limit — the clock DeviceLimitGrace runs against. Called after new sightings land.
+//
+// Kept out of WorkingUsers because that is a read, called from six places, and this is
+// the one write the rule needs: the grace has to measure from a moment, and a moment
+// cannot be derived from the connections table after the fact.
+//
+// Arming and disarming are separate statements over an id list rather than one UPDATE
+// with a correlated count, so the cost is one grouped pass (ActiveDeviceCounts) plus at
+// most two writes that touch only the rows actually changing state — usually none.
+func (s *Store) StampDeviceOverLimit(now int64) error {
+	// In "hwid" mode addresses do not enforce anything, so nothing should carry a stamp:
+	// left armed, it would cut people the moment an operator switched back to "auto".
+	if !s.ipCountsAsDevice() {
+		_, err := s.db.Exec(`UPDATE users SET device_over_since = 0 WHERE device_over_since <> 0`)
+		return err
+	}
+	counts, err := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	if err != nil {
+		return err
+	}
+	rows, err := s.db.Query(`SELECT id, device_limit, device_over_since FROM users
+		WHERE device_limit > 0 OR device_over_since <> 0`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var arm, disarm []int64
+	for rows.Next() {
+		var id, since int64
+		var limit int
+		if err := rows.Scan(&id, &limit, &since); err != nil {
+			return err
+		}
+		over := limit > 0 && counts[id] > limit
+		switch {
+		case over && since == 0:
+			arm = append(arm, id)
+		case !over && since != 0:
+			disarm = append(disarm, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(arm) == 0 && len(disarm) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		if len(arm) > 0 {
+			args := make([]any, 0, len(arm)+1)
+			args = append(args, now)
+			for _, id := range arm {
+				args = append(args, id)
+			}
+			if _, err := tx.Exec(`UPDATE users SET device_over_since = ?
+				WHERE id IN (`+placeholders(len(arm))+`)`, args...); err != nil {
+				return err
+			}
+		}
+		if len(disarm) > 0 {
+			args := make([]any, len(disarm))
+			for i, id := range disarm {
+				args[i] = id
+			}
+			if _, err := tx.Exec(`UPDATE users SET device_over_since = 0
+				WHERE id IN (`+placeholders(len(disarm))+`)`, args...); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

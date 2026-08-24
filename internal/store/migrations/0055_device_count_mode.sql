@@ -1,0 +1,13 @@
+-- Which counter enforces users.device_limit.
+--
+-- The panel has always had two: distinct source IPs seen in the last two minutes, and
+-- HWID-bound devices. Both gate the same column, so the stricter one won — and the IP one
+-- is wrong about phones: switching from mobile data to Wi-Fi leaves the old address alive
+-- inside the window, so one device counts as two and the user is dropped from the config
+-- for a couple of minutes (issue #66).
+--
+-- 'auto' keeps the IP counter only while it is the sole means of identification: with
+-- HWID binding required, every served client is identified by hardware id and counting
+-- addresses adds nothing but false positives. 'hwid' and 'both' let an operator override
+-- that either way; 'both' is the historical behaviour.
+ALTER TABLE settings ADD COLUMN device_count_mode TEXT NOT NULL DEFAULT 'auto';

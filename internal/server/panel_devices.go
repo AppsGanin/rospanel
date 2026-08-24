@@ -81,6 +81,12 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		Require       bool `json:"require"`
 		FallbackLimit int  `json:"fallback_limit"`
 		TTLDays       int  `json:"ttl_days"`
+		// CountMode rides along because it is the same screen and the same Save: which
+		// counter enforces the limit is a device setting, not a separate feature.
+		// Pointer, so "absent" and "empty" are distinguishable and this surface refuses
+		// exactly what /v1 refuses. A bare "" used to mean "leave alone" here and
+		// "invalid" there.
+		CountMode *string `json:"count_mode"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -94,12 +100,24 @@ func (rt *Router) saveHWIDSettings(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
+	if req.CountMode != nil {
+		// Validated in the manager, so this screen, /v1 and the MCP tool refuse the same
+		// values. Applied first: a rejected mode must not leave the HWID half saved.
+		if err := rt.mgr.SetDeviceCountMode(*req.CountMode); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+	}
 	set.HWIDEnabled, set.HWIDRequire = req.Enabled, req.Require
 	set.HWIDFallbackLimit, set.HWIDTTLDays = req.FallbackLimit, req.TTLDays
 	if err := rt.mgr.Store().SetHWIDSettings(set); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
+	// Deliberately no user sync: none of these settings reach the proxy config. They
+	// govern who may FETCH a subscription, which is decided per request against the
+	// stored row. Syncing here rewrote config.json and woke every node for a change
+	// none of them can see.
 	writeOK(w)
 }
 
@@ -111,5 +129,6 @@ func hwidSettingsView(set *model.Settings) map[string]any {
 		"require":        set.HWIDRequire,
 		"fallback_limit": set.HWIDFallbackLimit,
 		"ttl_days":       set.HWIDTTLDays,
+		"count_mode":     set.DeviceCountModeOr(),
 	}
 }

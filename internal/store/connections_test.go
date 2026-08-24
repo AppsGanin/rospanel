@@ -131,4 +131,3 @@ func TestActiveDeviceCountForUser(t *testing.T) {
 		t.Fatalf("query plan %q does not use idx_connections_last_seen", plan)
 	}
 }
-

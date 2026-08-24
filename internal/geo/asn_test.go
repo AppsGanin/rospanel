@@ -29,15 +29,15 @@ func TestASNLookup(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	cases := []struct {
-		ip   string
-		asn  uint32
-		org  string
-		ok   bool
+		ip  string
+		asn uint32
+		org string
+		ok  bool
 	}{
 		{"1.0.0.5", 13335, "CLOUDFLARENET", true},
 		{"8.8.8.8", 15169, "GOOGLE", true},
-		{"5.1.2.3", 0, "", false},      // asn 0 range was skipped
-		{"9.9.9.9", 0, "", false},      // unmapped
+		{"5.1.2.3", 0, "", false}, // asn 0 range was skipped
+		{"9.9.9.9", 0, "", false}, // unmapped
 		{"2a00:1450::42", 15169, "GOOGLE", true},
 	}
 	for _, tc := range cases {
