@@ -689,6 +689,9 @@ type Settings struct {
 	HWIDRequire       bool `json:"-"` // refuse clients that send no x-hwid (default on)
 	HWIDFallbackLimit int  `json:"-"` // cap for users whose own device_limit is 0
 	HWIDTTLDays       int  `json:"-"` // forget a device after N days of silence (0 = never)
+	// DeviceCountMode picks which counter enforces DeviceLimit: "auto" (the default),
+	// "hwid" or "both". See CountsIPAsDevice.
+	DeviceCountMode string `json:"-"`
 
 	// Public status page (Settings → General). Off by default: it is the one surface
 	// that answers to strangers, so it exists only when an operator asks for it.

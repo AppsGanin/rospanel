@@ -126,17 +126,45 @@ func (s *Store) ExpiredUsersBefore(cutoff int64) ([]model.User, error) {
 		ORDER BY id ASC`, cutoff)
 }
 
+// deviceCountCTE yields one row, ip_counts, saying whether distinct source addresses
+// still enforce users.device_limit. It mirrors model.Settings.CountsIPAsDevice exactly;
+// the two exist because the decision is needed on both sides of the wire, and any change
+// ipCountsAsDevice answers the same question as the CTE below, for Go-side callers.
+// A read failure keeps the historical answer: enforcing a limit the operator set is the
+// safer side of an unreadable settings row.
+func (s *Store) ipCountsAsDevice() bool {
+	var n int
+	if err := s.db.QueryRow(`WITH device_count AS (` + deviceCountCTE + `)
+		SELECT ip_counts FROM device_count`).Scan(&n); err != nil {
+		return true
+	}
+	return n != 0
+}
+
+// has to land in both (a test pins that they agree).
+const deviceCountCTE = `SELECT CASE
+	WHEN device_count_mode = 'hwid' THEN 0
+	WHEN device_count_mode = 'both' THEN 1
+	WHEN hwid_enabled = 1 AND hwid_require = 1 THEN 0
+	ELSE 1
+	END AS ip_counts FROM settings WHERE id = 1`
+
 // WorkingUsers returns users that should be in the proxy config right now:
 // manually enabled AND not expired AND within their data limit AND within their
 // device limit. enabled is an independent manual flag — expiry/quota/devices
 // never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 	since := now - model.DeviceOnlineWindow
-	return s.queryUsers(`SELECT `+userCols+` FROM users
+	// device_count decides, once, whether source addresses still enforce the limit — the
+	// same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
+	// this query and the status derivation agree without threading a flag through six of
+	// them. See migration 0055 and issue #66.
+	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT `+userCols+` FROM users
 		WHERE enabled = 1
 		  AND (expire_at = 0 OR expire_at > ?)
 		  AND (data_limit = 0 OR used_up + used_down < data_limit)
-		  AND (device_limit = 0 OR (
+		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count) OR (
 		    SELECT COUNT(DISTINCT c.ip) FROM connections c
 		    WHERE c.user_id = users.id AND c.last_seen > ?
 		  ) <= device_limit)
@@ -599,13 +627,22 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 		return
 	}
 	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	// The displayed count stays honest — it is how many addresses were seen — but it only
+	// DRIVES the status while addresses are what enforces the limit. Otherwise a phone
+	// changing network read as "device limit exceeded" (issue #66), and the bot said so,
+	// while the HWID roster it is actually capped by showed one device.
+	countIP := s.ipCountsAsDevice()
 	for i := range users {
 		u := &users[i]
 		active := counts[u.ID]
 		u.ActiveDevices = active
+		limit := u.DeviceLimit
+		if !countIP {
+			limit = 0 // not enforced by this counter
+		}
 		u.Status = deriveStatus(
 			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			active, u.DeviceLimit,
+			active, limit,
 		)
 	}
 }

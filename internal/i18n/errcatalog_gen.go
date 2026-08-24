@@ -38,6 +38,7 @@ var errEN = map[string]string{
 	"err.badCredentials":           "wrong username or password",
 	"err.badCron":                  "invalid schedule (cron): {{err}}",
 	"err.badDNS":                   "invalid DNS address: {{detail}}",
+	"err.badDeviceCountMode":       "device counting mode must be one of: {{allowed}}",
 	"err.badExpiryDate":            "invalid expiry date",
 	"err.badFrom":                  "invalid `from` parameter (expected YYYY-MM-DD)",
 	"err.badGrpcService":           "invalid gRPC service name (Latin letters, digits, . _ -)",

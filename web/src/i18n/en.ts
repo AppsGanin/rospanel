@@ -257,6 +257,7 @@ const en: Dict = {
     apiPathGenFailed: "could not generate the API path",
     attachmentSaveFailed: "could not save the attachment: {{detail}}",
     badCredentials: "wrong username or password",
+    badDeviceCountMode: "device counting mode must be one of: {{allowed}}",
     badDNS: "invalid DNS address: {{detail}}",
     badFrom: "invalid `from` parameter (expected YYYY-MM-DD)",
     badID: "invalid id",
@@ -975,6 +976,11 @@ const en: Dict = {
     hwid: "Device binding (HWID)",
     hwidHint:
       "Clients like Happ and v2RayTun send an install id when they refresh the subscription. A device takes a slot from the user's limit; once the slots are gone, a new device doesn't get the subscription.",
+    countMode: "Count devices by",
+    countModeAuto: "Automatic (recommended)",
+    countModeHWID: "HWID only",
+    countModeBoth: "HWID and address",
+    countModeHint: "A device limit can be counted two ways: by HWID bindings, and by distinct IP addresses seen in the last two minutes. The second is wrong about phones — moving from mobile data to Wi-Fi leaves the old address alive, so one device counts as two. “Automatic” stops counting addresses once HWID is required and every client is identified.",
     hwidRequire: "Require an id",
     hwidRequireHint:
       "A client that sends no HWID (v2rayN, Clash, curl) gets no subscription. That is the point: otherwise the limit is dodged by switching apps. Turn it off if you have users on such clients — they are counted by IP, as before.",

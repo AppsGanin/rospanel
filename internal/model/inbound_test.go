@@ -318,14 +318,14 @@ func TestNormalizeClearsForeignAdvancedFields(t *testing.T) {
 // an opinion about.
 func TestLaneNamesCarryEmoji(t *testing.T) {
 	for _, name := range []string{
-		"🇳🇱 Нидерланды",   // the reported case: flag + Cyrillic
-		"🇩🇪",               // a flag on its own
-		"🇷🇺 РФ 🚀",         // several, mixed with text
-		"VLESS-TCP-TLS",     // the default, still fine
-		"Node ①",            // a number form, category No
-		"👋🏽 hi",            // skin-tone modifier (category Sk)
-		"👨‍👩‍👧 family",        // a ZWJ sequence
-		"⚠️ backup",         // variation selector
+		"🇳🇱 Нидерланды", // the reported case: flag + Cyrillic
+		"🇩🇪",            // a flag on its own
+		"🇷🇺 РФ 🚀",       // several, mixed with text
+		"VLESS-TCP-TLS", // the default, still fine
+		"Node ①",        // a number form, category No
+		"👋🏽 hi",         // skin-tone modifier (category Sk)
+		"👨‍👩‍👧 family",  // a ZWJ sequence
+		"⚠️ backup",     // variation selector
 	} {
 		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,
 			Opts: InboundOpts{Transport: TrTCP, Security: SecTLS}}

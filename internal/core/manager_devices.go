@@ -219,3 +219,25 @@ func deviceLabel(d model.Device) string {
 		return d.HWID
 	}
 }
+
+
+// SetDeviceCountMode picks which counter enforces a user's device limit. Validated here
+// so the panel, /v1 and the MCP tool built from it all refuse the same values — an
+// unknown mode would otherwise fall through to "auto" silently and the operator would
+// believe they had changed something.
+func (m *Manager) SetDeviceCountMode(mode string) error {
+	switch mode {
+	case model.DeviceCountAuto, model.DeviceCountHWID, model.DeviceCountBoth:
+	default:
+		return invalidCode("err.badDeviceCountMode",
+			"режим подсчёта устройств: {{allowed}}",
+			map[string]any{"allowed": "auto, hwid, both"})
+	}
+	if err := m.store.SetDeviceCountMode(mode); err != nil {
+		return err
+	}
+	// The limit is enforced from the generated config, so the change only takes effect
+	// once it is regenerated.
+	m.TriggerReconcile()
+	return nil
+}

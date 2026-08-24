@@ -75,6 +75,45 @@ func cleanDeviceField(s string, max int) string {
 // byte).
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 
+// Device-count modes. The value decides which counter enforces DeviceLimit.
+const (
+	DeviceCountAuto = "auto" // IP counter only while HWID is not authoritative
+	DeviceCountHWID = "hwid" // HWID roster only, always
+	DeviceCountBoth = "both" // both, whichever is stricter — the historical behaviour
+)
+
+// DeviceCountModeOr is the stored mode, or "auto" for a row that predates the column.
+func (s *Settings) DeviceCountModeOr() string {
+	switch s.DeviceCountMode {
+	case DeviceCountHWID, DeviceCountBoth:
+		return s.DeviceCountMode
+	default:
+		return DeviceCountAuto
+	}
+}
+
+// CountsIPAsDevice reports whether distinct source addresses still enforce DeviceLimit.
+//
+// They should not while every served client is identified by hardware id: with HWID
+// binding REQUIRED, a client that sends no id is refused outright, so the address count
+// adds no protection and plenty of false positives — a phone moving from mobile data to
+// Wi-Fi keeps its old address inside the two-minute window and counts as two devices,
+// which drops the user out of the generated config until it ages out (issue #66).
+//
+// With binding on but not required, silent clients are still served and the address count
+// is the only cap they face, so it stays on: turning it off there would hand anyone a way
+// past the limit by switching to a client that says nothing.
+func (s *Settings) CountsIPAsDevice() bool {
+	switch s.DeviceCountMode {
+	case DeviceCountHWID:
+		return false
+	case DeviceCountBoth:
+		return true
+	default: // auto, and any value an older row might hold
+		return !(s.HWIDEnabled && s.HWIDRequire)
+	}
+}
+
 // MaxDevicesPerUser is the DEFAULT cap, applied when no operator limit is set. The roster is written from an unauthenticated subscription
 // fetch carrying a client-supplied hardware id, so "no limit" cannot mean "unbounded" —
 // one token would otherwise insert a row per request forever.
