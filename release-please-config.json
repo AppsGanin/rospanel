@@ -9,6 +9,12 @@
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         "internal/version/version.go"
+      ],
+      "changelog-sections": [
+        {"type": "feat", "section": "Features"},
+        {"type": "fix", "section": "Bug Fixes"},
+        {"type": "perf", "section": "Performance Improvements"},
+        {"type": "refactor", "section": "Refactoring", "hidden": false}
       ]
     }
   }
