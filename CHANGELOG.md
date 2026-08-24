@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.11.0...v2.12.0) (2026-08-24)
+
+
+### Features
+
+* introduce device count enforcement modes with configurable tracking strategies ([70cf4b6](https://github.com/Shu1t3/rospanel-shu1t3/commit/70cf4b6da557aa2617c37d98fb5e035f02ab8556))
+
 ## [2.11.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.10.0...v2.11.0) (2026-08-23)
 
 
