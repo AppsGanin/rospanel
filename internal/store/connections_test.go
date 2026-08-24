@@ -65,16 +65,41 @@ func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
 	}
 	defer st.Close()
 
-	var plan string
-	row := st.db.QueryRow(
-		`EXPLAIN QUERY PLAN
-		 SELECT user_id, COUNT(DISTINCT ip) FROM connections INDEXED BY idx_connections_last_seen
-		 WHERE last_seen > ? GROUP BY user_id`, 0)
-	var id, parent, notused int
-	if err := row.Scan(&id, &parent, &notused, &plan); err != nil {
+	// Explains the query the code actually runs, not a copy of it: the earlier version of
+	// this test spelled out its own SELECT with the INDEXED BY hint written into the test,
+	// so it asserted that a hinted query uses its hint and passed even after the hint was
+	// dropped from the real one.
+	rows, err := st.db.Query(
+		`EXPLAIN QUERY PLAN WITH device_count AS (`+deviceCountCTE+`), `+deviceUseCTEs+`
+		 SELECT user_id, n FROM device_use`, 0, 0, 0)
+	if err != nil {
 		t.Fatalf("explain: %v", err)
 	}
-	if !strings.Contains(plan, "idx_connections_last_seen") {
-		t.Fatalf("query plan %q does not use idx_connections_last_seen", plan)
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var line string
+		if err := rows.Scan(&id, &parent, &notused, &line); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		plan = append(plan, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	// Both halves — each user's newest sighting and the address count itself — have to
+	// reach connections through the window index. The table keys on (user_id, ip) and
+	// keeps a row per address for ConnectionRetentionDays, so a half that misses the index
+	// reads the whole thirty-day table to answer a question about the last two minutes.
+	seeks := 0
+	for _, line := range plan {
+		if strings.Contains(line, "idx_connections_last_seen") && strings.Contains(line, "last_seen>?") {
+			seeks++
+		}
+	}
+	if seeks < 2 {
+		t.Fatalf("device-count plan seeks the window index %d time(s), want 2:\n  %s",
+			seeks, strings.Join(plan, "\n  "))
 	}
 }
