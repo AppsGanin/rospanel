@@ -199,3 +199,65 @@ func TestCountUsersOnlineWindow(t *testing.T) {
 		t.Errorf("online = %d, want 2 (the two-device user counted once, plus the edge)", got.Online)
 	}
 }
+
+// CountUsers keeps its own copy of the device clause, so it has to be pinned against the
+// list beside it in every mode — not just the default. It once honoured neither the
+// count mode nor the grace, which made the dashboard's "active" total disagree with the
+// list rendered next to it by one user per affected account.
+func TestCountUsersAgreesInEveryDeviceMode(t *testing.T) {
+	for _, mode := range []string{model.DeviceCountAuto, model.DeviceCountHWID, model.DeviceCountBoth} {
+		t.Run(mode, func(t *testing.T) {
+			st := dcStore(t)
+			now := time.Now().Unix()
+			// One account well over a one-device limit, stamped from before the grace
+			// expired, so the device dimension is live rather than merely present.
+			dcUser(t, st, "shared",
+				ConnectionHit{IP: "10.0.0.1", SeenAt: now},
+				ConnectionHit{IP: "10.0.0.2", SeenAt: now},
+				ConnectionHit{IP: "10.0.0.3", SeenAt: now},
+			)
+			if err := st.StampDeviceOverLimit(now - model.DeviceLimitGrace - 10); err != nil {
+				t.Fatalf("stamp: %v", err)
+			}
+			// The mode is set AFTER the stamp on purpose. Switching to "hwid" clears
+			// stamps, but only when something next runs the stamp — until then the row
+			// carries an armed stamp under a mode that does not enforce it, and that is
+			// the exact state where a clause missing the mode reads differently from a
+			// clause that has it. Setting the mode first would leave device_over_since
+			// at zero, which makes both readings agree for a reason that has nothing to
+			// do with what this test is for.
+			if err := st.SetDeviceCountMode(mode); err != nil {
+				t.Fatalf("mode: %v", err)
+			}
+			// A second account over the limit but only just — still inside the grace,
+			// so nothing has happened to it yet. This is the half that pins the grace
+			// term rather than the mode term: without it, a clause that cuts the moment
+			// someone goes over reads the same as one that waits.
+			fresh := dcUser(t, st, "fresh",
+				ConnectionHit{IP: "10.9.0.1", SeenAt: now},
+				ConnectionHit{IP: "10.9.0.2", SeenAt: now},
+			)
+			if _, err := st.db.Exec(
+				`UPDATE users SET device_over_since = ? WHERE id = ?`, now, fresh.ID); err != nil {
+				t.Fatalf("arm: %v", err)
+			}
+			got, err := st.CountUsers(now)
+			if err != nil {
+				t.Fatalf("count: %v", err)
+			}
+			users, err := st.ListUsers()
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			var listActive int
+			for _, u := range users {
+				if u.Status == model.StatusActive {
+					listActive++
+				}
+			}
+			if listActive != got.Active {
+				t.Errorf("ListUsers says %d active, CountUsers says %d", listActive, got.Active)
+			}
+		})
+	}
+}
