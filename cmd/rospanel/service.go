@@ -96,6 +96,18 @@ func runServer(dataDir string) {
 		log.Printf("[WARN] reencrypt secrets: %v", err)
 	}
 
+	// Port 80, before anything asks for a certificate. A host that serves a
+	// convincing site on 443 and refuses 80 outright is not a shape the real web has,
+	// and the refusal contradicts the page however good it is.
+	//
+	// Started FIRST so that issuance and every later renewal take the same route: this
+	// listener answers the ACME challenge itself (see server.StartRedirector and
+	// tlsmgr.UseSharedHTTP01). Starting it afterwards would leave the first issuance
+	// going through lego's own server and every renewal through this one — two paths
+	// in production, one of which nothing would exercise until a certificate was
+	// already days from expiry.
+	redirector := startRedirector(st)
+
 	// Obtain the ACME cert before Xray opens :443. Non-fatal: if ACME isn't
 	// reachable yet, a self-signed fallback is written so Xray still comes up, and
 	// tlsLoop keeps retrying ACME and swaps in the real cert once it succeeds.
@@ -302,18 +314,6 @@ func runServer(dataDir string) {
 		}
 	}()
 
-	// Port 80. A host that serves a convincing site on 443 and refuses 80 outright is
-	// not a shape the real web has, and the refusal says so however good the page is.
-	// This also takes over answering ACME challenges — see server.StartRedirector and
-	// tlsmgr.UseSharedHTTP01, because the alternative is two things wanting the same
-	// port and renewal being the one that loses.
-	var redirector *http.Server
-	if set, err := mgr.Settings(); err == nil {
-		redirector = server.StartRedirector(":80", set.Host)
-	} else {
-		log.Printf("http80: not started: %v", err)
-	}
-
 	startupStage("ready — panel is up (see FIRST-RUN CREDENTIALS above on a fresh install)")
 
 	stop := make(chan os.Signal, 1)
@@ -339,6 +339,18 @@ func runServer(dataDir string) {
 		_ = redirector.Shutdown(ctx)
 	}
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// startRedirector brings up the port-80 listener. Reads the host straight from the
+// store because it runs before the manager exists — the host is only a fallback for
+// requests that arrive without a usable Host header, so an unreadable settings row
+// costs nothing worth failing a boot over.
+func startRedirector(st *store.Store) *http.Server {
+	var host string
+	if set, err := st.GetSettings(); err == nil {
+		host = set.Host
+	}
+	return server.StartRedirector(":80", host)
 }
 
 // bootstrapTLS configures host/SNI and resolves a cert via ACME, falling back to
