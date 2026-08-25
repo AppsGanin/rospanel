@@ -16,19 +16,8 @@ import (
 // outbound interface. Returns "" if nothing usable is found.
 func PublicIP() string {
 	client := &http.Client{Timeout: 5 * time.Second}
-	for _, url := range []string{"https://api.ipify.org", "https://ifconfig.me/ip"} {
-		resp, err := client.Get(url)
-		if err != nil {
-			continue
-		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
-		if ip := strings.TrimSpace(string(body)); net.ParseIP(ip) != nil {
-			return ip
-		}
+	if ip := resolveFromURLs(client, []string{"https://api.ipify.org", "https://ifconfig.me/ip"}); ip != "" {
+		return ip
 	}
 	// Fallback: the local address chosen for an outbound connection (no packet is
 	// actually sent for a UDP "dial").
@@ -36,6 +25,28 @@ func PublicIP() string {
 		defer conn.Close()
 		if ua, ok := conn.LocalAddr().(*net.UDPAddr); ok && !ua.IP.IsLoopback() {
 			return ua.IP.String()
+		}
+	}
+	return ""
+}
+
+func resolveFromURLs(client *http.Client, urls []string) string {
+	for _, url := range urls {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			continue
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		_ = resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		if ip := strings.TrimSpace(string(body)); net.ParseIP(ip) != nil {
+			return ip
 		}
 	}
 	return ""

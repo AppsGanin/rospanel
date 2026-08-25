@@ -222,21 +222,24 @@ func runServer(dataDir string) {
 		}
 	}()
 
+	srvCtx, cancelSrv := context.WithCancel(context.Background())
+	defer cancelSrv()
+
 	// Daily TLS check: renews ACME certs near expiry and reloads Xray on change.
-	go tlsLoop(mgr)
+	go tlsLoop(srvCtx, mgr)
 	// Periodic traffic accounting + quota/expiry enforcement.
-	go statsPollLoop(mgr)
+	go statsPollLoop(srvCtx, mgr)
 	// Writes the buffered access-log sightings. RecordAccess only buffers, so this
 	// is what actually persists who connected from where.
-	go accessFlushLoop(mgr)
+	go accessFlushLoop(srvCtx, mgr)
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
-	go paymentPollLoop(mgr)
+	go paymentPollLoop(srvCtx, mgr)
 	// Audit-log + connection-row retention: drops rows past their windows.
-	go retentionLoop(mgr)
+	go retentionLoop(srvCtx, mgr)
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot
 	// still gets automatic backups; idles until a cron is set in Settings.
-	go autobackup.New(mgr, st, dataDir).Run(context.Background())
+	go autobackup.New(mgr, st, dataDir).Run(srvCtx)
 	// All three bots reach Telegram through the same egress, and in the WARP / Opera
 	// modes that egress is something this very startup brought up moments ago — Xray
 	// needs a couple of seconds past "process started" before its inbound accepts.
@@ -245,22 +248,21 @@ func runServer(dataDir string) {
 	// shared by all three, off the startup path so the panel still serves meanwhile
 	// (it returns immediately for the direct and custom routes).
 	go func() {
-		ctx := context.Background()
-		mgr.AwaitTelegramEgress(ctx)
+		mgr.AwaitTelegramEgress(srvCtx)
 		// Telegram admin bot: view/add/remove users + scheduled backups. It idles until
 		// enabled with a token in Settings → Telegram, re-reading config each cycle.
-		go telegram.New(mgr, st, dataDir).Run(ctx)
+		go telegram.New(mgr, st, dataDir).Run(srvCtx)
 		// Telegram user bot: public self-service for VPN clients (registration,
 		// subscription, stats). Idles until enabled with its own token in Settings.
-		go telegram.NewUser(mgr, st).Run(ctx)
+		go telegram.NewUser(mgr, st).Run(srvCtx)
 		// Telegram support bot: relays messages between a user's private chat and a
 		// per-user topic in the operator's forum supergroup. Idles until enabled with
 		// its own token and a group in Settings → Telegram.
-		go telegram.NewSupport(mgr, st).Run(ctx)
+		go telegram.NewSupport(mgr, st).Run(srvCtx)
 	}()
 	// Broadcast delivery. Polls the store rather than holding a queue, so a restart
 	// mid-run resumes from the remaining recipients instead of losing or repeating.
-	go telegram.NewBroadcast(st, dataDir).Run(context.Background())
+	go telegram.NewBroadcast(st, dataDir).Run(srvCtx)
 
 	handler, err := server.New(mgr, secret, set.DecoyTemplate, dataDir)
 	if err != nil {
@@ -309,6 +311,9 @@ func runServer(dataDir string) {
 	<-stop
 	log.Print("shutting down")
 
+	// Cancel background loops first so they stop ticking and executing DB queries
+	cancelSrv()
+
 	// Stop Xray FIRST. Draining HTTP can take the full timeout below, and until the
 	// supervisor is marked closed an Xray exit still reads as a crash — which is
 	// exactly what happens under systemd's default KillMode, where Xray receives its
@@ -324,6 +329,10 @@ func runServer(dataDir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
+
+	// Flush any buffered access sightings and abuse sightings before the store is closed
+	mgr.FlushAccess()
+	mgr.FlushAbuse()
 }
 
 // bootstrapTLS configures host/SNI and resolves a cert via ACME, falling back to
@@ -386,16 +395,21 @@ func safeTick(name string, fn func()) {
 }
 
 // statsPollLoop accounts per-user traffic and enforces quotas every minute.
-func statsPollLoop(mgr *core.Manager) {
+func statsPollLoop(ctx context.Context, mgr *core.Manager) {
 	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
-	for range t.C {
-		safeTick("stats poll", func() {
-			if err := mgr.PollStats(); err != nil {
-				// Expected when Xray isn't running (e.g. local dev) — keep quiet-ish.
-				log.Printf("stats poll: %v", err)
-			}
-		})
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			safeTick("stats poll", func() {
+				if err := mgr.PollStats(); err != nil {
+					// Expected when Xray isn't running (e.g. local dev) — keep quiet-ish.
+					log.Printf("stats poll: %v", err)
+				}
+			})
+		}
 	}
 }
 
@@ -406,31 +420,41 @@ func statsPollLoop(mgr *core.Manager) {
 const accessFlushInterval = 5 * time.Second
 
 // accessFlushLoop persists buffered access-log sightings.
-func accessFlushLoop(mgr *core.Manager) {
+func accessFlushLoop(ctx context.Context, mgr *core.Manager) {
 	t := time.NewTicker(accessFlushInterval)
 	defer t.Stop()
-	for range t.C {
-		safeTick("access flush", mgr.FlushAccess)
-		// Same cadence and the same reason: recordAbuse only buffers. Separate call
-		// rather than folded into FlushAccess so a failure in one does not cost the
-		// other its batch — they write different tables for different purposes.
-		safeTick("abuse flush", mgr.FlushAbuse)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			safeTick("access flush", mgr.FlushAccess)
+			// Same cadence and the same reason: recordAbuse only buffers. Separate call
+			// rather than folded into FlushAccess so a failure in one does not cost the
+			// other its batch — they write different tables for different purposes.
+			safeTick("abuse flush", mgr.FlushAbuse)
+		}
 	}
 }
 
 // paymentPollLoop reconciles pending provider orders (webhook fallback) every 25s.
-func paymentPollLoop(mgr *core.Manager) {
+func paymentPollLoop(ctx context.Context, mgr *core.Manager) {
 	t := time.NewTicker(25 * time.Second)
 	defer t.Stop()
-	for range t.C {
-		safeTick("payment poll", mgr.PollPendingPayments)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			safeTick("payment poll", mgr.PollPendingPayments)
+		}
 	}
 }
 
 // retentionLoop drops audit rows, stale connection rows and old traffic history
 // past their retention windows. Every cutoff moves by the day, so a slow cadence is
 // plenty — this only keeps the tables from growing forever.
-func retentionLoop(mgr *core.Manager) {
+func retentionLoop(ctx context.Context, mgr *core.Manager) {
 	sweep := func() {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
@@ -448,8 +472,13 @@ func retentionLoop(mgr *core.Manager) {
 	sweep() // sweep once at boot, then on the timer
 	t := time.NewTicker(6 * time.Hour)
 	defer t.Stop()
-	for range t.C {
-		safeTick("retention sweep", sweep)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			safeTick("retention sweep", sweep)
+		}
 	}
 }
 
@@ -457,7 +486,7 @@ func retentionLoop(mgr *core.Manager) {
 // Xray whenever the cert changes. It retries quickly while there's no usable
 // cert (e.g. ACME wasn't reachable at boot) and settles into a slow renew
 // cadence once one is in place.
-func tlsLoop(mgr *core.Manager) {
+func tlsLoop(ctx context.Context, mgr *core.Manager) {
 	for {
 		safeTick("tls", func() {
 			changed, err := mgr.RenewTLSIfNeeded()
@@ -480,10 +509,14 @@ func tlsLoop(mgr *core.Manager) {
 				}
 			}
 		})
+		delay := 3 * time.Minute // keep trying to get the first cert
 		if mgr.HasValidCert() {
-			time.Sleep(6 * time.Hour)
-		} else {
-			time.Sleep(3 * time.Minute) // keep trying to get the first cert
+			delay = 6 * time.Hour
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
 		}
 	}
 }
