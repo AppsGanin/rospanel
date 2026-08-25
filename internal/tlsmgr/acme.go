@@ -19,6 +19,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
+	"github.com/go-acme/lego/v4/challenge"
 	"github.com/go-acme/lego/v4/challenge/http01"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/registration"
@@ -110,7 +111,17 @@ func ObtainACME(target, email, certPath, keyPath, acmeDir, provider, eabKID, eab
 	if err != nil {
 		return err
 	}
-	if err := client.Challenge.SetHTTP01Provider(http01.NewProviderServer("", "80")); err != nil {
+	// Two ways to answer HTTP-01, and the choice is not cosmetic. When something in
+	// this process already holds port 80 (the redirector, so the panel does not look
+	// like a host that serves TLS and nothing else), lego must answer through it —
+	// standing up a second server on the same port would fail to bind, and the thing
+	// that breaks is renewal, weeks later, at expiry. With port 80 free, lego binds it
+	// itself for the few seconds a challenge takes, exactly as before.
+	var challenger challenge.Provider = sharedProvider{}
+	if !SharedHTTP01() {
+		challenger = http01.NewProviderServer("", "80")
+	}
+	if err := client.Challenge.SetHTTP01Provider(challenger); err != nil {
 		return err
 	}
 

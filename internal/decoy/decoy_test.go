@@ -47,8 +47,8 @@ func TestAssetsCarryContentLengthAndValidators(t *testing.T) {
 			t.Errorf("missing %s", hdr)
 		}
 	}
-	if got := rec.Header().Get("Server"); got != serverName {
-		t.Errorf("Server = %q, want %q", got, serverName)
+	if got := rec.Header().Get("Server"); got != ServerName {
+		t.Errorf("Server = %q, want %q", got, ServerName)
 	}
 }
 
@@ -253,7 +253,7 @@ func TestEveryResponseDeclaresItsLength(t *testing.T) {
 			} else if p.method != http.MethodHead && int(resp.ContentLength) != len(body) {
 				t.Errorf("%s: Content-Length %d but %d bytes of body", what, resp.ContentLength, len(body))
 			}
-			if resp.Header.Get("Server") != serverName {
+			if resp.Header.Get("Server") != ServerName {
 				t.Errorf("%s: Server = %q", what, resp.Header.Get("Server"))
 			}
 		}
