@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.1...v2.13.2) (2026-08-25)
+
+
+### Performance Improvements
+
+* add comprehensive test suite across internal packages and implement graceful stop for sysstat sampler ([b8abf5d](https://github.com/Shu1t3/rospanel-shu1t3/commit/b8abf5d409bce83d588667753da641b97b2fcd2d))
+
 ## [2.13.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.0...v2.13.1) (2026-08-24)
 
 
