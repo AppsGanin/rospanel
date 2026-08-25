@@ -36,7 +36,6 @@ import {
   gbToBytes,
   isOnline,
   localDay,
-  deviceLimitOptions,
   quotaOptions,
   speedLimitOptions,
   ranges,
@@ -66,6 +65,7 @@ import {
   ShowMore,
   Switch,
   TextInput,
+  cn,
   useConfirm,
   useCopy,
 } from './ui'
@@ -189,6 +189,77 @@ function EditableName({ user, onChanged }: { user: User; onChanged: () => void }
         <IconClose size={18} />
       </button>
     </span>
+  )
+}
+
+function DeviceLimitControl({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (val: string) => void
+}) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
+
+  const commit = (nextVal?: string) => {
+    const raw = nextVal !== undefined ? nextVal : draft
+    const n = parseInt(raw, 10)
+    const clamped = isNaN(n) ? 0 : Math.min(50, Math.max(0, n))
+    const str = String(clamped)
+    setDraft(str)
+    if (str !== value) {
+      onChange(str)
+    }
+  }
+
+  const presets = ['0', '1', '2', '3', '5', '10', '20', '50']
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <TextInput
+        label={t('userDetail.deviceLimit')}
+        type="number"
+        value={draft}
+        onChange={setDraft}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit()
+          }
+        }}
+        onBlur={() => commit()}
+        placeholder="0"
+      />
+      <div className="flex flex-wrap items-center gap-1.5">
+        {presets.map((p) => {
+          const isSelected =
+            p === draft || (p === '0' && (draft === '' || draft === '0'))
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => commit(p)}
+              className={cn(
+                'rounded px-2 py-0.5 text-xs font-medium transition cursor-pointer',
+                isSelected
+                  ? 'bg-brand text-white shadow-xs'
+                  : 'bg-gray-100 text-ink-muted hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700',
+              )}
+            >
+              {p === '0' ? i18n.t('common.unlimited') : p}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-xs text-ink-muted">
+        {t('bill.deviceLimitHint')}
+      </p>
+    </div>
   )
 }
 
@@ -336,19 +407,6 @@ export function UserDetail({
       : [...quotaOptions(), { value: limitGb, label: fmtBytes(user.data_limit) }]
     : quotaOptions()
 
-  const deviceData = deviceLimitOptions().some((o) => o.value === deviceLimit)
-    ? deviceLimitOptions()
-    : [
-        ...deviceLimitOptions(),
-        {
-          value: deviceLimit,
-          label:
-            Number(deviceLimit) > 0
-              ? i18n.t('devices.count', { count: Number(deviceLimit) })
-              : i18n.t('devices.unlimited'),
-        },
-      ]
-
   const saveLimits = (dl: number, ea: number, dev: number, speed?: number) =>
     setUserLimits(user!.id, dl, ea, dev, speed).then(onChanged).catch(fail)
 
@@ -390,13 +448,20 @@ export function UserDetail({
   // confirmChange gates an edit in the management block. These controls apply
   // to a live subscription the moment they're touched, so a misclick would
   // otherwise silently change what the user is paying for.
-  const confirmChange = async (field: string, from: string, to: string, apply: () => void) => {
+  const confirmChange = async (
+    field: string,
+    from: string,
+    to: string,
+    apply: () => void,
+    onCancel?: () => void,
+  ) => {
     const ok = await confirm({
       title: t('userDetail.changeTitle'),
       body: t('userDetail.changeBody', { field, name: user!.name, from, to }),
       confirmLabel: t('common.edit'),
     })
     if (ok) apply()
+    else if (onCancel) onCancel()
   }
 
   // Unbinding frees a slot immediately — the device can rebind on its next fetch, so
@@ -638,25 +703,31 @@ export function UserDetail({
                   )
                 }
               />
-              <Select
-                label={t('userDetail.deviceLimit')}
-                data={deviceData}
+              <DeviceLimitControl
                 value={deviceLimit}
-                onChange={(v) =>
+                onChange={(v) => {
+                  const fromLabel =
+                    Number(deviceLimit) > 0
+                      ? t('devices.count', { count: Number(deviceLimit) })
+                      : t('devices.unlimited')
+                  const toLabel =
+                    Number(v) > 0
+                      ? t('devices.count', { count: Number(v) })
+                      : t('devices.unlimited')
                   confirmChange(
                     t('userDetail.deviceLimit'),
-                    optLabel(deviceData, deviceLimit),
-                    optLabel(deviceData, v),
+                    fromLabel,
+                    toLabel,
                     () => {
                       setDeviceLimit(v)
                       saveLimits(user.data_limit, user.expire_at, Number(v))
                     },
+                    () => {
+                      setDeviceLimit((prev) => prev)
+                    },
                   )
-                }
+                }}
               />
-              <p className="-mt-1 text-xs text-ink-muted">
-                {t('userDetail.deviceLimitHint')}
-              </p>
               <Select
                 label={t('userDetail.speedLimit')}
                 data={speedData}
