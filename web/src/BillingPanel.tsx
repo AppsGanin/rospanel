@@ -386,6 +386,8 @@ function PlanForm({
           <TextInput
             label={t("userDetail.deviceLimit")}
             type="number"
+            min={0}
+            max={MAX_PLAN_DEVICES}
             value={String(plan.device_limit)}
             onChange={(v) =>
               patch({

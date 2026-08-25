@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type KeyboardEvent,
+  type FocusEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -707,8 +709,12 @@ export function TextInput({
   label,
   value,
   onChange,
+  onKeyDown,
+  onBlur,
   placeholder,
   type = "text",
+  min,
+  max,
   autoFocus,
   mono,
   disabled,
@@ -717,8 +723,12 @@ export function TextInput({
   label?: string;
   value: string;
   onChange: (v: string) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onBlur?: (e: FocusEvent<HTMLInputElement>) => void;
   placeholder?: string;
   type?: string;
+  min?: number | string;
+  max?: number | string;
   autoFocus?: boolean;
   mono?: boolean;
   disabled?: boolean;
@@ -735,10 +745,14 @@ export function TextInput({
         )}
         value={value}
         type={type}
+        min={min}
+        max={max}
         placeholder={placeholder}
         autoFocus={autoFocus}
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
       />
     </Field>
   );

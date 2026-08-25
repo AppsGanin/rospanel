@@ -224,6 +224,8 @@ function DeviceLimitControl({
       <TextInput
         label={t('userDetail.deviceLimit')}
         type="number"
+        min={0}
+        max={50}
         value={draft}
         onChange={setDraft}
         onKeyDown={(e) => {
