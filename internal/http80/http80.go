@@ -1,4 +1,7 @@
-package server
+// Package http80 answers plain HTTP on port 80 for the panel and for every node, so
+// neither looks like a host that serves TLS and nothing else. Its own package because
+// both need it and a node has no business importing the panel's HTTP layer to get it.
+package http80
 
 import (
 	"log"
@@ -11,7 +14,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 )
 
-// RedirectHandler answers plain HTTP on port 80: ACME challenges are served, and
+// Handler answers plain HTTP on port 80: ACME challenges are served, and
 // everything else is sent to HTTPS.
 //
 // The point is what port 80 looks like when nothing is there. A host that answers
@@ -38,7 +41,7 @@ import (
 // Read per request rather than captured once: an operator who points a new domain at
 // the box changes it without restarting anything, and a redirect still naming the old
 // one is the same contradiction this exists to remove.
-func RedirectHandler(host func() string) http.Handler {
+func Handler(host func() string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Before anything else: a CA validating a challenge will not follow a redirect
 		// to 443, so this has to win over the redirect below.
@@ -71,7 +74,7 @@ func RedirectHandler(host func() string) http.Handler {
 	})
 }
 
-// StartRedirector serves RedirectHandler on addr (normally ":80") and tells tlsmgr
+// Start serves Handler on addr (normally ":80") and tells tlsmgr
 // that ACME challenges now go through it.
 //
 // Best-effort by design. Port 80 may be held by something the operator runs, and in
@@ -79,7 +82,7 @@ func RedirectHandler(host func() string) http.Handler {
 // seconds a challenge takes, exactly as it did before this existed. Failing to bind
 // must never be fatal — a cosmetic improvement to how the host looks is not worth a
 // panel that will not start.
-func StartRedirector(addr string, host func() string) *http.Server {
+func Start(addr string, host func() string) *http.Server {
 	if strings.TrimSpace(addr) == "" {
 		addr = ":80"
 	}
@@ -89,7 +92,7 @@ func StartRedirector(addr string, host func() string) *http.Server {
 		return nil
 	}
 	srv := &http.Server{
-		Handler:           RedirectHandler(host),
+		Handler:           Handler(host),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
