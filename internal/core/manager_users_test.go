@@ -74,4 +74,3 @@ func TestSetUserLimitsDeviceBounds(t *testing.T) {
 		t.Fatal("device_limit > MaxDevicesPerUser must be rejected")
 	}
 }
-

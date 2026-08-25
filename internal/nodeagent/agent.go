@@ -27,6 +27,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/hop"
+	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -141,6 +142,10 @@ type Agent struct {
 	operaCountry string
 	operaPort    int
 
+	// Port 80. A node runs the same masquerade as the panel — a decoy behind Xray on
+	// 443 — so it has the same tell if 80 is closed, and the same reason to answer it.
+	redirectSrv *http.Server
+
 	// decoy server on the loopback fallback dest. The listener stays up for the
 	// agent's life; decoyHandler is swapped when the template changes.
 	decoySrv     *http.Server
@@ -232,6 +237,22 @@ func Run(ctx context.Context, dataDir string) error {
 		a.sup.Suspend()
 		slog.Warn("node: switched off by the panel — staying down until it says otherwise")
 	}
+
+	// Port 80, before anything asks for a certificate. This listener answers the ACME
+	// challenge itself, so issuance and every later renewal take the same route — see
+	// http80.Start and tlsmgr.UseSharedHTTP01. Starting it after the first issuance
+	// would leave two paths, and the one nothing exercises is renewal.
+	//
+	// The host comes from the panel and is not known on a first boot; until it arrives
+	// the redirect echoes what was asked for, which is all there is to go on.
+	a.redirectSrv = http80.Start(":80", func() string {
+		m, ok := a.currentMeta()
+		if !ok {
+			return ""
+		}
+		return m.Host
+	})
+
 	// Re-apply the last known-good config on boot so the node serves immediately,
 	// even before the first successful sync (or if the panel is down).
 	if a.state.LastConfig != nil {
@@ -1192,6 +1213,9 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 func (a *Agent) shutdown() {
 	a.sup.Stop()
 	a.operaSup.Stop()
+	if a.redirectSrv != nil {
+		_ = a.redirectSrv.Close()
+	}
 	a.decoyMu.Lock()
 	if a.decoySrv != nil {
 		_ = a.decoySrv.Close()

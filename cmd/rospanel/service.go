@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
@@ -95,6 +97,18 @@ func runServer(dataDir string) {
 	if err := st.ReencryptSensitiveFields(); err != nil {
 		log.Printf("[WARN] reencrypt secrets: %v", err)
 	}
+
+	// Port 80, before anything asks for a certificate. A host that serves a
+	// convincing site on 443 and refuses 80 outright is not a shape the real web has,
+	// and the refusal contradicts the page however good it is.
+	//
+	// Started FIRST so that issuance and every later renewal take the same route: this
+	// listener answers the ACME challenge itself (see http80.Start and
+	// tlsmgr.UseSharedHTTP01). Starting it afterwards would leave the first issuance
+	// going through lego's own server and every renewal through this one — two paths
+	// in production, one of which nothing would exercise until a certificate was
+	// already days from expiry.
+	redirector := startRedirector(st)
 
 	// Obtain the ACME cert before Xray opens :443. Non-fatal: if ACME isn't
 	// reachable yet, a self-signed fallback is written so Xray still comes up, and
@@ -329,10 +343,41 @@ func runServer(dataDir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
+	if redirector != nil {
+		_ = redirector.Close()
+	}
 
 	// Flush any buffered access sightings and abuse sightings before the store is closed
 	mgr.FlushAccess()
 	mgr.FlushAbuse()
+}
+
+// startRedirector brings up the port-80 listener. Reads the host straight from the
+// store because it runs before the manager exists — the host is only a fallback for
+// requests that arrive without a usable Host header, so an unreadable settings row
+// costs nothing worth failing a boot over.
+func startRedirector(st *store.Store) *http.Server {
+	// Cached for a minute: port 80 is scanned constantly and the store is the single
+	// connection every panel request queues behind. A read per request would stall the
+	// panel while a bot scanned; a minute of staleness after a domain change does not.
+	var (
+		mu     sync.Mutex
+		cached string
+		readAt time.Time
+	)
+	host := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if !readAt.IsZero() && time.Since(readAt) < time.Minute {
+			return cached
+		}
+		if set, err := st.GetSettings(); err == nil {
+			cached = set.Host
+		}
+		readAt = time.Now()
+		return cached
+	}
+	return http80.Start(":80", host)
 }
 
 // bootstrapTLS configures host/SNI and resolves a cert via ACME, falling back to

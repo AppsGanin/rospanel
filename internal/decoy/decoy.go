@@ -29,7 +29,9 @@ import (
 //go:embed all:templates
 var templatesFS embed.FS
 
-// serverName is the Server header the decoy presents.
+// ServerName is the Server header the decoy presents. Exported because the port-80
+// redirector has to present the same one — a host that answers 443 as Caddy and 80 as
+// something else has told a fingerprinter more than either answer alone.
 //
 // It is deliberately NOT "nginx". Xray terminates TLS for :443 and falls back to
 // this handler, so everything an outside prober fingerprints at the TLS layer —
@@ -38,7 +40,7 @@ var templatesFS embed.FS
 // one JA4S lookup to spot. Caddy is Go, is a mainstream choice for exactly this
 // kind of static site, and matches the behaviour implemented below, so the banner
 // and the machine underneath tell the same story.
-const serverName = "Caddy"
+const ServerName = "Caddy"
 
 // Available returns the list of bundled template slugs.
 func Available() ([]string, error) {
@@ -173,7 +175,7 @@ func stampHTML(body []byte, mark string) []byte {
 // validators, unknown ones get the template's not-found behaviour, and methods a
 // file server doesn't implement get a 405.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Server", serverName)
+	w.Header().Set("Server", ServerName)
 
 	// A maintenance decoy is down for everything, method included. The config it
 	// imitates (nginx `return 503` for the whole server) answers every request the
