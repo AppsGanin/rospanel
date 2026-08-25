@@ -24,6 +24,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
@@ -368,7 +369,7 @@ func startRedirector(st *store.Store) *http.Server {
 		readAt = time.Now()
 		return cached
 	}
-	return server.StartRedirector(":80", host)
+	return http80.Start(":80", host)
 }
 
 // bootstrapTLS configures host/SNI and resolves a cert via ACME, falling back to

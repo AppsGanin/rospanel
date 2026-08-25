@@ -1,4 +1,4 @@
-package server
+package http80
 
 import (
 	"net/http"
@@ -13,7 +13,7 @@ import (
 // Port 80 exists so the host does not look like one that serves TLS and nothing
 // else. That only holds if it answers the way the thing on 443 claims to be.
 func TestRedirectImitatesTheDecoysServer(t *testing.T) {
-	h := RedirectHandler(func() string { return "vpn.example" })
+	h := Handler(func() string { return "vpn.example" })
 	for _, tc := range []struct {
 		name, host, target, want string
 	}{
@@ -58,7 +58,7 @@ func TestRedirectImitatesTheDecoysServer(t *testing.T) {
 func TestChallengeIsServedNotRedirected(t *testing.T) {
 	const token, keyAuth = "tok-123", "tok-123.thumbprint"
 	tlsmgr.PresentForTest(token, keyAuth)
-	h := RedirectHandler(func() string { return "panel.example" })
+	h := Handler(func() string { return "panel.example" })
 
 	r := httptest.NewRequest(http.MethodGet, "/.well-known/acme-challenge/"+token, nil)
 	r.Host = "vpn.example"
@@ -88,7 +88,7 @@ func TestHoldingPortEightyRedirectsACMEThroughIt(t *testing.T) {
 	if tlsmgr.SharedHTTP01() {
 		t.Fatal("shared HTTP-01 was already on before anything took port 80")
 	}
-	srv := StartRedirector("127.0.0.1:0", func() string { return "panel.example" })
+	srv := Start("127.0.0.1:0", func() string { return "panel.example" })
 	if srv == nil {
 		t.Skip("could not bind a port in this environment")
 	}
@@ -113,7 +113,7 @@ func TestHoldingPortEightyRedirectsACMEThroughIt(t *testing.T) {
 // same contradiction between ports this whole listener exists to remove.
 func TestRedirectFollowsAHostChange(t *testing.T) {
 	current := "old.example"
-	h := RedirectHandler(func() string { return current })
+	h := Handler(func() string { return current })
 
 	ask := func() string {
 		r := httptest.NewRequest(http.MethodGet, "/p", nil)
