@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.14.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.5...v2.14.0) (2026-08-25)
+
+
+### Features
+
+* implement admin session management with active session list and revocation capabilities ([345566f](https://github.com/Shu1t3/rospanel-shu1t3/commit/345566ffe6ec3bdd42f5753797644ed4eb7f9d2e))
+
+
+### Refactoring
+
+* update role selector components to use data prop instead of options ([074dafe](https://github.com/Shu1t3/rospanel-shu1t3/commit/074dafe2656970623704398336d167a283daf5c2))
+
 ## [2.13.5](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.4...v2.13.5) (2026-08-25)
 
 
