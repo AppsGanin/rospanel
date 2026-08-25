@@ -25,9 +25,20 @@ import (
 // where nginx would use 301. Claiming to be Caddy on 443 and redirecting like nginx
 // on 80 is the same contradiction one layer down.
 //
-// fallbackHost is used when a request arrives without a usable Host header, so the
-// redirect still points somewhere real.
-func RedirectHandler(fallbackHost string) http.Handler {
+// host is the one name this machine answers to. The redirect goes there and not to
+// whatever Host the request carried: 443 already refuses an SNI it cannot serve, so a
+// port 80 that echoes any hostname back contradicts the port beside it and marks this
+// as a catch-all redirector rather than a configured site. A single-site server
+// sending everything to its own name is entirely ordinary. It also means no one can
+// make this panel emit a Location pointing at a host of their choosing.
+//
+// Empty host (a first boot before the wizard has run) falls back to echoing, because
+// there is nothing else to point at.
+//
+// Read per request rather than captured once: an operator who points a new domain at
+// the box changes it without restarting anything, and a redirect still naming the old
+// one is the same contradiction this exists to remove.
+func RedirectHandler(host func() string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Before anything else: a CA validating a challenge will not follow a redirect
 		// to 443, so this has to win over the redirect below.
@@ -36,22 +47,24 @@ func RedirectHandler(fallbackHost string) http.Handler {
 		}
 		w.Header().Set("Server", decoy.ServerName)
 
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
+		var target string
+		if host != nil {
+			target = host()
 		}
-		if host == "" {
-			host = fallbackHost
+		if target == "" {
+			target = r.Host
 		}
-		if host == "" {
+		if h, _, err := net.SplitHostPort(target); err == nil {
+			target = h
+		}
+		if target == "" {
 			// Nothing to redirect to. A server with no name for itself answers the
 			// request rather than emitting a Location it cannot fill in.
 			http.Error(w, "400 Bad Request", http.StatusBadRequest)
 			return
 		}
 		// RequestURI, not Path: the query belongs to the redirect too.
-		target := "https://" + host + r.URL.RequestURI()
-		w.Header().Set("Location", target)
+		w.Header().Set("Location", "https://"+target+r.URL.RequestURI())
 		// No body. http.Redirect would write a short HTML page for a GET, which the
 		// server this imitates does not.
 		w.WriteHeader(http.StatusPermanentRedirect)
@@ -66,7 +79,7 @@ func RedirectHandler(fallbackHost string) http.Handler {
 // seconds a challenge takes, exactly as it did before this existed. Failing to bind
 // must never be fatal — a cosmetic improvement to how the host looks is not worth a
 // panel that will not start.
-func StartRedirector(addr, fallbackHost string) *http.Server {
+func StartRedirector(addr string, host func() string) *http.Server {
 	if strings.TrimSpace(addr) == "" {
 		addr = ":80"
 	}
@@ -76,7 +89,7 @@ func StartRedirector(addr, fallbackHost string) *http.Server {
 		return nil
 	}
 	srv := &http.Server{
-		Handler:           RedirectHandler(fallbackHost),
+		Handler:           RedirectHandler(host),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

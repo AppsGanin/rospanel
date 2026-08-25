@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
@@ -12,13 +13,18 @@ import (
 // Port 80 exists so the host does not look like one that serves TLS and nothing
 // else. That only holds if it answers the way the thing on 443 claims to be.
 func TestRedirectImitatesTheDecoysServer(t *testing.T) {
-	h := RedirectHandler("panel.example")
+	h := RedirectHandler(func() string { return "vpn.example" })
 	for _, tc := range []struct {
 		name, host, target, want string
 	}{
 		{"plain path", "vpn.example", "/", "https://vpn.example/"},
 		{"query is carried", "vpn.example", "/a/b?c=1&d=2", "https://vpn.example/a/b?c=1&d=2"},
 		{"port is stripped", "vpn.example:80", "/x", "https://vpn.example/x"},
+		// Whatever Host is asked for, the answer names this machine. 443 refuses an SNI
+		// it cannot serve; a port 80 that echoed the asked-for name back would both
+		// contradict that and let anyone choose where this panel points people.
+		{"a foreign Host is not echoed", "evil.example", "/x", "https://vpn.example/x"},
+		{"no scheme smuggling", "vpn.example", "//evil.example/", "https://vpn.example//evil.example/"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
@@ -52,7 +58,7 @@ func TestRedirectImitatesTheDecoysServer(t *testing.T) {
 func TestChallengeIsServedNotRedirected(t *testing.T) {
 	const token, keyAuth = "tok-123", "tok-123.thumbprint"
 	tlsmgr.PresentForTest(token, keyAuth)
-	h := RedirectHandler("panel.example")
+	h := RedirectHandler(func() string { return "panel.example" })
 
 	r := httptest.NewRequest(http.MethodGet, "/.well-known/acme-challenge/"+token, nil)
 	r.Host = "vpn.example"
@@ -82,7 +88,7 @@ func TestHoldingPortEightyRedirectsACMEThroughIt(t *testing.T) {
 	if tlsmgr.SharedHTTP01() {
 		t.Fatal("shared HTTP-01 was already on before anything took port 80")
 	}
-	srv := StartRedirector("127.0.0.1:0", "panel.example")
+	srv := StartRedirector("127.0.0.1:0", func() string { return "panel.example" })
 	if srv == nil {
 		t.Skip("could not bind a port in this environment")
 	}
@@ -90,8 +96,37 @@ func TestHoldingPortEightyRedirectsACMEThroughIt(t *testing.T) {
 		t.Error("port 80 is held but ACME would still try to bind it itself")
 	}
 	_ = srv.Close()
-	// Serve returns once closed; give the goroutine its turn to clear the flag.
-	for i := 0; i < 100 && tlsmgr.SharedHTTP01(); i++ {
-		//nolint:staticcheck // a short spin is cheaper here than plumbing a channel out
+	// Serve returns once closed, and the goroutine clears the flag after it does — so
+	// ACME goes back to binding the port itself rather than answering into a listener
+	// that is gone.
+	deadline := time.Now().Add(2 * time.Second)
+	for tlsmgr.SharedHTTP01() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if tlsmgr.SharedHTTP01() {
+		t.Error("the listener is gone but ACME still thinks challenges are served through it")
+	}
+}
+
+// The operator can point a new domain at the box without restarting anything, and the
+// redirect has to follow. Captured once, port 80 would keep naming the old host — the
+// same contradiction between ports this whole listener exists to remove.
+func TestRedirectFollowsAHostChange(t *testing.T) {
+	current := "old.example"
+	h := RedirectHandler(func() string { return current })
+
+	ask := func() string {
+		r := httptest.NewRequest(http.MethodGet, "/p", nil)
+		r.Host = "old.example"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Header().Get("Location")
+	}
+	if got, want := ask(), "https://old.example/p"; got != want {
+		t.Fatalf("Location %q, want %q", got, want)
+	}
+	current = "new.example"
+	if got, want := ask(), "https://new.example/p"; got != want {
+		t.Errorf("Location %q after the host changed, want %q", got, want)
 	}
 }
