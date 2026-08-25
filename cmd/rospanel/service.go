@@ -302,6 +302,18 @@ func runServer(dataDir string) {
 		}
 	}()
 
+	// Port 80. A host that serves a convincing site on 443 and refuses 80 outright is
+	// not a shape the real web has, and the refusal says so however good the page is.
+	// This also takes over answering ACME challenges — see server.StartRedirector and
+	// tlsmgr.UseSharedHTTP01, because the alternative is two things wanting the same
+	// port and renewal being the one that loses.
+	var redirector *http.Server
+	if set, err := mgr.Settings(); err == nil {
+		redirector = server.StartRedirector(":80", set.Host)
+	} else {
+		log.Printf("http80: not started: %v", err)
+	}
+
 	startupStage("ready — panel is up (see FIRST-RUN CREDENTIALS above on a fresh install)")
 
 	stop := make(chan os.Signal, 1)
@@ -323,6 +335,9 @@ func runServer(dataDir string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if redirector != nil {
+		_ = redirector.Shutdown(ctx)
+	}
 	_ = httpSrv.Shutdown(ctx)
 }
 
