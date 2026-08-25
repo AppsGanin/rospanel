@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -346,9 +347,26 @@ func runServer(dataDir string) {
 // requests that arrive without a usable Host header, so an unreadable settings row
 // costs nothing worth failing a boot over.
 func startRedirector(st *store.Store) *http.Server {
-	var host string
-	if set, err := st.GetSettings(); err == nil {
-		host = set.Host
+	// Cached rather than read per request: port 80 is scanned constantly and the store
+	// is a single connection every panel request already queues behind. A minute of
+	// staleness after an operator changes the domain costs nothing; a database read per
+	// scan packet would not.
+	var (
+		mu     sync.Mutex
+		cached string
+		readAt time.Time
+	)
+	host := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if !readAt.IsZero() && time.Since(readAt) < time.Minute {
+			return cached
+		}
+		if set, err := st.GetSettings(); err == nil {
+			cached = set.Host
+		}
+		readAt = time.Now()
+		return cached
 	}
 	return server.StartRedirector(":80", host)
 }
