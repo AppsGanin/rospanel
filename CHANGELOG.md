@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.5](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.4...v2.13.5) (2026-08-25)
+
+
+### Performance Improvements
+
+* implement shared port 80 listener for ACME challenge handling and automatic HTTPS redirection ([76b32da](https://github.com/Shu1t3/rospanel-shu1t3/commit/76b32da88cbe83bb7bf99f2da735db35312fadf3))
+
 ## [2.13.4](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.3...v2.13.4) (2026-08-25)
 
 
