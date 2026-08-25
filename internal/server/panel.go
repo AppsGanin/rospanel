@@ -235,22 +235,26 @@ func (rt *Router) panelMux() http.Handler {
 	authedAny("GET /api/me", rt.me)
 	authedAny("POST /api/setup/password", rt.setupPassword)
 	authedAny("POST /api/account/credentials", rt.updateCredentials)
+	authedAny("GET /api/account/sessions", rt.mySessions)
+	authedAny("DELETE /api/account/sessions", rt.deleteAllMyOtherSessions)
+	authedAny("DELETE /api/account/sessions/{hash}", rt.deleteMySession)
 	// The caller's own second factor (no id in the path — see panel_totp.go).
 	authedAny("GET /api/account/totp", rt.totpStatus)
 	authedAny("POST /api/account/totp/start", rt.totpStart)
 	authedAny("POST /api/account/totp/enable", rt.totpEnable)
 	authedAny("POST /api/account/totp/disable", rt.totpDisable)
-	// The admin roster and its trail — owner only. Who signed in from where, who
-	// created or removed whom, who changed what setting: same tier as the roster
-	// itself.
+	// The admin roster and its trail — owner only for roster mutations, admin and up for listing.
 	authedOwner("GET /api/admin-audit", rt.adminAudit)
 	authedOwner("GET /api/admin-audit/catalog", rt.adminAuditCatalog)
 	authedOwner("GET /api/admin-audit/export", rt.exportAdminAudit)
-	authedOwner("GET /api/admins", rt.listAdmins)
+	authed("GET /api/admins", rt.listAdmins)
 	authedOwner("POST /api/admins", rt.createAdmin)
 	authedOwnerID("POST /api/admins/{id}/role", rt.setAdminRole)
 	authedOwnerID("POST /api/admins/{id}/password", rt.resetAdminPassword)
 	authedOwnerID("DELETE /api/admins/{id}", rt.deleteAdmin)
+	authedOpID("GET /api/admins/{id}/sessions", rt.getAdminSessions)
+	authedOpID("DELETE /api/admins/{id}/sessions", rt.deleteAllAdminSessions)
+	authedOpID("DELETE /api/admins/{id}/sessions/{hash}", rt.deleteAdminSession)
 	authed("GET /api/update", rt.checkUpdate)
 	authed("POST /api/update", rt.applyUpdate)
 	authed("POST /api/setup/timezone", rt.setupTimezone)
@@ -553,7 +557,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	rt.limiter.success(ip, username)
 	auditLogin(model.AuditLogin)
 
-	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second)
+	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second, ip, r.UserAgent())
 	if err != nil {
 		slog.Error("login: session creation failed", "err", err)
 		writeErrCode(w, http.StatusInternalServerError, "err.sessionCreateFailed", "не удалось создать сессию")

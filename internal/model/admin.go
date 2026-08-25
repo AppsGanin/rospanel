@@ -53,3 +53,17 @@ type Admin struct {
 	// is protected without handing anyone else the means to log in as them.
 	TOTPEnabled bool `json:"totp_enabled"`
 }
+
+// AdminSession is an active admin panel session.
+type AdminSession struct {
+	TokenHash  string `json:"token_hash"`
+	AdminID    int64  `json:"admin_id"`
+	Username   string `json:"username,omitempty"`
+	Role       string `json:"role,omitempty"`
+	IP         string `json:"ip"`
+	UserAgent  string `json:"user_agent"`
+	CreatedAt  int64  `json:"created_at"`
+	ExpiresAt  int64  `json:"expires_at"`
+	LastSeenAt int64  `json:"last_seen_at"`
+	IsCurrent  bool   `json:"is_current,omitempty"`
+}

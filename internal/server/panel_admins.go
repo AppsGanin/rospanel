@@ -19,10 +19,19 @@ func (rt *Router) listAdmins(w http.ResponseWriter, r *http.Request) {
 		writeManagerErr(w, err)
 		return
 	}
+	me, _ := rt.adminID(r)
+	if a, ok := sessionAdminFrom(r.Context()); ok && a.Role == model.RoleAdmin {
+		var filtered []model.Admin
+		for _, adm := range admins {
+			if adm.ID == me || adm.Role == model.RoleOperator {
+				filtered = append(filtered, adm)
+			}
+		}
+		admins = filtered
+	}
 	if admins == nil {
 		admins = []model.Admin{}
 	}
-	me, _ := rt.adminID(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"admins": admins,
 		"me":     me,
@@ -118,5 +127,147 @@ func (rt *Router) deleteAdmin(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	auditTarget(r, target.Username)
 	auditDetails(r, map[string]any{"role": target.Role})
+	writeOK(w)
+}
+
+func (rt *Router) currentSessionHash(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
+		hash, err := rt.mgr.Store().TokenHash(c.Value)
+		if err == nil {
+			return hash
+		}
+	}
+	return ""
+}
+
+// mySessions returns the active sessions of the currently signed-in user.
+func (rt *Router) mySessions(w http.ResponseWriter, r *http.Request) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	sessions, err := rt.mgr.ListAdminSessions(me, me)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	currentHash := rt.currentSessionHash(r)
+	for i := range sessions {
+		if sessions[i].TokenHash == currentHash {
+			sessions[i].IsCurrent = true
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+// deleteMySession revokes a specific session of the currently signed-in user.
+func (rt *Router) deleteMySession(w http.ResponseWriter, r *http.Request) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	hash := r.PathValue("hash")
+	if hash == "" {
+		writeErrCode(w, http.StatusBadRequest, "err.badRequestBody", "не указан идентификатор сессии")
+		return
+	}
+	if a, ok := sessionAdminFrom(r.Context()); ok {
+		auditTarget(r, a.Username)
+	}
+	if err := rt.mgr.DeleteAdminSession(me, me, hash); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// deleteAllMyOtherSessions revokes all sessions of the current user except the current one.
+func (rt *Router) deleteAllMyOtherSessions(w http.ResponseWriter, r *http.Request) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	keep := ""
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		keep = c.Value
+	}
+	if a, ok := sessionAdminFrom(r.Context()); ok {
+		auditTarget(r, a.Username)
+	}
+	if err := rt.mgr.DeleteAllAdminSessions(me, me, keep); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// getAdminSessions returns the active sessions for a target admin/operator.
+func (rt *Router) getAdminSessions(w http.ResponseWriter, r *http.Request, id int64) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	sessions, err := rt.mgr.ListAdminSessions(me, id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	currentHash := rt.currentSessionHash(r)
+	for i := range sessions {
+		if sessions[i].TokenHash == currentHash {
+			sessions[i].IsCurrent = true
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+// deleteAdminSession revokes a specific session for a target admin/operator.
+func (rt *Router) deleteAdminSession(w http.ResponseWriter, r *http.Request, id int64) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	hash := r.PathValue("hash")
+	if hash == "" {
+		writeErrCode(w, http.StatusBadRequest, "err.badRequestBody", "не указан идентификатор сессии")
+		return
+	}
+	target, _ := rt.mgr.Store().GetAdmin(id)
+	if target.Username != "" {
+		auditTarget(r, target.Username)
+	}
+	if err := rt.mgr.DeleteAdminSession(me, id, hash); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// deleteAllAdminSessions revokes all sessions for a target admin/operator.
+func (rt *Router) deleteAllAdminSessions(w http.ResponseWriter, r *http.Request, id int64) {
+	me, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return
+	}
+	target, _ := rt.mgr.Store().GetAdmin(id)
+	if target.Username != "" {
+		auditTarget(r, target.Username)
+	}
+	keep := ""
+	if id == me && r.URL.Query().Get("all") != "true" {
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			keep = c.Value
+		}
+	}
+	if err := rt.mgr.DeleteAllAdminSessions(me, id, keep); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
 	writeOK(w)
 }

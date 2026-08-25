@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import { ActiveSessions } from "./ActiveSessions";
 import { AdminAuditPanel } from "./AdminAuditPanel";
 import {
   type Admin,
@@ -15,6 +16,7 @@ import {
 } from "./api";
 import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useIsOwner } from "./role";
 import {
   Badge,
   Button,
@@ -63,25 +65,24 @@ function RoleBadge({ role }: { role: Role }) {
 function AdminRow({
   a,
   isMe,
+  isOwner,
   onChangeRole,
   onResetPassword,
   onDelete,
+  onOpenSessions,
 }: {
   a: Admin;
   isMe: boolean;
+  isOwner: boolean;
   onChangeRole: (a: Admin) => void;
   onResetPassword: (a: Admin) => void;
   onDelete: (a: Admin) => void;
+  onOpenSessions: (a: Admin) => void;
 }) {
-  // The owner is untouchable, and you are not your own administrator: your login
-  // and password live in the account menu, which re-asks for the current password.
   const { t } = useTranslation();
   const locked = a.role === "owner" || isMe;
+  const canManageSessions = isOwner || a.role === "operator" || isMe;
   return (
-    // Narrow screens stack the identity above the actions; from sm up they sit on
-    // one row. The action group must be allowed to wrap (three buttons plus a badge
-    // don't fit a phone), and the identity column needs min-w-0 or its long
-    // created/last-login line would rather squeeze the column to nothing than wrap.
     <div className="flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -99,45 +100,56 @@ function AdminRow({
           })}
         </div>
       </div>
-      {/* The owner's row and your own have no actions at all, so the whole group is
-          left out rather than rendered empty — an empty flex child would still eat a
-          gap under the identity block on a phone. */}
-      {!locked && (
-        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+        {canManageSessions && (
           <Button
             size="sm"
             variant="light"
             color="gray"
-            onClick={() => onChangeRole(a)}
+            onClick={() => onOpenSessions(a)}
           >
-            {t("admins.role")}
+            {t("sessions.btnSessions")}
           </Button>
-          <Button
-            size="sm"
-            variant="light"
-            color="gray"
-            onClick={() => onResetPassword(a)}
-          >
-            {t("login.password")}
-          </Button>
-          <Button
-            size="sm"
-            variant="light"
-            color="red"
-            onClick={() => onDelete(a)}
-          >
-            {t("common.delete")}
-          </Button>
-        </div>
-      )}
+        )}
+        {isOwner && !locked && (
+          <>
+            <Button
+              size="sm"
+              variant="light"
+              color="gray"
+              onClick={() => onChangeRole(a)}
+            >
+              {t("admins.role")}
+            </Button>
+            <Button
+              size="sm"
+              variant="light"
+              color="gray"
+              onClick={() => onResetPassword(a)}
+            >
+              {t("login.password")}
+            </Button>
+            <Button
+              size="sm"
+              variant="light"
+              color="red"
+              onClick={() => onDelete(a)}
+            >
+              {t("common.delete")}
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 export function AdminsSettings() {
   const { t } = useTranslation();
+  const isOwner = useIsOwner();
   const [list, setList] = useState<AdminList | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewingSessions, setViewingSessions] = useState<Admin | null>(null);
 
   // Create dialog.
   const [addOpen, setAddOpen] = useState(false);
@@ -270,9 +282,9 @@ export function AdminsSettings() {
   return (
     <div className="flex flex-col gap-4">
       <SettingCard
-        title={t("nav.admins")}
+        title={isOwner ? t("nav.admins") : t("nav.operators")}
         description={t("admins.description")}
-        action={<Button onClick={openAdd}>{t("common.add")}</Button>}
+        action={isOwner ? <Button onClick={openAdd}>{t("common.add")}</Button> : undefined}
         stackAction
       >
         <div className="flex flex-col gap-2">
@@ -281,9 +293,11 @@ export function AdminsSettings() {
               key={a.id}
               a={a}
               isMe={a.id === list.me}
+              isOwner={isOwner}
               onChangeRole={openRole}
               onResetPassword={openReset}
               onDelete={openDelete}
+              onOpenSessions={setViewingSessions}
             />
           ))}
         </div>
@@ -306,7 +320,21 @@ export function AdminsSettings() {
         </div>
       </SettingCard>
 
-      <AdminAuditPanel />
+      {isOwner && <AdminAuditPanel />}
+
+      {/* Sessions modal */}
+      <Modal
+        open={!!viewingSessions}
+        onClose={() => setViewingSessions(null)}
+        title={t("sessions.sessionsOf", { name: viewingSessions?.username ?? "" })}
+      >
+        {viewingSessions && (
+          <ActiveSessions
+            adminId={viewingSessions.id}
+            onSessionRevoked={refresh}
+          />
+        )}
+      </Modal>
 
       {/* Create */}
       <Modal
@@ -326,7 +354,7 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={role}
             onChange={(v) => setRole(v as Role)}
-            data={roleOptions()}
+            options={roleOptions()}
           />
           <PasswordInput
             label={t("admins.tempPassword")}
@@ -336,12 +364,12 @@ export function AdminsSettings() {
           />
           <PasswordInput
             label={t("admins.yourPassword")}
-            placeholder={t("creds.toConfirm")}
+            placeholder={t("admins.needOwnPassword")}
             value={current}
             onChange={setCurrent}
           />
           <Button loading={busy} onClick={add}>
-            {t("common.create")}
+            {t("common.save")}
           </Button>
         </div>
       </Modal>
@@ -357,13 +385,14 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={editRole}
             onChange={(v) => setEditRole(v as Role)}
-            data={roleOptions()}
+            options={roleOptions()}
           />
           <PasswordInput
             label={t("admins.yourPassword")}
-            placeholder={t("creds.toConfirm")}
+            placeholder={t("admins.needOwnPassword")}
             value={current}
             onChange={setCurrent}
+            autoFocus
           />
           <Button loading={busy} onClick={saveRole}>
             {t("common.save")}
@@ -383,17 +412,19 @@ export function AdminsSettings() {
           </p>
           <PasswordInput
             label={t("admins.newTempPassword")}
+            placeholder={t("admins.tempPasswordHint")}
             value={newPassword}
             onChange={setNewPassword}
           />
           <PasswordInput
             label={t("admins.yourPassword")}
-            placeholder={t("creds.toConfirm")}
+            placeholder={t("admins.needOwnPassword")}
             value={current}
             onChange={setCurrent}
+            autoFocus
           />
           <Button loading={busy} onClick={saveReset}>
-            {t("usersPanel.reset")}
+            {t("common.save")}
           </Button>
         </div>
       </Modal>
@@ -410,7 +441,7 @@ export function AdminsSettings() {
           </p>
           <PasswordInput
             label={t("admins.yourPassword")}
-            placeholder={t("creds.toConfirm")}
+            placeholder={t("admins.needOwnPassword")}
             value={current}
             onChange={setCurrent}
             autoFocus

@@ -655,6 +655,32 @@ export const deleteAdmin = (id: number, currentPassword: string) =>
     headers: { 'X-Current-Password': currentPassword },
   })
 
+export interface AdminSession {
+  token_hash: string
+  admin_id: number
+  username?: string
+  role?: Role
+  ip: string
+  user_agent: string
+  created_at: number
+  expires_at: number
+  last_seen_at: number
+  is_current?: boolean
+}
+
+export const listMySessions = () => api<{ sessions: AdminSession[] }>('api/account/sessions')
+export const deleteMySession = (hash: string) =>
+  api<{ ok: boolean }>(`api/account/sessions/${encodeURIComponent(hash)}`, { method: 'DELETE' })
+export const deleteAllMyOtherSessions = () =>
+  api<{ ok: boolean }>('api/account/sessions', { method: 'DELETE' })
+
+export const listAdminSessions = (id: number) =>
+  api<{ sessions: AdminSession[] }>(`api/admins/${id}/sessions`)
+export const deleteAdminSession = (id: number, hash: string) =>
+  api<{ ok: boolean }>(`api/admins/${id}/sessions/${encodeURIComponent(hash)}`, { method: 'DELETE' })
+export const deleteAllAdminSessions = (id: number) =>
+  api<{ ok: boolean }>(`api/admins/${id}/sessions`, { method: 'DELETE' })
+
 // The admin trail: what was done to the panel itself (the roster, the settings, TLS,
 // backups, sign-ins) and by whom, from where. Owner-only.
 export interface AdminAudit {

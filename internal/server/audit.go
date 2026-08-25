@@ -63,10 +63,14 @@ var auditActions = map[string]auditRoute{
 	"POST /api/account/totp/disable": {},
 
 	// The roster.
-	"POST /api/admins":               act(model.AuditAdminCreated),
-	"POST /api/admins/{id}/role":     act(model.AuditAdminRoleChanged),
-	"POST /api/admins/{id}/password": act(model.AuditAdminPasswordReset),
-	"DELETE /api/admins/{id}":        act(model.AuditAdminDeleted),
+	"POST /api/admins":                        act(model.AuditAdminCreated),
+	"POST /api/admins/{id}/role":              act(model.AuditAdminRoleChanged),
+	"POST /api/admins/{id}/password":          act(model.AuditAdminPasswordReset),
+	"DELETE /api/admins/{id}":                 act(model.AuditAdminDeleted),
+	"DELETE /api/account/sessions":            act(model.AuditSessionsRevoked),
+	"DELETE /api/account/sessions/{hash}":     act(model.AuditSessionRevoked),
+	"DELETE /api/admins/{id}/sessions":        act(model.AuditSessionsRevoked),
+	"DELETE /api/admins/{id}/sessions/{hash}": act(model.AuditSessionRevoked),
 
 	// Settings — one action, the section in the target.
 	"POST /api/settings/branding":              set("branding"),

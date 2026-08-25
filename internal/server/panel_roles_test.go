@@ -54,7 +54,7 @@ func signIn(t *testing.T, st *store.Store, name, role string, gated bool) *http.
 	if err != nil {
 		t.Fatalf("create %s: %v", name, err)
 	}
-	token, err := st.CreateSession(id, time.Hour)
+	token, err := st.CreateSession(id, time.Hour, "127.0.0.1", "test-agent")
 	if err != nil {
 		t.Fatalf("session for %s: %v", name, err)
 	}
@@ -109,8 +109,16 @@ func TestRouteTiersByRole(t *testing.T) {
 			wantOwner: 200, wantAdmin: 200, wantOperator: denied, wantNoAuth: 401,
 		},
 		{
-			name: "admin roster (owner only)", method: "GET", path: "/api/admins",
-			wantOwner: 200, wantAdmin: denied, wantOperator: denied, wantNoAuth: 401,
+			name: "admin roster (admin and up)", method: "GET", path: "/api/admins",
+			wantOwner: 200, wantAdmin: 200, wantOperator: denied, wantNoAuth: 401,
+		},
+		{
+			name: "create admin (owner only)", method: "POST", path: "/api/admins",
+			wantOwner: 415, wantAdmin: denied, wantOperator: denied, wantNoAuth: 401,
+		},
+		{
+			name: "own sessions (any role)", method: "GET", path: "/api/account/sessions",
+			wantOwner: 200, wantAdmin: 200, wantOperator: 200, wantNoAuth: 401,
 		},
 	}
 	for _, tc := range cases {

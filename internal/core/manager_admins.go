@@ -156,3 +156,167 @@ func (m *Manager) rosterTarget(actorID, targetID int64, op rosterOp) (model.Admi
 	}
 	return target, nil
 }
+
+// ListAdminSessions returns the active sessions the actor is allowed to view.
+// - Owner may view all sessions (targetAdminID=0) or any specific admin's sessions.
+// - Admin may view their own sessions or operators' sessions.
+// - Operator may only view their own sessions.
+func (m *Manager) ListAdminSessions(actorID, targetAdminID int64) ([]model.AdminSession, error) {
+	actor, err := m.store.GetAdmin(actorID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return nil, invalidCode("err.adminNotFound", "администратор не найден")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if targetAdminID == actorID {
+		return m.store.ListSessions(targetAdminID)
+	}
+
+	if targetAdminID == 0 {
+		all, err := m.store.ListSessions(0)
+		if err != nil {
+			return nil, err
+		}
+		if actor.Role == model.RoleOwner {
+			return all, nil
+		}
+		var filtered []model.AdminSession
+		for _, s := range all {
+			if s.AdminID == actorID || s.Role == model.RoleOperator {
+				filtered = append(filtered, s)
+			}
+		}
+		if filtered == nil {
+			filtered = []model.AdminSession{}
+		}
+		return filtered, nil
+	}
+
+	target, err := m.store.GetAdmin(targetAdminID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return nil, invalidCode("err.adminNotFound", "администратор не найден")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch actor.Role {
+	case model.RoleOwner:
+		return m.store.ListSessions(targetAdminID)
+	case model.RoleAdmin:
+		if target.Role == model.RoleOperator {
+			return m.store.ListSessions(targetAdminID)
+		}
+		return nil, invalidCode("err.cannotViewAdminSessions", "нельзя просматривать сессии другого администратора")
+	default:
+		return nil, invalidCode("err.cannotViewAdminSessions", "нельзя просматривать чужие сессии")
+	}
+}
+
+// DeleteAdminSession revokes a single session if the actor has permission.
+// - Owner may revoke any session.
+// - Admin may revoke their own sessions and operators' sessions.
+// - Operator may only revoke their own sessions.
+func (m *Manager) DeleteAdminSession(actorID, targetAdminID int64, tokenHash string) error {
+	tokenHash = strings.TrimSpace(tokenHash)
+	if tokenHash == "" {
+		return invalidCode("err.sessionNotFound", "сессия не найдена")
+	}
+	sess, err := m.store.GetSessionByHash(tokenHash)
+	if errors.Is(err, store.ErrSessionNotFound) {
+		return invalidCode("err.sessionNotFound", "сессия не найдена")
+	}
+	if err != nil {
+		return err
+	}
+	if targetAdminID > 0 && targetAdminID != sess.AdminID {
+		return invalidCode("err.sessionNotFound", "сессия не найдена")
+	}
+
+	actor, err := m.store.GetAdmin(actorID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return invalidCode("err.adminNotFound", "администратор не найден")
+	}
+	if err != nil {
+		return err
+	}
+
+	target, err := m.store.GetAdmin(sess.AdminID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return m.store.DeleteSessionByHash(tokenHash)
+	}
+	if err != nil {
+		return err
+	}
+
+	switch actor.Role {
+	case model.RoleOwner:
+		// Owner can revoke any session
+	case model.RoleAdmin:
+		if target.ID == actorID {
+			// Admin revokes own session
+		} else if target.Role == model.RoleOperator {
+			// Admin revokes operator's session
+		} else if target.Role == model.RoleOwner {
+			return invalidCode("err.cannotDeleteOwnerSession", "нельзя завершить сессию владельца панели")
+		} else {
+			return invalidCode("err.cannotDeleteOtherAdminSession", "нельзя завершить сессию другого администратора")
+		}
+	default:
+		if target.ID != actorID {
+			return invalidCode("err.cannotDeleteOtherAdminSession", "нельзя завершить чужую сессию")
+		}
+	}
+
+	if err := m.store.DeleteSessionByHash(tokenHash); err != nil {
+		return err
+	}
+	slog.Info("admin session: revoked", "actor", actor.Username, "target", target.Username, "hash", tokenHash)
+	return nil
+}
+
+// DeleteAllAdminSessions revokes all sessions of targetAdminID (except keepToken if supplied).
+func (m *Manager) DeleteAllAdminSessions(actorID, targetAdminID int64, keepToken string) error {
+	actor, err := m.store.GetAdmin(actorID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return invalidCode("err.adminNotFound", "администратор не найден")
+	}
+	if err != nil {
+		return err
+	}
+
+	target, err := m.store.GetAdmin(targetAdminID)
+	if errors.Is(err, store.ErrAdminNotFound) {
+		return invalidCode("err.adminNotFound", "администратор не найден")
+	}
+	if err != nil {
+		return err
+	}
+
+	switch actor.Role {
+	case model.RoleOwner:
+		// Owner can revoke all sessions for any user
+	case model.RoleAdmin:
+		if target.ID == actorID {
+			// Admin revokes own sessions
+		} else if target.Role == model.RoleOperator {
+			// Admin revokes operator's sessions
+		} else if target.Role == model.RoleOwner {
+			return invalidCode("err.cannotDeleteOwnerSession", "нельзя завершить сессию владельца панели")
+		} else {
+			return invalidCode("err.cannotDeleteOtherAdminSession", "нельзя завершить сессию другого администратора")
+		}
+	default:
+		if target.ID != actorID {
+			return invalidCode("err.cannotDeleteOtherAdminSession", "нельзя завершить чужую сессию")
+		}
+	}
+
+	if err := m.store.DeleteSessionsForAdminExcept(targetAdminID, keepToken); err != nil {
+		return err
+	}
+	slog.Info("admin sessions: all revoked", "actor", actor.Username, "target", target.Username)
+	return nil
+}

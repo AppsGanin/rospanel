@@ -29,9 +29,11 @@ const AdminAuditRetentionDays = 90
 // once shipped, or old rows lose their label.
 const (
 	// Sessions.
-	AuditLogin       = "admin.login"
-	AuditLoginFailed = "admin.login_failed"
-	AuditLogout      = "admin.logout"
+	AuditLogin           = "admin.login"
+	AuditLoginFailed     = "admin.login_failed"
+	AuditLogout          = "admin.logout"
+	AuditSessionRevoked  = "admin.session_revoked"
+	AuditSessionsRevoked = "admin.sessions_revoked"
 
 	// The roster.
 	AuditAdminCreated       = "admin.created"
@@ -130,6 +132,8 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditLogin, AuditCatSession},
 	{AuditLoginFailed, AuditCatSession},
 	{AuditLogout, AuditCatSession},
+	{AuditSessionRevoked, AuditCatSession},
+	{AuditSessionsRevoked, AuditCatSession},
 
 	{AuditAdminCreated, AuditCatAdmins},
 	{AuditAdminDeleted, AuditCatAdmins},

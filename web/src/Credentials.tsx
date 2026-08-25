@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { updateCredentials } from './api'
 import { useAction } from './hooks'
 import { notifyError, notifySuccess } from './notify'
+import { ActiveSessions } from './ActiveSessions'
 import { TwoFactor } from './TwoFactor'
 import { Button, Modal, PasswordInput, TextInput } from './ui'
 
@@ -82,6 +83,8 @@ export function Credentials({
             "how do I get into this account", and an operator hardening their access
             should not have to find two screens. It saves on its own. */}
         <TwoFactor password={current} />
+        <hr className="my-2 border-gray-200" />
+        <ActiveSessions />
       </div>
     </Modal>
   )

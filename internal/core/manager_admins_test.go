@@ -152,7 +152,7 @@ func TestResetAdminPasswordRevokesSessionsAndRegates(t *testing.T) {
 	if err := m.ChangeAdminPassword(admin.ID, "chosen-by-them"); err != nil {
 		t.Fatalf("change password: %v", err)
 	}
-	token, err := m.store.CreateSession(admin.ID, time.Hour)
+	token, err := m.store.CreateSession(admin.ID, time.Hour, "127.0.0.1", "test-agent")
 	if err != nil {
 		t.Fatalf("session: %v", err)
 	}

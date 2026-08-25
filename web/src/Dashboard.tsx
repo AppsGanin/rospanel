@@ -95,10 +95,9 @@ export function Dashboard({
     ...(isAdmin ? [{ value: "nodes" as Tab, label: t("nav.servers") }] : []),
     ...(isAdmin ? [{ value: "settings" as Tab, label: t("nav.settings") }] : []),
   ];
-  // The roster isn't in NAV, so resolve it separately — and only for the owner, so
-  // hand-typing /admins as anyone else lands on the dashboard rather than on a page
-  // whose every request would 403.
-  const onAdmins = seg[0] === "admins" && isOwner;
+  // The roster isn't in NAV, so resolve it separately — accessible to Owner and Admins.
+  const canManageRoster = isOwner || isAdmin;
+  const onAdmins = seg[0] === "admins" && canManageRoster;
   const tab: Tab = onAdmins
     ? "admins"
     : ((NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab);
@@ -184,8 +183,10 @@ export function Dashboard({
               <DropdownItem onClick={() => setCredsOpen(true)}>
                 {t("nav.credentials")}
               </DropdownItem>
-              {isOwner && (
-                <DropdownItem onClick={goAdmins}>{t("nav.admins")}</DropdownItem>
+              {canManageRoster && (
+                <DropdownItem onClick={goAdmins}>
+                  {isOwner ? t("nav.admins") : t("nav.operators")}
+                </DropdownItem>
               )}
               <DropdownDivider />
               <DropdownLabel>{t("common.language")}</DropdownLabel>
@@ -221,7 +222,7 @@ export function Dashboard({
               {n.label}
             </button>
           ))}
-          {isOwner && (
+          {canManageRoster && (
             <button
               onClick={goAdmins}
               className={cn(
@@ -229,7 +230,7 @@ export function Dashboard({
                 onAdmins ? "text-brand-800" : "text-accent",
               )}
             >
-              {t("nav.admins")}
+              {isOwner ? t("nav.admins") : t("nav.operators")}
             </button>
           )}
         </nav>

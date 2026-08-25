@@ -51,6 +51,30 @@ func TestXrayCrashAndRecoveryArePaired(t *testing.T) {
 	if len(sent) != 2 {
 		t.Fatalf("throttled crash produced an all-clear: %v", sent)
 	}
+
+	// onXrayWedged with restarted=false (auto-restart off) is an active outage,
+	// so recovery must send the all-clear.
+	m.lastCrashNotify = time.Now().Add(-crashNotifyThrottle - time.Minute)
+	m.onXrayWedged(false)
+	if len(sent) != 3 {
+		t.Fatalf("wedged (no restart) alerts = %d, want 3", len(sent))
+	}
+	m.onXrayRecover()
+	if len(sent) != 4 {
+		t.Fatalf("no all-clear after wedged (no restart): %v", sent)
+	}
+
+	// onXrayWedged with restarted=true was already self-resolved, so recovery
+	// should not produce an extra all-clear.
+	m.lastCrashNotify = time.Now().Add(-crashNotifyThrottle - time.Minute)
+	m.onXrayWedged(true)
+	if len(sent) != 5 {
+		t.Fatalf("wedged (restarted) alerts = %d, want 5", len(sent))
+	}
+	m.onXrayRecover()
+	if len(sent) != 5 {
+		t.Fatalf("unexpected all-clear after wedged (restarted): %v", sent)
+	}
 }
 
 func TestFmtDowntime(t *testing.T) {

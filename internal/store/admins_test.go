@@ -195,7 +195,7 @@ func TestDeleteAdminRevokesSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	token, err := st.CreateSession(id, time.Hour)
+	token, err := st.CreateSession(id, time.Hour, "127.0.0.1", "test-agent")
 	if err != nil {
 		t.Fatalf("session: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestLookupSessionCarriesRoleAndGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	token, err := st.CreateSession(id, time.Hour)
+	token, err := st.CreateSession(id, time.Hour, "127.0.0.1", "test-agent")
 	if err != nil {
 		t.Fatalf("session: %v", err)
 	}
