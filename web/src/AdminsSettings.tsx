@@ -354,7 +354,7 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={role}
             onChange={(v) => setRole(v as Role)}
-            options={roleOptions()}
+            data={roleOptions()}
           />
           <PasswordInput
             label={t("admins.tempPassword")}
@@ -385,7 +385,7 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={editRole}
             onChange={(v) => setEditRole(v as Role)}
-            options={roleOptions()}
+            data={roleOptions()}
           />
           <PasswordInput
             label={t("admins.yourPassword")}
