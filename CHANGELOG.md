@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.3](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.2...v2.13.3) (2026-08-25)
+
+
+### Performance Improvements
+
+* enforce device limit constraints and expand UI selection options ([eb9eadf](https://github.com/Shu1t3/rospanel-shu1t3/commit/eb9eadf6903e221d22a49ca7df8a0c4f1772c8a8))
+
 ## [2.13.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.1...v2.13.2) (2026-08-25)
 
 
