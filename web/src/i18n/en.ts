@@ -351,6 +351,7 @@ const en: Dict = {
     planHasUsers: "the plan is assigned to {{count}} users — move them to another plan first",
     planHasPendingOrders: "the plan has {{count}} unpaid orders — wait for them to settle or cancel them",
     planPeriodRange: "duration: between 0 and {{max}} days",
+    planDeviceLimitRange: "device limit: between 0 and {{max}}",
     planLimitsNegative: "plan limits cannot be negative",
     orderNotPending: "the order is already paid or cancelled — refresh the list",
     backupCorrupt: "the backup archive is corrupt",
@@ -1920,6 +1921,7 @@ const en: Dict = {
     order: "Order in the list",
     activeVisible: "Active (visible to users)",
     price: "Price, ₽",
+    deviceLimitHint: "0 = unlimited (max 50)",
     term: "Duration",
     trialHint:
       "Trial plan: granted at sign-up, access expires after the duration, then moves to the free plan.",

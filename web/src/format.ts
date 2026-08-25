@@ -39,7 +39,7 @@ export const quotaOptions = () => [
 // detail editor.
 export const deviceLimitOptions = () => [
   { value: '0', label: i18n.t('devices.unlimited') },
-  ...[1, 2, 3, 5, 10].map((n) => ({
+  ...[1, 2, 3, 5, 10, 20, 50].map((n) => ({
     value: String(n),
     label: i18n.t('devices.count', { count: n }),
   })),

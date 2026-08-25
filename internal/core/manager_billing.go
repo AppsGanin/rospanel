@@ -75,6 +75,9 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.DataLimit < 0 || p.DeviceLimit < 0 || p.SpeedLimit < 0 {
 		return invalidCode("err.planLimitsNegative", "лимиты тарифа не могут быть отрицательными")
 	}
+	if p.DeviceLimit > model.MaxDevicesPerUser {
+		return invalidCode("err.planDeviceLimitRange", "лимит устройств: от 0 до {{max}}", map[string]any{"max": model.MaxDevicesPerUser})
+	}
 	// Access groups the plan grants. Unknown ids are dropped rather than rejected: a
 	// group deleted while the editor was open would otherwise make the plan unsavable,
 	// and the FK would fail the whole write anyway.

@@ -255,14 +255,7 @@ const EMPTY_PLAN = (): TariffPlan => ({
 });
 
 
-const devices = () => [
-  { value: "0", label: i18n.t("common.unlimited") },
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "3", label: "3" },
-  { value: "5", label: "5" },
-  { value: "10", label: "10" },
-];
+const MAX_PLAN_DEVICES = 50;
 
 const periods = () => [
   { value: "0", label: i18n.t("bill.unlimitedTerm") },
@@ -389,12 +382,25 @@ function PlanForm({
           value={gbFromBytes(plan.data_limit)}
           onChange={(v) => patch({ data_limit: gbToBytes(Number(v)) })}
         />
-        <Select
-          label={t("userDetail.deviceLimit")}
-          data={devices()}
-          value={String(plan.device_limit)}
-          onChange={(v) => patch({ device_limit: Number(v) })}
-        />
+        <div>
+          <TextInput
+            label={t("userDetail.deviceLimit")}
+            type="number"
+            value={String(plan.device_limit)}
+            onChange={(v) =>
+              patch({
+                device_limit: Math.min(
+                  MAX_PLAN_DEVICES,
+                  Math.max(0, Number(v) || 0),
+                ),
+              })
+            }
+            placeholder="0"
+          />
+          <p className="mt-1 text-xs text-ink-muted">
+            {t("bill.deviceLimitHint")}
+          </p>
+        </div>
         <Select
           label={t("userDetail.speedLimit")}
           data={speedLimitOptions()}

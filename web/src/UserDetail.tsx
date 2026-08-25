@@ -336,6 +336,19 @@ export function UserDetail({
       : [...quotaOptions(), { value: limitGb, label: fmtBytes(user.data_limit) }]
     : quotaOptions()
 
+  const deviceData = deviceLimitOptions().some((o) => o.value === deviceLimit)
+    ? deviceLimitOptions()
+    : [
+        ...deviceLimitOptions(),
+        {
+          value: deviceLimit,
+          label:
+            Number(deviceLimit) > 0
+              ? i18n.t('devices.count', { count: Number(deviceLimit) })
+              : i18n.t('devices.unlimited'),
+        },
+      ]
+
   const saveLimits = (dl: number, ea: number, dev: number, speed?: number) =>
     setUserLimits(user!.id, dl, ea, dev, speed).then(onChanged).catch(fail)
 
@@ -627,13 +640,13 @@ export function UserDetail({
               />
               <Select
                 label={t('userDetail.deviceLimit')}
-                data={deviceLimitOptions()}
+                data={deviceData}
                 value={deviceLimit}
                 onChange={(v) =>
                   confirmChange(
                     t('userDetail.deviceLimit'),
-                    optLabel(deviceLimitOptions(), deviceLimit),
-                    optLabel(deviceLimitOptions(), v),
+                    optLabel(deviceData, deviceLimit),
+                    optLabel(deviceData, v),
                     () => {
                       setDeviceLimit(v)
                       saveLimits(user.data_limit, user.expire_at, Number(v))

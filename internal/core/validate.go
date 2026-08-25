@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/mail"
 	"strings"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // User-input bounds. These guard the DB and the config/subscription/link
@@ -26,7 +28,7 @@ func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 		return invalidCode("err.badTrafficLimit", "некорректный лимит трафика")
 	case expireAt < 0 || expireAt > maxExpireAt:
 		return invalidCode("err.badExpiryDate", "некорректная дата истечения")
-	case deviceLimit < 0:
+	case deviceLimit < 0 || deviceLimit > model.MaxDevicesPerUser:
 		return invalidCode("err.deviceLimitNegative", "лимит устройств не может быть отрицательным")
 	}
 	return nil
