@@ -318,6 +318,11 @@ func (s *BroadcastService) primeMedia(ctx context.Context, client *Client, b *mo
 	return true
 }
 
+type sendResult struct {
+	chatID int64
+	err    error
+}
+
 // deliver sends one batch, overlapping round-trips across a few workers while the
 // package limiter keeps the aggregate rate legal.
 func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model.Broadcast, targets []int64) {
@@ -325,6 +330,7 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 		return
 	}
 	ch := make(chan int64)
+	results := make(chan sendResult, len(targets))
 	var wg sync.WaitGroup
 	var lostTrack atomic.Bool
 	for range min(broadcastWorkers, len(targets)) {
@@ -332,8 +338,9 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 		go func() {
 			defer wg.Done()
 			for chatID := range ch {
-				if err := s.record(b.ID, chatID, s.sendOne(ctx, client, b, chatID)); err != nil {
-					lostTrack.Store(true)
+				results <- sendResult{
+					chatID: chatID,
+					err:    s.sendOne(ctx, client, b, chatID),
 				}
 			}
 		}()
@@ -343,12 +350,18 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 		case <-ctx.Done():
 			close(ch)
 			wg.Wait()
+			close(results)
+			// Drain anything sent before context cancellation so we don't drop records
+			s.persistBatchResults(b.ID, results, &lostTrack)
 			return
 		case ch <- chatID:
 		}
 	}
 	close(ch)
 	wg.Wait()
+	close(results)
+	s.persistBatchResults(b.ID, results, &lostTrack)
+
 	if lostTrack.Load() {
 		// The message went out but the outcome could not be written down. Selecting
 		// pending rows is not claiming them, so the very same people would be picked
@@ -359,6 +372,45 @@ func (s *BroadcastService) deliver(ctx context.Context, client *Client, b *model
 		// even when nothing can be persisted at all.
 		s.quarantine(b.ID)
 		s.pause(b.ID, "could not record a send outcome — broadcast stopped")
+	}
+}
+
+func (s *BroadcastService) persistBatchResults(broadcastID int64, results <-chan sendResult, lostTrack *atomic.Bool) {
+	now := time.Now().Unix()
+	var outcomes []store.TargetOutcome
+	for res := range results {
+		state, msg := model.TargetSent, ""
+		switch {
+		case res.err == nil:
+			s.clearTextRejections(broadcastID)
+		case isBlockedByUser(res.err):
+			state, msg = model.TargetBlocked, res.err.Error()
+			if err := s.store.SetSubscriberBlocked(res.chatID, now); err != nil {
+				log.Printf("telegram broadcast: mark %d blocked: %v", res.chatID, err)
+			}
+		default:
+			state, msg = model.TargetFailed, res.err.Error()
+			if isFileRejected(res.err) {
+				if n := s.noteTextRejected(broadcastID); n >= maxTextRejections {
+					log.Printf("telegram broadcast %d: %d consecutive rejections: %v", broadcastID, n, res.err)
+					s.pause(broadcastID, "Telegram rejected the message text: "+res.err.Error())
+				}
+			} else {
+				s.clearTextRejections(broadcastID)
+			}
+		}
+		outcomes = append(outcomes, store.TargetOutcome{
+			ChatID: res.chatID,
+			State:  state,
+			ErrMsg: msg,
+			At:     now,
+		})
+	}
+	if len(outcomes) > 0 {
+		if err := s.store.MarkTargets(broadcastID, outcomes); err != nil {
+			log.Printf("telegram broadcast %d: batch mark targets (%d): %v", broadcastID, len(outcomes), err)
+			lostTrack.Store(true)
+		}
 	}
 }
 

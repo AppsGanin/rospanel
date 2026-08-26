@@ -33,12 +33,13 @@ const remoteInstaller = "/usr/local/bin/rospanel.installer"
 // Credentials describe how to reach and authenticate to the target server. Exactly
 // one of Password / PrivateKey must be set.
 type Credentials struct {
-	Host       string // IP or hostname of the target server
-	Port       int    // SSH port (0 ⇒ 22)
-	User       string // SSH user (must be root)
-	Password   string // password auth (mutually exclusive with PrivateKey)
-	PrivateKey string // PEM private key (mutually exclusive with Password)
-	Passphrase string // optional passphrase for an encrypted PrivateKey
+	Host                       string // IP or hostname of the target server
+	Port                       int    // SSH port (0 ⇒ 22)
+	User                       string // SSH user (must be root)
+	Password                   string // password auth (mutually exclusive with PrivateKey)
+	PrivateKey                 string // PEM private key (mutually exclusive with Password)
+	Passphrase                 string // optional passphrase for an encrypted PrivateKey
+	ExpectedHostKeyFingerprint string // optional pinned SHA256 host key fingerprint to verify against MitM
 }
 
 // Install connects to the target, uploads localBinary, and runs it as
@@ -81,12 +82,14 @@ func dial(ctx context.Context, c Credentials, onLine func(string)) (*ssh.Client,
 		Auth: auth,
 		// Trust-on-first-use: the operator is installing onto their own fresh server
 		// and has no prior key to pin, so we accept the presented key and surface its
-		// fingerprint. NOTE: this offers no protection against a man-in-the-middle on
-		// the SSH path — with password auth the password is sent to whoever answers.
-		// It is intended for provisioning your own box over a trusted network; prefer
-		// key auth (the signature is session-bound and can't be replayed by a MITM).
+		// fingerprint. If an expected fingerprint was provided, it is verified.
 		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
 			fp = keyFingerprint(key)
+			if expected := strings.TrimSpace(c.ExpectedHostKeyFingerprint); expected != "" {
+				if !strings.EqualFold(fp, expected) && !strings.EqualFold(strings.TrimPrefix(fp, "SHA256:"), strings.TrimPrefix(expected, "SHA256:")) {
+					return fmt.Errorf("host key fingerprint mismatch: presented %s, expected %s", fp, expected)
+				}
+			}
 			return nil
 		},
 		Timeout: 20 * time.Second,

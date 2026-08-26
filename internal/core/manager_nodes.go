@@ -1600,19 +1600,11 @@ func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample) {
 		logErr("node sync: cannot validate site user ids", "err", err)
 		return
 	}
-	abuseBudget := abuseNodeMax // cap this sync's contribution to the shared buffer
-	for _, s := range rows {
-		if _, ok := known[s.UserID]; !ok {
-			continue
-		}
-		// Attributed to the reporting node: an abuse complaint names one server's IP,
-		// so which node emitted the traffic is the first thing the operator needs.
-		// Bounded so a hostile node cannot fill the whole match buffer (the feeds are
-		// public) and starve the master's own locally-observed matches.
-		if abuseBudget > 0 && m.RecordNodeAbuse(nodeID, s.UserID, s.Host, s.Count) {
-			abuseBudget--
-		}
-	}
+	// Attributed to the reporting node: an abuse complaint names one server's IP,
+	// so which node emitted the traffic is the first thing the operator needs.
+	// Bounded so a hostile node cannot fill the whole match buffer (the feeds are
+	// public) and starve the master's own locally-observed matches.
+	m.RecordNodeAbuseBatch(nodeID, rows, known, abuseNodeMax)
 }
 
 // knownUserIDs returns the set of existing user ids, cached briefly.
@@ -1719,7 +1711,15 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		// spot who just crossed a limit.
 		var snapshot []model.User
 		if len(deltas) > 0 {
-			snapshot, _ = m.store.ListUsers()
+			userIDs := make([]int64, 0, len(deltas))
+			seen := make(map[int64]bool, len(deltas))
+			for _, d := range deltas {
+				if !seen[d.UserID] {
+					seen[d.UserID] = true
+					userIDs = append(userIDs, d.UserID)
+				}
+			}
+			snapshot, _ = m.store.GetUsersByIDs(userIDs)
 		}
 		claimed, err := m.store.ApplyNodeReport(n.ID, req.ReportID, deltas)
 		switch {

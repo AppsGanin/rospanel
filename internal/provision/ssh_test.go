@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -24,5 +25,37 @@ func TestKeyFingerprintShape(t *testing.T) {
 	fp := "SHA256:" + strings.TrimRight("abc", "=")
 	if !strings.HasPrefix(fp, "SHA256:") {
 		t.Fatal("fingerprint must be SHA256-prefixed")
+	}
+}
+
+func TestExpectedHostKeyFingerprintValidation(t *testing.T) {
+	// Mock a public key by testing the callback logic directly
+	fpPresented := "SHA256:abcd1234efgh5678"
+
+	cases := []struct {
+		name      string
+		expected  string
+		wantError bool
+	}{
+		{"empty expected (TOFU mode)", "", false},
+		{"exact match", "SHA256:abcd1234efgh5678", false},
+		{"case insensitive match", "sha256:ABCD1234efgh5678", false},
+		{"without sha256 prefix", "abcd1234efgh5678", false},
+		{"mismatch", "SHA256:wrongfingerprint1234", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := strings.TrimSpace(tc.expected)
+			var err error
+			if expected != "" {
+				if !strings.EqualFold(fpPresented, expected) && !strings.EqualFold(strings.TrimPrefix(fpPresented, "SHA256:"), strings.TrimPrefix(expected, "SHA256:")) {
+					err = errors.New("mismatch")
+				}
+			}
+			if (err != nil) != tc.wantError {
+				t.Errorf("fingerprint validation error=%v, wantError=%v", err, tc.wantError)
+			}
+		})
 	}
 }

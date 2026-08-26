@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -247,12 +249,73 @@ func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.U
 	_, _ = w.Write(html)
 }
 
+// isSubRequestAllowed validates that POST requests to subscription actions originate
+// from the expected origin/page (anti-CSRF protection).
+func isSubRequestAllowed(r *http.Request, set *model.Settings) bool {
+	if strings.EqualFold(r.Header.Get("X-Requested-With"), "RosPanelSub") {
+		return true
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site == "cross-site" {
+		return false
+	}
+	matchHost := func(targetHost string) bool {
+		targetHost = strings.ToLower(strings.TrimSpace(targetHost))
+		if targetHost == "" {
+			return false
+		}
+		if h, _, err := net.SplitHostPort(targetHost); err == nil {
+			targetHost = h
+		}
+		reqHost := r.Host
+		if h, _, err := net.SplitHostPort(reqHost); err == nil {
+			reqHost = h
+		}
+		allowed := []string{"localhost", "127.0.0.1"}
+		if reqHost != "" {
+			allowed = append(allowed, strings.ToLower(strings.TrimSpace(reqHost)))
+		}
+		if set != nil && set.Host != "" {
+			setHost := set.Host
+			if h, _, err := net.SplitHostPort(setHost); err == nil {
+				setHost = h
+			}
+			allowed = append(allowed, strings.ToLower(strings.TrimSpace(setHost)))
+		}
+		for _, a := range allowed {
+			if a != "" && (targetHost == a || strings.HasSuffix(targetHost, "."+a)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return matchHost(u.Host)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		u, err := url.Parse(ref)
+		if err != nil {
+			return false
+		}
+		return matchHost(u.Host)
+	}
+	return r.Header.Get("Sec-Fetch-Site") != "cross-site"
+}
+
 // handleSubCancel cancels the user's active paid plan from the subscription page
 // (moves them to the free plan immediately). Only acts on an active paid plan, so
 // a stray POST on a free/expired account is a no-op success.
 func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if !isSubRequestAllowed(r, set) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden origin"})
 		return
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
@@ -279,6 +342,10 @@ func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u mode
 func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if !isSubRequestAllowed(r, set) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden origin"})
 		return
 	}
 	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
@@ -545,6 +612,10 @@ func subDeviceSub(d model.Device) string {
 func (rt *Router) handleSubDeviceUnbind(w http.ResponseWriter, r *http.Request, u model.User, set *model.Settings) {
 	if r.Method != http.MethodPost {
 		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	if !isSubRequestAllowed(r, set) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden origin"})
 		return
 	}
 	if !set.HWIDEnabled {

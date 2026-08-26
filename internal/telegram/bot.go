@@ -152,41 +152,31 @@ func (s *Service) clearPending(chatID int64) {
 
 // Run drives the bot until ctx is cancelled: it long-polls for updates and, in a
 // sibling goroutine, fires scheduled backups. When the bot is disabled or has no
+type adminNotifyTask struct {
+	html    string
+	menuMsg string
+	menuBtn [][]InlineButton
+	isMenu  bool
+}
+
+// Run drives the bot until ctx is cancelled: it long-polls for updates and, in a
+// sibling goroutine, fires scheduled backups. When the bot is disabled or has no
 // token it idles, re-checking periodically.
 func (s *Service) Run(ctx context.Context) {
 	go s.backupLoop(ctx)
+
+	notifyQueue := make(chan adminNotifyTask, 256)
+
 	// Broadcast admin events (payments, outages, blocklist hits) to the authorized
 	// admin chats.
 	s.panel.SetAdminNotifier(func(html string) {
-		set, err := s.store.GetSettings()
-		if err != nil {
-			log.Printf("telegram: admin notify: settings: %v", err)
-			return
+		select {
+		case notifyQueue <- adminNotifyTask{html: html, isMenu: false}:
+		default:
+			log.Printf("telegram: admin notify queue full, dropped message")
 		}
-		token := strings.TrimSpace(set.TGBotToken)
-		if token == "" {
-			log.Printf("telegram: admin notify dropped — no bot token")
-			return
-		}
-		chats := set.TelegramChatIDs()
-		if len(chats) == 0 {
-			// The whole feature is silent in this state and nothing else says so: every
-			// alert the panel raises is built, gated, and then delivered to nobody.
-			log.Printf("telegram: admin notify dropped — no linked admin chats")
-			return
-		}
-		c := NewClient(token, set.TelegramProxyURL())
-		go func(client *Client, chatIDs []int64, text string) {
-			for _, id := range chatIDs {
-				// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
-				// revoked token fails per send, and with the error discarded the panel looked
-				// exactly like a panel that had nothing to say.
-				if err := client.SendMessage(context.Background(), id, text); err != nil {
-					log.Printf("telegram: admin notify to %d failed: %v", id, err)
-				}
-			}
-		}(c, chats, html)
 	})
+
 	// A signup awaiting moderation: post it with approve/reject buttons.
 	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
 		set, err := s.store.GetSettings()
@@ -203,16 +193,61 @@ func (s *Service) Run(ctx context.Context) {
 			{Text: i18n.T(lang, "admin.btnApprove"), CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
 			{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
 		}}
-		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		chatIDs := set.TelegramChatIDs()
-		go func(client *Client, chats []int64, text string, btns [][]InlineButton) {
-			for _, id := range chats {
-				if err := client.SendMenu(context.Background(), id, text, btns); err != nil {
-					log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+		select {
+		case notifyQueue <- adminNotifyTask{menuMsg: msg, menuBtn: rows, isMenu: true}:
+		default:
+			log.Printf("telegram: admin moderation queue full, dropped prompt")
+		}
+	})
+
+	var notifyWg sync.WaitGroup
+	for range 4 {
+		notifyWg.Add(1)
+		go func() {
+			defer notifyWg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case task, ok := <-notifyQueue:
+					if !ok {
+						return
+					}
+					set, err := s.store.GetSettings()
+					if err != nil {
+						continue
+					}
+					token := strings.TrimSpace(set.TGBotToken)
+					if token == "" {
+						continue
+					}
+					chats := set.TelegramChatIDs()
+					if len(chats) == 0 {
+						continue
+					}
+					c := NewClient(token, set.TelegramProxyURL())
+					sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+					for _, id := range chats {
+						if sendCtx.Err() != nil {
+							break
+						}
+						if task.isMenu {
+							if err := c.SendMenu(sendCtx, id, task.menuMsg, task.menuBtn); err != nil && ctx.Err() == nil {
+								log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+							}
+						} else {
+							if err := c.SendMessage(sendCtx, id, task.html); err != nil && ctx.Err() == nil {
+								log.Printf("telegram: admin notify to %d failed: %v", id, err)
+							}
+						}
+					}
+					cancel()
 				}
 			}
-		}(c, chatIDs, msg, rows)
-	})
+		}()
+	}
+	defer notifyWg.Wait()
+
 	for {
 		if ctx.Err() != nil {
 			return

@@ -954,7 +954,7 @@ func (s *Supervisor) stopProc() {
 	}
 	select {
 	case <-p.done: // monitor's Wait() returned → process fully reaped
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		_ = p.cmd.Process.Kill()
 		<-p.done
 	}

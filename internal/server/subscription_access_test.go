@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // When the per-user access read fails the panel refuses to build a subscription: serving
@@ -68,4 +69,87 @@ func TestDecoyAnswersAnExtensionlessMissWith200(t *testing.T) {
 			"if that is deliberate, subUnavailable's reasoning needs revisiting")
 	}
 	t.Logf("%d of %d templates answer an extensionless miss with 200", checked, len(names))
+}
+
+func TestSubOriginValidation(t *testing.T) {
+	set := &model.Settings{Host: "vpn.example.com"}
+
+	cases := []struct {
+		name       string
+		headers    map[string]string
+		host       string
+		wantAllow  bool
+	}{
+		{
+			name: "custom header allowed",
+			headers: map[string]string{
+				"X-Requested-With": "RosPanelSub",
+				"Origin":           "https://malicious.site",
+			},
+			host:      "vpn.example.com",
+			wantAllow: true,
+		},
+		{
+			name: "same origin allowed",
+			headers: map[string]string{
+				"Origin": "https://vpn.example.com",
+			},
+			host:      "vpn.example.com",
+			wantAllow: true,
+		},
+		{
+			name: "foreign origin rejected",
+			headers: map[string]string{
+				"Origin": "https://attacker.com",
+			},
+			host:      "vpn.example.com",
+			wantAllow: false,
+		},
+		{
+			name: "same origin referer allowed",
+			headers: map[string]string{
+				"Referer": "https://vpn.example.com/sub/token123",
+			},
+			host:      "vpn.example.com",
+			wantAllow: true,
+		},
+		{
+			name: "foreign referer rejected",
+			headers: map[string]string{
+				"Referer": "https://evil.org/attack",
+			},
+			host:      "vpn.example.com",
+			wantAllow: false,
+		},
+		{
+			name: "sec-fetch-site cross-site rejected",
+			headers: map[string]string{
+				"Sec-Fetch-Site": "cross-site",
+			},
+			host:      "vpn.example.com",
+			wantAllow: false,
+		},
+		{
+			name: "localhost allowed",
+			headers: map[string]string{
+				"Origin": "http://127.0.0.1:8080",
+			},
+			host:      "vpn.example.com",
+			wantAllow: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/sub/token/pay", nil)
+			req.Host = tc.host
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			got := isSubRequestAllowed(req, set)
+			if got != tc.wantAllow {
+				t.Errorf("isSubRequestAllowed() = %v, want %v", got, tc.wantAllow)
+			}
+		})
+	}
 }

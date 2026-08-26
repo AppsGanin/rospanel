@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,23 +44,42 @@ type Result struct {
 }
 
 // Provider identifiers for the two providers the panel shipped with. Every other
-// provider's key lives in its own file; use payments.Get to look one up.
+// provider added to registry.go gets an equivalent constant.
 const (
-	ProviderYooKassa  = keyYooKassa
-	ProviderCryptoBot = keyCryptoBot
+	ProviderYooKassa  = "yookassa"
+	ProviderCryptoBot = "cryptobot"
+	ProviderHeadsPay  = "headspay"
+	ProviderPlatezhka = "platezhka"
+	ProviderFreeKassa = "freekassa"
+	ProviderRobokassa = "robokassa"
+	ProviderPalPay    = "palpay"
 )
 
 func httpClient() *http.Client { return &http.Client{Timeout: 15 * time.Second} }
 
-// parseKopecks converts a decimal money string ("100", "100.5", "100.00") to
-// integer kopecks without floating point. Fraction digits beyond kopecks are
-// truncated (money has no sub-kopeck). Returns ok=false on a malformed value.
+// parseKopecks converts a decimal money string ("100", "100.5", "100.00", "1e2") to
+// integer kopecks. Fraction digits beyond kopecks are truncated/rounded.
+// Returns ok=false on a malformed or negative value.
 func parseKopecks(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, false
 	}
 	s = strings.ReplaceAll(s, ",", ".")
+	if strings.ContainsAny(s, "eE") {
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, false
+		}
+		if f > float64((1<<62)/100) {
+			return 0, false
+		}
+		k := int64(math.Round(f * 100))
+		if k < 0 {
+			return 0, false
+		}
+		return k, true
+	}
 	intPart, fracPart := s, ""
 	if i := strings.IndexByte(s, '.'); i >= 0 {
 		intPart, fracPart = s[:i], s[i+1:]

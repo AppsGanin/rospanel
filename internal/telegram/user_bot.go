@@ -126,21 +126,55 @@ func (s *UserService) clearPending(chatID int64) {
 	s.mu.Unlock()
 }
 
+type userNotifyTask struct {
+	chatID int64
+	text   string
+}
+
 // Run long-polls the user bot until ctx is cancelled.
 func (s *UserService) Run(ctx context.Context) {
+	notifyQueue := make(chan userNotifyTask, 256)
+
 	// Let the panel push payment confirmations to a user's chat via this bot.
 	s.panel.SetUserNotifier(func(chatID int64, html string) {
-		set, err := s.store.GetSettings()
-		if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
-			return
+		select {
+		case notifyQueue <- userNotifyTask{chatID: chatID, text: html}:
+		default:
+			log.Printf("telegram: user notify queue full, dropped message to %d", chatID)
 		}
-		c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
-		go func(client *Client, id int64, text string) {
-			if err := client.SendMessage(context.Background(), id, text); err != nil {
-				log.Printf("telegram: user notify to %d failed: %v", id, err)
-			}
-		}(c, chatID, html)
 	})
+
+	var notifyWg sync.WaitGroup
+	for range 4 {
+		notifyWg.Add(1)
+		go func() {
+			defer notifyWg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case task, ok := <-notifyQueue:
+					if !ok {
+						return
+					}
+					set, err := s.store.GetSettings()
+					if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
+						continue
+					}
+					c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
+					sendCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+					if err := c.SendMessage(sendCtx, task.chatID, task.text); err != nil {
+						if ctx.Err() == nil {
+							log.Printf("telegram: user notify to %d failed: %v", task.chatID, err)
+						}
+					}
+					cancel()
+				}
+			}
+		}()
+	}
+	defer notifyWg.Wait()
+
 	for {
 		if ctx.Err() != nil {
 			return

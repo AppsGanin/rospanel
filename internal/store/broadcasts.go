@@ -123,6 +123,14 @@ func (s *Store) NextPendingTargets(broadcastID int64, limit int) ([]int64, error
 	return out, rows.Err()
 }
 
+// TargetOutcome carries one delivery outcome for batch persistence.
+type TargetOutcome struct {
+	ChatID int64
+	State  string
+	ErrMsg string
+	At     int64
+}
+
 // MarkTarget records one delivery outcome. The state moves off 'pending' whatever
 // happened, so a recipient is attempted once per run and a resume can't repeat it.
 func (s *Store) MarkTarget(broadcastID, chatID int64, state, errMsg string, at int64) error {
@@ -132,6 +140,37 @@ func (s *Store) MarkTarget(broadcastID, chatID int64, state, errMsg string, at i
 		 WHERE broadcast_id = ? AND chat_id = ?`,
 		state, errMsg, at, broadcastID, chatID)
 	return err
+}
+
+// MarkTargets records multiple delivery outcomes in a single transaction.
+func (s *Store) MarkTargets(broadcastID int64, outcomes []TargetOutcome) error {
+	if len(outcomes) == 0 {
+		return nil
+	}
+	if len(outcomes) == 1 {
+		return s.MarkTarget(broadcastID, outcomes[0].ChatID, outcomes[0].State, outcomes[0].ErrMsg, outcomes[0].At)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+
+	stmt, err := tx.Prepare(
+		`UPDATE broadcast_targets
+		 SET state = ?, error = ?, attempts = attempts + 1, sent_at = ?
+		 WHERE broadcast_id = ? AND chat_id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, o := range outcomes {
+		if _, err := stmt.Exec(o.State, o.ErrMsg, o.At, broadcastID, o.ChatID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // SetBroadcastMediaFileID caches the file_id Telegram assigned on the first upload,
@@ -297,10 +336,8 @@ func (s *Store) ListBroadcasts(limit int) ([]model.Broadcast, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for i := range out {
-		if err := s.fillCounts(&out[i]); err != nil {
-			return nil, err
-		}
+	if err := s.fillCountsBatch(out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -332,17 +369,78 @@ func (s *Store) scanBroadcast(where string, args ...any) (*model.Broadcast, erro
 // fillCounts derives the progress figures from the recipient rows — the single
 // source of truth for what actually happened.
 func (s *Store) fillCounts(b *model.Broadcast) error {
+	if b == nil {
+		return nil
+	}
 	rows, err := s.db.Query(
 		`SELECT state, COUNT(*) FROM broadcast_targets WHERE broadcast_id = ? GROUP BY state`, b.ID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+	b.Total = 0
+	b.Sent = 0
+	b.Failed = 0
+	b.Blocked = 0
+	b.Skipped = 0
 	for rows.Next() {
 		var state string
 		var n int
 		if err := rows.Scan(&state, &n); err != nil {
 			return err
+		}
+		b.Total += n
+		switch state {
+		case model.TargetSent:
+			b.Sent = n
+		case model.TargetFailed:
+			b.Failed = n
+		case model.TargetBlocked:
+			b.Blocked = n
+		case model.TargetSkipped:
+			b.Skipped = n
+		}
+	}
+	return rows.Err()
+}
+
+// fillCountsBatch derives progress counters for a batch of broadcasts in a single SQL query.
+func (s *Store) fillCountsBatch(list []model.Broadcast) error {
+	if len(list) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(list))
+	args := make([]any, len(list))
+	bMap := make(map[int64]*model.Broadcast, len(list))
+	for i := range list {
+		placeholders[i] = "?"
+		args[i] = list[i].ID
+		bMap[list[i].ID] = &list[i]
+		list[i].Total = 0
+		list[i].Sent = 0
+		list[i].Failed = 0
+		list[i].Blocked = 0
+		list[i].Skipped = 0
+	}
+	rows, err := s.db.Query(
+		`SELECT broadcast_id, state, COUNT(*)
+		 FROM broadcast_targets
+		 WHERE broadcast_id IN (`+strings.Join(placeholders, ",")+`)
+		 GROUP BY broadcast_id, state`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var broadcastID int64
+		var state string
+		var n int
+		if err := rows.Scan(&broadcastID, &state, &n); err != nil {
+			return err
+		}
+		b, ok := bMap[broadcastID]
+		if !ok {
+			continue
 		}
 		b.Total += n
 		switch state {
