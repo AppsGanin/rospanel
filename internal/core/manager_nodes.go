@@ -403,6 +403,19 @@ type NodeView struct {
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
+
+	// Rental & Sharing fields (Owner supremacy, tenant isolation, and resource quotas)
+	IsRented              bool   `json:"is_rented"`
+	ShareEnabled          bool   `json:"share_enabled"`
+	ShareQuotaPercent     int    `json:"share_quota_percent"`
+	ShareSpeedLimit       int    `json:"share_speed_limit"`
+	ShareLink             string `json:"share_link,omitempty"`
+	RentOwnerNodeID       int64  `json:"rent_owner_node_id,omitempty"`
+	RentTenantID          string `json:"rent_tenant_id,omitempty"`
+	ActiveTenants         int    `json:"active_tenants"`
+	AllocatedSpeedLimit   int    `json:"allocated_speed_limit"`
+	AllocatedQuotaPercent int    `json:"allocated_quota_percent"`
+	ReservedPorts         []int  `json:"reserved_ports,omitempty"`
 }
 
 // NodeViews returns the local server (node 0) followed by every remote node, each
@@ -512,6 +525,26 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			RealityShortID:   n.RealityShortID,
 			RealityPath:      n.RealityPath,
 			Proxy:            n.Proxy,
+			// Rental and sharing
+			IsRented:          n.IsRented,
+			ShareEnabled:      n.ShareEnabled,
+			ShareQuotaPercent: n.ShareQuotaPercent,
+			ShareSpeedLimit:   n.ShareSpeedLimit,
+			RentOwnerNodeID:   n.RentOwnerNodeID,
+			RentTenantID:      n.RentTenantID,
+		}
+		if n.ShareEnabled && !n.IsRented {
+			tenants, _ := m.store.ListNodeTenants(n.ID)
+			v.ActiveTenants = len(tenants)
+			v.AllocatedSpeedLimit = model.CalculateTenantSpeed(n.ShareSpeedLimit, len(tenants))
+			v.AllocatedQuotaPercent = model.CalculateTenantQuota(n.ShareQuotaPercent, len(tenants))
+			v.ShareLink, _ = m.GenerateNodeShareLink(n.ID)
+		}
+		if ports, err := m.GetNodeReservedPorts(n.ID); err == nil {
+			v.ReservedPorts = make([]int, 0, len(ports))
+			for _, p := range ports {
+				v.ReservedPorts = append(v.ReservedPorts, p.Port)
+			}
 		}
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
@@ -1024,6 +1057,10 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 // node-agent PR, where it first becomes reachable. Until then, disabling a node
 // (which keeps the token and answers revoked) is the reliable "stop now" control.
 func (m *Manager) DeleteNode(id int64) error {
+	node, _ := m.store.GetNode(id)
+	if node != nil && node.IsRented {
+		return m.DeleteRentedNode(id)
+	}
 	if err := m.store.DeleteNode(id); err != nil {
 		return err
 	}

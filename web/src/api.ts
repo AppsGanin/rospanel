@@ -1759,6 +1759,18 @@ export interface NodeView {
   reality_path: string
   master_label?: string // config-label name of the master (local node only)
   proxy: SystemProxy // this server's system proxy (SOCKS/HTTP forward listeners)
+  // Rental & Sharing fields
+  is_rented: boolean
+  share_enabled: boolean
+  share_quota_percent: number
+  share_speed_limit: number
+  share_link?: string
+  rent_owner_node_id?: number
+  rent_tenant_id?: string
+  active_tenants: number
+  allocated_speed_limit: number
+  allocated_quota_percent: number
+  reserved_ports?: number[]
 }
 
 // SystemProxy is one server's forward proxy: SOCKS5 and/or HTTP listeners for
@@ -1990,6 +2002,76 @@ export async function provisionNode(
   if (buf.trim()) handle(buf)
   return outcome
 }
+
+// --- Node Rental & Sharing (Owner supremacy & multi-tenant division) --------
+
+export interface NodeRentalSettings {
+  share_enabled: boolean
+  share_quota_percent: number
+  share_speed_limit: number
+  max_tenants?: number
+}
+
+export interface NodeTenant {
+  id: number
+  node_id: number
+  tenant_id: string
+  name: string
+  traffic_up: number
+  traffic_down: number
+  speed_limit: number
+  last_seen: number
+  created_at: number
+}
+
+export interface NodeRentalResp {
+  settings: NodeRentalSettings
+  tenants: NodeTenant[]
+  allocated_speed_limit: number
+  allocated_quota_percent: number
+  share_link?: string
+}
+
+export interface PortInfo {
+  port: number
+  protocol: string
+  service: string
+  is_owner: boolean
+  tenant_id?: string
+}
+
+export interface ImportRentedReq {
+  share_link: string
+  name?: string
+}
+
+export const getNodeRental = (id: number) => api<NodeRentalResp>(`api/nodes/${id}/rental`)
+
+export const saveNodeRental = (id: number, s: NodeRentalSettings) =>
+  api<NodeRentalSettings>(`api/nodes/${id}/rental`, {
+    method: 'POST',
+    body: JSON.stringify(s),
+  })
+
+export const getNodeShareLink = (id: number) =>
+  api<{ share_link: string }>(`api/nodes/${id}/rental/share-link`, {
+    method: 'POST',
+  })
+
+export const importRentedNode = (req: ImportRentedReq) =>
+  api<NodeView>('api/nodes/import-rented', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+
+export const getNodeReservedPorts = (id: number) =>
+  api<{ ports: PortInfo[] }>(`api/nodes/${id}/reserved-ports`)
+
+export const deleteNodeTenant = (id: number, tenantId: string) =>
+  api<{ ok: boolean }>(`api/nodes/${id}/tenants/${tenantId}`, {
+    method: 'DELETE',
+  })
+
 
 // ---- Custom inbounds -------------------------------------------------------
 //

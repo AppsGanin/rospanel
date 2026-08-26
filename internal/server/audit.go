@@ -167,6 +167,10 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/{id}/xray-restart":      set("nodeXrayRestart"),
 	"POST /api/nodes/update-all":             set("nodesUpdateAll"),
 	"POST /api/nodes/{id}/provision":         set("nodeProvision"),
+	"POST /api/nodes/import-rented":          set("nodeImportRented"),
+	"POST /api/nodes/{id}/rental":            set("nodeRentalChanged"),
+	"POST /api/nodes/{id}/rental/share-link": skip, // generating a share link is read-only metadata retrieval
+	"DELETE /api/nodes/{id}/tenants/{tenantId}": set("nodeTenantDeleted"),
 
 	// Custom inbounds. Each of these opens, changes or closes a public listener on a
 	// server, so all four are recorded.

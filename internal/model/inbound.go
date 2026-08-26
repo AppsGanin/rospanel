@@ -106,6 +106,7 @@ type Inbound struct {
 	Protocol string      `json:"protocol"`
 	Port     int         `json:"port"`
 	Opts     InboundOpts `json:"opts"`
+	TenantID string      `json:"tenant_id,omitempty"` // populated if created by a tenant on a rented node
 
 	CreatedAt int64 `json:"created_at"`
 }

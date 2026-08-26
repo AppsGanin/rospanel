@@ -191,6 +191,11 @@ func (m *Manager) CreateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	if err := m.checkServerExists(in.ServerID); err != nil {
 		return nil, err
 	}
+	if in.ServerID != model.LocalNodeID {
+		if node, nerr := m.store.GetNode(in.ServerID); nerr == nil && node != nil && node.IsRented {
+			in.TenantID = node.RentTenantID
+		}
+	}
 	in.Normalize()
 	if err := m.prepareInbound(&in); err != nil {
 		return nil, err

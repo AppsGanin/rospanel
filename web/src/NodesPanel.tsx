@@ -40,6 +40,16 @@ import {
   restartXray,
   updateNode,
   updateNodeVersion,
+  getNodeRental,
+  saveNodeRental,
+  getNodeShareLink,
+  importRentedNode,
+  getNodeReservedPorts,
+  deleteNodeTenant,
+  type NodeRentalSettings,
+  type NodeTenant,
+  type NodeRentalResp,
+  type PortInfo,
   type GeoCategories,
   type GeoFile,
   type GeoInfo,
@@ -560,9 +570,10 @@ function AddNodeDialog({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<"command" | "ssh">("command");
+  const [mode, setMode] = useState<"command" | "ssh" | "import">("command");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
+  const [shareLink, setShareLink] = useState("");
   const [busy, setBusy] = useState(false);
 
   // SSH (auto) fields.
@@ -574,8 +585,6 @@ function AddNodeDialog({
   const [sshKey, setSshKey] = useState("");
   const [log, setLog] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
-  // The node is created once; a retry after a failed SSH install reuses this id
-  // instead of creating a second orphan node.
   const [createdId, setCreatedId] = useState<number | null>(null);
 
   const submitCommand = async () => {
@@ -590,14 +599,28 @@ function AddNodeDialog({
     }
   };
 
+  const submitImport = async () => {
+    if (!shareLink.trim()) return;
+    setBusy(true);
+    try {
+      await importRentedNode({
+        share_link: shareLink.trim(),
+        name: name.trim() || undefined,
+      });
+      notifySuccess(t("nodes.importedSuccess"));
+      onDone();
+    } catch (e) {
+      notifyError(errMessage(e));
+      setBusy(false);
+    }
+  };
+
   const submitSSH = async () => {
     if (!name.trim() || !host.trim() || !sshHost.trim()) return;
     if (sshAuth === "password" && !sshPassword) return;
     if (sshAuth === "key" && !sshKey.trim()) return;
     setInstalling(true);
     try {
-      // Create the node once; on a retry reuse the existing id so a failed install
-      // doesn't leave a trail of orphan not-joined nodes.
       let nodeId = createdId;
       if (nodeId == null) {
         setLog([t("nodes.creating")]);
@@ -635,7 +658,7 @@ function AddNodeDialog({
   return (
     <Modal open onClose={onClose} title={t("nodes.addNode")} size="lg" dismissible={!installing}>
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
-        {(["command", "ssh"] as const).map((m) => (
+        {(["command", "ssh", "import"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMode(m)}
@@ -645,76 +668,105 @@ function AddNodeDialog({
               mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
             )}
           >
-            {t(m === "command" ? "nodes.tabCommand" : "nodes.tabSsh")}
+            {m === "command"
+              ? t("nodes.tabCommand")
+              : m === "ssh"
+                ? t("nodes.tabSsh")
+                : t("nodes.tabImportShare")}
           </button>
         ))}
       </div>
 
-      <div className="space-y-3">
-        <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
-        <TextInput
-          label={t("nodes.hostLabel")}
-          value={host}
-          onChange={setHost}
-          placeholder="nl1.example.com"
-        />
+      {mode === "import" ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3.5 text-xs text-indigo-950 dark:text-indigo-200">
+            <p className="font-medium">{t("nodes.importShareHint")}</p>
+          </div>
+          <Textarea
+            label={t("nodes.pasteShareLink")}
+            value={shareLink}
+            onChange={setShareLink}
+            rows={3}
+            placeholder="rpnshare://eyJhbGciOi..."
+          />
+          <TextInput
+            label={t("groups.name")}
+            value={name}
+            onChange={setName}
+            placeholder={t("nodes.namePlaceholder")}
+          />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
+          <TextInput
+            label={t("nodes.hostLabel")}
+            value={host}
+            onChange={setHost}
+            placeholder="nl1.example.com"
+          />
 
-        {mode === "ssh" && (
-          <div className="space-y-3 border-t border-gray-100 pt-3">
-            <p className="text-xs text-ink-muted">
-              {t("nodes.sshHint")}
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <TextInput label={t("nodes.sshHost")} value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+          {mode === "ssh" && (
+            <div className="space-y-3 border-t border-gray-100 pt-3">
+              <p className="text-xs text-ink-muted">
+                {t("nodes.sshHint")}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <TextInput label={t("nodes.sshHost")} value={sshHost} onChange={setSshHost} placeholder="203.0.113.10" />
+                </div>
+                <TextInput label={t("conn.port")} value={sshPort} onChange={setSshPort} placeholder="22" />
               </div>
-              <TextInput label={t("conn.port")} value={sshPort} onChange={setSshPort} placeholder="22" />
+              <TextInput label={t("nodes.sshUser")} value={sshUser} onChange={setSshUser} placeholder="root" />
+              <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
+                {(["password", "key"] as const).map((a) => (
+                  <button
+                    key={a}
+                    onClick={() => setSshAuth(a)}
+                    className={cn(
+                      "rounded-md px-3 py-1 transition",
+                      sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+                    )}
+                  >
+                    {t(a === "password" ? "login.password" : "nodes.key")}
+                  </button>
+                ))}
+              </div>
+              {sshAuth === "password" ? (
+                <PasswordInput label={t("nodes.sshPassword")} value={sshPassword} onChange={setSshPassword} />
+              ) : (
+                <Textarea
+                  label={t("nodes.privateKey")}
+                  value={sshKey}
+                  onChange={setSshKey}
+                  rows={4}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                />
+              )}
             </div>
-            <TextInput label={t("nodes.sshUser")} value={sshUser} onChange={setSshUser} placeholder="root" />
-            <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
-              {(["password", "key"] as const).map((a) => (
-                <button
-                  key={a}
-                  onClick={() => setSshAuth(a)}
-                  className={cn(
-                    "rounded-md px-3 py-1 transition",
-                    sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
-                  )}
-                >
-                  {t(a === "password" ? "login.password" : "nodes.key")}
-                </button>
+          )}
+
+          {log.length > 0 && (
+            <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
+              {log.map((l, i) => (
+                <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
+                  {l}
+                </div>
               ))}
             </div>
-            {sshAuth === "password" ? (
-              <PasswordInput label={t("nodes.sshPassword")} value={sshPassword} onChange={setSshPassword} />
-            ) : (
-              <Textarea
-                label={t("nodes.privateKey")}
-                value={sshKey}
-                onChange={setSshKey}
-                rows={4}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-              />
-            )}
-          </div>
-        )}
-
-        {log.length > 0 && (
-          <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
-            {log.map((l, i) => (
-              <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
-                {l}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={onClose} disabled={installing}>
           {t("common.cancel")}
         </Button>
-        {mode === "command" ? (
+        {mode === "import" ? (
+          <Button onClick={submitImport} loading={busy} disabled={!shareLink.trim()}>
+            {t("nodes.importNode")}
+          </Button>
+        ) : mode === "command" ? (
           <Button onClick={submitCommand} loading={busy} disabled={!name.trim() || !host.trim()}>
             {t("common.create")}
           </Button>
@@ -1022,11 +1074,224 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
   );
 }
 
-// NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
-// protocol overrides, its OWN routing + egress (the same editor as the master), and
-// its DNS. Routing/egress and DNS each either inherit the panel's or are the node's
-// own override. Egress (proxy lanes / WARP / Opera) is independent of the master and
-// only meaningful with own routing, so it lives inside the routing editor.
+function NodeRentalTab({
+  node,
+  onRefresh,
+}: {
+  node: NodeView;
+  onRefresh: () => void;
+}) {
+  const { t } = useTranslation();
+  const [data, setData] = useState<NodeRentalResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [shareEnabled, setShareEnabled] = useState(false);
+  const [quota, setQuota] = useState(100);
+  const [speed, setSpeed] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [deletingTenant, setDeletingTenant] = useState<string | null>(null);
+
+  const loadData = () => {
+    getNodeRental(node.id)
+      .then((r) => {
+        setData(r);
+        setShareEnabled(r.settings.share_enabled);
+        setQuota(r.settings.share_quota_percent || 100);
+        setSpeed(r.settings.share_speed_limit || 0);
+      })
+      .catch((e) => notifyError(errMessage(e)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [node.id]);
+
+  const onSave = async () => {
+    setSaving(true);
+    try {
+      await saveNodeRental(node.id, {
+        share_enabled: shareEnabled,
+        share_quota_percent: Number(quota) || 100,
+        share_speed_limit: Number(speed) || 0,
+      });
+      notifySuccess(t("nodes.rentalSaved"));
+      loadData();
+      onRefresh();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!data?.share_link) return;
+    try {
+      await navigator.clipboard.writeText(data.share_link);
+      setCopied(true);
+      notifySuccess(t("nodes.shareLinkCopied"));
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // fallback
+    }
+  };
+
+  const removeTenant = async (tenantId: string) => {
+    setDeletingTenant(tenantId);
+    try {
+      await deleteNodeTenant(node.id, tenantId);
+      notifySuccess(t("nodes.deleted"));
+      loadData();
+      onRefresh();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setDeletingTenant(null);
+    }
+  };
+
+  if (loading || !data) return <CenterLoader />;
+
+  const isDirty =
+    shareEnabled !== data.settings.share_enabled ||
+    Number(quota) !== data.settings.share_quota_percent ||
+    Number(speed) !== data.settings.share_speed_limit;
+
+  const tenants = data.tenants || [];
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Section title={t("nodes.tabRental")}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-ink">{t("nodes.shareEnabled")}</span>
+            <span className="text-xs text-ink-muted">{t("nodes.shareLinkHint")}</span>
+          </div>
+          <Switch checked={shareEnabled} onChange={setShareEnabled} />
+        </div>
+
+        {shareEnabled && (
+          <div className="mt-4 flex flex-col gap-4 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <TextInput
+                  label={t("nodes.shareQuota")}
+                  type="number"
+                  value={String(quota)}
+                  onChange={(v) => setQuota(Math.min(100, Math.max(1, Number(v) || 100)))}
+                />
+                <span className="text-xs text-ink-muted">
+                  {t("nodes.quotaPerTenant")}: <strong>{data.allocated_quota_percent}%</strong>
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <TextInput
+                  label={t("nodes.shareSpeed")}
+                  type="number"
+                  value={String(speed)}
+                  onChange={(v) => setSpeed(Math.max(0, Number(v) || 0))}
+                  placeholder="0 = без ограничений"
+                />
+                <span className="text-xs text-ink-muted">
+                  {t("nodes.speedPerTenant")}:{" "}
+                  <strong>{data.allocated_speed_limit > 0 ? `${data.allocated_speed_limit} Kbps` : "∞"}</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-brand-500/20 bg-brand-500/5 p-3 text-xs text-brand-900 dark:text-brand-200">
+              <div className="flex items-center gap-2 font-semibold">
+                <span>ℹ️ {t("nodes.evenDivisionNotice")}</span>
+              </div>
+            </div>
+
+            {data.share_link && (
+              <div className="flex flex-col gap-1.5 rounded-xl border border-gray-200 bg-gray-50/60 p-3.5 dark:border-gray-800 dark:bg-gray-900/50">
+                <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {t("nodes.shareLink")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={data.share_link}
+                    className="flex-1 truncate rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-mono text-xs text-ink select-all dark:border-gray-700 dark:bg-gray-800"
+                  />
+                  <Button size="sm" onClick={copyLink}>
+                    {copied ? t("nodes.shareLinkCopied") : t("nodes.copyShareLink")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Section>
+
+      <TabSaveBar
+        onSave={onSave}
+        onReset={() => {
+          setShareEnabled(data.settings.share_enabled);
+          setQuota(data.settings.share_quota_percent || 100);
+          setSpeed(data.settings.share_speed_limit || 0);
+        }}
+        dirty={isDirty}
+        busy={saving}
+      />
+
+      {shareEnabled && (
+        <Section title={t("nodes.tenantsTitle")}>
+          {tenants.length === 0 ? (
+            <p className="py-2 text-sm text-ink-muted">{t("nodes.noTenants")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-ink-muted">
+                    <th className="pb-2 font-medium">{t("nodes.tenantName")}</th>
+                    <th className="pb-2 font-medium">{t("nodes.tenantTraffic")}</th>
+                    <th className="pb-2 font-medium">{t("nodes.tenantSpeed")}</th>
+                    <th className="pb-2 font-medium">{t("nodes.tenantLastSeen")}</th>
+                    <th className="pb-2 font-medium text-right" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tenants.map((ten) => (
+                    <tr key={ten.tenant_id} className="hover:bg-gray-50/50">
+                      <td className="py-2.5 font-mono font-medium text-ink">
+                        {ten.name || ten.tenant_id}
+                      </td>
+                      <td className="py-2.5 text-ink-muted">
+                        ↑ {fmtBytes(ten.traffic_up)} / ↓ {fmtBytes(ten.traffic_down)}
+                      </td>
+                      <td className="py-2.5 text-ink-muted">
+                        {ten.speed_limit > 0 ? `${ten.speed_limit} Kbps` : "—"}
+                      </td>
+                      <td className="py-2.5 text-ink-muted">
+                        {ten.last_seen > 0 ? new Date(ten.last_seen * 1000).toLocaleString() : "—"}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="red"
+                          loading={deletingTenant === ten.tenant_id}
+                          onClick={() => removeTenant(ten.tenant_id)}
+                        >
+                          {t("nodes.tenantRemove")}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
+    </div>
+  );
+}
+
 function NodeSettingsDialog({
   node,
   decoys,
@@ -1043,18 +1308,12 @@ function NodeSettingsDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(node.name);
   const [decoy, setDecoy] = useState(node.decoy_template);
-  // The per-node quota multiplier (1 = neutral). Kept as a string so the field can be
-  // cleared while typing; parsed on save.
   const [coef, setCoef] = useState(String(node.traffic_coefficient || 1));
-  // genBase / dnsBase are the last-saved snapshots powering dirty-tracking + revert on
-  // the General and DNS tabs (routing carries its own inside useServerRouting).
   const [genBase, setGenBase] = useState({
     name: node.name,
     decoy: node.decoy_template,
     coef: String(node.traffic_coefficient || 1),
   });
-  // The system proxy is part of the General tab, so its draft lives here and rides
-  // that tab's single save.
   const [proxy, setProxy] = useState<SystemProxy>(node.proxy);
   const [proxyBase, setProxyBase] = useState<SystemProxy>(node.proxy);
   const proxyDirty = JSON.stringify(proxy) !== JSON.stringify(proxyBase);
@@ -1073,8 +1332,6 @@ function NodeSettingsDialog({
     name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || proxyDirty;
   const dnsDirty = dns !== dnsBase;
 
-  // Status badges: WARP registration is known from the node's report; Opera runs
-  // remotely, so the panel only shows enabled/disabled.
   const warpBadge: StatusBadge = !r.warpEnabled
     ? { label: t("conn.off"), color: "gray" }
     : node.warp_registered
@@ -1084,23 +1341,16 @@ function NodeSettingsDialog({
     ? { label: t("nodes.on"), color: "green" }
     : { label: t("conn.off"), color: "gray" };
 
-  // Each tab saves on its own (like Connections/Geo/Domain) and stays open; onRefresh
-  // updates the background list. General persists name/decoy, Routing the routing +
-  // egress, DNS its own endpoint — three independent saves.
   const saveGeneral = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
       await updateNode(node.id, {
         name: name.trim(),
-        host: node.host, // domain is changed from the Domain tab
+        host: node.host,
         decoy_template: decoy,
         traffic_coefficient: clampCoefficient(coef),
-        // Protocols are edited on the Connections tab; omitting them here tells the
-        // panel to preserve the current values (never revert a just-made change).
       });
-      // Only when it actually changed: the proxy write reconciles the server's Xray,
-      // which is not something a rename should trigger.
       if (proxyDirty) {
         await setServerProxy(node.id, proxy);
         setProxyBase(proxy);
@@ -1118,8 +1368,6 @@ function NodeSettingsDialog({
   const saveRouting = async () => {
     setSaving(true);
     try {
-      // Routing + egress — always the node's OWN (no inherit toggle). An empty routing
-      // config just means "mostly direct". DNS is saved separately.
       await setNodeRouting(
         node.id,
         r.effective(),
@@ -1140,7 +1388,6 @@ function NodeSettingsDialog({
   const saveDns = async () => {
     setSaving(true);
     try {
-      // Empty ⇒ inherit the panel's default resolver.
       await setNodeDNS(node.id, dns.trim() ? dns : null);
       setDnsBase(dns);
       notifySuccess(t("nodes.dnsSaved"));
@@ -1152,20 +1399,27 @@ function NodeSettingsDialog({
     }
   };
 
+  const dialogTabs = [
+    { value: "general", label: t("settings.tabGeneral") },
+    { value: "connections", label: t("nodes.tabConnections") },
+    { value: "routing", label: t("nodes.tabRouting") },
+    { value: "dns", label: "DNS" },
+    { value: "geo", label: "Geo" },
+    { value: "domain", label: t("restore.domain") },
+    ...(!node.is_rented ? [{ value: "rental", label: t("nodes.tabRental") }] : []),
+  ];
+
   return (
     <Modal open onClose={onClose} title={t("nodes.settingsOf", { name: node.name })} size="xl">
-      <DialogTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: "general", label: t("settings.tabGeneral") },
-          { value: "connections", label: t("nodes.tabConnections") },
-          { value: "routing", label: t("nodes.tabRouting") },
-          { value: "dns", label: "DNS" },
-          { value: "geo", label: "Geo" },
-          { value: "domain", label: t("restore.domain") },
-        ]}
-      />
+      {node.is_rented && (
+        <div className="mb-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs text-indigo-950 dark:text-indigo-200">
+          <div className="flex items-center gap-2 font-medium">
+            <span className="h-2 w-2 rounded-full bg-indigo-500" />
+            <span>{t("nodes.ownerSupremacy")}</span>
+          </div>
+        </div>
+      )}
+      <DialogTabs value={tab} onChange={setTab} tabs={dialogTabs} />
 
       {tab === "general" && (
         <div className="flex flex-col gap-4">
@@ -1221,7 +1475,6 @@ function NodeSettingsDialog({
 
       {tab === "routing" && (
         <div className="flex flex-col gap-4">
-          {/* Routing + egress — always the node's own (independent of the master). */}
           <RoutingEditor
             cfg={r.cfg}
             onCfg={r.onCfg}
@@ -1269,6 +1522,10 @@ function NodeSettingsDialog({
           redirectOnSuccess={false}
           onChanged={onRefresh}
         />
+      )}
+
+      {tab === "rental" && !node.is_rented && (
+        <NodeRentalTab node={node} onRefresh={onRefresh} />
       )}
     </Modal>
   );
@@ -1652,15 +1909,27 @@ function NodeCard({
   };
 
   const remove = async () => {
-    if (
-      !(await confirm({
-        title: t("nodes.deleteTitle"),
-        body: t("nodes.deleteBody", { name: node.name }),
-        confirmLabel: t("common.delete"),
-        danger: true,
-      }))
-    )
-      return;
+    if (node.is_rented) {
+      if (
+        !(await confirm({
+          title: t("nodes.deleteRentedTitle"),
+          body: t("nodes.deleteRentedBody", { name: node.name }),
+          confirmLabel: t("nodes.detachRented"),
+          danger: true,
+        }))
+      )
+        return;
+    } else {
+      if (
+        !(await confirm({
+          title: t("nodes.deleteTitle"),
+          body: t("nodes.deleteBody", { name: node.name }),
+          confirmLabel: t("common.delete"),
+          danger: true,
+        }))
+      )
+        return;
+    }
     try {
       await deleteNode(node.id);
       notifySuccess(t("nodes.deleted"));
@@ -1723,25 +1992,37 @@ function NodeCard({
                 together, and a chip wedged between them pushed the address around
                 every time the state changed. */}
             <span className="truncate font-mono text-sm text-ink-muted">{node.host}</span>
+            {node.is_rented && <Badge color="indigo">{t("nodes.rentedBadge")}</Badge>}
             <StatusChip node={node} />
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
             <span>{t("nodes.todayTraffic", { value: fmtBytes(node.traffic_up + node.traffic_down) })}</span>
-            {!node.is_local && (
+            {node.is_rented ? (
               <>
                 <Sep />
-                <span>{fmtSeen(node.last_seen)}</span>
+                <span>{t("nodes.quotaPerTenant")}: {node.share_quota_percent}%</span>
+                <Sep />
+                <span>{t("nodes.speedPerTenant")}: {node.share_speed_limit > 0 ? `${node.share_speed_limit} Kbps` : "∞"}</span>
               </>
-            )}
-            <Sep />
-            <span className={node.version_skew ? "text-amber-600" : undefined}>
-              Xray {node.xray_version || "—"}
-              {node.version_skew ? " ⚠" : ""}
-            </span>
-            {!node.is_local && (
+            ) : (
               <>
+                {!node.is_local && (
+                  <>
+                    <Sep />
+                    <span>{fmtSeen(node.last_seen)}</span>
+                  </>
+                )}
                 <Sep />
-                <span>{t("nodes.agentVersion", { version: node.node_version || "—" })}</span>
+                <span className={node.version_skew ? "text-amber-600" : undefined}>
+                  Xray {node.xray_version || "—"}
+                  {node.version_skew ? " ⚠" : ""}
+                </span>
+                {!node.is_local && (
+                  <>
+                    <Sep />
+                    <span>{t("nodes.agentVersion", { version: node.node_version || "—" })}</span>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1795,19 +2076,24 @@ function NodeCard({
                 </span>
               }
             >
-              <DropdownItem onClick={doUpdate}>
-                {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
-              </DropdownItem>
-              {/* One reinstall action: the dialog offers the command and the SSH way.
-                  They were two menu items (one just issued the command for
-                  the same reinstall), which read as two different operations. */}
-              <DropdownItem onClick={() => setReconnecting(true)}>
-                {t("nodes.reinstall")}
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem color="red" onClick={remove}>
-                {t("common.delete")}
-              </DropdownItem>
+              {node.is_rented ? (
+                <DropdownItem color="red" onClick={remove}>
+                  {t("nodes.detachRented")}
+                </DropdownItem>
+              ) : (
+                <>
+                  <DropdownItem onClick={doUpdate}>
+                    {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
+                  </DropdownItem>
+                  <DropdownItem onClick={() => setReconnecting(true)}>
+                    {t("nodes.reinstall")}
+                  </DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem color="red" onClick={remove}>
+                    {t("common.delete")}
+                  </DropdownItem>
+                </>
+              )}
             </Dropdown>
           )}
         </div>
@@ -2018,6 +2304,8 @@ export function NodesPanel() {
 
   if (nodes === null) return <CenterLoader />;
 
+  const ownedNodes = nodes.filter((n) => !n.is_rented);
+  const rentedNodes = nodes.filter((n) => n.is_rented);
   const remoteCount = nodes.filter((n) => !n.is_local).length;
   const anyStale = nodes.some((n) => !n.is_local && n.version_skew && n.online);
 
@@ -2031,7 +2319,7 @@ export function NodesPanel() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-ink">{t("nav.servers")}</h1>
@@ -2047,7 +2335,7 @@ export function NodesPanel() {
       </div>
 
       <Card className="divide-y divide-gray-100">
-        {nodes.map((n) => (
+        {ownedNodes.map((n) => (
           <NodeCard
             key={n.id}
             node={n}
@@ -2058,6 +2346,34 @@ export function NodesPanel() {
           />
         ))}
       </Card>
+
+      {rentedNodes.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
+              <span>{t("nodes.rentedBadge")} ({rentedNodes.length})</span>
+            </div>
+            <div className="h-px flex-1 bg-gradient-to-r from-indigo-500/30 via-indigo-500/10 to-transparent" />
+          </div>
+          <div className="space-y-2.5">
+            {rentedNodes.map((n) => (
+              <div
+                key={n.id}
+                className="overflow-hidden rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-purple-500/[0.03] shadow-sm ring-1 ring-indigo-500/20 transition-all hover:border-indigo-500/50 hover:shadow dark:border-indigo-500/40"
+              >
+                <NodeCard
+                  node={n}
+                  decoys={decoys}
+                  geo={geo}
+                  onChanged={load}
+                  onRegen={setInstallCmd}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {adding && (
         <AddNodeDialog

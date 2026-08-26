@@ -34,7 +34,7 @@ func mapInboundConflict(err error) error {
 }
 
 // inboundColumns is the SELECT list every inbound read shares, in Inbound-field order.
-const inboundColumns = `id, server_id, enabled, sort, name, protocol, port, opts, created_at`
+const inboundColumns = `id, server_id, enabled, sort, name, protocol, port, opts, created_at, tenant_id`
 
 // scanInbound reads one inbound row in inboundColumns order, decoding the opts blob
 // and decrypting the REALITY private key it may carry.
@@ -44,7 +44,7 @@ func scanInbound(sc interface{ Scan(...any) error }) (*model.Inbound, error) {
 	var optsJSON string
 	if err := sc.Scan(
 		&in.ID, &in.ServerID, &enabled, &in.Sort, &in.Name, &in.Protocol, &in.Port,
-		&optsJSON, &in.CreatedAt,
+		&optsJSON, &in.CreatedAt, &in.TenantID,
 	); err != nil {
 		return nil, err
 	}
@@ -155,9 +155,9 @@ func (s *Store) CreateInbound(in model.Inbound) (*model.Inbound, error) {
 		in.Sort = maxSort + 1
 	}
 	res, err := s.db.Exec(`
-		INSERT INTO inbounds (server_id, enabled, sort, name, protocol, port, opts)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		in.ServerID, boolToInt(in.Enabled), in.Sort, in.Name, in.Protocol, in.Port, opts)
+		INSERT INTO inbounds (server_id, enabled, sort, name, protocol, port, opts, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.ServerID, boolToInt(in.Enabled), in.Sort, in.Name, in.Protocol, in.Port, opts, in.TenantID)
 	if err != nil {
 		return nil, mapInboundConflict(err)
 	}
@@ -177,9 +177,9 @@ func (s *Store) UpdateInbound(in model.Inbound) error {
 		return err
 	}
 	_, err = s.db.Exec(`
-		UPDATE inbounds SET enabled = ?, sort = ?, name = ?, protocol = ?, port = ?, opts = ?
+		UPDATE inbounds SET enabled = ?, sort = ?, name = ?, protocol = ?, port = ?, opts = ?, tenant_id = ?
 		WHERE id = ?`,
-		boolToInt(in.Enabled), in.Sort, in.Name, in.Protocol, in.Port, opts, in.ID)
+		boolToInt(in.Enabled), in.Sort, in.Name, in.Protocol, in.Port, opts, in.TenantID, in.ID)
 	return mapInboundConflict(err)
 }
 

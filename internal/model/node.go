@@ -142,6 +142,16 @@ type Node struct {
 	// operator exactly once (it is the credential in the install command). It is
 	// never stored in clear and never read back.
 	RawJoinToken string `json:"join_token,omitempty"`
+
+	// Rental & Sharing fields (Owner supremacy & tenant isolation)
+	ShareEnabled      bool   `json:"share_enabled"`
+	ShareQuotaPercent int    `json:"share_quota_percent"`
+	ShareSpeedLimit   int    `json:"share_speed_limit"`
+	ShareToken        string `json:"-"`
+	IsRented          bool   `json:"is_rented"`
+	RentOwnerNodeID   int64  `json:"rent_owner_node_id,omitempty"`
+	RentShareKey      string `json:"-"`
+	RentTenantID      string `json:"rent_tenant_id,omitempty"`
 }
 
 // NodeConnections is a node's own connection transport, overriding the master's when

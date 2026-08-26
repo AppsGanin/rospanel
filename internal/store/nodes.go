@@ -47,7 +47,9 @@ const nodeColumns = `id, name, host, enabled,
 	cert_issuer, cert_expires_at, geo_refresh_hours,
 	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
-	proxy_accounts, traffic_coefficient`
+	proxy_accounts, traffic_coefficient,
+	share_enabled, share_quota_percent, share_speed_limit, share_token,
+	is_rented, rent_owner_node_id, rent_share_key, rent_tenant_id`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -68,6 +70,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var vlessEn, hysteriaEn, realityEn sql.NullBool
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
+	var shareEn, isRented int
 	if err := sc.Scan(
 		&n.ID, &n.Name, &n.Host, &enabled,
 		&n.RealityPrivateKey, &n.RealityPublicKey, &n.RealityShortID, &n.RealityPath, &n.RealityDest,
@@ -83,6 +86,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.ACMEEmail, &n.ACMEProvider, &n.ZeroSSLEABKID, &n.ZeroSSLEABHMAC,
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
 		&proxyAccounts, &n.TrafficCoefficient,
+		&shareEn, &n.ShareQuotaPercent, &n.ShareSpeedLimit, &n.ShareToken,
+		&isRented, &n.RentOwnerNodeID, &n.RentShareKey, &n.RentTenantID,
 	); err != nil {
 		return nil, err
 	}
@@ -91,6 +96,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.CertSelfSigned = certSelfSigned != 0
 	n.WarpEnabled = warpEn != 0
 	n.OperaEnabled = operaEn != 0
+	n.ShareEnabled = shareEn != 0
+	n.IsRented = isRented != 0
 	n.WarpPrivateKey = decField(n.WarpPrivateKey)
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
 	n.ZeroSSLEABHMAC = decField(n.ZeroSSLEABHMAC)

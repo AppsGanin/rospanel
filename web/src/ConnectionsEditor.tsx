@@ -8,11 +8,13 @@ import {
   listInbounds,
   regenInboundReality,
   updateInbound,
+  getNodeReservedPorts,
   type ConnectionsStatus,
   type ConnectionsUpdate,
   type Inbound,
   type InboundCatalog,
   type InboundInput,
+  type PortInfo,
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
@@ -28,6 +30,7 @@ import {
   Badge,
   Button,
   CenterLoader,
+  cn,
   IconChevron,
   Modal,
   Select,
@@ -128,6 +131,7 @@ export function ConnectionsEditor({
   // Custom inbounds state
   const [inbounds, setInbounds] = useState<Inbound[] | null>(null);
   const [catalog, setCatalog] = useState<InboundCatalog | null>(null);
+  const [reservedPorts, setReservedPorts] = useState<PortInfo[]>([]);
   const [editingInbound, setEditingInbound] = useState<{ id: number; v: InboundInput } | null>(null);
   const [confirmDelInbound, setConfirmDelInbound] = useState<Inbound | null>(null);
 
@@ -135,13 +139,19 @@ export function ConnectionsEditor({
   const [confirmDelDefault, setConfirmDelDefault] = useState<{ key: string; name: string } | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const reloadInbounds = () =>
+  const reloadInbounds = () => {
     listInbounds(serverId)
       .then(setInbounds)
       .catch((e) => {
         notifyError(errMessage(e));
         setInbounds([]);
       });
+    if (serverId > 0) {
+      getNodeReservedPorts(serverId)
+        .then((r) => setReservedPorts(r.ports || []))
+        .catch(() => {});
+    }
+  };
 
   const applyStatus = (s: ConnectionsStatus, explicitDeleted?: Record<string, boolean>) => {
     setStatus(s);
@@ -186,7 +196,12 @@ export function ConnectionsEditor({
   };
 
   useEffect(() => {
-    Promise.all([load(), listInbounds(serverId), getInboundCatalog()])
+    const promises: [Promise<ConnectionsStatus>, Promise<Inbound[]>, Promise<InboundCatalog>] = [
+      load(),
+      listInbounds(serverId),
+      getInboundCatalog(),
+    ];
+    Promise.all(promises)
       .then(([s, inbList, cat]) => {
         applyStatus(s);
         setInbounds(inbList);
@@ -194,6 +209,12 @@ export function ConnectionsEditor({
       })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoaded(true));
+
+    if (serverId > 0) {
+      getNodeReservedPorts(serverId)
+        .then((r) => setReservedPorts(r.ports || []))
+        .catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
@@ -386,6 +407,34 @@ export function ConnectionsEditor({
           </Button>
         </div>
       </div>
+
+      {/* ── Reserved Ports Summary (if any) ─────────────────────────────────── */}
+      {reservedPorts.length > 0 && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-50/40 p-3.5 text-xs dark:bg-indigo-950/20">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+              🛡️ {t("nodes.reservedPorts")} ({reservedPorts.length})
+            </span>
+            <span className="text-[11px] text-ink-muted">{t("nodes.reservedPortsHint")}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {reservedPorts.map((pi) => (
+              <span
+                key={`${pi.port}-${pi.protocol}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[11px]",
+                  pi.is_owner
+                    ? "bg-amber-100/80 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                    : "bg-indigo-100/80 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-200",
+                )}
+                title={pi.is_owner ? t("nodes.portOwner") : t("nodes.portTenant")}
+              >
+                <strong>{pi.port}</strong>/{pi.protocol.toUpperCase()} ({pi.service || (pi.is_owner ? t("nodes.portOwner") : t("nodes.portTenant"))})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Unified Connections List ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-3">

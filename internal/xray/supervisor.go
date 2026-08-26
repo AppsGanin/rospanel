@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1090,6 +1091,9 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 				s.dispatchAccess(email, ip, dest)
 			}
 		}
+	}
+	if err := sc.Err(); err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, io.EOF) {
+		slog.Debug("xray log scanner error", "err", err)
 	}
 }
 

@@ -406,6 +406,13 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/nodes/{id}/xray-restart", rt.nodeXrayRestart)
 	authed("POST /api/nodes/update-all", rt.updateAllNodes)
 	authedID("POST /api/nodes/{id}/provision", rt.provisionNode)
+	// Node Rental & Sharing endpoints
+	authedID("GET /api/nodes/{id}/rental", rt.nodeRentalSettings)
+	authedID("POST /api/nodes/{id}/rental", rt.saveNodeRentalSettings)
+	authedID("POST /api/nodes/{id}/rental/share-link", rt.getNodeShareLink)
+	authed("POST /api/nodes/import-rented", rt.importRentedNode)
+	authedID("GET /api/nodes/{id}/reserved-ports", rt.nodeReservedPorts)
+	authedID("DELETE /api/nodes/{id}/tenants/{tenantId}", rt.deleteNodeTenant)
 	authed("GET /api/webhooks", rt.listWebhooks)
 	authed("POST /api/webhooks", rt.createWebhook)
 	authedID("POST /api/webhooks/{id}", rt.updateWebhook)
