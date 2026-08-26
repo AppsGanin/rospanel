@@ -117,9 +117,14 @@ func TestValidateRejectsBadCombos(t *testing.T) {
 
 // The cross-inbound rules: two listeners can't share a port, a display name can't
 // repeat (it becomes a colliding sing-box tag), and nothing may sit on a built-in
+// The cross-inbound rules: two listeners can't share a port, a display name can't
+// repeat (it becomes a colliding sing-box tag), and nothing may sit on a built-in
 // lane's port — the collision would otherwise surface as an Xray that won't start.
 func TestValidateInboundSetCollisions(t *testing.T) {
-	reserved := ReservedPorts{443: "VLESS-Vision :443", 8443: "VLESS-XHTTP-REALITY"}
+	reserved := NewReservedPorts()
+	reserved.HoldTCP(443, "VLESS-Vision :443")
+	reserved.HoldTCP(8443, "VLESS-XHTTP-REALITY")
+	reserved.HoldUDP(443, "HYSTERIA-UDP")
 
 	if err := ValidateInboundSet([]Inbound{
 		vlessWS(1, "A", 9001), vlessWS(2, "B", 9001),
@@ -140,6 +145,20 @@ func TestValidateInboundSetCollisions(t *testing.T) {
 		t.Errorf("a valid pair was rejected: %v", err)
 	}
 
+	// TCP and UDP on the same port number must NOT collide.
+	tcpInbound := vlessWS(1, "TCP-Port", 7777)
+	udpInbound := hy2(2, "UDP-Port", 7777, 0, 0)
+	if err := ValidateInboundSet([]Inbound{tcpInbound, udpInbound}, NewReservedPorts(), nil); err != nil {
+		t.Errorf("TCP and UDP inbounds on the same port should not collide: %v", err)
+	}
+
+	// Custom UDP inbound on port 443 when only TCP is reserved on 443 must not collide.
+	tcpOnlyReserved := NewReservedPorts()
+	tcpOnlyReserved.HoldTCP(443, "VLESS-Vision")
+	if err := ValidateInboundSet([]Inbound{hy2(1, "Hy2", 443, 0, 0)}, tcpOnlyReserved, nil); err != nil {
+		t.Errorf("UDP inbound on 443 should not collide with TCP-only reservation: %v", err)
+	}
+
 	// A disabled inbound occupies nothing, so parking a spare on a busy port is fine.
 	off := vlessWS(2, "B", 9001)
 	off.Enabled = false
@@ -153,14 +172,14 @@ func TestValidateInboundSetCollisions(t *testing.T) {
 // duplicate tag rejects the WHOLE profile — costing the user every other server too.
 func TestValidateInboundSetRejectsBuiltinName(t *testing.T) {
 	taken := []string{ProtoVLESS, ProtoReality, ProtoHysteria}
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, ProtoVLESS, 9001)}, nil, taken); err == nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, ProtoVLESS, 9001)}, NewReservedPorts(), taken); err == nil {
 		t.Error("expected a built-in lane name to be refused")
 	}
 	// Case-insensitively, since that is how the collision is judged at render time.
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, "vless-tcp-tls", 9001)}, nil, taken); err == nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, "vless-tcp-tls", 9001)}, NewReservedPorts(), taken); err == nil {
 		t.Error("expected the built-in name check to be case-insensitive")
 	}
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, "Резерв", 9001)}, nil, taken); err != nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, "Резерв", 9001)}, NewReservedPorts(), taken); err != nil {
 		t.Errorf("a distinct name was refused: %v", err)
 	}
 }
@@ -174,24 +193,26 @@ func TestValidateInboundSetHopRanges(t *testing.T) {
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		hy2(2, "H2", 4000, 4001, 5050),
-	}, nil, nil); err == nil {
+	}, NewReservedPorts(), nil); err == nil {
 		t.Error("expected overlapping hop ranges to be rejected")
 	}
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		vlessWS(2, "W", 5050),
-	}, nil, nil); err == nil {
+	}, NewReservedPorts(), nil); err == nil {
 		t.Error("expected a hop range swallowing another inbound's port to be rejected")
 	}
+	resUDP := NewReservedPorts()
+	resUDP.HoldUDP(5050, "HYSTERIA-UDP")
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
-	}, ReservedPorts{5050: "HYSTERIA-UDP"}, nil); err == nil {
+	}, resUDP, nil); err == nil {
 		t.Error("expected a hop range covering a reserved port to be rejected")
 	}
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		hy2(2, "H2", 6000, 6001, 6100),
-	}, nil, nil); err != nil {
+	}, NewReservedPorts(), nil); err != nil {
 		t.Errorf("two disjoint hop ranges were rejected: %v", err)
 	}
 }

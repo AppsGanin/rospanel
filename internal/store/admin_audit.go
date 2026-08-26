@@ -51,7 +51,9 @@ func adminAuditWhere(f AdminAuditFilter) (string, []any) {
 	var q strings.Builder
 	var args []any
 	if len(f.Actions) > 0 {
-		q.WriteString(` AND action IN (?` + strings.Repeat(`, ?`, len(f.Actions)-1) + `)`)
+		q.WriteString(` AND action IN (?`)
+		q.WriteString(strings.Repeat(`, ?`, len(f.Actions)-1))
+		q.WriteString(`)`)
 		for _, a := range f.Actions {
 			args = append(args, a)
 		}

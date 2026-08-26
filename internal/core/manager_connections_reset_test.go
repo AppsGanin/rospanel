@@ -218,6 +218,7 @@ func TestCustomInboundAllowedWhenDefaultDisabled(t *testing.T) {
 		},
 		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
 		Names:        map[string]string{},
+		VLESSPort:    443,
 		HysteriaPort: 443,
 		HopStart:     443,
 		HopEnd:       443,
@@ -226,5 +227,118 @@ func TestCustomInboundAllowedWhenDefaultDisabled(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected collision error when re-enabling VLESS on 443 while custom inbound holds 443")
+	}
+}
+
+func TestTCPUDPCoexistenceOnPort443(t *testing.T) {
+	m := testConnManager(t)
+
+	// Built-in VLESS (TCP:443) is enabled.
+	// Custom Hysteria2 (UDP:443) should SUCCEED because it's UDP and VLESS is TCP!
+	in, err := m.CreateInbound(context.Background(), model.Inbound{
+		ServerID: model.LocalNodeID,
+		Name:     "CustomHy443",
+		Protocol: "hysteria2",
+		Port:     443,
+		Enabled:  true,
+		Opts: model.InboundOpts{
+			Transport: "hysteria",
+			Security:  "tls",
+		},
+	})
+	// In testConnManager, Hysteria2 built-in is on UDP:443 by default in settings.
+	// Let's first disable built-in Hysteria2 so only VLESS (TCP:443) is enabled.
+	if err := m.store.SetProtocolEnabled("hysteria2", false); err != nil {
+		t.Fatalf("disable built-in hysteria2: %v", err)
+	}
+
+	in, err = m.CreateInbound(context.Background(), model.Inbound{
+		ServerID: model.LocalNodeID,
+		Name:     "CustomHy443",
+		Protocol: "hysteria2",
+		Port:     443,
+		Enabled:  true,
+		Opts: model.InboundOpts{
+			Transport: "hysteria",
+			Security:  "tls",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected custom UDP:443 to succeed alongside built-in TCP:443 VLESS, got: %v", err)
+	}
+	if in.ID == 0 {
+		t.Fatal("expected valid inbound ID")
+	}
+
+	// Now re-saving connections with VLESS on TCP:443 should succeed without colliding with UDP:443 custom inbound.
+	err = m.ApplyConnections(ConnectionsUpdate{
+		Protocols: map[string]bool{
+			"vless":     true,
+			"reality":   false,
+			"hysteria2": false,
+		},
+		Fingerprints: map[string]string{"vless": "firefox"},
+		Names:        map[string]string{},
+		VLESSPort:    443,
+		HysteriaPort: 50000,
+		HopStart:     50000,
+		HopEnd:       50000,
+		RealityPort:  8443,
+		RealityDest:  "max.ru",
+	})
+	if err != nil {
+		t.Fatalf("ApplyConnections failed with TCP:443 VLESS and UDP:443 custom inbound: %v", err)
+	}
+}
+
+func TestVLESSCustomPortAndCollisions(t *testing.T) {
+	m := testConnManager(t)
+
+	// Change VLESS port to 9443
+	err := m.ApplyConnections(ConnectionsUpdate{
+		Protocols: map[string]bool{
+			"vless":     true,
+			"reality":   true,
+			"hysteria2": true,
+		},
+		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
+		Names:        map[string]string{},
+		VLESSPort:    9443,
+		HysteriaPort: 443,
+		HopStart:     443,
+		HopEnd:       443,
+		RealityPort:  8443,
+		RealityDest:  "max.ru",
+	})
+	if err != nil {
+		t.Fatalf("ApplyConnections with custom VLESSPort failed: %v", err)
+	}
+
+	status, err := m.ConnectionsInfo()
+	if err != nil {
+		t.Fatalf("ConnectionsInfo: %v", err)
+	}
+	if len(status.Protocols) > 0 && status.Protocols[0].Port != "9443" {
+		t.Errorf("expected VLESS port 9443, got %s", status.Protocols[0].Port)
+	}
+
+	// Attempting to set VLESS and REALITY to the same TCP port should fail
+	err = m.ApplyConnections(ConnectionsUpdate{
+		Protocols: map[string]bool{
+			"vless":     true,
+			"reality":   true,
+			"hysteria2": true,
+		},
+		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
+		Names:        map[string]string{},
+		VLESSPort:    8443,
+		HysteriaPort: 443,
+		HopStart:     443,
+		HopEnd:       443,
+		RealityPort:  8443,
+		RealityDest:  "max.ru",
+	})
+	if err == nil {
+		t.Fatal("expected collision error when VLESS and REALITY both use TCP 8443")
 	}
 }

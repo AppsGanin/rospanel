@@ -302,6 +302,15 @@ func (s *Store) SetHysteriaPorts(port, hopStart, hopEnd int, interval string) er
 	return err
 }
 
+// SetVLESSPort persists the VLESS listening port.
+func (s *Store) SetVLESSPort(port int) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET vless_port = ?, updated_at = unixepoch() WHERE id = 1`,
+		port,
+	)
+	return err
+}
+
 // SetFingerprints persists the per-connection uTLS fingerprints used in links.
 func (s *Store) SetFingerprints(vless, reality string) error {
 	_, err := s.db.Exec(

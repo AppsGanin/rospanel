@@ -266,6 +266,7 @@ export interface ConnectionsUpdate {
   protocols: Record<string, boolean>
   fingerprints: Record<string, string>
   names: Record<string, string>
+  vless_port?: number
   hysteria_port: number
   hop_start: number
   hop_end: number

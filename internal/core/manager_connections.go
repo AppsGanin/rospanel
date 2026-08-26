@@ -230,6 +230,7 @@ type ConnectionsUpdate struct {
 	Protocols         map[string]bool   `json:"protocols"`    // key → enabled
 	Fingerprints      map[string]string `json:"fingerprints"` // key → uTLS fingerprint
 	Names             map[string]string `json:"names"`        // key → custom node name ("" = default)
+	VLESSPort         int               `json:"vless_port"`
 	HysteriaPort      int               `json:"hysteria_port"`
 	HopStart          int               `json:"hop_start"`
 	HopEnd            int               `json:"hop_end"`
@@ -325,6 +326,16 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if err != nil {
 		return err
 	}
+	vlessPort := u.VLESSPort
+	if vlessPort == 0 {
+		vlessPort = set.VLESSPort
+	}
+	if vlessPort == 0 {
+		vlessPort = 443
+	}
+	if vlessPort < 1 || vlessPort > 65535 {
+		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
+	}
 	if u.HysteriaPort < 1 || u.HysteriaPort > 65535 {
 		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
 	}
@@ -341,18 +352,29 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if u.RealityPort < 1 || u.RealityPort > 65535 {
 		return invalidCode("err.realityPortRange", "порт REALITY вне диапазона 1–65535")
 	}
+
+	// Two built-in TCP lanes cannot share the same port if both enabled.
+	if u.Protocols["vless"] && u.Protocols["reality"] && vlessPort == u.RealityPort {
+		return invalidCode("err.tcpPortTaken", "порт {{port}} уже занят (VLESS-Vision и REALITY не могут использовать один TCP-порт)", map[string]any{"port": vlessPort})
+	}
+
 	// A port we're about to (re)bind must be free on the host, so a typo'd or
 	// colliding port is rejected up front instead of crash-looping Xray. Hysteria's
 	// UDP listener is always up, so only a CHANGE needs checking; the REALITY inbound
 	// exists only while enabled, so check whenever it'll be enabled on a port our
 	// REALITY inbound isn't already holding.
-	if u.HysteriaPort != set.HysteriaPort && !portFree("udp", u.HysteriaPort) {
+	if u.Protocols["hysteria2"] && u.HysteriaPort != set.HysteriaPort && !portFree("udp", u.HysteriaPort) {
 		return invalidCode("err.udpPortTaken", "UDP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.HysteriaPort})
 	}
 	realityHeld := set.RealityEnabled && set.RealityPrivateKey != "" && set.RealityPort == u.RealityPort
-	if u.Protocols["reality"] && !realityHeld && !portFree("tcp", u.RealityPort) {
+	if u.Protocols["reality"] && !realityHeld && u.RealityPort != set.VLESSPort && !portFree("tcp", u.RealityPort) {
 		return invalidCode("err.tcpPortTaken", "TCP-порт {{port}} уже занят — выберите другой", map[string]any{"port": u.RealityPort})
 	}
+	vlessHeld := set.VLESSEnabled && set.VLESSPort == vlessPort
+	if u.Protocols["vless"] && !vlessHeld && vlessPort != set.RealityPort && !portFree("tcp", vlessPort) {
+		return invalidCode("err.tcpPortTaken", "TCP-порт {{port}} уже занят — выберите другой", map[string]any{"port": vlessPort})
+	}
+
 	inbounds, err := m.store.Inbounds(model.LocalNodeID)
 	if err != nil {
 		return err
@@ -361,14 +383,19 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		if !in.Enabled {
 			continue
 		}
-		if u.Protocols["vless"] && in.Port == set.VLESSPort {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": set.VLESSPort, "who": in.Name})
-		}
-		if u.Protocols["reality"] && in.Port == u.RealityPort {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": u.RealityPort, "who": in.Name})
-		}
-		if u.Protocols["hysteria2"] && (in.Port == u.HysteriaPort || (u.HopEnd > u.HysteriaPort && in.Port >= u.HysteriaPort && in.Port <= u.HopEnd)) {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": in.Name})
+		inNet := portNetwork(in)
+		switch inNet {
+		case "tcp":
+			if u.Protocols["vless"] && in.Port == vlessPort {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": vlessPort, "who": in.Name})
+			}
+			if u.Protocols["reality"] && in.Port == u.RealityPort {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": u.RealityPort, "who": in.Name})
+			}
+		case "udp":
+			if u.Protocols["hysteria2"] && (in.Port == u.HysteriaPort || (u.HopEnd > u.HysteriaPort && in.Port >= u.HysteriaPort && in.Port <= u.HopEnd)) {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": in.Name})
+			}
 		}
 	}
 
@@ -405,6 +432,9 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		return err
 	}
 	if err := m.store.SetProtocolNames(connNames["vless"], connNames["reality"], connNames["hysteria2"]); err != nil {
+		return err
+	}
+	if err := m.store.SetVLESSPort(vlessPort); err != nil {
 		return err
 	}
 	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval); err != nil {
@@ -527,6 +557,9 @@ func (m *Manager) ResetConnections() (*ConnectionsStatus, error) {
 		return nil, err
 	}
 	if err := m.store.SetProtocolNames("", "", ""); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetVLESSPort(443); err != nil {
 		return nil, err
 	}
 	if err := m.store.SetHysteriaPorts(443, 443, 443, "5-10"); err != nil {

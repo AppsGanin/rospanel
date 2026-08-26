@@ -128,52 +128,38 @@ func (m *Manager) effectiveSettings(serverID int64) (*model.Settings, error) {
 // collision then — as an Xray that won't start — is exactly the failure this set
 // exists to prevent.
 func reservedPorts(set *model.Settings) model.ReservedPorts {
-	r := model.ReservedPorts{}
-	// Named through a helper rather than a map literal: two built-in lanes routinely
-	// share a number (Vision on TCP/443 and Hysteria2 on UDP/443 is the default), and
-	// a literal would silently keep whichever key came last — telling the operator
-	// their port collides with the wrong thing.
-	hold := func(port int, who string) {
-		if port <= 0 {
-			return
-		}
-		if prev, ok := r[port]; ok && prev != who {
-			r[port] = prev + " / " + who
-			return
-		}
-		r[port] = who
-	}
+	r := model.NewReservedPorts()
 	if set.VLESSEnabled {
-		hold(set.VLESSPort, "VLESS-Vision")
+		r.HoldTCP(set.VLESSPort, "VLESS-Vision")
 	}
 	if set.RealityEnabled {
-		hold(set.RealityPort, "VLESS-XHTTP-REALITY")
+		r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
 	}
 	if set.HysteriaEnabled {
-		hold(set.HysteriaPort, "HYSTERIA-UDP")
+		r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
 		if set.HopEnd > set.HysteriaPort {
 			// The built-in hop range is a funnel onto the Hysteria port: anything inside
 			// it would have its traffic silently stolen by the nftables redirect.
 			for p := set.HysteriaPort + 1; p <= set.HopEnd; p++ {
-				hold(p, "HYSTERIA-UDP hop range")
+				r.HoldUDP(p, "HYSTERIA-UDP hop range")
 			}
 		}
 	}
-	hold(xray.APIPort, "Xray internal API")
+	r.HoldTCP(xray.APIPort, "Xray internal API")
 
 	// The system proxies' listeners, held whether or not they are currently on — for
 	// the same reason the built-in lanes are: the port comes back the moment the
 	// operator flips the switch, and discovering the collision then, as an Xray that
 	// won't start, is what this set exists to prevent.
-	hold(set.ProxySocksPort, "SOCKS-прокси")
-	hold(set.ProxyHTTPPort, "HTTP-прокси")
+	r.HoldTCP(set.ProxySocksPort, "SOCKS-прокси")
+	r.HoldTCP(set.ProxyHTTPPort, "HTTP-прокси")
 	if set.OperaEnabled {
-		hold(set.OperaPortOr(), "Opera VPN")
+		r.HoldTCP(set.OperaPortOr(), "Opera VPN")
 	}
 	// WARP's loopback entrance. Loopback-only, but it still occupies a port on the
 	// box, so a custom inbound must not be allowed to claim it.
 	if set.WarpEnabled && set.WarpRegistered() {
-		hold(model.PanelEgressPort, "WARP local entrance")
+		r.HoldTCP(model.PanelEgressPort, "WARP local entrance")
 	}
 	return r
 }
@@ -196,9 +182,7 @@ func (m *Manager) holdPanelPort(reserved model.ReservedPorts) {
 	if err != nil {
 		return
 	}
-	if _, taken := reserved[p]; !taken {
-		reserved[p] = "panel internal port"
-	}
+	reserved.HoldTCP(p, "panel internal port")
 }
 
 // CreateInbound validates and stores a new custom inbound, generating REALITY key
@@ -513,6 +497,26 @@ func portNetwork(in model.Inbound) string {
 	return "tcp"
 }
 
+// isSelfXrayPort reports whether port is one of the local master server's configured
+// ports that our own running Xray holds (and which will be reconfigured/released on apply).
+func (m *Manager) isSelfXrayPort(network string, port int) bool {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return false
+	}
+	vlessPort := set.VLESSPort
+	if vlessPort == 0 {
+		vlessPort = 443
+	}
+	if network == "tcp" && (port == vlessPort || (set.RealityPort > 0 && port == set.RealityPort)) {
+		return true
+	}
+	if network == "udp" && port == set.HysteriaPort {
+		return true
+	}
+	return false
+}
+
 // probePort asks the machine that will run this inbound whether the port is free.
 //
 // On the master that is a local bind. On a node the panel cannot bind anything
@@ -523,7 +527,7 @@ func portNetwork(in model.Inbound) string {
 // validate-and-rollback if the config turns out not to start.
 func (m *Manager) probePort(ctx context.Context, serverID int64, network string, port int) error {
 	if serverID == model.LocalNodeID {
-		if !portFree(network, port) {
+		if !portFree(network, port) && !m.isSelfXrayPort(network, port) {
 			return invalidCode("err.portTakenOnServer", "порт {{port}} ({{network}}) уже занят на этом сервере — выберите другой", map[string]any{"port": port, "network": network})
 		}
 		return nil

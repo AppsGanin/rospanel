@@ -149,6 +149,7 @@ type Node struct {
 // are separate per-node fields; this holds the ports, port-hopping, WS path, REALITY
 // port + anti-replay, uTLS fingerprints, connection display names, and anti-DPI.
 type NodeConnections struct {
+	VLESSPort          int    `json:"vless_port"`
 	HysteriaPort       int    `json:"hysteria_port"`
 	HopStart           int    `json:"hop_start"`
 	HopEnd             int    `json:"hop_end"`

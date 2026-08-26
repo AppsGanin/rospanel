@@ -835,14 +835,55 @@ func (in *Inbound) UnsupportedFormats() []string {
 }
 
 // ReservedPorts is the set of ports one server's custom inbounds may not take,
-// keyed by what already holds them, for the error message. Built by the caller from
-// the server's effective settings — see core.reservedPorts.
-type ReservedPorts map[int]string
+// split by network (TCP and UDP), keyed by what already holds them for error messages.
+// Built by the caller from the server's effective settings — see core.reservedPorts.
+type ReservedPorts struct {
+	TCP map[int]string
+	UDP map[int]string
+}
+
+// NewReservedPorts initializes an empty ReservedPorts struct.
+func NewReservedPorts() ReservedPorts {
+	return ReservedPorts{
+		TCP: make(map[int]string),
+		UDP: make(map[int]string),
+	}
+}
+
+// HoldTCP marks a TCP port as reserved.
+func (r *ReservedPorts) HoldTCP(port int, who string) {
+	if port <= 0 {
+		return
+	}
+	if r.TCP == nil {
+		r.TCP = make(map[int]string)
+	}
+	if prev, ok := r.TCP[port]; ok && prev != who {
+		r.TCP[port] = prev + " / " + who
+		return
+	}
+	r.TCP[port] = who
+}
+
+// HoldUDP marks a UDP port as reserved.
+func (r *ReservedPorts) HoldUDP(port int, who string) {
+	if port <= 0 {
+		return
+	}
+	if r.UDP == nil {
+		r.UDP = make(map[int]string)
+	}
+	if prev, ok := r.UDP[port]; ok && prev != who {
+		r.UDP[port] = prev + " / " + who
+		return
+	}
+	r.UDP[port] = who
+}
 
 // ValidateInboundSet checks a server's whole inbound list together: the per-inbound
 // rules, plus everything that is only visible across the set — duplicate display
-// names (they become colliding sing-box/Clash tags), duplicate ports, ports already
-// held by a built-in lane, and overlapping Hysteria2 hop ranges (two nftables
+// names (they become colliding sing-box/Clash tags), duplicate ports (separated by TCP and UDP),
+// ports already held by a built-in lane, and overlapping Hysteria2 hop ranges (two nftables
 // funnels over the same UDP port would fight).
 //
 // takenNames are display names already in use on this server that are NOT in list —
@@ -865,7 +906,8 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 			names[strings.ToLower(n)] = true
 		}
 	}
-	ports := map[int]string{}
+	portsTCP := map[int]string{}
+	portsUDP := map[int]string{}
 	type hopRange struct {
 		name     string
 		from, to int
@@ -885,13 +927,25 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 		if !in.Enabled {
 			continue
 		}
-		if who, taken := reserved[in.Port]; taken {
-			return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Port, "who": who})
+
+		isUDP := in.Protocol == InbHysteria
+		if isUDP {
+			if who, taken := reserved.UDP[in.Port]; taken {
+				return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Port, "who": who})
+			}
+			if who, dup := portsUDP[in.Port]; dup {
+				return fieldErr("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": who})
+			}
+			portsUDP[in.Port] = in.Name
+		} else {
+			if who, taken := reserved.TCP[in.Port]; taken {
+				return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Port, "who": who})
+			}
+			if who, dup := portsTCP[in.Port]; dup {
+				return fieldErr("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": who})
+			}
+			portsTCP[in.Port] = in.Name
 		}
-		if who, dup := ports[in.Port]; dup {
-			return fieldErr("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": who})
-		}
-		ports[in.Port] = in.Name
 
 		if in.UsesHopping() {
 			from := in.Opts.HopStart
@@ -914,14 +968,28 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 	// A hop range must not swallow another inbound's base port: the nftables redirect
 	// would silently steal its traffic.
 	for _, h := range hops {
-		for p, who := range ports {
+		for p, who := range portsUDP {
 			if p >= h.from && p <= h.to && who != h.name {
 				return fieldErr("err.hopRangeCoversInbound",
 					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} подключения «{{who}}»",
 					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
 			}
 		}
-		for p, who := range reserved {
+		for p, who := range portsTCP {
+			if p >= h.from && p <= h.to && who != h.name {
+				return fieldErr("err.hopRangeCoversInbound",
+					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} подключения «{{who}}»",
+					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
+			}
+		}
+		for p, who := range reserved.UDP {
+			if p >= h.from && p <= h.to {
+				return fieldErr("err.hopRangeCoversPort",
+					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} ({{who}})",
+					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
+			}
+		}
+		for p, who := range reserved.TCP {
 			if p >= h.from && p <= h.to {
 				return fieldErr("err.hopRangeCoversPort",
 					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} ({{who}})",

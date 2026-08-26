@@ -74,11 +74,9 @@ type Hy = { port: number; start: number; end: number; interval: string };
 type Reality = { port: number; dests: string[]; antiReplay: boolean };
 type Anti = { fragment: boolean; min13: boolean; blockQuic: boolean };
 
-// ConnectionsEditor is the full connection editor (protocols on/off + names +
-// fingerprints + ports + hop + REALITY donor/keys/regen/port/anti-replay +
-// anti-DPI + custom inbounds + factory reset) for one server. Controlled: the
-// caller injects how to load, save and reset (master = global connections;
-// a node = its own).
+// ConnectionsEditor is the unified connection editor (built-in protocols + custom inbounds +
+// Anti-DPI + factory reset) for one server. Controlled: the caller injects how to load,
+// save and reset (master = global connections; a node = its own).
 export function ConnectionsEditor({
   load,
   save,
@@ -100,16 +98,19 @@ export function ConnectionsEditor({
 
   // Standard connections state
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [deleted, setDeleted] = useState<Record<string, boolean>>({});
   const [fps, setFps] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
-  const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10" });
-  const [reality, setReality] = useState<Reality>({ port: 0, dests: [], antiReplay: false });
+  const [vlessPort, setVlessPort] = useState<number>(443);
+  const [hy, setHy] = useState<Hy>({ port: 443, start: 443, end: 443, interval: "5-10" });
+  const [reality, setReality] = useState<Reality>({ port: 8443, dests: [], antiReplay: false });
   const [anti, setAnti] = useState<Anti>({ fragment: false, min13: false, blockQuic: false });
   const [regenReality, setRegenReality] = useState(false);
   const [saved, setSaved] = useState<{
     enabled: Record<string, boolean>;
     fps: Record<string, string>;
     names: Record<string, string>;
+    vlessPort: number;
     hy: Hy;
     reality: Reality;
     anti: Anti;
@@ -117,8 +118,9 @@ export function ConnectionsEditor({
     enabled: {},
     fps: {},
     names: {},
-    hy: { port: 0, start: 0, end: 0, interval: "5-10" },
-    reality: { port: 0, dests: [], antiReplay: false },
+    vlessPort: 443,
+    hy: { port: 443, start: 443, end: 443, interval: "5-10" },
+    reality: { port: 8443, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
   });
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -141,11 +143,13 @@ export function ConnectionsEditor({
         setInbounds([]);
       });
 
-  const applyStatus = (s: ConnectionsStatus) => {
+  const applyStatus = (s: ConnectionsStatus, explicitDeleted?: Record<string, boolean>) => {
     setStatus(s);
     const en: Record<string, boolean> = {};
     const fp: Record<string, string> = {};
     const nm: Record<string, string> = {};
+    const vlessP = Number(s.protocols.find((p) => p.key === "vless")?.port) || 443;
+    setVlessPort(vlessP);
     s.protocols.forEach((p) => {
       en[p.key] = p.enabled;
       if (p.fingerprint) fp[p.key] = p.fingerprint;
@@ -175,7 +179,10 @@ export function ConnectionsEditor({
     setReality(r);
     setAnti(a);
     setRegenReality(false);
-    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a });
+    if (explicitDeleted !== undefined) {
+      setDeleted(explicitDeleted);
+    }
+    setSaved({ enabled: en, fps: fp, names: nm, vlessPort: vlessP, hy: h, reality: r, anti: a });
   };
 
   useEffect(() => {
@@ -192,7 +199,10 @@ export function ConnectionsEditor({
 
   const protocolsChanged = Object.keys(enabled).some((k) => enabled[k] !== saved.enabled[k]);
   const portsChanged =
-    hy.port !== saved.hy.port || hy.start !== saved.hy.start || hy.end !== saved.hy.end;
+    vlessPort !== saved.vlessPort ||
+    hy.port !== saved.hy.port ||
+    hy.start !== saved.hy.start ||
+    hy.end !== saved.hy.end;
   const hyChanged = portsChanged || hy.interval !== saved.hy.interval;
   const realityChanged =
     reality.port !== saved.reality.port ||
@@ -207,6 +217,7 @@ export function ConnectionsEditor({
     fpsChanged ||
     namesChanged ||
     protocolsChanged ||
+    portsChanged ||
     hyChanged ||
     realityChanged ||
     regenReality ||
@@ -226,6 +237,7 @@ export function ConnectionsEditor({
         protocols: enabled,
         fingerprints: fps,
         names,
+        vless_port: vlessPort,
         hysteria_port: hy.port,
         hop_start: hy.start,
         hop_end: hy.end,
@@ -249,6 +261,7 @@ export function ConnectionsEditor({
     setEnabled(saved.enabled);
     setFps(saved.fps);
     setNames(saved.names);
+    setVlessPort(saved.vlessPort);
     setHy(saved.hy);
     setReality(saved.reality);
     setAnti(saved.anti);
@@ -287,16 +300,19 @@ export function ConnectionsEditor({
 
   const regenInbound = (v: Inbound) => writeInbound(() => regenInboundReality(v.id));
 
-  // Delete default connection (turns it off with confirmation)
+  // Delete default connection (disables it and removes from active list with immediate save)
   const deleteDefaultConnection = (key: string) => {
     const nextEnabled = { ...enabled, [key]: false };
+    const nextDeleted = { ...deleted, [key]: true };
     setEnabled(nextEnabled);
+    setDeleted(nextDeleted);
     setConfirmDelDefault(null);
     const run1 = async () => {
       const s = await save({
         protocols: nextEnabled,
         fingerprints: fps,
         names,
+        vless_port: vlessPort,
         hysteria_port: hy.port,
         hop_start: hy.start,
         hop_end: hy.end,
@@ -309,7 +325,7 @@ export function ConnectionsEditor({
         tls_min13: anti.min13,
         block_quic: anti.blockQuic,
       });
-      applyStatus(s);
+      applyStatus(s, nextDeleted);
       notifySuccess(t("common.saved"));
     };
     if (restartsPanel) applyXray(run1);
@@ -321,7 +337,8 @@ export function ConnectionsEditor({
     if (!reset) return;
     const task = async () => {
       const s = await reset();
-      applyStatus(s);
+      setDeleted({});
+      applyStatus(s, {});
       await reloadInbounds();
       setConfirmReset(false);
       notifySuccess(t("conn.resetFactoryDone"));
@@ -333,6 +350,8 @@ export function ConnectionsEditor({
   if (!loaded || !status || inbounds === null || !catalog) return <CenterLoader />;
 
   const customLimitReached = inbounds.length >= catalog.max;
+  const visibleProtocols = status.protocols.filter((p) => !deleted[p.key]);
+  const totalConnections = visibleProtocols.length + inbounds.length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -364,45 +383,60 @@ export function ConnectionsEditor({
         </div>
       </div>
 
-      {/* ── Section 1: Default / Built-in connections ───────────────────────── */}
+      {/* ── Unified Connections List ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-          {t("conn.defaultConnections")}
-        </h4>
-        <div className="grid grid-cols-1 gap-3">
-          {status.protocols.map((p) => {
-            const isOpen = !!open[p.key];
-            const on = !!enabled[p.key];
-            const displayName = names[p.key] || p.name;
-            return (
-              <div
-                key={p.key}
-                className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60"
-              >
+        {totalConnections === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 p-6 text-center">
+            <p className="text-sm text-ink-muted">{t("inb.empty")}</p>
+            <div className="mt-3 flex justify-center gap-2">
+              {reset && (
+                <Button size="sm" variant="light" color="orange" onClick={() => setConfirmReset(true)}>
+                  {t("conn.resetFactory")}
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setEditingInbound({ id: 0, v: blank() })}>
+                + {t("conn.addConnection")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3">
+            {/* Built-in connections */}
+            {visibleProtocols.map((p) => {
+              const isOpen = !!open[p.key];
+              const on = !!enabled[p.key];
+              const displayName = names[p.key] || p.name;
+              const portDisplay =
+                p.key === "vless" ? vlessPort : p.key === "reality" ? reality.port : hy.port;
+
+              return (
                 <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setOpen((o) => ({ ...o, [p.key]: !o[p.key] }));
-                    }
-                  }}
-                  className="flex w-full cursor-pointer items-center justify-between gap-2 p-4 text-left"
+                  key={p.key}
+                  className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60"
                 >
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <IconChevron
-                      className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                    />
-                    <span className="font-medium text-ink">{displayName}</span>
-                    <Badge color="gray">{p.port}</Badge>
-                    <Badge color="gray">{p.transport}</Badge>
-                    <Badge color="gray">{p.security}</Badge>
-                    {!on && <Badge color="gray">{t("conn.off")}</Badge>}
-                  </div>
-                  <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                    {on && (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setOpen((o) => ({ ...o, [p.key]: !o[p.key] }));
+                      }
+                    }}
+                    className="flex w-full cursor-pointer items-center justify-between gap-2 p-4 text-left"
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <IconChevron
+                        className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                      />
+                      <span className="font-medium text-ink">{displayName}</span>
+                      <Badge color="gray">{portDisplay}</Badge>
+                      <Badge color="gray">{p.transport}</Badge>
+                      <Badge color="gray">{p.security}</Badge>
+                      {!on && <Badge color="gray">{t("conn.off")}</Badge>}
+                    </div>
+                    <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => setConfirmDelDefault({ key: p.key, name: displayName })}
@@ -411,49 +445,58 @@ export function ConnectionsEditor({
                       >
                         {t("common.delete")}
                       </button>
-                    )}
-                    <Switch
-                      checked={on}
-                      onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))}
-                      disabled={busy || applying}
-                    />
-                  </div>
-                </div>
-
-                {isOpen && (
-                  <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
-                    <div className="flex flex-col gap-2">
-                      <TextInput
-                        label={t("conn.name")}
-                        value={names[p.key] ?? ""}
-                        onChange={(v) => setNames((n) => ({ ...n, [p.key]: v }))}
-                        placeholder={p.name}
+                      <Switch
+                        checked={on}
+                        onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))}
+                        disabled={busy || applying}
                       />
-                      <p className="text-xs text-ink-muted">
-                        {t("conn.nameHint", { name: p.name })}
-                      </p>
                     </div>
+                  </div>
 
-                    <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
-                      <Field label={t("conn.transport")} value={p.transport} />
-                      <Field label={t("conn.security")} value={p.security} />
-                      {p.note && <Field label={t("conn.note")} value={p.note} />}
-                    </div>
-
-                    {p.fingerprint && (
-                      <div className="border-t border-gray-100 pt-3">
-                        <Select
-                          label="Fingerprint (uTLS)"
-                          data={FP_OPTIONS}
-                          value={fps[p.key] ?? "firefox"}
-                          onChange={(v) => setFps((f) => ({ ...f, [p.key]: v }))}
+                  {isOpen && (
+                    <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
+                      <div className="flex flex-col gap-2">
+                        <TextInput
+                          label={t("conn.name")}
+                          value={names[p.key] ?? ""}
+                          onChange={(v) => setNames((n) => ({ ...n, [p.key]: v }))}
+                          placeholder={p.name}
                         />
-                        <p className="mt-2 text-xs text-ink-muted">{t("conn.fpHint")}</p>
+                        <p className="text-xs text-ink-muted">
+                          {t("conn.nameHint", { name: p.name })}
+                        </p>
                       </div>
-                    )}
 
-                    {p.key === "hysteria2" &&
-                      (on ? (
+                      <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
+                        <Field label={t("conn.transport")} value={p.transport} />
+                        <Field label={t("conn.security")} value={p.security} />
+                        {p.note && <Field label={t("conn.note")} value={p.note} />}
+                      </div>
+
+                      {p.key === "vless" && (
+                        <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+                          <TextInput
+                            label={t("conn.port")}
+                            type="number"
+                            value={String(vlessPort)}
+                            onChange={(v) => setVlessPort(Number(v.replace(/\D/g, "")) || 0)}
+                          />
+                        </div>
+                      )}
+
+                      {p.fingerprint && (
+                        <div className="border-t border-gray-100 pt-3">
+                          <Select
+                            label="Fingerprint (uTLS)"
+                            data={FP_OPTIONS}
+                            value={fps[p.key] ?? "firefox"}
+                            onChange={(v) => setFps((f) => ({ ...f, [p.key]: v }))}
+                          />
+                          <p className="mt-2 text-xs text-ink-muted">{t("conn.fpHint")}</p>
+                        </div>
+                      )}
+
+                      {p.key === "hysteria2" && (
                         <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                           <div className="grid grid-cols-3 gap-2">
                             <TextInput
@@ -483,14 +526,9 @@ export function ConnectionsEditor({
                           />
                           <p className="text-xs text-ink-muted">{t("conn.hopHint")}</p>
                         </div>
-                      ) : (
-                        <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                          {t("conn.enableHysteria")}
-                        </p>
-                      ))}
+                      )}
 
-                    {p.key === "reality" &&
-                      (on ? (
+                      {p.key === "reality" && (
                         <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
                           <TextInput
                             label={t("conn.port")}
@@ -536,43 +574,26 @@ export function ConnectionsEditor({
                           </div>
                           <p className="text-xs text-ink-muted">{t("conn.realityHint")}</p>
                         </div>
-                      ) : (
-                        <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                          {t("conn.enableReality")}
-                        </p>
-                      ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                      )}
 
-      {/* ── Section 2: Custom inbounds ───────────────────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-            {t("conn.customConnections")} ({inbounds.length})
-          </h4>
-        </div>
+                      <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
+                        <Button
+                          size="sm"
+                          variant="light"
+                          color="red"
+                          onClick={() => setConfirmDelDefault({ key: p.key, name: displayName })}
+                          disabled={busy || applying}
+                        >
+                          {t("common.delete")}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-        {inbounds.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-200 p-4 text-center">
-            <p className="text-sm text-ink-muted">{t("inb.empty")}</p>
-            <div className="mt-3">
-              <Button
-                size="sm"
-                variant="light"
-                onClick={() => setEditingInbound({ id: 0, v: blank() })}
-                disabled={busy || applying || customLimitReached}
-              >
-                + {t("inb.add")}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
+            {/* Custom inbounds */}
             {inbounds.map((v) => (
               <InboundRow
                 key={v.id}
@@ -588,7 +609,25 @@ export function ConnectionsEditor({
         )}
       </div>
 
-      {/* ── Section 3: Anti-DPI Transport Hardening ──────────────────────────── */}
+      {/* Save bar for dirty standard connection parameters */}
+      <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-ink-muted">{t("conn.saveHint")}</p>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="light"
+            color="gray"
+            onClick={cancel}
+            disabled={!dirty || busy || applying}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={doSave} loading={busy || applying} disabled={!dirty}>
+            {t("common.save")}
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Section: Anti-DPI Transport Hardening ────────────────────────────── */}
       <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
         <h3 className="mb-1 font-bold text-ink">{t("conn.antiDpi")}</h3>
         <p className="mb-3 text-sm text-ink-muted">{t("conn.antiDpiHint")}</p>
@@ -629,24 +668,6 @@ export function ConnectionsEditor({
               onChange={(v) => setAnti((a) => ({ ...a, min13: v }))}
             />
           </label>
-        </div>
-      </div>
-
-      {/* Save bar for dirty standard connection parameters */}
-      <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-ink-muted">{t("conn.saveHint")}</p>
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="light"
-            color="gray"
-            onClick={cancel}
-            disabled={!dirty || busy || applying}
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={doSave} loading={busy || applying} disabled={!dirty}>
-            {t("common.save")}
-          </Button>
         </div>
       </div>
 

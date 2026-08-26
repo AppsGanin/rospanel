@@ -99,6 +99,9 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	// Connection transport: the node's own if configured, otherwise inherit the
 	// master's (ns already carries the master's values from the shallow copy).
 	if c := n.Connections; c != nil {
+		if c.VLESSPort > 0 {
+			ns.VLESSPort = c.VLESSPort
+		}
 		ns.HysteriaPort = c.HysteriaPort
 		ns.HopStart = c.HopStart
 		ns.HopEnd = c.HopEnd
@@ -843,6 +846,31 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		maxTimeDiff = realityAntiReplayWindowMs
 	}
 
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return err
+	}
+
+	vlessPort := u.VLESSPort
+	if vlessPort == 0 {
+		if nc := n.Connections; nc != nil && nc.VLESSPort > 0 {
+			vlessPort = nc.VLESSPort
+		} else {
+			vlessPort = set.VLESSPort
+		}
+	}
+	if vlessPort == 0 {
+		vlessPort = 443
+	}
+	if vlessPort < 1 || vlessPort > 65535 {
+		return invalidCode("err.portRange", "порт вне диапазона 1–65535")
+	}
+
+	// Two built-in TCP lanes cannot share the same port if both enabled.
+	if u.Protocols["vless"] && u.Protocols["reality"] && vlessPort == u.RealityPort {
+		return invalidCode("err.tcpPortTaken", "порт {{port}} уже занят (VLESS-Vision и REALITY не могут использовать один TCP-порт)", map[string]any{"port": vlessPort})
+	}
+
 	inbounds, err := m.store.Inbounds(id)
 	if err != nil {
 		return err
@@ -851,14 +879,19 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		if !in.Enabled {
 			continue
 		}
-		if u.Protocols["vless"] && in.Port == 443 {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": 443, "who": in.Name})
-		}
-		if u.Protocols["reality"] && in.Port == u.RealityPort {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": u.RealityPort, "who": in.Name})
-		}
-		if u.Protocols["hysteria2"] && (in.Port == u.HysteriaPort || (u.HopEnd > u.HysteriaPort && in.Port >= u.HysteriaPort && in.Port <= u.HopEnd)) {
-			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": in.Name})
+		inNet := portNetwork(in)
+		switch inNet {
+		case "tcp":
+			if u.Protocols["vless"] && in.Port == vlessPort {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": vlessPort, "who": in.Name})
+			}
+			if u.Protocols["reality"] && in.Port == u.RealityPort {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": u.RealityPort, "who": in.Name})
+			}
+		case "udp":
+			if u.Protocols["hysteria2"] && (in.Port == u.HysteriaPort || (u.HopEnd > u.HysteriaPort && in.Port >= u.HysteriaPort && in.Port <= u.HopEnd)) {
+				return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": in.Name})
+			}
 		}
 	}
 
@@ -890,6 +923,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	}
 	// Transport blob.
 	blob := &model.NodeConnections{
+		VLESSPort:          vlessPort,
 		HysteriaPort:       u.HysteriaPort,
 		HopStart:           u.HopStart,
 		HopEnd:             u.HopEnd,
@@ -931,6 +965,7 @@ func (m *Manager) ResetNodeConnections(id int64) (*ConnectionsStatus, error) {
 		return nil, err
 	}
 	blob := &model.NodeConnections{
+		VLESSPort:          443,
 		HysteriaPort:       443,
 		HopStart:           443,
 		HopEnd:             443,

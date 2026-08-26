@@ -513,13 +513,13 @@ func (m *Manager) checkProxyPorts(p model.SystemProxy, set *model.Settings, cust
 	reserved := otherListenerPorts(set, custom)
 	m.holdPanelPort(reserved)
 	if p.SocksEnabled {
-		if who, taken := reserved[p.SocksPort]; taken {
+		if who, taken := reserved.TCP[p.SocksPort]; taken {
 			return invalidCode("err.portTaken", "порт {{port}} уже занят: {{who}}",
 				map[string]any{"port": p.SocksPort, "who": who})
 		}
 	}
 	if p.HTTPEnabled {
-		if who, taken := reserved[p.HTTPPort]; taken {
+		if who, taken := reserved.TCP[p.HTTPPort]; taken {
 			return invalidCode("err.portTaken", "порт {{port}} уже занят: {{who}}",
 				map[string]any{"port": p.HTTPPort, "who": who})
 		}
@@ -536,7 +536,11 @@ func otherListenerPorts(set *model.Settings, custom []model.Inbound) model.Reser
 	r := reservedPorts(&stripped)
 	for _, in := range custom {
 		if in.Port > 0 {
-			r[in.Port] = in.Name
+			if in.Protocol == model.InbHysteria {
+				r.HoldUDP(in.Port, in.Name)
+			} else {
+				r.HoldTCP(in.Port, in.Name)
+			}
 		}
 	}
 	return r
