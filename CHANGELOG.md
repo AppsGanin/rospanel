@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.16.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.3...v2.16.0) (2026-08-26)
+
+
+### Features
+
+* implement node rental system supporting remote node importing, port reservation management, and tenant tracking ([d0f3f22](https://github.com/Shu1t3/rospanel-shu1t3/commit/d0f3f220313d7bd59aba9b3ae8441989b41b0605))
+
+
+### Bug Fixes
+
+* optimize telegram notifications with worker pools and add robust numeric parsing and batched abuse reporting ([5fa1f09](https://github.com/Shu1t3/rospanel-shu1t3/commit/5fa1f098229e8f9bb5c30c52fbb703755ff9f094))
+
 ## [2.15.3](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.2...v2.15.3) (2026-08-26)
 
 
