@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.2...v2.15.0) (2026-08-26)
+
+
+### Features
+
+* add connection settings factory reset functionality and remove legacy inbounds UI ([75a54bf](https://github.com/Shu1t3/rospanel-shu1t3/commit/75a54bfcc1a178b5710b60a8df7211e4968cf9c9))
+
 ## [2.14.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.1...v2.14.2) (2026-08-26)
 
 
