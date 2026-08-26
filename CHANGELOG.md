@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.1...v2.14.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* implement error fingerprinting for poll log deduplication and clean up service method signatures ([f8d736d](https://github.com/Shu1t3/rospanel-shu1t3/commit/f8d736d497e971b34872df80d129436d497a2273))
+
 ## [2.14.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.0...v2.14.1) (2026-08-26)
 
 
