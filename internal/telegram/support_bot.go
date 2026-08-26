@@ -44,6 +44,7 @@ type SupportService struct {
 	// nobody owns doesn't collect a warning per message.
 	orphanWarned map[int64]bool
 	prunedAt     time.Time // last candidate prune
+	lastPollErr  string    // last getUpdates error (dedups log spam on a bad token)
 }
 
 // Per-chat flood limit. The support bot is public and everything it receives lands
@@ -111,6 +112,7 @@ func (s *SupportService) clientFor(token, proxy string) *Client {
 		// message until its counter caught up — silently, with nothing logged.
 		s.offset = 0
 		s.botID = 0
+		s.lastPollErr = ""
 	}
 	return s.client
 }
@@ -154,10 +156,18 @@ func (s *SupportService) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			if key := pollErrorKey(err); key != s.lastPollErr {
+				log.Printf("telegram support: getUpdates: %v", err)
+				s.lastPollErr = key
+			}
 			if !sleep(ctx, pollBackoff(err)) {
 				return
 			}
 			continue
+		}
+		if s.lastPollErr != "" {
+			log.Printf("telegram support: polling recovered")
+			s.lastPollErr = ""
 		}
 		for _, u := range updates {
 			s.offset = u.UpdateID + 1
@@ -494,13 +504,13 @@ func topicCard(u model.User, linked bool, m *Message, set *model.Settings, panel
 	if linked {
 		b.WriteString(userSelfCard(u, set, panel, i18n.Default))
 	} else {
-		b.WriteString(i18n.T(i18n.Default, "support.notRegistered") + "\n")
+		fmt.Fprintf(&b, "%s\n", i18n.T(i18n.Default, "support.notRegistered"))
 		if m.From != nil && m.From.Username != "" {
 			fmt.Fprintf(&b, "Telegram: @%s\n", esc(m.From.Username))
 		}
 		fmt.Fprintf(&b, "Chat ID: <code>%d</code>", m.Chat.ID)
 	}
-	b.WriteString("\n\n" + i18n.T(i18n.Default, "support.topicHint", internalNotePrefix))
+	fmt.Fprintf(&b, "\n\n%s", i18n.T(i18n.Default, "support.topicHint", internalNotePrefix))
 	return b.String()
 }
 

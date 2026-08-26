@@ -124,6 +124,7 @@ func (s *Service) clientFor(token, proxy string) *Client {
 	if s.client == nil || s.clientToken != token || s.clientProxy != proxy {
 		s.client = NewClient(token, proxy)
 		s.clientToken, s.clientProxy = token, proxy
+		s.lastPollErr = ""
 	}
 	return s.client
 }
@@ -231,9 +232,9 @@ func (s *Service) Run(ctx context.Context) {
 			}
 			// Log a persistent error (e.g. a bad token, or a webhook conflict) once,
 			// not every cycle — otherwise it floods the journal forever.
-			if msg := err.Error(); msg != s.lastPollErr {
+			if key := pollErrorKey(err); key != s.lastPollErr {
 				log.Printf("telegram: getUpdates: %v", err)
-				s.lastPollErr = msg
+				s.lastPollErr = key
 			}
 			if !sleep(ctx, pollBackoff(err)) {
 				return
@@ -318,7 +319,7 @@ func (s *Service) handleMessage(ctx context.Context, client *Client, m *Message)
 	}
 	// A pending prompt (e.g. "send the new user's name") consumes the next message.
 	if s.takePending(chatID) == "add" {
-		s.doAdd(ctx, client, chatID, set, text)
+		s.doAdd(ctx, client, chatID, text)
 		return
 	}
 	// Any other text just opens the menu — the whole UI is buttons.
@@ -331,15 +332,15 @@ func (s *Service) handleStart(ctx context.Context, client *Client, set *model.Se
 	lang := s.lang()
 	if len(args) >= 1 && set.TGLinkCode != "" &&
 		subtle.ConstantTimeCompare([]byte(args[0]), []byte(set.TGLinkCode)) == 1 {
-		ids := set.TelegramChatIDs()
-		if !set.TelegramAuthorized(chatID) {
-			ids = append(ids, chatID)
-		}
-		_ = s.store.SetTelegramChats(joinIDs(ids))
-		_ = s.store.SetTelegramLinkCode("") // one-time: burn the code
-		log.Printf("telegram: chat %d linked", chatID)
-		s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.chatLinked")+"\n\n"+menuHeader(lang), mainMenuRows(lang))
-		return
+	ids := set.TelegramChatIDs()
+	if !set.TelegramAuthorized(chatID) {
+		ids = append(ids, chatID)
+	}
+	_ = s.store.SetTelegramChats(joinIDs(ids))
+	_ = s.store.SetTelegramLinkCode("") // one-time: burn the code
+	log.Printf("telegram: chat %d linked", chatID)
+	s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.chatLinked")+"\n\n"+menuHeader(lang), mainMenuRows(lang))
+	return
 	}
 	if set.TelegramAuthorized(chatID) {
 		s.sendMainMenu(ctx, client, chatID)
@@ -377,7 +378,7 @@ func (s *Service) handleCallback(ctx context.Context, client *Client, cb *Callba
 	case data == "add":
 		s.promptAdd(ctx, client, chatID, msgID)
 	case data == "backup":
-		s.cmdBackup(ctx, client, chatID, set)
+		s.cmdBackup(ctx, client, chatID)
 	}
 }
 
@@ -433,7 +434,7 @@ func (s *Service) handleUserAction(ctx context.Context, client *Client, chatID, 
 		_ = s.panel.ResetTraffic(ctx, id)
 		s.showUserCard(ctx, client, chatID, msgID, set, id)
 	case "plans":
-		s.showUserPlans(ctx, client, chatID, msgID, set, id)
+		s.showUserPlans(ctx, client, chatID, msgID, id)
 	case "del": // ask for confirmation in place
 		u, ok := s.findUser(id)
 		if !ok {
@@ -544,7 +545,7 @@ func (s *Service) showUserCard(ctx context.Context, client *Client, chatID, msgI
 }
 
 // showUserPlans lets the admin assign a tariff (or switch back to manual limits).
-func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, userID int64) {
+func (s *Service) showUserPlans(ctx context.Context, client *Client, chatID, msgID int64, userID int64) {
 	lang := s.lang()
 	u, ok := s.findUser(userID)
 	if !ok {
@@ -584,7 +585,7 @@ func (s *Service) promptAdd(ctx context.Context, client *Client, chatID, msgID i
 }
 
 // doAdd creates a user, without a data limit or expiry, from the prompted name.
-func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, set *model.Settings, text string) {
+func (s *Service) doAdd(ctx context.Context, client *Client, chatID int64, text string) {
 	lang := s.lang()
 	name := strings.TrimSpace(text)
 	if name == "" {
@@ -620,7 +621,7 @@ func (s *Service) sendSubscription(ctx context.Context, client *Client, chatID i
 	}
 }
 
-func (s *Service) cmdBackup(ctx context.Context, client *Client, chatID int64, set *model.Settings) {
+func (s *Service) cmdBackup(ctx context.Context, client *Client, chatID int64) {
 	lang := s.lang()
 	s.send(ctx, client, chatID, i18n.T(lang, "admin.preparingBackup"))
 	if err := SendBackup(ctx, client, []int64{chatID}, s.dataDir,

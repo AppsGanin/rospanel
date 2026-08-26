@@ -28,6 +28,7 @@ type UserService struct {
 	clientProxy string // proxy the cached client was built with; a change rebuilds it
 	commandsFor string // token whose command menu was already published
 	offset      int64
+	lastPollErr string           // last getUpdates error (dedups log spam on a bad token)
 	pending     map[int64]string // chatID → "reg" (awaiting display name)
 
 	regMu     sync.Mutex
@@ -83,6 +84,7 @@ func (s *UserService) clientFor(token, proxy string) *Client {
 		// Per-bot update ids: keeping the old offset across a token swap would ACK
 		// away the new bot's backlog and drop messages until it caught up.
 		s.offset = 0
+		s.lastPollErr = ""
 	}
 	return s.client
 }
@@ -158,10 +160,18 @@ func (s *UserService) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			if key := pollErrorKey(err); key != s.lastPollErr {
+				log.Printf("telegram user: getUpdates: %v", err)
+				s.lastPollErr = key
+			}
 			if !sleep(ctx, pollBackoff(err)) {
 				return
 			}
 			continue
+		}
+		if s.lastPollErr != "" {
+			log.Printf("telegram user: polling recovered")
+			s.lastPollErr = ""
 		}
 		for _, u := range updates {
 			s.offset = u.UpdateID + 1
@@ -619,7 +629,7 @@ func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang
 			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardPlan", esc(name)))
 		}
 	} else if set.BillingEnabled {
-		b.WriteString(i18n.T(lang, "user.cardPlanManual") + "\n")
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardPlanManual"))
 	}
 
 	// Expiry + remaining time.
@@ -631,7 +641,7 @@ func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang
 			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardExpiredOn", exp))
 		}
 	} else {
-		b.WriteString(i18n.T(lang, "user.cardNoExpiry") + "\n")
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardNoExpiry"))
 	}
 
 	// Traffic.

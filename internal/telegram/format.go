@@ -138,7 +138,7 @@ func userCard(u model.User, loc *time.Location, lang i18n.Lang) string {
 	if u.ExpireAt > 0 {
 		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "admin.cardExpires", time.Unix(u.ExpireAt, 0).In(loc).Format("2006-01-02 15:04")))
 	} else {
-		b.WriteString(i18n.T(lang, "admin.cardNoExpiry") + "\n")
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "admin.cardNoExpiry"))
 	}
 	if u.LastSeen > 0 {
 		fmt.Fprintf(&b, "%s", i18n.T(lang, "admin.cardLastSeen", time.Unix(u.LastSeen, 0).In(loc).Format("2006-01-02 15:04")))

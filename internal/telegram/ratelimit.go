@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -85,6 +86,28 @@ func pollBackoff(err error) time.Duration {
 		return d + time.Second // a beat past the deadline, clocks differ
 	}
 	return 15 * time.Second
+}
+
+var (
+	reLocalSocket = regexp.MustCompile(`(read|write|dial)\s+(udp\d?|tcp\d?)\s+[^\s->]+->`)
+	reRetryAfter  = regexp.MustCompile(`(?i)retry after \d+`)
+	reOffsetQuery = regexp.MustCompile(`offset=\d+`)
+)
+
+// pollErrorKey returns a normalized fingerprint of err for log deduplication.
+// It strips dynamic and ephemeral attributes (such as the local UDP/TCP source
+// port allocated for a DNS query or dial, the exact seconds in a 429 retry_after,
+// or long-poll offset) so that repeated occurrences of the same failure are logged
+// only once until the error resolves or changes.
+func pollErrorKey(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	s = reLocalSocket.ReplaceAllString(s, "$1 $2 *->")
+	s = reRetryAfter.ReplaceAllString(s, "retry after *")
+	s = reOffsetQuery.ReplaceAllString(s, "offset=*")
+	return s
 }
 
 // waitSlot blocks until chatID's reserved slot comes up, or ctx ends.

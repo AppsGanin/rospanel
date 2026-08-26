@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -81,3 +82,43 @@ func TestPruneChatsKeepsActive(t *testing.T) {
 		t.Fatalf("after prune: %d entries, active kept=%v; want 1 entry, the active one", got, active)
 	}
 }
+
+func TestPollErrorKey(t *testing.T) {
+	if got := pollErrorKey(nil); got != "" {
+		t.Fatalf("pollErrorKey(nil) = %q, want empty", got)
+	}
+
+	// Dynamic DNS lookup UDP ports must yield identical keys to prevent journal flooding.
+	dnsErr1 := errors.New(`Get "https://api.telegram.org/bot<token hidden>/getUpdates?allowed_updates=%5B%22message%22%2C%22callback_query%22%5D&offset=0&timeout=25": dial tcp: lookup api.telegram.org on 127.0.0.53:53: read udp 127.0.0.1:38000->127.0.0.53:53: i/o timeout`)
+	dnsErr2 := errors.New(`Get "https://api.telegram.org/bot<token hidden>/getUpdates?allowed_updates=%5B%22message%22%2C%22callback_query%22%5D&offset=0&timeout=25": dial tcp: lookup api.telegram.org on 127.0.0.53:53: read udp 127.0.0.1:14722->127.0.0.53:53: i/o timeout`)
+	dnsErr3 := errors.New(`Get "https://api.telegram.org/bot<token hidden>/getUpdates?allowed_updates=%5B%22message%22%2C%22callback_query%22%5D&offset=0&timeout=25": dial tcp: lookup api.telegram.org on 127.0.0.53:53: read udp 127.0.0.1:41382->127.0.0.53:53: i/o timeout`)
+
+	k1, k2, k3 := pollErrorKey(dnsErr1), pollErrorKey(dnsErr2), pollErrorKey(dnsErr3)
+	if k1 != k2 || k2 != k3 {
+		t.Fatalf("DNS error keys differed:\nk1=%s\nk2=%s\nk3=%s", k1, k2, k3)
+	}
+
+	// 429 retry-after variance must yield identical keys.
+	rateErr1 := errors.New("telegram api 429: Too Many Requests: retry after 5")
+	rateErr2 := errors.New("telegram api 429: Too Many Requests: retry after 10")
+	if pollErrorKey(rateErr1) != pollErrorKey(rateErr2) {
+		t.Fatalf("429 error keys differed for retry after 5 vs 10")
+	}
+
+	// Different error classes must NOT collide.
+	err502 := errors.New("telegram api 502: Bad Gateway")
+	err401 := errors.New("telegram api 401: Unauthorized")
+	errTimeout := errors.New(`Get "https://api.telegram.org/bot<token hidden>/getUpdates?offset=0&timeout=25": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`)
+
+	distinct := map[string]string{
+		"dns":     k1,
+		"rate":    pollErrorKey(rateErr1),
+		"502":     pollErrorKey(err502),
+		"401":     pollErrorKey(err401),
+		"timeout": pollErrorKey(errTimeout),
+	}
+	if len(distinct) != 5 {
+		t.Fatalf("collision among distinct error classes: %+v", distinct)
+	}
+}
+
