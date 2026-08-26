@@ -164,10 +164,11 @@ export function ChangelogDropdown({
               </span>
               <div className="w-36">
                 <Select
-                  size="sm"
                   data={versionOptions}
                   value={activeVersion}
-                  onChange={(val) => val && setSelectedVersion(val)}
+                  onChange={(val) => {
+                    if (val) setSelectedVersion(val);
+                  }}
                 />
               </div>
             </div>
