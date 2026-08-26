@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.14.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.0...v2.14.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* add changelog display component and improve session cookie handling ([7f5938e](https://github.com/Shu1t3/rospanel-shu1t3/commit/7f5938ea9f73636df3a73404209762cd29ca8ca0))
+* remove size prop and update onChange handler in ChangelogDropdown Select component ([eb086e5](https://github.com/Shu1t3/rospanel-shu1t3/commit/eb086e54485eb205d5f85db053c73c823375794c))
+
 ## [2.14.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.13.5...v2.14.0) (2026-08-25)
 
 
