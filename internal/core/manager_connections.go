@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
@@ -149,6 +151,12 @@ func portFree(network string, port int) bool {
 	if network == "udp" {
 		c, err := net.ListenPacket("udp", addr)
 		if err != nil {
+			// In unprivileged test runners (e.g. CI without root / CAP_NET_BIND_SERVICE),
+			// low ports (< 1024) return EACCES/EPERM, which indicates lack of OS capability
+			// rather than a port collision with another running listener.
+			if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+				return true
+			}
 			return false
 		}
 		_ = c.Close()
@@ -156,6 +164,9 @@ func portFree(network string, port int) bool {
 	}
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
+		if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+			return true
+		}
 		return false
 	}
 	_ = l.Close()
