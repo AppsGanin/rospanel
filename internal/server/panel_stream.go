@@ -320,3 +320,13 @@ func (rt *Router) applyConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, c)
 }
+
+// resetConnections restores the master server's connection settings to factory defaults.
+func (rt *Router) resetConnections(w http.ResponseWriter, _ *http.Request) {
+	c, err := rt.mgr.ResetConnections()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}

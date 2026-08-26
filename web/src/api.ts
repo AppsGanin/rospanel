@@ -388,6 +388,8 @@ export const resetPanel = (currentPassword: string) =>
   })
 
 export const getConnections = () => api<ConnectionsStatus>('api/connections')
+export const resetConnections = () =>
+  api<ConnectionsStatus>('api/connections/reset', { method: 'POST' })
 
 // Per-node connections: a node's own transport/protocols/REALITY. Same shape as the
 // master's, so the same editor drives both.
@@ -398,6 +400,9 @@ export const applyNodeConnections = (id: number, u: ConnectionsUpdate) =>
     method: 'POST',
     body: JSON.stringify(u),
   })
+export const resetNodeConnections = (id: number) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections/reset`, { method: 'POST' })
+
 export const deleteUser = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}`, { method: 'DELETE' })
 export const resetUserTraffic = (id: number) =>

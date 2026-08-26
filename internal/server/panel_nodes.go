@@ -275,6 +275,16 @@ func (rt *Router) applyNodeConnections(w http.ResponseWriter, r *http.Request, i
 	writeJSON(w, http.StatusOK, c)
 }
 
+// resetNodeConnections restores a node's connection settings to factory defaults.
+func (rt *Router) resetNodeConnections(w http.ResponseWriter, _ *http.Request, id int64) {
+	c, err := rt.mgr.ResetNodeConnections(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
 // nodeTLS returns a node's TLS/ACME status (mirrors the master's GET /api/tls).
 func (rt *Router) nodeTLS(w http.ResponseWriter, _ *http.Request, id int64) {
 	s, err := rt.mgr.NodeTLSStatus(id)

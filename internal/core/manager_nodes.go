@@ -893,6 +893,55 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	return nil
 }
 
+// ResetNodeConnections restores a node's connection settings back to factory defaults:
+// enables built-in protocols (VLESS, REALITY, Hysteria2), resets default ports,
+// default fingerprints, default Anti-DPI parameters, and removes all custom inbounds
+// on this node.
+func (m *Manager) ResetNodeConnections(id int64) (*ConnectionsStatus, error) {
+	n, err := m.store.GetNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
+	}
+	if err := m.store.SetNodeProtocols(id, true, true, true); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetNodeRealityDest(id, ""); err != nil {
+		return nil, err
+	}
+	blob := &model.NodeConnections{
+		HysteriaPort:       443,
+		HopStart:           443,
+		HopEnd:             443,
+		HopInterval:        "5-10",
+		RealityPort:        8443,
+		RealityMaxTimeDiff: 0,
+		TLSFragment:        true,
+		TLSMin13:           true,
+		BlockQUIC:          true,
+		VLESSFp:            "firefox",
+		RealityFp:          "firefox",
+		VLESSName:          "",
+		RealityName:        "",
+		HysteriaName:       "",
+	}
+	if err := m.store.SetNodeConnections(id, blob); err != nil {
+		return nil, err
+	}
+	// Drop all custom inbounds on this node and their associated group grants.
+	inbounds, err := m.store.Inbounds(id)
+	if err == nil {
+		for _, in := range inbounds {
+			_ = m.store.DeleteInboundGrants(in.ID)
+		}
+		_ = m.store.DeleteServerInbounds(id)
+	}
+	m.nodes.wakeOne(id)
+	return m.NodeConnectionsInfo(id)
+}
+
 // SetNodeEnabled toggles a node and wakes it (a disabled node is told to stop).
 func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 	if err := m.store.SetNodeEnabled(id, enabled); err != nil {

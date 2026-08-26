@@ -481,3 +481,54 @@ func (m *Manager) regenRealityKeys() error {
 	}
 	return m.store.SetRealityKeys(priv, pub, shortIDs, svc)
 }
+
+// ResetConnections restores the master server's connection settings back to factory defaults:
+// enables built-in protocols (VLESS, REALITY, Hysteria2), resets default ports (443, 8443),
+// default REALITY destination ("max.ru"), default fingerprints ("firefox"), default Anti-DPI
+// parameters (fragment, TLS 1.3, block QUIC), clears custom display names, and removes all
+// custom inbounds on the master server.
+func (m *Manager) ResetConnections() (*ConnectionsStatus, error) {
+	for _, proto := range []string{"vless", "reality", "hysteria2"} {
+		if err := m.store.SetProtocolEnabled(proto, true); err != nil {
+			return nil, err
+		}
+	}
+	if err := m.store.SetFingerprints("firefox", "firefox"); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetProtocolNames("", "", ""); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetHysteriaPorts(443, 443, 443, "5-10"); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetRealityPorts(8443, "max.ru"); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetAntiDPI(true, true, true, 0); err != nil {
+		return nil, err
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	if set.RealityPrivateKey == "" {
+		if err := m.regenRealityKeys(); err != nil {
+			return nil, err
+		}
+	}
+	// Drop all custom inbounds on the master server and their associated group grants.
+	inbounds, err := m.store.Inbounds(model.LocalNodeID)
+	if err == nil {
+		for _, in := range inbounds {
+			_ = m.store.DeleteInboundGrants(in.ID)
+		}
+		_ = m.store.DeleteServerInbounds(model.LocalNodeID)
+	}
+	if err := EnsureHostHops(m.store); err != nil {
+		slog.Error("hop: re-apply failed", "err", err)
+	}
+	m.ensureLocalConnGuard()
+	m.TriggerReconcile()
+	return m.ConnectionsInfo()
+}

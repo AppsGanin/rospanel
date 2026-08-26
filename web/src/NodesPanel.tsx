@@ -19,6 +19,8 @@ import {
   provisionNode,
   refreshNodeGeo,
   regenNodeJoin,
+  resetConnections,
+  resetNodeConnections,
   saveRouting,
   setNodeACME,
   setNodeGeoCadence,
@@ -48,7 +50,6 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { ConnectionsEditor } from "./ConnectionsEditor";
-import { InboundsEditor } from "./InboundsEditor";
 import { ServerSnapshots } from "./ServerSnapshots";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./egress";
@@ -1159,7 +1160,6 @@ function NodeSettingsDialog({
         tabs={[
           { value: "general", label: t("settings.tabGeneral") },
           { value: "connections", label: t("nodes.tabConnections") },
-          { value: "inbounds", label: t("nodes.tabInbounds") },
           { value: "routing", label: t("nodes.tabRouting") },
           { value: "dns", label: "DNS" },
           { value: "geo", label: "Geo" },
@@ -1213,11 +1213,11 @@ function NodeSettingsDialog({
         <ConnectionsEditor
           load={() => getNodeConnections(node.id)}
           save={(u) => applyNodeConnections(node.id, u)}
+          reset={() => resetNodeConnections(node.id)}
+          serverId={node.id}
           restartsPanel={false}
         />
       )}
-
-      {tab === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
 
       {tab === "routing" && (
         <div className="flex flex-col gap-4">
@@ -1479,7 +1479,6 @@ function MasterSettingsDialog({
             tabs={[
               { value: "general", label: t("settings.tabGeneral") },
               { value: "connections", label: t("nodes.tabConnections") },
-              { value: "inbounds", label: t("nodes.tabInbounds") },
               { value: "routing", label: t("nodes.tabRouting") },
               { value: "dns", label: "DNS" },
               { value: "geo", label: "Geo" },
@@ -1526,10 +1525,14 @@ function MasterSettingsDialog({
           )}
 
           {tab === "connections" && (
-            <ConnectionsEditor load={getConnections} save={applyConnections} restartsPanel />
+            <ConnectionsEditor
+              load={getConnections}
+              save={applyConnections}
+              reset={resetConnections}
+              serverId={0}
+              restartsPanel
+            />
           )}
-
-          {tab === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
 
           {tab === "routing" && (
             <div className="flex flex-col gap-4">

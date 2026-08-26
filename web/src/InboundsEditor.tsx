@@ -71,7 +71,7 @@ const hopIntervals = () =>
 
 // blank is a new inbound's starting point: the combination that works everywhere
 // and needs the least explaining — VLESS over WebSocket behind our own certificate.
-const blank = (): InboundInput => ({
+export const blank = (): InboundInput => ({
   enabled: true,
   name: "",
   protocol: "vless",
@@ -101,7 +101,7 @@ const blank = (): InboundInput => ({
 });
 
 // toInput turns a stored inbound back into the editable shape.
-function toInput(v: Inbound): InboundInput {
+export function toInput(v: Inbound): InboundInput {
   const o = v.opts;
   return {
     enabled: v.enabled,
@@ -305,7 +305,7 @@ export function InboundsEditor({
 }
 
 // InboundRow is one collapsed inbound: identity, where it listens, and the actions.
-function InboundRow({
+export function InboundRow({
   v,
   busy,
   onToggle,
@@ -795,7 +795,7 @@ function LongRow({ label, value }: { label: string; value: string }) {
 // InboundForm renders exactly the fields the chosen protocol × transport × security
 // actually uses. The options come from the server's catalog, so the form can never
 // offer a combination the validator would reject.
-function InboundForm({
+export function InboundForm({
   v,
   catalog,
   onChange,

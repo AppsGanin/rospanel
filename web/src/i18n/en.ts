@@ -1929,6 +1929,16 @@ const en: Dict = {
       "Raises the TLS floor. May slightly reduce how convincing the decoy site looks to very old clients.",
     saveHint:
       "Each section saves separately. Without saving, the changes are not applied.",
+    defaultConnections: "Built-in connections",
+    customConnections: "Custom connections",
+    resetFactory: "Reset to factory defaults",
+    resetFactoryTitle: "Reset connection settings?",
+    resetFactoryDesc:
+      "All custom connections on this server will be deleted, and built-in protocols (VLESS, REALITY, Hysteria2), ports, and security parameters will be restored to their factory defaults as on first install.",
+    resetFactoryDone: "Connection settings reset to factory defaults",
+    deleteDefaultTitle: "Delete connection?",
+    deleteDefaultDesc: "“{{name}}” will be disabled and stop accepting clients.",
+    addConnection: "Add connection",
   },
 
   bill: {

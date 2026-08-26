@@ -306,6 +306,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/panel/restart", rt.restartPanel)
 	authed("GET /api/connections", rt.connections)
 	authed("POST /api/connections", rt.applyConnections)
+	authed("POST /api/connections/reset", rt.resetConnections)
 	// User groups: which connections a member may use. Managed by operators, same tier
 	// as users (assigning a user to a group is a user-management action).
 	authedOp("GET /api/groups", rt.listGroups)
@@ -381,6 +382,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
+	authedID("POST /api/nodes/{id}/connections/reset", rt.resetNodeConnections)
 	// Custom inbounds. The list/create routes are keyed by SERVER id (0 = master);
 	// edit/delete are keyed by the inbound's own id, which already implies its server.
 	authed("GET /api/inbounds/catalog", rt.inboundCatalog)
