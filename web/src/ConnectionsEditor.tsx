@@ -350,7 +350,11 @@ export function ConnectionsEditor({
   if (!loaded || !status || inbounds === null || !catalog) return <CenterLoader />;
 
   const customLimitReached = inbounds.length >= catalog.max;
-  const visibleProtocols = status.protocols.filter((p) => !deleted[p.key]);
+  const visibleProtocols = status.protocols.filter((p) => {
+    if (deleted[p.key]) return false;
+    if (!p.enabled && enabled[p.key] !== true) return false;
+    return true;
+  });
   const totalConnections = visibleProtocols.length + inbounds.length;
 
   return (

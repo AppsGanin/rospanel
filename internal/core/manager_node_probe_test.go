@@ -95,3 +95,17 @@ func TestConfigCheckMatchesOnID(t *testing.T) {
 		t.Error("the matching verdict never arrived")
 	}
 }
+
+func TestProbePortSkipsNodeXrayPorts(t *testing.T) {
+	m := testConnManager(t)
+
+	node, err := m.store.CreateNode("edge-probe", "edge.example.com", "tok")
+	if err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+
+	// Port 443 (default VLESS port on node) should be recognized as node Xray port and pass probePort without probing offline node.
+	if err := m.probePort(t.Context(), node.ID, "tcp", 443); err != nil {
+		t.Errorf("expected port 443 (node Xray port) to be allowed, got: %v", err)
+	}
+}

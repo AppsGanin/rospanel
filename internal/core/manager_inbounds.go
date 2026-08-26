@@ -514,6 +514,42 @@ func (m *Manager) isSelfXrayPort(network string, port int) bool {
 	if network == "udp" && port == set.HysteriaPort {
 		return true
 	}
+	inbounds, err := m.store.Inbounds(model.LocalNodeID)
+	if err == nil {
+		for _, in := range inbounds {
+			if in.Port == port && portNetwork(in) == network {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isNodeXrayPort reports whether port is one of the node's configured
+// ports that its running Xray holds (and which will be reconfigured/released on apply).
+func (m *Manager) isNodeXrayPort(nodeID int64, network string, port int) bool {
+	set, err := m.effectiveSettings(nodeID)
+	if err != nil || set == nil {
+		return false
+	}
+	vlessPort := set.VLESSPort
+	if vlessPort == 0 {
+		vlessPort = 443
+	}
+	if network == "tcp" && (port == vlessPort || (set.RealityPort > 0 && port == set.RealityPort)) {
+		return true
+	}
+	if network == "udp" && port == set.HysteriaPort {
+		return true
+	}
+	inbounds, err := m.store.Inbounds(nodeID)
+	if err == nil {
+		for _, in := range inbounds {
+			if in.Port == port && portNetwork(in) == network {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -530,6 +566,9 @@ func (m *Manager) probePort(ctx context.Context, serverID int64, network string,
 		if !portFree(network, port) && !m.isSelfXrayPort(network, port) {
 			return invalidCode("err.portTakenOnServer", "порт {{port}} ({{network}}) уже занят на этом сервере — выберите другой", map[string]any{"port": port, "network": network})
 		}
+		return nil
+	}
+	if m.isNodeXrayPort(serverID, network, port) {
 		return nil
 	}
 	free, err := m.ProbeNodePort(ctx, serverID, network, port)
