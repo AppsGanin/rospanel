@@ -569,7 +569,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("login: could not record last-login", "user", username, "err", err)
 	}
 	slog.Info("login: authenticated", "user", req.Username, "role", role, "ip", ip)
-	rt.setSessionCookie(w, r, token, rt.cookiePath())
+	rt.setSessionCookie(w, token, rt.cookiePath())
 	writeOK(w)
 }
 
@@ -578,7 +578,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 // TLS-terminated :443, even though r.TLS is nil here (the request arrives over the
 // plaintext loopback fallback after Xray terminated TLS). Keying Secure off r.TLS
 // would wrongly drop the flag and let the session ride an accidental plaintext path.
-func (rt *Router) setSessionCookie(w http.ResponseWriter, r *http.Request, token, path string) {
+func (rt *Router) setSessionCookie(w http.ResponseWriter, token, path string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,

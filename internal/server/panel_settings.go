@@ -476,7 +476,7 @@ func (rt *Router) regenSecret(w http.ResponseWriter, r *http.Request) {
 	// was scoped to the old secret path and the browser won't send it to /<new>/.
 	// Re-issue the same session token scoped to the new path.
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		rt.setSessionCookie(w, r, c.Value, "/"+p+"/")
+		rt.setSessionCookie(w, c.Value, "/"+p+"/")
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"secret_path": p})
 }

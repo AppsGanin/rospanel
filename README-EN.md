@@ -601,35 +601,6 @@ releases and publish the binary and the Docker image to GHCR.
 
 ---
 
-## 💝 Support the project
-
-RosPanel is developed in spare time and distributed for free. If the panel turned out to be
-useful, the easiest way to support it is
-**[DonationAlerts](https://www.donationalerts.com/r/dmitryapp)** or
-**[Boosty](https://boosty.to/githubapps)** (RU cards, one-off or recurring). Thank you! 🙏
-
-
-<b>Crypto</b>
-
-
-**USDT.** Pick a network and copy the address **carefully** — the sender's and the receiver's
-network must match. Send **USDT** only, and only on the network listed: a transfer on the wrong
-network cannot be recovered. The cheapest fees are on **TRON (TRC20)** and **TON**.
-
-| Network          | Token | Address                                            |
-| ---------------- | ----- | -------------------------------------------------- |
-| TRC20 (Tron)     | USDT  | `TJwyrPVEZVZ1YrcmDiZTyFjLo3Q2DmEGzs`               |
-| ERC20 (Ethereum) | USDT  | `0xf9d663146ce902da91911b214c71cc73a5269d1d`       |
-| Solana           | USDT  | `2qAZRTbaUMTfYuZbD1dCYHjkYgxkw4dUYE9XY3JhC2Cs`     |
-| TON              | USDT  | `UQDoat731MLYuIw8ayL3Vhhw7zTBbLvRaQFmDvab--CNNI7e` |
-
-**Bybit.** If you're on Bybit too — transfer to UID `136462734`: instant and free.
-
-**Can't support financially?** You can still help — rent servers through the referral links in
-[Where to get a server](#️-where-to-get-a-server). It costs you nothing and helps the project.
-
----
-
 ## 📄 License
 
 [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
