@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.3](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.2...v2.15.3) (2026-08-26)
+
+
+### Bug Fixes
+
+* implement node Xray port validation in probe logic and update protocol visibility filtering in editor ([916f56a](https://github.com/Shu1t3/rospanel-shu1t3/commit/916f56a3b246747bf5e8434168eab6c985a19945))
+
 ## [2.15.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.1...v2.15.2) (2026-08-26)
 
 
