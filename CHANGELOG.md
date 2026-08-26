@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.15.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.0...v2.15.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* handle unprivileged EACCES in portFree probe during CI test runs ([6eef628](https://github.com/Shu1t3/rospanel-shu1t3/commit/6eef6281eadb88805719ee839833ae1565433c6c))
+* implement dynamic port collision detection between custom inbounds and enabled built-in protocols ([af4d81a](https://github.com/Shu1t3/rospanel-shu1t3/commit/af4d81a5faa4177a633e241dcb5c5550c66cae77))
+
+
+### Refactoring
+
+* perform comprehensive system-wide codebase update and codebase cleanup ([7c9124b](https://github.com/Shu1t3/rospanel-shu1t3/commit/7c9124ba63eb19c79cd81aa5c9b06bfaee44989c))
+
 ## [2.15.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.14.2...v2.15.0) (2026-08-26)
 
 
