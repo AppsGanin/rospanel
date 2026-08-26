@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // User groups gate which connections a user may reach. A user in no group reaches

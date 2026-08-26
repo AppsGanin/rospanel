@@ -12,16 +12,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	"github.com/AppsGanin/rospanel/internal/logbuf"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/tlsmgr"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
-	"github.com/AppsGanin/rospanel/internal/warp"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsmgr"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsutil"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/warp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // nodeSettings materializes a node's effective settings: the global settings row

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // The configuration half of the /v1 surface: the settings singleton, per-server

@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
 )
 
 // Process supervision tuning.

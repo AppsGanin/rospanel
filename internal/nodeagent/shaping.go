@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/shaper"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/shaper"
 )
 
 // Per-user speed caps on a node.

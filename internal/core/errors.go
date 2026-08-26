@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ValidationError marks an error caused by bad operator input rather than a server

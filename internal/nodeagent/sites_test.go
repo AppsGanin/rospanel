@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 )
 
 // ipN builds a distinct address for index n. The node only buffers addresses now

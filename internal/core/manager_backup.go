@@ -3,7 +3,7 @@ package core
 import (
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/cron"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/cron"
 )
 
 // maxBackupKeep bounds the retention count. Archives are full copies of the data

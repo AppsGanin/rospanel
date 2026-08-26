@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ErrInboundPortTaken / ErrInboundNameTaken are the unique-index violations from

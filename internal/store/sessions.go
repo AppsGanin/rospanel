@@ -9,8 +9,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ErrSessionNotFound is returned when a session does not exist or has expired.

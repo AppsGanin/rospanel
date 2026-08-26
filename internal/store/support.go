@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Support relay topic mapping: one forum topic per writer, both directions. The

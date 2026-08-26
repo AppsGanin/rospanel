@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 func openNodeStore(t *testing.T) *Store {

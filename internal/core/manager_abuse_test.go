@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/abuse"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/abuse"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // abuseTestManager builds a manager with a store and a matcher primed with known-bad

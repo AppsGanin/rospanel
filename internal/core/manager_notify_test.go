@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // newNotifyManager builds a minimal Manager wired to a fresh store and a capturing

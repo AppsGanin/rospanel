@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 )
 
 // Port probing on a remote node.

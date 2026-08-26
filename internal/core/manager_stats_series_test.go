@@ -3,7 +3,7 @@ package core
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // A day with no traffic writes no row, so the stored series is a list of busy days

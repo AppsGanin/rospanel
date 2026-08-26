@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ErrGroupNameTaken is the unique-name index violation, mapped to a user-facing error

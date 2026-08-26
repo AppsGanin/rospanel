@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The public status page's data: a liveness sample per server per watch tick,

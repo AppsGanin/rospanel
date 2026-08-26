@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // fetchSubUA fetches a subscription with a chosen User-Agent (fetchSub hardcodes one).

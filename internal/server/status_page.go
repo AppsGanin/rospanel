@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/core"
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/status"
-	"github.com/AppsGanin/rospanel/internal/sub"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/core"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/status"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/sub"
 )
 
 // statusWindowDays is how much history the public page shows. Ninety days is the

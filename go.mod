@@ -1,4 +1,4 @@
-module github.com/AppsGanin/rospanel
+module github.com/Shu1t3/rospanel-shu1t3
 
 go 1.26.6
 

@@ -3,8 +3,8 @@ package core
 import (
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // The admin trail — see model/admin_audit.go for what it holds and why it isn't the

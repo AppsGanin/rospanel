@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // CustomLabel is the node name a custom inbound shows in the client: the operator's

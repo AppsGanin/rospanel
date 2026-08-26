@@ -3,7 +3,7 @@ package i18n
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 // The generated catalog is a copy of the panel's English dictionary, and a copy is

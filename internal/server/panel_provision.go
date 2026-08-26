@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/provision"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/provision"
 )
 
 // provisionReq carries the SSH credentials used to install a node remotely. They

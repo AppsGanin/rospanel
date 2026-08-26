@@ -1,7 +1,7 @@
 package store
 
 import (
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Uptime history for the public status page. See migration 0043 for the shape and

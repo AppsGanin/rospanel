@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	"github.com/AppsGanin/rospanel/internal/tlsmgr"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsmgr"
 )
 
 // Handler answers plain HTTP on port 80: ACME challenges are served, and

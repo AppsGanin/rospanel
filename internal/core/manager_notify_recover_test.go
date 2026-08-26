@@ -2,11 +2,11 @@ package core
 
 import (
 	"errors"
-	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // An alarm with no all-clear leaves the operator unable to tell "recovered in two

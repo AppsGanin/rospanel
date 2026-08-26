@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/datasec"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 func TestPaymentProviderRoundtrip(t *testing.T) {

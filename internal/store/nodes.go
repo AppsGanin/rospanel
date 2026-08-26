@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ErrNodeNameTaken is returned when a node write violates the live-node name unique

@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The admin's own second factor. Every route here acts on the CALLER — there is no id

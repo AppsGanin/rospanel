@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The range a client is told to hop over must be the range the firewall actually funnels

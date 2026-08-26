@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 // A provider's form is described here and rendered by the panel, so its field

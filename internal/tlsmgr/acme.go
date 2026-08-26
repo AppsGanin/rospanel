@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsutil"
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/challenge"

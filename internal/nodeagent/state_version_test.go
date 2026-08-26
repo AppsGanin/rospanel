@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // An upgraded agent must re-fetch the whole desired state.

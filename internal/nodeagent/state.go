@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsutil"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // persistState is the agent's durable state (state.json): the last config it

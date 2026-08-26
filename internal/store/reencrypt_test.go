@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ReencryptSensitiveFields names its columns as STRINGS, so nothing but this test

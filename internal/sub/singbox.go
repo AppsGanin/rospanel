@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/link"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // SingBoxJSON renders an importable sing-box configuration for a single server.

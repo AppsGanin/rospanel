@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 type userSecretRow struct {

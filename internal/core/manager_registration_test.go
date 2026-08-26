@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // TestModerationRegistrationFlow covers the moderation path end to end: a signup is

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ErrAdminNotFound is returned when an admin id matches no row.

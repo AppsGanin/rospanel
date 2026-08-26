@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/updater"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/updater"
 )
 
 func TestResolveUpdateRepo(t *testing.T) {

@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/abuse"
-	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/abuse"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 )
 
 // Some keys are not written at the call site: the abuse alert keys off the category

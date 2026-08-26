@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // Identity is the node's persisted credential + where to reach the panel. Stored

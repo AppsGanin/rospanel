@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // warpSettings is baseSettings with a provisioned WARP account, the state the

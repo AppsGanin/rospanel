@@ -10,17 +10,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/abuse"
-	"github.com/AppsGanin/rospanel/internal/connguard"
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/logbuf"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/opera"
-	"github.com/AppsGanin/rospanel/internal/shaper"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/sysstat"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/abuse"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/connguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/opera"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/shaper"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/sysstat"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // TLSPaths are the on-disk locations the panel manages for TLS material.

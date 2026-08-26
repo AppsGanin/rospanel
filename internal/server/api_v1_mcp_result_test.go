@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
 )
 
 // bigPage builds a `{"data": […], "meta": …}` response of n rows of about size bytes

@@ -13,15 +13,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/logbuf"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/netguard"
-	"github.com/AppsGanin/rospanel/internal/probeblock"
-	"github.com/AppsGanin/rospanel/internal/warp"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/netguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/probeblock"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/warp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // SetTimezone validates and persists the operator's IANA timezone, then updates

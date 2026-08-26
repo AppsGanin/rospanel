@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 )
 
 func TestDayClass(t *testing.T) {

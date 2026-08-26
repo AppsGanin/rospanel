@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/decoy"
-	"github.com/AppsGanin/rospanel/internal/tlsmgr"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsmgr"
 )
 
 // Port 80 exists so the host does not look like one that serves TLS and nothing

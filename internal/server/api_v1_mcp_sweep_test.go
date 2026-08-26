@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Every MCP tool, called for real, through the endpoint an assistant is pointed at.

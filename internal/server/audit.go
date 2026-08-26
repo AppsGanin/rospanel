@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/actor"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/actor"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The admin audit trail is written HERE, in the router, rather than inside the ~30

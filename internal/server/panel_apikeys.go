@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // apiBaseURL builds the external API's base URL for display in the panel, from

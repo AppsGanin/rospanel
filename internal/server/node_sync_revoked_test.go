@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 )
 
 // joinedNode registers a node and completes its join, returning its id and the

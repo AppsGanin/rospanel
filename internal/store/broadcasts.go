@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Broadcast persistence. See migrations/0031_telegram_support_broadcast.sql for why the recipient

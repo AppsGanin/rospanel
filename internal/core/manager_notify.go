@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // crashNotifyThrottle / certErrNotifyThrottle bound how often a stuck condition

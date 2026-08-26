@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/payments"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/payments"
 )
 
 // escHTML escapes a dynamic value for the bots' HTML parse mode.

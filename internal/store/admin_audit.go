@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 const adminAuditCols = `id, action, target, actor_kind, actor_name, ip, details, created_at`

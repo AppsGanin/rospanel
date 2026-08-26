@@ -4,10 +4,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/version"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // NodeHealth is the diagnostics for one server, so the Nodes page can show the

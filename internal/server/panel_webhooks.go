@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // validateWebhook checks the URL (http/https with a host) and the subscribed

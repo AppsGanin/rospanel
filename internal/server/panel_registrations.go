@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // listRegistrations returns the moderated self-registration queue plus whether the

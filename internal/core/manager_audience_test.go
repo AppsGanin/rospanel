@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Targeted audiences are what let an operator write to the people a message is

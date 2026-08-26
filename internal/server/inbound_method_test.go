@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The Shadowsocks method must survive the request→model mapping. It very nearly

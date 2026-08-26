@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/connguard"
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/tlsutil"
-	"github.com/AppsGanin/rospanel/internal/tuning"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/connguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tlsutil"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/tuning"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // Health check severities. worstStatus ranks error > warn > ok; info is advisory

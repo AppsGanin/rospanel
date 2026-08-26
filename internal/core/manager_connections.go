@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ConnInfo describes one client-facing protocol endpoint. Key is the stable

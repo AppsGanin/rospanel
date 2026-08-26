@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // TestCountUsersMatchesDeriveStatus pins the aggregate to the row-by-row logic it

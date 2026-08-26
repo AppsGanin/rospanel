@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/link"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // ShareLinks returns one server's links for a user, in client-import order: the

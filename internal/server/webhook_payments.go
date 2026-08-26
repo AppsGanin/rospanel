@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/AppsGanin/rospanel/internal/payments"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/payments"
 )
 
 // handlePaymentWebhook is the public provider callback, mounted at

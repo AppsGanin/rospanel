@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/connguard"
-	"github.com/AppsGanin/rospanel/internal/hop"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/xray"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/connguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/hop"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/xray"
 )
 
 // InboundView is one custom inbound as the UI sees it: the stored record plus the

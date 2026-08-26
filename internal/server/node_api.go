@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 )
 
 // nodeSyncHoldSec is the nominal time a no-change sync request is held before

@@ -3,7 +3,7 @@ package core
 import (
 	"log/slog"
 
-	"github.com/AppsGanin/rospanel/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
 )
 
 // logInfo/logWarn/logErr are package-level structured logging helpers for the

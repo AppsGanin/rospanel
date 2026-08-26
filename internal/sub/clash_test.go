@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Mihomo treats a proxy as UDP-incapable unless it says `udp: true`, and it then

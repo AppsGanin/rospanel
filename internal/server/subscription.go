@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/actor"
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/sub"
-	"github.com/AppsGanin/rospanel/internal/telegram"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/actor"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/sub"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/telegram"
 	qrcode "github.com/skip2/go-qrcode"
 )
 

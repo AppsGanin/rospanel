@@ -1,11 +1,11 @@
 package sub
 
 import (
-	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // TestPageBillingBlock renders the subscription page with a paid-renewal block and

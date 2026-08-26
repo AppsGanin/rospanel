@@ -4,7 +4,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
 )
 
 func encField(s string) string {

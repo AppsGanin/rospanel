@@ -121,4 +121,3 @@ func TestPollErrorKey(t *testing.T) {
 		t.Fatalf("collision among distinct error classes: %+v", distinct)
 	}
 }
-

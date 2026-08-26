@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/actor"
-	"github.com/AppsGanin/rospanel/internal/auth"
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/sub"
-	"github.com/AppsGanin/rospanel/internal/telegram"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/actor"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/link"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/sub"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/telegram"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // userView is a user plus its derived share links (one credential set, three

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // restartTestManager returns a manager with a node registered, ready to take

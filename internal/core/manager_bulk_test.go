@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // bulkTestManager builds a Manager over a fresh store with no Xray supervisor.

@@ -5,8 +5,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/AppsGanin/rospanel/internal/hop"
-	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/hop"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 )
 
 // hopRanges is the complete set of UDP funnels this node should install, taken from

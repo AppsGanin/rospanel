@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/AppsGanin/rospanel/internal/telegram"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/telegram"
 )
 
 // Telegram's own caps: a plain message, and the shorter caption a message carrying

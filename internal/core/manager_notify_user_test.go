@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // userNotifyManager wires a manager whose user bot is on and whose notices are all

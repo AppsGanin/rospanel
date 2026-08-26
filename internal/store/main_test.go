@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
 )
 
 // datasec keeps its key in a package variable with no way back, so the FIRST test that

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 var testGroups = geo.GroupSet{

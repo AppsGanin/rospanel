@@ -7,8 +7,8 @@ package mcp_test
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
-	"github.com/AppsGanin/rospanel/internal/server"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/server"
 )
 
 // The panel's real spec must produce the tools an operator expects to be able to

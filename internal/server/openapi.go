@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/core"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/backup"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/core"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // The OpenAPI document is generated from the code, not hand-written: component

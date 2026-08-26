@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // Prometheus exposition, served at GET /<apiPath>/v1/metrics behind the same API key

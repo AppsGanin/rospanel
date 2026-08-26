@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Webhooks over the external API. They were panel-only, which made the push half of

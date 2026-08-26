@@ -3,7 +3,7 @@ package store
 import (
 	"encoding/json"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The system proxy's accounts travel as one JSON column per server, with each

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // countryLookup returns an IP→country resolver built from geoip.dat, cached and

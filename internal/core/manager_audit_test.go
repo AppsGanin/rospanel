@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/actor"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/actor"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // adminCtx is a request context as the panel's requireAuth would stamp it.

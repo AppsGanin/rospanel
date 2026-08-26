@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 // Diagnostics travel to the panel as dictionary keys, so nothing on either side of

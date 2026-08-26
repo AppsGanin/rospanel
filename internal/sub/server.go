@@ -1,6 +1,6 @@
 package sub
 
-import "github.com/AppsGanin/rospanel/internal/model"
+import "github.com/Shu1t3/rospanel-shu1t3/internal/model"
 
 // Server is one server as a subscription sees it: its effective settings (host, SNI,
 // ports, REALITY material, node label), its enabled custom inbounds, and the

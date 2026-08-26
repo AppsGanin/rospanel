@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Custom-inbound endpoints. Every route is keyed by SERVER id (0 = the master, a

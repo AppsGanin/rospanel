@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // The panel's own MCP endpoint, so an assistant can be pointed at a URL instead of

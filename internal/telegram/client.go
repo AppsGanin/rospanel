@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/netguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/netguard"
 )
 
 // apiBase is the Telegram Bot API root; the token is appended per request.

@@ -14,7 +14,7 @@ package actor
 import (
 	"context"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Actor is who is performing an action: a kind (model.Actor*) and a display name.

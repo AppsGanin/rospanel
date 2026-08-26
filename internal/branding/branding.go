@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 //go:embed default-logo.svg

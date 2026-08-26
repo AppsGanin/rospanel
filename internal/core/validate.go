@@ -5,7 +5,7 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // User-input bounds. These guard the DB and the config/subscription/link

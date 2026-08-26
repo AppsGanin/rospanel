@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
 )
 
 // When the per-user access read fails the panel refuses to build a subscription: serving

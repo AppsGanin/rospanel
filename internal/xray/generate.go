@@ -6,8 +6,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // parseDNS splits the operator's DNS setting (servers separated by newlines or

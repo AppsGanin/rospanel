@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/datasec"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/backup"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 type mockPanel struct {

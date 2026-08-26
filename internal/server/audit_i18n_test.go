@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 // A settings row stores its section as a dictionary key, so nothing on either side

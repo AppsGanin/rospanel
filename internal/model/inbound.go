@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/AppsGanin/rospanel/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
 	"regexp"
 	"sort"
 	"strings"

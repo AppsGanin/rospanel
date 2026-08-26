@@ -2,15 +2,15 @@ package telegram
 
 import (
 	"context"
-	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 	"log"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/cron"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/backup"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/cron"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // backupLoop fires scheduled backups: it wakes every minute and lets maybeBackup

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 // Model validation errors reach the panel as codes (core re-wraps them), assembled

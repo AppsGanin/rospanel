@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
 )
 
 // brandingInfo is the shape returned to the SPA: the resolved name/theme plus the

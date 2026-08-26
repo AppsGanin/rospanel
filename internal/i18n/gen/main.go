@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/AppsGanin/rospanel/internal/i18n/dictcheck"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n/dictcheck"
 )
 
 func main() {

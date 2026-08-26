@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/link"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 //go:embed logo.svg

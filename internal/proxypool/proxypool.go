@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/netguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/netguard"
 )
 
 // Parse turns proxy lines into endpoints, skipping blanks/comments/dupes and

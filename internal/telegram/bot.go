@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/actor"
-	"github.com/AppsGanin/rospanel/internal/backup"
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/actor"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/backup"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
 
 // Panel is the slice of the core Manager the bot drives. Defining it here (rather
@@ -332,15 +332,15 @@ func (s *Service) handleStart(ctx context.Context, client *Client, set *model.Se
 	lang := s.lang()
 	if len(args) >= 1 && set.TGLinkCode != "" &&
 		subtle.ConstantTimeCompare([]byte(args[0]), []byte(set.TGLinkCode)) == 1 {
-	ids := set.TelegramChatIDs()
-	if !set.TelegramAuthorized(chatID) {
-		ids = append(ids, chatID)
-	}
-	_ = s.store.SetTelegramChats(joinIDs(ids))
-	_ = s.store.SetTelegramLinkCode("") // one-time: burn the code
-	log.Printf("telegram: chat %d linked", chatID)
-	s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.chatLinked")+"\n\n"+menuHeader(lang), mainMenuRows(lang))
-	return
+		ids := set.TelegramChatIDs()
+		if !set.TelegramAuthorized(chatID) {
+			ids = append(ids, chatID)
+		}
+		_ = s.store.SetTelegramChats(joinIDs(ids))
+		_ = s.store.SetTelegramLinkCode("") // one-time: burn the code
+		log.Printf("telegram: chat %d linked", chatID)
+		s.sendMenu(ctx, client, chatID, i18n.T(lang, "admin.chatLinked")+"\n\n"+menuHeader(lang), mainMenuRows(lang))
+		return
 	}
 	if set.TelegramAuthorized(chatID) {
 		s.sendMainMenu(ctx, client, chatID)

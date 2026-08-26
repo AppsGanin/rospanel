@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The node config viewer must show the config the node actually runs — which the

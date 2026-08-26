@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // SetPlanUsersSpeedLimit stamps a plan's speed cap onto every user currently on it,

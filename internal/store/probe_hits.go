@@ -3,7 +3,7 @@ package store
 import (
 	"database/sql"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // maxProbeHits caps how many scanning IPs are kept. A public IP is scanned by

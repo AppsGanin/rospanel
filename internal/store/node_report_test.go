@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 func nodeReportFixture(t *testing.T) (*Store, *model.Node, []int64) {

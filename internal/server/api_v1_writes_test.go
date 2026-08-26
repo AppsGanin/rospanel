@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // The other half of "a write that answers 200 must have changed something".

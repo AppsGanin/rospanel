@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"unicode/utf8"
 
-	"github.com/AppsGanin/rospanel/internal/mcp"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/mcp"
 )
 
 // Fitting one tool result under maxMCPResult.

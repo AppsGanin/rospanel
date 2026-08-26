@@ -3,7 +3,7 @@ package xray
 import (
 	"testing"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // hysteriaSettings enables both a built-in Hysteria2 lane and the other built-ins,

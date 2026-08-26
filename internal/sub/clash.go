@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/AppsGanin/rospanel/internal/branding"
-	"github.com/AppsGanin/rospanel/internal/link"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/branding"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/link"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // SubTitle is the per-user profile title: the configured subscription title (or

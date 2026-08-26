@@ -3,8 +3,8 @@ package xray
 import (
 	"log"
 
-	"github.com/AppsGanin/rospanel/internal/geo"
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // expandGroups returns a copy of rc with every "iplist:<source>/<group>" entry

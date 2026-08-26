@@ -20,9 +20,9 @@ import (
 	"time"
 	_ "time/tzdata" // embed the IANA tz database so LoadLocation works on any host
 
-	"github.com/AppsGanin/rospanel/internal/logbuf"
-	"github.com/AppsGanin/rospanel/internal/store"
-	"github.com/AppsGanin/rospanel/internal/version"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/logbuf"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 func main() {

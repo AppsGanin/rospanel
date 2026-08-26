@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AppsGanin/rospanel/internal/cron"
-	"github.com/AppsGanin/rospanel/internal/i18n"
-	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/netguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/cron"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/netguard"
 )
 
 // SaveTelegram validates and persists the Telegram bot configuration: the enable

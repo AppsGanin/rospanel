@@ -12,8 +12,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/AppsGanin/rospanel/internal/nodeagent"
-	"github.com/AppsGanin/rospanel/internal/updater"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeagent"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/updater"
 )
 
 const (

@@ -3,7 +3,7 @@ package link
 import (
 	"net/url"
 
-	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
 
 // Reality builds a vless:// share link for VLESS + XHTTP + REALITY.
