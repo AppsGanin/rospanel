@@ -1271,16 +1271,24 @@ func (s *Settings) RealityFP() string { return fpOr(s.RealityFp) }
 // on the bare labels.
 func (s *Settings) BuiltinLaneLabels() []string {
 	out := make([]string, 0, 3)
-	for proto, custom := range map[string]string{
-		ProtoVLESS:    s.VLESSName,
-		ProtoReality:  s.RealityName,
-		ProtoHysteria: s.HysteriaName,
+	type lane struct {
+		proto   string
+		custom  string
+		enabled bool
+	}
+	for _, l := range []lane{
+		{ProtoVLESS, s.VLESSName, s.VLESSEnabled},
+		{ProtoReality, s.RealityName, s.RealityEnabled},
+		{ProtoHysteria, s.HysteriaName, s.HysteriaEnabled},
 	} {
-		if c := strings.TrimSpace(custom); c != "" {
+		if !l.enabled {
+			continue
+		}
+		if c := strings.TrimSpace(l.custom); c != "" {
 			out = append(out, c)
 			continue
 		}
-		out = append(out, proto)
+		out = append(out, l.proto)
 	}
 	return out
 }

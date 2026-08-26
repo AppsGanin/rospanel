@@ -42,13 +42,21 @@ const PROTOCOL_LABELS: Record<string, string> = {
 };
 
 const TRANSPORT_LABELS: Record<string, string> = {
-  tcp: "TCP (raw)",
+  tcp: "TCP",
   ws: "WebSocket",
   xhttp: "XHTTP",
   grpc: "gRPC",
   httpupgrade: "HTTPUpgrade",
   hysteria: "QUIC / UDP",
 };
+
+export const transportLabel = (protocol: string, transport: string): string => {
+  if (transport === "tcp") {
+    return protocol === "vless" ? "TCP (XTLS-Vision)" : "TCP";
+  }
+  return TRANSPORT_LABELS[transport] ?? transport;
+};
+
 
 const securityLabels = (): Record<string, string> => ({
   none: i18n.t("common.none"),
@@ -341,7 +349,7 @@ export function InboundRow({
           />
           <span className="font-medium text-ink">{v.name}</span>
           <Badge color="gray">{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Badge>
-          {!isSS && <Badge color="gray">{TRANSPORT_LABELS[o.transport] ?? o.transport}</Badge>}
+          {!isSS && <Badge color="gray">{transportLabel(v.protocol, o.transport)}</Badge>}
           {isSS && ssMethod && <Badge color="green">{ssMethod}</Badge>}
           {o.security === "reality" && <Badge color="green">REALITY</Badge>}
           {o.security === "none" && !isSS && <Badge color="orange">{t("inb.noTls")}</Badge>}
@@ -373,7 +381,7 @@ export function InboundRow({
               <>
                 <Row
                   label={t("conn.transport")}
-                  value={TRANSPORT_LABELS[o.transport] ?? o.transport}
+                  value={transportLabel(v.protocol, o.transport)}
                 />
                 <Row
                   label={t("inb.security")}
@@ -890,7 +898,7 @@ export function InboundForm({
             onChange={pickTransport}
             data={transports.map((c) => ({
               value: c.transport,
-              label: TRANSPORT_LABELS[c.transport] ?? c.transport,
+              label: transportLabel(v.protocol, c.transport),
             }))}
           />
           <Select

@@ -143,17 +143,24 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 		}
 		r[port] = who
 	}
-	hold(set.VLESSPort, "VLESS-Vision")
-	hold(set.RealityPort, "VLESS-XHTTP-REALITY")
-	hold(set.HysteriaPort, "HYSTERIA-UDP")
-	hold(xray.APIPort, "Xray internal API")
-	if set.HopEnd > set.HysteriaPort {
-		// The built-in hop range is a funnel onto the Hysteria port: anything inside
-		// it would have its traffic silently stolen by the nftables redirect.
-		for p := set.HysteriaPort + 1; p <= set.HopEnd; p++ {
-			hold(p, "HYSTERIA-UDP hop range")
+	if set.VLESSEnabled {
+		hold(set.VLESSPort, "VLESS-Vision")
+	}
+	if set.RealityEnabled {
+		hold(set.RealityPort, "VLESS-XHTTP-REALITY")
+	}
+	if set.HysteriaEnabled {
+		hold(set.HysteriaPort, "HYSTERIA-UDP")
+		if set.HopEnd > set.HysteriaPort {
+			// The built-in hop range is a funnel onto the Hysteria port: anything inside
+			// it would have its traffic silently stolen by the nftables redirect.
+			for p := set.HysteriaPort + 1; p <= set.HopEnd; p++ {
+				hold(p, "HYSTERIA-UDP hop range")
+			}
 		}
 	}
+	hold(xray.APIPort, "Xray internal API")
+
 	// The system proxies' listeners, held whether or not they are currently on — for
 	// the same reason the built-in lanes are: the port comes back the moment the
 	// operator flips the switch, and discovering the collision then, as an Xray that

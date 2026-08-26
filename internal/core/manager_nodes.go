@@ -843,6 +843,25 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		maxTimeDiff = realityAntiReplayWindowMs
 	}
 
+	inbounds, err := m.store.Inbounds(id)
+	if err != nil {
+		return err
+	}
+	for _, in := range inbounds {
+		if !in.Enabled {
+			continue
+		}
+		if u.Protocols["vless"] && in.Port == 443 {
+			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": 443, "who": in.Name})
+		}
+		if u.Protocols["reality"] && in.Port == u.RealityPort {
+			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": u.RealityPort, "who": in.Name})
+		}
+		if u.Protocols["hysteria2"] && (in.Port == u.HysteriaPort || (u.HopEnd > u.HysteriaPort && in.Port >= u.HysteriaPort && in.Port <= u.HopEnd)) {
+			return invalidCode("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": in.Name})
+		}
+	}
+
 	// Protocols (the node's own explicit on/off).
 	if err := m.store.SetNodeProtocols(id,
 		u.Protocols["vless"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {

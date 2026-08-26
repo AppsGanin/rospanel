@@ -158,3 +158,73 @@ func TestResetNodeConnections(t *testing.T) {
 		t.Errorf("expected 0 node inbounds after reset, got %d", len(inbounds))
 	}
 }
+
+func TestCustomInboundAllowedWhenDefaultDisabled(t *testing.T) {
+	m := testConnManager(t)
+
+	// 1. By default, VLESS-Vision and Hysteria2 are enabled on 443.
+	// Creating an enabled inbound on 443 must be rejected because built-in is enabled.
+	_, err := m.CreateInbound(context.Background(), model.Inbound{
+		ServerID: model.LocalNodeID,
+		Name:     "Custom443",
+		Protocol: "vless",
+		Port:     443,
+		Enabled:  true,
+		Opts: model.InboundOpts{
+			Transport: "ws",
+			Security:  "tls",
+			Path:      "/ws",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected port 443 collision when VLESS-Vision is enabled")
+	}
+
+	// 2. Disable VLESS-Vision and Hysteria2.
+	if err := m.store.SetProtocolEnabled("vless", false); err != nil {
+		t.Fatalf("disable vless: %v", err)
+	}
+	if err := m.store.SetProtocolEnabled("hysteria2", false); err != nil {
+		t.Fatalf("disable hysteria2: %v", err)
+	}
+
+	// 3. Now creating custom inbound on 443 must SUCCEED because built-in protocols are disabled!
+	in, err := m.CreateInbound(context.Background(), model.Inbound{
+		ServerID: model.LocalNodeID,
+		Name:     "Custom443",
+		Protocol: "vless",
+		Port:     443,
+		Enabled:  true,
+		Opts: model.InboundOpts{
+			Transport: "ws",
+			Security:  "tls",
+			Path:      "/ws",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create custom inbound on 443 when built-in is disabled failed: %v", err)
+	}
+	if in.ID == 0 {
+		t.Fatal("expected valid inbound ID")
+	}
+
+	// 4. If the user now attempts to re-enable VLESS-Vision on 443 while custom inbound is active,
+	// ApplyConnections must reject the collision.
+	err = m.ApplyConnections(ConnectionsUpdate{
+		Protocols: map[string]bool{
+			"vless":     true,
+			"reality":   true,
+			"hysteria2": false,
+		},
+		Fingerprints: map[string]string{"vless": "firefox", "reality": "firefox"},
+		Names:        map[string]string{},
+		HysteriaPort: 443,
+		HopStart:     443,
+		HopEnd:       443,
+		RealityPort:  8443,
+		RealityDest:  "max.ru",
+	})
+	if err == nil {
+		t.Fatal("expected collision error when re-enabling VLESS on 443 while custom inbound holds 443")
+	}
+}
