@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.1...v2.15.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* implement VLESS port configuration and dynamic inbound deletion logic in connection manager ([b705085](https://github.com/Shu1t3/rospanel-shu1t3/commit/b705085b7cdea4bb9eb9ab663abf43a154fddc86))
+
 ## [2.15.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.0...v2.15.1) (2026-08-26)
 
 
