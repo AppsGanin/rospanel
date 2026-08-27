@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.3](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.2...v2.16.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* allow configuration of routing and DNS settings for rented nodes ([2958bb1](https://github.com/Shu1t3/rospanel-shu1t3/commit/2958bb1e1b7fc519da43fcbdc138cd01fb0ba8f7))
+
 ## [2.16.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.1...v2.16.2) (2026-08-27)
 
 
