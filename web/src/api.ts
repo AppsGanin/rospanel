@@ -2187,6 +2187,7 @@ export interface Inbound {
   protocol: string
   port: number
   opts: InboundOpts
+  tenant_id?: string
   created_at: number
   // Subscription formats that cannot carry this combination and will skip it.
   // A warning, not an error — those clients just won't see this lane.

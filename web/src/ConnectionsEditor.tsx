@@ -410,9 +410,9 @@ export function ConnectionsEditor({
 
       {/* ── Reserved Ports Summary (if any) ─────────────────────────────────── */}
       {reservedPorts.length > 0 && (
-        <div className="rounded-xl border border-indigo-500/20 bg-indigo-50/40 p-3.5 text-xs dark:bg-indigo-950/20">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3.5 text-xs dark:border-indigo-900/50 dark:bg-indigo-950/30">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-semibold text-indigo-900 dark:text-indigo-200">
+            <span className="font-bold text-indigo-950 dark:text-indigo-100">
               🛡️ {t("nodes.reservedPorts")} ({reservedPorts.length})
             </span>
             <span className="text-[11px] text-ink-muted">{t("nodes.reservedPortsHint")}</span>

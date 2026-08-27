@@ -592,7 +592,11 @@ func (m *Manager) probePort(ctx context.Context, serverID int64, network string,
 // so its held poll returns with the fresh config.
 func (m *Manager) applyInboundChange(serverID int64) {
 	if serverID != model.LocalNodeID {
-		m.nodes.wakeOne(serverID)
+		if node, nerr := m.store.GetNode(serverID); nerr == nil && node != nil && node.IsRented {
+			go m.SyncRentedNode(serverID)
+		} else if m.nodes != nil {
+			m.nodes.wakeOne(serverID)
+		}
 		return
 	}
 	if err := EnsureHostHops(m.store); err != nil {

@@ -41,14 +41,47 @@ type NodeSharePayload struct {
 	Version       int      `json:"v"`
 	NodeID        int64    `json:"nid"`
 	Host          string   `json:"host"`
+	NodePath      string   `json:"npath,omitempty"`
 	Name          string   `json:"name"`
 	ShareToken    string   `json:"token"`
 	QuotaPercent  int      `json:"quota"`
 	SpeedLimit    int      `json:"speed"`
 	ReservedPorts []int    `json:"ports"`
 	Protocols     []string `json:"protos"`
+	NodeVersion   string   `json:"node_ver,omitempty"`
+	XrayVersion   string   `json:"xray_ver,omitempty"`
+	CPUPercent    float64  `json:"cpu,omitempty"`
+	MemUsed       int64    `json:"mem_u,omitempty"`
+	MemTotal      int64    `json:"mem_t,omitempty"`
+	DiskUsed      int64    `json:"disk_u,omitempty"`
+	DiskTotal     int64    `json:"disk_t,omitempty"`
+	HostUptime    int64    `json:"uptime,omitempty"`
 	Signature     string   `json:"sig,omitempty"`
 	CreatedAt     int64    `json:"ts"`
+}
+
+// NodeRentalSyncReq is the payload sent by a tenant panel to sync with the owner panel.
+type NodeRentalSyncReq struct {
+	NodeID     int64     `json:"node_id"`
+	ShareToken string    `json:"share_token"`
+	TenantID   string    `json:"tenant_id"`
+	TenantName string    `json:"tenant_name"`
+	Inbounds   []Inbound `json:"inbounds"`
+}
+
+// NodeRentalSyncResp is the telemetry returned to a tenant by the owner panel.
+type NodeRentalSyncResp struct {
+	Online        bool    `json:"online"`
+	NodeVersion   string  `json:"node_version"`
+	XrayVersion   string  `json:"xray_version"`
+	XrayRunning   bool    `json:"xray_running"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemUsed       int64   `json:"mem_used"`
+	MemTotal      int64   `json:"mem_total"`
+	DiskUsed      int64   `json:"disk_used"`
+	DiskTotal     int64   `json:"disk_total"`
+	HostUptime    int64   `json:"host_uptime"`
+	ReservedPorts []int   `json:"reserved_ports"`
 }
 
 // PortInfo describes an individual port usage on a node.

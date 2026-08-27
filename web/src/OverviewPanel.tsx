@@ -184,13 +184,17 @@ function ServerRow({ n }: { n: NodeView }) {
           <span className="truncate font-mono text-[11px] text-ink-muted">{n.host}</span>
         )}
       </span>
-      {/* A server that has never reported says so, rather than showing three empty
-          bars that read as an idle machine. */}
       {n.has_host_stats ? (
         <div className="hidden items-center gap-3 sm:flex">
           <MiniBar label="CPU" percent={n.cpu_percent} />
           <MiniBar label="RAM" percent={pct(n.mem_used, n.mem_total)} />
           <MiniBar label={t("overview.disk")} percent={pct(n.disk_used, n.disk_total)} />
+        </div>
+      ) : n.is_rented ? (
+        <div className="hidden items-center gap-2 text-xs text-ink-muted sm:flex">
+          <Badge color="indigo" size="xs">{t("nodes.rentedBadge")}</Badge>
+          <span>{t("nodes.quotaPerTenant")}: {n.share_quota_percent}%</span>
+          {n.share_speed_limit > 0 && <span>· {n.share_speed_limit} Kbps</span>}
         </div>
       ) : (
         <span className="hidden text-xs text-ink-muted sm:inline">{t("overview.noStats")}</span>

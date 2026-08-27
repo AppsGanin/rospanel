@@ -111,3 +111,17 @@ func (rt *Router) deleteNodeTenant(w http.ResponseWriter, r *http.Request, id in
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+func (rt *Router) handleRentalSync(w http.ResponseWriter, r *http.Request) {
+	var req model.NodeRentalSyncReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	resp, err := rt.mgr.ProcessRentalSync(req)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+

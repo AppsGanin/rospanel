@@ -136,14 +136,15 @@ func (s *Store) UpdateTenantTraffic(nodeID int64, tenantID string, up, down int6
 }
 
 // CreateRentedNode inserts a node marked as is_rented=1 on the tenant's panel.
-func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey, tenantID string, quotaPercent, speedLimit int) (*model.Node, error) {
+func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey, tenantID string, quotaPercent, speedLimit int, nodeVersion, xrayVersion string) (*model.Node, error) {
 	now := time.Now()
 	res, err := s.db.Exec(`
 		INSERT INTO nodes (name, host, enabled, is_rented, rent_owner_node_id,
 			rent_share_key, rent_tenant_id, share_quota_percent, share_speed_limit,
+			node_version, xray_version,
 			created_at, geo_refresh_hours)
-		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?)`,
-		name, host, ownerNodeID, shareKey, tenantID, quotaPercent, speedLimit, now.Unix(), defaultGeoRefreshHours,
+		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, host, ownerNodeID, shareKey, tenantID, quotaPercent, speedLimit, nodeVersion, xrayVersion, now.Unix(), defaultGeoRefreshHours,
 	)
 	if err != nil {
 		if isNameConflict(err) {
@@ -163,8 +164,47 @@ func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey,
 		RentTenantID:      tenantID,
 		ShareQuotaPercent: quotaPercent,
 		ShareSpeedLimit:   speedLimit,
+		NodeVersion:       nodeVersion,
+		XrayVersion:       xrayVersion,
 		CreatedAt:         now.Unix(),
 	}, nil
+}
+
+// UpsertNodeTenant creates or refreshes an active tenant record.
+func (s *Store) UpsertNodeTenant(nodeID int64, tenantID, name string, speedLimit int) error {
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`
+		INSERT INTO node_tenants (node_id, tenant_id, name, speed_limit, last_seen, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(node_id, tenant_id) DO UPDATE SET
+			name = CASE WHEN excluded.name != '' THEN excluded.name ELSE node_tenants.name END,
+			speed_limit = excluded.speed_limit,
+			last_seen = excluded.last_seen`,
+		nodeID, tenantID, name, speedLimit, now, now,
+	)
+	return err
+}
+
+// SaveTenantInbound registers or updates a tenant's custom inbound on the owner node.
+func (s *Store) SaveTenantInbound(in model.Inbound) error {
+	opts, err := marshalInboundOpts(in.Opts)
+	if err != nil {
+		return err
+	}
+	var existingID int64
+	err = s.db.QueryRow(`SELECT id FROM inbounds WHERE server_id = ? AND port = ?`, in.ServerID, in.Port).Scan(&existingID)
+	if err == nil && existingID > 0 {
+		_, err = s.db.Exec(`
+			UPDATE inbounds SET enabled = ?, name = ?, protocol = ?, opts = ?, tenant_id = ?
+			WHERE id = ?`,
+			boolToInt(in.Enabled), in.Name, in.Protocol, opts, in.TenantID, existingID)
+		return err
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO inbounds (server_id, enabled, sort, name, protocol, port, opts, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.ServerID, boolToInt(in.Enabled), in.Sort, in.Name, in.Protocol, in.Port, opts, in.TenantID)
+	return err
 }
 
 // DeleteTenantInbounds purges all custom inbounds created by a specific tenant on a server.

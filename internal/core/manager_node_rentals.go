@@ -1,13 +1,28 @@
 package core
 
 import (
+	"bytes"
+	"crypto/subtle"
+	"crypto/tls"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 )
+
+// SetNodeHostStats records host stats in memory for a server/node.
+func (m *Manager) SetNodeHostStats(id int64, h nodeapi.HostStats) {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	m.nodeHostStats[id] = h
+}
 
 // GetNodeRentalSettings returns rental settings for a node.
 func (m *Manager) GetNodeRentalSettings(nodeID int64) (*model.NodeRentalSettings, error) {
@@ -78,6 +93,12 @@ func (m *Manager) GenerateNodeShareLink(nodeID int64) (string, error) {
 		return "", invalidCode("err.nodeSharingDisabled", "совместное использование для данной ноды отключено владельцем")
 	}
 
+	set, _ := m.store.GetSettings()
+	var nodePath string
+	if set != nil {
+		nodePath = set.NodeAPIPath
+	}
+
 	token := node.ShareToken
 	if token == "" {
 		newToken, terr := auth.RandomToken()
@@ -110,16 +131,27 @@ func (m *Manager) GenerateNodeShareLink(nodeID int64) (string, error) {
 		protos = append(protos, "reality")
 	}
 
+	hostStats, _ := m.NodeHostStats(nodeID)
+
 	payload := model.NodeSharePayload{
 		Version:       1,
 		NodeID:        node.ID,
 		Host:          node.Host,
+		NodePath:      nodePath,
 		Name:          node.Name,
 		ShareToken:    token,
 		QuotaPercent:  node.ShareQuotaPercent,
 		SpeedLimit:    node.ShareSpeedLimit,
 		ReservedPorts: reserved,
 		Protocols:     protos,
+		NodeVersion:   node.NodeVersion,
+		XrayVersion:   node.XrayVersion,
+		CPUPercent:    hostStats.CPUPercent,
+		MemUsed:       hostStats.MemUsed,
+		MemTotal:      hostStats.MemTotal,
+		DiskUsed:      hostStats.DiskUsed,
+		DiskTotal:     hostStats.DiskTotal,
+		HostUptime:    hostStats.HostUptime,
 	}
 
 	return model.EncodeShareLink(payload)
@@ -160,6 +192,8 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 		tenantID,
 		payload.QuotaPercent,
 		payload.SpeedLimit,
+		payload.NodeVersion,
+		payload.XrayVersion,
 	)
 	if err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
@@ -168,7 +202,153 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 		return nil, err
 	}
 
+	if payload.MemTotal > 0 || payload.CPUPercent > 0 {
+		m.SetNodeHostStats(node.ID, nodeapi.HostStats{
+			CPUPercent: payload.CPUPercent,
+			MemUsed:    payload.MemUsed,
+			MemTotal:   payload.MemTotal,
+			DiskUsed:   payload.DiskUsed,
+			DiskTotal:  payload.DiskTotal,
+			HostUptime: payload.HostUptime,
+		})
+	}
+
+	go m.SyncRentedNode(node.ID)
+
 	return node, nil
+}
+
+// ProcessRentalSync handles an incoming telemetry/inbound sync request from a tenant.
+func (m *Manager) ProcessRentalSync(req model.NodeRentalSyncReq) (*model.NodeRentalSyncResp, error) {
+	node, err := m.store.GetNode(req.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil {
+		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
+	}
+	if !node.ShareEnabled || node.ShareToken == "" || subtle.ConstantTimeCompare([]byte(node.ShareToken), []byte(req.ShareToken)) != 1 {
+		return nil, invalidCode("err.invalidShareToken", "неверный или устаревший токен аренды")
+	}
+
+	speedLimit := model.CalculateTenantSpeed(node.ShareSpeedLimit, 1)
+	_ = m.store.UpsertNodeTenant(node.ID, req.TenantID, req.TenantName, speedLimit)
+
+	currentInbounds, _ := m.store.Inbounds(node.ID)
+	tenantInbounds := make(map[int]bool)
+	for _, in := range req.Inbounds {
+		tenantInbounds[in.Port] = true
+		in.ServerID = node.ID
+		in.TenantID = req.TenantID
+		_ = m.store.SaveTenantInbound(in)
+	}
+	for _, in := range currentInbounds {
+		if in.TenantID == req.TenantID && !tenantInbounds[in.Port] {
+			_ = m.store.DeleteInbound(in.ID)
+		}
+	}
+	if m.nodes != nil {
+		m.nodes.wakeOne(node.ID)
+	}
+
+	hostStats, _ := m.NodeHostStats(node.ID)
+	ports, _ := m.GetNodeReservedPorts(node.ID)
+	reserved := make([]int, 0, len(ports))
+	for _, p := range ports {
+		reserved = append(reserved, p.Port)
+	}
+
+	return &model.NodeRentalSyncResp{
+		Online:        node.Online(time.Now().Unix()),
+		NodeVersion:   node.NodeVersion,
+		XrayVersion:   node.XrayVersion,
+		XrayRunning:   node.XrayRunning,
+		CPUPercent:    hostStats.CPUPercent,
+		MemUsed:       hostStats.MemUsed,
+		MemTotal:      hostStats.MemTotal,
+		DiskUsed:      hostStats.DiskUsed,
+		DiskTotal:     hostStats.DiskTotal,
+		HostUptime:    hostStats.HostUptime,
+		ReservedPorts: reserved,
+	}, nil
+}
+
+// SyncRentedNode reaches out to the owner panel to sync inbounds and fetch updated telemetry.
+func (m *Manager) SyncRentedNode(nodeID int64) error {
+	node, err := m.store.GetNode(nodeID)
+	if err != nil || node == nil || !node.IsRented {
+		return err
+	}
+	inbounds, _ := m.store.Inbounds(nodeID)
+	reqBody := model.NodeRentalSyncReq{
+		NodeID:     node.RentOwnerNodeID,
+		ShareToken: node.RentShareKey,
+		TenantID:   node.RentTenantID,
+		TenantName: node.Name,
+		Inbounds:   inbounds,
+	}
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	urls := []string{
+		fmt.Sprintf("https://%s/api/nodes/rentals/sync", node.Host),
+		fmt.Sprintf("http://%s/api/nodes/rentals/sync", node.Host),
+	}
+
+	client := &http.Client{
+		Timeout: 4 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	var resp *http.Response
+	for _, u := range urls {
+		r, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(data))
+		if err != nil {
+			continue
+		}
+		r.Header.Set("Content-Type", "application/json")
+		resp, err = client.Do(r)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+			resp = nil
+		}
+	}
+
+	if resp == nil {
+		return errors.New("failed to connect to rented node owner")
+	}
+	defer resp.Body.Close()
+
+	var syncResp model.NodeRentalSyncResp
+	if err := json.NewDecoder(resp.Body).Decode(&syncResp); err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	_ = m.store.UpdateNodeStatus(node.ID, model.NodeStatusUpdate{
+		LastSeen:    now,
+		NodeVersion: syncResp.NodeVersion,
+		XrayVersion: syncResp.XrayVersion,
+		XrayRunning: syncResp.XrayRunning,
+	})
+
+	m.SetNodeHostStats(node.ID, nodeapi.HostStats{
+		CPUPercent: syncResp.CPUPercent,
+		MemUsed:    syncResp.MemUsed,
+		MemTotal:   syncResp.MemTotal,
+		DiskUsed:   syncResp.DiskUsed,
+		DiskTotal:  syncResp.DiskTotal,
+		HostUptime: syncResp.HostUptime,
+	})
+
+	return nil
 }
 
 // DeleteRentedNode detaches a rented node locally and wipes any custom inbounds created on it.

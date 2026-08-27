@@ -230,6 +230,7 @@ const ru = {
     inboundNameTooLong2: "название подключения не длиннее 32 символов",
     inboundPortRange: "порт вне диапазона 1–65535",
     invalidShareLink: "неверная или повреждённая ссылка шеринга ноды",
+    invalidShareToken: "неверный или устаревший токен аренды",
     nodeSharingDisabled: "совместное использование для данной ноды отключено владельцем",
     rentedNodeCannotBeShared: "арендованную ноду нельзя повторно передавать в аренду",
     rentedNodeManagedByOwner: "арендованная нода управляется владельцем",

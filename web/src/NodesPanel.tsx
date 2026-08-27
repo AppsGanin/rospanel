@@ -2050,6 +2050,10 @@ function NodeCard({
                 <span>{t("nodes.quotaPerTenant")}: {node.share_quota_percent}%</span>
                 <Sep />
                 <span>{t("nodes.speedPerTenant")}: {node.share_speed_limit > 0 ? `${node.share_speed_limit} Kbps` : "∞"}</span>
+                <Sep />
+                <span>Xray {node.xray_version || "—"}</span>
+                <Sep />
+                <span>{t("nodes.agentVersion", { version: node.node_version || "—" })}</span>
               </>
             ) : (
               <>

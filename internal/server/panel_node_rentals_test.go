@@ -243,5 +243,58 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 	if !strings.Contains(subBody, "nl.example.com") || !strings.Contains(subBody, "2053") {
 		t.Fatalf("user subscription missing rented node host or port 2053 (inbound: %s):\n%s", inbound.Name, subBody)
 	}
+
+	// 12. Test POST /api/nodes/rentals/sync
+	payload, err := model.DecodeShareLink(shareLink)
+	if err != nil {
+		t.Fatalf("decode share link: %v", err)
+	}
+	syncBody := model.NodeRentalSyncReq{
+		NodeID:     payload.NodeID,
+		ShareToken: payload.ShareToken,
+		TenantID:   rentedNode.RentTenantID,
+		TenantName: "Tenant #1",
+		Inbounds:   []model.Inbound{*inbound},
+	}
+	rawSync, _ := json.Marshal(syncBody)
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/nodes/rentals/sync", bytes.NewReader(rawSync))
+	syncReq.Header.Set("Content-Type", "application/json")
+	syncRec := httptest.NewRecorder()
+	h.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/nodes/rentals/sync status = %d (body: %s)", syncRec.Code, syncRec.Body.String())
+	}
+	var syncResp model.NodeRentalSyncResp
+	if err := json.Unmarshal(syncRec.Body.Bytes(), &syncResp); err != nil {
+		t.Fatalf("decode sync resp: %v", err)
+	}
+	if len(syncResp.ReservedPorts) == 0 {
+		t.Errorf("want reserved ports in sync resp, got none")
+	}
+
+	// Verify owner sees tenant in ListNodeTenants
+	tenants, err := r.mgr.ListNodeTenants(node.ID)
+	if err != nil {
+		t.Fatalf("list node tenants: %v", err)
+	}
+	if len(tenants) != 1 || tenants[0].Name != "Tenant #1" {
+		t.Fatalf("want 1 tenant named 'Tenant #1', got %+v", tenants)
+	}
+
+	// Verify owner sees tenant's inbound in Inbounds
+	ownerInbounds, err := r.mgr.Inbounds(node.ID)
+	if err != nil {
+		t.Fatalf("get owner inbounds: %v", err)
+	}
+	var foundTenantInbound bool
+	for _, in := range ownerInbounds {
+		if in.Port == 2053 && in.TenantID == rentedNode.RentTenantID {
+			foundTenantInbound = true
+			break
+		}
+	}
+	if !foundTenantInbound {
+		t.Fatalf("tenant inbound port 2053 not found on owner node inbounds: %+v", ownerInbounds)
+	}
 }
 

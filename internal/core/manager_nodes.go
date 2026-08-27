@@ -538,6 +538,9 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			v.Online = n.Enabled
 			v.XrayRunning = n.Enabled
 			v.VersionSkew = false
+			if n.Enabled && (n.LastSeen == 0 || (now-n.LastSeen > 30)) {
+				go m.SyncRentedNode(n.ID)
+			}
 		}
 		if n.ShareEnabled && !n.IsRented {
 			tenants, _ := m.store.ListNodeTenants(n.ID)
@@ -981,7 +984,11 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err
 	}
-	m.nodes.wakeOne(id)
+	if n.IsRented {
+		go m.SyncRentedNode(id)
+	} else if m.nodes != nil {
+		m.nodes.wakeOne(id)
+	}
 	return nil
 }
 
@@ -1031,7 +1038,11 @@ func (m *Manager) ResetNodeConnections(id int64) (*ConnectionsStatus, error) {
 		}
 		_ = m.store.DeleteServerInbounds(id)
 	}
-	m.nodes.wakeOne(id)
+	if n.IsRented {
+		go m.SyncRentedNode(id)
+	} else if m.nodes != nil {
+		m.nodes.wakeOne(id)
+	}
 	return m.NodeConnectionsInfo(id)
 }
 

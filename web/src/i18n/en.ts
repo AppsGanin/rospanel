@@ -227,6 +227,7 @@ const en: Dict = {
     inboundNameTooLong2: "the connection name must be at most 32 characters",
     inboundPortRange: "the port is outside 1–65535",
     invalidShareLink: "invalid or corrupted node share link",
+    invalidShareToken: "invalid or expired rental share token",
     nodeSharingDisabled: "sharing for this node is disabled by the owner",
     rentedNodeCannotBeShared: "a rented node cannot be shared again",
     rentedNodeManagedByOwner: "rented node is managed by the owner",

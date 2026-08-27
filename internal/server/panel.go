@@ -222,6 +222,7 @@ func (rt *Router) panelMux() http.Handler {
 	}
 	mux.HandleFunc("POST /api/login", rt.login)
 	mux.HandleFunc("POST /api/logout", rt.logout)
+	mux.HandleFunc("POST /api/nodes/rentals/sync", rt.handleRentalSync)
 	// Branding reads are unauthenticated: the login screen (under the secret path)
 	// renders the panel name/accent/logo before any session exists.
 	mux.HandleFunc("GET /api/branding", rt.getBranding)

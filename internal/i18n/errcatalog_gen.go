@@ -124,6 +124,7 @@ var errEN = map[string]string{
 	"err.inboundPortRange":              "the port is outside 1–65535",
 	"err.internal":                      "internal server error",
 	"err.invalidShareLink":              "invalid or corrupted node share link",
+	"err.invalidShareToken":             "invalid or expired rental share token",
 	"err.inviteCodeRequired":            "enter an invite code for invite-based sign-up",
 	"err.keyNameRequired":               "enter a key name",
 	"err.laneBadID":                     "invalid lane id “{{id}}”: latin letters and digits only (up to 16 characters); warp/opera/direct are taken",
