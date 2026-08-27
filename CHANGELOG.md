@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.0...v2.16.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* implement node rental via shareable links and update documentation ([6e56bd5](https://github.com/Shu1t3/rospanel-shu1t3/commit/6e56bd5e3e985ecc22952f7c25df62424aa13115))
+
 ## [2.16.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.15.3...v2.16.0) (2026-08-26)
 
 
