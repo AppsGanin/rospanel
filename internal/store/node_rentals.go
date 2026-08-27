@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -17,6 +18,28 @@ var ErrTenantNotFound = errors.New("tenant not found")
 
 // SetNodeRentalSettings updates the sharing parameters for a node owned by this panel.
 func (s *Store) SetNodeRentalSettings(nodeID int64, st model.NodeRentalSettings) error {
+	if nodeID == model.LocalNodeID {
+		set, err := s.GetSettings()
+		if err != nil {
+			return err
+		}
+		token := set.ShareToken
+		if st.ShareEnabled && token == "" {
+			newToken, terr := auth.RandomToken()
+			if terr != nil {
+				return terr
+			}
+			token = "rpn_share_" + newToken
+		}
+		_, err = s.db.Exec(`
+			UPDATE settings SET share_enabled = ?, share_quota_percent = ?,
+				share_speed_limit = ?, share_token = ?
+			WHERE id = 1`,
+			boolToInt(st.ShareEnabled), st.ShareQuotaPercent, st.ShareSpeedLimit, token,
+		)
+		return err
+	}
+
 	node, err := s.GetNode(nodeID)
 	if err != nil {
 		return err
@@ -47,6 +70,24 @@ func (s *Store) SetNodeRentalSettings(nodeID int64, st model.NodeRentalSettings)
 
 // GetNodeRentalSettings returns the current sharing parameters and generated token for a node.
 func (s *Store) GetNodeRentalSettings(nodeID int64) (*model.NodeRentalSettings, error) {
+	if nodeID == model.LocalNodeID {
+		set, err := s.GetSettings()
+		if err != nil {
+			return nil, err
+		}
+		quota := set.ShareQuotaPercent
+		if quota <= 0 {
+			quota = 100
+		}
+		return &model.NodeRentalSettings{
+			ShareEnabled:      set.ShareEnabled,
+			ShareQuotaPercent: quota,
+			ShareSpeedLimit:   set.ShareSpeedLimit,
+			ShareToken:        set.ShareToken,
+			MaxTenants:        10,
+		}, nil
+	}
+
 	var shareEn, quota, speed int
 	var token string
 	err := s.db.QueryRow(`
@@ -137,7 +178,7 @@ func (s *Store) UpdateTenantTraffic(nodeID int64, tenantID string, up, down int6
 
 // CreateRentedNode inserts a node marked as is_rented=1 on the tenant's panel.
 func (s *Store) CreateRentedNode(
-	name, host string,
+	name, host, masterHost string,
 	ownerNodeID int64,
 	shareKey, tenantID string,
 	quotaPercent, speedLimit int,
@@ -145,20 +186,36 @@ func (s *Store) CreateRentedNode(
 	realityPubKey, realitySID, realityPath, realityDest, certSha string,
 	certSelf bool,
 	vlessEn, realityEn, hyEn bool,
+	vlessPort, realityPort, hysteriaPort int,
 ) (*model.Node, error) {
 	now := time.Now()
+	connCfg := model.NodeConnections{
+		VLESSPort:    vlessPort,
+		RealityPort:  realityPort,
+		HysteriaPort: hysteriaPort,
+		TLSFragment:  true,
+		TLSMin13:     true,
+		BlockQUIC:    true,
+		VLESSFp:      "firefox",
+		RealityFp:    "firefox",
+	}
+	connBlobBytes, _ := json.Marshal(&connCfg)
+	connBlob := string(connBlobBytes)
+
 	res, err := s.db.Exec(`
 		INSERT INTO nodes (name, host, enabled, is_rented, rent_owner_node_id,
-			rent_share_key, rent_tenant_id, share_quota_percent, share_speed_limit,
+			rent_share_key, rent_tenant_id, rent_master_host, share_quota_percent, share_speed_limit,
 			node_version, xray_version,
 			reality_public_key, reality_short_id, reality_path, reality_dest,
 			cert_sha256, cert_self_signed,
 			vless_enabled, reality_enabled, hysteria_enabled,
+			connections_config,
 			created_at, geo_refresh_hours)
-		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, host, ownerNodeID, shareKey, tenantID, quotaPercent, speedLimit, nodeVersion, xrayVersion,
+		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, host, ownerNodeID, shareKey, tenantID, masterHost, quotaPercent, speedLimit, nodeVersion, xrayVersion,
 		realityPubKey, realitySID, realityPath, realityDest, certSha, boolToInt(certSelf),
 		boolToInt(vlessEn), boolToInt(realityEn), boolToInt(hyEn),
+		connBlob,
 		now.Unix(), defaultGeoRefreshHours,
 	)
 	if err != nil {
@@ -178,6 +235,7 @@ func (s *Store) CreateRentedNode(
 		RentOwnerNodeID:   ownerNodeID,
 		RentShareKey:      shareKey,
 		RentTenantID:      tenantID,
+		RentMasterHost:    masterHost,
 		ShareQuotaPercent: quotaPercent,
 		ShareSpeedLimit:   speedLimit,
 		NodeVersion:       nodeVersion,
@@ -191,6 +249,7 @@ func (s *Store) CreateRentedNode(
 		VLESSEnabled:      &vEn,
 		RealityEnabled:    &rEn,
 		HysteriaEnabled:   &hEn,
+		Connections:       &connCfg,
 		CreatedAt:         now.Unix(),
 	}, nil
 }

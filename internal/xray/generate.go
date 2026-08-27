@@ -491,9 +491,6 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 	sniff *Sniffing, cert []Certificate, minTLS string, opts Options) Inbound {
 
-	// Only the users allowed this inbound get a credential in it — the access gate.
-	allowed := allowedUsers(users, func(u model.User) bool { return opts.allowsInbound(u.ID, in.ID) })
-
 	out := Inbound{
 		Tag:      in.Tag(),
 		Listen:   "0.0.0.0",
@@ -501,23 +498,69 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 		Protocol: in.Protocol,
 		Sniffing: sniff,
 	}
-	switch in.Protocol {
-	case model.InbVLESS:
-		out.Settings = VLESSInboundSettings{
-			Clients:    customVLESSClients(in, allowed),
-			Decryption: "none",
+
+	if in.TenantID != "" && len(in.Opts.Clients) > 0 {
+		switch in.Protocol {
+		case model.InbVLESS:
+			vc := make([]VLESSClient, 0, len(in.Opts.Clients))
+			for _, c := range in.Opts.Clients {
+				flow := c.Flow
+				if flow == "" {
+					flow = in.Opts.Flow
+				}
+				vc = append(vc, VLESSClient{ID: c.ID, Flow: flow, Email: c.Email})
+			}
+			out.Settings = VLESSInboundSettings{
+				Clients:    vc,
+				Decryption: "none",
+			}
+		case model.InbTrojan:
+			tc := make([]TrojanClient, 0, len(in.Opts.Clients))
+			for _, c := range in.Opts.Clients {
+				tc = append(tc, TrojanClient{Password: c.Password, Email: c.Email})
+			}
+			out.Settings = TrojanInboundSettings{Clients: tc}
+		case model.InbHysteria:
+			hc := make([]HysteriaClient, 0, len(in.Opts.Clients))
+			for _, c := range in.Opts.Clients {
+				hc = append(hc, HysteriaClient{Auth: c.Password, Email: c.Email})
+			}
+			out.Protocol = "hysteria"
+			out.Settings = HysteriaInboundSettings{Version: 2, Users: hc}
+		case model.InbShadowsocks:
+			sc := make([]ShadowsocksClient, 0, len(in.Opts.Clients))
+			for _, c := range in.Opts.Clients {
+				sc = append(sc, ShadowsocksClient{Password: c.Password, Email: c.Email})
+			}
+			out.Settings = ShadowsocksInboundSettings{
+				Method:   in.Opts.Method,
+				Password: in.Opts.ShadowKey,
+				Network:  "tcp,udp",
+				Users:    sc,
+			}
 		}
-	case model.InbTrojan:
-		out.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
-	case model.InbHysteria:
-		out.Protocol = "hysteria"
-		out.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
-	case model.InbShadowsocks:
-		out.Settings = ShadowsocksInboundSettings{
-			Method:   in.Opts.Method,
-			Password: in.Opts.ShadowKey,
-			Network:  "tcp,udp",
-			Users:    customShadowsocksClients(in, allowed),
+	} else {
+		// Only the users allowed this inbound get a credential in it — the access gate.
+		allowed := allowedUsers(users, func(u model.User) bool { return opts.allowsInbound(u.ID, in.ID) })
+
+		switch in.Protocol {
+		case model.InbVLESS:
+			out.Settings = VLESSInboundSettings{
+				Clients:    customVLESSClients(in, allowed),
+				Decryption: "none",
+			}
+		case model.InbTrojan:
+			out.Settings = TrojanInboundSettings{Clients: customTrojanClients(allowed)}
+		case model.InbHysteria:
+			out.Protocol = "hysteria"
+			out.Settings = HysteriaInboundSettings{Version: 2, Users: customHysteriaClients(allowed)}
+		case model.InbShadowsocks:
+			out.Settings = ShadowsocksInboundSettings{
+				Method:   in.Opts.Method,
+				Password: in.Opts.ShadowKey,
+				Network:  "tcp,udp",
+				Users:    customShadowsocksClients(in, allowed),
+			}
 		}
 	}
 	out.StreamSettings = customStream(in, set, cert, minTLS)
@@ -779,6 +822,43 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		return in
 	}
 	for _, c := range custom {
+		if c.TenantID != "" && len(c.Opts.Clients) > 0 {
+			stub := Inbound{Tag: c.Tag(), Port: c.Port, Protocol: c.Protocol}
+			switch c.Protocol {
+			case model.InbVLESS:
+				vc := make([]VLESSClient, 0, len(c.Opts.Clients))
+				for _, cl := range c.Opts.Clients {
+					flow := cl.Flow
+					if flow == "" {
+						flow = c.Opts.Flow
+					}
+					vc = append(vc, VLESSClient{ID: cl.ID, Flow: flow, Email: cl.Email})
+				}
+				stub.Settings = VLESSInboundSettings{Clients: vc, Decryption: "none"}
+			case model.InbTrojan:
+				tc := make([]TrojanClient, 0, len(c.Opts.Clients))
+				for _, cl := range c.Opts.Clients {
+					tc = append(tc, TrojanClient{Password: cl.Password, Email: cl.Email})
+				}
+				stub.Settings = TrojanInboundSettings{Clients: tc}
+			case model.InbShadowsocks:
+				sc := make([]ShadowsocksClient, 0, len(c.Opts.Clients))
+				for _, cl := range c.Opts.Clients {
+					sc = append(sc, ShadowsocksClient{Password: cl.Password, Email: cl.Email})
+				}
+				stub.Settings = ShadowsocksInboundSettings{
+					Method:   c.Opts.Method,
+					Password: c.Opts.ShadowKey,
+					Network:  "tcp,udp",
+					Users:    sc,
+				}
+			default:
+				continue
+			}
+			in = append(in, stub)
+			continue
+		}
+
 		allowed := allowedUsers(users, func(u model.User) bool {
 			return model.AccessOf(access, u.ID).AllowsInbound(c.ID)
 		})

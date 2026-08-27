@@ -49,7 +49,7 @@ const nodeColumns = `id, name, host, enabled,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
 	proxy_accounts, traffic_coefficient,
 	share_enabled, share_quota_percent, share_speed_limit, share_token,
-	is_rented, rent_owner_node_id, rent_share_key, rent_tenant_id`
+	is_rented, rent_owner_node_id, rent_share_key, rent_tenant_id, rent_master_host`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -87,7 +87,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
 		&proxyAccounts, &n.TrafficCoefficient,
 		&shareEn, &n.ShareQuotaPercent, &n.ShareSpeedLimit, &n.ShareToken,
-		&isRented, &n.RentOwnerNodeID, &n.RentShareKey, &n.RentTenantID,
+		&isRented, &n.RentOwnerNodeID, &n.RentShareKey, &n.RentTenantID, &n.RentMasterHost,
 	); err != nil {
 		return nil, err
 	}

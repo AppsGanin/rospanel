@@ -25,6 +25,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var hwidEn, hwidRequire int
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
+	var shareEn, shareQuota, shareSpeed int
+	var shareToken string
 	var routingCfg, subRulesJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -65,7 +67,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
 		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
-		       probe_detect, watchdog_enabled, probe_block
+		       probe_detect, watchdog_enabled, probe_block,
+		       share_enabled, share_quota_percent, share_speed_limit, share_token
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -107,6 +110,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.DeviceCountMode,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock,
+		&shareEn, &shareQuota, &shareSpeed, &shareToken,
 	)
 	if err != nil {
 		return nil, err
@@ -153,6 +157,13 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.ProbeDetect = probeDetect != 0
 	st.WatchdogEnabled = watchdogEnabled != 0
 	st.ProbeBlock = probeBlock != 0
+	st.ShareEnabled = shareEn != 0
+	if shareQuota <= 0 {
+		shareQuota = 100
+	}
+	st.ShareQuotaPercent = shareQuota
+	st.ShareSpeedLimit = shareSpeed
+	st.ShareToken = shareToken
 	// Decrypt at-rest secret fields (legacy plaintext rows pass through).
 	st.TGBotToken = decField(st.TGBotToken)
 	st.TGUserBotToken = decField(st.TGUserBotToken)

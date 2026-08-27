@@ -41,6 +41,7 @@ type NodeSharePayload struct {
 	Version       int      `json:"v"`
 	NodeID        int64    `json:"nid"`
 	Host          string   `json:"host"`
+	MasterHost    string   `json:"mhost,omitempty"`
 	NodePath      string   `json:"npath,omitempty"`
 	Name          string   `json:"name"`
 	ShareToken    string   `json:"token"`
@@ -200,7 +201,7 @@ func DecodeShareLink(link string) (*NodeSharePayload, error) {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil, fieldErr("err.invalidShareLink", "неверная или поврежденная ссылка шеринга ноды")
 	}
-	if payload.Host == "" || payload.ShareToken == "" || payload.NodeID == 0 {
+	if payload.Host == "" || payload.ShareToken == "" || payload.NodeID < 0 {
 		return nil, fieldErr("err.invalidShareLink", "неверная или поврежденная ссылка шеринга ноды")
 	}
 	expectedSig := ComputeShareSignature(payload.NodeID, payload.Host, payload.ShareToken)

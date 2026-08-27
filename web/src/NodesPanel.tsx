@@ -1079,6 +1079,27 @@ function NodeGeoCard({ node, onChanged }: { node: NodeView; onChanged: () => voi
   );
 }
 
+export function formatSpeedLimit(kbps: number, t?: (k: any) => string): string {
+  if (!kbps || kbps <= 0) return "∞";
+  const kbpsLabel = t ? t("nodes.unitKbps") : "Kbps";
+  const mbpsLabel = t ? t("nodes.unitMbps") : "Mbps";
+  const gbpsLabel = t ? t("nodes.unitGbps") : "Gbps";
+
+  if (kbps >= 1_000_000 && kbps % 1_000_000 === 0) {
+    return `${kbps / 1_000_000} ${gbpsLabel}`;
+  }
+  if (kbps >= 1_000_000) {
+    return `${(kbps / 1_000_000).toFixed(1)} ${gbpsLabel}`;
+  }
+  if (kbps >= 1_000 && kbps % 1_000 === 0) {
+    return `${kbps / 1_000} ${mbpsLabel}`;
+  }
+  if (kbps >= 1_000) {
+    return `${(kbps / 1_000).toFixed(1)} ${mbpsLabel}`;
+  }
+  return `${kbps} ${kbpsLabel}`;
+}
+
 function NodeRentalTab({
   node,
   onRefresh,
@@ -1091,10 +1112,24 @@ function NodeRentalTab({
   const [loading, setLoading] = useState(true);
   const [shareEnabled, setShareEnabled] = useState(false);
   const [quota, setQuota] = useState(100);
-  const [speed, setSpeed] = useState(0);
+  const [speedVal, setSpeedVal] = useState(0);
+  const [speedUnit, setSpeedUnit] = useState<"kbps" | "mbps" | "gbps">("kbps");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [deletingTenant, setDeletingTenant] = useState<string | null>(null);
+
+  const speedToKbps = (val: number, unit: "kbps" | "mbps" | "gbps") => {
+    if (unit === "gbps") return val * 1_000_000;
+    if (unit === "mbps") return val * 1_000;
+    return val;
+  };
+
+  const kbpsToValAndUnit = (kbps: number): [number, "kbps" | "mbps" | "gbps"] => {
+    if (!kbps || kbps <= 0) return [0, "kbps"];
+    if (kbps >= 1_000_000 && kbps % 1_000_000 === 0) return [kbps / 1_000_000, "gbps"];
+    if (kbps >= 1_000 && kbps % 1_000 === 0) return [kbps / 1_000, "mbps"];
+    return [kbps, "kbps"];
+  };
 
   const loadData = () => {
     getNodeRental(node.id)
@@ -1102,7 +1137,9 @@ function NodeRentalTab({
         setData(r);
         setShareEnabled(r.settings.share_enabled);
         setQuota(r.settings.share_quota_percent || 100);
-        setSpeed(r.settings.share_speed_limit || 0);
+        const [v, u] = kbpsToValAndUnit(r.settings.share_speed_limit || 0);
+        setSpeedVal(v);
+        setSpeedUnit(u);
       })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
@@ -1115,10 +1152,11 @@ function NodeRentalTab({
   const onSave = async () => {
     setSaving(true);
     try {
+      const totalKbps = speedToKbps(Number(speedVal) || 0, speedUnit);
       await saveNodeRental(node.id, {
         share_enabled: shareEnabled,
         share_quota_percent: Number(quota) || 100,
-        share_speed_limit: Number(speed) || 0,
+        share_speed_limit: totalKbps,
       });
       notifySuccess(t("nodes.rentalSaved"));
       loadData();
@@ -1158,10 +1196,11 @@ function NodeRentalTab({
 
   if (loading || !data) return <CenterLoader />;
 
+  const currentKbps = speedToKbps(Number(speedVal) || 0, speedUnit);
   const isDirty =
     shareEnabled !== data.settings.share_enabled ||
     Number(quota) !== data.settings.share_quota_percent ||
-    Number(speed) !== data.settings.share_speed_limit;
+    currentKbps !== data.settings.share_speed_limit;
 
   const tenants = data.tenants || [];
 
@@ -1191,16 +1230,29 @@ function NodeRentalTab({
                 </span>
               </div>
               <div className="flex flex-col gap-1">
-                <TextInput
-                  label={t("nodes.shareSpeed")}
-                  type="number"
-                  value={String(speed)}
-                  onChange={(v) => setSpeed(Math.max(0, Number(v) || 0))}
-                  placeholder="0 = без ограничений"
-                />
+                <label className="text-xs font-medium text-ink-muted">{t("nodes.shareSpeed")}</label>
+                <div className="flex items-center gap-2">
+                  <TextInput
+                    type="number"
+                    value={String(speedVal)}
+                    onChange={(v) => setSpeedVal(Math.max(0, Number(v) || 0))}
+                    placeholder="0 = ∞"
+                    className="flex-1"
+                  />
+                  <Select
+                    value={speedUnit}
+                    onChange={(v) => setSpeedUnit(v as any)}
+                    data={[
+                      { value: "kbps", label: t("nodes.unitKbps") },
+                      { value: "mbps", label: t("nodes.unitMbps") },
+                      { value: "gbps", label: t("nodes.unitGbps") },
+                    ]}
+                    className="w-28"
+                  />
+                </div>
                 <span className="text-xs text-ink-muted">
                   {t("nodes.speedPerTenant")}:{" "}
-                  <strong>{data.allocated_speed_limit > 0 ? `${data.allocated_speed_limit} Kbps` : "∞"}</strong>
+                  <strong>{formatSpeedLimit(data.allocated_speed_limit, t)}</strong>
                 </span>
               </div>
             </div>
@@ -1237,7 +1289,9 @@ function NodeRentalTab({
         onReset={() => {
           setShareEnabled(data.settings.share_enabled);
           setQuota(data.settings.share_quota_percent || 100);
-          setSpeed(data.settings.share_speed_limit || 0);
+          const [v, u] = kbpsToValAndUnit(data.settings.share_speed_limit || 0);
+          setSpeedVal(v);
+          setSpeedUnit(u);
         }}
         dirty={isDirty}
         busy={saving}
@@ -1457,7 +1511,7 @@ function NodeSettingsDialog({
               </div>
               <div className="flex items-center justify-between py-1 text-xs text-ink-muted">
                 <span>{t("nodes.speedPerTenant")}:</span>
-                <span className="font-medium text-ink">{node.share_speed_limit > 0 ? `${node.share_speed_limit} Kbps` : "∞"}</span>
+                <span className="font-medium text-ink">{formatSpeedLimit(node.share_speed_limit, t)}</span>
               </div>
             </Section>
             <TabSaveBar
@@ -2049,7 +2103,7 @@ function NodeCard({
                 <Sep />
                 <span>{t("nodes.quotaPerTenant")}: {node.share_quota_percent}%</span>
                 <Sep />
-                <span>{t("nodes.speedPerTenant")}: {node.share_speed_limit > 0 ? `${node.share_speed_limit} Kbps` : "∞"}</span>
+                <span>{t("nodes.speedPerTenant")}: {formatSpeedLimit(node.share_speed_limit, t)}</span>
                 <Sep />
                 <span>Xray {node.xray_version || "—"}</span>
                 <Sep />

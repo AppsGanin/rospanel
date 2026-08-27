@@ -943,6 +943,9 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		return err
 	}
 	// REALITY donor + optional key regeneration.
+	if n.IsRented && realityDest == "" && n.RealityDest != "" {
+		realityDest = n.RealityDest
+	}
 	if err := m.store.SetNodeRealityDest(id, realityDest); err != nil {
 		return err
 	}

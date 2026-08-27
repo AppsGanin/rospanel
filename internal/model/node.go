@@ -152,6 +152,7 @@ type Node struct {
 	RentOwnerNodeID   int64  `json:"rent_owner_node_id,omitempty"`
 	RentShareKey      string `json:"-"`
 	RentTenantID      string `json:"rent_tenant_id,omitempty"`
+	RentMasterHost    string `json:"rent_master_host,omitempty"`
 }
 
 // NodeConnections is a node's own connection transport, overriding the master's when

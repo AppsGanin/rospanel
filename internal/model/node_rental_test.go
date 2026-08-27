@@ -123,16 +123,16 @@ func TestDecodeShareLinkErrors(t *testing.T) {
 		t.Error("DecodeShareLink(empty json) want error, got nil")
 	}
 
-	// Missing fields
+	// Missing / invalid fields
 	badPayload := NodeSharePayload{
 		Version:    1,
-		NodeID:     0, // missing ID
+		NodeID:     -1, // invalid ID (< 0)
 		Host:       "example.com",
 		ShareToken: "token",
 	}
 	encodedBad, _ := EncodeShareLink(badPayload)
 	if _, err := DecodeShareLink(encodedBad); err == nil {
-		t.Error("DecodeShareLink(missing node id) want error, got nil")
+		t.Error("DecodeShareLink(invalid node id) want error, got nil")
 	}
 }
 

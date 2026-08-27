@@ -96,7 +96,7 @@ func TestRentedNodeLifecycleAndInbounds(t *testing.T) {
 	st := openNodeStore(t)
 
 	// Create rented node
-	rented, err := st.CreateRentedNode("Rented US", "us.example.com", 100, "token_123", "tenant_xyz", 60, 40000, "v1.2.0", "1.8.24", "pubkey123", "sid123", "/rpath", "dest.com:443", "sha123", false, true, true, true)
+	rented, err := st.CreateRentedNode("Rented US", "us.example.com", "panel.example.com", 100, "token_123", "tenant_xyz", 60, 40000, "v1.2.0", "1.8.24", "pubkey123", "sid123", "/rpath", "dest.com:443", "sha123", false, true, true, true, 443, 8443, 443)
 	if err != nil {
 		t.Fatalf("CreateRentedNode failed: %v", err)
 	}

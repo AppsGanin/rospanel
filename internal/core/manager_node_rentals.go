@@ -15,6 +15,7 @@ import (
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/version"
 )
 
 // SetNodeHostStats records host stats in memory for a server/node.
@@ -26,6 +27,20 @@ func (m *Manager) SetNodeHostStats(id int64, h nodeapi.HostStats) {
 
 // GetNodeRentalSettings returns rental settings for a node.
 func (m *Manager) GetNodeRentalSettings(nodeID int64) (*model.NodeRentalSettings, error) {
+	if nodeID == model.LocalNodeID {
+		settings, err := m.store.GetNodeRentalSettings(nodeID)
+		if err != nil {
+			return nil, err
+		}
+		if settings == nil {
+			settings = &model.NodeRentalSettings{
+				ShareQuotaPercent: 100,
+				MaxTenants:        10,
+			}
+		}
+		return settings, nil
+	}
+
 	node, err := m.store.GetNode(nodeID)
 	if err != nil {
 		return nil, err
@@ -51,6 +66,20 @@ func (m *Manager) GetNodeRentalSettings(nodeID int64) (*model.NodeRentalSettings
 
 // UpdateNodeRentalSettings saves sharing configuration for an owner node.
 func (m *Manager) UpdateNodeRentalSettings(nodeID int64, s model.NodeRentalSettings) (*model.NodeRentalSettings, error) {
+	if s.ShareQuotaPercent <= 0 || s.ShareQuotaPercent > 100 {
+		s.ShareQuotaPercent = 100
+	}
+	if s.ShareSpeedLimit < 0 {
+		s.ShareSpeedLimit = 0
+	}
+
+	if nodeID == model.LocalNodeID {
+		if err := m.store.SetNodeRentalSettings(nodeID, s); err != nil {
+			return nil, err
+		}
+		return m.GetNodeRentalSettings(nodeID)
+	}
+
 	node, err := m.store.GetNode(nodeID)
 	if err != nil {
 		return nil, err
@@ -62,55 +91,140 @@ func (m *Manager) UpdateNodeRentalSettings(nodeID int64, s model.NodeRentalSetti
 		return nil, invalidCode("err.rentedNodeCannotBeShared", "арендованную ноду нельзя повторно передавать в аренду")
 	}
 
-	if s.ShareQuotaPercent <= 0 || s.ShareQuotaPercent > 100 {
-		s.ShareQuotaPercent = 100
-	}
-	if s.ShareSpeedLimit < 0 {
-		s.ShareSpeedLimit = 0
-	}
-
 	if err := m.store.SetNodeRentalSettings(nodeID, s); err != nil {
 		return nil, err
 	}
 
-	m.nodes.wakeOne(nodeID)
+	if m.nodes != nil {
+		m.nodes.wakeOne(nodeID)
+	}
 	return m.GetNodeRentalSettings(nodeID)
 }
 
 // GenerateNodeShareLink builds and encodes an encrypted share link for an owner node.
 func (m *Manager) GenerateNodeShareLink(nodeID int64) (string, error) {
-	node, err := m.store.GetNode(nodeID)
-	if err != nil {
-		return "", err
+	set, _ := m.store.GetSettings()
+	if set == nil {
+		return "", errors.New("settings not found")
 	}
-	if node == nil {
-		return "", invalidCode("err.nodeNotFound", "нода не найдена")
+
+	var (
+		host              string
+		masterHost        string
+		nodePath          string
+		name              string
+		shareToken        string
+		shareQuotaPercent int
+		shareSpeedLimit   int
+		shareEnabled      bool
+		nodeVersion       string
+		xrayVersion       string
+		cpuPercent        float64
+		memUsed, memTotal int64
+		diskUsed          int64
+		diskTotal         int64
+		hostUptime        int64
+		certSha           string
+		certSelf          bool
+		eff               *model.Settings
+		protos            = []string{}
+	)
+
+	nodePath = set.NodeAPIPath
+	masterHost = set.Host
+
+	if nodeID == model.LocalNodeID {
+		shareEnabled = set.ShareEnabled
+		shareQuotaPercent = set.ShareQuotaPercent
+		shareSpeedLimit = set.ShareSpeedLimit
+		shareToken = set.ShareToken
+		host = set.Host
+		name = model.LocalNodeName
+		if set.MasterLabel != "" {
+			name = set.MasterLabel
+		}
+		if set.VLESSEnabled {
+			protos = append(protos, "vless")
+		}
+		if set.HysteriaEnabled {
+			protos = append(protos, "hysteria2")
+		}
+		if set.RealityEnabled {
+			protos = append(protos, "reality")
+		}
+		nodeVersion = version.Version
+		if m.sup != nil {
+			xrayVersion = m.sup.Version()
+		}
+		if m.sys != nil {
+			st := m.sys.Read()
+			cpuPercent = st.CPUPercent
+			memUsed = st.MemUsed
+			memTotal = st.MemTotal
+			diskUsed = st.DiskUsed
+			diskTotal = st.DiskTotal
+			hostUptime = st.HostUptime
+		}
+		eff = set
+	} else {
+		node, err := m.store.GetNode(nodeID)
+		if err != nil {
+			return "", err
+		}
+		if node == nil {
+			return "", invalidCode("err.nodeNotFound", "нода не найдена")
+		}
+		if node.IsRented {
+			return "", invalidCode("err.rentedNodeCannotBeShared", "арендованную ноду нельзя повторно передавать в аренду")
+		}
+		shareEnabled = node.ShareEnabled
+		shareQuotaPercent = node.ShareQuotaPercent
+		shareSpeedLimit = node.ShareSpeedLimit
+		shareToken = node.ShareToken
+		host = node.Host
+		name = node.Name
+		if derefBool(node.VLESSEnabled) {
+			protos = append(protos, "vless")
+		}
+		if derefBool(node.HysteriaEnabled) {
+			protos = append(protos, "hysteria2")
+		}
+		if derefBool(node.RealityEnabled) {
+			protos = append(protos, "reality")
+		}
+		nodeVersion = node.NodeVersion
+		xrayVersion = node.XrayVersion
+		certSha = node.CertSHA256
+		certSelf = node.CertSelfSigned
+		hostStats, _ := m.NodeHostStats(nodeID)
+		cpuPercent = hostStats.CPUPercent
+		memUsed = hostStats.MemUsed
+		memTotal = hostStats.MemTotal
+		diskUsed = hostStats.DiskUsed
+		diskTotal = hostStats.DiskTotal
+		hostUptime = hostStats.HostUptime
+		eff = nodeSettings(set, node)
 	}
-	if node.IsRented {
-		return "", invalidCode("err.rentedNodeCannotBeShared", "арендованную ноду нельзя повторно передавать в аренду")
-	}
-	if !node.ShareEnabled {
+
+	if !shareEnabled {
 		return "", invalidCode("err.nodeSharingDisabled", "совместное использование для данной ноды отключено владельцем")
 	}
 
-	set, _ := m.store.GetSettings()
-	var nodePath string
-	if set != nil {
-		nodePath = set.NodeAPIPath
+	if masterHost == "" {
+		masterHost = host
 	}
 
-	token := node.ShareToken
-	if token == "" {
+	if shareToken == "" {
 		newToken, terr := auth.RandomToken()
 		if terr != nil {
 			return "", terr
 		}
-		token = "rpn_share_" + newToken
+		shareToken = "rpn_share_" + newToken
 		_ = m.store.SetNodeRentalSettings(nodeID, model.NodeRentalSettings{
 			ShareEnabled:      true,
-			ShareQuotaPercent: node.ShareQuotaPercent,
-			ShareSpeedLimit:   node.ShareSpeedLimit,
-			ShareToken:        token,
+			ShareQuotaPercent: shareQuotaPercent,
+			ShareSpeedLimit:   shareSpeedLimit,
+			ShareToken:        shareToken,
 		})
 	}
 
@@ -120,46 +234,32 @@ func (m *Manager) GenerateNodeShareLink(nodeID int64) (string, error) {
 		reserved = append(reserved, p.Port)
 	}
 
-	protos := []string{}
-	if derefBool(node.VLESSEnabled) {
-		protos = append(protos, "vless")
-	}
-	if derefBool(node.HysteriaEnabled) {
-		protos = append(protos, "hysteria2")
-	}
-	if derefBool(node.RealityEnabled) {
-		protos = append(protos, "reality")
-	}
-
-	hostStats, _ := m.NodeHostStats(nodeID)
-
-	eff := nodeSettings(set, node)
-
 	payload := model.NodeSharePayload{
 		Version:          1,
-		NodeID:           node.ID,
-		Host:             node.Host,
+		NodeID:           nodeID,
+		Host:             host,
+		MasterHost:       masterHost,
 		NodePath:         nodePath,
-		Name:             node.Name,
-		ShareToken:       token,
-		QuotaPercent:     node.ShareQuotaPercent,
-		SpeedLimit:       node.ShareSpeedLimit,
+		Name:             name,
+		ShareToken:       shareToken,
+		QuotaPercent:     shareQuotaPercent,
+		SpeedLimit:       shareSpeedLimit,
 		ReservedPorts:    reserved,
 		Protocols:        protos,
-		NodeVersion:      node.NodeVersion,
-		XrayVersion:      node.XrayVersion,
-		CPUPercent:       hostStats.CPUPercent,
-		MemUsed:          hostStats.MemUsed,
-		MemTotal:         hostStats.MemTotal,
-		DiskUsed:         hostStats.DiskUsed,
-		DiskTotal:        hostStats.DiskTotal,
-		HostUptime:       hostStats.HostUptime,
+		NodeVersion:      nodeVersion,
+		XrayVersion:      xrayVersion,
+		CPUPercent:       cpuPercent,
+		MemUsed:          memUsed,
+		MemTotal:         memTotal,
+		DiskUsed:         diskUsed,
+		DiskTotal:        diskTotal,
+		HostUptime:       hostUptime,
 		RealityPublicKey: eff.RealityPublicKey,
 		RealityShortID:   eff.RealityShortID,
 		RealityPath:      eff.RealityPath,
 		RealityDest:      eff.RealityDest,
-		CertSHA256:       node.CertSHA256,
-		CertSelfSigned:   node.CertSelfSigned,
+		CertSHA256:       certSha,
+		CertSelfSigned:   certSelf,
 		VLESSPort:        eff.VLESSPort,
 		RealityPort:      eff.RealityPort,
 		HysteriaPort:     eff.HysteriaPort,
@@ -198,9 +298,15 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 	}
 	tenantID = "t_" + tenantID[:16]
 
+	masterHost := payload.MasterHost
+	if masterHost == "" {
+		masterHost = payload.Host
+	}
+
 	node, err := m.store.CreateRentedNode(
 		name,
 		payload.Host,
+		masterHost,
 		payload.NodeID,
 		payload.ShareToken,
 		tenantID,
@@ -217,6 +323,9 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 		payload.VLESSEnabled,
 		payload.RealityEnabled,
 		payload.HysteriaEnabled,
+		payload.VLESSPort,
+		payload.RealityPort,
+		payload.HysteriaPort,
 	)
 	if err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
@@ -243,25 +352,84 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 
 // ProcessRentalSync handles an incoming telemetry/inbound sync request from a tenant.
 func (m *Manager) ProcessRentalSync(req model.NodeRentalSyncReq) (*model.NodeRentalSyncResp, error) {
-	node, err := m.store.GetNode(req.NodeID)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil {
-		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
-	}
-	if !node.ShareEnabled || node.ShareToken == "" || subtle.ConstantTimeCompare([]byte(node.ShareToken), []byte(req.ShareToken)) != 1 {
-		return nil, invalidCode("err.invalidShareToken", "неверный или устаревший токен аренды")
+	set, _ := m.store.GetSettings()
+	if set == nil {
+		return nil, errors.New("settings not found")
 	}
 
-	speedLimit := model.CalculateTenantSpeed(node.ShareSpeedLimit, 1)
-	_ = m.store.UpsertNodeTenant(node.ID, req.TenantID, req.TenantName, speedLimit)
+	var (
+		online            bool
+		nodeVersion       string
+		xrayVersion       string
+		xrayRunning       bool
+		cpuPercent        float64
+		memUsed, memTotal int64
+		diskUsed          int64
+		diskTotal         int64
+		hostUptime        int64
+		certSha           string
+		certSelf          bool
+		eff               *model.Settings
+		shareSpeedLimit   int
+	)
 
-	currentInbounds, _ := m.store.Inbounds(node.ID)
+	if req.NodeID == model.LocalNodeID {
+		if !set.ShareEnabled || set.ShareToken == "" || subtle.ConstantTimeCompare([]byte(set.ShareToken), []byte(req.ShareToken)) != 1 {
+			return nil, invalidCode("err.invalidShareToken", "неверный или устаревший токен аренды")
+		}
+		shareSpeedLimit = set.ShareSpeedLimit
+		online = true
+		nodeVersion = version.Version
+		if m.sup != nil {
+			xrayVersion = m.sup.Version()
+			xrayRunning = m.sup.Running()
+		}
+		if m.sys != nil {
+			st := m.sys.Read()
+			cpuPercent = st.CPUPercent
+			memUsed = st.MemUsed
+			memTotal = st.MemTotal
+			diskUsed = st.DiskUsed
+			diskTotal = st.DiskTotal
+			hostUptime = st.HostUptime
+		}
+		eff = set
+	} else {
+		node, err := m.store.GetNode(req.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		if node == nil {
+			return nil, invalidCode("err.nodeNotFound", "нода не найдена")
+		}
+		if !node.ShareEnabled || node.ShareToken == "" || subtle.ConstantTimeCompare([]byte(node.ShareToken), []byte(req.ShareToken)) != 1 {
+			return nil, invalidCode("err.invalidShareToken", "неверный или устаревший токен аренды")
+		}
+		shareSpeedLimit = node.ShareSpeedLimit
+		online = node.Online(time.Now().Unix())
+		nodeVersion = node.NodeVersion
+		xrayVersion = node.XrayVersion
+		xrayRunning = node.XrayRunning
+		certSha = node.CertSHA256
+		certSelf = node.CertSelfSigned
+		hostStats, _ := m.NodeHostStats(node.ID)
+		cpuPercent = hostStats.CPUPercent
+		memUsed = hostStats.MemUsed
+		memTotal = hostStats.MemTotal
+		diskUsed = hostStats.DiskUsed
+		diskTotal = hostStats.DiskTotal
+		hostUptime = hostStats.HostUptime
+		eff = nodeSettings(set, node)
+	}
+
+	speedLimit := model.CalculateTenantSpeed(shareSpeedLimit, 1)
+	_ = m.store.UpsertNodeTenant(req.NodeID, req.TenantID, req.TenantName, speedLimit)
+
+	currentInbounds, _ := m.store.Inbounds(req.NodeID)
 	tenantInbounds := make(map[int]bool)
 	for _, in := range req.Inbounds {
 		tenantInbounds[in.Port] = true
-		in.ServerID = node.ID
+		in.ServerID = req.NodeID
 		in.TenantID = req.TenantID
 		_ = m.store.SaveTenantInbound(in)
 	}
@@ -270,38 +438,39 @@ func (m *Manager) ProcessRentalSync(req model.NodeRentalSyncReq) (*model.NodeRen
 			_ = m.store.DeleteInbound(in.ID)
 		}
 	}
-	if m.nodes != nil {
-		m.nodes.wakeOne(node.ID)
+
+	if req.NodeID == model.LocalNodeID {
+		if m.sup != nil {
+			_ = m.Reconcile()
+		}
+	} else if m.nodes != nil {
+		m.nodes.wakeOne(req.NodeID)
 	}
 
-	hostStats, _ := m.NodeHostStats(node.ID)
-	ports, _ := m.GetNodeReservedPorts(node.ID)
+	ports, _ := m.GetNodeReservedPorts(req.NodeID)
 	reserved := make([]int, 0, len(ports))
 	for _, p := range ports {
 		reserved = append(reserved, p.Port)
 	}
 
-	set, _ := m.store.GetSettings()
-	eff := nodeSettings(set, node)
-
 	return &model.NodeRentalSyncResp{
-		Online:           node.Online(time.Now().Unix()),
-		NodeVersion:      node.NodeVersion,
-		XrayVersion:      node.XrayVersion,
-		XrayRunning:      node.XrayRunning,
-		CPUPercent:       hostStats.CPUPercent,
-		MemUsed:          hostStats.MemUsed,
-		MemTotal:         hostStats.MemTotal,
-		DiskUsed:         hostStats.DiskUsed,
-		DiskTotal:        hostStats.DiskTotal,
-		HostUptime:       hostStats.HostUptime,
+		Online:           online,
+		NodeVersion:      nodeVersion,
+		XrayVersion:      xrayVersion,
+		XrayRunning:      xrayRunning,
+		CPUPercent:       cpuPercent,
+		MemUsed:          memUsed,
+		MemTotal:         memTotal,
+		DiskUsed:         diskUsed,
+		DiskTotal:        diskTotal,
+		HostUptime:       hostUptime,
 		ReservedPorts:    reserved,
 		RealityPublicKey: eff.RealityPublicKey,
 		RealityShortID:   eff.RealityShortID,
 		RealityPath:      eff.RealityPath,
 		RealityDest:      eff.RealityDest,
-		CertSHA256:       node.CertSHA256,
-		CertSelfSigned:   node.CertSelfSigned,
+		CertSHA256:       certSha,
+		CertSelfSigned:   certSelf,
 		VLESSPort:        eff.VLESSPort,
 		RealityPort:      eff.RealityPort,
 		HysteriaPort:     eff.HysteriaPort,
@@ -317,7 +486,41 @@ func (m *Manager) SyncRentedNode(nodeID int64) error {
 	if err != nil || node == nil || !node.IsRented {
 		return err
 	}
+
 	inbounds, _ := m.store.Inbounds(nodeID)
+	users, _ := m.store.WorkingUsers(time.Now().Unix())
+	access, _ := m.store.AccessMap()
+
+	// Attach tenant's client credentials to each inbound so Xray on the owner node can authenticate them.
+	for i := range inbounds {
+		in := &inbounds[i]
+		in.Opts.Clients = make([]model.InboundClient, 0, len(users))
+		for _, u := range users {
+			if !model.AccessOf(access, u.ID).AllowsInbound(in.ID) {
+				continue
+			}
+			email := fmt.Sprintf("t_%s_%d", node.RentTenantID, u.ID)
+			switch in.Protocol {
+			case model.InbVLESS:
+				in.Opts.Clients = append(in.Opts.Clients, model.InboundClient{
+					ID:    u.UUID,
+					Flow:  in.Opts.Flow,
+					Email: email,
+				})
+			case model.InbTrojan, model.InbHysteria:
+				in.Opts.Clients = append(in.Opts.Clients, model.InboundClient{
+					Password: u.Password,
+					Email:    email,
+				})
+			case model.InbShadowsocks:
+				in.Opts.Clients = append(in.Opts.Clients, model.InboundClient{
+					Password: model.UserShadowKey(u.UUID, in.Opts.Method),
+					Email:    email,
+				})
+			}
+		}
+	}
+
 	reqBody := model.NodeRentalSyncReq{
 		NodeID:     node.RentOwnerNodeID,
 		ShareToken: node.RentShareKey,
@@ -330,9 +533,20 @@ func (m *Manager) SyncRentedNode(nodeID int64) error {
 		return err
 	}
 
+	syncHost := node.RentMasterHost
+	if syncHost == "" {
+		syncHost = node.Host
+	}
+
 	urls := []string{
-		fmt.Sprintf("https://%s/api/nodes/rentals/sync", node.Host),
-		fmt.Sprintf("http://%s/api/nodes/rentals/sync", node.Host),
+		fmt.Sprintf("https://%s/api/nodes/rentals/sync", syncHost),
+		fmt.Sprintf("http://%s/api/nodes/rentals/sync", syncHost),
+	}
+	if node.Host != "" && node.Host != syncHost {
+		urls = append(urls,
+			fmt.Sprintf("https://%s/api/nodes/rentals/sync", node.Host),
+			fmt.Sprintf("http://%s/api/nodes/rentals/sync", node.Host),
+		)
 	}
 
 	client := &http.Client{
@@ -421,7 +635,13 @@ func (m *Manager) DeleteNodeTenant(nodeID int64, tenantID string) error {
 		}
 		return err
 	}
-	m.nodes.wakeOne(nodeID)
+	if nodeID == model.LocalNodeID {
+		if m.sup != nil {
+			_ = m.Reconcile()
+		}
+	} else if m.nodes != nil {
+		m.nodes.wakeOne(nodeID)
+	}
 	return nil
 }
 
@@ -526,6 +746,21 @@ func (m *Manager) GetNodeReservedPorts(nodeID int64) ([]model.PortInfo, error) {
 
 // CalculateTenantResourceShare calculates the per-tenant bandwidth limit and quota percent for a node.
 func (m *Manager) CalculateTenantResourceShare(nodeID int64) (quotaPercent int, speedLimitKbps int, err error) {
+	if nodeID == model.LocalNodeID {
+		set, err := m.store.GetSettings()
+		if err != nil {
+			return 0, 0, err
+		}
+		tenants, err := m.store.ListNodeTenants(nodeID)
+		if err != nil {
+			return 0, 0, err
+		}
+		count := len(tenants)
+		return model.CalculateTenantQuota(set.ShareQuotaPercent, count),
+			model.CalculateTenantSpeed(set.ShareSpeedLimit, count),
+			nil
+	}
+
 	node, err := m.store.GetNode(nodeID)
 	if err != nil {
 		return 0, 0, err

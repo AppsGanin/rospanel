@@ -111,6 +111,14 @@ type Inbound struct {
 	CreatedAt int64 `json:"created_at"`
 }
 
+// InboundClient represents one client authorized on an inbound (used for tenant custom inbounds).
+type InboundClient struct {
+	ID       string `json:"id,omitempty"`       // UUID for VLESS
+	Password string `json:"password,omitempty"` // Password for Trojan / Hysteria2 / Shadowsocks
+	Flow     string `json:"flow,omitempty"`     // Flow for VLESS (e.g. xtls-rprx-vision)
+	Email    string `json:"email,omitempty"`    // User email identifier for accounting
+}
+
 // InboundOpts is the transport/security-dependent half of an inbound. It is stored
 // as one JSON blob rather than thirty nullable columns because which fields are even
 // meaningful depends on the protocol × transport × security combination — see
@@ -118,6 +126,9 @@ type Inbound struct {
 type InboundOpts struct {
 	Transport string `json:"transport"`
 	Security  string `json:"security"`
+
+	// Clients carries authorized client credentials for tenant-owned inbounds.
+	Clients []InboundClient `json:"clients,omitempty"`
 
 	// SNI overrides the TLS server name (empty ⇒ the server's own host). Also the
 	// value that goes into the share link's sni=.
