@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.7](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.6...v2.16.7) (2026-08-27)
+
+
+### Refactoring
+
+* implement strict isolation between owner and tenant inbounds using a Scope model and explicit rental client syncing ([63aa42d](https://github.com/Shu1t3/rospanel-shu1t3/commit/63aa42da190269ce682a2649f45aab14f23f67fd))
+
 ## [2.16.6](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.5...v2.16.6) (2026-08-27)
 
 
