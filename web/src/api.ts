@@ -1872,7 +1872,7 @@ export const createNode = (name: string, host: string) =>
 export interface NodePatch {
   name: string
   host: string
-  decoy_template: string
+  decoy_template?: string
   vless_enabled?: boolean
   hysteria_enabled?: boolean
   reality_enabled?: boolean

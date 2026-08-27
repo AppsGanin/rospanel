@@ -125,6 +125,29 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		writeErrCode(w, http.StatusBadRequest, "err.nameAndHostRequired", "название и домен обязательны")
 		return
 	}
+	if node.IsRented {
+		// Tenants can only rename the rented node locally; other server-level fields are owner-managed.
+		edit := store.NodeEdit{
+			Name:               req.Name,
+			Host:               node.Host,
+			DecoyTemplate:      node.DecoyTemplate,
+			VLESS:              node.VLESSEnabled,
+			Hysteria:           node.HysteriaEnabled,
+			Reality:            node.RealityEnabled,
+			Routing:            node.Routing,
+			XrayDNS:            node.XrayDNS,
+			WarpEnabled:        node.WarpEnabled,
+			OperaEnabled:       node.OperaEnabled,
+			OperaCountry:       node.OperaCountry,
+			TrafficCoefficient: node.TrafficCoefficient,
+		}
+		if err := rt.mgr.UpdateNode(id, edit); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+		writeOK(w)
+		return
+	}
 	edit := store.NodeEdit{
 		Name:          req.Name,
 		Host:          req.Host,
@@ -178,6 +201,10 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
+	if node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
+		return
+	}
 	edit := store.NodeEdit{
 		Name:               node.Name,
 		Host:               node.Host,
@@ -206,6 +233,15 @@ func (rt *Router) setNodeDNS(w http.ResponseWriter, r *http.Request, id int64) {
 		XrayDNS *string `json:"xray_dns"` // null ⇒ inherit global DNS
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
 		return
 	}
 	if err := rt.mgr.SetNodeDNS(id, req.XrayDNS); err != nil {
@@ -305,6 +341,15 @@ func (rt *Router) setNodeACME(w http.ResponseWriter, r *http.Request, id int64) 
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
+		return
+	}
 	if err := rt.mgr.SetNodeACME(id, req.Target, req.Email, req.Provider); err != nil {
 		writeManagerErr(w, err)
 		return
@@ -332,6 +377,15 @@ func (rt *Router) nodeGeoInfo(w http.ResponseWriter, _ *http.Request, id int64) 
 
 // nodeGeoRefresh asks a node to re-download its geo databases now.
 func (rt *Router) nodeGeoRefresh(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
+		return
+	}
 	if err := rt.mgr.RequestNodeGeoRefresh(id); err != nil {
 		writeManagerErr(w, err)
 		return
@@ -345,6 +399,15 @@ func (rt *Router) nodeGeoCadence(w http.ResponseWriter, r *http.Request, id int6
 		RefreshHours int `json:"refresh_hours"`
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
 		return
 	}
 	if err := rt.mgr.SetNodeGeoRefresh(id, req.RefreshHours); err != nil {
@@ -361,6 +424,15 @@ func (rt *Router) setNodeReality(w http.ResponseWriter, r *http.Request, id int6
 		Regen bool   `json:"regen"`
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
 		return
 	}
 	if err := rt.mgr.SetNodeReality(id, req.Dest, req.Regen); err != nil {
@@ -391,6 +463,11 @@ func (rt *Router) setMasterProtocols(w http.ResponseWriter, r *http.Request) {
 // nodeLogs returns a node's recent log tail. Requesting it also asks the node to
 // send fresh logs on its next sync, so a UI polling this endpoint keeps refreshing.
 func (rt *Router) nodeLogs(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err == nil && node != nil && node.IsRented {
+		writeJSON(w, http.StatusOK, map[string]any{"lines": []string{}, "at": 0})
+		return
+	}
 	lines, at := rt.mgr.RequestNodeLogs(id)
 	if lines == nil {
 		lines = []string{}
@@ -415,6 +492,15 @@ func (rt *Router) nodeXrayConfig(w http.ResponseWriter, _ *http.Request, id int6
 // picks it up on its next sync (immediately, since the flag wakes its held poll), so
 // a 200 here means "asked", not "restarted".
 func (rt *Router) nodeXrayRestart(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
+		return
+	}
 	if err := rt.mgr.RequestNodeXrayRestart(id); err != nil {
 		writeManagerErr(w, err)
 		return
@@ -425,6 +511,11 @@ func (rt *Router) nodeXrayRestart(w http.ResponseWriter, _ *http.Request, id int
 // nodeHealth returns one server's diagnostics — the panel's own full report for
 // node 0, and for a remote node what it last reported (the panel does not dial it).
 func (rt *Router) nodeHealth(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err == nil && node != nil && node.IsRented {
+		writeJSON(w, http.StatusOK, map[string]any{})
+		return
+	}
 	rep, err := rt.mgr.NodeHealth(id)
 	if err != nil {
 		writeManagerErr(w, err)
@@ -459,6 +550,15 @@ func (rt *Router) deleteNode(w http.ResponseWriter, _ *http.Request, id int64) {
 
 // updateNodeVersion flags one node to self-update to the latest release.
 func (rt *Router) updateNodeVersion(w http.ResponseWriter, _ *http.Request, id int64) {
+	node, err := rt.mgr.GetNode(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	if node != nil && node.IsRented {
+		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
+		return
+	}
 	if err := rt.mgr.RequestNodeUpdate(id); err != nil {
 		writeManagerErr(w, err)
 		return

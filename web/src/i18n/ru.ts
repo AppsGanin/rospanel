@@ -232,6 +232,7 @@ const ru = {
     invalidShareLink: "неверная или повреждённая ссылка шеринга ноды",
     nodeSharingDisabled: "совместное использование для данной ноды отключено владельцем",
     rentedNodeCannotBeShared: "арендованную ноду нельзя повторно передавать в аренду",
+    rentedNodeManagedByOwner: "арендованная нода управляется владельцем",
     portReservedByOwner: "порт {{port}} зарезервирован владельцем ноды ({{service}})",
     tenantNotFound: "арендатор не найден",
     laneBadID: "недопустимый идентификатор полосы «{{id}}»: только латиница и цифры (до 16 символов), имена warp/opera/direct заняты",

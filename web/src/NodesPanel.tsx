@@ -467,6 +467,7 @@ function clampCoefficient(v: string): number {
 }
 
 export function statusDot(node: NodeView): string {
+  if (node.is_rented) return node.enabled ? "bg-emerald-500" : "bg-gray-400";
   if (!node.enabled || !node.joined) return "bg-gray-400";
   if (!node.is_local && !node.online) return "bg-red-500";
   return node.xray_running ? "bg-emerald-500" : "bg-amber-500";
@@ -477,6 +478,10 @@ export function statusDot(node: NodeView): string {
 // plain "up and serving" is left to the green dot to keep the row quiet; the states
 // that need words get an xs badge.
 function StatusChip({ node }: { node: NodeView }) {
+  if (node.is_rented) {
+    if (!node.enabled) return <Badge color="gray" size="xs">{i18n.t("nodes.disabled")}</Badge>;
+    return null; // up and serving
+  }
   if (!node.is_local) {
     if (!node.enabled) return <Badge color="gray" size="xs">{i18n.t("nodes.disabled")}</Badge>;
     if (!node.joined) return <Badge color="gray" size="xs">{i18n.t("nodes.notJoined")}</Badge>;
@@ -1327,7 +1332,7 @@ function NodeSettingsDialog({
   const [dns, setDns] = useState(canonicalDns(node.xray_dns ?? ""));
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState("general");
+  const [tab, setTab] = useState(node.is_rented ? "connections" : "general");
   const genDirty =
     name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || proxyDirty;
   const dnsDirty = dns !== dnsBase;
@@ -1345,15 +1350,22 @@ function NodeSettingsDialog({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await updateNode(node.id, {
-        name: name.trim(),
-        host: node.host,
-        decoy_template: decoy,
-        traffic_coefficient: clampCoefficient(coef),
-      });
-      if (proxyDirty) {
-        await setServerProxy(node.id, proxy);
-        setProxyBase(proxy);
+      if (node.is_rented) {
+        await updateNode(node.id, {
+          name: name.trim(),
+          host: node.host,
+        });
+      } else {
+        await updateNode(node.id, {
+          name: name.trim(),
+          host: node.host,
+          decoy_template: decoy,
+          traffic_coefficient: clampCoefficient(coef),
+        });
+        if (proxyDirty) {
+          await setServerProxy(node.id, proxy);
+          setProxyBase(proxy);
+        }
       }
       setGenBase({ name, decoy, coef });
       notifySuccess(t("nodes.generalSaved"));
@@ -1399,15 +1411,20 @@ function NodeSettingsDialog({
     }
   };
 
-  const dialogTabs = [
-    { value: "general", label: t("settings.tabGeneral") },
-    { value: "connections", label: t("nodes.tabConnections") },
-    { value: "routing", label: t("nodes.tabRouting") },
-    { value: "dns", label: "DNS" },
-    { value: "geo", label: "Geo" },
-    { value: "domain", label: t("restore.domain") },
-    ...(!node.is_rented ? [{ value: "rental", label: t("nodes.tabRental") }] : []),
-  ];
+  const dialogTabs = node.is_rented
+    ? [
+        { value: "connections", label: t("nodes.tabConnections") },
+        { value: "general", label: t("settings.tabGeneral") },
+      ]
+    : [
+        { value: "general", label: t("settings.tabGeneral") },
+        { value: "connections", label: t("nodes.tabConnections") },
+        { value: "routing", label: t("nodes.tabRouting") },
+        { value: "dns", label: "DNS" },
+        { value: "geo", label: "Geo" },
+        { value: "domain", label: t("restore.domain") },
+        { value: "rental", label: t("nodes.tabRental") },
+      ];
 
   return (
     <Modal open onClose={onClose} title={t("nodes.settingsOf", { name: node.name })} size="xl">
@@ -1422,45 +1439,76 @@ function NodeSettingsDialog({
       <DialogTabs value={tab} onChange={setTab} tabs={dialogTabs} />
 
       {tab === "general" && (
-        <div className="flex flex-col gap-4">
-          <Section title={t("nodes.server")}>
-            <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
-            <Select
-              label={t("nodes.decoy")}
-              value={decoy}
-              onChange={setDecoy}
-              data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
-            />
-            <div className="flex flex-col gap-1">
+        node.is_rented ? (
+          <div className="flex flex-col gap-4">
+            <Section title={t("nodes.server")}>
               <TextInput
-                label={t("nodes.coefficient")}
-                type="number"
-                value={coef}
-                onChange={setCoef}
-                placeholder="1.0"
+                label={t("groups.name")}
+                value={name}
+                onChange={setName}
+                placeholder={t("nodes.namePlaceholder")}
               />
-              <p className="text-xs text-ink-muted">{t("nodes.coefficientHint")}</p>
-            </div>
-            <SystemProxyEditor
-              host={node.host}
-              value={proxy}
-              saved={proxyBase}
-              onChange={setProxy}
+              <div className="flex items-center justify-between py-1 text-xs text-ink-muted">
+                <span>{t("nodes.hostLabel")}:</span>
+                <span className="font-mono font-medium text-ink">{node.host}</span>
+              </div>
+              <div className="flex items-center justify-between py-1 text-xs text-ink-muted">
+                <span>{t("nodes.quotaPerTenant")}:</span>
+                <span className="font-medium text-ink">{node.share_quota_percent}%</span>
+              </div>
+              <div className="flex items-center justify-between py-1 text-xs text-ink-muted">
+                <span>{t("nodes.speedPerTenant")}:</span>
+                <span className="font-medium text-ink">{node.share_speed_limit > 0 ? `${node.share_speed_limit} Kbps` : "∞"}</span>
+              </div>
+            </Section>
+            <TabSaveBar
+              onSave={saveGeneral}
+              onReset={() => setName(genBase.name)}
+              dirty={name !== genBase.name}
+              busy={saving}
             />
-          </Section>
-          <TabSaveBar
-            onSave={saveGeneral}
-            onReset={() => {
-              setName(genBase.name);
-              setDecoy(genBase.decoy);
-              setCoef(genBase.coef);
-              setProxy(proxyBase);
-            }}
-            dirty={genDirty}
-            busy={saving}
-            invalid={proxyIssue !== ""}
-          />
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <Section title={t("nodes.server")}>
+              <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
+              <Select
+                label={t("nodes.decoy")}
+                value={decoy}
+                onChange={setDecoy}
+                data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
+              />
+              <div className="flex flex-col gap-1">
+                <TextInput
+                  label={t("nodes.coefficient")}
+                  type="number"
+                  value={coef}
+                  onChange={setCoef}
+                  placeholder="1.0"
+                />
+                <p className="text-xs text-ink-muted">{t("nodes.coefficientHint")}</p>
+              </div>
+              <SystemProxyEditor
+                host={node.host}
+                value={proxy}
+                saved={proxyBase}
+                onChange={setProxy}
+              />
+            </Section>
+            <TabSaveBar
+              onSave={saveGeneral}
+              onReset={() => {
+                setName(genBase.name);
+                setDecoy(genBase.decoy);
+                setCoef(genBase.coef);
+                setProxy(proxyBase);
+              }}
+              dirty={genDirty}
+              busy={saving}
+              invalid={proxyIssue !== ""}
+            />
+          </div>
+        )
       )}
 
       {tab === "connections" && (
@@ -2030,39 +2078,42 @@ function NodeCard({
 
         <div className="flex shrink-0 flex-wrap items-center gap-1">
           {!node.is_local && <Switch checked={node.enabled} onChange={toggleEnabled} />}
-          {/* Four per-server actions, as icons: spelled out they crowded the row and
-              pushed the server's own name off a narrow screen. */}
+          {/* Settings / Connections action */}
           <IconButton title={t("nav.settings")} onClick={() => setEditingRouting(true)}>
             <IconGear size={18} />
           </IconButton>
-          <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
-            <IconPulse size={18} />
-          </IconButton>
-          <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
-            <IconBraces size={18} />
-          </IconButton>
-          <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
-            <IconTerminal size={18} />
-          </IconButton>
-          <IconButton
-            title={
-              node.xray_restart === "pending"
-                ? t("nodes.restartQueuedHint")
-                : t("nodes.restartXray")
-            }
-            color="red"
-            disabled={
-              restarting ||
-              node.xray_restart === "pending" ||
-              (!node.is_local && (!node.enabled || !node.joined))
-            }
-            onClick={doXrayRestart}
-          >
-            <IconRestart
-              size={18}
-              className={node.xray_restart === "pending" ? "animate-spin" : undefined}
-            />
-          </IconButton>
+          {!node.is_rented && (
+            <>
+              <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
+                <IconPulse size={18} />
+              </IconButton>
+              <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
+                <IconBraces size={18} />
+              </IconButton>
+              <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
+                <IconTerminal size={18} />
+              </IconButton>
+              <IconButton
+                title={
+                  node.xray_restart === "pending"
+                    ? t("nodes.restartQueuedHint")
+                    : t("nodes.restartXray")
+                }
+                color="red"
+                disabled={
+                  restarting ||
+                  node.xray_restart === "pending" ||
+                  (!node.is_local && (!node.enabled || !node.joined))
+                }
+                onClick={doXrayRestart}
+              >
+                <IconRestart
+                  size={18}
+                  className={node.xray_restart === "pending" ? "animate-spin" : undefined}
+                />
+              </IconButton>
+            </>
+          )}
           {!node.is_local && (
             <Dropdown
               align="end"

@@ -533,6 +533,12 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			RentOwnerNodeID:   n.RentOwnerNodeID,
 			RentTenantID:      n.RentTenantID,
 		}
+		if n.IsRented {
+			v.Joined = true
+			v.Online = n.Enabled
+			v.XrayRunning = n.Enabled
+			v.VersionSkew = false
+		}
 		if n.ShareEnabled && !n.IsRented {
 			tenants, _ := m.store.ListNodeTenants(n.ID)
 			v.ActiveTenants = len(tenants)

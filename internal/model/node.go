@@ -177,11 +177,14 @@ type NodeConnections struct {
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent
-// one — i.e. whether the install command has actually been run on a server.
-func (n *Node) Joined() bool { return n.ConfigHash != "" || n.LastSeen > 0 }
+// one — i.e. whether the install command has actually been run on a server, or it's a rented node.
+func (n *Node) Joined() bool { return n.IsRented || n.ConfigHash != "" || n.LastSeen > 0 }
 
 // Online reports whether the node has synced within NodeOnlineWindow of now.
 func (n *Node) Online(now int64) bool {
+	if n.IsRented {
+		return n.Enabled
+	}
 	return n.LastSeen > 0 && now-n.LastSeen < NodeOnlineWindow
 }
 
