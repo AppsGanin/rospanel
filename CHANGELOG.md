@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.6](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.5...v2.16.6) (2026-08-27)
+
+
+### Bug Fixes
+
+* implement rent master host tracking and add speed unit selector to nodes panel ([6ac0b34](https://github.com/Shu1t3/rospanel-shu1t3/commit/6ac0b346cebc883833fe71dbe52ae051691c835c))
+
 ## [2.16.5](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.4...v2.16.5) (2026-08-27)
 
 
