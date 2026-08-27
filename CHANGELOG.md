@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.2](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.1...v2.16.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* restrict rented node management and implement owner-only administration controls ([d19149c](https://github.com/Shu1t3/rospanel-shu1t3/commit/d19149cdae8d7275a2928feb7c21b2a8dc739a3c))
+
 ## [2.16.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.0...v2.16.1) (2026-08-27)
 
 
