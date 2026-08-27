@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.4](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.3...v2.16.4) (2026-08-27)
+
+
+### Bug Fixes
+
+* implement rental synchronization API and update node management to support rented node tracking and tenant inbound configuration. ([00e6a95](https://github.com/Shu1t3/rospanel-shu1t3/commit/00e6a951f36b012356ec8675f1b1573bc56d65c8))
+
 ## [2.16.3](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.2...v2.16.3) (2026-08-27)
 
 
