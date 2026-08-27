@@ -136,15 +136,30 @@ func (s *Store) UpdateTenantTraffic(nodeID int64, tenantID string, up, down int6
 }
 
 // CreateRentedNode inserts a node marked as is_rented=1 on the tenant's panel.
-func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey, tenantID string, quotaPercent, speedLimit int, nodeVersion, xrayVersion string) (*model.Node, error) {
+func (s *Store) CreateRentedNode(
+	name, host string,
+	ownerNodeID int64,
+	shareKey, tenantID string,
+	quotaPercent, speedLimit int,
+	nodeVersion, xrayVersion string,
+	realityPubKey, realitySID, realityPath, realityDest, certSha string,
+	certSelf bool,
+	vlessEn, realityEn, hyEn bool,
+) (*model.Node, error) {
 	now := time.Now()
 	res, err := s.db.Exec(`
 		INSERT INTO nodes (name, host, enabled, is_rented, rent_owner_node_id,
 			rent_share_key, rent_tenant_id, share_quota_percent, share_speed_limit,
 			node_version, xray_version,
+			reality_public_key, reality_short_id, reality_path, reality_dest,
+			cert_sha256, cert_self_signed,
+			vless_enabled, reality_enabled, hysteria_enabled,
 			created_at, geo_refresh_hours)
-		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, host, ownerNodeID, shareKey, tenantID, quotaPercent, speedLimit, nodeVersion, xrayVersion, now.Unix(), defaultGeoRefreshHours,
+		VALUES (?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, host, ownerNodeID, shareKey, tenantID, quotaPercent, speedLimit, nodeVersion, xrayVersion,
+		realityPubKey, realitySID, realityPath, realityDest, certSha, boolToInt(certSelf),
+		boolToInt(vlessEn), boolToInt(realityEn), boolToInt(hyEn),
+		now.Unix(), defaultGeoRefreshHours,
 	)
 	if err != nil {
 		if isNameConflict(err) {
@@ -153,6 +168,7 @@ func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey,
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
+	vEn, rEn, hEn := vlessEn, realityEn, hyEn
 	return &model.Node{
 		ID:                id,
 		Name:              name,
@@ -166,8 +182,43 @@ func (s *Store) CreateRentedNode(name, host string, ownerNodeID int64, shareKey,
 		ShareSpeedLimit:   speedLimit,
 		NodeVersion:       nodeVersion,
 		XrayVersion:       xrayVersion,
+		RealityPublicKey:  realityPubKey,
+		RealityShortID:    realitySID,
+		RealityPath:       realityPath,
+		RealityDest:       realityDest,
+		CertSHA256:        certSha,
+		CertSelfSigned:    certSelf,
+		VLESSEnabled:      &vEn,
+		RealityEnabled:    &rEn,
+		HysteriaEnabled:   &hEn,
 		CreatedAt:         now.Unix(),
 	}, nil
+}
+
+// UpdateRentedNodeSecurity updates a rented node's security keys, cert fingerprints and connection details.
+func (s *Store) UpdateRentedNodeSecurity(
+	nodeID int64,
+	realityPubKey, realitySID, realityPath, realityDest, certSha string,
+	certSelf bool,
+	vlessEn, realityEn, hyEn bool,
+) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET
+			reality_public_key = ?,
+			reality_short_id = ?,
+			reality_path = ?,
+			reality_dest = ?,
+			cert_sha256 = ?,
+			cert_self_signed = ?,
+			vless_enabled = ?,
+			reality_enabled = ?,
+			hysteria_enabled = ?
+		WHERE id = ? AND is_rented = 1`,
+		realityPubKey, realitySID, realityPath, realityDest, certSha, boolToInt(certSelf),
+		boolToInt(vlessEn), boolToInt(realityEn), boolToInt(hyEn),
+		nodeID,
+	)
+	return err
 }
 
 // UpsertNodeTenant creates or refreshes an active tenant record.

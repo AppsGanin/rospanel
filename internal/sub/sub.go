@@ -22,7 +22,7 @@ func ShareLinks(u model.User, srv Server) []string {
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		links = append(links, link.VLESS(u, set))
 	}
-	if set.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
+	if set.RealityEnabled && set.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
 		links = append(links, link.Reality(u, set))
 	}
 	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {

@@ -48,16 +48,28 @@ type NodeSharePayload struct {
 	SpeedLimit    int      `json:"speed"`
 	ReservedPorts []int    `json:"ports"`
 	Protocols     []string `json:"protos"`
-	NodeVersion   string   `json:"node_ver,omitempty"`
-	XrayVersion   string   `json:"xray_ver,omitempty"`
-	CPUPercent    float64  `json:"cpu,omitempty"`
-	MemUsed       int64    `json:"mem_u,omitempty"`
-	MemTotal      int64    `json:"mem_t,omitempty"`
-	DiskUsed      int64    `json:"disk_u,omitempty"`
-	DiskTotal     int64    `json:"disk_t,omitempty"`
-	HostUptime    int64    `json:"uptime,omitempty"`
-	Signature     string   `json:"sig,omitempty"`
-	CreatedAt     int64    `json:"ts"`
+	NodeVersion      string   `json:"node_ver,omitempty"`
+	XrayVersion      string   `json:"xray_ver,omitempty"`
+	CPUPercent       float64  `json:"cpu,omitempty"`
+	MemUsed          int64    `json:"mem_u,omitempty"`
+	MemTotal         int64    `json:"mem_t,omitempty"`
+	DiskUsed         int64    `json:"disk_u,omitempty"`
+	DiskTotal        int64    `json:"disk_t,omitempty"`
+	HostUptime       int64    `json:"uptime,omitempty"`
+	RealityPublicKey string   `json:"r_pbk,omitempty"`
+	RealityShortID   string   `json:"r_sid,omitempty"`
+	RealityPath      string   `json:"r_path,omitempty"`
+	RealityDest      string   `json:"r_dest,omitempty"`
+	CertSHA256       string   `json:"cert_sha,omitempty"`
+	CertSelfSigned   bool     `json:"cert_self,omitempty"`
+	VLESSPort        int      `json:"vless_port,omitempty"`
+	RealityPort      int      `json:"reality_port,omitempty"`
+	HysteriaPort     int      `json:"hy_port,omitempty"`
+	VLESSEnabled     bool     `json:"vless_en,omitempty"`
+	RealityEnabled   bool     `json:"reality_en,omitempty"`
+	HysteriaEnabled  bool     `json:"hy_en,omitempty"`
+	Signature        string   `json:"sig,omitempty"`
+	CreatedAt        int64    `json:"ts"`
 }
 
 // NodeRentalSyncReq is the payload sent by a tenant panel to sync with the owner panel.
@@ -71,17 +83,29 @@ type NodeRentalSyncReq struct {
 
 // NodeRentalSyncResp is the telemetry returned to a tenant by the owner panel.
 type NodeRentalSyncResp struct {
-	Online        bool    `json:"online"`
-	NodeVersion   string  `json:"node_version"`
-	XrayVersion   string  `json:"xray_version"`
-	XrayRunning   bool    `json:"xray_running"`
-	CPUPercent    float64 `json:"cpu_percent"`
-	MemUsed       int64   `json:"mem_used"`
-	MemTotal      int64   `json:"mem_total"`
-	DiskUsed      int64   `json:"disk_used"`
-	DiskTotal     int64   `json:"disk_total"`
-	HostUptime    int64   `json:"host_uptime"`
-	ReservedPorts []int   `json:"reserved_ports"`
+	Online           bool    `json:"online"`
+	NodeVersion      string  `json:"node_version"`
+	XrayVersion      string  `json:"xray_version"`
+	XrayRunning      bool    `json:"xray_running"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	MemUsed          int64   `json:"mem_used"`
+	MemTotal         int64   `json:"mem_total"`
+	DiskUsed         int64   `json:"disk_used"`
+	DiskTotal        int64   `json:"disk_total"`
+	HostUptime       int64   `json:"host_uptime"`
+	ReservedPorts    []int   `json:"reserved_ports"`
+	RealityPublicKey string  `json:"reality_public_key,omitempty"`
+	RealityShortID   string  `json:"reality_short_id,omitempty"`
+	RealityPath      string  `json:"reality_path,omitempty"`
+	RealityDest      string  `json:"reality_dest,omitempty"`
+	CertSHA256       string  `json:"cert_sha256,omitempty"`
+	CertSelfSigned   bool    `json:"cert_self_signed,omitempty"`
+	VLESSPort        int     `json:"vless_port,omitempty"`
+	RealityPort      int     `json:"reality_port,omitempty"`
+	HysteriaPort     int     `json:"hysteria_port,omitempty"`
+	VLESSEnabled     bool    `json:"vless_enabled,omitempty"`
+	RealityEnabled   bool    `json:"reality_enabled,omitempty"`
+	HysteriaEnabled  bool    `json:"hysteria_enabled,omitempty"`
 }
 
 // PortInfo describes an individual port usage on a node.

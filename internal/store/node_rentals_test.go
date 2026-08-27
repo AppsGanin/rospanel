@@ -96,12 +96,15 @@ func TestRentedNodeLifecycleAndInbounds(t *testing.T) {
 	st := openNodeStore(t)
 
 	// Create rented node
-	rented, err := st.CreateRentedNode("Rented US", "us.example.com", 100, "token_123", "tenant_xyz", 60, 40000, "v1.2.0", "1.8.24")
+	rented, err := st.CreateRentedNode("Rented US", "us.example.com", 100, "token_123", "tenant_xyz", 60, 40000, "v1.2.0", "1.8.24", "pubkey123", "sid123", "/rpath", "dest.com:443", "sha123", false, true, true, true)
 	if err != nil {
 		t.Fatalf("CreateRentedNode failed: %v", err)
 	}
 	if !rented.IsRented {
 		t.Errorf("want IsRented = true")
+	}
+	if rented.RealityPublicKey != "pubkey123" {
+		t.Errorf("want RealityPublicKey = pubkey123, got %q", rented.RealityPublicKey)
 	}
 	if rented.NodeVersion != "v1.2.0" || rented.XrayVersion != "1.8.24" {
 		t.Errorf("unexpected versions on rented node: node_ver=%s, xray_ver=%s", rented.NodeVersion, rented.XrayVersion)

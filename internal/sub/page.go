@@ -318,7 +318,7 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoVLESS), link.VLESS(u, s)})
 		}
-		if s.RealityEnabled && srv.allowsBuiltin(model.LaneReality) {
+		if s.RealityEnabled && s.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoReality), link.Reality(u, s)})
 		}
 		if s.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {

@@ -133,25 +133,39 @@ func (m *Manager) GenerateNodeShareLink(nodeID int64) (string, error) {
 
 	hostStats, _ := m.NodeHostStats(nodeID)
 
+	eff := nodeSettings(set, node)
+
 	payload := model.NodeSharePayload{
-		Version:       1,
-		NodeID:        node.ID,
-		Host:          node.Host,
-		NodePath:      nodePath,
-		Name:          node.Name,
-		ShareToken:    token,
-		QuotaPercent:  node.ShareQuotaPercent,
-		SpeedLimit:    node.ShareSpeedLimit,
-		ReservedPorts: reserved,
-		Protocols:     protos,
-		NodeVersion:   node.NodeVersion,
-		XrayVersion:   node.XrayVersion,
-		CPUPercent:    hostStats.CPUPercent,
-		MemUsed:       hostStats.MemUsed,
-		MemTotal:      hostStats.MemTotal,
-		DiskUsed:      hostStats.DiskUsed,
-		DiskTotal:     hostStats.DiskTotal,
-		HostUptime:    hostStats.HostUptime,
+		Version:          1,
+		NodeID:           node.ID,
+		Host:             node.Host,
+		NodePath:         nodePath,
+		Name:             node.Name,
+		ShareToken:       token,
+		QuotaPercent:     node.ShareQuotaPercent,
+		SpeedLimit:       node.ShareSpeedLimit,
+		ReservedPorts:    reserved,
+		Protocols:        protos,
+		NodeVersion:      node.NodeVersion,
+		XrayVersion:      node.XrayVersion,
+		CPUPercent:       hostStats.CPUPercent,
+		MemUsed:          hostStats.MemUsed,
+		MemTotal:         hostStats.MemTotal,
+		DiskUsed:         hostStats.DiskUsed,
+		DiskTotal:        hostStats.DiskTotal,
+		HostUptime:       hostStats.HostUptime,
+		RealityPublicKey: eff.RealityPublicKey,
+		RealityShortID:   eff.RealityShortID,
+		RealityPath:      eff.RealityPath,
+		RealityDest:      eff.RealityDest,
+		CertSHA256:       node.CertSHA256,
+		CertSelfSigned:   node.CertSelfSigned,
+		VLESSPort:        eff.VLESSPort,
+		RealityPort:      eff.RealityPort,
+		HysteriaPort:     eff.HysteriaPort,
+		VLESSEnabled:     eff.VLESSEnabled,
+		RealityEnabled:   eff.RealityEnabled && eff.RealityPublicKey != "",
+		HysteriaEnabled:  eff.HysteriaEnabled,
 	}
 
 	return model.EncodeShareLink(payload)
@@ -194,6 +208,15 @@ func (m *Manager) ImportRentedNode(shareLink string, customName string) (*model.
 		payload.SpeedLimit,
 		payload.NodeVersion,
 		payload.XrayVersion,
+		payload.RealityPublicKey,
+		payload.RealityShortID,
+		payload.RealityPath,
+		payload.RealityDest,
+		payload.CertSHA256,
+		payload.CertSelfSigned,
+		payload.VLESSEnabled,
+		payload.RealityEnabled,
+		payload.HysteriaEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, store.ErrNodeNameTaken) {
@@ -258,18 +281,33 @@ func (m *Manager) ProcessRentalSync(req model.NodeRentalSyncReq) (*model.NodeRen
 		reserved = append(reserved, p.Port)
 	}
 
+	set, _ := m.store.GetSettings()
+	eff := nodeSettings(set, node)
+
 	return &model.NodeRentalSyncResp{
-		Online:        node.Online(time.Now().Unix()),
-		NodeVersion:   node.NodeVersion,
-		XrayVersion:   node.XrayVersion,
-		XrayRunning:   node.XrayRunning,
-		CPUPercent:    hostStats.CPUPercent,
-		MemUsed:       hostStats.MemUsed,
-		MemTotal:      hostStats.MemTotal,
-		DiskUsed:      hostStats.DiskUsed,
-		DiskTotal:     hostStats.DiskTotal,
-		HostUptime:    hostStats.HostUptime,
-		ReservedPorts: reserved,
+		Online:           node.Online(time.Now().Unix()),
+		NodeVersion:      node.NodeVersion,
+		XrayVersion:      node.XrayVersion,
+		XrayRunning:      node.XrayRunning,
+		CPUPercent:       hostStats.CPUPercent,
+		MemUsed:          hostStats.MemUsed,
+		MemTotal:         hostStats.MemTotal,
+		DiskUsed:         hostStats.DiskUsed,
+		DiskTotal:        hostStats.DiskTotal,
+		HostUptime:       hostStats.HostUptime,
+		ReservedPorts:    reserved,
+		RealityPublicKey: eff.RealityPublicKey,
+		RealityShortID:   eff.RealityShortID,
+		RealityPath:      eff.RealityPath,
+		RealityDest:      eff.RealityDest,
+		CertSHA256:       node.CertSHA256,
+		CertSelfSigned:   node.CertSelfSigned,
+		VLESSPort:        eff.VLESSPort,
+		RealityPort:      eff.RealityPort,
+		HysteriaPort:     eff.HysteriaPort,
+		VLESSEnabled:     eff.VLESSEnabled,
+		RealityEnabled:   eff.RealityEnabled && eff.RealityPublicKey != "",
+		HysteriaEnabled:  eff.HysteriaEnabled,
 	}, nil
 }
 
@@ -338,6 +376,19 @@ func (m *Manager) SyncRentedNode(nodeID int64) error {
 		XrayVersion: syncResp.XrayVersion,
 		XrayRunning: syncResp.XrayRunning,
 	})
+
+	_ = m.store.UpdateRentedNodeSecurity(
+		node.ID,
+		syncResp.RealityPublicKey,
+		syncResp.RealityShortID,
+		syncResp.RealityPath,
+		syncResp.RealityDest,
+		syncResp.CertSHA256,
+		syncResp.CertSelfSigned,
+		syncResp.VLESSEnabled,
+		syncResp.RealityEnabled,
+		syncResp.HysteriaEnabled,
+	)
 
 	m.SetNodeHostStats(node.ID, nodeapi.HostStats{
 		CPUPercent: syncResp.CPUPercent,
