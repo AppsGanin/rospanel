@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.5](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.4...v2.16.5) (2026-08-27)
+
+
+### Bug Fixes
+
+* extend rented node models and store with reality and protocol configuration fields ([0f7924f](https://github.com/Shu1t3/rospanel-shu1t3/commit/0f7924fab0a23ba9809cd93ae7ff3acf913f73a7))
+
 ## [2.16.4](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.3...v2.16.4) (2026-08-27)
 
 
