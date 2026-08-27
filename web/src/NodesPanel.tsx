@@ -2360,7 +2360,7 @@ export function NodesPanel() {
             {rentedNodes.map((n) => (
               <div
                 key={n.id}
-                className="overflow-hidden rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-purple-500/[0.03] shadow-sm ring-1 ring-indigo-500/20 transition-all hover:border-indigo-500/50 hover:shadow dark:border-indigo-500/40"
+                className="relative rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-purple-500/[0.03] shadow-sm ring-1 ring-indigo-500/20 transition-all hover:border-indigo-500/50 hover:shadow dark:border-indigo-500/40"
               >
                 <NodeCard
                   node={n}

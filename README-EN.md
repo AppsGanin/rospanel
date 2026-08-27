@@ -45,26 +45,6 @@ from the last backup.
 
 ---
 
-## 🖥️ Where to get a server
-
-The cheapest VPS is enough: 1 vCPU, 1 GB RAM, any Linux — that covers both the panel and
-Xray for dozens of users.
-
-**If you haven't picked a host yet, sign up through the links below.** It's a free way to
-support the project: the price is the same for you, and a share of the rent goes into the
-panel's development.
-
-[VDSina](https://www.vdsina.com/?partner=nmzki7z7tu) ·
-[Aeza](https://aeza.net/?ref=375522) ·
-[NetGrid](https://netgrid.host/ru?from=3491) ·
-[Serv.host](https://serv.host/?from=36809) ·
-[u1Host](https://u1host.com/?from=7702) ·
-[Waicore](https://waicore.net/?from=35607)
-
-Thanks to everyone who signs up through them 🙏
-
----
-
 ## 🚀 Quick start
 
 ### Option 1 — install script (recommended)
@@ -217,6 +197,8 @@ into the server itself (address, port, user + password **or** a PEM private key)
 **its own** binary and installs the agent — with a live install log. The node version is
 guaranteed to match the panel's. **SSH credentials are never stored.**
 
+**Option 3 — import via link (node rental).** The "Import via link" tab in the Add Node dialog: paste an encrypted `rpnshare://` link shared with you by another RosPanel administrator. The rented node connects immediately to your panel with an allocated traffic quota and speed cap, allowing you to configure custom inbounds on free ports.
+
 A few seconds after install the node shows up in the list as online: it reaches out to the
 panel over outbound HTTPS, so the panel needs no inbound access to it and there is nothing to
 forward.
@@ -351,6 +333,17 @@ Every server is configured separately (protocols, egress, DNS, REALITY keys, dom
 geo databases, decoy). A node is **the same binary** in node mode: the panel generates its
 config, a local `xray -test` with rollback guards against version mismatches, and updates run
 from the UI with SHA256 verification.
+
+#### 🤝 Node rental and resource division
+
+A node owner can **share capacity** with administrators of other RosPanel instances via encrypted `rpnshare://` links without sharing SSH access or master credentials:
+
+* **Owner Supremacy:** the primary owner retains full sovereignty. The owner sets the overall tenant traffic quota percentage and speed limit cap (Kbps), monitors active tenants (traffic, speed, last active timestamp), and can revoke access anytime.
+* **Even Resource Division:** the allocated quota and speed limit are automatically and dynamically split evenly among all currently active tenants.
+* **Port Reservation & Visibility:** the connection editor highlights all reserved owner and tenant system ports, preventing port collisions and allowing custom inbounds on free ports.
+* **Security Floor & Route Isolation:** the panel's security floor (private network isolation, internal IP blocks) and the owner's global block rules are compiled with highest priority, taking precedence over tenant routes.
+* **Local Detach:** when a tenant deletes a rented node, it is detached only locally; all inbounds created by the tenant on the remote node are cascade-deleted, while the owner's node and other tenants remain intact.
+* **Visual Framing:** rented nodes are distinctively presented with dedicated framing, glowing badges, and allocated resource metrics.
 
 #### 💳 Plans and payments (optional)
 
