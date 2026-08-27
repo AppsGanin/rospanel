@@ -297,4 +297,3 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 		t.Fatalf("tenant inbound port 2053 not found on owner node inbounds: %+v", ownerInbounds)
 	}
 }
-

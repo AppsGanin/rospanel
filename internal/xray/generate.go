@@ -499,7 +499,7 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 		Sniffing: sniff,
 	}
 
-	if in.TenantID != "" && len(in.Opts.Clients) > 0 {
+	if in.IsRental() {
 		switch in.Protocol {
 		case model.InbVLESS:
 			vc := make([]VLESSClient, 0, len(in.Opts.Clients))
@@ -531,6 +531,9 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 			sc := make([]ShadowsocksClient, 0, len(in.Opts.Clients))
 			for _, c := range in.Opts.Clients {
 				sc = append(sc, ShadowsocksClient{Password: c.Password, Email: c.Email})
+			}
+			if len(sc) == 0 {
+				sc = []ShadowsocksClient{{Password: model.LockedShadowKey(in.Opts.ShadowKey, in.Opts.Method), Email: "nobody@disabled"}}
 			}
 			out.Settings = ShadowsocksInboundSettings{
 				Method:   in.Opts.Method,
@@ -822,40 +825,9 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		return in
 	}
 	for _, c := range custom {
-		if c.TenantID != "" && len(c.Opts.Clients) > 0 {
-			stub := Inbound{Tag: c.Tag(), Port: c.Port, Protocol: c.Protocol}
-			switch c.Protocol {
-			case model.InbVLESS:
-				vc := make([]VLESSClient, 0, len(c.Opts.Clients))
-				for _, cl := range c.Opts.Clients {
-					flow := cl.Flow
-					if flow == "" {
-						flow = c.Opts.Flow
-					}
-					vc = append(vc, VLESSClient{ID: cl.ID, Flow: flow, Email: cl.Email})
-				}
-				stub.Settings = VLESSInboundSettings{Clients: vc, Decryption: "none"}
-			case model.InbTrojan:
-				tc := make([]TrojanClient, 0, len(c.Opts.Clients))
-				for _, cl := range c.Opts.Clients {
-					tc = append(tc, TrojanClient{Password: cl.Password, Email: cl.Email})
-				}
-				stub.Settings = TrojanInboundSettings{Clients: tc}
-			case model.InbShadowsocks:
-				sc := make([]ShadowsocksClient, 0, len(c.Opts.Clients))
-				for _, cl := range c.Opts.Clients {
-					sc = append(sc, ShadowsocksClient{Password: cl.Password, Email: cl.Email})
-				}
-				stub.Settings = ShadowsocksInboundSettings{
-					Method:   c.Opts.Method,
-					Password: c.Opts.ShadowKey,
-					Network:  "tcp,udp",
-					Users:    sc,
-				}
-			default:
-				continue
-			}
-			in = append(in, stub)
+		if c.IsRental() {
+			// Rental inbounds have their client credentials synced directly from the tenant panel.
+			// Owner users being dynamically added must never be placed into rental inbounds.
 			continue
 		}
 

@@ -29,7 +29,8 @@ func (s Server) allowsInbound(id int64) bool { return s.Access.AllowsInbound(id)
 func Servers(sets []*model.Settings, custom map[int64][]model.Inbound, access model.Access) []Server {
 	out := make([]Server, 0, len(sets))
 	for _, set := range sets {
-		out = append(out, Server{Set: set, Custom: enabledOnly(custom[set.ServerID]), Access: access})
+		isRented := set != nil && set.IsRented
+		out = append(out, Server{Set: set, Custom: filterInbounds(custom[set.ServerID], isRented), Access: access})
 	}
 	return out
 }
@@ -40,14 +41,19 @@ func One(set *model.Settings) []Server {
 	return []Server{{Set: set, Access: model.UnrestrictedAccess()}}
 }
 
-// enabledOnly filters out inbounds the operator has switched off, so a parked
-// configuration never reaches a client.
-func enabledOnly(list []model.Inbound) []model.Inbound {
+// filterInbounds filters out inbounds the operator has switched off, and isolates
+// tenant inbounds from owner subscriptions so credentials never mix.
+func filterInbounds(list []model.Inbound, isRentedServer bool) []model.Inbound {
 	out := make([]model.Inbound, 0, len(list))
 	for _, in := range list {
-		if in.Enabled {
-			out = append(out, in)
+		if !in.Enabled {
+			continue
 		}
+		// On an owner server, do not leak tenant-owned inbounds into owner subscriptions.
+		if !isRentedServer && in.IsRental() {
+			continue
+		}
+		out = append(out, in)
 	}
 	return out
 }

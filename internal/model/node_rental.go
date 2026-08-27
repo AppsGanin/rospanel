@@ -38,17 +38,17 @@ type NodeTenant struct {
 
 // NodeSharePayload is the data serialized and encrypted/encoded inside a share link.
 type NodeSharePayload struct {
-	Version       int      `json:"v"`
-	NodeID        int64    `json:"nid"`
-	Host          string   `json:"host"`
-	MasterHost    string   `json:"mhost,omitempty"`
-	NodePath      string   `json:"npath,omitempty"`
-	Name          string   `json:"name"`
-	ShareToken    string   `json:"token"`
-	QuotaPercent  int      `json:"quota"`
-	SpeedLimit    int      `json:"speed"`
-	ReservedPorts []int    `json:"ports"`
-	Protocols     []string `json:"protos"`
+	Version          int      `json:"v"`
+	NodeID           int64    `json:"nid"`
+	Host             string   `json:"host"`
+	MasterHost       string   `json:"mhost,omitempty"`
+	NodePath         string   `json:"npath,omitempty"`
+	Name             string   `json:"name"`
+	ShareToken       string   `json:"token"`
+	QuotaPercent     int      `json:"quota"`
+	SpeedLimit       int      `json:"speed"`
+	ReservedPorts    []int    `json:"ports"`
+	Protocols        []string `json:"protos"`
 	NodeVersion      string   `json:"node_ver,omitempty"`
 	XrayVersion      string   `json:"xray_ver,omitempty"`
 	CPUPercent       float64  `json:"cpu,omitempty"`

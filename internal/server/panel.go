@@ -166,7 +166,13 @@ func (rt *Router) localInbounds() []model.Inbound {
 	if err != nil {
 		return nil
 	}
-	return list
+	out := make([]model.Inbound, 0, len(list))
+	for _, in := range list {
+		if in.IsOwner() {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
 func (rt *Router) panelMux() http.Handler {

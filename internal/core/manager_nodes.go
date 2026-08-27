@@ -36,6 +36,7 @@ import (
 func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns := *set // shallow copy; we only overwrite value fields below
 	ns.ServerID = n.ID
+	ns.IsRented = n.IsRented
 	ns.Host = n.Host
 	ns.SNI = n.Host
 	ns.RealityPrivateKey = n.RealityPrivateKey
@@ -613,6 +614,14 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 			continue
 		}
 		ns := nodeSettings(set, n)
+		if n.IsRented {
+			// A rented node only serves the custom inbounds provisioned by this tenant
+			// on that node. The owner's built-in lanes (:443, REALITY, Hysteria2) do not
+			// authenticate this tenant's users, so emitting them would hand out broken links.
+			ns.VLESSEnabled = false
+			ns.RealityEnabled = false
+			ns.HysteriaEnabled = false
+		}
 		// Uniqueness is enforced on create/edit, but defend the subscription anyway:
 		// a duplicate label would collide Clash proxy names / sing-box tags and make a
 		// client reject the whole config. Disambiguate any collision with the node id.

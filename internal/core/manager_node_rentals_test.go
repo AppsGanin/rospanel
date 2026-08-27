@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -19,7 +20,7 @@ func newTestManager(t *testing.T) *Manager {
 	t.Cleanup(func() { st.Close() })
 
 	sup := xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
-	return New(st, sup, xray.Options{}, TLSPaths{}, dir)
+	return New(st, sup, xray.Options{PanelDest: "127.0.0.1:8080"}, TLSPaths{}, dir)
 }
 
 func TestManagerNodeRentalFlow(t *testing.T) {
@@ -322,5 +323,76 @@ func TestLocalNodeZeroRental(t *testing.T) {
 	}
 	if rented.RentOwnerNodeID != model.LocalNodeID {
 		t.Errorf("want RentOwnerNodeID = 0, got %d", rented.RentOwnerNodeID)
+	}
+}
+
+func TestRentedNodeValidationAndProbe(t *testing.T) {
+	mgr := newTestManager(t)
+
+	// Create owner node
+	ownerNode, err := mgr.store.CreateNode("Owner Node", "owner.ros.example.com", "test")
+	if err != nil {
+		t.Fatalf("CreateNode: %v", err)
+	}
+	_, err = mgr.UpdateNodeRentalSettings(ownerNode.ID, model.NodeRentalSettings{
+		ShareEnabled:      true,
+		ShareQuotaPercent: 50,
+		ShareSpeedLimit:   50000,
+	})
+	if err != nil {
+		t.Fatalf("UpdateNodeRentalSettings: %v", err)
+	}
+
+	link, err := mgr.GenerateNodeShareLink(ownerNode.ID)
+	if err != nil {
+		t.Fatalf("GenerateNodeShareLink: %v", err)
+	}
+
+	// Import rented node on tenant panel
+	rentedNode, err := mgr.ImportRentedNode(link, "Tenant Rented Node")
+	if err != nil {
+		t.Fatalf("ImportRentedNode: %v", err)
+	}
+
+	// Create inbound on rented node
+	inbound := model.Inbound{
+		ServerID: rentedNode.ID,
+		Enabled:  true,
+		Name:     "Tenant Inbound 8877",
+		Protocol: model.InbVLESS,
+		Port:     8877,
+		Opts: model.InboundOpts{
+			Transport:   model.TrTCP,
+			Security:    model.SecReality,
+			RealityDest: "google.com",
+		},
+	}
+
+	saved, err := mgr.CreateInbound(context.Background(), inbound)
+	if err != nil {
+		t.Fatalf("CreateInbound on rented node failed: %v", err)
+	}
+	if saved.Port != 8877 {
+		t.Errorf("want port 8877, got %d", saved.Port)
+	}
+
+	// Verify NodeLinkSettings has built-ins disabled for rented node
+	linkSets, err := mgr.NodeLinkSettings()
+	if err != nil {
+		t.Fatalf("NodeLinkSettings failed: %v", err)
+	}
+	var rentedSettings *model.Settings
+	for _, s := range linkSets {
+		if s.ServerID == rentedNode.ID {
+			rentedSettings = s
+			break
+		}
+	}
+	if rentedSettings == nil {
+		t.Fatalf("rented node settings missing from NodeLinkSettings")
+	}
+	if rentedSettings.VLESSEnabled || rentedSettings.RealityEnabled || rentedSettings.HysteriaEnabled {
+		t.Errorf("expected built-ins to be disabled for rented node in NodeLinkSettings, got: vless=%v, reality=%v, hy=%v",
+			rentedSettings.VLESSEnabled, rentedSettings.RealityEnabled, rentedSettings.HysteriaEnabled)
 	}
 }

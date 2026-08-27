@@ -124,4 +124,3 @@ func (rt *Router) handleRentalSync(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
-

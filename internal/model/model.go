@@ -893,6 +893,9 @@ type Settings struct {
 	// what pairs a settings value with that server's custom inbounds, which live in
 	// their own table rather than in this row.
 	ServerID int64 `json:"-"`
+
+	// IsRented is computed (NOT stored): whether this server is a rented node.
+	IsRented bool `json:"-"`
 }
 
 // WarpRegistered reports whether a WARP account has been provisioned.

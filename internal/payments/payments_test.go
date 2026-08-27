@@ -208,11 +208,11 @@ func TestParseKopecks(t *testing.T) {
 		{"100.5", 10050, true},   // 1 decimal digit → padded, not misread as 5 kopecks
 		{"100.004", 10000, true}, // sub-kopeck noise truncated
 		{" 250.00 ", 25000, true},
-		{"1e2", 10000, true},     // 100.00 via exponential notation
-		{"1.5e2", 15000, true},   // 150.00 via exponential notation
+		{"1e2", 10000, true},   // 100.00 via exponential notation
+		{"1.5e2", 15000, true}, // 150.00 via exponential notation
 		{"100e0", 10000, true},
-		{"0.5e1", 500, true},     // 5.00
-		{"1e-2", 1, true},        // 0.01 (1 kopeck)
+		{"0.5e1", 500, true}, // 5.00
+		{"1e-2", 1, true},    // 0.01 (1 kopeck)
 		{"", 0, false},
 		{"abc", 0, false},
 		{"-5.00", 0, false},

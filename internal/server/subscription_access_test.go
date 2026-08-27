@@ -75,10 +75,10 @@ func TestSubOriginValidation(t *testing.T) {
 	set := &model.Settings{Host: "vpn.example.com"}
 
 	cases := []struct {
-		name       string
-		headers    map[string]string
-		host       string
-		wantAllow  bool
+		name      string
+		headers   map[string]string
+		host      string
+		wantAllow bool
 	}{
 		{
 			name: "custom header allowed",

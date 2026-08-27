@@ -429,11 +429,26 @@ func (m *Manager) validateCandidate(ctx context.Context, serverID int64, set []m
 	}
 
 	if serverID == model.LocalNodeID {
-		if err := m.sup.ValidateConfig(cfg); err != nil {
-			return invalidCode("err.xrayRejectedConfig", "Xray отклонил конфигурацию: {{err}}", map[string]any{"err": err.Error()})
+		if m.sup != nil {
+			if err := m.sup.ValidateConfig(cfg); err != nil {
+				return invalidCode("err.xrayRejectedConfig", "Xray отклонил конфигурацию: {{err}}", map[string]any{"err": err.Error()})
+			}
 		}
 		return nil
 	}
+
+	node, _ := m.store.GetNode(serverID)
+	if node != nil && node.IsRented {
+		// A rented node is managed by the owner's panel. Validate candidate syntax locally
+		// with the supervisor rather than waiting for a direct agent long-poll that does not exist.
+		if m.sup != nil {
+			if err := m.sup.ValidateConfig(cfg); err != nil {
+				return invalidCode("err.xrayRejectedConfig", "Xray отклонил конфигурацию: {{err}}", map[string]any{"err": err.Error()})
+			}
+		}
+		return nil
+	}
+
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return nil
@@ -442,7 +457,7 @@ func (m *Manager) validateCandidate(ctx context.Context, serverID int64, set []m
 	case err == nil:
 		return nil
 	case errors.Is(err, errProbeUnavailable):
-		logWarn("inbound: node config check skipped", "server", serverID)
+		logWarn("inbound: node config check skipped", "server", serverID, "scope", model.ScopeOwner)
 		return nil
 	default:
 		return err
@@ -573,12 +588,23 @@ func (m *Manager) probePort(ctx context.Context, serverID int64, network string,
 		}
 		return nil
 	}
+	node, _ := m.store.GetNode(serverID)
+	if node != nil && node.IsRented {
+		// For a rented node, check against known reserved ports without blocking on a direct agent poll.
+		ports, _ := m.GetNodeReservedPorts(serverID)
+		for _, p := range ports {
+			if p.Port == port && p.Protocol == network && p.TenantID != node.RentTenantID {
+				return invalidCode("err.portTakenOnServer", "порт {{port}} ({{network}}) уже занят на этом сервере — выберите другой", map[string]any{"port": port, "network": network})
+			}
+		}
+		return nil
+	}
 	if m.isNodeXrayPort(serverID, network, port) {
 		return nil
 	}
 	free, err := m.ProbeNodePort(ctx, serverID, network, port)
 	if err != nil {
-		logWarn("inbound: node port probe skipped", "node", serverID, "port", port, "err", err)
+		logWarn("inbound: node port probe skipped", "node", serverID, "port", port, "scope", model.ScopeOwner, "err", err)
 		return nil
 	}
 	if !free {
