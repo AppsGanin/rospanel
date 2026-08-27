@@ -594,7 +594,7 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 	}
 	for i := range nodes {
 		n := &nodes[i]
-		if !n.Enabled || n.LastSeen == 0 {
+		if !n.Enabled || (!n.IsRented && n.LastSeen == 0) {
 			// Disabled, or never installed. Deliberately NOT "currently offline": a node
 			// bounces on every deploy and cert renewal, and yanking its links on a
 			// two-minute blip would strand every client whose next refresh is hours
@@ -606,7 +606,7 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		// pinned, so its VLESS/Trojan/Hysteria links would fail silently in a modern
 		// client (no allowInsecure). Skip it until it reports a fingerprint (or gets a
 		// CA cert) — better no link than a broken one.
-		if n.CertSelfSigned && n.CertSHA256 == "" {
+		if !n.IsRented && n.CertSelfSigned && n.CertSHA256 == "" {
 			continue
 		}
 		ns := nodeSettings(set, n)

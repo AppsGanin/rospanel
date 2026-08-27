@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/core"
@@ -115,7 +117,7 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 		t.Fatalf("DELETE /api/nodes/{id}/tenants/{tenantId} status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	// 7. Verify security: critical endpoints must reject mutations on rentedNode
+	// 7. Verify routing & DNS customization works on rentedNode
 	// a. Routing
 	routingPayload := `{"routing":{"rules":[]},"warp_enabled":false}`
 	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/nodes/%d/routing", rentedNode.ID), bytes.NewReader([]byte(routingPayload)))
@@ -123,8 +125,8 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("POST /api/nodes/{rentedId}/routing want 403 Forbidden, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("POST /api/nodes/{rentedId}/routing want 200 OK, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 
 	// b. DNS
@@ -134,11 +136,12 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("POST /api/nodes/{rentedId}/dns want 403 Forbidden, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("POST /api/nodes/{rentedId}/dns want 200 OK, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 
-	// c. ACME / TLS
+	// 8. Verify security: critical machine-level endpoints must reject mutations on rentedNode
+	// a. ACME / TLS (Let's Encrypt cert issuance on remote node)
 	acmePayload := `{"target":"rented.com","email":"a@b.com","provider":"letsencrypt"}`
 	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/nodes/%d/tls", rentedNode.ID), bytes.NewReader([]byte(acmePayload)))
 	req.Header.Set("Content-Type", "application/json")
@@ -149,7 +152,7 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 		t.Errorf("POST /api/nodes/{rentedId}/tls want 403 Forbidden, got %d", rec.Code)
 	}
 
-	// d. Xray Restart
+	// b. Xray Restart
 	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/nodes/%d/xray-restart", rentedNode.ID), nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
@@ -158,7 +161,7 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 		t.Errorf("POST /api/nodes/{rentedId}/xray-restart want 403 Forbidden, got %d", rec.Code)
 	}
 
-	// e. Node list shows rented node as online and joined
+	// 9. Node list shows rented node as online and joined
 	req = httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
 	req.AddCookie(cookie)
 	rec = httptest.NewRecorder()
@@ -183,6 +186,62 @@ func TestPanelNodeRentalEndpoints(t *testing.T) {
 	if !foundRented.Joined || !foundRented.Online || !foundRented.XrayRunning {
 		t.Errorf("rented node view unexpected status: Joined=%v, Online=%v, XrayRunning=%v",
 			foundRented.Joined, foundRented.Online, foundRented.XrayRunning)
+	}
+
+	// 10. Verify NodeLinkSettings and subscription generation includes rented node
+	linkSettings, err := r.mgr.NodeLinkSettings()
+	if err != nil {
+		t.Fatalf("NodeLinkSettings failed: %v", err)
+	}
+	var foundSettings *model.Settings
+	for _, ls := range linkSettings {
+		if ls.ServerID == rentedNode.ID {
+			foundSettings = ls
+			break
+		}
+	}
+	if foundSettings == nil {
+		t.Fatalf("rented node not included in NodeLinkSettings()")
+	}
+	if foundSettings.Host != "nl.example.com" {
+		t.Errorf("unexpected host in rented node settings: %s", foundSettings.Host)
+	}
+
+	// 11. Create a custom inbound on rentedNode and verify user subscription output includes it
+	inbound, err := st.CreateInbound(model.Inbound{
+		ServerID: rentedNode.ID,
+		Name:     "Trojan Rented",
+		Protocol: model.InbTrojan,
+		Port:     2053,
+		Enabled:  true,
+		TenantID: rentedNode.RentTenantID,
+		Opts: model.InboundOpts{
+			Transport: model.TrTCP,
+			Security:  model.SecNone,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateInbound failed: %v", err)
+	}
+
+	u, err := r.mgr.CreateUser(t.Context(), "subuser", 0, 0)
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	subReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/sub/%s", u.SubToken), nil)
+	subRec := httptest.NewRecorder()
+	handleSub(r, subRec, subReq, u.SubToken)
+	if subRec.Code != http.StatusOK {
+		t.Fatalf("GET /sub/{token} status = %d (body: %s)", subRec.Code, subRec.Body.String())
+	}
+	rawBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(subRec.Body.String()))
+	if err != nil {
+		t.Fatalf("failed to decode base64 subscription: %v", err)
+	}
+	subBody := string(rawBytes)
+	if !strings.Contains(subBody, "nl.example.com") || !strings.Contains(subBody, "2053") {
+		t.Fatalf("user subscription missing rented node host or port 2053 (inbound: %s):\n%s", inbound.Name, subBody)
 	}
 }
 

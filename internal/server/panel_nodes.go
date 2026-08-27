@@ -201,10 +201,6 @@ func (rt *Router) setNodeRouting(w http.ResponseWriter, r *http.Request, id int6
 		writeErrCode(w, http.StatusNotFound, "err.nodeNotFound", "нода не найдена")
 		return
 	}
-	if node.IsRented {
-		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
-		return
-	}
 	edit := store.NodeEdit{
 		Name:               node.Name,
 		Host:               node.Host,
@@ -233,15 +229,6 @@ func (rt *Router) setNodeDNS(w http.ResponseWriter, r *http.Request, id int64) {
 		XrayDNS *string `json:"xray_dns"` // null ⇒ inherit global DNS
 	}
 	if !decodeJSON(w, r, &req) {
-		return
-	}
-	node, err := rt.mgr.GetNode(id)
-	if err != nil {
-		writeManagerErr(w, err)
-		return
-	}
-	if node != nil && node.IsRented {
-		writeErrCode(w, http.StatusForbidden, "err.rentedNodeManagedByOwner", "арендованная нода управляется владельцем")
 		return
 	}
 	if err := rt.mgr.SetNodeDNS(id, req.XrayDNS); err != nil {

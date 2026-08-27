@@ -1411,20 +1411,19 @@ function NodeSettingsDialog({
     }
   };
 
-  const dialogTabs = node.is_rented
-    ? [
-        { value: "connections", label: t("nodes.tabConnections") },
-        { value: "general", label: t("settings.tabGeneral") },
-      ]
-    : [
-        { value: "general", label: t("settings.tabGeneral") },
-        { value: "connections", label: t("nodes.tabConnections") },
-        { value: "routing", label: t("nodes.tabRouting") },
-        { value: "dns", label: "DNS" },
-        { value: "geo", label: "Geo" },
-        { value: "domain", label: t("restore.domain") },
-        { value: "rental", label: t("nodes.tabRental") },
-      ];
+  const dialogTabs = [
+    { value: "general", label: t("settings.tabGeneral") },
+    { value: "connections", label: t("nodes.tabConnections") },
+    { value: "routing", label: t("nodes.tabRouting") },
+    { value: "dns", label: "DNS" },
+    ...(!node.is_rented
+      ? [
+          { value: "geo", label: "Geo" },
+          { value: "domain", label: t("restore.domain") },
+          { value: "rental", label: t("nodes.tabRental") },
+        ]
+      : []),
+  ];
 
   return (
     <Modal open onClose={onClose} title={t("nodes.settingsOf", { name: node.name })} size="xl">
