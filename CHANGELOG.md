@@ -5,7 +5,11 @@
 
 ### Bug Fixes
 
-* resolve node xray 443 port collision and restore author connection model ([1ca3f2d](https://github.com/Shu1t3/rospanel-shu1t3/commit/1ca3f2d216789c1b59addb49d69be6367b120034))
+* resolve node Xray 443 TCP port collision and restore author connection model ([1ca3f2d](https://github.com/Shu1t3/rospanel-shu1t3/commit/1ca3f2d216789c1b59addb49d69be6367b120034))
+  * **Xray Generator**: emit `vless-in` (443 TCP) only when `set.VLESSEnabled` is true, keeping port 443 TCP unblocked for custom inbounds (e.g. TCP Reality) on remote nodes.
+  * **Master Connections**: restore immutable 443 TCP VLESS-Vision and 443 UDP Hysteria2 built-in lanes (undeletable).
+  * **XHTTP Reality**: disable automatic creation on fresh installations and factory resets (migration `0060_reality_default_off.sql`).
+  * **Node Rentals**: disallow factory reset on rented nodes (`err.rentedNodeResetForbidden`) and hide reset UI button.
 
 ## [2.16.7](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.6...v2.16.7) (2026-08-27)
 
