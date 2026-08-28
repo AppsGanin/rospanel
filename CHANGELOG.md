@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.8...v2.17.0) (2026-08-28)
+
+
+### Features
+
+* automated ufw firewall management for panel and node deployment ([c908e6d](https://github.com/Shu1t3/rospanel-shu1t3/commit/c908e6ddaf4564ada92ee455d17a9a1fb881f502))
+
 ## [2.16.8](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.7...v2.16.8) (2026-08-28)
 
 
