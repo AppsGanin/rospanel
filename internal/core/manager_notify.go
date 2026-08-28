@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -343,6 +344,7 @@ func (m *Manager) probeDigestLoop() {
 		if err != nil || len(probes) == 0 {
 			continue // nothing new — don't send an empty digest
 		}
+		m.AnnotateProbes(probes)
 		m.sendProbeDigest(probes)
 	}
 }
@@ -359,9 +361,35 @@ func (m *Manager) sendProbeDigest(probes []model.ProbeHit) {
 			b.WriteString("\n" + i18n.T(lang, "notify.probeDigestMore", len(probes)-show))
 			break
 		}
-		fmt.Fprintf(&b, "\n• <code>%s</code> — %d", escHTML(p.IP), p.Paths)
+		fmt.Fprintf(&b, "\n• <code>%s</code> — %d%s", escHTML(p.IP), p.Paths, probeOrigin(p))
 	}
 	m.notifyAdminEvent(model.AdminEventProbe, b.String())
+}
+
+// probeOrigin renders where a scanning address belongs, as a trailing " · 🇳🇱 NL ·
+// Operator". Returns "" when nothing is known, so the line stays exactly as it was
+// rather than growing empty separators.
+//
+// The operator name comes from our own ASN table and not from anything the scanner
+// sent, but it is escaped like every other value that reaches an HTML-parsed message:
+// the rule is that nothing goes in unescaped, not that this particular field happens
+// to be safe today.
+func probeOrigin(p model.ProbeHit) string {
+	var parts []string
+	if p.Country != "" {
+		if f := geo.Flag(p.Country); f != "" {
+			parts = append(parts, f+" "+escHTML(p.Country))
+		} else {
+			parts = append(parts, escHTML(p.Country))
+		}
+	}
+	if p.Org != "" {
+		parts = append(parts, escHTML(p.Org))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
 }
 
 // onXrayWedged reports that the watchdog found Xray alive but no longer answering its

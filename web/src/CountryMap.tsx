@@ -8,23 +8,12 @@ import {
 } from './api'
 import { currentLang } from './i18n'
 import { Card, SegmentedControl, Skeleton } from './ui'
+import { countryFlag } from './format'
 
 const PALETTE = [
   '#2566f5', '#0d9488', '#9333ea', '#f97316', '#ef4444',
   '#06b6d4', '#65a30d', '#ec4899', '#4f46e5', '#eab308',
 ]
-
-// flag turns a 2-letter country code into its emoji flag via regional-indicator
-// symbols; anything else (the "" unknown bucket) gets a globe.
-function flag(code: string): string {
-  if (code.length !== 2) return '🌐'
-  const base = 0x1f1e6
-  const up = code.toUpperCase()
-  return String.fromCodePoint(
-    base + up.charCodeAt(0) - 65,
-    base + up.charCodeAt(1) - 65,
-  )
-}
 
 function countryName(code: string, lang: string, unknown: string): string {
   if (code.length !== 2) return unknown
@@ -70,7 +59,7 @@ export function ConnectionCountries() {
         ? null
         : countries.map((r) => ({
             key: r.code || 'unknown',
-            glyph: flag(r.code),
+            glyph: countryFlag(r.code),
             label: countryName(r.code, lang, t('stats.unknownCountry')),
             ips: r.ips,
           }))
