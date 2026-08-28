@@ -153,7 +153,7 @@ func (m *Manager) ConnectionCountries() ([]model.CountryStat, error) {
 	return out, nil
 }
 
-// AnnotateProbes fills in the country and network operator of each scanning address,
+// annotateProbes fills in the country and network operator of each scanning address,
 // in place.
 //
 // A list of bare addresses is a list of numbers: the operator cannot tell a research
@@ -164,7 +164,7 @@ func (m *Manager) ConnectionCountries() ([]model.CountryStat, error) {
 // Missing tables are not an error. Every field here is optional and the list is still
 // worth showing without them — a panel that has not finished its first geo download
 // must not answer with nothing.
-func (m *Manager) AnnotateProbes(probes []model.ProbeHit) {
+func (m *Manager) annotateProbes(probes []model.ProbeHit) {
 	if len(probes) == 0 {
 		return
 	}

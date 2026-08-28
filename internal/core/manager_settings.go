@@ -839,7 +839,7 @@ func (m *Manager) Probes(limit int) ([]model.ProbeHit, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.AnnotateProbes(probes)
+	m.annotateProbes(probes)
 	return probes, nil
 }
 
