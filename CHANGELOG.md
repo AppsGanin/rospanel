@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.17.0...v2.17.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **xray:** resolve sockopt validation, inbound sniffing and direct domainStrategy ([861db86](https://github.com/Shu1t3/rospanel-shu1t3/commit/861db86984d189b1f81958dd7c21b60fe09c5e8a))
+
 ## [2.17.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.8...v2.17.0) (2026-08-28)
 
 
