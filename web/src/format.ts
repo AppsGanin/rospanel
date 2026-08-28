@@ -170,3 +170,15 @@ export function countryFlag(code: string): string {
     base + up.charCodeAt(1) - 65,
   )
 }
+
+// countryName resolves a 2-letter code to its name in the reader's language, falling
+// back to the upper-cased code. Shared so the map and the scanner list agree.
+export function countryName(code: string, lang: string, unknown: string): string {
+  if (code.length !== 2) return unknown
+  try {
+    const dn = new Intl.DisplayNames([lang], { type: 'region' })
+    return dn.of(code.toUpperCase()) || code.toUpperCase()
+  } catch {
+    return code.toUpperCase()
+  }
+}

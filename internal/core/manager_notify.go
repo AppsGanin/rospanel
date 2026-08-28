@@ -374,6 +374,19 @@ func (m *Manager) sendProbeDigest(probes []model.ProbeHit) {
 // sent, but it is escaped like every other value that reaches an HTML-parsed message:
 // the rule is that nothing goes in unescaped, not that this particular field happens
 // to be safe today.
+const maxProbeOrgRunes = 40
+
+// truncRunes shortens s to at most n runes, marking that it did. Counts runes, not
+// bytes: a name in Cyrillic or Chinese would otherwise be cut mid-character and reach
+// Telegram as invalid UTF-8.
+func truncRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimRight(string(r[:n]), " ") + "…"
+}
+
 func probeOrigin(p model.ProbeHit) string {
 	var parts []string
 	if p.Country != "" {
@@ -384,7 +397,10 @@ func probeOrigin(p model.ProbeHit) string {
 		}
 	}
 	if p.Org != "" {
-		parts = append(parts, escHTML(p.Org))
+		// Registry names run long ("MAYTINHVPSTTT-VN VPSTTT COMPUTER COMPANY LIMITED")
+		// and ten of them turn a digest meant to be glanced at into a wall. The panel
+		// shows the whole thing.
+		parts = append(parts, escHTML(truncRunes(p.Org, maxProbeOrgRunes)))
 	}
 	if len(parts) == 0 {
 		return ""

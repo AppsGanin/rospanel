@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -42,5 +43,24 @@ func TestProbeOriginEscapesHTML(t *testing.T) {
 	}
 	if !strings.Contains(got, "&lt;b&gt;") {
 		t.Errorf("expected the markup escaped, got %q", got)
+	}
+}
+
+// Registry names run long enough to swamp a ten-line digest, and cutting them by
+// bytes would hand Telegram a half-character.
+func TestProbeOriginShortensLongOperatorNames(t *testing.T) {
+	long := "MAYTINHVPSTTT-VN VPSTTT COMPUTER COMPANY LIMITED AND SUBSIDIARIES"
+	got := probeOrigin(model.ProbeHit{Country: "VN", Org: long})
+	if strings.Contains(got, "SUBSIDIARIES") {
+		t.Errorf("long operator name was not shortened: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("shortened name should say so, got %q", got)
+	}
+	// Cyrillic is where a byte-wise cut shows up as broken UTF-8 rather than a short
+	// string, so the count has to be in runes.
+	cyr := strings.Repeat("Ростелеком ", 10)
+	if got := probeOrigin(model.ProbeHit{Org: cyr}); !utf8.ValidString(got) {
+		t.Errorf("shortening produced invalid UTF-8: %q", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/geo"
@@ -178,7 +179,10 @@ func (m *Manager) AnnotateProbes(probes []model.ProbeHit) {
 		}
 		if countries != nil {
 			if cc, ok := countries.Lookup(addr); ok {
-				probes[i].Country = cc
+				// The table answers in lower case; ISO 3166-1 alpha-2 is written in
+				// upper. Normalised here so the digest, the panel and the JSON all
+				// carry the same spelling.
+				probes[i].Country = strings.ToUpper(cc)
 			}
 		}
 		if asns != nil {

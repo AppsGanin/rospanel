@@ -8,22 +8,13 @@ import {
 } from './api'
 import { currentLang } from './i18n'
 import { Card, SegmentedControl, Skeleton } from './ui'
-import { countryFlag } from './format'
+import { countryFlag, countryName } from './format'
 
 const PALETTE = [
   '#2566f5', '#0d9488', '#9333ea', '#f97316', '#ef4444',
   '#06b6d4', '#65a30d', '#ec4899', '#4f46e5', '#eab308',
 ]
 
-function countryName(code: string, lang: string, unknown: string): string {
-  if (code.length !== 2) return unknown
-  try {
-    const dn = new Intl.DisplayNames([lang], { type: 'region' })
-    return dn.of(code.toUpperCase()) || code.toUpperCase()
-  } catch {
-    return code.toUpperCase()
-  }
-}
 
 // One normalised row for the shared bar renderer: a stable key, a leading glyph, a
 // label, and the distinct-IP count.
