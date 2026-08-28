@@ -151,3 +151,38 @@ func (m *Manager) ConnectionCountries() ([]model.CountryStat, error) {
 	})
 	return out, nil
 }
+
+// AnnotateProbes fills in the country and network operator of each scanning address,
+// in place.
+//
+// A list of bare addresses is a list of numbers: the operator cannot tell a research
+// scanner in a datacentre from a residential range in the country they actually serve,
+// which is the difference between "ignore" and "this is aimed at me". Both tables are
+// already loaded for the connection breakdowns, so this costs a lookup per row.
+//
+// Missing tables are not an error. Every field here is optional and the list is still
+// worth showing without them — a panel that has not finished its first geo download
+// must not answer with nothing.
+func (m *Manager) AnnotateProbes(probes []model.ProbeHit) {
+	if len(probes) == 0 {
+		return
+	}
+	countries, asns := m.countryLookup(), m.asnLookup()
+	if countries == nil && asns == nil {
+		return
+	}
+	for i := range probes {
+		addr, err := netip.ParseAddr(probes[i].IP)
+		if err != nil {
+			continue
+		}
+		if countries != nil {
+			if cc, ok := countries.Lookup(addr); ok {
+				probes[i].Country = cc
+			}
+		}
+		if asns != nil {
+			probes[i].ASN, probes[i].Org, _ = asns.Lookup(addr)
+		}
+	}
+}

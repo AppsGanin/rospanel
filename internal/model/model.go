@@ -514,6 +514,15 @@ type ProbeHit struct {
 	LastSeen  int64  `json:"last_seen"`
 	Hits      int64  `json:"hits"`  // times this IP crossed the scan threshold
 	Paths     int64  `json:"paths"` // largest distinct-miss burst seen
+
+	// Where the address belongs, filled in on read from the geo tables rather than
+	// stored: an address changes hands and the tables are refreshed on a schedule, so
+	// a value written when the probe was recorded would slowly become a lie. Empty
+	// when the tables are missing or cover no range for this address — a bare list of
+	// numbers is still a list of numbers, so nothing here may be required.
+	Country string `json:"country,omitempty"` // ISO 3166-1 alpha-2
+	ASN     uint32 `json:"asn,omitempty"`
+	Org     string `json:"org,omitempty"` // network operator that announces the address
 }
 
 // UserEmail returns the identifier a user is keyed by inside Xray — "u<id>" —

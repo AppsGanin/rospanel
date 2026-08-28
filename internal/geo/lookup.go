@@ -266,3 +266,24 @@ func lower(c byte) byte {
 	}
 	return c
 }
+
+// Flag renders a two-letter country code as its emoji flag, or "" for anything that
+// is not one. The glyph is two regional-indicator runes: 'A' maps to U+1F1E6, and a
+// pair of them is what every platform draws as a flag.
+func Flag(code string) string {
+	if len(code) != 2 {
+		return ""
+	}
+	var out []rune
+	for i := 0; i < 2; i++ {
+		c := code[i]
+		if c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		if c < 'A' || c > 'Z' {
+			return ""
+		}
+		out = append(out, rune(c-'A')+0x1F1E6)
+	}
+	return string(out)
+}

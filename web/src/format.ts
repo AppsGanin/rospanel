@@ -157,3 +157,16 @@ export function fmtLastSeen(unix: number): string {
   if (sec < 7 * 86400) return i18n.t('lastSeen.days', { n: Math.floor(sec / 86400) })
   return new Date(unix * 1000).toLocaleString()
 }
+
+// countryFlag turns a 2-letter country code into its emoji flag via regional-indicator
+// symbols; anything else (the "" unknown bucket) gets a globe. Shared because the map
+// and the scanner list both name countries and must name them the same way.
+export function countryFlag(code: string): string {
+  if (code.length !== 2) return '\u{1F310}'
+  const base = 0x1f1e6
+  const up = code.toUpperCase()
+  return String.fromCodePoint(
+    base + up.charCodeAt(0) - 65,
+    base + up.charCodeAt(1) - 65,
+  )
+}
