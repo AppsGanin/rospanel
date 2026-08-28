@@ -1217,7 +1217,7 @@ function NodeRentalTab({
 
         {shareEnabled && (
           <div className="mt-4 flex flex-col gap-4 border-t border-gray-100 pt-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1.5fr]">
               <div className="flex flex-col gap-1">
                 <TextInput
                   label={t("nodes.shareQuota")}
@@ -1237,7 +1237,7 @@ function NodeRentalTab({
                     value={String(speedVal)}
                     onChange={(v) => setSpeedVal(Math.max(0, Number(v) || 0))}
                     placeholder="0 = ∞"
-                    className="flex-1"
+                    className="flex-1 min-w-0"
                   />
                   <Select
                     value={speedUnit}
@@ -1247,7 +1247,7 @@ function NodeRentalTab({
                       { value: "mbps", label: t("nodes.unitMbps") },
                       { value: "gbps", label: t("nodes.unitGbps") },
                     ]}
-                    className="w-28"
+                    className="w-28 shrink-0"
                   />
                 </div>
                 <span className="text-xs text-ink-muted">

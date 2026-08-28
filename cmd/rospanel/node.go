@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/Shu1t3/rospanel-shu1t3/internal/firewall"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeagent"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/updater"
 )
@@ -226,6 +228,19 @@ func installNodeSystemd(dataDir string) {
 		if err := cmd.Run(); err != nil {
 			log.Fatalf("node install: systemctl %s: %v", strings.Join(a, " "), err)
 		}
+	}
+
+	// Ensure system firewall (UFW) is configured and standard ports (80/tcp, 443/tcp) are open.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	nodeRules := []firewall.Rule{
+		firewall.TCPRule(80, "http-redirect"),
+		firewall.TCPRule(443, "vless"),
+	}
+	if err := firewall.Sync(ctx, nodeRules); err != nil {
+		log.Printf("node install: firewall setup warning: %v", err)
+	} else {
+		log.Print("node install: firewall (ufw) configured and enabled")
 	}
 }
 

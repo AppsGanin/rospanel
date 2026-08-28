@@ -211,6 +211,7 @@ var errEN = map[string]string{
 	"err.realityDestRequired":           "give at least one REALITY masquerade domain",
 	"err.realityDestRequired2":          "enter a REALITY masquerade domain",
 	"err.realityPortRange":              "the REALITY port is outside 1–65535",
+	"err.rentalInboundReadOnly":         "tenant connection cannot be modified",
 	"err.rentedNodeCannotBeShared":      "a rented node cannot be shared again",
 	"err.rentedNodeManagedByOwner":      "rented node is managed by the owner",
 	"err.rentedNodeResetForbidden":      "factory reset is not available for a rented node",

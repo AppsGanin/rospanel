@@ -848,9 +848,15 @@ func (m *Manager) SetProbeBlock(on bool) error {
 	return nil
 }
 
-// Probes returns the IPs caught scanning for the hidden panel, most recent first.
+// Probes returns the IPs caught scanning for the hidden panel, most recent first,
+// each annotated with where it belongs.
 func (m *Manager) Probes(limit int) ([]model.ProbeHit, error) {
-	return m.store.ListProbes(limit)
+	probes, err := m.store.ListProbes(limit)
+	if err != nil {
+		return nil, err
+	}
+	m.annotateProbes(probes)
+	return probes, nil
 }
 
 // SubRules returns the stored subscription response rules.

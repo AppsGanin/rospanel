@@ -179,3 +179,28 @@ export function parseUserAgent(ua: string): string {
   if (os) return os
   return ua.length > 30 ? ua.slice(0, 30) + '…' : ua
 }
+
+// countryFlag turns a 2-letter country code into its emoji flag via regional-indicator
+// symbols; anything else (the "" unknown bucket) gets a globe. Shared because the map
+// and the scanner list both name countries and must name them the same way.
+export function countryFlag(code: string): string {
+  if (code.length !== 2) return '\u{1F310}'
+  const base = 0x1f1e6
+  const up = code.toUpperCase()
+  return String.fromCodePoint(
+    base + up.charCodeAt(0) - 65,
+    base + up.charCodeAt(1) - 65,
+  )
+}
+
+// countryName resolves a 2-letter code to its name in the reader's language, falling
+// back to the upper-cased code. Shared so the map and the scanner list agree.
+export function countryName(code: string, lang: string, unknown: string): string {
+  if (code.length !== 2) return unknown
+  try {
+    const dn = new Intl.DisplayNames([lang], { type: 'region' })
+    return dn.of(code.toUpperCase()) || code.toUpperCase()
+  } catch {
+    return code.toUpperCase()
+  }
+}

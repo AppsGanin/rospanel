@@ -137,6 +137,11 @@ func runServer(dataDir string) {
 		log.Printf("port-hopping setup failed (Hysteria2 hopping disabled): %v", err)
 	}
 
+	// Best-effort host-level firewall (UFW) configuration.
+	if err := core.EnsureHostFirewall(st); err != nil {
+		log.Printf("firewall setup failed: %v", err)
+	}
+
 	// Best-effort host-level per-IP connection guard on the public TCP ports: caps
 	// concurrent connections and the new-connection rate per source IP so a single
 	// client can't flood the proxy with TLS handshakes (a CPU/connection-exhaustion
@@ -342,10 +347,10 @@ func runServer(dataDir string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = httpSrv.Shutdown(ctx)
 	if redirector != nil {
-		_ = redirector.Close()
+		_ = redirector.Shutdown(ctx)
 	}
+	_ = httpSrv.Shutdown(ctx)
 
 	// Flush any buffered access sightings and abuse sightings before the store is closed
 	mgr.FlushAccess()

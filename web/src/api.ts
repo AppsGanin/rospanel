@@ -1053,6 +1053,11 @@ export interface ProbeHit {
   last_seen: number
   hits: number
   paths: number
+  // Derived from the geo tables on read, so all three are absent when those tables
+  // are missing or cover no range for the address.
+  country?: string
+  asn?: number
+  org?: string
 }
 
 export const getProbes = () =>

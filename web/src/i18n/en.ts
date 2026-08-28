@@ -440,6 +440,7 @@ const en: Dict = {
     priceMustBePositive: "the price must be above 0 — a plan becomes free by being chosen as the free or trial plan under Pricing",
     portTaken: "port {{port}} is already taken by {{who}}",
     proxyAccountNoPass: "the {{value}} user has no password",
+    rentalInboundReadOnly: "tenant connection cannot be modified",
     proxyAccountNoUser: "a proxy user has no login",
     proxyNeedsAccount: "add at least one proxy user",
     proxyTooManyAccounts: "no more than {{max}} proxy users",

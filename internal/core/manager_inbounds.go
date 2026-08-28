@@ -11,6 +11,7 @@ import (
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/auth"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/connguard"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/firewall"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/hop"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/nodeapi"
@@ -223,6 +224,9 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	if cur == nil {
 		return nil, invalidCode("err.inboundNotFound", "подключение не найдено")
 	}
+	if cur.IsRental() {
+		return nil, invalidCode("err.rentalInboundReadOnly", "нельзя изменять подключение арендатора")
+	}
 	in.ServerID = cur.ServerID
 	in.CreatedAt = cur.CreatedAt
 	in.Sort = cur.Sort
@@ -272,6 +276,9 @@ func (m *Manager) RegenInboundReality(id int64) (*InboundView, error) {
 	if in == nil {
 		return nil, invalidCode("err.inboundNotFound", "подключение не найдено")
 	}
+	if in.IsRental() {
+		return nil, invalidCode("err.rentalInboundReadOnly", "нельзя изменять подключение арендатора")
+	}
 	if in.Opts.Security != model.SecReality {
 		return nil, invalidCode("err.inboundHasNoReality", "у этого подключения нет REALITY")
 	}
@@ -295,6 +302,9 @@ func (m *Manager) DeleteInbound(id int64) error {
 	}
 	if in == nil {
 		return nil // already gone; deleting twice is not an error
+	}
+	if in.IsRental() {
+		return invalidCode("err.rentalInboundReadOnly", "нельзя удалять подключение арендатора")
 	}
 	if err := m.store.DeleteInbound(id); err != nil {
 		return err
@@ -629,6 +639,9 @@ func (m *Manager) applyInboundChange(serverID int64) {
 		logErr("hop: re-apply failed", "err", err)
 	}
 	m.ensureLocalConnGuard()
+	if err := EnsureHostFirewall(m.store); err != nil {
+		logErr("firewall: re-apply failed", "err", err)
+	}
 	m.TriggerReconcile()
 }
 
@@ -716,6 +729,68 @@ func (m *Manager) ensureLocalConnGuard() {
 	if err := connguard.Ensure(ports, lim); err != nil {
 		logErr("connguard: re-apply failed", "err", err)
 	}
+}
+
+// HostFirewallRules returns the full set of firewall rules needed for the local host:
+// port 80/tcp, VLESS/Reality ports, Hysteria2 port + hop ranges, and all custom inbounds.
+func HostFirewallRules(st *store.Store) ([]firewall.Rule, error) {
+	set, err := st.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	vlessPort := set.VLESSPort
+	if vlessPort == 0 {
+		vlessPort = 443
+	}
+	rules := []firewall.Rule{
+		firewall.TCPRule(80, "http-redirect"),
+		firewall.TCPRule(vlessPort, "vless"),
+	}
+	if set.RealityEnabled && set.RealityPort > 0 {
+		rules = append(rules, firewall.TCPRule(set.RealityPort, "reality"))
+	}
+	if set.HysteriaEnabled && set.HysteriaPort > 0 {
+		rules = append(rules, firewall.UDPRule(set.HysteriaPort, "hysteria"))
+		if set.HopEnd > set.HysteriaPort {
+			start := set.HopStart
+			if start <= set.HysteriaPort {
+				start = set.HysteriaPort + 1
+			}
+			if start <= set.HopEnd {
+				rules = append(rules, firewall.UDPRangeRule(start, set.HopEnd, "hysteria-hop"))
+			}
+		}
+	}
+	list, err := st.EnabledInbounds(model.LocalNodeID)
+	if err != nil {
+		return nil, err
+	}
+	for _, in := range list {
+		if in.Protocol == model.InbHysteria {
+			rules = append(rules, firewall.UDPRule(in.Port, in.Name))
+			if in.UsesHopping() {
+				start := in.Opts.HopStart
+				if start <= in.Port {
+					start = in.Port + 1
+				}
+				if start <= in.Opts.HopEnd {
+					rules = append(rules, firewall.UDPRangeRule(start, in.Opts.HopEnd, in.Name+"-hop"))
+				}
+			}
+		} else {
+			rules = append(rules, firewall.TCPRule(in.Port, in.Name))
+		}
+	}
+	return firewall.DeduplicateRules(rules), nil
+}
+
+// EnsureHostFirewall synchronizes the system firewall for the local host's active ports.
+func EnsureHostFirewall(st *store.Store) error {
+	rules, err := HostFirewallRules(st)
+	if err != nil {
+		return err
+	}
+	return firewall.Sync(context.Background(), rules)
 }
 
 // inboundNames is the display names already taken by a server's custom inbounds, so

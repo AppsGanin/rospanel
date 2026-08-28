@@ -25,6 +25,7 @@ import (
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/connguard"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/decoy"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/firewall"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/hop"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/http80"
@@ -259,6 +260,12 @@ func Run(ctx context.Context, dataDir string) error {
 		if err := a.applyState(a.state.LastConfig); err != nil {
 			slog.Warn("node: re-applying saved config failed", "err", err)
 		}
+	} else {
+		// Fresh boot before first sync: ensure initial firewall state is ready.
+		_ = firewall.Sync(ctx, []firewall.Rule{
+			firewall.TCPRule(80, "http-redirect"),
+			firewall.TCPRule(443, "vless"),
+		})
 	}
 
 	go a.statsLoop(ctx)
@@ -1022,6 +1029,30 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 			slog.Warn("node: connection guard setup failed", "err", err)
 		}
 	}
+
+	// Host-level firewall (UFW) management for node ports.
+	nodeFWRules := []firewall.Rule{
+		firewall.TCPRule(80, "http-redirect"),
+	}
+	for _, p := range m.ConnGuardPorts {
+		nodeFWRules = append(nodeFWRules, firewall.TCPRule(p, "proxy-tcp"))
+	}
+	if m.HysteriaEnabled && m.HysteriaPort > 0 {
+		nodeFWRules = append(nodeFWRules, firewall.UDPRule(m.HysteriaPort, "hysteria"))
+	}
+	for _, r := range hopRanges(m) {
+		start := r.Start
+		if start <= r.Target {
+			start = r.Target + 1
+		}
+		if start <= r.End {
+			nodeFWRules = append(nodeFWRules, firewall.UDPRangeRule(start, r.End, "hysteria-hop"))
+		}
+	}
+	if err := firewall.Sync(context.Background(), firewall.DeduplicateRules(nodeFWRules)); err != nil {
+		slog.Warn("node: firewall sync failed", "err", err)
+	}
+
 	// Decoy server on the loopback fallback dest (the config's VLESS fallback points
 	// here for non-VPN traffic).
 	if err := a.ensureDecoy(m.LoopbackDest, m.DecoyTemplate); err != nil {

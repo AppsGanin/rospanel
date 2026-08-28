@@ -17,6 +17,7 @@ import (
 	"github.com/Shu1t3/rospanel-shu1t3/internal/backup"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/core"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/datasec"
+	"github.com/Shu1t3/rospanel-shu1t3/internal/firewall"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/store"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/updater"
@@ -371,6 +372,25 @@ func runInstall() {
 	}
 	log.Print("install: done — service enabled and started")
 	log.Print("first-run credentials: journalctl -u rospanel | grep -A6 FIRST-RUN")
+
+	// Ensure system firewall (UFW) is configured and ports are opened.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	installRules := []firewall.Rule{
+		firewall.TCPRule(80, "http-redirect"),
+		firewall.TCPRule(443, "vless"),
+	}
+	if dbSt, err := store.Open(filepath.Join(dataDir, "rospanel.db")); err == nil {
+		if r, rerr := core.HostFirewallRules(dbSt); rerr == nil && len(r) > 0 {
+			installRules = r
+		}
+		_ = dbSt.Close()
+	}
+	if err := firewall.Sync(ctx, installRules); err != nil {
+		log.Printf("install: firewall setup warning: %v", err)
+	} else {
+		log.Print("install: firewall (ufw) configured and enabled")
+	}
 }
 
 // runUninstall stops/disables the service and removes the unit file. Data under

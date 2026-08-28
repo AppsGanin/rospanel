@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -396,3 +397,128 @@ func TestRentedNodeValidationAndProbe(t *testing.T) {
 			rentedSettings.VLESSEnabled, rentedSettings.RealityEnabled, rentedSettings.HysteriaEnabled)
 	}
 }
+
+func TestTenantInboundProtection(t *testing.T) {
+	mgr := newTestManager(t)
+
+	// 1. Create owner node
+	ownerNode, err := mgr.store.CreateNode("Owner Node", "owner.example.com", "secret")
+	if err != nil {
+		t.Fatalf("CreateNode: %v", err)
+	}
+
+	// 2. Create an inbound on owner node belonging to a tenant
+	tenantInb, err := mgr.store.CreateInbound(model.Inbound{
+		ServerID: ownerNode.ID,
+		Enabled:  true,
+		Name:     "Tenant Inbound",
+		Protocol: model.InbVLESS,
+		Port:     9999,
+		TenantID: "tenant_abc123",
+		Opts: model.InboundOpts{
+			Transport:   model.TrTCP,
+			Security:    model.SecReality,
+			RealityDest: "microsoft.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateInbound: %v", err)
+	}
+
+	// 3. Attempt UpdateInbound on tenant inbound - should fail
+	_, err = mgr.UpdateInbound(context.Background(), model.Inbound{
+		ID:       tenantInb.ID,
+		ServerID: ownerNode.ID,
+		Enabled:  false,
+		Name:     "Hacked Name",
+		Protocol: model.InbVLESS,
+		Port:     9999,
+		Opts: model.InboundOpts{
+			Transport:   model.TrTCP,
+			Security:    model.SecReality,
+			RealityDest: "microsoft.com",
+		},
+	})
+	if err == nil {
+		t.Fatalf("UpdateInbound on tenant inbound expected error, got nil")
+	}
+	var vErr *ValidationError
+	if errors.As(err, &vErr) {
+		if vErr.Code != "err.rentalInboundReadOnly" {
+			t.Errorf("want err.rentalInboundReadOnly, got code %q", vErr.Code)
+		}
+	} else {
+		t.Errorf("expected ValidationError, got %v", err)
+	}
+
+	// 4. Attempt RegenInboundReality on tenant inbound - should fail
+	_, err = mgr.RegenInboundReality(tenantInb.ID)
+	if err == nil {
+		t.Fatalf("RegenInboundReality on tenant inbound expected error, got nil")
+	}
+	if errors.As(err, &vErr) {
+		if vErr.Code != "err.rentalInboundReadOnly" {
+			t.Errorf("want err.rentalInboundReadOnly, got code %q", vErr.Code)
+		}
+	} else {
+		t.Errorf("expected ValidationError, got %v", err)
+	}
+
+	// 5. Attempt DeleteInbound on tenant inbound - should fail
+	err = mgr.DeleteInbound(tenantInb.ID)
+	if err == nil {
+		t.Fatalf("DeleteInbound on tenant inbound expected error, got nil")
+	}
+	if errors.As(err, &vErr) {
+		if vErr.Code != "err.rentalInboundReadOnly" {
+			t.Errorf("want err.rentalInboundReadOnly, got code %q", vErr.Code)
+		}
+	} else {
+		t.Errorf("expected ValidationError, got %v", err)
+	}
+
+	// 6. Create owner's own inbound (TenantID = "") and verify operations succeed
+	ownerInb, err := mgr.store.CreateInbound(model.Inbound{
+		ServerID: ownerNode.ID,
+		Enabled:  true,
+		Name:     "Owner Inbound",
+		Protocol: model.InbVLESS,
+		Port:     10001,
+		TenantID: "",
+		Opts: model.InboundOpts{
+			Transport:   model.TrTCP,
+			Security:    model.SecReality,
+			RealityDest: "google.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateInbound owner: %v", err)
+	}
+
+	// Owner can update
+	updated, err := mgr.UpdateInbound(context.Background(), model.Inbound{
+		ID:       ownerInb.ID,
+		ServerID: ownerNode.ID,
+		Enabled:  false,
+		Name:     "Owner Inbound Updated",
+		Protocol: model.InbVLESS,
+		Port:     10001,
+		Opts: model.InboundOpts{
+			Transport:   model.TrTCP,
+			Security:    model.SecReality,
+			RealityDest: "google.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateInbound owner failed: %v", err)
+	}
+	if updated.Name != "Owner Inbound Updated" {
+		t.Errorf("unexpected updated name: %s", updated.Name)
+	}
+
+	// Owner can delete
+	if err := mgr.DeleteInbound(ownerInb.ID); err != nil {
+		t.Fatalf("DeleteInbound owner failed: %v", err)
+	}
+}
+

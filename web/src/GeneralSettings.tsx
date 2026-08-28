@@ -48,6 +48,7 @@ import {
   ToggleRow,
   useConfirm,
 } from "./ui";
+import { countryFlag, countryName } from "./format";
 
 // LocalBackup is the scheduled on-disk backup: a schedule plus how many archives to
 // keep. Independent of the Telegram backup schedule — an operator with no bot still
@@ -501,6 +502,24 @@ export function GeneralSettings() {
                     <span className="text-xs text-ink-muted">
                       {t("general.probePaths", { n: p.paths })}
                     </span>
+                    {/* Where the address belongs. A datacentre range abroad and a
+                        residential one in the country you serve call for different
+                        answers, and a bare address says neither. Both are optional —
+                        the geo tables may not be downloaded yet. */}
+                    {p.country && (
+                      <span className="text-xs text-ink-muted">
+                        {countryFlag(p.country)}{" "}
+                        {countryName(p.country, i18n.language, p.country)}
+                      </span>
+                    )}
+                    {p.org && (
+                      <span
+                        className="max-w-[16rem] truncate text-xs text-ink-muted"
+                        title={p.asn ? `AS${p.asn} · ${p.org}` : p.org}
+                      >
+                        {p.org}
+                      </span>
+                    )}
                     <span className="ml-auto text-xs text-ink-muted">
                       {new Date(p.last_seen * 1000).toLocaleString(i18n.language)}
                     </span>

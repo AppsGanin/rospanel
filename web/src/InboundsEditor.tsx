@@ -320,6 +320,7 @@ export function InboundRow({
   onEdit,
   onDelete,
   onRegen,
+  readOnly,
 }: {
   v: Inbound;
   busy: boolean;
@@ -327,9 +328,11 @@ export function InboundRow({
   onEdit: () => void;
   onDelete: () => void;
   onRegen: () => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const isReadOnly = readOnly || !!v.tenant_id;
   const o = v.opts;
   const isSS = v.protocol === "shadowsocks";
   // Shadowsocks-2022 is encrypted by its own AEAD, so "no TLS" would misread as
@@ -358,7 +361,7 @@ export function InboundRow({
           {!v.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
         </div>
         <span onClick={(e) => e.stopPropagation()} className="flex items-center">
-          <Switch checked={v.enabled} onChange={onToggle} disabled={busy} />
+          <Switch checked={v.enabled} onChange={onToggle} disabled={busy || isReadOnly} />
         </span>
       </button>
 
@@ -417,19 +420,21 @@ export function InboundRow({
               <LongRow label="Short IDs" value={v.reality_short_id ?? ""} />
             </div>
           )}
-          <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
-            {o.security === "reality" && (
-              <Button size="sm" variant="light" color="orange" onClick={onRegen} disabled={busy}>
-                {t("conn.regenKeys")}
+          {!isReadOnly && (
+            <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
+              {o.security === "reality" && (
+                <Button size="sm" variant="light" color="orange" onClick={onRegen} disabled={busy}>
+                  {t("conn.regenKeys")}
+                </Button>
+              )}
+              <Button size="sm" variant="light" color="gray" onClick={onEdit} disabled={busy}>
+                {t("common.edit")}
               </Button>
-            )}
-            <Button size="sm" variant="light" color="gray" onClick={onEdit} disabled={busy}>
-              {t("common.edit")}
-            </Button>
-            <Button size="sm" variant="light" color="red" onClick={onDelete} disabled={busy}>
-              {t("common.delete")}
-            </Button>
-          </div>
+              <Button size="sm" variant="light" color="red" onClick={onDelete} disabled={busy}>
+                {t("common.delete")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

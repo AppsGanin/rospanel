@@ -87,7 +87,7 @@ func Start(addr string, host func() string) *http.Server {
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Printf("http80: not listening on %s: %v (will rely on lego's per-challenge listener)", addr, err)
+		log.Printf("http80: not listening on %s (%v) — ACME keeps binding it per challenge", addr, err)
 		return nil
 	}
 	srv := &http.Server{
@@ -95,14 +95,17 @@ func Start(addr string, host func() string) *http.Server {
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	tlsmgr.UseSharedHTTP01(true)
 	go func() {
-		defer tlsmgr.UseSharedHTTP01(false)
-		log.Printf("http80: redirecting to HTTPS on %s", addr)
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("http80: %v", err)
 		}
+		// Whatever stopped it, ACME must go back to binding the port itself rather
+		// than answering into a listener that is gone.
+		tlsmgr.UseSharedHTTP01(false)
 	}()
+	log.Printf("http80: redirecting to HTTPS on %s", addr)
 	return srv
 }

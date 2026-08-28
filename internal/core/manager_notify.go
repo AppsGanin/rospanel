@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Shu1t3/rospanel-shu1t3/internal/geo"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/i18n"
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
 )
@@ -365,9 +366,51 @@ func (m *Manager) sendProbeDigest(probes []model.ProbeHit) {
 			b.WriteString(i18n.T(lang, "notify.probeDigestMore", len(probes)-show))
 			break
 		}
-		fmt.Fprintf(&b, "\n• <code>%s</code> — %d", escHTML(p.IP), p.Paths)
+		fmt.Fprintf(&b, "\n• <code>%s</code> — %d%s", escHTML(p.IP), p.Paths, probeOrigin(p))
 	}
 	m.notifyAdminEvent(model.AdminEventProbe, b.String())
+}
+
+// probeOrigin renders where a scanning address belongs, as a trailing " · 🇳🇱 NL ·
+// Operator". Returns "" when nothing is known, so the line stays exactly as it was
+// rather than growing empty separators.
+//
+// The operator name comes from our own ASN table and not from anything the scanner
+// sent, but it is escaped like every other value that reaches an HTML-parsed message:
+// the rule is that nothing goes in unescaped, not that this particular field happens
+// to be safe today.
+const maxProbeOrgRunes = 40
+
+// truncRunes shortens s to at most n runes, marking that it did. Counts runes, not
+// bytes: a name in Cyrillic or Chinese would otherwise be cut mid-character and reach
+// Telegram as invalid UTF-8.
+func truncRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimRight(string(r[:n]), " ") + "…"
+}
+
+func probeOrigin(p model.ProbeHit) string {
+	var parts []string
+	if p.Country != "" {
+		if f := geo.Flag(p.Country); f != "" {
+			parts = append(parts, f+" "+escHTML(p.Country))
+		} else {
+			parts = append(parts, escHTML(p.Country))
+		}
+	}
+	if p.Org != "" {
+		// Registry names run long ("MAYTINHVPSTTT-VN VPSTTT COMPUTER COMPANY LIMITED")
+		// and ten of them turn a digest meant to be glanced at into a wall. The panel
+		// shows the whole thing.
+		parts = append(parts, escHTML(truncRunes(p.Org, maxProbeOrgRunes)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
 }
 
 // onXrayWedged is the watchdog callback when Xray is alive but no longer answering
