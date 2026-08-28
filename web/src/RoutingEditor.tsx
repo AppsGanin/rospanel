@@ -90,6 +90,7 @@ export const EMPTY: RoutingConfig = {
   opera_ips: [],
   direct_domains: [],
   direct_ips: [],
+  direct_domain_strategy: "UseIPv4",
   routing_order: ["warp", "opera", "direct"],
   lanes: [],
   proxy_refresh_minutes: 30,
@@ -99,6 +100,16 @@ export const EMPTY: RoutingConfig = {
 // A proxy lane is labelled by its own name instead.
 const builtinLaneName = (lane: string): string =>
   lane === "direct" ? i18n.t("route.direct") : lane === "warp" ? "WARP" : "Opera VPN";
+
+// freedomDomainStrategies offers domain resolution modes for direct outbound.
+export const freedomDomainStrategies = () => [
+  { value: "UseIPv4", label: i18n.t("route.stratUseIPv4") },
+  { value: "UseIPv4v6", label: i18n.t("route.stratUseIPv4v6") },
+  { value: "UseIPv6v4", label: i18n.t("route.stratUseIPv6v4") },
+  { value: "UseIP", label: i18n.t("route.stratUseIP") },
+  { value: "UseIPv6", label: i18n.t("route.stratUseIPv6") },
+  { value: "AsIs", label: i18n.t("route.stratAsIs") },
+];
 
 // Opera VPN regions opera-proxy supports.
 export const operaCountries = () => [
@@ -197,6 +208,7 @@ export function hydrateRouting(
     opera_ips: src.opera_ips ?? [],
     direct_domains: src.direct_domains ?? [],
     direct_ips: src.direct_ips ?? [],
+    direct_domain_strategy: src.direct_domain_strategy ?? "UseIPv4",
     lanes,
     routing_order: normalizeOrder(
       src.routing_order,
@@ -742,6 +754,12 @@ export function RoutingEditor({
 
       {/* Direct */}
       <Section title={t("route.direct")} desc={withCatchAllNote(t("route.directHint"), "direct")}>
+        <Select
+          label={t("route.domainStrategy")}
+          data={freedomDomainStrategies()}
+          value={cfg.direct_domain_strategy || "UseIPv4"}
+          onChange={(v) => set({ direct_domain_strategy: v })}
+        />
         <TagsInput
           label={t("route.domains")}
           value={cfg.direct_domains}

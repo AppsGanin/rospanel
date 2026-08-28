@@ -192,3 +192,21 @@ func jsonHasKey(text, key string) bool {
 	_, ok := m[key]
 	return ok
 }
+
+func TestSockoptTrustedXForwardedFor(t *testing.T) {
+	rawJSON := `{"trustedXForwardedFor":["173.245.48.0/20","104.16.0.0/13"],"acceptProxyProtocol":true}`
+	f := DisassembleSockopt(json.RawMessage(rawJSON))
+	if !jsonHasKey(f.Raw, "trustedXForwardedFor") {
+		t.Errorf("trustedXForwardedFor should stay in raw fallback: %s", f.Raw)
+	}
+	if !jsonHasKey(f.Raw, "acceptProxyProtocol") {
+		t.Errorf("acceptProxyProtocol should stay in raw fallback: %s", f.Raw)
+	}
+	blob, err := AssembleSockopt(f)
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if err := validateJSONObject(blob, SockoptKeys, "sockopt"); err != nil {
+		t.Errorf("validateJSONObject rejected trustedXForwardedFor/acceptProxyProtocol: %v", err)
+	}
+}

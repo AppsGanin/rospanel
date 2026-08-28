@@ -3,6 +3,7 @@ package xray
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Shu1t3/rospanel-shu1t3/internal/model"
@@ -682,4 +683,61 @@ func TestNodeModeCustomInboundOnPort443WithoutVLESSCollision(t *testing.T) {
 		}
 	}
 }
+
+func TestSniffingRouteOnlyAndDirectFreedomDomainStrategy(t *testing.T) {
+	set := baseSettings()
+	cfg, err := Generate(set, nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// 1. Verify user inbounds have sniffing with routeOnly: false
+	vless := findInbound(cfg, TagVLESS)
+	if vless == nil {
+		t.Fatal("vless inbound not found")
+	}
+	if vless.Sniffing == nil || !vless.Sniffing.Enabled || vless.Sniffing.RouteOnly {
+		t.Errorf("vless sniffing unexpected: %+v", vless.Sniffing)
+	}
+	raw, err := json.Marshal(vless.Sniffing)
+	if err != nil {
+		t.Fatalf("marshal sniffing: %v", err)
+	}
+	if !strings.Contains(string(raw), `"routeOnly":false`) {
+		t.Errorf("serialized sniffing missing explicit routeOnly:false: %s", raw)
+	}
+
+	// 2. Verify default freedom outbound uses UseIPv4
+	var direct *Outbound
+	for i := range cfg.Outbounds {
+		if cfg.Outbounds[i].Tag == "direct" {
+			direct = &cfg.Outbounds[i]
+			break
+		}
+	}
+	if direct == nil {
+		t.Fatal("direct outbound not found")
+	}
+	fs, ok := direct.Settings.(FreedomSettings)
+	if !ok || fs.DomainStrategy != "UseIPv4" {
+		t.Errorf("direct freedom settings = %+v, want DomainStrategy: UseIPv4", direct.Settings)
+	}
+
+	// 3. Verify customized direct domain strategy is respected
+	set.Routing.DirectDomainStrategy = "UseIPv4v6"
+	cfg2, err := Generate(set, nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("Generate with custom strategy failed: %v", err)
+	}
+	for i := range cfg2.Outbounds {
+		if cfg2.Outbounds[i].Tag == "direct" {
+			fs2, ok := cfg2.Outbounds[i].Settings.(FreedomSettings)
+			if !ok || fs2.DomainStrategy != "UseIPv4v6" {
+				t.Errorf("custom direct freedom settings = %+v, want UseIPv4v6", cfg2.Outbounds[i].Settings)
+			}
+			break
+		}
+	}
+}
+
 

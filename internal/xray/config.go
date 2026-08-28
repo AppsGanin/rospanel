@@ -136,13 +136,19 @@ type Inbound struct {
 type Sniffing struct {
 	Enabled      bool     `json:"enabled"`
 	DestOverride []string `json:"destOverride,omitempty"`
+	RouteOnly    bool     `json:"routeOnly"`
 }
 
-// Outbound is one egress. Settings is protocol-specific (nil for freedom/blackhole).
+// Outbound is one egress. Settings is protocol-specific (nil for blackhole).
 type Outbound struct {
 	Tag      string `json:"tag,omitempty"`
 	Protocol string `json:"protocol"`
 	Settings any    `json:"settings,omitempty"`
+}
+
+// FreedomSettings is the "settings" object for a freedom outbound.
+type FreedomSettings struct {
+	DomainStrategy string `json:"domainStrategy,omitempty"`
 }
 
 // ProxyOutboundSettings is the "settings" object for a socks/http proxy outbound.

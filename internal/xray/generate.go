@@ -99,7 +99,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// real destination (HTTP host / TLS SNI / QUIC). "fakedns" is intentionally
 	// omitted: it's a TUN/client mechanism and no fakedns server is configured, so
 	// it was an inert (and confusing) destOverride on a server inbound.
-	sniff := &Sniffing{Enabled: true, DestOverride: []string{"http", "tls", "quic"}}
+	sniff := &Sniffing{Enabled: true, DestOverride: []string{"http", "tls", "quic"}, RouteOnly: false}
 
 	// rejectUnknownSni drops TLS probes whose SNI doesn't match the cert — but only
 	// when the host is a domain. On a bare IP browsers send no SNI, so enabling it
@@ -204,8 +204,18 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	}
 
 	rc := set.Routing
+	directStrategy := rc.DirectDomainStrategy
+	if directStrategy == "" {
+		directStrategy = "UseIPv4"
+	}
 	outbounds := []Outbound{
-		{Tag: "direct", Protocol: "freedom"},
+		{
+			Tag:      "direct",
+			Protocol: "freedom",
+			Settings: FreedomSettings{
+				DomainStrategy: directStrategy,
+			},
+		},
 		{Tag: "block", Protocol: "blackhole"},
 	}
 

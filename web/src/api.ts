@@ -910,6 +910,7 @@ export interface RoutingConfig {
   opera_ips: string[]
   direct_domains: string[]
   direct_ips: string[]
+  direct_domain_strategy?: string
   routing_order: string[]
   lanes: EgressLane[]
   proxy_refresh_minutes: number

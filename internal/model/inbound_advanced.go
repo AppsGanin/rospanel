@@ -286,5 +286,8 @@ var (
 		"", "none", "srvportonly", "srvaddressonly", "srvportandaddress",
 		"txtportonly", "txtaddressonly", "txtportandaddress",
 	}
+	FreedomDomainStrats = []string{
+		"", "UseIPv4", "UseIPv4v6", "UseIPv6v4", "UseIP", "UseIPv6", "AsIs",
+	}
 	TLSVersions = []string{"", "1.0", "1.1", "1.2", "1.3"}
 )

@@ -274,17 +274,13 @@ var XHTTPExtraKeys = map[string]bool{
 }
 
 // SockoptKeys is the socket-option set, from infra/conf.SocketConfig.
-// acceptProxyProtocol and trustedXForwardedFor are excluded: they say to trust a
-// forwarded client IP, and the panel — not the operator — decides which upstreams
-// are trusted, since getting it wrong lets a client forge its own source address and
-// defeat the per-user device limit.
 var SockoptKeys = map[string]bool{
 	"mark": true, "tcpFastOpen": true, "tproxy": true, "domainStrategy": true,
 	"dialerProxy": true, "tcpKeepAliveInterval": true, "tcpKeepAliveIdle": true,
 	"tcpCongestion": true, "tcpWindowClamp": true, "tcpMaxSeg": true,
 	"penetrate": true, "tcpUserTimeout": true, "v6only": true, "interface": true,
 	"tcpMptcp": true, "customSockopt": true, "addressPortStrategy": true,
-	"happyEyeballs": true,
+	"happyEyeballs": true, "trustedXForwardedFor": true, "acceptProxyProtocol": true,
 }
 
 // TLSExtraKeys is the tlsSettings the operator may add on top of the derived ones.

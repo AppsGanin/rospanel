@@ -1368,8 +1368,9 @@ type RoutingConfig struct {
 	WarpIPs         []string `json:"warp_ips"`      // CIDRs or geoip:xx, via WARP
 	OperaDomains    []string `json:"opera_domains"` // routed through Opera VPN
 	OperaIPs        []string `json:"opera_ips"`     // CIDRs or geoip:xx, via Opera VPN
-	DirectDomains   []string `json:"direct_domains"`
-	DirectIPs       []string `json:"direct_ips"`
+	DirectDomains        []string `json:"direct_domains"`
+	DirectIPs            []string `json:"direct_ips"`
+	DirectDomainStrategy string   `json:"direct_domain_strategy,omitempty"`
 
 	// RoutingOrder is the precedence of the egress lanes; first-match-wins. It is a
 	// permutation of the built-in lanes ("warp"/"opera"/"direct") plus the ID of

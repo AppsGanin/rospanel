@@ -154,3 +154,21 @@ func TestValidateLanesTooMany(t *testing.T) {
 		t.Fatalf("accepted %d lanes, want a limit of %d", len(rc.Lanes), MaxEgressLanes)
 	}
 }
+
+func TestRoutingConfigDirectDomainStrategy(t *testing.T) {
+	rc := RoutingConfig{
+		DirectDomains:        []string{"vk.com"},
+		DirectDomainStrategy: "UseIPv4",
+	}
+	raw, err := json.Marshal(rc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out RoutingConfig
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.DirectDomainStrategy != "UseIPv4" {
+		t.Errorf("DirectDomainStrategy = %q, want UseIPv4", out.DirectDomainStrategy)
+	}
+}
