@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.8](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.7...v2.16.8) (2026-08-28)
+
+
+### Bug Fixes
+
+* resolve node xray 443 port collision and restore author connection model ([1ca3f2d](https://github.com/Shu1t3/rospanel-shu1t3/commit/1ca3f2d216789c1b59addb49d69be6367b120034))
+
 ## [2.16.7](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.16.6...v2.16.7) (2026-08-27)
 
 
