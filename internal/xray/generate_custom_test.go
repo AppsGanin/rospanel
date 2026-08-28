@@ -630,3 +630,56 @@ func TestLiveUserAPICoversShadowsocks(t *testing.T) {
 		t.Error("adu stub carries the wrong per-user key")
 	}
 }
+
+// When VLESS is disabled (e.g. on a node), vless-in must not be generated,
+// allowing a custom inbound to safely bind to port 443 without port collisions.
+func TestNodeModeCustomInboundOnPort443WithoutVLESSCollision(t *testing.T) {
+	set := baseSettings()
+	set.VLESSEnabled = false
+	set.HysteriaEnabled = false
+	set.RealityEnabled = false
+
+	users := []model.User{{ID: 1, UUID: "uuid-1", Password: "pw"}}
+	customReality := model.Inbound{
+		ID: 1, Enabled: true, Name: "Node Reality 443",
+		Protocol: model.InbVLESS, Port: 443,
+		Opts: model.InboundOpts{
+			Transport: model.TrTCP, Security: model.SecReality,
+			RealityPrivateKey: "priv", RealityPublicKey: "pub",
+			RealityDest: "dl.google.com", RealityShortID: "11223344",
+		},
+	}
+	customReality.Normalize()
+
+	cfg, err := Generate(set, users, Options{
+		Custom:    []model.Inbound{customReality},
+		PanelDest: "127.0.0.1:8080",
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if findInbound(cfg, TagVLESS) != nil {
+		t.Errorf("TagVLESS (vless-in) should not be present when VLESSEnabled is false")
+	}
+
+	custom := findInbound(cfg, customReality.Tag())
+	if custom == nil {
+		t.Fatalf("custom inbound %s not found in generated config", customReality.Tag())
+	}
+	if custom.Port != 443 {
+		t.Errorf("custom inbound port = %d, want 443", custom.Port)
+	}
+
+	// Verify no duplicate TCP ports
+	tcpPorts := map[int]string{}
+	for _, in := range cfg.Inbounds {
+		if in.Protocol != "hysteria" {
+			if prev, ok := tcpPorts[in.Port]; ok {
+				t.Errorf("duplicate TCP port %d in inbounds (%s and %s)", in.Port, prev, in.Tag)
+			}
+			tcpPorts[in.Port] = in.Tag
+		}
+	}
+}
+

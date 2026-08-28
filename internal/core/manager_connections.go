@@ -548,10 +548,13 @@ func (m *Manager) regenRealityKeys() error {
 // parameters (fragment, TLS 1.3, block QUIC), clears custom display names, and removes all
 // custom inbounds on the master server.
 func (m *Manager) ResetConnections() (*ConnectionsStatus, error) {
-	for _, proto := range []string{"vless", "reality", "hysteria2"} {
+	for _, proto := range []string{"vless", "hysteria2"} {
 		if err := m.store.SetProtocolEnabled(proto, true); err != nil {
 			return nil, err
 		}
+	}
+	if err := m.store.SetProtocolEnabled("reality", false); err != nil {
+		return nil, err
 	}
 	if err := m.store.SetFingerprints("firefox", "firefox"); err != nil {
 		return nil, err
@@ -570,15 +573,6 @@ func (m *Manager) ResetConnections() (*ConnectionsStatus, error) {
 	}
 	if err := m.store.SetAntiDPI(true, true, true, 0); err != nil {
 		return nil, err
-	}
-	set, err := m.store.GetSettings()
-	if err != nil {
-		return nil, err
-	}
-	if set.RealityPrivateKey == "" {
-		if err := m.regenRealityKeys(); err != nil {
-			return nil, err
-		}
 	}
 	// Drop all custom inbounds on the master server and their associated group grants.
 	inbounds, err := m.store.Inbounds(model.LocalNodeID)

@@ -173,7 +173,10 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		Settings: DokodemoSettings{Address: "127.0.0.1"},
 	}
 
-	inbounds := []Inbound{apiInbound, vless, hysteria}
+	inbounds := []Inbound{apiInbound, hysteria}
+	if set.VLESSEnabled {
+		inbounds = append(inbounds, vless)
+	}
 
 	// VLESS + XHTTP + REALITY on its own port. Only emitted when enabled AND keys
 	// are present (REALITY can't authenticate without them). It borrows the TLS of

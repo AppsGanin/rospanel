@@ -213,6 +213,7 @@ var errEN = map[string]string{
 	"err.realityPortRange":              "the REALITY port is outside 1–65535",
 	"err.rentedNodeCannotBeShared":      "a rented node cannot be shared again",
 	"err.rentedNodeManagedByOwner":      "rented node is managed by the owner",
+	"err.rentedNodeResetForbidden":      "factory reset is not available for a rented node",
 	"err.requestNotFound":               "request not found",
 	"err.restoreFailed":                 "the restore failed: {{detail}}",
 	"err.retryOnlyFinished":             "only a finished broadcast can be retried",

@@ -1016,7 +1016,10 @@ func (m *Manager) ResetNodeConnections(id int64) (*ConnectionsStatus, error) {
 	if n == nil {
 		return nil, invalidCode("err.nodeNotFound", "нода не найдена")
 	}
-	if err := m.store.SetNodeProtocols(id, true, true, true); err != nil {
+	if n.IsRented {
+		return nil, invalidCode("err.rentedNodeResetForbidden", "сброс настроек недоступен для арендованной ноды")
+	}
+	if err := m.store.SetNodeProtocols(id, true, true, false); err != nil {
 		return nil, err
 	}
 	if err := m.store.SetNodeRealityDest(id, ""); err != nil {

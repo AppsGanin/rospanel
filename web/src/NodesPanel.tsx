@@ -1568,7 +1568,7 @@ function NodeSettingsDialog({
         <ConnectionsEditor
           load={() => getNodeConnections(node.id)}
           save={(u) => applyNodeConnections(node.id, u)}
-          reset={() => resetNodeConnections(node.id)}
+          reset={node.is_rented ? undefined : () => resetNodeConnections(node.id)}
           serverId={node.id}
           restartsPanel={false}
         />

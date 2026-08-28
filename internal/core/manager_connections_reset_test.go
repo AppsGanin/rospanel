@@ -80,6 +80,12 @@ func TestResetConnectionsMaster(t *testing.T) {
 	}
 
 	for _, proto := range status.Protocols {
+		if proto.Key == "reality" {
+			if proto.Enabled {
+				t.Errorf("expected reality disabled after reset")
+			}
+			continue
+		}
 		if !proto.Enabled {
 			t.Errorf("expected protocol %q enabled", proto.Key)
 		}
@@ -110,7 +116,7 @@ func TestResetNodeConnections(t *testing.T) {
 	}
 
 	// Mutate node connections
-	if err := m.store.SetNodeProtocols(node.ID, false, true, false); err != nil {
+	if err := m.store.SetNodeProtocols(node.ID, false, true, true); err != nil {
 		t.Fatalf("set node protocols: %v", err)
 	}
 	if err := m.store.SetNodeRealityDest(node.ID, "donor.node.com"); err != nil {
@@ -141,6 +147,12 @@ func TestResetNodeConnections(t *testing.T) {
 	}
 
 	for _, proto := range status.Protocols {
+		if proto.Key == "reality" {
+			if proto.Enabled {
+				t.Errorf("expected node reality disabled after reset")
+			}
+			continue
+		}
 		if !proto.Enabled {
 			t.Errorf("expected node protocol %q enabled", proto.Key)
 		}
@@ -156,6 +168,20 @@ func TestResetNodeConnections(t *testing.T) {
 	}
 	if len(inbounds) != 0 {
 		t.Errorf("expected 0 node inbounds after reset, got %d", len(inbounds))
+	}
+}
+
+func TestResetNodeConnectionsRentedNodeForbidden(t *testing.T) {
+	m := testConnManager(t)
+
+	rented, err := m.store.CreateRentedNode("Rented 1", "rented.example.com", "master.example.com", 10, "token_123", "tenant_xyz", 60, 40000, "v1.2.0", "1.8.24", "pubkey123", "sid123", "/rpath", "dest.com:443", "sha123", false, true, true, true, 443, 8443, 443)
+	if err != nil {
+		t.Fatalf("create rented node: %v", err)
+	}
+
+	_, err = m.ResetNodeConnections(rented.ID)
+	if err == nil {
+		t.Fatal("expected ResetNodeConnections to fail for rented node")
 	}
 }
 

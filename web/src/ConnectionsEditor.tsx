@@ -135,8 +135,6 @@ export function ConnectionsEditor({
   const [editingInbound, setEditingInbound] = useState<{ id: number; v: InboundInput } | null>(null);
   const [confirmDelInbound, setConfirmDelInbound] = useState<Inbound | null>(null);
 
-  // Modals for default connection deletion and factory reset
-  const [confirmDelDefault, setConfirmDelDefault] = useState<{ key: string; name: string } | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const reloadInbounds = () => {
@@ -321,38 +319,6 @@ export function ConnectionsEditor({
 
   const regenInbound = (v: Inbound) => writeInbound(() => regenInboundReality(v.id));
 
-  // Delete default connection (disables it and removes from active list with immediate save)
-  const deleteDefaultConnection = (key: string) => {
-    const nextEnabled = { ...enabled, [key]: false };
-    const nextDeleted = { ...deleted, [key]: true };
-    setEnabled(nextEnabled);
-    setDeleted(nextDeleted);
-    setConfirmDelDefault(null);
-    const run1 = async () => {
-      const s = await save({
-        protocols: nextEnabled,
-        fingerprints: fps,
-        names,
-        vless_port: vlessPort,
-        hysteria_port: hy.port,
-        hop_start: hy.start,
-        hop_end: hy.end,
-        hop_interval: hy.interval,
-        reality_port: reality.port,
-        reality_dest: reality.dests.join(","),
-        reality_anti_replay: reality.antiReplay,
-        regen_reality_keys: regenReality,
-        tls_fragment: anti.fragment,
-        tls_min13: anti.min13,
-        block_quic: anti.blockQuic,
-      });
-      applyStatus(s, nextDeleted);
-      notifySuccess(t("common.saved"));
-    };
-    if (restartsPanel) applyXray(run1);
-    else run(run1);
-  };
-
   // Factory reset action
   const doFactoryReset = () => {
     if (!reset) return;
@@ -373,7 +339,8 @@ export function ConnectionsEditor({
   const customLimitReached = inbounds.length >= catalog.max;
   const visibleProtocols = status.protocols.filter((p) => {
     if (deleted[p.key]) return false;
-    if (!p.enabled && enabled[p.key] !== true) return false;
+    if (p.key === "reality" && !p.enabled && enabled[p.key] !== true) return false;
+    if (serverId > 0 && !p.enabled && enabled[p.key] !== true) return false;
     return true;
   });
   const totalConnections = visibleProtocols.length + inbounds.length;
@@ -490,14 +457,6 @@ export function ConnectionsEditor({
                       {!on && <Badge color="gray">{t("conn.off")}</Badge>}
                     </div>
                     <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelDefault({ key: p.key, name: displayName })}
-                        className="text-xs text-red-600 hover:text-red-700 hover:underline"
-                        title={t("common.delete")}
-                      >
-                        {t("common.delete")}
-                      </button>
                       <Switch
                         checked={on}
                         onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))}
@@ -525,17 +484,6 @@ export function ConnectionsEditor({
                         <Field label={t("conn.security")} value={p.security} />
                         {p.note && <Field label={t("conn.note")} value={p.note} />}
                       </div>
-
-                      {p.key === "vless" && (
-                        <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
-                          <TextInput
-                            label={t("conn.port")}
-                            type="number"
-                            value={String(vlessPort)}
-                            onChange={(v) => setVlessPort(Number(v.replace(/\D/g, "")) || 0)}
-                          />
-                        </div>
-                      )}
 
                       {p.fingerprint && (
                         <div className="border-t border-gray-100 pt-3">
@@ -629,17 +577,6 @@ export function ConnectionsEditor({
                         </div>
                       )}
 
-                      <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
-                        <Button
-                          size="sm"
-                          variant="light"
-                          color="red"
-                          onClick={() => setConfirmDelDefault({ key: p.key, name: displayName })}
-                          disabled={busy || applying}
-                        >
-                          {t("common.delete")}
-                        </Button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -763,33 +700,6 @@ export function ConnectionsEditor({
               color="red"
               loading={busy || applying}
               onClick={() => confirmDelInbound && removeInbound(confirmDelInbound)}
-            >
-              {t("common.delete")}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Default connection delete confirmation modal */}
-      <Modal
-        open={!!confirmDelDefault}
-        onClose={() => setConfirmDelDefault(null)}
-        title={t("conn.deleteDefaultTitle")}
-      >
-        <div className="flex flex-col gap-3">
-          <p className="text-sm text-ink-muted">
-            {t("conn.deleteDefaultDesc", { name: confirmDelDefault?.name ?? "" })}
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button variant="light" color="gray" onClick={() => setConfirmDelDefault(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button
-              color="red"
-              loading={busy || applying}
-              onClick={() =>
-                confirmDelDefault && deleteDefaultConnection(confirmDelDefault.key)
-              }
             >
               {t("common.delete")}
             </Button>

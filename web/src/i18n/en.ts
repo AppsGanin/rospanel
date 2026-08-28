@@ -231,6 +231,7 @@ const en: Dict = {
     nodeSharingDisabled: "sharing for this node is disabled by the owner",
     rentedNodeCannotBeShared: "a rented node cannot be shared again",
     rentedNodeManagedByOwner: "rented node is managed by the owner",
+    rentedNodeResetForbidden: "factory reset is not available for a rented node",
     portReservedByOwner: "port {{port}} is reserved by the node owner ({{service}})",
     tenantNotFound: "tenant not found",
     laneBadID: "invalid lane id “{{id}}”: latin letters and digits only (up to 16 characters); warp/opera/direct are taken",
