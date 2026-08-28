@@ -47,7 +47,7 @@ import {
   ToggleRow,
   useConfirm,
 } from "./ui";
-import { countryFlag } from "./format";
+import { countryFlag, countryName } from "./format";
 
 // LocalBackup is the scheduled on-disk backup: a schedule plus how many archives to
 // keep. Independent of the Telegram backup schedule — an operator with no bot still
@@ -486,7 +486,8 @@ export function GeneralSettings() {
                         the geo tables may not be downloaded yet. */}
                     {p.country && (
                       <span className="text-xs text-ink-muted">
-                        {countryFlag(p.country)} {p.country}
+                        {countryFlag(p.country)}{" "}
+                        {countryName(p.country, i18n.language, p.country)}
                       </span>
                     )}
                     {p.org && (
