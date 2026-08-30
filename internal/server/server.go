@@ -223,12 +223,27 @@ func injectBase(html []byte, base string) []byte {
 // nowhere. It happens whenever a browser tab outlives the endpoint it is calling, and
 // it cost one operator an afternoon and an apology for a bug that was not theirs
 // (issue #70). A 404 with a code says which of the two sides is out of date.
-func (rt *Router) index(w http.ResponseWriter, r *http.Request) {
+// fallback answers everything no route claimed. See index for why an API path may not
+// be given the app shell, and the mux registration for why this takes every method
+// rather than only GET.
+func (rt *Router) fallback(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		writeErrCode(w, http.StatusNotFound, "err.staleTab",
 			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
 		return
 	}
+	// A client route is a page, and a page is fetched. Anything else aimed at one is
+	// not something this app does, so it keeps the status net/http used to give it —
+	// with a body the caller can read.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeErrCode(w, http.StatusMethodNotAllowed, "err.staleTab",
+			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
+		return
+	}
+	rt.index(w, r)
+}
+
+func (rt *Router) index(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	rt.mu.RLock()
