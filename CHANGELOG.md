@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.18.0...v2.18.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* resolve Happ node JSON serialization and sync upstream API fallback routing ([2a67ff5](https://github.com/Shu1t3/rospanel-shu1t3/commit/2a67ff5cb39206d174007ec24782834c578f44ce))
+
 ## [2.18.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.17.1...v2.18.0) (2026-08-30)
 
 
