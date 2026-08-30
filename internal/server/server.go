@@ -215,7 +215,20 @@ func injectBase(html []byte, base string) []byte {
 }
 
 // index serves the SPA shell (with injected base) for any non-asset panel path.
-func (rt *Router) index(w http.ResponseWriter, _ *http.Request) {
+//
+// Except an API path. The shell is the right answer for a client-side route the server
+// has never heard of — that is how the SPA's own routing works — but a request under
+// /api/ is asking for JSON, and answering it with a page means the caller parses
+// "<!doctype" and reports "is not valid JSON": an error that names nothing and points
+// nowhere. It happens whenever a browser tab outlives the endpoint it is calling, and
+// it cost one operator an afternoon and an apology for a bug that was not theirs
+// (issue #70). A 404 with a code says which of the two sides is out of date.
+func (rt *Router) index(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		writeErrCode(w, http.StatusNotFound, "err.staleTab",
+			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	rt.mu.RLock()
