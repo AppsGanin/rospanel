@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.0](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.17.1...v2.18.0) (2026-08-30)
+
+
+### Features
+
+* **servers:** add Happ Subscription import and automatic background sync ([0302998](https://github.com/Shu1t3/rospanel-shu1t3/commit/03029987779a47647320cfd5ae4342058cf36f74))
+
 ## [2.17.1](https://github.com/Shu1t3/rospanel-shu1t3/compare/v2.17.0...v2.17.1) (2026-08-28)
 
 
