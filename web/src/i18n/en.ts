@@ -308,6 +308,8 @@ const en: Dict = {
     totpRequired: "enter the code from your authenticator",
     tooManyAttempts: "too many attempts, try again later",
     tooManyStreams: "too many active streams",
+    staleTab:
+      "the panel answered this request with a page instead of data — this tab is out of date, reload it",
     unauthorized: "not authorised",
     unknownEvent: "unknown event",
     unknownEventNamed: "unknown event: {{detail}}",
