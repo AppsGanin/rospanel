@@ -199,6 +199,8 @@ guaranteed to match the panel's. **SSH credentials are never stored.**
 
 **Option 3 — import via link (node rental).** The "Import via link" tab in the Add Node dialog: paste an encrypted `rpnshare://` link shared with you by another RosPanel administrator. The rented node connects immediately to your panel with an allocated traffic quota and speed cap, allowing you to configure custom inbounds on free ports.
 
+**Option 4 — import from Happ Subscription.** The "Happ Subscription" tab in the Add Server dialog: paste a subscription URL (`happ://crypt...`, `https://...`, or base64 list). The panel natively decrypts all schemes (crypt1–crypt5), parses node configs (VLESS, VMess, Trojan, Shadowsocks, Hysteria2), and injects them as Xray outbounds. Nodes are automatically synced in the background every 59 minutes and displayed in the Servers panel with compact cards and toggle switches.
+
 A few seconds after install the node shows up in the list as online: it reaches out to the
 panel over outbound HTTPS, so the panel needs no inbound access to it and there is nothing to
 forward.

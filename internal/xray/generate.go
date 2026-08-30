@@ -54,6 +54,9 @@ type Options struct {
 	// historical behaviour.
 	ServerID int64
 	Access   map[int64]model.Access
+
+	// HappOutbounds are imported proxy endpoints from Happ subscriptions used as Xray outbounds.
+	HappOutbounds []Outbound
 }
 
 // allowsBuiltin reports whether a user may use a built-in lane on this server.
@@ -270,6 +273,9 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		active[lane.ID] = true
 		outbounds = append(outbounds, proxyOutbounds(lane.ID, pool)...)
 	}
+
+	// Happ subscription egress outbounds (VLESS/VMess/Trojan/SS/Hysteria2).
+	outbounds = append(outbounds, opts.HappOutbounds...)
 
 	// One Observatory probes every health-checked egress (every active lane + Opera)
 	// so their balancers can drop to "direct" on a failed probe and recover.

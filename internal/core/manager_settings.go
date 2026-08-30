@@ -258,6 +258,11 @@ func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 		return opts, nil
 	}
 	opts.Custom = list
+	if serverID == model.LocalNodeID {
+		if happObs, err := m.HappOutbounds(); err == nil && len(happObs) > 0 {
+			opts.HappOutbounds = happObs
+		}
+	}
 	return opts, nil
 }
 

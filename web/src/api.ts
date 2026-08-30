@@ -2079,6 +2079,66 @@ export const deleteNodeTenant = (id: number, tenantId: string) =>
   })
 
 
+// ---- Happ Subscriptions ----------------------------------------------------
+
+export interface HappSubscription {
+  id: number
+  name: string
+  url: string
+  enabled: boolean
+  update_interval_min: number
+  last_fetch_at: number
+  last_success_at: number
+  last_error: string
+  node_count: number
+  created_at: number
+}
+
+export interface HappNode {
+  id: number
+  subscription_id: number
+  identity_key: string
+  name: string
+  protocol: string
+  host: string
+  port: number
+  enabled: boolean
+  uri: string
+  last_seen_at: number
+  created_at: number
+  updated_at: number
+}
+
+export const createHappSubscription = (req: { name?: string; url: string }) =>
+  api<{ id: number; node_count: number }>('api/happ/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  })
+
+export const listHappSubscriptions = () =>
+  api<HappSubscription[]>('api/happ/subscriptions')
+
+export const deleteHappSubscription = (id: number) =>
+  api<void>(`api/happ/subscriptions/${id}`, { method: 'DELETE' })
+
+export const syncHappSubscription = (id: number) =>
+  api<{ added: number; updated: number; total: number }>(`api/happ/subscriptions/${id}/sync`, {
+    method: 'POST',
+  })
+
+export const listHappNodes = () =>
+  api<HappNode[]>('api/happ/nodes')
+
+export const setHappNodeEnabled = (id: number, enabled: boolean) =>
+  api<void>(`api/happ/nodes/${id}/enabled`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export const deleteHappNode = (id: number) =>
+  api<void>(`api/happ/nodes/${id}`, { method: 'DELETE' })
+
+
 // ---- Custom inbounds -------------------------------------------------------
 //
 // Operator-defined listeners that sit beside the three built-in lanes. Each

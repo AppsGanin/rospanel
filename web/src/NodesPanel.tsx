@@ -46,6 +46,14 @@ import {
   importRentedNode,
   getNodeReservedPorts,
   deleteNodeTenant,
+  createHappSubscription,
+  listHappNodes,
+  setHappNodeEnabled,
+  deleteHappNode,
+  syncHappSubscription,
+  listHappSubscriptions,
+  type HappNode,
+  type HappSubscription,
   type NodeRentalSettings,
   type NodeTenant,
   type NodeRentalResp,
@@ -575,10 +583,12 @@ function AddNodeDialog({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<"command" | "ssh" | "import">("command");
+  const [mode, setMode] = useState<"command" | "ssh" | "import" | "happ">("command");
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [shareLink, setShareLink] = useState("");
+  const [happUrl, setHappUrl] = useState("");
+  const [happName, setHappName] = useState("");
   const [busy, setBusy] = useState(false);
 
   // SSH (auto) fields.
@@ -613,6 +623,22 @@ function AddNodeDialog({
         name: name.trim() || undefined,
       });
       notifySuccess(t("nodes.importedSuccess"));
+      onDone();
+    } catch (e) {
+      notifyError(errMessage(e));
+      setBusy(false);
+    }
+  };
+
+  const submitHapp = async () => {
+    if (!happUrl.trim()) return;
+    setBusy(true);
+    try {
+      const res = await createHappSubscription({
+        name: happName.trim() || undefined,
+        url: happUrl.trim(),
+      });
+      notifySuccess(t("nodes.happImportedSuccess", { count: res.node_count }));
       onDone();
     } catch (e) {
       notifyError(errMessage(e));
@@ -662,8 +688,8 @@ function AddNodeDialog({
 
   return (
     <Modal open onClose={onClose} title={t("nodes.addNode")} size="lg" dismissible={!installing}>
-      <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
-        {(["command", "ssh", "import"] as const).map((m) => (
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 text-sm">
+        {(["command", "ssh", "import", "happ"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMode(m)}
@@ -677,12 +703,33 @@ function AddNodeDialog({
               ? t("nodes.tabCommand")
               : m === "ssh"
                 ? t("nodes.tabSsh")
-                : t("nodes.tabImportShare")}
+                : m === "import"
+                  ? t("nodes.tabImportShare")
+                  : t("nodes.tabHapp")}
           </button>
         ))}
       </div>
 
-      {mode === "import" ? (
+      {mode === "happ" ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-3.5 text-xs text-teal-950 dark:text-teal-200">
+            <p className="font-medium">{t("nodes.happImportHint")}</p>
+          </div>
+          <Textarea
+            label={t("nodes.happUrl")}
+            value={happUrl}
+            onChange={setHappUrl}
+            rows={3}
+            placeholder="happ://crypt... / https://... / base64..."
+          />
+          <TextInput
+            label={t("groups.name")}
+            value={happName}
+            onChange={setHappName}
+            placeholder={t("nodes.namePlaceholder")}
+          />
+        </div>
+      ) : mode === "import" ? (
         <div className="space-y-4">
           <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3.5 text-xs text-indigo-950 dark:text-indigo-200">
             <p className="font-medium">{t("nodes.importShareHint")}</p>
@@ -767,7 +814,11 @@ function AddNodeDialog({
         <Button variant="light" color="gray" onClick={onClose} disabled={installing}>
           {t("common.cancel")}
         </Button>
-        {mode === "import" ? (
+        {mode === "happ" ? (
+          <Button onClick={submitHapp} loading={busy} disabled={!happUrl.trim()}>
+            {t("nodes.happImportBtn")}
+          </Button>
+        ) : mode === "import" ? (
           <Button onClick={submitImport} loading={busy} disabled={!shareLink.trim()}>
             {t("nodes.importNode")}
           </Button>
@@ -2367,9 +2418,99 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
   );
 }
 
+// HappNodeCard renders one imported Happ proxy node (simplified card with protocol badge, host, enable switch, delete button).
+function HappNodeCard({
+  node,
+  onChanged,
+}: {
+  node: HappNode;
+  onChanged: () => void;
+}) {
+  const { t } = useTranslation();
+  const { confirm, confirmNode } = useConfirm();
+
+  const toggleEnabled = async (enabled: boolean) => {
+    try {
+      await setHappNodeEnabled(node.id, enabled);
+      onChanged();
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+
+  const remove = async () => {
+    const ok = await confirm({
+      title: t("nodes.happDeleteNodeConfirm"),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteHappNode(node.id);
+      notifySuccess(t("nodes.deleted"));
+      onChanged();
+    } catch (e) {
+      notifyError(errMessage(e));
+    }
+  };
+
+  const protoColor = (proto: string): "brand" | "teal" | "purple" | "indigo" | "orange" | "gray" => {
+    switch (proto.toLowerCase()) {
+      case "vless":
+        return "brand";
+      case "vmess":
+        return "teal";
+      case "trojan":
+        return "purple";
+      case "ss":
+        return "indigo";
+      case "hysteria2":
+      case "hysteria":
+        return "orange";
+      default:
+        return "gray";
+    }
+  };
+
+  return (
+    <div className={cn("px-4 py-3 transition-colors", !node.enabled && "opacity-60")}>
+      {confirmNode}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className={cn(
+                "h-2.5 w-2.5 shrink-0 rounded-full",
+                node.enabled ? "bg-emerald-500 shadow-sm shadow-emerald-500/50" : "bg-gray-400 dark:bg-gray-600",
+              )}
+            />
+            <span className="truncate font-medium text-ink">{node.name || "Happ Server"}</span>
+            <Badge color={protoColor(node.protocol)} size="xs">
+              {node.protocol.toUpperCase()}
+            </Badge>
+            <span className="truncate font-mono text-xs text-ink-muted">
+              {node.host}:{node.port}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch checked={node.enabled} onChange={toggleEnabled} />
+          <IconButton title={t("nodes.happDeleteNode")} onClick={remove}>
+            <IconTrash size={16} />
+          </IconButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function NodesPanel() {
   const { t } = useTranslation();
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
+  const [happNodes, setHappNodes] = useState<HappNode[] | null>(null);
+  const [happSubs, setHappSubs] = useState<HappSubscription[]>([]);
+  const [syncingHapp, setSyncingHapp] = useState(false);
   const [decoys, setDecoys] = useState<string[]>([]);
   // Geo categories feed the routing editor's domain/IP suggestions (same list for
   // the master and every node — one panel-side geosite/geoip).
@@ -2382,8 +2523,14 @@ export function NodesPanel() {
       .then((r) => setNodes(r.nodes))
       .catch((e) => notifyError(errMessage(e)));
 
+  const loadHapp = () => {
+    listHappNodes().then(setHappNodes).catch(() => {});
+    listHappSubscriptions().then(setHappSubs).catch(() => {});
+  };
+
   useEffect(() => {
     load();
+    loadHapp();
     getSettings()
       .then((s) => setDecoys(s.decoy_templates || []))
       .catch(() => {});
@@ -2397,6 +2544,22 @@ export function NodesPanel() {
       )
       .catch(() => {});
   }, []);
+
+  const syncAllHapp = async () => {
+    if (happSubs.length === 0) return;
+    setSyncingHapp(true);
+    try {
+      for (const sub of happSubs) {
+        await syncHappSubscription(sub.id);
+      }
+      notifySuccess(t("nodes.happSynced"));
+      loadHapp();
+    } catch (e) {
+      notifyError(errMessage(e));
+    } finally {
+      setSyncingHapp(false);
+    }
+  };
 
   // A requested restart resolves in a couple of seconds and its outcome is only
   // shown briefly, so the list polls fast for the whole of it — pending AND the
@@ -2483,6 +2646,30 @@ export function NodesPanel() {
         </div>
       )}
 
+      {happNodes && happNodes.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-teal-600 dark:text-teal-400">
+                <span className="h-2 w-2 rounded-full bg-teal-500" />
+                <span>{t("nodes.happServersTitle")} ({happNodes.length})</span>
+              </div>
+              <Badge color="teal" size="xs">{t("nodes.happAutoSyncHint")}</Badge>
+            </div>
+            {happSubs.length > 0 && (
+              <Button variant="light" color="gray" size="xs" onClick={syncAllHapp} loading={syncingHapp}>
+                {t("nodes.happSyncAll")}
+              </Button>
+            )}
+          </div>
+          <Card className="divide-y divide-gray-100 dark:divide-gray-800">
+            {happNodes.map((n) => (
+              <HappNodeCard key={n.id} node={n} onChanged={loadHapp} />
+            ))}
+          </Card>
+        </div>
+      )}
+
       {adding && (
         <AddNodeDialog
           onClose={() => setAdding(false)}
@@ -2490,10 +2677,12 @@ export function NodesPanel() {
             setAdding(false);
             setInstallCmd(cmd);
             load();
+            loadHapp();
           }}
           onDone={() => {
             setAdding(false);
             load();
+            loadHapp();
           }}
         />
       )}

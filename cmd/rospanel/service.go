@@ -259,6 +259,8 @@ func runServer(dataDir string) {
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot
 	// still gets automatic backups; idles until a cron is set in Settings.
 	go autobackup.New(mgr, st, dataDir).Run(srvCtx)
+	// Periodic Happ proxy subscriptions sync (auto-refresh every 59 min).
+	mgr.StartHappScheduler(srvCtx)
 	// All three bots reach Telegram through the same egress, and in the WARP / Opera
 	// modes that egress is something this very startup brought up moments ago — Xray
 	// needs a couple of seconds past "process started" before its inbound accepts.

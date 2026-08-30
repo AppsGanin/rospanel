@@ -141,9 +141,10 @@ type Sniffing struct {
 
 // Outbound is one egress. Settings is protocol-specific (nil for blackhole).
 type Outbound struct {
-	Tag      string `json:"tag,omitempty"`
-	Protocol string `json:"protocol"`
-	Settings any    `json:"settings,omitempty"`
+	Tag            string          `json:"tag,omitempty"`
+	Protocol       string          `json:"protocol"`
+	Settings       any             `json:"settings,omitempty"`
+	StreamSettings *StreamSettings `json:"streamSettings,omitempty"`
 }
 
 // FreedomSettings is the "settings" object for a freedom outbound.
@@ -337,8 +338,9 @@ type GRPCSettings struct {
 
 // WSSettings configures the WebSocket transport.
 type WSSettings struct {
-	Path string `json:"path,omitempty"`
-	Host string `json:"host,omitempty"`
+	Path    string            `json:"path,omitempty"`
+	Host    string            `json:"host,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 	// AcceptProxyProtocol reads the real client IP from a PROXY-protocol header
 	// prepended by an upstream that forwards to this inbound.
 	AcceptProxyProtocol bool `json:"acceptProxyProtocol,omitempty"`
@@ -404,10 +406,12 @@ type HysteriaClient struct {
 	Email string `json:"email,omitempty"`
 }
 
-// TLSSettings configures the TLS layer for an inbound.
+// TLSSettings configures the TLS layer for an inbound or outbound.
 type TLSSettings struct {
 	ServerName       string        `json:"serverName,omitempty"`
 	RejectUnknownSni bool          `json:"rejectUnknownSni,omitempty"`
+	AllowInsecure    bool          `json:"allowInsecure,omitempty"`
+	Fingerprint      string        `json:"fingerprint,omitempty"`
 	ALPN             []string      `json:"alpn,omitempty"`
 	MinVersion       string        `json:"minVersion,omitempty"`
 	Certificates     []Certificate `json:"certificates,omitempty"`

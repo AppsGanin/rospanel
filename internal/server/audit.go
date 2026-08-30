@@ -172,6 +172,13 @@ var auditActions = map[string]auditRoute{
 	"POST /api/nodes/{id}/rental/share-link":    skip, // generating a share link is read-only metadata retrieval
 	"DELETE /api/nodes/{id}/tenants/{tenantId}": set("nodeTenantDeleted"),
 
+	// Happ subscriptions and imported proxy nodes.
+	"POST /api/happ/subscriptions":           set("happSubscriptionAdded"),
+	"DELETE /api/happ/subscriptions/{id}":    set("happSubscriptionDeleted"),
+	"POST /api/happ/subscriptions/{id}/sync": set("happSubscriptionSynced"),
+	"POST /api/happ/nodes/{id}/enabled":      set("happNodeToggled"),
+	"DELETE /api/happ/nodes/{id}":            set("happNodeDeleted"),
+
 	// Custom inbounds. Each of these opens, changes or closes a public listener on a
 	// server, so all four are recorded.
 	"POST /api/servers/{id}/inbounds":       set("inboundAdded"),
