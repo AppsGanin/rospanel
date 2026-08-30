@@ -233,6 +233,7 @@ var errEN = map[string]string{
 	"err.ssMethodUnknown":               "unknown Shadowsocks method {{value}} (available: {{available}})",
 	"err.sshCredsRequired":              "enter an SSH password or a private key",
 	"err.sshHostUserRequired":           "enter the server address and the SSH user",
+	"err.staleTab":                      "the panel answered this request with a page instead of data — this tab is out of date, reload it",
 	"err.streamingUnsupported":          "streaming is not supported",
 	"err.subPathCharset":                "subscription path: Latin letters, digits, “-” and “_”, 1–32 characters",
 	"err.subPathReserved":               "the subscription path “{{path}}” is reserved by the panel — pick another one",

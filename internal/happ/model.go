@@ -17,34 +17,34 @@ import (
 // Subscription is a managed Happ subscription source.
 // One subscription maps to many HappNodes (parsed proxy endpoints).
 type Subscription struct {
-	ID                int64
-	Name              string
-	URL               string
-	Enabled           bool
-	UpdateIntervalMin int // 0 = manual only; default 59
-	LastFetchAt       int64
-	LastSuccessAt     int64
-	LastError         string
-	NodeCount         int
-	CreatedAt         int64
+	ID                int64  `json:"id"`
+	Name              string `json:"name"`
+	URL               string `json:"url"`
+	Enabled           bool   `json:"enabled"`
+	UpdateIntervalMin int    `json:"update_interval_min"` // 0 = manual only; default 59
+	LastFetchAt       int64  `json:"last_fetch_at"`
+	LastSuccessAt     int64  `json:"last_success_at"`
+	LastError         string `json:"last_error,omitempty"`
+	NodeCount         int    `json:"node_count"`
+	CreatedAt         int64  `json:"created_at"`
 }
 
 // Node is one parsed proxy endpoint from a Subscription.
 // It is shown in the Servers section and, when enabled, registered as an
 // Xray outbound with tag "happ-<id>".
 type Node struct {
-	ID             int64
-	SubscriptionID int64
-	IdentityKey    string // SHA256-based dedup key
-	Name           string // from URI fragment (#Name)
-	Protocol       string // vless | vmess | trojan | ss | hysteria2
-	Host           string
-	Port           int
-	Enabled        bool
-	URI            string // raw proxy URI for Xray outbound generation
-	LastSeenAt     int64
-	CreatedAt      int64
-	UpdatedAt      int64
+	ID             int64  `json:"id"`
+	SubscriptionID int64  `json:"subscription_id"`
+	IdentityKey    string `json:"identity_key"` // SHA256-based dedup key
+	Name           string `json:"name"`         // from URI fragment (#Name)
+	Protocol       string `json:"protocol"`     // vless | vmess | trojan | ss | hysteria2
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	Enabled        bool   `json:"enabled"`
+	URI            string `json:"uri"` // raw proxy URI for Xray outbound generation
+	LastSeenAt     int64  `json:"last_seen_at"`
+	CreatedAt      int64  `json:"created_at"`
+	UpdatedAt      int64  `json:"updated_at"`
 }
 
 // XrayTag returns the Xray outbound tag for this node.

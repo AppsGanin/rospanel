@@ -535,6 +535,25 @@ function apiError(data: Record<string, unknown>, status: number): ApiError {
   return new ApiError(msg, code, args)
 }
 
+// parseBody turns a response body into the object the callers expect, and refuses to
+// let a non-JSON one reach them as a parser error.
+//
+// A body that is not JSON means the request was answered by something other than the
+// API — a proxy's page, or the panel's own SPA shell when the endpoint no longer
+// exists. `JSON.parse` then throws "Unexpected token '<', \"<!doctype\"... is not
+// valid JSON", which names neither the request nor the cause; the one operator who hit
+// it concluded the fault was theirs. The status is consulted first, so a plain HTTP
+// error still reports as that error rather than as a parse failure.
+function parseBody(text: string, status: number, ok: boolean): Record<string, unknown> {
+  if (!text) return {}
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    if (!ok) throw new ApiError(`HTTP ${status}`, undefined, undefined)
+    throw new ApiError('', 'err.staleTab', undefined)
+  }
+}
+
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -542,13 +561,7 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...CSRF_HEADER, ...(opts.headers || {}) },
   })
   if (res.status === 401) onUnauthorized?.()
-  const text = await res.text()
-  let data: Record<string, unknown> = {}
-  try {
-    data = text ? JSON.parse(text) : {}
-  } catch {
-    data = { error: text || `HTTP ${res.status}` }
-  }
+  const data = parseBody(await res.text(), res.status, res.ok)
   if (!res.ok) throw apiError(data, res.status)
   return data as T
 }
@@ -563,13 +576,7 @@ async function apiForm<T>(path: string, body: FormData): Promise<T> {
     headers: { ...CSRF_HEADER },
   })
   if (res.status === 401) onUnauthorized?.()
-  const text = await res.text()
-  let data: Record<string, unknown> = {}
-  try {
-    data = text ? JSON.parse(text) : {}
-  } catch {
-    data = { error: text || `HTTP ${res.status}` }
-  }
+  const data = parseBody(await res.text(), res.status, res.ok)
   if (!res.ok) throw apiError(data, res.status)
   return data as T
 }

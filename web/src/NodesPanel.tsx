@@ -2454,8 +2454,8 @@ function HappNodeCard({
     }
   };
 
-  const protoColor = (proto: string): "brand" | "teal" | "purple" | "indigo" | "orange" | "gray" => {
-    switch (proto.toLowerCase()) {
+  const protoColor = (proto?: string): "brand" | "teal" | "purple" | "indigo" | "orange" | "gray" => {
+    switch ((proto || "").toLowerCase()) {
       case "vless":
         return "brand";
       case "vmess":
@@ -2486,7 +2486,7 @@ function HappNodeCard({
             />
             <span className="truncate font-medium text-ink">{node.name || "Happ Server"}</span>
             <Badge color={protoColor(node.protocol)} size="xs">
-              {node.protocol.toUpperCase()}
+              {(node.protocol || "UNKNOWN").toUpperCase()}
             </Badge>
             <span className="truncate font-mono text-xs text-ink-muted">
               {node.host}:{node.port}

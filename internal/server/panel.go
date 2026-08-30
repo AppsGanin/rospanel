@@ -454,11 +454,17 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/broadcasts/{id}/retry", rt.retryBroadcast)
 	// Content-hashed build assets (JS/CSS/fonts) never change for a given URL → cache forever.
 	mux.Handle("GET /assets/", cacheControl(rt.assets, "public, max-age=31536000, immutable"))
-	favicon := cacheControl(rt.assets, "public, max-age=604800") // stable name → 1 week
-	mux.Handle("GET /favicon.svg", favicon)
-	mux.Handle("GET /favicon.ico", favicon)
-	mux.Handle("GET /favicon-96x96.png", favicon)
-	mux.HandleFunc("GET /", rt.index) // SPA shell (client-side rendered)
+	// No /favicon.* routes: the build has no such files. Vite emits only what is
+	// imported, under a hashed name in assets/, and the tab's icon comes from
+	// api/branding/logo — which index.html names, so the browser never falls back to
+	// the conventional root name. The three routes here answered 404 for as long as
+	// they existed.
+	// One catch-all for every method, not just GET. With "GET /" alone, a request
+	// this mux has no route for but whose METHOD differs — a stale tab still PATCHing
+	// an endpoint that has been removed — fell through to net/http's own 405, which
+	// answers text/plain "Method Not Allowed". That is the same failure as issue #70
+	// wearing a different status code: a caller expecting JSON gets prose.
+	mux.HandleFunc("/", rt.fallback)
 	return mux
 }
 

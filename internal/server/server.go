@@ -216,6 +216,26 @@ func injectBase(html []byte, base string) []byte {
 	return bytes.Replace(html, []byte("<head>"), []byte("<head><base href=\""+base+"\">"), 1)
 }
 
+// fallback answers everything no route claimed. See index for why an API path may not
+// be given the app shell, and the mux registration for why this takes every method
+// rather than only GET.
+func (rt *Router) fallback(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		writeErrCode(w, http.StatusNotFound, "err.staleTab",
+			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
+		return
+	}
+	// A client route is a page, and a page is fetched. Anything else aimed at one is
+	// not something this app does, so it keeps the status net/http used to give it —
+	// with a body the caller can read.
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeErrCode(w, http.StatusMethodNotAllowed, "err.staleTab",
+			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
+		return
+	}
+	rt.index(w, r)
+}
+
 // index serves the SPA shell (with injected base) for any non-asset panel path.
 func (rt *Router) index(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

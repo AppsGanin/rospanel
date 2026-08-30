@@ -63,6 +63,13 @@ func TestPanelHappEndpoints(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/happ/nodes failed: %d", rec.Code)
 	}
+	bodyStr := rec.Body.String()
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"protocol":"vless"`)) {
+		t.Fatalf("expected lowercase JSON key \"protocol\":\"vless\", got: %s", bodyStr)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"subscription_id":`)) {
+		t.Fatalf("expected snake_case JSON key \"subscription_id\", got: %s", bodyStr)
+	}
 	var nodeResp []happ.Node
 	if err := json.Unmarshal(rec.Body.Bytes(), &nodeResp); err != nil || len(nodeResp) != 1 {
 		t.Fatalf("unexpected nodes response: %v, len=%d", err, len(nodeResp))
