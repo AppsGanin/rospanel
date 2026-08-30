@@ -430,7 +430,12 @@ func (rt *Router) panelMux() http.Handler {
 	mux.Handle("GET /favicon.svg", favicon)
 	mux.Handle("GET /favicon.ico", favicon)
 	mux.Handle("GET /favicon-96x96.png", favicon)
-	mux.HandleFunc("GET /", rt.index) // SPA shell (client-side rendered)
+	// One catch-all for every method, not just GET. With "GET /" alone, a request
+	// this mux has no route for but whose METHOD differs — a stale tab still PATCHing
+	// an endpoint that has been removed — fell through to net/http's own 405, which
+	// answers text/plain "Method Not Allowed". That is the same failure as issue #70
+	// wearing a different status code: a caller expecting JSON gets prose.
+	mux.HandleFunc("/", rt.fallback)
 	return mux
 }
 

@@ -18,7 +18,7 @@ func TestUnknownAPIPathAnswersJSONNotThePage(t *testing.T) {
 
 	t.Run("an API path that no route answered", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		rt.index(w, httptest.NewRequest(http.MethodGet, "/api/nodes-typo", nil))
+		rt.fallback(w, httptest.NewRequest(http.MethodGet, "/api/nodes-typo", nil))
 
 		if w.Code != http.StatusNotFound {
 			t.Errorf("status %d, want 404 — a 200 tells the caller it worked", w.Code)
@@ -44,7 +44,7 @@ func TestUnknownAPIPathAnswersJSONNotThePage(t *testing.T) {
 	for _, path := range []string{"/", "/users", "/settings/subscriptions", "/apixyz"} {
 		t.Run("client route "+path, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			rt.index(w, httptest.NewRequest(http.MethodGet, path, nil))
+			rt.fallback(w, httptest.NewRequest(http.MethodGet, path, nil))
 			if w.Code != http.StatusOK {
 				t.Errorf("status %d, want 200", w.Code)
 			}
@@ -52,5 +52,32 @@ func TestUnknownAPIPathAnswersJSONNotThePage(t *testing.T) {
 				t.Errorf("client route did not get the app shell: %q", w.Body.String())
 			}
 		})
+	}
+}
+
+// A stale tab does not only GET. Before this, a PATCH to a route that had been removed
+// fell through to net/http's own 405, which answers text/plain — the same failure as
+// issue #70 with a different status code.
+func TestUnknownPathAnswersJSONForEveryMethod(t *testing.T) {
+	rt := &Router{spaIndex: []byte("<!doctype html><html><head></head></html>")}
+	for _, m := range []string{http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodPut} {
+		t.Run(m, func(t *testing.T) {
+			for _, path := range []string{"/api/nope", "/users"} {
+				w := httptest.NewRecorder()
+				rt.fallback(w, httptest.NewRequest(m, path, nil))
+				if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+					t.Errorf("%s %s: Content-Type %q, want JSON", m, path, ct)
+				}
+				if w.Code == http.StatusOK {
+					t.Errorf("%s %s: answered 200 — nothing handled this request", m, path)
+				}
+			}
+		})
+	}
+	// HEAD is how a browser or a monitor asks for the page, and it must still get one.
+	w := httptest.NewRecorder()
+	rt.fallback(w, httptest.NewRequest(http.MethodHead, "/users", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("HEAD on a client route: status %d, want 200", w.Code)
 	}
 }
