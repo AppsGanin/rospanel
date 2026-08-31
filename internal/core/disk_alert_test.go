@@ -60,3 +60,21 @@ func TestDiskAlertSaysNothingWithoutFigures(t *testing.T) {
 		t.Errorf("a node with no disk figures was reported as full: %v %q", on, msg)
 	}
 }
+
+// A supervised recovery has to re-push the user set, not just announce itself.
+//
+// The supervisor restores config.json.bak to get Xray running after a crash, and that
+// backup is only refreshed by Apply — a user sync moves config.json without touching
+// it. So the config that ends an outage can be well out of date on users, and nothing
+// else would catch it: reconcileLoop is driven by events, not a timer, and the
+// rollback fires no event of its own.
+func TestRecoveryReSyncsUsers(t *testing.T) {
+	m := &Manager{reconcileCh: make(chan struct{}, 1)}
+	m.onXrayRecover()
+	select {
+	case <-m.reconcileCh:
+	default:
+		t.Error("Xray came back and nobody re-sent the user set — anyone added since " +
+			"the restored backup stays unserved until an unrelated edit triggers a sync")
+	}
+}
