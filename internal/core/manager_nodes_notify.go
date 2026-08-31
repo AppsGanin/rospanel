@@ -51,6 +51,10 @@ type nodeAlertState struct {
 	offlineAlerted bool
 	offlineSince   int64 // node's last_seen when it went silent (for the downtime line)
 
+	// diskLowAlerted records that admins were told this server is running out of
+	// space, so the all-clear is only sent for an alarm they saw.
+	diskLowAlerted bool
+
 	xrayAlerted    bool
 	xrayDownAt     time.Time
 	lastXrayNotify time.Time
@@ -108,16 +112,46 @@ func (m *Manager) SweepNodeAlerts() {
 			continue
 		}
 		live[n.ID] = struct{}{}
-		for _, msg := range m.nodeAlertsFor(n, now) {
+		var diskUsed, diskTotal int64
+		if h, ok := m.NodeHostStats(n.ID); ok {
+			diskUsed, diskTotal = h.DiskUsed, h.DiskTotal
+		}
+		for _, msg := range m.nodeAlertsFor(n, now, diskUsed, diskTotal) {
 			m.notifyAdminEvent(msg.bit, msg.html)
 		}
 	}
+	m.sweepLocalDiskAlert(live)
 	m.pruneNodeAlerts(live)
+}
+
+// sweepLocalDiskAlert runs the same free-space check over the panel's own machine.
+// It is separate because the master is not in ListNodes — it is a virtual node the API
+// view assembles — so the sweep above never sees it, and the machine the panel itself
+// runs on is the one whose full disk breaks everything at once.
+func (m *Manager) sweepLocalDiskAlert(live map[int64]struct{}) {
+	if m.sys == nil {
+		return
+	}
+	sys := m.sys.Read()
+	live[model.LocalNodeID] = struct{}{} // keep the state from being pruned as stale
+	m.nodeAlertMu.Lock()
+	st := m.nodeAlertLocked(model.LocalNodeID)
+	next, msg := diskAlert(st.diskLowAlerted, sys.DiskUsed, sys.DiskTotal,
+		model.LocalNodeName, m.botLang())
+	st.diskLowAlerted = next
+	st.known = true
+	m.nodeAlertMu.Unlock()
+	if msg != "" {
+		m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+	}
 }
 
 // nodeAlertsFor advances one node's alert state and returns the messages that
 // transition produced. Sending is left to the caller: the state lock is held here.
-func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
+// diskUsed/diskTotal are read by the caller rather than looked up here: they live
+// behind a different lock, and taking it while holding the alert lock would introduce
+// an ordering between two mutexes that currently have none.
+func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTotal int64) []nodeAlertMsg {
 	m.nodeAlertMu.Lock()
 	defer m.nodeAlertMu.Unlock()
 	st := m.nodeAlertLocked(n.ID)
@@ -146,6 +180,16 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time) []nodeAlertMsg {
 		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
 	}
 	st.online = online
+
+	// Free space, from the figures the node already reports for the panel's own
+	// dashboard. Nothing else watches this: the disk filling up stops SQLite writing,
+	// which shows up as traffic that is not recorded and users that do not sync —
+	// symptoms an operator has no reason to connect to a full disk, on a machine they
+	// have no reason to be logged into.
+	if next, msg := diskAlert(st.diskLowAlerted, diskUsed, diskTotal, nodeLabel(n), lang); msg != "" {
+		st.diskLowAlerted = next
+		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+	}
 
 	// Everything below reads what the node reported. While it is silent that report
 	// is stale — its Xray may well be down with the box — so it is not evaluated:
@@ -275,4 +319,34 @@ func certDaysLeft(expiresAt int64, now time.Time) int {
 		return 0
 	}
 	return int(d.Hours() / 24)
+}
+
+// Disk thresholds. Alerting starts at the same 15% the health report already calls a
+// warning, so the panel does not grade one way and shout another. The all-clear waits
+// for 20% rather than 15 on purpose: a disk sitting exactly on the line would
+// otherwise alternate between alarm and all-clear on every sweep, and an alert that
+// cries wolf is one an operator learns to ignore.
+const (
+	diskAlertFreePct = 15
+	diskClearFreePct = 20
+)
+
+// diskAlert decides what to tell admins about free space, given what they were last
+// told. Returns the new alerted state and a message, or "" for nothing to say.
+//
+// A server that reports no disk figures at all (an older node, or one whose stats have
+// not arrived yet) says nothing rather than reading as a full disk.
+func diskAlert(alerted bool, used, total int64, label string, lang i18n.Lang) (bool, string) {
+	if total <= 0 {
+		return alerted, ""
+	}
+	freePct := int(float64(total-used) / float64(total) * 100)
+	switch {
+	case !alerted && freePct < diskAlertFreePct:
+		return true, fmt.Sprintf(i18n.T(lang, "notify.diskLow"), label, freePct,
+			humanBytes(total-used), humanBytes(total))
+	case alerted && freePct >= diskClearFreePct:
+		return false, fmt.Sprintf(i18n.T(lang, "notify.diskBack"), label, freePct)
+	}
+	return alerted, ""
 }

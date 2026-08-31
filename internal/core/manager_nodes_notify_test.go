@@ -22,7 +22,7 @@ func nodeAlertFixture(t *testing.T) (*Manager, *[]string, *model.Node, time.Time
 	n.LastSeen = now.Unix()
 	n.ConfigHash = "h1" // Joined()
 	n.XrayRunning = true
-	if got := m.nodeAlertsFor(n, now); got != nil {
+	if got := m.nodeAlertsFor(n, now, 0, 0); got != nil {
 		t.Fatalf("baseline emitted alerts: %v", got)
 	}
 	return m, msgs, n, now
@@ -45,7 +45,7 @@ func TestNodeOfflineTransition(t *testing.T) {
 
 	// last_seen is now older than the online window ⇒ unreachable.
 	later := now.Add(10 * time.Minute)
-	got := only(t, m.nodeAlertsFor(n, later))
+	got := only(t, m.nodeAlertsFor(n, later, 0, 0))
 	if got.bit != model.AdminEventXrayDown || !strings.Contains(got.html, "Нет связи с сервером") {
 		t.Fatalf("expected an unreachable alert, got %+v", got)
 	}
@@ -53,12 +53,12 @@ func TestNodeOfflineTransition(t *testing.T) {
 		t.Fatalf("alert does not name the node: %s", got.html)
 	}
 
-	if out := m.nodeAlertsFor(n, later.Add(time.Minute)); out != nil {
+	if out := m.nodeAlertsFor(n, later.Add(time.Minute), 0, 0); out != nil {
 		t.Fatalf("still-offline node re-alerted: %v", out)
 	}
 
 	n.LastSeen = later.Add(2 * time.Minute).Unix() // it synced again
-	back := only(t, m.nodeAlertsFor(n, later.Add(2*time.Minute)))
+	back := only(t, m.nodeAlertsFor(n, later.Add(2*time.Minute), 0, 0))
 	if !strings.Contains(back.html, "восстановлена") {
 		t.Fatalf("expected a recovery alert, got %+v", back)
 	}
@@ -70,7 +70,7 @@ func TestNodeOfflineRecoveryOnlyAfterAlert(t *testing.T) {
 	m, _, n, now := nodeAlertFixture(t)
 	// Never observed offline (no sweep landed in the gap): last_seen jumps forward.
 	n.LastSeen = now.Add(10 * time.Minute).Unix()
-	if out := m.nodeAlertsFor(n, now.Add(10*time.Minute)); out != nil {
+	if out := m.nodeAlertsFor(n, now.Add(10*time.Minute), 0, 0); out != nil {
 		t.Fatalf("unprompted all-clear: %v", out)
 	}
 }
@@ -82,7 +82,7 @@ func TestNodeXrayTransition(t *testing.T) {
 
 	n.XrayRunning = false
 	n.LastSeen = now.Unix()
-	down := only(t, m.nodeAlertsFor(n, now))
+	down := only(t, m.nodeAlertsFor(n, now, 0, 0))
 	if down.bit != model.AdminEventXrayDown || !strings.Contains(down.html, "аварийно завершился") {
 		t.Fatalf("expected an Xray crash alert, got %+v", down)
 	}
@@ -91,13 +91,13 @@ func TestNodeXrayTransition(t *testing.T) {
 	// (admins saw the alarm), the second crash is suppressed.
 	n.XrayRunning = true
 	n.LastSeen = now.Add(time.Minute).Unix()
-	up := only(t, m.nodeAlertsFor(n, now.Add(time.Minute)))
+	up := only(t, m.nodeAlertsFor(n, now.Add(time.Minute), 0, 0))
 	if !strings.Contains(up.html, "снова работает") {
 		t.Fatalf("expected a recovery alert, got %+v", up)
 	}
 	n.XrayRunning = false
 	n.LastSeen = now.Add(2 * time.Minute).Unix()
-	if out := m.nodeAlertsFor(n, now.Add(2*time.Minute)); out != nil {
+	if out := m.nodeAlertsFor(n, now.Add(2*time.Minute), 0, 0); out != nil {
 		t.Fatalf("crash alert not throttled: %v", out)
 	}
 }
@@ -108,7 +108,7 @@ func TestNodeXrayIgnoredWhileOffline(t *testing.T) {
 	m, _, n, now := nodeAlertFixture(t)
 	later := now.Add(10 * time.Minute)
 	n.XrayRunning = false // whatever the frozen row says
-	got := only(t, m.nodeAlertsFor(n, later))
+	got := only(t, m.nodeAlertsFor(n, later, 0, 0))
 	if !strings.Contains(got.html, "Нет связи с сервером") {
 		t.Fatalf("expected only the unreachable alert, got %+v", got)
 	}
@@ -121,14 +121,14 @@ func TestNodeCertAlerts(t *testing.T) {
 
 	// Self-signed fallback changing: silent.
 	n.CertSHA256, n.CertSelfSigned = "aa", true
-	if out := m.nodeAlertsFor(n, now); out != nil {
+	if out := m.nodeAlertsFor(n, now, 0, 0); out != nil {
 		t.Fatalf("self-signed cert alerted: %v", out)
 	}
 
 	// First real cert.
 	n.CertSHA256, n.CertSelfSigned = "bb", false
 	n.CertExpiresAt = now.Add(90 * 24 * time.Hour).Unix()
-	first := only(t, m.nodeAlertsFor(n, now))
+	first := only(t, m.nodeAlertsFor(n, now, 0, 0))
 	if first.bit != model.AdminEventCert || !strings.Contains(first.html, "выпущен") {
 		t.Fatalf("expected an issued-cert alert, got %+v", first)
 	}
@@ -141,25 +141,25 @@ func TestNodeCertAlerts(t *testing.T) {
 
 	// A later renewal.
 	n.CertSHA256 = "cc"
-	renew := only(t, m.nodeAlertsFor(n, now))
+	renew := only(t, m.nodeAlertsFor(n, now, 0, 0))
 	if !strings.Contains(renew.html, "обновлён") {
 		t.Fatalf("expected a renewal alert, got %+v", renew)
 	}
 
 	// A failure the node reported: once, then throttled.
 	m.NoteNodeCertError(n.ID, "acme: dns problem")
-	fail := only(t, m.nodeAlertsFor(n, now))
+	fail := only(t, m.nodeAlertsFor(n, now, 0, 0))
 	if fail.bit != model.AdminEventCert || !strings.Contains(fail.html, "dns problem") {
 		t.Fatalf("expected a cert-failure alert, got %+v", fail)
 	}
 	within := now.Add(time.Hour)
 	n.LastSeen = within.Unix() // still syncing, so only the throttle can silence it
-	if out := m.nodeAlertsFor(n, within); out != nil {
+	if out := m.nodeAlertsFor(n, within, 0, 0); out != nil {
 		t.Fatalf("cert failure not throttled: %v", out)
 	}
 	after := now.Add(certErrNotifyThrottle + time.Minute)
 	n.LastSeen = after.Unix()
-	if out := m.nodeAlertsFor(n, after); len(out) != 1 {
+	if out := m.nodeAlertsFor(n, after, 0, 0); len(out) != 1 {
 		t.Fatalf("cert failure did not repeat after the window: %v", out)
 	}
 }
@@ -171,7 +171,7 @@ func TestNodeAlertsRespectAdminMask(t *testing.T) {
 	if err := m.store.SetAdminEvents(0); err != nil {
 		t.Fatalf("clear admin events: %v", err)
 	}
-	for _, a := range m.nodeAlertsFor(n, now.Add(10*time.Minute)) {
+	for _, a := range m.nodeAlertsFor(n, now.Add(10*time.Minute), 0, 0) {
 		m.notifyAdminEvent(a.bit, a.html)
 	}
 	if len(*msgs) != 0 {
