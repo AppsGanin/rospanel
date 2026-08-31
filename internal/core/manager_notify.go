@@ -449,6 +449,15 @@ func (m *Manager) onXrayWedged(restarted bool) {
 // in two seconds" from "still down" — and an all-clear for an alarm that was
 // throttled away would announce the end of an outage nobody was told about.
 func (m *Manager) onXrayRecover() {
+	// Push the current user set onto whatever config Xray just came back with. The
+	// supervisor can restore config.json.bak to get Xray running again, and that
+	// backup is only refreshed by Apply — a user sync moves the file without touching
+	// it — so the config that recovers the outage can be hours out of date on users.
+	// Nothing else would notice: reconcileLoop is driven by events, not a timer, and
+	// no event fired here. Users added since that backup would simply not be served
+	// until somebody happened to edit something.
+	m.TriggerUserSync()
+
 	m.throttleMu.Lock()
 	alerted, at := m.crashAlerted, m.lastCrashNotify
 	m.crashAlerted = false
