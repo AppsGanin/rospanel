@@ -266,6 +266,7 @@ var en = map[string]string{
 	"notify.hoursMinutes":        "%d h %d min",
 	"notify.certRenewed":         "🔒 <b>TLS certificate renewed</b>\nServer: %s\nHost: %s\nValid for another %d days.",
 	"notify.certFailed":          "🔓 <b>Could not renew the TLS certificate</b>\nServer: %s\nHost: %s\nError: %s",
+	"notify.configRolledBack":    "↩️ <b>Configuration rolled back</b>\n%s\nXray refused to start with the current configuration, so the panel restored the last one that worked. Reason:\n<code>%s</code>\nYour most recent settings change did not take — go and check it.",
 	"notify.diskLow":             "⚠️ <b>Running out of disk space</b>\n%s\n%d%% free (%s of %s). When it fills up, the panel stops recording traffic and syncing users.",
 	"notify.diskBack":            "✅ <b>Disk space recovered</b>\n%s\n%d%% free.",
 	"notify.nodeOffline":         "⚠️ <b>No contact with the server</b>\n%s\nSilent for %s — its users are not being served.",

@@ -313,9 +313,10 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 			go func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) }()
 		}
 	}
-	m.sup.SetOnCrash(m.onXrayCrash)     // alert admins when Xray exits unexpectedly
-	m.sup.SetOnRecover(m.onXrayRecover) // ...and tell them when it is back
-	m.sup.SetOnWedged(m.onXrayWedged)   // ...and when the watchdog revives a hung one
+	m.sup.SetOnCrash(m.onXrayCrash)             // alert admins when Xray exits unexpectedly
+	m.sup.SetOnRecover(m.onXrayRecover)         // ...and tell them when it is back
+	m.sup.SetOnRolledBack(m.onConfigRolledBack) // ...and when a change was undone to get it back
+	m.sup.SetOnWedged(m.onXrayWedged)           // ...and when the watchdog revives a hung one
 	if wd, err := st.GetSettings(); err == nil {
 		m.sup.SetWatchdogEnabled(wd.WatchdogEnabled) // honour the operator's toggle
 	}
