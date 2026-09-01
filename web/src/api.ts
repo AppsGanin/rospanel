@@ -1353,6 +1353,22 @@ export const login = (username: string, password: string, code?: string) =>
     body: JSON.stringify({ username, password, code }),
   })
 
+// ---- The admin's own open sessions -----------------------------------------
+export interface AdminSession {
+  id: number
+  ip: string // last address it was used from
+  user_agent: string
+  created_at: number
+  last_seen_at: number
+  expires_at: number
+  current: boolean // the session making this request
+}
+export const listSessions = () => api<AdminSession[]>('api/account/sessions')
+export const revokeSession = (id: number) =>
+  api<{ ok: boolean }>(`api/account/sessions/${id}`, { method: 'DELETE' })
+export const revokeOtherSessions = () =>
+  api<{ revoked: number }>('api/account/sessions/revoke-others', { method: 'POST' })
+
 // ---- The admin's own second factor (TOTP) ----------------------------------
 //
 // Every call acts on the CALLER; there is no id anywhere, so nobody manages anybody

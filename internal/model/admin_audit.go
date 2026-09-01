@@ -32,6 +32,10 @@ const (
 	AuditLogin       = "admin.login"
 	AuditLoginFailed = "admin.login_failed"
 	AuditLogout      = "admin.logout"
+	// An admin ended one of their own sessions from the account screen (or all but
+	// the current one). Its own action: "someone signed me out" and "I signed out"
+	// are different stories when a cookie has been misused.
+	AuditSessionRevoked = "admin.session_revoked"
 
 	// The roster.
 	AuditAdminCreated       = "admin.created"
@@ -130,6 +134,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditLogin, AuditCatSession},
 	{AuditLoginFailed, AuditCatSession},
 	{AuditLogout, AuditCatSession},
+	{AuditSessionRevoked, AuditCatSession},
 
 	{AuditAdminCreated, AuditCatAdmins},
 	{AuditAdminDeleted, AuditCatAdmins},

@@ -369,7 +369,10 @@ themselves — a code from an authenticator app (Google Authenticator, Aegis, 1P
 of the password, the secret encrypted in the database and never handed back out after setup;
 for a lost phone, `rospanel totp reset <login>` on the server; a fuller **`rospanel rescue`**
 resets a forgotten password, clears a second factor, or recreates an owner when no admin can
-sign in at all. The **user log** records what was
+sign in at all. Each admin also sees their own **active sessions** in the account dialog —
+browser and OS, the address it was last used from, when it signed in — and can end any one of
+them or **sign out everywhere else** in one click; a session ended this way stops working on
+its next request, and the panel log records who ended what. The **user log** records what was
 done to them and by whom (admin, API key, bot, the user themselves, the system) and survives
 their deletion. The **panel log** (visible to the owner) covers logins and **failed attempts
 with IPs**, second factors switched on and off, settings changes and backups; only successful

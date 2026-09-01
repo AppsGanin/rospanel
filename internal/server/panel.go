@@ -240,6 +240,11 @@ func (rt *Router) panelMux() http.Handler {
 	authedAny("POST /api/account/totp/start", rt.totpStart)
 	authedAny("POST /api/account/totp/enable", rt.totpEnable)
 	authedAny("POST /api/account/totp/disable", rt.totpDisable)
+	// The caller's own open sessions (see panel_sessions.go). Same shape as 2FA: no
+	// id of another admin anywhere in the path.
+	authedAny("GET /api/account/sessions", rt.listSessions)
+	authedAny("DELETE /api/account/sessions/{id}", withID(rt.revokeSession))
+	authedAny("POST /api/account/sessions/revoke-others", rt.revokeOtherSessions)
 	// The admin roster and its trail — owner only. Who signed in from where, who
 	// created or removed whom, who changed what setting: same tier as the roster
 	// itself.
@@ -551,7 +556,7 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	rt.limiter.success(ip, username)
 	auditLogin(model.AuditLogin)
 
-	token, err := rt.mgr.Store().CreateSession(id, sessionTTLSec*time.Second)
+	token, err := rt.mgr.Store().CreateSessionFrom(id, sessionTTLSec*time.Second, ip, r.UserAgent())
 	if err != nil {
 		slog.Error("login: session creation failed", "err", err)
 		writeErrCode(w, http.StatusInternalServerError, "err.sessionCreateFailed", "не удалось создать сессию")
@@ -737,6 +742,15 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if !mustChangeAllowed[r.URL.Path] && a.MustChangePassword {
 			writeErrCode(w, http.StatusForbidden, "err.mustChangePassword", "смените пароль, прежде чем пользоваться панелью")
 			return
+		}
+		// Keep the session's "last used from" current, at most once a minute: the
+		// account screen lists open sessions by it, and a cookie used from a new
+		// address is what that list exists to show. Best-effort — a failed stamp
+		// must not cost a valid request.
+		if now := time.Now().Unix(); now-a.LastSeenAt >= int64(store.SessionTouchInterval.Seconds()) {
+			if err := rt.mgr.Store().TouchSession(a.SessionID, now, clientIP(r)); err != nil {
+				slog.Warn("session: could not stamp last-seen", "admin", a.Username, "err", err)
+			}
 		}
 		// Stamp the acting admin onto the context so the audit log can attribute every
 		// mutation this request makes, without each handler re-reading the cookie, and

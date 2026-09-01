@@ -4,6 +4,7 @@ import { updateCredentials } from './api'
 import { useAction } from './hooks'
 import { notifyError, notifySuccess } from './notify'
 import { TwoFactor } from './TwoFactor'
+import { Sessions } from './Sessions'
 import { Button, Modal, PasswordInput, TextInput } from './ui'
 
 export function Credentials({
@@ -82,6 +83,7 @@ export function Credentials({
             "how do I get into this account", and an operator hardening their access
             should not have to find two screens. It saves on its own. */}
         <TwoFactor password={current} />
+        <Sessions />
       </div>
     </Modal>
   )
