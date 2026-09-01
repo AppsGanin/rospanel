@@ -212,6 +212,8 @@ var errEN = map[string]string{
 	"err.sendFailed":               "could not send: {{detail}}",
 	"err.serverNotFound":           "server not found",
 	"err.sessionCreateFailed":      "could not create the session",
+	"err.sessionIsCurrent":         "this is the current session — use the sign-out button instead",
+	"err.sessionNotFound":          "session not found",
 	"err.setBotTokenFirst":         "set the bot token first",
 	"err.setRealityDestFirst":      "set a REALITY masquerade domain on the Connections tab first",
 	"err.setSupportGroupFirst":     "set the support group id and save the settings first",

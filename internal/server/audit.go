@@ -188,6 +188,11 @@ var auditActions = map[string]auditRoute{
 	"POST /api/panel/restart":  act(model.AuditPanelRestarted),
 	"POST /api/stats/reset":    act(model.AuditStatsReset),
 
+	// The caller's own sessions. Ending one is a security action worth a row of its
+	// own; listing them is a read.
+	"DELETE /api/account/sessions/{id}":        act(model.AuditSessionRevoked),
+	"POST /api/account/sessions/revoke-others": act(model.AuditSessionRevoked),
+
 	// End users: audited in the user journal instead, per user, with details this
 	// trail could not carry. Listed explicitly so the exhaustiveness test sees a
 	// decision rather than an omission.
