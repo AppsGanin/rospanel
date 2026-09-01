@@ -85,6 +85,12 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 				return
 			}
 			format = action
+		} else if format == "v2ray" && r.URL.Query().Get("format") == "" &&
+			set.SubDPI.JSONClients && model.IsXrayCoreClient(r.Header.Get("User-Agent")) {
+			// Xray-core apps get full configs when the operator asked for it: the
+			// only form in which fragment/noise reach them. A rule or an explicit
+			// ?format= above still wins.
+			format = model.SubActionXrayJSON
 		}
 		// Machine payload, format chosen by the client (User-Agent or ?format=).
 		// Device binding is checked here and not on the page: the page is a browser
@@ -123,6 +129,9 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allServers)))
+		case model.SubActionXrayJSON, "xray", "json":
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(sub.XrayJSONMulti(*u, allServers, set.SubDPI)))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			links := sub.ShareLinksAll(*u, allServers)

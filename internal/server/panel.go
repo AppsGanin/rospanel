@@ -266,6 +266,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/subscription", rt.saveSubSettings)
 	authed("GET /api/settings/sub-rules", rt.getSubRules)
 	authed("POST /api/settings/sub-rules", rt.saveSubRules)
+	authed("POST /api/settings/sub-dpi", rt.saveSubDPI)
 	authed("POST /api/settings/hwid", rt.saveHWIDSettings)
 	authed("POST /api/settings/maintenance", rt.saveMaintenance)
 	authed("POST /api/settings/probe-detect", rt.saveProbeDetect)

@@ -308,6 +308,17 @@ matched against the request (User-Agent or an HWID header) — force a specific 
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
+**DPI evasion on the client** (*Settings → Subscriptions*) is what the subscription tells the
+app to do with the TLS handshake before a DPI box sees it — the server is untouched. For
+Xray-core apps (Happ, v2rayNG, v2rayN, Streisand) there is an **Xray JSON** subscription format:
+one full config per lane, derived from the very share link the panel already builds, with a
+`freedom` outbound the proxy dials through that carries **fragment** (split the ClientHello:
+`tlshello` / first packets, piece length, interval) and **noise** (random, string or base64
+packets ahead of the data). It is served to those apps automatically once switched on, and is
+always reachable through `?format=xray-json` or a response rule. For sing-box, **record fragment**
+splits the ClientHello into several TLS records on top of the packet-level fragmentation set
+under Connections.
+
 **Maintenance mode** — one switch puts the public surfaces (subscription page, status page,
 decoy) on a "temporarily unavailable" page while the panel, API, node sync and the tunnels
 themselves keep running, so existing connections are untouched and the operator can still sign in.
