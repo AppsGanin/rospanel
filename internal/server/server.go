@@ -234,10 +234,12 @@ func (rt *Router) fallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// A client route is a page, and a page is fetched. Anything else aimed at one is
 	// not something this app does, so it keeps the status net/http used to give it —
-	// with a body the caller can read.
+	// with a body the caller can read, and its own code: nothing was answered with a
+	// page here, so the stale-tab wording would be describing something that did not
+	// happen.
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeErrCode(w, http.StatusMethodNotAllowed, "err.staleTab",
-			"панель ответила страницей вместо данных — вкладка устарела, обновите её")
+		writeErrCode(w, http.StatusMethodNotAllowed, "err.methodNotSupported",
+			"панель не принимает такой метод запроса по этому адресу")
 		return
 	}
 	rt.index(w, r)

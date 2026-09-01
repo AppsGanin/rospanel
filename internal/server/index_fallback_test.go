@@ -71,6 +71,19 @@ func TestUnknownPathAnswersJSONForEveryMethod(t *testing.T) {
 				if w.Code == http.StatusOK {
 					t.Errorf("%s %s: answered 200 — nothing handled this request", m, path)
 				}
+				// The two cases are different facts and must not share a code: only the
+				// API one is "you were handed a page instead of data".
+				var body struct {
+					Code string `json:"code"`
+				}
+				_ = json.Unmarshal(w.Body.Bytes(), &body)
+				want := "err.methodNotSupported"
+				if strings.HasPrefix(path, "/api/") {
+					want = "err.staleTab"
+				}
+				if body.Code != want {
+					t.Errorf("%s %s: code %q, want %q", m, path, body.Code, want)
+				}
 			}
 		})
 	}
