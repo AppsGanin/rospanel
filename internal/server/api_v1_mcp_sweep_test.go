@@ -544,17 +544,31 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 		}
 	}
 	// value is what to send; read pulls the same thing back off the stored user.
+	// want, when set, is what read should return for value — for a field the server
+	// normalises on the way in (tags), so the two are not equal by design. Left nil,
+	// value itself is expected back.
 	type field struct {
 		value any
 		read  func(model.User) any
+		want  any
 	}
+	joined := func(u model.User) any { return strings.Join(u.Tags, ",") }
 	fields := map[string]field{
-		"name":         {"written", func(u model.User) any { return u.Name }},
-		"enabled":      {false, func(u model.User) any { return u.Enabled }},
-		"data_limit":   {float64(4096), func(u model.User) any { return float64(u.DataLimit) }},
-		"expire_at":    {float64(2_000_000_000), func(u model.User) any { return float64(u.ExpireAt) }},
-		"device_limit": {float64(4), func(u model.User) any { return float64(u.DeviceLimit) }},
-		"speed_limit":  {float64(3072), func(u model.User) any { return float64(u.SpeedLimit) }},
+		"name":         {value: "written", read: func(u model.User) any { return u.Name }},
+		"enabled":      {value: false, read: func(u model.User) any { return u.Enabled }},
+		"data_limit":   {value: float64(4096), read: func(u model.User) any { return float64(u.DataLimit) }},
+		"expire_at":    {value: float64(2_000_000_000), read: func(u model.User) any { return float64(u.ExpireAt) }},
+		"device_limit": {value: float64(4), read: func(u model.User) any { return float64(u.DeviceLimit) }},
+		"speed_limit":  {value: float64(3072), read: func(u model.User) any { return float64(u.SpeedLimit) }},
+		"note":         {value: "from the sweep", read: func(u model.User) any { return u.Note }},
+		// Mixed case and a stray space: the stored form is what the model normalises to.
+		"tags": {value: []any{"VIP", "beta "}, read: joined, want: "beta,vip"},
+	}
+	expected := func(f field) any {
+		if f.want != nil {
+			return f.want
+		}
+		return f.value
 	}
 
 	// Create with everything the body accepts, then read the account back.
@@ -575,26 +589,41 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 		if name == "enabled" {
 			continue
 		}
-		if got := f.read(created); got != f.value {
-			t.Errorf("post_users: %s was sent as %v and stored as %v", name, f.value, got)
+		if got, want := f.read(created), expected(f); got != want {
+			t.Errorf("post_users: %s was sent as %v and stored as %v (want %v)", name, f.value, got, want)
 		}
 	}
 
 	// Now change every one of them through the patch tool, to different values.
-	patch := map[string]any{
-		"name": "patched", "enabled": false,
-		"data_limit": float64(8192), "expire_at": float64(2_100_000_000),
-		"device_limit": float64(7), "speed_limit": float64(1536),
+	patch := map[string]field{
+		"name": {value: "patched"}, "enabled": {value: false},
+		"data_limit": {value: float64(8192)}, "expire_at": {value: float64(2_100_000_000)},
+		"device_limit": {value: float64(7)}, "speed_limit": {value: float64(1536)},
+		"note": {value: "patched note"},
+		"tags": {value: []any{"gold"}, want: "gold"},
 	}
-	call("patch_users_by_id", map[string]any{"id": created.ID, "body": patch})
+	patchBody := map[string]any{}
+	for name, f := range patch {
+		patchBody[name] = f.value
+	}
+	call("patch_users_by_id", map[string]any{"id": created.ID, "body": patchBody})
 	after, err := st.GetUser(created.ID)
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	for name, want := range patch {
-		if got := fields[name].read(*after); got != want {
-			t.Errorf("patch_users_by_id: %s was sent as %v and stored as %v", name, want, got)
+	for name, f := range patch {
+		if got, want := fields[name].read(*after), expected(f); got != want {
+			t.Errorf("patch_users_by_id: %s was sent as %v and stored as %v (want %v)", name, f.value, got, want)
 		}
+	}
+	// And that an empty list clears the tags, since "omit" and "empty" differ here.
+	call("patch_users_by_id", map[string]any{"id": created.ID, "body": map[string]any{"tags": []any{}, "note": ""}})
+	cleared, err := st.GetUser(created.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if len(cleared.Tags) != 0 || cleared.Note != "" {
+		t.Errorf("patch with empty tags/note should clear them, got tags=%v note=%q", cleared.Tags, cleared.Note)
 	}
 
 	// The guarantee: every field the schemas advertise is exercised above.

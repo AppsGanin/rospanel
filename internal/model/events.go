@@ -32,6 +32,8 @@ const (
 	EventUserRegistered = "user.registered" // self-registered via the user bot
 	EventUserDeleted    = "user.deleted"
 	EventUserRenamed    = "user.renamed"
+	EventUserNote       = "user.note_changed" // the operator's note was edited
+	EventUserTags       = "user.tags_changed" // the tag list was edited
 	EventUserEnabled    = "user.enabled"
 	EventUserDisabled   = "user.disabled"
 	EventUserLimits     = "user.limits_changed"
@@ -68,6 +70,8 @@ var UserEventCatalog = []string{
 	EventUserRegistered,
 	EventUserDeleted,
 	EventUserRenamed,
+	EventUserNote,
+	EventUserTags,
 	EventUserEnabled,
 	EventUserDisabled,
 	EventUserLimits,

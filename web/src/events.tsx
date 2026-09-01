@@ -20,6 +20,8 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.registered": "green",
   "user.deleted": "red",
   "user.renamed": "gray",
+  "user.note_changed": "gray",
+  "user.tags_changed": "gray",
   "user.enabled": "green",
   "user.disabled": "orange",
   "user.limits_changed": "brand",
@@ -157,6 +159,14 @@ export function eventDetails(e: UserEvent): string {
     }
     case "user.renamed":
       return `${str(d, "from") || "—"} → ${str(d, "to")}`;
+    case "user.tags_changed": {
+      // Both sides are lists; an empty one reads as "—" so a clear is visible.
+      const list = (k: string) => {
+        const v = d[k];
+        return Array.isArray(v) && v.length ? v.join(", ") : "—";
+      };
+      return `${list("from")} → ${list("to")}`;
+    }
     case "user.traffic_reset":
     case "user.quota_reset": {
       const used = num(d, "used_before");

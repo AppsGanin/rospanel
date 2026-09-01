@@ -35,6 +35,10 @@ export interface User {
   links: { name: string; url: string }[]
   // Groups the user belongs to (empty ⇒ access to everything).
   groups: GroupRef[]
+  // The operator's own annotations: a free-text note (panel-only) and a normalised
+  // tag list (lower-cased, sorted) for filtering.
+  note: string
+  tags: string[]
 }
 
 export interface GroupRef {
@@ -420,6 +424,22 @@ export const setUserEnabled = (id: number, enabled: boolean) =>
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })
+export const setUserNote = (id: number, note: string) =>
+  api<{ ok: boolean }>(`api/users/${id}/note`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  })
+export const setUserTags = (id: number, tags: string[]) =>
+  api<{ ok: boolean }>(`api/users/${id}/tags`, {
+    method: 'POST',
+    body: JSON.stringify({ tags }),
+  })
+// Every tag in use with how many users carry it, most used first.
+export interface TagCount {
+  tag: string
+  count: number
+}
+export const listUserTags = () => api<TagCount[]>('api/users/tags')
 export const renameUser = (id: number, name: string) =>
   api<{ ok: boolean }>(`api/users/${id}/name`, {
     method: 'POST',
