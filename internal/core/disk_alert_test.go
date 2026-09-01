@@ -1,10 +1,12 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 const gb = int64(1) << 30
@@ -76,5 +78,23 @@ func TestRecoveryReSyncsUsers(t *testing.T) {
 	default:
 		t.Error("Xray came back and nobody re-sent the user set — anyone added since " +
 			"the restored backup stays unserved until an unrelated edit triggers a sync")
+	}
+}
+
+// The rollback message has to name the reason Xray refused the config: that string is
+// the only thing connecting a brief outage to the setting the operator has to go and
+// fix. It is also the only part of the message that comes from outside, so it is
+// escaped like everything else that reaches an HTML-parsed chat.
+func TestRollbackMessageCarriesTheReason(t *testing.T) {
+	lang := i18n.Lang("ru")
+	msg := fmt.Sprintf(i18n.T(lang, "notify.configRolledBack"), model.LocalNodeName,
+		escHTML("common/geodata: CIDR prefix length 96 exceeds max 32"))
+	if !strings.Contains(msg, "CIDR prefix length 96") {
+		t.Errorf("the reason did not survive into the message: %q", msg)
+	}
+	esc := fmt.Sprintf(i18n.T(lang, "notify.configRolledBack"), model.LocalNodeName,
+		escHTML(`bad <b>rule</b> & "quote"`))
+	if strings.Contains(esc, "<b>rule</b>") {
+		t.Errorf("the reason reached an HTML message unescaped: %q", esc)
 	}
 }
