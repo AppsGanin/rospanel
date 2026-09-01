@@ -824,6 +824,7 @@ export const saveHWIDSettings = (s: HWIDSettings) =>
   api<{ ok: boolean }>('api/settings/hwid', { method: 'POST', body: JSON.stringify(s) })
 
 export interface SettingsInfo extends SubSettings {
+  sub_dpi?: SubDPI
   secret_path: string
   decoy_template: string
   decoy_templates: string[]
@@ -991,6 +992,34 @@ export const saveRouting = (
 export const setXrayDNS = (dns: string) =>
   api<{ ok: boolean }>('api/settings/dns', { method: 'POST', body: JSON.stringify({ dns }) })
 
+// ---- Client-side DPI evasion handed out by the subscription ------------------
+export interface SubDPI {
+  json_clients: boolean
+  fragment: boolean
+  fragment_packets: string // tlshello | 1-1 | 1-3
+  fragment_length: string // "100-200"
+  fragment_interval: string // "10-20"
+  noise: boolean
+  noise_type: string // rand | str | base64
+  noise_packet: string
+  noise_delay: string
+  record_fragment: boolean
+}
+export const DEFAULT_SUB_DPI: SubDPI = {
+  json_clients: false,
+  fragment: false,
+  fragment_packets: 'tlshello',
+  fragment_length: '100-200',
+  fragment_interval: '10-20',
+  noise: false,
+  noise_type: 'rand',
+  noise_packet: '10-20',
+  noise_delay: '10-16',
+  record_fragment: false,
+}
+export const saveSubDPI = (d: SubDPI) =>
+  api<{ ok: boolean }>('api/settings/sub-dpi', { method: 'POST', body: JSON.stringify(d) })
+
 export const saveSubSettings = (s: SubSettings) =>
   api<{ ok: boolean }>('api/settings/subscription', {
     method: 'POST',
@@ -1002,7 +1031,7 @@ export interface SubRule {
   field: 'user_agent' | 'device_os' | 'ver_os' | 'device_model'
   op: 'contains' | 'equals' | 'prefix' | 'regex' | 'not_contains'
   value: string
-  action: 'v2ray' | 'clash' | 'singbox' | 'block'
+  action: 'v2ray' | 'clash' | 'singbox' | 'xray-json' | 'block'
   enabled: boolean
 }
 

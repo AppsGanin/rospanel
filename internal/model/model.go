@@ -690,6 +690,9 @@ type Settings struct {
 	// SubRules are the subscription response rules, evaluated in order before the
 	// automatic format detection (see EvalSubRules). Stored as JSON in one column.
 	SubRules []SubRule `json:"-"`
+	// SubDPI is the client-side DPI evasion the subscription hands out (fragment,
+	// noise, sing-box record fragmentation) — see subdpi.go.
+	SubDPI SubDPI `json:"-"`
 
 	// MaintenanceMode makes the public surfaces show a "temporarily unavailable"
 	// page; the panel, API, node sync and the tunnels themselves keep serving.

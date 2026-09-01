@@ -34,10 +34,11 @@ const (
 
 // Sub-rule actions: a format to force, or "block".
 const (
-	SubActionV2ray   = "v2ray"
-	SubActionClash   = "clash"
-	SubActionSingbox = "singbox"
-	SubActionBlock   = "block"
+	SubActionV2ray    = "v2ray"
+	SubActionClash    = "clash"
+	SubActionSingbox  = "singbox"
+	SubActionXrayJSON = "xray-json" // full Xray configs for Xray-core clients (fragment/noise ride here)
+	SubActionBlock    = "block"
 )
 
 // SubRule is one response rule. Enabled rules are evaluated top to bottom.
@@ -60,7 +61,7 @@ var (
 	}
 	subActions = map[string]bool{
 		SubActionV2ray: true, SubActionClash: true,
-		SubActionSingbox: true, SubActionBlock: true,
+		SubActionSingbox: true, SubActionXrayJSON: true, SubActionBlock: true,
 	}
 )
 

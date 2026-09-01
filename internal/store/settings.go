@@ -25,7 +25,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var hwidEn, hwidRequire int
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
-	var routingCfg, subRulesJSON string
+	var routingCfg, subRulesJSON, subDPIJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
@@ -65,7 +65,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
 		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
-		       probe_detect, watchdog_enabled, probe_block
+		       probe_detect, watchdog_enabled, probe_block, sub_dpi
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -106,13 +106,22 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
 		&st.DeviceCountMode,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
-		&probeDetect, &watchdogEnabled, &probeBlock,
+		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
 	)
 	if err != nil {
 		return nil, err
 	}
 	if subRulesJSON != "" {
 		_ = json.Unmarshal([]byte(subRulesJSON), &st.SubRules)
+	}
+	// A blank column (pre-0059, or never saved) reads as the defaults with every
+	// switch off; a corrupt one too — the subscription must keep serving.
+	st.SubDPI = model.DefaultSubDPI()
+	if subDPIJSON != "" {
+		if err := json.Unmarshal([]byte(subDPIJSON), &st.SubDPI); err != nil {
+			st.SubDPI = model.DefaultSubDPI()
+		}
+		st.SubDPI = st.SubDPI.Normalized()
 	}
 	if routingCfg != "" {
 		_ = json.Unmarshal([]byte(routingCfg), &st.Routing)
@@ -607,4 +616,15 @@ func PeekTimezone(dbPath string) string {
 		return ""
 	}
 	return tz
+}
+
+// SetSubDPI persists the client-side DPI settings as one JSON blob (see
+// migration 0059). Callers validate first (model.SubDPI.Validate).
+func (s *Store) SetSubDPI(d model.SubDPI) error {
+	b, err := json.Marshal(d.Normalized())
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE settings SET sub_dpi = ?, updated_at = unixepoch() WHERE id = 1`, string(b))
+	return err
 }

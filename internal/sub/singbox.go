@@ -52,6 +52,11 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 	// Fragmenting sits below the TLS record layer, so it doesn't disturb Vision's flow.
 	if set.TLSFragment {
 		vless["tls"].(map[string]any)["fragment"] = true
+		// Record-level split on top (sing-box ≥1.12): survives a middlebox that
+		// reassembles TCP segments before it looks at the ClientHello.
+		if set.SubDPI.RecordFragment {
+			vless["tls"].(map[string]any)["record_fragment"] = true
+		}
 	}
 	// ALPN consistency on the Vision lane: the :443 inbound offers [h2,http/1.1];
 	// offering the same aligns the ClientHello with a real browser to that cert.

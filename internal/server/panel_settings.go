@@ -64,6 +64,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
 		"sub_show_configs":     set.SubShowConfigs,
+		"sub_dpi":              set.SubDPI,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,

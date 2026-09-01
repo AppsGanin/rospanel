@@ -26,6 +26,7 @@ import {
   TextInput,
   ToggleRow,
 } from "./ui";
+import { SubDPICard } from "./SubDPICard";
 
 const ROUTING_REPO = "https://github.com/hydraponique/roscomvpn-routing";
 
@@ -316,6 +317,7 @@ export function SubscriptionsPanel() {
         )}
       </Card>
 
+      <SubDPICard />
       <SubRulesEditor />
 
       <SaveBar
@@ -394,6 +396,7 @@ function SubRulesEditor() {
     { value: "v2ray", label: t("subs.ruleAction.v2ray") },
     { value: "clash", label: t("subs.ruleAction.clash") },
     { value: "singbox", label: t("subs.ruleAction.singbox") },
+    { value: "xray-json", label: t("subs.ruleAction.xray-json") },
     { value: "block", label: t("subs.ruleAction.block") },
   ];
 
