@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // The rule that decides whether a config change gets reverted after Xray goes down.
@@ -101,4 +102,75 @@ func TestCurrentConfigUnloadableFailsSafe(t *testing.T) {
 	if !sup.currentConfigUnloadable() {
 		t.Error("an unloadable config went unnoticed — the rollback will not fire")
 	}
+}
+
+// The rollback copy has to be the last config that RAN, not the last one that was
+// structurally applied. Apply was its only writer, so everything a user sync wrote
+// afterwards was missing from it — and a rollback that reaches for an arbitrarily old
+// copy restores an arbitrarily old user set with it.
+func TestHealthyConfigBecomesTheRollbackCopy(t *testing.T) {
+	defer swapPromoteAfter(t)()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	sup := NewSupervisor("", cfg, dir)
+
+	proven := []byte(`{"inbounds":["ran fine"]}`)
+	p := &proc{done: make(chan struct{}), started: time.Now(), cfg: proven}
+	sup.mu.Lock()
+	sup.cur = p
+	sup.mu.Unlock()
+
+	sup.promoteWhenHealthy(p)
+	got, err := os.ReadFile(cfg + ".bak")
+	if err != nil {
+		t.Fatalf("nothing was promoted: %v", err)
+	}
+	if string(got) != string(proven) {
+		t.Errorf("rollback copy = %q, want the config this run proved", got)
+	}
+}
+
+// A config that dies straight away must never become the thing we roll back TO.
+func TestACrashedRunIsNotPromoted(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	sup := NewSupervisor("", cfg, dir)
+
+	p := &proc{done: make(chan struct{}), started: time.Now(), cfg: []byte(`{"bad":true}`)}
+	close(p.done) // it is already gone
+	sup.mu.Lock()
+	sup.cur = p
+	sup.mu.Unlock()
+
+	sup.promoteWhenHealthy(p)
+	if _, err := os.Stat(cfg + ".bak"); err == nil {
+		t.Error("a config that crashed immediately was promoted to the rollback copy")
+	}
+}
+
+// Superseded runs must not promote either: by the time the wait is over, the config
+// they were running is not the one on disk.
+func TestASupersededRunIsNotPromoted(t *testing.T) {
+	defer swapPromoteAfter(t)()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	sup := NewSupervisor("", cfg, dir)
+
+	old := &proc{done: make(chan struct{}), started: time.Now(), cfg: []byte(`{"old":true}`)}
+	sup.mu.Lock()
+	sup.cur = &proc{done: make(chan struct{})} // something else took over
+	sup.mu.Unlock()
+
+	sup.promoteWhenHealthy(old)
+	if _, err := os.Stat(cfg + ".bak"); err == nil {
+		t.Error("a run that had already been replaced still promoted its config")
+	}
+}
+
+// swapPromoteAfter shortens the proving period for a test and restores it after.
+func swapPromoteAfter(t *testing.T) func() {
+	t.Helper()
+	prev := promoteAfter
+	promoteAfter = time.Millisecond
+	return func() { promoteAfter = prev }
 }

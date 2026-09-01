@@ -507,3 +507,16 @@ func (m *Manager) notifyCertError(host string, err error) {
 		i18n.T(m.botLang(), "notify.certFailed"),
 		model.LocalNodeName, escHTML(host), escHTML(err.Error())))
 }
+
+// onConfigRolledBack reports that the panel reverted config.json to its backup because
+// Xray would not start with the live one.
+//
+// Its own message rather than a line on the recovery notice: the outage is over either
+// way, but this one means a change the operator made is no longer in effect, and
+// nothing else on the panel says so. Without it they see a brief blip and, later, a
+// setting that quietly is not what they set.
+func (m *Manager) onConfigRolledBack(reason string) {
+	lang := m.botLang()
+	m.notifyAdminEvent(model.AdminEventXrayDown, fmt.Sprintf(
+		i18n.T(lang, "notify.configRolledBack"), model.LocalNodeName, escHTML(reason)))
+}
