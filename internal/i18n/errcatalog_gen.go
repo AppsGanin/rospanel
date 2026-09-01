@@ -134,6 +134,7 @@ var errEN = map[string]string{
 	"err.masqHostInvalid":          "the masquerade host {{value}} does not look like a real domain",
 	"err.masqHostRequired":         "give at least one host for HTTP masquerading",
 	"err.messageTooLong":           "the text is longer than {{limit}} characters ({{count}} now) — Telegram will reject it",
+	"err.methodNotSupported":       "the panel does not accept this request method here",
 	"err.mustChangePassword":       "change your password before using the panel",
 	"err.nameAndHostRequired":      "the name and the domain are required",
 	"err.nameEmpty":                "the name cannot be empty",

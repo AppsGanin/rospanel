@@ -2,11 +2,15 @@ package core
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sysstat"
 )
 
 const gb = int64(1) << 30
@@ -96,5 +100,61 @@ func TestRollbackMessageCarriesTheReason(t *testing.T) {
 		escHTML(`bad <b>rule</b> & "quote"`))
 	if strings.Contains(esc, "<b>rule</b>") {
 		t.Errorf("the reason reached an HTML message unescaped: %q", esc)
+	}
+}
+
+// The master is not in ListNodes — it is a virtual node the API view assembles — so it
+// needs its own path through the sweep, and it is the machine whose full disk breaks
+// everything at once. This walks that path rather than the rule underneath it: having
+// the rule right and never calling it is the failure mode that only shows up in
+// production.
+func TestMasterDiskAlertGoesThroughTheSweep(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "disk.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	m := &Manager{store: st, nodeAlerts: map[int64]*nodeAlertState{}}
+	live := map[int64]struct{}{}
+
+	if msg := m.localDiskAlertMsg(live, 50*gb, 100*gb); msg != "" {
+		t.Errorf("a half-empty disk on the master raised: %q", msg)
+	}
+	msg := m.localDiskAlertMsg(live, 92*gb, 100*gb)
+	if msg == "" {
+		t.Fatal("the master's disk filled up and nobody was told")
+	}
+	if !strings.Contains(msg, model.LocalNodeName) {
+		t.Errorf("the alert does not name the master: %q", msg)
+	}
+	// The state has to survive the prune that follows it in the sweep, or the alarm
+	// re-fires from scratch every pass.
+	if _, ok := live[model.LocalNodeID]; !ok {
+		t.Error("the master's alert state would be pruned as stale after every sweep")
+	}
+	if again := m.localDiskAlertMsg(live, 92*gb, 100*gb); again != "" {
+		t.Errorf("repeated the same alarm on the next sweep: %q", again)
+	}
+}
+
+// Walks the sweep itself, not the rule underneath it. Deleting the master's disk check
+// from SweepNodeAlerts used to break nothing: every test drove the rule directly, so a
+// correct rule that nobody called would have shipped.
+func TestSweepConsultsTheMastersDisk(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "sweep.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	m := &Manager{store: st, nodeAlerts: map[int64]*nodeAlertState{}}
+
+	m.sweepAlerts(nil, &sysstat.Stats{DiskUsed: 92 * gb, DiskTotal: 100 * gb}, time.Now())
+
+	m.nodeAlertMu.Lock()
+	alerted := m.nodeAlerts[model.LocalNodeID] != nil && m.nodeAlerts[model.LocalNodeID].diskLowAlerted
+	m.nodeAlertMu.Unlock()
+	if !alerted {
+		t.Error("the sweep never looked at the master's disk — the machine whose full " +
+			"disk breaks everything at once is the one it skips")
 	}
 }

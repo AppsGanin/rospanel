@@ -937,11 +937,16 @@ func (s *Supervisor) startProc() error {
 	if err != nil {
 		return fmt.Errorf("xray stderr pipe: %w", err)
 	}
+	// Snapshot the config BEFORE handing it to Xray, not after. WriteConfig rewrites
+	// this file on every user sync, and reading it afterwards can catch a revision
+	// that landed in between — which would promote, as "the config that ran", one the
+	// process never read. Read first and the race falls the safe way instead: at worst
+	// a revision behind, and that one was proven when it ran.
+	startedWith, _ := os.ReadFile(s.configPath)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start xray: %w", err)
 	}
-	started, _ := os.ReadFile(s.configPath)
-	p := &proc{cmd: cmd, done: make(chan struct{}), started: time.Now(), cfg: started}
+	p := &proc{cmd: cmd, done: make(chan struct{}), started: time.Now(), cfg: startedWith}
 	s.mu.Lock()
 	s.cur = p
 	s.mu.Unlock()

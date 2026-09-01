@@ -6,6 +6,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sysstat"
 )
 
 // Admin alerts about remote nodes.
@@ -100,7 +101,18 @@ func (m *Manager) SweepNodeAlerts() {
 		logErr("node alerts: cannot list nodes", "err", err)
 		return
 	}
-	now := time.Now()
+	// The master's own figures are read here rather than deep inside: Sampler reports
+	// the real host and cannot be pointed at made-up numbers, so keeping it at the
+	// edge leaves the sweep itself something a test can drive.
+	var local *sysstat.Stats
+	if m.sys != nil {
+		st := m.sys.Read()
+		local = &st
+	}
+	m.sweepAlerts(nodes, local, time.Now())
+}
+
+func (m *Manager) sweepAlerts(nodes []model.Node, local *sysstat.Stats, now time.Time) {
 	live := make(map[int64]struct{}, len(nodes))
 	for i := range nodes {
 		n := &nodes[i]
@@ -120,7 +132,11 @@ func (m *Manager) SweepNodeAlerts() {
 			m.notifyAdminEvent(msg.bit, msg.html)
 		}
 	}
-	m.sweepLocalDiskAlert(live)
+	if local != nil {
+		if msg := m.localDiskAlertMsg(live, local.DiskUsed, local.DiskTotal); msg != "" {
+			m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+		}
+	}
 	m.pruneNodeAlerts(live)
 }
 
@@ -128,22 +144,21 @@ func (m *Manager) SweepNodeAlerts() {
 // It is separate because the master is not in ListNodes — it is a virtual node the API
 // view assembles — so the sweep above never sees it, and the machine the panel itself
 // runs on is the one whose full disk breaks everything at once.
-func (m *Manager) sweepLocalDiskAlert(live map[int64]struct{}) {
-	if m.sys == nil {
-		return
-	}
-	sys := m.sys.Read()
+
+// localDiskAlertMsg advances the master's own disk state and returns what to say, or ""
+// for nothing. Split from the sending half — the same shape nodeAlertsFor has — so the
+// step between "the figures crossed a threshold" and "an admin was told" is one a test
+// can walk, rather than the kind of wiring that is only discovered missing in
+// production.
+func (m *Manager) localDiskAlertMsg(live map[int64]struct{}, used, total int64) string {
 	live[model.LocalNodeID] = struct{}{} // keep the state from being pruned as stale
 	m.nodeAlertMu.Lock()
+	defer m.nodeAlertMu.Unlock()
 	st := m.nodeAlertLocked(model.LocalNodeID)
-	next, msg := diskAlert(st.diskLowAlerted, sys.DiskUsed, sys.DiskTotal,
-		model.LocalNodeName, m.botLang())
+	next, msg := diskAlert(st.diskLowAlerted, used, total, model.LocalNodeName, m.botLang())
 	st.diskLowAlerted = next
 	st.known = true
-	m.nodeAlertMu.Unlock()
-	if msg != "" {
-		m.notifyAdminEvent(model.AdminEventXrayDown, msg)
-	}
+	return msg
 }
 
 // nodeAlertsFor advances one node's alert state and returns the messages that
