@@ -19,11 +19,15 @@ import {
   setUserLimits,
   setUserPlan,
   setUserGroups,
+  setUserNote,
+  setUserTags,
   listGroups,
+  listUserTags,
   type Connection,
   type DailyPoint,
   type DeviceList,
   type Group,
+  type TagCount,
   type TariffPlan,
   type User,
 } from './api'
@@ -65,6 +69,8 @@ import {
   Select,
   ShowMore,
   Switch,
+  TagsInput,
+  Textarea,
   TextInput,
   useConfirm,
   useCopy,
@@ -458,6 +464,8 @@ export function UserDetail({
               {email.copied ? <IconCheck /> : <IconCopy />}
             </button>
           </div>
+
+          <NoteAndTags user={user} onChanged={onChanged} />
 
           <Divider label={t('userDetail.management')} />
           <div className="flex items-center justify-between">
@@ -1054,6 +1062,91 @@ export function UserDetail({
 // user belongs to — clicking it (the ×) leaves; a dashed chip ("add") is one they can
 // join — clicking (the ＋) adds. `count` is how many connections the group grants, shown
 // so an operator can tell a rich group from an empty (access-revoking) one at a glance.
+// TAG_MAX_LEN mirrors model.MaxUserTagLen for the hint text; the server is the one
+// that enforces it.
+const TAG_MAX_LEN = 32
+
+// NoteAndTags is the operator's own annotation of the account: a free-text note and
+// the tag list the user list filters on. Tags save on every change — a cheap write
+// with no Xray reload — while the note, being typed rather than picked, saves on a
+// button so half a sentence never lands in the journal.
+function NoteAndTags({ user, onChanged }: { user: User; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const [note, setNote] = useState(user.note ?? '')
+  const [known, setKnown] = useState<TagCount[]>([])
+  const { busy, run } = useAction()
+  const tags = user.tags ?? []
+  const tagKey = tags.join(',')
+
+  useEffect(() => {
+    setNote(user.note ?? '')
+  }, [user.id, user.note])
+
+  // Every tag in use, as suggestions — so the second user tagged "vip" gets the
+  // same spelling as the first without retyping it. Refetched when this user's
+  // tags change, since that is when the set of known tags can grow.
+  useEffect(() => {
+    let alive = true
+    listUserTags()
+      .then((l) => alive && setKnown(l))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [user.id, tagKey])
+
+  const saved = user.note ?? ''
+  const noteDirty = note.trim() !== saved.trim()
+  const saveNote = () =>
+    run(async () => {
+      await setUserNote(user.id, note)
+      onChanged()
+      notifySuccess(t('userDetail.noteSaved'))
+    })
+  const saveTags = (next: string[]) =>
+    run(async () => {
+      await setUserTags(user.id, next)
+      onChanged()
+    })
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <TagsInput
+        label={t('userDetail.tags')}
+        value={tags}
+        onChange={saveTags}
+        options={known.map((k) => ({ value: k.tag, label: k.tag }))}
+        hint={t('userDetail.tagsHint', { maxLen: TAG_MAX_LEN })}
+      />
+      <div>
+        <Textarea
+          label={t('userDetail.note')}
+          value={note}
+          onChange={setNote}
+          rows={2}
+          placeholder={t('userDetail.notePlaceholder')}
+        />
+        {noteDirty && (
+          <div className="mt-1.5 flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="light"
+              color="gray"
+              onClick={() => setNote(saved)}
+              disabled={busy}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" loading={busy} onClick={saveNote}>
+              {t('common.save')}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function GroupChip({
   name,
   count,

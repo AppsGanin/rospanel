@@ -135,6 +135,15 @@ type User struct {
 	// see internal/shaper for what that does and does not guarantee.
 	SpeedLimit int `json:"speed_limit"`
 
+	// Note is the operator's own text about this user: where they came from, what was
+	// agreed, what to remember at the next ticket. Panel and API only — it is never
+	// handed to the user, the bots or a client app.
+	Note string `json:"note"`
+	// Tags label the user for filtering ("vip", "reseller-a"). Always in the form
+	// NormalizeTags produces: lower-cased, deduplicated, sorted, no commas — so the
+	// same tag cannot be spelled two ways and a filter on it is a plain equality.
+	Tags []string `json:"tags"`
+
 	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
 
 	TgLinkCode   string `json:"-"` // pending one-time Telegram bind code (replaces sub-token deep links)

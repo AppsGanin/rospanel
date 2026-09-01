@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -115,6 +117,53 @@ func (m *Manager) RenameUser(ctx context.Context, id int64, name string) error {
 		return err
 	}
 	m.audit(ctx, id, model.EventUserRenamed, map[string]any{"from": prev, "to": name})
+	return nil
+}
+
+// SetUserNote replaces the operator's note on a user. The note is panel-only, so
+// nothing is reloaded; an unchanged note is not an event, so a card that re-saves
+// what it loaded leaves no row behind.
+func (m *Manager) SetUserNote(ctx context.Context, id int64, note string) error {
+	note = strings.TrimSpace(strings.ReplaceAll(note, "\r\n", "\n"))
+	if utf8.RuneCountInString(note) > model.MaxUserNoteLen {
+		return invalidCode("err.noteTooLong", "заметка длиннее {{max}} символов", map[string]any{"max": model.MaxUserNoteLen})
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if u.Note == note {
+		return nil
+	}
+	if err := m.store.SetUserNote(id, note); err != nil {
+		return err
+	}
+	// The journal keeps whether there was a note and whether there is one now — not
+	// the text. A note is where an operator writes what they would not put in a
+	// subscription name, and the journal is broader-audience than the card.
+	m.audit(ctx, id, model.EventUserNote, map[string]any{"had": u.Note != "", "has": note != ""})
+	return nil
+}
+
+// SetUserTags replaces a user's tag list with the normalised form of tags (see
+// model.NormalizeTags). Rejects what cannot be stored rather than dropping it.
+func (m *Manager) SetUserTags(ctx context.Context, id int64, tags []string) error {
+	norm, ok := model.NormalizeTags(tags)
+	if !ok {
+		return invalidCode("err.tagsInvalid", "тег: до {{maxLen}} символов, без запятых, не больше {{max}} тегов",
+			map[string]any{"maxLen": model.MaxUserTagLen, "max": model.MaxUserTags})
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if slices.Equal(u.Tags, norm) {
+		return nil
+	}
+	if err := m.store.SetUserTags(id, norm); err != nil {
+		return err
+	}
+	m.audit(ctx, id, model.EventUserTags, map[string]any{"from": u.Tags, "to": norm})
 	return nil
 }
 

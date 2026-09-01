@@ -198,6 +198,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/limits":          skip,
 	"POST /api/users/{id}/enabled":         skip,
 	"POST /api/users/{id}/name":            skip,
+	"POST /api/users/{id}/note":            skip,
+	"POST /api/users/{id}/tags":            skip,
 	"POST /api/users/{id}/rotate-sub":      skip,
 	"POST /api/users/{id}/telegram/unlink": skip,
 	"POST /api/users/{id}/telegram/link":   skip,

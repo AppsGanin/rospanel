@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
@@ -12,7 +13,11 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
-	notified_expire_at, notified_quota_at, device_over_since`
+	notified_expire_at, notified_quota_at, device_over_since, note, tags`
+
+// errTagsInvalid is returned by SetUserTags for a list model.NormalizeTags refuses.
+// Callers validate before writing, so reaching this means a bug, not user input.
+var errTagsInvalid = errors.New("store: invalid user tags")
 
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
@@ -381,6 +386,46 @@ func (s *Store) SetUserName(id int64, name string) error {
 	return err
 }
 
+// SetUserNote replaces the operator's note on a user.
+func (s *Store) SetUserNote(id int64, note string) error {
+	_, err := s.db.Exec(`UPDATE users SET note = ? WHERE id = ?`, note, id)
+	return err
+}
+
+// SetUserTags replaces a user's tag list. Tags are stored in model.NormalizeTags
+// form regardless of what the caller hands in, so a read never sees a variant
+// spelling. The caller is expected to have validated the input first; the check
+// here is a safety net, not the place a bad tag gets reported to a person.
+func (s *Store) SetUserTags(id int64, tags []string) error {
+	norm, ok := model.NormalizeTags(tags)
+	if !ok {
+		return errTagsInvalid
+	}
+	_, err := s.db.Exec(`UPDATE users SET tags = ? WHERE id = ?`, model.EncodeTags(norm), id)
+	return err
+}
+
+// AllUserTags returns every distinct tag in use with how many users carry it —
+// what the list page's tag filter and the tag editor's suggestions are built from.
+func (s *Store) AllUserTags() (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT tags FROM users WHERE tags != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		for _, t := range model.DecodeTags(raw) {
+			out[t]++
+		}
+	}
+	return out, rows.Err()
+}
+
 // SetSubToken replaces a user's subscription capability token. The old URL stops
 // working immediately; protocol credentials (UUID/password) are unchanged.
 func (s *Store) SetSubToken(id int64, token string) error {
@@ -613,17 +658,19 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 		var u model.User
 		var created int64
 		var enabled, trialUsed int
+		var tags string
 		if err := rows.Scan(
 			&u.ID, &u.Name, &u.UUID, &u.Password, &u.SubToken, &enabled,
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
-			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince,
+			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags,
 		); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled != 0
 		u.TrialUsed = trialUsed != 0
+		u.Tags = model.DecodeTags(tags)
 		u.Password = decField(u.Password)
 		u.CreatedAt = time.Unix(created, 0)
 		out = append(out, u)

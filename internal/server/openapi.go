@@ -102,7 +102,8 @@ func apiSpecRoutes() []oaRoute {
 		{method: "GET", path: "/v1/users", tag: "Users", summary: "List users",
 			query: []oaParam{
 				{name: "status", typ: "string", desc: "active | disabled | expired | limited | device_limited"},
-				{name: "search", typ: "string", desc: "substring match on the user name"},
+				{name: "search", typ: "string", desc: "substring match on the user name, note or tags"},
+				{name: "tag", typ: "string", desc: "only users carrying this tag (exact, case-insensitive)"},
 				{name: "limit", typ: "integer", desc: "page size (<=0 = all from offset)"},
 				{name: "offset", typ: "integer", desc: "number of users to skip"},
 			},

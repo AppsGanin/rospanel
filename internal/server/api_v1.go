@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,9 @@ type (
 		SpeedLimit  int     `json:"speed_limit,omitempty"`  // kbit/s, 0 = unlimited
 		PlanID      int64   `json:"plan_id,omitempty"`      // 0 = no plan (manual limits)
 		GroupIDs    []int64 `json:"group_ids,omitempty"`    // access groups, by hand
+		// Note and Tags are the operator's own annotations; see model.User.
+		Note string   `json:"note,omitempty"` // up to model.MaxUserNoteLen characters
+		Tags []string `json:"tags,omitempty"` // normalised: lower-cased, sorted, no commas
 	}
 	// apiPatchUserReq fields are pointers: a nil field is left unchanged, so a
 	// caller can update just one attribute.
@@ -52,6 +56,10 @@ type (
 		ExpireAt    *int64  `json:"expire_at,omitempty"`
 		DeviceLimit *int    `json:"device_limit,omitempty"`
 		SpeedLimit  *int    `json:"speed_limit,omitempty"` // kbit/s, 0 = unlimited
+		// Note and Tags are the operator's own annotations; see model.User. An empty
+		// note or an empty tag list clears the field; a missing one leaves it alone.
+		Note *string   `json:"note,omitempty"` // up to model.MaxUserNoteLen characters
+		Tags *[]string `json:"tags,omitempty"` // normalised: lower-cased, sorted, no commas
 	}
 	apiBulkReq struct {
 		IDs    []int64 `json:"ids"`
@@ -564,7 +572,21 @@ func (rt *Router) apiHealth(w http.ResponseWriter, _ *http.Request) {
 	writeAPIData(w, http.StatusOK, oaHealthResp{Status: "ok"})
 }
 
-// apiListUsers lists users with optional filtering (?status, ?search) and
+// userMatches is the ?search predicate: a case-insensitive substring of the name,
+// the operator's note or any tag. q must already be lower-cased.
+func userMatches(u model.User, q string) bool {
+	if strings.Contains(strings.ToLower(u.Name), q) || strings.Contains(strings.ToLower(u.Note), q) {
+		return true
+	}
+	for _, t := range u.Tags {
+		if strings.Contains(t, q) {
+			return true
+		}
+	}
+	return false
+}
+
+// apiListUsers lists users with optional filtering (?status, ?search, ?tag) and
 // pagination (?limit, ?offset). The result carries a "meta" block with the total
 // count (after filtering, before the page window) so callers can paginate.
 func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
@@ -583,12 +605,16 @@ func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	status := strings.TrimSpace(q.Get("status"))
 	search := strings.ToLower(strings.TrimSpace(q.Get("search")))
+	tag := strings.ToLower(strings.TrimSpace(q.Get("tag")))
 	filtered := users[:0:0]
 	for _, u := range users {
 		if status != "" && u.Status != status {
 			continue
 		}
-		if search != "" && !strings.Contains(strings.ToLower(u.Name), search) {
+		if search != "" && !userMatches(u, search) {
+			continue
+		}
+		if tag != "" && !slices.Contains(u.Tags, tag) {
 			continue
 		}
 		filtered = append(filtered, u)
@@ -715,6 +741,18 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if strings.TrimSpace(req.Note) != "" {
+		if err := rt.mgr.SetUserNote(r.Context(), u.ID, req.Note); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if len(req.Tags) > 0 {
+		if err := rt.mgr.SetUserTags(r.Context(), u.ID, req.Tags); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
 	fresh, err := rt.mgr.Store().GetUser(u.ID)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -790,6 +828,18 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.Enabled != nil {
 		if err := rt.mgr.SetUserEnabled(r.Context(), id, *req.Enabled); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.Note != nil {
+		if err := rt.mgr.SetUserNote(r.Context(), id, *req.Note); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.Tags != nil {
+		if err := rt.mgr.SetUserTags(r.Context(), id, *req.Tags); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}

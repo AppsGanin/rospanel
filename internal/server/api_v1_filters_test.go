@@ -42,6 +42,10 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 	if err := st.SetUserEnabled(beta.ID, false); err != nil {
 		t.Fatalf("disable beta: %v", err)
 	}
+	// One tagged user, so ?tag has someone to leave out.
+	if err := st.SetUserTags(alpha.ID, []string{"vip"}); err != nil {
+		t.Fatalf("tag alpha: %v", err)
+	}
 
 	// Two days of traffic for two users on two servers.
 	for _, u := range []*model.User{alpha, beta} {
@@ -120,6 +124,7 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 	probes := map[string]string{
 		"/v1/users?status":                  "status=disabled",
 		"/v1/users?search":                  "search=alpha",
+		"/v1/users?tag":                     "tag=vip",
 		"/v1/users?limit":                   "limit=1",
 		"/v1/users?offset":                  "offset=1",
 		"/v1/users/{id}/connections?limit":  "limit=1",

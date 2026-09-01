@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -219,4 +220,67 @@ func (rt *Router) setUserEnabled(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	writeOK(w)
+}
+
+// setUserNote replaces the operator's note on a user (empty clears it).
+func (rt *Router) setUserNote(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Note string `json:"note"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetUserNote(r.Context(), id, req.Note); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setUserTags replaces a user's tag list (empty clears it).
+func (rt *Router) setUserTags(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Tags []string `json:"tags"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetUserTags(r.Context(), id, req.Tags); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// userTags lists every tag in use with how many users carry it, for the list
+// page's filter and the tag editor's suggestions.
+func (rt *Router) userTags(w http.ResponseWriter, _ *http.Request) {
+	counts, err := rt.mgr.Store().AllUserTags()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tagCounts(counts))
+}
+
+// tagCount is one tag and how many users carry it.
+type tagCount struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+// tagCounts turns the store's map into a sorted list: most used first, ties by
+// name, so the filter dropdown reads the same on every load.
+func tagCounts(counts map[string]int) []tagCount {
+	out := make([]tagCount, 0, len(counts))
+	for t, n := range counts {
+		out = append(out, tagCount{Tag: t, Count: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Tag < out[j].Tag
+	})
+	return out
 }

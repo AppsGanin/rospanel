@@ -229,7 +229,11 @@ no domain and no DNS**.
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
 **device limit** (see *Device binding* below for exactly what it counts) and a per-user
 **speed cap**. Traffic accounting via Xray Stats, online status, connection
-list; expired users can be auto-deleted. Search and filters stay fast with hundreds of users,
+list; expired users can be auto-deleted. Every user carries an operator's **note** (where they
+came from, what was agreed — panel and API only, never shown to the client) and **tags** (`vip`,
+`reseller-a`) that the list filters on and the search covers, along with the Xray client id
+(`u12`) shown next to the name so a log line maps to an account at a glance. Search and filters
+stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
 The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time. A **connection
 map** breaks down where clients connect from — distinct source IPs per **country** (from the
