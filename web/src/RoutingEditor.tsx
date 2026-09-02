@@ -73,6 +73,9 @@ export type Opt = { value: string; label: string };
 // a family instead makes the panel's DNS decide and pins the address family, which
 // is what fixes "only through the tunnel some sites crawl" on a host whose IPv6
 // route is broken.
+// AsIs is not offered separately: it IS Xray's default, so listing both gave the
+// same behaviour two names. A config that carries it explicitly (set through the
+// API) is shown as the default — see fromRouting.
 export const directStrategies = (): Opt[] => [
   { value: "", label: i18n.t("route.stratDefault") },
   { value: "UseIP", label: i18n.t("route.stratUseIP") },
@@ -80,7 +83,6 @@ export const directStrategies = (): Opt[] => [
   { value: "UseIPv6", label: i18n.t("route.stratUseIPv6") },
   { value: "UseIPv4v6", label: i18n.t("route.stratUseIPv4v6") },
   { value: "UseIPv6v4", label: i18n.t("route.stratUseIPv6v4") },
-  { value: "AsIs", label: i18n.t("route.stratAsIs") },
 ];
 
 // proxyRefresh() are the URL auto-refresh cadence options (minutes; -1 = never).
@@ -213,7 +215,8 @@ export function hydrateRouting(
     opera_ips: src.opera_ips ?? [],
     direct_domains: src.direct_domains ?? [],
     direct_ips: src.direct_ips ?? [],
-    direct_strategy: src.direct_strategy ?? "",
+    // "AsIs" and "" mean the same to Xray; the editor shows one of them.
+    direct_strategy: src.direct_strategy === "AsIs" ? "" : (src.direct_strategy ?? ""),
     lanes,
     routing_order: normalizeOrder(
       src.routing_order,
