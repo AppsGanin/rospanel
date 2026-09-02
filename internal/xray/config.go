@@ -148,6 +148,13 @@ type Outbound struct {
 	StreamSettings any `json:"streamSettings,omitempty"`
 }
 
+// FreedomSettings is the "settings" object of a freedom (direct) outbound. Only
+// domainStrategy is expressed: it decides whether Xray dials the name as given or
+// resolves it first, and through which address family.
+type FreedomSettings struct {
+	DomainStrategy string `json:"domainStrategy,omitempty"`
+}
+
 // ProxyOutboundSettings is the "settings" object for a socks/http proxy outbound.
 type ProxyOutboundSettings struct {
 	Servers []ProxyServer `json:"servers"`

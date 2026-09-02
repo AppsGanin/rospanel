@@ -159,7 +159,7 @@ func TestSystemProxyPortsAreReserved(t *testing.T) {
 
 	r := reservedPorts(set)
 	for _, port := range []int{1080, 3128} {
-		if _, held := r[port]; !held {
+		if _, held := r.OnTCP(port); !held {
 			t.Errorf("port %d is not reserved, so a custom inbound could claim it", port)
 		}
 	}

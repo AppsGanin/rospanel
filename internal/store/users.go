@@ -620,6 +620,69 @@ func (s *Store) ResetTraffic(id, lastUp, lastDown int64) error {
 	return err
 }
 
+// UsersByIDs reads several users in one query. Ids that name nobody are simply
+// absent from the result, which is what makes this the "which of these exist"
+// filter as well as the read.
+func (s *Store) UsersByIDs(ids []int64) ([]model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	return s.queryUsers(`SELECT `+userCols+` FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+}
+
+// ResetTrafficMany zeroes usage for several users in one transaction, each
+// re-baselined to its own live counters (see ResetTraffic). Returns the ids it
+// wrote — the same list back, since a missing id updates nothing and harms nobody.
+func (s *Store) ResetTrafficMany(baselines map[int64][2]int64) ([]int64, error) {
+	if len(baselines) == 0 {
+		return nil, nil
+	}
+	done := make([]int64, 0, len(baselines))
+	err := s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`UPDATE users SET used_up=0, used_down=0, last_up=?, last_down=? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		done = done[:0]
+		for id, t := range baselines {
+			if _, err := stmt.Exec(t[0], t[1], id); err != nil {
+				return err
+			}
+			done = append(done, id)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return done, nil
+}
+
+// SetUserExpiryMany writes a new expiry for several users in one transaction.
+func (s *Store) SetUserExpiryMany(expiries map[int64]int64) error {
+	if len(expiries) == 0 {
+		return nil
+	}
+	return s.withTx(func(tx *sql.Tx) error {
+		stmt, err := tx.Prepare(`UPDATE users SET expire_at = ? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for id, expire := range expiries {
+			if _, err := stmt.Exec(expire, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // SetNotifiedExpireAt records the expiry a "runs out soon" warning was sent for.
 func (s *Store) SetNotifiedExpireAt(id, expireAt int64) error {
 	_, err := s.db.Exec(`UPDATE users SET notified_expire_at = ? WHERE id = ?`, expireAt, id)

@@ -128,45 +128,34 @@ func (m *Manager) effectiveSettings(serverID int64) (*model.Settings, error) {
 // collision then — as an Xray that won't start — is exactly the failure this set
 // exists to prevent.
 func reservedPorts(set *model.Settings) model.ReservedPorts {
-	r := model.ReservedPorts{}
-	// Named through a helper rather than a map literal: two built-in lanes routinely
-	// share a number (Vision on TCP/443 and Hysteria2 on UDP/443 is the default), and
-	// a literal would silently keep whichever key came last — telling the operator
-	// their port collides with the wrong thing.
-	hold := func(port int, who string) {
-		if port <= 0 {
-			return
-		}
-		if prev, ok := r[port]; ok && prev != who {
-			r[port] = prev + " / " + who
-			return
-		}
-		r[port] = who
-	}
-	hold(set.VLESSPort, "VLESS-Vision")
-	hold(set.RealityPort, "VLESS-XHTTP-REALITY")
-	hold(set.HysteriaPort, "HYSTERIA-UDP")
-	hold(xray.APIPort, "Xray internal API")
+	r := model.NewReservedPorts()
+	r.HoldTCP(set.VLESSPort, "VLESS-Vision")
+	r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
+	r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
+	r.Hold(xray.APIPort, "Xray internal API")
 	if set.HopEnd > set.HysteriaPort {
-		// The built-in hop range is a funnel onto the Hysteria port: anything inside
-		// it would have its traffic silently stolen by the nftables redirect.
+		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
+		// inside it would have its traffic silently stolen by the nftables redirect.
 		for p := set.HysteriaPort + 1; p <= set.HopEnd; p++ {
-			hold(p, "HYSTERIA-UDP hop range")
+			r.HoldUDP(p, "HYSTERIA-UDP hop range")
 		}
 	}
 	// The system proxies' listeners, held whether or not they are currently on — for
 	// the same reason the built-in lanes are: the port comes back the moment the
 	// operator flips the switch, and discovering the collision then, as an Xray that
 	// won't start, is what this set exists to prevent.
-	hold(set.ProxySocksPort, "SOCKS-прокси")
-	hold(set.ProxyHTTPPort, "HTTP-прокси")
+	r.HoldTCP(set.ProxySocksPort, "SOCKS-прокси")
+	r.HoldTCP(set.ProxyHTTPPort, "HTTP-прокси")
 	if set.OperaEnabled {
-		hold(set.OperaPortOr(), "Opera VPN")
+		r.HoldTCP(set.OperaPortOr(), "Opera VPN")
 	}
 	// WARP's loopback entrance. Loopback-only, but it still occupies a port on the
 	// box, so a custom inbound must not be allowed to claim it.
 	if set.WarpEnabled && set.WarpRegistered() {
-		hold(model.PanelEgressPort, "WARP local entrance")
+		r.HoldTCP(model.PanelEgressPort, "WARP local entrance")
+	}
+	if set.AWGEnabled && set.AWGPort > 0 {
+		r.HoldUDP(set.AWGPort, "AmneziaWG")
 	}
 	return r
 }
@@ -189,9 +178,10 @@ func (m *Manager) holdPanelPort(reserved model.ReservedPorts) {
 	if err != nil {
 		return
 	}
-	if _, taken := reserved[p]; !taken {
-		reserved[p] = "panel internal port"
-	}
+	// Both transports: the panel's own listener is TCP, but nothing else should
+	// claim that number on this box either, and the operator gets a name instead of
+	// Xray's anonymous "port busy".
+	reserved.Hold(p, "panel internal port")
 }
 
 // CreateInbound validates and stores a new custom inbound, generating REALITY key

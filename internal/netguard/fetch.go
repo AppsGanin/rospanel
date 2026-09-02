@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -131,8 +132,25 @@ func dialValidated(ctx context.Context, network, addr string) (net.Conn, error) 
 	return nil, fmt.Errorf("could not connect")
 }
 
+// safeTransportOnce is the one transport every guarded fetch shares. A transport
+// per client keeps no connection alive between calls and starts a fresh TLS
+// handshake for each — on the geo refresh, the proxy-list poll and the payment
+// pollers that is a handshake every few seconds to the same handful of hosts. The
+// dialer is what enforces the address rules, and it is the same function either
+// way, so sharing costs nothing in safety.
+var safeTransportOnce = sync.OnceValue(func() *http.Transport {
+	return &http.Transport{
+		DialContext:         dialValidated,
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        32,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+})
+
 func safeTransport() *http.Transport {
-	return &http.Transport{DialContext: dialValidated}
+	return safeTransportOnce()
 }
 
 // Client returns an http.Client with timeout and redirect blocking to private nets.

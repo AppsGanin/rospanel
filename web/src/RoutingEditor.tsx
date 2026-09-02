@@ -68,6 +68,21 @@ export type BadgeColor = "gray" | "green" | "orange" | "red";
 export type StatusBadge = { label: string; color: BadgeColor };
 export type Opt = { value: string; label: string };
 
+// directStrategies() are the ways the direct outbound may resolve a name before
+// dialling it (Xray's freedom domainStrategy). The default is Xray's own — naming
+// a family instead makes the panel's DNS decide and pins the address family, which
+// is what fixes "only through the tunnel some sites crawl" on a host whose IPv6
+// route is broken.
+export const directStrategies = (): Opt[] => [
+  { value: "", label: i18n.t("route.stratDefault") },
+  { value: "UseIP", label: i18n.t("route.stratUseIP") },
+  { value: "UseIPv4", label: i18n.t("route.stratUseIPv4") },
+  { value: "UseIPv6", label: i18n.t("route.stratUseIPv6") },
+  { value: "UseIPv4v6", label: i18n.t("route.stratUseIPv4v6") },
+  { value: "UseIPv6v4", label: i18n.t("route.stratUseIPv6v4") },
+  { value: "AsIs", label: i18n.t("route.stratAsIs") },
+];
+
 // proxyRefresh() are the URL auto-refresh cadence options (minutes; -1 = never).
 export const proxyRefresh = (): Opt[] => [
   { value: "30", label: i18n.t("route.every30m") },
@@ -90,6 +105,7 @@ export const EMPTY: RoutingConfig = {
   opera_ips: [],
   direct_domains: [],
   direct_ips: [],
+  direct_strategy: "",
   routing_order: ["warp", "opera", "direct"],
   lanes: [],
   proxy_refresh_minutes: 30,
@@ -197,6 +213,7 @@ export function hydrateRouting(
     opera_ips: src.opera_ips ?? [],
     direct_domains: src.direct_domains ?? [],
     direct_ips: src.direct_ips ?? [],
+    direct_strategy: src.direct_strategy ?? "",
     lanes,
     routing_order: normalizeOrder(
       src.routing_order,
@@ -742,6 +759,13 @@ export function RoutingEditor({
 
       {/* Direct */}
       <Section title={t("route.direct")} desc={withCatchAllNote(t("route.directHint"), "direct")}>
+        <Select
+          label={t("route.directStrategy")}
+          data={directStrategies()}
+          value={cfg.direct_strategy ?? ""}
+          onChange={(v) => set({ direct_strategy: v })}
+        />
+        <p className="-mt-1 text-xs text-ink-muted">{t("route.directStrategyHint")}</p>
         <TagsInput
           label={t("route.domains")}
           value={cfg.direct_domains}

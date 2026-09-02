@@ -49,3 +49,30 @@ func TestExternalServersFollowAccess(t *testing.T) {
 		t.Fatalf("no grants: %v", links)
 	}
 }
+
+// A REALITY lane is only handed out once the panel has minted its keys: the public
+// key is what a client authenticates the handshake with, and a link without one
+// fails with nothing a user could act on. A node added before its keys landed used
+// to produce exactly that link.
+func TestRealityLaneNeedsItsPublicKey(t *testing.T) {
+	set := &model.Settings{
+		Host: "1.2.3.4", SNI: "1.2.3.4", ServerID: model.LocalNodeID,
+		RealityEnabled: true, RealityPort: 8443, RealityDest: "max.ru",
+		RealityShortID: "ab", RealityPath: "/x",
+	}
+	u := model.User{ID: 1, UUID: "uuid", Password: "pw"}
+	srv := Server{Set: set, Access: model.UnrestrictedAccess()}
+
+	if links := ShareLinks(u, srv); len(links) != 0 {
+		t.Fatalf("a keyless REALITY lane was handed out: %v", links)
+	}
+	if yaml := ClashYAMLMulti(u, []Server{srv}); strings.Contains(yaml, "reality-opts") {
+		t.Error("a keyless REALITY proxy reached the Clash profile")
+	}
+
+	set.RealityPublicKey = "PUBKEY"
+	links := ShareLinks(u, srv)
+	if len(links) != 1 || !strings.Contains(links[0], "pbk=PUBKEY") {
+		t.Fatalf("with a key the lane must be handed out: %v", links)
+	}
+}

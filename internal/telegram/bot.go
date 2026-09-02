@@ -161,90 +161,112 @@ func (s *Service) clearPending(chatID int64) {
 // token it idles, re-checking periodically.
 func (s *Service) Run(ctx context.Context) {
 	go s.backupLoop(ctx)
+	// Everything this bot pushes goes through one queue: the panel raises these from
+	// its poll loops and webhooks, which must not wait on Telegram (see notifyqueue.go).
+	q := newNotifyQueue("admin bot")
+	q.run(ctx, 2)
 	// Broadcast admin events (payments, outages, blocklist hits) to the authorized
 	// admin chats.
 	s.panel.SetAdminNotifier(func(html string) {
-		set, err := s.store.GetSettings()
-		if err != nil {
-			log.Printf("telegram: admin notify: settings: %v", err)
-			return
-		}
-		token := strings.TrimSpace(set.TGBotToken)
-		if token == "" {
-			log.Printf("telegram: admin notify dropped — no bot token")
-			return
-		}
-		chats := set.TelegramChatIDs()
-		if len(chats) == 0 {
-			// The whole feature is silent in this state and nothing else says so: every
-			// alert the panel raises is built, gated, and then delivered to nobody.
-			log.Printf("telegram: admin notify dropped — no linked admin chats")
-			return
-		}
-		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		for _, id := range chats {
-			// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
-			// revoked token fails per send, and with the error discarded the panel looked
-			// exactly like a panel that had nothing to say.
-			if err := c.SendMessage(context.Background(), id, html); err != nil {
-				log.Printf("telegram: admin notify to %d failed: %v", id, err)
-			}
-		}
+		q.submit(func(ctx context.Context) { s.sendAdminBroadcast(ctx, html) })
 	})
-	// A signup awaiting moderation: post it with approve/reject buttons.
 	s.panel.SetAdminModerationNotifier(func(reqID int64, name, plan string) {
-		set, err := s.store.GetSettings()
-		if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
-			return
-		}
-		lang := s.lang()
-		msg := i18n.T(lang, "admin.regRequest", esc(name))
-		if plan != "" {
-			msg += "\n" + i18n.T(lang, "admin.planIs", esc(plan))
-		}
-		msg += "\n\n" + i18n.T(lang, "admin.approveAccess")
-		rows := [][]InlineButton{{
-			{Text: i18n.T(lang, "admin.btnApprove"), CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
-			{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
-		}}
-		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		for _, id := range set.TelegramChatIDs() {
-			if err := c.SendMenu(context.Background(), id, msg, rows); err != nil {
-				log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
-			}
-		}
+		q.submit(func(ctx context.Context) { s.sendModerationPrompt(ctx, reqID, name, plan) })
 	})
-	// A sign-in from an address the admin had not used: say where from, on what,
-	// and offer the one action that helps if it was somebody else.
 	s.panel.SetAdminLoginNotifier(func(a core.LoginAlert) {
-		set, err := s.store.GetSettings()
-		if err != nil || strings.TrimSpace(set.TGBotToken) == "" {
-			return
-		}
-		lang := s.lang()
-		where := esc(a.IP)
-		if a.Country != "" {
-			where += " " + geo.Flag(a.Country) + " " + esc(a.Country)
-		}
-		if a.Org != "" {
-			where += " · " + esc(a.Org)
-		}
-		client := esc(a.Client)
-		if client == "" {
-			client = i18n.T(lang, "admin.unknownClient")
-		}
-		when := time.Unix(a.At, 0).In(s.panel.Location()).Format("02.01.2006 15:04")
-		msg := i18n.T(lang, "notify.adminLogin", esc(a.Username), where, client, when)
-		rows := [][]InlineButton{{
-			{Text: i18n.T(lang, "admin.btnNotMe"), CallbackData: fmt.Sprintf("sess:%d:kill", a.AdminID)},
-		}}
-		c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
-		for _, id := range set.TelegramChatIDs() {
-			if err := c.SendMenu(context.Background(), id, msg, rows); err != nil {
-				log.Printf("telegram: login alert to %d failed: %v", id, err)
-			}
-		}
+		q.submit(func(ctx context.Context) { s.sendLoginAlert(ctx, a) })
 	})
+	s.pollLoop(ctx)
+}
+
+// sendAdminBroadcast delivers one message to every authorized admin chat.
+func (s *Service) sendAdminBroadcast(ctx context.Context, html string) {
+	set, err := s.store.GetSettings()
+	if err != nil {
+		log.Printf("telegram: admin notify: settings: %v", err)
+		return
+	}
+	token := strings.TrimSpace(set.TGBotToken)
+	if token == "" {
+		log.Printf("telegram: admin notify dropped — no bot token")
+		return
+	}
+	chats := set.TelegramChatIDs()
+	if len(chats) == 0 {
+		// The whole feature is silent in this state and nothing else says so: every
+		// alert the panel raises is built, gated, and then delivered to nobody.
+		log.Printf("telegram: admin notify dropped — no linked admin chats")
+		return
+	}
+	c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
+	for _, id := range chats {
+		// Logged, never swallowed: a chat that blocked the bot, a stale chat id or a
+		// revoked token fails per send, and with the error discarded the panel looked
+		// exactly like a panel that had nothing to say.
+		if err := c.SendMessage(ctx, id, html); err != nil {
+			log.Printf("telegram: admin notify to %d failed: %v", id, err)
+		}
+	}
+}
+
+// sendModerationPrompt posts a signup awaiting moderation, with its buttons.
+func (s *Service) sendModerationPrompt(ctx context.Context, reqID int64, name, plan string) {
+	set, err := s.store.GetSettings()
+	if err != nil || strings.TrimSpace(set.TGBotToken) == "" || !set.AdminEventEnabled(model.AdminEventRegistered) {
+		return
+	}
+	lang := s.lang()
+	msg := i18n.T(lang, "admin.regRequest", esc(name))
+	if plan != "" {
+		msg += "\n" + i18n.T(lang, "admin.planIs", esc(plan))
+	}
+	msg += "\n\n" + i18n.T(lang, "admin.approveAccess")
+	rows := [][]InlineButton{{
+		{Text: i18n.T(lang, "admin.btnApprove"), CallbackData: fmt.Sprintf("reg:%d:ok", reqID)},
+		{Text: i18n.T(lang, "admin.btnReject"), CallbackData: fmt.Sprintf("reg:%d:no", reqID)},
+	}}
+	c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
+	for _, id := range set.TelegramChatIDs() {
+		if err := c.SendMenu(ctx, id, msg, rows); err != nil {
+			log.Printf("telegram: moderation prompt to %d failed: %v", id, err)
+		}
+	}
+}
+
+// sendLoginAlert reports a sign-in from an address the admin had not used: where
+// from, on what, and the one action that helps if it was somebody else.
+func (s *Service) sendLoginAlert(ctx context.Context, a core.LoginAlert) {
+	set, err := s.store.GetSettings()
+	if err != nil || strings.TrimSpace(set.TGBotToken) == "" {
+		return
+	}
+	lang := s.lang()
+	where := esc(a.IP)
+	if a.Country != "" {
+		where += " " + geo.Flag(a.Country) + " " + esc(a.Country)
+	}
+	if a.Org != "" {
+		where += " · " + esc(a.Org)
+	}
+	client := esc(a.Client)
+	if client == "" {
+		client = i18n.T(lang, "admin.unknownClient")
+	}
+	when := time.Unix(a.At, 0).In(s.panel.Location()).Format("02.01.2006 15:04")
+	msg := i18n.T(lang, "notify.adminLogin", esc(a.Username), where, client, when)
+	rows := [][]InlineButton{{
+		{Text: i18n.T(lang, "admin.btnNotMe"), CallbackData: fmt.Sprintf("sess:%d:kill", a.AdminID)},
+	}}
+	c := NewClient(strings.TrimSpace(set.TGBotToken), set.TelegramProxyURL())
+	for _, id := range set.TelegramChatIDs() {
+		if err := c.SendMenu(ctx, id, msg, rows); err != nil {
+			log.Printf("telegram: login alert to %d failed: %v", id, err)
+		}
+	}
+}
+
+// pollLoop long-polls for updates until ctx ends, idling while the bot is off.
+func (s *Service) pollLoop(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return

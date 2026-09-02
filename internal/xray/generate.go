@@ -202,8 +202,15 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	}
 
 	rc := set.Routing
+	direct := Outbound{Tag: "direct", Protocol: "freedom"}
+	if rc.DirectStrategy != "" {
+		// Only when the operator chose one: an absent settings block is Xray's own
+		// default (AsIs), and writing it out explicitly would say the panel decided
+		// something it did not.
+		direct.Settings = FreedomSettings{DomainStrategy: rc.DirectStrategy}
+	}
 	outbounds := []Outbound{
-		{Tag: "direct", Protocol: "freedom"},
+		direct,
 		{Tag: "block", Protocol: "blackhole"},
 	}
 

@@ -126,13 +126,22 @@ func (s *UserService) clearPending(chatID int64) {
 
 // Run long-polls the user bot until ctx is cancelled.
 func (s *UserService) Run(ctx context.Context) {
-	// Let the panel push payment confirmations to a user's chat via this bot.
+	// Let the panel push messages to a user's chat via this bot — off the goroutine
+	// that raised them (see notifyqueue.go): these come from the traffic poll and the
+	// payment path, where a sweep can touch many users at once.
+	q := newNotifyQueue("user bot")
+	q.run(ctx, 4)
 	s.panel.SetUserNotifier(func(chatID int64, html string) {
-		set, err := s.store.GetSettings()
-		if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
-			return
-		}
-		_ = NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL()).SendMessage(context.Background(), chatID, html)
+		q.submit(func(ctx context.Context) {
+			set, err := s.store.GetSettings()
+			if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
+				return
+			}
+			c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
+			if err := c.SendMessage(ctx, chatID, html); err != nil {
+				log.Printf("telegram: user notify to %d failed: %v", chatID, err)
+			}
+		})
 	})
 	for {
 		if ctx.Err() != nil {

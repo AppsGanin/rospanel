@@ -946,6 +946,9 @@ export interface RoutingConfig {
   opera_ips: string[]
   direct_domains: string[]
   direct_ips: string[]
+  // How the direct outbound resolves a name before dialling it (Xray's freedom
+  // domainStrategy). "" = Xray's own default (AsIs).
+  direct_strategy?: string
   routing_order: string[]
   lanes: EgressLane[]
   proxy_refresh_minutes: number
@@ -2515,6 +2518,11 @@ export const setExternalServerEnabled = (id: number, enabled: boolean) =>
     method: 'POST',
     body: JSON.stringify({ enabled }),
   })
+
+// MAX_DEVICE_LIMIT mirrors model.MaxDeviceLimit: the highest simultaneous-device
+// cap the panel accepts (0 still means unlimited). Kept here so the inputs cannot
+// offer what a save would refuse.
+export const MAX_DEVICE_LIMIT = 100
 
 // ---- Changelog --------------------------------------------------------------
 

@@ -194,15 +194,27 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		_, _ = w.Write(png)
 
 	case "pay":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
 		rt.handleSubPay(w, r, *u, set)
 
 	case "cancel":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
 		rt.handleSubCancel(w, r, *u, set)
 
 	case "order":
 		rt.handleSubOrder(w, r, *u)
 
 	case "devices/unbind":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
 		rt.handleSubDeviceUnbind(w, r, *u, set)
 
 	default:
@@ -258,6 +270,32 @@ func (rt *Router) handleSubApp(w http.ResponseWriter, r *http.Request, u model.U
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(html)
+}
+
+// subActionAllowed is the guard on the subscription page's own actions — cancel a
+// plan, start a payment, release a device. The token in the URL authenticates the
+// account but says nothing about who is asking: a link that leaked into a chat, a
+// referrer log or a browser's history is enough for another site to fire the
+// request from the user's browser and cancel their plan or unbind their device.
+//
+// So the request must prove it came from the page. Two ways, either is enough:
+// the page sends a custom header, which a cross-origin form or image cannot set
+// without a preflight the panel never answers; and a modern browser labels the
+// request's origin itself (Sec-Fetch-Site), where anything but "same-origin" is
+// somebody else's page. A request with neither is refused — that is the shape of
+// a curl by hand, which has no reason to reach this endpoint rather than the API.
+//
+// A refusal is served as the decoy, like every other unhappy path here: the
+// masquerade must not change because somebody guessed a path.
+func subActionAllowed(r *http.Request) bool {
+	if r.Header.Get("X-RosPanel-Sub") != "" {
+		return true
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true
+	}
+	return false
 }
 
 // handleSubCancel cancels the user's active paid plan from the subscription page

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -697,6 +698,20 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name is required")
 		return
 	}
+	// Everything below is applied to an account that already exists, so what a bad
+	// value costs is not a rejected request but a half-made user: a negative quota
+	// stored as "unlimited", a plan id that names nothing. Judged here, before the
+	// account is created, where the answer is still a plain 400.
+	if !apiNonNegative(w, map[string]int64{
+		"data_limit": req.DataLimit, "expire_at": req.ExpireAt,
+		"device_limit": int64(req.DeviceLimit), "speed_limit": int64(req.SpeedLimit),
+		"plan_id": req.PlanID,
+	}) {
+		return
+	}
+	if req.PlanID > 0 && !rt.apiPlanExists(w, req.PlanID) {
+		return
+	}
 	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -799,6 +814,25 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 			return
 		}
 	}
+	// Every number is judged before the first write: a PATCH sets limits, speed and
+	// the plan in turn, and a bad value in a later field must not leave the earlier
+	// ones applied.
+	check := map[string]int64{}
+	if req.DataLimit != nil {
+		check["data_limit"] = *req.DataLimit
+	}
+	if req.ExpireAt != nil {
+		check["expire_at"] = *req.ExpireAt
+	}
+	if req.DeviceLimit != nil {
+		check["device_limit"] = int64(*req.DeviceLimit)
+	}
+	if req.SpeedLimit != nil {
+		check["speed_limit"] = int64(*req.SpeedLimit)
+	}
+	if !apiNonNegative(w, check) {
+		return
+	}
 	// Limits are set as a unit; unspecified fields keep the user's current value.
 	if req.DataLimit != nil || req.ExpireAt != nil || req.DeviceLimit != nil {
 		dataLimit, expireAt, deviceLimit := cur.DataLimit, cur.ExpireAt, cur.DeviceLimit
@@ -810,10 +844,6 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 		}
 		if req.DeviceLimit != nil {
 			deviceLimit = *req.DeviceLimit
-		}
-		if deviceLimit < 0 {
-			writeAPIErr(w, http.StatusBadRequest, "bad_request", "device_limit cannot be negative")
-			return
 		}
 		if err := rt.mgr.SetUserLimits(r.Context(), id, dataLimit, expireAt, deviceLimit); err != nil {
 			writeAPIManagerErr(w, err)
@@ -1118,4 +1148,36 @@ func (rt *Router) apiSystem(w http.ResponseWriter, _ *http.Request) {
 
 func (rt *Router) apiHealthReport(w http.ResponseWriter, _ *http.Request) {
 	writeAPIData(w, http.StatusOK, rt.mgr.Health())
+}
+
+// apiNonNegative refuses a request carrying a negative number where none can mean
+// anything, naming the field. Reports whether the request may go on.
+//
+// Zero is not negative and is meaningful everywhere here — "no quota", "no
+// expiry", "no cap" — so only values below zero are refused. Fields are checked
+// in a fixed order so the same request always names the same field first.
+func apiNonNegative(w http.ResponseWriter, fields map[string]int64) bool {
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if fields[name] < 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", name+" must not be negative")
+			return false
+		}
+	}
+	return true
+}
+
+// apiPlanExists refuses a plan id that names no plan, rather than letting the
+// account be created and the plan step fail afterwards. Reports whether to go on.
+func (rt *Router) apiPlanExists(w http.ResponseWriter, planID int64) bool {
+	p, err := rt.mgr.Store().GetTariffPlan(planID)
+	if err != nil || p == nil {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "plan not found")
+		return false
+	}
+	return true
 }
