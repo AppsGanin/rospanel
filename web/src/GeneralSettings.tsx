@@ -30,7 +30,7 @@ import {
   EMPTY_SCHEDULE,
   type Schedule,
 } from "./CronPicker";
-import { useAction } from "./hooks";
+import { useAction, useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { browserTimezone, tzOptions } from "./tz";
 import {
@@ -42,6 +42,7 @@ import {
   SaveBar,
   Select,
   SettingCard,
+  ShowMore,
   Spinner,
   TextInput,
   ToggleRow,
@@ -131,6 +132,11 @@ export function GeneralSettings() {
       .then(setProbes)
       .catch(() => setProbes([]));
   };
+  // The scanner list is as long as the recording has been on, and it sits inside a
+  // settings card rather than on a page of its own — so it opens at a few rows and
+  // grows on demand. A refresh starts it over (resetKey), since the rows below the
+  // fold are no longer the ones the operator had expanded to.
+  const probeRows = useShowMore(probes ?? [], { first: 5, step: 20, resetKey: probes });
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -471,7 +477,7 @@ export function GeneralSettings() {
                     {t("common.refresh")}
                   </button>
                 </div>
-                {probes.map((p) => (
+                {probeRows.shown.map((p) => (
                   <div
                     key={p.ip}
                     className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-1.5 text-sm"
@@ -503,6 +509,11 @@ export function GeneralSettings() {
                     </span>
                   </div>
                 ))}
+                <ShowMore
+                  rest={probeRows.rest}
+                  onClick={probeRows.showMore}
+                  className="mt-1"
+                />
               </div>
             )}
           </div>
