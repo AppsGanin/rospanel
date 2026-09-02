@@ -14,6 +14,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -240,6 +241,15 @@ type Manager struct {
 	// online is who is connected to which server right now (see manager_online.go).
 	online onlineGauge
 
+	// probeBlock drops scanners at the firewall, policyBlock the addresses the source
+	// policy refuses (manager_connpolicy.go). Separate tables: switching one off must
+	// not lift the other's blocks. Nil in a test manager, where both are no-ops.
+	probeBlock  *ipblock.Blocker
+	policyBlock *ipblock.Blocker
+	// policy caches the source policy and the addresses it has recently ruled on
+	// (manager_connpolicy.go); the check runs on the connection path.
+	policy policyState
+
 	// awg is the master's AmneziaWG tunnel (see manager_awg.go); awgLast holds the
 	// counters read at the previous poll, per peer public key.
 	awg     awg.Device
@@ -303,6 +313,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeGeoFiles:   map[int64][]nodeapi.GeoFile{},
 		nodeHostStats:  map[int64]nodeapi.HostStats{},
 		awg:            awg.New(),
+		probeBlock:     ipblock.New(ipblock.TableProbes),
+		policyBlock:    ipblock.New(ipblock.TablePolicy),
 		nodeSyncFails:  map[int64]int{},
 		nodeLogsWanted: map[int64]int64{},
 		nodeAlerts:     map[int64]*nodeAlertState{},

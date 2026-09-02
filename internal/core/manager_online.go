@@ -69,6 +69,9 @@ func (g *onlineGauge) counts(since int64) map[int64]int {
 func (m *Manager) RecordAccessOn(serverID int64, email, ip, dest string) {
 	if id, ok := userIDFromEmail(email); ok {
 		m.online.record(serverID, id, time.Now().Unix())
+		// Where they connected FROM, against the source policy. Rate-limited per
+		// address inside, so this is a mutex and two lookups on the hot path.
+		m.CheckConnPolicy(id, ip)
 	}
 	m.RecordAccess(email, ip, dest)
 }

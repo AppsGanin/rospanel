@@ -353,6 +353,15 @@ type NodeMeta struct {
 	// An older agent ignores the field and simply doesn't shape.
 	SpeedLimits map[string]int `json:"speed_limits,omitempty"`
 
+	// BlockedIPs are the addresses the source policy refused, fleet-wide (see
+	// core.ConnPolicy). The node drops them at its own firewall, so a client refused
+	// on one server is refused on all of them. Empty ⇒ nothing is blocked and any
+	// table the node installed comes down.
+	BlockedIPs []string `json:"blocked_ips,omitempty"`
+	// BlockTTLHours is how long those blocks last, so a node cut off from the panel
+	// expires them on the operator's schedule rather than the blocker's default.
+	BlockTTLHours int `json:"block_ttl_hours,omitempty"`
+
 	// AWG is the node's AmneziaWG tunnel as the panel wants it — its identity, the
 	// obfuscation parameters and every peer allowed on it. nil ⇒ the lane is off
 	// on this node and any running tunnel comes down. See internal/awg.

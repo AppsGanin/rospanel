@@ -47,6 +47,7 @@ const (
 	EventDeviceLimited  = "user.device_limited" // system: too many devices
 	EventDeviceBound    = "user.device_bound"   // a client install claimed a device slot
 	EventDeviceRefused  = "user.device_refused" // system: a new device hit the device cap
+	EventPolicyRefused  = "user.policy_refused" // system: connected from a source the policy refuses
 	EventDeviceUnbound  = "user.device_unbound" // a device was released (admin, or token rotation)
 	EventTelegramLinked = "user.telegram_linked"
 	EventTelegramUnlink = "user.telegram_unlinked"
@@ -85,6 +86,7 @@ var UserEventCatalog = []string{
 	EventDeviceLimited,
 	EventDeviceBound,
 	EventDeviceRefused,
+	EventPolicyRefused,
 	EventDeviceUnbound,
 	EventTelegramLinked,
 	EventTelegramUnlink,

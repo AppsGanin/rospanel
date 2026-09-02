@@ -202,6 +202,9 @@ func runServer(dataDir string) {
 	// once with the proxies already in place — instead of starting empty and being
 	// restarted moments later when the background fetch lands.
 	mgr.SeedProxies()
+	// Put back the addresses the source policy had refused: the kernel forgets its
+	// sets on restart, and the panel's own record is what says who should still be out.
+	mgr.ApplyPolicyBlocksAtBoot()
 
 	startupStage("generating Xray config and starting Xray")
 	if err := mgr.Reconcile(); err != nil {
@@ -487,6 +490,7 @@ func retentionLoop(mgr *core.Manager) {
 		mgr.PurgeOldEvents()
 		mgr.PurgeOldAdminAudit()
 		mgr.PurgeOldConnections()
+		mgr.PurgePolicyBlocks()
 		mgr.PurgeOldProbes()       // scanning IPs past their retention window
 		mgr.PurgeOldOrders()       // cancelled (never-paid) orders past their retention window
 		mgr.PurgeOldNodeCommands() // node commands nobody came back for

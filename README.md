@@ -507,6 +507,19 @@ IP.
 
 Matches are kept for **14 days** — enough to handle a complaint.
 
+**Where clients may connect from** (*Settings → General*). A country rule — only these
+countries, or everywhere except these — plus a list of **networks (ASN)** that may never
+connect, which is how a resold account is usually spotted: it appears from a hosting provider
+rather than a home line. Both are checked against what the panel already records for every
+connection, on the master and on every node, so the rule covers every protocol including the
+ones Xray does not carry. **The address is dropped, not the account**: the offender's IP goes
+into an nftables set on every server (with a length the operator sets, self-expiring), while the
+account keeps working from wherever the policy does allow. Enforcement is off until switched on —
+until then a violation is only recorded, in the user's journal and in a list the operator can
+read before letting the rule cut anything, and any block can be lifted by hand. An address the
+geo table cannot place is never refused: that table is incomplete, and cutting real users off a
+working service is the one failure this must not have.
+
 #### 🧰 Operations and security
 
 **Diagnostics** in one click: the Xray process, config application, TLS expiry, disk space, geo
