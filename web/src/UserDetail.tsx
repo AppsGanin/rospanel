@@ -471,6 +471,16 @@ export function UserDetail({
           <div className="flex items-center justify-between">
             <span className="text-sm">
               {t(user.enabled ? 'userDetail.subOn' : 'userDetail.subOff')}
+              {user.abuse_action && user.abuse_until && (
+                <span className="mt-0.5 block text-xs text-orange-600">
+                  {t(
+                    user.abuse_action === 'disable'
+                      ? 'userDetail.abuseDisabled'
+                      : 'userDetail.abuseThrottled',
+                    { when: new Date(user.abuse_until * 1000).toLocaleString(i18n.language) },
+                  )}
+                </span>
+              )}
             </span>
             <Switch
               checked={user.enabled}

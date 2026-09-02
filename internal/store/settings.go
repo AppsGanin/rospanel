@@ -64,6 +64,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       tg_support_group_id, tg_support_greeting, tg_lang, tg_proxy, tg_proxy_mode,
 		       tg_user_events, tg_user_expiring_days,
 		       abuse_enabled, abuse_categories, abuse_custom, abuse_alert_min,
+		       abuse_warn_min, abuse_throttle_min, abuse_throttle_kbps, abuse_disable_min, abuse_hours,
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
 		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
@@ -108,6 +109,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.TGSupportGroupID, &st.TGSupportGreeting, &st.TGLang, &st.TGProxy, &st.TGProxyMode,
 		&st.TGUserEvents, &st.TGUserExpiringDays,
 		&abuseEn, &st.AbuseCategories, &st.AbuseCustom, &st.AbuseAlertMin,
+		&st.AbuseMeasures.WarnMin, &st.AbuseMeasures.ThrottleMin, &st.AbuseMeasures.ThrottleKbps,
+		&st.AbuseMeasures.DisableMin, &st.AbuseMeasures.Hours,
 		&hwidEn, &hwidRequire, &st.HWIDFallbackLimit, &st.HWIDTTLDays,
 		&st.DeviceCountMode,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
@@ -290,6 +293,16 @@ func (s *Store) SetAbuseConfig(enabled bool, categories int64, custom string, al
 		`UPDATE settings SET abuse_enabled = ?, abuse_categories = ?, abuse_custom = ?,
 		        abuse_alert_min = ?, updated_at = unixepoch() WHERE id = 1`,
 		enabled, categories, custom, alertMin,
+	)
+	return err
+}
+
+// SetAbuseMeasures persists the automatic-response ladder (model.AbuseMeasures).
+func (s *Store) SetAbuseMeasures(a model.AbuseMeasures) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET abuse_warn_min = ?, abuse_throttle_min = ?, abuse_throttle_kbps = ?,
+		        abuse_disable_min = ?, abuse_hours = ?, updated_at = unixepoch() WHERE id = 1`,
+		a.WarnMin, a.ThrottleMin, a.ThrottleKbps, a.DisableMin, a.Hours,
 	)
 	return err
 }

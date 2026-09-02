@@ -58,3 +58,41 @@ func TestAdminEventsRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// An explicit mask saved before the sign-in alert existed gains that category on
+// upgrade (migration 0065); a mask of -1 stays -1 rather than turning into a
+// frozen list.
+func TestLoginAlertIsOnForSavedMasks(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "ev.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer st.Close()
+	// Replay what an older install had: every category of its day, no bit 9.
+	old := model.AdminEventProbe<<1 - 1 // bits 0..8
+	if _, err := st.db.Exec(`UPDATE settings SET tg_admin_events = ? WHERE id = 1`, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE settings SET tg_admin_events = tg_admin_events | 512 WHERE tg_admin_events <> -1`); err != nil {
+		t.Fatal(err)
+	}
+	set, err := st.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.AdminEventEnabled(model.AdminEventLogin) {
+		t.Fatalf("login alert off after the migration: mask %d", set.TGAdminEvents)
+	}
+	if set.TGAdminEvents != old|model.AdminEventLogin {
+		t.Fatalf("other bits disturbed: %d", set.TGAdminEvents)
+	}
+	if err := st.SetAdminEvents(-1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE settings SET tg_admin_events = tg_admin_events | 512 WHERE tg_admin_events <> -1`); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ = st.GetSettings(); set.TGAdminEvents != -1 {
+		t.Fatalf("-1 must stay -1, got %d", set.TGAdminEvents)
+	}
+}

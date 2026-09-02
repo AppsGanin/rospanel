@@ -13,7 +13,8 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
-	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key`
+	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
+	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day`
 
 // errTagsInvalid is returned by SetUserTags for a list model.NormalizeTags refuses.
 // Callers validate before writing, so reaching this means a bug, not user input.
@@ -645,6 +646,34 @@ func (s *Store) SetUserEnabled(id int64, enabled bool) error {
 	return err
 }
 
+// SetAbuseMeasure records the measure the panel imposed on a user for blocklist
+// traffic, together with what it changed, so the lift can undo exactly that.
+func (s *Store) SetAbuseMeasure(id int64, action string, until int64, prevSpeed int) error {
+	_, err := s.db.Exec(`UPDATE users SET abuse_action = ?, abuse_until = ?, abuse_prev_speed = ? WHERE id = ?`,
+		action, until, prevSpeed, id)
+	return err
+}
+
+// ClearAbuseMeasure forgets the measure — after it was lifted, or after an operator
+// overruled it by hand.
+func (s *Store) ClearAbuseMeasure(id int64) error {
+	_, err := s.db.Exec(`UPDATE users SET abuse_action = '', abuse_until = 0, abuse_prev_speed = 0 WHERE id = ?`, id)
+	return err
+}
+
+// SetAbuseWarnedDay marks the day the user was last warned, so one day's traffic
+// produces one warning however many flushes carry it.
+func (s *Store) SetAbuseWarnedDay(id int64, day string) error {
+	_, err := s.db.Exec(`UPDATE users SET abuse_warned_day = ? WHERE id = ?`, day, id)
+	return err
+}
+
+// AbuseMeasuresDue returns the users whose measure has run its course by now.
+func (s *Store) AbuseMeasuresDue(now int64) ([]model.User, error) {
+	return s.queryUsers(`SELECT `+userCols+` FROM users
+		WHERE abuse_action <> '' AND abuse_until > 0 AND abuse_until <= ? ORDER BY id`, now)
+}
+
 // DeleteUser removes a user and detaches them from the broadcast audience.
 //
 // The subscriber row survives on purpose — someone whose account was deleted is
@@ -763,6 +792,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
+			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay,
 		); err != nil {
 			return nil, err
 		}

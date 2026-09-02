@@ -7,6 +7,8 @@ package i18n
 // same code the panel UI translates. The external API renders these; the panel
 // keeps translating in the browser, in whichever language the admin picked.
 var errEN = map[string]string{
+	"err.abuseHours":               "A measure lasts from 1 hour to 30 days",
+	"err.abuseThrottleSpeed":       "Enter the speed for the throttle",
 	"err.activeSubscription":       "you have an active “{{plan}}” subscription — cancel it first to switch plans",
 	"err.adminBotOff":              "turn the admin bot on — the test arrives through it, in the linked chat",
 	"err.adminChatUnreachable":     "the linked chat is unreachable — open the admin bot and make sure it is not blocked",

@@ -18,6 +18,10 @@ export interface User {
   device_limit: number
   active_devices: number
   speed_limit: number // kbit/s, 0 = unlimited
+  // The measure the panel holds against the user for blocklist traffic, and
+  // when it lifts. Absent when there is none.
+  abuse_action?: 'throttle' | 'disable'
+  abuse_until?: number
   plan_id: number
   plan_name?: string
   telegram_linked?: boolean
@@ -153,11 +157,30 @@ export interface AbuseFeedStatus {
   updated?: number
 }
 
+// AbuseMeasures is the ladder of automatic responses (model.AbuseMeasures): a
+// per-rung matches/day threshold, 0 = that rung is off.
+export interface AbuseMeasures {
+  warn_min: number
+  throttle_min: number
+  throttle_kbps: number
+  disable_min: number
+  hours: number
+}
+
+export const EMPTY_ABUSE_MEASURES: AbuseMeasures = {
+  warn_min: 0,
+  throttle_min: 0,
+  throttle_kbps: 1024,
+  disable_min: 0,
+  hours: 24,
+}
+
 export interface AbuseSettingsInfo {
   enabled: boolean
   categories: Record<string, boolean>
   custom: string
   alert_min: number
+  measures: AbuseMeasures
   status: AbuseFeedStatus[]
 }
 
@@ -169,6 +192,7 @@ export const saveAbuseSettings = (cfg: {
   categories: Record<string, boolean>
   custom: string
   alert_min: number
+  measures: AbuseMeasures
 }) =>
   api<{ ok: boolean }>('api/settings/abuse', {
     method: 'POST',

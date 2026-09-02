@@ -202,8 +202,14 @@ func (m *Manager) alertAbuse(hits []store.AbuseHit) {
 		dayCounts[k.day] = c
 	}
 
+	set, serr := m.store.GetSettings()
 	for k := range seen {
 		total := dayCounts[k.day][k.userID]
+		// The measures have thresholds of their own and are idempotent per rung, so
+		// they see every batch; the alert below is the once-a-day one.
+		if serr == nil {
+			m.applyAbuseMeasure(set, k.userID, k.day, total)
+		}
 		if total < int64(threshold) {
 			continue
 		}

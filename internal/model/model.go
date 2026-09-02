@@ -136,6 +136,15 @@ type User struct {
 	// see internal/shaper for what that does and does not guarantee.
 	SpeedLimit int `json:"speed_limit"`
 
+	// AbuseAction is the measure the panel imposed for blocklist traffic (one of the
+	// AbuseAction* values, "" when none), AbuseUntil when it lifts, AbusePrevSpeed the
+	// cap a throttle replaced so the lift can put it back. AbuseWarnedDay keeps the
+	// warning to one per day. See AbuseMeasures.
+	AbuseAction    string `json:"abuse_action,omitempty"`
+	AbuseUntil     int64  `json:"abuse_until,omitempty"`
+	AbusePrevSpeed int    `json:"-"`
+	AbuseWarnedDay string `json:"-"`
+
 	// Note is the operator's own text about this user: where they came from, what was
 	// agreed, what to remember at the next ticket. Panel and API only — it is never
 	// handed to the user, the bots or a client app.
@@ -847,6 +856,9 @@ type Settings struct {
 	AbuseCategories int64  `json:"-"`
 	AbuseCustom     string `json:"-"`
 	AbuseAlertMin   int    `json:"-"`
+	// AbuseMeasures is what the panel does on its own to a user over the daily
+	// thresholds, beyond telling the operator.
+	AbuseMeasures AbuseMeasures `json:"-"`
 
 	// Support relay (Settings → Telegram → Support): a third bot whose only job is
 	// to carry messages between a user and a per-user topic in TGSupportGroupID, a
@@ -989,6 +1001,7 @@ const (
 	AdminEventPayment       int64 = 1 << 6 // payment lifecycle (order created / paid)
 	AdminEventAbuse         int64 = 1 << 7 // a user's traffic hit a threat/piracy/gambling list
 	AdminEventProbe         int64 = 1 << 8 // daily summary of IPs scanning for the hidden panel
+	AdminEventLogin         int64 = 1 << 9 // an admin signed in from an address they had not used before
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1006,6 +1019,7 @@ var AdminEventCatalog = []struct {
 	{"payment", AdminEventPayment},
 	{"abuse", AdminEventAbuse},
 	{"probe", AdminEventProbe},
+	{"login", AdminEventLogin},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
@@ -1037,6 +1051,49 @@ var AbuseCategoryCatalog = []struct {
 
 // AbuseCategoryEnabled reports whether a category bit is active.
 func (s *Settings) AbuseCategoryEnabled(bit int64) bool { return s.AbuseCategories&bit != 0 }
+
+// AbuseMeasures is the ladder of automatic responses to a user whose destinations
+// keep matching the blocklists. Each rung has its own matches-per-day threshold and
+// 0 switches that rung off; the panel takes the highest rung a user's daily total
+// has reached. Warning goes through the user's own bot and costs nothing; the
+// throttle and the switch-off hold for Hours and are then lifted by the panel, so a
+// device that was cleaned up gets its access back without a ticket.
+//
+// Deliberately not "the operator's alert threshold with actions attached":
+// AbuseAlertMin says when the operator wants to hear about it, which is usually
+// earlier than when they want the panel to act.
+type AbuseMeasures struct {
+	WarnMin      int `json:"warn_min"`      // matches/day → a warning to the user's bot
+	ThrottleMin  int `json:"throttle_min"`  // matches/day → speed capped to ThrottleKbps
+	ThrottleKbps int `json:"throttle_kbps"` // the cap, kbit/s
+	DisableMin   int `json:"disable_min"`   // matches/day → switched off
+	Hours        int `json:"hours"`         // how long a throttle or a switch-off holds
+}
+
+// Validate rejects a ladder that could not mean what it says.
+func (a AbuseMeasures) Validate() error {
+	if a.WarnMin < 0 || a.ThrottleMin < 0 || a.DisableMin < 0 {
+		return fieldErr("err.badValue", "порог не может быть отрицательным")
+	}
+	if a.ThrottleMin > 0 && a.ThrottleKbps < 1 {
+		return fieldErr("err.abuseThrottleSpeed", "укажите скорость для ограничения")
+	}
+	if (a.ThrottleMin > 0 || a.DisableMin > 0) && (a.Hours < 1 || a.Hours > 24*30) {
+		return fieldErr("err.abuseHours", "срок меры — от 1 часа до 30 дней")
+	}
+	return nil
+}
+
+// Active reports whether any rung is switched on.
+func (a AbuseMeasures) Active() bool {
+	return a.WarnMin > 0 || a.ThrottleMin > 0 || a.DisableMin > 0
+}
+
+// The measure the panel currently holds against a user (User.AbuseAction).
+const (
+	AbuseActionThrottle = "throttle"
+	AbuseActionDisable  = "disable"
+)
 
 // User notification categories (bitmask flags stored in Settings.TGUserEvents).
 // Named UserNotify* rather than UserEvent*, which the user journal already uses for

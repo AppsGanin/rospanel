@@ -181,3 +181,15 @@ func (s *Store) PurgeAdminAudit(before int64) (int64, error) {
 		}
 	}
 }
+
+// AdminLoginSeenFrom reports whether this admin has signed in from this address
+// since `since` — the memory behind the "new address" alert. The audit trail is
+// the record rather than the session table: sessions are deleted on logout and
+// expiry, and an address used every morning would read as new every evening.
+func (s *Store) AdminLoginSeenFrom(username, ip string, since int64) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM admin_audit
+		WHERE action = ? AND actor_name = ? AND ip = ? AND created_at >= ?`,
+		model.AuditLogin, username, ip, since).Scan(&n)
+	return n > 0, err
+}

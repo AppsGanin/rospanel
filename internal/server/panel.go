@@ -9,6 +9,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -575,6 +576,9 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rt.limiter.success(ip, username)
+	// Judged before this sign-in writes its own row, or every sign-in would find
+	// itself and read as known.
+	newAddress := rt.mgr.AdminLoginIsNew(username, ip)
 	auditLogin(model.AuditLogin)
 
 	token, err := rt.mgr.Store().CreateSessionFrom(id, sessionTTLSec*time.Second, ip, r.UserAgent())
@@ -589,6 +593,13 @@ func (rt *Router) login(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("login: could not record last-login", "user", username, "err", err)
 	}
 	slog.Info("login: authenticated", "user", req.Username, "role", role, "ip", ip)
+	if newAddress {
+		// Off the request path: Telegram may be slow or blocked, and the sign-in is
+		// already done.
+		go rt.mgr.NotifyAdminLogin(core.LoginAlert{
+			AdminID: id, Username: username, IP: ip, Client: core.ClientLabel(r.UserAgent()),
+		})
+	}
 	rt.setSessionCookie(w, r, token, rt.cookiePath())
 	writeOK(w)
 }

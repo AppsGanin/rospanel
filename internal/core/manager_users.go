@@ -90,6 +90,11 @@ func (m *Manager) SetUserEnabled(ctx context.Context, id int64, enabled bool) er
 		func() error { return m.store.SetUserEnabled(id, enabled) })
 	if err == nil {
 		m.audit(ctx, id, enabledAction(enabled), nil)
+		if enabled {
+			// Switched back on by hand while the panel had them off for blocklist
+			// traffic: the operator's call stands, and the panel must not "lift" it later.
+			m.overruleAbuseMeasure(ctx, prev, model.AbuseActionDisable)
+		}
 	}
 	return err
 }
