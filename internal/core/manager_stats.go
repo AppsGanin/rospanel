@@ -76,6 +76,8 @@ func (m *Manager) PollStats() error {
 func (m *Manager) enforceAfterTraffic(users []model.User) error {
 	// Alert admins when a user crosses active → expired / out-of-quota / over-device.
 	m.notifyStatusTransitions(users)
+	// Give back what the blocklist measures took, once their time is up.
+	m.LiftAbuseMeasures(time.Now().Unix())
 	// Reconcile if the working set changed since the last applied config — e.g. a
 	// user just crossed their data limit (traffic) or expiry (time).
 	working, err := m.store.WorkingUsers(time.Now().Unix())

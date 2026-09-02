@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   abuseCategoryLabel,
+  EMPTY_ABUSE_MEASURES,
   getAbuseSettings,
   refreshAbuseFeeds,
   saveAbuseSettings,
   type AbuseFeedStatus,
+  type AbuseMeasures,
 } from "./api";
 import { useAction } from "./hooks";
 import i18n, { currentLang } from "./i18n";
@@ -58,6 +60,7 @@ export function AbuseSettings() {
   const [cats, setCats] = useState<Record<string, boolean>>({});
   const [custom, setCustom] = useState("");
   const [alertMin, setAlertMin] = useState(20);
+  const [measures, setMeasures] = useState<AbuseMeasures>(EMPTY_ABUSE_MEASURES);
   const [status, setStatus] = useState<AbuseFeedStatus[]>([]);
 
   // Saved snapshot for dirty-tracking, same shape as the editable state.
@@ -66,6 +69,7 @@ export function AbuseSettings() {
     cats: {} as Record<string, boolean>,
     custom: "",
     alertMin: 20,
+    measures: EMPTY_ABUSE_MEASURES,
   });
 
   const { run, isBusy } = useAction();
@@ -76,12 +80,15 @@ export function AbuseSettings() {
       setCats(s.categories ?? {});
       setCustom(s.custom ?? "");
       setAlertMin(s.alert_min || 20);
+      const m = { ...EMPTY_ABUSE_MEASURES, ...(s.measures ?? {}) };
+      setMeasures(m);
       setStatus(s.status ?? []);
       setSaved({
         enabled: s.enabled,
         cats: s.categories ?? {},
         custom: s.custom ?? "",
         alertMin: s.alert_min || 20,
+        measures: m,
       });
       setLoaded(true);
     });
@@ -98,8 +105,9 @@ export function AbuseSettings() {
     if (enabled !== saved.enabled) return true;
     if (custom !== saved.custom) return true;
     if (alertMin !== saved.alertMin) return true;
+    if (JSON.stringify(measures) !== JSON.stringify(saved.measures)) return true;
     return CATEGORIES.some((c) => !!cats[c.key] !== !!saved.cats[c.key]);
-  }, [enabled, cats, custom, alertMin, saved]);
+  }, [enabled, cats, custom, alertMin, measures, saved]);
 
   const save = () =>
     run(
@@ -109,6 +117,7 @@ export function AbuseSettings() {
           categories: cats,
           custom,
           alert_min: alertMin,
+          measures,
         });
         notifySuccess(t("abuse.saved"));
         await load();
@@ -121,7 +130,15 @@ export function AbuseSettings() {
     setCats(saved.cats);
     setCustom(saved.custom);
     setAlertMin(saved.alertMin);
+    setMeasures(saved.measures);
   };
+
+  // A rung's threshold is a count of matches; 0 is the off switch. The other two
+  // numbers only matter while a rung that uses them is on, so they are not
+  // validated here — the server refuses a ladder that could not mean what it says.
+  const num = (k: keyof AbuseMeasures, v: string) =>
+    setMeasures((p) => ({ ...p, [k]: Math.max(0, Math.floor(Number(v) || 0)) }));
+  const measuresOn = measures.throttle_min > 0 || measures.disable_min > 0;
 
   const doRefresh = () =>
     run(
@@ -218,6 +235,55 @@ export function AbuseSettings() {
           value={String(alertMin)}
           onChange={(v) => setAlertMin(Math.max(1, Number(v) || 1))}
         />
+      </SettingCard>
+
+      <SettingCard
+        title={t("abuse.measures")}
+        description={t("abuse.measuresDescription")}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <TextInput
+              type="number"
+              label={t("abuse.warnMin")}
+              value={String(measures.warn_min)}
+              disabled={!enabled}
+              onChange={(v) => num("warn_min", v)}
+            />
+            <p className="mt-1 text-xs text-ink-muted">{t("abuse.warnMinHint")}</p>
+          </div>
+          <TextInput
+            type="number"
+            label={t("abuse.disableMin")}
+            value={String(measures.disable_min)}
+            disabled={!enabled}
+            onChange={(v) => num("disable_min", v)}
+          />
+          <TextInput
+            type="number"
+            label={t("abuse.throttleMin")}
+            value={String(measures.throttle_min)}
+            disabled={!enabled}
+            onChange={(v) => num("throttle_min", v)}
+          />
+          <TextInput
+            type="number"
+            label={t("abuse.throttleKbps")}
+            value={String(measures.throttle_kbps)}
+            disabled={!enabled || measures.throttle_min === 0}
+            onChange={(v) => num("throttle_kbps", v)}
+          />
+          <div>
+            <TextInput
+              type="number"
+              label={t("abuse.hours")}
+              value={String(measures.hours)}
+              disabled={!enabled || !measuresOn}
+              onChange={(v) => num("hours", v)}
+            />
+            <p className="mt-1 text-xs text-ink-muted">{t("abuse.hoursHint")}</p>
+          </div>
+        </div>
       </SettingCard>
 
       <SaveBar

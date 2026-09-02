@@ -449,6 +449,7 @@ func (rt *Router) getAbuseSettings(w http.ResponseWriter, _ *http.Request) {
 		"categories": cats,
 		"custom":     custom,
 		"alert_min":  alertMin,
+		"measures":   rt.mgr.AbuseMeasures(),
 		"status":     status,
 	})
 }
@@ -456,19 +457,33 @@ func (rt *Router) getAbuseSettings(w http.ResponseWriter, _ *http.Request) {
 // saveAbuseSettings persists the blocklist config and reconfigures the live matcher.
 func (rt *Router) saveAbuseSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled    bool            `json:"enabled"`
-		Categories map[string]bool `json:"categories"`
-		Custom     string          `json:"custom"`
-		AlertMin   int             `json:"alert_min"`
+		Enabled    bool                 `json:"enabled"`
+		Categories map[string]bool      `json:"categories"`
+		Custom     string               `json:"custom"`
+		AlertMin   int                  `json:"alert_min"`
+		Measures   *model.AbuseMeasures `json:"measures"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+	// The ladder is validated first: a bad rung must not half-save the rest.
+	if req.Measures != nil {
+		if err := req.Measures.Validate(); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	if err := rt.mgr.SetAbuseConfig(req.Enabled, req.Categories, req.Custom, req.AlertMin); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	auditDetails(r, map[string]any{"enabled": req.Enabled, "alert_min": req.AlertMin})
+	if req.Measures != nil {
+		if err := rt.mgr.SetAbuseMeasures(*req.Measures); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+	}
+	auditDetails(r, map[string]any{"enabled": req.Enabled, "alert_min": req.AlertMin, "measures": req.Measures})
 	writeOK(w)
 }
 

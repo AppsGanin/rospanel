@@ -115,6 +115,7 @@ type Manager struct {
 	userNotify    func(chatID int64, html string)
 	adminNotify   func(html string)
 	adminModerate func(reqID int64, name, plan string)
+	adminLogin    func(LoginAlert) // a sign-in from a new address, with the revoke button
 
 	// notifyThrottle bounds the rate of repeatable system alerts (Xray crash loop,
 	// cert renewal errors) so a stuck condition can't flood the admin chats.

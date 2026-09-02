@@ -206,6 +206,17 @@ func (s *Store) DeleteOtherAdminSessions(adminID, keepID int64) (int64, error) {
 	return res.RowsAffected()
 }
 
+// DeleteAllAdminSessions ends every session of an admin — the response to "that
+// sign-in was not me": whoever holds the password is signed out everywhere, the
+// rightful owner included, until the password is changed. Returns how many went.
+func (s *Store) DeleteAllAdminSessions(adminID int64) (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM admin_sessions WHERE admin_id = ?`, adminID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // DeleteSession revokes a session by its raw token.
 func (s *Store) DeleteSession(token string) error {
 	hash, err := s.tokenHash(token)

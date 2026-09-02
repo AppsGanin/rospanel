@@ -51,6 +51,11 @@ const (
 	EventDeviceUnbound  = "user.device_unbound" // a device was released (admin, or token rotation)
 	EventTelegramLinked = "user.telegram_linked"
 	EventTelegramUnlink = "user.telegram_unlinked"
+	// System: the automatic blocklist measures (model.AbuseMeasures).
+	EventAbuseWarned    = "user.abuse_warned"    // the user's bot was told to stop
+	EventAbuseThrottled = "user.abuse_throttled" // speed capped for a while
+	EventAbuseDisabled  = "user.abuse_disabled"  // switched off for a while
+	EventAbuseLifted    = "user.abuse_lifted"    // the measure ran out or was overruled
 
 	EventPlanChanged    = "plan.changed"
 	EventPlanDowngraded = "plan.downgraded" // system: paid period ended → free plan
@@ -90,6 +95,10 @@ var UserEventCatalog = []string{
 	EventDeviceUnbound,
 	EventTelegramLinked,
 	EventTelegramUnlink,
+	EventAbuseWarned,
+	EventAbuseThrottled,
+	EventAbuseDisabled,
+	EventAbuseLifted,
 	EventPlanChanged,
 	EventPlanDowngraded,
 	EventPlanCancelled,

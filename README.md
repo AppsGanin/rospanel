@@ -417,7 +417,11 @@ resets a forgotten password, clears a second factor, or recreates an owner when 
 sign in at all. Each admin also sees their own **active sessions** in the account dialog —
 browser and OS, the address it was last used from, when it signed in — and can end any one of
 them or **sign out everywhere else** in one click; a session ended this way stops working on
-its next request, and the panel log records who ended what. The **user log** records what was
+its next request, and the panel log records who ended what. A sign-in from an address this
+admin has not used before is **reported to Telegram** (the "Sign-in from a new address"
+category in the bot settings): who, from where (IP, country, network), on which browser. Under
+the message is a **"Not me"** button — it ends every session of that admin in one tap, leaving
+only the password to change. The **user log** records what was
 done to them and by whom (admin, API key, bot, the user themselves, the system) and survives
 their deletion. The **panel log** (visible to the owner) covers logins and **failed attempts
 with IPs**, second factors switched on and off, settings changes and backups; only successful
@@ -500,6 +504,16 @@ Alongside it there's **your own list** (IP/CIDR), which is checked first. Matche
 the statistics and in the user's card, attributed to the **server** the traffic left from; when
 the daily threshold is exceeded a Telegram notification goes out. Categories, the custom list,
 the threshold and updates live in *Settings → Blocklists*.
+
+The alert is not the only response. The same tab configures **automatic measures** — a ladder
+of three steps, each with its own matches-per-day threshold (0 switches the step off): **warn**
+the user through their Telegram bot (once a day), **cap their speed** to a given value, **switch
+access off**. The cap and the switch-off hold for a set time (an hour to 30 days), after which
+the panel restores the previous speed or switches access back on by itself and tells the user;
+the user and the operator hear about every step, and every step lands in the journal. Enabling
+the user or changing their speed by hand overrules the measure — the operator's decision is not
+"lifted" by the panel later. Node traffic counts too: matches are tallied on the master, and
+speed caps and the user set reach the nodes through the usual sync.
 
 Checks run against addresses, not domains, and that isn't a simplification. Modern clients
 resolve DNS outside the tunnel and encrypt SNI (ECH), so all that reaches the server is a bare
