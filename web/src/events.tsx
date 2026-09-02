@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { EventPage, UserEvent } from "./api";
-import { fmtBytes } from "./format";
+import { fmtBytes, fmtSpeed } from "./format";
 import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { Badge, Button, CenterLoader, TableShell, TD, THead, TR } from "./ui";
@@ -32,7 +32,14 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.expired": "orange",
   "user.limited": "orange",
   "user.device_limited": "orange",
+  "user.device_bound": "gray",
+  "user.device_refused": "orange",
+  "user.device_unbound": "gray",
   "user.policy_refused": "orange",
+  "user.abuse_warned": "orange",
+  "user.abuse_throttled": "orange",
+  "user.abuse_disabled": "red",
+  "user.abuse_lifted": "green",
   "user.telegram_linked": "teal",
   "user.telegram_unlinked": "gray",
   "plan.changed": "brand",
@@ -44,9 +51,11 @@ const ACTION_COLORS: Record<string, Color> = {
 };
 
 export function actionMeta(action: string): { label: string; color: Color } {
-  const color = ACTION_COLORS[action];
-  if (!color) return { label: action, color: "gray" };
-  return { label: td(`events.action.${slugKey(action)}`), color };
+  // The label comes from the dictionary whenever it has one, whatever the colour
+  // table says: a new action forgotten here must still read as words, in grey.
+  const key = `events.action.${slugKey(action)}`;
+  const label = i18n.exists(key) ? td(key) : action;
+  return { label, color: ACTION_COLORS[action] ?? "gray" };
 }
 
 const ACTOR_KINDS = ["admin", "apikey", "telegram", "user", "system"] as const;
@@ -201,6 +210,35 @@ export function eventDetails(e: UserEvent): string {
       });
     case "user.telegram_linked":
       return str(d, "username");
+    case "user.device_bound":
+    case "user.device_refused": {
+      // What the device called itself, and where that put the count against the cap.
+      const what = [str(d, "model"), str(d, "os")].filter(Boolean).join(" · ");
+      const count = has(d, "device_limit") && num(d, "device_limit") > 0
+        ? i18n.t("events.det.devicesOverLimit", { active: num(d, "devices"), limit: num(d, "device_limit") })
+        : i18n.t("events.det.devices", { count: num(d, "devices") });
+      return [what, count].filter(Boolean).join(" · ");
+    }
+    case "user.device_unbound":
+      return has(d, "devices")
+        ? i18n.t("events.det.devices", { count: num(d, "devices") })
+        : str(d, "hwid");
+    case "user.policy_refused": {
+      const where = [str(d, "country"), str(d, "org")].filter(Boolean).join(" · ");
+      return i18n.t(d.blocked === true ? "events.det.policyBlocked" : "events.det.policyNoted", { where });
+    }
+    case "user.abuse_warned":
+      return i18n.t("events.det.matches", { count: num(d, "matches") });
+    case "user.abuse_throttled":
+      return i18n.t("events.det.throttledTo", {
+        speed: fmtSpeed(num(d, "speed_limit")),
+        hours: num(d, "hours"),
+        matches: num(d, "matches"),
+      });
+    case "user.abuse_disabled":
+      return i18n.t("events.det.disabledFor", { hours: num(d, "hours"), matches: num(d, "matches") });
+    case "user.abuse_lifted":
+      return i18n.t(str(d, "why") === "overruled" ? "events.det.liftedByHand" : "events.det.liftedExpired");
     case "plan.changed":
     case "plan.downgraded": {
       const noPlan = i18n.t("events.det.noPlan");
