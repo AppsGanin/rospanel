@@ -62,7 +62,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// button fetches YAML from this very URL instead of re-rendering the page.
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
-			if err := rt.servePage(w, *u, set, lang); err != nil {
+			if err := rt.servePage(w, *u, set, lang, clientIP(r)); err != nil {
 				// Render errors keep the masquerade; an access read that failed is a
 				// different thing and must not look like a successful, empty answer.
 				if errors.Is(err, errSubUnavailable) {
@@ -101,7 +101,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		}
 		// allServers spans the local server plus each enabled, connected node, so the
 		// payload carries one entry per protocol × server (single-server = local only).
-		allServers, err := rt.subServers(set, u.ID)
+		allServers, err := rt.subServers(set, u.ID, clientIP(r))
 		if err != nil {
 			rt.subUnavailable(w, u.ID, err)
 			return
@@ -435,13 +435,13 @@ func isBrowser(r *http.Request) bool {
 // lang comes from the caller's Accept-Language: the subscription page is the one
 // surface a VPN *user* sees, and the panel knows nothing about their language
 // preference, so the browser decides it per request.
-func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, lang i18n.Lang) error {
+func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, lang i18n.Lang, clientIP string) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
 	// A required HWID means the browser cannot fetch the machine payload — so the
 	// page must not offer a download button that answers 403 to its own owner.
 	showDownload := !(set.HWIDEnabled && set.HWIDRequire)
-	servers, err := rt.subServers(set, u.ID)
+	servers, err := rt.subServers(set, u.ID, clientIP)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errSubUnavailable, err)
 	}

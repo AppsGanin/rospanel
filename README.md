@@ -308,6 +308,14 @@ matched against the request (User-Agent or an HWID header) — force a specific 
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
+**Server order** (*Settings → Subscriptions*) decides which server a client sees first — and
+whether a full one is shown at all. Every server carries a manual **weight** and a **capacity**
+in users, set on its card under *Servers*. Two modes: manual (weight, then the list) and **least
+loaded** first (online users against capacity). A server marked *hide when full*
+drops out of the subscription while it is at capacity — never the last one, since an empty
+subscription strands every client. Load is counted per server from the same sightings that feed
+the device limit, and the servers page shows the live number next to each capacity.
+
 **DPI evasion on the client** (*Settings → Subscriptions*) is what the subscription tells the
 app to do with the TLS handshake before a DPI box sees it — the server is untouched. For
 Xray-core apps (Happ, v2rayNG, v2rayN, Streisand) there is an **Xray JSON** subscription format:

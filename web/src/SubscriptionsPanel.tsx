@@ -42,6 +42,7 @@ const EMPTY_SUB: SubSettings = {
   sub_update_interval: 1,
   sub_announce: "",
   sub_show_configs: true,
+  sub_order_mode: "manual",
 };
 
 // Requiring an id is the default: a cap a client can dodge by staying silent is not
@@ -95,6 +96,7 @@ export function SubscriptionsPanel() {
           sub_update_interval: d.sub_update_interval,
           sub_announce: d.sub_announce,
           sub_show_configs: d.sub_show_configs,
+          sub_order_mode: d.sub_order_mode ?? "manual",
         };
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
@@ -173,6 +175,18 @@ export function SubscriptionsPanel() {
             value={String(s.sub_update_interval)}
             onChange={(v) => patch({ sub_update_interval: Number(v) })}
           />
+          <div className="flex flex-col gap-1">
+            <Select
+              label={t("subs.orderMode.label")}
+              data={[
+                { value: "manual", label: t("subs.orderMode.manual") },
+                { value: "load", label: t("subs.orderMode.load") },
+              ]}
+              value={s.sub_order_mode}
+              onChange={(v) => patch({ sub_order_mode: v })}
+            />
+            <p className="text-xs text-ink-muted">{t("subs.orderMode.hint")}</p>
+          </div>
           <div>
             <Textarea
               label={t("subs.announce")}

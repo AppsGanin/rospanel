@@ -55,6 +55,8 @@ type Node struct {
 	// per-node statistics, which stay the true byte count. Default 1.0; a zero read
 	// from an older row is normalized to 1.0 (see NodeCoefficientOr).
 	TrafficCoefficient float64 `json:"traffic_coefficient"`
+	// Placement: where this node sits in a subscription (see placement.go).
+	Placement
 
 	// Per-node REALITY identity. RealityPrivateKey is encrypted at rest and never
 	// serialized to any client. RealityDest is the node's own masquerade donor SNI

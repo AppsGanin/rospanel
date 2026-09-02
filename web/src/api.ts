@@ -806,6 +806,8 @@ export interface SubSettings {
   // link of every lane). On by default; off leaves the page offering the
   // subscription link and the client buttons only.
   sub_show_configs: boolean
+  // How servers are ordered in a subscription: manual | nearest | load | nearest_load.
+  sub_order_mode: string
 }
 
 // HWIDSettings gates device binding: which installs may fetch the subscription and
@@ -1796,6 +1798,12 @@ export interface NodeView {
   opera_enabled: boolean
   opera_country: string
   traffic_coefficient: number
+  // Placement in subscriptions (see PlacementFields) and the live online count.
+  country: string
+  sort_weight: number
+  capacity: number
+  hide_when_full: boolean
+  online_users: number
   // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
   // donor. The public key / short id / XHTTP path are shown; private key is hidden.
   reality_dest: string
@@ -1902,6 +1910,16 @@ export const createNode = (name: string, host: string) =>
 // NodePatch carries a node edit (name/host/decoy). Protocols are edited on the
 // Connections tab and are OPTIONAL here: omitting them tells the panel to preserve the
 // node's current values, so a name/decoy save can't revert a just-made protocol change.
+// Placement is where a server sits in subscriptions: country (ISO-2, blank =
+// detect from the address on save), a manual weight, capacity in users and
+// whether a full server drops out until it has room again.
+export interface Placement {
+  country: string
+  sort_weight: number
+  capacity: number
+  hide_when_full: boolean
+}
+
 export interface NodePatch {
   name: string
   host: string
@@ -1910,7 +1928,11 @@ export interface NodePatch {
   hysteria_enabled?: boolean
   reality_enabled?: boolean
   traffic_coefficient?: number
+  placement?: Placement
 }
+
+export const setMasterPlacement = (p: Placement) =>
+  api<{ ok: boolean }>('api/nodes/master-placement', { method: 'POST', body: JSON.stringify(p) })
 
 export const updateNode = (id: number, patch: NodePatch) =>
   api<{ ok: boolean }>(`api/nodes/${id}`, {

@@ -65,6 +65,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_announce":         set.SubAnnounce,
 		"sub_show_configs":     set.SubShowConfigs,
 		"sub_dpi":              set.SubDPI,
+		"sub_order_mode":       set.SubOrderMode,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,
@@ -375,6 +376,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		UpdateInterval int    `json:"sub_update_interval"`
 		Announce       string `json:"sub_announce"`
 		ShowConfigs    bool   `json:"sub_show_configs"`
+		OrderMode      string `json:"sub_order_mode"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -395,6 +397,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubUpdateInterval: req.UpdateInterval,
 		SubAnnounce:       req.Announce,
 		SubShowConfigs:    req.ShowConfigs,
+		SubOrderMode:      strings.TrimSpace(req.OrderMode),
 	})
 	if err != nil {
 		writeManagerErr(w, err)

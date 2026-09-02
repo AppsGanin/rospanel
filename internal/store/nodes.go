@@ -47,7 +47,8 @@ const nodeColumns = `id, name, host, enabled,
 	cert_issuer, cert_expires_at, geo_refresh_hours,
 	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
-	proxy_accounts, traffic_coefficient`
+	proxy_accounts, traffic_coefficient,
+	country, sort_weight, capacity, hide_when_full`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -63,7 +64,7 @@ func generateNodeToken() (string, error) {
 func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var n model.Node
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
-	var proxySocksEn, proxyHTTPEn int
+	var proxySocksEn, proxyHTTPEn, hideFull int
 	var proxyAccounts string
 	var vlessEn, hysteriaEn, realityEn sql.NullBool
 	var routingJSON, connectionsJSON string
@@ -83,10 +84,12 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&n.ACMEEmail, &n.ACMEProvider, &n.ZeroSSLEABKID, &n.ZeroSSLEABHMAC,
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
 		&proxyAccounts, &n.TrafficCoefficient,
+		&n.Country, &n.Weight, &n.Capacity, &hideFull,
 	); err != nil {
 		return nil, err
 	}
 	n.Enabled = enabled != 0
+	n.HideWhenFull = hideFull != 0
 	n.XrayRunning = xrayRunning != 0
 	n.CertSelfSigned = certSelfSigned != 0
 	n.WarpEnabled = warpEn != 0
@@ -394,6 +397,8 @@ type NodeEdit struct {
 	OperaCountry string
 	// TrafficCoefficient scales quota consumption on this node (normalized on write).
 	TrafficCoefficient float64
+	// Placement: country, weight, capacity (normalized on write).
+	Placement model.Placement
 }
 
 // UpdateNode persists the operator-editable fields. Identity, tokens and reported
@@ -416,13 +421,15 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 			vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
 			routing_config = ?, xray_dns = ?,
 			warp_enabled = ?, opera_enabled = ?, opera_country = ?,
-			traffic_coefficient = ?
+			traffic_coefficient = ?,
+			country = ?, sort_weight = ?, capacity = ?, hide_when_full = ?
 		WHERE id = ?`,
 		e.Name, e.Host, e.DecoyTemplate,
 		boolToNull(e.VLESS), boolToNull(e.Hysteria), boolToNull(e.Reality),
 		routingJSON, dns,
 		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
 		model.NodeCoefficientOr(e.TrafficCoefficient),
+		model.NormalizeCountry(e.Placement.Country), e.Placement.Weight, e.Placement.Capacity, boolToInt(e.Placement.HideWhenFull),
 		id,
 	)
 	if isNameConflict(err) {

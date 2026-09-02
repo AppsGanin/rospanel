@@ -94,6 +94,9 @@ type nodePatchReq struct {
 	Hysteria           *bool   `json:"hysteria_enabled"`
 	Reality            *bool   `json:"reality_enabled"`
 	TrafficCoefficient float64 `json:"traffic_coefficient"`
+	// Placement (see model.Placement). Pointer so a General-tab save that predates
+	// these fields keeps the node's current placement rather than blanking it.
+	Placement *model.Placement `json:"placement"`
 }
 
 // orBool returns a when set, else b — used to preserve a node's current protocol
@@ -143,6 +146,18 @@ func (rt *Router) updateNode(w http.ResponseWriter, r *http.Request, id int64) {
 		OperaEnabled:       node.OperaEnabled,
 		OperaCountry:       node.OperaCountry,
 		TrafficCoefficient: req.TrafficCoefficient,
+		Placement:          node.Placement,
+	}
+	if req.Placement != nil {
+		if err := req.Placement.Validate(); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+		pl := req.Placement.Normalized()
+		if pl.Country == "" {
+			pl.Country = rt.mgr.DetectHostCountry(req.Host)
+		}
+		edit.Placement = pl
 	}
 	if err := rt.mgr.UpdateNode(id, edit); err != nil {
 		writeManagerErr(w, err)
@@ -225,6 +240,20 @@ func (rt *Router) setMasterName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.mgr.SetMasterLabel(req.Name); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
+// setMasterPlacement stores the master's placement (country, weight, capacity) —
+// the same fields a node edits on its own card; the master keeps them in settings.
+func (rt *Router) setMasterPlacement(w http.ResponseWriter, r *http.Request) {
+	var req model.Placement
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetMasterPlacement(req); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

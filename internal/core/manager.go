@@ -236,6 +236,8 @@ type Manager struct {
 	// its diagnostics page, under nodeGeoMu with the other "last reported" caches.
 	// Bounded by the node count; a deleted node's entry is dead weight of one struct.
 	nodeHostStats map[int64]nodeapi.HostStats
+	// online is who is connected to which server right now (see manager_online.go).
+	online onlineGauge
 
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).

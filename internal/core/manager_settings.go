@@ -646,6 +646,9 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 		return invalidCode("err.subPathCharset", "путь подписки: латиница, цифры, «-» и «_», 1–32 символа")
 	}
 	st.SubAnnounce = strings.TrimSpace(st.SubAnnounce)
+	if st.SubOrderMode != "" && !model.ValidOrderMode(st.SubOrderMode) {
+		return invalidCode("err.subOrderMode", "неизвестный режим порядка серверов")
+	}
 	// Clients render at most 200 characters of the announcement and silently cut the
 	// rest, so a longer text is a message the operator thinks they sent and nobody
 	// ever read. Reject it here instead. Runes, not bytes: the text is Cyrillic.

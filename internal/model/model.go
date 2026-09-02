@@ -693,6 +693,11 @@ type Settings struct {
 	// SubDPI is the client-side DPI evasion the subscription hands out (fragment,
 	// noise, sing-box record fragmentation) — see subdpi.go.
 	SubDPI SubDPI `json:"-"`
+	// SubOrderMode is how the subscription orders servers (OrderManual … see
+	// placement.go); MasterPlacement is the master's own placement, a node's is on
+	// its row.
+	SubOrderMode    string    `json:"-"`
+	MasterPlacement Placement `json:"-"`
 
 	// MaintenanceMode makes the public surfaces show a "temporarily unavailable"
 	// page; the panel, API, node sync and the tunnels themselves keep serving.
@@ -908,6 +913,10 @@ type Settings struct {
 	// what pairs a settings value with that server's custom inbounds, which live in
 	// their own table rather than in this row.
 	ServerID int64 `json:"-"`
+
+	// ServerPlacement is computed alongside ServerID: this server's placement, so
+	// the subscription can order the servers it spans (sub.Order).
+	ServerPlacement Placement `json:"-"`
 }
 
 // WarpRegistered reports whether a WARP account has been provisioned.
