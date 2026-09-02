@@ -43,6 +43,13 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns.RealityPublicKey = n.RealityPublicKey
 	ns.RealityShortID = n.RealityShortID
 	ns.RealityPath = n.RealityPath
+	// AmneziaWG: the node's own identity, never the master's; the port, name and
+	// DNS ride in the connections blob below (off ⇒ zero port ⇒ no config).
+	ns.AWGEnabled = derefBool(n.AWGEnabled)
+	ns.AWGPrivateKey = n.AWGPrivateKey
+	ns.AWGPublicKey = n.AWGPublicKey
+	ns.AWGParams = n.AWGParams
+	ns.AWGPort, ns.AWGName, ns.AWGDNS = 0, "", ""
 	// REALITY donor: the node's own if set, otherwise inherit the panel's (a node
 	// needs some donor for REALITY to work).
 	if n.RealityDest != "" {
@@ -114,6 +121,9 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.VLESSName = c.VLESSName
 		ns.RealityName = c.RealityName
 		ns.HysteriaName = c.HysteriaName
+		ns.AWGPort = c.AWGPort
+		ns.AWGName = c.AWGName
+		ns.AWGDNS = c.AWGDNS
 	}
 	return &ns
 }
@@ -194,6 +204,9 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence
 		XrayPinnedVersion: xray.PinnedVersion,
 		SpeedLimits:       m.SpeedLimits(),
+	}
+	if access, err := m.store.AccessMap(); err == nil {
+		meta.AWG = m.nodeAWGState(n, ns, users, access)
 	}
 	if ns.OperaEnabled {
 		meta.OperaEnabled = true
@@ -854,9 +867,28 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	}
 
 	// Protocols (the node's own explicit on/off).
+	awgPort, awgDNS, err := validateAWGUpdate(u.AWGPort, u.AWGDNS)
+	if err != nil {
+		return err
+	}
+	if u.Protocols["awg"] && awgPort == 0 {
+		if n.Connections != nil && n.Connections.AWGPort != 0 {
+			awgPort = n.Connections.AWGPort
+		} else {
+			awgPort = pickAWGPort()
+		}
+	}
 	if err := m.store.SetNodeProtocols(id,
 		u.Protocols["vless"], u.Protocols["hysteria2"], u.Protocols["reality"]); err != nil {
 		return err
+	}
+	if err := m.store.SetNodeAWGEnabled(id, u.Protocols["awg"]); err != nil {
+		return err
+	}
+	if u.Protocols["awg"] || u.RegenAWGKeys {
+		if err := m.ensureNodeAWGIdentity(n, u.RegenAWGKeys); err != nil {
+			return err
+		}
 	}
 	// REALITY donor + optional key regeneration.
 	if err := m.store.SetNodeRealityDest(id, realityDest); err != nil {
@@ -895,6 +927,9 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		VLESSName:          connNames["vless"],
 		RealityName:        connNames["reality"],
 		HysteriaName:       connNames["hysteria2"],
+		AWGPort:            awgPort,
+		AWGName:            connNames["awg"],
+		AWGDNS:             awgDNS,
 	}
 	if err := m.store.SetNodeConnections(id, blob); err != nil {
 		return err

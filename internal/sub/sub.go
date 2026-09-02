@@ -4,6 +4,7 @@ package sub
 
 import (
 	"encoding/base64"
+	"fmt"
 	"html/template"
 	"net/url"
 	"strings"
@@ -97,4 +98,34 @@ func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
 		{"Streisand", "iOS · macOS · tvOS", template.URL("streisand://import/" + subURL)},
 		{"Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + subB64)},
 	}
+}
+
+// AWGConfURL is where a user downloads their AmneziaWG config for one server
+// (0 = the master): <sub>/awg/<id>.conf; the QR of the same text is <id>.png.
+func AWGConfURL(set *model.Settings, token string, serverID int64) string {
+	return fmt.Sprintf("%s/awg/%d.conf", URL(set, token), serverID)
+}
+
+// AWGFileName is the config's file name — the Amnezia apps show it as the
+// tunnel's name, so it is the server's label with everything a file system or a
+// header would object to replaced.
+func AWGFileName(set *model.Settings) string {
+	label := set.ProtoLabel(model.ProtoAWG)
+	var b strings.Builder
+	for _, r := range label {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ', r == '·', r == '.':
+			b.WriteRune('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "amneziawg"
+	}
+	if len(name) > 15 { // wg interface names are 15 bytes; the apps derive one from the file
+		name = name[:15]
+	}
+	return name + ".conf"
 }

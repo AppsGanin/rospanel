@@ -13,11 +13,12 @@ const (
 	LaneVLESS    = "vless"
 	LaneReality  = "reality"
 	LaneHysteria = "hysteria2"
+	LaneAWG      = "awg" // AmneziaWG tunnel (internal/awg)
 )
 
 // BuiltinLaneKeys lists the built-in lane keys in display order (distinct from
 // BuiltinLanes(), which is the egress-lane set — an unrelated concept).
-var BuiltinLaneKeys = []string{LaneVLESS, LaneReality, LaneHysteria}
+var BuiltinLaneKeys = []string{LaneVLESS, LaneReality, LaneHysteria, LaneAWG}
 
 // Group is a named set of connections a user is allowed to use. Membership is
 // many-to-many; a user in no group may use everything (see Access).

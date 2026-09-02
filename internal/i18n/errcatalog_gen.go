@@ -22,6 +22,8 @@ var errEN = map[string]string{
 	"err.audienceEmpty":            "the selected audience has no recipients",
 	"err.autoPayNotConfigured":     "automatic payment is not configured",
 	"err.autodeleteRange":          "retention for expired users: from 0 (never delete) to {{max}} days",
+	"err.awgDNS":                   "AmneziaWG DNS: IP addresses separated by commas",
+	"err.awgPortRange":             "the AmneziaWG port is outside 1–65535",
 	"err.backupCorrupt":            "the backup archive is corrupt",
 	"err.backupDbUnreadable":       "the database in the backup is empty or corrupt",
 	"err.backupKeepRange":          "the number of copies to keep must be between 0 and {{max}} (0 — keep them all)",

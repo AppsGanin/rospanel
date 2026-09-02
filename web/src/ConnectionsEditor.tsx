@@ -57,6 +57,7 @@ const hopIntervals = () => [
 type Hy = { port: number; start: number; end: number; interval: string };
 type Reality = { port: number; dests: string[]; antiReplay: boolean };
 type Anti = { fragment: boolean; min13: boolean; blockQuic: boolean };
+type Awg = { port: number; dns: string };
 
 // ConnectionsEditor is the full connection editor (protocols on/off + names +
 // fingerprints + ports + hop + WS + REALITY donor/keys/regen/port/anti-replay +
@@ -89,6 +90,8 @@ export function ConnectionsEditor({
   const [reality, setReality] = useState<Reality>({ port: 0, dests: [], antiReplay: false });
   const [anti, setAnti] = useState<Anti>({ fragment: false, min13: false, blockQuic: false });
   const [regenReality, setRegenReality] = useState(false);
+  const [awgCfg, setAwgCfg] = useState<Awg>({ port: 0, dns: "" });
+  const [regenAwg, setRegenAwg] = useState(false);
   const [saved, setSaved] = useState<{
     enabled: Record<string, boolean>;
     fps: Record<string, string>;
@@ -96,6 +99,7 @@ export function ConnectionsEditor({
     hy: Hy;
     reality: Reality;
     anti: Anti;
+    awg: Awg;
   }>({
     enabled: {},
     fps: {},
@@ -103,6 +107,7 @@ export function ConnectionsEditor({
     hy: { port: 0, start: 0, end: 0, interval: "5-10" },
     reality: { port: 0, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
+    awg: { port: 0, dns: "" },
   });
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -123,14 +128,17 @@ export function ConnectionsEditor({
       antiReplay: s.reality_anti_replay,
     };
     const a: Anti = { fragment: s.tls_fragment, min13: s.tls_min13, blockQuic: s.block_quic };
+    const g: Awg = { port: s.awg_port, dns: s.awg_dns || "" };
     setEnabled(en);
     setFps(fp);
     setNames(nm);
     setHy(h);
     setReality(r);
     setAnti(a);
+    setAwgCfg(g);
     setRegenReality(false);
-    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a });
+    setRegenAwg(false);
+    setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a, awg: g });
   };
 
   useEffect(() => {
@@ -152,9 +160,10 @@ export function ConnectionsEditor({
   const namesChanged = Object.keys(names).some((k) => names[k] !== saved.names[k]);
   const antiServerChanged = anti.min13 !== saved.anti.min13;
   const antiClientChanged = anti.fragment !== saved.anti.fragment || anti.blockQuic !== saved.anti.blockQuic;
+  const awgChanged = awgCfg.port !== saved.awg.port || awgCfg.dns !== saved.awg.dns || regenAwg;
   const dirty =
     fpsChanged || namesChanged || protocolsChanged || hyChanged ||
-    realityChanged || regenReality || antiServerChanged || antiClientChanged;
+    realityChanged || regenReality || antiServerChanged || antiClientChanged || awgChanged;
   // Config-affecting changes restart Xray (on the master) or re-push to the node.
   const restartsXray = protocolsChanged || portsChanged || realityChanged || regenReality || antiServerChanged;
 
@@ -178,6 +187,9 @@ export function ConnectionsEditor({
         tls_fragment: anti.fragment,
         tls_min13: anti.min13,
         block_quic: anti.blockQuic,
+        awg_port: awgCfg.port,
+        awg_dns: awgCfg.dns,
+        regen_awg_keys: regenAwg,
       });
       applyStatus(s);
       notifySuccess(t("common.saved"));
@@ -193,7 +205,9 @@ export function ConnectionsEditor({
     setHy(saved.hy);
     setReality(saved.reality);
     setAnti(saved.anti);
+    setAwgCfg(saved.awg);
     setRegenReality(false);
+    setRegenAwg(false);
   };
 
   if (!loaded) return <CenterLoader />;
@@ -333,6 +347,54 @@ export function ConnectionsEditor({
                     ) : (
                       <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
                         {t("conn.enableReality")}
+                      </p>
+                    ))}
+
+                  {p.key === "awg" &&
+                    (on ? (
+                      <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <TextInput
+                            label={t("conn.awgPort")}
+                            type="number"
+                            value={awgCfg.port ? String(awgCfg.port) : ""}
+                            placeholder={t("conn.awgPortAuto")}
+                            onChange={(v) => setAwgCfg((g) => ({ ...g, port: Number(v.replace(/\D/g, "")) || 0 }))}
+                          />
+                          <TextInput
+                            label={t("conn.awgDns")}
+                            value={awgCfg.dns}
+                            placeholder={t("conn.awgDnsAuto")}
+                            onChange={(v) => setAwgCfg((g) => ({ ...g, dns: v }))}
+                          />
+                        </div>
+                        {status.awg_public_key && (
+                          <>
+                            <LongField label="Public key" value={status.awg_public_key} />
+                            <LongField
+                              label={t("conn.awgParams")}
+                              value={`Jc=${status.awg_params.jc} Jmin=${status.awg_params.jmin} Jmax=${status.awg_params.jmax} S1=${status.awg_params.s1} S2=${status.awg_params.s2} H1=${status.awg_params.h1} H2=${status.awg_params.h2} H3=${status.awg_params.h3} H4=${status.awg_params.h4}`}
+                            />
+                          </>
+                        )}
+                        {status.awg_error && (
+                          <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">{status.awg_error}</p>
+                        )}
+                        <div>
+                          <Button
+                            size="sm"
+                            variant="light"
+                            color={regenAwg ? "orange" : "gray"}
+                            onClick={() => setRegenAwg((v) => !v)}
+                          >
+                            {t(regenAwg ? "conn.keysWillRegen" : "conn.regenKeys")}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-ink-muted">{t("conn.awgHint")}</p>
+                      </div>
+                    ) : (
+                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
+                        {t("conn.enableAwg")}
                       </p>
                     ))}
                 </div>

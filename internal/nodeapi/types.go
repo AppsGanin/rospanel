@@ -8,7 +8,11 @@
 // internal/server/node_api.go and the loop in internal/nodeagent.
 package nodeapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/AppsGanin/rospanel/internal/awg"
+)
 
 // PathPrefix is the fixed sub-path under the panel's random node-API segment, so
 // the full URL is /<node_api_path>/<PathPrefix>/{join,sync}.
@@ -348,4 +352,25 @@ type NodeMeta struct {
 	// the master from, and shipping the master's view would cap the wrong addresses.
 	// An older agent ignores the field and simply doesn't shape.
 	SpeedLimits map[string]int `json:"speed_limits,omitempty"`
+
+	// AWG is the node's AmneziaWG tunnel as the panel wants it — its identity, the
+	// obfuscation parameters and every peer allowed on it. nil ⇒ the lane is off
+	// on this node and any running tunnel comes down. See internal/awg.
+	AWG *AWGState `json:"awg,omitempty"`
+}
+
+// AWGState is one server's tunnel: what the node feeds to awg.Device.Apply.
+type AWGState struct {
+	Port       int        `json:"port"`
+	PrivateKey string     `json:"private_key"`
+	Params     awg.Params `json:"params"`
+	Peers      []AWGPeer  `json:"peers"`
+}
+
+// AWGPeer is one user on the tunnel: their public key, their tunnel address and
+// their Xray tag, which the node reports counters and sightings under.
+type AWGPeer struct {
+	PublicKey string `json:"pk"`
+	Addr      string `json:"ip"`
+	Email     string `json:"e"`
 }

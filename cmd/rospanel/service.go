@@ -329,6 +329,7 @@ func runServer(dataDir string) {
 	// own SIGTERM at the same moment we do. Marking the shutdown before we wait on
 	// anything is what keeps an ordinary restart from paging the operator.
 	sup.Stop()
+	mgr.StopAWG()
 
 	// Drop the per-user speed caps. They live in the kernel's qdisc tree, which
 	// outlives this process until reboot — a panel that was stopped must not keep
@@ -440,6 +441,11 @@ func statsPollLoop(mgr *core.Manager) {
 			if err := mgr.PollStats(); err != nil {
 				// Expected when Xray isn't running (e.g. local dev) — keep quiet-ish.
 				log.Printf("stats poll: %v", err)
+			}
+		})
+		safeTick("awg poll", func() {
+			if err := mgr.PollAWG(); err != nil {
+				log.Printf("awg poll: %v", err)
 			}
 		})
 	}
