@@ -38,6 +38,97 @@ func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, exp
 	return &users[0], nil
 }
 
+// ImportedUser is everything an importer knows about a user coming from another
+// panel: the credentials to keep, the limits and the usage so far.
+type ImportedUser struct {
+	Name        string
+	UUID        string
+	Password    string
+	SubToken    string
+	DataLimit   int64
+	ExpireAt    int64
+	UsedUp      int64
+	UsedDown    int64
+	DeviceLimit int
+	SpeedLimit  int
+	ResetPeriod string
+	Enabled     bool
+	Note        string
+	Tags        []string // already in model.NormalizeTags form
+	// WGPrivateKey carries the user's AmneziaWG identity over, so the configs they
+	// already hold keep working. Empty mints one on first use, as for a new user.
+	WGPrivateKey string
+}
+
+// ImportUser inserts a user with the credentials and counters another panel had
+// for them, in one statement, so a half-imported user cannot exist. The UUID
+// column is UNIQUE: an id already present fails the insert, which is how a second
+// import of the same file is kept from doubling everyone.
+func (s *Store) ImportUser(in ImportedUser) (*model.User, error) {
+	enabled := 0
+	if in.Enabled {
+		enabled = 1
+	}
+	var id int64
+	period := in.ResetPeriod
+	if period == "" {
+		period = "none"
+	}
+	err := s.db.QueryRow(
+		`INSERT INTO users (name, uuid, password, sub_token, enabled, data_limit, expire_at,
+		   used_up, used_down, device_limit, speed_limit, reset_period, note, tags, wg_private_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		in.Name, in.UUID, encField(in.Password), in.SubToken, enabled, in.DataLimit, in.ExpireAt,
+		in.UsedUp, in.UsedDown, in.DeviceLimit, in.SpeedLimit, period, in.Note,
+		model.EncodeTags(in.Tags), encField(in.WGPrivateKey),
+	).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return s.GetUser(id)
+}
+
+// UserUUIDs returns every UUID in use, for an importer to tell "already here"
+// from "new" before it writes anything.
+func (s *Store) UserUUIDs() (map[string]int64, error) {
+	rows, err := s.db.Query(`SELECT id, uuid FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var id int64
+		var u string
+		if err := rows.Scan(&id, &u); err != nil {
+			return nil, err
+		}
+		out[strings.ToLower(u)] = id
+	}
+	return out, rows.Err()
+}
+
+// SubTokens returns every subscription token in use. The column is uniquely
+// indexed, so an importer carrying tokens from another panel has to know which
+// ones are taken before it writes — a collision is an insert error, and the user
+// it would fail is one nobody could then reach.
+func (s *Store) SubTokens() (map[string]struct{}, error) {
+	rows, err := s.db.Query(`SELECT sub_token FROM users WHERE sub_token != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out[t] = struct{}{}
+	}
+	return out, rows.Err()
+}
+
 // ListUsers returns all users, newest first.
 func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)

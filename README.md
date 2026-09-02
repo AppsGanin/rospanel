@@ -244,7 +244,15 @@ Traffic and time limits with auto-disable and quota auto-reset (day/week/month/y
 list; expired users can be auto-deleted. Every user carries an operator's **note** (where they
 came from, what was agreed — panel and API only, never shown to the client) and **tags** (`vip`,
 `reseller-a`) that the list filters on and the search covers, along with the Xray client id
-(`u12`) shown next to the name so a log line maps to an account at a glance. Search and filters
+(`u12`) shown next to the name so a log line maps to an account at a glance. **Import and
+export**: the users page reads a **Marzban** database or `GET /api/users` dump, a **3x-ui**
+`x-ui.db`, and this panel's **own export** — and writes that export with one button. Users arrive
+with the **same UUIDs and passwords**, limits, expiry, used traffic, notes and tags, so nobody
+re-adds a server in their app; the subscription token comes across too where the source has one
+(3x-ui's `subId`, Marzban's dump, and always from this panel's own export), so moving a domain to
+a new install keeps every existing subscription link working. A user already here (same UUID) is
+skipped, so running the file twice doubles nobody, a token another user holds is replaced rather
+than refused, and an uploaded file is deleted the moment it has been read. Search and filters
 stay fast with hundreds of users,
 and **bulk operations** (enable/disable/reset/extend/delete) go through a single Xray reload.
 The dashboard shows CPU / RAM / swap / disk and VPN traffic in real time. A **connection

@@ -200,6 +200,8 @@ var auditActions = map[string]auditRoute{
 	// decision rather than an omission.
 	"POST /api/users":                      skip,
 	"POST /api/users/bulk":                 skip,
+	"POST /api/users/import/inspect":       skip, // reads the upload, writes nothing
+	"POST /api/users/import":               skip, // one user.created row per imported user
 	"DELETE /api/users/{id}":               skip,
 	"POST /api/users/{id}/reset":           skip,
 	"POST /api/users/{id}/limits":          skip,
