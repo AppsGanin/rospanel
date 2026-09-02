@@ -333,7 +333,13 @@ func (rt *Router) listProbes(w http.ResponseWriter, _ *http.Request) {
 	if probes == nil {
 		probes = []model.ProbeHit{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"probes": probes})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"probes": probes,
+		// How far back the list can reach: a row survives this long after the address
+		// was last seen. The panel says so next to the list rather than hardcoding a
+		// number that would drift from model.ProbeRetentionDays.
+		"retention_days": model.ProbeRetentionDays,
+	})
 }
 
 // getSubRules returns the subscription response rules for the editor.

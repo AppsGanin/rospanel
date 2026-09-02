@@ -63,13 +63,18 @@ export function ProbeList() {
   const { t } = useTranslation()
   const [on, setOn] = useState(false)
   const [probes, setProbes] = useState<ProbeHit[]>([])
+  const [days, setDays] = useState(0)
   const rows = useShowMore(probes, { first: 10, step: 20, resetKey: probes })
 
   useEffect(() => {
     getSettings()
       .then((s) => {
         setOn(s.probe_detect)
-        if (s.probe_detect) return getProbes().then(setProbes)
+        if (s.probe_detect)
+          return getProbes().then((r) => {
+            setProbes(r.probes ?? [])
+            setDays(r.retention_days)
+          })
       })
       .catch(() => {})
   }, [])
@@ -79,7 +84,7 @@ export function ProbeList() {
     <Card className="p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
         <h3 className="font-bold">{t('general.probeRecent')}</h3>
-        <span className="text-xs text-ink-muted">{t('security.probeHint')}</span>
+        <span className="text-xs text-ink-muted">{t('security.probeHint', { days })}</span>
       </div>
       <div className="flex flex-col gap-1">
         {rows.shown.map((p) =>

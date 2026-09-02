@@ -1034,7 +1034,6 @@ const en: Dict = {
     saved: "Subscription settings saved",
     rules: "Response rules",
     rulesHint: "Evaluated in order before format auto-detection: force a format for a specific client/OS or block it (served the decoy). The first matching rule decides; no match falls through to normal auto-detection.",
-    rulesSaved: "Rules saved",
     rulesEmpty: "No rules — the format is auto-detected from the User-Agent.",
     ruleAdd: "Add rule",
     ruleValue: "value",
@@ -1083,7 +1082,6 @@ const en: Dict = {
       jsonOffWarning: "Fragment/noise are on, but Xray JSON is not served automatically — Xray-core clients will not receive them until the switch above or a response rule turns it on.",
       recordFragment: "sing-box: record fragment",
       recordFragmentHint: "Split the ClientHello into several TLS records (sing-box ≥ 1.12) on top of the packet-level fragmentation switched on under Connections. Helps where the DPI reassembles TCP segments.",
-      saved: "DPI evasion settings saved",
     },
     format: "Subscription format",
     path: "Subscription path",
@@ -1286,7 +1284,7 @@ const en: Dict = {
     unblock: "Unblock",
   },
   security: {
-    probeHint: "addresses that went looking for the hidden panel path",
+    probeHint: "addresses that went looking for the hidden panel path, over the last {{days}} days",
     blockedHint: "refused by the source policy (Settings → General)",
   },
   sessions: {

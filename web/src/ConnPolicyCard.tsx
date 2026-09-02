@@ -1,61 +1,56 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  getConnPolicy,
-  saveConnPolicy,
-  type BlockedIP,
-  type ConnPolicy,
-} from './api'
+import { getConnPolicy, type ConnPolicy } from './api'
 import { useAction } from './hooks'
 import { notifySuccess } from './notify'
 import { Button, Select, SettingCard, TagsInput, TextInput, ToggleRow } from './ui'
 
-const EMPTY: ConnPolicy = { mode: 'off', countries: [], asns: [], enforce: false, block_hours: 24 }
+// The feature switched off — what the page starts from before the load lands.
+export const EMPTY_POLICY: ConnPolicy = {
+  mode: 'off',
+  countries: [],
+  asns: [],
+  enforce: false,
+  block_hours: 24,
+}
 
 // ConnPolicyCard is the source policy: where a client is allowed to connect from,
 // and who it has refused. The two lists are separate on purpose — the country rule
 // is the operator's market, the ASN list is the hosting networks a resold account
 // tends to appear from — and enforcement is off until they have seen what the rule
 // would cut.
-export function ConnPolicyCard() {
+export function ConnPolicyCard({
+  value: p,
+  onChange,
+}: {
+  value: ConnPolicy
+  onChange: (v: ConnPolicy) => void
+}) {
   const { t } = useTranslation()
-  const [p, setP] = useState<ConnPolicy>(EMPTY)
-  const [saved, setSaved] = useState<ConnPolicy>(EMPTY)
-  const [blocked, setBlocked] = useState<BlockedIP[]>([])
+  // What the rule has caught is read here, not edited: the count points at the
+  // statistics page, and whether this machine can enforce at all comes with it.
+  const [blocked, setBlocked] = useState(0)
   const [canEnforce, setCanEnforce] = useState(true)
-  const { busy, run } = useAction()
-  // The two lists are edited as text and stored as data (ISO-2 codes, AS numbers),
-  // so what the operator typed and what the panel keeps can disagree. Entries that
-  // are not one of those are held here and shown back instead of vanishing on Enter
-  // — a silently dropped entry reads as a broken field, and a silently REWRITTEN one
-  // ("germany" → GE, which is Georgia) is worse than either.
+  // Entries that are neither an ISO-2 code nor an AS number are held and shown back
+  // instead of vanishing on Enter — a silently dropped entry reads as a broken
+  // field, and a silently REWRITTEN one ("germany" → GE, which is Georgia) is worse.
   const [badCountries, setBadCountries] = useState<string[]>([])
   const [badASNs, setBadASNs] = useState<string[]>([])
 
-  const load = () =>
+  useEffect(() => {
     getConnPolicy()
       .then((info) => {
-        setP(info.policy)
-        setSaved(info.policy)
-        setBadCountries([])
-        setBadASNs([])
-        setBlocked(info.blocked ?? [])
+        setBlocked((info.blocked ?? []).length)
         setCanEnforce(info.can_enforce)
       })
       .catch(() => {})
-
-  useEffect(() => {
-    load()
+    // Read once with the page: this is a pointer to the statistics list, not a live
+    // counter, and re-reading it on every keystroke of the draft would be a request
+    // per character.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const patch = (v: Partial<ConnPolicy>) => setP((cur) => ({ ...cur, ...v }))
-  const dirty = JSON.stringify(p) !== JSON.stringify(saved)
-  const save = () =>
-    run(async () => {
-      await saveConnPolicy(p)
-      notifySuccess(t('common.saved'))
-      await load()
-    })
+  const patch = (v: Partial<ConnPolicy>) => onChange({ ...p, ...v })
 
   const modes = [
     { value: 'off', label: t('policy.modeOff') },
@@ -142,21 +137,9 @@ export function ConnPolicyCard() {
             placeholder="24"
           />
         )}
-        {dirty && (
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => setP(saved)}>
-              {t('common.cancel')}
-            </Button>
-            <Button size="sm" loading={busy} onClick={save}>
-              {t('common.save')}
-            </Button>
-          </div>
-        )}
 
-        {blocked.length > 0 && (
-          <p className="text-xs text-ink-muted">
-            {t('policy.blockedSeeStats', { count: blocked.length })}
-          </p>
+        {blocked > 0 && (
+          <p className="text-xs text-ink-muted">{t('policy.blockedSeeStats', { count: blocked })}</p>
         )}
       </div>
     </SettingCard>

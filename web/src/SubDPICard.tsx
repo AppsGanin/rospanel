@@ -1,38 +1,20 @@
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DEFAULT_SUB_DPI, getSettings, saveSubDPI, type SubDPI } from './api'
-import { useAction } from './hooks'
-import { notifySuccess } from './notify'
-import { Button, Card, Select, TextInput, ToggleRow } from './ui'
+import { type SubDPI } from './api'
+import { Card, Select, TextInput, ToggleRow } from './ui'
 
 // SubDPICard is the client-side DPI evasion block: what the subscription tells
 // Xray-core apps (through the Xray JSON format) and sing-box to do with the TLS
 // handshake before a DPI box sees it. The server changes nothing; every switch here
 // reaches the clients on their next subscription refresh.
-export function SubDPICard() {
+export function SubDPICard({
+  value: d,
+  onChange,
+}: {
+  value: SubDPI
+  onChange: (v: SubDPI) => void
+}) {
   const { t } = useTranslation()
-  const [d, setD] = useState<SubDPI>(DEFAULT_SUB_DPI)
-  const [saved, setSaved] = useState<SubDPI>(DEFAULT_SUB_DPI)
-  const { busy, run } = useAction()
-
-  useEffect(() => {
-    getSettings()
-      .then((s) => {
-        const v = { ...DEFAULT_SUB_DPI, ...(s.sub_dpi ?? {}) }
-        setD(v)
-        setSaved(v)
-      })
-      .catch(() => {})
-  }, [])
-
-  const patch = (p: Partial<SubDPI>) => setD((cur) => ({ ...cur, ...p }))
-  const dirty = JSON.stringify(d) !== JSON.stringify(saved)
-  const save = () =>
-    run(async () => {
-      await saveSubDPI(d)
-      setSaved(d)
-      notifySuccess(t('subs.dpi.saved'))
-    })
+  const patch = (p: Partial<SubDPI>) => onChange({ ...d, ...p })
 
   const packets = [
     { value: 'tlshello', label: t('subs.dpi.packetsTlshello') },
@@ -126,13 +108,6 @@ export function SubDPICard() {
           checked={d.record_fragment}
           onChange={(v) => patch({ record_fragment: v })}
         />
-        {dirty && (
-          <div className="flex justify-end">
-            <Button loading={busy} onClick={save}>
-              {t('common.save')}
-            </Button>
-          </div>
-        )}
       </div>
     </Card>
   )
