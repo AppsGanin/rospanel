@@ -26,7 +26,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull, awgEn int
+	var masterHideFull, awgEn, hideOffline int
 	var awgParamsJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -69,6 +69,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
 		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
 		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
+		       sub_hide_offline,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns
 		FROM settings WHERE id = 1`,
 	).Scan(
@@ -112,7 +113,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
 		&st.SubOrderMode, &st.MasterPlacement.Country, &st.MasterPlacement.Weight,
-		&st.MasterPlacement.Capacity, &masterHideFull,
+		&st.MasterPlacement.Capacity, &masterHideFull, &hideOffline,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 	)
 	if err != nil {
@@ -124,6 +125,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	// A blank column (pre-0059, or never saved) reads as the defaults with every
 	// switch off; a corrupt one too — the subscription must keep serving.
 	st.MasterPlacement.HideWhenFull = masterHideFull != 0
+	st.SubHideOffline = hideOffline != 0
 	st.AWGEnabled = awgEn != 0
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
 	if awgParamsJSON != "" {
@@ -392,14 +394,14 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_base64 = ?, sub_email_in_name = ?, sub_title = ?, sub_routing = ?,
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
-			sub_order_mode = ?,
+			sub_order_mode = ?, sub_hide_offline = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
 		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
-		model.OrderModeOr(st.SubOrderMode),
+		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline),
 	)
 	return err
 }

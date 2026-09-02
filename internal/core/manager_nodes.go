@@ -566,6 +566,7 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 		return nil, err
 	}
 	var out []*model.Settings
+	now := time.Now().Unix()
 	seen := map[string]int{}
 	// The master occupies its label first, so a node whose name collides with the
 	// master's config label gets disambiguated rather than silently overwriting the
@@ -575,6 +576,12 @@ func (m *Manager) NodeLinkSettings() ([]*model.Settings, error) {
 	}
 	for i := range nodes {
 		n := &nodes[i]
+		// Offline, if the operator asked for that (settings → subscriptions). Checked
+		// before the "never installed" case below, which is a different thing: a node
+		// that has never connected has no cert to pin, so it is skipped either way.
+		if set.SubHideOffline && !n.Online(now) {
+			continue
+		}
 		if !n.Enabled || n.LastSeen == 0 {
 			// Disabled, or never installed. Deliberately NOT "currently offline": a node
 			// bounces on every deploy and cert renewal, and yanking its links on a

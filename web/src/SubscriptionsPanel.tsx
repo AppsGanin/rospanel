@@ -43,6 +43,7 @@ const EMPTY_SUB: SubSettings = {
   sub_announce: "",
   sub_show_configs: true,
   sub_order_mode: "manual",
+  sub_hide_offline: false,
 };
 
 // Requiring an id is the default: a cap a client can dodge by staying silent is not
@@ -97,6 +98,7 @@ export function SubscriptionsPanel() {
           sub_announce: d.sub_announce,
           sub_show_configs: d.sub_show_configs,
           sub_order_mode: d.sub_order_mode ?? "manual",
+          sub_hide_offline: d.sub_hide_offline ?? false,
         };
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
@@ -187,6 +189,12 @@ export function SubscriptionsPanel() {
             />
             <p className="text-xs text-ink-muted">{t("subs.orderMode.hint")}</p>
           </div>
+          <ToggleRow
+            label={t("subs.hideOffline")}
+            hint={t("subs.hideOfflineHint")}
+            checked={s.sub_hide_offline}
+            onChange={(v) => patch({ sub_hide_offline: v })}
+          />
           <div>
             <Textarea
               label={t("subs.announce")}

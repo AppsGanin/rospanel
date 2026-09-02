@@ -715,6 +715,9 @@ type Settings struct {
 	// its row.
 	SubOrderMode    string    `json:"-"`
 	MasterPlacement Placement `json:"-"`
+	// SubHideOffline drops a node from subscriptions while it is not reporting.
+	// Off by default — see migration 0062 for why that is the safer side.
+	SubHideOffline bool `json:"-"`
 
 	// MaintenanceMode makes the public surfaces show a "temporarily unavailable"
 	// page; the panel, API, node sync and the tunnels themselves keep serving.
