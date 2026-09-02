@@ -41,11 +41,14 @@ type Sampler struct {
 	lastCPU  cpuTimes
 	lastNet  netCounters
 	lastNetT time.Time
+
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 // New starts a sampler that refreshes CPU/network rates every 2s.
 func New(diskPath string) *Sampler {
-	s := &Sampler{diskPath: diskPath}
+	s := &Sampler{diskPath: diskPath, stop: make(chan struct{})}
 	s.lastCPU, _ = readCPU()
 	s.lastNet, _ = readNet()
 	s.lastNetT = time.Now()
@@ -56,9 +59,20 @@ func New(diskPath string) *Sampler {
 func (s *Sampler) loop() {
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
-	for range t.C {
-		s.sample()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-t.C:
+			s.sample()
+		}
 	}
+}
+
+// Stop ends the background sampling loop. Safe to call more than once; Read keeps
+// working afterwards and simply returns the last rates sampled.
+func (s *Sampler) Stop() {
+	s.stopOnce.Do(func() { close(s.stop) })
 }
 
 func (s *Sampler) sample() {

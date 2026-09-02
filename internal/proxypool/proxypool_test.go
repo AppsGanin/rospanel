@@ -1,6 +1,9 @@
 package proxypool
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // A lane's source may mix proxies and share links; each becomes an upstream of
 // its own kind, duplicates fall out either way, and what is neither is dropped.
@@ -29,8 +32,19 @@ func TestParseMixesProxiesAndShareLinks(t *testing.T) {
 		t.Fatalf("parsed %d upstreams: %v", len(eps), got)
 	}
 	for _, e := range eps {
-		if e.Protocol == "vless" && e.Link != link {
-			t.Fatalf("the first spelling of a duplicated link must win: %s", e.Link)
+		if e.Protocol == "vless" && e.Link != strings.TrimSuffix(link, "#one") {
+			t.Fatalf("the first spelling of a duplicated link must win, without its label: %s", e.Link)
 		}
+	}
+}
+
+// A provider renaming a server (a new #label on the same link) must not read as a
+// changed upstream: the label never reaches the outbound, and a changed upstream
+// restarts Xray.
+func TestParseIgnoresTheLabelOfAShareLink(t *testing.T) {
+	a := Parse([]string{"vless://id@9.9.9.9:443?security=tls&sni=a.b#one"})
+	b := Parse([]string{"vless://id@9.9.9.9:443?security=tls&sni=a.b#two"})
+	if len(a) != 1 || len(b) != 1 || a[0] != b[0] {
+		t.Fatalf("renamed server read as a different upstream: %+v vs %+v", a, b)
 	}
 }
