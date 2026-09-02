@@ -1038,6 +1038,9 @@ const en: Dict = {
       "xray-json": "→ Xray JSON",
       block: "block",
     },
+    hideOffline: "Hide a server while it is offline",
+    hideOfflineHint:
+      "Off by default: a node bounces on every update and certificate renewal, and a client whose refresh lands in that window loses the entry for a server that is already back — while a client that still has it fails over on its own. Turn it on if you would rather hide a dead server.",
     orderMode: {
       label: "Server order",
       manual: "Manual (weight, then the list)",

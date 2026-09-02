@@ -66,6 +66,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_show_configs":     set.SubShowConfigs,
 		"sub_dpi":              set.SubDPI,
 		"sub_order_mode":       set.SubOrderMode,
+		"sub_hide_offline":     set.SubHideOffline,
 		"maintenance_mode":     set.MaintenanceMode,
 		"probe_detect":         set.ProbeDetect,
 		"probe_block":          set.ProbeBlock,
@@ -377,6 +378,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		Announce       string `json:"sub_announce"`
 		ShowConfigs    bool   `json:"sub_show_configs"`
 		OrderMode      string `json:"sub_order_mode"`
+		HideOffline    bool   `json:"sub_hide_offline"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -398,6 +400,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubAnnounce:       req.Announce,
 		SubShowConfigs:    req.ShowConfigs,
 		SubOrderMode:      strings.TrimSpace(req.OrderMode),
+		SubHideOffline:    req.HideOffline,
 	})
 	if err != nil {
 		writeManagerErr(w, err)

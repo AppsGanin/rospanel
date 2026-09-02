@@ -820,6 +820,8 @@ export interface SubSettings {
   sub_show_configs: boolean
   // How servers are ordered in a subscription: manual | nearest | load | nearest_load.
   sub_order_mode: string
+  // Drop a node from subscriptions while it is offline (off by default).
+  sub_hide_offline: boolean
 }
 
 // HWIDSettings gates device binding: which installs may fetch the subscription and

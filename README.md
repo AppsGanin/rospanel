@@ -328,6 +328,12 @@ matched against the request (User-Agent or an HWID header) — force a specific 
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
+**A server that stops reporting** stays in the subscription by default — a node bounces on every
+update and certificate renewal, and a client whose refresh lands in that window would lose an
+entry for a server that is already back, while one that keeps the entry fails over on its own.
+*Settings → Subscriptions → hide a server while it is offline* switches that round for operators
+who would rather hide a dead server.
+
 **Server order** (*Settings → Subscriptions*) decides which server a client sees first — and
 whether a full one is shown at all. Every server carries a manual **weight** and a **capacity**
 in users, set on its card under *Servers*. Two modes: manual (weight, then the list) and **least
