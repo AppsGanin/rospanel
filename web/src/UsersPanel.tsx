@@ -5,6 +5,7 @@ import {
   type BulkAction,
   bulkUsers,
   createUser,
+  exportUsersURL,
   listUsers,
   setResetPeriod,
   setUserEnabled,
@@ -32,7 +33,9 @@ import {
   IconCheck,
   Modal,
   IconButton,
+  IconExport,
   IconExternal,
+  IconImport,
   IconEye,
   Select,
   Skeleton,
@@ -47,6 +50,7 @@ import {
   TD,
 } from "./ui";
 import { UserDetail } from "./UserDetail";
+import { ImportUsersModal } from "./ImportUsersModal";
 
 function UsersSkeleton() {
   return (
@@ -101,6 +105,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
   const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -368,6 +373,24 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
             label={t("nav.users")}
           />
         </div>
+        {/* Icons, not words: this toolbar already carries a search box, two selects
+            and the view switch, and these two are the least-used controls on it. The
+            words live on as the accessible name and the hover title. */}
+        <div className="flex gap-1 sm:shrink-0">
+          <IconButton
+            color="gray"
+            onClick={() => setImportOpen(true)}
+            title={t("importUsers.buttonHint")}
+          >
+            <IconImport />
+          </IconButton>
+          {/* A plain link, not a fetch: the file is an attachment the browser
+              saves, and it carries every credential — no reason for it to pass
+              through the SPA. */}
+          <IconButton color="gray" href={exportUsersURL()} title={t("importUsers.exportHint")}>
+            <IconExport />
+          </IconButton>
+        </div>
       </div>
 
       <div className="mb-3 flex items-center justify-between gap-3 text-sm text-ink-muted">
@@ -517,6 +540,7 @@ export function UsersPanel({ userBotEnabled }: { userBotEnabled: boolean }) {
       {/* The add-user FAB hides while a bulk selection is active (the bulk bar
           takes the bottom slot). */}
       {selected.size === 0 && <AddFab onClick={() => setAddOpen(true)} />}
+      <ImportUsersModal open={importOpen} onClose={() => setImportOpen(false)} onImported={refresh} />
 
       {/* Reserve scroll space so the last cards aren't hidden behind the fixed
           selection bar (taller on mobile, where it stacks into a grid). The

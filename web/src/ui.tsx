@@ -100,6 +100,28 @@ export const IconCopy = ({ size = 16, className }: IconProps) =>
       <path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2" />
     </>,
   );
+// Import / export: the same tray, the arrow pointing the other way — into it for a
+// file the panel reads, out of it for one the panel writes.
+export const IconImport = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M12 15V3" />
+    </>,
+  );
+export const IconExport = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 8l5-5 5 5" />
+      <path d="M12 3v12" />
+    </>,
+  );
 export const IconTrash = ({ size = 16, className }: IconProps) =>
   svg(
     size,

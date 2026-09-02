@@ -89,6 +89,8 @@ const (
 	AuditWatchdogRestart = "panel.watchdog_restart"
 	AuditWatchdogWedged  = "panel.watchdog_wedged" // wedge detected but auto-recovery off — alert only
 	AuditUpdated         = "panel.updated"
+	// Every user, with their credentials, downloaded as one file (users.exported).
+	AuditUsersExported = "users.exported"
 )
 
 // Audit categories. What the journal is FILTERED by — a handful of areas instead of
@@ -164,6 +166,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 
 	{AuditXrayRestarted, AuditCatPanel},
 	{AuditPanelRestarted, AuditCatPanel},
+	{AuditUsersExported, AuditCatPanel},
 	{AuditStatsReset, AuditCatPanel},
 	{AuditBackupTaken, AuditCatPanel},
 	{AuditRestored, AuditCatPanel},

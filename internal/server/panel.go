@@ -340,6 +340,11 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/note", rt.setUserNote)
 	authedOpID("POST /api/users/{id}/tags", rt.setUserTags)
 	authedOp("GET /api/users/tags", rt.userTags)
+	// Import from another panel (see panel_import.go): inspect reads, import writes.
+	authedOp("POST /api/users/import/inspect", rt.importInspect)
+	authedOp("POST /api/users/import", rt.importUsers)
+	// The export is admin-level: one file with every credential (see exportUsers).
+	authed("GET /api/users/export", rt.exportUsers)
 	authedOpID("GET /api/users/{id}/connections", rt.userConnections)
 	authedOpID("GET /api/users/{id}/devices", rt.userDevices)
 	authedOpID("POST /api/users/{id}/devices/unbind", rt.unbindUserDevice)

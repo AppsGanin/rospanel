@@ -1493,6 +1493,51 @@ export const bulkUsers = (ids: number[], action: BulkAction, days = 0) =>
     body: JSON.stringify({ ids, action, days }),
   })
 
+// ---- Import from another panel (Marzban, 3x-ui) ----------------------------
+// One user as read from the other panel's file, in this panel's terms. `issues`
+// are dictionary keys under importUsers.issue.*; `exists` means the UUID is
+// already here (the import skips it), `name_taken` is informational.
+export interface ImportCandidate {
+  name: string
+  uuid: string
+  password: string
+  data_limit: number
+  expire_at: number
+  used_up: number
+  used_down: number
+  device_limit: number
+  enabled: boolean
+  note: string
+  issues: string[]
+  exists: boolean
+  existing_id?: number
+  name_taken: boolean
+}
+export interface ImportPreview {
+  source: 'marzban' | '3x-ui'
+  users: ImportCandidate[]
+}
+export interface ImportResult {
+  created: number
+  skipped: number
+  failed: { name: string; code: string }[]
+}
+// exportUsers downloads this panel's own export file — the one inspectImport
+// reads back. Served as an attachment, so the browser saves it rather than the
+// SPA holding every credential in memory.
+export const exportUsersURL = () => 'api/users/export'
+
+export const inspectImport = (file: File) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiForm<ImportPreview>('api/users/import/inspect', fd)
+}
+export const importUsers = (source: string, users: ImportCandidate[], tags: string[]) =>
+  api<ImportResult>('api/users/import', {
+    method: 'POST',
+    body: JSON.stringify({ source, users, tags }),
+  })
+
 export interface CertInfo {
   subject: string
   issuer: string

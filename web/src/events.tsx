@@ -133,6 +133,9 @@ export function eventDetails(e: UserEvent): string {
   switch (e.action) {
     case "user.created":
     case "user.limits_changed": {
+      if (str(d, "imported_from")) {
+        parts.push(i18n.t("events.det.importedFrom", { source: str(d, "imported_from") }));
+      }
       // Only state a limit the row actually carries — a missing key is "unknown",
       // not "unlimited", and rendering it as the latter would be a false claim.
       if (has(d, "data_limit")) {
