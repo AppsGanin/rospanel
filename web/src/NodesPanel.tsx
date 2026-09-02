@@ -411,9 +411,12 @@ function ProxyListenerRow({
       <div className="flex items-center gap-3">
         <span className="text-sm text-ink-muted">{t("conn.port")}</span>
         <div className="w-24">
+          {/* A listener that was never given a port shows the one it will get when
+              switched on, as a value rather than a placeholder: next to a row whose
+              port was saved, a grey hint reads as a different kind of number. */}
           <TextInput
             type="number"
-            value={port ? String(port) : ""}
+            value={port ? String(port) : enabled ? "" : String(defaultPort)}
             onChange={(v) => onPort(Number(v) || 0)}
             placeholder={String(defaultPort)}
             disabled={!enabled}
