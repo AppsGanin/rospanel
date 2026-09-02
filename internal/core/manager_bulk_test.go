@@ -20,7 +20,15 @@ func bulkTestManager(t *testing.T) *Manager {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return &Manager{store: st}
+	// The buffers New fills, so a test that records a sighting does not write to a
+	// nil map. What New sets and this does not — the shaper, the Xray supervisor, the
+	// AmneziaWG device — is deliberate: those touch the machine, and every method
+	// that uses one already treats its absence as "nothing to do".
+	return &Manager{
+		store:      st,
+		accLast:    map[string]int64{},
+		accPending: map[accPendingKey]store.ConnectionHit{},
+	}
 }
 
 func mkUser(t *testing.T, m *Manager, name string, expireAt int64) int64 {

@@ -43,7 +43,15 @@ func (m *Manager) shaperLoop() {
 // too — a filter matching traffic that never arrives, costing a rule and nothing
 // else. Filtering them out would need per-server sightings, which is a schema
 // change to avoid a few unused entries in a table the kernel walks in microseconds.
+//
+// A manager built without a shaper installs nothing. Only the package's own tests
+// build one that way (New always sets it), and a test must not reach for `tc` on
+// the machine it runs on — nor crash for lack of one, which is what a nil applier
+// does on Linux, where Apply gets past its non-Linux early return.
 func (m *Manager) ApplyShaping() {
+	if m.shaper == nil {
+		return
+	}
 	targets, err := m.store.ShapedUsers(time.Now().Add(-shaperWindow).Unix())
 	if err != nil {
 		logErr("shaper: cannot read capped users", "err", err)
@@ -71,7 +79,12 @@ func (m *Manager) wanIface() string {
 // ResetShaping removes every cap this panel installed. Called on shutdown: the
 // kernel keeps a qdisc tree until reboot, so leaving one behind would throttle
 // users on behalf of a panel that is no longer running.
-func (m *Manager) ResetShaping() { m.shaper.Reset() }
+func (m *Manager) ResetShaping() {
+	if m.shaper == nil {
+		return
+	}
+	m.shaper.Reset()
+}
 
 // SetUserSpeedLimit changes one user's cap (kbit/s; 0 = unlimited) and puts it in
 // force immediately rather than at the next tick — an operator who has just typed a

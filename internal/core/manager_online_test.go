@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
-	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // The online gauge counts distinct users per server inside the online window,
@@ -13,14 +12,6 @@ import (
 // reported from — the master's own log to 0, a node's report to the node.
 func TestOnlineGaugeCountsPerServer(t *testing.T) {
 	m := bulkTestManager(t)
-	// The bulk test manager is built without New(); the access-log buffers it
-	// leaves nil are New's job, so give it the two RecordAccess writes to.
-	if m.accLast == nil {
-		m.accLast = map[string]int64{}
-	}
-	if m.accPending == nil {
-		m.accPending = map[accPendingKey]store.ConnectionHit{}
-	}
 	ctx := adminCtx()
 	a, _ := m.CreateUser(ctx, "a", 0, 0)
 	b, _ := m.CreateUser(ctx, "b", 0, 0)
