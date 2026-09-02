@@ -4,11 +4,14 @@ import {
   ANNOUNCE_MAX,
   getSettings,
   getSubRules,
+  saveSubDPI,
+  DEFAULT_SUB_DPI,
   saveHWIDSettings,
   saveSubRules,
   saveSubSettings,
   type HWIDSettings,
   type SubRule,
+  type SubDPI,
   type SubSettings,
 } from "./api";
 import { useAction, useDirtyForm } from "./hooks";
@@ -72,6 +75,15 @@ export function SubscriptionsPanel() {
   const [loaded, setLoaded] = useState(false);
   const { draft: s, setDraft: setS, isDirty: dirty, load, commit, reset } = useDirtyForm<SubSettings>(EMPTY_SUB);
   const [secret, setSecret] = useState("");
+  // The DPI block and the response rules are separate endpoints, but to the operator
+  // this is one page: their drafts live here and go out with the page's own Save.
+  const [dpi, setDpi] = useState<SubDPI>(DEFAULT_SUB_DPI);
+  const [dpiSaved, setDpiSaved] = useState<SubDPI>(DEFAULT_SUB_DPI);
+  const [rules, setRules] = useState<SubRule[]>([]);
+  const [rulesSaved, setRulesSaved] = useState<SubRule[]>([]);
+  const dpiDirty = JSON.stringify(dpi) !== JSON.stringify(dpiSaved);
+  const rulesDirty = JSON.stringify(rules) !== JSON.stringify(rulesSaved);
+
   const {
     draft: h,
     setDraft: setH,
@@ -103,9 +115,18 @@ export function SubscriptionsPanel() {
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
         setSecret(d.secret_path);
+        const dpiInit = { ...DEFAULT_SUB_DPI, ...(d.sub_dpi ?? {}) };
+        setDpi(dpiInit);
+        setDpiSaved(dpiInit);
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
+    getSubRules()
+      .then((rs) => {
+        setRules(rs);
+        setRulesSaved(rs);
+      })
+      .catch(() => {});
   }, []);
 
   const patch = (p: Partial<SubSettings>) => setS((cur) => ({ ...cur, ...p }));
@@ -124,6 +145,14 @@ export function SubscriptionsPanel() {
     run(async () => {
       if (dirty) await saveSubSettings(s);
       if (hwidDirty) await saveHWIDSettings(h);
+      if (dpiDirty) {
+        await saveSubDPI(dpi);
+        setDpiSaved(dpi);
+      }
+      if (rulesDirty) {
+        await saveSubRules(rules);
+        setRulesSaved(rules);
+      }
       commit();
       commitHwid();
       notifySuccess(t("subs.saved"));
@@ -339,17 +368,19 @@ export function SubscriptionsPanel() {
         )}
       </Card>
 
-      <SubDPICard />
-      <SubRulesEditor />
+      <SubDPICard value={dpi} onChange={setDpi} />
+      <SubRulesEditor value={rules} onChange={setRules} />
 
       <SaveBar
-        dirty={dirty || hwidDirty}
+        dirty={dirty || hwidDirty || dpiDirty || rulesDirty}
         busy={busy}
         saveDisabled={!!pathErr || announceErr}
         onSave={save}
         onCancel={() => {
           reset();
           resetHwid();
+          setDpi(dpiSaved);
+          setRules(rulesSaved);
         }}
       />
     </div>
@@ -358,24 +389,18 @@ export function SubscriptionsPanel() {
 
 // SubRulesEditor edits the ordered response rules: each matches a request attribute
 // (User-Agent or an HWID header) and forces a subscription format or blocks the
-// client. It has its own load/save (its own endpoint), so it saves independently of
-// the settings above.
-function SubRulesEditor() {
+// client. Its own endpoint, but not its own Save: the draft belongs to the page, so
+// everything on this screen is saved and cancelled together.
+function SubRulesEditor({
+  value: rules,
+  onChange,
+}: {
+  value: SubRule[];
+  onChange: (v: SubRule[]) => void;
+}) {
   const { t } = useTranslation();
-  const [rules, setRules] = useState<SubRule[]>([]);
-  const [base, setBase] = useState<SubRule[]>([]);
-  const { busy, run } = useAction();
+  const setRules = (fn: (rs: SubRule[]) => SubRule[]) => onChange(fn(rules));
 
-  useEffect(() => {
-    getSubRules()
-      .then((rs) => {
-        setRules(rs);
-        setBase(rs);
-      })
-      .catch(() => {});
-  }, []);
-
-  const dirty = JSON.stringify(rules) !== JSON.stringify(base);
   const patchRule = (i: number, p: Partial<SubRule>) =>
     setRules((rs) => rs.map((r, j) => (j === i ? { ...r, ...p } : r)));
   const addRule = () =>
@@ -391,13 +416,6 @@ function SubRulesEditor() {
       const out = [...rs];
       [out[i], out[j]] = [out[j], out[i]];
       return out;
-    });
-
-  const save = () =>
-    run(async () => {
-      await saveSubRules(rules);
-      setBase(rules);
-      notifySuccess(t("subs.rulesSaved"));
     });
 
   // Literal keys (not template strings) so the typed i18n accepts them.
@@ -493,16 +511,6 @@ function SubRulesEditor() {
         >
           + {t("subs.ruleAdd")}
         </button>
-        {dirty && (
-          <button
-            type="button"
-            className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-            onClick={save}
-            disabled={busy}
-          >
-            {t("common.save")}
-          </button>
-        )}
       </div>
     </Card>
   );

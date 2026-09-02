@@ -6,6 +6,9 @@ import {
   checkUpdate,
   getMe,
   getSettings,
+  getConnPolicy,
+  saveConnPolicy,
+  type ConnPolicy,
   saveMaintenance,
   saveProbeDetect,
   saveProbeBlock,
@@ -29,7 +32,7 @@ import {
   type Schedule,
 } from "./CronPicker";
 import { useAction } from "./hooks";
-import { ConnPolicyCard } from "./ConnPolicyCard";
+import { ConnPolicyCard, EMPTY_POLICY } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { browserTimezone, tzOptions } from "./tz";
 import {
@@ -114,6 +117,8 @@ export function GeneralSettings() {
   const { confirm, confirmNode } = useConfirm();
   const [newSecret, setNewSecret] = useState("");
   const [status, setStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
+  const [policy, setPolicy] = useState<ConnPolicy>(EMPTY_POLICY);
+  const [policySaved, setPolicySaved] = useState<ConnPolicy>(EMPTY_POLICY);
   const [savedStatus, setSavedStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
   // Maintenance is a live toggle (it takes effect the moment it's flipped), so it
   // saves on change rather than riding the page's Save bar.
@@ -150,6 +155,12 @@ export function GeneralSettings() {
           setSavedStatus(s);
         })
         .catch(() => {}),
+      getConnPolicy()
+        .then((info) => {
+          setPolicy(info.policy);
+          setPolicySaved(info.policy);
+        })
+        .catch(() => {}),
       getSettings()
         .then((s) => {
           setSettings(s);
@@ -180,7 +191,10 @@ export function GeneralSettings() {
   const adDirty = autoDel !== savedAutoDel;
   const statusDirty =
     status.enabled !== savedStatus.enabled || status.path !== savedStatus.path;
-  const dirty = timezone !== savedTz || bkDirty || adDirty || statusDirty;
+  // The source policy is a draft like everything else on this page: one Save at the
+  // bottom, one Cancel.
+  const policyDirty = JSON.stringify(policy) !== JSON.stringify(policySaved);
+  const dirty = timezone !== savedTz || bkDirty || adDirty || statusDirty || policyDirty;
   // The path is a bare URL segment; the server refuses anything else (and any
   // collision with the panel's other surfaces), but there is no reason to let the
   // operator get that far with an obviously wrong value.
@@ -211,6 +225,10 @@ export function GeneralSettings() {
           await saveStatusPage(status);
           setSavedStatus(status);
         }
+        if (policyDirty) {
+          await saveConnPolicy(policy);
+          setPolicySaved(policy);
+        }
         notifySuccess(t("general.saved"));
       },
       { key: "save" },
@@ -221,6 +239,7 @@ export function GeneralSettings() {
     setBk(savedBk);
     setAutoDel(savedAutoDel);
     setStatus(savedStatus);
+    setPolicy(policySaved);
   };
 
   const doRegenSecret = async () => {
@@ -446,7 +465,7 @@ export function GeneralSettings() {
         <p className="mt-3 text-xs text-ink-muted">{t("general.probeSeeStats")}</p>
       </SettingCard>
 
-      <ConnPolicyCard />
+      <ConnPolicyCard value={policy} onChange={setPolicy} />
 
       {watchdog && (
         <SettingCard

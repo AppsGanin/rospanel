@@ -1101,7 +1101,7 @@ export interface ProbeHit {
 }
 
 export const getProbes = () =>
-  api<{ probes: ProbeHit[] }>('api/security/probes').then((r) => r.probes)
+  api<{ probes: ProbeHit[]; retention_days: number }>('api/security/probes')
 
 // Routing/egress config snapshots (undo a change that broke the tunnels).
 export interface ConfigSnapshot {
