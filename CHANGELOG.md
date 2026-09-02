@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.12.0](https://github.com/AppsGanin/rospanel/compare/v2.11.0...v2.12.0) (2026-09-02)
+
+
+### Features
+
+* external subscriptions, lanes through foreign servers, changelog, factory reset ([b37843e](https://github.com/AppsGanin/rospanel/commit/b37843e9c108b56b88e9763ec63a69e3726c786f))
+* harden the subscription actions, the stops, the bulk paths and the sweeps ([4147468](https://github.com/AppsGanin/rospanel/commit/4147468ffc09b62144430c759a4fc321aecde666))
+
+
+### Bug Fixes
+
+* name every journal event from the dictionary, with details for devices, policy and abuse ([3da54dc](https://github.com/AppsGanin/rospanel/commit/3da54dc296f930b977a1329faaf587ef915d7cc5))
+* put the factory-reset button under its text ([9d047e6](https://github.com/AppsGanin/rospanel/commit/9d047e6ee156c378b6d259cb270f725d5db0cb34))
+* stop offering AsIs twice in the direct DNS strategy ([de69159](https://github.com/AppsGanin/rospanel/commit/de691593c83a6a5451a1685060284a64519920a4))
+
 ## [2.11.0](https://github.com/AppsGanin/rospanel/compare/v2.10.1...v2.11.0) (2026-09-02)
 
 
