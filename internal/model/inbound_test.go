@@ -119,7 +119,9 @@ func TestValidateRejectsBadCombos(t *testing.T) {
 // repeat (it becomes a colliding sing-box tag), and nothing may sit on a built-in
 // lane's port — the collision would otherwise surface as an Xray that won't start.
 func TestValidateInboundSetCollisions(t *testing.T) {
-	reserved := ReservedPorts{443: "VLESS-Vision :443", 8443: "VLESS-XHTTP-REALITY"}
+	reserved := NewReservedPorts()
+	reserved.HoldTCP(443, "VLESS-Vision :443")
+	reserved.HoldTCP(8443, "VLESS-XHTTP-REALITY")
 
 	if err := ValidateInboundSet([]Inbound{
 		vlessWS(1, "A", 9001), vlessWS(2, "B", 9001),
@@ -153,14 +155,14 @@ func TestValidateInboundSetCollisions(t *testing.T) {
 // duplicate tag rejects the WHOLE profile — costing the user every other server too.
 func TestValidateInboundSetRejectsBuiltinName(t *testing.T) {
 	taken := []string{ProtoVLESS, ProtoReality, ProtoHysteria}
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, ProtoVLESS, 9001)}, nil, taken); err == nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, ProtoVLESS, 9001)}, NewReservedPorts(), taken); err == nil {
 		t.Error("expected a built-in lane name to be refused")
 	}
 	// Case-insensitively, since that is how the collision is judged at render time.
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, "vless-tcp-tls", 9001)}, nil, taken); err == nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, "vless-tcp-tls", 9001)}, NewReservedPorts(), taken); err == nil {
 		t.Error("expected the built-in name check to be case-insensitive")
 	}
-	if err := ValidateInboundSet([]Inbound{vlessWS(1, "Резерв", 9001)}, nil, taken); err != nil {
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, "Резерв", 9001)}, NewReservedPorts(), taken); err != nil {
 		t.Errorf("a distinct name was refused: %v", err)
 	}
 }
@@ -174,24 +176,33 @@ func TestValidateInboundSetHopRanges(t *testing.T) {
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		hy2(2, "H2", 4000, 4001, 5050),
-	}, nil, nil); err == nil {
+	}, NewReservedPorts(), nil); err == nil {
 		t.Error("expected overlapping hop ranges to be rejected")
 	}
+	// A hop range swallows UDP, and only UDP: the nftables funnel redirects
+	// `udp dport`, so a second Hysteria2 lane inside the range loses its traffic…
+	if err := ValidateInboundSet([]Inbound{
+		hy2(1, "H1", 5000, 5001, 5100),
+		hy2(2, "H2", 5050, 0, 0),
+	}, NewReservedPorts(), nil); err == nil {
+		t.Error("expected a hop range swallowing another UDP inbound's port to be rejected")
+	}
+	// …while a TCP listener on a number inside that range is untouched by it.
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		vlessWS(2, "W", 5050),
-	}, nil, nil); err == nil {
-		t.Error("expected a hop range swallowing another inbound's port to be rejected")
+	}, NewReservedPorts(), nil); err != nil {
+		t.Errorf("a TCP inbound inside a UDP hop range was rejected: %v", err)
 	}
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
-	}, ReservedPorts{5050: "HYSTERIA-UDP"}, nil); err == nil {
+	}, hysteriaReserved(5050), nil); err == nil {
 		t.Error("expected a hop range covering a reserved port to be rejected")
 	}
 	if err := ValidateInboundSet([]Inbound{
 		hy2(1, "H1", 5000, 5001, 5100),
 		hy2(2, "H2", 6000, 6001, 6100),
-	}, nil, nil); err != nil {
+	}, NewReservedPorts(), nil); err != nil {
 		t.Errorf("two disjoint hop ranges were rejected: %v", err)
 	}
 }
@@ -422,5 +433,38 @@ func TestShadowsocksModel(t *testing.T) {
 	}
 	if good.NeedsShadowKey() {
 		t.Error("a correctly sized key should not need re-keying")
+	}
+}
+
+// hysteriaReserved is a set holding one UDP port, the shape a built-in Hysteria2
+// lane produces.
+func hysteriaReserved(port int) ReservedPorts {
+	r := NewReservedPorts()
+	r.HoldUDP(port, "HYSTERIA-UDP")
+	return r
+}
+
+// A UDP listener and a TCP one may share a number — the default configuration does
+// exactly that, Vision on TCP/443 beside Hysteria2 on UDP/443. Refusing across
+// transports made a legal setup unreachable.
+func TestValidateInboundSetSeparatesTCPFromUDP(t *testing.T) {
+	reserved := NewReservedPorts()
+	reserved.HoldTCP(443, "VLESS-Vision")
+	reserved.HoldUDP(443, "HYSTERIA-UDP")
+
+	if err := ValidateInboundSet([]Inbound{hy2(1, "H", 8443, 0, 0)}, reserved, nil); err != nil {
+		t.Errorf("a UDP inbound on a free UDP port was rejected: %v", err)
+	}
+	if err := ValidateInboundSet([]Inbound{hy2(1, "H", 443, 0, 0)}, reserved, nil); err == nil {
+		t.Error("a UDP inbound on the Hysteria2 port was accepted")
+	}
+	if err := ValidateInboundSet([]Inbound{vlessWS(1, "A", 443)}, reserved, nil); err == nil {
+		t.Error("a TCP inbound on the Vision port was accepted")
+	}
+	// Two inbounds of different transports on one number are fine.
+	if err := ValidateInboundSet([]Inbound{
+		vlessWS(1, "A", 9443), hy2(2, "H", 9443, 0, 0),
+	}, reserved, nil); err != nil {
+		t.Errorf("TCP and UDP listeners on the same number were rejected: %v", err)
 	}
 }

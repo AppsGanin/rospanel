@@ -1457,6 +1457,14 @@ type RoutingConfig struct {
 	DirectDomains   []string `json:"direct_domains"`
 	DirectIPs       []string `json:"direct_ips"`
 
+	// DirectStrategy is how the direct outbound resolves a domain before dialling
+	// it (Xray's freedom domainStrategy). "" keeps Xray's own default, AsIs, which
+	// hands the name to the system resolver on the box; naming a family instead
+	// makes the panel's DNS settings decide, and pins which address family is used
+	// on a host whose IPv6 route is broken — the usual cause of "some sites are
+	// slow only through the tunnel".
+	DirectStrategy string `json:"direct_strategy,omitempty"`
+
 	// RoutingOrder is the precedence of the egress lanes; first-match-wins. It is a
 	// permutation of the built-in lanes ("warp"/"opera"/"direct") plus the ID of
 	// every proxy lane in Lanes. The LAST lane is the catch-all ("everything else")
@@ -1570,6 +1578,10 @@ func (rc *RoutingConfig) MigrateLanes() {
 // ValidateLanes checks the operator-supplied lanes before they are persisted.
 // Messages are user-facing (shown in the panel).
 func (rc *RoutingConfig) ValidateLanes() error {
+	if !ValidDirectStrategy(rc.DirectStrategy) {
+		return fieldErr("err.badDirectStrategy", "неизвестная стратегия DNS для прямого выхода {{value}}",
+			map[string]any{"value": rc.DirectStrategy})
+	}
 	if len(rc.Lanes) > MaxEgressLanes {
 		return fieldErr("err.laneTooMany", "слишком много полос: максимум {{max}}", map[string]any{"max": MaxEgressLanes})
 	}
@@ -1624,3 +1636,26 @@ func (s *Settings) BotLang() string {
 // DefaultRealityDest is the donor a fresh install masquerades as: the value the
 // schema gives reality_dest, and what a factory reset puts back.
 const DefaultRealityDest = "max.ru"
+
+// validateDirectStrategy is folded into ValidateLanes so both the master and a node
+// reject an unknown value on the same path.
+
+// MaxDeviceLimit is the highest simultaneous-device cap the panel accepts. It is
+// not a licence limit — 0 still means unlimited — but a number this side of a
+// typo: a "500" meant as "50" reads as a plan nobody notices is unmetered, and the
+// device table grows one row per address per user.
+const MaxDeviceLimit = 100
+
+// DirectStrategies are the freedom domainStrategy values the panel offers, from
+// Xray's own parser. "" (absent) means Xray's default.
+var DirectStrategies = []string{"", "AsIs", "UseIP", "UseIPv4", "UseIPv6", "UseIPv4v6", "UseIPv6v4"}
+
+// ValidDirectStrategy reports whether s is one the panel will emit.
+func ValidDirectStrategy(s string) bool {
+	for _, v := range DirectStrategies {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}

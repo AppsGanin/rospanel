@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -26,9 +27,13 @@ import (
 const (
 	validateTimeout = 30 * time.Second // `xray -test` config validation (geosite.dat parse ~7-8s on 1 vCPU)
 	statsTimeout    = 10 * time.Second // `xray api statsquery`
-	restartBackoff  = time.Second      // base crash-restart delay (doubles, capped)
-	maxBackoff      = 30 * time.Second
-	healthyUptime   = 30 * time.Second // a run longer than this resets the backoff
+	// stopGrace is how long Xray gets to close its listeners on SIGTERM before it
+	// is killed. Long enough for an orderly shutdown, short enough that a save does
+	// not feel stuck: the caller is holding runMu and about to rebind :443.
+	stopGrace      = 3 * time.Second
+	restartBackoff = time.Second // base crash-restart delay (doubles, capped)
+	maxBackoff     = 30 * time.Second
+	healthyUptime  = 30 * time.Second // a run longer than this resets the backoff
 
 	// Wedged-process watchdog: the exit monitor restarts a process that DIES; this
 	// covers one that stays alive but stops serving (Xray's API stops answering).
@@ -307,9 +312,16 @@ func (s *Supervisor) watchdogTick(fails int) (count int, alert, restart bool) {
 }
 
 // apiResponsive reports whether the running Xray still answers its API — a failed,
-// timeout-bounded stats query is the "wedged" signal the exit monitor never sees.
+// timeout-bounded query is the "wedged" signal the exit monitor never sees.
+//
+// The question is deliberately the cheapest one the API answers: an inbound-level
+// stats pattern returns a handful of counters whatever the install's size, while
+// the per-user query the poller runs returns two rows per user and is answered by
+// walking them all. On a busy box that is the difference between a probe every 30
+// seconds costing nothing and one competing with the accounting it is meant to
+// watch — and a probe that times out under load reads as a wedge that is not there.
 func (s *Supervisor) apiResponsive() bool {
-	_, err := s.QueryStats(s.APIAddr())
+	_, err := s.runXray(statsTimeout, "api", "statsquery", "--server="+s.APIAddr(), "inbound>>>")
 	return err == nil
 }
 
@@ -958,10 +970,16 @@ func (s *Supervisor) startProc() error {
 	return nil
 }
 
-// stopProc kills the current process and blocks until its monitor has reaped it
+// stopProc ends the current process and blocks until its monitor has reaped it
 // (so :443 is free before a replacement binds). It marks the proc as an
 // intentional stop so the monitor won't auto-restart it. Caller must hold
 // s.runMu; only the short state section takes s.mu.
+//
+// SIGTERM first, SIGKILL only if that is ignored: Xray closes its listeners and
+// lets in-flight connections finish on a term, where a kill drops every tunnel
+// mid-packet. Every config change goes through here, so the difference is felt on
+// each save. The wait is bounded — a process that will not go still must not hold
+// the port, and the caller is about to bind it.
 func (s *Supervisor) stopProc() {
 	s.mu.Lock()
 	p := s.cur
@@ -974,8 +992,16 @@ func (s *Supervisor) stopProc() {
 	s.restarts = 0
 	s.mu.Unlock()
 
-	_ = p.cmd.Process.Kill()
-	<-p.done // monitor's Wait() returned → process fully reaped
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	select {
+	case <-p.done: // monitor's Wait() returned → process fully reaped
+	case <-time.After(stopGrace):
+		slog.Warn("xray: did not exit on SIGTERM — killing", "grace", stopGrace)
+		_ = p.cmd.Process.Kill()
+		<-p.done
+	}
 }
 
 // monitor waits for p to exit. An intentional stop (or a process already

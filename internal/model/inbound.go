@@ -837,7 +837,65 @@ func (in *Inbound) UnsupportedFormats() []string {
 // ReservedPorts is the set of ports one server's custom inbounds may not take,
 // keyed by what already holds them, for the error message. Built by the caller from
 // the server's effective settings — see core.reservedPorts.
-type ReservedPorts map[int]string
+type ReservedPorts struct {
+	TCP map[int]string
+	UDP map[int]string
+}
+
+// NewReservedPorts is an empty set.
+func NewReservedPorts() ReservedPorts {
+	return ReservedPorts{TCP: map[int]string{}, UDP: map[int]string{}}
+}
+
+// HoldTCP / HoldUDP / Hold record who owns a port. Hold takes both transports and
+// is for a listener that is not a socket of ours to reason about — the panel's own
+// loopback port, Xray's internal API — where the safe answer is "nobody else".
+//
+// Two owners of the same number on the same transport are joined rather than
+// overwritten: the built-in lanes routinely share a number (Vision on TCP/443 and
+// the system proxy behind it), and keeping only the last one told the operator
+// their port collides with the wrong thing.
+func (r ReservedPorts) HoldTCP(port int, who string) { hold(r.TCP, port, who) }
+func (r ReservedPorts) HoldUDP(port int, who string) { hold(r.UDP, port, who) }
+func (r ReservedPorts) Hold(port int, who string) {
+	r.HoldTCP(port, who)
+	r.HoldUDP(port, who)
+}
+
+func hold(m map[int]string, port int, who string) {
+	if port <= 0 || m == nil {
+		return
+	}
+	if prev, ok := m[port]; ok {
+		if prev == who || strings.Contains(prev, who) {
+			return
+		}
+		m[port] = prev + " / " + who
+		return
+	}
+	m[port] = who
+}
+
+// OnTCP / OnUDP report who holds a port on that transport.
+func (r ReservedPorts) OnTCP(port int) (string, bool) { who, ok := r.TCP[port]; return who, ok }
+func (r ReservedPorts) OnUDP(port int) (string, bool) { who, ok := r.UDP[port]; return who, ok }
+
+// ProtoOf is the transport an inbound listens on: Hysteria2 is QUIC over UDP,
+// everything else the panel offers is TCP.
+func ProtoOf(protocol string) string {
+	if protocol == InbHysteria {
+		return "udp"
+	}
+	return "tcp"
+}
+
+// On reports who holds a port on one transport ("tcp" | "udp").
+func (r ReservedPorts) On(proto string, port int) (string, bool) {
+	if proto == "udp" {
+		return r.OnUDP(port)
+	}
+	return r.OnTCP(port)
+}
 
 // ValidateInboundSet checks a server's whole inbound list together: the per-inbound
 // rules, plus everything that is only visible across the set — duplicate display
@@ -865,7 +923,7 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 			names[strings.ToLower(n)] = true
 		}
 	}
-	ports := map[int]string{}
+	ports := map[string]map[int]string{"tcp": {}, "udp": {}}
 	type hopRange struct {
 		name     string
 		from, to int
@@ -885,13 +943,18 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 		if !in.Enabled {
 			continue
 		}
-		if who, taken := reserved[in.Port]; taken {
+		// Per transport: a UDP listener and a TCP one may share a number, and the
+		// built-in lanes do exactly that by default (Vision on TCP/443, Hysteria2 on
+		// UDP/443). Refusing across transports turned a legal configuration into an
+		// error the operator could not resolve.
+		proto := ProtoOf(in.Protocol)
+		if who, taken := reserved.On(proto, in.Port); taken {
 			return fieldErr("err.portTakenBy", "порт {{port}} уже занят ({{who}}) — выберите другой", map[string]any{"port": in.Port, "who": who})
 		}
-		if who, dup := ports[in.Port]; dup {
+		if who, dup := ports[proto][in.Port]; dup {
 			return fieldErr("err.portTakenByInbound", "порт {{port}} уже занят подключением «{{who}}»", map[string]any{"port": in.Port, "who": who})
 		}
-		ports[in.Port] = in.Name
+		ports[proto][in.Port] = in.Name
 
 		if in.UsesHopping() {
 			from := in.Opts.HopStart
@@ -913,15 +976,16 @@ func ValidateInboundSet(list []Inbound, reserved ReservedPorts, takenNames []str
 	}
 	// A hop range must not swallow another inbound's base port: the nftables redirect
 	// would silently steal its traffic.
+	// A hop range is a UDP funnel, so only UDP listeners can be swallowed by it.
 	for _, h := range hops {
-		for p, who := range ports {
+		for p, who := range ports["udp"] {
 			if p >= h.from && p <= h.to && who != h.name {
 				return fieldErr("err.hopRangeCoversInbound",
 					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} подключения «{{who}}»",
 					map[string]any{"name": h.name, "from": h.from, "to": h.to, "port": p, "who": who})
 			}
 		}
-		for p, who := range reserved {
+		for p, who := range reserved.UDP {
 			if p >= h.from && p <= h.to {
 				return fieldErr("err.hopRangeCoversPort",
 					"диапазон хопа «{{name}}» ({{from}}–{{to}}) накрывает порт {{port}} ({{who}})",

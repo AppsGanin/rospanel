@@ -160,6 +160,7 @@ func TestSubscriptionPageListsAndUnbindsDevices(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{"hwid": "dev-a"})
 	unbind := httptest.NewRequest(http.MethodPost, "/sub/"+u.SubToken+"/devices/unbind", strings.NewReader(string(body)))
 	unbind.Header.Set("Content-Type", "application/json")
+	unbind.Header.Set("X-RosPanel-Sub", "1") // what the page itself sends
 	unbind.RemoteAddr = testClientIP + ":40000"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, unbind)
@@ -168,5 +169,48 @@ func TestSubscriptionPageListsAndUnbindsDevices(t *testing.T) {
 	}
 	if n, _ := st.CountDevices(u.ID); n != 0 {
 		t.Errorf("%d devices left after unbinding the only one", n)
+	}
+}
+
+// The token in a subscription URL authenticates the account, not the asker: a link
+// that leaked is enough for another site to fire these actions from the user's
+// browser. They are refused unless the request proves it came from the page.
+func TestSubscriptionActionsRefuseACrossSiteRequest(t *testing.T) {
+	h, mgr, st := nodeAPITestServer(t)
+	u := hwidUser(t, mgr, st, 2, false)
+	if rec := fetchSub(h, u.SubToken, "dev-a"); rec.Code != http.StatusOK {
+		t.Fatalf("bind: status %d", rec.Code)
+	}
+
+	post := func(headers map[string]string) int {
+		body, _ := json.Marshal(map[string]string{"hwid": "dev-a"})
+		r := httptest.NewRequest(http.MethodPost, "/sub/"+u.SubToken+"/devices/unbind", strings.NewReader(string(body)))
+		r.Header.Set("Content-Type", "application/json")
+		r.RemoteAddr = testClientIP + ":40000"
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec.Code
+	}
+
+	// Somebody else's page, as a browser labels it.
+	if code := post(map[string]string{"Sec-Fetch-Site": "cross-site"}); code == http.StatusOK {
+		t.Error("a cross-site POST released the device")
+	}
+	if n, _ := st.CountDevices(u.ID); n != 1 {
+		t.Fatalf("the device was released by a cross-site request (%d left)", n)
+	}
+	// A request with no origin label and no header of ours: not the page either.
+	if code := post(nil); code == http.StatusOK {
+		t.Error("an unlabelled POST released the device")
+	}
+	// The page itself, both ways a browser can say so.
+	if code := post(map[string]string{"Sec-Fetch-Site": "same-origin"}); code != http.StatusOK {
+		t.Errorf("the page's own request was refused: %d", code)
+	}
+	if n, _ := st.CountDevices(u.ID); n != 0 {
+		t.Errorf("%d devices left after the page unbound the only one", n)
 	}
 }

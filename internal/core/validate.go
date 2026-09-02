@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/AppsGanin/rospanel/internal/model"
 	"net"
 	"net/mail"
 	"strings"
@@ -28,6 +29,9 @@ func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 		return invalidCode("err.badExpiryDate", "некорректная дата истечения")
 	case deviceLimit < 0:
 		return invalidCode("err.deviceLimitNegative", "лимит устройств не может быть отрицательным")
+	case deviceLimit > model.MaxDeviceLimit:
+		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
+			map[string]any{"max": model.MaxDeviceLimit})
 	}
 	return nil
 }

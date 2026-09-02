@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/google/uuid"
@@ -343,11 +344,14 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 
 // snapshotUsers reads each id that still exists. Ids with no row are simply absent.
 func (m *Manager) snapshotUsers(ids []int64) map[int64]model.User {
-	out := make(map[int64]model.User, len(ids))
-	for _, id := range ids {
-		if u, err := m.store.GetUser(id); err == nil {
-			out[id] = *u
-		}
+	users, err := m.store.UsersByIDs(ids)
+	if err != nil {
+		logErr("bulk: reading the selected users failed", "users", len(ids), "err", err)
+		return map[int64]model.User{}
+	}
+	out := make(map[int64]model.User, len(users))
+	for _, u := range users {
+		out[u.ID] = u
 	}
 	return out
 }
@@ -387,12 +391,25 @@ func pick(names map[int64]string, ids []int64) map[int64]string {
 // auditBulk writes one audit row per user in names, flagged as part of a bulk action
 // so the journal can tell a hand-picked change from a mass one.
 func (m *Manager) auditBulk(ctx context.Context, names map[int64]string, action string, details map[string]any) {
+	if len(names) == 0 {
+		return
+	}
+	a := actor.From(ctx)
+	now := time.Now().Unix()
+	evs := make([]model.UserEvent, 0, len(names))
 	for id, name := range names {
 		d := map[string]any{"bulk": true}
 		for k, v := range details {
 			d[k] = v
 		}
-		m.auditNamed(ctx, id, name, action, d)
+		evs = append(evs, model.UserEvent{
+			UserID: id, UserName: name, Action: action,
+			ActorKind: a.Kind, ActorName: a.Name,
+			Details: detailsOrNil(d), CreatedAt: now,
+		})
+	}
+	if err := m.store.AddUserEvents(evs); err != nil {
+		logErr("audit: bulk write failed", "action", action, "rows", len(evs), "err", err)
 	}
 }
 
@@ -401,12 +418,15 @@ func (m *Manager) auditBulk(ctx context.Context, names map[int64]string, action 
 // It returns the ids it actually reset.
 func (m *Manager) bulkResetTraffic(ids []int64) []int64 {
 	stats, _ := m.sup.QueryStats(m.sup.APIAddr()) // nil map on error → (0,0) baselines
-	var done []int64
+	baselines := make(map[int64][2]int64, len(ids))
 	for _, id := range ids {
 		t := stats[fmt.Sprintf("u%d", id)]
-		if err := m.store.ResetTraffic(id, t.Up, t.Down); err == nil {
-			done = append(done, id)
-		}
+		baselines[id] = [2]int64{t.Up, t.Down}
+	}
+	done, err := m.store.ResetTrafficMany(baselines)
+	if err != nil {
+		logErr("bulk: resetting traffic failed", "users", len(ids), "err", err)
+		return nil
 	}
 	return done
 }
@@ -423,20 +443,25 @@ func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
 	defer m.applyPlanMu.Unlock()
 	now := time.Now().Unix()
 	add := int64(days) * 86400
-	out := map[int64]int64{}
-	for _, id := range ids {
-		u, err := m.store.GetUser(id)
-		if err != nil || u.ExpireAt == 0 {
-			continue
+	users, err := m.store.UsersByIDs(ids)
+	if err != nil {
+		logErr("bulk: reading the selected users failed", "users", len(ids), "err", err)
+		return nil
+	}
+	out := make(map[int64]int64, len(users))
+	for _, u := range users {
+		if u.ExpireAt == 0 {
+			continue // never expires; there is nothing to push out
 		}
 		base := now
 		if u.ExpireAt > now {
 			base = u.ExpireAt
 		}
-		expire := base + add
-		if err := m.store.SetUserLimits(id, u.DataLimit, expire, u.DeviceLimit); err == nil {
-			out[id] = expire
-		}
+		out[u.ID] = base + add
+	}
+	if err := m.store.SetUserExpiryMany(out); err != nil {
+		logErr("bulk: extending expiry failed", "users", len(out), "err", err)
+		return nil
 	}
 	return out
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
+  MAX_DEVICE_LIMIT,
   deleteTariffPlan,
   getBilling,
   getPayments,
@@ -19,6 +20,7 @@ import { useAction } from "./hooks";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
+  CustomizableSelect,
   Badge,
   Button,
   CenterLoader,
@@ -255,6 +257,8 @@ const EMPTY_PLAN = (): TariffPlan => ({
 });
 
 
+// devices() are the plan presets; the editor also takes any other number up to
+// MAX_DEVICE_LIMIT (see CustomizableSelect).
 const devices = () => [
   { value: "0", label: i18n.t("common.unlimited") },
   { value: "1", label: "1" },
@@ -389,10 +393,14 @@ function PlanForm({
           value={gbFromBytes(plan.data_limit)}
           onChange={(v) => patch({ data_limit: gbToBytes(Number(v)) })}
         />
-        <Select
+        {/* The presets cover the plans people actually sell; "other" takes any
+            number up to the panel's ceiling, the same as the user card. */}
+        <CustomizableSelect
           label={t("userDetail.deviceLimit")}
           data={devices()}
           value={String(plan.device_limit)}
+          max={MAX_DEVICE_LIMIT}
+          format={(n) => t("bill.nDevices", { count: n })}
           onChange={(v) => patch({ device_limit: Number(v) })}
         />
         <Select

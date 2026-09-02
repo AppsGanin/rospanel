@@ -1,6 +1,8 @@
 package xray
 
 import (
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -86,4 +88,78 @@ func TestCrashAlertStillFiresWhenRunning(t *testing.T) {
 	waitFor(t, "crash alert", func() bool { return crashes.Load() > 0 })
 	waitFor(t, "recovery alert", func() bool { return recoveries.Load() > 0 })
 	s.Stop()
+}
+
+// A stop asks the process to go before it kills it: Xray closes its listeners and
+// lets in-flight tunnels finish, which matters because every config save stops the
+// process. A child that ignores the term is still killed, so the port is never held.
+func TestStopSignalsBeforeKilling(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "xray")
+	ready := filepath.Join(dir, "ready")
+	trap := filepath.Join(dir, "term")
+	// `run -test` validates and exits; `run -c` installs a TERM handler, says it is
+	// ready, and waits. The handler records the signal — a kill would leave no trace.
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = run ] && [ \"$2\" = -test ]; then exit 0; fi\n" +
+		"if [ \"$1\" = run ]; then\n" +
+		"  trap 'echo term > " + trap + "; exit 0' TERM\n" +
+		"  echo ready > " + ready + "\n" +
+		"  /bin/sleep 60 & wait\n" +
+		"fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSupervisor(bin, filepath.Join(dir, "config.json"), "")
+	if err := s.Apply(&Config{}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	// The handler has to be installed before the signal, or the test would be racing
+	// the shell rather than testing the supervisor.
+	waitFor(t, "the child's signal handler", func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	})
+
+	s.Stop()
+	if _, err := os.Stat(trap); err != nil {
+		t.Fatalf("the process was killed without being asked to stop first: %v", err)
+	}
+	if s.Running() {
+		t.Fatal("still running after Stop")
+	}
+}
+
+// A child that ignores the term is still killed, so a config save never waits on a
+// wedged process holding :443.
+func TestStopKillsAChildThatIgnoresTheSignal(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "xray")
+	ready := filepath.Join(dir, "ready")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = run ] && [ \"$2\" = -test ]; then exit 0; fi\n" +
+		"if [ \"$1\" = run ]; then\n" +
+		"  trap '' TERM\n" +
+		"  echo ready > " + ready + "\n" +
+		"  /bin/sleep 60 & wait\n" +
+		"fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSupervisor(bin, filepath.Join(dir, "config.json"), "")
+	if err := s.Apply(&Config{}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	waitFor(t, "the child", func() bool { _, err := os.Stat(ready); return err == nil })
+
+	start := time.Now()
+	s.Stop()
+	if took := time.Since(start); took > stopGrace+3*time.Second {
+		t.Fatalf("Stop waited %s on a child that ignores SIGTERM", took.Round(time.Millisecond))
+	}
+	if s.Running() {
+		t.Fatal("still running after Stop")
+	}
 }

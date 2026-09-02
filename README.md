@@ -567,8 +567,15 @@ handler can't see — a process that stays alive but stops serving: it probes Xr
 it goes unresponsive for several checks in a row, restarts it (with a cooldown against restart
 storms) and alerts the operator. Runs on the master and every node.
 
+The subscription page's own actions (cancel a plan, pay, release a device) are accepted only
+from that page: the token in the link proves the account, not who is asking, so a leaked link
+cannot be acted on by somebody else's site.
+
 **Secrets in the database are encrypted** (AES-GCM). Session tokens and API keys are stored as
-hashes only — even with table access you can't reuse someone's session. Payment confirmation
+hashes only — even with table access you can't reuse someone's session. On a key change the
+panel re-wraps everything it keeps closed: user passwords and keys, node keys (REALITY, WARP,
+AmneziaWG), webhook secrets, custom-inbound keys, system-proxy passwords, admin second factors
+and payment-provider configs. Payment confirmation
 and admin management require **re-entering the password**. Outbound requests are protected
 against SSRF, brute force on inbounds is banned via nftables (a timed set entry the kernel
 expires on its own), and the number of connections per IP is limited via nftables.
