@@ -5,7 +5,6 @@ import {
   applyUpdate,
   checkUpdate,
   getMe,
-  getProbes,
   getSettings,
   saveMaintenance,
   saveProbeDetect,
@@ -18,7 +17,6 @@ import {
   setLocalBackup,
   setupTimezone,
   setUserAutoDelete,
-  type ProbeHit,
   type SettingsInfo,
   type StatusPageSettings,
   type UpdateInfo,
@@ -30,7 +28,7 @@ import {
   EMPTY_SCHEDULE,
   type Schedule,
 } from "./CronPicker";
-import { useAction, useShowMore } from "./hooks";
+import { useAction } from "./hooks";
 import { ConnPolicyCard } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { browserTimezone, tzOptions } from "./tz";
@@ -124,20 +122,9 @@ export function GeneralSettings() {
   // card is open.
   const [probeDetect, setProbeDetectState] = useState(false);
   const [probeBlock, setProbeBlockState] = useState(false);
-  const [probes, setProbes] = useState<ProbeHit[] | null>(null);
   // Watchdog: a live toggle plus the read-only auto-recovery counters.
   const [watchdog, setWatchdog] = useState<WatchdogInfo | null>(null);
 
-  const loadProbes = () => {
-    getProbes()
-      .then(setProbes)
-      .catch(() => setProbes([]));
-  };
-  // The scanner list is as long as the recording has been on, and it sits inside a
-  // settings card rather than on a page of its own — so it opens at a few rows and
-  // grows on demand. A refresh starts it over (resetKey), since the rows below the
-  // fold are no longer the ones the operator had expanded to.
-  const probeRows = useShowMore(probes ?? [], { first: 5, step: 20, resetKey: probes });
 
   const tzList = useMemo(
     () => tzOptions(timezone || browserTimezone()),
@@ -178,7 +165,6 @@ export function GeneralSettings() {
           setMaintenanceState(s.maintenance_mode);
           setProbeDetectState(s.probe_detect);
           setProbeBlockState(s.probe_block);
-          if (s.probe_detect) loadProbes();
           setWatchdog(s.watchdog);
         })
         .catch(() => {}),
@@ -439,7 +425,6 @@ export function GeneralSettings() {
             run(async () => {
               await saveProbeDetect(v);
               setProbeDetectState(v);
-              if (v && probes === null) loadProbes();
             })
           }
         />
@@ -458,67 +443,7 @@ export function GeneralSettings() {
             />
           </div>
         )}
-        {probeDetect && (
-          <div className="mt-3">
-            {probes === null ? (
-              <p className="text-sm text-ink-muted">{t("common.loading")}</p>
-            ) : probes.length === 0 ? (
-              <p className="text-sm text-ink-muted">{t("general.probeNone")}</p>
-            ) : (
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-                    {t("general.probeRecent")}
-                  </p>
-                  <button
-                    type="button"
-                    className="text-xs text-brand hover:underline"
-                    onClick={loadProbes}
-                  >
-                    {t("common.refresh")}
-                  </button>
-                </div>
-                {probeRows.shown.map((p) => (
-                  <div
-                    key={p.ip}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-1.5 text-sm"
-                  >
-                    <code className="font-mono text-ink">{p.ip}</code>
-                    <span className="text-xs text-ink-muted">
-                      {t("general.probePaths", { n: p.paths })}
-                    </span>
-                    {/* Where the address belongs. A datacentre range abroad and a
-                        residential one in the country you serve call for different
-                        answers, and a bare address says neither. Both are optional —
-                        the geo tables may not be downloaded yet. */}
-                    {p.country && (
-                      <span className="text-xs text-ink-muted">
-                        {countryFlag(p.country)}{" "}
-                        {countryName(p.country, i18n.language, p.country)}
-                      </span>
-                    )}
-                    {p.org && (
-                      <span
-                        className="max-w-[16rem] truncate text-xs text-ink-muted"
-                        title={p.asn ? `AS${p.asn} · ${p.org}` : p.org}
-                      >
-                        {p.org}
-                      </span>
-                    )}
-                    <span className="ml-auto text-xs text-ink-muted">
-                      {new Date(p.last_seen * 1000).toLocaleString(i18n.language)}
-                    </span>
-                  </div>
-                ))}
-                <ShowMore
-                  rest={probeRows.rest}
-                  onClick={probeRows.showMore}
-                  className="mt-1"
-                />
-              </div>
-            )}
-          </div>
-        )}
+        <p className="mt-3 text-xs text-ink-muted">{t("general.probeSeeStats")}</p>
       </SettingCard>
 
       <ConnPolicyCard />

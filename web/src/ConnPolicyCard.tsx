@@ -3,15 +3,12 @@ import { useTranslation } from 'react-i18next'
 import {
   getConnPolicy,
   saveConnPolicy,
-  unblockIP,
   type BlockedIP,
   type ConnPolicy,
 } from './api'
-import { countryFlag, countryName } from './format'
-import { useAction, useShowMore } from './hooks'
-import i18n from './i18n'
+import { useAction } from './hooks'
 import { notifySuccess } from './notify'
-import { Badge, Button, Select, SettingCard, ShowMore, TagsInput, TextInput, ToggleRow } from './ui'
+import { Button, Select, SettingCard, TagsInput, TextInput, ToggleRow } from './ui'
 
 const EMPTY: ConnPolicy = { mode: 'off', countries: [], asns: [], enforce: false, block_hours: 24 }
 
@@ -27,7 +24,6 @@ export function ConnPolicyCard() {
   const [blocked, setBlocked] = useState<BlockedIP[]>([])
   const [canEnforce, setCanEnforce] = useState(true)
   const { busy, run } = useAction()
-  const rows = useShowMore(blocked, { first: 5, step: 20, resetKey: blocked })
   // The two lists are edited as text and stored as data (ISO-2 codes, AS numbers),
   // so what the operator typed and what the panel keeps can disagree. Entries that
   // are not one of those are held here and shown back instead of vanishing on Enter
@@ -58,11 +54,6 @@ export function ConnPolicyCard() {
     run(async () => {
       await saveConnPolicy(p)
       notifySuccess(t('common.saved'))
-      await load()
-    })
-  const lift = (ip: string) =>
-    run(async () => {
-      await unblockIP(ip)
       await load()
     })
 
@@ -163,44 +154,9 @@ export function ConnPolicyCard() {
         )}
 
         {blocked.length > 0 && (
-          <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-              {t('policy.blocked')}
-            </p>
-            {rows.shown.map((b) => (
-              <div
-                key={b.ip}
-                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-1.5 text-sm"
-              >
-                <code className="font-mono text-ink">{b.ip}</code>
-                {b.country && (
-                  <span className="text-xs text-ink-muted">
-                    {countryFlag(b.country)} {countryName(b.country, i18n.language, b.country)}
-                  </span>
-                )}
-                {b.asn > 0 && (
-                  <span className="max-w-[16rem] truncate text-xs text-ink-muted" title={b.org}>
-                    AS{b.asn} {b.org}
-                  </span>
-                )}
-                <Badge color="orange" size="xs">
-                  {t(b.reason === 'asn' ? 'policy.reasonASN' : 'policy.reasonCountry')}
-                </Badge>
-                <span className="ml-auto text-xs text-ink-muted">
-                  {t('policy.until', { when: new Date(b.until * 1000).toLocaleString(i18n.language) })}
-                </span>
-                <button
-                  type="button"
-                  className="text-xs text-brand hover:underline"
-                  disabled={busy}
-                  onClick={() => lift(b.ip)}
-                >
-                  {t('policy.unblock')}
-                </button>
-              </div>
-            ))}
-            <ShowMore rest={rows.rest} onClick={rows.showMore} className="mt-1" />
-          </div>
+          <p className="text-xs text-ink-muted">
+            {t('policy.blockedSeeStats', { count: blocked.length })}
+          </p>
         )}
       </div>
     </SettingCard>

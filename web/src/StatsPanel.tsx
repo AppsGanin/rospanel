@@ -14,6 +14,7 @@ import { TrafficArea, TrafficDonut } from './charts'
 import { AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
+import { BlockedList, ProbeList } from './SecurityLists'
 import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
 
 const PALETTE = [
@@ -190,6 +191,15 @@ export function StatsPanel() {
         </div>
         <AbuseList limit={50} />
       </Card>
+
+      {/* What the security rules have caught. Both read admin-level endpoints, and
+          each renders nothing when there is nothing to show. */}
+      {isAdmin && (
+        <>
+          <BlockedList />
+          <ProbeList />
+        </>
+      )}
       {confirmNode}
     </div>
   )
