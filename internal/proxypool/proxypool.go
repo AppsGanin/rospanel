@@ -38,7 +38,11 @@ func Parse(lines []string) []model.ProxyEndpoint {
 				continue
 			}
 			seen[key] = struct{}{}
-			out = append(out, model.ProxyEndpoint{Protocol: ep.Protocol, Address: ep.Host, Port: ep.Port, Link: ep.Link})
+			// The label (#fragment) is dropped: the outbound never reads it, and the
+			// refresh compares endpoints to decide whether Xray must restart — a
+			// provider renaming a server is not a reason to cut every session.
+			link, _, _ := strings.Cut(ep.Link, "#")
+			out = append(out, model.ProxyEndpoint{Protocol: ep.Protocol, Address: ep.Host, Port: ep.Port, Link: link})
 			continue
 		}
 		u, err := url.Parse(ln)
