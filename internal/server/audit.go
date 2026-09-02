@@ -80,6 +80,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/hwid":                  set("deviceBinding"),
 	"POST /api/settings/maintenance":           set("maintenance"),
 	"POST /api/settings/probe-detect":          set("probeDetect"),
+	"POST /api/security/conn-policy":           set("connPolicy"),
+	"POST /api/security/unblock":               set("connPolicyUnblock"),
 	"POST /api/settings/probe-block":           set("probeBlock"),
 	"POST /api/settings/watchdog":              set("watchdog"),
 	"POST /api/settings/status-page":           set("statusPage"),

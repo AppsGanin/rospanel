@@ -715,6 +715,8 @@ type Settings struct {
 	// its row.
 	SubOrderMode    string    `json:"-"`
 	MasterPlacement Placement `json:"-"`
+	// ConnPolicy is where clients are allowed to connect from (connpolicy.go).
+	ConnPolicy ConnPolicy `json:"-"`
 	// SubHideOffline drops a node from subscriptions while it is not reporting.
 	// Off by default — see migration 0062 for why that is the safer side.
 	SubHideOffline bool `json:"-"`

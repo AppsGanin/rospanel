@@ -29,6 +29,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/http80"
+	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -213,6 +214,10 @@ type Agent struct {
 
 	// awg is this node's AmneziaWG tunnel (see awg.go); awgEmails maps a peer's
 	// public key to the user tag it reports under, awgLast the counters last read.
+	// policyBlock drops the addresses the panel's source policy refused, in this
+	// node's own firewall table.
+	policyBlock *ipblock.Blocker
+
 	awg       awg.Device
 	awgMu     sync.Mutex
 	awgEmails map[string]string
@@ -446,6 +451,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		seen:         newSeenAddrs(),
 		shaper:       shaper.New(),
 		awg:          awg.New(),
+		policyBlock:  ipblock.New(ipblock.TablePolicy),
 	}
 	// Resume report ids where the last run left off so the panel's forward-only
 	// watermark keeps accepting this node's traffic after a restart.
@@ -1040,6 +1046,14 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	// generated config's "opera" outbound already points at 127.0.0.1:OperaPort.
 	a.syncOpera(m.OperaEnabled, m.OperaCountry, m.OperaPort)
 	a.syncAWG(m.AWG)
+	// The addresses the panel's source policy refused. Sync, not add: a lifted block
+	// has to come out of the kernel here too.
+	if m.BlockTTLHours > 0 {
+		a.policyBlock.WithTTL(time.Duration(m.BlockTTLHours) * time.Hour)
+	}
+	if err := a.policyBlock.Sync(m.BlockedIPs); err != nil {
+		slog.Warn("node: could not apply the blocked addresses", "err", err)
+	}
 
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
 	//

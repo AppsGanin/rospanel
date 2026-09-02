@@ -208,6 +208,13 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	if access, err := m.store.AccessMap(); err == nil {
 		meta.AWG = m.nodeAWGState(n, ns, users, access)
 	}
+	// What the source policy has refused, for this node's own firewall. Read here
+	// rather than pushed on each block so a node that was offline catches up on its
+	// next sync, and so the hash covers it (a lifted block reaches the node too).
+	if blocked, err := m.store.BlockedIPList(); err == nil && len(blocked) > 0 {
+		meta.BlockedIPs = blocked
+		meta.BlockTTLHours = int(policyTTL(set.ConnPolicy) / time.Hour)
+	}
 	if ns.OperaEnabled {
 		meta.OperaEnabled = true
 		meta.OperaCountry = ns.OperaCountryOr()

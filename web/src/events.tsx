@@ -32,6 +32,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.expired": "orange",
   "user.limited": "orange",
   "user.device_limited": "orange",
+  "user.policy_refused": "orange",
   "user.telegram_linked": "teal",
   "user.telegram_unlinked": "gray",
   "plan.changed": "brand",

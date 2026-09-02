@@ -283,6 +283,10 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/probe-block", rt.saveProbeBlock)
 	authed("POST /api/settings/watchdog", rt.saveWatchdog)
 	authed("GET /api/security/probes", rt.listProbes)
+	// Where clients may connect from (panel_connpolicy.go).
+	authed("GET /api/security/conn-policy", rt.getConnPolicy)
+	authed("POST /api/security/conn-policy", rt.saveConnPolicy)
+	authed("POST /api/security/unblock", rt.unblockIP)
 	authed("GET /api/settings/status-page", rt.getStatusPage)
 	authed("POST /api/settings/status-page", rt.saveStatusPage)
 	authed("POST /api/settings/dns", rt.setXrayDNS)

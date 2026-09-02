@@ -1398,6 +1398,36 @@ export const login = (username: string, password: string, code?: string) =>
     body: JSON.stringify({ username, password, code }),
   })
 
+// ---- Where clients may connect from (the source policy) ---------------------
+export interface ConnPolicy {
+  mode: 'off' | 'allow' | 'block'
+  countries: string[]
+  asns: number[]
+  enforce: boolean
+  block_hours: number
+}
+export interface BlockedIP {
+  ip: string
+  reason: string // country | asn
+  country: string
+  asn: number
+  org: string
+  user_id: number
+  at: number
+  until: number
+}
+export interface ConnPolicyInfo {
+  policy: ConnPolicy
+  blocked: BlockedIP[]
+  // false when this machine has no nftables: refusals are recorded, not enforced.
+  can_enforce: boolean
+}
+export const getConnPolicy = () => api<ConnPolicyInfo>('api/security/conn-policy')
+export const saveConnPolicy = (p: ConnPolicy) =>
+  api<{ ok: boolean }>('api/security/conn-policy', { method: 'POST', body: JSON.stringify(p) })
+export const unblockIP = (ip: string) =>
+  api<{ ok: boolean }>('api/security/unblock', { method: 'POST', body: JSON.stringify({ ip }) })
+
 // ---- The admin's own open sessions -----------------------------------------
 export interface AdminSession {
   id: number

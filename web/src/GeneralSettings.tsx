@@ -31,6 +31,7 @@ import {
   type Schedule,
 } from "./CronPicker";
 import { useAction, useShowMore } from "./hooks";
+import { ConnPolicyCard } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { browserTimezone, tzOptions } from "./tz";
 import {
@@ -519,6 +520,8 @@ export function GeneralSettings() {
           </div>
         )}
       </SettingCard>
+
+      <ConnPolicyCard />
 
       {watchdog && (
         <SettingCard

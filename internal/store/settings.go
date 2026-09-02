@@ -27,7 +27,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var masterHideFull, awgEn, hideOffline int
-	var awgParamsJSON string
+	var awgParamsJSON, connPolicyJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
@@ -69,7 +69,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
 		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
 		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
-		       sub_hide_offline,
+		       sub_hide_offline, conn_policy,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns
 		FROM settings WHERE id = 1`,
 	).Scan(
@@ -113,7 +113,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
 		&st.SubOrderMode, &st.MasterPlacement.Country, &st.MasterPlacement.Weight,
-		&st.MasterPlacement.Capacity, &masterHideFull, &hideOffline,
+		&st.MasterPlacement.Capacity, &masterHideFull, &hideOffline, &connPolicyJSON,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 	)
 	if err != nil {
@@ -126,6 +126,15 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	// switch off; a corrupt one too — the subscription must keep serving.
 	st.MasterPlacement.HideWhenFull = masterHideFull != 0
 	st.SubHideOffline = hideOffline != 0
+	// A blank column (pre-0063, or never saved) reads as the feature off; so does a
+	// corrupt one — a policy nobody can parse must not start refusing connections.
+	st.ConnPolicy = model.DefaultConnPolicy()
+	if connPolicyJSON != "" {
+		var p model.ConnPolicy
+		if json.Unmarshal([]byte(connPolicyJSON), &p) == nil {
+			st.ConnPolicy = p.Normalized()
+		}
+	}
 	st.AWGEnabled = awgEn != 0
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
 	if awgParamsJSON != "" {
