@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.11.0](https://github.com/AppsGanin/rospanel/compare/v2.10.1...v2.11.0) (2026-09-02)
+
+
+### Features
+
+* AmneziaWG as a built-in lane ([94af079](https://github.com/AppsGanin/rospanel/commit/94af0795d12f041f98170cf21a5817778d31fc9e))
+* answer port 80 instead of leaving it closed ([6ce7dfd](https://github.com/AppsGanin/rospanel/commit/6ce7dfd2b9860d7c5789239297c9248112932400))
+* answer port 80 on nodes too ([ba0d549](https://github.com/AppsGanin/rospanel/commit/ba0d54969c35399111e2b36c8f7a902b380c40a8))
+* client-side DPI evasion in the subscription (fragment, noise, record fragment) ([a24a543](https://github.com/AppsGanin/rospanel/commit/a24a543f1ea686a7bf69c7d575d6a9830a64a14f))
+* import and export users (Marzban, 3x-ui, and this panel's own file) ([1d43f8e](https://github.com/AppsGanin/rospanel/commit/1d43f8e4f6c4753cf2146145575cd42c46b0760b))
+* list and revoke your own panel sessions ([e97a5cb](https://github.com/AppsGanin/rospanel/commit/e97a5cb5b22e5e1bf54a6c03c1295aa68331c03e))
+* move the security lists to the statistics page ([1e5fc83](https://github.com/AppsGanin/rospanel/commit/1e5fc8354aa3d4f566e9a6fd64f83ef270dff044))
+* name the country and network operator behind each scanner ([b82f8f5](https://github.com/AppsGanin/rospanel/commit/b82f8f54599074c3dfadd3d77b62cd70aff88b5e))
+* one Save and one Cancel per settings screen ([4968feb](https://github.com/AppsGanin/rospanel/commit/4968febc3ccd5ce06253bd5cc508095d15f1d11b))
+* operator notes and tags on users, with the client id shown in the list ([3199c21](https://github.com/AppsGanin/rospanel/commit/3199c21067795159734d88adbb7a406e4ec8220e))
+* optionally hide a server from subscriptions while it is offline ([30cd873](https://github.com/AppsGanin/rospanel/commit/30cd8733907332682d2dcf900ab85d198bd1d0a3))
+* order subscription servers by load, weight and capacity ([60f8846](https://github.com/AppsGanin/rospanel/commit/60f884613b3ab8b3c3f0307aa7fc059711e867ca))
+* refuse connections by source country and network ([158f78e](https://github.com/AppsGanin/rospanel/commit/158f78e87711b991c57eb6fab122149ab1ebda74))
+* say why a config was rolled back, and roll back to one that ran ([3087eab](https://github.com/AppsGanin/rospanel/commit/3087eab83048f61833c56a58114b717271d2fd14))
+* sign-in alerts and automatic blocklist measures ([7b7ce88](https://github.com/AppsGanin/rospanel/commit/7b7ce88d11b5949006e3e02afdcfa473d25a20fe))
+* update Xray-core to 26.7.28 ([e728ac6](https://github.com/AppsGanin/rospanel/commit/e728ac658c48ce5d371a270a576de95d6d56ef74))
+
+
+### Bug Fixes
+
+* a manager built without a shaper must not crash the tests ([14f29e3](https://github.com/AppsGanin/rospanel/commit/14f29e374fdc41031c43b67be4bd8e455794b54e))
+* answer an unknown API path with JSON, not with the app shell ([88bc658](https://github.com/AppsGanin/rospanel/commit/88bc6587663891d635e5e030530873b699c7f939))
+* page the recent-scanners list instead of dumping every row ([28ae26a](https://github.com/AppsGanin/rospanel/commit/28ae26a43f7359ecd63c9c4e8654e7d04dd42029))
+* port 80 names this machine, and keeps naming the right one ([8dcfed3](https://github.com/AppsGanin/rospanel/commit/8dcfed33abea47095c70bf3a7576b3fcc4ff6bcd))
+* re-send the user set when Xray comes back from a crash ([62bbde0](https://github.com/AppsGanin/rospanel/commit/62bbde0b0a72b0aefc878fc78e50e684c5337363))
+* roll back an unloadable config even when no Apply preceded it ([707bfc9](https://github.com/AppsGanin/rospanel/commit/707bfc98dcd33bb4b527bc163469852064e0bf59))
+* show a proxy listener's default port as a value while it is off ([45c74c5](https://github.com/AppsGanin/rospanel/commit/45c74c5582d6b552593a940ca217fa6124e18002))
+* snapshot the config before Xray reads it, and pin what was only assumed ([7860433](https://github.com/AppsGanin/rospanel/commit/786043313ac0917124c3fd3e3317587d46cf76e1))
+* spell the scanner's country the way the rest of the panel does ([3beaafd](https://github.com/AppsGanin/rospanel/commit/3beaafd915a880577d799eafad5548ac2d05f958))
+* take port 80 before issuing the certificate, not after ([fdc42ee](https://github.com/AppsGanin/rospanel/commit/fdc42ee13bea00795c99db17c98d6d3528294fd8))
+* the JSON fallback has to cover every method, not just GET ([ceaa62f](https://github.com/AppsGanin/rospanel/commit/ceaa62f3697e45d7e7e8d667059ad22c0dbeccd4))
+
 ## [2.10.1](https://github.com/AppsGanin/rospanel/compare/v2.10.0...v2.10.1) (2026-08-24)
 
 
