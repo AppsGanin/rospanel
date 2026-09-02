@@ -166,36 +166,57 @@ export function GroupsPanel() {
               onChange={(v) => setEditing({ ...editing, name: v })}
               placeholder={t("groups.namePlaceholder")}
             />
-            <div className="flex flex-col gap-3">
-              <p className="text-sm text-ink-muted">{t("groups.grantsIntro")}</p>
-              {targets.map((srv) => (
-                <div key={srv.server_id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
-                  <p className="mb-2 text-sm font-semibold text-ink">{srv.server_name}</p>
-                  <div className="flex flex-col gap-1.5">
-                    {srv.lanes.map((l) => (
-                      <GrantRow
-                        key={l.token}
-                        token={l.token}
-                        label={LANE_LABELS[l.lane] ?? l.label}
-                        off={!l.enabled}
-                        grants={editing.grants}
-                        onToggle={(g) => setEditing({ ...editing, grants: g })}
-                      />
-                    ))}
-                    {srv.inbounds.map((i) => (
-                      <GrantRow
-                        key={i.token}
-                        token={i.token}
-                        label={i.name}
-                        badge={t("groups.extraBadge")}
-                        off={!i.enabled}
-                        grants={editing.grants}
-                        onToggle={(g) => setEditing({ ...editing, grants: g })}
-                      />
-                    ))}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-ink-muted">{t("groups.grantsIntro")}</p>
+                <Badge color={editing.grants.size > 0 ? "brand" : "gray"}>
+                  {t("groups.nConnections", { count: editing.grants.size })}
+                </Badge>
+              </div>
+              {/* The list grows with every server and every external subscription;
+                  it scrolls inside the dialog so the members and the buttons below
+                  stay in reach. */}
+              <div className="flex max-h-72 flex-col gap-3 overflow-y-auto pr-1">
+                {targets.map((srv) => (
+                  <div key={srv.server_id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
+                    <p className="mb-2 text-sm font-semibold text-ink">{srv.server_name}</p>
+                    <div className="flex flex-col gap-1.5">
+                      {srv.lanes.map((l) => (
+                        <GrantRow
+                          key={l.token}
+                          token={l.token}
+                          label={LANE_LABELS[l.lane] ?? l.label}
+                          off={!l.enabled}
+                          grants={editing.grants}
+                          onToggle={(g) => setEditing({ ...editing, grants: g })}
+                        />
+                      ))}
+                      {srv.inbounds.map((i) => (
+                        <GrantRow
+                          key={i.token}
+                          token={i.token}
+                          label={i.name}
+                          badge={t("groups.extraBadge")}
+                          off={!i.enabled}
+                          grants={editing.grants}
+                          onToggle={(g) => setEditing({ ...editing, grants: g })}
+                        />
+                      ))}
+                      {srv.external?.map((e) => (
+                        <GrantRow
+                          key={e.token}
+                          token={e.token}
+                          label={e.name}
+                          badge={t("groups.externalBadge")}
+                          off={!e.enabled}
+                          grants={editing.grants}
+                          onToggle={(g) => setEditing({ ...editing, grants: g })}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             <MembersPicker

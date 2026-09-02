@@ -30,6 +30,8 @@ const (
 	TableProbes = "rospanel_probeblock"
 	// TablePolicy holds addresses refused by the source policy (country / network).
 	TablePolicy = "rospanel_policyblock"
+	// TableBrute holds the addresses the proxy brute-force guard banned.
+	TableBrute = "rospanel_bruteguard"
 )
 
 // DefaultTTL is how long a blocked address stays in the kernel set. The sets carry

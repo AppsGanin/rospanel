@@ -2,10 +2,11 @@ package core
 
 import (
 	"net"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/ipblock"
 )
 
 const (
@@ -14,18 +15,26 @@ const (
 	bruteBanTime  = time.Hour        // how long the ban lasts
 )
 
-// bruteGuard counts failed SOCKS/HTTP-proxy auth attempts per source IP and
-// bans repeat offenders via iptables for bruteBanTime.
+// bruteGuard counts failed SOCKS/HTTP-proxy auth attempts per source IP and bans
+// repeat offenders for bruteBanTime.
+//
+// The ban lives in the same kind of nftables set as the panel's other blocks
+// (ipblock): one table of its own, elements with a kernel timeout. So the ban
+// expires in the kernel whether or not the panel is still running to lift it, a
+// restart leaves no rule behind, and nothing here shells out per address to a
+// tool the box may not have.
 type bruteGuard struct {
 	mu       sync.Mutex
 	attempts map[string][]time.Time
-	banned   map[string]time.Time // ip → expiry
+	banned   map[string]time.Time // ip → expiry, so an address is not banned twice
+	blocker  *ipblock.Blocker
 }
 
 func newBruteGuard() *bruteGuard {
 	g := &bruteGuard{
 		attempts: make(map[string][]time.Time),
 		banned:   make(map[string]time.Time),
+		blocker:  ipblock.New(ipblock.TableBrute).WithTTL(bruteBanTime),
 	}
 	go g.cleanupLoop()
 	return g
@@ -58,43 +67,31 @@ func (g *bruteGuard) record(ip string) bool {
 	return false
 }
 
+// ban drops the address at the firewall for bruteBanTime. The kernel lifts it;
+// the guard only has to remember not to ban it again meanwhile.
 func (g *bruteGuard) ban(ip string) {
-	tool := iptoolFor(ip)
-	if tool == "" {
+	if net.ParseIP(ip) == nil {
+		return // never hand untrusted input to the firewall
+	}
+	if err := g.blocker.BlockIP(ip); err != nil {
+		logErr("brute-guard: ban failed", "ip", ip, "err", err)
 		return
 	}
-	if err := exec.Command(tool, "-I", "INPUT", "1", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: ban failed", "tool", tool, "ip", ip, "err", err)
-	} else {
-		logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
-	}
+	logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
 }
 
-func (g *bruteGuard) unban(ip string) {
-	tool := iptoolFor(ip)
-	if tool == "" {
-		return
-	}
-	if err := exec.Command(tool, "-D", "INPUT", "-s", ip, "-j", "DROP").Run(); err != nil {
-		logErr("brute-guard: unban failed", "tool", tool, "ip", ip, "err", err)
-	} else {
-		logInfo("brute-guard: unbanned", "ip", ip)
-	}
-}
-
-// cleanupLoop checks every minute for expired bans and removes them.
+// cleanupLoop forgets expired bans and stale attempt lists once a minute. The
+// firewall side needs nothing: the elements time out on their own.
 func (g *bruteGuard) cleanupLoop() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
 		cutoff := now.Add(-bruteWindow)
-		var expired []string
 		g.mu.Lock()
 		for ip, exp := range g.banned {
 			if now.After(exp) {
 				delete(g.banned, ip)
-				expired = append(expired, ip)
 			}
 		}
 		// Sweep stale attempt lists too. An entry is otherwise pruned only when that
@@ -108,23 +105,7 @@ func (g *bruteGuard) cleanupLoop() {
 			}
 		}
 		g.mu.Unlock()
-		for _, ip := range expired {
-			g.unban(ip)
-		}
 	}
-}
-
-// iptoolFor returns "iptables" for IPv4, "ip6tables" for IPv6, or "" for
-// unparseable addresses (so we never shell out with untrusted input).
-func iptoolFor(ip string) string {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return ""
-	}
-	if parsed.To4() != nil {
-		return "iptables"
-	}
-	return "ip6tables"
 }
 
 // bruteGuardLoop subscribes to the Xray log stream and feeds failed-auth lines

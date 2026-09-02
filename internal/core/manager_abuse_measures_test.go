@@ -211,10 +211,10 @@ func TestAbuseMeasuresOffDoNothing(t *testing.T) {
 
 func TestAbuseMeasuresValidate(t *testing.T) {
 	bad := []model.AbuseMeasures{
-		{ThrottleMin: 3, ThrottleKbps: 0, Hours: 1},  // a throttle to nothing
-		{DisableMin: 3, Hours: 0},                     // a switch-off with no end
-		{DisableMin: 3, Hours: 24*30 + 1},             // or one past the ceiling
-		{WarnMin: -1},                                 // a negative threshold
+		{ThrottleMin: 3, ThrottleKbps: 0, Hours: 1}, // a throttle to nothing
+		{DisableMin: 3, Hours: 0},                   // a switch-off with no end
+		{DisableMin: 3, Hours: 24*30 + 1},           // or one past the ceiling
+		{WarnMin: -1},                               // a negative threshold
 	}
 	for i, b := range bad {
 		if err := b.Validate(); err == nil {
@@ -222,8 +222,8 @@ func TestAbuseMeasuresValidate(t *testing.T) {
 		}
 	}
 	good := []model.AbuseMeasures{
-		{},                            // everything off
-		{WarnMin: 5},                  // a warning needs no hours
+		{},           // everything off
+		{WarnMin: 5}, // a warning needs no hours
 		{ThrottleMin: 5, ThrottleKbps: 256, Hours: 1},
 		{DisableMin: 5, Hours: 24 * 30},
 	}

@@ -2410,11 +2410,22 @@ export interface GroupInboundOpt {
   enabled: boolean
 }
 // GroupTarget is one server's grantable connections, for the group editor.
+// GroupExtOpt is one external server (read from somebody else's subscription) as
+// a grantable item; listed under the master, where it is handed out.
+export interface GroupExtOpt {
+  id: number
+  name: string
+  protocol: string
+  token: string
+  enabled: boolean
+}
+
 export interface GroupTarget {
   server_id: number
   server_name: string
   lanes: GroupLaneOpt[]
   inbounds: GroupInboundOpt[]
+  external?: GroupExtOpt[]
 }
 
 export const listGroups = () => api<Group[]>('api/groups')
@@ -2435,3 +2446,93 @@ export const setUserGroups = (userId: number, groupIds: number[]) =>
     method: 'POST',
     body: JSON.stringify({ group_ids: groupIds }),
   })
+
+// ---- External subscriptions ------------------------------------------------
+// Servers that are not ours, read from another provider's subscription and
+// handed on to users beside our own lanes (gated by access groups like the rest).
+
+export interface ExtSubscription {
+  id: number
+  name: string
+  // An http(s) URL fetched on every sync, or the payload itself (a happ:// link,
+  // a base64 blob, a list of links) decoded in place.
+  source: string
+  enabled: boolean
+  last_fetch_at: number
+  last_ok_at: number
+  last_error?: string
+  server_count: number
+  created_at: number
+}
+
+export interface ExtServer {
+  id: number
+  sub_id: number
+  name: string
+  protocol: string
+  host: string
+  port: number
+  enabled: boolean
+  seen_at: number
+}
+
+export interface ExtSyncReport {
+  added: number
+  updated: number
+  removed: number
+  total: number
+}
+
+export const getExternal = () =>
+  api<{ subscriptions: ExtSubscription[]; servers: ExtServer[] }>('api/external')
+
+export const createExternal = (name: string, source: string) =>
+  api<{ subscription: ExtSubscription; report: ExtSyncReport }>('api/external', {
+    method: 'POST',
+    body: JSON.stringify({ name, source }),
+  })
+
+export const deleteExternal = (id: number) =>
+  api<{ ok: boolean }>(`api/external/${id}`, { method: 'DELETE' })
+
+export const syncExternal = (id: number) =>
+  api<ExtSyncReport>(`api/external/${id}/sync`, { method: 'POST' })
+
+export const setExternalEnabled = (id: number, enabled: boolean) =>
+  api<{ ok: boolean }>(`api/external/${id}/enabled`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export const setExternalServersEnabled = (id: number, enabled: boolean) =>
+  api<{ ok: boolean }>(`api/external/${id}/servers`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+export const setExternalServerEnabled = (id: number, enabled: boolean) =>
+  api<{ ok: boolean }>(`api/external/servers/${id}/enabled`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
+
+// ---- Changelog --------------------------------------------------------------
+
+export interface ReleaseSection {
+  title: string
+  items: string[]
+}
+export interface Release {
+  version: string
+  date?: string
+  sections: ReleaseSection[]
+}
+// The history this binary was built with, newest first, and the version it is.
+export const getChangelog = () => api<{ version: string; releases: Release[] }>('api/changelog')
+
+// ---- Factory reset of the connection surface --------------------------------
+
+export const resetConnections = () =>
+  api<ConnectionsStatus>('api/connections/reset', { method: 'POST' })
+export const resetNodeConnections = (id: number) =>
+  api<ConnectionsStatus>(`api/nodes/${id}/connections/reset`, { method: 'POST' })

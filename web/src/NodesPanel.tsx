@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ExternalServers } from "./ExternalServers";
 import i18n, { currentLang } from "./i18n";
 import {
   applyConnections,
   applyNodeConnections,
+  resetConnections,
+  resetNodeConnections,
   createNode,
   deleteNode,
   getConnections,
@@ -1226,6 +1229,7 @@ function NodeSettingsDialog({
         <ConnectionsEditor
           load={() => getNodeConnections(node.id)}
           save={(u) => applyNodeConnections(node.id, u)}
+          reset={() => resetNodeConnections(node.id)}
           restartsPanel={false}
         />
       )}
@@ -1548,7 +1552,7 @@ function MasterSettingsDialog({
           )}
 
           {tab === "connections" && (
-            <ConnectionsEditor load={getConnections} save={applyConnections} restartsPanel />
+            <ConnectionsEditor load={getConnections} save={applyConnections} reset={resetConnections} restartsPanel />
           )}
 
           {tab === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
@@ -2077,6 +2081,8 @@ export function NodesPanel() {
           />
         ))}
       </Card>
+
+      <ExternalServers />
 
       {adding && (
         <AddNodeDialog

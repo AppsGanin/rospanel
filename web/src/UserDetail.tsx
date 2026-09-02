@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -106,6 +106,99 @@ function unixToDate(unix: number): string {
 // optLabel resolves a select value to its human label, for the confirmation text.
 function optLabel(data: { value: string; label: string }[], value: string): string {
   return data.find((o) => o.value === value)?.label ?? value
+}
+
+// fmtLimitOption names a limit value: the preset's label when it is one, the
+// formatter's wording otherwise (a value typed by hand).
+function fmtLimitOption(
+  data: { value: string; label: string }[],
+  value: string,
+  format: (n: number) => string,
+): string {
+  return data.find((o) => o.value === value)?.label ?? format(Number(value))
+}
+
+// CustomizableSelect is a preset picker with a "custom…" entry that opens a number
+// field — optionally with a unit switch — so a value that is not on the list (a
+// 7-device family, a 3 Mbit/s plan) can still be set without leaving the card. The
+// value handed back is in the unit the server stores.
+function CustomizableSelect({
+  label,
+  data,
+  value,
+  format,
+  units,
+  onChange,
+}: {
+  label: string
+  data: { value: string; label: string }[]
+  value: string
+  format: (n: number) => string
+  units?: { factor: number; label: string }[]
+  onChange: (v: string) => void
+}) {
+  const { t } = useTranslation()
+  const [custom, setCustom] = useState(false)
+  const [raw, setRaw] = useState('')
+  const [unit, setUnit] = useState(0)
+  const isPreset = data.some((o) => o.value === value)
+  const options = useMemo(
+    () => [
+      ...data,
+      ...(!isPreset ? [{ value, label: format(Number(value)) }] : []),
+      { value: '__custom', label: t('common.customValue') },
+    ],
+    [data, isPreset, value, format, t],
+  )
+  const apply = () => {
+    const n = Math.floor(Number(raw))
+    if (!Number.isFinite(n) || n < 0) return
+    const factor = units?.[unit]?.factor ?? 1
+    setCustom(false)
+    setRaw('')
+    onChange(String(n * factor))
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        label={label}
+        data={options}
+        value={custom ? '__custom' : value}
+        onChange={(v) => {
+          if (v === '__custom') setCustom(true)
+          else {
+            setCustom(false)
+            onChange(v)
+          }
+        }}
+      />
+      {custom && (
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <TextInput
+              type="number"
+              value={raw}
+              onChange={setRaw}
+              placeholder={t('common.customValuePlaceholder')}
+              autoFocus
+            />
+          </div>
+          {units && units.length > 1 && (
+            <div className="w-28">
+              <Select
+                value={String(unit)}
+                onChange={(v) => setUnit(Number(v))}
+                data={units.map((u, i) => ({ value: String(i), label: u.label }))}
+              />
+            </div>
+          )}
+          <Button size="sm" onClick={apply} disabled={raw.trim() === ''}>
+            {t('common.apply')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // resetLabel renders a reset period for display. Beyond the fixed resetPeriods()
@@ -643,15 +736,16 @@ export function UserDetail({
                   )
                 }
               />
-              <Select
+              <CustomizableSelect
                 label={t('userDetail.deviceLimit')}
                 data={deviceLimitOptions()}
                 value={deviceLimit}
+                format={(n) => t('devices.count', { count: n })}
                 onChange={(v) =>
                   confirmChange(
                     t('userDetail.deviceLimit'),
-                    optLabel(deviceLimitOptions(), deviceLimit),
-                    optLabel(deviceLimitOptions(), v),
+                    fmtLimitOption(deviceLimitOptions(), deviceLimit, (n) => t('devices.count', { count: n })),
+                    fmtLimitOption(deviceLimitOptions(), v, (n) => t('devices.count', { count: n })),
                     () => {
                       setDeviceLimit(v)
                       saveLimits(user.data_limit, user.expire_at, Number(v))
@@ -662,15 +756,20 @@ export function UserDetail({
               <p className="-mt-1 text-xs text-ink-muted">
                 {t('userDetail.deviceLimitHint')}
               </p>
-              <Select
+              <CustomizableSelect
                 label={t('userDetail.speedLimit')}
                 data={speedData}
                 value={speedLimit}
+                format={fmtSpeed}
+                units={[
+                  { factor: 1, label: t('speed.unitKbit') },
+                  { factor: 1000, label: t('speed.unitMbit') },
+                ]}
                 onChange={(v) =>
                   confirmChange(
                     t('userDetail.speedLimit'),
-                    optLabel(speedData, speedLimit),
-                    optLabel(speedData, v),
+                    fmtLimitOption(speedData, speedLimit, fmtSpeed),
+                    fmtLimitOption(speedData, v, fmtSpeed),
                     () => {
                       setSpeedLimit(v)
                       saveLimits(

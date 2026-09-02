@@ -114,7 +114,7 @@ docker logs rospanel | grep -A6 FIRST-RUN
 > [!NOTE]
 > `--network host` is required so Xray can listen on 443/TCP, 80/TCP and the Hysteria2 UDP
 > ports directly; `NET_ADMIN` lets the panel manage firewall rules: port hopping and
-> connection limits (nftables), brute-force bans (iptables).
+> connection limits and brute-force bans (nftables).
 
 ### 🔑 Default login
 
@@ -214,7 +214,10 @@ WebSocket, XHTTP, gRPC, HTTPUpgrade) with their own port, REALITY keys, hop rang
 **fine-grained transport tuning** (XHTTP `extra`, HTTP masquerading, sockopt, extra TLS
 fields) — as individual fields or raw JSON; the config is validated on the target machine
 itself (`xray -test` + port bind) before saving, and combinations a client can't handle are
-silently kept out of Clash/sing-box subscriptions. The panel hides behind a **secret path**;
+silently kept out of Clash/sing-box subscriptions. A **"Reset to factory defaults"** button in
+the connections editor puts protocols, ports, donor, fingerprints and anti-DPI back to what a
+fresh install has and removes the server's custom inbounds (REALITY/AmneziaWG keys stay; the
+master snapshots its config first). The panel hides behind a **secret path**;
 any other path serves a decoy site (11 templates). **Probe detection** notices an IP that
 scans for the hidden panel — one that requests many distinct paths the decoy doesn't have —
 and records it for the operator to review; the reply never changes, so a scanner still sees
@@ -362,13 +365,23 @@ themselves keep running, so existing connections are untouched and the operator 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
 automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
 **Opera VPN** with region selection. **Proxy lanes** are independent egresses, each with its
-own socks5/http upstreams and zone rules, balanced across whatever is alive (Observatory).
+own upstreams and zone rules, balanced across whatever is alive (Observatory). An upstream is a
+socks5/http proxy **or somebody else's VPN server**: a vless:// / trojan:// / ss:// / vmess:// /
+hysteria2:// link, or a whole subscription (https://…, `happ://crypt…`, base64) — the panel
+decrypts it and keeps re-reading it.
 **Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
 **whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
 save a restore point by hand, and roll back to it if an edit breaks something. A rollback
 re-validates through `xray -test` and auto-snapshots the current state first (so it's itself
 undoable), and it deliberately leaves the **certificate and domain** untouched, so an undo
 never risks live access.
+
+**External subscriptions** (a card on the *Servers* page) are the other side of the same
+coin: another provider's servers, read from their subscription, **handed to your users** beside
+your own. The source is a link, a `happ://crypt…` link or a pasted list; a link is re-read every
+hour, every server switches on and off on its own, and who gets them is decided by the same
+**access groups** as your own lanes. The panel holds nothing on those servers — it only decides
+who is told about them.
 
 #### 🌐 Server network (multi-node)
 
@@ -543,7 +556,9 @@ credential, TLS or ALPN drift before a user does. **Backup / restore** and reset
 from the panel and the CLI.
 
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
-only then replaces itself, keeping the previous version next to it. The Xray core is pinned to
+only then replaces itself, keeping the previous version next to it. **"What's new"** in the
+profile menu shows the release history built into the binary itself, with the running version
+marked. The Xray core is pinned to
 an exact release, and a panel update carries it: on the next start the panel and every node
 compare the Xray they have with the pinned one and replace it if it differs — checksum first,
 and a box that can't reach GitHub keeps the release it already runs. The supervisor restarts
@@ -555,8 +570,8 @@ storms) and alerts the operator. Runs on the master and every node.
 **Secrets in the database are encrypted** (AES-GCM). Session tokens and API keys are stored as
 hashes only — even with table access you can't reuse someone's session. Payment confirmation
 and admin management require **re-entering the password**. Outbound requests are protected
-against SSRF, brute force on inbounds is banned via iptables, and the number of connections per
-IP is limited via nftables.
+against SSRF, brute force on inbounds is banned via nftables (a timed set entry the kernel
+expires on its own), and the number of connections per IP is limited via nftables.
 
 ---
 

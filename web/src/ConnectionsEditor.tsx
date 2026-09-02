@@ -16,6 +16,7 @@ import {
   IconChevron,
   Select,
   Switch,
+  useConfirm,
   TagsInput,
   TextInput,
 } from "./ui";
@@ -71,13 +72,18 @@ type Awg = { port: number; dns: string };
 export function ConnectionsEditor({
   load,
   save,
+  reset,
   restartsPanel,
 }: {
   load: () => Promise<ConnectionsStatus>;
   save: (u: ConnectionsUpdate) => Promise<ConnectionsStatus>;
+  // Factory reset of this server's connections (ports, protocols, donor, anti-DPI,
+  // custom inbounds). Absent ⇒ the button is not offered.
+  reset?: () => Promise<ConnectionsStatus>;
   restartsPanel: boolean;
 }) {
   const { t } = useTranslation();
+  const { confirm, confirmNode } = useConfirm();
   const [status, setStatus] = useState<ConnectionsStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const { busy, run } = useAction();
@@ -169,6 +175,25 @@ export function ConnectionsEditor({
 
   const setHyNum = (key: "port" | "start" | "end") => (v: string) =>
     setHy((h) => ({ ...h, [key]: Number(v.replace(/\D/g, "")) || 0 }));
+
+  // A reset takes the same road as a save — validated, reconciled, audited — and on
+  // the master restarts Xray like any port change would.
+  const doReset = async () => {
+    if (!reset) return;
+    const ok = await confirm({
+      title: t("conn.resetTitle"),
+      body: t("conn.resetBody"),
+      confirmLabel: t("conn.resetConfirm"),
+      danger: true,
+    });
+    if (!ok) return;
+    const run1 = async () => {
+      applyStatus(await reset());
+      notifySuccess(t("conn.resetDone"));
+    };
+    if (restartsPanel) applyXray(run1);
+    else run(run1);
+  };
 
   const doSave = () => {
     const run1 = async () => {
@@ -441,6 +466,19 @@ export function ConnectionsEditor({
         </div>
       </div>
 
+      {reset && (
+        <div className="flex flex-col gap-2 rounded-xl border border-red-200/70 bg-red-50/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-bold text-ink">{t("conn.resetTitle")}</h3>
+            <p className="mt-0.5 text-sm text-ink-muted">{t("conn.resetHint")}</p>
+          </div>
+          <Button variant="light" color="red" onClick={doReset} disabled={busy || applying}>
+            {t("conn.reset")}
+          </Button>
+        </div>
+      )}
+
+      {confirmNode}
       <div className="flex flex-col gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-ink-muted">
           {t("conn.saveHint")}

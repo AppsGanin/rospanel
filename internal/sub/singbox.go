@@ -3,6 +3,7 @@ package sub
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/extsub"
 	"net"
 
 	"github.com/AppsGanin/rospanel/internal/link"
@@ -84,6 +85,12 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 		if o, tag, ok := singboxCustom(u, in, set); ok {
 			proxies = append(proxies, o)
 			tags = append(tags, tag)
+		}
+	}
+	for _, e := range srv.externalEndpoints() {
+		if o, ok := extsub.SingBoxOutbound(e, e.Name); ok {
+			proxies = append(proxies, o)
+			tags = append(tags, e.Name)
 		}
 	}
 	return proxies, tags
