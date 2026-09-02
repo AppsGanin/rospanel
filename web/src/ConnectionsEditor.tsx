@@ -467,14 +467,16 @@ export function ConnectionsEditor({
       </div>
 
       {reset && (
-        <div className="flex flex-col gap-2 rounded-xl border border-red-200/70 bg-red-50/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-bold text-ink">{t("conn.resetTitle")}</h3>
-            <p className="mt-0.5 text-sm text-ink-muted">{t("conn.resetHint")}</p>
+        <div className="rounded-xl border border-red-200/70 bg-red-50/40 p-4">
+          <h3 className="font-bold text-ink">{t("conn.resetTitle")}</h3>
+          <p className="mt-0.5 text-sm text-ink-muted">{t("conn.resetHint")}</p>
+          {/* Below the text, not beside it: beside, the row squeezes the button into
+              three lines as soon as the hint is longer than a sentence. */}
+          <div className="mt-3 flex justify-end">
+            <Button variant="light" color="red" className="whitespace-nowrap" onClick={doReset} disabled={busy || applying}>
+              {t("conn.reset")}
+            </Button>
           </div>
-          <Button variant="light" color="red" onClick={doReset} disabled={busy || applying}>
-            {t("conn.reset")}
-          </Button>
         </div>
       )}
 
