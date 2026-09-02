@@ -59,6 +59,16 @@ type ConnectionsStatus struct {
 	TLSFragment bool `json:"tls_fragment"` // sing-box ClientHello fragmentation
 	TLSMin13    bool `json:"tls_min13"`    // require TLS 1.3 on :443
 	BlockQUIC   bool `json:"block_quic"`   // drop untunneled browser QUIC in client configs
+
+	// AmneziaWG (see internal/awg): the tunnel's port, the server's public key and
+	// obfuscation parameters (read-only, regenerated on request), in-tunnel DNS,
+	// and — for the master, whose tunnel this process runs — whether it is up.
+	AWGPort      int             `json:"awg_port"`
+	AWGPublicKey string          `json:"awg_public_key"`
+	AWGParams    model.AWGParams `json:"awg_params"`
+	AWGDNS       string          `json:"awg_dns"`
+	AWGRunning   bool            `json:"awg_running"`
+	AWGError     string          `json:"awg_error,omitempty"`
 }
 
 // ConnectionsInfo reports the master's enabled protocols and their connection
@@ -68,7 +78,9 @@ func (m *Manager) ConnectionsInfo() (*ConnectionsStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildConnectionsStatus(set), nil
+	st := buildConnectionsStatus(set)
+	st.AWGRunning, st.AWGError = m.AWGStatus()
+	return st, nil
 }
 
 // buildConnectionsStatus derives the connection status from an effective settings
@@ -99,6 +111,10 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 		TLSFragment:       set.TLSFragment,
 		TLSMin13:          set.TLSMin13,
 		BlockQUIC:         set.BlockQUIC,
+		AWGPort:           set.AWGPort,
+		AWGPublicKey:      set.AWGPublicKey,
+		AWGParams:         set.AWGParams,
+		AWGDNS:            set.AWGDNS,
 		Protocols: []ConnInfo{
 			{
 				Key:         "vless",
@@ -132,8 +148,27 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 				Note:        hyNote,
 				Enabled:     set.HysteriaEnabled,
 			},
+			{
+				Key:         "awg",
+				Name:        model.ProtoAWG,
+				DisplayName: set.AWGName,
+				Transport:   "UDP (AmneziaWG)",
+				Security:    "WireGuard + obfuscation",
+				Port:        awgPortLabel(set.AWGPort),
+				Note:        "",
+				Enabled:     set.AWGEnabled,
+			},
 		},
 	}
+}
+
+// awgPortLabel shows "—" for a tunnel that has never been switched on (no port
+// picked yet), the port otherwise.
+func awgPortLabel(port int) string {
+	if port == 0 {
+		return "—"
+	}
+	return strconv.Itoa(port)
 }
 
 // realityAntiReplayWindowMs is the REALITY maxTimeDiff applied when anti-replay is
@@ -171,6 +206,7 @@ var connNameKeys = []struct{ key, proto string }{
 	{"vless", model.ProtoVLESS},
 	{"reality", model.ProtoReality},
 	{"hysteria2", model.ProtoHysteria},
+	{"awg", model.ProtoAWG},
 }
 
 // validateConnNames trims and checks the custom node names, returning them keyed
@@ -233,6 +269,12 @@ type ConnectionsUpdate struct {
 	TLSFragment bool `json:"tls_fragment"`
 	TLSMin13    bool `json:"tls_min13"`
 	BlockQUIC   bool `json:"block_quic"`
+
+	// AmneziaWG: port (0 = keep / pick one), in-tunnel DNS, and a request for a
+	// fresh keypair + parameters (every client config handed out so far dies).
+	AWGPort      int    `json:"awg_port"`
+	AWGDNS       string `json:"awg_dns"`
+	RegenAWGKeys bool   `json:"regen_awg_keys"`
 }
 
 // realityHostRe validates a REALITY destination: a real domain (≥1 dot) with an
@@ -366,8 +408,33 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 		}
 	}
 
+	awgPort, awgDNS, err := validateAWGUpdate(u.AWGPort, u.AWGDNS)
+	if err != nil {
+		return err
+	}
+	if u.Protocols["awg"] {
+		if awgPort == 0 {
+			awgPort = set.AWGPort
+		}
+		if awgPort == 0 {
+			awgPort = pickAWGPort()
+		}
+		if awgPort != set.AWGPort && !portFree("udp", awgPort) {
+			return invalidCode("err.udpPortTaken", "UDP-порт {{port}} уже занят — выберите другой", map[string]any{"port": awgPort})
+		}
+	} else if awgPort == 0 {
+		awgPort = set.AWGPort
+	}
 	for key, en := range u.Protocols {
 		if err := m.store.SetProtocolEnabled(key, en); err != nil {
+			return err
+		}
+	}
+	if err := m.store.SetAWGConfig(awgPort, awgDNS, connNames["awg"]); err != nil {
+		return err
+	}
+	if u.Protocols["awg"] || u.RegenAWGKeys {
+		if err := m.ensureMasterAWGIdentity(set, u.RegenAWGKeys); err != nil {
 			return err
 		}
 	}

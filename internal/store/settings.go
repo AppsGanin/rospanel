@@ -26,7 +26,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull int
+	var masterHideFull, awgEn int
+	var awgParamsJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
@@ -67,7 +68,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
 		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
-		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full
+		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
+		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -111,6 +113,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
 		&st.SubOrderMode, &st.MasterPlacement.Country, &st.MasterPlacement.Weight,
 		&st.MasterPlacement.Capacity, &masterHideFull,
+		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 	)
 	if err != nil {
 		return nil, err
@@ -121,6 +124,11 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	// A blank column (pre-0059, or never saved) reads as the defaults with every
 	// switch off; a corrupt one too — the subscription must keep serving.
 	st.MasterPlacement.HideWhenFull = masterHideFull != 0
+	st.AWGEnabled = awgEn != 0
+	st.AWGPrivateKey = decField(st.AWGPrivateKey)
+	if awgParamsJSON != "" {
+		_ = json.Unmarshal([]byte(awgParamsJSON), &st.AWGParams)
+	}
 	st.SubOrderMode = model.OrderModeOr(st.SubOrderMode)
 	st.SubDPI = model.DefaultSubDPI()
 	if subDPIJSON != "" {
@@ -492,6 +500,7 @@ var protocolColumn = map[string]string{
 	"vless":     "vless_enabled",
 	"hysteria2": "hysteria_enabled",
 	"reality":   "reality_enabled",
+	"awg":       "awg_enabled",
 }
 
 // SetProtocolEnabled flips a single protocol's on/off toggle.
@@ -643,5 +652,25 @@ func (s *Store) SetSubDPI(d model.SubDPI) error {
 		return err
 	}
 	_, err = s.db.Exec(`UPDATE settings SET sub_dpi = ?, updated_at = unixepoch() WHERE id = 1`, string(b))
+	return err
+}
+
+// SetAWGConfig persists the master's AmneziaWG port, in-tunnel DNS and display
+// name (the toggle goes through SetProtocolEnabled("awg")).
+func (s *Store) SetAWGConfig(port int, dns, name string) error {
+	_, err := s.db.Exec(`UPDATE settings SET awg_port = ?, awg_dns = ?, awg_name = ?,
+		updated_at = unixepoch() WHERE id = 1`, port, dns, name)
+	return err
+}
+
+// SaveAWGKeys stores the master's AmneziaWG keypair and obfuscation parameters
+// (the private key encrypted at rest).
+func (s *Store) SaveAWGKeys(priv, pub string, params model.AWGParams) error {
+	b, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE settings SET awg_private_key = ?, awg_public_key = ?, awg_params = ?,
+		updated_at = unixepoch() WHERE id = 1`, encField(priv), pub, string(b))
 	return err
 }

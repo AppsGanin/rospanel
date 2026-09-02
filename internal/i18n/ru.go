@@ -65,6 +65,9 @@ var ru = map[string]string{
 	"sub.copied":        "Скопировано",
 	"sub.openInApp":     "Открыть в приложении",
 	"sub.downloadClash": "Скачать конфиг Clash",
+	"sub.awgTitle":      "AmneziaWG",
+	"sub.awgHint":       "Для приложений AmneziaVPN и AmneziaWG: отсканируйте QR или скачайте файл и импортируйте его в приложение.",
+	"sub.awgDownload":   "Скачать конфиг",
 	"sub.singleConfigs": "Отдельные конфиги",
 	"sub.pickApp":       "Выберите приложение",
 

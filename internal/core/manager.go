@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/abuse"
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/logbuf"
@@ -239,6 +240,12 @@ type Manager struct {
 	// online is who is connected to which server right now (see manager_online.go).
 	online onlineGauge
 
+	// awg is the master's AmneziaWG tunnel (see manager_awg.go); awgLast holds the
+	// counters read at the previous poll, per peer public key.
+	awg     awg.Device
+	awgMu   sync.Mutex
+	awgLast map[string]awg.PeerStat
+
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
 	nodeLogsMu     sync.Mutex
@@ -295,6 +302,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeLogs:       map[int64]nodeLogEntry{},
 		nodeGeoFiles:   map[int64][]nodeapi.GeoFile{},
 		nodeHostStats:  map[int64]nodeapi.HostStats{},
+		awg:            awg.New(),
 		nodeSyncFails:  map[int64]int{},
 		nodeLogsWanted: map[int64]int64{},
 		nodeAlerts:     map[int64]*nodeAlertState{},
@@ -642,6 +650,7 @@ func (m *Manager) syncUsers() error {
 			m.TriggerReconcile()
 		}
 	}
+	m.syncAWGLocked(set, users)
 	return m.store.MarkConfigApplied()
 }
 
@@ -710,6 +719,7 @@ func (m *Manager) reconcileLocked() error {
 	}
 	m.setApplied(users)
 	logInfo("reconcile: config applied", "users", len(users))
+	m.syncAWGLocked(set, users)
 	return m.store.MarkConfigApplied()
 }
 

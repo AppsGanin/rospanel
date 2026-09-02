@@ -56,6 +56,9 @@ var en = map[string]string{
 	"sub.copied":        "Copied",
 	"sub.openInApp":     "Open in the app",
 	"sub.downloadClash": "Download the Clash config",
+	"sub.awgTitle":      "AmneziaWG",
+	"sub.awgHint":       "For the AmneziaVPN and AmneziaWG apps: scan the QR or download the file and import it into the app.",
+	"sub.awgDownload":   "Download the config",
 	"sub.singleConfigs": "Individual configs",
 	"sub.pickApp":       "Pick an app",
 

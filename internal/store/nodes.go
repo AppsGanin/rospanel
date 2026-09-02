@@ -48,7 +48,8 @@ const nodeColumns = `id, name, host, enabled,
 	acme_email, acme_provider, zerossl_eab_kid, zerossl_eab_hmac,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
 	proxy_accounts, traffic_coefficient,
-	country, sort_weight, capacity, hide_when_full`
+	country, sort_weight, capacity, hide_when_full,
+	awg_enabled, awg_private_key, awg_public_key, awg_params`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
 func generateNodeToken() (string, error) {
@@ -66,7 +67,8 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	var enabled, xrayRunning, certSelfSigned, warpEn, operaEn int
 	var proxySocksEn, proxyHTTPEn, hideFull int
 	var proxyAccounts string
-	var vlessEn, hysteriaEn, realityEn sql.NullBool
+	var vlessEn, hysteriaEn, realityEn, awgEn sql.NullBool
+	var awgParamsJSON string
 	var routingJSON, connectionsJSON string
 	var xrayDNS sql.NullString
 	if err := sc.Scan(
@@ -85,6 +87,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
 		&proxyAccounts, &n.TrafficCoefficient,
 		&n.Country, &n.Weight, &n.Capacity, &hideFull,
+		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON,
 	); err != nil {
 		return nil, err
 	}
@@ -96,6 +99,11 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 	n.OperaEnabled = operaEn != 0
 	n.WarpPrivateKey = decField(n.WarpPrivateKey)
 	n.RealityPrivateKey = decField(n.RealityPrivateKey)
+	n.AWGPrivateKey = decField(n.AWGPrivateKey)
+	n.AWGEnabled = nullBoolPtr(awgEn)
+	if awgParamsJSON != "" {
+		_ = json.Unmarshal([]byte(awgParamsJSON), &n.AWGParams)
+	}
 	n.ZeroSSLEABHMAC = decField(n.ZeroSSLEABHMAC)
 	n.Proxy.SocksEnabled = proxySocksEn != 0
 	n.Proxy.HTTPEnabled = proxyHTTPEn != 0
@@ -638,4 +646,23 @@ func (s *Store) PurgeDeletedNodes(before int64) (int64, error) {
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
+}
+
+// SetNodeAWGEnabled flips a node's AmneziaWG lane (the node's own toggle, like
+// its other protocols).
+func (s *Store) SetNodeAWGEnabled(id int64, enabled bool) error {
+	_, err := s.db.Exec(`UPDATE nodes SET awg_enabled = ? WHERE id = ?`, boolToInt(enabled), id)
+	return err
+}
+
+// SaveNodeAWGKeys stores a node's AmneziaWG keypair and obfuscation parameters
+// (the private key encrypted at rest).
+func (s *Store) SaveNodeAWGKeys(id int64, priv, pub string, params model.AWGParams) error {
+	b, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE nodes SET awg_private_key = ?, awg_public_key = ?, awg_params = ? WHERE id = ?`,
+		encField(priv), pub, string(b), id)
+	return err
 }

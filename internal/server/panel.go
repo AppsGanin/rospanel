@@ -90,6 +90,11 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 			v.Links = append(v.Links, namedLink{link.CustomLabel(in, set), l})
 		}
 	}
+	// AmneziaWG has no share-link form; what the card carries is the address of the
+	// user's config file for this server, which the Amnezia apps import as is.
+	if set.AWGEnabled && set.AWGPort != 0 && access.AllowsBuiltin(model.LocalNodeID, model.LaneAWG) {
+		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoAWG), sub.AWGConfURL(set, u.SubToken, model.LocalNodeID)})
+	}
 	return v
 }
 

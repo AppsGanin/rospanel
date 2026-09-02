@@ -619,6 +619,20 @@
       </div>
       {{end}}
 
+      {{if .AWG}}
+      <div class="card">
+        <div class="lbl" style="margin-bottom: 8px">{{.L.AWGTitle}}</div>
+        <p class="muted" style="margin: 0 0 10px">{{.L.AWGHint}}</p>
+        {{range .AWG}}
+        <details>
+          <summary>{{.Label}}</summary>
+          <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
+          <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+        </details>
+        {{end}}
+      </div>
+      {{end}}
+
       {{if .ShowConfigs}}
       <div class="card">
         <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>

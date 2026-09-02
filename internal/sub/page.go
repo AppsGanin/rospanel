@@ -109,6 +109,9 @@ type pageText struct {
 	OpenInApp      string
 	DownloadClash  string
 	SingleConfigs  string
+	AWGTitle       string
+	AWGHint        string
+	AWGDownload    string
 	Copy           string
 	Copied         string
 	PickApp        string
@@ -153,6 +156,9 @@ func text(lang i18n.Lang) pageText {
 		OpenInApp:      t("sub.openInApp"),
 		DownloadClash:  t("sub.downloadClash"),
 		SingleConfigs:  t("sub.singleConfigs"),
+		AWGTitle:       t("sub.awgTitle"),
+		AWGHint:        t("sub.awgHint"),
+		AWGDownload:    t("sub.awgDownload"),
 		Copy:           t("sub.copy"),
 		Copied:         t("sub.copied"),
 		PickApp:        t("sub.pickApp"),
@@ -176,6 +182,13 @@ func text(lang i18n.Lang) pageText {
 	}
 }
 
+// awgCard is one server's AmneziaWG config on the page.
+type awgCard struct {
+	Label   string
+	ConfURL string
+	QRURL   string
+}
+
 type pageData struct {
 	L         pageText
 	Name      string
@@ -194,6 +207,9 @@ type pageData struct {
 	SubURL    string
 	Links     []protoLink
 	DeepLinks []DeepLink
+	// AWG lists one card per server whose AmneziaWG lane the user may use: the
+	// config file to import and its QR.
+	AWG []awgCard
 
 	StatusLabel string
 	StatusClass string
@@ -313,8 +329,16 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 	// carries the node name (Settings.ProtoLabel / link.CustomLabel), so a multi-node
 	// user can tell the entries apart.
 	var protoLinks []protoLink
+	var awgCards []awgCard
 	for _, srv := range servers {
 		s := srv.Set
+		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
+			awgCards = append(awgCards, awgCard{
+				Label:   s.ProtoLabel(model.ProtoAWG),
+				ConfURL: AWGConfURL(s, u.SubToken, s.ServerID),
+				QRURL:   fmt.Sprintf("%s/awg/%d.png", subURL, s.ServerID),
+			})
+		}
 		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoVLESS), link.VLESS(u, s)})
 		}
@@ -361,6 +385,7 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 		IsDefault:   isDefault,
 		SubURL:      subURL,
 		Links:       protoLinks,
+		AWG:         awgCards,
 		DeepLinks:   DeepLinks(subURL, lang),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,

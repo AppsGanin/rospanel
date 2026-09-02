@@ -67,11 +67,18 @@ type Node struct {
 	RealityPath       string `json:"-"`
 	RealityDest       string `json:"-"`
 
+	// Per-node AmneziaWG identity (its own keypair and obfuscation parameters, see
+	// internal/awg); the port and display name ride in Connections.
+	AWGPrivateKey string    `json:"-"`
+	AWGPublicKey  string    `json:"-"`
+	AWGParams     AWGParams `json:"-"`
+
 	// Per-node protocols (the node's OWN — no inheritance from the master). A stored
 	// nil is treated as off; every write sets an explicit value.
 	VLESSEnabled    *bool `json:"vless_enabled"`
 	HysteriaEnabled *bool `json:"hysteria_enabled"`
 	RealityEnabled  *bool `json:"reality_enabled"`
+	AWGEnabled      *bool `json:"awg_enabled"`
 
 	DecoyTemplate string `json:"decoy_template"`
 
@@ -165,6 +172,9 @@ type NodeConnections struct {
 	VLESSName          string `json:"vless_name"`
 	RealityName        string `json:"reality_name"`
 	HysteriaName       string `json:"hysteria_name"`
+	AWGPort            int    `json:"awg_port"`
+	AWGName            string `json:"awg_name"`
+	AWGDNS             string `json:"awg_dns"`
 }
 
 // Joined reports whether the node has exchanged its join token for a permanent

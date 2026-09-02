@@ -62,6 +62,7 @@ func (m *Manager) GroupTargets() ([]GroupTarget, error) {
 			{model.LaneVLESS, s.ProtoLabel(model.ProtoVLESS), model.BuiltinToken(id, model.LaneVLESS), s.VLESSEnabled},
 			{model.LaneReality, s.ProtoLabel(model.ProtoReality), model.BuiltinToken(id, model.LaneReality), s.RealityEnabled},
 			{model.LaneHysteria, s.ProtoLabel(model.ProtoHysteria), model.BuiltinToken(id, model.LaneHysteria), s.HysteriaEnabled},
+			{model.LaneAWG, s.ProtoLabel(model.ProtoAWG), model.BuiltinToken(id, model.LaneAWG), s.AWGEnabled},
 		}
 		t := GroupTarget{ServerID: id, ServerName: name, Lanes: lanes, Inbounds: []GroupInboundOpt{}}
 		for _, in := range custom[id] {
@@ -104,7 +105,7 @@ func sanitizeGrants(tokens []string) []string {
 		if _, isInbound := model.ParseInboundToken(t); isInbound {
 			ok = true
 		} else if _, lane, isBuiltin := model.ParseBuiltinToken(t); isBuiltin {
-			ok = lane == model.LaneVLESS || lane == model.LaneReality || lane == model.LaneHysteria
+			ok = lane == model.LaneVLESS || lane == model.LaneReality || lane == model.LaneHysteria || lane == model.LaneAWG
 		}
 		if ok {
 			seen[t] = true

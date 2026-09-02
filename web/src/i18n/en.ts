@@ -285,6 +285,8 @@ const en: Dict = {
     nameAndHostRequired: "the name and the domain are required",
     nameEmpty: "the name cannot be empty",
     noteTooLong: "the note is longer than {{max}} characters",
+    awgPortRange: "the AmneziaWG port is outside 1–65535",
+    awgDNS: "AmneziaWG DNS: IP addresses separated by commas",
     placementCountry: "country: two Latin letters (NL, DE) or blank",
     placementCapacity: "capacity: from 0 (unset) to 1,000,000",
     placementWeight: "weight: from -1000 to 1000",
@@ -1945,6 +1947,13 @@ const en: Dict = {
   },
 
   conn: {
+    awgPort: "UDP port",
+    awgPortAuto: "picked automatically",
+    awgDns: "DNS inside the tunnel",
+    awgDnsAuto: "same as the server's DNS settings",
+    awgParams: "Obfuscation parameters",
+    awgHint: "AmneziaWG is WireGuard with a disguised handshake, for the AmneziaVPN and AmneziaWG apps. The panel generates the keys and parameters; regenerating them invalidates every config handed out. An empty DNS means the resolvers from this server's DNS settings (DoH addresses there cannot be used and are skipped). Clients download the config (file or QR) from the subscription page.",
+    enableAwg: "Turn AmneziaWG on to set the port and DNS.",
     off: "disabled",
     name: "Connection name",
     nameHint:

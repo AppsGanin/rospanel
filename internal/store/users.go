@@ -13,7 +13,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	data_limit, expire_at, used_up, used_down, last_up, last_down, created_at,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
-	notified_expire_at, notified_quota_at, device_over_since, note, tags`
+	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key`
 
 // errTagsInvalid is returned by SetUserTags for a list model.NormalizeTags refuses.
 // Callers validate before writing, so reaching this means a bug, not user input.
@@ -386,6 +386,13 @@ func (s *Store) SetUserName(id int64, name string) error {
 	return err
 }
 
+// SetUserWGKey stores a user's AmneziaWG private key (encrypted at rest). Written
+// once, when the first tunnel config is built for them; never rotated on its own.
+func (s *Store) SetUserWGKey(id int64, priv string) error {
+	_, err := s.db.Exec(`UPDATE users SET wg_private_key = ? WHERE id = ?`, encField(priv), id)
+	return err
+}
+
 // SetUserNote replaces the operator's note on a user.
 func (s *Store) SetUserNote(id int64, note string) error {
 	_, err := s.db.Exec(`UPDATE users SET note = ? WHERE id = ?`, note, id)
@@ -664,7 +671,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.DataLimit, &u.ExpireAt, &u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &created,
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
-			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags,
+			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
 		); err != nil {
 			return nil, err
 		}
@@ -672,6 +679,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 		u.TrialUsed = trialUsed != 0
 		u.Tags = model.DecodeTags(tags)
 		u.Password = decField(u.Password)
+		u.WGPrivateKey = decField(u.WGPrivateKey)
 		u.CreatedAt = time.Unix(created, 0)
 		out = append(out, u)
 	}

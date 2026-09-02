@@ -263,6 +263,15 @@ export interface ConnectionsStatus {
   tls_fragment: boolean
   tls_min13: boolean
   block_quic: boolean
+  // AmneziaWG (the tunnel's port, the server's public key and obfuscation
+  // parameters, in-tunnel DNS); awg_running/awg_error describe the master's own
+  // tunnel and mean nothing for a node.
+  awg_port: number
+  awg_public_key: string
+  awg_params: { jc: number; jmin: number; jmax: number; s1: number; s2: number; h1: number; h2: number; h3: number; h4: number }
+  awg_dns: string
+  awg_running: boolean
+  awg_error?: string
 }
 
 // ConnectionsUpdate is the whole connection surface, applied in one request.
@@ -281,6 +290,9 @@ export interface ConnectionsUpdate {
   tls_fragment: boolean
   tls_min13: boolean
   block_quic: boolean
+  awg_port: number
+  awg_dns: string
+  regen_awg_keys: boolean
 }
 
 export const applyConnections = (u: ConnectionsUpdate) =>

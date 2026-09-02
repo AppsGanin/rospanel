@@ -208,6 +208,10 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	default:
 		// /app/<n> — deep-link hand-off page (opened in the external browser from the
 		// Telegram Mini App so the client scheme actually launches).
+		if rest, ok := strings.CutPrefix(leaf, "awg/"); ok {
+			rt.serveAWG(w, r, u, set, rest)
+			return
+		}
 		if idx, ok := strings.CutPrefix(leaf, "app/"); ok {
 			rt.handleSubApp(w, r, *u, set, idx)
 			return
@@ -734,4 +738,58 @@ func (rt *Router) subUnavailable(w http.ResponseWriter, userID int64, err error)
 	w.Header().Set("Content-Length", "0")
 	w.Header().Set("Retry-After", "30")
 	w.WriteHeader(http.StatusServiceUnavailable)
+}
+
+// serveAWG hands out one user's AmneziaWG config for one server — "<id>.conf" as
+// the file the Amnezia apps import, "<id>.png" as the same text in a QR — where
+// id is the server (0 = the master, otherwise the node). The server must have the
+// lane on and the user must be allowed on it; anything else is the decoy, so the
+// URL space confirms nothing about the fleet.
+func (rt *Router) serveAWG(w http.ResponseWriter, r *http.Request, u *model.User, set *model.Settings, rest string) {
+	name, ext, ok := strings.Cut(rest, ".")
+	if !ok || (ext != "conf" && ext != "png") {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	serverID, err := strconv.ParseInt(name, 10, 64)
+	if err != nil || serverID < 0 {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	servers, err := rt.subServers(set, u.ID, clientIP(r))
+	if err != nil {
+		rt.subUnavailable(w, u.ID, err)
+		return
+	}
+	var srv *sub.Server
+	for i := range servers {
+		if servers[i].Set.ServerID == serverID {
+			srv = &servers[i]
+			break
+		}
+	}
+	if srv == nil || !srv.Set.AWGEnabled || !srv.Access.AllowsBuiltin(serverID, model.LaneAWG) {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	conf, err := rt.mgr.AWGClientConfig(u, srv.Set)
+	if err != nil {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if ext == "png" {
+		png, err := qrcode.Encode(conf, qrcode.Low, 512)
+		if err != nil {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+		return
+	}
+	// The file name is what the app shows as the tunnel's name.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+sub.AWGFileName(srv.Set)+`"`)
+	_, _ = w.Write([]byte(conf))
 }

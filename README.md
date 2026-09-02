@@ -224,6 +224,18 @@ is the safe baseline. TLS out of the box — **ACME** (Let's
 Encrypt / ZeroSSL) with auto-renewal; the certificate can also be issued **for a bare IP, with
 no domain and no DNS**.
 
+**AmneziaWG** is the fourth built-in lane: WireGuard whose handshake hides behind junk packets
+and random-looking headers, for the AmneziaVPN and AmneziaWG apps. The protocol engine
+(amneziawg-go) runs inside the panel process — no daemon, no extra binary — one tunnel per
+server (master and every node), each with its own
+keypair and obfuscation parameters the panel generates; a user is a peer on every server they
+are allowed on, with one keypair and one tunnel address everywhere. Switch it on under
+*Connections* like any other lane (the UDP port is picked high and random rather than 51820,
+which needs no handshake to spot); users get the config as a file or a QR on the subscription
+page and in their card, and the access groups, device limit, traffic accounting and online
+status treat it exactly like the Xray lanes. Needs `/dev/net/tun` and `CAP_NET_ADMIN`, which
+the installed service has; `nftables` for the tunnel's NAT.
+
 #### 👤 Users
 
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
