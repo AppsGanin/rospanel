@@ -823,7 +823,7 @@ func countInboundUsers(inbounds []Inbound) int {
 // lane's connections and the panel's own (:443 is Xray's; the panel sits on its
 // fallback) for a change that concerns one inbound.
 //
-// Verified against Xray 26.6.27: rmi + adi swap the user set with the process
+// Verified against Xray 26.7.28: rmi + adi swap the user set with the process
 // untouched — same pid, same listening socket.
 //
 // Failure is the caller's to handle: rmi may have already landed, leaving that lane

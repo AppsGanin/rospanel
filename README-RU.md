@@ -9,7 +9,7 @@
 ![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=версия&sort=semver&color=2ea44f)
 ![Downloads](https://img.shields.io/github/downloads/AppsGanin/rospanel/total?label=скачиваний&color=6f42c1)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
+![Xray-core](https://img.shields.io/badge/Xray--core-v26.7.28-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
@@ -505,8 +505,11 @@ https://vpn.example.com/<api-путь>/v1/mcp/<ключ>/write    плюс вс�
 восстановление** и сброс — из панели и CLI.
 
 **Обновление** одной командой: панель сверяет SHA256, прогоняет бинарь вхолостую, снимает
-бэкап и только потом подменяет себя, храня прошлую версию рядом. Xray-ядро зафиксировано,
-упавшее супервизор поднимает сам. **Сторож** закрывает более сложный случай, который не видит
+бэкап и только потом подменяет себя, храня прошлую версию рядом. Xray-ядро зафиксировано на
+точной версии, и обновление панели тянет его за собой: при старте панель и каждая нода
+сверяют свой Xray с зафиксированным и заменяют, если он другой, — сначала SHA256, а сервер
+без доступа к GitHub остаётся на той версии, что уже работает. Упавший Xray супервизор
+поднимает сам. **Сторож** закрывает более сложный случай, который не видит
 обработчик краха, — процесс жив, но перестал обслуживать: он опрашивает API Xray и, если тот
 не отвечает несколько проверок подряд, перезапускает его (с задержкой против шторма
 перезапусков) и уведомляет оператора. Работает на мастере и на каждой ноде.

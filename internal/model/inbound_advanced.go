@@ -271,7 +271,7 @@ func DisassembleTLSExtra(blob json.RawMessage) TLSExtraForm {
 	return f
 }
 
-// Enumerations offered in the editor, from Xray's own parser (v26.6.27). Exposed so
+// Enumerations offered in the editor, from Xray's own parser (v26.7.28). Exposed so
 // the catalog endpoint hands the UI exactly what Xray accepts — no drift between the
 // dropdowns and the validator.
 var (
@@ -280,7 +280,7 @@ var (
 	SockoptTProxy       = []string{"", "off", "redirect", "tproxy"}
 	SockoptDomainStrats = []string{
 		"", "asis", "useip", "useipv4", "useipv6", "useipv4v6", "useipv6v4",
-		"forceip", "forceipv4", "forceipv6",
+		"forceip", "forceipv4", "forceipv6", "forceipv4v6", "forceipv6v4",
 	}
 	SockoptAddrPortStrats = []string{
 		"", "none", "srvportonly", "srvaddressonly", "srvportandaddress",

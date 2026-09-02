@@ -165,7 +165,7 @@ func xrayOutbound(l *url.URL) (map[string]any, bool) {
 	case "hysteria2":
 		// The client wants version 2 in TWO places — the outbound settings and
 		// streamSettings.hysteriaSettings — and the address/port in the settings
-		// block rather than a servers/vnext list. Verified against Xray 26.6.27;
+		// block rather than a servers/vnext list. Verified against Xray 26.7.28;
 		// either version omitted and the client refuses to load.
 		password, err := url.QueryUnescape(cred)
 		if err != nil {
