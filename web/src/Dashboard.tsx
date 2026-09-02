@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
 import { Credentials } from "./Credentials";
+import { ChangelogModal } from "./ChangelogModal";
 import { LangChoice, LangPills } from "./LangSwitch";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
@@ -55,6 +56,7 @@ export function Dashboard({
   const isOwner = useIsOwner();
   const [menuOpen, setMenuOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   // Keep the payments-enabled flag fresh so the "Payments" item appears/vanishes
   // without a full reload: re-read on every top-level tab change AND whenever the
   // Both flags are saved in Settings, which fires an event when it does. Without a
@@ -184,6 +186,9 @@ export function Dashboard({
               <DropdownItem onClick={() => setCredsOpen(true)}>
                 {t("nav.credentials")}
               </DropdownItem>
+              <DropdownItem onClick={() => setChangelogOpen(true)}>
+                {t("nav.changelog")}
+              </DropdownItem>
               {isOwner && (
                 <DropdownItem onClick={goAdmins}>{t("nav.admins")}</DropdownItem>
               )}
@@ -233,6 +238,16 @@ export function Dashboard({
             </button>
           )}
         </nav>
+        <hr className="my-4 border-gray-200" />
+        <button
+          onClick={() => {
+            setMenuOpen(false);
+            setChangelogOpen(true);
+          }}
+          className="py-2 text-left text-lg font-medium text-accent"
+        >
+          {t("nav.changelog")}
+        </button>
         <hr className="my-4 border-gray-200" />
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
           {t("common.language")}
@@ -291,6 +306,7 @@ export function Dashboard({
         </a>
       </footer>
 
+      {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
       {credsOpen && (
         <Credentials
           username={username}

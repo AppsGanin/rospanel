@@ -27,6 +27,18 @@ type GroupTarget struct {
 	ServerName string            `json:"server_name"`
 	Lanes      []GroupLaneOpt    `json:"lanes"`
 	Inbounds   []GroupInboundOpt `json:"inbounds"`
+	// External are the servers read from other people's subscriptions — a
+	// panel-level list, shown under the master since that is where it is handed out.
+	External []GroupExtOpt `json:"external,omitempty"`
+}
+
+// GroupExtOpt is one external server as a grantable item.
+type GroupExtOpt struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Token    string `json:"token"`
+	Enabled  bool   `json:"enabled"`
 }
 
 // GroupLaneOpt is one built-in lane as a grantable item.
@@ -77,6 +89,13 @@ func (m *Manager) GroupTargets() ([]GroupTarget, error) {
 	masterSet := *set
 	masterSet.NodeLabel = ""
 	out := []GroupTarget{target(model.LocalNodeID, model.LocalNodeName, &masterSet)}
+	if ext, err := m.store.ExtServers(); err == nil {
+		for _, e := range ext {
+			out[0].External = append(out[0].External, GroupExtOpt{
+				ID: e.ID, Name: e.Name, Protocol: e.Protocol, Token: model.ExtToken(e.ID), Enabled: e.Enabled,
+			})
+		}
+	}
 
 	nodes, err := m.store.ListNodes()
 	if err != nil {
@@ -89,8 +108,8 @@ func (m *Manager) GroupTargets() ([]GroupTarget, error) {
 	return out, nil
 }
 
-// sanitizeGrants keeps only well-formed grant tokens (a built-in lane or a custom
-// inbound), dropping anything malformed. A token that references a missing inbound or
+// sanitizeGrants keeps only well-formed grant tokens (a built-in lane, a custom
+// inbound or an external server), dropping anything malformed. A token that references a missing inbound or
 // server is allowed through — it simply grants access to nothing and is swept when
 // that target is deleted.
 func sanitizeGrants(tokens []string) []string {
@@ -103,6 +122,8 @@ func sanitizeGrants(tokens []string) []string {
 		}
 		ok := false
 		if _, isInbound := model.ParseInboundToken(t); isInbound {
+			ok = true
+		} else if _, isExt := model.ParseExtToken(t); isExt {
 			ok = true
 		} else if _, lane, isBuiltin := model.ParseBuiltinToken(t); isBuiltin {
 			ok = lane == model.LaneVLESS || lane == model.LaneReality || lane == model.LaneHysteria || lane == model.LaneAWG

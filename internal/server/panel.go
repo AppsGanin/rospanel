@@ -167,7 +167,18 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 	// operator's weights decide who comes first, and a full server can drop out.
 	// Under the manual mode with no weights this is the old order, unchanged.
 	servers := sub.Servers(sets, custom, access)
-	return sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP), rt.mgr.OnlineByServer()), nil
+	ordered := sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP), rt.mgr.OnlineByServer())
+	// External servers ride on the master's entry (the one every subscription has;
+	// the ordering may hide a node, never the master's own list of extras).
+	if ext := rt.mgr.EnabledExtServers(); len(ext) > 0 {
+		for i := range ordered {
+			if ordered[i].Set.ServerID == model.LocalNodeID {
+				ordered[i].External = ext
+				break
+			}
+		}
+	}
+	return ordered, nil
 }
 
 // localInbounds is the master's own custom inbounds, or none when they can't be
@@ -253,6 +264,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedAny("POST /api/account/totp/disable", rt.totpDisable)
 	// The caller's own open sessions (see panel_sessions.go). Same shape as 2FA: no
 	// id of another admin anywhere in the path.
+	authedAny("GET /api/changelog", rt.changelog)
 	authedAny("GET /api/account/sessions", rt.listSessions)
 	authedAny("DELETE /api/account/sessions/{id}", withID(rt.revokeSession))
 	authedAny("POST /api/account/sessions/revoke-others", rt.revokeOtherSessions)
@@ -293,6 +305,14 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/dns", rt.setXrayDNS)
 	authed("POST /api/settings/local-backup", rt.setLocalBackup)
 	authed("POST /api/settings/autodelete", rt.setUserAutoDelete)
+	// External subscriptions: other people's servers handed on to users.
+	authed("GET /api/external", rt.listExternal)
+	authed("POST /api/external", rt.createExternal)
+	authedID("DELETE /api/external/{id}", rt.deleteExternal)
+	authedID("POST /api/external/{id}/sync", rt.syncExternal)
+	authedID("POST /api/external/{id}/enabled", rt.setExternalEnabled)
+	authedID("POST /api/external/{id}/servers", rt.setExternalServersEnabled)
+	authedID("POST /api/external/servers/{id}/enabled", rt.setExternalServerEnabled)
 	authed("GET /api/settings/abuse", rt.getAbuseSettings)
 	authed("POST /api/settings/abuse", rt.saveAbuseSettings)
 	authed("POST /api/settings/abuse/refresh", rt.refreshAbuse)
@@ -323,6 +343,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/panel/restart", rt.restartPanel)
 	authed("GET /api/connections", rt.connections)
 	authed("POST /api/connections", rt.applyConnections)
+	authed("POST /api/connections/reset", rt.resetConnections)
 	// User groups: which connections a member may use. Managed by operators, same tier
 	// as users (assigning a user to a group is a user-management action).
 	authedOp("GET /api/groups", rt.listGroups)
@@ -407,6 +428,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
 	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
 	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
+	authedID("POST /api/nodes/{id}/connections/reset", rt.resetNodeConnections)
 	// Custom inbounds. The list/create routes are keyed by SERVER id (0 = master);
 	// edit/delete are keyed by the inbound's own id, which already implies its server.
 	authed("GET /api/inbounds/catalog", rt.inboundCatalog)

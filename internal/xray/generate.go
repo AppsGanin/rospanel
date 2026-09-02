@@ -2,6 +2,7 @@ package xray
 
 import (
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/extsub"
 	"hash/fnv"
 	"net"
 	"strings"
@@ -430,16 +431,28 @@ func laneBalancerTag(laneID string) string { return "pool-" + laneID }
 // upstream is unreachable, and recover when it's back.
 const operaBalancerTag = "opera-out"
 
-// proxyOutbounds builds one socks/http outbound per proxy of a lane.
+// proxyOutbounds builds one outbound per upstream of a lane: a socks/http proxy
+// as such, a share link as the outbound an app would build from it. Either way the
+// tag is the lane's, so the balancer and the Observatory treat them alike.
 func proxyOutbounds(laneID string, proxies []model.ProxyEndpoint) []Outbound {
 	out := make([]Outbound, 0, len(proxies))
 	for i, p := range proxies {
+		tag := fmt.Sprintf("%s%d", laneTagPrefix(laneID), i)
+		if p.Link != "" {
+			o, ok := extsub.XrayOutbound(p.Link, tag)
+			if !ok {
+				continue // a link the panel accepted but cannot express is skipped, not guessed at
+			}
+			proto, _ := o["protocol"].(string)
+			out = append(out, Outbound{Tag: tag, Protocol: proto, Settings: o["settings"], StreamSettings: o["streamSettings"]})
+			continue
+		}
 		srv := ProxyServer{Address: p.Address, Port: p.Port}
 		if p.User != "" || p.Pass != "" {
 			srv.Users = []ProxyUser{{User: p.User, Pass: p.Pass}}
 		}
 		out = append(out, Outbound{
-			Tag:      fmt.Sprintf("%s%d", laneTagPrefix(laneID), i),
+			Tag:      tag,
 			Protocol: p.Protocol,
 			Settings: ProxyOutboundSettings{Servers: []ProxyServer{srv}},
 		})

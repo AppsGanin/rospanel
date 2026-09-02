@@ -2,6 +2,7 @@ package sub
 
 import (
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/extsub"
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/branding"
@@ -78,6 +79,11 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 		}
 		if p, ok := clashCustom(u, in, set, sv); ok {
 			out = append(out, p)
+		}
+	}
+	for _, e := range srv.externalEndpoints() {
+		if name, line, ok := extsub.ClashProxy(e); ok {
+			out = append(out, clashProxy{name, line})
 		}
 	}
 	return out

@@ -249,6 +249,7 @@ func runServer(dataDir string) {
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
 	go paymentPollLoop(mgr)
+	go mgr.RunExtSubLoop(context.Background()) // external subscriptions, re-read hourly
 	// Audit-log + connection-row retention: drops rows past their windows.
 	go retentionLoop(mgr)
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot

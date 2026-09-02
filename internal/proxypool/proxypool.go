@@ -1,17 +1,18 @@
-// Package proxypool fetches and parses outbound proxy lists for the proxy-pool
-// egress: free public lists or a manually-entered set, one
-// "scheme://[user:pass@]host:port" per line.
+// Package proxypool fetches and parses the upstreams of an egress lane: a proxy
+// list (one "scheme://[user:pass@]host:port" per line) or a subscription of share
+// links (vless://, trojan://, ss://, vmess://, hysteria2://) — plain, base64 or a
+// happ://crypt… link, exactly as the apps trade them. A lane can therefore leave
+// through somebody else's VPN server as easily as through a socks proxy.
 package proxypool
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
 )
@@ -28,6 +29,17 @@ func Parse(lines []string) []model.ProxyEndpoint {
 		}
 		if !strings.Contains(ln, "://") {
 			ln = "socks5://" + ln // bare host:port ⇒ assume socks5
+		}
+		// A share link is an upstream too: kept whole, since the outbound is built
+		// from it, and identified the way a subscription identifies it.
+		if ep, ok := extsub.Parse(ln); ok {
+			key := "link:" + ep.Key()
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, model.ProxyEndpoint{Protocol: ep.Protocol, Address: ep.Host, Port: ep.Port, Link: ep.Link})
+			continue
 		}
 		u, err := url.Parse(ln)
 		if err != nil || u.Hostname() == "" || u.Port() == "" {
@@ -61,7 +73,8 @@ func Parse(lines []string) []model.ProxyEndpoint {
 	return out
 }
 
-// Fetch downloads a proxy-list URL and returns its non-empty lines. The URL is
+// Fetch downloads a proxy-list or subscription URL and returns its lines, decoded
+// when the body is a base64 blob or a happ://crypt… link. The URL is
 // SSRF-validated (https only, no private/metadata addresses) before any request.
 func Fetch(ctx context.Context, rawURL string) ([]string, error) {
 	if err := netguard.ValidateFetchURL(rawURL); err != nil {
@@ -72,15 +85,9 @@ func Fetch(ctx context.Context, rawURL string) ([]string, error) {
 		ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 	}
-	body, err := netguard.Get(ctx, rawURL, 1<<20)
+	body, err := netguard.Get(ctx, rawURL, 2<<20)
 	if err != nil {
 		return nil, err
 	}
-	var lines []string
-	sc := bufio.NewScanner(bytes.NewReader(body))
-	sc.Buffer(make([]byte, 64*1024), 1<<20)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	return lines, sc.Err()
+	return extsub.Decode(body), nil
 }

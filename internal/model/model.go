@@ -1606,6 +1606,10 @@ type ProxyEndpoint struct {
 	Port     int
 	User     string
 	Pass     string
+	// Link is set when the upstream is a share link (vless://, trojan://, ss://,
+	// vmess://, hysteria2://) rather than a socks/http proxy: the outbound is then
+	// built from the link (see extsub.XrayOutbound), and Protocol names its scheme.
+	Link string
 }
 
 // BotLang returns the language tag the admin bot writes in, defaulting to "ru"
@@ -1616,3 +1620,7 @@ func (s *Settings) BotLang() string {
 	}
 	return "ru"
 }
+
+// DefaultRealityDest is the donor a fresh install masquerades as: the value the
+// schema gives reality_dest, and what a factory reset puts back.
+const DefaultRealityDest = "max.ru"
