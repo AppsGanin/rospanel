@@ -471,12 +471,13 @@ func realityInbound(set *model.Settings, clients []VLESSClient, sniff *Sniffing)
 			Network:  "xhttp",
 			Security: "reality",
 			RealitySettings: &RealitySettings{
-				Show:        false,
-				Dest:        set.RealitySNI() + ":443", // primary donor is dialed for probes
-				ServerNames: set.RealityServerNames(),  // all accepted SNIs
-				PrivateKey:  set.RealityPrivateKey,
-				ShortIds:    strings.Split(set.RealityShortID, ","),
-				MaxTimeDiff: set.RealityMaxTimeDiff, // anti-replay window (ms); 0 = off
+				Show:         false,
+				Dest:         set.RealitySNI() + ":443", // primary donor is dialed for probes
+				ServerNames:  set.RealityServerNames(),  // all accepted SNIs
+				PrivateKey:   set.RealityPrivateKey,
+				ShortIds:     strings.Split(set.RealityShortID, ","),
+				MaxTimeDiff:  set.RealityMaxTimeDiff, // anti-replay window (ms); 0 = off
+				MinClientVer: MinClientVerAny,
 			},
 			XHTTPSettings: &XHTTPSettings{Path: set.RealityPathOr()},
 		},
@@ -592,12 +593,13 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 	case model.SecReality:
 		st.Security = "reality"
 		st.RealitySettings = &RealitySettings{
-			Show:        false,
-			Dest:        o.RealitySNI() + ":443",
-			ServerNames: o.RealityServerNames(),
-			PrivateKey:  o.RealityPrivateKey,
-			ShortIds:    o.RealityShortIDs(),
-			MaxTimeDiff: o.RealityMaxTimeDiff,
+			Show:         false,
+			Dest:         o.RealitySNI() + ":443",
+			ServerNames:  o.RealityServerNames(),
+			PrivateKey:   o.RealityPrivateKey,
+			ShortIds:     o.RealityShortIDs(),
+			MaxTimeDiff:  o.RealityMaxTimeDiff,
+			MinClientVer: MinClientVerAny,
 		}
 	}
 	return st

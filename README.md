@@ -9,7 +9,7 @@
 ![Release](https://img.shields.io/github/v/release/AppsGanin/rospanel?label=release&sort=semver&color=2ea44f)
 ![Downloads](https://img.shields.io/github/downloads/AppsGanin/rospanel/total?label=downloads&color=6f42c1)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![Xray-core](https://img.shields.io/badge/Xray--core-v26.6.27-2b2b2b)
+![Xray-core](https://img.shields.io/badge/Xray--core-v26.7.28-2b2b2b)
 ![React](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux-555?logo=linux&logoColor=white)
 ![Deploy](https://img.shields.io/badge/deploy-single%20binary%20%7C%20Docker-2496ED?logo=docker&logoColor=white)
@@ -529,8 +529,11 @@ credential, TLS or ALPN drift before a user does. **Backup / restore** and reset
 from the panel and the CLI.
 
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
-only then replaces itself, keeping the previous version next to it. The Xray core is pinned,
-and the supervisor restarts it if it crashes. A **watchdog** covers the harder case a crash
+only then replaces itself, keeping the previous version next to it. The Xray core is pinned to
+an exact release, and a panel update carries it: on the next start the panel and every node
+compare the Xray they have with the pinned one and replace it if it differs — checksum first,
+and a box that can't reach GitHub keeps the release it already runs. The supervisor restarts
+Xray if it crashes. A **watchdog** covers the harder case a crash
 handler can't see — a process that stays alive but stops serving: it probes Xray's API and, if
 it goes unresponsive for several checks in a row, restarts it (with a cooldown against restart
 storms) and alerts the operator. Runs on the master and every node.

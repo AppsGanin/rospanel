@@ -4,7 +4,7 @@ import "testing"
 
 func TestVersionMatchesPinned(t *testing.T) {
 	// The reported version (from `xray version`) has no "v"; PinnedVersion does.
-	for _, v := range []string{"26.6.27", "v26.6.27"} {
+	for _, v := range []string{"26.7.28", "v26.7.28"} {
 		if !VersionMatchesPinned(v) {
 			t.Errorf("VersionMatchesPinned(%q) = false, want true (pinned=%s)", v, PinnedVersion)
 		}

@@ -27,7 +27,7 @@ func customHysteria() model.Inbound {
 
 // Live user ops must never target a Hysteria2 inbound.
 //
-// Verified against Xray 26.6.27: `adu` answers "unsupported inbound type" and adds
+// Verified against Xray 26.7.28: `adu` answers "unsupported inbound type" and adds
 // nobody, while `rmu` prints "Removed 1 user(s)" for a user that never existed — it
 // removes nothing and says otherwise. Sending removals there would have the panel
 // believe it revoked access it still grants, which is the worst of the three possible

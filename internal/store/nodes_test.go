@@ -182,13 +182,13 @@ func TestNodeStatusAndDelete(t *testing.T) {
 	n, _ := st.CreateNode("status", "s.example.com", "")
 
 	if err := st.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
-		LastSeen: 1000, NodeVersion: "1.2.3", XrayVersion: "v26.6.27",
+		LastSeen: 1000, NodeVersion: "1.2.3", XrayVersion: "v26.7.28",
 		XrayRunning: true, CertSHA256: "abc", CertSelfSigned: false, ConfigHash: "h1",
 	}); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	got, _ := st.GetNode(n.ID)
-	if got.LastSeen != 1000 || got.XrayVersion != "v26.6.27" || !got.XrayRunning {
+	if got.LastSeen != 1000 || got.XrayVersion != "v26.7.28" || !got.XrayRunning {
 		t.Fatalf("status not persisted: %+v", got)
 	}
 	if !got.Joined() {

@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH \
 
 # 3) Fetch the official Xray-core binary for the target architecture.
 FROM --platform=$BUILDPLATFORM debian:stable-slim AS xray
-ARG XRAY_VERSION=v26.6.27
+ARG XRAY_VERSION=v26.7.28
 ARG TARGETARCH
 # SHA256 of each release zip for XRAY_VERSION (from XTLS's published .dgst files).
 # The download is rejected on mismatch, before it is unpacked and run as root.
@@ -31,8 +31,8 @@ ARG TARGETARCH
 # internal/xray/install.go's pinnedSHA256).
 RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates \
  && case "$TARGETARCH" in \
-      amd64) XF=Xray-linux-64.zip; SHA=b3e5902d06d6282fe53cfa2fc426058b9aeaa429b2c812e20887cd47f26d08bf ;; \
-      arm64) XF=Xray-linux-arm64-v8a.zip; SHA=13a251379bea366c2cf10363ad71e75734193d401f26f518bf0c25e5c8f8c931 ;; \
+      amd64) XF=Xray-linux-64.zip; SHA=8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40 ;; \
+      arm64) XF=Xray-linux-arm64-v8a.zip; SHA=f5698bb218ada3b4022db26fafc39601c5f53b46b19eb76c9616325985807501 ;; \
       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac \
  && curl -sL -o /tmp/x.zip "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XF}" \

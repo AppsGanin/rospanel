@@ -1323,7 +1323,8 @@ func resolveNodeXrayBin(downloadDir string) string {
 	if p, err := exec.LookPath(env("XRAY_BIN", "xray")); err == nil {
 		return p
 	}
-	slog.Info("node: downloading pinned Xray release", "version", xray.PinnedVersion)
+	slog.Info("node: no system Xray — using the node's own copy of the pinned release",
+		"version", xray.PinnedVersion)
 	p, err := xray.EnsureBinary(downloadDir)
 	if err != nil {
 		slog.Error("node: Xray binary unavailable — config will be written but not started", "err", err)

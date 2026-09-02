@@ -650,8 +650,9 @@ func resolveXrayBin(bin, downloadDir string) string {
 	if fi, err := os.Stat(bin); err == nil && !fi.IsDir() {
 		return bin
 	}
-	log.Printf("xray: %q not found — downloading pinned release %s from GitHub "+
-		"(~40 MB; can take a minute on a slow link)", bin, xray.PinnedVersion)
+	log.Printf("xray: no system %q — using the panel's own copy of the pinned release %s "+
+		"(installing or upgrading it downloads ~40 MB and can take a minute on a slow link)",
+		bin, xray.PinnedVersion)
 	t0 := time.Now()
 	p, err := xray.EnsureBinary(downloadDir)
 	if err != nil {
