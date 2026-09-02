@@ -26,6 +26,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
+	var masterHideFull int
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
@@ -65,7 +66,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       hwid_enabled, hwid_require, hwid_fallback_limit, hwid_ttl_days,
 		       device_count_mode,
 		       sub_show_configs, status_enabled, status_path, sub_rules, maintenance_mode,
-		       probe_detect, watchdog_enabled, probe_block, sub_dpi
+		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
+		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -107,6 +109,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.DeviceCountMode,
 		&subShowConfigs, &statusEn, &st.StatusPath, &subRulesJSON, &maintenanceMode,
 		&probeDetect, &watchdogEnabled, &probeBlock, &subDPIJSON,
+		&st.SubOrderMode, &st.MasterPlacement.Country, &st.MasterPlacement.Weight,
+		&st.MasterPlacement.Capacity, &masterHideFull,
 	)
 	if err != nil {
 		return nil, err
@@ -116,6 +120,8 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	}
 	// A blank column (pre-0059, or never saved) reads as the defaults with every
 	// switch off; a corrupt one too — the subscription must keep serving.
+	st.MasterPlacement.HideWhenFull = masterHideFull != 0
+	st.SubOrderMode = model.OrderModeOr(st.SubOrderMode)
 	st.SubDPI = model.DefaultSubDPI()
 	if subDPIJSON != "" {
 		if err := json.Unmarshal([]byte(subDPIJSON), &st.SubDPI); err != nil {
@@ -378,13 +384,24 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_base64 = ?, sub_email_in_name = ?, sub_title = ?, sub_routing = ?,
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
+			sub_order_mode = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
 		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
+		model.OrderModeOr(st.SubOrderMode),
 	)
+	return err
+}
+
+// SetMasterPlacement persists the master's placement (see migration 0060).
+func (s *Store) SetMasterPlacement(p model.Placement) error {
+	p = p.Normalized()
+	_, err := s.db.Exec(`UPDATE settings SET master_country = ?, master_sort_weight = ?, master_capacity = ?,
+		master_hide_when_full = ?, updated_at = unixepoch() WHERE id = 1`,
+		p.Country, p.Weight, p.Capacity, boolToInt(p.HideWhenFull))
 	return err
 }
 

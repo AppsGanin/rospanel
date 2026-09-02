@@ -36,6 +36,7 @@ import (
 func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 	ns := *set // shallow copy; we only overwrite value fields below
 	ns.ServerID = n.ID
+	ns.ServerPlacement = n.Placement
 	ns.Host = n.Host
 	ns.SNI = n.Host
 	ns.RealityPrivateKey = n.RealityPrivateKey
@@ -400,6 +401,10 @@ type NodeView struct {
 	// MasterLabel is the master server's config-label name (local node only), so the
 	// UI can edit it. Empty for remote nodes (they use their own Name).
 	MasterLabel string `json:"master_label,omitempty"`
+	// Placement (country, weight, capacity) and the live online-user count the
+	// subscription orders servers by; see model.Placement and sub.Order.
+	model.Placement
+	OnlineUsers int `json:"online_users"`
 }
 
 // NodeViews returns the local server (node 0) followed by every remote node, each
@@ -416,6 +421,7 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	today := time.Now().In(m.loc()).Format("2006-01-02")
 	traffic, _ := m.store.NodeTrafficTotals(0, today, today)
 	now := time.Now().Unix()
+	online := m.OnlineByServer()
 
 	views := make([]NodeView, 0, len(nodes)+1)
 	// Node 0: the panel's own server, identity from settings.
@@ -436,6 +442,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		RealityEnabled:  set.RealityEnabled,
 		DecoyTemplate:   set.DecoyTemplate,
 		MasterLabel:     set.MasterLabel,
+		Placement:       set.MasterPlacement,
+		OnlineUsers:     online[model.LocalNodeID],
 		// The master's own routing/DNS/egress, so the relocated per-server editor edits
 		// the master through the same controls as a node.
 		Routing:        &set.Routing,
@@ -503,6 +511,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 			OperaEnabled:       n.OperaEnabled,
 			OperaCountry:       n.OperaCountry,
 			TrafficCoefficient: model.NodeCoefficientOr(n.TrafficCoefficient),
+			Placement:          n.Placement,
+			OnlineUsers:        online[n.ID],
 			// The node's own REALITY identity (dest "" ⇒ inherits the panel's donor).
 			RealityDest:      n.RealityDest,
 			RealityPublicKey: n.RealityPublicKey,
@@ -1639,7 +1649,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// the master. Not gated on ReportID: connection samples are idempotent (upsert by
 	// user+ip) and independent of the traffic batch.
 	for _, c := range req.Conns {
-		m.RecordAccess(c.Email, c.IP, "")
+		m.RecordAccessOn(n.ID, c.Email, c.IP, "")
 	}
 
 	// Destinations arrive pre-aggregated with a count, so they bypass RecordAccess

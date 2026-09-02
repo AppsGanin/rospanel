@@ -187,8 +187,8 @@ func runServer(dataDir string) {
 	mgr := core.New(st, sup, xray.Options{PanelDest: panelDest(adminAddr)},
 		core.TLSPaths{CertPath: certPath, KeyPath: keyPath, ACMEDir: acmeDir},
 		filepath.Join(dataDir, "opera"))
-	sup.SetOnAccess(mgr.RecordAccess) // track online status + connection IPs
-	mgr.StartSysstat(dataDir)         // host metrics for the dashboard
+	sup.SetOnAccess(mgr.RecordLocalAccess) // track online status + connection IPs
+	mgr.StartSysstat(dataDir)              // host metrics for the dashboard
 	// Blocklists for abuse detection. Cached copies load synchronously (fast, local),
 	// so matching works from the first access-log line; downloads run in background
 	// and a failure leaves the matcher empty rather than holding up the boot.

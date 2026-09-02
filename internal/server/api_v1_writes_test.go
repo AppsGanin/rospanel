@@ -87,6 +87,9 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				"opera_enabled": true, "opera_country": "EU",
 				"traffic_coefficient": float64(2),
 				"routing":             map[string]any{},
+				// Placement: the country is normalised to upper case on the way in.
+				"country": "nl", "sort_weight": float64(7), "capacity": float64(120),
+				"hide_when_full": true,
 			},
 			check: func(t *testing.T) map[string]any {
 				n := getNode(t)
@@ -100,6 +103,8 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"reality_enabled": deref(n.RealityEnabled), "xray_dns": dns,
 					"warp_enabled": n.WarpEnabled, "opera_enabled": n.OperaEnabled,
 					"opera_country": n.OperaCountry, "traffic_coefficient": n.TrafficCoefficient,
+					"country": strings.ToLower(n.Country), "sort_weight": float64(n.Weight),
+					"capacity": float64(n.Capacity), "hide_when_full": n.HideWhenFull,
 					// Routing round-trips as a struct; that it arrived non-nil is the
 					// landing test — its contents are model.RoutingConfig's own business.
 					"routing": n.Routing != nil,

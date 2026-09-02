@@ -285,6 +285,10 @@ const en: Dict = {
     nameAndHostRequired: "the name and the domain are required",
     nameEmpty: "the name cannot be empty",
     noteTooLong: "the note is longer than {{max}} characters",
+    placementCountry: "country: two Latin letters (NL, DE) or blank",
+    placementCapacity: "capacity: from 0 (unset) to 1,000,000",
+    placementWeight: "weight: from -1000 to 1000",
+    subOrderMode: "unknown server ordering mode",
     dpiPackets: "fragment: packets must be tlshello, 1-1 or 1-3",
     dpiFragmentLength: "fragment: length \"{{value}}\" must be a number or min-max within {{lo}}–{{hi}}",
     dpiFragmentInterval: "fragment: interval \"{{value}}\" must be a number or min-max within {{lo}}–{{hi}}",
@@ -1023,6 +1027,12 @@ const en: Dict = {
       singbox: "→ sing-box",
       "xray-json": "→ Xray JSON",
       block: "block",
+    },
+    orderMode: {
+      label: "Server order",
+      manual: "Manual (weight, then the list)",
+      load: "Least loaded first",
+      hint: "Load is online users against the server's capacity. Weight and capacity are set on each server's card; a full server can be hidden.",
     },
     dpi: {
       title: "DPI evasion on the client",
@@ -2389,6 +2399,15 @@ const en: Dict = {
   },
 
   nodes: {
+    placement: {
+      title: "Place in subscriptions",
+      hint: "Weight and capacity decide the order of servers in a subscription (Settings → Subscriptions → Server order). The server's country is detected from its address automatically.",
+      online: "online {{count}}",
+      weight: "Weight",
+      capacity: "Capacity, users",
+      hideWhenFull: "Hide from subscriptions when full",
+      hideNeedsCapacity: "Only works with a capacity set.",
+    },
     master: "Master",
     server: "Server",
     neverJoined: "has never joined",

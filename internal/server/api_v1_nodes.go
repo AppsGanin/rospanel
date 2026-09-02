@@ -32,6 +32,12 @@ type (
 		OperaEnabled       *bool                `json:"opera_enabled,omitempty"`
 		OperaCountry       *string              `json:"opera_country,omitempty"`
 		TrafficCoefficient *float64             `json:"traffic_coefficient,omitempty"`
+		// Placement in subscriptions (see model.Placement): country (ISO-2), a manual
+		// weight, capacity in users and whether to hide the node when full.
+		Country      *string `json:"country,omitempty"`
+		SortWeight   *int    `json:"sort_weight,omitempty"`
+		Capacity     *int    `json:"capacity,omitempty"`
+		HideWhenFull *bool   `json:"hide_when_full,omitempty"`
 	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
@@ -154,6 +160,7 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 		OperaEnabled:       node.OperaEnabled,
 		OperaCountry:       node.OperaCountry,
 		TrafficCoefficient: node.TrafficCoefficient,
+		Placement:          node.Placement,
 	}
 	if req.Name != nil {
 		edit.Name = strings.TrimSpace(*req.Name)
@@ -191,6 +198,23 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	if req.TrafficCoefficient != nil {
 		edit.TrafficCoefficient = *req.TrafficCoefficient
 	}
+	if req.Country != nil {
+		edit.Placement.Country = *req.Country
+	}
+	if req.SortWeight != nil {
+		edit.Placement.Weight = *req.SortWeight
+	}
+	if req.Capacity != nil {
+		edit.Placement.Capacity = *req.Capacity
+	}
+	if req.HideWhenFull != nil {
+		edit.Placement.HideWhenFull = *req.HideWhenFull
+	}
+	if err := edit.Placement.Validate(); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	edit.Placement = edit.Placement.Normalized()
 	if edit.Name == "" || edit.Host == "" {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "name and host must not be empty")
 		return

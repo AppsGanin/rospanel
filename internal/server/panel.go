@@ -126,6 +126,7 @@ func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
 	// client can tell the master's entries from the nodes'.
 	local.NodeLabel = local.MasterLabel
 	local.ServerID = model.LocalNodeID
+	local.ServerPlacement = local.MasterPlacement
 	sets := []*model.Settings{local}
 	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
 		sets = append(sets, nodes...)
@@ -146,7 +147,7 @@ func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
 // failure as fatal (see genOptsFor), so the credential is withheld and the links cannot
 // work anyway. Failing the fetch locks nobody out: a client that cannot refresh keeps the
 // config it already has and tries again later.
-func (rt *Router) subServers(local *model.Settings, userID int64) ([]sub.Server, error) {
+func (rt *Router) subServers(local *model.Settings, userID int64, clientIP string) ([]sub.Server, error) {
 	sets := rt.subSettings(local)
 	custom, err := rt.mgr.Store().AllInbounds()
 	if err != nil {
@@ -156,7 +157,11 @@ func (rt *Router) subServers(local *model.Settings, userID int64) ([]sub.Server,
 	if err != nil {
 		return nil, err
 	}
-	return sub.Servers(sets, custom, access), nil
+	// Ordered for THIS client: their country, each server's live load and the
+	// operator's weights decide who comes first, and a full server can drop out.
+	// Under the manual mode with no weights this is the old order, unchanged.
+	servers := sub.Servers(sets, custom, access)
+	return sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP), rt.mgr.OnlineByServer()), nil
 }
 
 // localInbounds is the master's own custom inbounds, or none when they can't be
@@ -375,6 +380,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
 	authed("GET /api/nodes", rt.listNodes)
 	authed("POST /api/nodes/master-name", rt.setMasterName)
+	authed("POST /api/nodes/master-placement", rt.setMasterPlacement)
 	authed("POST /api/nodes/master-protocols", rt.setMasterProtocols)
 	authed("POST /api/nodes/master-reality", rt.setMasterReality)
 	authed("POST /api/nodes", rt.createNode)
