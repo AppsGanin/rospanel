@@ -918,7 +918,7 @@ export function Select({
         <AnchoredPopover anchor={ref.current} onClose={() => setOpen(false)}>
           {(rect) => (
             <div
-              className="animate-scale-in origin-top overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
               style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
             >
               {searchable && (
@@ -1076,7 +1076,7 @@ export function TagsInput({
         <AnchoredPopover anchor={boxRef.current} onClose={closePopover}>
           {(rect) => (
             <div
-              className="animate-scale-in origin-top overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg"
+              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
               style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
             >
               <div className="border-b border-gray-100 p-2">
@@ -1674,7 +1674,7 @@ export function Modal({
       />
       <div
         className={cn(
-          "relative z-10 flex max-h-[90vh] w-full animate-fade-in-up flex-col overflow-hidden rounded-2xl bg-white shadow-xl",
+          "relative z-10 flex max-h-[90vh] w-full animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl",
           maxW,
         )}
       >
@@ -1769,7 +1769,7 @@ export function Drawer({
       />
       <div
         className={cn(
-          "absolute top-0 flex h-full flex-col overflow-hidden bg-white shadow-xl",
+          "absolute top-0 flex h-full flex-col overflow-clip bg-white shadow-xl",
           side === "right"
             ? "right-0 animate-slide-in-right"
             : "left-0 animate-slide-in-left",
@@ -1940,7 +1940,7 @@ export function InfoModal({
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl animate-fade-in-up flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+      <div className="relative z-10 flex max-h-[85vh] w-full max-w-2xl animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-gray-100 bg-white px-5 py-4">
           <div className="flex items-center gap-2">
             {icon && <span className="text-accent">{icon}</span>}
@@ -2022,7 +2022,7 @@ export function ToolDialog({
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
       />
-      <div className="relative z-10 flex h-[80vh] w-full max-w-4xl animate-fade-in-up flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+      <div className="relative z-10 flex h-[80vh] w-full max-w-4xl animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl">
         <div className="border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-ink">{title}</h2>
