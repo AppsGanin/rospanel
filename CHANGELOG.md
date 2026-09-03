@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.1](https://github.com/AppsGanin/rospanel/compare/v2.12.0...v2.12.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **deps:** x/crypto 0.56.0 for the two ssh channel DoS advisories ([4a87891](https://github.com/AppsGanin/rospanel/commit/4a87891d72811d0a5c6ab7bfba2a8a7e43c3baa1))
+* modal/drawer panels no longer scroll themselves off-screen ([464e30b](https://github.com/AppsGanin/rospanel/commit/464e30b2b2121f8c27f7ad96437ceea656aa9d1e)), closes [#75](https://github.com/AppsGanin/rospanel/issues/75)
+
 ## [2.12.0](https://github.com/AppsGanin/rospanel/compare/v2.11.0...v2.12.0) (2026-09-02)
 
 
