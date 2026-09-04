@@ -698,8 +698,10 @@ func panelDest(adminAddr string) string {
 
 // resolveXrayBin returns a usable Xray binary path. If bin isn't found on PATH or
 // as an existing file, it auto-downloads the pinned release into downloadDir so a
-// bare box works without a separate install step. Xray is required: if no binary
-// can be resolved or fetched, the process exits rather than running without it.
+// bare box works without a separate install step. Xray is required, and not only to
+// carry traffic: it owns the public :443 listener and forwards the panel's own
+// requests over loopback, so a panel with no Xray answers nobody. Exiting here says
+// that; carrying on would leave a service that reports healthy and serves no one.
 func resolveXrayBin(bin, downloadDir string) string {
 	if p, err := exec.LookPath(bin); err == nil {
 		return p
