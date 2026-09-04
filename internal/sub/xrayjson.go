@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"net/url"
+	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -32,6 +33,52 @@ func XrayJSONMulti(u model.User, servers []Server, dpi model.SubDPI) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// XrayJSONWithTemplate renders each lane into the operator's own Xray config instead
+// of the panel's. The template is ONE config — the format is an array of independent
+// configs, one per lane, and the client picks between them — so {{outbounds}} takes
+// that lane's whole outbound chain (its proxy, the optional fragment/noise dialer,
+// direct and block) and {{remarks}} its display name.
+//
+// Falls back to the generated profile on an unparseable template or a lane that will
+// not render: a client that cannot parse the array drops every server in it.
+func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, template string) (string, error) {
+	if strings.TrimSpace(template) == "" {
+		return XrayJSONMulti(u, servers, dpi), nil
+	}
+	configs := make([]any, 0, 8)
+	for _, l := range ShareLinksAll(u, servers) {
+		cfg, ok := xrayConfigFromLink(l, dpi)
+		if !ok {
+			continue
+		}
+		outbounds, _ := cfg["outbounds"].([]map[string]any)
+		chain := make([]any, len(outbounds))
+		for i, o := range outbounds {
+			chain[i] = o
+		}
+		rendered, err := renderJSONTemplate(template,
+			map[string]any{TplRemarks: cfg["remarks"]},
+			map[string][]any{TplOutbounds: chain},
+		)
+		if err != nil {
+			return XrayJSONMulti(u, servers, dpi), err
+		}
+		var doc any
+		if err := json.Unmarshal([]byte(rendered), &doc); err != nil {
+			return XrayJSONMulti(u, servers, dpi), err
+		}
+		configs = append(configs, doc)
+	}
+	if len(configs) == 0 {
+		return XrayJSONMulti(u, servers, dpi), nil
+	}
+	b, err := json.MarshalIndent(configs, "", "  ")
+	if err != nil {
+		return XrayJSONMulti(u, servers, dpi), err
+	}
+	return string(b), nil
 }
 
 // xrayConfigFromLink turns one share link into a complete client config: local

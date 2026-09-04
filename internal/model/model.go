@@ -727,14 +727,20 @@ type Settings struct {
 	Timezone  string `json:"-"`
 
 	// Subscription delivery settings (Settings → Subscriptions).
-	SubPath           string `json:"-"` // public subscription URL prefix /<sub_path>/<token>
-	SubBase64         bool   `json:"-"` // base64-encode the universal link list
-	SubNameInTitle    bool   `json:"-"` // append the user name to Profile-Title / group name
-	SubTitle          string `json:"-"` // profile title base (empty ⇒ the brand name)
-	SubRouting        bool   `json:"-"` // attach auto-routing headers
-	SubRoutingHapp    string `json:"-"` // Happ routing config URL
-	SubRoutingIncy    string `json:"-"` // INCY routing config URL
-	SubRoutingMihomo  string `json:"-"` // Mihomo (Clash Meta) routing config URL
+	SubPath          string `json:"-"` // public subscription URL prefix /<sub_path>/<token>
+	SubBase64        bool   `json:"-"` // base64-encode the universal link list
+	SubNameInTitle   bool   `json:"-"` // append the user name to Profile-Title / group name
+	SubTitle         string `json:"-"` // profile title base (empty ⇒ the brand name)
+	SubRouting       bool   `json:"-"` // attach auto-routing headers
+	SubRoutingHapp   string `json:"-"` // Happ routing config URL
+	SubRoutingIncy   string `json:"-"` // INCY routing config URL
+	SubRoutingMihomo string `json:"-"` // Mihomo (Clash Meta) routing config URL
+	// Operator-editable profile templates, one per format (empty ⇒ the generated
+	// profile). See internal/sub/template.go for the placeholders and why the shape is
+	// "your document, our proxies" rather than a template language.
+	SubTplClash       string `json:"-"`
+	SubTplSingBox     string `json:"-"`
+	SubTplXray        string `json:"-"`
 	SubUpdateInterval int    `json:"-"` // subscription auto-update interval (hours)
 	// SubShowConfigs renders the "individual configs" card on the page — the raw
 	// share link of every lane, each with a copy button. On by default (that is what

@@ -8,6 +8,9 @@ import {
   DEFAULT_SUB_DPI,
   saveHWIDSettings,
   saveSubRules,
+  saveSubTemplates,
+  getSubTemplates,
+  type SubTemplates,
   saveSubSettings,
   type HWIDSettings,
   type SubRule,
@@ -30,8 +33,11 @@ import {
   ToggleRow,
 } from "./ui";
 import { SubDPICard } from "./SubDPICard";
+import { SubTemplatesCard } from "./SubTemplatesCard";
 
 const ROUTING_REPO = "https://github.com/hydraponique/roscomvpn-routing";
+
+const EMPTY_TPL: SubTemplates = { clash: "", singbox: "", xray: "" };
 
 const EMPTY_SUB: SubSettings = {
   sub_path: "sub",
@@ -81,8 +87,11 @@ export function SubscriptionsPanel() {
   const [dpiSaved, setDpiSaved] = useState<SubDPI>(DEFAULT_SUB_DPI);
   const [rules, setRules] = useState<SubRule[]>([]);
   const [rulesSaved, setRulesSaved] = useState<SubRule[]>([]);
+  const [tpl, setTpl] = useState<SubTemplates>(EMPTY_TPL);
+  const [tplSaved, setTplSaved] = useState<SubTemplates>(EMPTY_TPL);
   const dpiDirty = JSON.stringify(dpi) !== JSON.stringify(dpiSaved);
   const rulesDirty = JSON.stringify(rules) !== JSON.stringify(rulesSaved);
+  const tplDirty = JSON.stringify(tpl) !== JSON.stringify(tplSaved);
 
   const {
     draft: h,
@@ -127,6 +136,12 @@ export function SubscriptionsPanel() {
         setRulesSaved(rs);
       })
       .catch(() => {});
+    getSubTemplates()
+      .then((v) => {
+        setTpl(v);
+        setTplSaved(v);
+      })
+      .catch(() => {});
   }, []);
 
   const patch = (p: Partial<SubSettings>) => setS((cur) => ({ ...cur, ...p }));
@@ -152,6 +167,10 @@ export function SubscriptionsPanel() {
       if (rulesDirty) {
         await saveSubRules(rules);
         setRulesSaved(rules);
+      }
+      if (tplDirty) {
+        await saveSubTemplates(tpl);
+        setTplSaved(tpl);
       }
       commit();
       commitHwid();
@@ -369,10 +388,12 @@ export function SubscriptionsPanel() {
       </Card>
 
       <SubDPICard value={dpi} onChange={setDpi} />
+
+      <SubTemplatesCard value={tpl} onChange={setTpl} />
       <SubRulesEditor value={rules} onChange={setRules} />
 
       <SaveBar
-        dirty={dirty || hwidDirty || dpiDirty || rulesDirty}
+        dirty={dirty || hwidDirty || dpiDirty || rulesDirty || tplDirty}
         busy={busy}
         saveDisabled={!!pathErr || announceErr}
         onSave={save}
