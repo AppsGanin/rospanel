@@ -33,7 +33,8 @@ func langTestServers() []Server {
 // whatever language it was typed.
 func TestPageEnglishHasNoRussian(t *testing.T) {
 	u := model.User{Name: "Alice", SubToken: "tok", DataLimit: 5 << 30, UsedUp: 1 << 30}
-	html, err := Page(u, langTestServers(), Billing{}, Devices{}, true, i18n.EN)
+	servers := langTestServers()
+	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.EN)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -48,7 +49,8 @@ func TestPageEnglishHasNoRussian(t *testing.T) {
 // quietly turned the Russian page English.
 func TestPageRussianStillRussian(t *testing.T) {
 	u := model.User{Name: "Алиса", SubToken: "tok"}
-	html, err := Page(u, langTestServers(), Billing{}, Devices{}, true, i18n.RU)
+	servers := langTestServers()
+	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -65,7 +67,8 @@ func TestPageRussianStillRussian(t *testing.T) {
 // if the catalogs happened to agree, so assert a known string flips.
 func TestPageSwitchesWithLanguage(t *testing.T) {
 	u := model.User{Name: "Alice", SubToken: "tok"}
-	en, err := Page(u, langTestServers(), Billing{}, Devices{}, true, i18n.EN)
+	servers := langTestServers()
+	en, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.EN)
 	if err != nil {
 		t.Fatalf("render en: %v", err)
 	}

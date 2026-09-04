@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -74,5 +75,77 @@ func TestRealityLaneNeedsItsPublicKey(t *testing.T) {
 	links := ShareLinks(u, srv)
 	if len(links) != 1 || !strings.Contains(links[0], "pbk=PUBKEY") {
 		t.Fatalf("with a key the lane must be handed out: %v", links)
+	}
+}
+
+// The subscription page is the fifth format, and it was the one that left the
+// external servers out: they reached the link list, Clash, sing-box and the Xray
+// JSON, but a user who opened the page saw only the operator's own servers. They
+// come last there too, as they do in the link list.
+func TestPageListsExternalServers(t *testing.T) {
+	local := &model.Settings{
+		Host: "vpn.example.com", SubPath: "sub", SNI: "vpn.example.com",
+		ServerID: model.LocalNodeID, VLESSEnabled: true, VLESSPort: 443,
+		SubShowConfigs: true,
+	}
+	ext := []model.ExtServer{
+		{ID: 11, Name: "Partner NL", Protocol: "vless", Host: "9.9.9.9", Port: 443, Enabled: true,
+			Link: "vless://uuid@9.9.9.9:443?type=tcp&security=tls&sni=nl.example#Partner%20NL"},
+		{ID: 12, Name: "Off", Protocol: "trojan", Host: "7.7.7.7", Port: 443, Enabled: false,
+			Link: "trojan://pw@7.7.7.7:443?security=tls&sni=x#Off"},
+	}
+	u := model.User{ID: 1, UUID: "u", Password: "p", SubToken: "tok"}
+	servers := []Server{{Set: local, Access: model.UnrestrictedAccess(), External: ext}}
+
+	html, err := Page(u, local, servers, Billing{}, Devices{}, true, i18n.RU)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, "Partner NL") || !strings.Contains(s, "9.9.9.9") {
+		t.Errorf("the enabled external server is missing from the page")
+	}
+	if strings.Contains(s, "7.7.7.7") {
+		t.Errorf("a disabled external server reached the page")
+	}
+	// Last: after the server's own lanes, the way the link list has them.
+	if own, partner := strings.Index(s, "vpn.example.com:443"), strings.Index(s, "9.9.9.9"); own < 0 || partner < own {
+		t.Errorf("external server is not last: own lane at %d, external at %d", own, partner)
+	}
+}
+
+// Everything on the page that addresses the panel itself — the sub URL behind the
+// QR and the copy button, the AmneziaWG download — must address the panel, whatever
+// the ordering did to the server list. A node can come first by weight, distance or
+// load, and a full master with hide-when-full leaves the list altogether; reading
+// the first entry then pointed the page's own links at a node, which serves none of
+// them.
+func TestPageAddressesThePanelNotWhicheverServerIsFirst(t *testing.T) {
+	local := &model.Settings{
+		Host: "vpn.example.com", SubPath: "sub", ServerID: model.LocalNodeID,
+		PanelName: "Panel", SubShowConfigs: true,
+	}
+	// The master is gone (full, hidden) and only a node is left.
+	node := &model.Settings{
+		Host: "node.example.com", SubPath: "sub", ServerID: 7, NodeLabel: "NL",
+		VLESSEnabled: true, VLESSPort: 443, SNI: "node.example.com",
+		AWGEnabled: true, AWGPort: 51820,
+	}
+	u := model.User{ID: 1, UUID: "u", Password: "p", SubToken: "tok"}
+
+	html, err := Page(u, local, []Server{{Set: node, Access: model.UnrestrictedAccess()}}, Billing{}, Devices{}, true, i18n.RU)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(html)
+	if !strings.Contains(s, "https://vpn.example.com/sub/tok") {
+		t.Errorf("the page does not carry the panel's own subscription URL")
+	}
+	if strings.Contains(s, "https://node.example.com/sub/") {
+		t.Errorf("the page addressed the node for something the panel serves")
+	}
+	// The node's own lane still points at the node — only the panel's links moved.
+	if !strings.Contains(s, "node.example.com:443") {
+		t.Errorf("the node's own lane is missing from the page")
 	}
 }
