@@ -44,14 +44,14 @@ func TestAudienceTargeting(t *testing.T) {
 		{350, fresh, 0},
 		{400, soon, now.Add(-time.Hour).Unix()},
 	} {
-		sub(t, m, c.chat, c.user)
+		subscribeChat(t, m, c.chat, c.user)
 		if c.lastSeen != 0 {
 			if err := m.store.TouchLastSeen(c.user, c.lastSeen); err != nil {
 				t.Fatalf("seen: %v", err)
 			}
 		}
 	}
-	sub(t, m, 500, 0)
+	subscribeChat(t, m, 500, 0)
 
 	for _, tc := range []struct {
 		audience string
@@ -112,7 +112,7 @@ func TestAudienceValidation(t *testing.T) {
 func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 	m := bcManager(t)
 	id := mkUser(t, m, "ушёл", 0)
-	sub(t, m, 900, id)
+	subscribeChat(t, m, 900, id)
 	if err := m.store.TouchLastSeen(id, time.Now().Add(-time.Hour).Unix()); err != nil {
 		t.Fatalf("seen: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 // it or — for an empty string — fall back to everyone.
 func TestAudiencePreviewMatchesTheSend(t *testing.T) {
 	m := bcManager(t)
-	sub(t, m, 100, 0)
+	subscribeChat(t, m, 100, 0)
 
 	if n, err := m.AudiencePreview(""); err != nil || n != 1 {
 		t.Fatalf("empty audience previewed %d, %v; want the same 1 recipient the send would use", n, err)

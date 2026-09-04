@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -114,7 +115,12 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			// Mihomo/Clash ignores the routing header — inject the routing rules
 			// straight into the YAML by merging proxies into the template.
 			body := sub.ClashYAMLMulti(*u, allServers)
-			if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
+			// The operator's own stored template wins over the fetched one: they wrote
+			// it, and a remote URL that has quietly changed under them is exactly what
+			// storing it is meant to avoid.
+			if tpl := strings.TrimSpace(set.SubTplClash); tpl != "" {
+				body = sub.ClashWithTemplateMulti(*u, allServers, tpl)
+			} else if set.SubRouting && strings.TrimSpace(set.SubRoutingMihomo) != "" {
 				if tpl, err := rt.mgr.FetchRoutingTemplate(set.SubRoutingMihomo); err == nil {
 					body = sub.ClashWithTemplateMulti(*u, allServers, tpl)
 				}
@@ -128,10 +134,21 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			_, _ = w.Write([]byte(body))
 		case "singbox", "sing-box":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(sub.SingBoxJSONMulti(*u, allServers)))
+			// A template that fails here has already passed validation on save, so a
+			// failure now is worth a log line — but never worth a broken profile: the
+			// renderer hands back the generated one and the user keeps working.
+			body, err := sub.SingBoxWithTemplate(*u, allServers, set.SubTplSingBox)
+			if err != nil {
+				slog.Warn("subscription: sing-box template failed, serving the generated profile", "err", err)
+			}
+			_, _ = w.Write([]byte(body))
 		case model.SubActionXrayJSON, "xray", "json":
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte(sub.XrayJSONMulti(*u, allServers, set.SubDPI)))
+			body, err := sub.XrayJSONWithTemplate(*u, allServers, set.SubDPI, set.SubTplXray)
+			if err != nil {
+				slog.Warn("subscription: xray template failed, serving the generated profile", "err", err)
+			}
+			_, _ = w.Write([]byte(body))
 		default:
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			links := sub.ShareLinksAll(*u, allServers)

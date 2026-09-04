@@ -25,8 +25,10 @@ func bcManager(t *testing.T) *Manager {
 	return &Manager{store: st}
 }
 
-// sub links a chat to the audience, optionally to a user account.
-func sub(t *testing.T, m *Manager, chatID, userID int64) {
+// subscribeChat links a chat to the audience, optionally to a user account.
+// Not named "sub": the package imports internal/sub, and a package-level function of
+// that name would collide with the import in every other file.
+func subscribeChat(t *testing.T, m *Manager, chatID, userID int64) {
 	t.Helper()
 	if err := m.store.UpsertSubscriber(chatID, userID, "", "", "", time.Now().Unix()); err != nil {
 		t.Fatalf("subscriber %d: %v", chatID, err)
@@ -35,7 +37,7 @@ func sub(t *testing.T, m *Manager, chatID, userID int64) {
 
 func TestValidateBroadcast(t *testing.T) {
 	m := bcManager(t)
-	sub(t, m, 1, 0)
+	subscribeChat(t, m, 1, 0)
 	ctx := context.Background()
 
 	cases := []struct {
@@ -104,7 +106,7 @@ func TestCreateBroadcastRequiresRecipients(t *testing.T) {
 // leave a run stuck at 0 % with nothing explaining why.
 func TestCreateBroadcastRequiresUserBot(t *testing.T) {
 	m := bcManager(t)
-	sub(t, m, 1, 0)
+	subscribeChat(t, m, 1, 0)
 	if err := m.store.SetTelegramUserBot(false, "", model.RegOff, ""); err != nil {
 		t.Fatalf("disable user bot: %v", err)
 	}
@@ -120,15 +122,15 @@ func TestAudienceFilters(t *testing.T) {
 	active := mkUser(t, m, "active", 0)
 	expired := mkUser(t, m, "expired", time.Now().Add(-24*time.Hour).Unix())
 
-	sub(t, m, 100, active)
-	sub(t, m, 200, expired)
-	sub(t, m, 300, 0) // opened the bot, never registered
+	subscribeChat(t, m, 100, active)
+	subscribeChat(t, m, 200, expired)
+	subscribeChat(t, m, 300, 0) // opened the bot, never registered
 	// Opted out and blocked chats are excluded from every audience, not just "all".
-	sub(t, m, 400, 0)
+	subscribeChat(t, m, 400, 0)
 	if err := m.store.SetSubscriberOptOut(400, true, time.Now().Unix()); err != nil {
 		t.Fatalf("opt out: %v", err)
 	}
-	sub(t, m, 500, 0)
+	subscribeChat(t, m, 500, 0)
 	if err := m.store.SetSubscriberBlocked(500, time.Now().Unix()); err != nil {
 		t.Fatalf("block: %v", err)
 	}
@@ -164,7 +166,7 @@ func TestAudienceFilters(t *testing.T) {
 // arrived halfway and move the total the progress bar is measured against.
 func TestAudienceIsSnapshotted(t *testing.T) {
 	m := bcManager(t)
-	sub(t, m, 100, 0)
+	subscribeChat(t, m, 100, 0)
 	created, err := m.CreateBroadcast(context.Background(),
 		&model.Broadcast{Text: "привет", Audience: model.AudienceAll})
 	if err != nil {
@@ -174,7 +176,7 @@ func TestAudienceIsSnapshotted(t *testing.T) {
 		t.Fatalf("total = %d, want 1", created.Total)
 	}
 
-	sub(t, m, 200, 0) // arrives after the launch
+	subscribeChat(t, m, 200, 0) // arrives after the launch
 	again, err := m.GetBroadcast(created.ID)
 	if err != nil {
 		t.Fatalf("GetBroadcast: %v", err)
@@ -188,7 +190,7 @@ func TestAudienceIsSnapshotted(t *testing.T) {
 // message should stop going out.
 func TestTerminalBroadcastRefusesControl(t *testing.T) {
 	m := bcManager(t)
-	sub(t, m, 100, 0)
+	subscribeChat(t, m, 100, 0)
 	created, err := m.CreateBroadcast(context.Background(),
 		&model.Broadcast{Text: "привет", Audience: model.AudienceAll})
 	if err != nil {

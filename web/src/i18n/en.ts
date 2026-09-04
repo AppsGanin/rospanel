@@ -497,6 +497,9 @@ const en: Dict = {
     subPathSameAsPanel: "the subscription path cannot be the same as the panel's secret path",
     snapshotNotFound: "snapshot not found",
     snapshotBad: "snapshot is corrupted",
+    subTemplateTooBig: "{{format}} template: at most {{max}} KB",
+    subTemplateNoSlot: "{{format}} template: no slot for the servers — paste {{slot}} where they go",
+    subTemplateInvalid: "{{format}} template: {{err}}",
     subRuleField: "unknown rule field {{value}}",
     subRuleOp: "unknown rule operator {{value}}",
     subRuleAction: "unknown rule action {{value}}",
@@ -1348,6 +1351,16 @@ const en: Dict = {
     total: "The traffic limit, ∞ when unlimited",
     expire: "The expiry date, ∞ when there is none",
     days: "Whole days until expiry, ∞ when there is none",
+  },
+
+  subTpl: {
+    title: "Profile templates",
+    hint: "Your own document for each format, with the panel's servers spliced in where you mark it. Leave a field empty and the panel generates the profile as before. The servers stay the panel's to build — a template decides the DNS, the groups and the rules around them. It is checked when you save: a document that cannot be parsed, or has nowhere to put the servers, is refused here rather than discovered by a client that drops the whole profile.",
+    clash: "Mihomo / Clash (YAML)",
+    singbox: "sing-box (JSON)",
+    xray: "Xray JSON (one config per connection)",
+    placeholder: "Empty — the panel generates the profile",
+    slots: "Slots:",
   },
 
   stepUp: {

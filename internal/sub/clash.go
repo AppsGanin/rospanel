@@ -275,6 +275,15 @@ func clashGroupName(u model.User, set *model.Settings) string {
 	return strings.TrimSpace(strings.ReplaceAll(SubTitle(u, set), ",", " "))
 }
 
+// The two markers a mihomo template carries. Named constants because the operator's
+// template, the validator and the injector all have to agree on them character for
+// character — a template whose marker is a space out is silently served without any
+// proxies in it.
+const (
+	clashProxiesMarker = "proxies: # LEAVE THIS LINE!"
+	clashNamesMarker   = "    # LEAVE THIS LINE!"
+)
+
 // ClashWithTemplateMulti injects the user's proxies into a RoscomVPN-style Mihomo
 // routing template. The template carries two "# LEAVE THIS LINE!" markers: the
 // `proxies:` line (full proxy definitions) and a slot inside the main select group
@@ -282,7 +291,7 @@ func clashGroupName(u model.User, set *model.Settings) string {
 // marker.
 func ClashWithTemplateMulti(u model.User, servers []Server, template string) string {
 	proxies := clashProxiesAll(u, servers)
-	if len(proxies) == 0 || !strings.Contains(template, "proxies: # LEAVE THIS LINE!") {
+	if len(proxies) == 0 || !strings.Contains(template, clashProxiesMarker) {
 		return ClashYAMLMulti(u, servers)
 	}
 
@@ -291,7 +300,7 @@ func ClashWithTemplateMulti(u model.User, servers []Server, template string) str
 		defs[i] = p.line
 	}
 	out := strings.Replace(template,
-		"proxies: # LEAVE THIS LINE!",
+		clashProxiesMarker,
 		"proxies:\n"+strings.Join(defs, "\n"),
 		1,
 	)
@@ -301,6 +310,6 @@ func ClashWithTemplateMulti(u model.User, servers []Server, template string) str
 	for _, p := range proxies {
 		fmt.Fprintf(&names, "      - %q\n", p.name)
 	}
-	out = strings.Replace(out, "    # LEAVE THIS LINE!", strings.TrimRight(names.String(), "\n"), 1)
+	out = strings.Replace(out, clashNamesMarker, strings.TrimRight(names.String(), "\n"), 1)
 	return out
 }

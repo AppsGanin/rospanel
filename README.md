@@ -341,6 +341,16 @@ The page carries what the account holder needs and nothing they shouldn't hand o
 **individual per-lane configs** card can be switched off, and with device binding on it lists **their own bound devices** with a
 button to release one — so a full device roster is self-service rather than a support ticket.
 
+**Profile templates** (*Settings → Subscriptions*) let you replace the generated
+document for **mihomo/Clash, sing-box and Xray JSON** with your own — your DNS, your
+groups, your rule set — with the panel's servers spliced in where you mark it
+(`{{proxies}}`, `{{tags}}`, `{{group}}` for sing-box, `{{outbounds}}` and `{{remarks}}`
+for Xray JSON, the familiar `# LEAVE THIS LINE!` markers for mihomo). The servers stay
+the panel's to build, so a template cannot produce an entry a client rejects. It is
+checked when you save, and if it ever fails at render time the panel serves the
+generated profile instead — a client that cannot parse a profile drops every server in
+it, so a broken one must never reach one.
+
 **Response rules** override the automatic format detection: an ordered list of operator rules
 matched against the request (User-Agent or an HWID header) — force a specific format for a given
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is

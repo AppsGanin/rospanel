@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netguard"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/warp"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -869,6 +871,73 @@ func (m *Manager) SaveSubRules(rules []model.SubRule) error {
 		rules[i].Value = strings.TrimSpace(r.Value)
 	}
 	return m.store.SetSubRules(rules)
+}
+
+// SubTemplates returns the operator's stored profile templates.
+func (m *Manager) SubTemplates() (clash, singbox, xray string, err error) {
+	set, err := m.Settings()
+	if err != nil {
+		return "", "", "", err
+	}
+	return set.SubTplClash, set.SubTplSingBox, set.SubTplXray, nil
+}
+
+// SaveSubTemplates validates and stores the three profile templates. Validation is
+// the whole point of doing it here: a client that cannot parse a profile drops every
+// server in it, so a template that would produce one is refused at the keyboard —
+// where the operator can see why — rather than at a user's client, where nobody can.
+//
+// The maximum is generous but real: these are documents an operator pastes, and an
+// unbounded settings column is a row every subscription read has to carry.
+func (m *Manager) SaveSubTemplates(clash, singbox, xray string) error {
+	clash, singbox, xray = strings.TrimSpace(clash), strings.TrimSpace(singbox), strings.TrimSpace(xray)
+	for name, tpl := range map[string]string{"clash": clash, "singbox": singbox, "xray": xray} {
+		if len(tpl) > maxSubTemplateBytes {
+			return invalidCode("err.subTemplateTooBig", "шаблон {{format}}: не больше {{max}} КБ",
+				map[string]any{"format": name, "max": maxSubTemplateBytes / 1024})
+		}
+	}
+	if err := subTemplateErr("clash", sub.ValidateClashTemplate(clash)); err != nil {
+		return err
+	}
+	if err := subTemplateErr("sing-box", sub.ValidateSingBoxTemplate(singbox)); err != nil {
+		return err
+	}
+	if err := subTemplateErr("xray", sub.ValidateXrayTemplate(xray)); err != nil {
+		return err
+	}
+	return m.store.SetSubTemplates(clash, singbox, xray)
+}
+
+// maxSubTemplateBytes caps one stored template. A full mihomo rule set is a few tens
+// of kilobytes; 256 KB is far past any of them and far short of a settings row that
+// costs something to read.
+const maxSubTemplateBytes = 256 * 1024
+
+// subTemplateErr turns a validator's error into one the panel can show, naming the
+// format so an operator editing three documents knows which one is refused.
+func subTemplateErr(format string, err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, sub.ErrTemplateEmpty):
+		return invalidCode("err.subTemplateNoSlot", "шаблон {{format}}: нет места для серверов — вставьте {{slot}}",
+			map[string]any{"format": format, "slot": subTemplateSlot(format)})
+	default:
+		return invalidCode("err.subTemplateInvalid", "шаблон {{format}}: {{err}}",
+			map[string]any{"format": format, "err": err.Error()})
+	}
+}
+
+func subTemplateSlot(format string) string {
+	switch format {
+	case "clash":
+		return "proxies: # LEAVE THIS LINE!"
+	case "xray":
+		return sub.TplOutbounds
+	default:
+		return sub.TplProxies
+	}
 }
 
 type routingTmpl struct {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"net"
+	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -281,6 +282,49 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// SingBoxWithTemplate renders the user's outbounds into the operator's own sing-box
+// document. {{proxies}} takes the generated outbounds, {{tags}} their tags and
+// {{group}} the profile's name — enough to write any group layout, DNS and rule set
+// on top of servers the panel still owns.
+//
+// Falls back to the generated profile whenever the template cannot produce a working
+// one: unparseable, or the user has no servers to put in it. A client that cannot
+// parse a profile drops all of it, so serving the plain one is always better than
+// serving a broken document.
+func SingBoxWithTemplate(u model.User, servers []Server, template string) (string, error) {
+	if strings.TrimSpace(template) == "" {
+		return SingBoxJSONMulti(u, servers), nil
+	}
+	if len(servers) == 0 {
+		return SingBoxJSONMulti(u, servers), nil
+	}
+	var proxies []any
+	var tags []string
+	for _, srv := range servers {
+		p, t := singboxProxies(u, srv)
+		proxies = append(proxies, p...)
+		tags = append(tags, t...)
+	}
+	// Nothing allowed: the generated profile has a direct-only answer for this, which
+	// is valid and honest. A template spliced with an empty proxy list would leave a
+	// selector pointing at nothing, which sing-box refuses outright.
+	if len(tags) == 0 {
+		return SingBoxJSONMulti(u, servers), nil
+	}
+	tagList := make([]any, len(tags))
+	for i, t := range tags {
+		tagList[i] = t
+	}
+	out, err := renderJSONTemplate(template,
+		map[string]any{TplGroup: SubTitle(u, servers[0].Set)},
+		map[string][]any{TplProxies: proxies, TplTags: tagList},
+	)
+	if err != nil {
+		return SingBoxJSONMulti(u, servers), err
+	}
+	return out, nil
 }
 
 // singboxObfs adds sing-box's Salamander block to a Hysteria2 outbound, or leaves

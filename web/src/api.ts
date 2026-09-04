@@ -1093,6 +1093,22 @@ export const saveSubRules = (rules: SubRule[]) =>
     body: JSON.stringify({ rules }),
   })
 
+// SubTemplates are the operator's own profile documents, one per format. Empty means
+// "use the generated profile", which is what every install starts with.
+export interface SubTemplates {
+  clash: string
+  singbox: string
+  xray: string
+}
+
+export const getSubTemplates = () => api<SubTemplates>('api/settings/sub-templates')
+
+export const saveSubTemplates = (tpl: SubTemplates) =>
+  api<{ ok: boolean }>('api/settings/sub-templates', {
+    method: 'POST',
+    body: JSON.stringify(tpl),
+  })
+
 export const saveMaintenance = (enabled: boolean) =>
   api<{ ok: boolean }>('api/settings/maintenance', {
     method: 'POST',

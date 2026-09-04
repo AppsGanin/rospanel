@@ -370,6 +370,34 @@ func (rt *Router) saveSubRules(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// getSubTemplates returns the three profile templates for the editor.
+func (rt *Router) getSubTemplates(w http.ResponseWriter, _ *http.Request) {
+	clash, singbox, xray, err := rt.mgr.SubTemplates()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"clash": clash, "singbox": singbox, "xray": xray})
+}
+
+// saveSubTemplates replaces all three. Sent together because the editor shows all
+// three and an operator who cleared one meant to clear it.
+func (rt *Router) saveSubTemplates(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Clash   string `json:"clash"`
+		SingBox string `json:"singbox"`
+		Xray    string `json:"xray"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SaveSubTemplates(req.Clash, req.SingBox, req.Xray); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}
+
 func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path           string `json:"sub_path"`

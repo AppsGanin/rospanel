@@ -72,6 +72,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
 		       master_traffic_limit, master_traffic_period, master_hide_when_over,
 		       sub_hide_offline, conn_policy,
+		       sub_tpl_clash, sub_tpl_singbox, sub_tpl_xray,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns
 		FROM settings WHERE id = 1`,
 	).Scan(
@@ -120,6 +121,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.MasterPlacement.Capacity, &masterHideFull,
 		&st.MasterPlacement.TrafficLimit, &st.MasterPlacement.TrafficPeriod, &masterHideOver,
 		&hideOffline, &connPolicyJSON,
+		&st.SubTplClash, &st.SubTplSingBox, &st.SubTplXray,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 	)
 	if err != nil {
@@ -442,6 +444,17 @@ func (s *Store) SetMasterPlacement(p model.Placement) error {
 		master_hide_when_over = ?, updated_at = unixepoch() WHERE id = 1`,
 		p.Country, p.Weight, p.Capacity, boolToInt(p.HideWhenFull),
 		p.TrafficLimit, p.TrafficPeriod, boolToInt(p.HideWhenOver))
+	return err
+}
+
+// SetSubTemplates persists the three profile templates. Its own method, like the
+// response rules: the template editor is its own surface, and saving a renamed
+// subscription title should not rewrite a document the operator is still working on.
+func (s *Store) SetSubTemplates(clash, singbox, xray string) error {
+	_, err := s.db.Exec(
+		`UPDATE settings SET sub_tpl_clash = ?, sub_tpl_singbox = ?, sub_tpl_xray = ?,
+		        updated_at = unixepoch() WHERE id = 1`,
+		clash, singbox, xray)
 	return err
 }
 

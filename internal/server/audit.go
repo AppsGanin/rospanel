@@ -76,6 +76,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/decoy":                 set("decoy"),
 	"POST /api/settings/subscription":          set("subscriptions"),
 	"POST /api/settings/sub-rules":             set("subscriptions"),
+	"POST /api/settings/sub-templates":         set("subscriptions"),
 	"POST /api/settings/sub-dpi":               set("subscriptions"),
 	"POST /api/settings/hwid":                  set("deviceBinding"),
 	"POST /api/settings/maintenance":           set("maintenance"),
