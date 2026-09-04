@@ -105,6 +105,7 @@ journalctl -u rospanel | grep -A6 FIRST-RUN
 docker run -d --name rospanel \
   --network host \
   --cap-add NET_ADMIN \
+  --device /dev/net/tun \
   -v rospanel-data:/data \
   ghcr.io/appsganin/rospanel:latest
 
@@ -114,7 +115,9 @@ docker logs rospanel | grep -A6 FIRST-RUN
 > [!NOTE]
 > `--network host` is required so Xray can listen on 443/TCP, 80/TCP and the Hysteria2 UDP
 > ports directly; `NET_ADMIN` lets the panel manage firewall rules: port hopping and
-> connection limits and brute-force bans (nftables).
+> connection limits and brute-force bans (nftables). `--device /dev/net/tun` is what the
+> AmneziaWG lane needs to create its tunnel — a container gets no TUN device without it,
+> and the capability alone is not enough. Drop the flag only if you never enable that lane.
 
 ### 🔑 Default login
 
@@ -169,6 +172,7 @@ services:
     command: node run
     network_mode: host          # Xray binds 443/TCP, 80/TCP and the Hysteria2 UDP ports
     cap_add: [NET_ADMIN]        # nftables: per-IP limits, port hopping
+    devices: [/dev/net/tun]     # AmneziaWG's tunnel; omit if that lane stays off
     environment:
       ROSPANEL_JOIN: 'https://<panel>/<node-api-path>/v1/join#<token>'
       # ROSPANEL_JOIN_INSECURE: "1"   # only if the panel is still on a self-signed cert
@@ -237,7 +241,8 @@ are allowed on, with one keypair and one tunnel address everywhere. Switch it on
 which needs no handshake to spot); users get the config as a file or a QR on the subscription
 page and in their card, and the access groups, device limit, traffic accounting and online
 status treat it exactly like the Xray lanes. Needs `/dev/net/tun` and `CAP_NET_ADMIN`, which
-the installed service has; `nftables` for the tunnel's NAT.
+the installed service has; in Docker pass them yourself (`--device /dev/net/tun --cap-add
+NET_ADMIN`), as a container is given no TUN device by default. `nftables` for the tunnel's NAT.
 
 #### 👤 Users
 
