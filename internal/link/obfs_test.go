@@ -109,3 +109,34 @@ func TestCustomHysteriaLinkCarriesItsOwnObfs(t *testing.T) {
 		t.Errorf("obfs-password = %q, want the inbound's own key", got)
 	}
 }
+
+// Name variables have to reach the SHARE LINK, not only the Clash and sing-box
+// profiles. The link fragment is what the base64 subscription carries — the format
+// v2rayNG, NekoBox and Streisand read — and what the Xray-JSON format copies into its
+// remarks, so a lane that renders one way there and another way in Clash is the same
+// server under two names.
+func TestBuiltinLinkLabelsResolveTheUser(t *testing.T) {
+	set := obfsSettings()
+	set.NodeLabel = "NL"
+	set.ServerPlacement = model.Placement{Country: "NL"}
+	set.VLESSName = "{flag} VLESS {left}"
+	set.HysteriaName = "{flag} Hy2 {left}"
+	u := model.User{Password: "pw", UUID: "u-1", DataLimit: 100 << 30, UsedUp: 25 << 30}
+
+	for name, raw := range map[string]string{
+		"vless":     VLESS(u, set),
+		"hysteria2": Hysteria2(u, set),
+	} {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", name, err)
+		}
+		frag, err := url.PathUnescape(parsed.Fragment)
+		if err != nil {
+			t.Fatalf("%s: unescape: %v", name, err)
+		}
+		if !strings.Contains(frag, "75 GB") || !strings.Contains(frag, "🇳🇱") {
+			t.Errorf("%s link label = %q, want the user's remaining traffic and the flag", name, frag)
+		}
+	}
+}

@@ -29,7 +29,7 @@ func LabelFor(proto string, u model.User, set *model.Settings) string {
 // url.QueryEscape(pw); UUID links pass the raw uuid). host is always set.Host.
 func assemble(scheme, cred string, port int, q url.Values, proto string, u model.User, set *model.Settings) string {
 	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, set.Host, port, q.Encode(), url.PathEscape(Label(proto, set)))
+		scheme, cred, set.Host, port, q.Encode(), url.PathEscape(LabelFor(proto, u, set)))
 }
 
 // pinSelfSigned adds the cert-pin query param (pcs) when the active cert isn't
