@@ -435,7 +435,10 @@ themselves — a code from an authenticator app (Google Authenticator, Aegis, 1P
 of the password, the secret encrypted in the database and never handed back out after setup;
 for a lost phone, `rospanel totp reset <login>` on the server; a fuller **`rospanel rescue`**
 resets a forgotten password, clears a second factor, or recreates an owner when no admin can
-sign in at all. Each admin also sees their own **active sessions** in the account dialog —
+sign in at all. The two actions with no undo — **a factory reset and deleting a server** —
+ask for the password and, from an admin who has one, a **fresh** code: the one that signed
+them in is already spent, so a single shoulder-surfed code buys one action rather than all of
+them. Each admin also sees their own **active sessions** in the account dialog —
 browser and OS, the address it was last used from, when it signed in — and can end any one of
 them or **sign out everywhere else** in one click; a session ended this way stops working on
 its next request, and the panel log records who ended what. A sign-in from an address this
@@ -474,7 +477,8 @@ operate, and the configuration behind them — settings, per-server routing and 
 save-points with rollback. Administrators, API keys and the panel's secret path are
 deliberately not exposed. **Webhooks** send HMAC-SHA256 signed events with retries. **Prometheus metrics**
 at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, host stats and
-one series per node. An **MCP server** hands the same API to an AI assistant, with the tool
+one series per node; a ready **Grafana dashboard** for them is
+[docs/grafana/rospanel.json](docs/grafana/rospanel.json) (Dashboards → New → Import). An **MCP server** hands the same API to an AI assistant, with the tool
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
 a URL and there is nothing to install anywhere. Write operations are off unless you ask for
 them (the `/write` address). More in [docs/api.md](docs/api.md).
