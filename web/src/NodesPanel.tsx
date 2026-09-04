@@ -1202,7 +1202,12 @@ function NodeSettingsDialog({
               />
               <p className="text-xs text-ink-muted">{t("nodes.coefficientHint")}</p>
             </div>
-            <PlacementFields value={pl} onChange={setPl} online={node.online_users ?? 0} />
+            <PlacementFields
+              value={pl}
+              onChange={setPl}
+              online={node.online_users ?? 0}
+              trafficUsed={node.traffic_period_used}
+            />
             <SystemProxyEditor
               host={node.host}
               value={proxy}
@@ -1529,7 +1534,12 @@ function MasterSettingsDialog({
                   onChange={setDecoy}
                   data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
                 />
-                <PlacementFields value={pl} onChange={setPl} online={node.online_users ?? 0} />
+                <PlacementFields
+              value={pl}
+              onChange={setPl}
+              online={node.online_users ?? 0}
+              trafficUsed={node.traffic_period_used}
+            />
                 <SystemProxyEditor
                   host={node.host}
                   value={proxy}

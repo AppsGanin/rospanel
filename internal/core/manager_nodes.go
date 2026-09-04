@@ -377,6 +377,11 @@ type NodeView struct {
 	GeoRefreshHours int   `json:"geo_refresh_hours"`
 	TrafficUp       int64 `json:"traffic_up"`   // today, this node
 	TrafficDown     int64 `json:"traffic_down"` // today, this node
+	// TrafficPeriodUsed is what this server has carried in its cap period (the month
+	// by default), and TrafficOver whether that has reached the cap. Reported even
+	// with no cap set, so the operator can see the figure before choosing a number.
+	TrafficPeriodUsed int64 `json:"traffic_period_used"`
+	TrafficOver       bool  `json:"traffic_over"`
 
 	// The machine this server runs on, as it last reported (the master fills these
 	// from its own sampler). HasHostStats is false when nothing has been reported
@@ -490,6 +495,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 	if t, ok := traffic[model.LocalNodeID]; ok {
 		local.TrafficUp, local.TrafficDown = t[0], t[1]
 	}
+	lu := m.NodeTrafficUsage(model.LocalNodeID)
+	local.TrafficPeriodUsed, local.TrafficOver = lu.Used, lu.Over
 	// The master samples its own machine directly rather than reporting to itself.
 	if m.sys != nil {
 		st := m.sys.Read()
@@ -544,6 +551,8 @@ func (m *Manager) NodeViews() ([]NodeView, error) {
 		if t, ok := traffic[n.ID]; ok {
 			v.TrafficUp, v.TrafficDown = t[0], t[1]
 		}
+		nu := m.NodeTrafficUsage(n.ID)
+		v.TrafficPeriodUsed, v.TrafficOver = nu.Used, nu.Over
 		v.SyncFails = m.NodeSyncFails(n.ID)
 		// What the node last said about its own machine. Absent until it checks in.
 		if h, ok := m.NodeHostStats(n.ID); ok {

@@ -62,7 +62,7 @@ func TestOrderModes(t *testing.T) {
 		{"bogus", "NL", []int64{1, 0, 2, 3}},
 	}
 	for _, c := range cases {
-		got := ids(Order(servers, c.mode, c.cc, online))
+		got := ids(Order(servers, c.mode, c.cc, online, nil))
 		if !equal(got, c.want) {
 			t.Errorf("%s / %q: got %v, want %v", c.mode, c.cc, got, c.want)
 		}
@@ -75,19 +75,19 @@ func TestOrderHidesFullServersButNeverAll(t *testing.T) {
 		placed(1, "NL", 0, 10, true),
 		placed(2, "NL", 0, 0, true), // no capacity: never "full"
 	}
-	got := ids(Order(servers, model.OrderManual, "", map[int64]int{0: 10, 1: 3}))
+	got := ids(Order(servers, model.OrderManual, "", map[int64]int{0: 10, 1: 3}, nil))
 	if !equal(got, []int64{1, 2}) {
 		t.Errorf("full server should drop: %v", got)
 	}
 	// Every server full: keep them all rather than hand out nothing.
 	two := servers[:2]
-	got = ids(Order(two, model.OrderLoad, "", map[int64]int{0: 12, 1: 10}))
+	got = ids(Order(two, model.OrderLoad, "", map[int64]int{0: 12, 1: 10}, nil))
 	if !equal(got, []int64{1, 0}) {
 		t.Errorf("all full should keep everything, least loaded first: %v", got)
 	}
 	// Without hide-when-full a full server merely sorts last under load.
 	open := []Server{placed(0, "", 0, 10, false), placed(1, "", 0, 10, false)}
-	got = ids(Order(open, model.OrderLoad, "", map[int64]int{0: 10, 1: 2}))
+	got = ids(Order(open, model.OrderLoad, "", map[int64]int{0: 10, 1: 2}, nil))
 	if !equal(got, []int64{1, 0}) {
 		t.Errorf("load order: %v", got)
 	}

@@ -56,6 +56,11 @@ type nodeAlertState struct {
 	// space, so the all-clear is only sent for an alarm they saw.
 	diskLowAlerted bool
 
+	// trafficAlerted records that admins were told this server reached its traffic
+	// cap, so they are told once per crossing rather than once per sweep — and get an
+	// all-clear only for an alarm they actually saw.
+	trafficAlerted bool
+
 	xrayAlerted    bool
 	xrayDownAt     time.Time
 	lastXrayNotify time.Time
@@ -81,6 +86,10 @@ func (m *Manager) nodeWatchLoop() {
 	defer t.Stop()
 	for {
 		m.SweepNodeAlerts()
+		// Per-server traffic caps ride the same tick: the question is the same shape
+		// (compare a server against a threshold, tell admins once per crossing) and the
+		// answer is a SUM the subscription path must not be paying for per request.
+		m.refreshNodeTraffic()
 		<-t.C
 		// The status page's history rides this tick: it needs the same "is each server
 		// up" question the sweep just answered, on the same cadence, and a second timer

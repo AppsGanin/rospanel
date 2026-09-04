@@ -1928,6 +1928,12 @@ export interface NodeView {
   sort_weight: number
   capacity: number
   hide_when_full: boolean
+  // Traffic cap and what has been used against it in the current period.
+  traffic_limit: number
+  traffic_period: string
+  hide_when_over: boolean
+  traffic_period_used: number
+  traffic_over: boolean
   online_users: number
   // REALITY identity (per-server). reality_dest "" on a node = inherits the master's
   // donor. The public key / short id / XHTTP path are shown; private key is hidden.
@@ -2043,6 +2049,11 @@ export interface Placement {
   sort_weight: number
   capacity: number
   hide_when_full: boolean
+  // Bytes the server may carry per traffic_period ('month' | 'day'); 0 = no cap.
+  // hide_when_over drops it out of subscriptions once the cap is reached.
+  traffic_limit: number
+  traffic_period: string
+  hide_when_over: boolean
 }
 
 export interface NodePatch {

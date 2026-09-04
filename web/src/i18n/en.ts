@@ -314,6 +314,8 @@ const en: Dict = {
     placementCountry: "country: two Latin letters (NL, DE) or blank",
     placementCapacity: "capacity: from 0 (unset) to 1,000,000",
     placementWeight: "weight: from -1000 to 1000",
+    placementTrafficLimit: "traffic limit: from 0 (none) to 1 PB",
+    placementTrafficPeriod: "limit period: month or day",
     subOrderMode: "unknown server ordering mode",
     dpiPackets: "fragment: packets must be tlshello, 1-1 or 1-3",
     dpiFragmentLength: "fragment: length \"{{value}}\" must be a number or min-max within {{lo}}–{{hi}}",
@@ -2442,6 +2444,9 @@ const en: Dict = {
     evProbeDesc: "A daily summary of IPs scanning the address for the hidden panel.",
     evLoginLabel: "Sign-in from a new address",
     evLoginDesc: "An admin signed in from an IP they had not used before. The message carries a “Not me” button that ends every session of that admin.",
+    evNodeTrafficLabel: "Server traffic limit",
+    evNodeTrafficDesc:
+      "A server reached the traffic limit set for it, and again when the period rolls over and it has allowance again.",
     uEndingLabel: "Subscription ending soon",
     uEndingDesc: "A reminder the chosen number of days ahead",
     uLowTrafficLabel: "Traffic running out",
@@ -2623,6 +2628,19 @@ const en: Dict = {
   },
 
   nodes: {
+    traffic: {
+      title: "Traffic limit",
+      hint: "How much this server may carry before the panel says something. Counted from what the panel attributes to it, which runs slightly under what the hosting bills — the safe direction for a threshold. Leave empty for no limit.",
+      limit: "Limit, GB",
+      noLimit: "no limit",
+      period: "Per",
+      perMonth: "Month (from the 1st)",
+      perDay: "Day",
+      hideWhenOver: "Hide the server once the limit is reached",
+      hideHint: "It drops out of subscriptions until the period rolls over. Never all of them: if every server is over, they all keep serving.",
+      hideNeedsLimit: "Set a limit first.",
+      over: "over the limit",
+    },
     placement: {
       title: "Place in subscriptions",
       hint: "Weight and capacity decide the order of servers in a subscription (Settings → Subscriptions → Server order). The server's country is detected from its address automatically.",

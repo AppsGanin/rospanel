@@ -1032,6 +1032,11 @@ const (
 	AdminEventAbuse         int64 = 1 << 7 // a user's traffic hit a threat/piracy/gambling list
 	AdminEventProbe         int64 = 1 << 8 // daily summary of IPs scanning for the hidden panel
 	AdminEventLogin         int64 = 1 << 9 // an admin signed in from an address they had not used before
+	// AdminEventNodeTraffic fires when a server reaches the traffic cap the operator
+	// set for it, and again when the period rolls over and it has room. Its own flag
+	// rather than riding XrayDown: nothing is down, the bill is what is at risk, and
+	// an operator who muted outage noise still wants to hear about overage.
+	AdminEventNodeTraffic int64 = 1 << 10
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1050,6 +1055,7 @@ var AdminEventCatalog = []struct {
 	{"abuse", AdminEventAbuse},
 	{"probe", AdminEventProbe},
 	{"login", AdminEventLogin},
+	{"node_traffic", AdminEventNodeTraffic},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.
