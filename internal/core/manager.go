@@ -274,6 +274,9 @@ type Manager struct {
 	// and certificate — the fleet-wide half of the "Xray failure" / "TLS certificate"
 	// admin events (see manager_nodes_notify.go).
 	nodeAlertMu sync.Mutex
+	// nodeTraffic caches each server's usage in its cap period; the node watch loop
+	// refreshes it and the subscription path reads it (see manager_node_traffic.go).
+	nodeTraffic nodeTrafficCache
 	nodeAlerts  map[int64]*nodeAlertState
 }
 

@@ -346,6 +346,13 @@ matched against the request (User-Agent or an HWID header) — force a specific 
 client / OS / version (contains, equals, prefix, regex), or **block** a client entirely (it is
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
+**A traffic limit per server** (on the server card, next to its capacity) is what the
+hosting sells you: a monthly or daily allowance in gigabytes. The panel counts what it
+attributes to that server — slightly under what the hosting bills, which is the safe
+side of a threshold — tells you once when the allowance runs out and once when the new
+period starts, and can drop the server out of subscriptions in between. Never all of
+them: if every server is over, they all keep serving.
+
 **A server that stops reporting** stays in the subscription by default — a node bounces on every
 update and certificate renewal, and a client whose refresh lands in that window would lose an
 entry for a server that is already back, while one that keeps the entry fails over on its own.

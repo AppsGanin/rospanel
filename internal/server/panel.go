@@ -167,7 +167,8 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 	// operator's weights decide who comes first, and a full server can drop out.
 	// Under the manual mode with no weights this is the old order, unchanged.
 	servers := sub.Servers(sets, custom, access)
-	ordered := sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP), rt.mgr.OnlineByServer())
+	ordered := sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP),
+		rt.mgr.OnlineByServer(), rt.mgr.ServersOverTrafficLimit())
 	// External servers are the panel's, not any one server's, so they ride along on
 	// whichever entry survived the ordering — the master by preference, since that is
 	// where they have always appeared. It must not be *only* the master: the master

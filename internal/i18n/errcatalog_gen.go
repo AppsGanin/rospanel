@@ -201,6 +201,8 @@ var errEN = map[string]string{
 	"err.pickAnotherPlanToMigrate": "pick a different plan to migrate to",
 	"err.placementCapacity":        "capacity: from 0 (unset) to 1,000,000",
 	"err.placementCountry":         "country: two Latin letters (NL, DE) or blank",
+	"err.placementTrafficLimit":    "traffic limit: from 0 (none) to 1 PB",
+	"err.placementTrafficPeriod":   "limit period: month or day",
 	"err.placementWeight":          "weight: from -1000 to 1000",
 	"err.planHasPendingOrders":     "the plan has {{count}} unpaid orders — wait for them to settle or cancel them",
 	"err.planHasUsers":             "the plan is assigned to {{count}} users — move them to another plan first",

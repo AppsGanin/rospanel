@@ -23,7 +23,7 @@ import (
 // clientCC is the client's country (blank when unknown, in which case nothing is
 // "nearest" and the mode degrades to its second key). online is each server's
 // current online users by server id; a missing entry reads as zero.
-func Order(servers []Server, mode, clientCC string, online map[int64]int) []Server {
+func Order(servers []Server, mode, clientCC string, online map[int64]int, overTraffic map[int64]bool) []Server {
 	mode = model.OrderModeOr(mode)
 	type ranked struct {
 		s     Server
@@ -42,9 +42,16 @@ func Order(servers []Server, mode, clientCC string, online map[int64]int) []Serv
 		if clientCC != "" && p.Country != "" && p.Country == clientCC {
 			r.near = 0
 		}
+		// Out of traffic allowance counts as full: same treatment, same escape hatch
+		// below (a fleet where every server is over is served anyway, because an empty
+		// subscription helps nobody). Only when the operator asked to hide it — a cap
+		// without HideWhenOver is a thing to be told about, not a thing to be cut off by.
+		if p.HideWhenOver && overTraffic[s.Set.ServerID] {
+			r.full = true
+		}
 		if p.Capacity > 0 {
 			r.load = float64(n) / float64(p.Capacity)
-			r.full = p.HideWhenFull && n >= p.Capacity
+			r.full = r.full || (p.HideWhenFull && n >= p.Capacity)
 		} else {
 			// No stated capacity: the count itself, scaled so a server with a
 			// capacity always compares by its ratio against one without by raw load.

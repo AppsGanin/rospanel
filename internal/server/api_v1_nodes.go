@@ -38,6 +38,11 @@ type (
 		SortWeight   *int    `json:"sort_weight,omitempty"`
 		Capacity     *int    `json:"capacity,omitempty"`
 		HideWhenFull *bool   `json:"hide_when_full,omitempty"`
+		// Traffic cap: bytes per period, the period, and whether reaching it drops the
+		// server out of subscriptions. 0 clears the cap (and with it the other two).
+		TrafficLimit  *int64  `json:"traffic_limit,omitempty"`
+		TrafficPeriod *string `json:"traffic_period,omitempty"`
+		HideWhenOver  *bool   `json:"hide_when_over,omitempty"`
 	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
@@ -209,6 +214,15 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.HideWhenFull != nil {
 		edit.Placement.HideWhenFull = *req.HideWhenFull
+	}
+	if req.TrafficLimit != nil {
+		edit.Placement.TrafficLimit = *req.TrafficLimit
+	}
+	if req.TrafficPeriod != nil {
+		edit.Placement.TrafficPeriod = *req.TrafficPeriod
+	}
+	if req.HideWhenOver != nil {
+		edit.Placement.HideWhenOver = *req.HideWhenOver
 	}
 	if err := edit.Placement.Validate(); err != nil {
 		writeAPIManagerErr(w, err)
