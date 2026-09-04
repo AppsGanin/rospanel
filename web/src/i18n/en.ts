@@ -208,6 +208,8 @@ const en: Dict = {
     badColorText: "the text colour must be #RRGGBB",
     badGrpcService: "invalid gRPC service name (Latin letters, digits, . _ -)",
     badHopInterval: "invalid hop interval (expected “N-M”, e.g. 5-10)",
+    badObfsPassword:
+      "obfuscation password: {{min}}–{{max}} characters, latin letters, digits and .~_-",
     badHopRange2: "invalid hop range",
     badMasqPath: "invalid masquerade path {{value}}",
     badPath: "invalid path (starts with “/”; Latin letters, digits, - _ . / allowed)",
@@ -351,6 +353,7 @@ const en: Dict = {
     totpInvalid: "wrong code",
     totpNoSetup: "start the setup first",
     totpRequired: "enter the code from your authenticator",
+    totpUsed: "that code has already been used — wait for the next one",
     tooManyAttempts: "too many attempts, try again later",
     tooManyStreams: "too many active streams",
     methodNotSupported: "the panel does not accept this request method here",
@@ -1328,6 +1331,12 @@ const en: Dict = {
     probeHint: "addresses that went looking for the hidden panel path, over the last {{days}} days",
     blockedHint: "refused by the source policy (Settings → General)",
   },
+  stepUp: {
+    code: "Code from your authenticator",
+    codeHint:
+      "A fresh code — the one that signed you in has already been used. If it is refused, wait for the next one.",
+  },
+
   sessions: {
     title: "Active sessions",
     hint: "Where this account is signed in. A device you don't recognise: end its session and change the password.",
@@ -2093,6 +2102,11 @@ const en: Dict = {
     sec: "{{range}} s",
     hopHint:
       "The client spreads traffic across the hop range, and nftables funnels it back to the base port.",
+    obfs: "Obfuscation (Salamander)",
+    obfsOff: "off",
+    obfsGenerate: "Generate",
+    obfsHint:
+      "Hysteria2 is QUIC, and a QUIC handshake is the one thing a DPI box can recognise before any traffic flows. With a key set, every datagram is XORed with it and the handshake stops being recognisable. The key goes into every link and profile, so clients pick it up on their next subscription update — old links stop working the moment you save.",
     enableHysteria: "Enable HYSTERIA-UDP to configure the ports and the interval.",
     masquerade: "Masquerade (SNI)",
     sniPlaceholder: "max.ru — type and press Enter…",

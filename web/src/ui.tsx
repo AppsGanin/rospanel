@@ -728,6 +728,8 @@ export function TextInput({
   mono,
   disabled,
   className,
+  inputMode,
+  autoComplete,
 }: {
   label?: string;
   value: string;
@@ -738,6 +740,11 @@ export function TextInput({
   mono?: boolean;
   disabled?: boolean;
   className?: string;
+  // Passed through for the fields where the on-screen keyboard and the browser's
+  // autofill actually matter — a one-time code wants a numeric pad and the OS's
+  // "paste the code from your messages" affordance, not a generic text box.
+  inputMode?: "text" | "numeric";
+  autoComplete?: string;
 }) {
   return (
     <Field label={label}>
@@ -753,6 +760,8 @@ export function TextInput({
         placeholder={placeholder}
         autoFocus={autoFocus}
         disabled={disabled}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
         onChange={(e) => onChange(e.currentTarget.value)}
       />
     </Field>

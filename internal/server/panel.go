@@ -686,6 +686,12 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 		"version":              version.Version,
 		"must_change_password": a.MustChangePassword,
 	}
+	// Whether this admin has a second factor. A UI hint only — it decides whether the
+	// destructive-action dialogs ask for a code — and the server checks for real
+	// regardless, so an error here degrades towards ASKING rather than towards a
+	// dialog with no field to type the required code into.
+	totp, err := rt.mgr.Store().AdminTOTPByID(a.ID)
+	resp["totp_enabled"] = err != nil || totp.Enabled()
 	if set, err := rt.mgr.Store().GetSettings(); err == nil {
 		resp["setup_done"] = set.SetupDone
 		resp["timezone"] = set.Timezone
@@ -728,6 +734,71 @@ func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password 
 		return true
 	}
 	return rt.verifyAdminPassword(w, r, password)
+}
+
+// verifyStepUpTOTP is verifyStepUp plus a FRESH second factor, for the handful of
+// actions that destroy something no backup taken afterwards can bring back.
+//
+// The password alone is the wrong bar for those: it is the credential most likely to
+// be reused elsewhere, and an admin who has bound an authenticator has already said
+// they want a second one. The code is required only when that admin actually has 2FA
+// — turning it on must not become a prerequisite for operating the panel.
+//
+// "Fresh" is load-bearing. The step is claimed through MarkAdminTOTPStep exactly as
+// login claims it, so the code that just signed the admin in cannot also authorise
+// the deletion: an attacker who watched one code over a shoulder gets one action, not
+// every action inside the same 30 seconds. The cost is real and deliberate — two
+// destructive actions in one window need two codes — so the refusal says so.
+func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, password, code string) bool {
+	if !rt.verifyStepUp(w, r, password) {
+		return false
+	}
+	id, ok := rt.adminID(r)
+	if !ok {
+		writeErrCode(w, http.StatusUnauthorized, "err.unauthorized", "не авторизован")
+		return false
+	}
+	totp, err := rt.mgr.Store().AdminTOTPByID(id)
+	if err != nil {
+		// A secret that will not decrypt must never read as "no second factor" — that
+		// would turn a broken encryption key into an open door.
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+		return false
+	}
+	if !totp.Enabled() {
+		return true
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		writeErrCode(w, http.StatusForbidden, "err.totpRequired", "введите код из приложения")
+		return false
+	}
+	// Verified WITHOUT the replay marker, then compared against it separately. Folding
+	// the two together (as the login does) collapses "wrong code" and "the code you
+	// just signed in with" into one message — and here the second is the likely one,
+	// because the admin often reaches a destructive action seconds after logging in.
+	// Security is unchanged: the step still has to beat the marker, and the atomic
+	// claim below is what actually settles a race between two requests.
+	step, ok := auth.VerifyTOTP(totp.Secret, code, time.Now(), 0)
+	if !ok {
+		writeErrCode(w, http.StatusForbidden, "err.totpInvalid", "неверный код")
+		return false
+	}
+	if step <= totp.LastStep {
+		writeErrCode(w, http.StatusForbidden, "err.totpUsed", "этот код уже использован — дождитесь следующего")
+		return false
+	}
+	// Claim the step before acting, so a replayed code cannot drive the action twice.
+	claimed, err := rt.mgr.Store().MarkAdminTOTPStep(id, step)
+	if err != nil {
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+		return false
+	}
+	if !claimed {
+		writeErrCode(w, http.StatusForbidden, "err.totpUsed", "этот код уже использован — дождитесь следующего")
+		return false
+	}
+	return true
 }
 
 // verifyAdminPassword checks the current admin password (step-up for sensitive

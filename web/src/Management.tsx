@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { AppLogs } from "./AppLogs";
 import { getBackupInfo, resetPanel, restartPanel } from "./api";
+import { EMPTY_STEP_UP, type StepUp, StepUpFields, stepUpReady, useTotpEnabled } from "./stepup";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError } from "./notify";
 import {
@@ -110,11 +111,12 @@ const sqBtn =
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {
   const { t } = useTranslation();
+  const totpEnabled = useTotpEnabled();
   const { data: info } = useFetch(getBackupInfo);
   const [logsOpen, setLogsOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetPw, setResetPw] = useState("");
+  const [resetCreds, setResetCreds] = useState<StepUp>(EMPTY_STEP_UP);
   const [restorePw, setRestorePw] = useState("");
   const [resetting, setResetting] = useState(false);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
@@ -126,13 +128,13 @@ export function ManagementCard() {
 
   const closeReset = () => {
     setResetOpen(false);
-    setResetPw("");
+    setResetCreds(EMPTY_STEP_UP);
   };
 
   const doReset = async () => {
     setResetting(true);
     try {
-      const { url } = await resetPanel(resetPw);
+      const { url } = await resetPanel(resetCreds.password, resetCreds.code);
       closeReset();
       setResetUrl(url || `${window.location.origin}/rospanel/`);
     } catch (e) {
@@ -300,15 +302,10 @@ export function ManagementCard() {
             components={{ c: <code /> }}
           />
         </p>
-        {/* The panel re-asks for the password: a reset is irreversible, so a session
-            cookie alone must not be enough to trigger it. */}
-        <div className="mt-3">
-          <PasswordInput
-            label={t("creds.currentPassword")}
-            value={resetPw}
-            onChange={setResetPw}
-          />
-        </div>
+        {/* The panel re-asks for the password — and for a fresh authenticator code
+            when this admin has one: a reset is irreversible, so a session cookie alone
+            must not be enough to trigger it. */}
+        <StepUpFields value={resetCreds} onChange={setResetCreds} />
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" color="gray" size="sm" onClick={closeReset}>
             {t("common.cancel")}
@@ -318,7 +315,7 @@ export function ManagementCard() {
             color="red"
             size="sm"
             loading={resetting}
-            disabled={!resetPw}
+            disabled={!stepUpReady(resetCreds, totpEnabled)}
             onClick={doReset}
           >
             {t("manage.resetConfirm")}
