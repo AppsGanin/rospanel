@@ -18,8 +18,8 @@ import (
 // tab, which is where a subscription page tends to live.
 func TestPageFaviconUsesTheBrandingLogo(t *testing.T) {
 	u := model.User{Name: "u", SubToken: "tok"}
-	html, err := Page(u, One(&model.Settings{Host: "vpn.example.com", SubPath: "sub"}),
-		Billing{}, Devices{}, true, i18n.RU)
+	set := &model.Settings{Host: "vpn.example.com", SubPath: "sub"}
+	html, err := Page(u, set, One(set), Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestPageFaviconUsesTheBrandingLogo(t *testing.T) {
 func TestPageSelfHostsFonts(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPageSelfHostsFonts(t *testing.T) {
 func TestPageFontURLsAreAllEmbedded(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, One(set), Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), Billing{}, Devices{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

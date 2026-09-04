@@ -487,7 +487,7 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 	if err != nil {
 		return fmt.Errorf("%w: %w", errSubUnavailable, err)
 	}
-	html, err := sub.Page(u, servers, rt.buildBilling(u, set, lang),
+	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang),
 		rt.buildDevices(u, set, lang), showDownload, lang)
 	if err != nil {
 		return err

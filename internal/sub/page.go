@@ -311,31 +311,38 @@ func subStatus(s string, lang i18n.Lang) (label, class string) {
 
 // Page renders the human-facing subscription page (usage stats, QR of the sub
 // URL, copy button, per-client import buttons, and the raw links).
-// Page renders the human-facing subscription page. sets spans every server the
-// user is on — the local one plus each enabled node — so the "individual configs"
-// list shows one labelled entry per protocol × server (with a single server it's
-// unchanged). sets[0] is the local server, used for the sub URL, branding and
-// billing.
-func Page(u model.User, servers []Server, billing Billing, devices Devices, showDownload bool, lang i18n.Lang) ([]byte, error) {
+//
+// servers spans every server the user is on — the local one plus each enabled node
+// — so the "individual configs" list shows one labelled entry per protocol × server
+// (with a single server it's unchanged). local is the panel's own settings, and
+// everything about the panel rather than about a server reads from it: the sub URL
+// behind the QR and the copy button, the AmneziaWG download links, the branding.
+// It is passed rather than taken from servers[0] because the ordering decides what
+// lands there — a node comes first by weight, by distance or by load, and the master
+// leaves the list entirely once it is full with hide-when-full set. Every one of
+// those would have addressed the panel's own links at a node, which serves none of
+// them.
+func Page(u model.User, local *model.Settings, servers []Server, billing Billing, devices Devices, showDownload bool, lang i18n.Lang) ([]byte, error) {
 	if len(servers) == 0 {
 		return nil, fmt.Errorf("no settings for subscription page")
 	}
-	set := servers[0].Set
-	subURL := URL(set, u.SubToken)
+	subURL := URL(local, u.SubToken)
 	used := u.UsedUp + u.UsedDown
 
 	// Only lanes enabled in the Connections panel appear on the page, across every
 	// server: the built-in ones first, then that server's custom inbounds. The label
 	// carries the node name (Settings.ProtoLabel / link.CustomLabel), so a multi-node
 	// user can tell the entries apart.
-	var protoLinks []protoLink
+	var protoLinks, extLinks []protoLink
 	var awgCards []awgCard
 	for _, srv := range servers {
 		s := srv.Set
 		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
 			awgCards = append(awgCards, awgCard{
-				Label:   s.ProtoLabel(model.ProtoAWG),
-				ConfURL: AWGConfURL(s, u.SubToken, s.ServerID),
+				Label: s.ProtoLabel(model.ProtoAWG),
+				// The label names the server whose tunnel this is, but the config
+				// itself is downloaded from the panel — the node hosts no /sub path.
+				ConfURL: AWGConfURL(local, u.SubToken, s.ServerID),
 				QRURL:   fmt.Sprintf("%s/awg/%d.png", subURL, s.ServerID),
 			})
 		}
@@ -356,18 +363,26 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 				protoLinks = append(protoLinks, protoLink{link.CustomLabel(in, s), l})
 			}
 		}
+		// External servers are not ours: the link is theirs and so is the label. They
+		// hang off whichever entry carries them for the whole subscription, so they are
+		// gathered here and appended once the servers are done — last, and in the order
+		// the link list has them.
+		for _, e := range srv.externalEndpoints() {
+			extLinks = append(extLinks, protoLink{e.Name, e.Link})
+		}
 	}
+	protoLinks = append(protoLinks, extLinks...)
 
 	statusLabel, statusClass := subStatus(u.Status, lang)
 	// A custom panel name is the operator's own text and passes through verbatim;
 	// only the stock name is localised, so an English page does not announce itself
 	// in Russian in the <title> and the header.
-	brandName := branding.Name(set.PanelName)
+	brandName := branding.Name(local.PanelName)
 	isDefault := brandName == branding.DefaultName
 	if isDefault {
 		brandName = i18n.T(lang, "sub.defaultBrand")
 	}
-	theme := branding.ParseTheme(set.PanelTheme)
+	theme := branding.ParseTheme(local.PanelTheme)
 	data := pageData{
 		L:           text(lang),
 		Name:        u.Name,
@@ -402,7 +417,7 @@ func Page(u model.User, servers []Server, billing Billing, devices Devices, show
 		// identified itself. Anyone holding the subscription URL could fetch the page
 		// with a browser Accept header, copy the links and use them from any number of
 		// devices, with no slot consumed and the HWID roster none the wiser.
-		ShowConfigs:  set.SubShowConfigs && showDownload,
+		ShowConfigs:  local.SubShowConfigs && showDownload,
 		ShowDownload: showDownload,
 	}
 	if u.DataLimit > 0 {
