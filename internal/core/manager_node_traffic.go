@@ -24,9 +24,9 @@ import (
 // hour. The node watch loop already runs on that cadence and already raises the other
 // per-server alerts, so it owns the refresh.
 
-// nodeTrafficUsage is one server's answer: bytes carried in the current period, and
-// whether that has reached its cap.
-type nodeTrafficUsage struct {
+// NodeTrafficUsage is one server's answer: bytes carried in the current period, and
+// whether that has reached its cap. Exported because NodeViews hands it to the API.
+type NodeTrafficUsage struct {
 	Used int64
 	Over bool
 }
@@ -34,10 +34,10 @@ type nodeTrafficUsage struct {
 // nodeTrafficCache is the whole fleet's answer, replaced wholesale on each refresh.
 type nodeTrafficCache struct {
 	mu   sync.RWMutex
-	byID map[int64]nodeTrafficUsage
+	byID map[int64]NodeTrafficUsage
 }
 
-func (c *nodeTrafficCache) get(id int64) nodeTrafficUsage {
+func (c *nodeTrafficCache) get(id int64) NodeTrafficUsage {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.byID[id]
@@ -55,7 +55,7 @@ func (c *nodeTrafficCache) overSet() map[int64]bool {
 	return out
 }
 
-func (c *nodeTrafficCache) replace(v map[int64]nodeTrafficUsage) {
+func (c *nodeTrafficCache) replace(v map[int64]NodeTrafficUsage) {
 	c.mu.Lock()
 	c.byID = v
 	c.mu.Unlock()
@@ -74,7 +74,7 @@ func trafficPeriodStart(period string, now time.Time) string {
 // NodeTrafficUsage reports what one server has carried in its cap period and whether
 // it is over. A server with no cap reports its month-to-date usage and Over false, so
 // the UI can show the figure before a cap is ever set.
-func (m *Manager) NodeTrafficUsage(id int64) nodeTrafficUsage { return m.nodeTraffic.get(id) }
+func (m *Manager) NodeTrafficUsage(id int64) NodeTrafficUsage { return m.nodeTraffic.get(id) }
 
 // ServersOverTrafficLimit is the set of servers that have reached their cap. It is a
 // fact, not a decision: whether being over means dropping out of a subscription is the
@@ -102,8 +102,17 @@ func (m *Manager) refreshNodeTraffic() {
 	// Placements keyed by server, master included. The master is not in ListNodes —
 	// it is the virtual node 0 whose placement lives in settings.
 	places := map[int64]model.Placement{model.LocalNodeID: set.MasterPlacement}
+	// Which of them may raise an alarm. A node that is switched off or was never
+	// installed is not carrying traffic and is not the operator's problem — the same
+	// judgement the outage sweep makes, and the same reason: it also FORGETS that
+	// node's alert state, so alerting on it here would re-announce the identical
+	// condition on every tick, forever. The master is always alertable; it is the
+	// panel. Usage is still computed for everyone, because the server card shows the
+	// figure whether or not the server is currently serving.
+	alertable := map[int64]bool{model.LocalNodeID: true}
 	for i := range nodes {
 		places[nodes[i].ID] = nodes[i].Placement
+		alertable[nodes[i].ID] = nodes[i].Enabled && nodes[i].Joined()
 	}
 
 	// One query per distinct period rather than per server: with everything on the
@@ -116,37 +125,59 @@ func (m *Manager) refreshNodeTraffic() {
 		}
 		totals, err := m.store.NodeTrafficTotals(0, from, today)
 		if err != nil {
-			logErr("node traffic: cannot total", "from", from, "err", err)
-			continue
+			// Keep the previous answer rather than publishing zeros. A missing sum
+			// reads as "this server has carried nothing", which un-hides every capped
+			// server at once AND sends an all-clear for an allowance that has not come
+			// back — then re-alerts on the next successful pass. One transient SQLite
+			// error is not worth that.
+			logErr("node traffic: cannot total, keeping the previous figures", "from", from, "err", err)
+			return
 		}
 		sums[from] = totals
 	}
 
-	out := make(map[int64]nodeTrafficUsage, len(places))
+	out := make(map[int64]NodeTrafficUsage, len(places))
 	for id, p := range places {
 		totals := sums[trafficPeriodStart(p.TrafficPeriod, now)]
 		t := totals[id]
 		used := t[0] + t[1]
-		out[id] = nodeTrafficUsage{Used: used, Over: p.OverTrafficLimit(used)}
+		out[id] = NodeTrafficUsage{Used: used, Over: p.OverTrafficLimit(used)}
 	}
 	m.nodeTraffic.replace(out)
-	m.sweepNodeTrafficAlerts(places, out)
+	m.sweepNodeTrafficAlerts(places, out, alertable)
 }
 
 // sweepNodeTrafficAlerts tells admins when a server crosses its cap, and again when
 // the period rolls over and it has room. One alert per crossing, not one per sweep.
-func (m *Manager) sweepNodeTrafficAlerts(places map[int64]model.Placement, usage map[int64]nodeTrafficUsage) {
+func (m *Manager) sweepNodeTrafficAlerts(places map[int64]model.Placement, usage map[int64]NodeTrafficUsage, alertable map[int64]bool) {
 	lang := m.botLang()
 	type pending struct{ html string }
 	var msgs []pending
 
+	// Labels are resolved BEFORE the lock: naming a server reads the database, and
+	// nodeAlertMu is also taken on the node sync path (NoteNodeCertError). Holding it
+	// across I/O would let a stalled database block node syncs.
+	labels := make(map[int64]string, len(places))
+	for id, p := range places {
+		if p.TrafficCapped() && alertable[id] {
+			labels[id] = escHTML(m.serverLabel(id))
+		}
+	}
+
 	m.nodeAlertMu.Lock()
 	for id, p := range places {
+		if !alertable[id] {
+			continue
+		}
 		u := usage[id]
 		if !p.TrafficCapped() {
-			// No cap: forget any alarm, so re-adding one later starts clean rather
-			// than silently believing the operator was already told.
-			m.nodeAlertLocked(id).trafficAlerted = false
+			// No cap: forget any alarm, so re-adding one later starts clean rather than
+			// silently believing the operator was already told. Only for a server that
+			// HAS state — creating one here would resurrect the entry the outage sweep
+			// deliberately forgot for a disabled or uninstalled node.
+			if st := m.nodeAlerts[id]; st != nil {
+				st.trafficAlerted = false
+			}
 			continue
 		}
 		st := m.nodeAlertLocked(id)
@@ -154,12 +185,12 @@ func (m *Manager) sweepNodeTrafficAlerts(places map[int64]model.Placement, usage
 		case u.Over && !st.trafficAlerted:
 			st.trafficAlerted = true
 			msgs = append(msgs, pending{fmt.Sprintf(i18n.T(lang, "notify.nodeTrafficOver"),
-				m.serverLabel(id), humanBytes(u.Used), humanBytes(p.TrafficLimit),
+				labels[id], humanBytes(u.Used), humanBytes(p.TrafficLimit),
 				i18n.T(lang, trafficPeriodKey(p.TrafficPeriod)))})
 		case !u.Over && st.trafficAlerted:
 			st.trafficAlerted = false
 			msgs = append(msgs, pending{fmt.Sprintf(i18n.T(lang, "notify.nodeTrafficBack"),
-				m.serverLabel(id), humanBytes(u.Used), humanBytes(p.TrafficLimit))})
+				labels[id], humanBytes(u.Used), humanBytes(p.TrafficLimit))})
 		}
 	}
 	m.nodeAlertMu.Unlock()
@@ -179,6 +210,11 @@ func trafficPeriodKey(period string) string {
 
 // serverLabel names a server for an alert: the master by its configured label, a node
 // by its name. Falls back to the id, which is still enough to act on.
+//
+// Returns the RAW name — callers escape it. Admin messages are sent with HTML parse
+// mode and a server name is operator input, so an unescaped "DE <fast> & cheap" makes
+// Telegram reject the whole message: the alert is dropped, and the one alert an
+// operator must not silently lose is the one about their bill.
 func (m *Manager) serverLabel(id int64) string {
 	if id == model.LocalNodeID {
 		if set, err := m.store.GetSettings(); err == nil && set.MasterLabel != "" {

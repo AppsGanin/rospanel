@@ -1479,16 +1479,23 @@ func (s *Settings) DecorateName(name string, u *User) string { return s.decorate
 // "{flag} {server} VLESS" has said where the server goes, and prefixing on top of that
 // produces "Netherlands · 🇳🇱 Netherlands VLESS".
 func (s *Settings) decorate(name string, u *User) string {
-	server := s.NodeLabel
-	if server == "" {
-		server = s.MasterLabel
+	rendered := name
+	// Resolving the timezone means reading the zone database, and this runs once per
+	// lane per server on every subscription request — so it happens only for a name
+	// that actually asks for a date. A plain name (every install that never touches
+	// this feature) does no work here at all.
+	if UsesNameVars(name) {
+		server := s.NodeLabel
+		if server == "" {
+			server = s.MasterLabel
+		}
+		rendered = RenderName(name, NameVars{
+			Server:  server,
+			Country: s.ServerPlacement.Country,
+			User:    u,
+			Loc:     s.Location(),
+		})
 	}
-	rendered := RenderName(name, NameVars{
-		Server:  server,
-		Country: s.ServerPlacement.Country,
-		User:    u,
-		Loc:     s.Location(),
-	})
 	// Multi-node: prefix with the server name so a client shows "Netherlands · VLESS"
 	// — server first, then protocol.
 	if s.NodeLabel != "" && !HasNameVar(name, NameVarServer) {
