@@ -15,7 +15,7 @@ import {
   type PaymentProvider,
   type TariffPlan,
 } from "./api";
-import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, speedLimitOptions } from "./format";
+import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, resetPeriods, speedLimitOptions } from "./format";
 import { useAction } from "./hooks";
 import i18n, { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -251,6 +251,7 @@ const EMPTY_PLAN = (): TariffPlan => ({
   data_limit: 0,
   device_limit: 0,
   speed_limit: 0,
+  reset_period: "",
   sort_order: 0,
   enabled: true,
   group_ids: [],
@@ -304,8 +305,28 @@ function planSummary(p: TariffPlan): string {
   // Only when the plan promises one: "unlimited speed" is the norm and would just
   // make every summary longer.
   if (p.speed_limit > 0) parts.push(fmtSpeed(p.speed_limit));
+  // Same rule: the derived cycle is the norm, only an explicit one is news.
+  if (p.reset_period && p.data_limit) {
+    parts.push(i18n.t("bill.resetSummary", { period: resetLabel(p.reset_period) }));
+  }
   return parts.join(" · ");
 }
+
+// resetLabel renders a plan's explicit cycle with the same words the user card
+// uses for the same value.
+function resetLabel(period: string): string {
+  const hit = resetPeriods().find((o) => o.value === period);
+  return hit ? hit.label.toLowerCase() : period;
+}
+
+// planResetOptions are the cycles a plan may carry. The first entry is the derived
+// default and reads differently for a free plan (refill every duration) and a paid
+// one (the quota covers the whole period) — the server decides which, this only
+// tells the operator what leaving it blank means.
+const planResetOptions = (free: boolean) => [
+  { value: "", label: i18n.t(free ? "bill.resetAutoFree" : "bill.resetAutoPaid") },
+  ...resetPeriods().filter((o) => o.value !== "none"),
+];
 
 function PlanForm({
   plan,
@@ -409,7 +430,17 @@ function PlanForm({
           value={String(plan.speed_limit)}
           onChange={(v) => patch({ speed_limit: Number(v) })}
         />
+        {/* A cycle needs a quota to refill; without one the choice is meaningless
+            and the server ignores it, so the control says so instead of pretending. */}
+        <Select
+          label={t("bill.resetPeriod")}
+          data={planResetOptions(isFree)}
+          value={plan.data_limit ? plan.reset_period : ""}
+          disabled={!plan.data_limit}
+          onChange={(v) => patch({ reset_period: v })}
+        />
       </div>
+      <p className="text-xs text-ink-muted">{t("bill.resetHint")}</p>
       {/* Access groups: the plan decides WHICH connections its users may reach, not
           only how much traffic. Ticking nothing keeps the plan silent about access —
           the historical behaviour, and what every existing plan has. */}

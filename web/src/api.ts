@@ -1633,6 +1633,9 @@ export interface TariffPlan {
   data_limit: number
   device_limit: number
   speed_limit: number // kbit/s, 0 = unlimited
+  // The plan's own quota-refill cycle: daily | weekly | monthly | yearly, or "" for
+  // the derived default (free: every plan duration; paid: none inside the period).
+  reset_period: string
   sort_order: number
   enabled: boolean
   // Access groups the plan grants: whoever is put on the plan joins these groups and

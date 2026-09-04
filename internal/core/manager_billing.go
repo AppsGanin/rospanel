@@ -79,6 +79,15 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
 			map[string]any{"max": model.MaxDeviceLimit})
 	}
+	// "none" and "" both mean the derived default; storing one spelling keeps the
+	// "did it change" comparison below honest.
+	p.ResetPeriod = strings.TrimSpace(p.ResetPeriod)
+	if p.ResetPeriod == "none" {
+		p.ResetPeriod = ""
+	}
+	if p.ResetPeriod != "" && !model.ValidPlanResetPeriod(p.ResetPeriod) {
+		return invalidCode("err.badResetPeriod", "неверный период сброса {{value}}", map[string]any{"value": p.ResetPeriod})
+	}
 	// Access groups the plan grants. Unknown ids are dropped rather than rejected: a
 	// group deleted while the editor was open would otherwise make the plan unsavable,
 	// and the FK would fail the whole write anyway.
@@ -95,10 +104,16 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	// Whether the speed cap moved decides if the plan's existing subscribers have to
 	// be re-stamped — see below.
 	respeed := false
+	// Whether the refill cycle moved — same treatment as the cap, see below. The
+	// derived default depends on the price and the duration too, so those count.
+	recycle := false
+	freePlan := p.IsFree() && p.ID != set.BillingTrialPlanID
 	if p.ID > 0 {
 		prev, err := m.store.GetTariffPlan(p.ID)
 		regroup = err != nil || prev == nil || !sameIDs(prev.GroupIDs, p.GroupIDs)
 		respeed = err != nil || prev == nil || prev.SpeedLimit != p.SpeedLimit
+		recycle = err != nil || prev == nil ||
+			planResetPeriod(prev, prev.IsFree() && prev.ID != set.BillingTrialPlanID) != planResetPeriod(p, freePlan)
 	}
 	if err := m.store.SaveTariffPlan(p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -129,6 +144,23 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 				"plan", p.ID, "users", n, "kbps", p.SpeedLimit)
 			go m.ApplyShaping()
 			m.TriggerUserSync() // nodes shape from the limits in their sync payload
+		}
+	}
+	if recycle {
+		// The refill cycle has the same shape as the cap: a policy value with no side
+		// effects of its own (the sweep zeroes the counter only when a boundary rolls),
+		// so it reaches existing subscribers too — "this tariff refills monthly" is a
+		// statement about the tariff, not about the next purchase. Anchored at now: for
+		// a calendar cycle the next refill lands on the next boundary either way, and
+		// a rolling days:N restarts its count.
+		period := planResetPeriod(p, freePlan)
+		n, err := m.store.SetPlanUsersResetPeriod(p.ID, period, time.Now().Unix())
+		if err != nil {
+			logErr("billing: applying the plan's reset period to its users failed",
+				"plan", p.ID, "err", err)
+		} else if n > 0 {
+			logInfo("billing: plan reset period applied to existing users",
+				"plan", p.ID, "users", n, "period", period)
 		}
 	}
 	return nil
@@ -484,24 +516,36 @@ func (m *Manager) createBareUser(name string) (*model.User, error) {
 // which is what keeps the several columns a plan touches from landing separately.
 // PlanID is filled in here; TrialUsed is the caller's to set.
 func planLimits(userID int64, plan *model.TariffPlan, expireAt int64, freeReset bool, now int64) store.UserPlanWrite {
-	period := "none"
-	if freeReset && plan.DataLimit > 0 && plan.PeriodDays > 0 {
-		// Free plan: refill the quota every plan duration (rolling N-day cycle),
-		// not on a fixed calendar month. A free plan with no duration (PeriodDays 0)
-		// never resets — its quota is one-time.
-		period = fmt.Sprintf("days:%d", plan.PeriodDays)
-	}
 	return store.UserPlanWrite{
 		UserID:      userID,
 		DataLimit:   plan.DataLimit,
 		ExpireAt:    expireAt,
 		DeviceLimit: plan.DeviceLimit,
 		SpeedLimit:  plan.SpeedLimit,
-		ResetPeriod: period,
+		ResetPeriod: planResetPeriod(plan, freeReset),
 		ResetAnchor: now,
 		PlanID:      plan.ID,
 		GroupIDs:    plan.GroupIDs,
 	}
+}
+
+// planResetPeriod is the users.reset_period a plan implies. The plan's own cycle
+// wins when it has one; otherwise the derived default: a free plan refills every
+// plan duration (a rolling N-day cycle, not a calendar month), a paid one runs its
+// quota over the whole period bought. No cycle at all without a quota to refill —
+// an unlimited plan on "monthly" would only zero counters and write an audit row
+// every month for nothing — and a free plan with no duration (PeriodDays 0) never
+// resets either: its quota is one-time.
+func planResetPeriod(plan *model.TariffPlan, freeReset bool) string {
+	switch {
+	case plan.DataLimit <= 0:
+		return "none"
+	case plan.ResetPeriod != "":
+		return plan.ResetPeriod
+	case freeReset && plan.PeriodDays > 0:
+		return fmt.Sprintf("days:%d", plan.PeriodDays)
+	}
+	return "none"
 }
 
 // planGroupsChanged reports whether writing w actually moves the user's group
@@ -667,13 +711,15 @@ func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, pa
 	// a free refill (see TestSamePlanKeepsUsage). Manual mode (planID 0) grants no
 	// quota at all and is handled above.
 	//
-	// A purchase is different, and paidPeriod marks it: a paid plan carries no rolling
-	// refill (planLimits gives it ResetPeriod "none"), so its quota is tied to the
+	// A purchase is different, and paidPeriod marks it: by default a paid plan carries
+	// no rolling refill (planResetPeriod gives it "none"), so its quota is tied to the
 	// period the money buys. Without this the one path that never refills is the one
 	// the user pays for — burn the quota mid-period, press "продлить", and the payment
 	// buys fresh time on a spent counter, leaving WorkingUsers to filter the user out
-	// (used >= data_limit) with the money taken. A free plan is excluded: its days:N
-	// cycle already refills it.
+	// (used >= data_limit) with the money taken. A paid plan WITH its own cycle
+	// (monthly, say) still gets the fresh counter on purchase: money taken must mean
+	// access now, not on the 1st. A free plan is excluded: its days:N cycle already
+	// refills it, and nothing is bought.
 	if u.PlanID != plan.ID || (paidPeriod && !freePlan && plan.DataLimit > 0) {
 		w.ResetUsage = true
 		w.LastUp, w.LastDown = m.liveCounter(u.ID)

@@ -402,14 +402,17 @@ from the UI with SHA256 verification.
 
 #### 💳 Plans and payments (optional)
 
-**Plans**: price, duration, traffic and device limits; price 0 makes a free plan. There's a
-trial period, a free fallback plan for expired users, renewals and user migration between
-plans. **Payment acceptance** — pick a provider: **YooKassa**, **PayPalych**, **RioPay**,
-**RollyPay**, **SeverPay**, **Platega**, **PayPear**, **AuraPay** (cards, SBP, ₽),
-**CryptoBot** and **Heleket** (crypto). The client pays in the bot or on the subscription
-page, and the plan **activates itself**. A webhook confirms it (signature verified), polling
-covers the case where the webhook never arrives; processing is idempotent and the amount is
-checked against the order. With no provider configured, an admin confirms payments manually.
+**Plans**: price, duration, traffic and device limits; price 0 makes a free plan. A plan can
+carry its own **traffic refill cycle** (daily / weekly / monthly / yearly) for tariffs like
+"100 GB a month, paid for a year"; left blank, a paid plan's quota covers the whole term and
+a free plan refills every term. There's a trial period, a free fallback plan for expired
+users, renewals and user migration between plans. **Payment acceptance** — pick a provider:
+**YooKassa**, **PayPalych**, **RioPay**, **RollyPay**, **SeverPay**, **Platega**, **PayPear**,
+**AuraPay** (cards, SBP, ₽), **CryptoBot** and **Heleket** (crypto). The client pays in the
+bot or on the subscription page, and the plan **activates itself**. A webhook confirms it
+(signature verified), polling covers the case where the webhook never arrives; processing is
+idempotent and the amount is checked against the order. With no provider configured, an admin
+confirms payments manually.
 
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected

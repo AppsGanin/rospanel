@@ -162,7 +162,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 			body: map[string]any{
 				"name": "Landed", "slug": "landed", "price_rub": float64(499),
 				"period_days": float64(31), "data_limit": float64(1 << 30),
-				"device_limit": float64(5), "speed_limit": float64(2048),
+				"device_limit": float64(5), "speed_limit": float64(2048), "reset_period": "monthly",
 				"sort_order": float64(3), "enabled": true, "group_ids": []any{},
 			},
 			// id picks create from update; a create is told to leave it out.
@@ -177,7 +177,8 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"name": p.Name, "slug": p.Slug, "price_rub": float64(p.PriceRub),
 					"period_days": float64(p.PeriodDays), "data_limit": float64(p.DataLimit),
 					"device_limit": float64(p.DeviceLimit), "speed_limit": float64(p.SpeedLimit),
-					"sort_order": float64(p.SortOrder), "enabled": p.Enabled,
+					"reset_period": p.ResetPeriod,
+					"sort_order":   float64(p.SortOrder), "enabled": p.Enabled,
 					"group_ids": len(p.GroupIDs) == 0,
 				}
 			},

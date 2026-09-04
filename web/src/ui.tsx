@@ -878,6 +878,7 @@ export function Select({
   searchable,
   placeholder,
   className,
+  disabled,
 }: {
   label?: string
   value: string
@@ -886,6 +887,9 @@ export function Select({
   searchable?: boolean
   placeholder?: string
   className?: string
+  // A disabled select still shows its current value — the point is to say "this
+  // does not apply right now", not to hide what it would be.
+  disabled?: boolean
 }) {
   const { t } = useTranslation()
   placeholder = placeholder ?? t('common.select')
@@ -906,8 +910,9 @@ export function Select({
       <button
         ref={ref}
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={cn(triggerCls, className)}
+        className={cn(triggerCls, disabled && 'cursor-not-allowed opacity-60 hover:border-gray-300', className)}
       >
         <span className={cn('truncate', !current && 'text-gray-400')}>
           {current ? current.label : placeholder}

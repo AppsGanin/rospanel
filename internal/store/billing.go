@@ -21,10 +21,26 @@ func (s *Store) SetPlanUsersSpeedLimit(planID int64, kbps int) (int64, error) {
 	return n, nil
 }
 
+// SetPlanUsersResetPeriod stamps a plan's quota-reset cycle onto every user currently
+// on it, anchoring the cycle at now for the rows it changes, and returns how many
+// changed. The cycle is a policy value like the speed cap — it moves no date and
+// zeroes no counter — so it is retroactive for the same reason (Manager.SaveTariffPlan).
+func (s *Store) SetPlanUsersResetPeriod(planID int64, period string, now int64) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE users SET reset_period = ?, last_reset_at = ?
+		  WHERE plan_id = ? AND reset_period != ?`,
+		period, now, planID, period)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             speed_limit, sort_order, enabled
+	             speed_limit, reset_period, sort_order, enabled
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -35,7 +51,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		speed_limit, sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
+		speed_limit, reset_period, sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -57,18 +73,18 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 		if p.ID == 0 {
 			if err := tx.QueryRow(
 				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-				 speed_limit, is_free, sort_order, enabled)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				 speed_limit, reset_period, is_free, sort_order, enabled)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-				p.SpeedLimit, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
+				p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
 			).Scan(&p.ID); err != nil {
 				return err
 			}
 		} else if _, err := tx.Exec(
 			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
-			 device_limit=?, speed_limit=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
+			 device_limit=?, speed_limit=?, reset_period=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-			p.SpeedLimit, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
+			p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
 		); err != nil {
 			return err
 		}
@@ -241,7 +257,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 		var en int
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
-			&p.SpeedLimit, &p.SortOrder, &en,
+			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en,
 		); err != nil {
 			return nil, err
 		}
