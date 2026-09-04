@@ -52,14 +52,14 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 	}
 	var out []clashProxy
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
-		n := link.Label(model.ProtoVLESS, set)
+		n := link.LabelFor(model.ProtoVLESS, u, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, udp: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
 			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
 	}
 	// No public key, no dialable lane — see ShareLinks.
 	if set.RealityEnabled && set.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
-		n := link.Label(model.ProtoReality, set)
+		n := link.LabelFor(model.ProtoReality, u, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, udp: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
 			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityPathOr())})
@@ -69,7 +69,7 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 		if set.HopEnd > set.HysteriaPort {
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", model.HopAdvertised(set.HysteriaPort, set.HopStart), set.HopEnd))
 		}
-		n := link.Label(model.ProtoHysteria, set)
+		n := link.LabelFor(model.ProtoHysteria, u, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
 			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
 			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop, clashObfs(set.HysteriaObfs))})
@@ -111,7 +111,7 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 		return clashProxy{}, false
 	}
 	o := in.Opts
-	n := link.CustomLabel(in, set)
+	n := link.CustomLabelFor(in, u, set)
 
 	if in.Protocol == model.InbHysteria {
 		hop := ""

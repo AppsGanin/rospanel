@@ -304,7 +304,12 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 // between them would let one surface accept what the other rejects.
 //
 // It is an allowlist, and what it keeps out is the punctuation that would break the
-// documents the name is embedded in: quotes, colons and braces. Emoji are none of
+// documents the name is embedded in: quotes and colons. Braces are IN, because a name
+// may carry the variables in nametmpl.go ("{flag} {left}") — they are expanded before
+// the name reaches any document, and a brace that survives (an unknown variable, kept
+// verbatim on purpose) is escaped by every surface that renders it. The middle dot is
+// in for the same reason: it is the separator the panel's own "<server> · <lane>"
+// prefix uses, so a name that places {server} itself has to be able to spell it. Emoji are none of
 // those and are explicitly in — a flag is how an operator labels a location, and
 // every format the name reaches handles it (Clash quotes with %q, sing-box goes
 // through encoding/json, and a share link percent-escapes its fragment).
@@ -313,7 +318,7 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 // symbols, which are category So, and the rest of the emoji machinery — skin tones,
 // ZWJ sequences, variation selectors — is spread across categories that \p{So}
 // alone does not cover.
-var LaneNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.()\-` +
+var LaneNameRe = regexp.MustCompile(`^[\p{L}\p{N} _.(){}·\-` +
 	`\p{So}` + // emoji proper, and both halves of a flag
 	`\x{1F3FB}-\x{1F3FF}` + // skin-tone modifiers (category Sk)
 	`\x{200D}\x{FE0E}\x{FE0F}\x{20E3}` + // ZWJ, variation selectors, keycap
@@ -644,7 +649,7 @@ func (in *Inbound) Validate() error {
 		return fieldErr("err.inboundNameTooLong2", "название подключения не длиннее 32 символов")
 	}
 	if !LaneNameRe.MatchString(in.Name) {
-		return fieldErr("err.inboundNameCharset2", "недопустимое название {{name}} (буквы, цифры, эмодзи, пробел, . _ - ( ))", map[string]any{"name": in.Name})
+		return fieldErr("err.inboundNameCharset2", "недопустимое название {{name}} (буквы, цифры, эмодзи, переменные в фигурных скобках, пробел, . _ - ( ) ·)", map[string]any{"name": in.Name})
 	}
 	if lower := strings.ToLower(in.Name); lower == "auto" || lower == "direct" {
 		return fieldErr("err.inboundNameReserved", "название {{name}} зарезервировано — выберите другое", map[string]any{"name": in.Name})

@@ -337,6 +337,8 @@ func TestLaneNamesCarryEmoji(t *testing.T) {
 		"👋🏽 hi",         // skin-tone modifier (category Sk)
 		"👨‍👩‍👧 family",  // a ZWJ sequence
 		"⚠️ backup",     // variation selector
+		"{flag} Node",   // a name variable (nametmpl.go) — braces are part of the syntax
+		"{server} · {left}",
 	} {
 		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,
 			Opts: InboundOpts{Transport: TrTCP, Security: SecTLS}}
@@ -346,8 +348,9 @@ func TestLaneNamesCarryEmoji(t *testing.T) {
 		}
 	}
 	// The point of the allowlist is unchanged: what breaks a sing-box tag or a Clash
-	// node name stays out.
-	for _, name := range []string{`say "hi"`, "a:b", "{tpl}", "a,b", "back\\slash", "new\nline"} {
+	// node name stays out. Braces are no longer in this list — they are how a name
+	// variable is written, and they are expanded before the name reaches a document.
+	for _, name := range []string{`say "hi"`, "a:b", "a,b", "back\\slash", "new\nline"} {
 		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,
 			Opts: InboundOpts{Transport: TrTCP, Security: SecTLS}}
 		in.Normalize()

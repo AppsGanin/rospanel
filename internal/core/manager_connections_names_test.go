@@ -35,10 +35,16 @@ func TestValidateConnNames(t *testing.T) {
 		t.Fatal("expected clash with default label")
 	}
 
-	for _, bad := range []string{"auto", "direct", "bad\"quote", "no,comma", "a{b}"} {
+	for _, bad := range []string{"auto", "direct", "bad\"quote", "no,comma"} {
 		if _, err := validateConnNames(map[string]string{"vless": bad}, nil); err == nil {
 			t.Fatalf("expected rejection for %q", bad)
 		}
+	}
+
+	// A name carrying variables is a normal name here: the braces are syntax, and the
+	// value they stand for is decided per user when the subscription is rendered.
+	if _, err := validateConnNames(map[string]string{"vless": "{flag} VLESS ({left})"}, nil); err != nil {
+		t.Fatalf("a templated name was rejected: %v", err)
 	}
 
 	// A built-in lane may not be renamed onto a name a custom inbound already holds:
