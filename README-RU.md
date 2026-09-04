@@ -104,6 +104,7 @@ journalctl -u rospanel | grep -A6 FIRST-RUN
 docker run -d --name rospanel \
   --network host \
   --cap-add NET_ADMIN \
+  --device /dev/net/tun \
   -v rospanel-data:/data \
   ghcr.io/appsganin/rospanel:latest
 
@@ -113,7 +114,9 @@ docker logs rospanel | grep -A6 FIRST-RUN
 > [!NOTE]
 > `--network host` нужен, чтобы Xray слушал 443/TCP, 80/TCP и UDP-порты Hysteria2 напрямую;
 > `NET_ADMIN` — чтобы панель могла править правила фаервола: port-hopping и лимиты
-> соединений, бан за перебор (nftables).
+> соединений, бан за перебор (nftables). `--device /dev/net/tun` нужен лейну AmneziaWG,
+> чтобы поднять туннель: в контейнере TUN-устройства нет, и одной capability недостаточно.
+> Убирать флаг стоит, только если этот лейн вы не включаете.
 
 ### 🔑 Вход по умолчанию
 
@@ -169,6 +172,7 @@ services:
     command: node run
     network_mode: host          # Xray слушает 443/TCP, 80/TCP и UDP-порты Hysteria2
     cap_add: [NET_ADMIN]        # nftables: лимиты по IP, port hopping
+    devices: [/dev/net/tun]     # туннель AmneziaWG; можно убрать, если лейн выключен
     environment:
       ROSPANEL_JOIN: 'https://<панель>/<node-api-path>/v1/join#<токен>'
       # ROSPANEL_JOIN_INSECURE: "1"   # только если панель ещё на самоподписанном сертификате
@@ -237,7 +241,9 @@ rospanel node status                  # локальный статус
 случайный, а не 51820, который DPI узнаёт без всякого рукопожатия); пользователи получают конфиг
 файлом или QR на странице подписки и в своей карточке, а группы доступа, лимит устройств, учёт
 трафика и онлайн-статус работают с ним точно так же, как с протоколами Xray. Нужны
-`/dev/net/tun` и `CAP_NET_ADMIN` (у установленного сервиса они есть) и `nftables` для NAT.
+`/dev/net/tun` и `CAP_NET_ADMIN` (у установленного сервиса они есть; в Docker их нужно
+передать самому — `--device /dev/net/tun --cap-add NET_ADMIN`, контейнеру TUN-устройство
+по умолчанию не выдают) и `nftables` для NAT.
 
 #### 👤 Пользователи
 
