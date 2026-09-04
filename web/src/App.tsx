@@ -10,6 +10,7 @@ import { Agreement, agreementAccepted } from './Agreement'
 import { Donate } from './Donate'
 import { BrandProvider } from './brand'
 import { RoleProvider } from './role'
+import { TotpProvider } from './stepup'
 
 // 'password' is where a colleague lands at their first sign-in, still holding the
 // temporary password the owner gave them: the server refuses everything else until
@@ -37,6 +38,7 @@ function AppInner() {
   const [role, setRole] = useState<Role>('operator')
   const [version, setVersion] = useState('')
   const [billingEnabled, setBillingEnabled] = useState(false)
+  const [totpEnabled, setTotpEnabled] = useState(true)
   const [userBotEnabled, setUserBotEnabled] = useState(false)
   const [agreed, setAgreed] = useState(agreementAccepted)
   const [showAgreement, setShowAgreement] = useState(false)
@@ -49,6 +51,7 @@ function AppInner() {
         setRole(m.role)
         setVersion(m.version)
         setBillingEnabled(!!m.billing_enabled)
+        setTotpEnabled(m.totp_enabled !== false)
         setUserBotEnabled(!!m.user_bot_enabled)
         // The first-run wizard covers the owner's own password step, so it wins:
         // an install that hasn't been set up yet goes there, not to the bare
@@ -94,6 +97,7 @@ function AppInner() {
   } else {
     content = (
       <RoleProvider role={role}>
+        <TotpProvider enabled={totpEnabled}>
         <Dashboard
           username={username}
           version={version}
@@ -104,6 +108,7 @@ function AppInner() {
           onShowDonate={openDonate}
           onAccountChanged={check}
         />
+        </TotpProvider>
       </RoleProvider>
     )
   }

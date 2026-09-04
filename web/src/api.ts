@@ -278,6 +278,8 @@ export interface ConnectionsStatus {
   hop_start: number
   hop_end: number
   hop_interval: string
+  // Salamander pre-shared key for the built-in Hysteria2 lane ("" = obfuscation off).
+  hysteria_obfs: string
   reality_port: number
   reality_dest: string
   reality_public_key: string
@@ -307,6 +309,7 @@ export interface ConnectionsUpdate {
   hop_start: number
   hop_end: number
   hop_interval: string
+  hysteria_obfs: string
   reality_port: number
   reality_dest: string
   reality_anti_replay: boolean
@@ -421,10 +424,10 @@ export const restoreBackup = (file: File, currentPassword: string) =>
 // resetPanel wipes all state and restarts the panel into first-run mode. It
 // returns the URL the panel will come back on (auto-detected IP + default path),
 // which may differ from the current address (e.g. a custom domain).
-export const resetPanel = (currentPassword: string) =>
+export const resetPanel = (currentPassword: string, code: string) =>
   api<{ url: string }>('api/reset', {
     method: 'POST',
-    body: JSON.stringify({ current_password: currentPassword }),
+    body: JSON.stringify({ current_password: currentPassword, code }),
   })
 
 export const getConnections = () => api<ConnectionsStatus>('api/connections')
@@ -656,6 +659,9 @@ export interface Me {
   timezone: string
   version: string
   must_change_password?: boolean
+  // Whether this admin has an authenticator bound. Decides whether the irreversible
+  // actions ask for a code as well as a password (see stepup.tsx).
+  totp_enabled?: boolean
   billing_enabled?: boolean
   user_bot_enabled?: boolean
 }
@@ -2065,8 +2071,14 @@ export const setNodeEnabled = (id: number, enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   })
 
-export const deleteNode = (id: number) =>
-  api<{ ok: boolean }>(`api/nodes/${id}`, { method: 'DELETE' })
+// Deleting a server is irreversible and cuts off everyone on it, so it is re-authorised
+// like a factory reset. The credentials go in headers: a DELETE body is the kind of
+// thing proxies and clients feel free to drop.
+export const deleteNode = (id: number, currentPassword: string, code: string) =>
+  api<{ ok: boolean }>(`api/nodes/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-Current-Password': currentPassword, 'X-TOTP-Code': code },
+  })
 
 export const regenNodeJoin = (id: number) =>
   api<{ install_command: string }>(`api/nodes/${id}/regen-join`, {
@@ -2199,6 +2211,8 @@ export interface InboundOpts {
   hop_start?: number
   hop_end?: number
   hop_interval?: string
+  // Hysteria2 Salamander pre-shared key ("" / absent = no obfuscation).
+  obfs?: string
   // Shadowsocks-2022: the AEAD method. The server key is generated and never sent to
   // the client, so there is no field for it here.
   method?: string
@@ -2323,6 +2337,7 @@ export interface InboundInput {
   hop_start: number
   hop_end: number
   hop_interval: string
+  obfs: string
   header_type: string
   header_hosts: string[]
   header_paths: string[]
