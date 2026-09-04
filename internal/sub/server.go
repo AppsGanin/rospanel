@@ -20,8 +20,10 @@ type Server struct {
 	Custom []model.Inbound
 	Access model.Access
 	// External are servers that are not ours, handed on beside this server's own
-	// lanes (model.ExtServer). Only the master's entry carries them: they are a
-	// panel-level list, and the master is the server every subscription has.
+	// lanes (model.ExtServer). They are a panel-level list, so exactly one entry
+	// carries them for the whole subscription — the master where it survived the
+	// ordering, otherwise the first server that did. Nothing about the carrier
+	// reaches the output: an external server renders from its own fields alone.
 	External []model.ExtServer
 }
 

@@ -168,15 +168,21 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 	// Under the manual mode with no weights this is the old order, unchanged.
 	servers := sub.Servers(sets, custom, access)
 	ordered := sub.Order(servers, local.SubOrderMode, rt.mgr.CountryOfIP(clientIP), rt.mgr.OnlineByServer())
-	// External servers ride on the master's entry (the one every subscription has;
-	// the ordering may hide a node, never the master's own list of extras).
-	if ext := rt.mgr.EnabledExtServers(); len(ext) > 0 {
+	// External servers are the panel's, not any one server's, so they ride along on
+	// whichever entry survived the ordering — the master by preference, since that is
+	// where they have always appeared. It must not be *only* the master: the master
+	// drops out like anything else once it is full with hide-when-full set, and
+	// attaching to nothing at all silently took every external server down with it —
+	// for a plan whose grants are all external, the whole subscription.
+	if ext := rt.mgr.EnabledExtServers(); len(ext) > 0 && len(ordered) > 0 {
+		carrier := 0
 		for i := range ordered {
 			if ordered[i].Set.ServerID == model.LocalNodeID {
-				ordered[i].External = ext
+				carrier = i
 				break
 			}
 		}
+		ordered[carrier].External = ext
 	}
 	return ordered, nil
 }
