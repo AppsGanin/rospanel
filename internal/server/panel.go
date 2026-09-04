@@ -753,7 +753,13 @@ func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password 
 // every action inside the same 30 seconds. The cost is real and deliberate — two
 // destructive actions in one window need two codes — so the refusal says so.
 func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, password, code string) bool {
-	if !rt.verifyStepUp(w, r, password) {
+	// Deliberately NOT verifyStepUp: that one waives re-authentication entirely while
+	// the first-run wizard is unfinished, and "unfinished" is a state a panel can sit
+	// in forever — the wizard clears the forced password change several steps before it
+	// marks setup done, so an abandoned wizard leaves a working panel with the shortcut
+	// open. There is nothing to factory-reset or delete during first run anyway, so
+	// asking costs nothing and closes the window.
+	if !rt.verifyAdminPassword(w, r, password) {
 		return false
 	}
 	id, ok := rt.adminID(r)
@@ -784,6 +790,11 @@ func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, passw
 	// claim below is what actually settles a race between two requests.
 	step, ok := auth.VerifyTOTP(totp.Secret, code, time.Now(), 0)
 	if !ok {
+		// Counted against the lockout for the same reason the login counts it: six
+		// digits is a small space, and whoever is guessing here has already got past
+		// the password. The legitimate case costs nothing — a correct code never
+		// reaches this branch.
+		rt.limiter.fail(clientIP(r), "")
 		writeErrCode(w, http.StatusForbidden, "err.totpInvalid", "неверный код")
 		return false
 	}

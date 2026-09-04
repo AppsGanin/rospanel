@@ -22,7 +22,11 @@ scrape_configs:
       - targets: ['panel.example.com']
 ```
 
-A read-only key is enough — the endpoint only reads.
+**The key is not read-only.** The panel has no read-only API keys: any valid key opens
+the whole `/v1` surface, including creating and deleting users and servers. A
+`prometheus.yml` is a file that tends to be world-readable and committed to a config
+repo, so treat the key in it as the panel credential it is — restrict the file, keep it
+out of version control, and give the scrape its own key so it can be revoked on its own.
 
 ## What the panels expect
 

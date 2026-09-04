@@ -501,6 +501,7 @@ const ru = {
     snapshotNotFound: "снимок не найден",
     snapshotBad: "снимок повреждён",
     subTemplateTooBig: "шаблон {{format}}: не больше {{max}} КБ",
+    subTemplateTooDeep: "шаблон {{format}}: слишком много вставок или слишком глубокая вложенность",
     subTemplateNoSlot: "шаблон {{format}}: нет места для серверов — вставьте {{slot}} туда, где они должны быть",
     subTemplateInvalid: "шаблон {{format}}: {{err}}",
     subRuleField: "неизвестное поле правила {{value}}",

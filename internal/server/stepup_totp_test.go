@@ -121,6 +121,24 @@ func TestDeleteNodeWithoutTOTPNeedsOnlyThePassword(t *testing.T) {
 	}
 }
 
+// The first-run wizard waives the password step-up for ordinary settings, and that
+// waiver must NOT extend to the two irreversible actions: the wizard clears the forced
+// password change several steps before it marks setup done, so an abandoned wizard
+// would otherwise leave a working panel where a session cookie alone deletes servers.
+func TestIrreversibleActionsAreNotWaivedDuringSetup(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	// Deliberately NOT marking setup done.
+	cookie := signIn(t, st, "owner", model.RoleOwner, false)
+
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, nil); errCode != "err.wrongPassword" {
+		t.Errorf("node delete during setup: %d %s — want the password to be required", code, errCode)
+	}
+	body := `{"current_password":"wrong"}`
+	if code, errCode := send(t, rt, http.MethodPost, "/api/reset", body, cookie, nil); errCode != "err.wrongPassword" {
+		t.Errorf("factory reset during setup: %d %s — want the password to be required", code, errCode)
+	}
+}
+
 // The factory reset asks for the same pair. It had the password already; the code is
 // what is new, and the reset must not run without it.
 func TestFactoryResetRequiresFreshTOTP(t *testing.T) {

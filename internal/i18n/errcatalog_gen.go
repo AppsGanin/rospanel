@@ -276,6 +276,7 @@ var errEN = map[string]string{
 	"err.subTemplateInvalid":       "{{format}} template: {{err}}",
 	"err.subTemplateNoSlot":        "{{format}} template: no slot for the servers — paste {{slot}} where they go",
 	"err.subTemplateTooBig":        "{{format}} template: at most {{max}} KB",
+	"err.subTemplateTooDeep":       "{{format}} template: too many slots or too deeply nested",
 	"err.supportAdminSameToken":    "the support bot and the admin bot must have different tokens",
 	"err.supportGroupRequired":     "enter the support group (a supergroup with Topics enabled)",
 	"err.supportGroupUnreachable":  "the group is unreachable: {{detail}} — add @{{bot}} to it and check its ID",

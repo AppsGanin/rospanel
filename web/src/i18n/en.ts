@@ -498,6 +498,7 @@ const en: Dict = {
     snapshotNotFound: "snapshot not found",
     snapshotBad: "snapshot is corrupted",
     subTemplateTooBig: "{{format}} template: at most {{max}} KB",
+    subTemplateTooDeep: "{{format}} template: too many slots or too deeply nested",
     subTemplateNoSlot: "{{format}} template: no slot for the servers — paste {{slot}} where they go",
     subTemplateInvalid: "{{format}} template: {{err}}",
     subRuleField: "unknown rule field {{value}}",

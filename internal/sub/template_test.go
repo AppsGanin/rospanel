@@ -203,3 +203,46 @@ func TestClashTemplateKeepsTheDocument(t *testing.T) {
 		t.Error("the proxies were not injected")
 	}
 }
+
+// A template is stored once and rendered on every subscription fetch by every client,
+// so its cost is paid by the panel over and over. Two ways it grows are invisible in
+// the document: repeating the list placeholder, and nesting (the output is indented
+// two spaces per level, so depth alone turns kilobytes into hundreds of megabytes).
+func TestTemplateExpansionIsBounded(t *testing.T) {
+	// Deep nesting, no proxies involved at all.
+	deep := strings.Repeat("[", 200) + `"{{proxies}}"` + strings.Repeat("]", 200)
+	if err := ValidateSingBoxTemplate(deep); !errors.Is(err, ErrTemplateTooBig) {
+		t.Errorf("a 200-deep template gave %v, want ErrTemplateTooBig", err)
+	}
+
+	// Many list placeholders: each one is replaced by the whole proxy list.
+	slots := make([]string, 200)
+	for i := range slots {
+		slots[i] = `"{{proxies}}"`
+	}
+	many := `{"outbounds": [` + strings.Join(slots, ",") + `]}`
+	if err := ValidateSingBoxTemplate(many); !errors.Is(err, ErrTemplateTooBig) {
+		t.Errorf("a template with 200 slots gave %v, want ErrTemplateTooBig", err)
+	}
+
+	// The shapes an operator actually writes stay accepted.
+	ok := `{"outbounds": [{"type":"selector","outbounds":["{{tags}}"]}, "{{proxies}}"], "route": {"final": "{{group}}"}}`
+	if err := ValidateSingBoxTemplate(ok); err != nil {
+		t.Errorf("an ordinary template was refused: %v", err)
+	}
+
+	// And a template that slips past validation still cannot produce a giant profile:
+	// the render measures the finished bytes and falls back.
+	huge := map[string]any{"pad": strings.Repeat("x", maxRenderedBytes), "outbounds": []any{TplProxies}}
+	b, err := json.Marshal(huge)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), string(b))
+	if !errors.Is(err, ErrTemplateTooBig) {
+		t.Errorf("an oversized render gave %v, want ErrTemplateTooBig", err)
+	}
+	if out != SingBoxJSONMulti(tplUser(), tplServers()) {
+		t.Error("an oversized render did not fall back to the generated profile")
+	}
+}

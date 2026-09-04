@@ -920,6 +920,9 @@ func subTemplateErr(format string, err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, sub.ErrTemplateTooBig):
+		return invalidCode("err.subTemplateTooDeep", "шаблон {{format}}: слишком много вставок или слишком глубокая вложенность",
+			map[string]any{"format": format})
 	case errors.Is(err, sub.ErrTemplateEmpty):
 		return invalidCode("err.subTemplateNoSlot", "шаблон {{format}}: нет места для серверов — вставьте {{slot}}",
 			map[string]any{"format": format, "slot": subTemplateSlot(format)})
