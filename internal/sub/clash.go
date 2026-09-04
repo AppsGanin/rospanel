@@ -71,8 +71,8 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 		}
 		n := link.Label(model.ProtoHysteria, set)
 		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
-			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop)})
+			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
+			n, set.Host, set.HysteriaPort, u.Password, set.SNI, sv, hop, clashObfs(set.HysteriaObfs))})
 	}
 	for _, in := range srv.Custom {
 		if !srv.allowsInbound(in.ID) {
@@ -88,6 +88,17 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 		}
 	}
 	return out
+}
+
+// clashObfs renders mihomo's Salamander fields for a Hysteria2 proxy, or "" when
+// the lane is not obfuscated. %q on the key is safe rather than decorative: the key
+// is operator input, and an unquoted one would end the inline mapping early and cost
+// the user every proxy in the profile.
+func clashObfs(obfs string) string {
+	if obfs == "" {
+		return ""
+	}
+	return fmt.Sprintf(", obfs: salamander, obfs-password: %q", obfs)
 }
 
 // clashCustom renders one custom inbound as a Clash proxy, or reports false when
@@ -108,8 +119,8 @@ func clashCustom(u model.User, in model.Inbound, set *model.Settings, sv string)
 			hop = fmt.Sprintf(", ports: %q", fmt.Sprintf("%d-%d", model.HopAdvertised(in.Port, o.HopStart), o.HopEnd))
 		}
 		return clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s}",
-			n, set.Host, in.Port, u.Password, clashSNI(in, set), sv, hop)}, true
+			"  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: %s%s%s}",
+			n, set.Host, in.Port, u.Password, clashSNI(in, set), sv, hop, clashObfs(o.Obfs))}, true
 	}
 
 	if in.Protocol == model.InbShadowsocks {

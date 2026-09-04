@@ -106,6 +106,7 @@ func (s *Store) RestoreServerConfig(c *model.ServerConfigSnapshot) error {
 		if _, err := tx.Exec(`UPDATE settings SET
 			vless_enabled = ?, hysteria_enabled = ?, reality_enabled = ?,
 			vless_port = ?, hysteria_port = ?, hop_start = ?, hop_end = ?, hop_interval = ?,
+			hysteria_obfs = ?,
 			reality_port = ?, reality_dest = ?, reality_private_key = ?, reality_public_key = ?,
 			reality_short_id = ?, reality_path = ?, reality_max_time_diff = ?,
 			vless_fp = ?, reality_fp = ?,
@@ -120,6 +121,7 @@ func (s *Store) RestoreServerConfig(c *model.ServerConfigSnapshot) error {
 			WHERE id = 1`,
 			boolToInt(c.VLESSEnabled), boolToInt(c.HysteriaEnabled), boolToInt(c.RealityEnabled),
 			c.VLESSPort, c.HysteriaPort, c.HopStart, c.HopEnd, c.HopInterval,
+			c.HysteriaObfs,
 			c.RealityPort, c.RealityDest, encField(c.RealityPrivateKey), c.RealityPublicKey,
 			c.RealityShortID, c.RealityPath, c.RealityMaxTimeDiff,
 			c.VLESSFp, c.RealityFp,

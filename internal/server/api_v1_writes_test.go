@@ -356,6 +356,7 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 			body: map[string]any{
 				"enabled": true, "name": "land-hy2", "protocol": model.InbHysteria, "port": 21105,
 				"hop_start": 40000, "hop_end": 40010, "hop_interval": "5-10",
+				"obfs":      "salamander-key-01",
 				"sockopt":   map[string]any{"raw": `{"tcpFastOpen":true}`},
 				"tls_extra": map[string]any{"raw": `{"rejectUnknownSni":true}`},
 			},
@@ -363,6 +364,7 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 				eq(t, "hop_start", 40000, in.Opts.HopStart)
 				eq(t, "hop_end", 40010, in.Opts.HopEnd)
 				eq(t, "hop_interval", "5-10", in.Opts.HopInterval)
+				eq(t, "obfs", "salamander-key-01", in.Opts.Obfs)
 				if len(in.Opts.Sockopt) == 0 {
 					t.Error("sockopt did not land: the assembled blob is empty")
 				}

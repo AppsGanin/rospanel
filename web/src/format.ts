@@ -182,3 +182,13 @@ export function countryName(code: string, lang: string, unknown: string): string
     return code.toUpperCase()
   }
 }
+
+// randomObfs generates a Hysteria2 Salamander key inside the charset the server
+// accepts (model.ValidObfsPassword). 22 characters of a 64-symbol alphabet is far
+// past the point where guessing beats simply blocking the port.
+export function randomObfs(): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+  const bytes = new Uint8Array(22)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+}

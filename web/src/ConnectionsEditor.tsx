@@ -7,6 +7,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
+import { randomObfs } from "./format";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -55,7 +56,8 @@ const hopIntervals = () => [
   { value: "60-120", label: i18n.t("conn.sec", { range: "60–120" }) },
 ];
 
-type Hy = { port: number; start: number; end: number; interval: string };
+type Hy = { port: number; start: number; end: number; interval: string; obfs: string };
+
 type Reality = { port: number; dests: string[]; antiReplay: boolean };
 type Anti = { fragment: boolean; min13: boolean; blockQuic: boolean };
 type Awg = { port: number; dns: string };
@@ -92,7 +94,7 @@ export function ConnectionsEditor({
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [fps, setFps] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
-  const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10" });
+  const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10", obfs: "" });
   const [reality, setReality] = useState<Reality>({ port: 0, dests: [], antiReplay: false });
   const [anti, setAnti] = useState<Anti>({ fragment: false, min13: false, blockQuic: false });
   const [regenReality, setRegenReality] = useState(false);
@@ -110,7 +112,7 @@ export function ConnectionsEditor({
     enabled: {},
     fps: {},
     names: {},
-    hy: { port: 0, start: 0, end: 0, interval: "5-10" },
+    hy: { port: 0, start: 0, end: 0, interval: "5-10", obfs: "" },
     reality: { port: 0, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
     awg: { port: 0, dns: "" },
@@ -127,7 +129,10 @@ export function ConnectionsEditor({
       if (p.fingerprint) fp[p.key] = p.fingerprint;
       nm[p.key] = p.display_name || "";
     });
-    const h: Hy = { port: s.hysteria_port, start: s.hop_start, end: s.hop_end, interval: s.hop_interval || "5-10" };
+    const h: Hy = {
+      port: s.hysteria_port, start: s.hop_start, end: s.hop_end,
+      interval: s.hop_interval || "5-10", obfs: s.hysteria_obfs || "",
+    };
     const r: Reality = {
       port: s.reality_port,
       dests: s.reality_dest ? s.reality_dest.split(",").map((d) => d.trim()).filter(Boolean) : [],
@@ -157,7 +162,11 @@ export function ConnectionsEditor({
 
   const protocolsChanged = Object.keys(enabled).some((k) => enabled[k] !== saved.enabled[k]);
   const portsChanged = hy.port !== saved.hy.port || hy.start !== saved.hy.start || hy.end !== saved.hy.end;
-  const hyChanged = portsChanged || hy.interval !== saved.hy.interval;
+  // The obfuscation key is part of the SERVER config (Xray's finalmask block), not
+  // just of the links — changing it has to restart Xray, or the panel hands out
+  // links for a key the listener is not using yet.
+  const obfsChanged = hy.obfs !== saved.hy.obfs;
+  const hyChanged = portsChanged || hy.interval !== saved.hy.interval || obfsChanged;
   const realityChanged =
     reality.port !== saved.reality.port ||
     reality.dests.join(",") !== saved.reality.dests.join(",") ||
@@ -171,7 +180,8 @@ export function ConnectionsEditor({
     fpsChanged || namesChanged || protocolsChanged || hyChanged ||
     realityChanged || regenReality || antiServerChanged || antiClientChanged || awgChanged;
   // Config-affecting changes restart Xray (on the master) or re-push to the node.
-  const restartsXray = protocolsChanged || portsChanged || realityChanged || regenReality || antiServerChanged;
+  const restartsXray =
+    protocolsChanged || portsChanged || obfsChanged || realityChanged || regenReality || antiServerChanged;
 
   const setHyNum = (key: "port" | "start" | "end") => (v: string) =>
     setHy((h) => ({ ...h, [key]: Number(v.replace(/\D/g, "")) || 0 }));
@@ -205,6 +215,7 @@ export function ConnectionsEditor({
         hop_start: hy.start,
         hop_end: hy.end,
         hop_interval: hy.interval,
+        hysteria_obfs: hy.obfs,
         reality_port: reality.port,
         reality_dest: reality.dests.join(","),
         reality_anti_replay: reality.antiReplay,
@@ -318,6 +329,22 @@ export function ConnectionsEditor({
                         <p className="text-xs text-ink-muted">
                           {t("conn.hopHint")}
                         </p>
+                        {/* Salamander. Not a password field: both ends need the same
+                            value and it is already inside every link the panel hands
+                            out, so hiding it here would only stop the operator
+                            reading back what they set. */}
+                        <TextInput
+                          label={t("conn.obfs")}
+                          value={hy.obfs}
+                          placeholder={t("conn.obfsOff")}
+                          onChange={(v) => setHy((h) => ({ ...h, obfs: v.trim() }))}
+                        />
+                        <div className="flex items-center gap-2">
+                          <p className="flex-1 text-xs text-ink-muted">{t("conn.obfsHint")}</p>
+                          <Button variant="subtle" size="xs" onClick={() => setHy((h) => ({ ...h, obfs: randomObfs() }))}>
+                            {t("conn.obfsGenerate")}
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">

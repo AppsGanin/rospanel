@@ -45,6 +45,7 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 		hy2["hop_interval"] = "10s"
 		delete(hy2, "server_port")
 	}
+	singboxObfs(hy2, set.HysteriaObfs)
 
 	// Anti-DPI shaping of the generated config (client-side only; no server change).
 	// ClientHello fragmentation (sing-box ≥1.12) defeats stateless SNI inspection on
@@ -121,6 +122,7 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 			out["hop_interval"] = "10s"
 			delete(out, "server_port")
 		}
+		singboxObfs(out, o.Obfs)
 		return out, tag, true
 	}
 
@@ -279,4 +281,14 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// singboxObfs adds sing-box's Salamander block to a Hysteria2 outbound, or leaves
+// it alone when the lane is not obfuscated. sing-box's implementation is wire
+// compatible with the Xray finalmask mask the server runs, so one key serves both.
+func singboxObfs(out map[string]any, obfs string) {
+	if obfs == "" {
+		return
+	}
+	out["obfs"] = map[string]any{"type": "salamander", "password": obfs}
 }
