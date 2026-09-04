@@ -2173,6 +2173,12 @@ const en: Dict = {
     planGroupsHint:
       "Whoever is put on this plan — by payment, by hand or at registration — joins the ticked groups, and leaves them when the plan changes. Groups assigned by hand in the user card are kept. Tick nothing and the plan grants no groups — and moving someone onto it takes away the ones their previous plan granted.",
     planGroupsNone: "No groups yet — create them under Users → Groups.",
+    resetPeriod: "Traffic refill",
+    resetAutoPaid: "No — the quota covers the whole term",
+    resetAutoFree: "Every term of the plan",
+    resetSummary: "refill {{period}}",
+    resetHint:
+      "When the traffic limit starts over: a paid plan normally gets its quota for the whole term (“100 GB for 30 days”), a free one refills every term. Pick a calendar cycle for a plan like “100 GB a month, paid for a year” — it rolls at local midnight, like the same setting on the user card. Changing it here reaches everyone already on the plan; the counter itself is not touched until the cycle rolls.",
     nUsers: "{{count}} users",
     afterTrial: "after the trial",
     trial: "trial",

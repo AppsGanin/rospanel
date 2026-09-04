@@ -207,6 +207,13 @@ type TariffPlan struct {
 	DataLimit   int64  `json:"data_limit"`
 	DeviceLimit int    `json:"device_limit"`
 	SpeedLimit  int    `json:"speed_limit"` // kbit/s, 0 = unlimited
+	// ResetPeriod is the plan's own quota-refill cycle: daily | weekly | monthly |
+	// yearly, or "" for the derived default — a free plan refills every plan duration
+	// (a rolling days:N), a paid one runs its quota over the whole period it was
+	// bought for. Explicit beats derived, so "monthly" on a free plan replaces its
+	// days:N. Applied on every plan assignment and, like the speed cap, re-stamped on
+	// existing subscribers when the plan is edited. See PlanResetPeriods.
+	ResetPeriod string `json:"reset_period"`
 	SortOrder   int    `json:"sort_order"`
 	Enabled     bool   `json:"enabled"`
 	// GroupIDs are the access groups this plan grants: whoever is put on the plan is
@@ -214,6 +221,22 @@ type TariffPlan struct {
 	// and what every pre-existing plan has) means the plan says nothing about access —
 	// the user keeps whatever groups they were given by hand.
 	GroupIDs []int64 `json:"group_ids"`
+}
+
+// PlanResetPeriods are the cycles a plan may carry explicitly — the calendar ones a
+// user can be given by hand (see Manager.SetResetPeriod), minus "none": a plan says
+// "no cycle" by leaving the field empty, which means the derived default rather
+// than a literal never. The rolling days:N stays derived-only.
+var PlanResetPeriods = []string{"daily", "weekly", "monthly", "yearly"}
+
+// ValidPlanResetPeriod reports whether p is one of PlanResetPeriods.
+func ValidPlanResetPeriod(p string) bool {
+	for _, v := range PlanResetPeriods {
+		if v == p {
+			return true
+		}
+	}
+	return false
 }
 
 // IsFree reports whether this is a free plan. A plan is free iff it has no price:
