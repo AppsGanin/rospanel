@@ -45,6 +45,28 @@ const (
 // which would produce a profile with no servers in it — valid, parseable, and useless.
 var ErrTemplateEmpty = errors.New("template has no placeholder for the servers")
 
+// ErrTemplateTooBig is returned when a template would render to more than the panel is
+// willing to build or send.
+var ErrTemplateTooBig = errors.New("template renders too large")
+
+// Limits on what a template may expand into. A template is stored once and rendered on
+// every subscription fetch by every client, so its cost is paid over and over by the
+// panel rather than by the operator who wrote it — and two of the ways it grows are
+// invisible when reading the document:
+//
+//   - every list placeholder is replaced by the whole proxy list, so N of them multiply
+//     the profile N times over;
+//   - the output is indented two spaces per level, so nesting alone turns a twenty
+//     kilobyte template into hundreds of megabytes with no proxies involved at all.
+//
+// Both are bounded here rather than trusted, and the render checks the finished size
+// as well: the counts are a proxy for the cost, the byte count is the cost.
+const (
+	maxListPlaceholders = 64
+	maxTemplateDepth    = 64
+	maxRenderedBytes    = 4 << 20
+)
+
 // spliceJSON renders a JSON template: it walks the decoded document replacing scalar
 // placeholders with their values, and array elements that are list placeholders with
 // the elements themselves.
@@ -94,6 +116,13 @@ func renderJSONTemplate(tpl string, scalars map[string]any, lists map[string][]a
 	if err != nil {
 		return "", err
 	}
+	// The last line of defence, and the only one measured in the units that matter.
+	// Refusing here means the caller serves the generated profile, which is a working
+	// subscription — far better than building a profile no client would accept and no
+	// panel could afford to build again on the next request.
+	if len(out) > maxRenderedBytes {
+		return "", ErrTemplateTooBig
+	}
 	return string(out), nil
 }
 
@@ -122,7 +151,41 @@ func validateJSONTemplate(tpl, required string) error {
 	if !hasPlaceholder(doc, required) {
 		return ErrTemplateEmpty
 	}
+	if lists, depth := templateCost(doc, 1); lists > maxListPlaceholders || depth > maxTemplateDepth {
+		return ErrTemplateTooBig
+	}
 	return nil
+}
+
+// templateCost measures the two things that make a template expand: how many list
+// placeholders it carries (each one is replaced by the whole proxy list) and how deep
+// it nests (the rendered document is indented two spaces per level). Counted on the
+// decoded form, so it measures what the renderer will actually walk.
+func templateCost(doc any, depth int) (lists, maxDepth int) {
+	maxDepth = depth
+	switch v := doc.(type) {
+	case string:
+		if v == TplProxies || v == TplTags || v == TplOutbounds {
+			return 1, depth
+		}
+	case []any:
+		for _, item := range v {
+			l, d := templateCost(item, depth+1)
+			lists += l
+			if d > maxDepth {
+				maxDepth = d
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			l, d := templateCost(item, depth+1)
+			lists += l
+			if d > maxDepth {
+				maxDepth = d
+			}
+		}
+	}
+	return lists, maxDepth
 }
 
 // hasPlaceholder reports whether the decoded document contains the placeholder as a
