@@ -315,6 +315,15 @@ func (m *Manager) pruneNodeAlerts(live map[int64]struct{}) {
 	m.nodeAlertMu.Lock()
 	defer m.nodeAlertMu.Unlock()
 	for id := range m.nodeAlerts {
+		// The master is always live — it is the panel — and it is never in the node
+		// list the sweep builds `live` from. Pruning it would drop every flag recording
+		// what admins were already told about this server, so the next sweep would tell
+		// them again: an alarm every minute for a condition that has not changed. It
+		// used to be saved by localDiskAlertMsg inserting itself into `live`, which
+		// only runs when the host sampler exists; the rule belongs here instead.
+		if id == model.LocalNodeID {
+			continue
+		}
 		if _, ok := live[id]; !ok {
 			delete(m.nodeAlerts, id)
 		}
