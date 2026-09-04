@@ -193,13 +193,7 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 	}
 	local := servers[0].Set
 
-	var proxies []any
-	var tags []string
-	for _, srv := range servers {
-		p, t := singboxProxies(u, srv)
-		proxies = append(proxies, p...)
-		tags = append(tags, t...)
-	}
+	proxies, tags := singboxProxiesAll(u, servers)
 
 	group := SubTitle(u, local)
 	// Nothing allowed ⇒ no tags. A urltest with an empty outbound list and a selector
@@ -300,13 +294,7 @@ func SingBoxWithTemplate(u model.User, servers []Server, template string) (strin
 	if len(servers) == 0 {
 		return SingBoxJSONMulti(u, servers), nil
 	}
-	var proxies []any
-	var tags []string
-	for _, srv := range servers {
-		p, t := singboxProxies(u, srv)
-		proxies = append(proxies, p...)
-		tags = append(tags, t...)
-	}
+	proxies, tags := singboxProxiesAll(u, servers)
 	// Nothing allowed: the generated profile has a direct-only answer for this, which
 	// is valid and honest. A template spliced with an empty proxy list would leave a
 	// selector pointing at nothing, which sing-box refuses outright.
@@ -325,6 +313,31 @@ func SingBoxWithTemplate(u model.User, servers []Server, template string) (strin
 		return SingBoxJSONMulti(u, servers), err
 	}
 	return out, nil
+}
+
+// singboxProxiesAll gathers every server's outbounds, giving each a tag no other
+// outbound shares. A duplicate tag is fatal in sing-box — the selector would name it
+// twice and the profile is refused — so the de-duplication is not cosmetic; see
+// uniqueLabel for how two differently-named lanes end up asking for the same tag.
+func singboxProxiesAll(u model.User, servers []Server) ([]any, []string) {
+	var proxies []any
+	var tags []string
+	seen := map[string]int{}
+	for _, srv := range servers {
+		p, t := singboxProxies(u, srv)
+		for i := range p {
+			uniq := uniqueLabel(seen, t[i])
+			if uniq != t[i] {
+				if m, ok := p[i].(map[string]any); ok {
+					m["tag"] = uniq
+				}
+				t[i] = uniq
+			}
+			proxies = append(proxies, p[i])
+			tags = append(tags, t[i])
+		}
+	}
+	return proxies, tags
 }
 
 // singboxObfs adds sing-box's Salamander block to a Hysteria2 outbound, or leaves

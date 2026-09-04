@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"fmt"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -72,4 +73,25 @@ func enabledOnly(list []model.Inbound) []model.Inbound {
 		}
 	}
 	return out
+}
+
+// uniqueLabel returns name, or name with a discriminator appended, so that no two
+// entries in one profile carry the same one.
+//
+// It exists because the uniqueness the panel enforces when a name is SAVED is
+// uniqueness of the stored text, and a name may carry variables (model.RenderName)
+// that resolve per user at render time. Two different names can resolve to the same
+// string — "{left}" and "{total}" are both ∞ for an account with no quota, "{used}"
+// and "{left}" meet for one user at the moment they have spent half of theirs — and a
+// duplicate Clash node name or sing-box tag makes a client reject the WHOLE profile,
+// costing that user every server rather than one.
+//
+// The same shape NodeLinkSettings already uses for colliding server labels: keep the
+// first, discriminate the rest, never drop anything.
+func uniqueLabel(seen map[string]int, name string) string {
+	seen[name]++
+	if n := seen[name]; n > 1 {
+		return fmt.Sprintf("%s #%d", name, n)
+	}
+	return name
 }

@@ -204,11 +204,24 @@ func firstShortID(o model.InboundOpts) string {
 }
 
 // clashProxiesAll concatenates a user's proxy entries across every server (local +
-// each node). Names are unique because Settings.ProtoLabel appends the node label.
+// each node), giving each a name no other entry shares. The node label keeps servers
+// apart on its own; what needs de-duplicating is two lanes on one server whose names
+// carry variables that happen to resolve alike (see uniqueLabel).
 func clashProxiesAll(u model.User, servers []Server) []clashProxy {
 	var out []clashProxy
+	seen := map[string]int{}
 	for _, srv := range servers {
-		out = append(out, clashProxies(u, srv)...)
+		for _, p := range clashProxies(u, srv) {
+			uniq := uniqueLabel(seen, p.name)
+			if uniq != p.name {
+				// The name is the first %q-quoted field of the line, so replacing its
+				// first occurrence rewrites exactly the one that matters and leaves an
+				// SNI or a password that happens to read the same alone.
+				p.line = strings.Replace(p.line, fmt.Sprintf("%q", p.name), fmt.Sprintf("%q", uniq), 1)
+				p.name = uniq
+			}
+			out = append(out, p)
+		}
 	}
 	return out
 }

@@ -116,6 +116,12 @@ func (rt *Router) userViewFor(u model.User, set *model.Settings, bot string) use
 // and attaches the cert pin so Xray links can pin it (pinnedPeerCertSha256); a
 // trusted CA cert leaves verification on.
 func (rt *Router) applyTLSHints(set *model.Settings) {
+	// The master's own placement, which the subscription path fills in when it builds
+	// the per-server settings. Every other consumer of a bare GetSettings() value is
+	// looking at the master, so without this a connection name using {flag} or
+	// {country} renders as "unknown" on the admin's user card while the subscription
+	// renders it properly — the same name, two answers.
+	set.ServerPlacement = set.MasterPlacement
 	if rt.mgr.HasValidCert() {
 		return
 	}

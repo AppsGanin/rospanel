@@ -246,3 +246,56 @@ func TestTemplateExpansionIsBounded(t *testing.T) {
 		t.Error("an oversized render did not fall back to the generated profile")
 	}
 }
+
+// Two lanes whose names carry different variables can still render to the same
+// string — "{left}" and "{total}" are both ∞ for an account with no quota. A duplicate
+// Clash node name or sing-box tag makes a client reject the WHOLE profile, so the user
+// would lose every server rather than one. Neither validator can see this: they compare
+// the stored text, and the collision only exists once the values are resolved.
+func TestRenderedNameCollisionsAreDeduplicated(t *testing.T) {
+	set := &model.Settings{
+		Host: "vpn.example.com", SNI: "vpn.example.com", NodeLabel: "NL",
+		VLESSEnabled: true, VLESSPort: 443, VLESSName: "Fast {left}",
+		HysteriaEnabled: true, HysteriaPort: 8443, HysteriaName: "Fast {total}",
+		SubTitle: "MyVPN",
+	}
+	// No quota: {left} and {total} both render ∞.
+	u := model.User{ID: 1, Name: "u", UUID: "11111111-1111-1111-1111-111111111111", Password: "pw"}
+	servers := One(set)
+
+	yaml := ClashYAMLMulti(u, servers)
+	names := map[string]int{}
+	for _, line := range strings.Split(yaml, "\n") {
+		if i := strings.Index(line, `- {name: "`); i >= 0 {
+			rest := line[i+len(`- {name: "`):]
+			names[rest[:strings.Index(rest, `"`)]]++
+		}
+	}
+	if len(names) < 2 {
+		t.Fatalf("expected two proxies, got %v", names)
+	}
+	for n, c := range names {
+		if c > 1 {
+			t.Errorf("Clash proxy name %q appears %d times — mihomo rejects the profile", n, c)
+		}
+	}
+
+	// sing-box: the selector lists every tag, and a repeated one is refused outright.
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(SingBoxJSONMulti(u, servers)), &cfg); err != nil {
+		t.Fatalf("sing-box profile is not JSON: %v", err)
+	}
+	tags := map[string]int{}
+	for _, o := range cfg["outbounds"].([]any) {
+		m := o.(map[string]any)
+		if m["type"] == "selector" || m["type"] == "urltest" {
+			continue
+		}
+		tags[m["tag"].(string)]++
+	}
+	for tag, c := range tags {
+		if c > 1 {
+			t.Errorf("sing-box tag %q appears %d times — the profile is refused", tag, c)
+		}
+	}
+}
