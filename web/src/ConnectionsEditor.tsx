@@ -8,6 +8,7 @@ import {
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
 import { randomObfs } from "./format";
+import { NameVarsHint } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -290,6 +291,11 @@ export function ConnectionsEditor({
                     <p className="text-xs text-ink-muted">
                       {t("conn.nameHint", { name: p.name })}
                     </p>
+                    <NameVarsHint
+                      onInsert={(v) =>
+                        setNames((n) => ({ ...n, [p.key]: ((n[p.key] ?? "") + " " + v).trim() }))
+                      }
+                    />
                   </div>
 
                   <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">

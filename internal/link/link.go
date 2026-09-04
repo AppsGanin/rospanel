@@ -15,6 +15,12 @@ import (
 // sub.SubTitle).
 func Label(proto string, set *model.Settings) string { return set.ProtoLabel(proto) }
 
+// LabelFor is Label with the user in hand, so a name carrying variables ({left},
+// {expire}, …) resolves against the person the link is being built for.
+func LabelFor(proto string, u model.User, set *model.Settings) string {
+	return set.ProtoLabelFor(proto, &u)
+}
+
 // assemble joins the share-link shape shared by every protocol:
 //
 //	<scheme>://<cred>@<host>:<port>?<query>#<label>

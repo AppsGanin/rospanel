@@ -1425,11 +1425,17 @@ func (s *Settings) BuiltinLaneLabels() []string {
 	return out
 }
 
-// ProtoLabel returns the display name for a protocol constant (ProtoVLESS, …):
-// the admin-configured custom name when set, otherwise the constant itself. Used
-// for the share-link node label and the sing-box/Clash node tag. A nil receiver
-// falls back to the constant so link builders stay safe.
-func (s *Settings) ProtoLabel(proto string) string {
+// ProtoLabel is ProtoLabelFor with no user in hand — the surfaces that list lanes as
+// things rather than as one person's connections (the access-group editor). Any
+// user-dependent variable in the name renders as NameUnknown there.
+func (s *Settings) ProtoLabel(proto string) string { return s.ProtoLabelFor(proto, nil) }
+
+// ProtoLabelFor returns the display name for a protocol constant (ProtoVLESS, …):
+// the admin-configured custom name when set, otherwise the constant itself, with any
+// name variables expanded against this user and this server. Used for the share-link
+// node label and the sing-box/Clash node tag. A nil receiver falls back to the
+// constant so link builders stay safe.
+func (s *Settings) ProtoLabelFor(proto string, u *User) string {
 	if s == nil {
 		return proto
 	}
@@ -1448,12 +1454,49 @@ func (s *Settings) ProtoLabel(proto string) string {
 	if custom = strings.TrimSpace(custom); custom != "" {
 		label = custom
 	}
+	return s.decorate(label, u)
+}
+
+// DecorateName is decorate for the packages that build a name the settings do not own
+// — a custom inbound's, which lives on the inbound row. Same rules, one implementation.
+func (s *Settings) DecorateName(name string, u *User) string { return s.decorate(name, u) }
+
+// decorate expands a name's variables and adds the multi-node prefix.
+//
+// The prefix is skipped when the name places the server itself: an operator who wrote
+// "{flag} {server} VLESS" has said where the server goes, and prefixing on top of that
+// produces "Netherlands · 🇳🇱 Netherlands VLESS".
+func (s *Settings) decorate(name string, u *User) string {
+	server := s.NodeLabel
+	if server == "" {
+		server = s.MasterLabel
+	}
+	rendered := RenderName(name, NameVars{
+		Server:  server,
+		Country: s.ServerPlacement.Country,
+		User:    u,
+		Loc:     s.Location(),
+	})
 	// Multi-node: prefix with the server name so a client shows "Netherlands · VLESS"
 	// — server first, then protocol.
-	if s.NodeLabel != "" {
-		return s.NodeLabel + " · " + label
+	if s.NodeLabel != "" && !HasNameVar(name, NameVarServer) {
+		return s.NodeLabel + " · " + rendered
 	}
-	return label
+	return rendered
+}
+
+// Location is the operator timezone as a *time.Location, defaulting to UTC. Only the
+// name variables need it, and they need it rarely, so it resolves on demand rather
+// than being cached on the settings value.
+func (s *Settings) Location() *time.Location {
+	if s == nil || strings.TrimSpace(s.Timezone) == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(s.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
 }
 
 // Fingerprints are the uTLS ClientHello fingerprints offered in the UI.

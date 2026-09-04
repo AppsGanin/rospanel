@@ -231,7 +231,7 @@ func validateConnNames(names map[string]string, taken []string) (map[string]stri
 			return nil, invalidCode("err.inboundNameTooLong", "название подключения не длиннее 32 символов")
 		}
 		if raw != "" && !model.LaneNameRe.MatchString(raw) {
-			return nil, invalidCode("err.inboundNameCharset", "недопустимое название подключения {{value}} (буквы, цифры, эмодзи, пробел, . _ - ( ))", map[string]any{"value": raw})
+			return nil, invalidCode("err.inboundNameCharset", "недопустимое название подключения {{value}} (буквы, цифры, эмодзи, переменные в фигурных скобках, пробел, . _ - ( ) ·)", map[string]any{"value": raw})
 		}
 		display := raw
 		if display == "" {

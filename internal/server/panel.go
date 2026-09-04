@@ -73,28 +73,28 @@ func makeUserView(u model.User, set *model.Settings, userBotUsername string, cus
 	// actually gets, not just what exists.
 	if set.VLESSEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneVLESS) {
 		v.VLESS = link.VLESS(u, set)
-		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoVLESS), v.VLESS})
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoVLESS, &u), v.VLESS})
 	}
 	if set.RealityEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneReality) {
 		v.Reality = link.Reality(u, set)
-		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoReality), v.Reality})
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoReality, &u), v.Reality})
 	}
 	if set.HysteriaEnabled && access.AllowsBuiltin(model.LocalNodeID, model.LaneHysteria) {
 		v.Hysteria2 = link.Hysteria2(u, set)
-		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoHysteria), v.Hysteria2})
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoHysteria, &u), v.Hysteria2})
 	}
 	for _, in := range custom {
 		if !access.AllowsInbound(in.ID) {
 			continue
 		}
 		if l := link.Custom(u, in, set); l != "" {
-			v.Links = append(v.Links, namedLink{link.CustomLabel(in, set), l})
+			v.Links = append(v.Links, namedLink{link.CustomLabelFor(in, u, set), l})
 		}
 	}
 	// AmneziaWG has no share-link form; what the card carries is the address of the
 	// user's config file for this server, which the Amnezia apps import as is.
 	if set.AWGEnabled && set.AWGPort != 0 && access.AllowsBuiltin(model.LocalNodeID, model.LaneAWG) {
-		v.Links = append(v.Links, namedLink{set.ProtoLabel(model.ProtoAWG), sub.AWGConfURL(set, u.SubToken, model.LocalNodeID)})
+		v.Links = append(v.Links, namedLink{set.ProtoLabelFor(model.ProtoAWG, &u), sub.AWGConfURL(set, u.SubToken, model.LocalNodeID)})
 	}
 	return v
 }

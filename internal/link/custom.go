@@ -9,14 +9,24 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// CustomLabel is the node name a custom inbound shows in the client: the operator's
-// own name for it, prefixed with the server label on a multi-node install so two
-// servers' inbounds never read as one.
+// CustomLabel is CustomLabelFor with no user in hand — the catalogues that list
+// inbounds as things to tick rather than as one person's connections.
 func CustomLabel(in model.Inbound, set *model.Settings) string {
-	if set != nil && set.NodeLabel != "" {
-		return set.NodeLabel + " · " + in.Name
+	return customLabel(in, nil, set)
+}
+
+// CustomLabelFor is the node name a custom inbound shows in the client: the operator's
+// own name for it with any variables expanded against this user, prefixed with the
+// server label on a multi-node install so two servers' inbounds never read as one.
+func CustomLabelFor(in model.Inbound, u model.User, set *model.Settings) string {
+	return customLabel(in, &u, set)
+}
+
+func customLabel(in model.Inbound, u *model.User, set *model.Settings) string {
+	if set == nil {
+		return in.Name
 	}
-	return in.Name
+	return set.DecorateName(in.Name, u)
 }
 
 // Custom builds the share link for one operator-defined inbound, or "" for a
@@ -38,9 +48,9 @@ func Custom(u model.User, in model.Inbound, set *model.Settings) string {
 
 // customAssemble is assemble() for a custom inbound: same shape, but the label is
 // the inbound's own name rather than a protocol constant.
-func customAssemble(scheme, cred string, in model.Inbound, q url.Values, set *model.Settings) string {
+func customAssemble(scheme, cred string, u model.User, in model.Inbound, q url.Values, set *model.Settings) string {
 	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		scheme, cred, set.Host, in.Port, q.Encode(), url.PathEscape(CustomLabel(in, set)))
+		scheme, cred, set.Host, in.Port, q.Encode(), url.PathEscape(CustomLabelFor(in, u, set)))
 }
 
 // transportParams writes the transport-specific query parameters (the ones that tell
@@ -153,7 +163,7 @@ func customVLESS(u model.User, in model.Inbound, set *model.Settings) string {
 	if in.Opts.Flow != "" {
 		q.Set("flow", in.Opts.Flow)
 	}
-	return customAssemble("vless", u.UUID, in, q, set)
+	return customAssemble("vless", u.UUID, u, in, q, set)
 }
 
 // customTrojan builds a trojan:// link for a custom inbound.
@@ -161,7 +171,7 @@ func customTrojan(u model.User, in model.Inbound, set *model.Settings) string {
 	q := url.Values{}
 	securityParams(q, in, set)
 	transportParams(q, in, set)
-	return customAssemble("trojan", url.QueryEscape(u.Password), in, q, set)
+	return customAssemble("trojan", url.QueryEscape(u.Password), u, in, q, set)
 }
 
 // customHysteria builds a hysteria2:// link for a custom inbound. Same Xray/Happ
@@ -178,7 +188,7 @@ func customHysteria(u model.User, in model.Inbound, set *model.Settings) string 
 	if fm := fmParam(in.UsesHopping(), model.HopAdvertised(in.Port, in.Opts.HopStart), in.Opts.HopEnd, in.Opts.HopIntervalOr(), in.Opts.Obfs); fm != "" {
 		q.Set("fm", url.QueryEscape(fm))
 	}
-	return customAssemble("hysteria2", url.QueryEscape(u.Password), in, q, set)
+	return customAssemble("hysteria2", url.QueryEscape(u.Password), u, in, q, set)
 }
 
 // customShadowsocks builds an ss:// link for a Shadowsocks-2022 inbound, in the
@@ -196,5 +206,5 @@ func customShadowsocks(u model.User, in model.Inbound, set *model.Settings) stri
 	userinfo := base64.RawURLEncoding.EncodeToString(
 		[]byte(o.Method + ":" + o.ShadowKey + ":" + userKey))
 	return fmt.Sprintf("ss://%s@%s:%d#%s",
-		userinfo, set.Host, in.Port, url.PathEscape(CustomLabel(in, set)))
+		userinfo, set.Host, in.Port, url.PathEscape(CustomLabelFor(in, u, set)))
 }

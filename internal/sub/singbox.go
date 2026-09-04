@@ -20,8 +20,8 @@ func SingBoxJSON(u model.User, set *model.Settings) string {
 // unambiguous.
 func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 	set := srv.Set
-	nV := link.Label(model.ProtoVLESS, set)
-	nH := link.Label(model.ProtoHysteria, set)
+	nV := link.LabelFor(model.ProtoVLESS, u, set)
+	nH := link.LabelFor(model.ProtoHysteria, u, set)
 	insecure := set.TLSInsecure // true only for a self-signed/IP cert
 
 	vless := map[string]any{
@@ -106,7 +106,7 @@ func singboxCustom(u model.User, in model.Inbound, set *model.Settings) (map[str
 		return nil, "", false
 	}
 	o := in.Opts
-	tag := link.CustomLabel(in, set)
+	tag := link.CustomLabelFor(in, u, set)
 
 	if in.Protocol == model.InbHysteria {
 		out := map[string]any{

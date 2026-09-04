@@ -119,6 +119,10 @@ func AWGConfURL(set *model.Settings, token string, serverID int64) string {
 // tunnel's name, so it is the server's label with everything a file system or a
 // header would object to replaced.
 func AWGFileName(set *model.Settings) string {
+	// No user: this is a file name, not a connection name. A name carrying per-user
+	// variables renders them as NameUnknown here, which the sanitiser below drops —
+	// the right answer, since a downloaded file should not be stamped with somebody's
+	// remaining quota at the moment they clicked.
 	label := set.ProtoLabel(model.ProtoAWG)
 	var b strings.Builder
 	for _, r := range label {

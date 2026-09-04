@@ -19,6 +19,7 @@ import {
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
 import { randomObfs } from "./format";
+import { NameVarsHint } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -866,6 +867,7 @@ function InboundForm({
       <p className="-mt-1 text-xs text-ink-muted">
         {t("inb.nameHint")}
       </p>
+      <NameVarsHint onInsert={(x) => set("name", (v.name + " " + x).trim())} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Select

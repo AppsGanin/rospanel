@@ -233,7 +233,8 @@ const en: Dict = {
     hopRangeCoversPort: "the hop range “{{name}}” ({{from}}–{{to}}) covers port {{port}} ({{who}})",
     hopRangeOverlap: "the hop range {{from}}–{{to}} overlaps “{{name}}” ({{otherFrom}}–{{otherTo}})",
     imageTooLarge: "the image is larger than {{dim}}×{{dim}} pixels",
-    inboundNameCharset2: "invalid name {{name}} (letters, digits, emoji, space, . _ - ( ))",
+    inboundNameCharset2:
+      "invalid name {{name}} (letters, digits, emoji, variables in braces, space, . _ - ( ) ·)",
     inboundNameDuplicate2: "the connection name {{name}} is already used on this server — make them distinct",
     inboundNameRequired: "enter a connection name",
     inboundNameReserved: "the name {{name}} is reserved — pick another one",
@@ -389,7 +390,8 @@ const en: Dict = {
     donorNoHTTP2: "the donor {{host}} does not support HTTP/2 — pick another site",
     donorNoTLS13: "the donor {{host}} is not reachable over TLS 1.3 on :443 ({{err}})",
     extendTooLong: "the extension is too long (at most {{max}} days)",
-    inboundNameCharset: "invalid connection name {{value}} (letters, digits, emoji, space, . _ - ( ))",
+    inboundNameCharset:
+      "invalid connection name {{value}} (letters, digits, emoji, variables in braces, space, . _ - ( ) ·)",
     inboundNameDuplicate: "the connection name {{value}} is repeated — make them distinct",
     nameReserved: "the name {{value}} is reserved — pick another one",
     nameTakenByInbound: "the name {{value}} is already used by a custom connection — pick another one",
@@ -1331,6 +1333,21 @@ const en: Dict = {
     probeHint: "addresses that went looking for the hidden panel path, over the last {{days}} days",
     blockedHint: "refused by the source policy (Settings → General)",
   },
+  nameVars: {
+    hint: "Variables are replaced per user when a subscription is built. Click one to insert it.",
+    churn:
+      "A name that changes as the user spends traffic ({left}, {used}, {days}) is a new server name to the client on every subscription update, which resets the server they had picked. {flag}, {country} and {server} are stable.",
+    flag: "The server's country as a flag",
+    country: "The server's country code",
+    server: "The server's name (replaces the automatic “server · lane” prefix)",
+    user: "The account name",
+    used: "Traffic spent",
+    left: "Traffic remaining, ∞ when unlimited",
+    total: "The traffic limit, ∞ when unlimited",
+    expire: "The expiry date, ∞ when there is none",
+    days: "Whole days until expiry, ∞ when there is none",
+  },
+
   stepUp: {
     code: "Code from your authenticator",
     codeHint:

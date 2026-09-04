@@ -327,6 +327,16 @@ popular clients (auto-routing headers for Happ / INCY / Mihomo), with your own n
 link can be **reset** (token rotation) without changing UUIDs and passwords. An
 **announcement** inside the client (Happ, v2RayTun) puts a short text right in the app.
 
+**Variables in connection names.** A lane's or a custom inbound's name can carry
+`{flag}`, `{country}`, `{server}`, `{user}`, `{used}`, `{left}`, `{total}`, `{expire}`
+and `{days}`; the panel expands them per user when it builds the subscription, so a
+client can show "🇳🇱 Amsterdam · 75 GB left" without the operator keeping one name per
+person. A name that places `{server}` itself replaces the automatic "server · lane"
+prefix instead of being prefixed on top of it. Worth knowing before reaching for
+`{left}` or `{days}`: a name that changes is a NEW server name to the client on every
+subscription update, which resets whichever server the user had selected — the stable
+ones are `{flag}`, `{country}` and `{server}`.
+
 The page carries what the account holder needs and nothing they shouldn't hand out: the
 **individual per-lane configs** card can be switched off, and with device binding on it lists **their own bound devices** with a
 button to release one — so a full device roster is self-service rather than a support ticket.

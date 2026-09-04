@@ -339,7 +339,7 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 		s := srv.Set
 		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
 			awgCards = append(awgCards, awgCard{
-				Label: s.ProtoLabel(model.ProtoAWG),
+				Label: s.ProtoLabelFor(model.ProtoAWG, &u),
 				// The label names the server whose tunnel this is, but the config
 				// itself is downloaded from the panel — the node hosts no /sub path.
 				ConfURL: AWGConfURL(local, u.SubToken, s.ServerID),
@@ -347,20 +347,20 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 			})
 		}
 		if s.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
-			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoVLESS), link.VLESS(u, s)})
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoVLESS, &u), link.VLESS(u, s)})
 		}
 		if s.RealityEnabled && s.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
-			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoReality), link.Reality(u, s)})
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoReality, &u), link.Reality(u, s)})
 		}
 		if s.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
-			protoLinks = append(protoLinks, protoLink{s.ProtoLabel(model.ProtoHysteria), link.Hysteria2(u, s)})
+			protoLinks = append(protoLinks, protoLink{s.ProtoLabelFor(model.ProtoHysteria, &u), link.Hysteria2(u, s)})
 		}
 		for _, in := range srv.Custom {
 			if !srv.allowsInbound(in.ID) {
 				continue
 			}
 			if l := link.Custom(u, in, s); l != "" {
-				protoLinks = append(protoLinks, protoLink{link.CustomLabel(in, s), l})
+				protoLinks = append(protoLinks, protoLink{link.CustomLabelFor(in, u, s), l})
 			}
 		}
 		// External servers are not ours: the link is theirs and so is the label. They
