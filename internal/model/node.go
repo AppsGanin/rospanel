@@ -162,6 +162,7 @@ type NodeConnections struct {
 	HopStart           int    `json:"hop_start"`
 	HopEnd             int    `json:"hop_end"`
 	HopInterval        string `json:"hop_interval"`
+	HysteriaObfs       string `json:"hysteria_obfs"`
 	RealityPort        int    `json:"reality_port"`
 	RealityMaxTimeDiff int    `json:"reality_max_time_diff"` // >0 ⇒ anti-replay on
 	TLSFragment        bool   `json:"tls_fragment"`

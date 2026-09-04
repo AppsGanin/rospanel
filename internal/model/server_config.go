@@ -16,6 +16,7 @@ type ServerConfigSnapshot struct {
 	HopStart        int    `json:"hop_start"`
 	HopEnd          int    `json:"hop_end"`
 	HopInterval     string `json:"hop_interval"`
+	HysteriaObfs    string `json:"hysteria_obfs"`
 	RealityPort     int    `json:"reality_port"`
 
 	// REALITY identity (private key encrypted at rest via the snapshot blob).
@@ -77,6 +78,7 @@ func ServerConfigFrom(s *Settings, inbounds []Inbound) ServerConfigSnapshot {
 		HopStart:        s.HopStart,
 		HopEnd:          s.HopEnd,
 		HopInterval:     s.HopInterval,
+		HysteriaObfs:    s.HysteriaObfs,
 		RealityPort:     s.RealityPort,
 
 		RealityDest:        s.RealityDest,

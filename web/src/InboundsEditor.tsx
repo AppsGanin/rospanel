@@ -18,6 +18,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
+import { randomObfs } from "./format";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -89,6 +90,7 @@ const blank = (): InboundInput => ({
   hop_start: 0,
   hop_end: 0,
   hop_interval: "5-10",
+  obfs: "",
   header_type: "",
   header_hosts: [],
   header_paths: [],
@@ -122,6 +124,7 @@ function toInput(v: Inbound): InboundInput {
     hop_start: o.hop_start ?? 0,
     hop_end: o.hop_end ?? 0,
     hop_interval: o.hop_interval || "5-10",
+    obfs: o.obfs ?? "",
     header_type: o.header_type ?? "",
     header_hosts: o.header_hosts ?? [],
     header_paths: (o.header_paths ?? []).map((p) => p.replace(/^\/+/, "")),
@@ -1040,6 +1043,19 @@ function InboundForm({
           <p className="text-xs text-ink-muted">
             {t("inb.hopHint")}
           </p>
+          {/* Salamander: shared with the client, so it is shown, not masked. */}
+          <TextInput
+            label={t("conn.obfs")}
+            value={v.obfs}
+            placeholder={t("conn.obfsOff")}
+            onChange={(x) => set("obfs", x.trim())}
+          />
+          <div className="flex items-center gap-2">
+            <p className="flex-1 text-xs text-ink-muted">{t("conn.obfsHint")}</p>
+            <Button variant="subtle" size="xs" onClick={() => set("obfs", randomObfs())}>
+              {t("conn.obfsGenerate")}
+            </Button>
+          </div>
         </div>
       )}
 

@@ -111,6 +111,7 @@ func nodeSettings(set *model.Settings, n *model.Node) *model.Settings {
 		ns.HopStart = c.HopStart
 		ns.HopEnd = c.HopEnd
 		ns.HopInterval = c.HopInterval
+		ns.HysteriaObfs = c.HysteriaObfs
 		ns.RealityPort = c.RealityPort
 		ns.RealityMaxTimeDiff = c.RealityMaxTimeDiff
 		ns.TLSFragment = c.TLSFragment
@@ -864,6 +865,10 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if !hopIntervalRe.MatchString(interval) {
 		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
+	obfs, err := validateObfs(u.HysteriaObfs)
+	if err != nil {
+		return err
+	}
 	if u.RealityPort < 1 || u.RealityPort > 65535 {
 		return invalidCode("err.realityPortRange", "порт REALITY вне диапазона 1–65535")
 	}
@@ -931,6 +936,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 		HopStart:           u.HopStart,
 		HopEnd:             u.HopEnd,
 		HopInterval:        interval,
+		HysteriaObfs:       obfs,
 		RealityPort:        u.RealityPort,
 		RealityMaxTimeDiff: maxTimeDiff,
 		TLSFragment:        u.TLSFragment,

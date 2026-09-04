@@ -46,6 +46,7 @@ type inboundReq struct {
 	HopStart    int    `json:"hop_start"`
 	HopEnd      int    `json:"hop_end"`
 	HopInterval string `json:"hop_interval"`
+	Obfs        string `json:"obfs"`
 
 	// Shadowsocks-2022 method. The server key is generated (prepareInbound), so it is
 	// deliberately not a request field.
@@ -90,6 +91,7 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 			HopStart:    r.HopStart,
 			HopEnd:      r.HopEnd,
 			HopInterval: r.HopInterval,
+			Obfs:        r.Obfs,
 			HeaderType:  r.HeaderType,
 			HeaderHosts: r.HeaderHosts,
 			HeaderPaths: r.HeaderPaths,

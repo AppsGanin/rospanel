@@ -240,8 +240,11 @@ type StreamSettings struct {
 	XHTTPSettings       *XHTTPSettings       `json:"xhttpSettings,omitempty"`
 	HTTPUpgradeSettings *HTTPUpgradeSettings `json:"httpupgradeSettings,omitempty"`
 	HysteriaSettings    *HysteriaSettings    `json:"hysteriaSettings,omitempty"`
-	RealitySettings     *RealitySettings     `json:"realitySettings,omitempty"`
-	GRPCSettings        *GRPCSettings        `json:"grpcSettings,omitempty"`
+	// FinalMask is Xray's packet-masking layer. The panel uses exactly one of its
+	// masks — Salamander over UDP, for Hysteria2 — and never emits the block empty.
+	FinalMask       *FinalMask       `json:"finalmask,omitempty"`
+	RealitySettings *RealitySettings `json:"realitySettings,omitempty"`
+	GRPCSettings    *GRPCSettings    `json:"grpcSettings,omitempty"`
 	// Sockopt is the operator's socket-option block, passed through verbatim. Raw
 	// rather than typed: the field set is long, entirely server-local, and validated
 	// against a key whitelist before it gets here (model.SockoptKeys), so a typed
@@ -359,6 +362,40 @@ type WSSettings struct {
 	// AcceptProxyProtocol reads the real client IP from a PROXY-protocol header
 	// prepended by an upstream that forwards to this inbound.
 	AcceptProxyProtocol bool `json:"acceptProxyProtocol,omitempty"`
+}
+
+// FinalMask is Xray's finalmask block: lists of masks wrapped around the transport,
+// separately for TCP and UDP. Only the UDP side is used here.
+type FinalMask struct {
+	UDP []FinalMaskEntry `json:"udp,omitempty"`
+}
+
+// FinalMaskEntry is one mask: a type name and its own settings object. Xray loads
+// the settings with a per-type loader keyed on "type", so the shape of Settings
+// depends on Type.
+type FinalMaskEntry struct {
+	Type     string `json:"type"`
+	Settings any    `json:"settings,omitempty"`
+}
+
+// SalamanderSettings is the "salamander" mask's settings: a pre-shared key both ends
+// derive their per-packet XOR key from. Wire-compatible with Hysteria2's own
+// Salamander obfuscation (8-byte salt + BLAKE2b-256(psk‖salt)), which is what lets a
+// sing-box or hysteria client speak to an Xray server here.
+type SalamanderSettings struct {
+	Password string `json:"password"`
+}
+
+// salamanderUDP builds the finalmask block for a Salamander key, or nil when the
+// key is empty — an empty mask list would be an inert block in every config.
+func salamanderUDP(password string) *FinalMask {
+	if password == "" {
+		return nil
+	}
+	return &FinalMask{UDP: []FinalMaskEntry{{
+		Type:     "salamander",
+		Settings: SalamanderSettings{Password: password},
+	}}}
 }
 
 // HysteriaSettings is the Hysteria2 transport block. Xray models Hysteria2 as a

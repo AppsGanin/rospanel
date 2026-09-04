@@ -46,6 +46,10 @@ type ConnectionsStatus struct {
 	HopStart     int    `json:"hop_start"`
 	HopEnd       int    `json:"hop_end"`
 	HopInterval  string `json:"hop_interval"`
+	// HysteriaObfs is the Salamander pre-shared key (empty ⇒ obfuscation off). Shown
+	// in the editor because both ends must carry it — it is not a server-side secret,
+	// it is in every share link already.
+	HysteriaObfs string `json:"hysteria_obfs"`
 	// VLESS + XHTTP + REALITY parameters (public key / shortId / path are generated
 	// by the panel and shown read-only for reference).
 	RealityPort       int    `json:"reality_port"`
@@ -102,6 +106,7 @@ func buildConnectionsStatus(set *model.Settings) *ConnectionsStatus {
 		HopStart:          set.HopStart,
 		HopEnd:            set.HopEnd,
 		HopInterval:       set.HopInterval,
+		HysteriaObfs:      set.HysteriaObfs,
 		RealityPort:       set.RealityPort,
 		RealityDest:       set.RealityDest,
 		RealityPublicKey:  set.RealityPublicKey,
@@ -259,6 +264,7 @@ type ConnectionsUpdate struct {
 	HopStart          int               `json:"hop_start"`
 	HopEnd            int               `json:"hop_end"`
 	HopInterval       string            `json:"hop_interval"`
+	HysteriaObfs      string            `json:"hysteria_obfs"`
 	RealityPort       int               `json:"reality_port"`
 	RealityDest       string            `json:"reality_dest"`
 	RealityAntiReplay bool              `json:"reality_anti_replay"`
@@ -275,6 +281,18 @@ type ConnectionsUpdate struct {
 	AWGPort      int    `json:"awg_port"`
 	AWGDNS       string `json:"awg_dns"`
 	RegenAWGKeys bool   `json:"regen_awg_keys"`
+}
+
+// validateObfs checks a submitted Salamander key and returns it trimmed. Empty is
+// the valid "obfuscation off" value, so it is not an error — only a key that would
+// reach a client in a form the client cannot reproduce is.
+func validateObfs(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" || model.ValidObfsPassword(v) {
+		return v, nil
+	}
+	return "", invalidCode("err.badObfsPassword", "пароль обфускации: {{min}}–{{max}} символов, латиница, цифры и .~_-",
+		map[string]any{"min": model.ObfsMinLen, "max": model.ObfsMaxLen})
 }
 
 // realityHostRe validates a REALITY destination: a real domain (≥1 dot) with an
@@ -369,6 +387,10 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if !hopIntervalRe.MatchString(interval) {
 		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
+	obfs, err := validateObfs(u.HysteriaObfs)
+	if err != nil {
+		return err
+	}
 	if u.RealityPort < 1 || u.RealityPort > 65535 {
 		return invalidCode("err.realityPortRange", "порт REALITY вне диапазона 1–65535")
 	}
@@ -444,7 +466,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if err := m.store.SetProtocolNames(connNames["vless"], connNames["reality"], connNames["hysteria2"]); err != nil {
 		return err
 	}
-	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval); err != nil {
+	if err := m.store.SetHysteriaPorts(u.HysteriaPort, u.HopStart, u.HopEnd, interval, obfs); err != nil {
 		return err
 	}
 	if err := m.store.SetRealityPorts(u.RealityPort, realityDest); err != nil {

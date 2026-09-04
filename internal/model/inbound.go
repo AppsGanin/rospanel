@@ -154,6 +154,12 @@ type InboundOpts struct {
 	HopEnd      int    `json:"hop_end,omitempty"`
 	HopInterval string `json:"hop_interval,omitempty"`
 
+	// Obfs is the Hysteria2 Salamander pre-shared key (empty ⇒ no obfuscation).
+	// Client and server must agree on it, so it rides in the share link and in every
+	// generated profile. See ValidObfsPassword for the shape and Settings.HysteriaObfs
+	// for the built-in lane's equivalent.
+	Obfs string `json:"obfs,omitempty"`
+
 	// VLESS Encryption (Xray's post-quantum handshake, `xray vlessenc`). Reserved:
 	// nothing generates it yet, but current Xray deprecates VLESS-without-flow and
 	// points at this as the migration, so the field exists to avoid re-migrating
@@ -501,6 +507,24 @@ func (o InboundOpts) RealityShortIDs() []string {
 // FPOr returns the link fingerprint, defaulting to firefox.
 func (o InboundOpts) FPOr() string { return fpOr(o.FP) }
 
+// Salamander obfuscation key limits. The floor is well above Xray's own 4-byte
+// minimum: the key is the only thing standing between a probe and a recognisable
+// QUIC handshake, and four characters is guessable. The charset is deliberately
+// URL- and JSON-safe — the key is carried in a share-link query parameter and inside
+// the link's double-encoded finalmask blob, so a quote or an ampersand there would
+// corrupt the link rather than fail loudly.
+const (
+	ObfsMinLen = 8
+	ObfsMaxLen = 64
+)
+
+var obfsRe = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
+
+// ValidObfsPassword reports whether s is usable as a Salamander pre-shared key.
+func ValidObfsPassword(s string) bool {
+	return len(s) >= ObfsMinLen && len(s) <= ObfsMaxLen && obfsRe.MatchString(s)
+}
+
 // HopIntervalOr returns the port-hopping interval, defaulting to "5-10".
 func (o InboundOpts) HopIntervalOr() string {
 	if o.HopInterval == "" {
@@ -536,6 +560,7 @@ func (in *Inbound) Normalize() {
 		if o.HopInterval == "" && o.HopEnd > in.Port {
 			o.HopInterval = "5-10"
 		}
+		o.Obfs = strings.TrimSpace(o.Obfs)
 		return
 	}
 
@@ -599,8 +624,8 @@ func (in *Inbound) Normalize() {
 	o.XHTTPExtra = dropEmptyJSON(o.XHTTPExtra)
 	o.Sockopt = dropEmptyJSON(o.Sockopt)
 	o.TLSExtra = dropEmptyJSON(o.TLSExtra)
-	// Hop fields belong to Hysteria2 only.
-	o.HopStart, o.HopEnd, o.HopInterval = 0, 0, ""
+	// Hop and obfuscation fields belong to Hysteria2 only.
+	o.HopStart, o.HopEnd, o.HopInterval, o.Obfs = 0, 0, "", ""
 }
 
 // VisionFlowName is the VLESS flow used for raw-TCP Vision. It duplicates
@@ -652,6 +677,10 @@ func (in *Inbound) Validate() error {
 			if o.HopInterval != "" && !inboundHopRe.MatchString(o.HopInterval) {
 				return fieldErr("err.badHopInterval", "неверный интервал хопа (нужно «N-M», напр. 5-10)")
 			}
+		}
+		if o.Obfs != "" && !ValidObfsPassword(o.Obfs) {
+			return fieldErr("err.badObfsPassword", "пароль обфускации: {{min}}–{{max}} символов, латиница, цифры и .~_-",
+				map[string]any{"min": ObfsMinLen, "max": ObfsMaxLen})
 		}
 		return nil
 	}

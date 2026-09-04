@@ -40,7 +40,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       sub_update_interval, xray_dns,
 		       warp_enabled, warp_private_key, warp_public_key, warp_endpoint,
 		       warp_address_v4, warp_address_v6, warp_reserved, routing_config,
-		       vless_fp, reality_fp, hop_interval,
+		       vless_fp, reality_fp, hop_interval, hysteria_obfs,
 		       reality_enabled, reality_port, reality_dest, reality_private_key,
 		       reality_public_key, reality_short_id, reality_path,
 		       proxy_socks_enabled, proxy_socks_port,
@@ -85,7 +85,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.SubUpdateInterval, &st.XrayDNS,
 		&warpEn, &st.WarpPrivateKey, &st.WarpPublicKey, &st.WarpEndpoint,
 		&st.WarpAddressV4, &st.WarpAddressV6, &st.WarpReserved, &routingCfg,
-		&st.VLESSFp, &st.RealityFp, &st.HopInterval,
+		&st.VLESSFp, &st.RealityFp, &st.HopInterval, &st.HysteriaObfs,
 		&realityEn, &st.RealityPort, &st.RealityDest, &st.RealityPrivateKey,
 		&st.RealityPublicKey, &st.RealityShortID, &st.RealityPath,
 		&proxySocksEn, &st.ProxySocksPort,
@@ -339,12 +339,14 @@ func (s *Store) SetAntiDPI(tlsFragment, tlsMin13, blockQUIC bool, realityMaxTime
 	return err
 }
 
-// SetHysteriaPorts persists the Hysteria2 base port, hop range, and hop interval.
-func (s *Store) SetHysteriaPorts(port, hopStart, hopEnd int, interval string) error {
+// SetHysteriaPorts persists the Hysteria2 base port, hop range, hop interval and
+// Salamander obfuscation key — the whole client-visible shape of the lane, written
+// together because a link built from half of it does not connect.
+func (s *Store) SetHysteriaPorts(port, hopStart, hopEnd int, interval, obfs string) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET hysteria_port = ?, hop_start = ?, hop_end = ?,
-		        hop_interval = ?, updated_at = unixepoch() WHERE id = 1`,
-		port, hopStart, hopEnd, interval,
+		        hop_interval = ?, hysteria_obfs = ?, updated_at = unixepoch() WHERE id = 1`,
+		port, hopStart, hopEnd, interval, obfs,
 	)
 	return err
 }

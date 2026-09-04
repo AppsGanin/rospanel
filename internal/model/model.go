@@ -674,6 +674,13 @@ type Settings struct {
 	// HopInterval is the port-hopping rotation interval in seconds ("min-max"),
 	// embedded in the Hysteria2 share link's quicParams.
 	HopInterval string `json:"-"`
+	// HysteriaObfs is the Salamander pre-shared key for the built-in Hysteria2 lane
+	// (empty ⇒ no obfuscation). Salamander XORs every UDP datagram with
+	// BLAKE2b-256(psk‖salt), so what leaves the host stops looking like a QUIC
+	// handshake — the one thing a DPI box can fingerprint about Hysteria2 before any
+	// traffic flows. Both ends must carry the same key, so it is embedded in every
+	// share link and profile the panel hands out. See ValidObfsPassword.
+	HysteriaObfs string `json:"-"`
 
 	// Per-protocol toggles for the Connections panel. A disabled protocol drops
 	// out of user subscriptions/share links and its clients are removed from the

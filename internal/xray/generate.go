@@ -162,6 +162,9 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			// or the handshake fails with "no application protocol".
 			TLSSettings:      &TLSSettings{ServerName: set.SNI, ALPN: []string{"h3"}, Certificates: sharedCert},
 			HysteriaSettings: &HysteriaSettings{Version: 2},
+			// Salamander, when the operator set a key. Nil otherwise, so an install
+			// that never turned it on generates exactly the config it did before.
+			FinalMask: salamanderUDP(set.HysteriaObfs),
 		},
 		Sniffing: sniff,
 	}
@@ -587,6 +590,7 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 		}
 	case model.TrHysteria:
 		st.HysteriaSettings = &HysteriaSettings{Version: 2}
+		st.FinalMask = salamanderUDP(o.Obfs)
 	}
 	st.Sockopt = o.Sockopt
 
