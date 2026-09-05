@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/AppsGanin/rospanel/compare/v2.13.0...v2.14.0) (2026-09-05)
+
+
+### Features
+
+* **hysteria2:** the obfuscation key is generated, never typed ([9c2cb2e](https://github.com/AppsGanin/rospanel/commit/9c2cb2e0b333dda52169fb45729a1edc5557ae64))
+
 ## [2.13.0](https://github.com/AppsGanin/rospanel/compare/v2.12.1...v2.13.0) (2026-09-05)
 
 
