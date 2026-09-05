@@ -874,7 +874,7 @@ func (m *Manager) ApplyNodeConnections(id int64, u ConnectionsUpdate) error {
 	if !hopIntervalRe.MatchString(interval) {
 		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
-	obfs, err := validateObfs(u.HysteriaObfs)
+	obfs, err := resolveObfs(u.HysteriaObfs, u.RegenObfs)
 	if err != nil {
 		return err
 	}

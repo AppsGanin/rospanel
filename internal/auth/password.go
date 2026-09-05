@@ -162,6 +162,21 @@ func RandomPassword() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// RandomObfsKey mints a Hysteria2 Salamander pre-shared key.
+//
+// 128 bits, rendered with the URL-safe base64 alphabet — 22 characters of [A-Za-z0-9-_],
+// which is a subset of what model.ValidObfsPassword accepts, so a generated key always
+// passes the panel's own validation. The panel never asks an operator to invent one:
+// this is the only thing that produces it, the way REALITY material is minted rather
+// than typed.
+func RandomObfsKey() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
 // RandomToken returns a 256-bit URL-safe opaque token (sessions).
 func RandomToken() (string, error) {
 	b := make([]byte, 32)

@@ -7,7 +7,6 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
-import { randomObfs } from "./format";
 import { NameVarsHint } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -57,7 +56,18 @@ const hopIntervals = () => [
   { value: "60-120", label: i18n.t("conn.sec", { range: "60–120" }) },
 ];
 
-type Hy = { port: number; start: number; end: number; interval: string; obfs: string };
+// Hy carries the Hysteria2 lane's editable shape. obfs is DISPLAY only — the key is
+// never typed, only minted by the server (see auth.RandomObfsKey), so obfsAction is
+// what the operator actually changes: keep it, mint a new one, or switch it off.
+type ObfsAction = "keep" | "regen" | "off";
+type Hy = {
+  port: number;
+  start: number;
+  end: number;
+  interval: string;
+  obfs: string;
+  obfsAction: ObfsAction;
+};
 
 type Reality = { port: number; dests: string[]; antiReplay: boolean };
 type Anti = { fragment: boolean; min13: boolean; blockQuic: boolean };
@@ -95,7 +105,7 @@ export function ConnectionsEditor({
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [fps, setFps] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
-  const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10", obfs: "" });
+  const [hy, setHy] = useState<Hy>({ port: 0, start: 0, end: 0, interval: "5-10", obfs: "", obfsAction: "keep" });
   const [reality, setReality] = useState<Reality>({ port: 0, dests: [], antiReplay: false });
   const [anti, setAnti] = useState<Anti>({ fragment: false, min13: false, blockQuic: false });
   const [regenReality, setRegenReality] = useState(false);
@@ -113,7 +123,7 @@ export function ConnectionsEditor({
     enabled: {},
     fps: {},
     names: {},
-    hy: { port: 0, start: 0, end: 0, interval: "5-10", obfs: "" },
+    hy: { port: 0, start: 0, end: 0, interval: "5-10", obfs: "", obfsAction: "keep" },
     reality: { port: 0, dests: [], antiReplay: false },
     anti: { fragment: false, min13: false, blockQuic: false },
     awg: { port: 0, dns: "" },
@@ -132,7 +142,7 @@ export function ConnectionsEditor({
     });
     const h: Hy = {
       port: s.hysteria_port, start: s.hop_start, end: s.hop_end,
-      interval: s.hop_interval || "5-10", obfs: s.hysteria_obfs || "",
+      interval: s.hop_interval || "5-10", obfs: s.hysteria_obfs || "", obfsAction: "keep",
     };
     const r: Reality = {
       port: s.reality_port,
@@ -166,7 +176,7 @@ export function ConnectionsEditor({
   // The obfuscation key is part of the SERVER config (Xray's finalmask block), not
   // just of the links — changing it has to restart Xray, or the panel hands out
   // links for a key the listener is not using yet.
-  const obfsChanged = hy.obfs !== saved.hy.obfs;
+  const obfsChanged = hy.obfsAction !== "keep";
   const hyChanged = portsChanged || hy.interval !== saved.hy.interval || obfsChanged;
   const realityChanged =
     reality.port !== saved.reality.port ||
@@ -216,7 +226,10 @@ export function ConnectionsEditor({
         hop_start: hy.start,
         hop_end: hy.end,
         hop_interval: hy.interval,
-        hysteria_obfs: hy.obfs,
+        // "off" clears it, "keep" round-trips what the server already has, and
+        // regen_obfs makes the server mint one and ignore this value entirely.
+        hysteria_obfs: hy.obfsAction === "off" ? "" : hy.obfs,
+        regen_obfs: hy.obfsAction === "regen",
         reality_port: reality.port,
         reality_dest: reality.dests.join(","),
         reality_anti_replay: reality.antiReplay,
@@ -335,21 +348,44 @@ export function ConnectionsEditor({
                         <p className="text-xs text-ink-muted">
                           {t("conn.hopHint")}
                         </p>
-                        {/* Salamander. Not a password field: both ends need the same
-                            value and it is already inside every link the panel hands
-                            out, so hiding it here would only stop the operator
-                            reading back what they set. */}
-                        <TextInput
+                        {/* Salamander. Shown rather than hidden: both ends need the same
+                            value and it is already inside every link the panel hands out.
+                            Read only, like the REALITY material — the key is minted by the
+                            server, never invented by whoever is filling in the form. */}
+                        <LongField
                           label={t("conn.obfs")}
-                          value={hy.obfs}
-                          placeholder={t("conn.obfsOff")}
-                          onChange={(v) => setHy((h) => ({ ...h, obfs: v.trim() }))}
+                          value={
+                            hy.obfsAction === "off"
+                              ? t("conn.obfsOff")
+                              : hy.obfsAction === "regen"
+                                ? t("conn.obfsWillRegen")
+                                : hy.obfs || t("conn.obfsOff")
+                          }
                         />
                         <div className="flex items-center gap-2">
                           <p className="flex-1 text-xs text-ink-muted">{t("conn.obfsHint")}</p>
-                          <Button variant="subtle" size="xs" onClick={() => setHy((h) => ({ ...h, obfs: randomObfs() }))}>
+                          <Button
+                            variant="subtle"
+                            size="xs"
+                            color={hy.obfsAction === "regen" ? "orange" : "gray"}
+                            onClick={() =>
+                              setHy((h) => ({ ...h, obfsAction: h.obfsAction === "regen" ? "keep" : "regen" }))
+                            }
+                          >
                             {t("conn.obfsGenerate")}
                           </Button>
+                          {(hy.obfs !== "" || hy.obfsAction === "off") && (
+                            <Button
+                              variant="subtle"
+                              size="xs"
+                              color={hy.obfsAction === "off" ? "orange" : "gray"}
+                              onClick={() =>
+                                setHy((h) => ({ ...h, obfsAction: h.obfsAction === "off" ? "keep" : "off" }))
+                              }
+                            >
+                              {t("conn.obfsDisable")}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ) : (

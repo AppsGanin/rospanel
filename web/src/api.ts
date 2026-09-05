@@ -310,6 +310,8 @@ export interface ConnectionsUpdate {
   hop_end: number
   hop_interval: string
   hysteria_obfs: string
+  // Ask the server to mint a fresh Salamander key, ignoring hysteria_obfs.
+  regen_obfs: boolean
   reality_port: number
   reality_dest: string
   reality_anti_replay: boolean
@@ -2366,7 +2368,10 @@ export interface InboundInput {
   hop_start: number
   hop_end: number
   hop_interval: string
+  // The Salamander key is display-only; regen_obfs is what asks the server to mint a
+  // new one. The editor never lets it be typed.
   obfs: string
+  regen_obfs: boolean
   header_type: string
   header_hosts: string[]
   header_paths: string[]
