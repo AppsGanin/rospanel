@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.13.0](https://github.com/AppsGanin/rospanel/compare/v2.12.1...v2.13.0) (2026-09-05)
+
+
+### Features
+
+* **billing:** a tariff carries its own traffic refill cycle ([4d4d47b](https://github.com/AppsGanin/rospanel/commit/4d4d47b4b2425cf410fc943f08a444221ee3d059))
+* **hysteria2:** Salamander obfuscation for the lane and for custom inbounds ([2a86b00](https://github.com/AppsGanin/rospanel/commit/2a86b005b293d552ca18b83c1cb84cba25104bb9))
+* **security:** a fresh second factor for the two actions with no undo ([feff7d5](https://github.com/AppsGanin/rospanel/commit/feff7d58a6a82e05677cc83b36095e90532e6f2f))
+* **servers:** a traffic limit per server, with an alert and optional hiding ([45c70b8](https://github.com/AppsGanin/rospanel/commit/45c70b86c46ce49f8010a0d37f787809674e0872))
+* **subscriptions:** operator-editable profile templates for mihomo, sing-box and Xray JSON ([ab1afd3](https://github.com/AppsGanin/rospanel/commit/ab1afd36b44493bf6b7ac36643fb9c1a9aac9ebe))
+* **subscriptions:** variables in connection names ([2653cb4](https://github.com/AppsGanin/rospanel/commit/2653cb47a3e3700bb48cae067e301ab3759e2d13))
+
+
+### Bug Fixes
+
+* **admins:** the owner's password no longer has to be ASCII to remove an account ([a5fed37](https://github.com/AppsGanin/rospanel/commit/a5fed374c1d21889b6544f319b755934249326e5))
+* external servers no longer vanish with a hidden master ([d81120b](https://github.com/AppsGanin/rospanel/commit/d81120be2475c2119c6f28fd5d7603d96ba1b59b))
+* **security:** bound what a subscription template can expand into, and close the setup-time step-up gap ([f88615e](https://github.com/AppsGanin/rospanel/commit/f88615ef3ab7750fd8d4098e0f6a09dbab1be920))
+* **security:** four more from a second review pass ([0c15853](https://github.com/AppsGanin/rospanel/commit/0c15853258ea241b92e88e2a4fb10b9478d36342))
+* **servers:** the traffic alert stopped repeating itself, and stopped lying ([54547ba](https://github.com/AppsGanin/rospanel/commit/54547bad5b50396e83b27b93c88e7b4665f5056f))
+* **subscriptions:** name variables reach the share links, and rendered names cannot collide ([21c9658](https://github.com/AppsGanin/rospanel/commit/21c9658bd0e611ef9becfb839c3762a041a6cbcb))
+* the subscription page shows external servers, and addresses the panel ([e5572f1](https://github.com/AppsGanin/rospanel/commit/e5572f1aee71c00141c026acd45b8e6b2d4ce883))
+
 ## [2.12.1](https://github.com/AppsGanin/rospanel/compare/v2.12.0...v2.12.1) (2026-09-03)
 
 
