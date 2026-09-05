@@ -188,8 +188,9 @@ func TestAuditRosterRowsNameTheirTarget(t *testing.T) {
 
 	// Delete it: the login must survive into the audit row even though the admins
 	// row it came from is gone.
-	req := httptest.NewRequest("DELETE", "/api/admins/"+strconv.FormatInt(supportID, 10), nil)
-	req.Header.Set("X-Current-Password", "a-password")
+	req := httptest.NewRequest("DELETE", "/api/admins/"+strconv.FormatInt(supportID, 10),
+		strings.NewReader(`{"current_password":"a-password"}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(owner)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
