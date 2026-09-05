@@ -716,12 +716,13 @@ export const resetAdminPassword = (
     body: JSON.stringify({ password, current_password: currentPassword }),
   })
 
-// The owner's password rides in a header: a DELETE body is the kind of thing
-// proxies and clients feel free to drop.
+// The owner's password rides in the BODY, not a header: header values are ISO-8859-1
+// only, so fetch throws outright on a Cyrillic password and mangles an accented one
+// into bytes that can never match the stored hash.
 export const deleteAdmin = (id: number, currentPassword: string) =>
   api<{ ok: boolean }>(`api/admins/${id}`, {
     method: 'DELETE',
-    headers: { 'X-Current-Password': currentPassword },
+    body: JSON.stringify({ current_password: currentPassword }),
   })
 
 // The admin trail: what was done to the panel itself (the roster, the settings, TLS,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -261,5 +262,48 @@ func TestStepUpAcceptsANonASCIIPassword(t *testing.T) {
 	// And a wrong one is still wrong.
 	if _, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("пароль-Ω-124", ""), cookie, nil); errCode != "err.wrongPassword" {
 		t.Errorf("a wrong non-ASCII password was accepted: %s", errCode)
+	}
+}
+
+// Removing an admin re-checks the owner's password, and that password is whatever the
+// owner chose — nothing restricts it to ASCII. It rides in the body for the same reason
+// the irreversible actions do: a header is ISO-8859-1, so a browser cannot send a
+// Cyrillic password at all, and an owner with one could never remove an account.
+func TestDeleteAdminAcceptsANonASCIIPassword(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	const pw = "Владелец-Ω-9"
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	ownerID, err := st.CreateAdmin("owner", hash, model.RoleOwner, false)
+	if err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	token, err := st.CreateSession(ownerID, time.Hour)
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	cookie := &http.Cookie{Name: sessionCookie, Value: token}
+
+	victimHash, _ := auth.HashPassword("whatever-1")
+	victimID, err := st.CreateAdmin("support", victimHash, model.RoleOperator, false)
+	if err != nil {
+		t.Fatalf("create victim: %v", err)
+	}
+	path := "/api/admins/" + strconv.FormatInt(victimID, 10)
+
+	// A wrong password is still refused.
+	if _, errCode := send(t, rt, http.MethodDelete, path, `{"current_password":"Владелец-Ω-8"}`, cookie, nil); errCode != "err.wrongPassword" {
+		t.Fatalf("a wrong non-ASCII password was accepted: %s", errCode)
+	}
+	// The right one goes through.
+	body := `{"current_password":"` + pw + `"}`
+	if code, errCode := send(t, rt, http.MethodDelete, path, body, cookie, nil); code != http.StatusOK {
+		t.Fatalf("a correct non-ASCII password was rejected: %d %s", code, errCode)
+	}
+	if _, err := st.GetAdmin(victimID); err == nil {
+		t.Error("the account was not removed")
 	}
 }

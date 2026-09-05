@@ -102,10 +102,24 @@ func (rt *Router) resetAdminPassword(w http.ResponseWriter, r *http.Request, id 
 	writeOK(w)
 }
 
-// deleteAdmin removes an account. The password comes in a header rather than a body:
-// DELETE bodies are the kind of thing proxies and clients feel free to drop.
+// deleteAdmin removes an account, re-checking the owner's password first.
+//
+// The password rides in the request BODY, on a DELETE. It used to be a header, which
+// cannot carry it: header values are ISO-8859-1, so a browser refuses outright to send
+// a Cyrillic password and turns an accented one into bytes that can never match the
+// stored hash — a correct password answered "wrong password" with nothing to explain
+// it, and an owner whose password was not ASCII could never remove an account at all.
+// Passwords have no charset restriction, so that was not a corner case. Go's mux and
+// every browser's fetch both handle a DELETE body; see stepUpBody, which the two
+// irreversible actions use for the same reason.
 func (rt *Router) deleteAdmin(w http.ResponseWriter, r *http.Request, id int64) {
-	if !rt.verifyAdminPassword(w, r, r.Header.Get("X-Current-Password")) {
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyAdminPassword(w, r, req.CurrentPassword) {
 		return
 	}
 	me, _ := rt.adminID(r)
