@@ -1,8 +1,10 @@
 package sub
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -123,6 +125,15 @@ func renderJSONTemplate(tpl string, scalars map[string]any, lists map[string][]a
 	if len(out) > maxRenderedBytes {
 		return "", ErrTemplateTooBig
 	}
+	// Nothing the panel was asked to substitute may survive into a served profile. The
+	// validator refuses the shapes that would leave one, and this is the backstop for
+	// the shape it did not think of — the caller falls back to the generated profile,
+	// which is the whole point of failing loudly here rather than shipping the text.
+	for _, ph := range []string{TplProxies, TplTags, TplOutbounds} {
+		if bytes.Contains(out, []byte(ph)) {
+			return "", fmt.Errorf("%w: %s was left unsubstituted (it must be an array element)", ErrTemplateEmpty, ph)
+		}
+	}
 	return string(out), nil
 }
 
@@ -148,68 +159,71 @@ func validateJSONTemplate(tpl, required string) error {
 	if err := json.Unmarshal([]byte(tpl), &doc); err != nil {
 		return err
 	}
-	if !hasPlaceholder(doc, required) {
+	lists, tags, depth := templateCost(doc, 1)
+	// The placeholder has to sit where the renderer can act on it. spliceJSON replaces a
+	// list placeholder only as an ARRAY ELEMENT, so the natural mistake — writing
+	// "outbounds": "{{proxies}}" instead of ["{{proxies}}"] — used to pass validation
+	// and then render to itself: every client got a profile with the literal text
+	// {{proxies}} in it and refused the lot, with nothing logged because nothing failed.
+	// Counting substitutable positions is what makes "it validated" mean "it will work".
+	if lists[required] == 0 {
 		return ErrTemplateEmpty
 	}
-	if lists, depth := templateCost(doc, 1); lists > maxListPlaceholders || depth > maxTemplateDepth {
+	// One servers slot, not many. Each expansion re-emits the SAME outbound objects,
+	// tags included, so a second {{proxies}} is a profile with every tag duplicated —
+	// which sing-box and Xray reject outright. {{tags}} is the exception and repeats
+	// legitimately: a selector and a urltest both list them.
+	if lists[required] > 1 {
+		return ErrTemplateTooBig
+	}
+	if tags > maxListPlaceholders || depth > maxTemplateDepth {
 		return ErrTemplateTooBig
 	}
 	return nil
 }
 
-// templateCost measures the two things that make a template expand: how many list
-// placeholders it carries (each one is replaced by the whole proxy list) and how deep
-// it nests (the rendered document is indented two spaces per level). Counted on the
-// decoded form, so it measures what the renderer will actually walk.
-func templateCost(doc any, depth int) (lists, maxDepth int) {
+// templateCost measures what makes a template expand, counting only the positions the
+// renderer can actually act on: list placeholders that are ARRAY ELEMENTS (each one is
+// replaced by the whole proxy list) and how deep the document nests (the rendered form
+// is indented two spaces per level). Counted on the decoded document, so it measures
+// exactly what spliceJSON will walk.
+//
+// lists is keyed by placeholder so the caller can hold each to its own rule; tags is
+// the {{tags}} count, which may legitimately repeat.
+func templateCost(doc any, depth int) (lists map[string]int, tags, maxDepth int) {
+	lists = map[string]int{}
 	maxDepth = depth
-	switch v := doc.(type) {
-	case string:
-		if v == TplProxies || v == TplTags || v == TplOutbounds {
-			return 1, depth
+	merge := func(l map[string]int, tg, d int) {
+		for k, n := range l {
+			lists[k] += n
 		}
+		tags += tg
+		if d > maxDepth {
+			maxDepth = d
+		}
+	}
+	switch v := doc.(type) {
 	case []any:
 		for _, item := range v {
-			l, d := templateCost(item, depth+1)
-			lists += l
-			if d > maxDepth {
-				maxDepth = d
+			// Only here is a placeholder substitutable, so only here does it count.
+			if s, ok := item.(string); ok {
+				switch s {
+				case TplProxies, TplOutbounds:
+					lists[s]++
+					continue
+				case TplTags:
+					tags++
+					continue
+				}
 			}
+			merge(templateCost(item, depth+1))
 		}
 	case map[string]any:
 		for _, item := range v {
-			l, d := templateCost(item, depth+1)
-			lists += l
-			if d > maxDepth {
-				maxDepth = d
-			}
+			merge(templateCost(item, depth+1))
 		}
 	}
-	return lists, maxDepth
-}
-
-// hasPlaceholder reports whether the decoded document contains the placeholder as a
-// string value anywhere. Checked on the decoded form, not the text, so a placeholder
-// that only appears inside a comment-like key the renderer never visits does not
-// count as present.
-func hasPlaceholder(doc any, want string) bool {
-	switch v := doc.(type) {
-	case string:
-		return v == want
-	case []any:
-		for _, item := range v {
-			if hasPlaceholder(item, want) {
-				return true
-			}
-		}
-	case map[string]any:
-		for _, item := range v {
-			if hasPlaceholder(item, want) {
-				return true
-			}
-		}
-	}
-	return false
+	return lists, tags, maxDepth
 }
 
 // ValidateClashTemplate checks a mihomo template. It is YAML, which the panel does not

@@ -2099,12 +2099,13 @@ export const setNodeEnabled = (id: number, enabled: boolean) =>
   })
 
 // Deleting a server is irreversible and cuts off everyone on it, so it is re-authorised
-// like a factory reset. The credentials go in headers: a DELETE body is the kind of
-// thing proxies and clients feel free to drop.
+// like a factory reset. The credentials go in the BODY, not a header: header values are
+// ISO-8859-1 only, so fetch throws outright on a Cyrillic password and mangles an
+// accented one into bytes that can never match the stored hash.
 export const deleteNode = (id: number, currentPassword: string, code: string) =>
   api<{ ok: boolean }>(`api/nodes/${id}`, {
     method: 'DELETE',
-    headers: { 'X-Current-Password': currentPassword, 'X-TOTP-Code': code },
+    body: JSON.stringify({ current_password: currentPassword, code }),
   })
 
 export const regenNodeJoin = (id: number) =>

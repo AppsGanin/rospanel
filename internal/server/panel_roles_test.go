@@ -39,7 +39,7 @@ func rolesTestRouter(t *testing.T) (*Router, *store.Store) {
 	mgr := core.New(st, sup, xray.Options{PanelDest: "127.0.0.1:8080"}, core.TLSPaths{}, dir)
 	// The limiter is what /api/login consults before anything else; a Router without
 	// one panics the moment a test drives the login route (see login_totp_test.go).
-	return &Router{mgr: mgr, dataDir: dir, limiter: newLoginLimiter()}, st
+	return &Router{mgr: mgr, dataDir: dir, limiter: newLoginLimiter(), stepUp: newAPIKeyGuard()}, st
 }
 
 // signIn creates an admin with the given role and returns a request cookie for a

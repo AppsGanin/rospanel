@@ -299,3 +299,68 @@ func TestRenderedNameCollisionsAreDeduplicated(t *testing.T) {
 		}
 	}
 }
+
+// A placeholder only substitutes as an ARRAY ELEMENT. The natural mistake — writing it
+// as a map value — used to validate, render to itself, and hand every client a profile
+// with the literal text {{proxies}} in it. Nothing failed, so nothing fell back and
+// nothing was logged: the operator's only signal was users saying it does not work.
+func TestTemplatePlaceholderMustBeSubstitutable(t *testing.T) {
+	scalar := `{"log":{"level":"warn"},"outbounds":"{{proxies}}","route":{"final":"{{group}}"}}`
+	if err := ValidateSingBoxTemplate(scalar); !errors.Is(err, ErrTemplateEmpty) {
+		t.Errorf("a scalar {{proxies}} validated with %v, want ErrTemplateEmpty", err)
+	}
+	// And the render refuses it too, so a template stored before this rule cannot leak
+	// its own placeholder text to a client.
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), scalar)
+	if err == nil {
+		t.Error("a scalar {{proxies}} rendered without error")
+	}
+	if strings.Contains(out, TplProxies) {
+		t.Error("the placeholder text reached the served profile")
+	}
+	if out != SingBoxJSONMulti(tplUser(), tplServers()) {
+		t.Error("the render did not fall back to the generated profile")
+	}
+
+	// Same rule for the Xray template.
+	if err := ValidateXrayTemplate(`{"outbounds":"{{outbounds}}","remarks":"{{remarks}}"}`); !errors.Is(err, ErrTemplateEmpty) {
+		t.Errorf("a scalar {{outbounds}} validated with %v", err)
+	}
+}
+
+// One servers slot, not many: each expansion re-emits the same outbound objects, tags
+// included, and a duplicated tag makes sing-box and Xray refuse the whole profile.
+// {{tags}} is the exception — a selector and a urltest both list them.
+func TestTemplateRefusesASecondServersSlot(t *testing.T) {
+	twice := `{"outbounds":[{"type":"selector","tag":"{{group}}","outbounds":["{{tags}}"]},"{{proxies}}","{{proxies}}"]}`
+	if err := ValidateSingBoxTemplate(twice); !errors.Is(err, ErrTemplateTooBig) {
+		t.Errorf("two {{proxies}} slots validated with %v, want a refusal", err)
+	}
+	if err := ValidateXrayTemplate(`{"outbounds":["{{outbounds}}","{{outbounds}}"]}`); !errors.Is(err, ErrTemplateTooBig) {
+		t.Errorf("two {{outbounds}} slots validated with %v", err)
+	}
+	// Two {{tags}} is the shape an ordinary profile has, and stays valid.
+	both := `{"outbounds":[{"type":"selector","tag":"{{group}}","outbounds":["{{tags}}"]},` +
+		`{"type":"urltest","tag":"auto","outbounds":["{{tags}}"]},"{{proxies}}"]}`
+	if err := ValidateSingBoxTemplate(both); err != nil {
+		t.Errorf("selector + urltest was refused: %v", err)
+	}
+	// And it renders with every tag naming a real outbound.
+	out, err := SingBoxWithTemplate(tplUser(), tplServers(), both)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	seen := map[string]int{}
+	for _, o := range doc["outbounds"].([]any) {
+		seen[o.(map[string]any)["tag"].(string)]++
+	}
+	for tag, n := range seen {
+		if n > 1 {
+			t.Errorf("tag %q emitted %d times", tag, n)
+		}
+	}
+}
