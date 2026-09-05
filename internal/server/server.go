@@ -41,6 +41,11 @@ type Router struct {
 	assets   http.Handler
 	indexRaw []byte // index.html before <base href> injection
 	limiter  *loginLimiter
+	// stepUp throttles wrong second factors on the irreversible actions. Its OWN
+	// counter, not the login one: sharing it meant a mistyped code in the delete dialog
+	// locked the admin out of the login form for fifteen minutes while doing nothing at
+	// all to the endpoint being guessed at — the collateral without the protection.
+	stepUp *loginLimiter
 	// statusCache memoizes the rendered public status page per language; see statusBody.
 	statusMu    sync.Mutex
 	statusCache map[string]statusPageCache
@@ -117,6 +122,7 @@ func New(mgr *core.Manager, secret, decoyTemplate, dataDir string) (http.Handler
 		assets:      http.FileServer(http.FS(spa)),
 		indexRaw:    indexRaw,
 		limiter:     newLoginLimiter(),
+		stepUp:      newAPIKeyGuard(),
 		subLimiter:  newIPRateLimiter(120, time.Minute),
 		apiLimiter:  newIPRateLimiter(600, time.Minute),
 		apiKeys:     newAPIKeyGuard(),

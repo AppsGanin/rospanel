@@ -2,6 +2,7 @@ package sub
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"net/url"
 	"strings"
@@ -53,7 +54,15 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 		if !ok {
 			continue
 		}
-		outbounds, _ := cfg["outbounds"].([]map[string]any)
+		// A lane with no outbound chain would render into the operator's document as an
+		// empty outbounds list: a config that parses, imports, and routes nothing. Refuse
+		// rather than hand that out — the caller falls back to the generated profile,
+		// which is a working subscription. Defensive rather than reachable today, but
+		// the cost of being wrong here is a client that looks connected and is not.
+		outbounds, ok := cfg["outbounds"].([]map[string]any)
+		if !ok || len(outbounds) == 0 {
+			return XrayJSONMulti(u, servers, dpi), fmt.Errorf("lane %q produced no outbound chain", cfg["remarks"])
+		}
 		chain := make([]any, len(outbounds))
 		for i, o := range outbounds {
 			chain[i] = o

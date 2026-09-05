@@ -472,16 +472,20 @@ func (rt *Router) setNodeEnabled(w http.ResponseWriter, r *http.Request, id int6
 //
 // Step-up applies, with a fresh second factor when the admin has one: deleting a
 // server cuts off every user on it at once and there is no undo in the panel — the
-// node has to be installed and joined again. Credentials travel in headers rather
-// than a body because DELETE bodies are the kind of thing proxies and clients feel
-// free to drop (same reason as deleteAdmin).
+// node has to be installed and joined again. Credentials travel in the request BODY,
+// not a header: header values are ISO-8859-1 only, so a browser cannot send a
+// Cyrillic password at all and mangles an accented one (see stepUpBody).
 //
 // The /v1 API's node delete is deliberately NOT gated this way: it authenticates
 // with an API key, which is a separate credential issued on purpose for automation
 // and has no session or authenticator behind it. Gating it would break every
 // integration while adding nothing an attacker holding that key could not already do.
 func (rt *Router) deleteNode(w http.ResponseWriter, r *http.Request, id int64) {
-	if !rt.verifyStepUpTOTP(w, r, r.Header.Get("X-Current-Password"), r.Header.Get("X-TOTP-Code")) {
+	var req stepUpBody
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyStepUpTOTP(w, r, req.CurrentPassword, req.Code) {
 		return
 	}
 	if err := rt.mgr.DeleteNode(id); err != nil {

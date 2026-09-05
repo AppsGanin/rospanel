@@ -48,10 +48,7 @@ func (rt *Router) factoryReset(w http.ResponseWriter, r *http.Request) {
 	// Re-authenticate. This wipes every user, the admin roster, the TLS identity and the
 	// secret path, with no undo — a stolen session cookie must not be enough on its own.
 	// Changing a payment key already re-prompts; this is strictly more destructive.
-	var req struct {
-		CurrentPassword string `json:"current_password"`
-		Code            string `json:"code"`
-	}
+	var req stepUpBody
 	if !decodeJSON(w, r, &req) {
 		return
 	}

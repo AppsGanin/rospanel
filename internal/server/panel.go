@@ -745,6 +745,17 @@ func (rt *Router) verifyStepUp(w http.ResponseWriter, r *http.Request, password 
 	return rt.verifyAdminPassword(w, r, password)
 }
 
+// stepUpBody is how an irreversible action carries its credentials. A JSON body even
+// on DELETE, because an HTTP header cannot hold them: the Fetch API restricts header
+// values to ISO-8859-1, so a browser refuses outright to send a Cyrillic password and
+// silently mangles an accented one into a byte string that can never match the stored
+// hash — a correct password answered "wrong password", with nothing to explain it.
+// Passwords have no charset restriction, so this is not a corner case.
+type stepUpBody struct {
+	CurrentPassword string `json:"current_password"`
+	Code            string `json:"code"`
+}
+
 // verifyStepUpTOTP is verifyStepUp plus a FRESH second factor, for the handful of
 // actions that destroy something no backup taken afterwards can bring back.
 //
@@ -783,6 +794,14 @@ func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, passw
 	if !totp.Enabled() {
 		return true
 	}
+	ip := clientIP(r)
+	if rt.stepUp.blocked(ip, "") {
+		// The attacker this counts is already past the password and holds a session, so
+		// nothing but a lockout on THIS endpoint slows the walk through a six-digit
+		// space. Checked before the code is even read.
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyAttempts", "слишком много попыток, попробуйте позже")
+		return false
+	}
 	code = strings.TrimSpace(code)
 	if code == "" {
 		writeErrCode(w, http.StatusForbidden, "err.totpRequired", "введите код из приложения")
@@ -800,7 +819,7 @@ func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, passw
 		// digits is a small space, and whoever is guessing here has already got past
 		// the password. The legitimate case costs nothing — a correct code never
 		// reaches this branch.
-		rt.limiter.fail(clientIP(r), "")
+		rt.stepUp.fail(ip, "")
 		writeErrCode(w, http.StatusForbidden, "err.totpInvalid", "неверный код")
 		return false
 	}
@@ -808,6 +827,7 @@ func (rt *Router) verifyStepUpTOTP(w http.ResponseWriter, r *http.Request, passw
 		writeErrCode(w, http.StatusForbidden, "err.totpUsed", "этот код уже использован — дождитесь следующего")
 		return false
 	}
+	rt.stepUp.success(ip, "")
 	// Claim the step before acting, so a replayed code cannot drive the action twice.
 	claimed, err := rt.mgr.Store().MarkAdminTOTPStep(id, step)
 	if err != nil {

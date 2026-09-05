@@ -39,6 +39,17 @@ func setupDone(t *testing.T, st *store.Store) {
 	}
 }
 
+// stepUp builds the credential body an irreversible action carries. A body, not
+// headers: header values are ISO-8859-1 only, so a browser cannot send a non-ASCII
+// password at all — which is the bug this shape exists to avoid.
+func stepUp(password, code string) string {
+	b, err := json.Marshal(map[string]string{"current_password": password, "code": code})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 // send drives one request and returns the status plus the panel's error code.
 func send(t *testing.T, rt *Router, method, path, body string, c *http.Cookie, hdr map[string]string) (int, string) {
 	t.Helper()
@@ -67,22 +78,19 @@ func TestDeleteNodeRequiresFreshTOTP(t *testing.T) {
 	cookie, secret := adminWithTOTP(t, st, "owner")
 
 	// No credentials at all: the session alone is not enough any more.
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, nil); code != http.StatusForbidden {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "{}", cookie, nil); code != http.StatusForbidden {
 		t.Fatalf("bare session: %d %s — want 403", code, errCode)
 	}
 	// Right password, no code.
-	pw := map[string]string{"X-Current-Password": "a-password"}
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, pw); errCode != "err.totpRequired" {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("a-password", ""), cookie, nil); errCode != "err.totpRequired" {
 		t.Fatalf("password alone: %d %s — want err.totpRequired", code, errCode)
 	}
 	// Right code, wrong password: the password is still checked first.
-	bad := map[string]string{"X-Current-Password": "nope", "X-TOTP-Code": codeNow(t, secret)}
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, bad); errCode != "err.wrongPassword" {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("nope", codeNow(t, secret)), cookie, nil); errCode != "err.wrongPassword" {
 		t.Fatalf("wrong password: %d %s — want err.wrongPassword", code, errCode)
 	}
 	// Wrong code, right password.
-	wrong := map[string]string{"X-Current-Password": "a-password", "X-TOTP-Code": "000000"}
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, wrong); errCode != "err.totpInvalid" {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("a-password", "000000"), cookie, nil); errCode != "err.totpInvalid" {
 		t.Fatalf("wrong code: %d %s — want err.totpInvalid", code, errCode)
 	}
 
@@ -90,8 +98,8 @@ func TestDeleteNodeRequiresFreshTOTP(t *testing.T) {
 	// so what comes back is the manager's own answer — which is the point: the gate is
 	// no longer what refuses it.
 	good := codeNow(t, secret)
-	ok := map[string]string{"X-Current-Password": "a-password", "X-TOTP-Code": good}
-	code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, ok)
+	ok := stepUp("a-password", good)
+	code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", ok, cookie, nil)
 	if errCode == "err.totpRequired" || errCode == "err.totpInvalid" || errCode == "err.wrongPassword" {
 		t.Fatalf("valid credentials were refused by the gate: %d %s", code, errCode)
 	}
@@ -99,7 +107,7 @@ func TestDeleteNodeRequiresFreshTOTP(t *testing.T) {
 	// And that code is spent. Replaying it inside the same 30-second window must not
 	// authorise a second deletion — otherwise one shoulder-surfed code is worth every
 	// server in the fleet.
-	if code, errCode = send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, ok); errCode != "err.totpUsed" {
+	if code, errCode = send(t, rt, http.MethodDelete, "/api/nodes/1", ok, cookie, nil); errCode != "err.totpUsed" {
 		t.Errorf("replayed code answered %d %s, want err.totpUsed", code, errCode)
 	}
 }
@@ -111,11 +119,10 @@ func TestDeleteNodeWithoutTOTPNeedsOnlyThePassword(t *testing.T) {
 	setupDone(t, st)
 	cookie := signIn(t, st, "owner", model.RoleOwner, false)
 
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, nil); errCode != "err.wrongPassword" {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "{}", cookie, nil); errCode != "err.wrongPassword" {
 		t.Fatalf("no password: %d %s — want err.wrongPassword", code, errCode)
 	}
-	pw := map[string]string{"X-Current-Password": "a-password"}
-	code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, pw)
+	code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("a-password", ""), cookie, nil)
 	if errCode == "err.wrongPassword" || errCode == "err.totpRequired" {
 		t.Fatalf("password-only step-up was refused: %d %s", code, errCode)
 	}
@@ -130,7 +137,7 @@ func TestIrreversibleActionsAreNotWaivedDuringSetup(t *testing.T) {
 	// Deliberately NOT marking setup done.
 	cookie := signIn(t, st, "owner", model.RoleOwner, false)
 
-	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", "", cookie, nil); errCode != "err.wrongPassword" {
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("wrong", ""), cookie, nil); errCode != "err.wrongPassword" {
 		t.Errorf("node delete during setup: %d %s — want the password to be required", code, errCode)
 	}
 	body := `{"current_password":"wrong"}`
@@ -175,5 +182,84 @@ func TestFactoryResetRequiresFreshTOTP(t *testing.T) {
 	replay := `{"current_password":"a-password","code":"` + good + `"}`
 	if code, errCode := send(t, rt, http.MethodPost, "/api/reset", replay, cookie, nil); errCode != "err.totpUsed" {
 		t.Errorf("spent code answered %d %s, want err.totpUsed", code, errCode)
+	}
+}
+
+// Guessing a six-digit code has to be throttled at the endpoint that acts on it. The
+// attacker this counts already holds a session and the password, so a lockout anywhere
+// else costs them nothing — and putting the count on the LOGIN counter cost the
+// legitimate admin their login while leaving the guessing at full speed.
+func TestStepUpTOTPThrottlesItselfAndNotTheLogin(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	cookie, secret := adminWithTOTP(t, st, "owner")
+	bad := stepUp("a-password", "000000")
+
+	var last string
+	for i := 0; i < 12; i++ {
+		_, last = send(t, rt, http.MethodDelete, "/api/nodes/1", bad, cookie, nil)
+	}
+	if last != "err.tooManyAttempts" {
+		t.Errorf("twelve wrong codes ended with %q — the endpoint being guessed at is not throttled", last)
+	}
+
+	// The login form is a different counter: fumbling the delete dialog must not lock
+	// the admin out of the panel itself.
+	if code, errCode := tryLogin(t, rt, `{"username":"owner","password":"a-password","code":"`+codeNow(t, secret)+`"}`); code != http.StatusOK {
+		t.Errorf("login after the step-up lockout: %d %s — want it unaffected", code, errCode)
+	}
+}
+
+// A correct code clears the count, so a typo on the way to the right code costs
+// nothing once it lands.
+func TestStepUpTOTPSuccessClearsTheCount(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	cookie, secret := adminWithTOTP(t, st, "owner")
+
+	bad := stepUp("a-password", "000000")
+	for i := 0; i < 8; i++ {
+		send(t, rt, http.MethodDelete, "/api/nodes/1", bad, cookie, nil)
+	}
+	good := stepUp("a-password", codeNow(t, secret))
+	if code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", good, cookie, nil); errCode == "err.tooManyAttempts" {
+		t.Fatalf("a correct code was refused by the lockout: %d %s", code, errCode)
+	}
+	// The counter is clear again: another wrong code must not be an instant lockout.
+	if _, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", bad, cookie, nil); errCode != "err.totpInvalid" {
+		t.Errorf("after a success the count was not cleared: %s", errCode)
+	}
+}
+
+// A password is any string an admin chose; nothing restricts it to ASCII. It has to
+// survive the trip, which is why the credentials ride in a JSON body — an HTTP header
+// is ISO-8859-1, so a browser refuses a Cyrillic password outright and turns an
+// accented one into bytes that can never match the stored hash.
+func TestStepUpAcceptsANonASCIIPassword(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	const pw = "пароль-Ω-123"
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	id, err := st.CreateAdmin("owner", hash, model.RoleOwner, false)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	token, err := st.CreateSession(id, time.Hour)
+	if err != nil {
+		t.Fatalf("session: %v", err)
+	}
+	cookie := &http.Cookie{Name: sessionCookie, Value: token}
+
+	// The right password gets past the gate; the manager's own answer follows.
+	code, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp(pw, ""), cookie, nil)
+	if errCode == "err.wrongPassword" {
+		t.Fatalf("a correct non-ASCII password was rejected: %d %s", code, errCode)
+	}
+	// And a wrong one is still wrong.
+	if _, errCode := send(t, rt, http.MethodDelete, "/api/nodes/1", stepUp("пароль-Ω-124", ""), cookie, nil); errCode != "err.wrongPassword" {
+		t.Errorf("a wrong non-ASCII password was accepted: %s", errCode)
 	}
 }
