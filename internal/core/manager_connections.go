@@ -270,6 +270,11 @@ type ConnectionsUpdate struct {
 	RealityAntiReplay bool              `json:"reality_anti_replay"`
 	// RegenRealityKeys requests a fresh REALITY keypair / shortId / service name.
 	RegenRealityKeys bool `json:"regen_reality_keys"`
+	// RegenObfs requests a fresh Salamander key, replacing whatever HysteriaObfs
+	// carries. The panel's editor shows the key read-only and never lets an operator
+	// type one, so this is the only way it changes — same shape as the REALITY keys
+	// beside it, and for the same reason: a key somebody invented is a weak key.
+	RegenObfs bool `json:"regen_obfs"`
 
 	// Anti-DPI transport hardening (cross-protocol).
 	TLSFragment bool `json:"tls_fragment"`
@@ -283,10 +288,18 @@ type ConnectionsUpdate struct {
 	RegenAWGKeys bool   `json:"regen_awg_keys"`
 }
 
-// validateObfs checks a submitted Salamander key and returns it trimmed. Empty is
-// the valid "obfuscation off" value, so it is not an error — only a key that would
-// reach a client in a form the client cannot reproduce is.
-func validateObfs(v string) (string, error) {
+// resolveObfs decides the Salamander key a save lands on: a freshly minted one when
+// the editor asked to regenerate, otherwise whatever was submitted — which the editor
+// only ever round-trips, since it shows the key read-only.
+//
+// The submitted value is still validated rather than trusted. This is a panel endpoint,
+// not a form binding: a hand-made request can carry anything, and a key the client
+// cannot reproduce is a lane nobody can connect to. Empty stays valid — that is how
+// obfuscation is switched off.
+func resolveObfs(v string, regen bool) (string, error) {
+	if regen {
+		return auth.RandomObfsKey()
+	}
 	v = strings.TrimSpace(v)
 	if v == "" || model.ValidObfsPassword(v) {
 		return v, nil
@@ -387,7 +400,7 @@ func (m *Manager) ApplyConnections(u ConnectionsUpdate) error {
 	if !hopIntervalRe.MatchString(interval) {
 		return invalidCode("err.badInterval", "неверный интервал (нужно «N-M», напр. 5-10)")
 	}
-	obfs, err := validateObfs(u.HysteriaObfs)
+	obfs, err := resolveObfs(u.HysteriaObfs, u.RegenObfs)
 	if err != nil {
 		return err
 	}

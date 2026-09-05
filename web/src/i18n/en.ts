@@ -2137,9 +2137,11 @@ const en: Dict = {
       "The client spreads traffic across the hop range, and nftables funnels it back to the base port.",
     obfs: "Obfuscation (Salamander)",
     obfsOff: "off",
-    obfsGenerate: "Generate",
+    obfsGenerate: "Generate a key",
+    obfsDisable: "Turn off",
+    obfsWillRegen: "a new key will be generated on save",
     obfsHint:
-      "Hysteria2 is QUIC, and a QUIC handshake is the one thing a DPI box can recognise before any traffic flows. With a key set, every datagram is XORed with it and the handshake stops being recognisable. The key goes into every link and profile, so clients pick it up on their next subscription update — old links stop working the moment you save.",
+      "Hysteria2 is QUIC, and a QUIC handshake is the one thing a DPI box can recognise before any traffic flows. With a key set, every datagram is XORed with it and the handshake stops being recognisable. The key is generated here, never typed. It goes into every link and profile, so clients pick it up on their next subscription update — old links stop working the moment you save.",
     enableHysteria: "Enable HYSTERIA-UDP to configure the ports and the interval.",
     masquerade: "Masquerade (SNI)",
     sniPlaceholder: "max.ru — type and press Enter…",

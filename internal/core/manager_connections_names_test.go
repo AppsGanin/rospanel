@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/AppsGanin/rospanel/internal/model"
+)
 
 // TestValidateConnNames covers the custom node-name rules: trimming, the safe
 // charset, reserved tags, length, and the distinctness needed so sing-box/Clash
@@ -61,5 +65,46 @@ func TestValidateConnNames(t *testing.T) {
 	}
 	if _, err := validateConnNames(map[string]string{"vless": long}, nil); err == nil {
 		t.Fatal("expected length rejection")
+	}
+}
+
+// The Salamander key is minted, never typed: the editor shows it read-only and the
+// only thing that changes it is a request to regenerate. resolveObfs is where that is
+// decided, so it is where it has to hold — including the part that makes the read-only
+// field honest, that a regenerate ignores whatever value came with it.
+func TestResolveObfs(t *testing.T) {
+	// Regenerating wins over anything submitted, valid or not.
+	for _, submitted := range []string{"", "abcdefgh12345678", "!! not valid !!"} {
+		got, err := resolveObfs(submitted, true)
+		if err != nil {
+			t.Fatalf("regen with %q: %v", submitted, err)
+		}
+		if got == submitted {
+			t.Errorf("regen returned the submitted value %q", submitted)
+		}
+		if !model.ValidObfsPassword(got) {
+			t.Errorf("the generated key %q fails the panel's own validation", got)
+		}
+	}
+	// Two regenerations never produce the same key.
+	a, _ := resolveObfs("", true)
+	b, _ := resolveObfs("", true)
+	if a == b {
+		t.Error("two regenerations produced the same key")
+	}
+	// Without a regenerate the value round-trips, and empty is how obfuscation is off.
+	if got, err := resolveObfs("  abcdefgh12345678  ", false); err != nil || got != "abcdefgh12345678" {
+		t.Errorf("round-trip = %q, %v", got, err)
+	}
+	if got, err := resolveObfs("", false); err != nil || got != "" {
+		t.Errorf("empty = %q, %v — want it accepted as off", got, err)
+	}
+	// A hand-made request is still refused: a key the client cannot reproduce is a
+	// lane nobody can connect to.
+	if _, err := resolveObfs("short", false); err == nil {
+		t.Error("a too-short key was accepted")
+	}
+	if _, err := resolveObfs("has spaces here!", false); err == nil {
+		t.Error("a key outside the charset was accepted")
 	}
 }

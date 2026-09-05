@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -46,7 +47,11 @@ type inboundReq struct {
 	HopStart    int    `json:"hop_start"`
 	HopEnd      int    `json:"hop_end"`
 	HopInterval string `json:"hop_interval"`
-	Obfs        string `json:"obfs"`
+	// Obfs is the Salamander key the editor round-trips; RegenObfs asks for a fresh
+	// one, which is the only way it ever changes from the panel — the field is shown
+	// read-only, like the REALITY material beside it.
+	Obfs      string `json:"obfs"`
+	RegenObfs bool   `json:"regen_obfs"`
 
 	// Shadowsocks-2022 method. The server key is generated (prepareInbound), so it is
 	// deliberately not a request field.
@@ -102,6 +107,15 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 	}
 	if r.RealityAntiReplay {
 		in.Opts.RealityMaxTimeDiff = realityAntiReplayWindowMs
+	}
+	if r.RegenObfs {
+		// Minted here rather than in the browser so a key can only ever come from the
+		// panel's own generator — see auth.RandomObfsKey.
+		key, err := auth.RandomObfsKey()
+		if err != nil {
+			return in, err
+		}
+		in.Opts.Obfs = key
 	}
 	var err error
 	if in.Opts.XHTTPExtra, err = model.AssembleXHTTPExtra(r.XHTTPExtra); err != nil {
