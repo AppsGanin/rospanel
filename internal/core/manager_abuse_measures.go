@@ -67,7 +67,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 				logErr("abuse: restoring speed before switch-off failed", "user", u.ID, "err", err)
 				return
 			}
-			go m.ApplyShaping()
+			m.runAsync(m.ApplyShaping)
 		}
 		err := m.mutateUser(fmt.Sprintf("user %d switched off for blocklist traffic (%d matches)", u.ID, total), func() error {
 			if err := m.store.SetUserEnabled(u.ID, false); err != nil {
@@ -100,7 +100,7 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 			return
 		}
 		logInfo("abuse: user throttled for blocklist traffic", "user", u.ID, "matches", total, "kbps", a.ThrottleKbps)
-		go m.ApplyShaping()
+		m.runAsync(m.ApplyShaping)
 		m.TriggerUserSync() // nodes shape from the limits in their sync payload
 		m.auditNamed(ctx, u.ID, u.Name, model.EventAbuseThrottled,
 			map[string]any{"matches": total, "day": day, "until": until, "hours": a.Hours,
@@ -144,7 +144,7 @@ func (m *Manager) LiftAbuseMeasures(now int64) {
 		m.liftAbuseMeasure(ctx, set, u, "expired")
 	}
 	m.TriggerUserSync()
-	go m.ApplyShaping()
+	m.runAsync(m.ApplyShaping)
 }
 
 // liftAbuseMeasure puts back what one measure changed and forgets it. `why` goes

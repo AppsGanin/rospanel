@@ -979,7 +979,7 @@ func (m *Manager) SetNodeEnabled(id int64, enabled bool) error {
 	// background: a node enabled after boot was skipped by seedNodeProxies, so without
 	// this its lanes would egress direct until the next cadence tick (or forever when
 	// auto-refresh is "never"). RefreshNodeProxies also wakes the node on any change.
-	go m.RefreshNodeProxies()
+	m.runAsync(m.RefreshNodeProxies)
 	m.nodes.wakeOne(id)
 	return nil
 }

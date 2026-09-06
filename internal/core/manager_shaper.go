@@ -31,7 +31,11 @@ func (m *Manager) shaperLoop() {
 	defer t.Stop()
 	for {
 		m.ApplyShaping()
-		<-t.C
+		select {
+		case <-t.C:
+		case <-m.done:
+			return
+		}
 	}
 }
 
@@ -103,7 +107,7 @@ func (m *Manager) SetUserSpeedLimit(ctx context.Context, id int64, kbps int) err
 	m.audit(ctx, id, model.EventSpeedLimit, map[string]any{"speed_limit": kbps, "was": u.SpeedLimit})
 	// A speed set by hand replaces the panel's throttle rather than layering on it.
 	m.overruleAbuseMeasure(ctx, u, model.AbuseActionThrottle)
-	go m.ApplyShaping()
+	m.runAsync(m.ApplyShaping)
 	// Nodes shape their own traffic from the limits in their sync payload, so the
 	// change has to reach them too.
 	m.TriggerUserSync()

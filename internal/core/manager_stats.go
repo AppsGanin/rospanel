@@ -141,7 +141,7 @@ func (m *Manager) Summary() (*Summary, error) {
 // under "disk".
 func (m *Manager) StartSysstat(diskPath string) {
 	m.sys = sysstat.New(diskPath)
-	go m.vpnSpeedLoop()
+	m.runAsync(m.vpnSpeedLoop)
 }
 
 // TrackVPNViewer marks one active dashboard-stream subscriber for the life of the
@@ -160,7 +160,12 @@ func (m *Manager) vpnSpeedLoop() {
 	apiAddr := m.sup.APIAddr()
 	t := time.NewTicker(3 * time.Second)
 	defer t.Stop()
-	for range t.C {
+	for {
+		select {
+		case <-t.C:
+		case <-m.done:
+			return
+		}
 		if m.vpnViewers.Load() == 0 {
 			// Nobody watching → skip the xray-forking sample and clear the baseline
 			// so a later resume re-bootstraps cleanly (no smeared first reading).

@@ -142,7 +142,7 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 		} else if n > 0 {
 			logInfo("billing: plan speed limit applied to existing users",
 				"plan", p.ID, "users", n, "kbps", p.SpeedLimit)
-			go m.ApplyShaping()
+			m.runAsync(m.ApplyShaping)
 			m.TriggerUserSync() // nodes shape from the limits in their sync payload
 		}
 	}

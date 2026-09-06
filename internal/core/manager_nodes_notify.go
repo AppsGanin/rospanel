@@ -90,7 +90,11 @@ func (m *Manager) nodeWatchLoop() {
 		// (compare a server against a threshold, tell admins once per crossing) and the
 		// answer is a SUM the subscription path must not be paying for per request.
 		m.refreshNodeTraffic()
-		<-t.C
+		select {
+		case <-t.C:
+		case <-m.done:
+			return
+		}
 		// The status page's history rides this tick: it needs the same "is each server
 		// up" question the sweep just answered, on the same cadence, and a second timer
 		// asking it again would only add writes.

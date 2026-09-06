@@ -252,10 +252,14 @@ func (m *Manager) proxyLoop() {
 	for {
 		d := m.currentProxyRefresh()
 		if d <= 0 {
-			time.Sleep(defaultProxyRefresh)
+			if !m.wait(defaultProxyRefresh) {
+				return
+			}
 			continue
 		}
-		time.Sleep(d)
+		if !m.wait(d) {
+			return
+		}
 		if m.currentProxyRefresh() > 0 {
 			m.RefreshProxies()
 			m.RefreshNodeProxies()

@@ -357,6 +357,12 @@ func runServer(dataDir string) {
 	stopBG()
 	waitBG(&bgWG, 3*time.Second)
 
+	// And the manager's own loops. Its store outlives this call only long enough for
+	// the synchronous work below, so anything of its own still ticking would be writing
+	// into a database that is about to go — the failure that shows up as a stray
+	// "sql: database is closed" attributed to whichever loop happened to be last.
+	mgr.Close()
+
 	// Drop the per-user speed caps. They live in the kernel's qdisc tree, which
 	// outlives this process until reboot — a panel that was stopped must not keep
 	// throttling anyone, least of all after the operator uninstalled it.

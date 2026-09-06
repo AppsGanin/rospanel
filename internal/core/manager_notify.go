@@ -329,7 +329,9 @@ const probeDigestHour = 9
 func (m *Manager) probeDigestLoop() {
 	lastSent := "" // calendar day of the last digest, so it fires once per day
 	for {
-		time.Sleep(time.Hour)
+		if !m.wait(time.Hour) {
+			return
+		}
 		set, err := m.store.GetSettings()
 		if err != nil || !set.AdminEventEnabled(model.AdminEventProbe) {
 			continue // the digest rides the "Path scanners" alert category

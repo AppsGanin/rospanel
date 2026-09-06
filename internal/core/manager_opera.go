@@ -32,14 +32,14 @@ func (m *Manager) syncOpera(enabled bool, country string, port int) error {
 		return fmt.Errorf("opera-proxy: start failed: %w", err)
 	}
 	// Observe readiness off the request path; don't stop the helper on timeout.
-	go func() {
+	m.runAsync(func() {
 		if err := m.operaSup.WaitReady(port, operaReadyTimeout); err != nil {
 			logWarn("opera: not ready yet, helper keeps retrying", "err", err)
 		} else {
 			logInfo("opera: helper ready", "port", port, "country", country)
 		}
 		m.probeLanes()
-	}()
+	})
 	return nil
 }
 

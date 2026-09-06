@@ -163,13 +163,25 @@ func (m *Manager) enqueueWebhook(job webhookJob) {
 // startWebhookWorkers launches the delivery worker pool.
 func (m *Manager) startWebhookWorkers() {
 	for i := 0; i < webhookWorkers; i++ {
-		go m.webhookWorker()
+		m.runAsync(m.webhookWorker)
 	}
 }
 
 func (m *Manager) webhookWorker() {
-	for job := range m.webhookCh {
-		m.deliverWebhook(job)
+	for {
+		select {
+		case <-m.done:
+			// Queued deliveries are dropped rather than drained: a webhook is a
+			// best-effort notification with its own retry schedule, and finishing the
+			// queue would hold shutdown open for as long as the slowest endpoint takes
+			// to time out.
+			return
+		case job, ok := <-m.webhookCh:
+			if !ok {
+				return
+			}
+			m.deliverWebhook(job)
+		}
 	}
 }
 

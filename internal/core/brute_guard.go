@@ -113,7 +113,17 @@ func (g *bruteGuard) cleanupLoop() {
 func (m *Manager) bruteGuardLoop() {
 	ch, unsub := m.sup.SubscribeLogs()
 	defer unsub()
-	for line := range ch {
+	for {
+		var line string
+		select {
+		case <-m.done:
+			return
+		case l, ok := <-ch:
+			if !ok {
+				return
+			}
+			line = l
+		}
 		ip := parseRejectIP(line)
 		if ip == "" {
 			continue

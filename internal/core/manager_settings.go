@@ -362,7 +362,7 @@ func (m *Manager) ipListStale(maxAge time.Duration) bool { return stale(m.IPList
 // restart and a reboot doesn't reset a long timer. Sleeps first so boot stays quiet;
 // enabling the cadence refreshes promptly via SetGeoRefresh.
 func (m *Manager) geoLoop() {
-	refreshLoop("geo", m.currentGeoRefresh, m.geoStale, func() error {
+	refreshLoop("geo", m.wait, m.currentGeoRefresh, m.geoStale, func() error {
 		_, err := m.RefreshGeo()
 		return err
 	})
@@ -373,7 +373,7 @@ func (m *Manager) geoLoop() {
 // to the geo schedule would either poll the lists too rarely or drag ~28 MB of
 // .dat files down far too often.
 func (m *Manager) ipListLoop() {
-	refreshLoop("iplist", m.currentIPListRefresh, m.ipListStale, func() error {
+	refreshLoop("iplist", m.wait, m.currentIPListRefresh, m.ipListStale, func() error {
 		_, err := m.RefreshIPLists()
 		// The IP→ASN table is panel-only on a similar clock; refresh it on the same tick
 		// rather than giving it a cadence of its own. Best-effort — a stale ASN table
@@ -386,9 +386,13 @@ func (m *Manager) ipListLoop() {
 }
 
 // refreshLoop is the shared hourly staleness poll behind geoLoop/ipListLoop.
-func refreshLoop(what string, cadence func() time.Duration, isStale func(time.Duration) bool, refresh func() error) {
+// wait is the manager's, so a refresh loop stops with everything else instead of on
+// its own hourly clock — an hour is indistinguishable from a hang at shutdown.
+func refreshLoop(what string, wait func(time.Duration) bool, cadence func() time.Duration, isStale func(time.Duration) bool, refresh func() error) {
 	for {
-		time.Sleep(time.Hour)
+		if !wait(time.Hour) {
+			return
+		}
 		d := cadence()
 		if d <= 0 || !isStale(d) {
 			continue
@@ -412,11 +416,11 @@ func (m *Manager) SetGeoRefresh(hours int) error {
 		return err
 	}
 	if d := time.Duration(hours) * time.Hour; d > 0 && m.geoStale(d) {
-		go func() {
+		m.runAsync(func() {
 			if _, err := m.RefreshGeo(); err != nil {
 				logWarn("geo: refresh on enable failed", "err", err)
 			}
-		}()
+		})
 	}
 	return nil
 }
@@ -431,11 +435,11 @@ func (m *Manager) SetIPListRefresh(hours int) error {
 		return err
 	}
 	if d := time.Duration(hours) * time.Hour; d > 0 && m.ipListStale(d) {
-		go func() {
+		m.runAsync(func() {
 			if _, err := m.RefreshIPLists(); err != nil {
 				logWarn("iplist: refresh on enable failed", "err", err)
 			}
-		}()
+		})
 	}
 	return nil
 }
@@ -605,7 +609,7 @@ func (m *Manager) ApplyRouting(cfg model.RoutingConfig, warpEnabled, operaEnable
 	m.TriggerReconcile()
 	// Probe the helper lanes now (off the request path) so their alive/fallback
 	// status is fresh when the UI re-fetches after the Xray restart.
-	go m.probeLanes()
+	m.runAsync(m.probeLanes)
 	return nil
 }
 
@@ -972,7 +976,7 @@ func (m *Manager) FetchRoutingTemplate(url string) (string, error) {
 	m.tmplMu.Unlock()
 	if ok {
 		if time.Since(e.at) >= routingTmplTTL {
-			go func() { _, _ = m.fetchRoutingTemplate(url) }() // refresh in the background; serve stale now
+			m.runAsync(func() { _, _ = m.fetchRoutingTemplate(url) }) // refresh in the background; serve stale now
 		}
 		return e.body, nil
 	}
@@ -1063,7 +1067,7 @@ func (m *Manager) TelegramWebAppSDK() ([]byte, bool) {
 		stale := time.Since(m.tgSDKAt) >= telegramSDKTTL
 		m.tgSDKMu.Unlock()
 		if stale {
-			go m.refreshTelegramSDK() // serve what we have now, refresh behind it
+			m.runAsync(m.refreshTelegramSDK) // serve what we have now, refresh behind it
 		}
 		return body, true
 	}

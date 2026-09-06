@@ -384,7 +384,7 @@ func (m *Manager) RefreshAbuse() {
 	if m.abuse == nil {
 		return
 	}
-	go m.abuse.Refresh(context.Background(), true)
+	m.runAsync(func() { m.abuse.Refresh(context.Background(), true) })
 }
 
 // AbuseStatus exposes the loaded feeds for the settings UI.

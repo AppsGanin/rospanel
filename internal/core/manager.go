@@ -56,6 +56,14 @@ type Manager struct {
 	opts        xray.Options
 	tls         TLSPaths
 	reconcileCh chan struct{}
+	// done is closed by Close and is what every background loop watches. wg counts
+	// those loops so Close can WAIT for them rather than just asking them to stop:
+	// the whole point is that when Close returns, nothing is left that could still
+	// touch the store — a goroutine that outlives the database it writes to shows up
+	// as "sql: database is closed" long after the code that caused it has moved on.
+	done      chan struct{}
+	wg        sync.WaitGroup
+	closeOnce sync.Once
 	// structuralPending marks the next queued reload as a full restart (config
 	// changed), vs a cheap live user-sync. Set by TriggerReconcile.
 	structuralPending atomic.Bool
@@ -296,6 +304,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		opts:           opts,
 		tls:            tls,
 		reconcileCh:    make(chan struct{}, 1),
+		done:           make(chan struct{}),
 		accLast:        make(map[string]int64),
 		accPending:     make(map[accPendingKey]store.ConnectionHit),
 		abusePending:   make(map[abusePendingKey]store.AbuseHit),
@@ -332,11 +341,11 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		// master's SeedProxies, which service.go runs unconditionally at boot). Without
 		// this, a node's URL lanes would stay empty until the first proxyLoop tick — and
 		// forever when auto-refresh is "never", since the loop is cadence-gated.
-		go m.RefreshNodeProxies()
+		m.runAsync(m.RefreshNodeProxies)
 		if set.OperaEnabled {
 			// Bring the helper up in the background so a cold-cache download can't
 			// stall startup; the "opera" lane falls back to direct until it's ready.
-			go func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) }()
+			m.runAsync(func() { _ = m.syncOpera(true, set.OperaCountryOr(), set.OperaPortOr()) })
 		}
 	}
 	m.sup.SetOnCrash(m.onXrayCrash)             // alert admins when Xray exits unexpectedly
@@ -349,17 +358,20 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.sup.StartWatchdog() // auto-restart a wedged (alive-but-not-serving) Xray
 	// The same two alerts for the remote nodes. They have no bot of their own, and a
 	// node that stops syncing altogether can only be noticed on a timer.
-	go m.nodeWatchLoop()
-	go m.reconcileLoop()
-	go m.proxyLoop()
-	go m.geoLoop()         // auto-refresh geo databases on the operator's cadence
-	go m.ipListLoop()      // ...and the iplist lists on their own, separate cadence
-	go m.probeDigestLoop() // once-a-day summary of new secret-path scanners (opt-in)
-	go m.bruteGuardLoop()
-	go m.shaperLoop()              // per-user speed caps follow the addresses users connect from
-	go m.healthLoop()              // probe Opera/Hola lane liveness for the UI
-	m.startWebhookWorkers()        // drain the outbound-webhook delivery queue
-	go m.prewarmRoutingTemplates() // warm the routing-template cache so the first
+	// Every one of these goes through runAsync, so Close can wait for it. A loop that
+	// is started with a bare `go` is one Close cannot account for, and the failure is
+	// invisible until something it writes to has already been torn down.
+	m.runAsync(m.nodeWatchLoop)
+	m.runAsync(m.reconcileLoop)
+	m.runAsync(m.proxyLoop)
+	m.runAsync(m.geoLoop)         // auto-refresh geo databases on the operator's cadence
+	m.runAsync(m.ipListLoop)      // ...and the iplist lists on their own, separate cadence
+	m.runAsync(m.probeDigestLoop) // once-a-day summary of new secret-path scanners (opt-in)
+	m.runAsync(m.bruteGuardLoop)
+	m.runAsync(m.shaperLoop)              // per-user speed caps follow the addresses users connect from
+	m.runAsync(m.healthLoop)              // probe Opera/Hola lane liveness for the UI
+	m.startWebhookWorkers()               // drain the outbound-webhook delivery queue
+	m.runAsync(m.prewarmRoutingTemplates) // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
 	// NOTE: telegram-web-app.js is deliberately NOT prewarmed here. The cold path in
 	// TelegramWebAppSDK fetches it inline and serves it, so a warm-up would only save
@@ -527,6 +539,85 @@ func (m *Manager) TriggerReconcile() {
 	m.signalReload()
 }
 
+// runAsync starts a background goroutine that Close will wait for. Every long-lived
+// loop and every fire-and-forget task the manager owns goes through here; the ones
+// that do not are exactly the ones that can still be running after the store is gone.
+func (m *Manager) runAsync(fn func()) {
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		fn()
+	}()
+}
+
+// wait blocks for d and reports whether the caller should carry on. It answers false
+// the moment Close is called, which turns every "sleep then work" loop into one that
+// stops promptly instead of on its own cadence — a geo refresh sleeps an hour, and
+// waiting an hour to shut down is indistinguishable from a hang.
+func (m *Manager) wait(d time.Duration) bool {
+	if d <= 0 {
+		return !m.stopped()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-m.done:
+		return false
+	}
+}
+
+// stopped reports whether Close has been called, for the loops that check between
+// steps rather than at a wait.
+func (m *Manager) stopped() bool {
+	select {
+	case <-m.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// Close stops every background goroutine the manager owns and waits for them.
+//
+// Waiting is the contract: after Close returns, nothing of the manager's is still
+// running, so the caller can close the store without a loop writing into a closed
+// database behind it. That failure is quiet and misattributed — it surfaces as
+// "sql: database is closed" from whichever loop happened to tick last, in a test
+// that has already reported success or a shutdown that looks clean.
+//
+// Idempotent, and safe to call on a manager whose loops were never started (a test
+// building one directly): done is closed once and the WaitGroup is simply empty.
+func (m *Manager) Close() {
+	m.closeOnce.Do(func() {
+		if m.done != nil {
+			close(m.done)
+		}
+	})
+	// Bounded, because not everything the manager starts is a loop that can stop on a
+	// signal: a geo refresh triggered seconds before shutdown is a multi-megabyte
+	// download with nowhere to check. The loops all return in microseconds, so this
+	// budget is only ever spent on one of those, and spending it is better than either
+	// hanging the shutdown or leaving the task unaccounted for entirely.
+	stopped := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(closeGrace):
+		logWarn("shutdown: background work did not finish in time; continuing",
+			"grace", closeGrace)
+	}
+}
+
+// closeGrace is how long Close waits for background work. Generous next to the loops
+// (which stop at once) and short next to a network download, which is the only thing
+// that can reach it.
+const closeGrace = 5 * time.Second
+
 // TriggerUserSync requests a live user-set sync (add/remove users via the Xray
 // API, no restart) for user-only changes — far cheaper than a full reload.
 func (m *Manager) TriggerUserSync() {
@@ -541,8 +632,17 @@ func (m *Manager) signalReload() {
 }
 
 func (m *Manager) reconcileLoop() {
-	for range m.reconcileCh {
-		time.Sleep(reconcileDebounce) // let the response flush + coalesce bursts
+	for {
+		select {
+		case <-m.done:
+			return
+		case <-m.reconcileCh:
+		}
+		// The debounce is a wait like any other: a Close during it returns instead of
+		// starting a reload nobody will see the end of.
+		if !m.wait(reconcileDebounce) { // let the response flush + coalesce bursts
+			return
+		}
 		drain(m.reconcileCh)
 		// A structural change queued in this window upgrades the batch to a full
 		// reload; otherwise a live user-sync suffices.
