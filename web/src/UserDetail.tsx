@@ -33,6 +33,8 @@ import {
   type User,
 } from './api'
 import {
+  dateToUnixEndOfDay,
+  deviceLimitOptions,
   fmtBytes,
   fmtExpire,
   fmtLastSeen,
@@ -41,12 +43,12 @@ import {
   gbToBytes,
   isOnline,
   localDay,
-  deviceLimitOptions,
   quotaOptions,
-  speedLimitOptions,
   ranges,
   resetPeriods,
+  speedLimitOptions,
   statusInfo,
+  unixToLocalDate,
 } from './format'
 import { useAction, useShowMore } from './hooks'
 import { HtmlEditor } from './HtmlEditor'
@@ -101,9 +103,7 @@ function planSelectData(plans: TariffPlan[], user: User) {
   return data
 }
 
-function unixToDate(unix: number): string {
-  return unix ? new Date(unix * 1000).toISOString().slice(0, 10) : ''
-}
+
 
 // optLabel resolves a select value to its human label, for the confirmation text.
 function optLabel(data: { value: string; label: string }[], value: string): string {
@@ -609,9 +609,9 @@ export function UserDetail({
 
           <DatePicker
             label={t('usersPanel.validUntil')}
-            value={unixToDate(user.expire_at)}
+            value={unixToLocalDate(user.expire_at)}
             onChange={(v) => {
-              const ea = v ? Math.floor(new Date(v).getTime() / 1000) : 0
+              const ea = dateToUnixEndOfDay(v)
               confirmChange(t('usersPanel.validUntil'), dateLabel(user.expire_at), dateLabel(v), () =>
                 saveLimits(user.data_limit, ea, user.device_limit),
               )

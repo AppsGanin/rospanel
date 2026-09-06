@@ -4,6 +4,7 @@ import { listNodes, type NodeView, type SystemStatus } from "./api";
 import { cssVar } from "./charts";
 import { fmtBytes, fmtDuration } from "./format";
 import { serverName, statusDot } from "./NodesPanel";
+import { openStream } from "./livestream";
 import { useIsAdmin } from "./role";
 import { navigate } from "./router";
 import { Badge, Card, Skeleton } from "./ui";
@@ -273,19 +274,25 @@ export function OverviewPanel() {
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [nodes, setNodes] = useState<NodeView[]>([]);
+  const [live, setLive] = useState(true);
   useEffect(() => {
-    // Live push via Server-Sent Events — the server streams updates every 2s and
-    // EventSource auto-reconnects if the stream drops.
-    const es = new EventSource("api/system/stream", { withCredentials: true });
-    es.onmessage = (e) => {
-      try {
-        setS(JSON.parse(e.data));
-        setLoaded(true);
-      } catch {
-        /* ignore malformed frame */
-      }
-    };
-    return () => es.close();
+    // Live push via Server-Sent Events, through openStream rather than a bare
+    // EventSource: the panel refuses a stream with 429 once the per-IP gate is full,
+    // and a bare EventSource treats that as fatal and never comes back — the dashboard
+    // would sit frozen on stale numbers with nothing to say so.
+    const stream = openStream(
+      "api/system/stream",
+      (data) => {
+        try {
+          setS(JSON.parse(data));
+          setLoaded(true);
+        } catch {
+          /* ignore malformed frame */
+        }
+      },
+      setLive,
+    );
+    return () => stream.close();
   }, []);
 
   // The node list is an admin-only route, so an operator never asks for it (and never
@@ -311,6 +318,13 @@ export function OverviewPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Stale numbers must say so. Without this the dashboard is indistinguishable
+          from a quiet server: the same figures, forever. */}
+      {!live && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+          {t("overview.reconnecting")}
+        </div>
+      )}
 
       {/* The numbers the panel exists to report, above the machine it runs on. */}
       <Card className="p-4">

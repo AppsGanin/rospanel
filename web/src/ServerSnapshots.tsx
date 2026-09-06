@@ -80,7 +80,7 @@ export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void })
               <span className="ml-auto flex gap-3">
                 <button
                   type="button"
-                  className="text-brand hover:underline disabled:opacity-50"
+                  className="text-accent hover:underline disabled:opacity-50"
                   disabled={busy}
                   onClick={async () => {
                     const ok = await confirm({

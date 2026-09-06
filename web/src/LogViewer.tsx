@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { openStream } from "./livestream";
 import { cn, SegmentedControl, ToolDialog } from "./ui";
 
 // LogViewer is the live-tailing log dialog shared by the panel and Xray log views.
@@ -27,15 +28,21 @@ export function LogViewer({
   const boxRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
+  const [live, setLive] = useState(true);
   useEffect(() => {
-    const es = new EventSource(streamUrl, { withCredentials: true });
-    es.onmessage = (e) => {
-      setLines((prev) => {
-        const next = [...prev, e.data];
-        return next.length > 2000 ? next.slice(-2000) : next;
-      });
-    };
-    return () => es.close();
+    // openStream, not a bare EventSource: a 429 from the per-IP stream gate is an
+    // HTTP error, and a bare EventSource gives up on those for good — the log would
+    // simply stop scrolling, with no way to tell that from a quiet server.
+    const stream = openStream(
+      streamUrl,
+      (data) =>
+        setLines((prev) => {
+          const next = [...prev, data];
+          return next.length > 2000 ? next.slice(-2000) : next;
+        }),
+      setLive,
+    );
+    return () => stream.close();
   }, [streamUrl]);
 
   const shown =
@@ -77,6 +84,11 @@ export function LogViewer({
         onScroll={onScroll}
         className="flex-1 overflow-auto bg-gray-50 p-3 font-mono text-xs leading-relaxed"
       >
+        {!live && (
+          <p className="mb-2 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-orange-800">
+            {t("logs.reconnecting")}
+          </p>
+        )}
         {shown.length === 0 ? (
           <p className="text-gray-400">
             {lines.length === 0

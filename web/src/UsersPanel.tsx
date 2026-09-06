@@ -14,6 +14,7 @@ import {
 import { useAction, useViewMode } from "./hooks";
 import i18n, { currentLang } from "./i18n";
 import {
+  dateToUnixEndOfDay,
   fmtExpire,
   fmtQuota,
   gbToBytes,
@@ -21,6 +22,7 @@ import {
   quotaOptions,
   resetPeriods,
   statusInfo,
+  unixToLocalDate,
 } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -797,7 +799,7 @@ function AddUser({
     if (!name.trim()) return;
     run(async () => {
       const dl = gbToBytes(Number(limitGb) || 0);
-      const ea = expDate ? Math.floor(new Date(expDate).getTime() / 1000) : 0;
+      const ea = dateToUnixEndOfDay(expDate);
       const u = await createUser(name.trim(), dl, ea);
       if (resetPeriod !== "none") await setResetPeriod(u.id, resetPeriod);
       setCreated(u);
@@ -833,7 +835,7 @@ function AddUser({
               label={t("usersPanel.validUntil")}
               value={expDate}
               onChange={setExpDate}
-              min={new Date().toISOString().slice(0, 10)}
+              min={unixToLocalDate(Math.floor(Date.now() / 1000))}
             />
             <Select
               label={t("usersPanel.trafficLimit")}

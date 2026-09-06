@@ -464,7 +464,7 @@ export function TelegramSettings() {
       : "";
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-4">
       {/* First on the page because it decides whether anything below it can work
           at all: on a server that cannot reach Telegram, all three bots go silent
           and the subscription page's "open in app" buttons die with them. */}

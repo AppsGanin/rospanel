@@ -145,7 +145,7 @@ export function BlockedList() {
               </span>
               <button
                 type="button"
-                className="text-xs text-brand hover:underline disabled:opacity-50"
+                className="text-xs text-accent hover:underline disabled:opacity-50"
                 disabled={busy}
                 onClick={() =>
                   run(async () => {

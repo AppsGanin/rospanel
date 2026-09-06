@@ -182,3 +182,31 @@ export function countryName(code: string, lang: string, unknown: string): string
     return code.toUpperCase()
   }
 }
+
+// Expiry dates are picked from a calendar and stored as a unix second, and the naive
+// conversion is wrong twice over.
+//
+// `new Date("2026-09-10")` is parsed as UTC midnight, so an operator selling access
+// "until the 10th" cuts the customer off at the START of the 10th — a day early as far
+// as the customer is concerned. And `toISOString().slice(0,10)` renders a stored moment
+// as its UTC calendar day, so anyone west of UTC reads their own saved date back as the
+// day before.
+//
+// Both helpers work in the browser's local calendar, which is the one the picker shows.
+
+// dateToUnixEndOfDay turns a "YYYY-MM-DD" from a date input into the last second of
+// that day, locally. An empty string means no expiry, which is 0.
+export function dateToUnixEndOfDay(date: string): number {
+  const [y, m, d] = date.split('-').map(Number)
+  if (!y || !m || !d) return 0
+  return Math.floor(new Date(y, m - 1, d, 23, 59, 59).getTime() / 1000)
+}
+
+// unixToLocalDate renders a stored expiry as the "YYYY-MM-DD" a date input wants, in
+// the reader's own calendar.
+export function unixToLocalDate(unix: number): string {
+  if (!unix) return ''
+  const d = new Date(unix * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}

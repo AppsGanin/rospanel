@@ -862,6 +862,7 @@ const en: Dict = {
   },
 
   overview: {
+    reconnecting: "Connection to the panel lost — reconnecting. The numbers below are the last ones received.",
     activeUsers: "Active",
     online: "Online",
     trafficToday: "Traffic today",
@@ -1653,6 +1654,7 @@ const en: Dict = {
   },
 
   logs: {
+    reconnecting: "Stream lost — reconnecting.",
     all: "All",
     access: "Access",
     info: "Info",

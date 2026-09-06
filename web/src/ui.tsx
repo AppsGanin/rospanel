@@ -672,7 +672,13 @@ export function SaveBar({
   const { t } = useTranslation();
   if (!dirty) return null;
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur">
+    <>
+      {/* The bar is fixed, so it sits ON TOP of whatever is at the bottom of the page.
+          On General Settings that is the secret-path card — the one control an operator
+          must not be unable to reach. A spacer rendered with the bar keeps every page
+          scrollable past it without each one remembering its own padding. */}
+      <div aria-hidden className="h-24" />
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink">
@@ -698,8 +704,9 @@ export function SaveBar({
             {t("common.save")}
           </Button>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -730,6 +737,7 @@ export function TextInput({
   className,
   inputMode,
   autoComplete,
+  name,
 }: {
   label?: string;
   value: string;
@@ -742,9 +750,12 @@ export function TextInput({
   className?: string;
   // Passed through for the fields where the on-screen keyboard and the browser's
   // autofill actually matter — a one-time code wants a numeric pad and the OS's
-  // "paste the code from your messages" affordance, not a generic text box.
+  // "paste the code from your messages" affordance, not a generic text box. name is
+  // what a password manager keys its saved entry on; without it the admin login is
+  // one that 1Password and Chrome fill unreliably or not at all.
   inputMode?: "text" | "numeric";
   autoComplete?: string;
+  name?: string;
 }) {
   return (
     <Field label={label}>
@@ -762,6 +773,7 @@ export function TextInput({
         disabled={disabled}
         inputMode={inputMode}
         autoComplete={autoComplete}
+        name={name}
         onChange={(e) => onChange(e.currentTarget.value)}
       />
     </Field>
@@ -815,6 +827,8 @@ export function PasswordInput(
           type={show ? "text" : "password"}
           placeholder={props.placeholder}
           autoFocus={props.autoFocus}
+          autoComplete={props.autoComplete}
+          name={props.name}
           onChange={(e) => props.onChange(e.currentTarget.value)}
         />
         <button

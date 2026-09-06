@@ -65,16 +65,23 @@ export function Login({
           <div className="mb-1 flex justify-center">
             <BrandLogo size={32} />
           </div>
+          {/* name + autoComplete are what a password manager keys on. Without them
+              1Password and Chrome fill the admin login unreliably, which is the one
+              form where that costs the operator real time. */}
           <TextInput
             label={t('login.username')}
             value={username}
             onChange={setUsername}
+            name="username"
+            autoComplete="username"
             autoFocus
           />
           <PasswordInput
             label={t('login.password')}
             value={password}
             onChange={setPassword}
+            name="password"
+            autoComplete="current-password"
           />
           {needCode && (
             <TextInput
@@ -82,6 +89,9 @@ export function Login({
               value={code}
               onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
               placeholder="000000"
+              name="code"
+              autoComplete="one-time-code"
+              inputMode="numeric"
               autoFocus
               mono
             />
