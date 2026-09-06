@@ -45,10 +45,43 @@ func (a *Agent) syncAWG(st *nodeapi.AWGState) {
 	a.awgMu.Lock()
 	a.awgEmails = emails
 	a.awgMu.Unlock()
-	if err := a.awg.Apply(cfg); err != nil && err != awg.ErrUnsupported {
+	err := a.awg.Apply(cfg)
+	switch err {
+	case nil:
+		a.setAWGError("")
+	case awg.ErrUnsupported:
+		// Not a transient failure: this machine cannot run the tunnel at all. Worth
+		// reporting rather than swallowing — the operator switched the lane on for a
+		// server where it will never come up, and nothing else would tell them.
+		a.setAWGError("amneziawg is not supported on this machine")
+	default:
 		slog.Warn("node: amneziawg apply failed", "err", err)
+		a.setAWGError(err.Error())
 	}
 }
+
+// setAWGError records the last apply outcome for the next sync. Bounded: it is an
+// error string from a remote machine on its way into a chat message.
+func (a *Agent) setAWGError(msg string) {
+	if len(msg) > awgErrMax {
+		msg = msg[:awgErrMax]
+	}
+	a.awgMu.Lock()
+	a.awgErr = msg
+	a.awgMu.Unlock()
+}
+
+// awgState is what the sync reports: whether the tunnel is up, and why not.
+func (a *Agent) awgState() (bool, string) {
+	a.awgMu.Lock()
+	msg := a.awgErr
+	a.awgMu.Unlock()
+	return a.awg != nil && a.awg.Running(), msg
+}
+
+// awgErrMax truncates a reported failure, for the same reason nodeCertErrMax exists:
+// it is remote input that ends up in an admin's chat.
+const awgErrMax = 200
 
 // sampleAWG folds the tunnel's counters into the pending traffic deltas and its
 // recent handshakes into the connection samples, exactly as sampleStats and the

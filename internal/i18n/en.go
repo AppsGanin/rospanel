@@ -277,6 +277,8 @@ var en = map[string]string{
 	"notify.nodeTrafficBack":     "✅ <b>Server has traffic allowance again</b>\n%s\n%s of %s used in the new period.",
 	"notify.trafficPeriodMonth":  "month",
 	"notify.trafficPeriodDay":    "day",
+	"notify.nodeAWGDown":         "⚠️ <b>AmneziaWG tunnel is down</b>\n%s\nThe lane is on for this server, so its users cannot connect through it.",
+	"notify.nodeAWGBack":         "✅ <b>AmneziaWG tunnel is back</b>\n%s",
 	"notify.nodeBack":            "✅ <b>Contact with the server restored</b>",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray crashed</b>\n%s\nThe agent restarts the process automatically.",
 	"notify.nodeXrayBack":        "✅ <b>Xray is running again</b>",

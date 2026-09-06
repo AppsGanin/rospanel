@@ -79,6 +79,17 @@ type SyncRequest struct {
 	// which simply never triggers that alert.
 	CertError string `json:"cert_error,omitempty"`
 
+	// AWGRunning is whether this node's AmneziaWG tunnel is actually up, and AWGError
+	// the last reason it is not. Reported because the node has no way to say so
+	// otherwise: the agent applies the tunnel and, until now, logged a failure to its
+	// own disk and told nobody. The panel meanwhile kept the server green, kept handing
+	// out AWG keys for it, and found out from the users.
+	//
+	// Absent from an older agent, which reports neither — so the panel treats "no
+	// report at all" as "nothing known", not as "down".
+	AWGRunning bool   `json:"awg_running,omitempty"`
+	AWGError   string `json:"awg_error,omitempty"`
+
 	// Traffic deltas accumulated since the last acked report. ReportID is monotonic
 	// per node and persisted by the agent, so a lost response is retried without
 	// double-counting (the panel dedupes against its stored watermark).

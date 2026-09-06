@@ -247,6 +247,11 @@ type Manager struct {
 	// its diagnostics page, under nodeGeoMu with the other "last reported" caches.
 	// Bounded by the node count; a deleted node's entry is dead weight of one struct.
 	nodeHostStats map[int64]nodeapi.HostStats
+	// nodeAWG is each node's last-reported AmneziaWG state. Absent until a node
+	// reports one, which is how an agent older than the feature is told apart from a
+	// tunnel that is genuinely down — the difference between "nothing known" and "it
+	// is broken", and alerting on the first would page every operator mid-upgrade.
+	nodeAWG map[int64]nodeAWGState
 	// online is who is connected to which server right now (see manager_online.go).
 	online onlineGauge
 
@@ -325,6 +330,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeLogs:       map[int64]nodeLogEntry{},
 		nodeGeoFiles:   map[int64][]nodeapi.GeoFile{},
 		nodeHostStats:  map[int64]nodeapi.HostStats{},
+		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),

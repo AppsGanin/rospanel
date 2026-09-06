@@ -1533,6 +1533,13 @@ const en: Dict = {
   // and not there.
 
   health: {
+    awg: "AmneziaWG",
+    nodeAWGOK: "the tunnel is up",
+    nodeAWGDown: "the tunnel is not up on the node",
+    nodeAWGFailed: "the tunnel did not come up: {{err}}",
+    nodeAWGUnknown: "the node does not report the tunnel's state",
+    nodeAWGHint:
+      "The lane is switched on for this server but its tunnel is not running, so nobody can connect through it — while the panel keeps handing out keys and configs for it. Check the node's log and that the AmneziaWG port is open.",
     xray: "Xray proxy engine",
     xrayDown: "the process is not running",
     xrayDownHint:

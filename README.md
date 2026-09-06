@@ -600,7 +600,7 @@ working service is the one failure this must not have.
 
 #### 🧰 Operations and security
 
-**Diagnostics** in one click: the Xray process, config application, TLS expiry, disk space, geo
+**Diagnostics** in one click: the Xray process, the AmneziaWG tunnel, config application, TLS expiry, disk space, geo
 database freshness, egress health — every check with a hint. A separate **connection self-test**
 connects to each protocol as a real client and confirms traffic actually goes out — catching
 credential, TLS or ALPN drift before a user does. **Backup / restore** and reset are available

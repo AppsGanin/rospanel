@@ -287,6 +287,8 @@ var ru = map[string]string{
 	"notify.nodeTrafficBack":     "✅ <b>У сервера снова есть трафик</b>\n%s\nВ новом периоде израсходовано %s из %s.",
 	"notify.trafficPeriodMonth":  "месяц",
 	"notify.trafficPeriodDay":    "сутки",
+	"notify.nodeAWGDown":         "⚠️ <b>Туннель AmneziaWG не поднят</b>\n%s\nЛейн для этого сервера включён, значит его пользователи через него не подключатся.",
+	"notify.nodeAWGBack":         "✅ <b>Туннель AmneziaWG снова работает</b>\n%s",
 	"notify.nodeBack":            "✅ <b>Связь с сервером восстановлена</b>",
 	"notify.nodeXrayCrashed":     "⚠️ <b>Xray аварийно завершился</b>\n%s\nАгент перезапускает процесс автоматически.",
 	"notify.nodeXrayBack":        "✅ <b>Xray снова работает</b>",

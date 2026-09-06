@@ -61,6 +61,10 @@ type nodeAlertState struct {
 	// all-clear only for an alarm they actually saw.
 	trafficAlerted bool
 
+	// awgDownAlerted is the same for the AmneziaWG tunnel: once when it stops being
+	// up, once when it comes back.
+	awgDownAlerted bool
+
 	xrayAlerted    bool
 	xrayDownAt     time.Time
 	lastXrayNotify time.Time
@@ -247,6 +251,36 @@ func (m *Manager) nodeAlertsFor(n *model.Node, now time.Time, diskUsed, diskTota
 		out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
 	}
 	st.xrayUp = n.XrayRunning
+
+	// The AmneziaWG tunnel, when the operator switched the lane on for this server.
+	// Nothing else watched it: the agent applies the tunnel and a failure went into
+	// the node's own log and no further, so the panel kept the server green and kept
+	// issuing keys for a lane nobody could connect through.
+	//
+	// Only for a node that actually reports the state. An agent older than the feature
+	// says nothing, and reading silence as "down" would alert on every node in the
+	// fleet the moment this ships.
+	if awgEnabledOn(n) {
+		if awg, ok := m.NodeAWG(n.ID); ok {
+			switch {
+			case !awg.Running && !st.awgDownAlerted:
+				st.awgDownAlerted = true
+				msg := fmt.Sprintf(i18n.T(lang, "notify.nodeAWGDown"), nodeLabel(n))
+				if awg.Err != "" {
+					msg += "\n" + escHTML(awg.Err)
+				}
+				out = append(out, nodeAlertMsg{model.AdminEventXrayDown, msg})
+			case awg.Running && st.awgDownAlerted:
+				st.awgDownAlerted = false
+				out = append(out, nodeAlertMsg{model.AdminEventXrayDown,
+					fmt.Sprintf(i18n.T(lang, "notify.nodeAWGBack"), nodeLabel(n))})
+			}
+		}
+	} else {
+		// The lane was switched off. Forget the alarm so switching it back on later
+		// starts clean rather than believing the operator was already told.
+		st.awgDownAlerted = false
+	}
 
 	// A changed fingerprint on a CA-signed cert is a renewal that landed. Self-signed
 	// is the agent's fallback while ACME is unavailable, not an event: it changes on

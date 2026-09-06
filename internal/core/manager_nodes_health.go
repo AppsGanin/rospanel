@@ -63,6 +63,12 @@ func (m *Manager) NodeHealth(id int64) (*HealthReport, error) {
 				nodeBBRHealth(h),
 			)
 		}
+		// The AmneziaWG tunnel, when the operator switched it on for this server. Only
+		// then: a lane nobody enabled is not a health question, and every node had one
+		// switched off until it was.
+		if awgEnabledOn(n) {
+			checks = append(checks, m.nodeAWGHealth(n))
+		}
 		checks = append(checks,
 			m.nodeGeoHealth(n),
 			nodeAgentHealth(n),
@@ -90,6 +96,41 @@ func (m *Manager) nodeLinkHealth(n *model.Node, now int64, online bool) HealthCh
 			DetailKey: "health.nodeOffline", HintKey: "health.nodeOfflineHint",
 			Args: map[string]any{"ago": humanDuration(now - n.LastSeen)}}
 	}
+}
+
+// awgEnabledOn reports whether the AmneziaWG lane is on for this node — its own
+// answer when it has one, otherwise the master's, which is the same inheritance the
+// config generator applies.
+func awgEnabledOn(n *model.Node) bool {
+	return n.AWGEnabled != nil && *n.AWGEnabled
+}
+
+// nodeAWGHealth reports what the node last said about its tunnel.
+//
+// The gap this closes: the agent applies the tunnel, and a failure went into the
+// node's own log and no further. The panel kept the server green, kept handing out
+// AWG keys and configs for it, and the operator found out from the users.
+func (m *Manager) nodeAWGHealth(n *model.Node) HealthCheck {
+	const label = "health.awg"
+	st, ok := m.NodeAWG(n.ID)
+	if !ok {
+		// The node has never mentioned AWG: an agent older than this feature. Say so
+		// rather than guessing — "unknown" is honest and "down" would be a false alarm
+		// on every node mid-upgrade.
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthWarn,
+			DetailKey: "health.nodeAWGUnknown", HintKey: "health.nodeUpdateHint"}
+	}
+	if st.Running {
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthOK,
+			DetailKey: "health.nodeAWGOK"}
+	}
+	if st.Err != "" {
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
+			DetailKey: "health.nodeAWGFailed", HintKey: "health.nodeAWGHint",
+			Args: map[string]any{"err": st.Err}}
+	}
+	return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
+		DetailKey: "health.nodeAWGDown", HintKey: "health.nodeAWGHint"}
 }
 
 func nodeXrayHealth(n *model.Node) HealthCheck {

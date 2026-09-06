@@ -1482,6 +1482,24 @@ func (m *Manager) NodeHostStats(id int64) (nodeapi.HostStats, bool) {
 	return h, ok
 }
 
+// nodeAWGState is what a node last said about its AmneziaWG tunnel. Reported tells
+// "the node has never mentioned AWG" (an older agent, or one where the lane was never
+// switched on) apart from "the node says it is down", which are very different facts.
+type nodeAWGState struct {
+	Running  bool
+	Err      string
+	Reported bool
+}
+
+// NodeAWG returns a node's last-reported tunnel state (ok=false when it has never
+// reported one).
+func (m *Manager) NodeAWG(id int64) (nodeAWGState, bool) {
+	m.nodeGeoMu.Lock()
+	defer m.nodeGeoMu.Unlock()
+	st, ok := m.nodeAWG[id]
+	return st, ok && st.Reported
+}
+
 // NodeSyncFails returns a node's last-reported sync-failure count for the past hour
 // (0 if it hasn't reported one).
 func (m *Manager) NodeSyncFails(id int64) int {
@@ -1638,6 +1656,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	}
 	if req.Host != nil {
 		m.nodeHostStats[n.ID] = *req.Host
+	}
+	// The tunnel's own state. Recorded for every sync from an agent that reports it,
+	// so the health view and the alert both read one place.
+	if req.AWGRunning || req.AWGError != "" {
+		m.nodeAWG[n.ID] = nodeAWGState{Running: req.AWGRunning, Err: req.AWGError, Reported: true}
 	}
 	// Always refreshed (a healthy node reports 0), so the "limping" badge clears the
 	// moment the transport recovers rather than sticking on a stale count.

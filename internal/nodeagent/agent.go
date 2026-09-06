@@ -218,7 +218,10 @@ type Agent struct {
 	// node's own firewall table.
 	policyBlock *ipblock.Blocker
 
-	awg       awg.Device
+	awg awg.Device
+	// awgErr is the last tunnel-apply failure, reported to the panel so it can raise
+	// the AmneziaWG health alert — the node has no bot to tell anyone itself.
+	awgErr    string
 	awgMu     sync.Mutex
 	awgEmails map[string]string
 	awgLast   map[string]awg.PeerStat
@@ -927,6 +930,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		})
 	}
 
+	awgUp, awgErr := a.awgState()
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
 		NodeVersion: version.Version,
@@ -942,6 +946,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		CertIssuer:     certIssuer,
 		CertExpiresAt:  certExpiresAt,
 		CertError:      a.certError(),
+		AWGRunning:     awgUp,
+		AWGError:       awgErr,
 		ReportID:       rid,
 		Traffic:        traffic,
 		Conns:          a.takeConns(),
