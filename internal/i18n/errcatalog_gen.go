@@ -106,6 +106,7 @@ var errEN = map[string]string{
 	"err.enableUserBotToMessage":   "enable the client bot — the message goes through it",
 	"err.expectJSON":               "application/json expected",
 	"err.expectJSONObject":         "{{field}}: a JSON object was expected ({{err}})",
+	"err.extIdentityInvalid":       "{{field}}: up to {{max}} characters, no control or non-Latin characters",
 	"err.extNameCharset":           "The name cannot contain line breaks",
 	"err.extNameLong":              "The name is too long",
 	"err.extNotFound":              "Subscription not found",

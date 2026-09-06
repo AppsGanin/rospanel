@@ -28,13 +28,36 @@ type ExtSubscription struct {
 	Name string `json:"name"`
 	// Source is an http(s) URL, fetched on every sync, or the payload itself
 	// (a happ://crypt… link, a base64 blob, a list of links) decoded in place.
-	Source      string `json:"source"`
-	Enabled     bool   `json:"enabled"`
-	LastFetchAt int64  `json:"last_fetch_at"`
-	LastOKAt    int64  `json:"last_ok_at"`
-	LastError   string `json:"last_error,omitempty"`
-	ServerCount int    `json:"server_count"`
-	CreatedAt   int64  `json:"created_at"`
+	Source string `json:"source"`
+	// Identity is what this panel presents when it fetches that source. Every field
+	// is an override of a default, so an untouched subscription behaves exactly as it
+	// did before the fields existed.
+	Identity    ExtIdentity `json:"identity"`
+	Enabled     bool        `json:"enabled"`
+	LastFetchAt int64       `json:"last_fetch_at"`
+	LastOKAt    int64       `json:"last_ok_at"`
+	LastError   string      `json:"last_error,omitempty"`
+	ServerCount int         `json:"server_count"`
+	CreatedAt   int64       `json:"created_at"`
+}
+
+// ExtIdentity is the device this panel claims to be when it reads somebody else's
+// subscription. Panels increasingly refuse a caller that does not identify a device —
+// ours does — so the fetch has to answer that question, and the answer has to be
+// stable across syncs or every refresh burns another device slot upstream.
+//
+// Every field is OPTIONAL and every empty one falls back to a default the panel
+// derives (see extsub.Headers). The fields exist for the case the defaults are not
+// what the other side expects: an id the operator was given, an app name a panel
+// whitelists, a client string that decides which format it serves. All of them, rather
+// than a chosen few, because a partially editable identity is an arbitrary hole to
+// explain later.
+type ExtIdentity struct {
+	HWID        string `json:"hwid"`
+	DeviceOS    string `json:"device_os"`
+	OSVersion   string `json:"os_version"`
+	DeviceModel string `json:"device_model"`
+	UserAgent   string `json:"user_agent"`
 }
 
 // ExtServer is one server a subscription listed. Key is the server's identity

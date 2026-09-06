@@ -2512,12 +2512,33 @@ export interface ExtSubscription {
   // An http(s) URL fetched on every sync, or the payload itself (a happ:// link,
   // a base64 blob, a list of links) decoded in place.
   source: string
+  // The device this panel claims to be when it fetches that source. Every field is an
+  // override of a default; empty means the panel fills its own.
+  identity: ExtIdentity
   enabled: boolean
   last_fetch_at: number
   last_ok_at: number
   last_error?: string
   server_count: number
   created_at: number
+}
+
+// ExtIdentity is what the panel presents to a subscription that requires a device.
+// All fields optional: an empty one keeps the panel's default.
+export interface ExtIdentity {
+  hwid: string
+  device_os: string
+  os_version: string
+  device_model: string
+  user_agent: string
+}
+
+export const EMPTY_EXT_IDENTITY: ExtIdentity = {
+  hwid: '',
+  device_os: '',
+  os_version: '',
+  device_model: '',
+  user_agent: '',
 }
 
 export interface ExtServer {
@@ -2541,10 +2562,18 @@ export interface ExtSyncReport {
 export const getExternal = () =>
   api<{ subscriptions: ExtSubscription[]; servers: ExtServer[] }>('api/external')
 
-export const createExternal = (name: string, source: string) =>
+export const createExternal = (name: string, source: string, identity: ExtIdentity) =>
   api<{ subscription: ExtSubscription; report: ExtSyncReport }>('api/external', {
     method: 'POST',
-    body: JSON.stringify({ name, source }),
+    body: JSON.stringify({ name, source, identity }),
+  })
+
+// Changes where a subscription is read from and the device it presents, then re-reads
+// it — the answer is what that read found.
+export const updateExternalSource = (id: number, source: string, identity: ExtIdentity) =>
+  api<{ report: ExtSyncReport }>(`api/external/${id}/source`, {
+    method: 'POST',
+    body: JSON.stringify({ source, identity }),
   })
 
 export const deleteExternal = (id: number) =>

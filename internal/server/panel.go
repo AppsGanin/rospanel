@@ -324,6 +324,7 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/external", rt.listExternal)
 	authed("POST /api/external", rt.createExternal)
 	authedID("DELETE /api/external/{id}", rt.deleteExternal)
+	authedID("POST /api/external/{id}/source", rt.updateExternalSource)
 	authedID("POST /api/external/{id}/sync", rt.syncExternal)
 	authedID("POST /api/external/{id}/enabled", rt.setExternalEnabled)
 	authedID("POST /api/external/{id}/servers", rt.setExternalServersEnabled)

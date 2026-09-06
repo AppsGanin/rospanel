@@ -77,7 +77,7 @@ func TestExternalServersOutliveAHiddenFullMaster(t *testing.T) {
 		"?type=tcp&security=tls&sni=partner.example#Partner"
 
 	h, mgr, st := nodeAPITestServer(t)
-	if _, _, err := mgr.CreateExtSubscription(t.Context(), "partner", extLink); err != nil {
+	if _, _, err := mgr.CreateExtSubscription(t.Context(), "partner", extLink, model.ExtIdentity{}); err != nil {
 		t.Fatal(err)
 	}
 

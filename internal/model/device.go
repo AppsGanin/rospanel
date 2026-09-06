@@ -29,6 +29,10 @@ const (
 	HeaderDeviceModel = "x-device-model"
 )
 
+// MaxHWIDLen is the cap on a hardware id, exported so a message that has to state the
+// limit cannot drift from the value that enforces it.
+const MaxHWIDLen = maxHWIDLen
+
 // Field length caps. These strings are attacker-controlled — anyone holding a
 // subscription token picks them — and they end up in the database and in the panel
 // UI, so they are bounded on the way in rather than trusted. The HWID cap is

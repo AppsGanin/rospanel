@@ -23,7 +23,7 @@ func extServer(sub int64, key, name string) model.ExtServer {
 
 func TestExtServersReconcileAndKeepTheOperatorsChoice(t *testing.T) {
 	st := extStore(t)
-	id, err := st.CreateExtSubscription("partner", "https://example.com/sub")
+	id, err := st.CreateExtSubscription("partner", "https://example.com/sub", model.ExtIdentity{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestExtServersReconcileAndKeepTheOperatorsChoice(t *testing.T) {
 
 func TestDeletingAnExternalSubscriptionSweepsItsGrants(t *testing.T) {
 	st := extStore(t)
-	id, _ := st.CreateExtSubscription("p", "https://example.com/sub")
+	id, _ := st.CreateExtSubscription("p", "https://example.com/sub", model.ExtIdentity{})
 	_, _, _, err := st.ReplaceExtServers(id, []model.ExtServer{extServer(id, "a", "A")}, 1)
 	if err != nil {
 		t.Fatal(err)

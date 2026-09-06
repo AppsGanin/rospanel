@@ -38,17 +38,41 @@ func (rt *Router) createExternal(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string `json:"name"`
 		Source string `json:"source"`
+		// Empty fields are the normal case: the panel fills its own defaults. Set them
+		// only when the other side expects particular values.
+		Identity model.ExtIdentity `json:"identity"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	sub, report, err := rt.mgr.CreateExtSubscription(r.Context(), req.Name, req.Source)
+	sub, report, err := rt.mgr.CreateExtSubscription(r.Context(), req.Name, req.Source, req.Identity)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	auditDetails(r, map[string]any{"id": sub.ID, "name": sub.Name, "servers": report.Total})
 	writeJSON(w, http.StatusOK, map[string]any{"subscription": sub, "report": report})
+}
+
+// updateExternalSource changes where a subscription is read from and the device
+// identity it presents, then re-reads it. Both in one request because the editor shows
+// them together, and because changing the source usually means a different upstream,
+// where the old device id means nothing.
+func (rt *Router) updateExternalSource(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Source   string            `json:"source"`
+		Identity model.ExtIdentity `json:"identity"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	report, err := rt.mgr.UpdateExtSubscriptionSource(r.Context(), id, req.Source, req.Identity)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"id": id, "servers": report.Total})
+	writeJSON(w, http.StatusOK, map[string]any{"report": report})
 }
 
 func (rt *Router) deleteExternal(w http.ResponseWriter, r *http.Request, id int64) {

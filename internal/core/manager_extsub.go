@@ -47,7 +47,7 @@ func (m *Manager) EnabledExtServers() []model.ExtServer {
 // operator sees the servers — or the reason there are none — in the same click.
 // A first read that fails does not undo the creation: the source is kept with its
 // error, and the next sync or a retry from the UI picks it up.
-func (m *Manager) CreateExtSubscription(ctx context.Context, name, source string) (*model.ExtSubscription, ExtSyncReport, error) {
+func (m *Manager) CreateExtSubscription(ctx context.Context, name, source string, ident model.ExtIdentity) (*model.ExtSubscription, ExtSyncReport, error) {
 	name, err := model.CleanExtSubscriptionName(name)
 	if err != nil {
 		return nil, ExtSyncReport{}, fromFieldErr(err)
@@ -60,7 +60,11 @@ func (m *Manager) CreateExtSubscription(ctx context.Context, name, source string
 	if name == "" {
 		name = extSourceLabel(source)
 	}
-	id, err := m.store.CreateExtSubscription(name, source)
+	ident, err = cleanExtIdentity(ident)
+	if err != nil {
+		return nil, ExtSyncReport{}, err
+	}
+	id, err := m.store.CreateExtSubscription(name, source, ident)
 	if err != nil {
 		return nil, ExtSyncReport{}, err
 	}
@@ -92,7 +96,80 @@ func extSourceLabel(source string) string {
 }
 
 // SyncExtSubscription re-reads one source and reconciles its servers. A failed read
-// keeps the servers already there and records the error on the source.
+// cleanExtIdentity checks the overrides an operator typed. Every field is optional and
+// an empty one keeps the panel's default, so this only ever has to judge what was
+// actually written.
+//
+// Each value is sent verbatim as an HTTP header, so it is held to the same shape a
+// client's own device fields are (control characters stripped, length capped) and
+// REJECTED rather than silently corrected: sending a different id than the one on
+// screen would be a device that never binds and nothing to explain why. Header values
+// are also ISO-8859-1 on the wire, so anything outside it is refused here rather than
+// mangled by the transport.
+func cleanExtIdentity(id model.ExtIdentity) (model.ExtIdentity, error) {
+	for name, v := range map[string]*string{
+		"hwid":         &id.HWID,
+		"device_os":    &id.DeviceOS,
+		"os_version":   &id.OSVersion,
+		"device_model": &id.DeviceModel,
+		"user_agent":   &id.UserAgent,
+	} {
+		trimmed := strings.TrimSpace(*v)
+		if trimmed == "" {
+			*v = ""
+			continue
+		}
+		if clean := model.CleanHWID(trimmed); clean != trimmed || !isLatin1(trimmed) {
+			return id, invalidCode("err.extIdentityInvalid",
+				"{{field}}: до {{max}} символов, без управляющих и не-латинских символов",
+				map[string]any{"field": name, "max": model.MaxHWIDLen})
+		}
+		*v = trimmed
+	}
+	return id, nil
+}
+
+// isLatin1 reports whether every rune fits in a single HTTP header byte. Go will send
+// a wider one, but the other end reads bytes: a Cyrillic value arrives as mojibake and
+// matches nothing, which looks like the panel ignoring what was typed.
+func isLatin1(s string) bool {
+	for _, r := range s {
+		if r > 0xFF {
+			return false
+		}
+	}
+	return true
+}
+
+// UpdateExtSubscriptionSource changes where a subscription is read from and the device
+// identity it presents, then re-reads it so the operator sees the result of the change
+// rather than the previous read's servers.
+func (m *Manager) UpdateExtSubscriptionSource(ctx context.Context, id int64, source string, ident model.ExtIdentity) (ExtSyncReport, error) {
+	sub, err := m.store.ExtSubscription(id)
+	if err != nil {
+		return ExtSyncReport{}, err
+	}
+	if sub == nil {
+		return ExtSyncReport{}, invalidCode("err.extNotFound", "подписка не найдена")
+	}
+	source = strings.TrimSpace(source)
+	if err := extsub.ValidateSource(source); err != nil {
+		return ExtSyncReport{}, invalidCode("err.extSourceInvalid",
+			"источник не подходит: {{err}}", map[string]any{"err": err.Error()})
+	}
+	ident, err = cleanExtIdentity(ident)
+	if err != nil {
+		return ExtSyncReport{}, err
+	}
+	if err := m.store.SetExtSubscriptionSource(id, source, ident); err != nil {
+		return ExtSyncReport{}, err
+	}
+	logInfo("extsub: source updated", "id", id, "url", extsub.IsURL(source))
+	return m.SyncExtSubscription(ctx, id)
+}
+
+// SyncExtSubscription re-reads one subscription and reconciles its servers. A failed
+// read keeps the servers already there and records the error on the source.
 func (m *Manager) SyncExtSubscription(ctx context.Context, id int64) (ExtSyncReport, error) {
 	sub, err := m.store.ExtSubscription(id)
 	if err != nil {
@@ -102,7 +179,7 @@ func (m *Manager) SyncExtSubscription(ctx context.Context, id int64) (ExtSyncRep
 		return ExtSyncReport{}, invalidCode("err.extNotFound", "подписка не найдена")
 	}
 	now := time.Now().Unix()
-	eps, err := extsub.Load(ctx, sub.Source)
+	eps, err := extsub.Load(ctx, sub.Source, sub.Identity)
 	if err != nil {
 		_ = m.store.MarkExtSubscriptionSync(id, 0, err.Error(), now)
 		logWarn("extsub: read failed", "id", id, "name", sub.Name, "err", err)

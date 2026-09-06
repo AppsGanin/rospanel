@@ -20,13 +20,13 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 	m := nodeTestManager(t)
 	ctx := context.Background()
 
-	if _, _, err := m.CreateExtSubscription(ctx, "x", "not a subscription"); err == nil {
+	if _, _, err := m.CreateExtSubscription(ctx, "x", "not a subscription", model.ExtIdentity{}); err == nil {
 		t.Fatal("a payload with no links was accepted")
 	}
-	if _, _, err := m.CreateExtSubscription(ctx, strings.Repeat("n", model.MaxExtSubscriptionName+1), extLinkA); err == nil {
+	if _, _, err := m.CreateExtSubscription(ctx, strings.Repeat("n", model.MaxExtSubscriptionName+1), extLinkA, model.ExtIdentity{}); err == nil {
 		t.Fatal("an overlong name was accepted")
 	}
-	sub, report, err := m.CreateExtSubscription(ctx, "", extLinkA+"\n"+extLinkB)
+	sub, report, err := m.CreateExtSubscription(ctx, "", extLinkA+"\n"+extLinkB, model.ExtIdentity{})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -97,12 +97,12 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 func TestExternalSubscriptionKeepsServersWhenTheReadFails(t *testing.T) {
 	m := nodeTestManager(t)
 	ctx := context.Background()
-	sub, _, err := m.CreateExtSubscription(ctx, "p", extLinkA)
+	sub, _, err := m.CreateExtSubscription(ctx, "p", extLinkA, model.ExtIdentity{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Replace the stored source with a URL the SSRF gate refuses, then sync.
-	if err := m.store.SetExtSubscriptionSource(sub.ID, "http://127.0.0.1/sub"); err != nil {
+	if err := m.store.SetExtSubscriptionSource(sub.ID, "http://127.0.0.1/sub", model.ExtIdentity{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SyncExtSubscription(ctx, sub.ID); err == nil {

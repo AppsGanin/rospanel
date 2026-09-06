@@ -194,6 +194,8 @@ const en: Dict = {
     badDirectStrategy: "Unknown DNS strategy for the direct egress: {{value}}",
     extNameLong: "The name is too long",
     extNameCharset: "The name cannot contain line breaks",
+    extIdentityInvalid:
+      "{{field}}: up to {{max}} characters, no control or non-Latin characters",
     extSourceInvalid: "The source is not usable: {{err}}",
     extNotFound: "Subscription not found",
     extSyncFailed: "Could not read the subscription: {{err}}",
@@ -2604,6 +2606,18 @@ const en: Dict = {
   },
 
   external: {
+    editTitle: "Edit “{{name}}”",
+    updated: "Re-read: {{total}} servers",
+    identity: "Who we look like to them",
+    identityHint:
+      "Panels that require device binding refuse a caller that does not identify one. Leave these empty and the panel fills its own: an id derived from the source (the same on every sync, so their side binds one slot instead of a new one per refresh), this build's version, and a plain rospanel user agent. Fill one in only when the other side expects a particular value.",
+    identityDefault: "this build's version",
+    hwid: "Device id",
+    hwidAuto: "derived from the source",
+    userAgent: "User agent",
+    deviceOS: "Device OS",
+    osVersion: "OS version",
+    deviceModel: "Device model",
     title: "External subscriptions",
     hint: "Servers of other providers that the panel hands to users beside its own. The panel holds nothing on them — it only decides who gets them (access groups).",
     add: "Add subscription",

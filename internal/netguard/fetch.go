@@ -175,12 +175,26 @@ func Client(timeout time.Duration) *http.Client {
 
 // Get performs a bounded GET after SSRF validation.
 func Get(ctx context.Context, rawURL string, maxBody int64) ([]byte, error) {
+	return GetWithHeaders(ctx, rawURL, maxBody, nil)
+}
+
+// GetWithHeaders is Get with request headers. Same SSRF gate, same body cap, same
+// deadline handling — the headers are the only difference, and they are set before
+// the request is sent so a redirect carries them too.
+//
+// It exists for fetching another panel's subscription, which may require the caller
+// to identify a device before it will answer (see extsub.subscriptionHeaders). Nothing
+// here interprets them; a caller that passes none gets exactly what Get always did.
+func GetWithHeaders(ctx context.Context, rawURL string, maxBody int64, headers map[string]string) ([]byte, error) {
 	if err := ValidateFetchURL(rawURL); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 	client := Client(0)
 	if deadline, ok := ctx.Deadline(); ok {

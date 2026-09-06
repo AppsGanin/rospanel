@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  EMPTY_EXT_IDENTITY,
+  type ExtIdentity,
+  type ExtServer,
+  type ExtSubscription,
   createExternal,
   deleteExternal,
   getExternal,
@@ -8,8 +12,7 @@ import {
   setExternalServerEnabled,
   setExternalServersEnabled,
   syncExternal,
-  type ExtServer,
-  type ExtSubscription,
+  updateExternalSource,
 } from "./api";
 import { useAction, useShowMore } from "./hooks";
 import i18n from "./i18n";
@@ -50,6 +53,7 @@ export function ExternalServers() {
   const [subs, setSubs] = useState<ExtSubscription[] | null>(null);
   const [servers, setServers] = useState<ExtServer[]>([]);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<ExtSubscription | null>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
   const { busy, run, isBusy } = useAction();
   const { confirm, confirmNode } = useConfirm();
@@ -166,6 +170,9 @@ export function ExternalServers() {
                     >
                       {t("external.sync")}
                     </Button>
+                    <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => setEditing(s)}>
+                      {t("common.edit")}
+                    </Button>
                     <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => toggleOpen(s.id)}>
                       {t(open.has(s.id) ? "external.collapse" : "external.servers")}
                     </Button>
@@ -218,6 +225,17 @@ export function ExternalServers() {
             );
           })}
         </div>
+      )}
+
+      {editing && (
+        <EditExternalDialog
+          sub={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
       )}
 
       {adding && (
@@ -285,17 +303,127 @@ function ServerList({
   );
 }
 
+// IdentityFields edits what the panel presents to a subscription that asks who is
+// calling. Every field is an override: leaving one empty keeps the panel's default,
+// which is what makes an ordinary subscription work without touching any of this.
+// The placeholders show the actual default, so the operator can see what will be sent
+// before deciding to replace it.
+function IdentityFields({
+  source,
+  value,
+  onChange,
+}: {
+  source: string;
+  value: ExtIdentity;
+  onChange: (v: ExtIdentity) => void;
+}) {
+  const { t } = useTranslation();
+  const patch = (p: Partial<ExtIdentity>) => onChange({ ...value, ...p });
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
+      <span className="text-sm font-medium text-ink">{t("external.identity")}</span>
+      <p className="text-xs text-ink-muted">{t("external.identityHint")}</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <TextInput
+          label={t("external.hwid")}
+          value={value.hwid}
+          onChange={(v) => patch({ hwid: v })}
+          placeholder={derivedHWIDPlaceholder(source)}
+          mono
+        />
+        <TextInput
+          label={t("external.userAgent")}
+          value={value.user_agent}
+          onChange={(v) => patch({ user_agent: v })}
+          placeholder="rospanel/…"
+        />
+        <TextInput
+          label={t("external.deviceOS")}
+          value={value.device_os}
+          onChange={(v) => patch({ device_os: v })}
+          placeholder="rospanel"
+        />
+        <TextInput
+          label={t("external.osVersion")}
+          value={value.os_version}
+          onChange={(v) => patch({ os_version: v })}
+          placeholder={t("external.identityDefault")}
+        />
+        <TextInput
+          label={t("external.deviceModel")}
+          value={value.device_model}
+          onChange={(v) => patch({ device_model: v })}
+          placeholder="panel"
+        />
+      </div>
+    </div>
+  );
+}
+
+// derivedHWIDPlaceholder shows what the panel would send on its own. It is only a
+// hint — the server derives the real value, and does so from the source as stored —
+// so it is deliberately not computed here for a source that is not a URL, where no
+// fetch happens and no device is ever presented.
+function derivedHWIDPlaceholder(source: string): string {
+  const s = source.trim();
+  return /^https?:\/\//i.test(s) ? i18n.t("external.hwidAuto") : "—";
+}
+
+// EditExternalDialog changes where a subscription is read from and who the panel says
+// it is, then re-reads it — so the answer to "did that fix it" is on screen rather than
+// one manual sync away. Both fields together because changing the source usually means
+// a different upstream, where the old device id means nothing.
+function EditExternalDialog({
+  sub,
+  onClose,
+  onSaved,
+}: {
+  sub: ExtSubscription;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const [source, setSource] = useState(sub.source);
+  const [identity, setIdentity] = useState<ExtIdentity>({ ...EMPTY_EXT_IDENTITY, ...sub.identity });
+  const { busy, run } = useAction();
+
+  const submit = () =>
+    run(async () => {
+      const r = await updateExternalSource(sub.id, source.trim(), identity);
+      notifySuccess(t("external.updated", { total: r.report.total }));
+      onSaved();
+    });
+
+  return (
+    <Modal open onClose={onClose} title={t("external.editTitle", { name: sub.name })}>
+      <div className="flex flex-col gap-4">
+        <Textarea label={t("external.source")} value={source} onChange={setSource} rows={4} />
+        <IdentityFields source={source} value={identity} onChange={setIdentity} />
+        <div className="flex justify-end gap-2">
+          <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={submit} loading={busy} disabled={!source.trim()}>
+            {t("common.save")}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // AddExternalDialog takes a source of any of the accepted shapes; the answer says
 // how many servers it holds, so a wrong paste shows as zero right here.
 function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [source, setSource] = useState("");
+  const [identity, setIdentity] = useState<ExtIdentity>(EMPTY_EXT_IDENTITY);
   const { busy, run } = useAction();
 
   const submit = () =>
     run(async () => {
-      const r = await createExternal(name.trim(), source.trim());
+      const r = await createExternal(name.trim(), source.trim(), identity);
       notifySuccess(t("external.added", { name: r.subscription.name, total: r.report.total }));
       onAdded();
     });
@@ -312,6 +440,7 @@ function AddExternalDialog({ onClose, onAdded }: { onClose: () => void; onAdded:
           rows={5}
           placeholder={"https://provider.example/sub/…\nhapp://crypt5/…\nvless://…"}
         />
+        <IdentityFields source={source} value={identity} onChange={setIdentity} />
         <div className="flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
             {t("common.cancel")}

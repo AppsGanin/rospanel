@@ -14,18 +14,23 @@ import (
 
 const extServerCols = `id, sub_id, key, name, protocol, host, port, link, enabled, seen_at`
 
-// CreateExtSubscription stores a source and returns its id.
-func (s *Store) CreateExtSubscription(name, source string) (int64, error) {
-	var id int64
-	err := s.db.QueryRow(`INSERT INTO ext_subscriptions (name, source) VALUES (?, ?) RETURNING id`,
-		name, encField(source)).Scan(&id)
-	return id, err
+// CreateExtSubscription stores a source and returns its id. Empty identity fields mean
+// the panel's own defaults (see extsub.Headers), which is the normal case.
+func (s *Store) CreateExtSubscription(name, source string, id model.ExtIdentity) (int64, error) {
+	var newID int64
+	err := s.db.QueryRow(
+		`INSERT INTO ext_subscriptions (name, source, hwid, device_os, os_version, device_model, user_agent)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		name, encField(source), id.HWID, id.DeviceOS, id.OSVersion, id.DeviceModel, id.UserAgent,
+	).Scan(&newID)
+	return newID, err
 }
 
 // ExtSubscriptions lists every subscription, oldest first — the order the
 // operator added them, which is the order they read the list in.
 func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
-	rows, err := s.db.Query(`SELECT id, name, source, enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
+	rows, err := s.db.Query(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
+		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
 		FROM ext_subscriptions ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -44,7 +49,8 @@ func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
 
 // ExtSubscription reads one subscription; nil when there is none with that id.
 func (s *Store) ExtSubscription(id int64) (*model.ExtSubscription, error) {
-	row := s.db.QueryRow(`SELECT id, name, source, enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
+	row := s.db.QueryRow(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
+		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
 		FROM ext_subscriptions WHERE id = ?`, id)
 	x, err := scanExtSubscription(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -59,7 +65,10 @@ func (s *Store) ExtSubscription(id int64) (*model.ExtSubscription, error) {
 func scanExtSubscription(r rowScanner) (model.ExtSubscription, error) {
 	var x model.ExtSubscription
 	var enabled int
-	if err := r.Scan(&x.ID, &x.Name, &x.Source, &enabled, &x.LastFetchAt, &x.LastOKAt, &x.LastError, &x.ServerCount, &x.CreatedAt); err != nil {
+	if err := r.Scan(&x.ID, &x.Name, &x.Source,
+		&x.Identity.HWID, &x.Identity.DeviceOS, &x.Identity.OSVersion,
+		&x.Identity.DeviceModel, &x.Identity.UserAgent,
+		&enabled, &x.LastFetchAt, &x.LastOKAt, &x.LastError, &x.ServerCount, &x.CreatedAt); err != nil {
 		return x, err
 	}
 	x.Enabled = enabled != 0
@@ -67,10 +76,16 @@ func scanExtSubscription(r rowScanner) (model.ExtSubscription, error) {
 	return x, nil
 }
 
-// SetExtSubscriptionSource replaces where a subscription is read from; the next
-// sync reads the new source.
-func (s *Store) SetExtSubscriptionSource(id int64, source string) error {
-	_, err := s.db.Exec(`UPDATE ext_subscriptions SET source = ? WHERE id = ?`, encField(source), id)
+// SetExtSubscriptionSource replaces where a subscription is read from and the device
+// identity it presents; the next sync uses both. They are written together because the
+// editor shows them together: an operator changing the source usually means a different
+// upstream, where the old device id means nothing.
+func (s *Store) SetExtSubscriptionSource(id int64, source string, ident model.ExtIdentity) error {
+	_, err := s.db.Exec(
+		`UPDATE ext_subscriptions SET source = ?, hwid = ?, device_os = ?, os_version = ?,
+		        device_model = ?, user_agent = ? WHERE id = ?`,
+		encField(source), ident.HWID, ident.DeviceOS, ident.OSVersion,
+		ident.DeviceModel, ident.UserAgent, id)
 	return err
 }
 
