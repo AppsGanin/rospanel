@@ -8,6 +8,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
 // awgNodeFixture is a joined, online node with the AmneziaWG lane switched on.
@@ -59,7 +60,7 @@ func TestNodeAWGSilenceIsNotAFailure(t *testing.T) {
 		t.Fatalf("health: %v", err)
 	}
 	c := findCheck(t, rep, "awg")
-	if c.Status != healthWarn || c.DetailKey != "health.nodeAWGUnknown" {
+	if c.Status != healthWarn || c.DetailKey != "health.awgUnknown" {
 		t.Errorf("silent agent check = %s/%s, want a warning about not knowing", c.Status, c.DetailKey)
 	}
 }
@@ -142,4 +143,59 @@ func findCheck(t *testing.T, rep *HealthReport, key string) HealthCheck {
 	}
 	t.Fatalf("health report has no %q check", key)
 	return HealthCheck{}
+}
+
+// The master runs its own tunnel in this process, and its diagnostics never mentioned
+// it — the one server whose logs the operator can actually read was the one the panel
+// said nothing about. The lane being switched on is what makes it a question at all.
+func TestMasterAWGAppearsInDiagnosticsOnlyWhenTheLaneIsOn(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "mawg.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	// Health() walks every check, including the Xray one, so the manager needs a
+	// supervisor even though this test is about the tunnel.
+	m := &Manager{
+		store:   st,
+		sup:     xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir),
+		nodeAWG: map[int64]nodeAWGState{},
+	}
+
+	// Lane off: no row at all, rather than a green one for a tunnel nobody asked for.
+	if hasCheck(m.Health(), "awg") {
+		t.Error("the tunnel is reported while the lane is switched off")
+	}
+
+	if err := st.SetProtocolEnabled("awg", true); err != nil {
+		t.Fatalf("switch the lane on: %v", err)
+	}
+	rep := m.Health()
+	if !hasCheck(rep, "awg") {
+		t.Fatalf("the lane is on and the tunnel is still missing from diagnostics; checks: %v", checkKeys(rep))
+	}
+	// No tunnel is actually running in a test process, so the check must say so rather
+	// than report ok — a green row for a tunnel that does not exist is the worse bug.
+	c := findCheck(t, rep, "awg")
+	if c.Status != healthError {
+		t.Errorf("check = %s, want an error when the lane is on and the tunnel is not up", c.Status)
+	}
+}
+
+func hasCheck(rep *HealthReport, key string) bool {
+	for _, c := range rep.Checks {
+		if c.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func checkKeys(rep *HealthReport) []string {
+	out := make([]string, 0, len(rep.Checks))
+	for _, c := range rep.Checks {
+		out = append(out, c.Key)
+	}
+	return out
 }

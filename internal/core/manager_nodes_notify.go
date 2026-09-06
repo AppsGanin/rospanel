@@ -154,6 +154,13 @@ func (m *Manager) sweepAlerts(nodes []model.Node, local *sysstat.Stats, now time
 			m.notifyAdminEvent(model.AdminEventXrayDown, msg)
 		}
 	}
+	// The master's own tunnel, on the same terms as a node's. Nodes report theirs over
+	// the sync protocol; this one runs in this process, so it is asked directly — and
+	// without this the one server whose logs the operator can actually read is the one
+	// that never told them.
+	if msg := m.localAWGAlertMsg(); msg != "" {
+		m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+	}
 	m.pruneNodeAlerts(live)
 }
 
@@ -176,6 +183,40 @@ func (m *Manager) localDiskAlertMsg(live map[int64]struct{}, used, total int64) 
 	st.diskLowAlerted = next
 	st.known = true
 	return msg
+}
+
+// localAWGAlertMsg is localDiskAlertMsg's twin for the master's AmneziaWG tunnel:
+// one message when it stops being up, one when it comes back, and nothing at all when
+// the lane is switched off.
+func (m *Manager) localAWGAlertMsg() string {
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return ""
+	}
+	m.nodeAlertMu.Lock()
+	defer m.nodeAlertMu.Unlock()
+	st := m.nodeAlertLocked(model.LocalNodeID)
+	if !set.AWGEnabled {
+		// Switched off: forget the alarm so turning it back on starts clean rather
+		// than believing admins were already told.
+		st.awgDownAlerted = false
+		return ""
+	}
+	running, lastErr := m.AWGStatus()
+	lang := m.botLang()
+	switch {
+	case !running && !st.awgDownAlerted:
+		st.awgDownAlerted = true
+		msg := fmt.Sprintf(i18n.T(lang, "notify.nodeAWGDown"), model.LocalNodeName)
+		if lastErr != "" {
+			msg += "\n" + escHTML(lastErr)
+		}
+		return msg
+	case running && st.awgDownAlerted:
+		st.awgDownAlerted = false
+		return fmt.Sprintf(i18n.T(lang, "notify.nodeAWGBack"), model.LocalNodeName)
+	}
+	return ""
 }
 
 // nodeAlertsFor advances one node's alert state and returns the messages that

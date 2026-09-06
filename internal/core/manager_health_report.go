@@ -71,6 +71,15 @@ func (m *Manager) Health() *HealthReport {
 		checks = append(checks, *nc)
 	}
 
+	// This server's own AmneziaWG tunnel, when the lane is on. A node reports its
+	// tunnel over the sync protocol (nodeAWGHealth); the master runs its own in this
+	// process, so it just asks — and until now it never did, so the one server whose
+	// tunnel the operator can actually see the logs for was the one the diagnostics
+	// said nothing about.
+	if set != nil && set.AWGEnabled {
+		checks = append(checks, m.awgHealth())
+	}
+
 	if set != nil && set.OperaEnabled {
 		if m.OperaHealthy() {
 			checks = append(checks, HealthCheck{Key: "opera", LabelKey: "health.opera", Status: healthOK,
@@ -81,6 +90,25 @@ func (m *Manager) Health() *HealthReport {
 		}
 	}
 	return &HealthReport{Status: worstStatus(checks), Checks: checks}
+}
+
+// awgHealth reports the master's own tunnel. Same detail keys a node's check uses —
+// the facts are identical — with a hint that points at this machine rather than at a
+// remote one.
+func (m *Manager) awgHealth() HealthCheck {
+	const label = "health.awg"
+	running, lastErr := m.AWGStatus()
+	switch {
+	case running:
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthOK, DetailKey: "health.awgOK"}
+	case lastErr != "":
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
+			DetailKey: "health.awgFailed", HintKey: "health.awgHint",
+			Args: map[string]any{"err": lastErr}}
+	default:
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
+			DetailKey: "health.awgDown", HintKey: "health.awgHint"}
+	}
 }
 
 // nodesHealth summarizes the remote nodes: how many are online, and a warning

@@ -118,19 +118,19 @@ func (m *Manager) nodeAWGHealth(n *model.Node) HealthCheck {
 		// rather than guessing — "unknown" is honest and "down" would be a false alarm
 		// on every node mid-upgrade.
 		return HealthCheck{Key: "awg", LabelKey: label, Status: healthWarn,
-			DetailKey: "health.nodeAWGUnknown", HintKey: "health.nodeUpdateHint"}
+			DetailKey: "health.awgUnknown", HintKey: "health.nodeUpdateHint"}
 	}
 	if st.Running {
 		return HealthCheck{Key: "awg", LabelKey: label, Status: healthOK,
-			DetailKey: "health.nodeAWGOK"}
+			DetailKey: "health.awgOK"}
 	}
 	if st.Err != "" {
 		return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
-			DetailKey: "health.nodeAWGFailed", HintKey: "health.nodeAWGHint",
+			DetailKey: "health.awgFailed", HintKey: "health.nodeAWGHint",
 			Args: map[string]any{"err": st.Err}}
 	}
 	return HealthCheck{Key: "awg", LabelKey: label, Status: healthError,
-		DetailKey: "health.nodeAWGDown", HintKey: "health.nodeAWGHint"}
+		DetailKey: "health.awgDown", HintKey: "health.nodeAWGHint"}
 }
 
 func nodeXrayHealth(n *model.Node) HealthCheck {
