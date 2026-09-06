@@ -48,11 +48,14 @@ func (m *Manager) NodeHealth(id int64) (*HealthReport, error) {
 	// Everything below describes the node's last report. When it has never
 	// connected there is nothing to describe, so the link check stands alone.
 	if n.Joined() {
-		checks = append(checks,
-			nodeXrayHealth(n),
-			m.nodeConfigHealth(n, online),
-			nodeCertHealth(n),
-		)
+		checks = append(checks, nodeXrayHealth(n), m.nodeConfigHealth(n, online))
+		// With the config it is part of, matching the master's own report — the two
+		// views are read by the same person and should not order the same facts
+		// differently.
+		if awgEnabledOn(n) {
+			checks = append(checks, m.nodeAWGHealth(n))
+		}
+		checks = append(checks, nodeCertHealth(n))
 		// The machine itself, as the node reported it. An agent older than this
 		// feature sends nothing, so the rows are omitted rather than shown as zeros.
 		if h, ok := m.NodeHostStats(n.ID); ok {
@@ -62,12 +65,6 @@ func (m *Manager) NodeHealth(id int64) (*HealthReport, error) {
 				nodeConnGuardHealth(h),
 				nodeBBRHealth(h),
 			)
-		}
-		// The AmneziaWG tunnel, when the operator switched it on for this server. Only
-		// then: a lane nobody enabled is not a health question, and every node had one
-		// switched off until it was.
-		if awgEnabledOn(n) {
-			checks = append(checks, m.nodeAWGHealth(n))
 		}
 		checks = append(checks,
 			m.nodeGeoHealth(n),

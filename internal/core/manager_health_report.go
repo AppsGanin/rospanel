@@ -57,7 +57,15 @@ type HealthReport struct {
 // calls — so the page is cheap to poll.
 func (m *Manager) Health() *HealthReport {
 	set, _ := m.store.GetSettings()
-	checks := []HealthCheck{m.xrayHealth(), m.configHealth(set), m.tlsHealth()}
+	checks := []HealthCheck{m.xrayHealth(), m.configHealth(set)}
+	// The tunnel sits with the config it is part of, not at the end of the list: it is
+	// a lane this server serves, and reading it next to Xray is what makes the pair
+	// legible. Only when the lane is switched on — a lane nobody enabled is not a
+	// health question, and a green row for it would be noise.
+	if set != nil && set.AWGEnabled {
+		checks = append(checks, m.awgHealth())
+	}
+	checks = append(checks, m.tlsHealth())
 
 	if m.sys != nil {
 		s := m.sys.Read()
@@ -69,15 +77,6 @@ func (m *Manager) Health() *HealthReport {
 
 	if nc := m.nodesHealth(); nc != nil {
 		checks = append(checks, *nc)
-	}
-
-	// This server's own AmneziaWG tunnel, when the lane is on. A node reports its
-	// tunnel over the sync protocol (nodeAWGHealth); the master runs its own in this
-	// process, so it just asks — and until now it never did, so the one server whose
-	// tunnel the operator can actually see the logs for was the one the diagnostics
-	// said nothing about.
-	if set != nil && set.AWGEnabled {
-		checks = append(checks, m.awgHealth())
 	}
 
 	if set != nil && set.OperaEnabled {

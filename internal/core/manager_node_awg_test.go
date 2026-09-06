@@ -199,3 +199,63 @@ func checkKeys(rep *HealthReport) []string {
 	}
 	return out
 }
+
+// Where the row sits is part of the answer: the tunnel is a lane this server serves,
+// so it reads next to the Xray config rather than at the end of the list, and the
+// master and node views must not order the same facts differently.
+func TestAWGSitsUnderTheXrayConfigRow(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "order.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	m := &Manager{
+		store:   st,
+		sup:     xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir),
+		nodeAWG: map[int64]nodeAWGState{},
+	}
+	if err := st.SetProtocolEnabled("awg", true); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	assertAfterConfig(t, "master", checkKeys(m.Health()))
+
+	// The node view, built from a different function, has to agree.
+	n, err := st.CreateNode("nl", "nl.example.com", "")
+	if err != nil {
+		t.Fatalf("node: %v", err)
+	}
+	if err := st.SetNodeAWGEnabled(n.ID, true); err != nil {
+		t.Fatalf("node lane: %v", err)
+	}
+	if err := st.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
+		LastSeen: time.Now().Unix(), NodeVersion: "test", XrayRunning: true,
+	}); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	rep, err := m.NodeHealth(n.ID)
+	if err != nil {
+		t.Fatalf("node health: %v", err)
+	}
+	assertAfterConfig(t, "node", checkKeys(rep))
+}
+
+func assertAfterConfig(t *testing.T, view string, keys []string) {
+	t.Helper()
+	cfg, awg := -1, -1
+	for i, k := range keys {
+		switch k {
+		case "config":
+			cfg = i
+		case "awg":
+			awg = i
+		}
+	}
+	if cfg < 0 || awg < 0 {
+		t.Fatalf("%s view is missing a row; got %v", view, keys)
+	}
+	if awg != cfg+1 {
+		t.Errorf("%s view: awg is at %d and config at %d, want it directly after; got %v",
+			view, awg, cfg, keys)
+	}
+}
