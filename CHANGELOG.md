@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.14.0](https://github.com/AppsGanin/rospanel/compare/v2.13.0...v2.14.0) (2026-09-06)
+
+
+### Features
+
+* **external:** present a device when reading somebody else's subscription ([cab6a0f](https://github.com/AppsGanin/rospanel/commit/cab6a0f9cfa07f728df880de828244ab1025a450))
+* **hysteria2:** the obfuscation key is generated, never typed ([9c2cb2e](https://github.com/AppsGanin/rospanel/commit/9c2cb2e0b333dda52169fb45729a1edc5557ae64))
+* **nodes:** the AmneziaWG tunnel is watched on nodes, not just on the master ([4bbf73f](https://github.com/AppsGanin/rospanel/commit/4bbf73fe56903d83bbaf9cc191977c36b184e705))
+
+
+### Bug Fixes
+
+* **core:** the manager's background loops stop when it does ([3d3d20a](https://github.com/AppsGanin/rospanel/commit/3d3d20aa9caf7750a49b5dfa05de1e1adef6f682))
+* **health:** the AmneziaWG row sits under Xray config, not at the end ([ed6fd75](https://github.com/AppsGanin/rospanel/commit/ed6fd751d8d4cc46887c0d8e60ae8d9adeb78e36))
+* **health:** the master's own AmneziaWG tunnel is in its diagnostics too ([a02b4b2](https://github.com/AppsGanin/rospanel/commit/a02b4b2a405bb13042c75be0829736c2bc5dd859))
+* **web:** five defects the fork's frontend audit pointed at, done our way ([74e3035](https://github.com/AppsGanin/rospanel/commit/74e30354ab916e39db1fe60d640449937805af63))
+
 ## [2.13.0](https://github.com/AppsGanin/rospanel/compare/v2.12.1...v2.13.0) (2026-09-05)
 
 
