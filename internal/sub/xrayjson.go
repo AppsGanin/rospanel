@@ -25,7 +25,7 @@ import (
 func XrayJSONMulti(u model.User, servers []Server, dpi model.SubDPI) string {
 	configs := make([]map[string]any, 0, 8)
 	for _, l := range ShareLinksAll(u, servers) {
-		if cfg, ok := xrayConfigFromLink(l, dpi); ok {
+		if cfg, _, ok := xrayConfigFromLink(l, dpi); ok {
 			configs = append(configs, cfg)
 		}
 	}
@@ -50,7 +50,7 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 	}
 	configs := make([]any, 0, 8)
 	for _, l := range ShareLinksAll(u, servers) {
-		cfg, ok := xrayConfigFromLink(l, dpi)
+		cfg, remarks, ok := xrayConfigFromLink(l, dpi)
 		if !ok {
 			continue
 		}
@@ -61,14 +61,14 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 		// the cost of being wrong here is a client that looks connected and is not.
 		outbounds, ok := cfg["outbounds"].([]map[string]any)
 		if !ok || len(outbounds) == 0 {
-			return XrayJSONMulti(u, servers, dpi), fmt.Errorf("lane %q produced no outbound chain", cfg["remarks"])
+			return XrayJSONMulti(u, servers, dpi), fmt.Errorf("lane %q produced no outbound chain", remarks)
 		}
 		chain := make([]any, len(outbounds))
 		for i, o := range outbounds {
 			chain[i] = o
 		}
 		rendered, err := renderJSONTemplate(template,
-			map[string]any{TplRemarks: cfg["remarks"]},
+			map[string]any{TplRemarks: remarks},
 			map[string][]any{TplOutbounds: chain},
 		)
 		if err != nil {
@@ -94,14 +94,19 @@ func XrayJSONWithTemplate(u model.User, servers []Server, dpi model.SubDPI, temp
 // SOCKS/HTTP inbounds on the ports every Xray app expects, the proxy outbound, the
 // optional fragment/noise dialer, direct and block, and a routing block that keeps
 // private ranges local. Returns false for a scheme the format cannot carry.
-func xrayConfigFromLink(raw string, dpi model.SubDPI) (map[string]any, bool) {
+//
+// The lane's display name comes back on its own rather than being read back out of
+// the config: the map holds the outbound's credentials next to it, so anything
+// pulled from it by key is a secret as far as a caller — or a taint analyser — can
+// tell. Callers that want the name for a log line or a template take this one.
+func xrayConfigFromLink(raw string, dpi model.SubDPI) (map[string]any, string, bool) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return nil, false
+		return nil, "", false
 	}
 	proxy, ok := xrayOutbound(parsed)
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
 	outbounds := []map[string]any{proxy}
 	// Fragment only where there is a ClientHello with our real SNI to hide — a
@@ -152,7 +157,7 @@ func xrayConfigFromLink(raw string, dpi model.SubDPI) (map[string]any, bool) {
 				{"type": "field", "outboundTag": "direct", "ip": privateRanges()},
 			},
 		},
-	}, true
+	}, remarks, true
 }
 
 // privateRanges is what "geoip:private" expands to: the loopback, link-local and
