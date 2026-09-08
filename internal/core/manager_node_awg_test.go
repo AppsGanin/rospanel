@@ -259,3 +259,33 @@ func assertAfterConfig(t *testing.T, view string, keys []string) {
 			view, awg, cfg, keys)
 	}
 }
+
+// A panel restart is not an outage. The alert sweep runs the moment the process
+// starts, while the master's own tunnel is still coming up, so the first pass has to
+// record a baseline and say nothing — otherwise every restart sent "the tunnel is
+// down" and then "the tunnel is back", which is what admins actually saw.
+func TestLocalAWGFirstSweepIsSilent(t *testing.T) {
+	m, st, _, msgs := awgNodeFixture(t)
+	if err := st.SetProtocolEnabled("awg", true); err != nil {
+		t.Fatalf("enable the master's AWG lane: %v", err)
+	}
+
+	// m.awg is nil here, so the tunnel reads as not running — the state a restart
+	// catches it in.
+	m.sweepAlerts(nil, nil, time.Now())
+	if len(*msgs) != 0 {
+		t.Fatalf("the first sweep sent %d messages, want none:\n%v", len(*msgs), *msgs)
+	}
+
+	// Still down a minute later is a real outage, and that one is worth saying.
+	m.sweepAlerts(nil, nil, time.Now())
+	if len(*msgs) != 1 {
+		t.Fatalf("the second sweep sent %d messages, want 1:\n%v", len(*msgs), *msgs)
+	}
+
+	// And it is said once, not on every sweep after.
+	m.sweepAlerts(nil, nil, time.Now())
+	if len(*msgs) != 1 {
+		t.Fatalf("the outage was repeated: %d messages, want 1", len(*msgs))
+	}
+}

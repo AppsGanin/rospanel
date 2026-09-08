@@ -61,6 +61,10 @@ type nodeAlertState struct {
 	// all-clear only for an alarm they actually saw.
 	trafficAlerted bool
 
+	// awgKnown is false until the tunnel has been observed once. The first sweep runs
+	// the moment the panel boots, while the tunnel is still coming up, so without a
+	// baseline every restart read as an outage and sent "down" followed by "back".
+	awgKnown bool
 	// awgDownAlerted is the same for the AmneziaWG tunnel: once when it stops being
 	// up, once when it comes back.
 	awgDownAlerted bool
@@ -200,10 +204,18 @@ func (m *Manager) localAWGAlertMsg() string {
 		// Switched off: forget the alarm so turning it back on starts clean rather
 		// than believing admins were already told.
 		st.awgDownAlerted = false
+		st.awgKnown = false
 		return ""
 	}
 	running, lastErr := m.AWGStatus()
 	lang := m.botLang()
+	// The first pass only records that we have looked — the same baseline every node
+	// gets (see nodeAlertsFor). A tunnel that is genuinely down still alerts, on the
+	// next sweep a minute later; one that was merely still starting says nothing.
+	if !st.awgKnown {
+		st.awgKnown = true
+		return ""
+	}
 	switch {
 	case !running && !st.awgDownAlerted:
 		st.awgDownAlerted = true
