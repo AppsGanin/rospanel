@@ -687,6 +687,15 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			continue
 		}
 		backoff = backoffMin
+		// A poll the panel HELD to the end and answered proves the transport can carry
+		// a long request right now — which is the whole question "unstable" asks. The
+		// failures before it are history: most often the panel restarting under the
+		// operator's own hands, and leaving the node flagged for the rest of the hour
+		// blames it for the panel's downtime. A short answer does not clear anything:
+		// it proves the panel is reachable, not that a hold survives.
+		if time.Since(pollStart) >= minHeldPoll {
+			a.clearSyncFails()
+		}
 
 		if resp.Revoked {
 			if !a.revoked.Load() {
@@ -849,6 +858,13 @@ func (a *Agent) noteSyncFail() {
 		}
 	}
 	a.syncFailAt = append(kept, now)
+}
+
+// clearSyncFails forgets the failure window after the transport has proven itself.
+func (a *Agent) clearSyncFails() {
+	a.syncFailMu.Lock()
+	defer a.syncFailMu.Unlock()
+	a.syncFailAt = a.syncFailAt[:0]
 }
 
 // recentSyncFails returns how many sync attempts failed in the last window.

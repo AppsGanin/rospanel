@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 )
 
 func TestBenignPollCut(t *testing.T) {
@@ -51,5 +52,45 @@ func TestRecentSyncFailsWindow(t *testing.T) {
 	a.syncFailMu.Unlock()
 	if got := a.recentSyncFails(); got != 5 {
 		t.Fatalf("recentSyncFails = %d, want 5 (the ancient entry must not count); cutoff=%d", got, cutoff)
+	}
+}
+
+// A panel restart makes every poll in flight fail, and an operator who restarts a
+// few times in a row can push a healthy node past the panel's "unstable" threshold
+// (six in the hour) — leaving it flagged for the rest of the hour for the panel's
+// own downtime. One poll the panel held to the end and answered proves the transport
+// carries a long request right now, so the failures before it are history.
+func TestClearSyncFailsForgetsTheWindow(t *testing.T) {
+	a := &Agent{}
+	for range 7 {
+		a.noteSyncFail()
+	}
+	if got := a.recentSyncFails(); got != 7 {
+		t.Fatalf("recentSyncFails = %d, want 7 before the held poll", got)
+	}
+
+	a.clearSyncFails()
+	if got := a.recentSyncFails(); got != 0 {
+		t.Fatalf("recentSyncFails = %d after a held poll, want 0", got)
+	}
+
+	// Clearing reuses the backing array, so the window has to rebuild from scratch
+	// rather than resurrect what was in it.
+	a.noteSyncFail()
+	if got := a.recentSyncFails(); got != 1 {
+		t.Fatalf("recentSyncFails = %d after one new failure, want 1", got)
+	}
+}
+
+// The rule only holds because a poll cannot reach minHeldPoll without the panel
+// actually holding it: the panel's no-change hold is 45s jittered by ±15, so the
+// shortest hold it can pick is 30s. A threshold at or above that would let an
+// ordinary immediate answer — a config push, which proves nothing about long
+// requests — wipe the window.
+func TestMinHeldPollSitsBelowTheShortestHold(t *testing.T) {
+	const shortestPanelHold = 30 * time.Second // internal/server: 45s nominal, ±15s jitter
+	if minHeldPoll >= shortestPanelHold {
+		t.Fatalf("minHeldPoll = %v, must stay below the panel's shortest hold (%v)",
+			minHeldPoll, shortestPanelHold)
 	}
 }
