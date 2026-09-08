@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.14.1](https://github.com/AppsGanin/rospanel/compare/v2.14.0...v2.14.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **alerts:** a panel restart is not an AmneziaWG outage ([451778b](https://github.com/AppsGanin/rospanel/commit/451778b816345f3689c52c8477039f702380c647))
+* **http:** a held HTTP/2 response outlives ReadHeaderTimeout ([2000a0e](https://github.com/AppsGanin/rospanel/commit/2000a0e2bc2651916411b82c75a9fd1565214446))
+* **nodeagent:** a held poll clears the node's sync-failure window ([6c6e30e](https://github.com/AppsGanin/rospanel/commit/6c6e30eb52d5185d8c7128af65d5ee9439e4692a))
+* **sub:** the lane name comes back typed, not read out of the config map ([1c12158](https://github.com/AppsGanin/rospanel/commit/1c12158a18e3eaa1bc99b68845760bef9d5fee9c))
+
 ## [2.14.0](https://github.com/AppsGanin/rospanel/compare/v2.13.0...v2.14.0) (2026-09-06)
 
 
