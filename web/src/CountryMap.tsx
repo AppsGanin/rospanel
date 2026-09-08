@@ -6,14 +6,10 @@ import {
   type ASNStat,
   type CountryStat,
 } from './api'
+import { ShareBar } from './charts'
 import { currentLang } from './i18n'
-import { Card, SegmentedControl, Skeleton } from './ui'
+import { EmptyState, Panel, SegmentedControl, Skeleton } from './ui'
 import { countryFlag, countryName } from './format'
-
-const PALETTE = [
-  '#2566f5', '#0d9488', '#9333ea', '#f97316', '#ef4444',
-  '#06b6d4', '#65a30d', '#ec4899', '#4f46e5', '#eab308',
-]
 
 
 // One normalised row for the shared bar renderer: a stable key, a leading glyph, a
@@ -72,57 +68,46 @@ export function ConnectionCountries() {
   )
 
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-bold">{t('stats.byCountry')}</h3>
-        <div className="flex items-center gap-3">
-          {rows !== null && (
-            <p className="text-sm text-ink-muted">{t('stats.countryTotal', { n: total })}</p>
-          )}
-          <SegmentedControl
-            value={mode}
-            onChange={(v) => setMode(v as 'country' | 'asn')}
-            data={[
-              { value: 'country', label: t('stats.byCountryTab') },
-              { value: 'asn', label: t('stats.byAsnTab') },
-            ]}
-          />
-        </div>
-      </div>
+    <Panel
+      title={t('stats.byCountry')}
+      aside={
+        <SegmentedControl
+          size="xs"
+          value={mode}
+          onChange={(v) => setMode(v as 'country' | 'asn')}
+          data={[
+            { value: 'country', label: t('stats.byCountryTab') },
+            { value: 'asn', label: t('stats.byAsnTab') },
+          ]}
+        />
+      }
+      pad
+    >
       {rows === null ? (
-        <Skeleton className="h-40 w-full rounded-lg" />
+        <div className="flex flex-col gap-2">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-4 w-full" />
+          ))}
+        </div>
       ) : rows.length === 0 ? (
-        <p className="py-8 text-center text-ink-muted">{t('stats.noCountryData')}</p>
+        <EmptyState title={t('stats.noCountryData')} />
       ) : (
-        <div className="flex flex-col gap-1.5">
-          {rows.map((r, i) => {
-            const pct = maxIPs > 0 ? Math.round((r.ips / maxIPs) * 100) : 0
-            return (
-              <div key={r.key} className="flex items-center gap-2 text-sm">
-                <span className="w-6 shrink-0 text-center text-base leading-none">
-                  {r.glyph}
-                </span>
-                <span className="w-56 shrink-0 truncate" title={r.label}>
-                  {r.label}
-                </span>
-                <div className="relative h-4 flex-1 overflow-hidden rounded bg-gray-100">
-                  <div
-                    className="h-full rounded"
-                    style={{
-                      width: `${pct}%`,
-                      background: PALETTE[i % PALETTE.length],
-                      minWidth: r.ips > 0 ? 2 : 0,
-                    }}
-                  />
-                </div>
-                <span className="w-24 shrink-0 text-right tabular-nums text-ink-muted">
-                  {t('stats.countryIps', { n: r.ips })}
-                </span>
-              </div>
-            )
-          })}
+        <div className="flex flex-col gap-2">
+          {rows.map((r) => (
+            <ShareBar
+              key={r.key}
+              glyph={r.glyph}
+              label={r.label}
+              percent={maxIPs > 0 ? (r.ips / maxIPs) * 100 : 0}
+              value={t('stats.countryIps', { n: r.ips })}
+              title={r.label}
+            />
+          ))}
+          <p className="mt-0.5 text-[11px] text-ink-muted">
+            {t('stats.countryTotal', { n: total })}
+          </p>
         </div>
       )}
-    </Card>
+    </Panel>
   )
 }

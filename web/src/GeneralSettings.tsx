@@ -327,7 +327,7 @@ export function GeneralSettings() {
   if (!loaded) return <CenterLoader />;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-3.5">
       <SettingCard
         title={t("general.updateSection")}
         description={
@@ -448,7 +448,7 @@ export function GeneralSettings() {
           }
         />
         {probeDetect && (
-          <div className="mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3">
+          <div className="flex flex-col">
             <ToggleRow
               label={t("general.probeBlock")}
               hint={t("general.probeBlockHint")}

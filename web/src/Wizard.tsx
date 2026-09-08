@@ -1,21 +1,73 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { finishSetup, getTLS, regenSecret, setACME, setupPassword, setupTimezone } from './api'
 import type { TLSStatus } from './api'
-import { LangPills } from './LangSwitch'
-import { BrandLogo } from './Logo'
+import { AuthShell } from './AuthShell'
 import { errMessage, notifyError } from './notify'
 import { BACKUP_ACCEPT, ManifestCard, RestoreWaiting, useRestore, ValidationNote } from './restore'
 import { browserTimezone, tzOptions } from './tz'
-import { Button, Card, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
+import { Button, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
 import { isIP, isValidACMETarget, isValidEmail } from './validate'
 
+// The five steps the indicator names, "Начало" (the new-or-restore choice) among
+// them: an indicator that starts at the second step tells the reader nothing about
+// where they came from.
 const STEP_KEYS = [
+  'wizard.stepStart',
   'wizard.stepPassword',
   'wizard.stepTime',
   'wizard.stepAddress',
   'wizard.stepPath',
 ] as const
+
+// ChoiceRow is how the wizard asks a question: a full-width row, not a bare radio.
+// The whole row is the target, the tick is filled with the accent when it is the
+// answer, and the explanation sits under the title where it can be read before
+// choosing rather than after.
+function ChoiceRow({
+  checked,
+  onSelect,
+  title,
+  hint,
+  children,
+}: {
+  checked: boolean
+  onSelect: () => void
+  title: ReactNode
+  hint?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <label
+      className={cn(
+        'relative flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition',
+        checked
+          ? 'accent-tint border-accent'
+          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50',
+      )}
+    >
+      <input
+        type="radio"
+        className="sr-only"
+        checked={checked}
+        onChange={onSelect}
+      />
+      <span
+        className={cn(
+          'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition',
+          checked ? 'border-brand-600 bg-brand-600 text-onaccent' : 'border-gray-300 bg-white',
+        )}
+      >
+        {checked && <IconCheck size={12} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-ink">{title}</span>
+        {hint && <span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">{hint}</span>}
+        {children}
+      </span>
+    </label>
+  )
+}
 
 function currentSecret(): string {
   return window.location.pathname.split('/').filter(Boolean)[0] || 'rospanel'
@@ -31,7 +83,7 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-ink-muted">{t('wizard.restoreIntro')}</p>
+      <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.restoreIntro')}</p>
       <input
         ref={fileRef}
         type="file"
@@ -226,37 +278,26 @@ export function Wizard({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
-      <LangPills className="fixed right-3 top-3" />
-      <Card className="w-full max-w-xl animate-fade-in-up p-6 sm:p-8">
+    <AuthShell wide>
         <div className="flex flex-col gap-5">
-          <div className="flex justify-center">
-            <BrandLogo size={30} />
-          </div>
-          <h1 className="text-center text-lg font-bold">{t('wizard.title')}</h1>
+          <h1 className="text-center text-base font-semibold text-ink">{t('wizard.title')}</h1>
 
           {/* Mode choice */}
           {mode === '' && (
-            <div className="flex animate-fade-in flex-col gap-3">
-              <p className="text-sm text-ink-muted">{t('wizard.chooseStart')}</p>
-              <button
-                className="flex flex-col gap-1 rounded-xl border-2 border-accent accent-tint p-4 text-left transition hover:border-brand-500"
-                onClick={() => setMode('new')}
-              >
-                <span className="font-semibold text-ink">{t('wizard.newServer')}</span>
-                <span className="text-sm text-ink-muted">
-                  {t('wizard.newServerHint')}
-                </span>
-              </button>
-              <button
-                className="flex flex-col gap-1 rounded-xl border-2 border-gray-200 bg-gray-50 p-4 text-left transition hover:border-gray-400"
-                onClick={() => setMode('restore')}
-              >
-                <span className="font-semibold text-ink">{t('wizard.restoreFromBackup')}</span>
-                <span className="text-sm text-ink-muted">
-                  {t('wizard.restoreHint')}
-                </span>
-              </button>
+            <div className="flex animate-fade-in flex-col gap-2.5">
+              <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.chooseStart')}</p>
+              <ChoiceRow
+                checked={false}
+                onSelect={() => setMode('new')}
+                title={t('wizard.newServer')}
+                hint={t('wizard.newServerHint')}
+              />
+              <ChoiceRow
+                checked={false}
+                onSelect={() => setMode('restore')}
+                title={t('wizard.restoreFromBackup')}
+                hint={t('wizard.restoreHint')}
+              />
             </div>
           )}
 
@@ -266,13 +307,13 @@ export function Wizard({ onDone }: { onDone: () => void }) {
           {/* Save the freshly generated secret path before leaving the wizard */}
           {mode === 'new' && savedPath && (
             <div className="flex animate-fade-in flex-col gap-4">
-              <p className="text-sm text-ink-muted">{t('wizard.newPathIntro')}</p>
+              <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.newPathIntro')}</p>
               <Code block copy>
                 {`https://${finalHost || window.location.hostname}/${savedPath}/`}
               </Code>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <p className="warning-tint rounded-lg px-3 py-2.5 text-xs leading-relaxed text-warning">
                 {t('wizard.newPathWarn')}
-              </div>
+              </p>
               <Button onClick={() => redirect(savedPath)}>{t('wizard.savedGoToNew')}</Button>
             </div>
           )}
@@ -280,42 +321,33 @@ export function Wizard({ onDone }: { onDone: () => void }) {
           {/* New server wizard */}
           {mode === 'new' && !savedPath && (
             <>
-              {/* Stepper header */}
-              <div className="flex items-center">
+              {/* Where you are, and everywhere you have been: a bar per step, the
+                  passed ones and the current one in the accent. "Начало" counts —
+                  choosing new-or-restore is a step you took. */}
+              <div className="flex gap-2">
                 {STEP_KEYS.map((s, i) => (
-                  <div key={s} className={cn('flex items-center', i < STEP_KEYS.length - 1 && 'flex-1')}>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold',
-                          i < active && 'bg-brand-600 text-onaccent',
-                          i === active && 'bg-brand-600 text-onaccent',
-                          i > active && 'bg-gray-200 text-gray-500',
-                        )}
-                      >
-                        {i < active ? <IconCheck /> : i + 1}
-                      </span>
-                      <span
-                        className={cn(
-                          'hidden text-sm font-medium sm:block',
-                          i <= active ? 'text-ink' : 'text-gray-400',
-                        )}
-                      >
-                        {t(s)}
-                      </span>
-                    </div>
-                    {i < STEP_KEYS.length - 1 && (
-                      <div
-                        className={cn('mx-2 h-px flex-1', i < active ? 'bg-brand-500' : 'bg-gray-200')}
-                      />
-                    )}
+                  <div key={s} className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <span
+                      className={cn(
+                        'h-[3px] rounded-full',
+                        i <= active + 1 ? 'bg-brand-600' : 'bg-gray-300',
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        'truncate text-[11px]',
+                        i <= active + 1 ? 'text-ink' : 'text-ink-muted',
+                      )}
+                    >
+                      {t(s)}
+                    </span>
                   </div>
                 ))}
               </div>
 
               {active === 0 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">{t('wizard.passwordIntro')}</p>
+                  <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.passwordIntro')}</p>
                   <PasswordInput label={t('password.new')} value={password} onChange={setPassword} autoFocus />
                   <PasswordInput label={t('password.repeat')} value={confirm} onChange={setConfirm} />
                 </div>
@@ -323,7 +355,7 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
               {active === 1 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">{t('wizard.timezoneIntro')}</p>
+                  <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.timezoneIntro')}</p>
                   <Select
                     label={t('wizard.timezone')}
                     data={tzData}
@@ -338,83 +370,60 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                 <div className="flex animate-fade-in flex-col gap-3">
                   {onDomainWithCert ? (
                     <>
-                      <p className="text-sm text-ink-muted">
+                      <p className="text-xs leading-relaxed text-ink-muted">
                         {t('wizard.onDomainWithCert', { host: curHost })}
                         {cert ? t('wizard.certDaysLeft', { days: cert.days_left }) : ''}
                         {t('wizard.keepOrChange')}
                       </p>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'keep'}
-                          onChange={() => setWizMode('keep')}
-                          className="accent-brand-600"
-                        />
-                        {t('wizard.keepDomain', { host: curHost })}
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'domain'}
-                          onChange={() => setWizMode('domain')}
-                          className="accent-brand-600"
-                        />
-                        {t('wizard.changeDomainOrIp')}
-                      </label>
+                      <ChoiceRow
+                        checked={wizMode === 'keep'}
+                        onSelect={() => setWizMode('keep')}
+                        title={t('wizard.keepDomain', { host: curHost })}
+                      />
+                      <ChoiceRow
+                        checked={wizMode === 'domain'}
+                        onSelect={() => setWizMode('domain')}
+                        title={t('wizard.changeDomainOrIp')}
+                      />
                     </>
                   ) : curIsDomain ? (
                     <>
-                      <p className="text-sm text-ink-muted">
+                      <p className="warning-tint rounded-lg px-3 py-2.5 text-xs leading-relaxed text-warning">
                         {t('wizard.onDomainTempCert', { host: curHost })}
                       </p>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'domain'}
-                          onChange={() => setWizMode('domain')}
-                          className="accent-brand-600"
-                        />
-                        {t('wizard.issueCertFor', { host: curHost })}
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'keep'}
-                          onChange={() => setWizMode('keep')}
-                          className="accent-brand-600"
-                        />
-                        {t('wizard.keepTempCert')}
-                      </label>
+                      <ChoiceRow
+                        checked={wizMode === 'domain'}
+                        onSelect={() => setWizMode('domain')}
+                        title={t('wizard.issueCertFor', { host: curHost })}
+                      />
+                      <ChoiceRow
+                        checked={wizMode === 'keep'}
+                        onSelect={() => setWizMode('keep')}
+                        title={t('wizard.keepTempCert')}
+                      />
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-ink-muted">
+                      <p
+                        className={cn(
+                          'rounded-lg px-3 py-2.5 text-xs leading-relaxed',
+                          certValid
+                            ? 'accent-tint text-accent'
+                            : 'warning-tint text-warning',
+                        )}
+                      >
                         {certValid ? t('wizard.onIp') : t('wizard.onIpTempCert')}
                       </p>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'ip'}
-                          onChange={() => setWizMode('ip')}
-                          className="accent-brand-600"
-                        />
-                        {certValid ? t('wizard.stayOnIp') : t('wizard.stayOnIpTemp')}
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="mode"
-                          checked={wizMode === 'domain'}
-                          onChange={() => setWizMode('domain')}
-                          className="accent-brand-600"
-                        />
-                        {t('wizard.moveToDomain')}
-                      </label>
+                      <ChoiceRow
+                        checked={wizMode === 'ip'}
+                        onSelect={() => setWizMode('ip')}
+                        title={certValid ? t('wizard.stayOnIp') : t('wizard.stayOnIpTemp')}
+                      />
+                      <ChoiceRow
+                        checked={wizMode === 'domain'}
+                        onSelect={() => setWizMode('domain')}
+                        title={t('wizard.moveToDomain')}
+                      />
                     </>
                   )}
                   {wizMode === 'domain' && (
@@ -455,9 +464,9 @@ export function Wizard({ onDone }: { onDone: () => void }) {
                         ]}
                       />
                       {isZeroSSL ? (
-                        <p className="text-sm text-ink-muted">{t('wizard.zerosslNote')}</p>
+                        <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.zerosslNote')}</p>
                       ) : (
-                        <p className="text-sm text-ink-muted">{t('wizard.letsencryptNote')}</p>
+                        <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.letsencryptNote')}</p>
                       )}
                       <p className="text-xs text-ink-muted">{t('wizard.acmeRequirements')}</p>
                     </>
@@ -467,37 +476,30 @@ export function Wizard({ onDone }: { onDone: () => void }) {
 
               {active === 3 && (
                 <div className="flex animate-fade-in flex-col gap-3">
-                  <p className="text-sm text-ink-muted">{t('wizard.pathIntro')}</p>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="pathmode"
-                      checked={pathMode === 'generate'}
-                      onChange={() => setPathMode('generate')}
-                      className="mt-1 accent-brand-600"
-                    />
-                    <span>
-                      <span className="font-medium text-ink">{t('wizard.generatePath')}</span>
-                      <span className="block text-xs text-ink-muted">
-                        {t('wizard.generatePathHint')}
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="pathmode"
-                      checked={pathMode === 'keep'}
-                      onChange={() => setPathMode('keep')}
-                      className="mt-1 accent-brand-600"
-                    />
-                    <span>
-                      <span className="font-medium text-ink">{t('wizard.keepPath')}</span>
-                      <Code block className="mt-1">
-                        /{currentSecret()}/
-                      </Code>
-                    </span>
-                  </label>
+                  <p className="text-xs leading-relaxed text-ink-muted">{t('wizard.pathIntro')}</p>
+                  <ChoiceRow
+                    checked={pathMode === 'generate'}
+                    onSelect={() => setPathMode('generate')}
+                    title={t('wizard.generatePath')}
+                    hint={t('wizard.generatePathHint')}
+                  />
+                  <ChoiceRow
+                    checked={pathMode === 'keep'}
+                    onSelect={() => setPathMode('keep')}
+                    title={t('wizard.keepPath')}
+                  >
+                    <Code block className="mt-1.5">
+                      /{currentSecret()}/
+                    </Code>
+                  </ChoiceRow>
+                  {/* Before "Завершить", not after it: rotating the path is the one
+                      step of this wizard that cannot be undone, and the warning is
+                      no use on the screen that already did it. */}
+                  {pathMode === 'generate' && (
+                    <p className="warning-tint rounded-lg px-3 py-2.5 text-xs leading-relaxed text-warning">
+                      {t('wizard.newPathWarn')}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -541,7 +543,6 @@ export function Wizard({ onDone }: { onDone: () => void }) {
             </>
           )}
         </div>
-      </Card>
-    </div>
+    </AuthShell>
   )
 }

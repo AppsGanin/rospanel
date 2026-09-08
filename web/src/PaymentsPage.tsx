@@ -9,22 +9,21 @@ import {
   type PaymentOrder,
   type PaymentStats,
 } from "./api";
-import { useShowMore, useViewMode } from "./hooks";
+import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useStepUpDialog } from "./stepup";
 import {
   Badge,
   Button,
-  CenterLoader,
   cn,
-  Modal,
-  PasswordInput,
-  SettingCard,
+  EmptyState,
+  KpiTile,
+  MICRO,
+  Mono,
+  Panel,
   ShowMore,
-  TableShell,
-  TD,
-  THead,
-  TR,
-  ViewSwitch,
+  Skeleton,
+  useWideBox,
 } from "./ui";
 
 const PROVIDER_META: Record<
@@ -84,54 +83,30 @@ function statusMeta(status: string) {
     : { label: status, color: "gray" as const };
 }
 
-// StatTile is one headline number in the revenue row.
-function StatTile({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border p-4",
-        accent ? "border-transparent accent-tint" : "border-gray-200 bg-white",
-      )}
-    >
-      <div className="text-xs font-medium text-ink-muted">{label}</div>
-      <div
-        className={cn(
-          "mt-1 text-2xl font-bold tracking-tight",
-          accent ? "text-accent" : "text-ink",
-        )}
-      >
-        {value}
-      </div>
-      {sub && <div className="mt-0.5 text-xs text-ink-muted">{sub}</div>}
-    </div>
-  );
-}
+// The history's columns, one template for the header and every row. Narrow, the row
+// folds onto two lines rather than shrinking six columns of prose to a word each.
+// Status and time are their own columns: sharing one cell put the badge under the
+// "когда" heading and the time under nothing at all.
+const TPL =
+  "minmax(0,.8fr) minmax(0,1.1fr) minmax(0,1.4fr) minmax(0,.8fr) minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr)";
+const TPL_NARROW = "minmax(0,1fr) auto";
+const WIDE_MIN = 620;
 
+// orderWho is the account an order belongs to, by name when the row still has one.
+function orderWho(o: PaymentOrder): string {
+  return o.user_name ?? `user ${o.user_id}`;
+}
 
 
 export function PaymentsPage() {
   const { t } = useTranslation();
-  const [pendingView, setPendingView] = useViewMode("payments.pending");
-  const [historyView, setHistoryView] = useViewMode("payments.history");
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [boxRef, wide] = useWideBox(WIDE_MIN);
 
-  // Password step-up for confirm/cancel.
-  const [confirmId, setConfirmId] = useState<number | null>(null);
-  const [cancelId, setCancelId] = useState<number | null>(null);
-  const [password, setPassword] = useState("");
+  const { ask, stepUpNode } = useStepUpDialog();
 
   const refresh = () =>
     Promise.all([getPaymentStats(), listPaymentOrders()])
@@ -146,14 +121,17 @@ export function PaymentsPage() {
     refresh();
   }, []);
 
-  const submitConfirm = async () => {
-    if (confirmId === null) return;
+  const creditOrder = async (o: PaymentOrder) => {
+    const creds = await ask({
+      title: t("pay.confirmTitle"),
+      body: `${orderWho(o)} · ${o.plan_name ?? ""} · ${fmtRub(o.amount_rub)}`,
+      confirmLabel: t("pay.confirmPayment"),
+    });
+    if (!creds) return;
     setBusy(true);
     try {
-      await confirmPaymentOrder(confirmId, password);
+      await confirmPaymentOrder(o.id, creds.password);
       notifySuccess(t("pay.confirmed"));
-      setConfirmId(null);
-      setPassword("");
       await refresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -162,14 +140,18 @@ export function PaymentsPage() {
     }
   };
 
-  const submitCancel = async () => {
-    if (cancelId === null) return;
+  const cancelOrder = async (o: PaymentOrder) => {
+    const creds = await ask({
+      title: t("pay.cancelTitle"),
+      body: `${orderWho(o)} · ${o.plan_name ?? ""} · ${fmtRub(o.amount_rub)}`,
+      confirmLabel: t("pay.cancelOrder"),
+      danger: true,
+    });
+    if (!creds) return;
     setBusy(true);
     try {
-      await cancelPaymentOrder(cancelId, password);
+      await cancelPaymentOrder(o.id, creds.password);
       notifySuccess(t("pay.orderCancelled"));
-      setCancelId(null);
-      setPassword("");
       await refresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -182,390 +164,193 @@ export function PaymentsPage() {
   // The server hands over the last 100 orders, which is a long scroll on a page
   // whose useful part — the pending queue — is at the top.
   const pending = orders.filter((o) => o.status === "pending");
-  const history = orders.filter((o) => o.status !== "pending");
-  const pendingPage = useShowMore(pending);
-  const historyPage = useShowMore(history);
+  const pendingPage = useShowMore(pending, { first: 8, step: 20 });
+  const historyPage = useShowMore(orders);
 
-  if (loading) return <CenterLoader />;
+  if (loading)
+    return (
+      <div className="flex flex-col gap-3.5">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-[86px] rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    );
   if (!stats) return null;
 
+  const avg = stats.paid_count > 0 ? Math.round(stats.total_paid / stats.paid_count) : 0;
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Revenue headline */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
+    <div className="flex flex-col gap-3.5">
+      {/* The headline figures. Every one of them is a number the server keeps: the
+          all-time take, this month's, today's, and what is still owed. */}
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiTile
           label={t("pay.totalEarned")}
           value={fmtRub(stats.total_paid)}
-          sub={t("pay.nPayments", { count: stats.paid_count })}
-          accent
+          note={
+            stats.paid_count > 0
+              ? `${t("pay.nPayments", { count: stats.paid_count })} · ${t("pay.avgCheck", { sum: fmtRub(avg) })}`
+              : undefined
+          }
         />
-        <StatTile label={t("pay.thisMonth")} value={fmtRub(stats.earned_month)} />
-        <StatTile label={t("pay.today")} value={fmtRub(stats.earned_today)} />
-        <StatTile
+        <KpiTile label={t("pay.thisMonth")} value={fmtRub(stats.earned_month)} />
+        <KpiTile label={t("pay.today")} value={fmtRub(stats.earned_today)} />
+        <KpiTile
           label={t("pay.awaiting")}
           value={String(stats.pending_count)}
-          sub={stats.pending_sum ? t("pay.forSum", { sum: fmtRub(stats.pending_sum) }) : "—"}
+          tone={stats.pending_count > 0 ? "warning" : "default"}
+          note={stats.pending_sum ? t("pay.forSum", { sum: fmtRub(stats.pending_sum) }) : undefined}
         />
       </div>
 
-      <SettingCard
-        title={t("pay.byProvider")}
-        description={t("pay.byProviderHint")}
-      >
-        {stats.by_provider.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t("pay.noPayments")}</p>
+      <div className="grid gap-3.5 lg:grid-cols-2">
+        <Panel title={t("pay.byProvider")}>
+          {stats.by_provider.length === 0 ? (
+            <EmptyState title={t("pay.noPayments")} />
+          ) : (
+            stats.by_provider.map((p) => (
+              <div
+                key={p.provider || "manual"}
+                className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-[7px]"
+              >
+                <span className="truncate text-xs text-ink">
+                  {providerMeta(p.provider).label}
+                </span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-[11px] text-ink-muted">
+                    {t("pay.nPayments", { count: p.count })}
+                  </span>
+                  <Mono className="text-xs text-ink">{fmtRub(p.sum)}</Mono>
+                </span>
+              </div>
+            ))
+          )}
+        </Panel>
+
+        {/* The queue an operator actually works: a manual order sits here until it is
+            credited by hand, a provider's until the money lands. */}
+        <Panel title={t("pay.awaiting")}>
+          {pending.length === 0 ? (
+            <EmptyState title={t("pay.noPending")} />
+          ) : (
+            <>
+              {pendingPage.shown.map((o) => (
+                <div
+                  key={o.id}
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-gray-100 px-3.5 py-2"
+                >
+                  <span className="size-2 shrink-0 rounded-full bg-warning" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                    {orderWho(o)}
+                  </span>
+                  <span className="truncate text-xs text-ink-muted">{o.plan_name}</span>
+                  <Mono className="shrink-0 text-xs text-ink">{fmtRub(o.amount_rub)}</Mono>
+                  <span className="flex shrink-0 gap-2">
+                    <Button size="xs" disabled={busy} onClick={() => creditOrder(o)}>
+                      {t("pay.credit")}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      color="red"
+                      disabled={busy}
+                      onClick={() => cancelOrder(o)}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                  </span>
+                </div>
+              ))}
+              <ShowMore rest={pendingPage.rest} onClick={pendingPage.showMore} className="p-3.5" />
+            </>
+          )}
+        </Panel>
+      </div>
+
+      <Panel title={t("pay.history")}>
+        {orders.length === 0 ? (
+          <EmptyState title={t("pay.historyEmpty")} />
         ) : (
-          <div className="flex flex-col gap-2">
-            {stats.by_provider.map((p) => {
-              const meta = providerMeta(p.provider);
-              const share = stats.total_paid
-                ? Math.round((p.sum / stats.total_paid) * 100)
-                : 0;
+          <div ref={boxRef}>
+            {wide && (
+              <div
+                className={cn(MICRO, "grid items-center gap-3 border-t border-brand-600/10 px-3.5 py-2")}
+                style={{ gridTemplateColumns: TPL }}
+              >
+                <span className="truncate">{t("pay.colOrder")}</span>
+                <span className="truncate">{t("pay.colUser")}</span>
+                <span className="truncate">{t("pay.colPlan")}</span>
+                <span className="truncate">{t("pay.colAmount")}</span>
+                <span className="truncate">{t("pay.colMethod")}</span>
+                <span className="truncate">{t("pay.colStatus")}</span>
+                <span className="truncate text-right">{t("pay.colWhen")}</span>
+              </div>
+            )}
+            {historyPage.shown.map((o) => {
+              const st = statusMeta(o.status);
+              const paid = o.status === "paid";
+              const when = fmtDateTime(paid ? o.paid_at : o.created_at);
               return (
                 <div
-                  key={p.provider || "manual"}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5"
+                  key={o.id}
+                  className={cn(
+                    "grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]",
+                    o.status === "cancelled" && "danger-tint",
+                    o.status === "pending" && "warning-tint",
+                  )}
+                  style={{ gridTemplateColumns: wide ? TPL : TPL_NARROW }}
                 >
-                  <div className="flex items-center gap-2">
-                    <Badge color={meta.color}>{meta.label}</Badge>
-                    <span className="text-xs text-ink-muted">
-                      {t("pay.nPayments", { count: p.count })} · {share}%
-                    </span>
-                  </div>
-                  <span className="font-semibold text-ink">{fmtRub(p.sum)}</span>
+                  <Mono className="truncate text-xs text-ink">#{o.id}</Mono>
+                  {wide ? (
+                    <>
+                      <span className="truncate text-xs text-ink">{orderWho(o)}</span>
+                      <span className="truncate text-xs text-ink-muted" title={o.plan_name}>
+                        {o.plan_name}
+                      </span>
+                      <Mono className="text-xs text-ink">{fmtRub(o.amount_rub)}</Mono>
+                      <span className="truncate text-xs text-ink-muted">
+                        {providerMeta(o.provider).label}
+                      </span>
+                      <span className="min-w-0">
+                        <Badge color={st.color} size="xs">
+                          {st.label}
+                        </Badge>
+                      </span>
+                      <Mono
+                        className="truncate text-right text-[11px] text-ink-muted"
+                        title={t(paid ? "pay.paidWord" : "pay.createdWord")}
+                      >
+                        {when}
+                      </Mono>
+                    </>
+                  ) : (
+                    <>
+                      <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+                      <span className="col-span-2 flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
+                          {orderWho(o)} · {o.plan_name} · {providerMeta(o.provider).label}
+                        </span>
+                        <Mono className="shrink-0 text-xs text-ink">
+                          {fmtRub(o.amount_rub)}
+                        </Mono>
+                        <Badge color={st.color} size="xs">
+                          {st.label}
+                        </Badge>
+                      </span>
+                    </>
+                  )}
                 </div>
               );
             })}
+            <ShowMore rest={historyPage.rest} onClick={historyPage.showMore} className="p-3.5" />
           </div>
         )}
-      </SettingCard>
+      </Panel>
 
-      <SettingCard
-        title={t("pay.awaiting")}
-        action={
-          <span className="flex items-center gap-2">
-            {pending.length > 0 && <Badge color="orange">{pending.length}</Badge>}
-            <ViewSwitch
-              value={pendingView}
-              onChange={setPendingView}
-              tableLabel={t("usersPanel.viewTable")}
-              cardsLabel={t("usersPanel.viewCards")}
-              label={t("pay.awaiting")}
-            />
-          </span>
-        }
-      >
-        {pending.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t("pay.noPending")}</p>
-        ) : pendingView === "table" ? (
-          <PendingTable
-            orders={pendingPage.shown}
-            busy={busy}
-            onConfirm={setConfirmId}
-            onCancel={setCancelId}
-          />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {pendingPage.shown.map((o) => (
-              <PendingRow
-                key={o.id}
-                order={o}
-                busy={busy}
-                onConfirm={setConfirmId}
-                onCancel={setCancelId}
-              />
-            ))}
-          </ul>
-        )}
-        <ShowMore
-          rest={pendingPage.rest}
-          onClick={pendingPage.showMore}
-          className="mt-2"
-        />
-      </SettingCard>
-
-      <SettingCard
-        title={t("pay.history")}
-        action={
-          <ViewSwitch
-            value={historyView}
-            onChange={setHistoryView}
-            tableLabel={t("usersPanel.viewTable")}
-            cardsLabel={t("usersPanel.viewCards")}
-            label={t("pay.history")}
-          />
-        }
-      >
-        {history.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t("pay.historyEmpty")}</p>
-        ) : historyView === "table" ? (
-          <HistoryTable orders={historyPage.shown} />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {historyPage.shown.map((o) => (
-              <HistoryRow key={o.id} order={o} />
-            ))}
-          </ul>
-        )}
-        <ShowMore
-          rest={historyPage.rest}
-          onClick={historyPage.showMore}
-          className="mt-2"
-        />
-      </SettingCard>
-
-      <Modal
-        open={confirmId !== null}
-        onClose={() => setConfirmId(null)}
-        title={t("pay.confirmTitle")}
-      >
-        <p className="mb-3 text-sm text-ink-muted">
-          {t("pay.confirmBody")}
-        </p>
-        <PasswordInput
-          label={t("creds.currentPassword")}
-          value={password}
-          onChange={setPassword}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="subtle" onClick={() => setConfirmId(null)}>
-            {t("common.cancel")}
-          </Button>
-          <Button loading={busy} onClick={() => void submitConfirm()}>
-            {t("pay.confirmPayment")}
-          </Button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={cancelId !== null}
-        onClose={() => setCancelId(null)}
-        title={t("pay.cancelTitle")}
-      >
-        <p className="mb-3 text-sm text-ink-muted">
-          {t("pay.cancelBody")}
-        </p>
-        <PasswordInput
-          label={t("creds.currentPassword")}
-          value={password}
-          onChange={setPassword}
-        />
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="subtle" onClick={() => setCancelId(null)}>
-            {t("common.back")}
-          </Button>
-          <Button loading={busy} color="red" onClick={() => void submitCancel()}>
-            {t("pay.cancelOrder")}
-          </Button>
-        </div>
-      </Modal>
+      {stepUpNode}
     </div>
-  );
-}
-
-// orderWho is the account an order belongs to, by name when the row still has one.
-function orderWho(o: PaymentOrder): string {
-  return o.user_name ?? `user ${o.user_id}`;
-}
-
-// PendingTable lists orders awaiting payment. Every row carries the same six facts and
-// the same two decisions, which is exactly what a table is for — the card version spent a
-// line per order on punctuation.
-function PendingTable({
-  orders,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  orders: PaymentOrder[];
-  busy: boolean;
-  onConfirm: (id: number) => void;
-  onCancel: (id: number) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <TableShell bare>
-      <THead
-        cols={[
-          { label: t("pay.colOrder") },
-          { label: t("pay.colUser") },
-          { label: t("pay.colPlan"), className: "hidden sm:table-cell" },
-          { label: t("pay.colAmount") },
-          { label: t("pay.colMethod"), className: "hidden md:table-cell" },
-          { label: t("pay.colCreated"), className: "hidden lg:table-cell" },
-          { srOnly: t("pay.colActions") },
-        ]}
-      />
-      <tbody>
-        {orders.map((o) => {
-          const prov = providerMeta(o.provider);
-          return (
-            <TR key={o.id}>
-              <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
-              <TD className=""><div className="max-w-[12rem] truncate">{orderWho(o)}</div></TD>
-              <TD className="hidden  sm:table-cell"><div className="max-w-[12rem] truncate">{o.plan_name}</div></TD>
-              <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
-              <TD className="hidden whitespace-nowrap md:table-cell">
-                <Badge color={prov.color} size="xs">
-                  {prov.label}
-                </Badge>
-                {/* An order made through a provider confirms itself when the money
-                    lands; the buttons are for the ones that cannot. */}
-                {o.provider !== "" && (
-                  <span className="ml-1 text-xs text-ink-muted">{t("pay.autoConfirm")}</span>
-                )}
-              </TD>
-              <TD className="hidden whitespace-nowrap text-ink-muted lg:table-cell">
-                {fmtDateTime(o.created_at)}
-              </TD>
-              <TD>
-                <div className="flex justify-end gap-2 whitespace-nowrap">
-                  <Button size="sm" onClick={() => onConfirm(o.id)} disabled={busy}>
-                    {t("common.confirm")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="subtle"
-                    color="red"
-                    onClick={() => onCancel(o.id)}
-                    disabled={busy}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                </div>
-              </TD>
-            </TR>
-          );
-        })}
-      </tbody>
-    </TableShell>
-  );
-}
-
-// HistoryTable is the settled orders, read-only.
-function HistoryTable({ orders }: { orders: PaymentOrder[] }) {
-  const { t } = useTranslation();
-  return (
-    <TableShell bare>
-      <THead
-        cols={[
-          { label: t("pay.colOrder") },
-          { label: t("pay.colUser") },
-          { label: t("pay.colPlan"), className: "hidden sm:table-cell" },
-          { label: t("pay.colAmount") },
-          { label: t("pay.colMethod"), className: "hidden md:table-cell" },
-          { label: t("pay.colStatus") },
-          { label: t("pay.colWhen"), className: "hidden lg:table-cell" },
-        ]}
-      />
-      <tbody>
-        {orders.map((o) => {
-          const prov = providerMeta(o.provider);
-          const st = statusMeta(o.status);
-          const paid = o.status === "paid";
-          return (
-            <TR key={o.id}>
-              <TD className="whitespace-nowrap font-medium text-ink">#{o.id}</TD>
-              <TD className=""><div className="max-w-[12rem] truncate">{orderWho(o)}</div></TD>
-              <TD className="hidden  sm:table-cell"><div className="max-w-[12rem] truncate">{o.plan_name}</div></TD>
-              <TD className="whitespace-nowrap font-semibold text-ink">{o.amount_rub} ₽</TD>
-              <TD className="hidden whitespace-nowrap md:table-cell">
-                <Badge color={prov.color} size="xs">
-                  {prov.label}
-                </Badge>
-              </TD>
-              <TD className="whitespace-nowrap">
-                <Badge color={st.color}>{st.label}</Badge>
-              </TD>
-              <TD className="hidden whitespace-nowrap text-ink-muted lg:table-cell">
-                {/* A settled order is dated by when it settled; one that never did keeps
-                    the date it was raised. */}
-                <span title={t(paid ? "pay.paidWord" : "pay.createdWord")}>
-                  {fmtDateTime(paid ? o.paid_at : o.created_at)}
-                </span>
-              </TD>
-            </TR>
-          );
-        })}
-      </tbody>
-    </TableShell>
-  );
-}
-
-// PendingRow is an actionable order awaiting payment.
-function PendingRow({
-  order,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  order: PaymentOrder;
-  busy: boolean;
-  onConfirm: (id: number) => void;
-  onCancel: (id: number) => void;
-}) {
-  const { t } = useTranslation();
-  const prov = providerMeta(order.provider);
-  const auto = order.provider !== "";
-  return (
-    <li className="flex flex-col gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-ink">
-          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-          {order.plan_name} · {order.amount_rub} ₽
-        </span>
-        <span className="flex gap-2">
-          <Button size="sm" onClick={() => onConfirm(order.id)} disabled={busy}>
-            {t("common.confirm")}
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            color="red"
-            onClick={() => onCancel(order.id)}
-            disabled={busy}
-          >
-            {t("common.cancel")}
-          </Button>
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-        <Badge color={prov.color} size="xs">
-          {prov.label}
-        </Badge>
-        <span>· {t("pay.createdAt", { when: fmtDateTime(order.created_at) })}</span>
-        {auto && <span>· {t("pay.autoConfirm")}</span>}
-      </div>
-    </li>
-  );
-}
-
-// HistoryRow is a read-only completed order.
-function HistoryRow({ order }: { order: PaymentOrder }) {
-  const { t } = useTranslation();
-  const prov = providerMeta(order.provider);
-  const st = statusMeta(order.status);
-  return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5 text-sm">
-      <div className="min-w-0">
-        <div className="truncate font-medium text-ink">
-          <b>#{order.id}</b> · {order.user_name ?? `user ${order.user_id}`} ·{" "}
-          {order.plan_name}
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
-          <Badge color={prov.color} size="xs">
-            {prov.label}
-          </Badge>
-          <span>
-            · {t(order.status === "paid" ? "pay.paidWord" : "pay.createdWord")}{" "}
-            {fmtDateTime(order.status === "paid" ? order.paid_at : order.created_at)}
-          </span>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="font-semibold text-ink">{order.amount_rub} ₽</span>
-        <Badge color={st.color}>{st.label}</Badge>
-      </div>
-    </li>
   );
 }

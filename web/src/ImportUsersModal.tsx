@@ -87,7 +87,29 @@ export function ImportUsersModal({
   )
 
   return (
-    <Modal open={open} onClose={onClose} size="xl" title={t('importUsers.title')}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="xl"
+      title={t('importUsers.title')}
+      subtitle={
+        preview
+          ? t('importUsers.found', { total: users.length, fresh: newCount })
+          : undefined
+      }
+      footer={
+        preview ? (
+          <div className="flex justify-end gap-2">
+            <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
+              {t('common.cancel')}
+            </Button>
+            <Button loading={busy} disabled={picked.size === 0} onClick={doImport}>
+              {t('importUsers.import', { count: picked.size })}
+            </Button>
+          </div>
+        ) : undefined
+      }
+    >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-ink-muted">{t('importUsers.intro')}</p>
         <ul className="list-disc pl-5 text-xs text-ink-muted">
@@ -115,7 +137,6 @@ export function ImportUsersModal({
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge color="brand">{preview.source}</Badge>
-              <span>{t('importUsers.found', { total: users.length, fresh: newCount })}</span>
               <button
                 type="button"
                 className="ml-auto text-xs text-accent hover:underline"
@@ -211,15 +232,6 @@ export function ImportUsersModal({
                 </ul>
               </div>
             )}
-
-            <div className="flex justify-end gap-2">
-              <Button variant="light" color="gray" onClick={onClose} disabled={busy}>
-                {t('common.cancel')}
-              </Button>
-              <Button loading={busy} disabled={picked.size === 0} onClick={doImport}>
-                {t('importUsers.import', { count: picked.size })}
-              </Button>
-            </div>
           </>
         )}
       </div>

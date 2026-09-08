@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { type SubDPI } from './api'
-import { Card, Select, TextInput, ToggleRow } from './ui'
+import { Select, SettingCard, TextInput, ToggleRow } from './ui'
 
 // SubDPICard is the client-side DPI evasion block: what the subscription tells
 // Xray-core apps (through the Xray JSON format) and sing-box to do with the TLS
@@ -31,10 +31,8 @@ export function SubDPICard({
   const xrayOffNote = (d.fragment || d.noise) && !d.json_clients
 
   return (
-    <Card className="p-4">
-      <h3 className="mb-1 font-bold text-ink">{t('subs.dpi.title')}</h3>
-      <p className="mb-3 text-xs text-ink-muted">{t('subs.dpi.intro')}</p>
-      <div className="flex flex-col gap-3">
+    <SettingCard title={t('subs.dpi.title')} description={t('subs.dpi.intro')}>
+      <div className="flex flex-col">
         <ToggleRow
           label={t('subs.dpi.jsonClients')}
           hint={t('subs.dpi.jsonClientsHint')}
@@ -109,6 +107,6 @@ export function SubDPICard({
           onChange={(v) => patch({ record_fragment: v })}
         />
       </div>
-    </Card>
+    </SettingCard>
   )
 }

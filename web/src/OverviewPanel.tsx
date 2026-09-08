@@ -1,280 +1,212 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listNodes, type NodeView, type SystemStatus } from "./api";
-import { cssVar } from "./charts";
-import { fmtBytes, fmtDuration } from "./format";
-import { serverName, statusDot } from "./NodesPanel";
+import {
+  getRecentAbuse,
+  getStatsSeries,
+  listEvents,
+  listNodes,
+  listUsers,
+  restartNodeXray,
+  type DailyPoint,
+  type NodeView,
+  type SystemStatus,
+  type User,
+  type UserEvent,
+} from "./api";
+import { type Bar, DayBars } from "./charts";
+import { actionMeta, eventDetails } from "./events";
+import { fmtBytes, fmtDuration, localDay } from "./format";
+import { useAction } from "./hooks";
+import { nodeState, serverName, servingCount } from "./NodesPanel";
 import { openStream } from "./livestream";
 import { useIsAdmin } from "./role";
 import { navigate } from "./router";
-import { Badge, Card, Skeleton } from "./ui";
+import {
+  Button,
+  cn,
+  KpiTile,
+  MICRO,
+  MiniBar,
+  Mono,
+  Panel,
+  Skeleton,
+} from "./ui";
 import { ManagementCard } from "./Management";
 
-function Gauge({
-  percent,
-  label,
-  value,
-}: {
-  percent: number;
-  label: string;
-  value: string;
-}) {
-  const p = Math.max(0, Math.min(100, percent || 0));
-  const r = 40;
-  const c = 2 * Math.PI * r;
-  const dash = (p / 100) * c;
-  const color =
-    p < 70 ? cssVar("--color-brand-600", "#0d4cd3") : p < 90 ? "#f97316" : "#ef4444";
-  const track = cssVar("--color-gray-200", "#e7eef9");
+// EXPIRY_SOON is the window the dashboard counts subscriptions as running out in.
+// A week is what an operator can still act on: renew, message the customer, or let
+// it lapse deliberately.
+const EXPIRY_SOON_DAYS = 7;
+
+// SPARK_DAYS is how far back the traffic chart reaches. The panel keeps traffic per
+// DAY (model.TrafficDailyRetentionDays), not per hour, so this is a week of days
+// rather than a 24-hour curve — and at seven columns every day still gets its date
+// and its figure, which is what makes the chart readable at a glance.
+const SPARK_DAYS = 7;
+
+// ABUSE_DAYS mirrors model.AbuseRetentionDays: the store keeps a blocklist match for
+// two weeks, so a longer window here would count a period the panel cannot see.
+const ABUSE_DAYS = 14;
+
+// SLOW_POLL is the cadence for the figures that move by the day — expiring
+// subscriptions, the traffic history, blocklist matches. The live numbers come off
+// the SSE stream; re-reading a whole user list every two seconds to find out that
+// nothing expires today would be a query storm for a figure that cannot change.
+const SLOW_POLL = 5 * 60_000;
+const NODE_POLL = 30_000;
+
+/* ------------------------------------------------------------------ pieces */
+
+// StatusDot is the state marker that leads a row: colour carries the state, the
+// word beside it says which one — never colour alone.
+function StatusDot({ className, size = 1.5 }: { className: string; size?: number }) {
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative h-24 w-24">
-        <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-          <circle
-            cx="50"
-            cy="50"
-            r={r}
-            fill="none"
-            stroke={track}
-            strokeWidth="9"
-          />
-          <circle
-            cx="50"
-            cy="50"
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeDasharray={`${dash} ${c}`}
-            style={{
-              transition: "stroke-dasharray 0.5s ease, stroke 0.3s ease",
-            }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-ink">
-          {p.toFixed(p < 10 ? 1 : 0)}%
-        </div>
-      </div>
-      <div className="text-center">
-        <p className="text-sm font-bold text-ink">{label}</p>
-        <p className="text-xs text-ink-muted">{value}</p>
-      </div>
+    <span
+      className={cn("shrink-0 rounded-full", className)}
+      style={{ width: `${size * 4}px`, height: `${size * 4}px` }}
+      aria-hidden
+    />
+  );
+}
+
+// AttentionRow is one thing that is wrong and the one control that addresses it.
+// The button repeats the action, never "OK": the operator should be able to read
+// the row and know what the click will do.
+function AttentionRow({
+  text,
+  when,
+  action,
+  dot,
+  onAction,
+  busy,
+}: {
+  text: string;
+  when?: string;
+  action: string;
+  dot: string;
+  onAction: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0">
+      <StatusDot className={dot} size={2} />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-gray-900">{text}</span>
+      {when && <Mono className="shrink-0 text-[11px] text-ink-muted">{when}</Mono>}
+      <Button size="xs" variant="outline" loading={busy} onClick={onAction}>
+        {action}
+      </Button>
     </div>
   );
 }
 
-function InfoCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="flex h-full flex-col justify-between p-4">
-      <h3 className="mb-3 font-bold text-ink">{title}</h3>
-      {children}
-    </Card>
-  );
-}
+// SERVER_COLS is the servers table, header and rows alike. On a phone the six
+// columns become two and the row reads as a card — the design's one rule for dense
+// tables, and the reason there is no second component for narrow screens.
+const SERVER_COLS =
+  "grid-cols-[1fr_auto] sm:grid-cols-[1.5fr_.9fr_1fr_1fr_1fr_.8fr]";
 
-function Metric({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className={`text-lg font-bold ${valueClass ?? "text-ink"}`}>{value}</p>
-    </div>
-  );
-}
-
-// Kpi is one figure on the top row — the numbers an operator opens the panel to
-// read, before drilling into any page.
-function Kpi({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-ink-muted">{label}</p>
-      <p className={`text-2xl font-bold ${valueClass ?? "text-ink"}`}>{value}</p>
-    </div>
-  );
-}
-
-// FleetStrip is every server's connectivity in one line, and a shortcut to the page
-// that can fix it. It only renders on a multi-server install: with no nodes the
-// gauges below already describe the only server there is.
-function FleetStrip({ nodes }: { nodes: NodeView[] }) {
+// ServerRow is one server as the dashboard reports it: what it is, whether it is
+// serving, how loaded the machine is, and what it carried today. A server that has
+// never reported says so across the three load columns rather than showing empty
+// bars, which read as an idle machine.
+function ServerRow({ node }: { node: NodeView }) {
   const { t } = useTranslation();
-  const remote = nodes.filter((n) => !n.is_local);
-  if (remote.length === 0) return null;
-  // The badge names the worst thing about the NODES, and says "all healthy" only when
-  // it is true of every one of them — a grey dot for a node that was never installed
-  // must not hide behind a green summary. "Serving", not "reachable": a node whose
-  // Xray is down counts as broken however promptly its agent answers.
-  //
-  // The master is deliberately absent from this card, counts included: the whole
-  // dashboard around it already describes the panel's own machine (the gauges, the
-  // uptime, the traffic), so a row for it here was the same server twice. Its Xray
-  // state lives on its own card in Servers.
-  const offline = remote.filter((n) => n.enabled && n.joined && !n.online).length;
-  const dead = remote.filter((n) => n.enabled && n.joined && n.online && !n.xray_running).length;
-  const pending = remote.filter((n) => n.enabled && !n.joined).length;
-  const disabled = remote.filter((n) => !n.enabled).length;
-  return (
-    <Card className="p-4" onClick={() => navigate("nodes")}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="font-bold text-ink">{t("health.nodes")}</h3>
-        {offline > 0 ? (
-          <Badge color="red" size="xs">{t("overview.nOffline", { count: offline })}</Badge>
-        ) : dead > 0 ? (
-          <Badge color="orange" size="xs">{t("overview.nNoXray", { count: dead })}</Badge>
-        ) : pending > 0 ? (
-          <Badge color="gray" size="xs">
-            {t("overview.nNotJoined", { count: pending })}
-          </Badge>
-        ) : disabled > 0 ? (
-          <Badge color="gray" size="xs">
-            {t("overview.nDisabled", { count: disabled })}
-          </Badge>
-        ) : (
-          <Badge color="green" size="xs">{t("overview.allHealthy")}</Badge>
-        )}
-      </div>
-      {/* One row per server with the same three numbers the panel shows for its own
-          machine. Before this the strip was a list of names and dots: it answered
-          "is anything down" and nothing else, so "which server is out of disk" meant
-          opening each card in turn. The master is included — on a fleet it is just
-          another server carrying traffic. */}
-      <div className="flex flex-col gap-1">
-        {remote.map((n) => (
-          <ServerRow key={n.id} n={n} />
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ServerRow is one server: what it is, and how loaded the machine under it is.
-function ServerRow({ n }: { n: NodeView }) {
-  const { t } = useTranslation();
+  const state = nodeState(node);
   const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
-  const traffic = (n.traffic_up ?? 0) + (n.traffic_down ?? 0);
+  const traffic = (node.traffic_up ?? 0) + (node.traffic_down ?? 0);
   return (
-    <div className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50">
-      <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot(n)}`} />
-      {/* Name over address: the name is what the operator calls it, the address is
-          what they need when something is wrong and they are about to SSH in. */}
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate text-sm text-ink">{serverName(n)}</span>
-        {n.host && (
-          <span className="truncate font-mono text-[11px] text-ink-muted">{n.host}</span>
+    <div
+      className={cn(
+        "grid items-center gap-2.5 border-b border-gray-100 px-3.5 py-2 last:border-0",
+        SERVER_COLS,
+        // The one row an operator must not scroll past. Far fainter than a chip:
+        // it sits under text that still has to read as text.
+        state.tone === "warning" && "warning-tint-weak",
+      )}
+    >
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-xs font-medium text-ink">{serverName(node)}</span>
+        {node.host && (
+          <Mono className="truncate text-[11px] text-ink-muted">{node.host}</Mono>
         )}
       </span>
-      {/* A server that has never reported says so, rather than showing three empty
-          bars that read as an idle machine. */}
-      {n.has_host_stats ? (
-        <div className="hidden items-center gap-3 sm:flex">
-          <MiniBar label="CPU" percent={n.cpu_percent} />
-          <MiniBar label="RAM" percent={pct(n.mem_used, n.mem_total)} />
-          <MiniBar label={t("overview.disk")} percent={pct(n.disk_used, n.disk_total)} />
-        </div>
-      ) : (
-        <span className="hidden text-xs text-ink-muted sm:inline">{t("overview.noStats")}</span>
-      )}
-      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-ink-muted">
-        {traffic > 0 ? fmtBytes(traffic) : "—"}
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 text-xs max-sm:col-start-1",
+          state.tone === "success" && "text-success",
+          state.tone === "warning" && "text-warning",
+          state.tone === "danger" && "text-danger",
+          state.tone === "default" && "text-ink-muted",
+        )}
+      >
+        <StatusDot className={state.dot} />
+        <span className="truncate">{state.label}</span>
       </span>
+      {node.has_host_stats ? (
+        <>
+          {/* No labels here: the column headings above already name them. */}
+          <MiniBar percent={node.cpu_percent} className="max-sm:hidden" />
+          <MiniBar percent={pct(node.mem_used, node.mem_total)} className="max-sm:hidden" />
+          <MiniBar percent={pct(node.disk_used, node.disk_total)} className="max-sm:hidden" />
+        </>
+      ) : (
+        <span className="text-xs text-ink-muted max-sm:hidden sm:col-span-3">
+          {t("overview.noStats")}
+        </span>
+      )}
+      <Mono className="text-right text-xs text-gray-800 max-sm:col-start-2 max-sm:row-start-1">
+        {fmtBytes(traffic)}
+      </Mono>
     </div>
   );
 }
 
-// MiniBar is the compact form of the Gauge above: same thresholds, a tenth of the
-// space, because a fleet row has room for a hint and not for a dial.
-function MiniBar({ label, percent }: { label: string; percent: number }) {
-  const p = Math.max(0, Math.min(100, percent || 0));
-  const color = p < 70 ? "bg-success" : p < 90 ? "bg-warning" : "bg-danger";
-  return (
-    <span className="flex w-24 items-center gap-1.5" title={`${label} ${Math.round(p)}%`}>
-      <span className="w-7 shrink-0 text-[10px] uppercase tracking-wide text-ink-muted">
-        {label}
-      </span>
-      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
-        <span className={`block h-full rounded-full ${color}`} style={{ width: `${p}%` }} />
-      </span>
-      <span className="w-7 shrink-0 text-right text-[10px] tabular-nums text-ink-muted">
-        {Math.round(p)}%
-      </span>
-    </span>
-  );
-}
+/* ------------------------------------------------------------------ loading */
 
+// The skeleton repeats the layout it is standing in for, so nothing jumps when the
+// data lands — a centred spinner would collapse the page and then rebuild it.
 function OverviewSkeleton() {
   return (
-    <div className="flex flex-col gap-4 animate-fade-in">
-      <Card className="p-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="flex flex-col gap-1.5">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-8 w-20" />
-            </div>
-          ))}
-        </div>
-      </Card>
-      <Card className="p-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="flex flex-col items-center gap-2">
-              <Skeleton className="h-24 w-24 rounded-full" />
-              <Skeleton className="h-4 w-10" />
-              <Skeleton className="h-3 w-24" />
-            </div>
-          ))}
-        </div>
-      </Card>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {[...Array(4)].map((_, i) => (
-          <Card key={i} className="p-4">
-            <Skeleton className="mb-3 h-5 w-20" />
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Skeleton className="h-3 w-14" />
-                <Skeleton className="h-7 w-20" />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Skeleton className="h-3 w-14" />
-                <Skeleton className="h-7 w-20" />
-              </div>
-            </div>
-          </Card>
+    <div className="flex animate-fade-in flex-col gap-3.5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="rounded-xl border border-gray-200 bg-white px-3.5 py-3">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="mt-2 h-7 w-14" />
+            <Skeleton className="mt-1.5 h-2.5 w-20" />
+          </div>
         ))}
+      </div>
+      <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3.5">
+          <Skeleton className="h-40 rounded-xl" />
+          <Skeleton className="h-56 rounded-xl" />
+        </div>
+        <div className="flex flex-col gap-3.5">
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
+        </div>
       </div>
     </div>
   );
 }
+
+/* ------------------------------------------------------------------- screen */
 
 export function OverviewPanel() {
   const { t } = useTranslation();
   const isAdmin = useIsAdmin();
+  const { isBusy, run } = useAction();
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [nodes, setNodes] = useState<NodeView[]>([]);
   const [live, setLive] = useState(true);
+  const [nodes, setNodes] = useState<NodeView[]>([]);
+  const [events, setEvents] = useState<UserEvent[] | null>(null);
+  const [users, setUsers] = useState<User[] | null>(null);
+  const [series, setSeries] = useState<DailyPoint[] | null>(null);
+  const [hoverDay, setHoverDay] = useState<Bar | null>(null);
+  const [abuse, setAbuse] = useState<number | null>(null);
+
   useEffect(() => {
     // Live push via Server-Sent Events, through openStream rather than a bare
     // EventSource: the panel refuses a stream with 429 once the per-IP gate is full,
@@ -295,114 +227,399 @@ export function OverviewPanel() {
     return () => stream.close();
   }, []);
 
-  // The node list is an admin-only route, so an operator never asks for it (and never
-  // sees a strip that would answer 403). It polls on a slow timer of its own rather
-  // than riding the 2s status stream: it costs a query per tick and a server's state
-  // does not change second to second.
-  useEffect(() => {
+  // Nodes and the event tail move on the minute, not on the second, so they poll on
+  // their own slow timer instead of riding the 2s status stream. The node list is an
+  // admin-only route: an operator never asks for it, and so never sees a panel whose
+  // every refresh would answer 403.
+  const loadNodes = useCallback(() => {
     if (!isAdmin) return;
-    const load = () =>
-      listNodes()
-        .then((r) => setNodes(r.nodes))
-        .catch(() => {});
-    load();
-    const id = setInterval(load, 30000);
-    return () => clearInterval(id);
+    listNodes()
+      .then((r) => setNodes(r.nodes))
+      .catch(() => {});
   }, [isAdmin]);
+
+  useEffect(() => {
+    const load = () => {
+      loadNodes();
+      listEvents({ limit: 6 })
+        .then((p) => setEvents(p.events ?? []))
+        .catch(() => setEvents([]));
+    };
+    load();
+    const id = setInterval(load, NODE_POLL);
+    return () => clearInterval(id);
+  }, [loadNodes]);
+
+  // The day-scale figures. Each lands on its own: a tile whose fetch is still in
+  // flight shows a dash rather than holding the whole dashboard back.
+  useEffect(() => {
+    const load = () => {
+      listUsers()
+        .then(setUsers)
+        .catch(() => setUsers([]));
+      getStatsSeries({ from: localDay(SPARK_DAYS - 1), to: localDay(0) })
+        .then(setSeries)
+        .catch(() => setSeries([]));
+      getRecentAbuse(200)
+        .then((rows) => {
+          const cutoff = Date.now() / 1000 - ABUSE_DAYS * 86400;
+          setAbuse(rows.filter((r) => r.last_seen >= cutoff).length);
+        })
+        .catch(() => setAbuse(0));
+    };
+    load();
+    const id = setInterval(load, SLOW_POLL);
+    return () => clearInterval(id);
+  }, []);
 
   if (!loaded) return <OverviewSkeleton />;
   if (!s) return null;
 
-  const pct = (used: number, total: number) =>
-    total > 0 ? (used / total) * 100 : 0;
+  const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
+  const dash = "—";
+
+  /* --- derived figures ------------------------------------------------- */
+
+  // Only remote nodes count as a fleet: on a single-server install the host panel
+  // below already describes the only machine there is, so neither the tile nor the
+  // servers panel is drawn at all.
+  const remote = nodes.filter((n) => !n.is_local);
+  // A fleet is what makes the nodes tile and the "N of M" note worth printing; the
+  // servers table itself is drawn for every admin, because with the host panel gone
+  // it is the only place the machines' load is reported.
+  const hasFleet = isAdmin && remote.length > 0;
+  const showServers = isAdmin;
+  const serving = servingCount(nodes);
+  const fleetNote = [
+    remote.filter((n) => n.enabled && n.joined && n.online && !n.xray_running).length &&
+      t("overview.nNoXray", {
+        count: remote.filter((n) => n.enabled && n.joined && n.online && !n.xray_running)
+          .length,
+      }),
+    remote.filter((n) => n.enabled && n.joined && !n.online).length &&
+      t("overview.nOffline", {
+        count: remote.filter((n) => n.enabled && n.joined && !n.online).length,
+      }),
+    remote.filter((n) => n.enabled && !n.joined).length &&
+      t("overview.nNotJoined", {
+        count: remote.filter((n) => n.enabled && !n.joined).length,
+      }),
+    remote.filter((n) => !n.enabled).length &&
+      t("overview.nDisabled", { count: remote.filter((n) => !n.enabled).length }),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const now = Date.now() / 1000;
+  const expiring =
+    users === null
+      ? null
+      : users.filter(
+          (u) =>
+            u.expire_at > 0 &&
+            u.expire_at > now &&
+            u.expire_at - now <= EXPIRY_SOON_DAYS * 86400,
+        ).length;
+
+  // "vs yesterday" needs both days to be real: yesterday at zero makes any change
+  // infinite, and a panel installed today has no yesterday to compare with.
+  const today = localDay(0);
+  const yesterday = localDay(1);
+  const dayTotal = (day: string) => {
+    const p = series?.find((x) => x.day === day);
+    return p ? p.up + p.down : 0;
+  };
+  const prev = dayTotal(yesterday);
+  const current = dayTotal(today);
+  // Both days have to be real. Yesterday at zero makes any change infinite; today at
+  // zero is every panel at ten past midnight, and "−100% ко вчера" then reports the
+  // clock rather than the traffic.
+  const trend =
+    series && prev > 0 && current > 0
+      ? Math.round(((current - prev) / prev) * 100)
+      : null;
+  const sparkTotal = (series ?? []).reduce((a, p) => a + p.up + p.down, 0);
+  const sparkDays = (series ?? []).map((p) => ({
+    day: p.day,
+    value: p.up + p.down,
+    today: p.day === today,
+  }));
+
+  /* --- what needs doing ------------------------------------------------ */
+
+  type Attention = {
+    key: string;
+    dot: string;
+    text: string;
+    when?: string;
+    action: string;
+    onAction: () => void;
+    busy?: boolean;
+  };
+
+  const attention: Attention[] = [];
+  for (const n of remote) {
+    if (!n.enabled) continue; // switched off on purpose is not a fault
+    const since = n.last_seen ? fmtDuration(now - n.last_seen) : undefined;
+    if (!n.joined) {
+      attention.push({
+        key: `join-${n.id}`,
+        dot: "bg-gray-400",
+        text: t("overview.attnNotJoined", { name: serverName(n) }),
+        action: t("overview.open"),
+        onAction: () => navigate("nodes"),
+      });
+    } else if (!n.online) {
+      attention.push({
+        key: `off-${n.id}`,
+        dot: "bg-danger",
+        text: t("overview.attnOffline", { name: serverName(n) }),
+        when: since,
+        action: t("overview.open"),
+        onAction: () => navigate("nodes"),
+      });
+    } else if (!n.xray_running) {
+      attention.push({
+        key: `xray-${n.id}`,
+        dot: "bg-warning",
+        text: t("overview.attnXrayDown", { name: serverName(n) }),
+        when: since,
+        action: t("overview.start"),
+        busy: isBusy(`xray-${n.id}`),
+        // The same request the server card sends: the panel can only ask, and the
+        // node's next check-in is what proves it happened — so refresh the list
+        // after, rather than claiming success here.
+        onAction: () =>
+          run(
+            async () => {
+              await restartNodeXray(n.id);
+              loadNodes();
+            },
+            { key: `xray-${n.id}` },
+          ),
+      });
+    }
+  }
+  if (expiring) {
+    attention.push({
+      key: "expiring",
+      dot: "bg-brand-600",
+      text: t("overview.attnExpiring", { count: expiring }),
+      action: t("overview.open"),
+      onAction: () => navigate("users"),
+    });
+  }
+
+  // Nothing wrong, nothing to say: an empty "needs attention" panel is a claim in
+  // itself, and a false one the moment it goes stale.
+  const attentionPanel = attention.length > 0 && (
+    <Panel
+      title={t("overview.attention")}
+      aside={<Mono className="text-[11px] text-ink-muted">{attention.length}</Mono>}
+    >
+      {attention.map((a) => (
+        <AttentionRow
+          key={a.key}
+          dot={a.dot}
+          text={a.text}
+          when={a.when}
+          action={a.action}
+          busy={a.busy}
+          onAction={a.onAction}
+        />
+      ))}
+    </Panel>
+  );
+
+  /* --- render ---------------------------------------------------------- */
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3.5">
       {/* Stale numbers must say so. Without this the dashboard is indistinguishable
           from a quiet server: the same figures, forever. */}
       {!live && (
-        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+        <div className="warning-tint rounded-lg px-3 py-2 text-sm text-warning">
           {t("overview.reconnecting")}
         </div>
       )}
 
-      {/* The numbers the panel exists to report, above the machine it runs on. */}
-      <Card className="p-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Kpi label={t("nav.users")} value={String(s.users)} />
-          <Kpi label={t("overview.activeUsers")} value={String(s.enabled_users)} />
-          <Kpi
-            label={t("overview.online")}
-            value={String(s.online_users)}
-            valueClass={s.online_users > 0 ? "text-success" : "text-ink"}
+      {/* The figures the panel is opened to read, before anyone drills into a page. */}
+      {/* Explicit counts, not auto-fit: auto-fit picks the column count from the
+          width and lands on five-plus-one at ordinary desktop sizes. The row is
+          read as a row. */}
+      <div
+        className={cn(
+          "grid gap-2.5 grid-cols-2 sm:grid-cols-3",
+          hasFleet ? "lg:grid-cols-6" : "lg:grid-cols-5",
+        )}
+      >
+        <KpiTile
+          label={t("nav.users")}
+          value={s.users}
+          note={t("overview.nActive", { count: s.enabled_users })}
+        />
+        <KpiTile
+          label={t("overview.online")}
+          value={s.online_users}
+          tone={s.online_users > 0 ? "success" : "default"}
+        />
+        <KpiTile
+          label={t("overview.trafficToday")}
+          value={fmtBytes(s.traffic_today)}
+          note={
+            trend === null
+              ? undefined
+              : t("overview.vsYesterday", {
+                  pct: `${trend > 0 ? "+" : ""}${trend}%`,
+                })
+          }
+        />
+        {hasFleet && (
+          <KpiTile
+            label={t("health.nodes")}
+            value={`${serving}/${nodes.length}`}
+            note={fleetNote}
+            tone={serving < nodes.length ? "warning" : "success"}
           />
-          <Kpi label={t("overview.trafficToday")} value={fmtBytes(s.traffic_today)} />
-        </div>
-      </Card>
-
-      {/* Resource gauges. */}
-      <Card className="p-4">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Gauge
-            percent={s.cpu_percent}
-            label="CPU"
-            value={t("overview.cores", { count: s.cpu_cores })}
-          />
-          <Gauge
-            percent={pct(s.mem_used, s.mem_total)}
-            label="RAM"
-            value={`${fmtBytes(s.mem_used)} / ${fmtBytes(s.mem_total)}`}
-          />
-          <Gauge
-            percent={pct(s.swap_used, s.swap_total)}
-            label="Swap"
-            value={
-              s.swap_total > 0
-                ? `${fmtBytes(s.swap_used)} / ${fmtBytes(s.swap_total)}`
-                : t("common.none")
-            }
-          />
-          <Gauge
-            percent={pct(s.disk_used, s.disk_total)}
-            label={t("overview.disk")}
-            value={`${fmtBytes(s.disk_used)} / ${fmtBytes(s.disk_total)}`}
-          />
-        </div>
-      </Card>
-
-      {/* No Xray card here: its status, config, logs and restart all live on one
-          server card in Servers, next to the same controls for every node. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <InfoCard title={t("overview.uptime")}>
-          <div className="grid grid-cols-2 gap-4">
-            <Metric label="Xray" value={fmtDuration(s.xray_uptime)} />
-            <Metric label={t("overview.system")} value={fmtDuration(s.host_uptime)} />
-          </div>
-        </InfoCard>
-
-        <InfoCard title={t("overview.usage")}>
-          <div className="grid grid-cols-2 gap-4">
-            <Metric label={t("overview.panelRam")} value={fmtBytes(s.proc_mem)} />
-            <Metric label={t("overview.threads")} value={String(s.goroutines)} />
-          </div>
-        </InfoCard>
-
-        {/* No traffic cards here at all. The live VPN-traffic rate was the master's
-            own Xray only — nodes report accumulated deltas, not a rate — so on a
-            multi-server panel it read as the fleet's throughput while showing one
-            server's. Per-server traffic is on each card in Servers, and the honest
-            fleet total is the per-day history on Statistics. (An older card summing
-            users.used_up/down went for a related reason: the quota reset zeroes it per
-            user, so it added up a different period for everybody.) */}
+        )}
+        <KpiTile
+          label={t("overview.expiring")}
+          value={expiring === null ? dash : expiring}
+          note={t("overview.expiringNote")}
+        />
+        <KpiTile
+          label={t("overview.blocklists")}
+          value={abuse === null ? dash : abuse}
+          note={t("overview.blocklistNote", { n: ABUSE_DAYS })}
+          tone={abuse ? "warning" : "default"}
+        />
       </div>
 
-      {isAdmin && <FleetStrip nodes={nodes} />}
+      {/* Without a fleet there is no left column to fill, so the attention panel takes
+          the width and the three read-outs sit side by side instead of stretching one
+          sparkline across the screen. Same panels, placed by how many there are. */}
+      {!showServers && attentionPanel}
 
-      {/* No egress/routing card either — routing is per-server now and reads next to
-          the server it belongs to, in Servers. Maintenance holds backup/restore, the
-          restart and the factory reset — admin-only on the server. */}
-      {isAdmin && <ManagementCard />}
+      <div
+        className={cn(
+          "grid gap-3.5",
+          showServers
+            ? "lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"
+            : "md:grid-cols-2 xl:grid-cols-3",
+        )}
+      >
+        {showServers && (
+          <div className="flex min-w-0 flex-col gap-3.5">
+            {attentionPanel}
 
+            <Panel
+              title={t("nav.servers")}
+              aside={
+                nodes.length > 1 && (
+                  <span className="shrink-0 text-xs text-ink-muted">
+                    {t("overview.serversNote", { up: serving, total: nodes.length })}
+                  </span>
+                )
+              }
+            >
+              <div
+                className={cn(
+                  MICRO,
+                  "grid gap-2.5 border-b border-gray-200 px-3.5 py-2 max-sm:hidden",
+                  SERVER_COLS,
+                )}
+              >
+                <span>{t("nodes.server")}</span>
+                <span>{t("usersPanel.colStatus")}</span>
+                <span>CPU</span>
+                <span>RAM</span>
+                <span>{t("overview.disk")}</span>
+                <span className="text-right">{t("usersPanel.colTraffic")}</span>
+              </div>
+              {nodes.length === 0
+                ? [...Array(2)].map((_, i) => (
+                    <div key={i} className="border-b border-gray-100 px-3.5 py-3 last:border-0">
+                      <Skeleton className="h-3.5 w-full" />
+                    </div>
+                  ))
+                : nodes.map((n) => <ServerRow key={n.id} node={n} />)}
+            </Panel>
+          </div>
+        )}
+
+        {/* `contents` dissolves this wrapper when there is no left column, so the
+            three panels become grid items of the row above rather than a stack. */}
+        <div className={showServers ? "flex min-w-0 flex-col gap-3.5" : "contents"}>
+          <Panel
+            pad
+            title={t("overview.trafficDays", { n: SPARK_DAYS })}
+            aside={
+              // The header carries the fortnight's total — or, while the pointer is
+              // on a column, that day's figure. Hovering a chart should answer
+              // "how much, and when", not just enlarge a bar.
+              <Mono className="shrink-0 text-xs text-gray-800">
+                {series === null
+                  ? dash
+                  : hoverDay
+                    ? `${hoverDay.label} · ${fmtBytes(hoverDay.value)}`
+                    : fmtBytes(sparkTotal)}
+              </Mono>
+            }
+          >
+            {series === null ? (
+              <Skeleton className="h-24 w-full" />
+            ) : sparkTotal === 0 ? (
+              // A flat line on the floor reads as a measurement; "no data" is the
+              // truth on a panel that has not carried anything yet.
+              <p className="py-9 text-center text-xs text-ink-muted">
+                {t("stats.noData")}
+              </p>
+            ) : (
+              <DayBars data={sparkDays} fmt={fmtBytes} onHover={setHoverDay} />
+            )}
+          </Panel>
+
+          <Panel title={t("overview.recentEvents")} className="min-w-0">
+            {events === null ? (
+              <div className="flex flex-col gap-2 p-3.5">
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-3.5 w-full" />
+                ))}
+              </div>
+            ) : events.length === 0 ? (
+              <p className="p-3.5 text-xs text-ink-muted">{t("overview.noEvents")}</p>
+            ) : (
+              events.map((e) => <EventLine key={e.id} event={e} />)
+            )}
+          </Panel>
+
+          {/* Backup, restore, restart and the factory reset. Admin-only on the
+              server, so an operator is not shown controls whose every call would
+              403. */}
+          {isAdmin && <ManagementCard />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// EventLine is one line of the journal tail: when, then who and what. Details are
+// part of the sentence ("new device, iPhone"), not a second line — the panel next to
+// it is a glance, and the full trail is a click away in the journal.
+function EventLine({ event }: { event: UserEvent }) {
+  const details = eventDetails(event);
+  const who = event.user_name || (event.user_id ? `#${event.user_id}` : "");
+  const what = [actionMeta(event.action).label, details].filter(Boolean).join(", ");
+  const time = new Date(event.created_at * 1000).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <div className="flex gap-2.5 border-b border-gray-100 px-3.5 py-2 last:border-0">
+      <Mono className="shrink-0 text-[11px] leading-4 text-ink-muted">{time}</Mono>
+      <span className="min-w-0 flex-1 truncate text-xs leading-4 text-gray-800">
+        {who ? `${who} — ${what}` : what}
+      </span>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import {
 import { countryFlag, countryName } from './format'
 import { useAction, useShowMore } from './hooks'
 import i18n from './i18n'
-import { Badge, Card, ShowMore } from './ui'
+import { cn, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
 
 // The two lists the security features produce: who has been scanning for the hidden
 // panel path, and whose address the source policy refused. They live on the
@@ -23,37 +23,35 @@ import { Badge, Card, ShowMore } from './ui'
 // show, so the page stays as short as the install is quiet. Both endpoints are
 // admin-level; the caller decides whether the reader is one.
 
-// row is the shared shape of both lists: an address, where it belongs, and a
-// right-hand column.
-function row(children: React.ReactNode, key: string) {
-  return (
-    <div
-      key={key}
-      className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-1.5 text-sm"
-    >
-      {children}
-    </div>
-  )
+// Both lists are dense grid rows on a shared template — address, what it did, where
+// it comes from, when — not boxed cards: they are read down a column like every
+// other list in the console. Below WIDE_MIN the row folds onto two lines.
+const PROBE_TPL = 'minmax(0,1.1fr) minmax(0,.5fr) minmax(0,1.7fr) minmax(0,1fr)'
+const BLOCK_TPL =
+  'minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1fr) 108px'
+const NARROW_TPL = 'minmax(0,1fr) auto'
+const WIDE_MIN = 520
+
+const rowCls = 'grid items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]'
+
+function fmtWhen(unix: number): string {
+  return new Date(unix * 1000).toLocaleString(i18n.language, {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function Where({ country, asn, org }: { country?: string; asn?: number; org?: string }) {
-  return (
-    <>
-      {country && (
-        <span className="text-xs text-ink-muted">
-          {countryFlag(country)} {countryName(country, i18n.language, country)}
-        </span>
-      )}
-      {org && (
-        <span
-          className="max-w-[16rem] truncate text-xs text-ink-muted"
-          title={asn ? `AS${asn} · ${org}` : org}
-        >
-          {org}
-        </span>
-      )}
-    </>
-  )
+// where reads as one line of prose ("🇩🇪 Германия · OMEGATECH-AS") so it can be a
+// single cell wide and a single clause narrow.
+function where(country?: string, asn?: number, org?: string): string {
+  const parts = []
+  if (country)
+    parts.push(`${countryFlag(country)} ${countryName(country, i18n.language, country)}`)
+  if (org) parts.push(org)
+  else if (asn) parts.push(`AS${asn}`)
+  return parts.join(' · ')
 }
 
 // ProbeList is the addresses caught scanning for the hidden panel path. Rendered
@@ -65,6 +63,7 @@ export function ProbeList() {
   const [probes, setProbes] = useState<ProbeHit[]>([])
   const [days, setDays] = useState(0)
   const rows = useShowMore(probes, { first: 10, step: 20, resetKey: probes })
+  const [boxRef, wide] = useWideBox(WIDE_MIN)
 
   useEffect(() => {
     getSettings()
@@ -81,28 +80,60 @@ export function ProbeList() {
 
   if (!on || probes.length === 0) return null
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 className="font-bold">{t('general.probeRecent')}</h3>
-        <span className="text-xs text-ink-muted">{t('security.probeHint', { days })}</span>
-      </div>
-      <div className="flex flex-col gap-1">
-        {rows.shown.map((p) =>
-          row(
-            <>
-              <code className="font-mono text-ink">{p.ip}</code>
-              <span className="text-xs text-ink-muted">{t('general.probePaths', { n: p.paths })}</span>
-              <Where country={p.country} asn={p.asn} org={p.org} />
-              <span className="ml-auto text-xs text-ink-muted">
-                {new Date(p.last_seen * 1000).toLocaleString(i18n.language)}
-              </span>
-            </>,
-            p.ip,
-          ),
+    <Panel
+      title={t('general.probeRecent')}
+      aside={
+        <span className="min-w-0 text-xs text-ink-muted">
+          {t('security.probeHint', { days })}
+        </span>
+      }
+    >
+      <div ref={boxRef}>
+        {wide && (
+          <div
+            className={cn(MICRO, 'grid items-center gap-3 px-3.5 py-2')}
+            style={{ gridTemplateColumns: PROBE_TPL }}
+          >
+            <span className="truncate">{t('security.colIp')}</span>
+            <span className="truncate">{t('security.colPaths')}</span>
+            <span className="truncate">{t('security.colWhere')}</span>
+            <span className="truncate text-right">{t('security.colWhen')}</span>
+          </div>
         )}
-        <ShowMore rest={rows.rest} onClick={rows.showMore} className="mt-1" />
+        {rows.shown.map((p) => {
+          const from = where(p.country, p.asn, p.org)
+          return (
+            <div
+              key={p.ip}
+              className={rowCls}
+              style={{ gridTemplateColumns: wide ? PROBE_TPL : NARROW_TPL }}
+            >
+              <Mono className="truncate text-xs text-ink" title={p.ip}>
+                {p.ip}
+              </Mono>
+              {wide ? (
+                <>
+                  <Mono className="text-[11px] text-ink-muted">{p.paths}</Mono>
+                  <span className="truncate text-xs text-ink-muted" title={from}>
+                    {from}
+                  </span>
+                </>
+              ) : null}
+              <Mono className="text-right text-[11px] text-ink-muted">
+                {fmtWhen(p.last_seen)}
+              </Mono>
+              {!wide && (
+                <span className="col-span-2 truncate text-[11px] text-ink-muted">
+                  {t('general.probePaths', { n: p.paths })}
+                  {from ? ` · ${from}` : ''}
+                </span>
+              )}
+            </div>
+          )
+        })}
+        <ShowMore rest={rows.rest} onClick={rows.showMore} className="p-3.5" />
       </div>
-    </Card>
+    </Panel>
   )
 }
 
@@ -114,6 +145,7 @@ export function BlockedList() {
   const [blocked, setBlocked] = useState<BlockedIP[]>([])
   const { busy, run } = useAction()
   const rows = useShowMore(blocked, { first: 10, step: 20, resetKey: blocked })
+  const [boxRef, wide] = useWideBox(WIDE_MIN)
 
   const load = () =>
     getConnPolicy()
@@ -125,43 +157,86 @@ export function BlockedList() {
   }, [])
 
   if (blocked.length === 0) return null
+
+  const unblock = (ip: string) => (
+    <button
+      type="button"
+      className="text-xs font-medium text-accent hover:underline disabled:opacity-50"
+      disabled={busy}
+      onClick={() =>
+        run(async () => {
+          await unblockIP(ip)
+          await load()
+        })
+      }
+    >
+      {t('policy.unblock')}
+    </button>
+  )
+
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
-        <h3 className="font-bold">{t('policy.blocked')}</h3>
-        <span className="text-xs text-ink-muted">{t('security.blockedHint')}</span>
-      </div>
-      <div className="flex flex-col gap-1">
-        {rows.shown.map((b) =>
-          row(
-            <>
-              <code className="font-mono text-ink">{b.ip}</code>
-              <Where country={b.country} asn={b.asn} org={b.org} />
-              <Badge color="orange" size="xs">
-                {t(b.reason === 'asn' ? 'policy.reasonASN' : 'policy.reasonCountry')}
-              </Badge>
-              <span className="ml-auto text-xs text-ink-muted">
-                {t('policy.until', { when: new Date(b.until * 1000).toLocaleString(i18n.language) })}
-              </span>
-              <button
-                type="button"
-                className="text-xs text-accent hover:underline disabled:opacity-50"
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    await unblockIP(b.ip)
-                    await load()
-                  })
-                }
-              >
-                {t('policy.unblock')}
-              </button>
-            </>,
-            b.ip,
-          ),
+    <Panel
+      title={t('policy.blocked')}
+      aside={
+        <span className="min-w-0 text-xs text-ink-muted">
+          {t('security.blockedHint')}
+        </span>
+      }
+    >
+      <div ref={boxRef}>
+        {wide && (
+          <div
+            className={cn(MICRO, 'grid items-center gap-3 px-3.5 py-2')}
+            style={{ gridTemplateColumns: BLOCK_TPL }}
+          >
+            <span className="truncate">{t('security.colIp')}</span>
+            <span className="truncate">{t('security.colWhere')}</span>
+            <span className="truncate">{t('security.colReason')}</span>
+            <span className="truncate text-right">{t('security.colUntil')}</span>
+            <span />
+          </div>
         )}
-        <ShowMore rest={rows.rest} onClick={rows.showMore} className="mt-1" />
+        {rows.shown.map((b) => {
+          const from = where(b.country, b.asn, b.org)
+          const reason = t(
+            b.reason === 'asn' ? 'policy.reasonASN' : 'policy.reasonCountry',
+          )
+          return (
+            <div
+              key={b.ip}
+              className={rowCls}
+              style={{ gridTemplateColumns: wide ? BLOCK_TPL : NARROW_TPL }}
+            >
+              <Mono className="truncate text-xs text-ink" title={b.ip}>
+                {b.ip}
+              </Mono>
+              {wide ? (
+                <>
+                  <span className="truncate text-xs text-ink-muted" title={from}>
+                    {from}
+                  </span>
+                  <span className="truncate text-xs text-warning">{reason}</span>
+                </>
+              ) : null}
+              <Mono className="text-right text-[11px] text-ink-muted">
+                {fmtWhen(b.until)}
+              </Mono>
+              {wide ? (
+                unblock(b.ip)
+              ) : (
+                <span className="col-span-2 flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
+                    <span className="text-warning">{reason}</span>
+                    {from ? ` · ${from}` : ''}
+                  </span>
+                  {unblock(b.ip)}
+                </span>
+              )}
+            </div>
+          )
+        })}
+        <ShowMore rest={rows.rest} onClick={rows.showMore} className="p-3.5" />
       </div>
-    </Card>
+    </Panel>
   )
 }

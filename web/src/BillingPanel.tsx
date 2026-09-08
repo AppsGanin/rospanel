@@ -17,7 +17,7 @@ import {
 } from "./api";
 import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, resetPeriods, speedLimitOptions } from "./format";
 import { useAction } from "./hooks";
-import i18n, { td } from "./i18n";
+import i18n, { td, currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   CustomizableSelect,
@@ -27,13 +27,19 @@ import {
   Checkbox,
   cn,
   Code,
+  IconButton,
+  IconPencil,
+  IconTrash,
+  MICRO,
   Modal,
+  Mono,
   SaveBar,
   Select,
   SettingCard,
   Switch,
   Textarea,
   TextInput,
+  useWideBox,
   useConfirm,
 } from "./ui";
 
@@ -241,6 +247,12 @@ function PaymentIntegrations({
     </SettingCard>
   );
 }
+
+// The plan roster's columns.
+const PLAN_TPL =
+  "minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1.8fr) minmax(0,.5fr) 76px";
+const PLAN_TPL_NARROW = "minmax(0,1fr) auto";
+const PLANS_WIDE_MIN = 620;
 
 const EMPTY_PLAN = (): TariffPlan => ({
   id: 0,
@@ -483,6 +495,7 @@ export function BillingPanel() {
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
   const [plans, setPlans] = useState<TariffPlan[]>([]);
+  const [plansRef, widePlans] = useWideBox(PLANS_WIDE_MIN);
   const [planUsers, setPlanUsers] = useState<Record<string, number>>({});
   // Access groups a plan can grant. Best-effort: if the list can't be read the editor
   // just says there are none to pick, which is also the honest state for most installs.
@@ -680,7 +693,7 @@ export function BillingPanel() {
   return (
     <>
       {confirmNode}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-1 flex-col gap-4">
         <SettingCard
           title={t("settings.tabBilling")}
           description={t("bill.globalHint")}
@@ -715,67 +728,105 @@ export function BillingPanel() {
               {t("bill.noPlans")}
             </p>
           ) : (
-            <ul className="flex flex-col gap-2">
-              {safePlans.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2.5"
+            <div ref={plansRef} className="-mx-3.5 mt-1">
+              {widePlans && (
+                <div
+                  className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
+                  style={{ gridTemplateColumns: PLAN_TPL }}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-ink">{p.name}</span>
-                      {!p.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
-                      {(planUsers[String(p.id)] ?? 0) > 0 && (
-                        <Badge color="gray">
-                          {t("bill.nUsers", { count: planUsers[String(p.id)] })}
-                        </Badge>
-                      )}
-                      {p.price_rub <= 0 && <Badge color="teal">{t("bill.free")}</Badge>}
-                      {cfg.free_plan_id === p.id && (
-                        <Badge color="brand">{t("bill.afterTrial")}</Badge>
-                      )}
-                      {cfg.trial_plan_id === p.id && (
-                        <Badge color="orange">{t("bill.trial")}</Badge>
-                      )}
-                      {/* The groups the plan hands out — the difference between two
-                          plans is often only this, so it belongs in the list. */}
-                      {groups
-                        .filter((g) => (p.group_ids ?? []).includes(g.id))
-                        .map((g) => (
-                          <Badge key={g.id} color="brand">
-                            {g.name}
-                          </Badge>
-                        ))}
-                    </div>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {planSummary(p)}
-                      {p.slug ? ` · ${t("bill.codeIs", { slug: p.slug })}` : ""}
-                    </p>
-                  </div>
-                  <span className="flex shrink-0 gap-2">
-                    <Button
-                      size="sm"
-                      variant="light"
+                  <span className="truncate">{t("bill.colPlan")}</span>
+                  <span className="truncate">{t("bill.colPrice")}</span>
+                  <span className="truncate">{t("bill.colLimits")}</span>
+                  <span className="truncate">{t("bill.colUsers")}</span>
+                  <span />
+                </div>
+              )}
+              {safePlans.map((p) => {
+                const users = planUsers[String(p.id)] ?? 0
+                const marks = [
+                  !p.enabled ? t("conn.off") : "",
+                  cfg.free_plan_id === p.id ? t("bill.afterTrial") : "",
+                  cfg.trial_plan_id === p.id ? t("bill.trial") : "",
+                  ...groups
+                    .filter((g) => (p.group_ids ?? []).includes(g.id))
+                    .map((g) => g.name),
+                ].filter(Boolean)
+                const actions = (
+                  <span className="flex justify-end gap-0.5">
+                    <IconButton
+                      title={t("common.edit")}
                       onClick={() => {
                         setEditor({ ...p });
                         setMigrateTo(0);
                       }}
                     >
-                      {t("common.edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="subtle"
+                      <IconPencil size={16} />
+                    </IconButton>
+                    <IconButton
                       color="red"
-                      onClick={() => removePlan(p)}
+                      title={t("common.delete")}
                       disabled={busy}
+                      onClick={() => removePlan(p)}
                     >
-                      {t("common.delete")}
-                    </Button>
+                      <IconTrash size={16} />
+                    </IconButton>
                   </span>
-                </li>
-              ))}
-            </ul>
+                )
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]",
+                      !p.enabled && "opacity-60",
+                    )}
+                    style={{ gridTemplateColumns: widePlans ? PLAN_TPL : PLAN_TPL_NARROW }}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[13px] font-medium text-ink">
+                        {p.name}
+                      </span>
+                      {p.slug && (
+                        <Mono className="shrink-0 text-[11px] text-ink-muted">
+                          {p.slug}
+                        </Mono>
+                      )}
+                    </span>
+                    {widePlans ? (
+                      <>
+                        <Mono className="truncate text-xs text-ink">
+                          {p.price_rub > 0
+                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            : t("bill.free")}
+                        </Mono>
+                        <span className="truncate text-xs text-ink-muted" title={planSummary(p)}>
+                          {planSummary(p)}
+                        </span>
+                        <Mono className="truncate text-xs text-ink-muted">
+                          {users || "—"}
+                        </Mono>
+                        {actions}
+                      </>
+                    ) : (
+                      <>
+                        {actions}
+                        <span className="col-span-2 truncate text-[11px] text-ink-muted">
+                          {p.price_rub > 0
+                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            : t("bill.free")}{" "}
+                          · {planSummary(p)}
+                          {users ? ` · ${t("bill.nUsers", { count: users })}` : ""}
+                        </span>
+                      </>
+                    )}
+                    {marks.length > 0 && widePlans && (
+                      <span className="col-start-1 truncate text-[11px] text-accent">
+                        {marks.join(" · ")}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </SettingCard>
 

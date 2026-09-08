@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { abuseCategoryLabel, getRecentAbuse, getUserAbuse, type AbuseMatch } from './api'
 import { useShowMore } from './hooks'
 import { currentLang } from './i18n'
-import { Badge, ShowMore } from './ui'
+import { cn, EmptyState, Mono, ShowMore } from './ui'
 
 // AbuseList shows destinations that matched a threat, piracy or gambling blocklist
 // — for the whole fleet, or for one user when userId is given.
@@ -50,37 +50,38 @@ export function AbuseList({
   if (rows === null) return null // first load: no flash of the empty state
 
   if (rows.length === 0) {
-    return (
-      <p className="py-2 text-center text-sm text-ink-muted">
-        {t('abuse.noMatches')}
-      </p>
-    )
+    return <EmptyState title={t('abuse.noMatches')} />
   }
 
+  // Dense rows, like every other list here: the category as coloured text rather than
+  // a badge, the destination in mono, and who/when on the right.
   return (
-    <div className="flex flex-col gap-1.5">
-      {page.shown.map((r) => (
-        <div
-          key={`${r.user_id}-${r.node_id}-${r.domain}-${r.day}`}
-          className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2"
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge color={r.category === 'malware' || r.category === 'badip' ? 'red' : 'gray'}>
-              {abuseCategoryLabel(r.category)}
-            </Badge>
-            <span className="truncate font-mono text-sm" title={r.domain}>
-              {r.domain}
-            </span>
+    <div className="flex flex-col">
+      {page.shown.map((r) => {
+        const bad = r.category === 'malware' || r.category === 'badip'
+        return (
+          <div
+            key={`${r.user_id}-${r.node_id}-${r.domain}-${r.day}`}
+            className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-[7px] first:border-t-0"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={cn('shrink-0 text-xs', bad ? 'text-danger' : 'text-ink-muted')}>
+                {abuseCategoryLabel(r.category)}
+              </span>
+              <Mono className="truncate text-xs text-ink" title={r.domain}>
+                {r.domain}
+              </Mono>
+            </div>
+            <Mono className="shrink-0 text-[11px] text-ink-muted">
+              {/* Only on the fleet-wide view: inside a user's card the name is the page.
+                  The id rides along because names are not unique. */}
+              {userId === undefined ? `${r.user_name ? `${r.user_name} ` : ''}#${r.user_id} · ` : ''}
+              {r.day} · {r.count.toLocaleString(currentLang())}×
+            </Mono>
           </div>
-          <span className="shrink-0 text-xs text-ink-muted">
-            {/* Only on the fleet-wide view: inside a user's card the name is the page.
-                The id rides along because names are not unique. */}
-            {userId === undefined ? `${r.user_name ? `${r.user_name} ` : ''}#${r.user_id} · ` : ''}
-            {r.day} · {r.count.toLocaleString(currentLang())}×
-          </span>
-        </div>
-      ))}
-      <ShowMore rest={page.rest} onClick={page.showMore} />
+        )
+      })}
+      <ShowMore rest={page.rest} onClick={page.showMore} className="p-3.5" />
     </div>
   )
 }

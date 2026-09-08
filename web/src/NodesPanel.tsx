@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalServers } from "./ExternalServers";
-import i18n, { currentLang } from "./i18n";
+import i18n from "./i18n";
 import {
   applyConnections,
   applyNodeConnections,
@@ -11,6 +11,7 @@ import {
   deleteNode,
   getConnections,
   getGeoCategories,
+  getMe,
   getNodeConnections,
   getNodeGeo,
   getNodeTLS,
@@ -57,7 +58,7 @@ import { InboundsEditor } from "./InboundsEditor";
 import { ServerSnapshots } from "./ServerSnapshots";
 import { canonicalDns, DnsEditor } from "./DnsEditor";
 import { helperStatus } from "./egress";
-import { fmtBytes } from "./format";
+import { fmtBytes, fmtStamp } from "./format";
 import { decoyLabel } from "./GeneralSettings";
 import { HealthPanel } from "./HealthPanel";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -80,7 +81,6 @@ import {
 import {
   Badge,
   Button,
-  Card,
   CenterLoader,
   cn,
   Code,
@@ -103,6 +103,9 @@ import {
   Textarea,
   TextInput,
   useConfirm,
+  type Tone,
+  MiniBar,
+  Mono,
 } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
 
@@ -124,15 +127,15 @@ function DialogTabs({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="mb-4 flex gap-1 overflow-x-auto border-b border-gray-200">
+    <div className="no-scrollbar -mx-5 flex gap-0.5 overflow-x-auto px-5">
       {tabs.map((t) => (
         <button
           key={t.value}
           onClick={() => onChange(t.value)}
           className={cn(
-            "whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition",
+            "whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold transition",
             value === t.value
-              ? "border-brand-600 text-brand-800"
+              ? "border-brand-600 text-ink"
               : "border-transparent text-ink-muted hover:text-ink",
           )}
         >
@@ -438,10 +441,7 @@ function fmtSeen(unix: number): string {
   if (ago < 60) return i18n.t("lastSeen.justNow");
   if (ago < 3600) return i18n.t("lastSeen.minutes", { n: Math.floor(ago / 60) });
   if (ago < 86400) return i18n.t("lastSeen.hours", { n: Math.floor(ago / 3600) });
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return fmtStamp(unix);
 }
 
 // statusDot is the colour of the small dot that leads each server row. It answers
@@ -465,27 +465,57 @@ function clampCoefficient(v: string): number {
   return Math.min(Math.max(n, 0.1), 10);
 }
 
-export function statusDot(node: NodeView): string {
-  if (!node.enabled || !node.joined) return "bg-gray-400";
-  if (!node.is_local && !node.online) return "bg-red-500";
-  return node.xray_running ? "bg-emerald-500" : "bg-amber-500";
+// NodeState is a server's steady state in one place: the dot's colour, the word for
+// it and how that word should read. The dashboard writes it as text in a dense row
+// and the server card as a badge; before this each spelled the rules out again and
+// the two could drift apart on a state neither had thought about.
+//
+// Deliberately NOT covering the transient restart states (see RestartChip): those are
+// about a click the operator just made, not about how the server is.
+export type NodeState = {
+  dot: string; // background class for the state dot
+  label: string;
+  tone: Tone;
+};
+
+export function nodeState(node: NodeView): NodeState {
+  if (!node.is_local && !node.enabled) {
+    return { dot: "bg-gray-400", label: i18n.t("nodes.disabled"), tone: "default" };
+  }
+  if (!node.is_local && !node.joined) {
+    return { dot: "bg-gray-400", label: i18n.t("nodes.notJoined"), tone: "default" };
+  }
+  if (!node.is_local && !node.online) {
+    return { dot: "bg-danger", label: i18n.t("usersPanel.offline"), tone: "danger" };
+  }
+  if (!node.xray_running) {
+    return { dot: "bg-warning", label: i18n.t("nodes.xrayDown"), tone: "warning" };
+  }
+  if (!node.is_local && node.sync_fails >= UNSTABLE_SYNC_FAILS) {
+    return { dot: "bg-warning", label: i18n.t("nodes.unstable"), tone: "warning" };
+  }
+  return { dot: "bg-success", label: i18n.t("nodes.serving"), tone: "success" };
 }
 
-// StatusChip is the small state label next to a server's name. The master needs no
-// chip for the states it cannot be in (its name already reads "Master" when unnamed);
-// plain "up and serving" is left to the green dot to keep the row quiet; the states
-// that need words get an xs badge.
-function StatusChip({ node }: { node: NodeView }) {
-  if (!node.is_local) {
-    if (!node.enabled) return <Badge color="gray" size="xs">{i18n.t("nodes.disabled")}</Badge>;
-    if (!node.joined) return <Badge color="gray" size="xs">{i18n.t("nodes.notJoined")}</Badge>;
-    if (!node.online) return <Badge color="red" size="xs">{i18n.t("usersPanel.offline")}</Badge>;
-  }
-  // A restart the operator just asked for outranks everything below: during the
-  // bounce "Xray not running" is true too, and only this says the state is their own
-  // click rather than a fault. The outcome is shown for a few seconds after —
-  // confirmation lands about a second in, and a badge that appears and vanishes
-  // between two refreshes is why the same restart got clicked four times.
+// serving counts the servers actually carrying traffic — reachable AND running Xray.
+export function servingCount(nodes: NodeView[]): number {
+  return nodes.filter(
+    (n) => n.enabled && n.joined && (n.is_local || n.online) && n.xray_running,
+  ).length;
+}
+
+export function statusDot(node: NodeView): string {
+  return nodeState(node).dot;
+}
+
+
+// RestartChip is the outcome of a restart the operator just asked for. It outranks
+// the steady state in the line below: during the bounce "Xray not running" is true
+// too, and only this says the state is their own click rather than a fault. The
+// outcome shows for a few seconds after — confirmation lands about a second in, and
+// a badge that appears and vanishes between two refreshes is why the same restart
+// got clicked four times.
+function RestartChip({ node }: { node: NodeView }) {
   if (node.xray_restart === "pending") {
     return <Badge color="brand" size="xs">{i18n.t("nodes.restartQueued")}</Badge>;
   }
@@ -495,22 +525,7 @@ function StatusChip({ node }: { node: NodeView }) {
   if (node.xray_restart === "timeout") {
     return <Badge color="orange" size="xs">{i18n.t("nodes.restartUnconfirmed")}</Badge>;
   }
-  // The amber dot needs a word: reachable but not serving is the one state an
-  // operator reads as "fine" if nothing says otherwise.
-  if (!node.xray_running) {
-    return <Badge color="orange" size="xs">{i18n.t("nodes.xrayDown")}</Badge>;
-  }
-  // Online and serving, yet its long-poll to the panel keeps dropping: last_seen
-  // still advances (it looks fine), but the transport is limping. Surfacing it is the
-  // whole point — this state hid for a month until it decayed into hard outages.
-  if (!node.is_local && node.sync_fails >= UNSTABLE_SYNC_FAILS) {
-    return (
-      <Badge color="orange" size="xs">
-        {i18n.t("nodes.unstable")}
-      </Badge>
-    );
-  }
-  return null; // up and serving → the green dot already says so
+  return null;
 }
 
 // UNSTABLE_SYNC_FAILS is how many dropped syncs in the last hour a node reports before
@@ -642,7 +657,13 @@ function AddNodeDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={t("nodes.addNode")} size="lg" dismissible={!installing}>
+    <Modal
+      open
+      onClose={onClose}
+      title={t("nodes.addNode")}
+      size="lg"
+      dismissible={!installing}
+    >
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
@@ -817,7 +838,13 @@ function ReconnectDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={t("nodes.reinstallOf", { name: node.name })} size="lg" dismissible={!running}>
+    <Modal
+      open
+      onClose={onClose}
+      title={t("nodes.reinstallOf", { name: node.name })}
+      size="lg"
+      dismissible={!running}
+    >
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
@@ -1167,20 +1194,28 @@ function NodeSettingsDialog({
   };
 
   return (
-    <Modal open onClose={onClose} title={t("nodes.settingsOf", { name: node.name })} size="xl">
-      <DialogTabs
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: "general", label: t("settings.tabGeneral") },
-          { value: "connections", label: t("nodes.tabConnections") },
-          { value: "inbounds", label: t("nodes.tabInbounds") },
-          { value: "routing", label: t("nodes.tabRouting") },
-          { value: "dns", label: "DNS" },
-          { value: "geo", label: "Geo" },
-          { value: "domain", label: t("restore.domain") },
-        ]}
-      />
+    <Modal
+      open
+      onClose={onClose}
+      title={t("nodes.settingsOf", { name: node.name })}
+      size="xl"
+      subtitle={node.host}
+      toolbar={
+        <DialogTabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: "general", label: t("settings.tabGeneral") },
+            { value: "connections", label: t("nodes.tabConnections") },
+            { value: "inbounds", label: t("nodes.tabInbounds") },
+            { value: "routing", label: t("nodes.tabRouting") },
+            { value: "dns", label: "DNS" },
+            { value: "geo", label: "Geo" },
+            { value: "domain", label: t("restore.domain") },
+          ]}
+        />
+      }
+    >
 
       {tab === "general" && (
         <div className="flex flex-col gap-4">
@@ -1498,11 +1533,13 @@ function MasterSettingsDialog({
     });
 
   return (
-    <Modal open onClose={onClose} title={t("nodes.masterSettings")} size="xl">
-      {!loaded ? (
-        <CenterLoader />
-      ) : (
-        <>
+    <Modal
+      open
+      onClose={onClose}
+      title={t("nodes.masterSettings")}
+      size="xl"
+      toolbar={
+        loaded ? (
           <DialogTabs
             value={tab}
             onChange={setTab}
@@ -1518,6 +1555,13 @@ function MasterSettingsDialog({
               { value: "snapshots", label: t("nodes.tabSnapshots") },
             ]}
           />
+        ) : undefined
+      }
+    >
+      {!loaded ? (
+        <CenterLoader />
+      ) : (
+        <>
 
           {tab === "general" && (
             <div className="flex flex-col gap-4">
@@ -1654,16 +1698,25 @@ function MasterSettingsDialog({
 }
 
 // NodeCard renders one node with its status, traffic, protocol toggles and decoy.
+// agentStale is "this node runs an older build of the agent than the panel". Not the
+// same question as NodeView.version_skew, which is about the Xray build the panel
+// pins — a node can be current on one and behind on the other.
+function agentStale(node: NodeView, panelVersion: string): boolean {
+  return !node.is_local && !!node.node_version && !!panelVersion && node.node_version !== panelVersion;
+}
+
 function NodeCard({
   node,
   decoys,
   geo,
+  panelVersion,
   onChanged,
   onRegen,
 }: {
   node: NodeView;
   decoys: string[];
   geo: GeoCategories;
+  panelVersion: string;
   onChanged: () => void;
   onRegen: (command: string) => void;
 }) {
@@ -1718,7 +1771,8 @@ function NodeCard({
       <p className="text-sm leading-relaxed text-ink-muted">
         {t("nodes.deleteBody", { name: node.name })}
       </p>
-      <StepUpFields value={removeCreds} onChange={setRemoveCreds} />
+      {/* withCode: deleting a node goes through verifyStepUpTOTP on the server. */}
+      <StepUpFields value={removeCreds} onChange={setRemoveCreds} withCode />
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="light" color="gray" onClick={closeRemove}>
           {t("common.cancel")}
@@ -1776,58 +1830,64 @@ function NodeCard({
     }
   };
 
+  const state = nodeState(node);
+  const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
+  const traffic = node.traffic_up + node.traffic_down;
+  // The line under the address: whether we are hearing from it, and what it runs.
+  // The master answers for itself, so it has no "last seen" to report.
+  const version = node.is_local ? panelVersion : node.node_version;
+  // The line under the address: how the server is, and when we last heard it say so.
+  // The master answers for itself — there is no "last seen" for the machine you are
+  // talking to, and its Xray version is a click away in the config it serves.
+  const sublineTail = node.is_local ? "" : fmtSeen(node.last_seen);
+
   return (
-    <div className={cn("px-4 py-3.5", !node.enabled && !node.is_local && "opacity-55")}>
+    <section
+      className={cn(
+        "rounded-xl border border-brand-600/10 bg-white",
+        !node.enabled && !node.is_local && "opacity-55",
+      )}
+    >
       {confirmNode}
       {removeModal}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDot(node))} />
-            <span className="truncate font-semibold text-ink">{serverName(node)}</span>
-            {/* Address before the chip: the two identify the server and belong
-                together, and a chip wedged between them pushed the address around
-                every time the state changed. */}
-            <span className="truncate font-mono text-sm text-ink-muted">{node.host}</span>
-            <StatusChip node={node} />
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
-            <span>{t("nodes.todayTraffic", { value: fmtBytes(node.traffic_up + node.traffic_down) })}</span>
-            {!node.is_local && (
-              <>
-                <Sep />
-                <span>{fmtSeen(node.last_seen)}</span>
-              </>
-            )}
-            <Sep />
-            <span className={node.version_skew ? "text-amber-600" : undefined}>
-              Xray {node.xray_version || "—"}
-              {node.version_skew ? " ⚠" : ""}
-            </span>
-            {!node.is_local && (
-              <>
-                <Sep />
-                <span>{t("nodes.agentVersion", { version: node.node_version || "—" })}</span>
-              </>
-            )}
-          </div>
-        </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-1">
-          {!node.is_local && <Switch checked={node.enabled} onChange={toggleEnabled} />}
-          {/* Four per-server actions, as icons: spelled out they crowded the row and
-              pushed the server's own name off a narrow screen. */}
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-brand-600/10 px-3.5 py-2.5">
+        <span className={cn("size-2 shrink-0 rounded-full", state.dot)} />
+        <span className="shrink truncate text-sm font-semibold text-ink">{serverName(node)}</span>
+        {node.is_local && !!node.master_label?.trim() && (
+          <Badge size="xs" color="brand" className="shrink-0">
+            {t("nodes.master")}
+          </Badge>
+        )}
+        {/* What this server runs, plainly: the number, not the word "agent" in front
+            of it. The master answers with the panel's own version — it IS the panel. */}
+        {!!version && (
+          <Badge size="xs" color="gray" className="shrink-0">
+            <span className="font-mono">{version}</span>
+          </Badge>
+        )}
+        <RestartChip node={node} />
+        {agentStale(node, panelVersion) && (
+          <Badge size="xs" color="orange" className="shrink-0 max-sm:hidden">
+            {t("nodes.agentOutdated")}
+          </Badge>
+        )}
+
+        {/* Six actions, as icons. Spelled out they crowded the row and pushed the
+            server's own name off a narrow screen; the words live on as the
+            accessible name and the hover title. */}
+        <span className="ml-auto flex shrink-0 items-center gap-0.5">
           <IconButton title={t("nav.settings")} onClick={() => setEditingRouting(true)}>
-            <IconGear size={18} />
+            <IconGear size={16} />
           </IconButton>
           <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
-            <IconPulse size={18} />
+            <IconPulse size={16} />
           </IconButton>
           <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
-            <IconBraces size={18} />
+            <IconBraces size={16} />
           </IconButton>
           <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
-            <IconTerminal size={18} />
+            <IconTerminal size={16} />
           </IconButton>
           <IconButton
             title={
@@ -1835,7 +1895,6 @@ function NodeCard({
                 ? t("nodes.restartQueuedHint")
                 : t("nodes.restartXray")
             }
-            color="red"
             disabled={
               restarting ||
               node.xray_restart === "pending" ||
@@ -1844,7 +1903,7 @@ function NodeCard({
             onClick={doXrayRestart}
           >
             <IconRestart
-              size={18}
+              size={16}
               className={node.xray_restart === "pending" ? "animate-spin" : undefined}
             />
           </IconButton>
@@ -1855,12 +1914,18 @@ function NodeCard({
               trigger={
                 <span
                   title={t("nodes.manageNode")}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 active:scale-90"
+                  className="inline-flex size-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 active:scale-90"
                 >
-                  <IconDots size={18} />
+                  <IconDots size={16} />
                 </span>
               }
             >
+              {/* The access switch lives here rather than in the header: a toggle
+                  among five icon buttons is a mis-click waiting to happen, and this
+                  one takes a server out of every subscription. */}
+              <DropdownItem onClick={() => toggleEnabled(!node.enabled)}>
+                {t(node.enabled ? "usersPanel.disable" : "usersPanel.enable")}
+              </DropdownItem>
               <DropdownItem onClick={doUpdate}>
                 {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
               </DropdownItem>
@@ -1876,8 +1941,65 @@ function NodeCard({
               </DropdownItem>
             </Dropdown>
           )}
+        </span>
+      </header>
+
+      {/* On a phone this is three stacked lines — who and what it carried, how it is,
+          then the load bars full width. On a wider screen the same three parts sit in
+          one row; `lg:contents` dissolves the mobile pairing so ordering can put the
+          traffic back on the right. */}
+      <div className="p-3.5 lg:flex lg:flex-wrap lg:items-center lg:gap-x-5">
+        <div className="flex items-start justify-between gap-3 lg:contents">
+          <span className="flex min-w-0 flex-col gap-0.5 lg:order-1 lg:min-w-45">
+            <Mono className="truncate text-xs text-gray-800">{node.host || "—"}</Mono>
+            <span className="truncate text-xs text-ink-muted">
+              <span
+                title={
+                  !node.is_local && node.sync_fails > 0
+                    ? t("nodes.syncFailsHint", { count: node.sync_fails })
+                    : undefined
+                }
+                className={cn(
+                  state.tone === "success" && "text-success",
+                  state.tone === "warning" && "text-warning",
+                  state.tone === "danger" && "text-danger",
+                )}
+              >
+                {state.label}
+              </span>
+              {sublineTail && ` · ${sublineTail}`}
+            </span>
+          </span>
+
+          <span className="flex shrink-0 flex-col items-end lg:order-3 lg:ml-auto">
+            <Mono className="text-sm text-ink">{fmtBytes(traffic)}</Mono>
+            <span className="text-[11px] text-ink-muted">{t("nodes.trafficToday")}</span>
+          </span>
         </div>
+
+        {/* A server that has never reported says so, rather than showing three empty
+            bars — which read as an idle machine. */}
+        {node.has_host_stats ? (
+          <div className="mt-2.5 flex min-w-0 flex-col gap-1.5 lg:order-2 lg:mt-0 lg:flex-row lg:items-center lg:gap-5">
+            <MiniBar label="CPU" percent={node.cpu_percent} className="w-full lg:w-37" />
+            <MiniBar
+              label="RAM"
+              percent={pct(node.mem_used, node.mem_total)}
+              className="w-full lg:w-37"
+            />
+            <MiniBar
+              label={t("overview.disk")}
+              percent={pct(node.disk_used, node.disk_total)}
+              className="w-full lg:w-37"
+            />
+          </div>
+        ) : (
+          <span className="mt-2 block text-xs text-ink-muted lg:order-2 lg:mt-0">
+            {t("overview.noStats")}
+          </span>
+        )}
       </div>
+
       {reconnecting && (
         <ReconnectDialog
           node={node}
@@ -1934,7 +2056,7 @@ function NodeCard({
           onClose={() => setShowingConfig(false)}
         />
       )}
-    </div>
+    </section>
   );
 }
 
@@ -2048,6 +2170,7 @@ export function NodesPanel() {
   const [geo, setGeo] = useState<GeoCategories>({ geosite: [], geoip: [], iplist: [] });
   const [adding, setAdding] = useState(false);
   const [installCmd, setInstallCmd] = useState<string | null>(null);
+  const [panelVersion, setPanelVersion] = useState("");
 
   const load = () =>
     listNodes()
@@ -2058,6 +2181,9 @@ export function NodesPanel() {
     load();
     getSettings()
       .then((s) => setDecoys(s.decoy_templates || []))
+      .catch(() => {});
+    getMe()
+      .then((m) => setPanelVersion(m.version || ""))
       .catch(() => {});
     getGeoCategories()
       .then((g) =>
@@ -2085,7 +2211,7 @@ export function NodesPanel() {
   if (nodes === null) return <CenterLoader />;
 
   const remoteCount = nodes.filter((n) => !n.is_local).length;
-  const anyStale = nodes.some((n) => !n.is_local && n.version_skew && n.online);
+  const anyStale = nodes.some((n) => n.online && agentStale(n, panelVersion));
 
   const updateAll = async () => {
     try {
@@ -2097,33 +2223,50 @@ export function NodesPanel() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-ink">{t("nav.servers")}</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {remoteCount > 0 && (
-            <Button variant="light" color="gray" onClick={updateAll}>
-              {t("nodes.updateAll")}{anyStale ? " ⚠" : ""}
-            </Button>
-          )}
-          <Button onClick={() => setAdding(true)}>{t("nodes.addNode")}</Button>
-        </div>
+    <div className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => setAdding(true)}>
+          {t("nodes.addNode")}
+        </Button>
+        {remoteCount > 0 && (
+          <Button size="sm" variant="outline" color="gray" onClick={updateAll}>
+            {t("nodes.updateAll")}{anyStale ? " ⚠" : ""}
+          </Button>
+        )}
       </div>
 
-      <Card className="divide-y divide-gray-100">
-        {nodes.map((n) => (
-          <NodeCard
-            key={n.id}
-            node={n}
-            decoys={decoys}
-            geo={geo}
-            onChanged={load}
-            onRegen={setInstallCmd}
-          />
-        ))}
-      </Card>
+      {anyStale && (
+        <p className="accent-tint rounded-lg px-3 py-2 text-xs text-accent">
+          {t("nodes.someAgentsOutdated")}
+        </p>
+      )}
+
+      {/* A vertical list of sections, one per server — not a grid of cards. A fleet is
+          read top to bottom, and a row that wraps to a second column is a row an
+          operator scrolls past. */}
+      {nodes.map((n) => (
+        <NodeCard
+          key={n.id}
+          node={n}
+          decoys={decoys}
+          geo={geo}
+          panelVersion={panelVersion}
+          onChanged={load}
+          onRegen={setInstallCmd}
+        />
+      ))}
+
+      {/* One server is not a fleet: say what the page is for instead of leaving the
+          master alone under a heading about servers. */}
+      {remoteCount === 0 && (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-brand-600/10 bg-white px-4 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">{t("nodes.onlyThisServer")}</p>
+          <p className="max-w-md text-xs text-ink-muted">{t("nodes.onlyThisServerHint")}</p>
+          <Button size="sm" className="mt-2" onClick={() => setAdding(true)}>
+            {t("nodes.addNode")}
+          </Button>
+        </div>
+      )}
 
       <ExternalServers />
 

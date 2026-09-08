@@ -168,7 +168,7 @@ export function BrandingSettings() {
       title={t("settings.tabBranding")}
       description={t("brand.description")}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3.5">
         <TextInput
           label={t("brand.panelName")}
           placeholder={brand.default_name}

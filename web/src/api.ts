@@ -677,6 +677,10 @@ export interface Admin {
   must_change_password: boolean
   created_at: number
   last_login_at: number
+  // Whether this admin has a confirmed authenticator. The secret never leaves the
+  // server (model.Admin.TOTPEnabled) — only the flag does, so the roster can show
+  // who is protected.
+  totp_enabled: boolean
 }
 
 export interface AdminList {
@@ -1841,7 +1845,9 @@ export interface Webhook {
   id: number
   url: string
   secret: string
-  events: string[]
+  // null when the hook is subscribed to everything: the server marshals an empty
+  // list as null, and reading .length off it is what used to blank the API tab.
+  events: string[] | null
   enabled: boolean
   created_at: number
   last_status: number

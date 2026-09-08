@@ -1,5 +1,5 @@
 // Tailwind UI primitives — a small in-house component kit replacing Mantine.
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
@@ -73,6 +73,19 @@ export const IconCards = ({ size = 16, className }: IconProps) =>
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </>,
   );
+// Borrowed from Lucide ("plus"): the panel's own set has no add glyph, and the design
+// system says to take the nearest Lucide one rather than draw a new shape.
+export const IconSearch = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>,
+  );
+export const IconPlus = ({ size = 16, className }: IconProps) =>
+  svg(size, className, <path d="M12 5v14M5 12h14" />);
 export const IconCheck = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M20 6 9 17l-5-5" />);
 export const IconPencil = ({ size = 16, className }: IconProps) =>
@@ -126,6 +139,17 @@ export const IconTrash = ({ size = 16, className }: IconProps) =>
       <path d="M10 11v6M14 11v6" />
     </>,
   );
+// Borrowed from Lucide (key-round, ISC): a password is a key, and the roster needs
+// it small enough to sit next to the shield and the bin.
+export const IconKey = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z" />
+      <path d="M16.5 7.5h.01" />
+    </>,
+  );
 export const IconHeart = ({ size = 20, className }: IconProps) =>
   svg(
     size,
@@ -169,6 +193,40 @@ export const IconEyeOff = ({ size = 18, className }: IconProps) =>
 // Server-card actions: settings, diagnostics, config, logs, restart. Icons instead
 // of labels — a card carries five of them per server, and spelled out they crowded
 // the server's own name off the row.
+// Borrowed from Lucide (users, server), for the phone's tab bar: a dot per tab is
+// not enough to tell four destinations apart at a glance.
+// Borrowed from Lucide (log-out): ending sessions somewhere other than here.
+export const IconLogout = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </>,
+  );
+export const IconUsers = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>,
+  );
+export const IconServer = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <rect x="2" y="3" width="20" height="8" rx="2" />
+      <rect x="2" y="13" width="20" height="8" rx="2" />
+      <path d="M6 7h.01M6 17h.01" />
+    </>,
+  );
 export const IconGear = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -313,8 +371,8 @@ const BTN: Record<Variant, Record<Color, string>> = {
   },
 };
 const SIZE: Record<Size, string> = {
-  xs: "text-xs px-2.5 py-1.5",
-  sm: "text-sm px-3 py-1.5",
+  xs: "text-xs px-2.5 py-1",
+  sm: "text-[13px] px-3 py-1.5",
   md: "text-sm px-4 py-2",
 };
 
@@ -327,6 +385,7 @@ export function Button({
   fullWidth,
   disabled,
   className,
+  title,
   href,
   target,
   onClick,
@@ -340,6 +399,9 @@ export function Button({
   fullWidth?: boolean;
   disabled?: boolean;
   className?: string;
+  // A short label sometimes needs the long explanation behind it, without a second
+  // line of text on the button.
+  title?: string;
   href?: string;
   target?: string;
   onClick?: () => void;
@@ -355,7 +417,7 @@ export function Button({
   );
   if (href) {
     return (
-      <a className={cls} href={href} target={target} rel="noreferrer">
+      <a className={cls} href={href} target={target} title={title} rel="noreferrer">
         {children}
       </a>
     );
@@ -365,6 +427,7 @@ export function Button({
       className={cls}
       disabled={disabled || loading}
       onClick={onClick}
+      title={title}
       type={type}
     >
       {loading && <Spinner />}
@@ -388,17 +451,15 @@ export function ShowMore({
 }) {
   const { t } = useTranslation();
   if (rest <= 0) return null;
+  // The class lands on a WRAPPER, not on the button: the button is full width, so a
+  // padding class on it would inflate the button itself and a margin would push it
+  // past the edge of the list it belongs to (which is exactly what it did).
   return (
-    <Button
-      variant="light"
-      color="gray"
-      size="sm"
-      fullWidth
-      className={className}
-      onClick={onClick}
-    >
-      {t("common.showMoreCount", { n: rest })}
-    </Button>
+    <div className={className}>
+      <Button variant="light" color="gray" size="sm" fullWidth onClick={onClick}>
+        {t("common.showMoreCount", { n: rest })}
+      </Button>
+    </div>
   );
 }
 
@@ -408,6 +469,7 @@ export function IconButton({
   href,
   target,
   color = "gray",
+  variant = "subtle",
   disabled,
   className,
   title,
@@ -420,13 +482,15 @@ export function IconButton({
   href?: string;
   target?: string;
   color?: Color;
+  // The primary action in a row of icons still has to read as the primary one.
+  variant?: Variant;
   disabled?: boolean;
   className?: string;
   title?: string;
 }) {
   const cls = cn(
     "inline-flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-90",
-    BTN.subtle[color],
+    BTN[variant][color],
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
     className,
   );
@@ -633,29 +697,40 @@ export function SettingCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("p-4", className)}>
+    <section
+      className={cn("rounded-xl border border-brand-600/10 bg-white p-3.5", className)}
+    >
       <div
         className={cn(
-          "mb-3 flex items-start justify-between gap-3",
+          "flex items-start justify-between gap-3",
+          children ? "mb-3" : "",
           stackAction && "flex-col sm:flex-row",
         )}
       >
-        <div className="min-w-0">
-          <h3 className="font-bold text-ink">{title}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-ink">{title}</h3>
           {description && (
-            <p className="mt-1 text-sm text-ink-muted">{description}</p>
+            <p className="mt-[3px] text-xs leading-relaxed text-ink-muted">
+              {description}
+            </p>
           )}
         </div>
         {action}
       </div>
       {children}
-    </Card>
+    </section>
   );
 }
 
 // SaveBar is the sticky bottom action bar shown while a page has unsaved edits.
 // Leaving the page (it unmounts) discards the in-memory changes, which the hint
 // makes explicit. Render it once per page; it returns null when not dirty.
+// It lives inside the settings content area, which owns the scroll and pads by 20px:
+// the negative margins take it edge to edge and -bottom-5 pins it to the padding
+// edge, so it lands flush on the section's bottom rule instead of 20px above it.
+// mt-auto is what puts it there on a SHORT tab: sticky can only stop an element
+// leaving the top of the scrollport, it cannot push one down a page that does not
+// scroll — without this the bar sat directly under the last card.
 export function SaveBar({
   dirty,
   busy,
@@ -672,41 +747,32 @@ export function SaveBar({
   const { t } = useTranslation();
   if (!dirty) return null;
   return (
-    <>
-      {/* The bar is fixed, so it sits ON TOP of whatever is at the bottom of the page.
-          On General Settings that is the secret-path card — the one control an operator
-          must not be unable to reach. A spacer rendered with the bar keeps every page
-          scrollable past it without each one remembering its own padding. */}
-      <div aria-hidden className="h-24" />
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+    <div className="sticky -bottom-5 z-30 mt-auto -mx-5 -mb-5 border-t border-brand-600/10 bg-gray-50/95 px-5 py-2.5 backdrop-blur">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">
+          <p className="text-xs font-semibold leading-tight text-ink sm:text-[13px]">
             {t("common.unsavedTitle")}
           </p>
-          <p className="text-xs text-ink-muted">{t("common.unsavedHint")}</p>
+          {/* The bar eats the screen on a phone if it explains itself there too. */}
+          <p className="hidden text-xs text-ink-muted sm:block">
+            {t("common.unsavedHint")}
+          </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button
-            variant="light"
-            color="gray"
-            onClick={onCancel}
-            className="flex-1 sm:flex-none"
-          >
+          <Button size="sm" variant="light" color="gray" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
           <Button
+            size="sm"
             loading={busy}
             disabled={saveDisabled}
             onClick={onSave}
-            className="flex-1 sm:flex-none"
           >
             {t("common.save")}
           </Button>
         </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -715,14 +781,14 @@ function Field({ label, children }: { label?: string; children: ReactNode }) {
   if (!label) return <>{children}</>;
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-ink">{label}</span>
       {children}
     </label>
   );
 }
 
 const inputCls =
-  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-ink outline-none " +
+  "w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-[13px] text-ink outline-none " +
   "placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 
 export function TextInput({
@@ -890,7 +956,7 @@ function AnchoredPopover({
 }
 
 const triggerCls =
-  'flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-ink ' +
+  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-[13px] text-ink ' +
   'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
 
 export function Select({
@@ -1178,18 +1244,46 @@ function parseYmd(s: string): Date | null {
 
 // DatePicker holds a YYYY-MM-DD string (empty = unset) and renders a calendar
 // popover. `min` (YYYY-MM-DD) disables earlier days.
+// The calendar's own box. Fixed, because the popover has to be placed before it is
+// measured — and a month grid is the same size every time.
+const CALENDAR_W = 260
+const CALENDAR_H = 320
+
+// popoverLeft keeps a fixed-width popover on screen: anchored to its trigger, but
+// pulled back from the right edge when the trigger sits there (a calendar opened by
+// a field at the right of a page used to hang half outside the window).
+function popoverLeft(rect: DOMRect, width: number, gutter = 8): number {
+  const max = window.innerWidth - width - gutter
+  return Math.max(gutter, Math.min(rect.left, max))
+}
+
+// popoverTop flips the panel above its trigger when there is no room under it.
+function popoverTop(rect: DOMRect, height: number, gutter = 8): number {
+  const below = rect.bottom + 4
+  if (below + height + gutter <= window.innerHeight) return below
+  return Math.max(gutter, rect.top - height - 4)
+}
+
 export function DatePicker({
   label,
   value,
   onChange,
   min,
   placeholder,
+  disabled,
+  clearable,
 }: {
   label?: string
   value: string
   onChange: (v: string) => void
   min?: string
   placeholder?: string
+  // A disabled picker still shows its date: it says "this is decided elsewhere",
+  // which is the point when a tariff owns the dates.
+  disabled?: boolean
+  // A filter has to be removable: with this the calendar icon becomes a clear
+  // button once a date is chosen.
+  clearable?: boolean
 }) {
   const { t } = useTranslation()
   placeholder = placeholder ?? t('common.never')
@@ -1213,7 +1307,7 @@ export function DatePicker({
   const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate()
   for (let d = 1; d <= days; d++) cells.push(new Date(view.getFullYear(), view.getMonth(), d))
 
-  const disabled = (d: Date) => {
+  const beforeMin = (d: Date) => {
     if (!minDate) return false
     const a = new Date(d.getFullYear(), d.getMonth(), d.getDate())
     const b = new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate())
@@ -1225,18 +1319,40 @@ export function DatePicker({
       <button
         ref={ref}
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={triggerCls}
+        className={cn(triggerCls, disabled && 'cursor-not-allowed opacity-60')}
       >
         <span className={cn('truncate', !display && 'text-gray-400')}>{display || placeholder}</span>
-        <IconCalendar className="shrink-0 text-gray-400" />
+        {clearable && display && !disabled ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            aria-label={t('common.clear')}
+            title={t('common.clear')}
+            className="shrink-0 rounded p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-ink"
+            onClick={(e) => {
+              e.stopPropagation()
+              onChange('')
+            }}
+          >
+            <IconClose size={14} />
+          </span>
+        ) : (
+          <IconCalendar className="shrink-0 text-gray-400" />
+        )}
       </button>
       {open && (
         <AnchoredPopover anchor={ref.current} onClose={() => setOpen(false)}>
           {(rect) => (
             <div
-              className="animate-scale-in origin-top rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: 260 }}
+              className="animate-scale-in rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+              style={{
+                position: 'fixed',
+                left: popoverLeft(rect, CALENDAR_W),
+                top: popoverTop(rect, CALENDAR_H),
+                width: CALENDAR_W,
+              }}
             >
               <div className="mb-2 flex items-center justify-between">
                 <button
@@ -1270,7 +1386,7 @@ export function DatePicker({
                     <button
                       key={i}
                       type="button"
-                      disabled={disabled(d)}
+                      disabled={beforeMin(d)}
                       onClick={() => {
                         onChange(ymd(d))
                         setOpen(false)
@@ -1321,6 +1437,7 @@ export function CustomizableSelect({
   units,
   max,
   onChange,
+  disabled,
 }: {
   label: string;
   data: { value: string; label: string }[];
@@ -1335,6 +1452,7 @@ export function CustomizableSelect({
   // would refuse.
   max?: number;
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation()
   const [custom, setCustom] = useState(false)
@@ -1363,6 +1481,7 @@ export function CustomizableSelect({
       <Select
         label={label}
         data={options}
+        disabled={disabled}
         value={custom ? "__custom" : value}
         onChange={(v) => {
           if (v === "__custom") setCustom(true)
@@ -1372,7 +1491,7 @@ export function CustomizableSelect({
           }
         }}
       />
-      {custom && (
+      {custom && !disabled && (
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1">
             <TextInput
@@ -1422,14 +1541,14 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition disabled:opacity-50",
         checked ? "bg-brand-600" : "bg-gray-300",
       )}
     >
       <span
         className={cn(
-          "inline-block h-5 w-5 transform rounded-full bg-onaccent shadow transition",
-          checked ? "translate-x-5" : "translate-x-0.5",
+          "inline-block h-4 w-4 transform rounded-full bg-onaccent shadow transition",
+          checked ? "translate-x-[18px]" : "translate-x-0.5",
         )}
       />
     </button>
@@ -1438,24 +1557,31 @@ export function Switch({
 
 // ToggleRow is a labelled switch row: label (+ optional hint) on the left, a
 // Switch on the right — the shared form for an on/off setting.
+// ToggleRow is a setting card's sub-item: what it does, what it costs, and its own
+// switch. Rows divide themselves with a rule rather than floating apart on a gap —
+// the first one in a card has nothing above it to divide from.
 export function ToggleRow({
   label,
   hint,
   checked,
   onChange,
+  disabled,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-sm font-medium text-ink">{label}</p>
-        {hint && <p className="text-xs text-ink-muted">{hint}</p>}
+    <div className="flex items-start justify-between gap-3 border-t border-gray-100 py-2.5 first:border-t-0 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-ink">{label}</p>
+        {hint && (
+          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">{hint}</p>
+        )}
       </div>
-      <Switch checked={checked} onChange={onChange} />
+      <Switch checked={checked} onChange={onChange} disabled={disabled} />
     </div>
   );
 }
@@ -1477,7 +1603,10 @@ export function Checkbox({
   return (
     <label
       className={cn(
-        "flex cursor-pointer select-none items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
+        // relative: the sr-only input inside is absolutely positioned, and without an
+        // anchor here the browser scrolls the page to wherever it lands when it takes
+        // focus on a click.
+        "relative flex cursor-pointer select-none items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
         checked
           ? "border-accent accent-tint"
           : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
@@ -1558,6 +1687,216 @@ export function Divider({ label }: { label?: string }) {
   );
 }
 
+/* -------------------------------------------------------------- breakpoint */
+// Grid tracks are inline styles (a shared template is the only way a header and its
+// rows cannot drift apart), and an inline style carries no media query — so the few
+// components whose columns change with width ask for the answer instead of guessing
+// it. They ask about their own box, not the window: with the 224px sidebar showing,
+// a 700px window leaves a list barely 430px, and a viewport breakpoint would call
+// that wide.
+
+// useWideBox returns a ref to put on the container and whether that container is at
+// least `min` CSS pixels wide. A callback ref rather than an effect over a ref
+// object: the box it measures usually mounts only once the list has loaded, long
+// after an effect would have looked for it and found nothing.
+export function useWideBox(min: number) {
+  // Infinity until measured: a table renders wide on the first paint and narrows
+  // once the observer reports, rather than flashing its phone layout on a desktop.
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY);
+  const obs = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    obs.current?.disconnect();
+    obs.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    obs.current = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    obs.current.observe(el);
+  }, []);
+  useEffect(() => () => obs.current?.disconnect(), []);
+  // The width comes back too, for a table with more than one step to it.
+  return [ref, width >= min, width] as const;
+}
+
+/* ------------------------------------------------------------------- panel */
+// MICRO is the console's micro-heading: column headers, KPI captions, mini-bar
+// labels. One constant so the 11px / uppercase / 0.06em triple is spelled once, and
+// so "is this a heading or a value" is answered by a name rather than by three
+// numbers at the call site.
+export const MICRO =
+  "text-[11px] font-medium uppercase tracking-[0.06em] text-ink-muted";
+
+// EmptyState is the one shape an empty list takes: what is not here, why, and the
+// way out when there is one. Two cases must not share words — "nothing created yet"
+// and "the filter matched nothing" need different answers — so the caller passes both
+// lines rather than the component guessing.
+export function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-4 py-16 text-center">
+      <p className="text-sm font-semibold text-ink">{title}</p>
+      {body && <p className="max-w-md text-xs text-ink-muted">{body}</p>}
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
+
+// loadColor is the panel's one opinion about how loaded is too loaded: under 70% is
+// healthy, 70–90% is worth noticing, over 90% needs doing something about. Every
+// bar, dial and figure that reports load reads it from here, so a CPU number on the
+// dashboard and the same number on the server card can never disagree.
+export function loadColor(percent: number): string {
+  return percent < 70 ? "bg-success" : percent < 90 ? "bg-warning" : "bg-danger";
+}
+
+// Panel is the surface a console screen is built from: a hairline, radius 12, no
+// shadow — panels are told apart by their fill and their border, and elevation is
+// kept for things that float over the page. `title` draws the header row and
+// `aside` is the note or figure at its right end; `pad` gives the body the standard
+// inset, which rows and tables do not want because they pad themselves.
+export function Panel({
+  title,
+  aside,
+  pad,
+  children,
+  className,
+  bodyClassName,
+}: {
+  title?: ReactNode;
+  aside?: ReactNode;
+  pad?: boolean;
+  children?: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 flex-col rounded-xl border border-brand-600/10 bg-white",
+        className,
+      )}
+    >
+      {/* The header row wraps rather than truncates: a section's note ("за последние
+          30 дней") is a sentence, and half of one is worse than a second line. */}
+      {(title || aside) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-brand-600/10 px-3.5 py-[11px]">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+            {title}
+          </h3>
+          {aside}
+        </div>
+      )}
+      <div className={cn("min-w-0", pad && "p-3.5", bodyClassName)}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+// Tone is how a figure reads at a glance, independent of what produced it.
+export type Tone = "default" | "success" | "warning" | "danger";
+
+const TONE: Record<Tone, string> = {
+  default: "text-ink",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+
+// KpiTile is one figure on a dashboard's top row: what it counts, the number, and
+// one line of context under it. The number is mono because these sit in a row and
+// are read as a column of digits; `note` keeps its height when empty so a tile
+// without context does not stand shorter than its neighbours.
+export function KpiTile({
+  label,
+  value,
+  note,
+  tone = "default",
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  note?: ReactNode;
+  tone?: Tone;
+}) {
+  return (
+    <div className="rounded-xl border border-brand-600/10 bg-white p-3.5">
+      <p className={MICRO}>{label}</p>
+      <p
+        className={cn(
+          "mt-1.5 font-mono text-2xl leading-8 font-semibold tracking-[-0.02em]",
+          TONE[tone],
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 min-h-3.5 text-[11px] leading-3.5 text-ink-muted">
+        {note}
+      </p>
+    </div>
+  );
+}
+
+// MiniBar is one load figure inside a dense row: a short label, a 4px bar and the
+// percentage. The compact form of a dial — a row has space for a hint, not for a
+// gauge — and it uses the same thresholds, so the two never tell different stories.
+export function MiniBar({
+  label,
+  percent,
+  className,
+}: {
+  // Omitted inside a table whose column already names the resource — repeating it in
+  // every row is the heading printed once per line.
+  label?: string;
+  percent: number;
+  className?: string;
+}) {
+  const p = Math.max(0, Math.min(100, percent || 0));
+  return (
+    <span className={cn("flex items-center gap-1", className)}>
+      {label && <span className={cn(MICRO, "w-9 shrink-0 truncate")}>{label}</span>}
+      {/* The figure leads: it is what gets read, and the bar behind it is the shape of
+          that figure rather than a thing to be measured on its own. */}
+      <span className="w-[30px] shrink-0 text-right font-mono text-[11px] text-ink-muted">
+        {Math.round(p)}%
+      </span>
+      <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+        <span
+          className={cn("block h-full rounded-full", loadColor(p))}
+          style={{ width: `${p}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------- mono */
+// Mono wraps a value that has to be read digit by digit and line up under the one
+// above it: numbers, ids, hosts, IPs, timestamps, traffic, versions. A component
+// rather than a class repeated at every call site, so "what is mono" stays one
+// decision and can be answered by grepping for one name.
+export function Mono({
+  children,
+  className,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  // A compact value often needs to say in full what it is ("Local time", the
+  // untruncated host); the tooltip is part of the value, not of its layout.
+  title?: string;
+}) {
+  return (
+    <span title={title} className={cn("font-mono", className)}>
+      {children}
+    </span>
+  );
+}
+
 /* -------------------------------------------------------------------- code */
 export function Code({
   children,
@@ -1572,8 +1911,8 @@ export function Code({
 }) {
   const { copied, copy: doCopy } = useCopy();
   const base =
-    "rounded-md bg-gray-100 font-mono text-xs text-ink " +
-    (block ? "block whitespace-pre-wrap break-all p-3" : "px-1.5 py-0.5");
+    "rounded-md bg-gray-100 font-mono text-[11px] text-ink " +
+    (block ? "block whitespace-pre-wrap break-all p-2.5" : "px-1.5 py-0.5");
   if (copy && block) {
     return (
       <div className="relative">
@@ -1598,6 +1937,7 @@ export function SegmentedControl({
   value,
   onChange,
   fullWidth,
+  size = "md",
 }: {
   // label may be an icon. When it is, pass title too: an icon-only button has no
   // accessible name of its own, and a screen reader would announce nothing at all.
@@ -1605,11 +1945,15 @@ export function SegmentedControl({
   value: string;
   onChange: (v: string) => void;
   fullWidth?: boolean;
+  // "xs" is the one that rides in a section's header band, where it must not make
+  // the band taller than the 14px title beside it.
+  size?: "md" | "xs";
 }) {
+  const xs = size === "xs";
   return (
     <div
       className={cn(
-        "inline-flex rounded-xl bg-gray-100 p-1",
+        "inline-flex rounded-lg bg-gray-100 p-0.5",
         fullWidth && "flex w-full",
       )}
     >
@@ -1622,7 +1966,10 @@ export function SegmentedControl({
           aria-label={o.title}
           aria-pressed={value === o.value}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+            "font-semibold transition",
+            xs
+              ? "rounded-md px-2.5 py-0.5 text-[11px]"
+              : "rounded-md px-3 py-1 text-[13px]",
             fullWidth && "flex-1",
             value === o.value
               ? "bg-brand-600 text-onaccent shadow-sm"
@@ -1672,43 +2019,77 @@ function useEscape(onClose?: () => void, active = true) {
   }, [onClose, active]);
 }
 
+// A dialog's width is its own; its height follows the content. The one exception is
+// a dialog with a TAB STRIP: switching tabs must not resize the frame under the
+// pointer, so those get a floor by size. Anything else can still ask for one with
+// minBodyHeight.
+const MODAL_SIZES = {
+  md: { w: "max-w-lg", body: 200 },
+  lg: { w: "max-w-2xl", body: 320 },
+  xl: { w: "max-w-3xl", body: 420 },
+} as const;
+
 export function Modal({
   open,
   onClose,
   title,
+  subtitle,
+  toolbar,
+  footer,
   children,
   dismissible = true,
   size = "md",
+  minBodyHeight,
 }: {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
+  // The line under the title: which step this is, what it will act on, what it
+  // cannot undo. Never a second sentence of the title.
+  subtitle?: ReactNode;
+  // A band pinned under the header — a tab strip, a filter row. Scrolls with
+  // nothing; the body scrolls under it.
+  toolbar?: ReactNode;
+  // Pinned buttons. Passing them here rather than at the end of the body is what
+  // keeps them reachable while the body scrolls.
+  footer?: ReactNode;
   children: ReactNode;
   // When false the modal can't be dismissed (no X, no backdrop click, no Esc) —
   // used for blocking states like "panel restarting".
   dismissible?: boolean;
   size?: "md" | "lg" | "xl";
+  // A floor for the body, in pixels. Only worth setting when the frame resizing
+  // under the reader would be worse than the empty space it costs.
+  minBodyHeight?: number;
 }) {
   useLockBody(open);
   useEscape(onClose, open && dismissible);
   if (!open) return null;
-  const maxW =
-    size === "xl" ? "max-w-3xl" : size === "lg" ? "max-w-2xl" : "max-w-lg";
+  const sz = MODAL_SIZES[size];
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={dismissible ? onClose : undefined}
       />
+      {/* 92dvh on a phone, 86dvh above it: a dialog may fill a small screen, but on
+          a desktop it has to read as a dialog rather than as a second page. */}
       <div
         className={cn(
-          "relative z-10 flex max-h-[90vh] w-full animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl",
-          maxW,
+          "relative z-10 flex max-h-[92dvh] w-full animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl sm:max-h-[86dvh]",
+          sz.w,
         )}
       >
         {title && (
-          <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-5 py-4">
-            <div className="min-w-0 flex-1 text-lg font-bold text-ink">{title}</div>
+          <div className="flex min-w-0 shrink-0 items-start justify-between gap-2 border-b border-gray-100 px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-lg font-bold text-ink">{title}</div>
+              {subtitle && (
+                <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">
+                  {subtitle}
+                </div>
+              )}
+            </div>
             {dismissible && (
               <button
                 onClick={onClose}
@@ -1719,7 +2100,20 @@ export function Modal({
             )}
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+        {toolbar && (
+          <div className="shrink-0 border-b border-gray-100 px-5">{toolbar}</div>
+        )}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto p-5"
+          style={{ minHeight: minBodyHeight ?? (toolbar ? sz.body : undefined) }}
+        >
+          {children}
+        </div>
+        {footer && (
+          <div className="shrink-0 border-t border-gray-100 px-5 py-3.5">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,
@@ -1801,12 +2195,12 @@ export function Drawer({
           side === "right"
             ? "right-0 animate-slide-in-right"
             : "left-0 animate-slide-in-left",
-          full ? "w-full" : "w-full max-w-lg",
+          full ? "w-full" : "w-full max-w-[520px]",
           // Rounded inner edge on desktop only (on mobile the drawer is full-width).
           !full && (side === "right" ? "sm:rounded-l-2xl" : "sm:rounded-r-2xl"),
         )}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-brand-600/10 px-3.5 py-[11px]">
           <div className="min-w-0 font-bold text-ink">{title}</div>
           <button
             onClick={onClose}
@@ -1830,11 +2224,16 @@ export function Dropdown({
   children,
   align = "end",
   width = 200,
+  up,
 }: {
   trigger: ReactNode;
   children: ReactNode;
   align?: "start" | "end";
   width?: number;
+  // up opens the menu above the trigger. The account chip lives in the footer of
+  // the sidebar, where a menu dropping down has nowhere to go — the shell owns
+  // the viewport height and clips it.
+  up?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1862,10 +2261,16 @@ export function Dropdown({
           className={cn(
             // border-gray-300 (not -100) + shadow-xl so the menu reads as a distinct
             // panel even when it overlays a same-coloured card surface on a dark theme.
-            "absolute z-50 mt-2 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
-            align === "end"
-              ? "right-0 origin-top-right"
-              : "left-0 origin-top-left",
+            "absolute z-50 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
+            up ? "bottom-full mb-2" : "mt-2",
+            align === "end" ? "right-0" : "left-0",
+            up
+              ? align === "end"
+                ? "origin-bottom-right"
+                : "origin-bottom-left"
+              : align === "end"
+                ? "origin-top-right"
+                : "origin-top-left",
           )}
         >
           <DropCtx.Provider value={{ close: () => setOpen(false) }}>

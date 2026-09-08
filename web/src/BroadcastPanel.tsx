@@ -21,10 +21,14 @@ import {
   Badge,
   Button,
   CenterLoader,
+  cn,
+  EmptyState,
   IconButton,
   IconClose,
+  MICRO,
+  Mono,
+  Panel,
   Select,
-  SettingCard,
   ShowMore,
   TextInput,
   useConfirm,
@@ -43,6 +47,14 @@ const audiences = (): { value: string; label: string; days?: boolean }[] => [
   { value: "unseen", label: i18n.t("bc.audUnseen"), days: true },
   { value: "never", label: i18n.t("bc.audNever") },
 ];
+
+// audienceLabel turns a stored audience ("seen:7") back into words for the history,
+// where the run is over and the picker that produced it is long reset.
+function audienceLabel(a: string): string {
+  const [kind, days] = a.split(":");
+  const base = audiences().find((x) => x.value === kind)?.label ?? kind;
+  return days ? `${base} ${i18n.t("bc.days", { count: Number(days) })}` : base;
+}
 
 const dayChoices = () =>
   [1, 3, 7, 14, 30, 90].map((d) => ({
@@ -206,24 +218,30 @@ export function BroadcastPanel() {
   if (!loaded) return <CenterLoader />;
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
+    <div className="flex flex-col gap-3.5">
       {confirmNode}
-      <SettingCard
+      {/* The composer as bands, not as a stack of labelled form fields: who it goes
+          to, what it says, what rides along, and the two ways to send it. */}
+      <Panel
         title={t("bc.title")}
-        description={t("bc.description")}
+        aside={
+          <span className="min-w-0 text-xs text-ink-muted">
+            {t("bc.description")}
+          </span>
+        }
       >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-[16rem] flex-1">
+        <div className="flex flex-col">
+          <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3.5 py-3">
+            <span className={cn(MICRO, "w-full sm:w-16")}>{t("bc.to")}</span>
+            <div className="min-w-0 flex-1 sm:max-w-80">
               <Select
-                label={t("bc.to")}
                 data={audiences().map((a) => ({ value: a.value, label: a.label }))}
                 value={audienceKind}
                 onChange={setAudienceKind}
               />
             </div>
             {needsDays && (
-              <div className="w-40">
+              <div className="w-36">
                 <Select
                   data={dayChoices()}
                   value={audienceDays}
@@ -231,29 +249,38 @@ export function BroadcastPanel() {
                 />
               </div>
             )}
+            {/* The count the operator is really deciding on. A sentence, not a
+                figure, so it takes the line under the picker rather than a chip. */}
+            <p className="w-full text-[11px] text-ink-muted">
+              {reach === null ? t("bc.counting") : t("bc.reachNow", { count: reach })}
+            </p>
           </div>
-          <p className="text-xs text-ink-muted">
-            {reach === null
-              ? t("bc.counting")
-              : t("bc.reachNow", { count: reach })}
-          </p>
 
-          <HtmlEditor
-            label={t("bc.text")}
-            value={text}
-            onChange={setText}
-            rows={5}
-            placeholder={t("bc.textPlaceholder")}
-          />
-          <p
-            className={`text-xs ${overLimit ? "text-red-600" : "text-ink-muted"}`}
-          >
-            {[...text].length} / {limit}
-            {media && ` — ${t("bc.captionNote")}`}
-          </p>
+          <div className="flex flex-col gap-1.5 border-t border-gray-100 px-3.5 py-3">
+            <HtmlEditor
+              value={text}
+              onChange={setText}
+              rows={4}
+              placeholder={t("bc.textPlaceholder")}
+            />
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-[11px] text-ink-muted">
+                {t("bc.markupHint")}
+                {media && ` · ${t("bc.captionNote")}`}
+              </span>
+              <Mono
+                className={cn(
+                  "text-[11px]",
+                  overLimit ? "text-danger" : "text-ink-muted",
+                )}
+              >
+                {[...text].length} / {limit}
+              </Mono>
+            </div>
+          </div>
 
-          <div>
-            <p className="mb-1 text-sm font-medium text-ink">{t("bc.attachment")}</p>
+          <div className="border-t border-gray-100 px-3.5 py-3">
+            <p className={cn(MICRO, "mb-1.5")}>{t("bc.attachment")}</p>
             {/* The native file input renders its own browser-locale label, which
                 reads as a rendering fault next to styled controls.
                 Hidden, driven by a button that says what it does. */}
@@ -279,13 +306,13 @@ export function BroadcastPanel() {
                 {t("bc.pickFile")}
               </Button>
             )}
-            <p className="mt-1 text-xs text-ink-muted">
+            <p className="mt-1 text-[11px] text-ink-muted">
               {t("bc.attachmentHint")}
             </p>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-ink">{t("bc.buttons")}</p>
+          <div className="flex flex-col gap-2 border-t border-gray-100 px-3.5 py-3">
+            <p className={MICRO}>{t("bc.buttons")}</p>
             {buttons.map((b, i) => (
               <div key={i} className="flex items-end gap-2">
                 <div className="flex-1">
@@ -325,7 +352,7 @@ export function BroadcastPanel() {
             {buttons.length < BUTTONS_MAX && (
               <div>
                 <Button
-                  variant="subtle"
+                  variant="light"
                   size="sm"
                   onClick={() =>
                     setButtons((cur) => [...cur, { text: "", url: "" }])
@@ -337,37 +364,41 @@ export function BroadcastPanel() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button loading={busy} onClick={send} disabled={!canSend}>
+          {/* The section's own footer: the two ways to send, and what the test one
+              does, on the panel's bottom edge. */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-brand-600/10 bg-gray-50/95 px-3.5 py-2.5">
+            <Button size="sm" loading={busy} onClick={send} disabled={!canSend}>
               {t("bc.startBroadcast")}
             </Button>
             <Button
-              variant="light"
+              size="sm"
+              variant="outline"
+              color="gray"
               loading={testing}
               onClick={sendTest}
               disabled={!canSend}
             >
               {t("bc.sendTest")}
             </Button>
+            <span className="min-w-0 text-[11px] text-ink-muted">
+              {t("bc.testHint")}
+            </span>
           </div>
-          <p className="text-xs text-ink-muted">
-            {t("bc.testHint")}
-          </p>
         </div>
-      </SettingCard>
+      </Panel>
 
-      <SettingCard title={t("bc.history")}>
+      <Panel title={t("bc.history")}>
         {list.length === 0 ? (
-          <p className="text-sm text-ink-muted">{t("bc.historyEmpty")}</p>
+          <EmptyState title={t("bc.historyEmpty")} />
         ) : (
-          <div className="flex flex-col gap-3">
+          <>
             {history.shown.map((b) => (
               <BroadcastRow key={b.id} b={b} onControl={control} />
             ))}
-            <ShowMore rest={history.rest} onClick={history.showMore} />
-          </div>
+            <ShowMore rest={history.rest} onClick={history.showMore} className="p-3.5" />
+          </>
         )}
-      </SettingCard>
+      </Panel>
     </div>
   );
 }
@@ -388,40 +419,50 @@ function BroadcastRow({
   const st = statusMeta(b.status);
 
   return (
-    <div className="rounded-lg border border-gray-200 p-3">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <Badge color={st.color}>{st.label}</Badge>
-        <span className="text-xs text-ink-muted">
+    <div className="flex flex-col gap-1.5 border-t border-gray-100 px-3.5 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Mono className="text-[11px] text-ink-muted">
           {fmtTime(b.started_at || b.created_at)}
-          {b.created_by && ` · ${b.created_by}`}
+        </Mono>
+        <Badge color={st.color} size="xs">
+          {st.label}
+        </Badge>
+        <span className="truncate text-[11px] text-ink-muted">
+          {audienceLabel(b.audience)}
         </span>
+        {b.created_by && (
+          <span className="truncate text-[11px] text-ink-muted">{b.created_by}</span>
+        )}
+        {b.media_name && (
+          <span className="truncate text-[11px] text-ink-muted">📎 {b.media_name}</span>
+        )}
       </div>
 
-      <p className="mb-2 line-clamp-2 text-sm text-ink">
+      <p className="line-clamp-2 text-xs text-ink">
         {b.text || <span className="text-ink-muted">{t("bc.noText")}</span>}
       </p>
-      {b.media_name && (
-        <p className="mb-2 text-xs text-ink-muted">📎 {b.media_name}</p>
-      )}
 
-      <div className="mb-1 h-2 w-full overflow-hidden rounded-full bg-gray-200">
-        <div
-          className="h-full rounded-full bg-accent transition-all"
-          style={{ width: `${pct}%` }}
-        />
+      <div className="flex items-center gap-2">
+        <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+          <span
+            className="block h-full rounded-full bg-brand-600 transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+        <Mono className="shrink-0 text-[11px] text-ink-muted">
+          {t("bc.progress", { done, total: b.total, sent: b.sent })}
+          {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
+          {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
+          {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}
+        </Mono>
       </div>
-      <p className="text-xs text-ink-muted">
-        {t("bc.progress", { done, total: b.total, sent: b.sent })}
-        {b.failed > 0 && ` · ${t("bc.failedN", { count: b.failed })}`}
-        {b.blocked > 0 && ` · ${t("bc.blockedN", { count: b.blocked })}`}
-        {b.skipped > 0 && ` · ${t("bc.skippedN", { count: b.skipped })}`}
-      </p>
 
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 empty:hidden">
         {b.status === "running" && (
           <Button
-            variant="subtle"
-            size="sm"
+            variant="outline"
+            color="gray"
+            size="xs"
             onClick={() => onControl(() => pauseBroadcast(b.id))}
           >
             {t("bc.pause")}
@@ -429,8 +470,9 @@ function BroadcastRow({
         )}
         {b.status === "paused" && (
           <Button
-            variant="subtle"
-            size="sm"
+            variant="outline"
+            color="gray"
+            size="xs"
             onClick={() => onControl(() => resumeBroadcast(b.id))}
           >
             {t("bc.resume")}
@@ -438,9 +480,9 @@ function BroadcastRow({
         )}
         {(b.status === "running" || b.status === "paused") && (
           <Button
-            variant="subtle"
+            variant="outline"
             color="red"
-            size="sm"
+            size="xs"
             onClick={() => onControl(() => cancelBroadcast(b.id))}
           >
             {t("bc.cancel")}
@@ -451,8 +493,9 @@ function BroadcastRow({
             operator just stopped — from a button labelled as a retry of a few. */}
         {b.failed > 0 && b.status === "done" && (
           <Button
-            variant="subtle"
-            size="sm"
+            variant="outline"
+            color="gray"
+            size="xs"
             onClick={() => onControl(() => retryBroadcast(b.id))}
           >
             {t("bc.retryFailed", { count: b.failed })}

@@ -8,19 +8,28 @@ import {
   type UserTotal,
 } from './api'
 import { fmtBytes, localDay, ranges } from './format'
-import { useAction } from './hooks'
+import { useAction, useShowMore } from './hooks'
 import { useIsAdmin } from './role'
-import { TrafficArea, TrafficDonut } from './charts'
+import { DayBars, ShareBar } from './charts'
 import { AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { BlockedList, ProbeList } from './SecurityLists'
-import { Button, Card, Skeleton, SegmentedControl, useConfirm } from './ui'
+import {
+  Button,
+  EmptyState,
+  Mono,
+  Panel,
+  SegmentedControl,
+  ShowMore,
+  Skeleton,
+  useConfirm,
+} from './ui'
 
-const PALETTE = [
-  '#2566f5', '#0d9488', '#9333ea', '#f97316', '#ef4444',
-  '#06b6d4', '#65a30d', '#ec4899', '#4f46e5', '#eab308',
-]
+// How many users the share list opens with. The rest are one click away: the tail of
+// a long install is a hundred accounts that used a megabyte each, and it answers
+// nothing about who is carrying the traffic.
+const SHARE_FIRST = 8
 
 export function StatsPanel() {
   const { t } = useTranslation()
@@ -31,6 +40,9 @@ export function StatsPanel() {
   const [loaded, setLoaded] = useState(false)
   const { busy, run } = useAction()
   const { confirm, confirmNode } = useConfirm()
+
+  const from = localDay(Number(range) - 1)
+  const to = localDay(0)
 
   const load = useCallback(() => {
     const to = localDay(0)
@@ -61,136 +73,110 @@ export function StatsPanel() {
     })
   }
 
-  const chartData = series.map((p) => ({ day: p.day.slice(5), up: p.up, down: p.down }))
-  const sumUp = totals.reduce((a, t) => a + t.up, 0)
-  const sumDown = totals.reduce((a, t) => a + t.down, 0)
-
-  const active = totals.filter((t) => t.up + t.down > 0)
-  const colorById: Record<number, string> = {}
-  active.forEach((t, i) => {
-    colorById[t.user_id] = PALETTE[i % PALETTE.length]
-  })
-  const pieData = active.map((t) => ({
-    name: t.name,
-    value: t.up + t.down,
-    color: colorById[t.user_id],
+  const today = localDay(0)
+  const days = series.map((p) => ({
+    day: p.day,
+    value: p.up + p.down,
+    today: p.day === today,
   }))
+  const sumDays = days.reduce((a, d) => a + d.value, 0)
 
-  if (!loaded) return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <Skeleton className="h-9 w-64 rounded-full" />
-        <Skeleton className="h-8 w-32 rounded-lg" />
-      </div>
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-4 w-36" />
-        </div>
-        <Skeleton className="h-48 w-full rounded-lg" />
-      </Card>
-      <Card className="p-4">
-        <Skeleton className="mb-3 h-5 w-24" />
-        <div className="flex items-center gap-6">
-          <Skeleton className="h-36 w-36 rounded-full" />
-          <div className="flex flex-col gap-2 flex-1">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Skeleton className="h-3 w-3 rounded-full" />
-                <Skeleton className="h-3 flex-1" />
-              </div>
+  // Sorted by what they spent, largest first — the list is read as a ranking, and the
+  // server returns it in whatever order the query produced.
+  const share = totals
+    .map((u) => ({ ...u, total: u.up + u.down }))
+    .filter((u) => u.total > 0)
+    .sort((a, b) => b.total - a.total)
+  const maxShare = share.length > 0 ? share[0].total : 0
+  const page = useShowMore(share, { first: SHARE_FIRST, step: SHARE_FIRST, resetKey: range })
+
+  if (!loaded)
+    return (
+      <div className="flex flex-col gap-3.5">
+        <Skeleton className="h-8 w-64 rounded-lg" />
+        <Panel title={t('stats.trafficByDay')} pad>
+          <Skeleton className="h-32 w-full rounded-lg" />
+        </Panel>
+        <Panel title={t('stats.shareByUser')} pad>
+          <div className="flex flex-col gap-2">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-4 w-full" />
             ))}
           </div>
-        </div>
-      </Card>
-    </div>
-  )
+        </Panel>
+      </div>
+    )
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl value={range} onChange={setRange} data={ranges()} />
         {/* Reading the numbers is the operator's job; wiping them is not. */}
         {isAdmin && (
-          <Button color="red" variant="light" loading={busy} onClick={doReset}>
+          <Button
+            size="sm"
+            color="red"
+            variant="subtle"
+            loading={busy}
+            onClick={doReset}
+          >
             {t('stats.reset')}
           </Button>
         )}
       </div>
 
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-bold">{t('stats.trafficByDay')}</h3>
-          <p className="text-sm text-ink-muted">
-            Σ ↓ {fmtBytes(sumDown)} · ↑ {fmtBytes(sumUp)}
-          </p>
-        </div>
-        {chartData.length === 0 ? (
-          <p className="py-10 text-center text-ink-muted">{t('stats.noDataForRange')}</p>
+      <Panel
+        title={t('stats.trafficByDay')}
+        aside={
+          sumDays > 0 && (
+            <Mono className="shrink-0 text-xs text-ink-muted">
+              {fmtBytes(sumDays)}
+            </Mono>
+          )
+        }
+        pad
+      >
+        {days.length === 0 || sumDays === 0 ? (
+          <EmptyState
+            title={t('stats.noDataForRange')}
+            body={t('stats.noDataForRangeHint')}
+          />
         ) : (
-          <>
-            <TrafficArea data={chartData} fmt={fmtBytes} />
-            <NodeTrafficSplit from={localDay(Number(range) - 1)} to={localDay(0)} />
-          </>
+          <DayBars data={days} fmt={fmtBytes} />
         )}
-      </Card>
+      </Panel>
 
-      <Card className="p-4">
-        <h3 className="mb-3 font-bold">{t('stats.shareByUser')}</h3>
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <div className="flex items-center justify-center">
-            {pieData.length > 0 ? (
-              <TrafficDonut data={pieData} fmt={fmtBytes} centerLabel={fmtBytes(sumUp + sumDown)} />
-            ) : (
-              <p className="py-10 text-ink-muted">{t('stats.noData')}</p>
-            )}
+      <Panel title={t('stats.shareByUser')} pad>
+        {share.length === 0 ? (
+          <EmptyState title={t('stats.noData')} />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {page.shown.map((u) => (
+              <ShareBar
+                key={u.user_id}
+                label={u.name}
+                percent={maxShare > 0 ? (u.total / maxShare) * 100 : 0}
+                value={fmtBytes(u.total)}
+                title={`${u.name} · ↓ ${fmtBytes(u.down)} · ↑ ${fmtBytes(u.up)}`}
+              />
+            ))}
+            <ShowMore rest={page.rest} onClick={page.showMore} className="mt-1" />
           </div>
-          <div className="max-h-80 overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b border-gray-200 text-left text-ink-muted">
-                  <th className="py-2 pr-2 font-medium">{t('stats.user')}</th>
-                  <th className="py-2 pr-2 font-medium">↓ {t('traffic.received')}</th>
-                  <th className="py-2 pr-2 font-medium">↑ {t('traffic.sent')}</th>
-                  <th className="py-2 font-medium">{t('stats.total')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {totals.map((t) => (
-                  <tr key={t.user_id} className="border-b border-gray-100">
-                    <td className="py-2 pr-2">
-                      <span
-                        className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
-                        style={{ background: colorById[t.user_id] || 'var(--color-gray-300)' }}
-                      />
-                      {t.name}
-                    </td>
-                    <td className="py-2 pr-2">{fmtBytes(t.down)}</td>
-                    <td className="py-2 pr-2">{fmtBytes(t.up)}</td>
-                    <td className="py-2">{fmtBytes(t.up + t.down)}</td>
-                  </tr>
-                ))}
-                {totals.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-4 text-center text-ink-muted">
-                      {t('stats.noData')}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </Card>
+        )}
+      </Panel>
 
-      <ConnectionCountries />
+      {/* Only ever rendered on a fleet: with one server the split repeats the total
+          above it, and the component says so by rendering nothing. */}
+      <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} />
 
-      <Card className="p-4">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
-          <h3 className="font-bold">{t('stats.blocklistMatches')}</h3>
-        </div>
-        <AbuseList limit={50} />
-      </Card>
+      {/* Two short reports, side by side where there is room: neither fills a row. */}
+      <div className="grid gap-3.5 lg:grid-cols-2">
+        <ConnectionCountries />
+
+        <Panel title={t('stats.blocklistMatches')}>
+          <AbuseList limit={50} />
+        </Panel>
+      </div>
 
       {/* What the security rules have caught. Both read admin-level endpoints, and
           each renders nothing when there is nothing to show. */}

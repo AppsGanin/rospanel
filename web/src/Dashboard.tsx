@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
@@ -13,24 +13,40 @@ import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import {
   cn,
-  Drawer,
   Dropdown,
   DropdownDivider,
   DropdownItem,
   DropdownLabel,
-  IconBurger,
   IconChevron,
-  IconGithub,
+  IconDots,
+  IconGear,
+  IconPulse,
+  IconServer,
+  IconShield,
+  IconUsers,
+  MICRO,
+  Mono,
+  Panel,
 } from "./ui";
 import { UsersPage } from "./UsersPage";
 
-// "admins" is a page without a nav tab: the roster is reached from the account menu
-// (it's about who runs the panel, not about how the VPN is configured), so it never
-// appears in NAV — only in the route.
-// Statistics and the journal aren't tabs either: they're sub-tabs of "users"
-// (see UsersPage), because both only ever describe end users.
+// Statistics and the journal aren't tabs: they're sub-tabs of "users" (see
+// UsersPage), because both only ever describe end users.
 type Tab = "overview" | "users" | "nodes" | "settings" | "admins";
 
+const SOURCE_URL = "https://github.com/AppsGanin/rospanel";
+
+// How many destinations the phone's bottom bar carries before the "More" tab. The
+// rest of the nav — and everything about the account — lives behind that tab, which
+// is why there is no burger and no side drawer on a phone any more.
+const BOTTOM_TABS = 3;
+
+// The console frame: a 224px sidebar, a 52px topbar and a content area that owns
+// the scroll. One breakpoint, at Tailwind's `sm` (640px): below it the sidebar
+// moves into a left drawer behind a burger, the first four destinations repeat as
+// a bottom bar, and the content padding drops from 20px to 12px. No screen inside
+// branches on width. Colours are the operator's five branding inputs throughout —
+// there is no second theme and nothing here names a colour literally.
 export function Dashboard({
   username,
   version,
@@ -54,7 +70,8 @@ export function Dashboard({
   const seg = useRoute();
   const isAdmin = useIsAdmin();
   const isOwner = useIsOwner();
-  const [menuOpen, setMenuOpen] = useState(false);
+  // The phone's "More" tab: the rest of the nav and the account, over the content.
+  const [moreOpen, setMoreOpen] = useState(false);
   const [credsOpen, setCredsOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   // Keep the payments-enabled flag fresh so the "Payments" item appears/vanishes
@@ -86,27 +103,31 @@ export function Dashboard({
     };
   }, []);
 
-  // An operator gets the tabs whose routes they can actually call: the dashboard and
-  // the users section (list, stats, journal). Settings and the payments desk are
-  // admin-and-up, so they're not rendered — and if an operator navigates to /settings
-  // by hand, `tab` falls back to the dashboard rather than showing a page whose every
-  // request would 403.
-  const NAV: { value: Tab; label: string }[] = [
-    { value: "overview", label: t("nav.overview") },
-    { value: "users", label: t("nav.users") },
-    ...(isAdmin ? [{ value: "nodes" as Tab, label: t("nav.servers") }] : []),
-    ...(isAdmin ? [{ value: "settings" as Tab, label: t("nav.settings") }] : []),
-  ];
-  // The roster isn't in NAV, so resolve it separately — and only for the owner, so
-  // hand-typing /admins as anyone else lands on the dashboard rather than on a page
+  // An operator gets the sections whose routes they can actually call: the dashboard
+  // and the users section (list, stats, journal). Settings and the servers page are
+  // admin-and-up, the roster is the owner's alone — and a section someone cannot use
+  // is not rendered at all rather than rendered disabled. If they navigate to
+  // /settings by hand, `tab` falls back to the dashboard rather than showing a page
   // whose every request would 403.
-  const onAdmins = seg[0] === "admins" && isOwner;
-  const tab: Tab = onAdmins
-    ? "admins"
-    : ((NAV.find((n) => n.value === seg[0])?.value ?? "overview") as Tab);
+  const NAV: { value: Tab; label: string; icon: ReactNode }[] = [
+    { value: "overview", label: t("nav.overview"), icon: <IconPulse size={18} /> },
+    { value: "users", label: t("nav.users"), icon: <IconUsers size={18} /> },
+    ...(isAdmin
+      ? [{ value: "nodes" as Tab, label: t("nav.servers"), icon: <IconServer size={18} /> }]
+      : []),
+    ...(isOwner
+      ? [{ value: "admins" as Tab, label: t("nav.admins"), icon: <IconShield size={18} /> }]
+      : []),
+    ...(isAdmin
+      ? [{ value: "settings" as Tab, label: t("nav.settings"), icon: <IconGear size={18} /> }]
+      : []),
+  ];
+  const tab: Tab = (NAV.find((n) => n.value === seg[0])?.value ??
+    "overview") as Tab;
+  const title = NAV.find((n) => n.value === tab)?.label ?? "";
 
   const doLogout = async () => {
-    setMenuOpen(false);
+    setMoreOpen(false);
     try {
       await logout();
     } finally {
@@ -116,195 +137,219 @@ export function Dashboard({
 
   const go = (t: Tab) => {
     navigate(t === "overview" ? "" : t);
-    setMenuOpen(false);
+    setMoreOpen(false);
   };
 
-  const goAdmins = () => {
-    navigate("admins");
-    setMenuOpen(false);
-  };
+  // Everything about the person signed in, in one list: the desktop dropdown and the
+  // phone's "More" sheet render the same entries rather than drifting apart.
+  const accountItems: { label: string; onClick: () => void; danger?: boolean }[] = [
+    { label: t("nav.credentials"), onClick: () => setCredsOpen(true) },
+    { label: t("nav.agreement"), onClick: onShowAgreement },
+    { label: t("nav.donate"), onClick: onShowDonate },
+    { label: t("nav.changelog"), onClick: () => setChangelogOpen(true) },
+    { label: t("nav.sourceOnGithub"), onClick: () => window.open(SOURCE_URL, "_blank") },
+    { label: t("nav.logout"), onClick: doLogout, danger: true },
+  ];
+
+  // The account menu: everything about the person signed in, plus the two document
+  // links and the source link that used to sit in a page footer the console frame
+  // no longer has.
+  const accountMenu = (
+    <>
+      <DropdownLabel>{username}</DropdownLabel>
+      <DropdownDivider />
+      <DropdownItem onClick={() => setCredsOpen(true)}>
+        {t("nav.credentials")}
+      </DropdownItem>
+      <DropdownDivider />
+      <DropdownLabel>{t("common.language")}</DropdownLabel>
+      <LangChoice />
+      <DropdownDivider />
+      <DropdownItem onClick={onShowAgreement}>{t("nav.agreement")}</DropdownItem>
+      <DropdownItem onClick={onShowDonate}>{t("nav.donate")}</DropdownItem>
+      <DropdownItem onClick={() => setChangelogOpen(true)}>
+        {t("nav.changelog")}
+      </DropdownItem>
+      <DropdownItem href={SOURCE_URL} target="_blank">
+        {t("nav.sourceOnGithub")}
+      </DropdownItem>
+      <DropdownDivider />
+      <DropdownItem color="red" onClick={doLogout}>
+        {t("nav.logout")}
+      </DropdownItem>
+    </>
+  );
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      {/* White sticky top bar. */}
-      <header className="sticky top-0 z-100 border-b border-brand-600/10 bg-white shadow-sm">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-3 sm:px-4">
-          {/* min-w-0 lets this box shrink so the row never overflows the viewport;
-              BrandLogo ellipses instead of spilling over the badge next to it. The
-              badge is decorative, so it's the first thing to go when space is tight —
-              below lg the nav needs every pixel, and hiding it keeps the panel name
-              whole instead of truncating it to make room. */}
-          <div className="flex min-w-0 gap-2 items-center">
-            <button
-              className="text-gray-600 md:hidden"
-              onClick={() => setMenuOpen(true)}
-              aria-label={t("common.menu")}
-            >
-              <IconBurger />
-            </button>
-            <BrandLogo size={26} />
-            {version && (
-              <span className="hidden shrink-0 whitespace-nowrap rounded-full self-start accent-tint px-2 py-0.5 text-xs font-medium text-ink-muted lg:inline">
-                v{version}
-              </span>
-            )}
-          </div>
-
-          {/* Desktop nav + account. min-w-0 is what lets the nav actually shrink —
-              a flex item's default min-width:auto floors it at its content width, so
-              overflow-x-auto on the nav would never engage without it. */}
-          <div className="hidden min-w-0 items-center gap-8 md:flex">
-            <nav className="no-scrollbar flex min-w-0 items-center gap-7 overflow-x-auto">
-              {NAV.map((n) => (
-                <button
-                  key={n.value}
-                  onClick={() => go(n.value)}
-                  className={cn(
-                    "whitespace-nowrap py-1 text-sm font-medium transition",
-                    tab === n.value
-                      ? " text-brand-800"
-                      : " text-accent hover:text-brand-800",
-                  )}
-                >
-                  {n.label}
-                </button>
-              ))}
-            </nav>
-
-            <Dropdown
-              trigger={
-                <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition hover:bg-gray-100">
-                  <span className="max-w-35 truncate text-sm font-medium text-ink-muted">
-                    {username}
-                  </span>
-                  <IconChevron className="text-gray-400" />
-                </span>
-              }
-            >
-              <DropdownLabel>{username}</DropdownLabel>
-              <DropdownDivider />
-              <DropdownItem onClick={() => setCredsOpen(true)}>
-                {t("nav.credentials")}
-              </DropdownItem>
-              <DropdownItem onClick={() => setChangelogOpen(true)}>
-                {t("nav.changelog")}
-              </DropdownItem>
-              {isOwner && (
-                <DropdownItem onClick={goAdmins}>{t("nav.admins")}</DropdownItem>
-              )}
-              <DropdownDivider />
-              <DropdownLabel>{t("common.language")}</DropdownLabel>
-              <LangChoice />
-              <DropdownDivider />
-              <DropdownItem color="red" onClick={doLogout}>
-                {t("nav.logout")}
-              </DropdownItem>
-            </Dropdown>
-          </div>
+    // The shell owns the viewport height so the content area — and only it —
+    // scrolls. body carries the safe-area insets (index.css), so they come off
+    // the available height here rather than being padded a second time.
+    <div className="flex h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-hidden">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-brand-600/6 bg-gray-50 sm:flex">
+        <div className="flex h-13 shrink-0 items-center gap-2.5 border-b border-brand-600/6 px-4">
+          <BrandLogo size={22} />
+          {version && (
+            <Mono className="ml-auto shrink-0 text-[11px] text-ink-muted">
+              {version}
+            </Mono>
+          )}
         </div>
-      </header>
 
-      {/* Mobile full-screen menu. */}
-      <Drawer
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        side="left"
-        full
-        title={<BrandLogo size={24} />}
-      >
-        <p className="mb-2 text-lg font-semibold text-ink">{username}</p>
-        <nav className="flex flex-col">
+        <nav className="flex flex-col gap-0.5 p-2 pt-3">
           {NAV.map((n) => (
-            <button
+            <NavItem
               key={n.value}
+              label={n.label}
+              active={tab === n.value}
               onClick={() => go(n.value)}
-              className={cn(
-                "py-2 text-left text-lg font-medium transition",
-                tab === n.value ? "text-brand-800" : "text-accent",
-              )}
-            >
-              {n.label}
-            </button>
-          ))}
-          {isOwner && (
-            <button
-              onClick={goAdmins}
-              className={cn(
-                "py-2 text-left text-lg font-medium transition",
-                onAdmins ? "text-brand-800" : "text-accent",
-              )}
-            >
-              {t("nav.admins")}
-            </button>
-          )}
-        </nav>
-        <hr className="my-4 border-gray-200" />
-        <button
-          onClick={() => {
-            setMenuOpen(false);
-            setChangelogOpen(true);
-          }}
-          className="py-2 text-left text-lg font-medium text-accent"
-        >
-          {t("nav.changelog")}
-        </button>
-        <hr className="my-4 border-gray-200" />
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-          {t("common.language")}
-        </p>
-        <LangPills />
-        <hr className="my-4 border-gray-200" />
-        <button
-          onClick={doLogout}
-          className="text-lg font-medium text-danger"
-        >
-          {t("nav.logout")}
-        </button>
-      </Drawer>
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-3 py-6 sm:px-4">
-        <div key={tab} className="animate-fade-in">
-          {tab === "overview" && <OverviewPanel />}
-          {tab === "users" && (
-            <UsersPage
-              userBotEnabled={userBot}
-              billingEnabled={billing}
             />
-          )}
-          {tab === "nodes" && <NodesPanel />}
-          {tab === "settings" && <SettingsPanel />}
-          {tab === "admins" && <AdminsSettings />}
-        </div>
-      </main>
+          ))}
+        </nav>
 
-      <footer className="mx-auto grid w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pb-8 pt-2 text-xs text-ink-muted sm:px-4">
-        {/* empty left cell balances the right-hand icon so the links stay centered */}
-        <span aria-hidden />
-        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center">
-          <button
-            onClick={onShowAgreement}
-            className="transition hover:text-accent"
+        {/* Only the account lives in the footer. The domain, the certificate and the
+            Xray version used to be chrome; they belong to the Overview and to the
+            server's Domain tab, where they can be acted on. */}
+        <div className="mt-auto border-t border-brand-600/6 p-3">
+          <Dropdown
+            up
+            align="start"
+            width={224}
+            trigger={
+              <span
+                title={t("nav.account")}
+                className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 transition hover:bg-gray-100"
+              >
+                <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-800">
+                  {username.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 truncate text-xs text-gray-800">
+                  {username}
+                </span>
+                <IconChevron className="ml-auto shrink-0 text-gray-400" />
+              </span>
+            }
           >
-            {t("nav.agreement")}
-          </button>
-          <button
-            onClick={onShowDonate}
-            className="transition hover:text-accent"
-          >
-            {t("nav.donate")}
-          </button>
+            {accountMenu}
+          </Dropdown>
         </div>
-        <a
-          href="https://github.com/AppsGanin/rospanel"
-          target="_blank"
-          rel="noreferrer"
-          aria-label="GitHub"
-          title={t("nav.sourceOnGithub")}
-          className="justify-self-end text-gray-400 transition hover:text-accent"
-        >
-          <IconGithub size={18} />
-        </a>
-      </footer>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-13 shrink-0 items-center gap-4 border-b border-brand-600/6 px-3 sm:px-5">
+          <h1 className="min-w-0 truncate text-base font-semibold text-ink">
+            {moreOpen ? t("nav.more") : title}
+          </h1>
+          <Clock />
+        </header>
+
+        {/* relative: the "More" sheet covers this area and nothing else — the header
+            above it and the tab bar below it stay where they are. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+        <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          {/* h-full, not min-h-full: a definite height is what lets a screen that
+              owns its scroll (users, settings) keep its header band and its save bar
+              in place while the middle scrolls. Screens taller than that overflow
+              visibly and main scrolls them as before. */}
+          <div key={tab} className="flex h-full flex-col animate-fade-in">
+            {tab === "overview" && <OverviewPanel />}
+            {tab === "users" && (
+              <UsersPage userBotEnabled={userBot} billingEnabled={billing} />
+            )}
+            {tab === "nodes" && <NodesPanel />}
+            {tab === "settings" && <SettingsPanel />}
+            {tab === "admins" && <AdminsSettings />}
+          </div>
+        </main>
+
+        {moreOpen && (
+          <div className="absolute inset-0 z-30 overflow-y-auto bg-gray-50 p-3 sm:hidden">
+            <div className="flex flex-col gap-3.5">
+              {/* Whatever did not fit in the bar: the rest of the destinations… */}
+              {NAV.length > BOTTOM_TABS && (
+                <Panel>
+                  {NAV.slice(BOTTOM_TABS).map((n) => (
+                    <button
+                      key={n.value}
+                      onClick={() => go(n.value)}
+                      className="flex w-full items-center gap-2.5 border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium text-ink first:border-t-0"
+                    >
+                      <span
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          tab === n.value ? "bg-brand-600" : "bg-gray-400",
+                        )}
+                      />
+                      {n.label}
+                    </button>
+                  ))}
+                </Panel>
+              )}
+
+              {/* …and everything about the account, which the desktop keeps in the
+                  sidebar footer. */}
+              <Panel title={username}>
+                {accountItems.map((it) => (
+                  <button
+                    key={it.label}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      it.onClick();
+                    }}
+                    className={cn(
+                      "flex w-full items-center border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium first:border-t-0",
+                      it.danger ? "text-danger" : "text-accent",
+                    )}
+                  >
+                    {it.label}
+                  </button>
+                ))}
+                <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-2.5">
+                  <span className={MICRO}>{t("common.language")}</span>
+                  <LangPills />
+                </div>
+              </Panel>
+            </div>
+          </div>
+        )}
+        </div>
+
+        {/* The three most-used destinations, repeated where a thumb reaches them.
+            Named rather than "the first four": the roster sits above Settings in the
+            sidebar, and a thumb reaching for Settings must not find it missing.
+            Rows are 44px tall: the whole strip is a touch target, not a dense one. */}
+        <nav className="relative z-40 flex shrink-0 border-t border-brand-600/6 bg-gray-50 px-1 py-1.5 sm:hidden">
+          {NAV.slice(0, BOTTOM_TABS).map((n) => {
+            const active = !moreOpen && tab === n.value;
+            return (
+              <button
+                key={n.value}
+                onClick={() => {
+                  setMoreOpen(false);
+                  go(n.value);
+                }}
+                className={cn(
+                  "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
+                  active ? "text-accent" : "text-ink-muted",
+                )}
+              >
+                {n.icon}
+                <span className="max-w-full truncate px-1">{n.label}</span>
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setMoreOpen((o) => !o)}
+            className={cn(
+              "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
+              moreOpen ? "text-accent" : "text-ink-muted",
+            )}
+          >
+            <IconDots size={18} />
+            <span className="max-w-full truncate px-1">{t("nav.more")}</span>
+          </button>
+        </nav>
+      </div>
+
 
       {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
       {credsOpen && (
@@ -315,5 +360,73 @@ export function Dashboard({
         />
       )}
     </div>
+  );
+}
+
+// A sidebar destination: a 6px state dot, the label, nothing else. The dot is what
+// carries "you are here" in the console theme, where the active row is a tint
+// rather than a border.
+function NavItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition",
+        active ? "accent-tint text-ink" : "text-ink-muted hover:bg-gray-100",
+      )}
+    >
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          active ? "bg-brand-600" : "bg-gray-400",
+        )}
+      />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+// Clock is the topbar's right edge: the reader's own wall time, ticking. Schedules,
+// expiry dates and backup windows are all read in this timezone, so the panel says
+// out loud which one it is showing them in.
+function Clock() {
+  const { t, i18n } = useTranslation();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    // Line the tick up with the next whole minute instead of drifting a second
+    // later on every render.
+    let timer: number;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        setNow(new Date());
+        schedule();
+      }, 60000 - (Date.now() % 60000));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const text = new Intl.DateTimeFormat(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(now);
+
+  return (
+    <Mono
+      title={t("common.localTime")}
+      className="ml-auto shrink-0 text-xs text-ink-muted"
+    >
+      {text}
+    </Mono>
   );
 }

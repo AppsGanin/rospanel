@@ -3,16 +3,38 @@ import i18n from './i18n'
 // The option tables below are functions, not constants: a constant would freeze
 // the labels in whichever language happened to be active when the module was first
 // imported, and switching language would leave every dropdown behind.
+// Units come from the dictionary, not from a constant: a Russian panel says
+// "412.6 ГБ", and a byte figure appears on nearly every screen, so leaving it in
+// English is the most visible way for the interface to be half-translated.
+// Every "when did this happen" figure in the panel reads the same way: numeric,
+// fixed width, in mono — 13.07.2026, 15:48. A month name ("12 июл. 2026 г.") is a
+// different width in every row and cannot be scanned down a column.
+export const STAMP_OPTS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+}
+
+// fmtStamp takes unix SECONDS; 0 means "never happened" and reads as a dash.
+export function fmtStamp(unix: number): string {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString(i18n.language, STAMP_OPTS)
+}
+
+const BYTE_UNITS = ['b', 'kb', 'mb', 'gb', 'tb'] as const
+
 export function fmtBytes(n: number): string {
-  if (!n) return '0 B'
-  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  const unit = (i: number) => i18n.t(`bytes.${BYTE_UNITS[i]}` as 'bytes.b')
+  if (!n) return `0 ${unit(0)}`
   let i = 0
   let v = n
-  while (v >= 1024 && i < u.length - 1) {
+  while (v >= 1024 && i < BYTE_UNITS.length - 1) {
     v /= 1024
     i++
   }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${unit(i)}`
 }
 
 const GB = 1024 * 1024 * 1024
@@ -92,16 +114,19 @@ export const ranges = () => [
   { value: '365', label: i18n.t('range.year') },
 ]
 
-// fmtDuration renders a span of seconds compactly: "1d 13h", "6h 4m", "12m".
+// fmtDuration renders a span of seconds compactly, in the reader's language:
+// "6 д 4 ч", "6 h 4 m", "12 м". Two units at most — this is read at a glance next to
+// a figure, not used to settle a stopwatch.
 export function fmtDuration(sec: number): string {
   if (sec <= 0) return '—'
+  const u = (k: 'd' | 'h' | 'm' | 's', n: number) => i18n.t(`dur.${k}` as 'dur.d', { n })
   const d = Math.floor(sec / 86400)
   const h = Math.floor((sec % 86400) / 3600)
   const m = Math.floor((sec % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m`
-  return `${Math.floor(sec)}s`
+  if (d > 0) return `${u('d', d)} ${u('h', h)}`
+  if (h > 0) return `${u('h', h)} ${u('m', m)}`
+  if (m > 0) return u('m', m)
+  return u('s', Math.floor(sec))
 }
 
 // localDay returns the calendar day (YYYY-MM-DD) in the browser's local time,

@@ -37,6 +37,12 @@
 
   --font-sans: Mulish, Arial, sans-serif, -apple-system;
 
+  /* Every number, id, host, IP, timestamp, traffic figure and version renders in
+     this face — a column of digits only lines up in one. IBM Plex Mono ships
+     Cyrillic, so "412.6 ГБ" stays in one family. */
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
   /* Custom enter animations (usable as animate-fade-in, animate-slide-in-right…). */
   --animate-fade-in: fade-in 0.18s ease-out both;
   --animate-fade-in-up: fade-in-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -189,6 +195,17 @@ body {
 @utility text-danger {
   color: var(--danger-fg, #b91c1c);
 }
+/* Solid status fills: the load bars and state dots. Same lightness-adjusted colour
+   as the text utilities above, so a bar and the figure beside it agree. */
+@utility bg-success {
+  background-color: var(--success-fg, #047857);
+}
+@utility bg-warning {
+  background-color: var(--warning-fg, #c2410c);
+}
+@utility bg-danger {
+  background-color: var(--danger-fg, #b91c1c);
+}
 .success-tint {
   background-color: color-mix(in srgb, #059669 16%, transparent);
 }
@@ -197,6 +214,11 @@ body {
 }
 .danger-tint {
   background-color: color-mix(in srgb, #dc2626 16%, transparent);
+}
+/* A whole row tinted to say "read this one". Far fainter than a chip: a chip is a
+   small block of colour, a row is a line of text that still has to read as text. */
+.warning-tint-weak {
+  background-color: color-mix(in srgb, #ea580c 10%, transparent);
 }
 .success-tint-hover:hover {
   background-color: color-mix(in srgb, #059669 16%, transparent);

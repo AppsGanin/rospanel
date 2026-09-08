@@ -28,13 +28,15 @@ import {
   Code,
   IconButton,
   IconClose,
+  Mono,
   PasswordInput,
   SaveBar,
   Select,
   SettingCard,
   Switch,
-  Textarea,
   TextInput,
+  Textarea,
+  ToggleRow,
 } from "./ui";
 
 // ADMIN_EVENTS are the admin-bot notification categories shown as toggles. Keys
@@ -464,7 +466,7 @@ export function TelegramSettings() {
       : "";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       {/* First on the page because it decides whether anything below it can work
           at all: on a server that cannot reach Telegram, all three bots go silent
           and the subscription page's "open in app" buttons die with them. */}
@@ -587,23 +589,22 @@ export function TelegramSettings() {
               {t("tg.linkedChats", { count: chats.length })}
             </p>
             {chats.length === 0 ? (
-              <p className="text-sm text-ink-muted">{t("tg.noneYet")}</p>
+              <p className="text-xs text-ink-muted">{t("tg.noneYet")}</p>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col">
                 {chats.map((id) => (
                   <div
                     key={id}
-                    className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2"
+                    className="flex items-center justify-between gap-3 border-t border-gray-100 py-1.5 first:border-t-0 first:pt-0"
                   >
-                    <span className="font-mono text-sm text-ink">{id}</span>
-                    <Button
-                      variant="subtle"
+                    <Mono className="truncate text-xs text-ink">{id}</Mono>
+                    <IconButton
                       color="red"
-                      size="sm"
+                      title={t("userDetail.unlink")}
                       onClick={() => unlink(id)}
                     >
-                      {t("userDetail.unlink")}
-                    </Button>
+                      <IconClose size={16} />
+                    </IconButton>
                   </div>
                 ))}
               </div>
@@ -616,26 +617,16 @@ export function TelegramSettings() {
         title={t("tg.adminNotifs")}
         description={t("tg.adminNotifsHint")}
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col">
           {ADMIN_EVENTS.map((e) => (
-            <div
+            <ToggleRow
               key={e.key}
-              className="flex items-center justify-between gap-3"
-            >
-              <div>
-                <p className="text-sm font-medium text-ink">{t(e.label as "tg.evExpired")}</p>
-                {e.desc && (
-                  <p className="text-xs text-ink-muted">{t(e.desc as "tg.evRegDesc")}</p>
-                )}
-              </div>
-              <Switch
-                checked={!!adminEvents[e.key]}
-                onChange={(v) =>
-                  setAdminEvents((cur) => ({ ...cur, [e.key]: v }))
-                }
-                disabled={!enabled}
-              />
-            </div>
+              label={t(e.label as "tg.evExpired")}
+              hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
+              checked={!!adminEvents[e.key]}
+              onChange={(v) => setAdminEvents((cur) => ({ ...cur, [e.key]: v }))}
+              disabled={!enabled}
+            />
           ))}
         </div>
       </SettingCard>
@@ -714,21 +705,15 @@ export function TelegramSettings() {
           )}
           {USER_EVENTS.map((e) => (
             <div key={e.key}>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-ink">{t(e.label as "tg.evExpired")}</p>
-                  {e.desc && <p className="text-xs text-ink-muted">{t(e.desc as "tg.evRegDesc")}</p>}
-                </div>
-                <Switch
-                  checked={!!userEvents[e.key]}
-                  onChange={(v) =>
-                    setUserEvents((cur) => ({ ...cur, [e.key]: v }))
-                  }
-                  disabled={!userEnabled}
-                />
-              </div>
+              <ToggleRow
+                label={t(e.label as "tg.evExpired")}
+                hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
+                checked={!!userEvents[e.key]}
+                onChange={(v) => setUserEvents((cur) => ({ ...cur, [e.key]: v }))}
+                disabled={!userEnabled}
+              />
               {e.key === "expiring" && userEvents.expiring && (
-                <div className="mt-2">
+                <div className="pb-2.5">
                   <Select
                     data={expiringDayOptions()}
                     value={expiringDays}

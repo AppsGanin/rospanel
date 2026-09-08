@@ -9,14 +9,15 @@ import {
   type Webhook,
   type WebhookEventDef,
 } from "./api";
-import i18n, { currentLang, slugKey, td } from "./i18n";
+import { fmtStamp } from "./format";
+import i18n, { slugKey, td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  Badge,
   Button,
-  Card,
-  Checkbox,
+  cn,
   IconCopy,
+  MICRO,
+  Mono,
   SettingCard,
   Switch,
   TextInput,
@@ -24,20 +25,17 @@ import {
   useCopy,
 } from "./ui";
 
-function fmtTs(unix: number): string {
-  if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
-// StatusBadge shows the outcome of the last delivery attempt.
-function StatusBadge({ hook }: { hook: Webhook }) {
-  if (!hook.last_attempt_at) return <Badge color="gray">{i18n.t("hooks.noDeliveries")}</Badge>;
-  if (hook.last_status >= 200 && hook.last_status < 300)
-    return <Badge color="green">{hook.last_status}</Badge>;
-  return <Badge color="red">{hook.last_status || i18n.t("hooks.failed")}</Badge>;
+// The outcome of the last attempt, as part of the line that already says when it
+// was — a badge beside the URL made a row of two headline elements out of one.
+function lastDelivery(hook: Webhook): { text: string; failed: boolean } {
+  if (!hook.last_attempt_at) return { text: i18n.t("hooks.noDeliveries"), failed: false };
+  const ok = hook.last_status >= 200 && hook.last_status < 300;
+  const parts = [
+    i18n.t("hooks.lastDelivery", { when: fmtStamp(hook.last_attempt_at) }),
+    String(hook.last_status || i18n.t("hooks.failed")),
+    hook.last_error || "",
+  ].filter(Boolean);
+  return { text: parts.join(" · "), failed: !ok };
 }
 
 // SecretField reveals + copies the signing secret (needed by the receiver to
@@ -47,13 +45,13 @@ function SecretField({ value }: { value: string }) {
   const { copied, copy } = useCopy();
   return (
     <div className="flex items-center gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-ink">
+      <code className="min-w-0 flex-1 truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-[11px] text-ink">
         {shown ? value : "•".repeat(24)}
       </code>
-      <Button size="sm" variant="light" color="gray" onClick={() => setShown((s) => !s)}>
+      <Button size="xs" variant="outline" color="gray" onClick={() => setShown((s) => !s)}>
         {i18n.t(shown ? "hooks.hide" : "hooks.show")}
       </Button>
-      <Button size="sm" variant="light" color="gray" onClick={() => copy(value)}>
+      <Button size="xs" variant="outline" color="gray" onClick={() => copy(value)}>
         <IconCopy size={14} /> {i18n.t(copied ? "hooks.ok" : "common.copy")}
       </Button>
     </div>
@@ -71,17 +69,33 @@ function EventPicker({
   selected: Set<string>;
   onToggle: (key: string) => void;
 }) {
+  // Chips, not a column of boxed checkboxes: nine events took half a screen each
+  // time, and what the operator does here is glance at which ones are lit.
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {catalog.map((e) => (
-        <Checkbox
-          key={e.key}
-          label={td(`webhookEvent.${slugKey(e.key)}`)}
-          hint={e.key}
-          checked={selected.has(e.key)}
-          onChange={() => onToggle(e.key)}
-        />
-      ))}
+    <div className="flex flex-wrap gap-1.5">
+      {catalog.map((e) => {
+        const on = selected.has(e.key);
+        return (
+          <label
+            key={e.key}
+            title={e.key}
+            className={cn(
+              "relative cursor-pointer select-none rounded-md border px-2 py-1 text-[11px] transition",
+              on
+                ? "accent-tint border-accent text-accent"
+                : "border-gray-300 text-ink-muted hover:border-gray-400",
+            )}
+          >
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={on}
+              onChange={() => onToggle(e.key)}
+            />
+            {td(`webhookEvent.${slugKey(e.key)}`)}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -98,14 +112,16 @@ function WebhookRow({
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
-  const [events, setEvents] = useState<Set<string>>(new Set(hook.events));
+  // null events = every event; the picker holds the explicit set either way.
+  const hookEvents = hook.events ?? [];
+  const [events, setEvents] = useState<Set<string>>(new Set(hookEvents));
   const [busy, setBusy] = useState(false);
   const [testResult, setTestResult] = useState<string>("");
   const { confirm, confirmNode } = useConfirm();
+  const delivery = lastDelivery(hook);
 
   const dirty =
-    events.size !== hook.events.length ||
-    hook.events.some((e) => !events.has(e));
+    events.size !== hookEvents.length || hookEvents.some((e) => !events.has(e));
 
   const toggle = (key: string) =>
     setEvents((prev) => {
@@ -176,16 +192,18 @@ function WebhookRow({
   };
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-2 rounded-lg border border-gray-200 p-2.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <code className="truncate font-mono text-sm text-ink">{hook.url}</code>
-            <StatusBadge hook={hook} />
-          </div>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            {t("hooks.lastDelivery", { when: fmtTs(hook.last_attempt_at) })}
-            {hook.last_error ? ` · ${hook.last_error}` : ""}
+          <Mono className="truncate text-xs text-ink">{hook.url}</Mono>
+          <p
+            className={cn(
+              "mt-0.5 truncate text-[11px]",
+              delivery.failed ? "text-danger" : "text-ink-muted",
+            )}
+            title={delivery.text}
+          >
+            {delivery.text}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -194,35 +212,31 @@ function WebhookRow({
       </div>
 
       <div>
-        <div className="mb-1 text-xs font-semibold text-ink-muted">
-          {t("hooks.signingSecret")}
-        </div>
+        <div className={cn(MICRO, "mb-1")}>{t("hooks.signingSecret")}</div>
         <SecretField value={hook.secret} />
       </div>
 
       <div>
-        <div className="mb-1.5 text-xs font-semibold text-ink-muted">
-          {t("hooks.eventsLabel")}
-        </div>
+        <div className={cn(MICRO, "mb-1.5")}>{t("hooks.eventsLabel")}</div>
         <EventPicker catalog={catalog} selected={events} onToggle={toggle} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         {dirty && (
-          <Button size="sm" onClick={saveEvents} loading={busy}>
+          <Button size="xs" onClick={saveEvents} loading={busy}>
             {t("hooks.saveEvents")}
           </Button>
         )}
-        <Button size="sm" variant="light" color="gray" onClick={runTest} loading={busy}>
+        <Button size="xs" variant="outline" color="gray" onClick={runTest} loading={busy}>
           {t("hooks.test")}
         </Button>
-        <Button size="sm" variant="light" color="red" onClick={remove}>
+        <Button size="xs" variant="outline" color="red" onClick={remove}>
           {t("common.delete")}
         </Button>
-        {testResult && <span className="text-xs text-ink-muted">{testResult}</span>}
+        {testResult && <span className="text-[11px] text-ink-muted">{testResult}</span>}
       </div>
       {confirmNode}
-    </Card>
+    </div>
   );
 }
 

@@ -12,17 +12,46 @@ import {
   type GroupTarget,
   type User,
 } from "./api";
+import { statusInfo } from "./format";
 import { useAction, useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Badge,
   Button,
   CenterLoader,
-  Checkbox,
+  cn,
+  EmptyState,
+  IconButton,
+  IconCheck,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  MICRO,
   Modal,
+  Mono,
+  Panel,
   ShowMore,
   TextInput,
+  useWideBox,
 } from "./ui";
+
+// One template for the header and every row; narrow, the row folds to name + actions
+// with the figures on a second line.
+// Every track is minmax(0,…): a bare `1fr` floors at the cell's min-content, so one
+// long name would widen that row's column and the rows would stop lining up. The
+// action track is a fixed width for the same reason — the header's is empty, and an
+// `auto` track would resolve to zero there and to two buttons in every row.
+const TPL = "minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) 76px";
+const TPL_NARROW = "minmax(0,1fr) auto";
+const WIDE_MIN = 520;
+
+// The dialog's draft: what is being edited before it is saved.
+interface Editing {
+  id: number;
+  name: string;
+  grants: Set<string>;
+  members: Set<number>;
+}
 
 const LANE_LABELS: Record<string, string> = {
   vless: "VLESS-Vision",
@@ -38,14 +67,11 @@ export function GroupsPanel() {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [targets, setTargets] = useState<GroupTarget[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
-  const [editing, setEditing] = useState<{
-    id: number;
-    name: string;
-    grants: Set<string>;
-    members: Set<number>;
-  } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [confirmDel, setConfirmDel] = useState<Group | null>(null);
   const { busy, run } = useAction();
+  const [boxRef, wide] = useWideBox(WIDE_MIN);
+  const [tab, setTab] = useState<"grants" | "members">("grants");
 
   const reload = () => listGroups().then(setGroups);
 
@@ -88,69 +114,102 @@ export function GroupsPanel() {
 
   if (!groups || !targets) return <CenterLoader />;
 
+
+  // Icon, not words: it is the one action of the section header, and it reads the
+  // same as "add a user" two tabs over. The title carries the label.
+  const openEditor = (e: Editing) => {
+    setTab("grants");
+    setEditing(e);
+  };
+
+  const createBtn = (
+    <IconButton
+      variant="filled"
+      color="brand"
+      title={t("groups.create")}
+      onClick={() =>
+        openEditor({ id: 0, name: "", grants: new Set(), members: new Set() })
+      }
+    >
+      <IconPlus />
+    </IconButton>
+  );
+
   return (
-    <div className="flex flex-col gap-3">
-      {/* White, not the gray-50 tint used elsewhere: this tab renders straight onto the
-          page background, where that tint has nothing to sit against and the blocks
-          read as empty space. The tinted variant belongs inside a card or a modal. */}
-      <div className="rounded-xl border border-gray-200/80 bg-white p-4">
-        <h3 className="mb-1 font-bold text-ink">{t("groups.title")}</h3>
-        <p className="text-sm text-ink-muted">{t("groups.description")}</p>
-      </div>
-
-      {groups.length === 0 && (
-        <p className="px-1 text-sm text-ink-muted">
-          {t("groups.empty")}
-        </p>
-      )}
-
-      <div className="flex flex-col gap-2">
-        {groups.map((g) => (
-          <div
-            key={g.id}
-            className="flex items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-white p-4"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="font-medium text-ink">{g.name}</span>
-              <Badge color="gray">
-                {t("groups.nConnections", { count: g.grants?.length ?? 0 })}
-              </Badge>
-              <Badge color="gray">
-                {t("groups.nMembers", { count: g.members })}
-              </Badge>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button
-                size="sm"
-                variant="light"
-                color="gray"
-                onClick={() =>
-                  setEditing({
-                    id: g.id,
-                    name: g.name,
-                    grants: new Set(g.grants ?? []),
-                    members: new Set(g.member_ids ?? []),
-                  })
-                }
+    <div className="flex flex-col gap-3.5">
+      <Panel title={t("groups.title")} aside={createBtn}>
+        {groups.length === 0 ? (
+          <EmptyState title={t("groups.empty")} />
+        ) : (
+          <div ref={boxRef}>
+            {wide && (
+              <div
+                className={cn(MICRO, "grid items-center gap-3 border-t border-brand-600/10 px-3.5 py-2")}
+                style={{ gridTemplateColumns: TPL }}
               >
-                {t("common.edit")}
-              </Button>
-              <Button size="sm" variant="light" color="red" onClick={() => setConfirmDel(g)}>
-                {t("common.delete")}
-              </Button>
-            </div>
+                <span className="truncate">{t("groups.colName")}</span>
+                <span className="truncate">{t("groups.colConnections")}</span>
+                <span className="truncate">{t("groups.colMembers")}</span>
+                <span />
+              </div>
+            )}
+            {groups.map((g) => {
+              const grants = g.grants ?? [];
+              return (
+                <div
+                  key={g.id}
+                  className="grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]"
+                  style={{ gridTemplateColumns: wide ? TPL : TPL_NARROW }}
+                >
+                  <span className="truncate text-[13px] font-medium text-ink" title={g.name}>
+                    {g.name}
+                  </span>
+                  {wide ? (
+                    <>
+                      <Mono className="text-xs text-ink-muted">{grants.length}</Mono>
+                      <Mono className="text-xs text-ink-muted">{g.members}</Mono>
+                    </>
+                  ) : (
+                    <span className="col-start-1 row-start-2 truncate text-[11px] text-ink-muted">
+                      {t("groups.nConnections", { count: grants.length })} ·{" "}
+                      {t("groups.nMembers", { count: g.members })}
+                    </span>
+                  )}
+                  {/* Icons, like the roster two tabs over: the row is read for its
+                      name, not for the two words repeated down every line. */}
+                  <span
+                    className={cn(
+                      "flex justify-end gap-0.5",
+                      !wide && "col-start-2 row-span-2 row-start-1",
+                    )}
+                  >
+                    <IconButton
+                      title={t("common.edit")}
+                      onClick={() =>
+                        openEditor({
+                          id: g.id,
+                          name: g.name,
+                          grants: new Set(g.grants ?? []),
+                          members: new Set(g.member_ids ?? []),
+                        })
+                      }
+                    >
+                      <IconPencil size={16} />
+                    </IconButton>
+                    <IconButton
+                      color="red"
+                      title={t("common.delete")}
+                      onClick={() => setConfirmDel(g)}
+                    >
+                      <IconTrash size={16} />
+                    </IconButton>
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
-
-      <div>
-        <Button
-          variant="light"
-          onClick={() => setEditing({ id: 0, name: "", grants: new Set(), members: new Set() })}
-        >
-          {t("groups.create")}
-        </Button>
-      </div>
+        )}
+      </Panel>
 
       <Modal
         open={!!editing}
@@ -159,71 +218,54 @@ export function GroupsPanel() {
         size="lg"
       >
         {editing && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3.5">
             <TextInput
               label={t("groups.name")}
               value={editing.name}
               onChange={(v) => setEditing({ ...editing, name: v })}
               placeholder={t("groups.namePlaceholder")}
             />
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-ink-muted">{t("groups.grantsIntro")}</p>
-                <Badge color={editing.grants.size > 0 ? "brand" : "gray"}>
-                  {t("groups.nConnections", { count: editing.grants.size })}
-                </Badge>
-              </div>
-              {/* The list grows with every server and every external subscription;
-                  it scrolls inside the dialog so the members and the buttons below
-                  stay in reach. */}
-              <div className="flex max-h-72 flex-col gap-3 overflow-y-auto pr-1">
-                {targets.map((srv) => (
-                  <div key={srv.server_id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
-                    <p className="mb-2 text-sm font-semibold text-ink">{srv.server_name}</p>
-                    <div className="flex flex-col gap-1.5">
-                      {srv.lanes.map((l) => (
-                        <GrantRow
-                          key={l.token}
-                          token={l.token}
-                          label={LANE_LABELS[l.lane] ?? l.label}
-                          off={!l.enabled}
-                          grants={editing.grants}
-                          onToggle={(g) => setEditing({ ...editing, grants: g })}
-                        />
-                      ))}
-                      {srv.inbounds.map((i) => (
-                        <GrantRow
-                          key={i.token}
-                          token={i.token}
-                          label={i.name}
-                          badge={t("groups.extraBadge")}
-                          off={!i.enabled}
-                          grants={editing.grants}
-                          onToggle={(g) => setEditing({ ...editing, grants: g })}
-                        />
-                      ))}
-                      {srv.external?.map((e) => (
-                        <GrantRow
-                          key={e.token}
-                          token={e.token}
-                          label={e.name}
-                          badge={t("groups.externalBadge")}
-                          off={!e.enabled}
-                          grants={editing.grants}
-                          onToggle={(g) => setEditing({ ...editing, grants: g })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+
+            {/* Two lists, one dialog: what the group hands out, and who is in it.
+                Tabs rather than one long scroll — the buttons at the bottom were
+                pushed out of reach by whichever list happened to be long. */}
+            <div className="-mx-5 flex gap-0.5 border-b border-brand-600/10 px-5">
+              {(
+                [
+                  ["grants", t("groups.tabGrants"), editing.grants.size],
+                  ["members", t("groups.tabMembers"), editing.members.size],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTab(value)}
+                  className={cn(
+                    "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold transition",
+                    tab === value
+                      ? "border-brand-600 text-ink"
+                      : "border-transparent text-ink-muted hover:text-ink",
+                  )}
+                >
+                  {label}
+                  <Mono className="text-[11px] text-ink-muted">{count}</Mono>
+                </button>
+              ))}
             </div>
 
-            <MembersPicker
-              users={users}
-              members={editing.members}
-              onChange={(m) => setEditing({ ...editing, members: m })}
-            />
+            {tab === "grants" ? (
+              <GrantsTable
+                targets={targets}
+                grants={editing.grants}
+                onChange={(g) => setEditing({ ...editing, grants: g })}
+              />
+            ) : (
+              <MembersTable
+                users={users}
+                members={editing.members}
+                onChange={(m) => setEditing({ ...editing, members: m })}
+              />
+            )}
 
             <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
               <Button variant="light" color="gray" onClick={() => setEditing(null)} disabled={busy}>
@@ -259,7 +301,175 @@ export function GroupsPanel() {
 // MembersPicker is the group-side membership editor: a searchable, checkable user
 // list. Membership is also editable per user (the user drawer); this is the same
 // relation seen from the group.
-function MembersPicker({
+// Both dialog tables share a shape: a checkbox column, the thing's name, and what
+// else is worth knowing about it. Dense rows with dividers, a micro header, and the
+// body scrolls inside the dialog so the save buttons stay in reach.
+const GRANT_TPL = "28px minmax(0,1.7fr) minmax(0,1fr) minmax(0,.7fr)";
+// How deep both dialog tables open, and how much a "show more" adds. The same 50 the
+// users list uses: enough to scan, short enough to render instantly on a big install.
+const PAGE = 50;
+const MEMBER_TPL = "28px minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr)";
+
+function CheckCell({
+  checked,
+  mixed,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  // Some but not all of what this box stands for — the header box over a partly
+  // selected list. It reads as a dash, and clicking it selects the rest.
+  mixed?: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  const on = checked || mixed;
+  return (
+    <label className="relative flex shrink-0 cursor-pointer items-center">
+      <input
+        type="checkbox"
+        className="sr-only"
+        checked={checked}
+        aria-label={label}
+        onChange={(e) => onChange(e.currentTarget.checked)}
+      />
+      <span
+        className={cn(
+          "flex size-4 items-center justify-center rounded-sm border transition",
+          on
+            ? "border-brand-600 bg-brand-600 text-onaccent"
+            : "border-gray-300 bg-white",
+        )}
+      >
+        {mixed ? (
+          <span className="h-0.5 w-2 rounded-full bg-current" />
+        ) : (
+          checked && <IconCheck size={12} />
+        )}
+      </span>
+    </label>
+  );
+}
+
+// GrantsTable is every connection the panel can hand out, one row each: which server
+// it belongs to and whether it is switched on there.
+function GrantsTable({
+  targets,
+  grants,
+  onChange,
+}: {
+  targets: GroupTarget[];
+  grants: Set<string>;
+  onChange: (g: Set<string>) => void;
+}) {
+  const { t } = useTranslation();
+  const rows = targets.flatMap((srv) => [
+    ...srv.lanes.map((l) => ({
+      token: l.token,
+      name: LANE_LABELS[l.lane] ?? l.label,
+      kind: "",
+      server: srv.server_name,
+      off: !l.enabled,
+    })),
+    ...srv.inbounds.map((i) => ({
+      token: i.token,
+      name: i.name,
+      kind: t("groups.extraBadge"),
+      server: srv.server_name,
+      off: !i.enabled,
+    })),
+    ...(srv.external ?? []).map((e) => ({
+      token: e.token,
+      name: e.name,
+      kind: t("groups.externalBadge"),
+      server: srv.server_name,
+      off: !e.enabled,
+    })),
+  ]);
+
+  // A big fleet with custom inbounds and external subscriptions runs to hundreds of
+  // rows; they arrive a page at a time like every other list in the panel.
+  const page = useShowMore(rows, { first: PAGE, step: PAGE });
+
+  const toggle = (token: string, on: boolean) => {
+    const next = new Set(grants);
+    if (on) next.add(token);
+    else next.delete(token);
+    onChange(next);
+  };
+
+  const picked = rows.filter((r) => grants.has(r.token)).length;
+  const allPicked = rows.length > 0 && picked === rows.length;
+  // Everything, or nothing: a half-selected list is completed rather than cleared.
+  const toggleAll = () =>
+    onChange(allPicked ? new Set() : new Set(rows.map((r) => r.token)));
+
+  return (
+    <div className="-mx-5 flex flex-col">
+      <div
+        className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-5 py-2")}
+        style={{ gridTemplateColumns: GRANT_TPL }}
+      >
+        <CheckCell
+          checked={allPicked}
+          mixed={picked > 0 && !allPicked}
+          onChange={toggleAll}
+          label={t("usersPanel.selectAll", { count: rows.length })}
+        />
+        <span className="truncate">{t("groups.colConn")}</span>
+        <span className="truncate">{t("groups.colServer")}</span>
+        <span className="truncate text-right">{t("groups.colState")}</span>
+      </div>
+      <div className="max-h-[46vh] overflow-y-auto">
+        {rows.length === 0 ? (
+          <EmptyState title={t("groups.noConnections")} />
+        ) : (
+          page.shown.map((r) => {
+            const on = grants.has(r.token);
+            return (
+              <label
+                key={r.token}
+                className={cn(
+                  "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
+                  on ? "accent-tint" : "hover:bg-gray-50",
+                )}
+                style={{ gridTemplateColumns: GRANT_TPL }}
+              >
+                <CheckCell checked={on} onChange={(v) => toggle(r.token, v)} label={r.name} />
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-[13px] text-ink" title={r.name}>
+                    {r.name}
+                  </span>
+                  {r.kind && (
+                    <Badge color="gray" size="xs">
+                      {r.kind}
+                    </Badge>
+                  )}
+                </span>
+                <span className="truncate text-xs text-ink-muted" title={r.server}>
+                  {r.server}
+                </span>
+                <span
+                  className={cn(
+                    "truncate text-right text-xs",
+                    r.off ? "text-warning" : "text-ink-muted",
+                  )}
+                >
+                  {r.off ? t("groups.off") : t("groups.on")}
+                </span>
+              </label>
+            );
+          })
+        )}
+        <ShowMore rest={page.rest} onClick={page.showMore} className="p-3.5" />
+      </div>
+    </div>
+  );
+}
+
+// MembersTable is who is in the group. Every user on the install lands here, so the
+// current members sort first and the rest arrive a page at a time.
+function MembersTable({
   users,
   members,
   onChange,
@@ -268,6 +478,7 @@ function MembersPicker({
   members: Set<number>;
   onChange: (m: Set<number>) => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -284,88 +495,96 @@ function MembersPicker({
       const bm = members.has(b.id) ? 0 : 1;
       return am - bm || a.name.localeCompare(b.name);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users, query, members]);
 
-  // Every user on the install lands here, so on a big panel this one picker used to
-  // mount thousands of checkboxes inside a 14rem scroll box. Selected members sort
-  // first, which is what makes a short first chunk usable: the current set is in it.
   // A new search starts from the top again.
-  const page = useShowMore(filtered, { resetKey: query });
+  const page = useShowMore(filtered, { first: PAGE, step: PAGE, resetKey: query });
 
-  const toggle = (id: number) => {
+  const toggle = (id: number, on: boolean) => {
     const next = new Set(members);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (on) next.add(id);
+    else next.delete(id);
     onChange(next);
   };
 
-  const { t } = useTranslation();
+  // Over what the search is showing, not over every account on the install: the box
+  // must mean the list under it.
+  const picked = filtered.filter((u) => members.has(u.id)).length;
+  const allPicked = filtered.length > 0 && picked === filtered.length;
+  const toggleAll = () => {
+    const next = new Set(members);
+    for (const u of filtered) {
+      if (allPicked) next.delete(u.id);
+      else next.add(u.id);
+    }
+    onChange(next);
+  };
 
   return (
-    <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-ink-muted">{t("groups.members")}</span>
-        <Badge color="gray">{t("groups.nSelected", { count: members.size })}</Badge>
-      </div>
-      <TextInput value={query} onChange={setQuery} placeholder={t("groups.searchUsers")} />
-      {users.length === 0 ? (
-        <p className="text-xs text-ink-muted">{t("groups.noUsers")}</p>
-      ) : (
-        <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-200/80 bg-gray-50/60 p-2">
-          <div className="flex flex-col gap-1.5">
-            {page.shown.map((u) => (
-              <Checkbox
-                key={u.id}
-                checked={members.has(u.id)}
-                onChange={() => toggle(u.id)}
-                label={u.name}
-                hint={u.system_email}
-              />
-            ))}
-            <ShowMore rest={page.rest} onClick={page.showMore} className="mt-1" />
-            {filtered.length === 0 && (
-              <p className="px-1 py-2 text-xs text-ink-muted">{t("common.nothingFound")}</p>
-            )}
-          </div>
+    <div className="flex flex-col gap-2.5">
+      <TextInput
+        value={query}
+        onChange={setQuery}
+        placeholder={t("groups.searchUsers")}
+      />
+      <div className="-mx-5 flex flex-col">
+        <div
+          className={cn(MICRO, "grid items-center gap-3 border-b border-gray-100 px-5 py-2")}
+          style={{ gridTemplateColumns: MEMBER_TPL }}
+        >
+          <CheckCell
+            checked={allPicked}
+            mixed={picked > 0 && !allPicked}
+            onChange={toggleAll}
+            label={t("usersPanel.selectAll", { count: filtered.length })}
+          />
+          <span className="truncate">{t("groups.colUser")}</span>
+          <span className="truncate">{t("groups.colId")}</span>
+          <span className="truncate text-right">{t("groups.colStatus")}</span>
         </div>
-      )}
+        <div className="max-h-[38vh] overflow-y-auto">
+          {users.length === 0 ? (
+            <EmptyState title={t("groups.noUsers")} />
+          ) : filtered.length === 0 ? (
+            <EmptyState title={t("common.nothingFound")} />
+          ) : (
+            <>
+              {page.shown.map((u) => {
+                const on = members.has(u.id);
+                const st = statusInfo(u.status);
+                return (
+                  <label
+                    key={u.id}
+                    className={cn(
+                      "grid cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-[7px] transition last:border-0",
+                      on ? "accent-tint" : "hover:bg-gray-50",
+                    )}
+                    style={{ gridTemplateColumns: MEMBER_TPL }}
+                  >
+                    <CheckCell checked={on} onChange={(v) => toggle(u.id, v)} label={u.name} />
+                    <span className="truncate text-[13px] text-ink" title={u.name}>
+                      {u.name}
+                    </span>
+                    <Mono className="truncate text-[11px] text-ink-muted">
+                      {u.system_email}
+                    </Mono>
+                    <span
+                      className={cn(
+                        "truncate text-right text-xs",
+                        u.status === "active" ? "text-success" : "text-ink-muted",
+                      )}
+                    >
+                      {st.label}
+                    </span>
+                  </label>
+                );
+              })}
+              <ShowMore rest={page.rest} onClick={page.showMore} className="p-3.5" />
+            </>
+          )}
+        </div>
+      </div>
     </div>
-  );
-}
-
-// GrantRow is one grantable connection: a checkbox that adds/removes its token.
-function GrantRow({
-  token,
-  label,
-  badge,
-  off,
-  grants,
-  onToggle,
-}: {
-  token: string;
-  label: string;
-  badge?: string;
-  off?: boolean;
-  grants: Set<string>;
-  onToggle: (g: Set<string>) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Checkbox
-      checked={grants.has(token)}
-      onChange={(c) => {
-        const next = new Set(grants);
-        if (c) next.add(token);
-        else next.delete(token);
-        onToggle(next);
-      }}
-      label={
-        <span className="flex items-center gap-2">
-          <span>{label}</span>
-          {badge && <Badge color="gray">{badge}</Badge>}
-          {off && <Badge color="gray">{t("groups.off")}</Badge>}
-        </span>
-      }
-    />
   );
 }

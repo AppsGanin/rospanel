@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { updateCredentials } from './api'
 import { useAction } from './hooks'
 import { notifyError, notifySuccess } from './notify'
+import { useStepUpDialog } from './stepup'
 import { TwoFactor } from './TwoFactor'
 import { Sessions } from './Sessions'
 import { Button, Modal, PasswordInput, TextInput } from './ui'
@@ -18,10 +19,10 @@ export function Credentials({
 }) {
   const { t } = useTranslation()
   const [login, setLogin] = useState(username)
-  const [current, setCurrent] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const { busy, run } = useAction()
+  const { ask, stepUpNode } = useStepUpDialog()
 
   const submit = async () => {
     const changingPassword = password.length > 0
@@ -34,14 +35,17 @@ export function Credentials({
     if (!login.trim() && !changingPassword) {
       return notifyError(t('creds.nothingToSave'))
     }
-    if (!current) {
-      return notifyError(t('creds.needCurrent'))
-    }
+    const creds = await ask({
+      title: t('nav.credentials'),
+      body: changingPassword ? t('creds.stepUpPassword') : t('creds.stepUpLogin'),
+      confirmLabel: t('common.save'),
+    })
+    if (!creds) return
     run(async () => {
       // Send the login only if it changed; password only if entered. The current
       // password re-authenticates the change server-side.
       const newLogin = login.trim() && login.trim() !== username ? login.trim() : ''
-      await updateCredentials(newLogin, password, current)
+      await updateCredentials(newLogin, password, creds.password)
       notifySuccess(t('creds.updated'))
       onUpdated() // refresh the header username immediately
       onClose()
@@ -70,21 +74,16 @@ export function Credentials({
             onChange={setConfirm}
           />
         )}
-        <PasswordInput
-          label={t('creds.currentPassword')}
-          placeholder={t('creds.toConfirm')}
-          value={current}
-          onChange={setCurrent}
-        />
         <Button loading={busy} onClick={submit}>
           {t('common.save')}
         </Button>
         {/* The second factor lives in the same dialog as the password: both answer
             "how do I get into this account", and an operator hardening their access
-            should not have to find two screens. It saves on its own. */}
-        <TwoFactor password={current} />
+            should not have to find two screens. It asks for the password itself. */}
+        <TwoFactor />
         <Sessions />
       </div>
+      {stepUpNode}
     </Modal>
   )
 }

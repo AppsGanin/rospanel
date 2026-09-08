@@ -2,15 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getEventCatalog, listEvents } from "./api";
 import { actionMeta, actorOptions, EventList } from "./events";
-import { useViewMode } from "./hooks";
 import { errMessage, notifyError } from "./notify";
-import { Select, SettingCard, ViewSwitch } from "./ui";
+import { Panel, Select } from "./ui";
 
 // The global audit trail: every recorded action across all users, newest first,
-// filterable by action and by who performed it.
+// filterable by action and by who performed it. Those two are the whole filter set —
+// the endpoint takes an action, an actor kind and a cursor, and nothing else — so
+// there is no date range and no export here.
 export function EventsPanel() {
   const { t } = useTranslation();
-  const [view, setView] = useViewMode("events");
   const [keys, setKeys] = useState<string[]>([]);
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
@@ -38,37 +38,28 @@ export function EventsPanel() {
   );
 
   return (
-    <SettingCard
+    <Panel
       title={t("events.title")}
-      description={t("events.description", { days: RETENTION_DAYS })}
-      action={
-        <ViewSwitch
-          value={view}
-          onChange={setView}
-          tableLabel={t("usersPanel.viewTable")}
-          cardsLabel={t("usersPanel.viewCards")}
-        />
+      aside={
+        <span className="min-w-0 text-xs text-ink-muted">
+          {t("events.retention", { count: RETENTION_DAYS })}
+        </span>
       }
-      stackAction
     >
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select
-            label={t("events.filterAction")}
-            value={action}
-            onChange={setAction}
-            data={actions}
-          />
-          <Select
-            label={t("events.filterActor")}
-            value={actor}
-            onChange={setActor}
-            data={actorOptions()}
-          />
+      <div className="flex flex-col gap-2.5 px-3.5 py-3">
+        {/* Each select says what it is by what it shows ("Все события", "Кто
+            угодно"), so a label above it would only repeat the value. */}
+        <div className="flex flex-wrap gap-2">
+          <div className="w-full sm:w-52">
+            <Select value={action} onChange={setAction} data={actions} />
+          </div>
+          <div className="w-full sm:w-44">
+            <Select value={actor} onChange={setActor} data={actorOptions()} />
+          </div>
         </div>
-        <EventList load={load} showUser table={view === "table"} />
       </div>
-    </SettingCard>
+      <EventList load={load} showUser table />
+    </Panel>
   );
 }
 

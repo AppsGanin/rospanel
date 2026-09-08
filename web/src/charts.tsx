@@ -13,6 +13,7 @@ import {
   YAxis,
 } from 'recharts'
 import i18n from './i18n'
+import { cn, Mono, useWideBox } from './ui'
 
 // seriesLabel names the two traffic series. recharts hands the formatter the raw
 // dataKey, so this maps it rather than the component threading labels down.
@@ -123,6 +124,183 @@ export function TrafficDonut({
           {centerLabel}
         </div>
       )}
+    </div>
+  )
+}
+
+/* --------------------------------------------------------- plain-DOM charts */
+// The statistics screen draws its own bars rather than reaching for recharts: a
+// share is a rectangle, and a rectangle built from the panel's own tokens follows
+// the operator's branding, needs no measuring pass, and reads at any width.
+
+// ShareBar is the one row shape used for "who/where/which server carried how much":
+// a name, the share as a bar against the largest row, and the figure in mono.
+export function ShareBar({
+  label,
+  glyph,
+  percent,
+  value,
+  title,
+}: {
+  label: string
+  // A leading flag or icon where the row has one (countries); omitted elsewhere.
+  glyph?: string
+  percent: number
+  value: string
+  title?: string
+}) {
+  const p = Math.max(0, Math.min(100, percent || 0))
+  return (
+    <div className="flex items-center gap-2.5" title={title}>
+      {glyph && (
+        <span className="w-5 shrink-0 text-center text-sm leading-none">{glyph}</span>
+      )}
+      <span className="w-24 shrink-0 truncate text-xs text-ink sm:w-28">{label}</span>
+      <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+        <span
+          className="block h-full rounded-full bg-brand-600"
+          style={{ width: `${p}%`, minWidth: p > 0 ? 2 : 0 }}
+        />
+      </span>
+      <Mono className="w-20 shrink-0 text-right text-[11px] text-ink-muted">
+        {value}
+      </Mono>
+    </div>
+  )
+}
+
+// dm renders a day key as DD.MM — the axis label, and the unit the tooltip counts in.
+function dm(day: string): string {
+  return `${day.slice(8, 10)}.${day.slice(5, 7)}`
+}
+
+type Day = { day: string; value: number; today?: boolean }
+export type Bar = { key: string; label: string; title: string; value: number; today: boolean }
+
+// bucketize keeps the number of columns readable whatever the period is. A month of
+// days fits as days; a quarter is read by weeks; a year by months. Without this a
+// 365-day range asks for 365 columns, the gaps alone are wider than the panel, and
+// every bar is squeezed to nothing — which is exactly what it looked like.
+function bucketize(data: Day[]): Bar[] {
+  const one = (d: Day): Bar => ({
+    key: d.day,
+    label: dm(d.day),
+    title: dm(d.day),
+    value: d.value,
+    today: !!d.today,
+  })
+  if (data.length <= 31) return data.map(one)
+
+  if (data.length <= 120) {
+    // Chunked from the end, so the newest bucket is the week that ends today rather
+    // than a partial week left over at the front.
+    const out: Bar[] = []
+    for (let end = data.length; end > 0; end -= 7) {
+      const chunk = data.slice(Math.max(0, end - 7), end)
+      out.unshift({
+        key: chunk[0].day,
+        label: dm(chunk[0].day),
+        title: `${dm(chunk[0].day)} — ${dm(chunk[chunk.length - 1].day)}`,
+        value: chunk.reduce((a, d) => a + d.value, 0),
+        today: chunk.some((d) => d.today),
+      })
+    }
+    return out
+  }
+
+  const months = new Map<string, Bar>()
+  for (const d of data) {
+    const k = d.day.slice(0, 7) // YYYY-MM
+    const b = months.get(k)
+    if (b) {
+      b.value += d.value
+      b.today = b.today || !!d.today
+    } else {
+      months.set(k, {
+        key: k,
+        label: `${k.slice(5, 7)}.${k.slice(2, 4)}`,
+        title: k,
+        value: d.value,
+        today: !!d.today,
+      })
+    }
+  }
+  return [...months.values()]
+}
+
+// The narrowest column that can still print a figure on one line, at 10px mono.
+const VALUE_MIN_COL = 44
+
+// DayBars is the traffic-per-period column chart: the current column in the accent,
+// the rest grey, heights taken from the largest one. Labels thin out as the period
+// grows — dates cannot be read side by side past a handful — but every column keeps
+// its title, so the exact span and figure are one hover away.
+export function DayBars({
+  data,
+  fmt,
+  onHover,
+}: {
+  data: Day[]
+  fmt: (n: number) => string
+  // Which column the pointer is on, so the panel around the chart can print that
+  // day's figure where the total normally sits. A chart of fourteen bars is read by
+  // pointing at one of them.
+  onHover?: (bar: Bar | null) => void
+}) {
+  const bars = bucketize(data)
+  const max = bars.reduce((a, d) => Math.max(a, d.value), 0)
+  // Sparse enough to read: values only for a week or less AND only where a column is
+  // wide enough to hold one on a single line — "412.6 ГБ" wrapped in two is worse
+  // than no label at all, and the figure is a hover away either way.
+  const [boxRef, , boxW] = useWideBox(0)
+  const perBar = boxW / Math.max(bars.length, 1)
+  const showValues = bars.length <= 8 && perBar >= VALUE_MIN_COL
+  const every = Math.ceil(bars.length / 7)
+  // One or two columns stretched across the panel read as a slab, not as a chart:
+  // few of them keep a column's width and sit in the middle.
+  const few = bars.length <= 3
+  return (
+    <div
+      ref={boxRef}
+      className={cn(
+        'flex items-end',
+        few && 'justify-center',
+        bars.length > 31 ? 'gap-px' : 'gap-1 sm:gap-2',
+      )}
+    >
+      {bars.map((d, i) => {
+        const pct = max > 0 ? (d.value / max) * 100 : 0
+        return (
+          <span
+            key={d.key}
+            className={cn(
+              'group flex min-w-0 flex-1 flex-col items-center gap-1.5',
+              few && 'max-w-24',
+            )}
+            title={`${d.title} · ${fmt(d.value)}`}
+            onMouseEnter={onHover ? () => onHover(d) : undefined}
+            onMouseLeave={onHover ? () => onHover(null) : undefined}
+          >
+            {showValues && (
+              <Mono className="text-[10px] whitespace-nowrap text-ink-muted">
+                {fmt(d.value)}
+              </Mono>
+            )}
+            <span className="flex h-24 w-full items-end">
+              <span
+                className={cn(
+                  'w-full rounded-t-md transition-colors',
+                  d.today ? 'bg-brand-600' : 'bg-gray-400 group-hover:bg-brand-600',
+                )}
+                style={{ height: `${pct}%`, minHeight: d.value > 0 ? 2 : 0 }}
+              />
+            </span>
+            <Mono className="truncate text-[11px] text-ink-muted">
+              {i % every === 0 ? d.label : '\u00a0'}
+            </Mono>
+          </span>
+        )
+      })}
     </div>
   )
 }

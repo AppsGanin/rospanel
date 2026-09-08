@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { SubTemplates } from "./api";
-import { Card, Textarea } from "./ui";
+import { SettingCard, Textarea } from "./ui";
 
 // The placeholders each format's template must carry, kept next to the field that
 // needs them. Mirrored from internal/sub/template.go — the server validates on save,
@@ -44,12 +44,10 @@ export function SubTemplatesCard({
     </div>
   );
   return (
-    <Card className="p-4">
-      <h3 className="mb-1 font-bold text-ink">{t("subTpl.title")}</h3>
-      <p className="mb-3 text-sm text-ink-muted">{t("subTpl.hint")}</p>
+    <SettingCard title={t("subTpl.title")} description={t("subTpl.hint")}>
       <div className="flex flex-col gap-4">
         {(["clash", "singbox", "xray"] as const).map(field)}
       </div>
-    </Card>
+    </SettingCard>
   );
 }

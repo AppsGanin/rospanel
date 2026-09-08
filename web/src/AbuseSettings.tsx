@@ -15,11 +15,12 @@ import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Button,
   CenterLoader,
+  Mono,
   SaveBar,
   SettingCard,
   Switch,
-  Textarea,
   TextInput,
+  Textarea,
 } from "./ui";
 
 // Categories in display order. Keys must match model.AbuseCategoryCatalog on the
@@ -154,41 +155,44 @@ export function AbuseSettings() {
   if (!loaded) return <CenterLoader />;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <SettingCard
         title={t("abuse.title")}
         description={t("abuse.description")}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-ink">{t("common.enabled")}</span>
-          <Switch checked={enabled} onChange={setEnabled} />
-        </div>
-      </SettingCard>
+        action={<Switch checked={enabled} onChange={setEnabled} />}
+      />
 
       <SettingCard
         title={t("abuse.lists")}
         description={t("abuse.listsDescription")}
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col">
           {CATEGORIES.map((c) => {
             const st = status.find((s) => s.category === c.key);
             return (
-              <div key={c.key} className="flex items-start justify-between gap-3">
+              <div
+                key={c.key}
+                className="flex items-start justify-between gap-3 border-t border-gray-100 py-2.5 first:border-t-0 first:pt-0"
+              >
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-sm text-ink">
-                    <span>{abuseCategoryLabel(c.key)}</span>
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-xs font-medium text-ink">
+                      {abuseCategoryLabel(c.key)}
+                    </span>
                     {st && st.entries > 0 && (
-                      <span className="text-xs text-ink-muted">
+                      <Mono className="text-[11px] text-ink-muted">
                         {fmtEntries(st.entries)}
                         {st.size ? ` · ${fmtBytes(st.size)}` : ""}
-                      </span>
+                      </Mono>
                     )}
                   </div>
-                  <div className="text-xs text-ink-muted">{t(c.desc as "abuse.badipDesc")}</div>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">
+                    {t(c.desc as "abuse.badipDesc")}
+                  </p>
                   {st && (
-                    <div className="text-xs text-ink-muted">
+                    <Mono className="text-[11px] text-ink-muted">
                       {t("abuse.updatedAt", { when: fmtWhen(st.updated) })}
-                    </div>
+                    </Mono>
                   )}
                 </div>
                 <Switch
@@ -202,7 +206,8 @@ export function AbuseSettings() {
         </div>
         <div className="mt-3">
           <Button
-            variant="light"
+            size="sm"
+            variant="outline"
             color="gray"
             loading={isBusy("refresh")}
             disabled={!enabled}

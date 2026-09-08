@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type ApiKey,
@@ -8,18 +8,22 @@ import {
   revokeApiKey,
   setApiPath,
 } from "./api";
+import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
-import i18n, { currentLang } from "./i18n";
+import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  Badge,
   Button,
   CenterLoader,
   cn,
+  IconButton,
+  IconClose,
   IconChevron,
   IconCopy,
   IconShield,
+  MICRO,
   Modal,
+  Mono,
   SaveBar,
   SettingCard,
   ShowMore,
@@ -27,15 +31,8 @@ import {
   TextInput,
   useConfirm,
   useCopy,
+  useWideBox,
 } from "./ui";
-
-function fmtTs(unix: number): string {
-  if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
 
 /* small inline glyphs for the docs tiles (match the stroke style of ui.tsx) */
 const IconDoc = ({ size = 18 }: { size?: number }) => (
@@ -119,43 +116,72 @@ function DocTile({
   );
 }
 
-// KeyRow is one API key in the list.
-function KeyRow({ k, onRevoke }: { k: ApiKey; onRevoke: (k: ApiKey) => void }) {
+// The key roster's columns, the same shape every other list in the panel has.
+const TPL =
+  "minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.7fr) 40px";
+const TPL_NARROW = "minmax(0,1fr) auto";
+const WIDE_MIN = 560;
+
+// KeyRow is one API key: what it is called, what it starts with, when it was minted
+// and last used, and whether it still works.
+function KeyRow({
+  k,
+  wide,
+  onRevoke,
+}: {
+  k: ApiKey;
+  wide: boolean;
+  onRevoke: (k: ApiKey) => void;
+}) {
   const { t } = useTranslation();
   const revoked = !!k.revoked_at;
+  // Never called reads as a dash, like every other empty value in a column —
+  // "ни разу" is a sentence where the column already asks the question.
+  const used = fmtStamp(k.last_used_at);
+  const status = (
+    <span className={cn("truncate text-xs", revoked ? "text-ink-muted" : "text-success")}>
+      {t(revoked ? "api.revoked" : "api.active")}
+    </span>
+  );
+  // An icon, like the other row actions in the panel; the word lives in its title.
+  const action = revoked ? null : (
+    <IconButton color="red" title={t("api.revoke")} onClick={() => onRevoke(k)}>
+      <IconClose size={16} />
+    </IconButton>
+  );
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2.5",
+        "grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]",
         revoked && "opacity-60",
       )}
+      style={{ gridTemplateColumns: wide ? TPL : TPL_NARROW }}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-semibold text-ink">{k.name}</span>
-          <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-ink-muted">
-            {k.prefix}…
-          </code>
-        </div>
-        <div className="mt-0.5 text-xs text-ink-muted">
-          {t("api.createdAt", { date: fmtTs(k.created_at) })} ·{" "}
-          {t("api.usedAt", {
-            date: k.last_used_at ? fmtTs(k.last_used_at) : t("admins.never"),
-          })}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {revoked ? (
-          <Badge color="gray">{t("api.revoked")}</Badge>
-        ) : (
-          <Badge color="green">{t("api.active")}</Badge>
-        )}
-        {!revoked && (
-          <Button size="sm" variant="light" color="red" onClick={() => onRevoke(k)}>
-            {t("api.revoke")}
-          </Button>
-        )}
-      </div>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="truncate text-xs font-medium text-ink">{k.name}</span>
+        <Mono className="shrink-0 text-[11px] text-ink-muted">{k.prefix}…</Mono>
+      </span>
+      {wide ? (
+        <>
+          <Mono className="truncate text-[11px] text-ink-muted">
+            {fmtStamp(k.created_at)}
+          </Mono>
+          <Mono className="truncate text-[11px] text-ink-muted">{used}</Mono>
+          {status}
+          <span className="flex justify-end">{action}</span>
+        </>
+      ) : (
+        <>
+          <span className="flex items-center justify-end gap-2">
+            {status}
+            {action}
+          </span>
+          <span className="col-span-2 truncate text-[11px] text-ink-muted">
+            {t("api.createdAt", { date: fmtStamp(k.created_at) })} ·{" "}
+            {t("api.usedAt", { date: used })}
+          </span>
+        </>
+      )}
     </div>
   );
 }
@@ -169,12 +195,24 @@ export function ApiSettings() {
   const [created, setCreated] = useState<ApiKey | null>(null);
   // Ten at a time: the roster grows with every key ever minted (revoked ones stay
   // as a record), and the card is a list to scan, not to scroll.
-  const shownKeys = useShowMore(info?.keys ?? [], { first: 10, step: 10 });
+  // Active keys first: a revoked one is kept as a record, and on an install that has
+  // been running a while the records outnumber the keys that still work.
+  const sortedKeys = useMemo(
+    () =>
+      [...(info?.keys ?? [])].sort(
+        (a, b) =>
+          Number(!!a.revoked_at) - Number(!!b.revoked_at) ||
+          b.created_at - a.created_at,
+      ),
+    [info],
+  );
+  const shownKeys = useShowMore(sortedKeys, { first: 10, step: 10 });
   // Draft of the enable toggle — applied via the bottom SaveBar (not instantly),
   // matching the other settings sections. Key create/revoke/rotate stay immediate.
   const [enabledDraft, setEnabledDraft] = useState(false);
   const [saving, setSaving] = useState(false);
   const { confirm, confirmNode } = useConfirm();
+  const [keysRef, wideKeys] = useWideBox(WIDE_MIN);
 
   const refresh = () =>
     getApiKeys()
@@ -265,7 +303,7 @@ export function ApiSettings() {
   const enabledDirty = enabledDraft !== info.enabled;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3.5">
       <SettingCard
         title={t("api.title")}
         description={t("api.description")}
@@ -345,14 +383,26 @@ export function ApiSettings() {
         </div>
 
         {info.keys.length > 0 ? (
-          <div className="mt-4 flex flex-col gap-2">
+          <div ref={keysRef} className="-mx-3.5 mt-3">
+            {wideKeys && (
+              <div
+                className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
+                style={{ gridTemplateColumns: TPL }}
+              >
+                <span className="truncate">{t("api.colName")}</span>
+                <span className="truncate">{t("api.colCreated")}</span>
+                <span className="truncate">{t("api.colUsed")}</span>
+                <span className="truncate">{t("api.colStatus")}</span>
+                <span />
+              </div>
+            )}
             {shownKeys.shown.map((k) => (
-              <KeyRow key={k.id} k={k} onRevoke={revoke} />
+              <KeyRow key={k.id} k={k} wide={wideKeys} onRevoke={revoke} />
             ))}
             {/* Keys accumulate — a revoked one is kept as a record — so an install
                 that has been running for a while lists more of them than anybody
                 reads at once. */}
-            <ShowMore rest={shownKeys.rest} onClick={shownKeys.showMore} />
+            <ShowMore rest={shownKeys.rest} onClick={shownKeys.showMore} className="p-3.5" />
           </div>
         ) : (
           <p className="mt-4 text-center text-sm text-ink-muted">

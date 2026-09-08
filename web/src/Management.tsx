@@ -12,7 +12,7 @@ import {
   useRestore,
   ValidationNote,
 } from "./restore";
-import { Button, Card, cn, Modal, PasswordInput } from "./ui";
+import { Button, cn, Modal, Panel, PasswordInput } from "./ui";
 
 /* ----------------------------------------------------------------- icons */
 function IconList() {
@@ -74,8 +74,8 @@ function ManageBtn({
     <button
       onClick={onClick}
       className={cn(
-        "flex flex-1 items-center justify-center gap-2 px-2 py-2 text-sm font-medium transition",
-        danger ? "text-danger hover:text-danger" : "text-ink-muted hover:text-ink",
+        "flex w-full items-center gap-2.5 border-b border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium transition last:border-0 hover:bg-gray-50",
+        danger ? "text-danger" : "text-ink-muted hover:text-ink",
       )}
     >
       {icon}
@@ -179,23 +179,20 @@ export function ManagementCard() {
 
   return (
     <>
-      <Card className="p-4">
-        <h3 className="mb-2 font-bold text-ink">{t("manage.title")}</h3>
-        <div className="flex flex-col items-stretch divide-y divide-gray-200 border-t border-gray-100 pt-1 sm:flex-row sm:divide-x sm:divide-y-0">
-          {/* Diagnostics is per-server now — it lives on each card under Servers,
-              where the server it describes is. */}
-          <ManageBtn icon={<IconList />} label={t("manage.logs")} onClick={() => setLogsOpen(true)} />
-          {/* One word, like every other button in this row — the modal it opens is
-              still titled "backup and restore", so nothing is hidden. */}
-          <ManageBtn icon={<IconArchive />} label={t("manage.backups")} onClick={() => setBackupOpen(true)} />
-          <ManageBtn
-            icon={<IconPower />}
-            label={t("manage.restart")}
-            onClick={() => setRestartOpen(true)}
-          />
-          <ManageBtn icon={<IconReset />} label={t("manage.reset")} danger onClick={() => setResetOpen(true)} />
-        </div>
-      </Card>
+      <Panel title={t("manage.title")}>
+        {/* Diagnostics is per-server now — it lives on each card under Servers,
+            where the server it describes is. */}
+        <ManageBtn icon={<IconList />} label={t("manage.logs")} onClick={() => setLogsOpen(true)} />
+        {/* One word, like every other action here — the modal it opens is still
+            titled "backup and restore", so nothing is hidden. */}
+        <ManageBtn icon={<IconArchive />} label={t("manage.backups")} onClick={() => setBackupOpen(true)} />
+        <ManageBtn
+          icon={<IconPower />}
+          label={t("manage.restart")}
+          onClick={() => setRestartOpen(true)}
+        />
+        <ManageBtn icon={<IconReset />} label={t("manage.reset")} danger onClick={() => setResetOpen(true)} />
+      </Panel>
 
       {logsOpen && <AppLogs onClose={() => setLogsOpen(false)} />}
 
@@ -305,7 +302,8 @@ export function ManagementCard() {
         {/* The panel re-asks for the password — and for a fresh authenticator code
             when this admin has one: a reset is irreversible, so a session cookie alone
             must not be enough to trigger it. */}
-        <StepUpFields value={resetCreds} onChange={setResetCreds} />
+        {/* withCode: the reset endpoint checks a fresh code too (verifyStepUpTOTP). */}
+        <StepUpFields value={resetCreds} onChange={setResetCreds} withCode />
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" color="gray" size="sm" onClick={closeReset}>
             {t("common.cancel")}

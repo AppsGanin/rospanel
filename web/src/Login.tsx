@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ApiError, login } from './api'
-import { LangPills } from './LangSwitch'
-import { BrandLogo } from './Logo'
+import { AuthShell } from './AuthShell'
 import { errMessage, notifyError } from './notify'
-import { Button, Card, PasswordInput, TextInput } from './ui'
+import { Button, Modal, PasswordInput, TextInput } from './ui'
 
 export function Login({
   onSuccess,
@@ -55,68 +54,84 @@ export function Login({
     }
   }
 
+  // Leaving the code step goes back to the password form rather than half-way: the
+  // session is not established until the code lands, so there is nothing to keep.
+  const cancelCode = () => {
+    setNeedCode(false)
+    setCode('')
+  }
+
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
-      {/* The picker sits outside the card: an admin who can't read the form has
-          nowhere else to reach it from — there is no account menu yet. */}
-      <LangPills className="fixed right-3 top-3" />
-      <Card className="w-full max-w-sm animate-fade-in-up p-6">
+    <AuthShell>
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        {/* name + autoComplete are what a password manager keys on. Without them
+            1Password and Chrome fill the admin login unreliably, which is the one
+            form where that costs the operator real time. */}
+        <TextInput
+          label={t('login.username')}
+          value={username}
+          onChange={setUsername}
+          name="username"
+          autoComplete="username"
+          autoFocus
+        />
+        <PasswordInput
+          label={t('login.password')}
+          value={password}
+          onChange={setPassword}
+          name="password"
+          autoComplete="current-password"
+        />
+        <Button type="submit" loading={busy} fullWidth>
+          {t('login.submit')}
+        </Button>
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+          <button
+            type="button"
+            onClick={onShowAgreement}
+            className="transition hover:text-accent"
+          >
+            {t('nav.agreement')}
+          </button>
+          <button
+            type="button"
+            onClick={onShowDonate}
+            className="transition hover:text-accent"
+          >
+            {t('nav.donate')}
+          </button>
+        </div>
+      </form>
+
+      {/* The second factor is its own question, asked once the password is already
+          accepted — a dialog rather than a field that appears under the form the
+          reader has just finished with. */}
+      <Modal open={needCode} onClose={cancelCode} title={t('totp.title')}>
         <form onSubmit={submit} className="flex flex-col gap-3">
-          <div className="mb-1 flex justify-center">
-            <BrandLogo size={32} />
-          </div>
-          {/* name + autoComplete are what a password manager keys on. Without them
-              1Password and Chrome fill the admin login unreliably, which is the one
-              form where that costs the operator real time. */}
+          <p className="text-xs leading-relaxed text-ink-muted">
+            {t('login.codeIntro')}
+          </p>
           <TextInput
-            label={t('login.username')}
-            value={username}
-            onChange={setUsername}
-            name="username"
-            autoComplete="username"
+            label={t('login.code')}
+            value={code}
+            onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+            placeholder="000000"
+            name="code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
             autoFocus
+            mono
           />
-          <PasswordInput
-            label={t('login.password')}
-            value={password}
-            onChange={setPassword}
-            name="password"
-            autoComplete="current-password"
-          />
-          {needCode && (
-            <TextInput
-              label={t('login.code')}
-              value={code}
-              onChange={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              name="code"
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              autoFocus
-              mono
-            />
-          )}
-          <Button type="submit" loading={busy} fullWidth>
-            {t('login.submit')}
-          </Button>
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-ink-muted">
-            <button
-              type="button"
-              onClick={onShowAgreement}
-              className="transition hover:text-accent"
-            >
-              {t('nav.agreement')}
-            </button>
-            <button
-              type="button"
-              onClick={onShowDonate}
-              className="transition hover:text-accent"
-            >
-              {t('nav.donate')}
-            </button>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="light" color="gray" onClick={cancelCode}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" loading={busy} disabled={code.length < 6}>
+              {t('login.submit')}
+            </Button>
           </div>
         </form>
-      </Card>
-    </div>
+      </Modal>
+    </AuthShell>
   )
 }

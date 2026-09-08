@@ -22,11 +22,11 @@ import i18n from "./i18n";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
-  Card,
   CenterLoader,
   cn,
   SaveBar,
   Select,
+  SettingCard,
   Switch,
   Textarea,
   TextInput,
@@ -180,9 +180,8 @@ export function SubscriptionsPanel() {
   if (!loaded) return <CenterLoader />;
 
   return (
-    <div className="flex flex-col gap-4 pb-20">
-      <Card className="p-4">
-        <h3 className="mb-3 font-bold text-ink">{t("subs.format")}</h3>
+    <div className="flex flex-1 flex-col gap-3.5">
+      <SettingCard title={t("subs.format")}>
         <div className="flex flex-col gap-4">
           <div>
             <TextInput
@@ -267,21 +266,20 @@ export function SubscriptionsPanel() {
             onChange={(v) => patch({ sub_show_configs: v })}
           />
         </div>
-      </Card>
+      </SettingCard>
 
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="font-bold text-ink">{t("subs.hwid")}</h3>
-            <p className="text-xs text-ink-muted">{t("subs.hwidHint")}</p>
-          </div>
+      <SettingCard
+        title={t("subs.hwid")}
+        description={t("subs.hwidHint")}
+        action={
           <Switch
             checked={h.enabled}
             onChange={(v) => patchHwid({ enabled: v })}
           />
-        </div>
+        }
+      >
         {h.enabled && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col">
             <ToggleRow
               label={t("subs.hwidRequire")}
               hint={t("subs.hwidRequireHint")}
@@ -327,30 +325,31 @@ export function SubscriptionsPanel() {
             </div>
           </div>
         )}
-      </Card>
+      </SettingCard>
 
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="font-bold text-ink">{t("subs.routing")}</h3>
-            <p className="text-xs text-ink-muted">
-              {t("subs.routingHint")}{" "}
-              <a
-                href={ROUTING_REPO}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent hover:underline"
-              >
-                roscomvpn-routing
-              </a>
-              .
-            </p>
-          </div>
+      <SettingCard
+        title={t("subs.routing")}
+        description={
+          <>
+            {t("subs.routingHint")}{" "}
+            <a
+              href={ROUTING_REPO}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent hover:underline"
+            >
+              roscomvpn-routing
+            </a>
+            .
+          </>
+        }
+        action={
           <Switch
             checked={s.sub_routing}
             onChange={(v) => patch({ sub_routing: v })}
           />
-        </div>
+        }
+      >
         {s.sub_routing && (
           <div className="flex flex-col gap-3">
             <TextInput
@@ -385,7 +384,7 @@ export function SubscriptionsPanel() {
             </div>
           </div>
         )}
-      </Card>
+      </SettingCard>
 
       <SubDPICard value={dpi} onChange={setDpi} />
 
@@ -462,9 +461,7 @@ function SubRulesEditor({
   ];
 
   return (
-    <Card className="p-4">
-      <h3 className="mb-1 font-bold text-ink">{t("subs.rules")}</h3>
-      <p className="mb-3 text-xs text-ink-muted">{t("subs.rulesHint")}</p>
+    <SettingCard title={t("subs.rules")} description={t("subs.rulesHint")}>
       <div className="flex flex-col gap-2">
         {rules.map((r, i) => (
           <div
@@ -533,6 +530,6 @@ function SubRulesEditor({
           + {t("subs.ruleAdd")}
         </button>
       </div>
-    </Card>
+    </SettingCard>
   );
 }
