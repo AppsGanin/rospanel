@@ -24,6 +24,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/datasec"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/h2fix"
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
@@ -327,7 +328,11 @@ func runServer(dataDir string) {
 	if err != nil {
 		log.Fatalf("listen %s: %v", adminAddr, err)
 	}
-	ln = &proxyproto.Listener{Listener: ln}
+	// …and h2fix keeps the ReadHeaderTimeout above from outliving the headers on an
+	// HTTP/2 connection, which is how a browser arrives through that same fallback:
+	// without it every held response — the dashboard's SSE stream — dies after ten
+	// seconds. See internal/h2fix.
+	ln = h2fix.Listener{Listener: &proxyproto.Listener{Listener: ln}}
 
 	go func() {
 		log.Printf("admin API listening on %s", adminAddr)

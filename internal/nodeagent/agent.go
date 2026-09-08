@@ -27,6 +27,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/decoy"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/h2fix"
 	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/ipblock"
@@ -1234,7 +1235,10 @@ func (a *Agent) ensureDecoy(dest, template string) error {
 	}
 	a.decoySrv = srv
 	go func() {
-		_ = srv.Serve(&proxyproto.Listener{Listener: ln})
+		// h2fix: ReadHeaderTimeout is a raw read deadline net/http never disarms on an
+		// unencrypted HTTP/2 connection, so without it every h2 request to the decoy is
+		// capped at ten seconds. See internal/h2fix.
+		_ = srv.Serve(h2fix.Listener{Listener: &proxyproto.Listener{Listener: ln}})
 	}()
 	return nil
 }
