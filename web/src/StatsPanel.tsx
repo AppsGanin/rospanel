@@ -23,6 +23,7 @@ import {
   SegmentedControl,
   ShowMore,
   Skeleton,
+  Skeletons,
   useConfirm,
 } from './ui'
 
@@ -99,9 +100,7 @@ export function StatsPanel() {
         </Panel>
         <Panel title={t('stats.shareByUser')} pad>
           <div className="flex flex-col gap-2">
-            {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full" />
-            ))}
+            <Skeletons n={5} className="h-4 w-full" />
           </div>
         </Panel>
       </div>

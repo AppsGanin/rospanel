@@ -34,6 +34,7 @@ import {
   IconTrash,
   Modal,
   Mono,
+  rowKey,
   Section,
   Select,
   SettingRow,
@@ -189,7 +190,6 @@ export function InboundsEditor({
         notifyError(errMessage(e));
         setList([]);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);
 
   // Every write here changes a listening socket, so it always goes through the
@@ -535,35 +535,42 @@ function HeadersEditor({ value, onChange }: {
   onChange: (v?: Record<string, string>) => void;
 }) {
   const { t } = useTranslation();
-  const [rows, setRows] = useState<[string, string][]>(() => Object.entries(value ?? {}));
-  const push = (next: [string, string][]) => {
+  // Each row carries a key of its own, so deleting one takes that row's inputs with
+  // it instead of shifting the row below into its DOM — and its caret.
+  type Row = { key: string; name: string; value: string };
+  const [rows, setRows] = useState<Row[]>(() =>
+    Object.entries(value ?? {}).map(([name, v]) => ({ key: rowKey(), name, value: v })),
+  );
+  const push = (next: Row[]) => {
     setRows(next);
     const obj: Record<string, string> = {};
-    for (const [k, val] of next) if (k.trim()) obj[k.trim()] = val;
+    for (const r of next) if (r.name.trim()) obj[r.name.trim()] = r.value;
     onChange(Object.keys(obj).length ? obj : undefined);
   };
+  const patch = (key: string, p: Partial<Row>) =>
+    push(rows.map((r) => (r.key === key ? { ...r, ...p } : r)));
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm text-ink-muted">{t("inb.requestHeaders")}</span>
-      {rows.map(([k, val], i) => (
-        <div key={i} className="flex items-center gap-2">
+      {rows.map((r) => (
+        <div key={r.key} className="flex items-center gap-2">
           <TextInput
-            value={k}
+            value={r.name}
             placeholder={t("inb.headerName")}
-            onChange={(x) => push(rows.map((r, j) => (j === i ? [x, r[1]] : r)))}
+            onChange={(x) => patch(r.key, { name: x })}
           />
           <TextInput
-            value={val}
+            value={r.value}
             placeholder={t("inb.headerValue")}
-            onChange={(x) => push(rows.map((r, j) => (j === i ? [r[0], x] : r)))}
+            onChange={(x) => patch(r.key, { value: x })}
           />
-          <Button size="sm" variant="light" color="red" onClick={() => push(rows.filter((_, j) => j !== i))}>
+          <Button size="sm" variant="light" color="red" onClick={() => push(rows.filter((x) => x.key !== r.key))}>
             ×
           </Button>
         </div>
       ))}
       <div>
-        <Button size="sm" variant="light" onClick={() => push([...rows, ["", ""]])}>
+        <Button size="sm" variant="light" onClick={() => push([...rows, { key: rowKey(), name: "", value: "" }])}>
           {t("inb.addHeader")}
         </Button>
       </div>

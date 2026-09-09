@@ -39,6 +39,7 @@ export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void })
     getConfigSnapshots()
       .then(setSnaps)
       .catch(() => setSnaps((prev) => prev ?? []));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     reload();
   }, []);

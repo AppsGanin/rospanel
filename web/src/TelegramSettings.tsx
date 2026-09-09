@@ -249,20 +249,20 @@ export function TelegramSettings() {
         /* transient — the poll below retries */
       });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load().finally(() => setLoaded(true));
     loadGroups();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // While the operator is setting support up, they are alt-tabbing to Telegram to
   // add the bot to a group. Poll so it appears in the picker on its own instead of
   // needing a page reload to show up.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: starts and stops the poll on the two fields that gate it; loadGroups is redefined every render and would restart the interval on each one
   useEffect(() => {
     if (!supportToken.trim() || supportGroupID) return;
     const id = setInterval(loadGroups, 4000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supportToken, supportGroupID]);
 
   // While a link code is pending (and the bot is enabled), poll the lightweight

@@ -12,7 +12,7 @@ import {
   EmptyState,
   MICRO,
   Mono,
-  Skeleton,
+  Skeletons,
   useWideBox,
 } from "./ui";
 
@@ -385,9 +385,7 @@ export function EventList({
   if (loading)
     return table ? (
       <div className="flex flex-col gap-2.5 border-t border-brand-600/10 p-3.5">
-        {[...Array(6)].map((_, i) => (
-          <Skeleton key={i} className="h-4 w-full" />
-        ))}
+        <Skeletons n={6} className="h-4 w-full" />
       </div>
     ) : (
       <CenterLoader />

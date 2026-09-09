@@ -63,6 +63,7 @@ export function ChangelogModal({ onClose }: { onClose: () => void }) {
                     </p>
                     <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-ink">
                       {s.items.map((item, i) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: a released changelog is a fixed list that never reorders
                         <li key={i}>{item}</li>
                       ))}
                     </ul>

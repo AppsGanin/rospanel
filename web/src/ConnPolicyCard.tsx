@@ -41,7 +41,6 @@ export function ConnPolicyCard({
     // Read once with the page: this is a pointer to the statistics list, not a live
     // counter, and re-reading it on every keystroke of the draft would be a request
     // per character.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const patch = (v: Partial<ConnPolicy>) => onChange({ ...p, ...v })

@@ -142,6 +142,7 @@ export function UsersPage({
       <div className="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-brand-600/10 px-5">
         {tabs.map((t) => (
           <button
+            type="button"
             key={t.value}
             onClick={() =>
               navigate(t.value === "list" ? "users" : `users/${t.value}`)

@@ -4,7 +4,6 @@ import i18n, { currentLang } from "./i18n";
 import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
 import {
-  Badge,
   Button,
   cn,
   Code,

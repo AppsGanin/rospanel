@@ -179,6 +179,7 @@ export function ImportUsersModal({
                     </td>
                   </tr>
                   {users.map((u, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the row index IS the identity here — `picked` is a set of indices into this very list, which the parse fixes and nothing reorders
                     <TR key={i} selected={picked.has(i)}>
                       <TD>
                         <input
@@ -225,6 +226,7 @@ export function ImportUsersModal({
                 <p className="font-medium">{t('importUsers.failedTitle', { count: failed.length })}</p>
                 <ul className="mt-1 list-disc pl-4">
                   {failed.map((f, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: the report of a finished import; it is rendered once and never reordered
                     <li key={i}>
                       {f.name || '—'}: {td(f.code)}
                     </li>

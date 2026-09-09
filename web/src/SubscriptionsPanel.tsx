@@ -22,7 +22,6 @@ import i18n from "./i18n";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
-  Button,
   CenterLoader,
   cn,
   IconButton,
@@ -109,6 +108,7 @@ export function SubscriptionsPanel() {
   } = useDirtyForm<HWIDSettings>(EMPTY_HWID);
   const { busy, run } = useAction();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     getSettings()
       .then((d) => {
@@ -517,6 +517,7 @@ function SubRulesEditor({
           // One rule per line: on/off, what is matched, how, against what, and what
           // the panel answers with. Order matters, so each row can walk up or down.
           <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: the rule list is the wire payload — it carries no id, and a rule's position IS its precedence, which is what every mutator here addresses
             key={i}
             className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3.5 py-2"
           >

@@ -207,6 +207,7 @@ export function AdminsSettings() {
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     refresh();
   }, []);

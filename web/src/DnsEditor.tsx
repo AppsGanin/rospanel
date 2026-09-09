@@ -91,9 +91,9 @@ export function DnsEditor({
   // Re-derive from `value` when the container changes it out from under us (e.g. the
   // the Cancel reset restores the last-saved DNS) — but not for our own edits, whose
   // recombined string already equals `value`, so the parse is skipped.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: watches the container's value only — st is what this compares it against, and listing it would re-parse our own edits back over the draft
   useEffect(() => {
     if (value !== combineDns(st.sel, st.custom)) setSt(parseDns(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   const emit = (sel: string[], custom: string) => {

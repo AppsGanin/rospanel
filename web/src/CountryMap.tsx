@@ -8,7 +8,7 @@ import {
 } from './api'
 import { ShareBar } from './charts'
 import { currentLang } from './i18n'
-import { EmptyState, Panel, SegmentedControl, Skeleton } from './ui'
+import { EmptyState, Panel, SegmentedControl, Skeletons } from './ui'
 import { countryFlag, countryName } from './format'
 
 
@@ -85,9 +85,7 @@ export function ConnectionCountries() {
     >
       {rows === null ? (
         <div className="flex flex-col gap-2">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-4 w-full" />
-          ))}
+          <Skeletons n={5} className="h-4 w-full" />
         </div>
       ) : rows.length === 0 ? (
         <EmptyState title={t('stats.noCountryData')} />

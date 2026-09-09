@@ -90,9 +90,11 @@ export function Dashboard({
         setUserBot(!!m.user_bot_enabled);
       })
       .catch(() => {});
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-reads the flags when the top-level section changes; refreshFlags is redefined every render, so listing it would refetch on every one
   useEffect(() => {
     refreshFlags();
   }, [seg[0]]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: subscribes once; refreshFlags is redefined every render and the listener reads the current one through the closure
   useEffect(() => {
     const h = () => refreshFlags();
     window.addEventListener("rospanel:billing-changed", h);
@@ -272,6 +274,7 @@ export function Dashboard({
                 <Panel>
                   {NAV.slice(BOTTOM_TABS).map((n) => (
                     <button
+                      type="button"
                       key={n.value}
                       onClick={() => go(n.value)}
                       className="flex w-full items-center gap-2.5 border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium text-ink first:border-t-0"
@@ -324,6 +327,7 @@ export function Dashboard({
             const active = !moreOpen && tab === n.value;
             return (
               <button
+                type="button"
                 key={n.value}
                 onClick={() => {
                   setMoreOpen(false);
@@ -340,6 +344,7 @@ export function Dashboard({
             );
           })}
           <button
+            type="button"
             onClick={() => setMoreOpen((o) => !o)}
             className={cn(
               "flex flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
@@ -379,6 +384,7 @@ function NavItem({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -408,6 +414,7 @@ function MoreRow({
 }) {
   return (
     <button
+      type="button"
       onClick={() => {
         onDone();
         item.onClick();

@@ -139,12 +139,14 @@ export function ApiSettings() {
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     refresh();
   }, []);
 
   // Sync the toggle draft whenever the server's enabled state changes (initial
   // load, after Save, or after rotate) — but not on a purely local flip.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the server's enabled flag alone — a purely local flip of the draft must not be overwritten by the object it came from
   useEffect(() => {
     if (info) setEnabledDraft(info.enabled);
   }, [info?.enabled]);

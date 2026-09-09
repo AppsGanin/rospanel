@@ -37,12 +37,12 @@ export function TLSPanel({
   const [provider, setProvider] = useState("letsencrypt");
   const [busy, setBusy] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load()
       .then(setStatus)
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

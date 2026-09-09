@@ -31,6 +31,7 @@ export function TwoFactor() {
       .then(setStatus)
       .catch(() => {})
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     reload()
   }, [])

@@ -59,6 +59,7 @@ export function Toaster() {
             <div className="text-sm text-ink-muted wrap-break-word">{t.message}</div>
           </div>
           <button
+            type="button"
             onClick={() => dismissToast(t.id)}
             className="text-gray-400 hover:text-gray-600"
           >

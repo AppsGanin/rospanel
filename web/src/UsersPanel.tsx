@@ -8,7 +8,6 @@ import {
   getBilling,
   listUsers,
   setResetPeriod,
-  setUserEnabled,
   setUserPlan,
   type TariffPlan,
   type User,
@@ -39,13 +38,13 @@ import {
   IconCheck,
   IconSearch,
   Modal,
-  IconButton,
   loadColor,
   MICRO,
   Mono,
   Panel,
   Select,
   Skeleton,
+  Skeletons,
   TextInput,
   useConfirm,
   useCopy,
@@ -166,11 +165,7 @@ function UsersSkeleton() {
         <Skeleton className="h-7 w-24 rounded-full" />
       </div>
       <Panel>
-        {[...Array(8)].map((_, i) => (
-          <div key={i} className="border-b border-gray-100 px-3.5 py-2.5 last:border-0">
-            <Skeleton className="h-3.5 w-full" />
-          </div>
-        ))}
+        <Skeletons n={8} row="border-b border-gray-100 px-3.5 py-2.5 last:border-0" className="h-3.5 w-full" />
       </Panel>
     </div>
   );
@@ -279,6 +274,7 @@ export function UsersPanel({
 
   // Filtering and sorting are client-side: the full list is already loaded and stays
   // snappy well into the hundreds, so this avoids any API round-trips.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `now` is deliberately out: it changes on every render and only the expiring chip reads it, where a second's drift cannot change the answer
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return users.filter(
@@ -292,20 +288,17 @@ export function UsersPanel({
           (u.note ?? "").toLowerCase().includes(q) ||
           (u.tags ?? []).some((tag) => tag.includes(q))),
     );
-    // `now` deliberately out of the deps: it changes on every render and only the
-    // "expiring" chip reads it, where a second's drift cannot change the answer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users, query, filter, tagFilter]);
 
   // What each chip would find, so the operator can see the shape of the list before
   // clicking. Counted over every user, not over the current filter — a chip that
   // counted only what is already on screen would always read the same.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `now` is deliberately out: it changes on every render and only the expiring chip reads it, where a second's drift cannot change the answer
   const counts = useMemo(() => {
     const out = {} as Record<Filter, number>;
     for (const c of CHIPS) out[c.value] = users.filter((u) => matches(u, c.value, now)).length;
     out.all = users.length;
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users]);
 
   // Every tag in use with how many users carry it, most used first, for the
@@ -379,11 +372,6 @@ export function UsersPanel({
     setFilter("all");
     setTagFilter("");
   };
-  const setEnabled = (id: number, v: boolean) =>
-    setUserEnabled(id, v)
-      .then(refresh)
-      .catch((e) => notifyError(errMessage(e)));
-
   const runBulk = async (action: BulkAction, days = 0) => {
     const ids = [...selected];
     if (ids.length === 0) return;
@@ -431,8 +419,6 @@ export function UsersPanel({
   };
 
   if (!loaded) return <UsersSkeleton />;
-
-  const hasFilter = query !== "" || filter !== "all" || tagFilter !== "";
 
   const addButton = (
     <Button size="sm" onClick={() => onAddOpen(true)}>
@@ -649,7 +635,6 @@ export function UsersPanel({
               roomy={roomy}
               checked={selected.has(u.id)}
               onToggle={(v) => toggleOne(u.id, v)}
-              onSetEnabled={(v) => setEnabled(u.id, v)}
               onDetail={() => setDetail(u)}
             />
           ))}
@@ -686,6 +671,7 @@ export function UsersPanel({
                 {t("common.delete")}
               </Button>
               <button
+                type="button"
                 onClick={clearSelection}
                 disabled={pending !== null}
                 className="text-xs font-medium text-accent hover:underline disabled:opacity-60"
@@ -806,7 +792,6 @@ function UserRow({
   roomy,
   checked,
   onToggle,
-  onSetEnabled,
   onDetail,
 }: {
   u: User;
@@ -814,7 +799,6 @@ function UserRow({
   roomy: boolean;
   checked: boolean;
   onToggle: (v: boolean) => void;
-  onSetEnabled: (v: boolean) => void;
   onDetail: () => void;
 }) {
   const { t } = useTranslation();
@@ -847,6 +831,9 @@ function UserRow({
       style={{ gridTemplateColumns: wide ? (roomy ? TPL : TPL_MID) : TPL_MOBILE }}
     >
       {/* Selecting is not opening: the box swallows the click that would open the card. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: not a control — it only keeps
+          the checkbox's click from reaching the row behind it; the checkbox itself is
+          focusable and answers Space. */}
       <span className={wide ? "" : "row-start-1"} onClick={(e) => e.stopPropagation()}>
         <SelectCheck
           checked={checked}

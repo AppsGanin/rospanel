@@ -152,6 +152,7 @@ export function BlockedList() {
       .then((info) => setBlocked(info.blocked ?? []))
       .catch(() => {})
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load()
   }, [])

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -48,7 +49,6 @@ import {
   ranges,
   resetPeriods,
   speedLimitOptions,
-  statusInfo,
   unixToLocalDate,
 } from './format'
 import { useAction, useShowMore } from './hooks'
@@ -91,7 +91,7 @@ import {
   useConfirm,
   useCopy,
 } from './ui'
-import i18n, { currentLang } from './i18n'
+import i18n from './i18n'
 
 // planSelectData builds the tariff dropdown: "manual" plus enabled plans, and a
 // fallback entry if the user is on a plan that's hidden/disabled (so the current
@@ -117,38 +117,6 @@ function planSelectData(plans: TariffPlan[], user: User) {
 
 
 
-// optLabel resolves a select value to its human label, for the confirmation text.
-function optLabel(data: { value: string; label: string }[], value: string): string {
-  return data.find((o) => o.value === value)?.label ?? value
-}
-
-// fmtLimitOption names a limit value: the preset's label when it is one, the
-// formatter's wording otherwise (a value typed by hand).
-function fmtLimitOption(
-  data: { value: string; label: string }[],
-  value: string,
-  format: (n: number) => string,
-): string {
-  return data.find((o) => o.value === value)?.label ?? format(Number(value))
-}
-
-
-// resetLabel renders a reset period for display. Beyond the fixed resetPeriods()
-// options it also handles the "days:N" rolling cycle that a free plan writes
-// (see planLimits in internal/core/manager_billing.go), which has no entry there.
-function resetLabel(v: string): string {
-  const m = /^days:(\d+)$/.exec(v)
-  if (m) return i18n.t('userDetail.everyNDays', { count: Number(m[1]) })
-  return optLabel(resetPeriods(), v || 'none')
-}
-
-// dateLabel renders an expiry (unix or a "YYYY-MM-DD" picker value) for the
-// confirmation text.
-function dateLabel(v: number | string): string {
-  if (!v) return i18n.t('common.never')
-  const d = typeof v === 'number' ? new Date(v * 1000) : new Date(v)
-  return d.toLocaleDateString(currentLang())
-}
 
 // StateRow is one fact about the account: what it is on the left, muted; what it
 // says on the right, mono when it is a number. Rows divide; they are not boxed.
@@ -322,6 +290,7 @@ export function UserDetail({
   const email = useCopy()
   const { confirm, confirmNode } = useConfirm()
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resets the card for a new user; resetLimitDraft is defined below and closes over `user`, so re-running it on a user change is the whole point
   useEffect(() => {
     setTgLink(null) // a one-time bind link is per-user; don't leak it across switches
     setEventsOpen(false) // ditto for the journal — never show one user's trail over another
@@ -330,9 +299,6 @@ export function UserDetail({
     setSel(new Set((user?.groups ?? []).map((g) => g.id)))
     setGroupQuery('')
     resetLimitDraft()
-    // resetLimitDraft is defined below and closes over `user`; re-running it on every
-    // user change is the whole point.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
   // All groups, for the access-group selector. Loaded once the card opens.
@@ -563,6 +529,7 @@ export function UserDetail({
               {user.system_email}
             </Mono>
             <button
+              type="button"
               onClick={() => email.copy(user.system_email)}
               className="shrink-0 text-gray-400 transition hover:text-accent"
               title={t('common.copy')}
@@ -1239,6 +1206,7 @@ function NoteAndTags({ user, onChanged }: { user: User; onChanged: () => void })
   const tags = user.tags ?? []
   const tagKey = tags.join(',')
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seeds the draft when the card switches user or the server returns a new note; user.id keeps a same-note switch from keeping the previous card's edits
   useEffect(() => {
     setNote(user.note ?? '')
   }, [user.id, user.note])
@@ -1246,6 +1214,7 @@ function NoteAndTags({ user, onChanged }: { user: User; onChanged: () => void })
   // Every tag in use, as suggestions — so the second user tagged "vip" gets the
   // same spelling as the first without retyping it. Refetched when this user's
   // tags change, since that is when the set of known tags can grow.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetched when this user's tags change — tagKey is the compared form of an array that is a new object every render
   useEffect(() => {
     let alive = true
     listUserTags()

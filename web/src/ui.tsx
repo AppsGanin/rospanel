@@ -311,9 +311,49 @@ export function CenterLoader() {
   );
 }
 
+// rowKey mints identity for a row the server does not id: an editable list whose
+// items are only ever a position in an array. React needs a key that travels with
+// the row through a delete or a move — position does not, so removing the second of
+// three rows would hand its DOM (and the caret sitting in it) to the third one's
+// values. The counter is per page load; these keys never leave the browser.
+let rowSeq = 0;
+export const rowKey = () => `r${++rowSeq}`;
+
 // Skeleton is a pulsing placeholder block. Pass className to set size and shape.
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded bg-gray-200", className)} />;
+}
+
+// Skeletons repeats one placeholder shape n times: `className` sizes the block,
+// `row` wraps each in a divider row, `children` replaces the block with a whole
+// card's worth of them. Placeholder rows have no identity of their own — a
+// fixed-length list that never reorders and never moves — so the synthetic keys
+// they need live here once instead of at every list that shows a loading state.
+export function Skeletons({
+  n,
+  className,
+  row,
+  children,
+}: {
+  n: number;
+  className?: string;
+  row?: string;
+  children?: ReactNode;
+}) {
+  const keys = Array.from({ length: n }, (_, i) => `sk${i}`);
+  return (
+    <>
+      {keys.map((k) =>
+        row || children ? (
+          <div key={k} className={row}>
+            {children ?? <Skeleton className={className} />}
+          </div>
+        ) : (
+          <Skeleton key={k} className={className} />
+        ),
+      )}
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ button */
@@ -548,7 +588,10 @@ export function THead({ cols }: { cols: TableCol[] }) {
   return (
     <thead className="border-b border-gray-100 bg-gray-50/70 text-left text-ink-muted">
       <tr>
+        {/* A column list is positional by definition: a fixed prop array whose
+            order IS the table. */}
         {cols.map((c, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional column list
           <th key={i} className={cn("py-2 pr-3 font-medium first:pl-3", c.className)}>
             {c.srOnly ? <span className="sr-only">{c.srOnly}</span> : c.label}
           </th>
@@ -599,22 +642,15 @@ export function TD({
 export function Card({
   children,
   className,
-  onClick,
-  style,
 }: {
   children: ReactNode;
   className?: string;
-  onClick?: () => void;
-  style?: React.CSSProperties;
 }) {
   return (
     <div
-      onClick={onClick}
-      style={style}
       className={cn(
         "rounded-2xl border border-brand-600/6 bg-white shadow-sm transition",
         "hover:shadow-lg flex flex-col",
-        onClick && "cursor-pointer",
         className,
       )}
     >
@@ -1047,6 +1083,9 @@ export function TagsInput({
   return (
     <div>
       {label && <span className="mb-1 block text-sm font-medium text-ink">{label}</span>}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: not a control — it forwards a
+          click on the box's padding to the input inside it, which a keyboard reaches
+          by tabbing to it directly. */}
       <div
         ref={boxRef}
         onClick={() => inputRef.current?.focus()}
@@ -1287,6 +1326,16 @@ export function DatePicker({
               e.stopPropagation()
               onChange('')
             }}
+            // It cannot be a <button>: it sits inside the trigger button, and nesting
+            // one is invalid. It is out of the tab order for the same reason — the
+            // trigger owns that stop — but a screen reader can still activate it in
+            // browse mode, so it answers the keys a button would.
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              e.stopPropagation()
+              onChange('')
+            }}
           >
             <IconClose size={14} />
           </span>
@@ -1331,11 +1380,15 @@ export function DatePicker({
                 ))}
               </div>
               <div className="grid grid-cols-7 gap-0.5">
+                {/* A month grid is positional: cell 0 is always the first weekday
+                    column, and the leading blanks have no identity to key by. */}
                 {cells.map((d, i) =>
                   d === null ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: positional grid
                     <span key={i} />
                   ) : (
                     <button
+                      // biome-ignore lint/suspicious/noArrayIndexKey: positional grid
                       key={i}
                       type="button"
                       disabled={beforeMin(d)}
@@ -2139,6 +2192,8 @@ export function Modal({
   const sz = MODAL_SIZES[size];
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-end justify-center sm:items-center sm:p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={dismissible ? onClose : undefined}
@@ -2170,6 +2225,7 @@ export function Modal({
             </div>
             {dismissible && (
               <button
+                type="button"
                 onClick={onClose}
                 className="shrink-0 text-gray-400 hover:text-gray-600"
               >
@@ -2283,6 +2339,8 @@ export function Drawer({
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-200">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={onClose}
@@ -2306,6 +2364,7 @@ export function Drawer({
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="shrink-0 text-gray-400 hover:text-gray-600"
           >
@@ -2485,6 +2544,8 @@ export function InfoModal({
   useEscape(onClose); // no-op when onClose is omitted (the blocking first-run gate)
   return createPortal(
     <div className="fixed inset-0 z-250 flex items-center justify-center p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
@@ -2497,6 +2558,7 @@ export function InfoModal({
           </div>
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
               className="text-gray-400 transition hover:text-gray-600"
             >
@@ -2567,6 +2629,8 @@ export function ToolDialog({
   useEscape(onClose);
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
@@ -2578,6 +2642,7 @@ export function ToolDialog({
             <div className="flex items-center gap-2">
               {actions}
               <button
+                type="button"
                 onClick={onClose}
                 className="text-gray-400 transition hover:text-gray-600"
               >

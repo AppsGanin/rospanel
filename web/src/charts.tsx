@@ -114,8 +114,8 @@ export function TrafficDonut({
             paddingAngle={1}
             stroke="none"
           >
-            {data.map((d, i) => (
-              <Cell key={i} fill={d.color} />
+            {data.map((d) => (
+              <Cell key={d.name} fill={d.color} />
             ))}
           </Pie>
         </RPieChart>
@@ -237,6 +237,7 @@ export function DayBars({
   // the range and the same key can exist in the new set — so the tooltip would hang
   // over a different chart, quoting a figure nobody asked for.
   const sig = `${bars.length}:${bars[0]?.key ?? ''}:${bars[bars.length - 1]?.key ?? ''}`
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sig is the compared form of the bars array, which is a new object on every render
   useEffect(() => setPicked(null), [sig])
   // A tooltip opened by a tap is closed by a tap anywhere else — the chart is not a
   // dialog, and a figure that follows the reader around the page is noise.
@@ -268,7 +269,17 @@ export function DayBars({
               few && 'max-w-24',
             )}
             title={`${d.title} · ${fmt(d.value)}`}
+            // A column is a control: it is the only place the figure lives on a
+            // dense chart, so it answers Enter and Space as well as a tap.
+            role="button"
+            tabIndex={0}
+            aria-label={`${d.title} · ${fmt(d.value)}`}
             onClick={() => setPicked((p) => (p === d.key ? null : d.key))}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              setPicked((p) => (p === d.key ? null : d.key))
+            }}
             onMouseEnter={onHover ? () => onHover(d) : undefined}
             onMouseLeave={onHover ? () => onHover(null) : undefined}
           >

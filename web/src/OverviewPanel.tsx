@@ -30,6 +30,7 @@ import {
   Mono,
   Panel,
   Skeleton,
+  Skeletons,
 } from "./ui";
 import { ManagementCard } from "./Management";
 
@@ -172,13 +173,11 @@ function OverviewSkeleton() {
   return (
     <div className="flex animate-fade-in flex-col gap-3.5">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="rounded-xl border border-gray-200 bg-white px-3.5 py-3">
-            <Skeleton className="h-2.5 w-16" />
-            <Skeleton className="mt-2 h-7 w-14" />
-            <Skeleton className="mt-1.5 h-2.5 w-20" />
-          </div>
-        ))}
+        <Skeletons n={6} row="rounded-xl border border-gray-200 bg-white px-3.5 py-3">
+          <Skeleton className="h-2.5 w-16" />
+          <Skeleton className="mt-2 h-7 w-14" />
+          <Skeleton className="mt-1.5 h-2.5 w-20" />
+        </Skeletons>
       </div>
       <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-3.5">
@@ -278,7 +277,6 @@ export function OverviewPanel() {
   if (!loaded) return <OverviewSkeleton />;
   if (!s) return null;
 
-  const pct = (used: number, total: number) => (total > 0 ? (used / total) * 100 : 0);
   const dash = "—";
 
   /* --- derived figures ------------------------------------------------- */
@@ -539,11 +537,7 @@ export function OverviewPanel() {
                 <span className="text-right">{t("usersPanel.colTraffic")}</span>
               </div>
               {nodes.length === 0
-                ? [...Array(2)].map((_, i) => (
-                    <div key={i} className="border-b border-gray-100 px-3.5 py-3 last:border-0">
-                      <Skeleton className="h-3.5 w-full" />
-                    </div>
-                  ))
+                ? <Skeletons n={2} row="border-b border-gray-100 px-3.5 py-3 last:border-0" className="h-3.5 w-full" />
                 : nodes.map((n) => <ServerRow key={n.id} node={n} />)}
             </Panel>
           </div>
@@ -584,9 +578,7 @@ export function OverviewPanel() {
           <Panel title={t("overview.recentEvents")} className="min-w-0">
             {events === null ? (
               <div className="flex flex-col gap-2 p-3.5">
-                {[...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-3.5 w-full" />
-                ))}
+                <Skeletons n={4} className="h-3.5 w-full" />
               </div>
             ) : events.length === 0 ? (
               <p className="p-3.5 text-xs text-ink-muted">{t("overview.noEvents")}</p>

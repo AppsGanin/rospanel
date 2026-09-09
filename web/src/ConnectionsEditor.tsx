@@ -167,12 +167,12 @@ export function ConnectionsEditor({
     setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a, awg: g });
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load()
       .then(applyStatus)
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const protocolsChanged = Object.keys(enabled).some((k) => enabled[k] !== saved.enabled[k]);

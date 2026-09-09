@@ -23,6 +23,7 @@ import {
   Panel,
   ShowMore,
   Skeleton,
+  Skeletons,
   useWideBox,
 } from "./ui";
 
@@ -117,6 +118,7 @@ export function PaymentsPage() {
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     refresh();
   }, []);
@@ -171,9 +173,7 @@ export function PaymentsPage() {
     return (
       <div className="flex flex-col gap-3.5">
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-[86px] rounded-xl" />
-          ))}
+          <Skeletons n={4} className="h-[86px] rounded-xl" />
         </div>
         <Skeleton className="h-64 rounded-xl" />
       </div>

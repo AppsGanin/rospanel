@@ -72,6 +72,7 @@ function ManageBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2.5 border-b border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium transition last:border-0 hover:bg-gray-50",
@@ -219,7 +220,7 @@ export function ManagementCard() {
                 className="hidden"
                 onChange={(e) => pick(e.target.files?.[0] ?? null)}
               />
-              <button className={sqBtn} disabled={inspecting} onClick={() => fileRef.current?.click()}>
+              <button type="button" className={sqBtn} disabled={inspecting} onClick={() => fileRef.current?.click()}>
                 <IconUpload />
               </button>
             </Row>

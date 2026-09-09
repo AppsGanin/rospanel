@@ -28,6 +28,7 @@ import {
   MICRO,
   Mono,
   Panel,
+  rowKey,
   Select,
   ShowMore,
   TextInput,
@@ -116,7 +117,12 @@ export function BroadcastPanel() {
   const audience: BroadcastAudience = needsDays
     ? `${audienceKind}:${audienceDays}`
     : audienceKind;
-  const [buttons, setButtons] = useState<BroadcastButton[]>([]);
+  // The inline keyboard, as rows the operator edits. Each carries a key of its own:
+  // deleting the middle button must take that button's inputs with it, not shift the
+  // one below into its DOM (and its caret).
+  const [buttons, setButtons] = useState<(BroadcastButton & { key: string })[]>(
+    [],
+  );
   const [media, setMedia] = useState<File | null>(null);
   const [reach, setReach] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,9 +135,9 @@ export function BroadcastPanel() {
       .then(setList)
       .catch((e) => notifyError(errMessage(e)));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load().finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll only while something is actually moving, and stop the moment it isn't.
@@ -162,7 +168,11 @@ export function BroadcastPanel() {
   const empty = !text.trim() && !media;
   const badButton = buttons.some((b) => !b.text.trim() || !b.url.trim());
   const canSend = !empty && !overLimit && !badButton;
-  const payload = { text, audience, buttons };
+  const payload = {
+    text,
+    audience,
+    buttons: buttons.map((b) => ({ text: b.text, url: b.url })),
+  };
 
   const clearMedia = () => {
     setMedia(null);
@@ -314,14 +324,14 @@ export function BroadcastPanel() {
           <div className="flex flex-col gap-2 border-t border-gray-100 px-3.5 py-3">
             <p className={MICRO}>{t("bc.buttons")}</p>
             {buttons.map((b, i) => (
-              <div key={i} className="flex items-end gap-2">
+              <div key={b.key} className="flex items-end gap-2">
                 <div className="flex-1">
                   <TextInput
                     label={i === 0 ? t("bc.text") : undefined}
                     value={b.text}
                     onChange={(v) =>
                       setButtons((cur) =>
-                        cur.map((x, j) => (j === i ? { ...x, text: v } : x)),
+                        cur.map((x) => (x.key === b.key ? { ...x, text: v } : x)),
                       )
                     }
                     placeholder={t("bc.buttonPlaceholder")}
@@ -333,7 +343,7 @@ export function BroadcastPanel() {
                     value={b.url}
                     onChange={(v) =>
                       setButtons((cur) =>
-                        cur.map((x, j) => (j === i ? { ...x, url: v } : x)),
+                        cur.map((x) => (x.key === b.key ? { ...x, url: v } : x)),
                       )
                     }
                     placeholder="https://example.com"
@@ -342,7 +352,7 @@ export function BroadcastPanel() {
                 <IconButton
                   title={t("bc.removeButton")}
                   onClick={() =>
-                    setButtons((cur) => cur.filter((_, j) => j !== i))
+                    setButtons((cur) => cur.filter((x) => x.key !== b.key))
                   }
                 >
                   <IconClose size={18} />
@@ -355,7 +365,10 @@ export function BroadcastPanel() {
                   variant="light"
                   size="sm"
                   onClick={() =>
-                    setButtons((cur) => [...cur, { text: "", url: "" }])
+                    setButtons((cur) => [
+                      ...cur,
+                      { text: "", url: "", key: rowKey() },
+                    ])
                   }
                 >
                   {t("bc.addButton")}

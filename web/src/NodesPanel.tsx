@@ -133,6 +133,7 @@ function DialogTabs({
     <div className="no-scrollbar -mx-5 flex gap-0.5 overflow-x-auto px-5">
       {tabs.map((t) => (
         <button
+          type="button"
           key={t.value}
           onClick={() => onChange(t.value)}
           className={cn(
@@ -332,6 +333,7 @@ function SystemProxyEditor({
       )}
       {on &&
         accounts.map((a, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the account list is the wire payload — it carries no id, and its position is what every mutator here addresses
           <SettingRow key={i}>
             <div className="flex flex-col gap-2">
               {/* Login, password and the delete control on ONE line: the button
@@ -535,11 +537,6 @@ export function serverName(node: NodeView): string {
   return node.name;
 }
 
-// Sep is the muted middot between inline meta values.
-function Sep() {
-  return <span className="text-gray-300">·</span>;
-}
-
 // InstallCommandModal shows the one-line install command exactly once after a node
 // is created or its token is regenerated.
 function InstallCommandModal({
@@ -662,6 +659,7 @@ function AddNodeDialog({
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
+            type="button"
             key={m}
             onClick={() => setMode(m)}
             disabled={installing}
@@ -699,6 +697,7 @@ function AddNodeDialog({
             <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
               {(["password", "key"] as const).map((a) => (
                 <button
+                  type="button"
                   key={a}
                   onClick={() => setSshAuth(a)}
                   className={cn(
@@ -727,6 +726,7 @@ function AddNodeDialog({
         {log.length > 0 && (
           <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
             {log.map((l, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: an install transcript is positional — lines repeat verbatim and only ever append
               <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
                 {l}
               </div>
@@ -843,6 +843,7 @@ function ReconnectDialog({
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
         {(["command", "ssh"] as const).map((m) => (
           <button
+            type="button"
             key={m}
             onClick={() => setMode(m)}
             disabled={running}
@@ -875,6 +876,7 @@ function ReconnectDialog({
           <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm">
             {(["password", "key"] as const).map((a) => (
               <button
+                type="button"
                 key={a}
                 onClick={() => setSshAuth(a)}
                 className={cn(
@@ -900,6 +902,7 @@ function ReconnectDialog({
           {log.length > 0 && (
             <div className="max-h-56 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
               {log.map((l, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: an install transcript is positional — lines repeat verbatim and only ever append
                 <div key={i} className={l.startsWith(ERR_PREFIX) ? "text-danger" : ""}>
                   {l}
                 </div>
@@ -1420,6 +1423,7 @@ function MasterSettingsDialog({
   });
   const reset = r.reset;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     getGeoStatus()
       .then((g) => {
@@ -1457,7 +1461,6 @@ function MasterSettingsDialog({
         notifyError(errMessage(e));
       })
       .finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshGeo = () =>
@@ -2207,6 +2210,7 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
         ) : (
           shown.map((l, i) => (
             <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: a log stream is positional — lines repeat verbatim and only ever append
               key={i}
               className={cn(
                 "whitespace-pre-wrap break-all",
@@ -2238,6 +2242,7 @@ export function NodesPanel() {
       .then((r) => setNodes(r.nodes))
       .catch((e) => notifyError(errMessage(e)));
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load();
     getSettings()
@@ -2264,6 +2269,7 @@ export function NodesPanel() {
   // seconds the server means it to be shown. Otherwise this is just the liveness
   // refresh keeping online/offline badges current, and it stays lazy.
   const showingRestart = !!nodes?.some((n) => n.xray_restart);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the cadence is the only thing this re-reads; load is redefined every render and would restart the timer on each one
   useEffect(() => {
     // 8s while the page is open. A node's own report lands every 30–60s (the panel
     // holds its long-poll that long), so this cannot make node data fresher than the

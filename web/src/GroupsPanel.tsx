@@ -512,7 +512,6 @@ function MembersTable({
       const bm = members.has(b.id) ? 0 : 1;
       return am - bm || a.name.localeCompare(b.name);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users, query, members]);
 
   // A new search starts from the top again.

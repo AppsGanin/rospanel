@@ -95,12 +95,12 @@ export function AbuseSettings() {
       setLoaded(true);
     });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load().catch((e) => {
       notifyError(errMessage(e));
       setLoaded(true);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dirty = useMemo(() => {
