@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -25,8 +26,102 @@ const regURL = "https://api.cloudflareclient.com/v0a2158/reg"
 // Well-known fallbacks if the API omits them (it usually returns its own).
 const (
 	defaultPeerPublicKey = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
-	defaultEndpoint      = "engage.cloudflareclient.com:2408"
+
+	// peerHost is the hostname registration hands back as the peer address, and
+	// anycastV4 is the address it resolves to — Cloudflare's well-known WARP anycast
+	// entry point. The panel dials the address, never the hostname: see EndpointAddr.
+	peerHost  = "engage.cloudflareclient.com"
+	anycastV4 = "162.159.192.1"
+	altV4     = "162.159.195.1"
+	peerPort  = "2408"
+
+	defaultEndpoint = anycastV4 + ":" + peerPort
 )
+
+// EndpointAddr returns ep with a literal IP for a host, so that reaching the WARP
+// peer takes no name resolution at all.
+//
+// Xray resolves a WireGuard endpoint through its OWN dns block, which carries the
+// resolvers the operator configured. When those are slow or filtered — a box inside
+// Russia querying a DoH resolver the censor drops — the lookup fails and Xray logs
+// "failed to set endpoint engage.cloudflareclient.com:2408: app/dns: record not
+// found" on every handshake attempt: the WARP lane never comes up while every other
+// lane looks healthy, and nothing in the panel says why. Cloudflare's hostname is a
+// fixed anycast address, so writing the address skips the lookup entirely.
+//
+// A host that is already an IP is kept as it is, and so is an unrecognised hostname
+// — the panel has no business inventing an address for a peer it doesn't know.
+func EndpointAddr(ep string) string {
+	ep = strings.TrimSpace(ep)
+	if ep == "" {
+		return defaultEndpoint
+	}
+	host, port, err := net.SplitHostPort(ep)
+	if err != nil {
+		host, port = ep, peerPort // no port at all, or a bare IPv6
+	}
+	if port == "" || port == "0" {
+		port = peerPort
+	}
+	switch {
+	case net.ParseIP(host) != nil:
+		return net.JoinHostPort(host, port)
+	case strings.EqualFold(host, peerHost):
+		return net.JoinHostPort(anycastV4, port)
+	}
+	return ep
+}
+
+// Pool returns the peer addresses the WARP lane spreads over, the account's own
+// endpoint first.
+//
+// A single endpoint is a single point of failure that no amount of retrying fixes:
+// a provider can drop a whole Cloudflare range or one UDP port, and then the lane
+// stops carrying traffic while the rest of the server looks healthy. So the members
+// differ in BOTH dimensions — another range and another port each.
+//
+// Measured from a Dutch box on 2026-09-09 with a real account: 162.159.192.0/24 and
+// 162.159.195.0/24 answered a WireGuard handshake on ports 2408, 4500, 500 and 1701,
+// while 162.159.193.0/24 answered on nothing at all. 193.0/24 is therefore left out
+// rather than carried as a member that can never come up, retrying its handshake and
+// filling the log forever.
+//
+// The members share the one WARP account. Cloudflare accepts the same key from
+// several endpoints at once — verified live, two members carried traffic
+// simultaneously through different egress addresses — and Xray's health-probed
+// balancer keeps the lane on whichever ones it can actually reach.
+func Pool(ep string) []string {
+	pool := []string{EndpointAddr(ep)}
+	for _, alt := range []string{
+		net.JoinHostPort(altV4, "4500"),
+		net.JoinHostPort(anycastV4, "500"),
+	} {
+		if alt != pool[0] {
+			pool = append(pool, alt)
+		}
+	}
+	return pool
+}
+
+// peerEndpoint picks the peer address out of a registration response, preferring
+// the IPv4 anycast address over the hostname. Cloudflare returns the address with
+// port 0 and the real port only on the hostname, so the two are combined.
+func peerEndpoint(v4, host string) string {
+	port := peerPort
+	if _, p, err := net.SplitHostPort(host); err == nil && p != "" && p != "0" {
+		port = p
+	}
+	if ip, p, err := net.SplitHostPort(strings.TrimSpace(v4)); err == nil && net.ParseIP(ip) != nil {
+		if p == "" || p == "0" {
+			p = port
+		}
+		return net.JoinHostPort(ip, p)
+	}
+	if ip := strings.TrimSpace(v4); net.ParseIP(ip) != nil {
+		return net.JoinHostPort(ip, port)
+	}
+	return host // may be empty — EndpointAddr then falls back to the anycast default
+}
 
 // Account holds everything needed to build a WireGuard outbound to WARP.
 type Account struct {
@@ -87,6 +182,8 @@ func Register(ctx context.Context) (*Account, error) {
 				PublicKey string `json:"public_key"`
 				Endpoint  struct {
 					Host string `json:"host"`
+					V4   string `json:"v4"`
+					V6   string `json:"v6"`
 				} `json:"endpoint"`
 			} `json:"peers"`
 		} `json:"config"`
@@ -103,12 +200,11 @@ func Register(ctx context.Context) (*Account, error) {
 		AddressV6:     rr.Config.Interface.Addresses.V6,
 	}
 	if len(rr.Config.Peers) > 0 {
-		if k := rr.Config.Peers[0].PublicKey; k != "" {
+		p := rr.Config.Peers[0]
+		if k := p.PublicKey; k != "" {
 			acc.PeerPublicKey = k
 		}
-		if h := rr.Config.Peers[0].Endpoint.Host; h != "" {
-			acc.Endpoint = h
-		}
+		acc.Endpoint = EndpointAddr(peerEndpoint(p.Endpoint.V4, p.Endpoint.Host))
 	}
 	if acc.AddressV4 == "" {
 		return nil, fmt.Errorf("warp registration: no IPv4 assigned")

@@ -404,7 +404,11 @@ themselves keep running, so existing connections are untouched and the operator 
 
 **block / direct / WARP / Opera** categories with priority, **geosite/geoip** presets with
 automatic database downloads, egress through **Cloudflare WARP** (WireGuard) and the free
-**Opera VPN** with region selection. **Proxy lanes** are independent egresses, each with its
+**Opera VPN** with region selection. The WARP lane stands on **several Cloudflare endpoints
+at once** — different address ranges and different UDP ports, health-probed, so a provider
+that drops one range or one port costs the lane nothing. Its peers are written as addresses,
+never hostnames: Xray resolves a WireGuard endpoint through its own DNS servers, and a lane
+that depends on them dies silently wherever those are filtered. **Proxy lanes** are independent egresses, each with its
 own upstreams and zone rules, balanced across whatever is alive (Observatory). An upstream is a
 socks5/http proxy **or somebody else's VPN server**: a vless:// / trojan:// / ss:// / vmess:// /
 hysteria2:// link, or a whole subscription (https://…, `happ://crypt…`, base64) — the panel

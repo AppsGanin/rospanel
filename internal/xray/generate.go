@@ -9,6 +9,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/geo"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/warp"
 )
 
 // parseDNS splits the operator's DNS setting (servers separated by newlines or
@@ -217,12 +218,13 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		{Tag: "block", Protocol: "blackhole"},
 	}
 
-	// Cloudflare WARP egress (WireGuard). Only emitted when enabled AND a WARP
-	// account has been provisioned; otherwise "warp" rules fall back to direct.
-	warpTag := "direct"
-	if set.WarpEnabled && set.WarpRegistered() {
-		outbounds = append(outbounds, warpOutbound(set))
-		warpTag = "warp"
+	// Cloudflare WARP egress (WireGuard), one outbound per endpoint in the pool,
+	// routed through a health-probed balancer so losing an endpoint costs the lane
+	// nothing. Only emitted when enabled AND a WARP account has been provisioned;
+	// otherwise "warp" rules fall back to direct.
+	warpActive := set.WarpEnabled && set.WarpRegistered()
+	if warpActive {
+		outbounds = append(outbounds, warpOutbounds(set)...)
 	}
 
 	// The entrance to WARP for anything running ON this box — the panel itself, or
@@ -234,8 +236,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// address (model.Settings.WarpProxyURL) whenever it is up, so the inbound has to
 	// exist for as long as that address is advertised — not only while some particular
 	// consumer happens to be configured to use it.
-	panelEgressWarp := warpTag == "warp"
-	if panelEgressWarp {
+	if warpActive {
 		inbounds = append(inbounds, panelEgressInbound())
 	}
 
@@ -280,6 +281,12 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	if operaActive {
 		subjects = append(subjects, "opera")
 	}
+	if warpActive {
+		// Without a probe the balancer has no idea which endpoints are reachable and
+		// leastPing degrades to picking one at random — which is worse than the single
+		// outbound it replaced, because now two thirds of the picks can be dead.
+		subjects = append(subjects, warpTagPrefix)
+	}
 	var observatory *Observatory
 	if len(subjects) > 0 {
 		probeURL, probeInterval := probeProfile(set.Host)
@@ -313,7 +320,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpTag, operaActive, panelEgressWarp, active),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active),
 		Observatory: observatory,
 	}, nil
 }
@@ -880,8 +887,59 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	return tags
 }
 
-// warpOutbound builds the WireGuard outbound to Cloudflare WARP from settings.
-func warpOutbound(set *model.Settings) Outbound {
+// warpTagPrefix is what the WARP members' tags start with: their balancer selects
+// them by it, and so does the Observatory that decides which are alive.
+const warpTagPrefix = "warp"
+
+// warpBalancerTag is the routing target for the WARP lane — the balancer in front of
+// the endpoint members, not any one member.
+const warpBalancerTag = "warp-out"
+
+// warpMemberTag names the i-th endpoint's outbound. The first member keeps the bare
+// "warp" tag it has always had: it carries the endpoint Cloudflare itself handed the
+// account, and the name shows up in operator-facing docs and in live Xray state.
+func warpMemberTag(i int) string {
+	if i == 0 {
+		return warpTagPrefix
+	}
+	return fmt.Sprintf("%s-%d", warpTagPrefix, i+1)
+}
+
+// warpOutbounds builds one WireGuard outbound per endpoint in the WARP pool. They
+// share the account's keys and differ only in which peer address they dial — see
+// warp.Pool for why there is more than one.
+func warpOutbounds(set *model.Settings) []Outbound {
+	pool := warp.Pool(set.WarpEndpoint)
+	outs := make([]Outbound, 0, len(pool))
+	for i, ep := range pool {
+		outs = append(outs, warpOutbound(set, warpMemberTag(i), ep))
+	}
+	return outs
+}
+
+// warpBalancer spreads the WARP lane across its endpoint members, keeping it on the
+// ones the Observatory can reach.
+//
+// The fallback is the first MEMBER, not "direct" as the proxy and Opera balancers
+// use. It is what stops the lane leaking: a balancer with no live member and no
+// fallback does not fail the request, it falls through to the first outbound in the
+// config — which is direct. Verified against Xray 26.7.28 by pointing all three
+// members at unreachable addresses: with no fallbackTag the request completed in
+// 0.1 s with warp=off (the real server address, for a client that asked to hide it),
+// and with the first member as the fallback it timed out instead. Failing is the
+// right answer here; leaving the tunnel silently is not.
+func warpBalancer() Balancer {
+	return Balancer{
+		Tag:         warpBalancerTag,
+		Selector:    []string{warpTagPrefix},
+		Strategy:    &BalancerStrategy{Type: "leastPing"},
+		FallbackTag: warpMemberTag(0),
+	}
+}
+
+// warpOutbound builds one WireGuard outbound to Cloudflare WARP: the account from
+// settings, dialling the peer at ep.
+func warpOutbound(set *model.Settings, tag, ep string) Outbound {
 	addrs := []string{set.WarpAddressV4 + "/32"}
 	if set.WarpAddressV6 != "" {
 		addrs = append(addrs, set.WarpAddressV6+"/128")
@@ -896,7 +954,7 @@ func warpOutbound(set *model.Settings) Outbound {
 		}
 	}
 	return Outbound{
-		Tag:      "warp",
+		Tag:      tag,
 		Protocol: "wireguard",
 		Settings: WireGuardSettings{
 			SecretKey: set.WarpPrivateKey,
@@ -917,8 +975,12 @@ func warpOutbound(set *model.Settings) Outbound {
 			// after enough edits.
 			NoKernelTun: true,
 			Peers: []WireGuardPeer{{
-				PublicKey:  set.WarpPublicKey,
-				Endpoint:   set.WarpEndpoint,
+				PublicKey: set.WarpPublicKey,
+				// An address, never Cloudflare's hostname: Xray looks a WireGuard
+				// endpoint up through its own dns block, so a hostname here hands the
+				// WARP lane to whatever resolvers the operator configured. See
+				// warp.EndpointAddr, which every address in warp.Pool has been through.
+				Endpoint:   ep,
 				AllowedIPs: []string{"0.0.0.0/0", "::/0"},
 			}},
 		},
@@ -951,9 +1013,12 @@ func healthBalancer(tag, selector string) Balancer {
 // compileRouting turns the structured routing config into Xray field rules
 // (first-match-wins, evaluated in category precedence: block → direct → IPv4 →
 // WARP). The api inbound is dispatched to the StatsService first; unmatched
-// traffic falls through to the first real outbound (direct). warpTag is the
-// outbound the WARP lane egresses through; the proxy/Opera lanes go through
-// health-probed balancers (when active) that fall back to direct on failure.
+// traffic falls through to the first real outbound (direct). Every lane with more
+// than one way out — WARP's endpoint members, a proxy lane's pool, Opera — is routed
+// through its health-probed balancer; the proxy and Opera balancers fall back to
+// direct on failure, while WARP's falls back to one of its own members so the lane
+// can never silently leave the tunnel (see warpBalancer). A WARP lane with no account
+// provisioned routes to direct, same as any other inactive lane.
 // privateEgressCIDRs are destination ranges a tunnelled client is never allowed to
 // reach: loopback, RFC1918 private space, link-local (covers the 169.254.169.254
 // cloud-metadata endpoint), CGNAT, and their IPv6 equivalents. Explicit CIDRs (not
@@ -1004,7 +1069,7 @@ var privateEgressDomains = []string{
 	"full:instance-data.ec2.internal",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpTag string, operaActive, panelEgressWarp bool, active map[string]bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active map[string]bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
 	// the Observatory) routes to a live member, else falls back to direct.
@@ -1015,6 +1080,9 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	}
 	if operaActive {
 		out.Balancers = append(out.Balancers, healthBalancer(operaBalancerTag, "opera"))
+	}
+	if warpActive {
+		out.Balancers = append(out.Balancers, warpBalancer())
 	}
 	// Dispatch the stats api inbound to the api handler before anything else.
 	out.Rules = append(out.Rules, RouteRule{
@@ -1045,11 +1113,11 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	// black-holing it. It stays BELOW the private-address floor above on purpose — an
 	// entrance on loopback gets no more reach into the LAN through Xray than a VPN
 	// client does.
-	if panelEgressWarp {
+	if warpActive {
 		out.Rules = append(out.Rules, RouteRule{
 			Type:        "field",
 			InboundTag:  []string{panelEgressTag},
-			OutboundTag: "warp",
+			BalancerTag: warpBalancerTag,
 		})
 	}
 
@@ -1076,8 +1144,14 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 			addDomainRule(out, "direct", rc.DirectDomains)
 			addIPRule(out, "direct", rc.DirectIPs)
 		case "warp":
-			addDomainRule(out, warpTag, rc.WarpDomains)
-			addIPRule(out, warpTag, rc.WarpIPs)
+			if warpActive {
+				addBalancerRule(out, warpBalancerTag, rc.WarpDomains, rc.WarpIPs)
+			} else {
+				// No account provisioned: the lane's traffic keeps flowing out directly
+				// rather than black-holing, which is how every inactive lane behaves.
+				addDomainRule(out, "direct", rc.WarpDomains)
+				addIPRule(out, "direct", rc.WarpIPs)
+			}
 		case "opera":
 			if operaActive {
 				addBalancerRule(out, operaBalancerTag, rc.OperaDomains, rc.OperaIPs)
@@ -1095,8 +1169,8 @@ func compileRouting(rc model.RoutingConfig, order []string, warpTag string, oper
 	}
 	switch last := order[len(order)-1]; last {
 	case "warp":
-		if warpTag == "warp" {
-			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", OutboundTag: "warp"})
+		if warpActive {
+			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: warpBalancerTag})
 		}
 	case "opera":
 		if operaActive {

@@ -3,6 +3,7 @@ package xray
 import (
 	"net"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -60,8 +61,9 @@ func TestPanelEgressInboundEmittedWheneverWarpIsUp(t *testing.T) {
 	if rule == nil {
 		t.Fatal("no routing rule for the entrance — its traffic would follow the operator's lanes instead of WARP")
 	}
-	if rule.OutboundTag != "warp" {
-		t.Errorf("the entrance is routed to %q, want warp", rule.OutboundTag)
+	if rule.BalancerTag != warpBalancerTag {
+		t.Errorf("the entrance is routed to %q/%q, want the %s balancer",
+			rule.OutboundTag, rule.BalancerTag, warpBalancerTag)
 	}
 }
 
@@ -148,20 +150,23 @@ func TestWarpOutboundStaysOutOfTheKernel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
+	members := 0
 	for _, o := range cfg.Outbounds {
-		if o.Tag != "warp" {
+		if !strings.HasPrefix(o.Tag, warpTagPrefix) {
 			continue
 		}
+		members++
 		wg, ok := o.Settings.(WireGuardSettings)
 		if !ok {
-			t.Fatalf("warp settings are %T, not WireGuardSettings", o.Settings)
+			t.Fatalf("%s settings are %T, not WireGuardSettings", o.Tag, o.Settings)
 		}
 		if !wg.NoKernelTun {
-			t.Error("noKernelTun is off — Xray will take a kernel TUN and leak a routing table per restart")
+			t.Errorf("noKernelTun is off on %s — Xray will take a kernel TUN and leak a routing table per restart", o.Tag)
 		}
-		return
 	}
-	t.Fatal("no warp outbound generated")
+	if members == 0 {
+		t.Fatal("no warp outbound generated")
+	}
 }
 
 // The security floor must block the loopback by NAME as well as by IP. The "direct"
@@ -184,7 +189,7 @@ func TestPrivateEgressFloorBlocksLoopbackByName(t *testing.T) {
 			domainAt, blocked = i, r.Domain
 		}
 		// The first rule that sends client traffic OUT is where the floor stops applying.
-		if laneAt < 0 && (r.OutboundTag == "direct" || r.OutboundTag == "warp") && len(r.InboundTag) == 0 {
+		if laneAt < 0 && (r.OutboundTag == "direct" || r.BalancerTag == warpBalancerTag) && len(r.InboundTag) == 0 {
 			laneAt = i
 		}
 	}
@@ -220,5 +225,116 @@ func TestPrivateEgressCIDRsAreValid(t *testing.T) {
 		if ip.To4() != nil && ones > 32 {
 			t.Errorf("%s: Xray reads this as IPv4 and rejects a /%d (max /32)", entry, ones)
 		}
+	}
+}
+
+// The WARP peer is written as an address. Xray resolves a WireGuard endpoint through
+// its own dns block, so a hostname makes the tunnel depend on the operator's
+// resolvers: on a box whose resolvers are filtered, Xray reports "failed to set
+// endpoint … app/dns: record not found" for every handshake and WARP stays down
+// while every other lane looks fine.
+func TestWarpPeerEndpointIsAnAddress(t *testing.T) {
+	set := warpSettings() // carries the hostname an older registration stored
+
+	cfg, err := Generate(set, nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	for _, ep := range warpEndpoints(t, cfg) {
+		host, _, err := net.SplitHostPort(ep)
+		if err != nil {
+			t.Errorf("WARP endpoint %q is not host:port: %v", ep, err)
+			continue
+		}
+		if net.ParseIP(host) == nil {
+			t.Errorf("WARP endpoint %q still carries a hostname — the lane dies whenever Xray's resolvers do", ep)
+		}
+	}
+}
+
+// warpEndpoints returns the peer address of every WARP member, one per outbound.
+func warpEndpoints(t *testing.T, cfg *Config) []string {
+	t.Helper()
+	var eps []string
+	for _, o := range cfg.Outbounds {
+		if !strings.HasPrefix(o.Tag, warpTagPrefix) {
+			continue
+		}
+		peers := o.Settings.(WireGuardSettings).Peers
+		if len(peers) != 1 {
+			t.Fatalf("%s has %d peers, want 1 — several peers in one outbound do not fail over, they overwrite each other", o.Tag, len(peers))
+		}
+		eps = append(eps, peers[0].Endpoint)
+	}
+	if len(eps) == 0 {
+		t.Fatal("no warp outbound generated")
+	}
+	return eps
+}
+
+// Losing one Cloudflare range or one UDP port must not take the lane down, so the
+// members spread over both. They are separate outbounds on purpose: a second peer
+// inside one wireguard outbound is not a second route to the same place — the peers
+// share a public key and an allowed-IP range, so the last one simply wins.
+func TestWarpSpreadsOverSeveralEndpoints(t *testing.T) {
+	cfg, err := Generate(warpSettings(), nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	eps := warpEndpoints(t, cfg)
+	if len(eps) < 2 {
+		t.Fatalf("only %d WARP endpoint(s): %v — one is a single point of failure", len(eps), eps)
+	}
+	hosts, ports := map[string]bool{}, map[string]bool{}
+	for _, ep := range eps {
+		host, port, err := net.SplitHostPort(ep)
+		if err != nil {
+			t.Fatalf("endpoint %q is not host:port: %v", ep, err)
+		}
+		if hosts[host] && ports[port] {
+			t.Errorf("endpoint %q repeats a host and a port already in the pool %v — it adds no cover", ep, eps)
+		}
+		hosts[host], ports[port] = true, true
+	}
+	if len(hosts) < 2 || len(ports) < 2 {
+		t.Errorf("pool %v covers %d address(es) and %d port(s); a provider dropping either dimension takes the lane with it",
+			eps, len(hosts), len(ports))
+	}
+}
+
+// The members are only useful if something works out which of them are reachable —
+// leastPing with no probe data picks at random, so most picks would be dead on a
+// network that dropped an endpoint.
+func TestWarpBalancerIsHealthProbedAndCannotLeaveTheTunnel(t *testing.T) {
+	cfg, err := Generate(warpSettings(), nil, Options{PanelDest: "127.0.0.1:8080"}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	var b *Balancer
+	for i := range cfg.Routing.Balancers {
+		if cfg.Routing.Balancers[i].Tag == warpBalancerTag {
+			b = &cfg.Routing.Balancers[i]
+		}
+	}
+	if b == nil {
+		t.Fatalf("no %s balancer — the lane would be pinned to one endpoint", warpBalancerTag)
+	}
+	if !slices.Contains(b.Selector, warpTagPrefix) {
+		t.Errorf("balancer selector %v does not select the WARP members", b.Selector)
+	}
+	// A tunnel that silently turns into the server's own address is worse than one
+	// that fails: the destination sees the real IP of a client who asked to hide it.
+	// An EMPTY fallback is the leaking case, not the safe one — Xray then falls
+	// through to the first outbound in the config, which is direct (measured against
+	// 26.7.28: warp=off in 0.1 s with every member unreachable). So the fallback has
+	// to name a WARP member.
+	if !strings.HasPrefix(b.FallbackTag, warpTagPrefix) {
+		t.Errorf("the WARP balancer falls back to %q — traffic that asked for the tunnel would leave unprotected", b.FallbackTag)
+	}
+	if cfg.Observatory == nil {
+		t.Fatal("no observatory — the balancer would have no idea which endpoints are alive")
+	}
+	if !slices.Contains(cfg.Observatory.SubjectSelector, warpTagPrefix) {
+		t.Errorf("observatory probes %v, which leaves the WARP members unprobed", cfg.Observatory.SubjectSelector)
 	}
 }
