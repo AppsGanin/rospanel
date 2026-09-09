@@ -5,7 +5,7 @@ import { fmtLastSeen } from './format'
 import { useAction } from './hooks'
 import { currentLang } from './i18n'
 import { notifySuccess } from './notify'
-import { Badge, Button, useConfirm } from './ui'
+import { Badge, IconButton, IconClose, IconLogout, useConfirm } from './ui'
 
 // clientLabel reduces a User-Agent to what tells sessions apart — "Chrome · macOS",
 // "Safari · iPhone" — since the header itself is a hundred characters of history
@@ -52,6 +52,7 @@ export function Sessions() {
       .then(setList)
       .catch(() => {})
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     reload()
   }, [])
@@ -84,10 +85,17 @@ export function Sessions() {
     <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-ink">{t('sessions.title')}</span>
+        {/* Icons, like every other row action in the panel; the words live in the
+            titles and in the confirmation that follows. */}
         {others.length > 0 && (
-          <Button size="sm" variant="light" color="red" loading={busy} onClick={revokeAll}>
-            {t('sessions.revokeOthers')}
-          </Button>
+          <IconButton
+            color="red"
+            disabled={busy}
+            title={t('sessions.revokeOthers')}
+            onClick={revokeAll}
+          >
+            <IconLogout size={16} />
+          </IconButton>
         )}
       </div>
       <p className="text-xs text-ink-muted">{t('sessions.hint')}</p>
@@ -116,9 +124,9 @@ export function Sessions() {
             </div>
           </div>
           {!s.current && (
-            <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => revoke(s)}>
-              {t('sessions.revoke')}
-            </Button>
+            <IconButton color="red" disabled={busy} title={t('sessions.revoke')} onClick={() => revoke(s)}>
+              <IconClose size={16} />
+            </IconButton>
           )}
         </div>
       ))}

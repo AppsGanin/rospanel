@@ -7,13 +7,31 @@ import {
   getAdminAuditCatalog,
   listAdminAudit,
 } from "./api";
-import { currentLang, slugKey, td } from "./i18n";
+import { fmtStamp } from "./format";
+import { slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
-import { Badge, Button, Select, SettingCard, Skeleton, TextInput } from "./ui";
+import {
+  Button,
+  cn,
+  DatePicker,
+  IconButton,
+  IconExport,
+  EmptyState,
+  MICRO,
+  Mono,
+  Panel,
+  Select,
+  Skeleton,
+  TextInput,
+  useWideBox,
+} from "./ui";
 
 // Same page size as the user journal (api.EVENT_PAGE) — two audit trails that read
 // the same way should not open at different depths.
 const PAGE = 20;
+
+// Mirrors model.AdminAuditRetentionDays.
+const RETENTION_DAYS = 90;
 
 // A YYYY-MM-DD date input → unix seconds at the local day's start (from) or end (to,
 // inclusive), or 0 when blank. Local time is what the operator picked, so that is
@@ -27,13 +45,6 @@ function dayEnd(d: string): number {
   if (!d) return 0;
   const t = new Date(`${d}T23:59:59`).getTime();
   return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
-}
-
-function fmtTs(unix: number): string {
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
 }
 
 // Rows the owner should be able to spot at a glance: a failed sign-in, and the two
@@ -59,41 +70,64 @@ function fmtDetails(d: AdminAudit["details"]): string {
     .join(" · ");
 }
 
+// The journal's columns, one template for the header and every row.
+const TPL =
+  "minmax(0,1.6fr) minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)";
+const TPL_NARROW = "minmax(0,1fr) auto";
+const WIDE_MIN = 640;
+
 function AuditRow({
   ev,
   label,
+  wide,
 }: {
   ev: AdminAudit;
   label: string;
+  wide: boolean;
 }) {
   const tone = toneOf(ev.action);
   const details = fmtDetails(ev.details);
+  const target = ev.target ? auditTarget(ev.target) : "";
+  const when = fmtStamp(ev.created_at);
+  // A failed sign-in and the two irreversible actions are the rows an owner scans
+  // for; they say so in colour rather than in a badge.
+  const actionCls =
+    tone === "danger" ? "text-danger" : tone === "warn" ? "text-warning" : "text-ink";
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {tone === "danger" ? (
-            <Badge color="red">{label}</Badge>
-          ) : tone === "warn" ? (
-            <Badge color="orange">{label}</Badge>
-          ) : (
-            <span className="font-semibold text-ink">{label}</span>
-          )}
-          {ev.target && (
-            <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-ink-muted">
-              {auditTarget(ev.target)}
-            </code>
-          )}
-        </div>
-        <div className="mt-0.5 text-xs text-ink-muted">
-          {ev.actor_name || "—"}
-          {ev.ip && ` · ${ev.ip}`}
-          {details && ` · ${details}`}
-        </div>
-      </div>
-      <div className="shrink-0 text-xs text-ink-muted sm:text-right">
-        {fmtTs(ev.created_at)}
-      </div>
+    <div
+      className={cn(
+        "grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]",
+        tone === "danger" && "danger-tint",
+      )}
+      style={{ gridTemplateColumns: wide ? TPL : TPL_NARROW }}
+    >
+      <span className={cn("truncate text-xs", actionCls)} title={label}>
+        {label}
+      </span>
+      {wide ? (
+        <>
+          <span
+            className="truncate text-xs text-ink-muted"
+            title={details ? `${target} · ${details}` : target}
+          >
+            {target || "—"}
+            {details && ` · ${details}`}
+          </span>
+          <span className="truncate text-xs text-accent">{ev.actor_name || "—"}</span>
+          <Mono className="truncate text-[11px] text-ink-muted">{ev.ip || "—"}</Mono>
+          <Mono className="truncate text-right text-[11px] text-ink-muted">{when}</Mono>
+        </>
+      ) : (
+        <>
+          <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+          <span className="col-span-2 truncate text-[11px] text-ink-muted">
+            <span className="text-accent">{ev.actor_name || "—"}</span>
+            {target && ` · ${target}`}
+            {ev.ip && ` · ${ev.ip}`}
+            {details && ` · ${details}`}
+          </span>
+        </>
+      )}
     </div>
   );
 }
@@ -123,6 +157,7 @@ export function AdminAuditPanel() {
   const [next, setNext] = useState(0);
   const [loading, setLoading] = useState(true);
   const [more, setMore] = useState(false);
+  const [boxRef, wide] = useWideBox(WIDE_MIN);
 
   useEffect(() => {
     getAdminAuditCatalog()
@@ -185,60 +220,90 @@ export function AdminAuditPanel() {
   };
 
   return (
-    <SettingCard
+    <Panel
       title={t("audit.title")}
-      description={t("audit.description", { days: 90 })}
-      action={
-        <div className="w-48">
-          <Select value={category} onChange={setCategory} data={options} />
-        </div>
+      aside={
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="min-w-0 text-xs text-ink-muted">
+            {t("events.retention", { count: RETENTION_DAYS })}
+          </span>
+          {/* A plain link, not a fetch: the file is an attachment the browser saves,
+              and it carries exactly the filter below. In the header rather than in
+              the filter row so it stays in reach however the row wraps. */}
+          <IconButton
+            href={adminAuditExportURL(filter)}
+            title={t("audit.export")}
+          >
+            <IconExport />
+          </IconButton>
+        </span>
       }
-      stackAction
     >
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="flex-1">
+      <div className="flex flex-wrap items-end gap-2 border-t border-gray-100 px-3.5 py-3">
+        <div className="min-w-40 flex-1">
           <TextInput
-            label={t("audit.search")}
             type="search"
             value={search}
             onChange={setSearch}
             placeholder={t("audit.searchHint")}
           />
         </div>
-        <TextInput label={t("audit.from")} type="date" value={from} onChange={setFrom} />
-        <TextInput label={t("audit.to")} type="date" value={to} onChange={setTo} />
-        <a
-          href={adminAuditExportURL(filter)}
-          download="rospanel-audit.csv"
-          className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-ink hover:bg-gray-50"
-        >
-          {t("audit.export")}
-        </a>
+        <div className="w-44">
+          <Select value={category} onChange={setCategory} data={options} />
+        </div>
+        {/* The panel's own calendar rather than the browser's native date input: it
+            renders the same on every platform, and the label lives in the field. */}
+        <div className="w-36">
+          <DatePicker
+            value={from}
+            onChange={setFrom}
+            placeholder={t("audit.from")}
+            clearable
+          />
+        </div>
+        <div className="w-36">
+          <DatePicker
+            value={to}
+            onChange={setTo}
+            min={from || undefined}
+            placeholder={t("audit.to")}
+            clearable
+          />
+        </div>
       </div>
+
       {loading ? (
-        <div className="flex flex-col gap-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-14 w-full" />
+        <div className="flex flex-col gap-2.5 border-t border-gray-100 p-3.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-4 w-full" />
           ))}
         </div>
       ) : events.length === 0 ? (
-        <p className="py-4 text-center text-sm text-ink-muted">
-          {t("audit.empty")}
-        </p>
+        <EmptyState title={t("audit.empty")} />
       ) : (
-        <div className="flex flex-col gap-2">
+        <div ref={boxRef}>
+          {wide && (
+            <div
+              className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
+              style={{ gridTemplateColumns: TPL }}
+            >
+              <span className="truncate">{t("audit.colAction")}</span>
+              <span className="truncate">{t("audit.colTarget")}</span>
+              <span className="truncate">{t("audit.colAdmin")}</span>
+              <span className="truncate">{t("audit.colIp")}</span>
+              <span className="truncate text-right">{t("audit.colWhen")}</span>
+            </div>
+          )}
           {events.map((ev) => (
-            <AuditRow
-              key={ev.id}
-              ev={ev}
-              label={actionLabel(ev.action)}
-            />
+            <AuditRow key={ev.id} ev={ev} label={actionLabel(ev.action)} wide={wide} />
           ))}
           {next > 0 && (
-            <div className="mt-2 flex justify-center">
+            <div className="border-t border-gray-100 p-3.5">
               <Button
                 variant="light"
                 color="gray"
+                size="sm"
+                fullWidth
                 loading={more}
                 onClick={loadMore}
               >
@@ -248,6 +313,6 @@ export function AdminAuditPanel() {
           )}
         </div>
       )}
-    </SettingCard>
+    </Panel>
   );
 }

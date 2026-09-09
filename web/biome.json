@@ -1,0 +1,41 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
+	"files": {
+		"includes": ["src/**/*.ts", "src/**/*.tsx", "e2e/**/*.ts"]
+	},
+	"formatter": {
+		"enabled": false
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "none",
+			"correctness": {
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error",
+				"noUnusedFunctionParameters": "error",
+				"useExhaustiveDependencies": "error",
+				"useHookAtTopLevel": "error",
+				"noChildrenProp": "error",
+				"noVoidElementsWithChildren": "error"
+			},
+			"suspicious": {
+				"noDoubleEquals": "error",
+				"noDuplicateObjectKeys": "error",
+				"noArrayIndexKey": "error",
+				"noExplicitAny": "error",
+				"noConsole": {
+					"level": "error",
+					"options": {
+						"allow": ["error", "warn"]
+					}
+				}
+			},
+			"a11y": {
+				"useKeyWithClickEvents": "error",
+				"useButtonType": "error",
+				"useAltText": "error"
+			}
+		}
+	}
+}

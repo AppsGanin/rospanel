@@ -473,7 +473,7 @@ func (m *Manager) SetSystemProxy(serverID int64, p model.SystemProxy) error {
 		return err
 	}
 	// A node applies whatever config the panel hands it on its next poll; waking it
-	// makes that now rather than up to 45s from now.
+	// makes that now rather than up to a hold (≤27s) from now.
 	m.nodes.wakeOne(serverID)
 	return nil
 }

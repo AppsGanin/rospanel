@@ -49,6 +49,7 @@ export function LogViewer({
     level === "all" ? lines : lines.filter((l) => classify(l) === level);
 
   // Auto-scroll to the bottom unless the user scrolled up to read history.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when a line arrives; the array identity changes on every stream tick, the count is what actually moved the box
   useEffect(() => {
     if (stick.current && boxRef.current) {
       boxRef.current.scrollTop = boxRef.current.scrollHeight;
@@ -98,6 +99,7 @@ export function LogViewer({
         ) : (
           shown.map((l, i) => (
             <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: a log stream is positional — lines repeat verbatim and only ever append
               key={i}
               className={cn("whitespace-pre-wrap break-all", colorOf(classify(l)))}
             >
@@ -108,6 +110,7 @@ export function LogViewer({
       </div>
       {!atBottom && (
         <button
+          type="button"
           onClick={scrollToBottom}
           aria-label={t("logs.scrollDown")}
           className="absolute bottom-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700"

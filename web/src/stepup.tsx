@@ -1,6 +1,7 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { PasswordInput, TextInput } from "./ui";
+import i18n from "./i18n";
+import { Button, Modal, PasswordInput, TextInput } from "./ui";
 
 // Whether the signed-in admin has a second factor, published once at the top the same
 // way the role is (see role.tsx). It decides whether a destructive-action dialog asks
@@ -39,14 +40,19 @@ export function stepUpReady(v: StepUp, totpEnabled: boolean): boolean {
 export function StepUpFields({
   value,
   onChange,
+  withCode,
 }: {
   value: StepUp;
   onChange: (v: StepUp) => void;
+  // Only two endpoints demand a fresh second factor (restore/factory reset and
+  // deleting a node — verifyStepUpTOTP on the server). Asking for a code where the
+  // server ignores it would block the button on an account that has 2FA.
+  withCode?: boolean;
 }) {
   const { t } = useTranslation();
-  const totp = useTotpEnabled();
+  const totp = useTotpEnabled() && !!withCode;
   return (
-    <div className="mt-3 flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <PasswordInput
         label={t("creds.currentPassword")}
         value={value.password}
@@ -67,4 +73,73 @@ export function StepUpFields({
       )}
     </div>
   );
+}
+
+// useStepUpDialog is how an action asks to be re-authorised: its own dialog, opened
+// at the moment it is needed, rather than a password field parked at the bottom of
+// every form that might one day do something irreversible.
+//
+// Same shape as useConfirm: await ask(...) resolves to the credentials, or null when
+// the operator backs out. Render the returned node once, anywhere in the component.
+export function useStepUpDialog() {
+  const hasTotp = useTotpEnabled();
+  const [req, setReq] = useState<
+    | (StepUpAsk & { resolve: (v: StepUp | null) => void })
+    | null
+  >(null);
+  const [value, setValue] = useState<StepUp>(EMPTY_STEP_UP);
+  const [busy, setBusy] = useState(false);
+
+  const ask = (opts: StepUpAsk = {}) => {
+    setValue(EMPTY_STEP_UP);
+    setBusy(false);
+    return new Promise<StepUp | null>((resolve) => setReq({ ...opts, resolve }));
+  };
+  const close = (v: StepUp | null) => {
+    req?.resolve(v);
+    setReq(null);
+  };
+
+  const stepUpNode = (
+    <Modal
+      open={!!req}
+      onClose={() => close(null)}
+      title={req?.title ?? i18n.t("stepUp.title")}
+      subtitle={req?.body}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="light" color="gray" onClick={() => close(null)}>
+            {i18n.t("common.cancel")}
+          </Button>
+          <Button
+            color={req?.danger ? "red" : "brand"}
+            loading={busy}
+            disabled={!stepUpReady(value, hasTotp && !!req?.withCode)}
+            onClick={() => {
+              setBusy(true);
+              close(value);
+            }}
+          >
+            {req?.confirmLabel ?? i18n.t("common.confirm")}
+          </Button>
+        </div>
+      }
+    >
+      <StepUpFields value={value} onChange={setValue} withCode={req?.withCode} />
+    </Modal>
+  );
+
+  return { ask, stepUpNode };
+}
+
+// What the dialog says while it asks. The action names itself here — "Удалить admin",
+// not "OK" — because this is the last screen before it happens.
+export interface StepUpAsk {
+  title?: string;
+  body?: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  // Ask for an authenticator code as well — for the two actions whose endpoint
+  // checks one (verifyStepUpTOTP).
+  withCode?: boolean;
 }

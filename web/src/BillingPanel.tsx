@@ -17,24 +17,32 @@ import {
 } from "./api";
 import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, resetPeriods, speedLimitOptions } from "./format";
 import { useAction } from "./hooks";
-import i18n, { td } from "./i18n";
+import i18n, { td, currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  CustomizableSelect,
-  Badge,
   Button,
   CenterLoader,
   Checkbox,
   cn,
   Code,
-  Modal,
+  CustomizableSelect,
+  Drawer,
+  EmptyState,
+  IconButton,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  MICRO,
+  Mono,
+  Panel,
   SaveBar,
   Select,
-  SettingCard,
+  SettingRow,
   Switch,
   Textarea,
   TextInput,
   useConfirm,
+  useWideBox,
 } from "./ui";
 
 // ProviderDraft is one provider's editable state (mirrors PaymentField kinds:
@@ -96,46 +104,41 @@ function ProviderCard({
       : { label: i18n.t("bill.provUnset"), color: "orange" as const };
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-2xl border transition-colors",
-        draft.enabled ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50/50",
-      )}
-    >
-      {/* Header: monogram, name + note, status, toggle. */}
-      <div className="flex items-center gap-3 p-3.5">
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-base font-bold",
-            draft.enabled ? "accent-tint text-accent" : "bg-gray-100 text-ink-muted",
-          )}
-        >
-          {provider.label.charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-ink">{provider.label}</span>
-            <Badge color={status.color} size="xs">
-              {status.label}
-            </Badge>
-          </div>
-          <p className="truncate text-xs text-ink-muted">{td(provider.note)}</p>
-        </div>
+    <SettingRow
+      label={
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          {provider.label}
+          <span
+            className={cn(
+              "text-[11px] font-normal",
+              status.color === "green"
+                ? "text-success"
+                : status.color === "orange"
+                  ? "text-warning"
+                  : "text-ink-muted",
+            )}
+          >
+            {status.label}
+          </span>
+        </span>
+      }
+      hint={td(provider.note)}
+      control={
         <Switch
           checked={draft.enabled}
           onChange={(v) => onChange({ ...draft, enabled: v })}
         />
-      </div>
-
-      {/* Credentials form, revealed when the provider is on. */}
+      }
+    >
+      {/* Credentials, revealed when the provider is on. */}
       {draft.enabled && (
-        <div className="flex flex-col gap-3 border-t border-gray-100 px-3.5 py-3.5">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           {provider.fields.map((f) => {
             if (f.kind === "bool") {
               return (
                 <label
                   key={f.key}
-                  className="flex items-center gap-2 text-sm text-ink"
+                  className="flex items-center gap-2 text-xs text-ink"
                 >
                   <Switch
                     checked={draft.config[f.key] === "1"}
@@ -143,7 +146,7 @@ function ProviderCard({
                   />
                   {td(f.label)}
                   {f.help && (
-                    <span className="text-xs text-ink-muted">— {td(f.help)}</span>
+                    <span className="text-[11px] text-ink-muted">— {td(f.help)}</span>
                   )}
                 </label>
               );
@@ -159,7 +162,7 @@ function ProviderCard({
                     onChange={(v) => setField(f.key, v)}
                   />
                   {f.help && (
-                    <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
+                    <p className="mt-1 text-[11px] text-ink-muted">{td(f.help)}</p>
                   )}
                 </div>
               );
@@ -179,17 +182,15 @@ function ProviderCard({
                   placeholder={isSecret && f.is_set ? "••••••••" : td(f.placeholder ?? "")}
                 />
                 {f.help && !isSecret && (
-                  <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
+                  <p className="mt-1 text-[11px] text-ink-muted">{td(f.help)}</p>
                 )}
               </div>
             );
           })}
 
           {provider.webhook_url && (
-            <div>
-              <p className="mb-1 text-xs text-ink-muted">
-                {t("bill.webhookUrl")}
-              </p>
+            <div className="sm:col-span-2">
+              <p className="mb-1 text-[11px] text-ink-muted">{t("bill.webhookUrl")}</p>
               <Code block copy>
                 {provider.webhook_url}
               </Code>
@@ -197,7 +198,7 @@ function ProviderCard({
           )}
         </div>
       )}
-    </div>
+    </SettingRow>
   );
 }
 
@@ -218,29 +219,31 @@ function PaymentIntegrations({
 }) {
   const { t } = useTranslation();
   return (
-    <SettingCard
-      title={t("bill.acceptTitle")}
-      description={t("bill.acceptDescription")}
-    >
+    <Panel title={t("bill.acceptTitle")}>
+      <SettingRow hint={t("bill.acceptDescription")} />
       {err ? (
-        <p className="text-sm text-danger">{err}</p>
+        <SettingRow hint={<span className="text-danger">{err}</span>} />
       ) : !providers ? (
         <CenterLoader />
       ) : (
-        <div className="flex flex-col gap-3">
-          {providers.map((p) => (
-            <ProviderCard
-              key={p.key}
-              provider={p}
-              draft={drafts[p.key] ?? draftFromProvider(p)}
-              onChange={(d) => onChange(p.key, d)}
-            />
-          ))}
-        </div>
+        providers.map((p) => (
+          <ProviderCard
+            key={p.key}
+            provider={p}
+            draft={drafts[p.key] ?? draftFromProvider(p)}
+            onChange={(d) => onChange(p.key, d)}
+          />
+        ))
       )}
-    </SettingCard>
+    </Panel>
   );
 }
+
+// The plan roster's columns.
+const PLAN_TPL =
+  "minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1.8fr) minmax(0,.5fr) 76px";
+const PLAN_TPL_NARROW = "minmax(0,1fr) auto";
+const PLANS_WIDE_MIN = 620;
 
 const EMPTY_PLAN = (): TariffPlan => ({
   id: 0,
@@ -448,7 +451,9 @@ function PlanForm({
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-ink">{t("bill.planGroups")}</span>
           {selected.size > 0 && (
-            <Badge color="gray">{t("groups.nSelected", { count: selected.size })}</Badge>
+            <span className="text-[11px] text-ink-muted">
+              {t("groups.nSelected", { count: selected.size })}
+            </span>
           )}
         </div>
         {groups.length === 0 ? (
@@ -483,6 +488,7 @@ export function BillingPanel() {
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
   const [plans, setPlans] = useState<TariffPlan[]>([]);
+  const [plansRef, widePlans] = useWideBox(PLANS_WIDE_MIN);
   const [planUsers, setPlanUsers] = useState<Record<string, number>>({});
   // Access groups a plan can grant. Best-effort: if the list can't be read the editor
   // just says there are none to pick, which is also the honest state for most installs.
@@ -564,14 +570,18 @@ export function BillingPanel() {
 
   if (loadErr || !cfg || !saved) {
     return (
-      <SettingCard title={t("bill.plans")}>
-        <p className="text-sm text-danger">
-          {loadErr || t("bill.loadFailed")}
-        </p>
-        <Button className="mt-3" onClick={() => reload()}>
-          {t("common.retry")}
-        </Button>
-      </SettingCard>
+      <Panel
+        title={t("bill.plans")}
+        aside={
+          <Button size="xs" variant="light" color="gray" onClick={() => reload()}>
+            {t("common.retry")}
+          </Button>
+        }
+      >
+        <SettingRow
+          hint={<span className="text-danger">{loadErr || t("bill.loadFailed")}</span>}
+        />
+      </Panel>
     );
   }
 
@@ -680,113 +690,157 @@ export function BillingPanel() {
   return (
     <>
       {confirmNode}
-      <div className="flex flex-col gap-4">
-        <SettingCard
+      <div className="flex flex-1 flex-col gap-3.5">
+        <Panel
           title={t("settings.tabBilling")}
-          description={t("bill.globalHint")}
-          action={
+          aside={
             <Switch
               checked={cfg.enabled}
               onChange={(v) => setCfg({ ...cfg, enabled: v })}
             />
           }
         >
-          <p className="text-sm text-ink-muted">
-            <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
-          </p>
-        </SettingCard>
+          <SettingRow
+            hint={
+              <>
+                {t("bill.globalHint")}{" "}
+                <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
+              </>
+            }
+          />
+        </Panel>
         <PaymentIntegrations
           providers={providers}
           drafts={payDrafts}
           err={payErr}
           onChange={patchProvider}
         />
-        <SettingCard
+        <Panel
           title={t("bill.plansTitle")}
-          description={t("bill.plansHint")}
-          action={
-            <Button size="sm" onClick={openCreate}>
-              {t("common.create")}
-            </Button>
+          aside={
+            <IconButton
+              variant="filled"
+              color="brand"
+              title={t("bill.newPlan")}
+              onClick={openCreate}
+            >
+              <IconPlus />
+            </IconButton>
           }
         >
+          <SettingRow hint={t("bill.plansHint")} />
           {safePlans.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              {t("bill.noPlans")}
-            </p>
+            <EmptyState title={t("bill.noPlans")} />
           ) : (
-            <ul className="flex flex-col gap-2">
-              {safePlans.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2.5"
+            <div ref={plansRef}>
+              {widePlans && (
+                <div
+                  className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
+                  style={{ gridTemplateColumns: PLAN_TPL }}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-ink">{p.name}</span>
-                      {!p.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
-                      {(planUsers[String(p.id)] ?? 0) > 0 && (
-                        <Badge color="gray">
-                          {t("bill.nUsers", { count: planUsers[String(p.id)] })}
-                        </Badge>
-                      )}
-                      {p.price_rub <= 0 && <Badge color="teal">{t("bill.free")}</Badge>}
-                      {cfg.free_plan_id === p.id && (
-                        <Badge color="brand">{t("bill.afterTrial")}</Badge>
-                      )}
-                      {cfg.trial_plan_id === p.id && (
-                        <Badge color="orange">{t("bill.trial")}</Badge>
-                      )}
-                      {/* The groups the plan hands out — the difference between two
-                          plans is often only this, so it belongs in the list. */}
-                      {groups
-                        .filter((g) => (p.group_ids ?? []).includes(g.id))
-                        .map((g) => (
-                          <Badge key={g.id} color="brand">
-                            {g.name}
-                          </Badge>
-                        ))}
-                    </div>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {planSummary(p)}
-                      {p.slug ? ` · ${t("bill.codeIs", { slug: p.slug })}` : ""}
-                    </p>
-                  </div>
-                  <span className="flex shrink-0 gap-2">
-                    <Button
-                      size="sm"
-                      variant="light"
+                  <span className="truncate">{t("bill.colPlan")}</span>
+                  <span className="truncate">{t("bill.colPrice")}</span>
+                  <span className="truncate">{t("bill.colLimits")}</span>
+                  <span className="truncate">{t("bill.colUsers")}</span>
+                  <span />
+                </div>
+              )}
+              {safePlans.map((p) => {
+                const users = planUsers[String(p.id)] ?? 0
+                const marks = [
+                  !p.enabled ? t("conn.off") : "",
+                  cfg.free_plan_id === p.id ? t("bill.afterTrial") : "",
+                  cfg.trial_plan_id === p.id ? t("bill.trial") : "",
+                  ...groups
+                    .filter((g) => (p.group_ids ?? []).includes(g.id))
+                    .map((g) => g.name),
+                ].filter(Boolean)
+                const actions = (
+                  <span className="flex justify-end gap-0.5">
+                    <IconButton
+                      title={t("common.edit")}
                       onClick={() => {
                         setEditor({ ...p });
                         setMigrateTo(0);
                       }}
                     >
-                      {t("common.edit")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="subtle"
+                      <IconPencil size={16} />
+                    </IconButton>
+                    <IconButton
                       color="red"
-                      onClick={() => removePlan(p)}
+                      title={t("common.delete")}
                       disabled={busy}
+                      onClick={() => removePlan(p)}
                     >
-                      {t("common.delete")}
-                    </Button>
+                      <IconTrash size={16} />
+                    </IconButton>
                   </span>
-                </li>
-              ))}
-            </ul>
+                )
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "grid items-center gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]",
+                      !p.enabled && "opacity-60",
+                    )}
+                    style={{ gridTemplateColumns: widePlans ? PLAN_TPL : PLAN_TPL_NARROW }}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[13px] font-medium text-ink">
+                        {p.name}
+                      </span>
+                      {p.slug && (
+                        <Mono className="shrink-0 text-[11px] text-ink-muted">
+                          {p.slug}
+                        </Mono>
+                      )}
+                    </span>
+                    {widePlans ? (
+                      <>
+                        <Mono className="truncate text-xs text-ink">
+                          {p.price_rub > 0
+                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            : t("bill.free")}
+                        </Mono>
+                        <span className="truncate text-xs text-ink-muted" title={planSummary(p)}>
+                          {planSummary(p)}
+                        </span>
+                        <Mono className="truncate text-xs text-ink-muted">
+                          {users || "—"}
+                        </Mono>
+                        {actions}
+                      </>
+                    ) : (
+                      <>
+                        {actions}
+                        <span className="col-span-2 truncate text-[11px] text-ink-muted">
+                          {p.price_rub > 0
+                            ? `${p.price_rub.toLocaleString(currentLang())} ₽`
+                            : t("bill.free")}{" "}
+                          · {planSummary(p)}
+                          {users ? ` · ${t("bill.nUsers", { count: users })}` : ""}
+                        </span>
+                      </>
+                    )}
+                    {marks.length > 0 && widePlans && (
+                      <span className="col-start-1 truncate text-[11px] text-accent">
+                        {marks.join(" · ")}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
-        </SettingCard>
+        </Panel>
 
-        <SettingCard
-          title={t("bill.pricing")}
-          description={t("bill.pricingHint")}
-        >
-          <div className="flex flex-col gap-4">
-            <div>
+        <Panel title={t("bill.pricing")}>
+          <SettingRow hint={t("bill.pricingHint")} />
+          <SettingRow
+            label={t("bill.freePlan")}
+            hint={t("bill.freePlanHint")}
+            field={
               <Select
-                label={t("bill.freePlan")}
                 data={[
                   { value: "0", label: t("bill.notSelected") },
                   // One plan cannot hold both roles: the trial has to expire into
@@ -797,13 +851,13 @@ export function BillingPanel() {
                 value={String(cfg.free_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
               />
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("bill.freePlanHint")}
-              </p>
-            </div>
-            <div>
+            }
+          />
+          <SettingRow
+            label={t("bill.trialPlan")}
+            hint={t("bill.trialPlanHint")}
+            field={
               <Select
-                label={t("bill.trialPlan")}
                 data={[
                   { value: "0", label: t("bill.notSelected") },
                   ...planOptions.filter((o) => o.value !== String(cfg.free_plan_id)),
@@ -811,22 +865,17 @@ export function BillingPanel() {
                 value={String(cfg.trial_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
               />
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("bill.trialPlanHint")}
-              </p>
-            </div>
+            }
+          />
+          <SettingRow label={t("bill.manualDetails")} hint={t("bill.manualHint")}>
             <Textarea
-              label={t("bill.manualDetails")}
               value={cfg.payment_note}
               onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-              placeholder={
-                t("bill.manualPlaceholder")
-              }
+              placeholder={t("bill.manualPlaceholder")}
               rows={4}
-              hint={t("bill.manualHint")}
             />
-          </div>
-        </SettingCard>
+          </SettingRow>
+        </Panel>
 
         <SaveBar
           dirty={dirty}
@@ -837,11 +886,29 @@ export function BillingPanel() {
 
       </div>
 
-      <Modal
+      {/* A tariff is a form of a dozen fields plus a migration block — a side drawer
+          holds it at full height, with Save pinned where it can always be reached. */}
+      <Drawer
         open={!!editor}
         onClose={() => setEditor(null)}
         title={editor?.id ? t("bill.planOf", { name: editor.name }) : t("bill.newPlan")}
-        size="md"
+        footer={
+          editor ? (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="light"
+                color="gray"
+                size="sm"
+                onClick={() => setEditor(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button size="sm" onClick={savePlan} loading={busy}>
+                {t(editor.id ? "common.save" : "common.create")}
+              </Button>
+            </div>
+          ) : undefined
+        }
       >
         {editor && (
           <div className="flex flex-col gap-4">
@@ -857,9 +924,7 @@ export function BillingPanel() {
                 <p className="text-sm font-semibold text-accent">
                   {t("bill.onPlanN", { count: planUsers[String(editor.id)] })}
                 </p>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {t("bill.migrateHint")}
-                </p>
+                <p className="mt-0.5 text-xs text-ink-muted">{t("bill.migrateHint")}</p>
                 <Select
                   className="mt-2"
                   label={t("bill.migrateTo")}
@@ -874,6 +939,7 @@ export function BillingPanel() {
                 />
                 <Button
                   className="mt-2"
+                  size="sm"
                   onClick={migratePlan}
                   disabled={!migrateTo || busy}
                   loading={busy}
@@ -882,17 +948,9 @@ export function BillingPanel() {
                 </Button>
               </div>
             )}
-            <div className="flex justify-end gap-2">
-              <Button variant="subtle" onClick={() => setEditor(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onClick={savePlan} loading={busy}>
-                {t(editor.id ? "common.save" : "common.create")}
-              </Button>
-            </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
     </>
   );
 }

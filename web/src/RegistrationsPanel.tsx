@@ -7,7 +7,7 @@ import {
 import { useAction, useShowMore } from "./hooks";
 import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Button, SettingCard, ShowMore } from "./ui";
+import { Button, EmptyState, Mono, Panel, ShowMore } from "./ui";
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
@@ -43,36 +43,44 @@ export function RegistrationsPanel({
     }).catch((e) => notifyError(errMessage(e)));
 
   return (
-    <SettingCard
-      title={t("reg.title")}
-      description={t("reg.description")}
-    >
+    <Panel title={t("reg.title")}>
+      <p className="border-b border-brand-600/10 px-3.5 py-3 text-xs leading-relaxed text-ink-muted">
+        {t("reg.description")}
+      </p>
       {requests.length === 0 ? (
-        <p className="text-sm text-ink-muted">{t("reg.empty")}</p>
+        <EmptyState title={t("reg.empty")} body={t("reg.emptyHint")} />
       ) : (
-        <ul className="flex flex-col gap-2">
+        <>
           {page.shown.map((r) => (
-            <li
+            <div
               key={r.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
+              className="flex flex-wrap items-center gap-2.5 border-b border-gray-100 px-3.5 py-2.25"
             >
-              <span className="min-w-0">
-                <b className="text-ink">{r.name}</b>
-                <span className="ml-2 text-xs text-ink-muted">
-                  Telegram ID {r.chat_id} · {fmtDateTime(r.created_at)}
-                </span>
+              {/* Amber, not green: a request is a thing waiting on the operator. */}
+              <span className="size-2 shrink-0 rounded-full bg-warning" />
+              <span className="truncate text-[13px] font-semibold text-ink">
+                {r.name}
               </span>
-              <span className="flex gap-2">
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
+                Telegram
+              </span>
+              <Mono className="shrink-0 text-[11px] text-ink-muted">
+                {r.chat_id}
+              </Mono>
+              <Mono className="shrink-0 text-[11px] text-ink-muted">
+                {fmtDateTime(r.created_at)}
+              </Mono>
+              <span className="flex shrink-0 gap-2">
                 <Button
-                  size="sm"
+                  size="xs"
                   disabled={busy}
                   onClick={() => decide(r.id, true)}
                 >
                   {t("reg.approve")}
                 </Button>
                 <Button
-                  size="sm"
-                  variant="subtle"
+                  size="xs"
+                  variant="outline"
                   color="red"
                   disabled={busy}
                   onClick={() => decide(r.id, false)}
@@ -80,11 +88,15 @@ export function RegistrationsPanel({
                   {t("reg.reject")}
                 </Button>
               </span>
-            </li>
+            </div>
           ))}
-        </ul>
+          <ShowMore
+            rest={page.rest}
+            onClick={page.showMore}
+            className="p-3.5"
+          />
+        </>
       )}
-      <ShowMore rest={page.rest} onClick={page.showMore} className="mt-2" />
-    </SettingCard>
+    </Panel>
   );
 }

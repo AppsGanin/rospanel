@@ -20,7 +20,7 @@ export function useFetch<T>(fn: () => Promise<T>, deps: unknown[] = []) {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the dep list is the caller's, passed through on purpose
   }, deps);
   return { data, loaded, setData };
 }
@@ -88,6 +88,7 @@ export function useShowMore<T>(
   }: { first?: number; step?: number; resetKey?: unknown } = {},
 ) {
   const [limit, setLimit] = useState(first);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetKey is a trigger, not an input — the effect exists to collapse the list when it changes
   useEffect(() => {
     setLimit(first);
   }, [resetKey, first]);

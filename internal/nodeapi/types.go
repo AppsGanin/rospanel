@@ -35,6 +35,33 @@ type JoinRequest struct {
 	NodeVersion string `json:"node_version"`
 }
 
+// The sync cadence lives here because BOTH sides derive from it and neither owns it.
+// The panel holds a no-change poll for HoldSec ± HoldJitter and the agent reads the
+// same numbers to tell a recycled hold from a request that never landed — a split
+// that used to be two constants in two packages tied together by a comment, so
+// halving the hold on one side silently turned every recycled poll on the other into
+// a "failure" and pushed the agent into backoff.
+const (
+	// HoldSec is the nominal hold of a no-change sync, and so the ceiling on how fresh
+	// anything a node reports can be in the panel.
+	HoldSec = 20
+	// HoldJitter spreads the hold over ±1/3 of the nominal value (13–27s). A link in
+	// steady state is a small encrypted exchange that never ends, so its TIMING is the
+	// only thing left to look at; a hold pinned to one value is a flat line at a single
+	// frequency, which is the signature of a control channel and nothing like a person
+	// browsing. The spread matters more than the mean — which is what makes a short
+	// hold affordable.
+	HoldJitter = 7
+	// MinHeldPollSec is how long a poll must have been in flight before a cut
+	// (EOF/GOAWAY/reset) counts as the panel merely recycling a HELD request rather
+	// than as a failure. Below the shortest hold with room to spare, so a benign
+	// recycle is never mistaken for the panel being down.
+	MinHeldPollSec = HoldSec - HoldJitter - 3
+	// SyncTimeoutSec bounds one long-poll from the agent's side. Well past the longest
+	// hold, so a request still in flight at this point is genuinely stuck.
+	SyncTimeoutSec = 90
+)
+
 // JoinResponse carries the permanent credential and where to reach the panel. The
 // agent persists all of it to node.json.
 type JoinResponse struct {

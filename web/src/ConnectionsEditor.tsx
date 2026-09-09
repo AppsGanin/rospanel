@@ -11,36 +11,40 @@ import { NameVarsHint } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  Badge,
   Button,
   CenterLoader,
+  cn,
+  Code,
   IconChevron,
+  Mono,
+  Section,
   Select,
+  SettingRow,
   Switch,
-  useConfirm,
   TagsInput,
   TextInput,
+  useConfirm,
 } from "./ui";
 
+// Field is a read-only fact about a protocol: what it is, not what to set.
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <span className="text-right text-sm font-medium">{value}</span>
-    </div>
+    <SettingRow
+      label={label}
+      control={<Mono className="text-[11px] text-ink-muted">{value}</Mono>}
+    />
   );
 }
 
-// LongField stacks the label over a wrapping monospace value — for long read-only
-// values (keys, shortIds) that would overflow a single row on mobile.
+// LongField is the same for a value no row edge can hold — a key, a set of short
+// IDs, a path: the label on its line and the value in a block under it.
 function LongField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <code className="block break-all rounded border border-gray-200 bg-white/60 px-2 py-1 font-mono text-xs text-ink">
+    <SettingRow label={label}>
+      <Code block copy>
         {value}
-      </code>
-    </div>
+      </Code>
+    </SettingRow>
   );
 }
 
@@ -163,12 +167,12 @@ export function ConnectionsEditor({
     setSaved({ enabled: en, fps: fp, names: nm, hy: h, reality: r, anti: a, awg: g });
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     load()
       .then(applyStatus)
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoaded(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const protocolsChanged = Object.keys(enabled).some((k) => enabled[k] !== saved.enabled[k]);
@@ -264,289 +268,351 @@ export function ConnectionsEditor({
   if (!status) return null;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3">
-        {status.protocols.map((p) => {
-          const isOpen = !!open[p.key];
-          const on = !!enabled[p.key];
-          return (
-            <div
-              key={p.key}
-              className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60"
-            >
+    <div className="flex flex-col gap-3.5">
+      {status.protocols.map((p) => {
+        const isOpen = !!open[p.key];
+        const on = !!enabled[p.key];
+        return (
+          <Section
+            key={p.key}
+            title={
+              // The whole name is the disclosure control; the switch beside it is
+              // not, so turning a protocol on does not also unfold its form.
               <button
                 type="button"
                 onClick={() => setOpen((o) => ({ ...o, [p.key]: !o[p.key] }))}
-                className="flex w-full items-center justify-between gap-2 p-4 text-left"
+                className="flex min-w-0 items-center gap-2 text-left"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <IconChevron
-                    className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                  />
-                  <span className="font-medium text-ink">{p.name}</span>
-                  <Badge color="gray">{p.port}</Badge>
-                  {!on && <Badge color="gray">{t("conn.off")}</Badge>}
-                </div>
-                <span onClick={(e) => e.stopPropagation()} className="flex items-center">
-                  <Switch checked={on} onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))} />
-                </span>
+                <IconChevron
+                  className={cn(
+                    "shrink-0 text-gray-400 transition-transform",
+                    isOpen && "rotate-180",
+                  )}
+                />
+                <span className="truncate">{p.name}</span>
+                <Mono className="shrink-0 text-[11px] font-normal text-ink-muted">
+                  {p.port}
+                </Mono>
+                {!on && (
+                  <span className="shrink-0 text-[11px] font-normal text-ink-muted">
+                    {t("conn.off")}
+                  </span>
+                )}
               </button>
-
-              {isOpen && (
-                <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
-                  <div className="flex flex-col gap-2">
+            }
+            action={
+              <Switch
+                checked={on}
+                onChange={(v) => setEnabled((e) => ({ ...e, [p.key]: v }))}
+              />
+            }
+            flush
+          >
+            {isOpen && (
+              <>
+                <SettingRow
+                  label={t("conn.name")}
+                  hint={t("conn.nameHint", { name: p.name })}
+                >
+                  <div className="flex flex-col gap-1.5">
                     <TextInput
-                      label={t("conn.name")}
                       value={names[p.key] ?? ""}
                       onChange={(v) => setNames((n) => ({ ...n, [p.key]: v }))}
                       placeholder={p.name}
                     />
-                    <p className="text-xs text-ink-muted">
-                      {t("conn.nameHint", { name: p.name })}
-                    </p>
                     <NameVarsHint
                       onInsert={(v) =>
-                        setNames((n) => ({ ...n, [p.key]: ((n[p.key] ?? "") + " " + v).trim() }))
+                        setNames((n) => ({
+                          ...n,
+                          [p.key]: ((n[p.key] ?? "") + " " + v).trim(),
+                        }))
                       }
                     />
                   </div>
+                </SettingRow>
 
-                  <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
-                    <Field label={t("conn.transport")} value={p.transport} />
-                    <Field label={t("conn.security")} value={p.security} />
-                    {p.note && <Field label={t("conn.note")} value={p.note} />}
-                  </div>
+                <Field label={t("conn.transport")} value={p.transport} />
+                <Field label={t("conn.security")} value={p.security} />
+                {p.note && <Field label={t("conn.note")} value={p.note} />}
 
-                  {p.fingerprint && (
-                    <div className="border-t border-gray-100 pt-3">
+                {p.fingerprint && (
+                  <SettingRow
+                    label="Fingerprint (uTLS)"
+                    hint={t("conn.fpHint")}
+                    field={
                       <Select
-                        label="Fingerprint (uTLS)"
                         data={FP_OPTIONS}
                         value={fps[p.key] ?? "firefox"}
                         onChange={(v) => setFps((f) => ({ ...f, [p.key]: v }))}
                       />
-                      <p className="mt-2 text-xs text-ink-muted">
-                        {t("conn.fpHint")}
-                      </p>
-                    </div>
-                  )}
+                    }
+                  />
+                )}
 
-                  {p.key === "hysteria2" &&
-                    (on ? (
-                      <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
+                {p.key === "hysteria2" &&
+                  (on ? (
+                    <>
+                      {/* Port and the hop range read as one setting, so they share
+                          a row and keep their own captions. */}
+                      <SettingRow>
                         <div className="grid grid-cols-3 gap-2">
-                          <TextInput label={t("conn.port")} type="number" value={String(hy.port)} onChange={setHyNum("port")} />
-                          <TextInput label={t("conn.hopFrom")} type="number" value={String(hy.start)} onChange={setHyNum("start")} />
-                          <TextInput label={t("conn.hopTo")} type="number" value={String(hy.end)} onChange={setHyNum("end")} />
+                          <TextInput
+                            label={t("conn.port")}
+                            type="number"
+                            value={String(hy.port)}
+                            onChange={setHyNum("port")}
+                          />
+                          <TextInput
+                            label={t("conn.hopFrom")}
+                            type="number"
+                            value={String(hy.start)}
+                            onChange={setHyNum("start")}
+                          />
+                          <TextInput
+                            label={t("conn.hopTo")}
+                            type="number"
+                            value={String(hy.end)}
+                            onChange={setHyNum("end")}
+                          />
                         </div>
-                        <Select
-                          label={t("conn.hopInterval")}
-                          data={hopIntervals()}
-                          value={hy.interval}
-                          onChange={(v) => setHy((h) => ({ ...h, interval: v }))}
-                        />
-                        <p className="text-xs text-ink-muted">
-                          {t("conn.hopHint")}
-                        </p>
-                        {/* Salamander. Shown rather than hidden: both ends need the same
-                            value and it is already inside every link the panel hands out.
-                            Read only, like the REALITY material — the key is minted by the
-                            server, never invented by whoever is filling in the form. */}
-                        <LongField
-                          label={t("conn.obfs")}
-                          value={
-                            hy.obfsAction === "off"
-                              ? t("conn.obfsOff")
-                              : hy.obfsAction === "regen"
-                                ? t("conn.obfsWillRegen")
-                                : hy.obfs || t("conn.obfsOff")
-                          }
-                        />
-                        <div className="flex items-center gap-2">
-                          <p className="flex-1 text-xs text-ink-muted">{t("conn.obfsHint")}</p>
-                          <Button
-                            variant="subtle"
-                            size="xs"
-                            color={hy.obfsAction === "regen" ? "orange" : "gray"}
-                            onClick={() =>
-                              setHy((h) => ({ ...h, obfsAction: h.obfsAction === "regen" ? "keep" : "regen" }))
-                            }
-                          >
-                            {t("conn.obfsGenerate")}
-                          </Button>
-                          {(hy.obfs !== "" || hy.obfsAction === "off") && (
+                      </SettingRow>
+                      <SettingRow
+                        label={t("conn.hopInterval")}
+                        hint={t("conn.hopHint")}
+                        field={
+                          <Select
+                            data={hopIntervals()}
+                            value={hy.interval}
+                            onChange={(v) => setHy((h) => ({ ...h, interval: v }))}
+                          />
+                        }
+                      />
+                      {/* Salamander. Shown rather than hidden: both ends need the same
+                          value and it is already inside every link the panel hands out.
+                          Read only, like the REALITY material — the key is minted by the
+                          server, never invented by whoever is filling in the form. */}
+                      <SettingRow
+                        label={t("conn.obfs")}
+                        hint={t("conn.obfsHint")}
+                        control={
+                          <span className="flex items-center gap-2">
                             <Button
                               variant="subtle"
                               size="xs"
-                              color={hy.obfsAction === "off" ? "orange" : "gray"}
+                              color={hy.obfsAction === "regen" ? "orange" : "gray"}
                               onClick={() =>
-                                setHy((h) => ({ ...h, obfsAction: h.obfsAction === "off" ? "keep" : "off" }))
+                                setHy((h) => ({
+                                  ...h,
+                                  obfsAction: h.obfsAction === "regen" ? "keep" : "regen",
+                                }))
                               }
                             >
-                              {t("conn.obfsDisable")}
+                              {t("conn.obfsGenerate")}
                             </Button>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        {t("conn.enableHysteria")}
-                      </p>
-                    ))}
+                            {(hy.obfs !== "" || hy.obfsAction === "off") && (
+                              <Button
+                                variant="subtle"
+                                size="xs"
+                                color={hy.obfsAction === "off" ? "orange" : "gray"}
+                                onClick={() =>
+                                  setHy((h) => ({
+                                    ...h,
+                                    obfsAction: h.obfsAction === "off" ? "keep" : "off",
+                                  }))
+                                }
+                              >
+                                {t("conn.obfsDisable")}
+                              </Button>
+                            )}
+                          </span>
+                        }
+                      >
+                        <Code block copy>
+                          {hy.obfsAction === "off"
+                            ? t("conn.obfsOff")
+                            : hy.obfsAction === "regen"
+                              ? t("conn.obfsWillRegen")
+                              : hy.obfs || t("conn.obfsOff")}
+                        </Code>
+                      </SettingRow>
+                    </>
+                  ) : (
+                    <SettingRow hint={t("conn.enableHysteria")} />
+                  ))}
 
-                  {p.key === "reality" &&
-                    (on ? (
-                      <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
-                        <TextInput
-                          label={t("conn.port")}
-                          type="number"
-                          value={String(reality.port)}
-                          onChange={(v) => setReality((r) => ({ ...r, port: Number(v.replace(/\D/g, "")) || 0 }))}
-                        />
+                {p.key === "reality" &&
+                  (on ? (
+                    <>
+                      <SettingRow
+                        label={t("conn.port")}
+                        field={
+                          <TextInput
+                            type="number"
+                            value={String(reality.port)}
+                            onChange={(v) =>
+                              setReality((r) => ({
+                                ...r,
+                                port: Number(v.replace(/\D/g, "")) || 0,
+                              }))
+                            }
+                          />
+                        }
+                      />
+                      <SettingRow label={t("conn.masquerade")}>
                         <TagsInput
-                          label={t("conn.masquerade")}
                           value={reality.dests}
                           onChange={(v) => setReality((r) => ({ ...r, dests: v }))}
                           placeholder={t("conn.sniPlaceholder")}
                         />
-                        <label className="flex items-center justify-between gap-3">
-                          <span className="text-sm">
-                            {t("conn.antiReplay")}
-                            <span className="block text-xs text-ink-muted">
-                              {t("conn.antiReplayHint")}
-                            </span>
-                          </span>
+                      </SettingRow>
+                      <SettingRow
+                        label={t("conn.antiReplay")}
+                        hint={t("conn.antiReplayHint")}
+                        control={
                           <Switch
                             checked={reality.antiReplay}
                             onChange={(v) => setReality((r) => ({ ...r, antiReplay: v }))}
                           />
-                        </label>
-                        <LongField label="Public key" value={status.reality_public_key} />
-                        <LongField label="Short IDs" value={status.reality_short_id} />
-                        <LongField label={t("conn.xhttpPath")} value={status.reality_path} />
-                        <div>
+                        }
+                      />
+                      <LongField label="Public key" value={status.reality_public_key} />
+                      <LongField label="Short IDs" value={status.reality_short_id} />
+                      <LongField label={t("conn.xhttpPath")} value={status.reality_path} />
+                      <SettingRow
+                        hint={t("conn.realityHint")}
+                        control={
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="light"
                             color={regenReality ? "orange" : "gray"}
                             onClick={() => setRegenReality((v) => !v)}
                           >
                             {t(regenReality ? "conn.keysWillRegen" : "conn.regenKeys")}
                           </Button>
-                        </div>
-                        <p className="text-xs text-ink-muted">
-                          {t("conn.realityHint")}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        {t("conn.enableReality")}
-                      </p>
-                    ))}
+                        }
+                      />
+                    </>
+                  ) : (
+                    <SettingRow hint={t("conn.enableReality")} />
+                  ))}
 
-                  {p.key === "awg" &&
-                    (on ? (
-                      <div className="flex flex-col gap-3 border-t border-gray-100 pt-3">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {p.key === "awg" &&
+                  (on ? (
+                    <>
+                      <SettingRow
+                        label={t("conn.awgPort")}
+                        field={
                           <TextInput
-                            label={t("conn.awgPort")}
                             type="number"
                             value={awgCfg.port ? String(awgCfg.port) : ""}
                             placeholder={t("conn.awgPortAuto")}
-                            onChange={(v) => setAwgCfg((g) => ({ ...g, port: Number(v.replace(/\D/g, "")) || 0 }))}
+                            onChange={(v) =>
+                              setAwgCfg((g) => ({
+                                ...g,
+                                port: Number(v.replace(/\D/g, "")) || 0,
+                              }))
+                            }
                           />
+                        }
+                      />
+                      <SettingRow
+                        label={t("conn.awgDns")}
+                        field={
                           <TextInput
-                            label={t("conn.awgDns")}
                             value={awgCfg.dns}
                             placeholder={t("conn.awgDnsAuto")}
                             onChange={(v) => setAwgCfg((g) => ({ ...g, dns: v }))}
                           />
-                        </div>
-                        {status.awg_public_key && (
-                          <>
-                            <LongField label="Public key" value={status.awg_public_key} />
-                            <LongField
-                              label={t("conn.awgParams")}
-                              value={`Jc=${status.awg_params.jc} Jmin=${status.awg_params.jmin} Jmax=${status.awg_params.jmax} S1=${status.awg_params.s1} S2=${status.awg_params.s2} H1=${status.awg_params.h1} H2=${status.awg_params.h2} H3=${status.awg_params.h3} H4=${status.awg_params.h4}`}
-                            />
-                          </>
-                        )}
-                        {status.awg_error && (
-                          <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">{status.awg_error}</p>
-                        )}
-                        <div>
+                        }
+                      />
+                      {status.awg_public_key && (
+                        <>
+                          <LongField label="Public key" value={status.awg_public_key} />
+                          <LongField
+                            label={t("conn.awgParams")}
+                            value={`Jc=${status.awg_params.jc} Jmin=${status.awg_params.jmin} Jmax=${status.awg_params.jmax} S1=${status.awg_params.s1} S2=${status.awg_params.s2} H1=${status.awg_params.h1} H2=${status.awg_params.h2} H3=${status.awg_params.h3} H4=${status.awg_params.h4}`}
+                          />
+                        </>
+                      )}
+                      {status.awg_error && (
+                        <SettingRow
+                          hint={<span className="text-warning">{status.awg_error}</span>}
+                        />
+                      )}
+                      <SettingRow
+                        hint={t("conn.awgHint")}
+                        control={
                           <Button
-                            size="sm"
+                            size="xs"
                             variant="light"
                             color={regenAwg ? "orange" : "gray"}
                             onClick={() => setRegenAwg((v) => !v)}
                           >
                             {t(regenAwg ? "conn.keysWillRegen" : "conn.regenKeys")}
                           </Button>
-                        </div>
-                        <p className="text-xs text-ink-muted">{t("conn.awgHint")}</p>
-                      </div>
-                    ) : (
-                      <p className="border-t border-gray-100 pt-3 text-xs text-ink-muted">
-                        {t("conn.enableAwg")}
-                      </p>
-                    ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                        }
+                      />
+                    </>
+                  ) : (
+                    <SettingRow hint={t("conn.enableAwg")} />
+                  ))}
+              </>
+            )}
+          </Section>
+        );
+      })}
 
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <h3 className="mb-1 font-bold text-ink">{t("conn.antiDpi")}</h3>
-        <p className="mb-3 text-sm text-ink-muted">
-          {t("conn.antiDpiHint")}
-        </p>
-        <div className="flex flex-col divide-y divide-gray-100">
-          <label className="flex items-center justify-between gap-3 py-3 first:pt-0">
-            <span className="text-sm">
-              {t("conn.fragment")}
-              <span className="block text-xs text-ink-muted">
-                {t("conn.fragmentHint")}
-                (VLESS-Vision).
-              </span>
-            </span>
-            <Switch checked={anti.fragment} onChange={(v) => setAnti((a) => ({ ...a, fragment: v }))} />
-          </label>
-          <label className="flex items-center justify-between gap-3 py-3">
-            <span className="text-sm">
-              {t("conn.blockQuic")}
-              <span className="block text-xs text-ink-muted">
-                {t("conn.blockQuicHint")}
-              </span>
-            </span>
-            <Switch checked={anti.blockQuic} onChange={(v) => setAnti((a) => ({ ...a, blockQuic: v }))} />
-          </label>
-          <label className="flex items-center justify-between gap-3 py-3 last:pb-0">
-            <span className="text-sm">
-              {t("conn.requireTls13")}
-              <span className="block text-xs text-ink-muted">
-                {t("conn.requireTls13Hint")}
-              </span>
-            </span>
-            <Switch checked={anti.min13} onChange={(v) => setAnti((a) => ({ ...a, min13: v }))} />
-          </label>
-        </div>
-      </div>
+      <Section title={t("conn.antiDpi")} desc={t("conn.antiDpiHint")} flush>
+        <SettingRow
+          label={t("conn.fragment")}
+          hint={`${t("conn.fragmentHint")} (VLESS-Vision).`}
+          control={
+            <Switch
+              checked={anti.fragment}
+              onChange={(v) => setAnti((a) => ({ ...a, fragment: v }))}
+            />
+          }
+        />
+        <SettingRow
+          label={t("conn.blockQuic")}
+          hint={t("conn.blockQuicHint")}
+          control={
+            <Switch
+              checked={anti.blockQuic}
+              onChange={(v) => setAnti((a) => ({ ...a, blockQuic: v }))}
+            />
+          }
+        />
+        <SettingRow
+          label={t("conn.requireTls13")}
+          hint={t("conn.requireTls13Hint")}
+          control={
+            <Switch
+              checked={anti.min13}
+              onChange={(v) => setAnti((a) => ({ ...a, min13: v }))}
+            />
+          }
+        />
+      </Section>
 
       {reset && (
-        <div className="rounded-xl border border-red-200/70 bg-red-50/40 p-4">
-          <h3 className="font-bold text-ink">{t("conn.resetTitle")}</h3>
-          <p className="mt-0.5 text-sm text-ink-muted">{t("conn.resetHint")}</p>
-          {/* Below the text, not beside it: beside, the row squeezes the button into
-              three lines as soon as the hint is longer than a sentence. */}
-          <div className="mt-3 flex justify-end">
-            <Button variant="light" color="red" className="whitespace-nowrap" onClick={doReset} disabled={busy || applying}>
+        <Section
+          title={t("conn.resetTitle")}
+          action={
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              className="whitespace-nowrap"
+              onClick={doReset}
+              disabled={busy || applying}
+            >
               {t("conn.reset")}
             </Button>
-          </div>
-        </div>
+          }
+          desc={t("conn.resetHint")}
+          flush
+        />
       )}
 
       {confirmNode}

@@ -31,10 +31,11 @@ export function UserEventsModal({
       size="lg"
       title={`${t("users.tabEvents")} · ${userName}`}
     >
-      <EventList
-        load={load}
-        empty={t("events.emptyForUser")}
-      />
+      {/* Edge to edge: a table's rows carry their own padding, and the dialog's
+          would inset every one of them. */}
+      <div className="-m-4">
+        <EventList table load={load} empty={t("events.emptyForUser")} />
+      </div>
     </Modal>
   );
 }

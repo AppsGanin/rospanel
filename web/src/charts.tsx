@@ -12,7 +12,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useEffect, useRef, useState } from 'react'
 import i18n from './i18n'
+import { cn, Mono, useWideBox } from './ui'
 
 // seriesLabel names the two traffic series. recharts hands the formatter the raw
 // dataKey, so this maps it rather than the component threading labels down.
@@ -112,8 +114,8 @@ export function TrafficDonut({
             paddingAngle={1}
             stroke="none"
           >
-            {data.map((d, i) => (
-              <Cell key={i} fill={d.color} />
+            {data.map((d) => (
+              <Cell key={d.name} fill={d.color} />
             ))}
           </Pie>
         </RPieChart>
@@ -123,6 +125,184 @@ export function TrafficDonut({
           {centerLabel}
         </div>
       )}
+    </div>
+  )
+}
+
+/* --------------------------------------------------------- plain-DOM charts */
+// The statistics screen draws its own bars rather than reaching for recharts: a
+// share is a rectangle, and a rectangle built from the panel's own tokens follows
+// the operator's branding, needs no measuring pass, and reads at any width.
+
+// ShareBar is the one row shape used for "who/where/which server carried how much":
+// a name, the share as a bar against the largest row, and the figure in mono.
+export function ShareBar({
+  label,
+  glyph,
+  percent,
+  value,
+  title,
+}: {
+  label: string
+  // A leading flag or icon where the row has one (countries); omitted elsewhere.
+  glyph?: string
+  percent: number
+  value: string
+  title?: string
+}) {
+  const p = Math.max(0, Math.min(100, percent || 0))
+  return (
+    <div className="flex items-center gap-2.5" title={title}>
+      {glyph && (
+        <span className="w-5 shrink-0 text-center text-sm leading-none">{glyph}</span>
+      )}
+      <span className="w-24 shrink-0 truncate text-xs text-ink sm:w-28">{label}</span>
+      <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+        <span
+          className="block h-full rounded-full bg-brand-600"
+          style={{ width: `${p}%`, minWidth: p > 0 ? 2 : 0 }}
+        />
+      </span>
+      <Mono className="w-20 shrink-0 text-right text-[11px] text-ink-muted">
+        {value}
+      </Mono>
+    </div>
+  )
+}
+
+// dm renders a day key as DD.MM — the axis label, and the unit the tooltip counts in.
+function dm(day: string): string {
+  return `${day.slice(8, 10)}.${day.slice(5, 7)}`
+}
+
+type Day = { day: string; value: number }
+export type Bar = { key: string; label: string; title: string; value: number }
+
+// LABEL_W is what one date needs: "03.09" is 30px at 10px mono, plus the air that
+// keeps it from touching the next one. Dates thin out to fit it — on a narrow tile
+// two columns can share one date.
+const LABEL_W = 38
+
+// DayBars is the short traffic series as columns — a week on the dashboard tile:
+// grey columns, heights taken from the largest one, and the accent reserved for the
+// one the reader picked. It expects a handful of days and nothing more; a range that
+// runs to months is drawn by TrafficArea, which is a line and does not care how many
+// points it is given. Dates thin out as the period
+// grows — they cannot be read side by side past a handful — and the figure is not
+// printed over the columns at all: a month of them is 29px wide each, and no type
+// size fits "412.6 ГБ" there. Tap a column and it says its own span and figure.
+export function DayBars({
+  data,
+  fmt,
+  onHover,
+}: {
+  data: Day[]
+  fmt: (n: number) => string
+  // Which column the pointer is on, so the panel around the chart can print that
+  // day's figure where the total normally sits. A chart of fourteen bars is read by
+  // pointing at one of them.
+  onHover?: (bar: Bar | null) => void
+}) {
+  // The box decides how many columns are worth drawing: same data, fewer and wider
+  // columns on a phone. Measured, not guessed from a breakpoint — this chart sits in
+  // a panel, a drawer and a dashboard tile, each a different width at the same
+  // viewport.
+  const [measureRef, , boxW] = useWideBox(0)
+  const bars: Bar[] = data.map((d) => ({
+    key: d.day,
+    label: dm(d.day),
+    title: dm(d.day),
+    value: d.value,
+  }))
+  const max = bars.reduce((a, d) => Math.max(a, d.value), 0)
+  const every = Math.max(
+    1,
+    Math.ceil(bars.length / Math.max(1, Math.floor(boxW / LABEL_W) || bars.length)),
+  )
+  // One or two columns stretched across the panel read as a slab, not as a chart:
+  // few of them keep a column's width and sit in the middle.
+  const few = bars.length <= 3
+  // Which column was tapped. A hover title is nothing on a touch screen, and on a
+  // dense chart the figure lives nowhere else — so a tap puts it on screen and a
+  // second tap (or a tap on another column) takes it away.
+  const [picked, setPicked] = useState<string | null>(null)
+  // One element, two jobs: it is measured (a callback ref) and it is asked whether a
+  // click landed inside it (a node), so the two refs are joined here.
+  const boxEl = useRef<HTMLDivElement | null>(null)
+  const setBox = (el: HTMLDivElement | null) => {
+    boxEl.current = el
+    measureRef(el)
+  }
+  // A tapped column belongs to the data that was on screen when it was tapped. Switch
+  // the range and the same key can exist in the new set — so the tooltip would hang
+  // over a different chart, quoting a figure nobody asked for.
+  const sig = `${bars.length}:${bars[0]?.key ?? ''}:${bars[bars.length - 1]?.key ?? ''}`
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sig is the compared form of the bars array, which is a new object on every render
+  useEffect(() => setPicked(null), [sig])
+  // A tooltip opened by a tap is closed by a tap anywhere else — the chart is not a
+  // dialog, and a figure that follows the reader around the page is noise.
+  useEffect(() => {
+    if (!picked) return
+    const away = (e: MouseEvent) => {
+      if (!boxEl.current?.contains(e.target as Node)) setPicked(null)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [picked])
+  return (
+    <div
+      ref={setBox}
+      className={cn(
+        'flex items-end',
+        few && 'justify-center',
+        bars.length > 31 ? 'gap-px' : 'gap-1 sm:gap-2',
+      )}
+    >
+      {bars.map((d, i) => {
+        const pct = max > 0 ? (d.value / max) * 100 : 0
+        const open = picked === d.key
+        return (
+          <span
+            key={d.key}
+            className={cn(
+              'group relative flex min-w-0 flex-1 cursor-pointer flex-col items-center gap-1.5',
+              few && 'max-w-24',
+            )}
+            title={`${d.title} · ${fmt(d.value)}`}
+            // A column is a control: it is the only place the figure lives on a
+            // dense chart, so it answers Enter and Space as well as a tap.
+            role="button"
+            tabIndex={0}
+            aria-label={`${d.title} · ${fmt(d.value)}`}
+            onClick={() => setPicked((p) => (p === d.key ? null : d.key))}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              setPicked((p) => (p === d.key ? null : d.key))
+            }}
+            onMouseEnter={onHover ? () => onHover(d) : undefined}
+            onMouseLeave={onHover ? () => onHover(null) : undefined}
+          >
+            {open && (
+              <span className="absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-brand-600 px-2 py-1 text-[11px] font-medium text-onaccent shadow-lg">
+                {d.title} · {fmt(d.value)}
+              </span>
+            )}
+            <span className="flex h-24 w-full items-end">
+              <span
+                className={cn(
+                  'w-full rounded-t-md transition-colors',
+                  open ? 'bg-brand-600' : 'bg-gray-400 group-hover:bg-brand-600',
+                )}
+                style={{ height: `${pct}%`, minHeight: d.value > 0 ? 2 : 0 }}
+              />
+            </span>
+            <Mono className="truncate text-[10px] text-ink-muted">
+              {i % every === 0 ? d.label : '\u00a0'}
+            </Mono>
+          </span>
+        )
+      })}
     </div>
   )
 }

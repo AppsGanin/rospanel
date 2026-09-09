@@ -1,5 +1,5 @@
 // Tailwind UI primitives — a small in-house component kit replacing Mantine.
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
@@ -31,16 +31,6 @@ export const IconChevron = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M6 9l6 6 6-6" />);
 export const IconClose = ({ size = 20, className }: IconProps) =>
   svg(size, className, <path d="M18 6 6 18M6 6l12 12" />);
-export const IconBurger = ({ size = 22, className }: IconProps) =>
-  svg(
-    size,
-    className,
-    <>
-      <path d="M3 6h18" />
-      <path d="M3 12h18" />
-      <path d="M3 18h18" />
-    </>,
-  );
 export const IconExternal = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -62,17 +52,17 @@ export const IconTable = ({ size = 16, className }: IconProps) =>
       <path d="M9 10v10" />
     </>,
   );
-export const IconCards = ({ size = 16, className }: IconProps) =>
+export const IconSearch = ({ size = 16, className }: IconProps) =>
   svg(
     size,
     className,
     <>
-      <rect x="3" y="4" width="7" height="7" rx="1.5" />
-      <rect x="14" y="4" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
     </>,
   );
+export const IconPlus = ({ size = 16, className }: IconProps) =>
+  svg(size, className, <path d="M12 5v14M5 12h14" />);
 export const IconCheck = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M20 6 9 17l-5-5" />);
 export const IconPencil = ({ size = 16, className }: IconProps) =>
@@ -126,6 +116,17 @@ export const IconTrash = ({ size = 16, className }: IconProps) =>
       <path d="M10 11v6M14 11v6" />
     </>,
   );
+// Borrowed from Lucide (key-round, ISC): a password is a key, and the roster needs
+// it small enough to sit next to the shield and the bin.
+export const IconKey = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M2.6 17.4A2 2 0 0 0 2 18.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a2 2 0 0 0 1.4-.6l.8-.8a6.5 6.5 0 1 0-4-4z" />
+      <path d="M16.5 7.5h.01" />
+    </>,
+  );
 export const IconHeart = ({ size = 20, className }: IconProps) =>
   svg(
     size,
@@ -169,6 +170,40 @@ export const IconEyeOff = ({ size = 18, className }: IconProps) =>
 // Server-card actions: settings, diagnostics, config, logs, restart. Icons instead
 // of labels — a card carries five of them per server, and spelled out they crowded
 // the server's own name off the row.
+// Borrowed from Lucide (users, server), for the phone's tab bar: a dot per tab is
+// not enough to tell four destinations apart at a glance.
+// Borrowed from Lucide (log-out): ending sessions somewhere other than here.
+export const IconLogout = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </>,
+  );
+export const IconUsers = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>,
+  );
+export const IconServer = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <rect x="2" y="3" width="20" height="8" rx="2" />
+      <rect x="2" y="13" width="20" height="8" rx="2" />
+      <path d="M6 7h.01M6 17h.01" />
+    </>,
+  );
 export const IconGear = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -208,6 +243,26 @@ export const IconDots = ({ size = 16, className }: IconProps) =>
       <circle cx="12" cy="19" r="1" />
     </>,
   );
+// IconSend is Lucide's "send" — a message on its way, for the one-off note the
+// operator writes to a single user.
+export const IconSend = ({ size = 16, className }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden
+  >
+    <path d="M22 2 11 13" />
+    <path d="M22 2 15 22l-4-9-9-4Z" />
+  </svg>
+);
+
 export const IconRestart = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -217,21 +272,6 @@ export const IconRestart = ({ size = 16, className }: IconProps) =>
       <path d="M3 3v5h5" />
     </>,
   );
-// GitHub mark — a filled glyph, so it doesn't use the stroke-based `svg` helper.
-export const IconGithub = ({ size = 20, className }: IconProps) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    className={className}
-    aria-hidden
-  >
-    <path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.26.82-.577 0-.285-.01-1.04-.015-2.04-3.338.726-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.082-.73.082-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.835 2.807 1.305 3.492.997.108-.776.42-1.305.762-1.605-2.665-.303-5.467-1.332-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.5 11.5 0 0 1 3.003-.404c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.24 2.873.118 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.806 5.624-5.48 5.92.43.372.823 1.102.823 2.222 0 1.604-.015 2.898-.015 3.293 0 .32.216.695.825.577C20.565 22.297 24 17.797 24 12.5 24 5.87 18.63.5 12 .5z" />
-  </svg>
-);
-
-/* ----------------------------------------------------------------- spinner */
 export function Spinner({ size = 16, className }: IconProps) {
   return (
     <svg
@@ -271,9 +311,49 @@ export function CenterLoader() {
   );
 }
 
+// rowKey mints identity for a row the server does not id: an editable list whose
+// items are only ever a position in an array. React needs a key that travels with
+// the row through a delete or a move — position does not, so removing the second of
+// three rows would hand its DOM (and the caret sitting in it) to the third one's
+// values. The counter is per page load; these keys never leave the browser.
+let rowSeq = 0;
+export const rowKey = () => `r${++rowSeq}`;
+
 // Skeleton is a pulsing placeholder block. Pass className to set size and shape.
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded bg-gray-200", className)} />;
+}
+
+// Skeletons repeats one placeholder shape n times: `className` sizes the block,
+// `row` wraps each in a divider row, `children` replaces the block with a whole
+// card's worth of them. Placeholder rows have no identity of their own — a
+// fixed-length list that never reorders and never moves — so the synthetic keys
+// they need live here once instead of at every list that shows a loading state.
+export function Skeletons({
+  n,
+  className,
+  row,
+  children,
+}: {
+  n: number;
+  className?: string;
+  row?: string;
+  children?: ReactNode;
+}) {
+  const keys = Array.from({ length: n }, (_, i) => `sk${i}`);
+  return (
+    <>
+      {keys.map((k) =>
+        row || children ? (
+          <div key={k} className={row}>
+            {children ?? <Skeleton className={className} />}
+          </div>
+        ) : (
+          <Skeleton key={k} className={className} />
+        ),
+      )}
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ button */
@@ -313,8 +393,8 @@ const BTN: Record<Variant, Record<Color, string>> = {
   },
 };
 const SIZE: Record<Size, string> = {
-  xs: "text-xs px-2.5 py-1.5",
-  sm: "text-sm px-3 py-1.5",
+  xs: "text-xs px-2.5 py-1",
+  sm: "text-[13px] px-3 py-1.5",
   md: "text-sm px-4 py-2",
 };
 
@@ -327,6 +407,7 @@ export function Button({
   fullWidth,
   disabled,
   className,
+  title,
   href,
   target,
   onClick,
@@ -340,6 +421,9 @@ export function Button({
   fullWidth?: boolean;
   disabled?: boolean;
   className?: string;
+  // A short label sometimes needs the long explanation behind it, without a second
+  // line of text on the button.
+  title?: string;
   href?: string;
   target?: string;
   onClick?: () => void;
@@ -355,7 +439,7 @@ export function Button({
   );
   if (href) {
     return (
-      <a className={cls} href={href} target={target} rel="noreferrer">
+      <a className={cls} href={href} target={target} title={title} rel="noreferrer">
         {children}
       </a>
     );
@@ -365,6 +449,7 @@ export function Button({
       className={cls}
       disabled={disabled || loading}
       onClick={onClick}
+      title={title}
       type={type}
     >
       {loading && <Spinner />}
@@ -388,17 +473,15 @@ export function ShowMore({
 }) {
   const { t } = useTranslation();
   if (rest <= 0) return null;
+  // The class lands on a WRAPPER, not on the button: the button is full width, so a
+  // padding class on it would inflate the button itself and a margin would push it
+  // past the edge of the list it belongs to (which is exactly what it did).
   return (
-    <Button
-      variant="light"
-      color="gray"
-      size="sm"
-      fullWidth
-      className={className}
-      onClick={onClick}
-    >
-      {t("common.showMoreCount", { n: rest })}
-    </Button>
+    <div className={className}>
+      <Button variant="light" color="gray" size="sm" fullWidth onClick={onClick}>
+        {t("common.showMoreCount", { n: rest })}
+      </Button>
+    </div>
   );
 }
 
@@ -408,6 +491,7 @@ export function IconButton({
   href,
   target,
   color = "gray",
+  variant = "subtle",
   disabled,
   className,
   title,
@@ -420,13 +504,15 @@ export function IconButton({
   href?: string;
   target?: string;
   color?: Color;
+  // The primary action in a row of icons still has to read as the primary one.
+  variant?: Variant;
   disabled?: boolean;
   className?: string;
   title?: string;
 }) {
   const cls = cn(
-    "inline-flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-90",
-    BTN.subtle[color],
+    "inline-flex size-8 items-center justify-center rounded-lg transition active:scale-90",
+    BTN[variant][color],
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
     className,
   );
@@ -460,39 +546,6 @@ export function IconButton({
   );
 }
 
-// ViewSwitch is the table/cards toggle every list view carries. Icons rather than words:
-// it repeats on several screens and the words would be the widest thing in a toolbar that
-// already holds a search box and two selects. The words stay as the accessible name and
-// the hover title (see SegmentedControl).
-export function ViewSwitch({
-  value,
-  onChange,
-  tableLabel,
-  cardsLabel,
-  label,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  tableLabel: string;
-  cardsLabel: string;
-  // label names WHICH list this switch drives. Two of them on one page otherwise present
-  // four buttons all called "Table"/"Cards", and nothing says which pair is which.
-  label?: string;
-}) {
-  return (
-    <div role="group" aria-label={label}>
-    <SegmentedControl
-      value={value}
-      onChange={onChange}
-      data={[
-        { value: "table", label: <IconTable size={18} />, title: tableLabel },
-        { value: "cards", label: <IconCards size={18} />, title: cardsLabel },
-      ]}
-    />
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------- table */
 
 // TableShell is the surface every data table in the panel sits on — the same white card
@@ -506,7 +559,7 @@ export function TableShell({
 }: {
   children: ReactNode;
   className?: string;
-  // bare drops the surface for a table that already sits inside a Card or SettingCard.
+  // bare drops the surface for a table that already sits inside a Card or Section.
   // Without it the operator sees a white rounded panel with its own border and shadow
   // nested 16px inside an identical one.
   bare?: boolean;
@@ -535,7 +588,10 @@ export function THead({ cols }: { cols: TableCol[] }) {
   return (
     <thead className="border-b border-gray-100 bg-gray-50/70 text-left text-ink-muted">
       <tr>
+        {/* A column list is positional by definition: a fixed prop array whose
+            order IS the table. */}
         {cols.map((c, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional column list
           <th key={i} className={cn("py-2 pr-3 font-medium first:pl-3", c.className)}>
             {c.srOnly ? <span className="sr-only">{c.srOnly}</span> : c.label}
           </th>
@@ -586,22 +642,15 @@ export function TD({
 export function Card({
   children,
   className,
-  onClick,
-  style,
 }: {
   children: ReactNode;
   className?: string;
-  onClick?: () => void;
-  style?: React.CSSProperties;
 }) {
   return (
     <div
-      onClick={onClick}
-      style={style}
       className={cn(
         "rounded-2xl border border-brand-600/6 bg-white shadow-sm transition",
         "hover:shadow-lg flex flex-col",
-        onClick && "cursor-pointer",
         className,
       )}
     >
@@ -610,52 +659,15 @@ export function Card({
   );
 }
 
-// SettingCard is a settings section: a padded Card with a bold title, an optional
-// muted description, and an optional right-aligned action (a Switch/Button in the
-// header). The body renders below the header.
-export function SettingCard({
-  title,
-  description,
-  action,
-  stackAction,
-  children,
-  className,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  action?: ReactNode;
-  // stackAction drops the action below the text on phones instead of keeping it on
-  // the title row. Off by default: most actions here are a Switch, which stays put
-  // happily in a corner at any width. Turn it on for a real button, which a long
-  // description would otherwise squeeze into a sliver on a narrow screen.
-  stackAction?: boolean;
-  children?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <Card className={cn("p-4", className)}>
-      <div
-        className={cn(
-          "mb-3 flex items-start justify-between gap-3",
-          stackAction && "flex-col sm:flex-row",
-        )}
-      >
-        <div className="min-w-0">
-          <h3 className="font-bold text-ink">{title}</h3>
-          {description && (
-            <p className="mt-1 text-sm text-ink-muted">{description}</p>
-          )}
-        </div>
-        {action}
-      </div>
-      {children}
-    </Card>
-  );
-}
-
 // SaveBar is the sticky bottom action bar shown while a page has unsaved edits.
 // Leaving the page (it unmounts) discards the in-memory changes, which the hint
 // makes explicit. Render it once per page; it returns null when not dirty.
+// It lives inside the settings content area, which owns the scroll and pads by 20px:
+// the negative margins take it edge to edge and -bottom-5 pins it to the padding
+// edge, so it lands flush on the section's bottom rule instead of 20px above it.
+// mt-auto is what puts it there on a SHORT tab: sticky can only stop an element
+// leaving the top of the scrollport, it cannot push one down a page that does not
+// scroll — without this the bar sat directly under the last card.
 export function SaveBar({
   dirty,
   busy,
@@ -672,41 +684,32 @@ export function SaveBar({
   const { t } = useTranslation();
   if (!dirty) return null;
   return (
-    <>
-      {/* The bar is fixed, so it sits ON TOP of whatever is at the bottom of the page.
-          On General Settings that is the secret-path card — the one control an operator
-          must not be unable to reach. A spacer rendered with the bar keeps every page
-          scrollable past it without each one remembering its own padding. */}
-      <div aria-hidden className="h-24" />
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+    <div className="sticky -bottom-5 z-30 mt-auto -mx-5 -mb-5 border-t border-brand-600/10 bg-gray-50/95 px-5 py-2.5 backdrop-blur">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">
+          <p className="text-xs font-semibold leading-tight text-ink sm:text-[13px]">
             {t("common.unsavedTitle")}
           </p>
-          <p className="text-xs text-ink-muted">{t("common.unsavedHint")}</p>
+          {/* The bar eats the screen on a phone if it explains itself there too. */}
+          <p className="hidden text-xs text-ink-muted sm:block">
+            {t("common.unsavedHint")}
+          </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button
-            variant="light"
-            color="gray"
-            onClick={onCancel}
-            className="flex-1 sm:flex-none"
-          >
+          <Button size="sm" variant="light" color="gray" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
           <Button
+            size="sm"
             loading={busy}
             disabled={saveDisabled}
             onClick={onSave}
-            className="flex-1 sm:flex-none"
           >
             {t("common.save")}
           </Button>
         </div>
-        </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -715,14 +718,15 @@ function Field({ label, children }: { label?: string; children: ReactNode }) {
   if (!label) return <>{children}</>;
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-ink">{label}</span>
       {children}
     </label>
   );
 }
 
 const inputCls =
-  "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-ink outline-none " +
+  "w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-[13px] text-ink outline-none " +
+  "" +
   "placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 
 export function TextInput({
@@ -787,6 +791,7 @@ export function Textarea({
   placeholder,
   rows = 3,
   hint,
+  mono,
   inputRef,
 }: {
   label?: string;
@@ -795,6 +800,8 @@ export function Textarea({
   placeholder?: string;
   rows?: number;
   hint?: string;
+  // mono for content that is a list of machine values — addresses, templates.
+  mono?: boolean;
   // inputRef exposes the element so a caller can act on the selection — wrapping
   // the highlighted text in a tag, for instance.
   inputRef?: React.Ref<HTMLTextAreaElement>;
@@ -803,7 +810,7 @@ export function Textarea({
     <Field label={label}>
       <textarea
         ref={inputRef}
-        className={cn(inputCls, "resize-y")}
+        className={cn(inputCls, "resize-y", mono && "font-mono")}
         value={value}
         rows={rows}
         placeholder={placeholder}
@@ -889,8 +896,31 @@ function AnchoredPopover({
   )
 }
 
+// popoverDrop places a list panel whose height the contents decide. It hangs under
+// the trigger while the list fits there, and flips above it when the trigger sits
+// near the bottom edge — which on a phone is every field of a sheet. Either way the
+// panel is capped to the room on the side it took, so a long list scrolls inside
+// the screen instead of running off it.
+const DROP_MIN = 120
+function popoverDrop(rect: DOMRect, want: number, gutter = 8, gap = 4) {
+  const below = window.innerHeight - rect.bottom - gap - gutter
+  const above = rect.top - gap - gutter
+  const up = below < Math.min(want, above)
+  const maxHeight = Math.min(want, Math.max(up ? above : below, DROP_MIN))
+  // Flipped, the panel hangs from its bottom edge rather than a computed top: the
+  // list is usually shorter than its cap — a search box shrinks it further — and a
+  // top-anchored panel would float away from the field it belongs to.
+  // The clamps only bite when neither side has DROP_MIN to give: the panel then
+  // overlaps its trigger rather than leaving the viewport.
+  const style: { top?: number; bottom?: number } = up
+    ? { bottom: Math.max(gutter, window.innerHeight - rect.top + gap) }
+    : { top: Math.max(gutter, Math.min(rect.bottom + gap, window.innerHeight - gutter - maxHeight)) }
+  return { up, maxHeight, style }
+}
+
 const triggerCls =
-  'flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-ink ' +
+  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-[13px] text-ink ' +
+  '' +
   'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
 
 export function Select({
@@ -944,43 +974,55 @@ export function Select({
       </button>
       {open && (
         <AnchoredPopover anchor={ref.current} onClose={() => setOpen(false)}>
-          {(rect) => (
-            <div
-              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
-            >
-              {searchable && (
-                <div className="border-b border-gray-100 p-2">
-                  <input
-                    autoFocus
-                    value={q}
-                    onChange={(e) => setQ(e.currentTarget.value)}
-                    placeholder={t('common.search')}
-                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
-                  />
-                </div>
-              )}
-              <div className="max-h-60 overflow-y-auto py-1">
-                {filtered.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+          {(rect) => {
+            const drop = popoverDrop(rect, 320)
+            return (
+              <div
+                className={cn(
+                  'animate-scale-in flex flex-col overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg',
+                  drop.up ? 'origin-bottom' : 'origin-top',
                 )}
-                {filtered.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => pick(o.value)}
-                    className={cn(
-                      'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
-                      o.value === value ? 'font-semibold text-accent' : 'text-ink',
-                    )}
-                  >
-                    <span className="truncate">{o.label}</span>
-                    {o.value === value && <IconCheck className="shrink-0 text-accent" />}
-                  </button>
-                ))}
+                style={{
+                  position: 'fixed',
+                  left: rect.left,
+                  width: rect.width,
+                  maxHeight: drop.maxHeight,
+                  ...drop.style,
+                }}
+              >
+                {searchable && (
+                  <div className="shrink-0 border-b border-gray-100 p-2">
+                    <input
+                      autoFocus
+                      value={q}
+                      onChange={(e) => setQ(e.currentTarget.value)}
+                      placeholder={t('common.search')}
+                      className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                    />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                  {filtered.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+                  )}
+                  {filtered.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => pick(o.value)}
+                      className={cn(
+                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
+                        o.value === value ? 'font-semibold text-accent' : 'text-ink',
+                      )}
+                    >
+                      <span className="truncate">{o.label}</span>
+                      {o.value === value && <IconCheck className="shrink-0 text-accent" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          }}
         </AnchoredPopover>
       )}
     </Field>
@@ -1041,6 +1083,9 @@ export function TagsInput({
   return (
     <div>
       {label && <span className="mb-1 block text-sm font-medium text-ink">{label}</span>}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: not a control — it forwards a
+          click on the box's padding to the input inside it, which a keyboard reaches
+          by tabbing to it directly. */}
       <div
         ref={boxRef}
         onClick={() => inputRef.current?.focus()}
@@ -1102,43 +1147,55 @@ export function TagsInput({
       {hint && <p className="mt-1 text-xs text-ink-muted">{hint}</p>}
       {open && avail.length > 0 && (
         <AnchoredPopover anchor={boxRef.current} onClose={closePopover}>
-          {(rect) => (
-            <div
-              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
-            >
-              <div className="border-b border-gray-100 p-2">
-                <input
-                  autoFocus
-                  value={q}
-                  onChange={(e) => setQ(e.currentTarget.value)}
-                  placeholder={t('common.searchCategory')}
-                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
-                />
-              </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {shown.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+          {(rect) => {
+            const drop = popoverDrop(rect, 340)
+            return (
+              <div
+                className={cn(
+                  'animate-scale-in flex flex-col overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg',
+                  drop.up ? 'origin-bottom' : 'origin-top',
                 )}
-                {shown.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => add(o.value)}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-gray-50"
-                  >
-                    <span className="truncate">{o.label}</span>
-                    <span className="ml-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
-                  </button>
-                ))}
-                {matched.length > SHOWN && (
-                  <p className="px-3 py-2 text-xs text-gray-400">
-                    {t('common.shownOfMatched', { shown: SHOWN, total: matched.length })}
-                  </p>
-                )}
+                style={{
+                  position: 'fixed',
+                  left: rect.left,
+                  width: rect.width,
+                  maxHeight: drop.maxHeight,
+                  ...drop.style,
+                }}
+              >
+                <div className="shrink-0 border-b border-gray-100 p-2">
+                  <input
+                    autoFocus
+                    value={q}
+                    onChange={(e) => setQ(e.currentTarget.value)}
+                    placeholder={t('common.searchCategory')}
+                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                  />
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                  {shown.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+                  )}
+                  {shown.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => add(o.value)}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-gray-50"
+                    >
+                      <span className="truncate">{o.label}</span>
+                      <span className="ml-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
+                    </button>
+                  ))}
+                  {matched.length > SHOWN && (
+                    <p className="px-3 py-2 text-xs text-gray-400">
+                      {t('common.shownOfMatched', { shown: SHOWN, total: matched.length })}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          }}
         </AnchoredPopover>
       )}
     </div>
@@ -1178,18 +1235,46 @@ function parseYmd(s: string): Date | null {
 
 // DatePicker holds a YYYY-MM-DD string (empty = unset) and renders a calendar
 // popover. `min` (YYYY-MM-DD) disables earlier days.
+// The calendar's own box. Fixed, because the popover has to be placed before it is
+// measured — and a month grid is the same size every time.
+const CALENDAR_W = 260
+const CALENDAR_H = 320
+
+// popoverLeft keeps a fixed-width popover on screen: anchored to its trigger, but
+// pulled back from the right edge when the trigger sits there (a calendar opened by
+// a field at the right of a page used to hang half outside the window).
+function popoverLeft(rect: DOMRect, width: number, gutter = 8): number {
+  const max = window.innerWidth - width - gutter
+  return Math.max(gutter, Math.min(rect.left, max))
+}
+
+// popoverTop flips the panel above its trigger when there is no room under it.
+function popoverTop(rect: DOMRect, height: number, gutter = 8): number {
+  const below = rect.bottom + 4
+  if (below + height + gutter <= window.innerHeight) return below
+  return Math.max(gutter, rect.top - height - 4)
+}
+
 export function DatePicker({
   label,
   value,
   onChange,
   min,
   placeholder,
+  disabled,
+  clearable,
 }: {
   label?: string
   value: string
   onChange: (v: string) => void
   min?: string
   placeholder?: string
+  // A disabled picker still shows its date: it says "this is decided elsewhere",
+  // which is the point when a tariff owns the dates.
+  disabled?: boolean
+  // A filter has to be removable: with this the calendar icon becomes a clear
+  // button once a date is chosen.
+  clearable?: boolean
 }) {
   const { t } = useTranslation()
   placeholder = placeholder ?? t('common.never')
@@ -1213,7 +1298,7 @@ export function DatePicker({
   const days = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate()
   for (let d = 1; d <= days; d++) cells.push(new Date(view.getFullYear(), view.getMonth(), d))
 
-  const disabled = (d: Date) => {
+  const beforeMin = (d: Date) => {
     if (!minDate) return false
     const a = new Date(d.getFullYear(), d.getMonth(), d.getDate())
     const b = new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate())
@@ -1225,18 +1310,50 @@ export function DatePicker({
       <button
         ref={ref}
         type="button"
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={triggerCls}
+        className={cn(triggerCls, disabled && 'cursor-not-allowed opacity-60')}
       >
         <span className={cn('truncate', !display && 'text-gray-400')}>{display || placeholder}</span>
-        <IconCalendar className="shrink-0 text-gray-400" />
+        {clearable && display && !disabled ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            aria-label={t('common.clear')}
+            title={t('common.clear')}
+            className="shrink-0 rounded p-0.5 text-gray-400 transition hover:bg-gray-100 hover:text-ink"
+            onClick={(e) => {
+              e.stopPropagation()
+              onChange('')
+            }}
+            // It cannot be a <button>: it sits inside the trigger button, and nesting
+            // one is invalid. It is out of the tab order for the same reason — the
+            // trigger owns that stop — but a screen reader can still activate it in
+            // browse mode, so it answers the keys a button would.
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              e.stopPropagation()
+              onChange('')
+            }}
+          >
+            <IconClose size={14} />
+          </span>
+        ) : (
+          <IconCalendar className="shrink-0 text-gray-400" />
+        )}
       </button>
       {open && (
         <AnchoredPopover anchor={ref.current} onClose={() => setOpen(false)}>
           {(rect) => (
             <div
-              className="animate-scale-in origin-top rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: 260 }}
+              className="animate-scale-in rounded-xl border border-gray-200 bg-white p-3 shadow-lg"
+              style={{
+                position: 'fixed',
+                left: popoverLeft(rect, CALENDAR_W),
+                top: popoverTop(rect, CALENDAR_H),
+                width: CALENDAR_W,
+              }}
             >
               <div className="mb-2 flex items-center justify-between">
                 <button
@@ -1263,14 +1380,18 @@ export function DatePicker({
                 ))}
               </div>
               <div className="grid grid-cols-7 gap-0.5">
+                {/* A month grid is positional: cell 0 is always the first weekday
+                    column, and the leading blanks have no identity to key by. */}
                 {cells.map((d, i) =>
                   d === null ? (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: positional grid
                     <span key={i} />
                   ) : (
                     <button
+                      // biome-ignore lint/suspicious/noArrayIndexKey: positional grid
                       key={i}
                       type="button"
-                      disabled={disabled(d)}
+                      disabled={beforeMin(d)}
                       onClick={() => {
                         onChange(ymd(d))
                         setOpen(false)
@@ -1321,8 +1442,10 @@ export function CustomizableSelect({
   units,
   max,
   onChange,
+  disabled,
 }: {
-  label: string;
+  // Optional: in a settings row the label is the row's, not the field's.
+  label?: string;
   data: { value: string; label: string }[];
   value: string;
   // format words a value that is not one of the presets — one the operator typed,
@@ -1335,6 +1458,7 @@ export function CustomizableSelect({
   // would refuse.
   max?: number;
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation()
   const [custom, setCustom] = useState(false)
@@ -1363,6 +1487,7 @@ export function CustomizableSelect({
       <Select
         label={label}
         data={options}
+        disabled={disabled}
         value={custom ? "__custom" : value}
         onChange={(v) => {
           if (v === "__custom") setCustom(true)
@@ -1372,7 +1497,7 @@ export function CustomizableSelect({
           }
         }}
       />
-      {custom && (
+      {custom && !disabled && (
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1">
             <TextInput
@@ -1422,41 +1547,143 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50",
+        // A 20px track: it is read at a glance far more often than it is flipped.
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition disabled:opacity-50",
         checked ? "bg-brand-600" : "bg-gray-300",
       )}
     >
       <span
         className={cn(
-          "inline-block h-5 w-5 transform rounded-full bg-onaccent shadow transition",
-          checked ? "translate-x-5" : "translate-x-0.5",
+          "inline-block h-4 w-4 transform rounded-full bg-onaccent shadow transition",
+          checked ? "translate-x-[18px]" : "translate-x-0.5",
         )}
       />
     </button>
   );
 }
 
-// ToggleRow is a labelled switch row: label (+ optional hint) on the left, a
-// Switch on the right — the shared form for an on/off setting.
+// SettingRow is one setting inside a section: what it is on the left, what changes
+// it on the right, divided from its neighbours by a rule rather than by a gap.
+// Three slots, because settings controls come in three widths:
+//   control — a switch, a button, a read-only value: it stays at the right edge.
+//   field   — a select or a text box: right-aligned when there is room, full width
+//             under the label on a phone, where a 200px field beside a label is a
+//             sliver.
+//   children — anything that needs the whole row (a picker, a chip list, a table).
+export function SettingRow({
+  label,
+  hint,
+  control,
+  field,
+  wideField,
+  children,
+  inset,
+  className,
+}: {
+  label?: ReactNode;
+  hint?: ReactNode;
+  control?: ReactNode;
+  field?: ReactNode;
+  // wideField widens the field column for values that are sentences rather than
+  // words — a timezone name, a cron preset.
+  wideField?: boolean;
+  children?: ReactNode;
+  // inset drops the horizontal padding for a row that already sits inside a padded
+  // box (a dialog, a card) instead of flush against a section's edges.
+  inset?: boolean;
+  className?: string;
+}) {
+  const head = !!(label || hint || control || field);
+  return (
+    <div
+      className={cn(
+        "border-t border-gray-100 py-2.5 first:border-t-0",
+        inset ? "first:pt-0 last:pb-0" : "px-3.5",
+        className,
+      )}
+    >
+      {head && (
+        <div
+          className={cn(
+            "flex gap-3",
+            field
+              ? "flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+              : cn(
+                  // Wrapping, not squeezing: the text keeps a floor width, so a
+                  // control too wide to sit beside it — a button with a real label —
+                  // drops onto its own line instead of pressing the sentence into a
+                  // column.
+                  "flex-wrap justify-between gap-y-2",
+                  // A label on its own is one line, and so is the value beside it:
+                  // centring the two puts them on the same optical line. With a hint
+                  // the text block is taller than the control, and the control belongs
+                  // at the top of it.
+                  hint ? "items-start" : "items-center",
+                ),
+          )}
+        >
+          {/* A hint is prose: capped at a readable measure so a wide screen does not
+              stretch one sentence across the whole panel. */}
+          <div
+            className={cn(
+              "min-w-0 max-w-[76ch]",
+              !field && "flex-1",
+              // The floor belongs to prose only: a hint keeps 10rem before the control
+              // beside it is allowed to wrap, so a button with a real label drops below
+              // instead of squeezing the sentence into a column. A row that is just a
+              // label and a value needs no floor — it was the floor that pushed short
+              // values onto a second line on a narrow screen.
+              !field && !!hint && "min-w-[min(100%,10rem)]",
+            )}
+          >
+            {label && <p className="text-xs font-medium text-ink">{label}</p>}
+            {hint && (
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">
+                {hint}
+              </p>
+            )}
+          </div>
+          {control && (
+            // leading-4: the same line box the label has. Without it the wrapper keeps
+            // the row's own 24px leading, and a value set in it sits 2px lower than the
+            // label it is supposed to sit beside.
+            <div className="ml-auto shrink-0 text-xs leading-4">{control}</div>
+          )}
+          {field && (
+            <div className={cn("w-full sm:shrink-0", wideField ? "sm:w-72" : "sm:w-56")}>
+              {field}
+            </div>
+          )}
+        </div>
+      )}
+      {children && <div className={cn(head && "mt-2.5")}>{children}</div>}
+    </div>
+  );
+}
+
+// ToggleRow is the switch case of SettingRow, which is most of them.
 export function ToggleRow({
   label,
   hint,
   checked,
   onChange,
+  disabled,
+  inset,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
+  inset?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-sm font-medium text-ink">{label}</p>
-        {hint && <p className="text-xs text-ink-muted">{hint}</p>}
-      </div>
-      <Switch checked={checked} onChange={onChange} />
-    </div>
+    <SettingRow
+      label={label}
+      hint={hint}
+      inset={inset}
+      control={<Switch checked={checked} onChange={onChange} disabled={disabled} />}
+    />
   );
 }
 
@@ -1477,7 +1704,10 @@ export function Checkbox({
   return (
     <label
       className={cn(
-        "flex cursor-pointer select-none items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
+        // relative: the sr-only input inside is absolutely positioned, and without an
+        // anchor here the browser scrolls the page to wherever it lands when it takes
+        // focus on a click.
+        "relative flex cursor-pointer select-none items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition",
         checked
           ? "border-accent accent-tint"
           : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50",
@@ -1547,14 +1777,246 @@ export function Badge({
   );
 }
 
-/* ----------------------------------------------------------------- divider */
-export function Divider({ label }: { label?: string }) {
-  if (!label) return <hr className="border-gray-200" />;
+// Grid tracks are inline styles (a shared template is the only way a header and its
+// rows cannot drift apart), and an inline style carries no media query — so the few
+// components whose columns change with width ask for the answer instead of guessing
+// it. They ask about their own box, not the window: with the 224px sidebar showing,
+// a 700px window leaves a list barely 430px, and a viewport breakpoint would call
+// that wide.
+
+// useWideBox returns a ref to put on the container and whether that container is at
+// least `min` CSS pixels wide. A callback ref rather than an effect over a ref
+// object: the box it measures usually mounts only once the list has loaded, long
+// after an effect would have looked for it and found nothing.
+export function useWideBox(min: number) {
+  // Infinity until measured: a table renders wide on the first paint and narrows
+  // once the observer reports, rather than flashing its phone layout on a desktop.
+  const [width, setWidth] = useState(Number.POSITIVE_INFINITY);
+  const obs = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLElement | null) => {
+    obs.current?.disconnect();
+    obs.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    obs.current = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    obs.current.observe(el);
+  }, []);
+  useEffect(() => () => obs.current?.disconnect(), []);
+  // The width comes back too, for a table with more than one step to it.
+  return [ref, width >= min, width] as const;
+}
+
+/* ------------------------------------------------------------------- panel */
+// MICRO is the console's micro-heading: column headers, KPI captions, mini-bar
+// labels. One constant so the 11px / uppercase / 0.06em triple is spelled once, and
+// so "is this a heading or a value" is answered by a name rather than by three
+// numbers at the call site.
+export const MICRO =
+  "text-[11px] font-medium uppercase tracking-[0.06em] text-ink-muted";
+
+// EmptyState is the one shape an empty list takes: what is not here, why, and the
+// way out when there is one. Two cases must not share words — "nothing created yet"
+// and "the filter matched nothing" need different answers — so the caller passes both
+// lines rather than the component guessing.
+export function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body?: string;
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-3 text-sm font-medium text-ink-muted">
-      <span className="whitespace-nowrap">{label}</span>
-      <hr className="grow border-gray-200" />
+    <div className="flex flex-col items-center gap-2 px-4 py-16 text-center">
+      <p className="text-sm font-semibold text-ink">{title}</p>
+      {body && <p className="max-w-md text-xs text-ink-muted">{body}</p>}
+      {action && <div className="mt-2">{action}</div>}
     </div>
+  );
+}
+
+// loadColor is the panel's one opinion about how loaded is too loaded: under 70% is
+// healthy, 70–90% is worth noticing, over 90% needs doing something about. Every
+// bar, dial and figure that reports load reads it from here, so a CPU number on the
+// dashboard and the same number on the server card can never disagree.
+export function loadColor(percent: number): string {
+  return percent < 70 ? "bg-success" : percent < 90 ? "bg-warning" : "bg-danger";
+}
+
+// Panel is the surface a console screen is built from: a hairline, radius 12, no
+// shadow — panels are told apart by their fill and their border, and elevation is
+// kept for things that float over the page. `title` draws the header row and
+// `aside` is the note or figure at its right end; `pad` gives the body the standard
+// inset, which rows and tables do not want because they pad themselves.
+export function Panel({
+  title,
+  aside,
+  pad,
+  children,
+  className,
+  bodyClassName,
+}: {
+  title?: ReactNode;
+  aside?: ReactNode;
+  pad?: boolean;
+  children?: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "flex min-w-0 flex-col rounded-xl border border-brand-600/10 bg-white",
+        className,
+      )}
+    >
+      {/* The header row wraps rather than truncates: a section's note ("за последние
+          30 дней") is a sentence, and half of one is worse than a second line. */}
+      {(title || aside) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-brand-600/10 px-3.5 py-[11px]">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+            {title}
+          </h3>
+          {aside}
+        </div>
+      )}
+      <div className={cn("min-w-0", pad && "p-3.5", bodyClassName)}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+// Section is the settings block used across the server settings dialogs — the same
+// surface the settings screens use: a white panel with a header band, its
+// description as the first row, and either dense rows (flush) or a padded form
+// underneath. One shape for every settings surface in the panel.
+export function Section({
+  title,
+  desc,
+  action,
+  children,
+  className,
+  flush,
+}: {
+  title?: ReactNode;
+  desc?: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  // flush hands the body straight to the section: for content that is already a
+  // list of rows, which draw their own dividers and padding.
+  flush?: boolean;
+}) {
+  return (
+    <Panel title={title} aside={action} className={className}>
+      {desc && <SettingRow hint={desc} />}
+      {children != null &&
+        (flush ? (
+          children
+        ) : (
+          <div className="flex flex-col gap-3 p-3.5">{children}</div>
+        ))}
+    </Panel>
+  );
+}
+
+// Tone is how a figure reads at a glance, independent of what produced it.
+export type Tone = "default" | "success" | "warning" | "danger";
+
+const TONE: Record<Tone, string> = {
+  default: "text-ink",
+  success: "text-success",
+  warning: "text-warning",
+  danger: "text-danger",
+};
+
+// KpiTile is one figure on a dashboard's top row: what it counts, the number, and
+// one line of context under it. The number is mono because these sit in a row and
+// are read as a column of digits; `note` keeps its height when empty so a tile
+// without context does not stand shorter than its neighbours.
+export function KpiTile({
+  label,
+  value,
+  note,
+  tone = "default",
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  note?: ReactNode;
+  tone?: Tone;
+}) {
+  return (
+    <div className="rounded-xl border border-brand-600/10 bg-white p-3.5">
+      <p className={MICRO}>{label}</p>
+      <p
+        className={cn(
+          "mt-1.5 font-mono text-2xl leading-8 font-semibold tracking-[-0.02em]",
+          TONE[tone],
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 min-h-3.5 text-[11px] leading-3.5 text-ink-muted">
+        {note}
+      </p>
+    </div>
+  );
+}
+
+// MiniBar is one load figure inside a dense row: a short label, a 4px bar and the
+// percentage. The compact form of a dial — a row has space for a hint, not for a
+// gauge — and it uses the same thresholds, so the two never tell different stories.
+export function MiniBar({
+  label,
+  percent,
+  className,
+}: {
+  // Omitted inside a table whose column already names the resource — repeating it in
+  // every row is the heading printed once per line.
+  label?: string;
+  percent: number;
+  className?: string;
+}) {
+  const p = Math.max(0, Math.min(100, percent || 0));
+  return (
+    <span className={cn("flex items-center gap-1", className)}>
+      {label && <span className={cn(MICRO, "w-9 shrink-0 truncate")}>{label}</span>}
+      {/* The figure leads: it is what gets read, and the bar behind it is the shape of
+          that figure rather than a thing to be measured on its own. */}
+      <span className="w-[30px] shrink-0 text-right font-mono text-[11px] text-ink-muted">
+        {Math.round(p)}%
+      </span>
+      <span className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+        <span
+          className={cn("block h-full rounded-full", loadColor(p))}
+          style={{ width: `${p}%` }}
+        />
+      </span>
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------- mono */
+// Mono wraps a value that has to be read digit by digit and line up under the one
+// above it: numbers, ids, hosts, IPs, timestamps, traffic, versions. A component
+// rather than a class repeated at every call site, so "what is mono" stays one
+// decision and can be answered by grepping for one name.
+export function Mono({
+  children,
+  className,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  // A compact value often needs to say in full what it is ("Local time", the
+  // untruncated host); the tooltip is part of the value, not of its layout.
+  title?: string;
+}) {
+  return (
+    <span title={title} className={cn("font-mono", className)}>
+      {children}
+    </span>
   );
 }
 
@@ -1572,8 +2034,8 @@ export function Code({
 }) {
   const { copied, copy: doCopy } = useCopy();
   const base =
-    "rounded-md bg-gray-100 font-mono text-xs text-ink " +
-    (block ? "block whitespace-pre-wrap break-all p-3" : "px-1.5 py-0.5");
+    "rounded-md bg-gray-100 font-mono text-[11px] text-ink " +
+    (block ? "block whitespace-pre-wrap break-all p-2.5" : "px-1.5 py-0.5");
   if (copy && block) {
     return (
       <div className="relative">
@@ -1598,6 +2060,7 @@ export function SegmentedControl({
   value,
   onChange,
   fullWidth,
+  size = "md",
 }: {
   // label may be an icon. When it is, pass title too: an icon-only button has no
   // accessible name of its own, and a screen reader would announce nothing at all.
@@ -1605,11 +2068,15 @@ export function SegmentedControl({
   value: string;
   onChange: (v: string) => void;
   fullWidth?: boolean;
+  // "xs" is the one that rides in a section's header band, where it must not make
+  // the band taller than the 14px title beside it.
+  size?: "md" | "xs";
 }) {
+  const xs = size === "xs";
   return (
     <div
       className={cn(
-        "inline-flex rounded-xl bg-gray-100 p-1",
+        "inline-flex rounded-lg bg-gray-100 p-0.5",
         fullWidth && "flex w-full",
       )}
     >
@@ -1622,7 +2089,11 @@ export function SegmentedControl({
           aria-label={o.title}
           aria-pressed={value === o.value}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+            "font-semibold transition",
+            "",
+            xs
+              ? "rounded-md px-2.5 py-0.5 text-[11px]"
+              : "rounded-md px-3 py-1 text-[13px]",
             fullWidth && "flex-1",
             value === o.value
               ? "bg-brand-600 text-onaccent shadow-sm"
@@ -1672,45 +2143,89 @@ function useEscape(onClose?: () => void, active = true) {
   }, [onClose, active]);
 }
 
+// A dialog's width is its own; its height follows the content. The one exception is
+// a dialog with a TAB STRIP: switching tabs must not resize the frame under the
+// pointer, so those get a floor by size. Anything else can still ask for one with
+// minBodyHeight.
+const MODAL_SIZES = {
+  md: { w: "max-w-lg", body: 200 },
+  lg: { w: "max-w-2xl", body: 320 },
+  xl: { w: "max-w-3xl", body: 420 },
+} as const;
+
 export function Modal({
   open,
   onClose,
   title,
+  subtitle,
+  toolbar,
+  footer,
   children,
   dismissible = true,
   size = "md",
+  minBodyHeight,
 }: {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
+  // The line under the title: which step this is, what it will act on, what it
+  // cannot undo. Never a second sentence of the title.
+  subtitle?: ReactNode;
+  // A band pinned under the header — a tab strip, a filter row. Scrolls with
+  // nothing; the body scrolls under it.
+  toolbar?: ReactNode;
+  // Pinned buttons. Passing them here rather than at the end of the body is what
+  // keeps them reachable while the body scrolls.
+  footer?: ReactNode;
   children: ReactNode;
   // When false the modal can't be dismissed (no X, no backdrop click, no Esc) —
   // used for blocking states like "panel restarting".
   dismissible?: boolean;
   size?: "md" | "lg" | "xl";
+  // A floor for the body, in pixels. Only worth setting when the frame resizing
+  // under the reader would be worse than the empty space it costs.
+  minBodyHeight?: number;
 }) {
   useLockBody(open);
   useEscape(onClose, open && dismissible);
   if (!open) return null;
-  const maxW =
-    size === "xl" ? "max-w-3xl" : size === "lg" ? "max-w-2xl" : "max-w-lg";
+  const sz = MODAL_SIZES[size];
   return createPortal(
-    <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-200 flex items-end justify-center sm:items-center sm:p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={dismissible ? onClose : undefined}
       />
+      {/* On a phone a dialog is a sheet: it comes up from the bottom edge, keeps the
+          rounding only where it meets the page, and carries a handle — the shape a
+          thumb expects to be able to push back down. Above 640px it is a dialog. */}
       <div
         className={cn(
-          "relative z-10 flex max-h-[90vh] w-full animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl",
-          maxW,
+          "relative z-10 flex w-full flex-col overflow-clip bg-white shadow-xl",
+          "max-h-[92dvh] rounded-t-2xl animate-slide-in-up",
+          "sm:max-h-[86dvh] sm:rounded-2xl sm:animate-fade-in-up",
+          sz.w,
         )}
       >
+        <span
+          aria-hidden
+          className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-gray-300 sm:hidden"
+        />
         {title && (
-          <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-5 py-4">
-            <div className="min-w-0 flex-1 text-lg font-bold text-ink">{title}</div>
+          <div className="flex min-w-0 shrink-0 items-start justify-between gap-2 border-b border-gray-100 px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-lg font-bold text-ink">{title}</div>
+              {subtitle && (
+                <div className="mt-0.5 text-xs leading-relaxed text-ink-muted">
+                  {subtitle}
+                </div>
+              )}
+            </div>
             {dismissible && (
               <button
+                type="button"
                 onClick={onClose}
                 className="shrink-0 text-gray-400 hover:text-gray-600"
               >
@@ -1719,7 +2234,25 @@ export function Modal({
             )}
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+        {toolbar && (
+          <div className="shrink-0 border-b border-gray-100 px-5">{toolbar}</div>
+        )}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto p-5"
+          style={{ minHeight: minBodyHeight ?? (toolbar ? sz.body : undefined) }}
+        >
+          {children}
+        </div>
+        {footer && (
+          <div
+            className="shrink-0 border-t border-gray-100 px-5 py-3.5"
+            style={{
+              paddingBottom: "calc(0.875rem + env(safe-area-inset-bottom))",
+            }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,
@@ -1776,21 +2309,38 @@ export function Drawer({
   onClose,
   side = "right",
   title,
+  subtitle,
+  toolbar,
+  footer,
   children,
   full,
+  wide,
 }: {
   open: boolean;
   onClose: () => void;
   side?: "right" | "left";
   title?: ReactNode;
+  // A second line under the title: what this drawer is about — an address, an id.
+  subtitle?: ReactNode;
+  // A strip pinned under the header, above the scrolling body: a tab bar.
+  toolbar?: ReactNode;
+  // Pinned to the bottom edge, out of the scroll: the actions that finish the job.
+  // A drawer is full-height, so buttons left in the body scroll away under a long
+  // list — which is the one place they must never be.
+  footer?: ReactNode;
   children: ReactNode;
   full?: boolean;
+  // wide is for a drawer that holds a form rather than a card: the server settings
+  // carry nine tabs of fields, and 520px turns every one of them into a column.
+  wide?: boolean;
 }) {
   useLockBody(open);
   useEscape(onClose, open);
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-200">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={onClose}
@@ -1801,21 +2351,40 @@ export function Drawer({
           side === "right"
             ? "right-0 animate-slide-in-right"
             : "left-0 animate-slide-in-left",
-          full ? "w-full" : "w-full max-w-lg",
+          full ? "w-full" : wide ? "w-full max-w-[760px]" : "w-full max-w-[520px]",
           // Rounded inner edge on desktop only (on mobile the drawer is full-width).
           !full && (side === "right" ? "sm:rounded-l-2xl" : "sm:rounded-r-2xl"),
         )}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-          <div className="min-w-0 font-bold text-ink">{title}</div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-brand-600/10 px-3.5 py-[11px]">
+          <div className="min-w-0 flex-1">
+            <div className="min-w-0 font-bold text-ink">{title}</div>
+            {subtitle && (
+              <div className="mt-0.5 truncate text-xs text-ink-muted">{subtitle}</div>
+            )}
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="shrink-0 text-gray-400 hover:text-gray-600"
           >
             <IconClose />
           </button>
         </div>
+        {toolbar && (
+          <div className="shrink-0 border-b border-brand-600/10 px-3.5">{toolbar}</div>
+        )}
         <div className="grow overflow-y-auto p-4">{children}</div>
+        {footer && (
+          <div
+            className="shrink-0 border-t border-gray-100 px-4 py-3"
+            style={{
+              paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))",
+            }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,
@@ -1830,11 +2399,16 @@ export function Dropdown({
   children,
   align = "end",
   width = 200,
+  up,
 }: {
   trigger: ReactNode;
   children: ReactNode;
   align?: "start" | "end";
   width?: number;
+  // up opens the menu above the trigger. The account chip lives in the footer of
+  // the sidebar, where a menu dropping down has nowhere to go — the shell owns
+  // the viewport height and clips it.
+  up?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1862,10 +2436,16 @@ export function Dropdown({
           className={cn(
             // border-gray-300 (not -100) + shadow-xl so the menu reads as a distinct
             // panel even when it overlays a same-coloured card surface on a dark theme.
-            "absolute z-50 mt-2 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
-            align === "end"
-              ? "right-0 origin-top-right"
-              : "left-0 origin-top-left",
+            "absolute z-50 animate-scale-in overflow-hidden rounded-xl border border-gray-300 bg-white py-1 shadow-xl",
+            up ? "bottom-full mb-2" : "mt-2",
+            align === "end" ? "right-0" : "left-0",
+            up
+              ? align === "end"
+                ? "origin-bottom-right"
+                : "origin-bottom-left"
+              : align === "end"
+                ? "origin-top-right"
+                : "origin-top-left",
           )}
         >
           <DropCtx.Provider value={{ close: () => setOpen(false) }}>
@@ -1964,6 +2544,8 @@ export function InfoModal({
   useEscape(onClose); // no-op when onClose is omitted (the blocking first-run gate)
   return createPortal(
     <div className="fixed inset-0 z-250 flex items-center justify-center p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
@@ -1976,6 +2558,7 @@ export function InfoModal({
           </div>
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
               className="text-gray-400 transition hover:text-gray-600"
             >
@@ -2046,6 +2629,8 @@ export function ToolDialog({
   useEscape(onClose);
   return createPortal(
     <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the backdrop is a mouse
+          affordance; a keyboard dismisses the dialog with Escape (useEscape above). */}
       <div
         className="absolute inset-0 animate-fade-in bg-black/50"
         onClick={onClose}
@@ -2057,6 +2642,7 @@ export function ToolDialog({
             <div className="flex items-center gap-2">
               {actions}
               <button
+                type="button"
                 onClick={onClose}
                 className="text-gray-400 transition hover:text-gray-600"
               >

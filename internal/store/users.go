@@ -612,10 +612,16 @@ func (s *Store) GetDetachedUserByPrevChat(chatID int64) (*model.User, error) {
 // stats poll measures the delta from now. Passing 0/0 would make the poll re-add
 // the user's whole lifetime Xray total straight back onto the freshly-zeroed
 // usage. Does not touch enabled or expiry — an expired user stays expired.
-func (s *Store) ResetTraffic(id, lastUp, lastDown int64) error {
+func (s *Store) ResetTraffic(id, lastUp, lastDown int64, now int64) error {
+	// The rolling cycle starts over with the counter it belongs to. Leaving the anchor
+	// where it was meant a reset done a day before the cycle rolled gave the user a
+	// fresh quota that expired the next morning — and there was no other way to say
+	// "start counting from now", since re-saving the same period is a no-op.
 	_, err := s.db.Exec(
-		`UPDATE users SET used_up=0, used_down=0, last_up=?, last_down=? WHERE id = ?`,
-		lastUp, lastDown, id,
+		`UPDATE users SET used_up=0, used_down=0, last_up=?, last_down=?,
+		        last_reset_at = CASE WHEN reset_period IN ('', 'none') THEN last_reset_at ELSE ? END
+		 WHERE id = ?`,
+		lastUp, lastDown, now, id,
 	)
 	return err
 }

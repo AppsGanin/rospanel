@@ -118,6 +118,11 @@ func (m *Manager) RenameUser(ctx context.Context, id int64, name string) error {
 	prev := ""
 	if u, err := m.store.GetUser(id); err == nil {
 		prev = u.Name
+		// Renaming to the name it already has is not a rename: a form that posts what
+		// it loaded would otherwise file "Вася → Вася" in the journal.
+		if prev == name {
+			return nil
+		}
 	}
 	if err := m.store.SetUserName(id, name); err != nil {
 		return err
@@ -196,7 +201,9 @@ func (m *Manager) DeleteUser(ctx context.Context, id int64) error {
 
 // ResetTraffic zeroes a user's usage and re-enables them. The raw counters are
 // re-baselined to the live Xray value so the next stats poll doesn't re-add the
-// user's whole lifetime total back (see store.ResetTraffic).
+// user's whole lifetime total back (see store.ResetTraffic), and a rolling quota
+// cycle starts over from now — a reset the day before the cycle rolled used to hand
+// out a fresh quota that expired the next morning.
 func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 	up, down := m.liveCounter(id)
 	// Record what was wiped — after the reset the used totals read 0, so the audit row
@@ -206,7 +213,7 @@ func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 		used = u.UsedUp + u.UsedDown
 	}
 	err := m.mutateUser(fmt.Sprintf("user %d traffic counters reset", id),
-		func() error { return m.store.ResetTraffic(id, up, down) })
+		func() error { return m.store.ResetTraffic(id, up, down, time.Now().Unix()) })
 	if err == nil {
 		m.audit(ctx, id, model.EventTrafficReset, map[string]any{"used_before": used})
 	}
@@ -242,6 +249,13 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 	// period, and the only trace is a user.limits audit row.
 	m.applyPlanMu.Lock()
 	defer m.applyPlanMu.Unlock()
+	// The limits form posts all three fields whether or not they changed, and the API
+	// and the bots do the same. Identical values are not an edit: writing them files a
+	// journal row and reconciles Xray for nothing.
+	if u, err := m.store.GetUser(id); err == nil &&
+		u.DataLimit == dataLimit && u.ExpireAt == expireAt && u.DeviceLimit == deviceLimit {
+		return nil
+	}
 	// store.SetUserLimits recomputes status from the new limit/expiry/devices.
 	err := m.mutateUser(fmt.Sprintf("user %d limits updated: limit=%d expire=%d devices=%d", id, dataLimit, expireAt, deviceLimit),
 		func() error { return m.store.SetUserLimits(id, dataLimit, expireAt, deviceLimit) })
@@ -546,6 +560,12 @@ func (m *Manager) SetResetPeriod(ctx context.Context, id int64, period string) e
 	case "none", "daily", "weekly", "monthly", "yearly":
 	default:
 		return invalidCode("err.badResetPeriod", "неверный период сброса {{value}}", map[string]any{"value": period})
+	}
+	// An unchanged period is left alone entirely, not just unaudited: the store
+	// re-anchors the cycle at "now", so re-saving the same value would quietly move
+	// the user's reset day.
+	if u, err := m.store.GetUser(id); err == nil && u.ResetPeriod == period {
+		return nil
 	}
 	if err := m.store.SetResetPeriod(id, period, time.Now().Unix()); err != nil {
 		return err

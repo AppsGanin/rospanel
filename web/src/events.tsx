@@ -4,7 +4,17 @@ import type { EventPage, UserEvent } from "./api";
 import { fmtBytes, fmtSpeed } from "./format";
 import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
-import { Badge, Button, CenterLoader, TableShell, TD, THead, TR } from "./ui";
+import {
+  Badge,
+  Button,
+  CenterLoader,
+  cn,
+  EmptyState,
+  MICRO,
+  Mono,
+  Skeletons,
+  useWideBox,
+} from "./ui";
 
 // The audit-log rendering shared by the per-user journal modal and the global
 // journal page: how each action is labelled and coloured, how its details read,
@@ -325,9 +335,9 @@ export function EventList({
   load: (before: number) => Promise<EventPage>;
   showUser?: boolean;
   empty?: string;
-  // table renders the trail as columns instead of stacked cards. Used by the global
-  // journal, where every row has the same four facts and scanning down a column is the
-  // point; the per-user trail inside a modal keeps the cards, which read better narrow.
+  // table renders the trail as columns instead of stacked cards — every row carries
+  // the same facts, and scanning down a column is the point. The grid stacks itself
+  // below 560px, so it fits a dialog and a phone as well as the journal page.
   table?: boolean;
 }) {
   const { t } = useTranslation();
@@ -370,18 +380,22 @@ export function EventList({
       .finally(() => setMore(false));
   }, [load, next]);
 
-  if (loading) return <CenterLoader />;
-  if (!events.length)
-    return (
-      <div className="py-6 text-center text-sm text-ink-muted">
-        {empty ?? t("events.empty")}
+  // A list of rows loads as a list of rows: the trail's shape is the placeholder,
+  // not a spinner in the middle of an empty box.
+  if (loading)
+    return table ? (
+      <div className="flex flex-col gap-2.5 border-t border-brand-600/10 p-3.5">
+        <Skeletons n={6} className="h-4 w-full" />
       </div>
+    ) : (
+      <CenterLoader />
     );
+  if (!events.length) return <EmptyState title={empty ?? t("events.empty")} />;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={cn("flex flex-col", !table && "gap-3")}>
       {table ? (
-        <EventTable events={events} showUser={showUser} />
+        <EventGrid events={events} showUser={showUser} />
       ) : (
         <ul className="flex flex-col gap-2">
           {events.map((e) => (
@@ -390,18 +404,35 @@ export function EventList({
         </ul>
       )}
       {next > 0 && (
-        <Button variant="light" fullWidth loading={more} onClick={loadMore}>
-          {t("common.showMore")}
-        </Button>
+        <div className={cn(table && "border-t border-gray-100 p-3.5")}>
+          <Button variant="light" fullWidth loading={more} onClick={loadMore}>
+            {t("common.showMore")}
+          </Button>
+        </div>
       )}
     </div>
   );
 }
 
-// EventTable is the journal as columns: what happened, to whom, the details, who did it
-// and when. Same data as EventRow — the card stacks it, this lines it up so a column can
-// be read down.
-function EventTable({
+// The journal's columns: what happened, to whom, the details, who did it and when.
+// One template for the header and every row (an inline style — Tailwind must not
+// generate a track list per screen), and a two-column stack on a phone, where five
+// columns of 12px text would each be a word wide.
+const TPL =
+  "minmax(0,1.4fr) minmax(0,1fr) minmax(0,2fr) minmax(0,.9fr) minmax(0,.9fr)";
+const TPL_NOUSER = "minmax(0,1.4fr) minmax(0,2fr) minmax(0,.9fr) minmax(0,.9fr)";
+const TPL_MOBILE = "minmax(0,1fr) auto";
+// Below this the five columns are each a word wide; the row stacks instead.
+const GRID_WIDE_MIN = 560;
+
+// actorClass: the system is grey because nobody did it — a person is the accent,
+// because "who" is the question a journal row is read for.
+const actorClass = (kind: string) =>
+  kind === "system" ? "text-ink-muted" : "text-accent";
+
+// EventGrid is the journal as columns. Same data as EventRow — the card stacks it,
+// this lines it up so a column can be read down.
+function EventGrid({
   events,
   showUser,
 }: {
@@ -409,59 +440,84 @@ function EventTable({
   showUser?: boolean;
 }) {
   const { t } = useTranslation();
+  // Measured on the grid itself: inside the sidebar layout a 700px window leaves
+  // this box ~430px, and five columns of prose do not fit in that.
+  const [boxRef, wide] = useWideBox(GRID_WIDE_MIN);
+  const tpl = !wide ? TPL_MOBILE : showUser ? TPL : TPL_NOUSER;
   return (
-    <TableShell bare>
-      <THead
-        cols={[
-          { label: t("events.colAction") },
-          ...(showUser ? [{ label: t("events.colUser") }] : []),
-          { label: t("events.colDetails"), className: "hidden md:table-cell" },
-          { label: t("events.colActor"), className: "hidden sm:table-cell" },
-          { label: t("events.colWhen") },
-        ]}
-      />
-      <tbody>
-        {events.map((e) => {
-          const meta = actionMeta(e.action);
-          const details = eventDetails(e);
+    <div ref={boxRef} className="border-t border-brand-600/10">
+      {wide && (
+        <div
+          className={cn(MICRO, "grid items-center gap-3 px-3.5 py-2")}
+          style={{ gridTemplateColumns: tpl }}
+        >
+          <span className="truncate">{t("events.colAction")}</span>
+          {showUser && <span className="truncate">{t("events.colUser")}</span>}
+          <span className="truncate">{t("events.colDetails")}</span>
+          <span className="truncate">{t("events.colActor")}</span>
+          <span className="truncate text-right">{t("events.colWhen")}</span>
+        </div>
+      )}
+      {events.map((e) => {
+        const meta = actionMeta(e.action);
+        const details = eventDetails(e);
+        const bulk = e.details?.bulk === true;
+        const who = actorLabel(e);
+        const when = fmtDateTime(e.created_at);
+        if (!wide)
           return (
-            <TR key={e.id}>
-              <TD>
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <Badge color={meta.color} size="xs">
-                    {meta.label}
-                  </Badge>
-                  {e.details?.bulk === true && (
-                    <Badge color="gray" size="xs">
-                      {t("events.bulk")}
-                    </Badge>
-                  )}
-                </div>
-              </TD>
-              {showUser && (
-                <TD className="font-medium text-ink">
-                  <div className="max-w-[12rem] truncate">{e.user_name || `#${e.user_id}`}</div>
-                </TD>
-              )}
-              <TD className="hidden md:table-cell">
-                {details ? (
-                  <div className="max-w-[22rem] truncate" title={details}>
-                    {details}
-                  </div>
-                ) : (
-                  <span className="text-ink-muted">—</span>
-                )}
-              </TD>
-              <TD className="hidden whitespace-nowrap text-ink-muted sm:table-cell">
-                {actorLabel(e)}
-              </TD>
-              <TD className="whitespace-nowrap text-ink-muted">
-                {fmtDateTime(e.created_at)}
-              </TD>
-            </TR>
+            <div
+              key={e.id}
+              className="grid items-baseline gap-x-3 gap-y-0.5 border-t border-gray-100 px-3.5 py-[7px]"
+              style={{ gridTemplateColumns: tpl }}
+            >
+              <span className="truncate text-xs text-ink">
+                {meta.label}
+                {bulk ? ` · ${t("events.bulk")}` : ""}
+              </span>
+              <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+              <span className="col-span-2 truncate text-xs text-ink-muted">
+                {showUser ? `${e.user_name || `#${e.user_id}`} · ` : ""}
+                <span className={actorClass(e.actor_kind)}>{who}</span>
+                {details ? ` · ${details}` : ""}
+              </span>
+            </div>
           );
-        })}
-      </tbody>
-    </TableShell>
+        return (
+          <div
+            key={e.id}
+            className="grid items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]"
+            style={{ gridTemplateColumns: tpl }}
+          >
+            <span className="truncate text-xs text-ink" title={meta.label}>
+              {meta.label}
+              {bulk && (
+                <span className="ml-1.5 text-[11px] text-ink-muted">
+                  {t("events.bulk")}
+                </span>
+              )}
+            </span>
+            {showUser && (
+              <span className="truncate text-xs text-ink">
+                {e.user_name || `#${e.user_id}`}
+              </span>
+            )}
+            <span
+              className="truncate text-xs text-ink-muted"
+              title={details || undefined}
+            >
+              {details || "—"}
+            </span>
+            <span
+              className={cn("truncate text-xs", actorClass(e.actor_kind))}
+              title={who}
+            >
+              {who}
+            </span>
+            <Mono className="text-right text-[11px] text-ink-muted">{when}</Mono>
+          </div>
+        );
+      })}
+    </div>
   );
 }

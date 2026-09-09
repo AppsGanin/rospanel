@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { SubTemplates } from "./api";
-import { Card, Textarea } from "./ui";
+import { Panel, SettingRow, Textarea } from "./ui";
 
 // The placeholders each format's template must carry, kept next to the field that
 // needs them. Mirrored from internal/sub/template.go — the server validates on save,
@@ -22,34 +22,35 @@ export function SubTemplatesCard({
 }) {
   const { t } = useTranslation();
   const field = (key: keyof SubTemplates) => (
-    <div key={key} className="flex flex-col gap-1.5">
+    <SettingRow
+      key={key}
+      label={t(`subTpl.${key}` as "subTpl.clash")}
+      hint={
+        <span className="flex flex-wrap items-center gap-1">
+          {t("subTpl.slots")}
+          {SLOTS[key].map((slot) => (
+            <code
+              key={slot}
+              className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-ink-muted"
+            >
+              {slot}
+            </code>
+          ))}
+        </span>
+      }
+    >
       <Textarea
-        label={t(`subTpl.${key}` as "subTpl.clash")}
         rows={6}
         value={value[key]}
         placeholder={t("subTpl.placeholder")}
         onChange={(v) => onChange({ ...value, [key]: v })}
       />
-      <div className="flex flex-wrap items-center gap-1">
-        <span className="text-xs text-ink-muted">{t("subTpl.slots")}</span>
-        {SLOTS[key].map((slot) => (
-          <code
-            key={slot}
-            className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-ink-muted"
-          >
-            {slot}
-          </code>
-        ))}
-      </div>
-    </div>
+    </SettingRow>
   );
   return (
-    <Card className="p-4">
-      <h3 className="mb-1 font-bold text-ink">{t("subTpl.title")}</h3>
-      <p className="mb-3 text-sm text-ink-muted">{t("subTpl.hint")}</p>
-      <div className="flex flex-col gap-4">
-        {(["clash", "singbox", "xray"] as const).map(field)}
-      </div>
-    </Card>
+    <Panel title={t("subTpl.title")}>
+      <SettingRow hint={t("subTpl.hint")} />
+      {(["clash", "singbox", "xray"] as const).map(field)}
+    </Panel>
   );
 }

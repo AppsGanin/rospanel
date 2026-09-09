@@ -4,7 +4,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { disableTOTP, enableTOTP, getTOTP, startTOTP, type TOTPStatus } from './api'
 import { useAction } from './hooks'
 import { notifySuccess } from './notify'
-import { Badge, Button, Code, Modal, TextInput } from './ui'
+import { Button, Code, Modal, TextInput } from './ui'
+import { useStepUpDialog } from './stepup'
 
 // The admin's own second factor, inside the account dialog. It manages the CALLER and
 // nobody else — there is no way to touch another admin's 2FA from the panel, which is
@@ -15,31 +16,39 @@ import { Badge, Button, Code, Modal, TextInput } from './ui'
 // the app produced proves the secret actually landed in it. Until that code arrives
 // the panel keeps signing this admin in with the password alone, so a QR that was
 // never scanned cannot lock anyone out of their own panel.
-// The password comes from the dialog's own "current password" field rather than a
-// second one of ours: turning 2FA on and changing the password are both "prove it is
-// you", and one field asking that question is enough.
-export function TwoFactor({ password }: { password: string }) {
+// Both actions are re-authorised in a dialog of their own the moment they are asked
+// for — the account dialog no longer carries a password field for them to borrow.
+export function TwoFactor() {
   const { t } = useTranslation()
   const [status, setStatus] = useState<TOTPStatus | null>(null)
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
   const [code, setCode] = useState('')
   const { busy, run } = useAction()
+  const { ask, stepUpNode } = useStepUpDialog()
 
   const reload = () =>
     getTOTP()
       .then(setStatus)
       .catch(() => {})
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
   useEffect(() => {
     reload()
   }, [])
 
-  const start = () =>
+  const start = async () => {
+    const creds = await ask({
+      title: t('totp.title'),
+      body: t('totp.hint'),
+      confirmLabel: t('totp.turnOn'),
+    })
+    if (!creds) return
     run(async () => {
-      const s = await startTOTP(password)
+      const s = await startTOTP(creds.password)
       setSetup(s)
       setCode('')
     })
+  }
 
   const confirm = () =>
     run(async () => {
@@ -50,39 +59,38 @@ export function TwoFactor({ password }: { password: string }) {
       await reload()
     })
 
-  const turnOff = () =>
+  const turnOff = async () => {
+    const creds = await ask({
+      title: t('totp.turnOff'),
+      body: t('totp.hint'),
+      confirmLabel: t('totp.turnOff'),
+      danger: true,
+    })
+    if (!creds) return
     run(async () => {
-      await disableTOTP(password)
+      await disableTOTP(creds.password)
       notifySuccess(t('totp.disabled'))
       await reload()
     })
+  }
 
   if (!status) return null
 
   return (
     <div className="flex flex-col gap-3 border-t border-gray-200 pt-4">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-ink">{t('totp.title')}</span>
-        <Badge color={status.enabled ? 'teal' : 'gray'}>
-          {status.enabled ? t('totp.on') : t('totp.off')}
-        </Badge>
-      </div>
+      <span className="text-sm font-medium text-ink">{t('totp.title')}</span>
       <p className="text-xs text-ink-muted">{t('totp.hint')}</p>
-      {/* Both actions are password-gated, and the field is the dialog's own — say so
-          instead of leaving a dead button with no explanation. */}
-      {!password && <p className="text-xs text-ink-muted">{t('totp.needPassword')}</p>}
-
       {/* On: the only action is removing it, and that costs the password — the whole
           point of a second factor is that a stolen session is not enough by itself. */}
       {status.enabled && (
-        <Button color="red" variant="light" loading={busy} disabled={!password} onClick={turnOff}>
+        <Button size="sm" color="red" variant="outline" loading={busy} onClick={turnOff}>
           {t('totp.turnOff')}
         </Button>
       )}
 
       {/* Off: the button opens the setup dialog. */}
       {!status.enabled && (
-        <Button loading={busy} disabled={!password} onClick={start}>
+        <Button size="sm" loading={busy} onClick={start}>
           {t('totp.turnOn')}
         </Button>
       )}
@@ -124,6 +132,8 @@ export function TwoFactor({ password }: { password: string }) {
           </div>
         )}
       </Modal>
+
+      {stepUpNode}
     </div>
   )
 }
