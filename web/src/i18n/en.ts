@@ -1,5 +1,3 @@
-// English dictionary. Typed as `typeof ru`, so a key that exists in ru.ts and not
-// here is a compile error — the two can never silently drift apart.
 import type { Dict } from "./ru";
 import type { PluralComplete } from "./plural";
 
@@ -197,10 +195,6 @@ const en: Dict = {
       "The domain changed. After signing in, check it under “Servers” → the master card → Domain.",
   },
 
-  // Validation errors from the server. It sends a CODE plus any values to
-  // interpolate and the panel words it here: the panel's language is a per-browser
-  // choice the server cannot see. A code with no entry falls back to the server's
-  // own text (see errMessage), so nothing ever renders as a bare key.
   err: {
     adminBotOff: "turn the admin bot on — the test arrives through it, in the linked chat",
     adminChatUnreachable: "the linked chat is unreachable — open the admin bot and make sure it is not blocked",
@@ -867,6 +861,10 @@ const en: Dict = {
     user: "User",
     total: "Total",
     blocklistMatches: "Blocklist matches",
+    window_one: "last {{count}} day",
+    window_few: "last {{count}} days",
+    window_many: "last {{count}} days",
+    window_other: "last {{count}} days",
     byCountry: "Connections by country",
     byCountryTab: "Countries",
     byAsnTab: "Providers",
@@ -955,8 +953,6 @@ const en: Dict = {
     from: "From",
     to: "To",
     export: "Export CSV",
-    // A settings row's target is stored as audit.sec.<key> so the journal reads in
-    // the admin's language rather than the server's.
     sec: {
       apiBillingSettings: "API · billing settings",
       apiGroupAdded: "API · group added",
@@ -1600,11 +1596,6 @@ const en: Dict = {
       "The password is shown once. At their first sign-in <b>{{name}}</b> will set their own — this one works only until then.",
   },
 
-
-  // Diagnostics. Everything below "checksCount" is sent by the server as a KEY plus
-  // the values to interpolate — see core.HealthCheck for why the wording lives here
-  // and not there.
-
   health: {
     panelUpdateHint: "Update the panel itself — the node already runs a newer version.",
     awgHint:
@@ -1997,9 +1988,6 @@ const en: Dict = {
     filecloud: "File cloud",
   },
 
-  // Payment-provider form fields. The registry stores a key here; td() falls back to
-  // the raw string, so a provider label that is not a key (a brand name) is
-  // untouched.
   payField: {
     allMethods: "All methods (chosen on the page)",
     apiKey: "API key",
@@ -2598,8 +2586,6 @@ const en: Dict = {
     needTokenAndChat: "A token and at least one linked chat are required.",
   },
 
-  // System proxy: this server's SOCKS/HTTP listeners for non-VPN traffic.
-  // Admin two-factor authentication (TOTP).
   totp: {
     title: "Two-factor authentication",
     hint: "A one-time code from an authenticator app (Google Authenticator, Aegis, 1Password and others).",
@@ -2801,8 +2787,6 @@ const en: Dict = {
   },
 };
 
-// Same guard as ru.ts: English selects only `one` and `other`, and a dictionary
-// without an _other form silently renders the fallback language for count >= 2.
 const _pluralsAreComplete: PluralComplete<typeof en> = en;
 void _pluralsAreComplete;
 

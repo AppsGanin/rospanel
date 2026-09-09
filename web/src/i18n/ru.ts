@@ -1,9 +1,3 @@
-// Russian dictionary — the reference the code is written against. en.ts is typed
-// as `typeof ru`, so every key added here must be added there too or tsc fails.
-//
-// Plural forms use i18next's suffixes (_one/_few/_many/_other) driven by
-// Intl.PluralRules — pass { count } and i18next picks the form. PluralComplete
-// makes a missing form a compile error; see plural.ts for the bug that motivated it.
 import type { PluralComplete } from "./plural";
 
 const ru = {
@@ -69,10 +63,6 @@ const ru = {
     account: "Учётная запись",
   },
 
-  // Duration units for fmtDuration: "6 д 4 ч". Short forms — these sit next to a
-  // figure, not in a sentence.
-  // Byte units for fmtBytes. Binary multiples (1024), named the short way they are
-  // written next to a figure.
   bytes: {
     b: "Б",
     kb: "КБ",
@@ -204,10 +194,6 @@ const ru = {
       "Домен изменился. После входа проверьте его в «Сервера» → карточка мастера → Домен.",
   },
 
-  // Validation errors from the server. It sends a CODE plus any values to
-  // interpolate and the panel words it here: the panel's language is a per-browser
-  // choice the server cannot see. A code with no entry falls back to the server's
-  // own text (see errMessage), so nothing ever renders as a bare key.
   err: {
     adminBotOff: "включите админ-бота — тест приходит через него, в привязанный чат",
     adminChatUnreachable: "привязанный чат недоступен — откройте админ-бота и убедитесь, что он не заблокирован",
@@ -712,9 +698,6 @@ const ru = {
     savedGoToNew: "Я сохранил, перейти на новый адрес",
     finish: "Завершить",
   },
-
-  // The journal. Action keys mirror model.UserEventCatalog, with the dot slugged
-  // to "_" so i18next reads each as one key rather than a nested subtree.
   events: {
     empty: "Пока нет событий",
     emptyForUser: "По этому пользователю пока нет событий",
@@ -876,6 +859,10 @@ const ru = {
     user: "Пользователь",
     total: "Всего",
     blocklistMatches: "Совпадения с блоклистами",
+    window_one: "за {{count}} день",
+    window_few: "за {{count}} дня",
+    window_many: "за {{count}} дней",
+    window_other: "за {{count}} дня",
     byCountry: "Подключения по странам",
     byCountryTab: "Страны",
     byAsnTab: "Провайдеры",
@@ -951,7 +938,6 @@ const ru = {
     rejected: "Заявка отклонена",
   },
 
-  // The admin trail. Action keys mirror model.AdminAuditCatalog with dots slugged.
   audit: {
     colAction: "действие",
     colTarget: "объект",
@@ -966,8 +952,6 @@ const ru = {
     from: "С",
     to: "По",
     export: "Экспорт CSV",
-    // A settings row's target is stored as audit.sec.<key> so the journal reads in
-    // the admin's language rather than the server's.
     sec: {
       apiBillingSettings: "API · настройки биллинга",
       apiGroupAdded: "API · группа добавлена",
@@ -1612,11 +1596,6 @@ const ru = {
       "Пароль показан один раз. При первом входе <b>{{name}}</b> задаст свой — этот работает только до тех пор.",
   },
 
-
-  // Diagnostics. Everything below "checksCount" is sent by the server as a KEY plus
-  // the values to interpolate — see core.HealthCheck for why the wording lives here
-  // and not there.
-
   health: {
     panelUpdateHint: "Обновите саму панель — нода уже на более новой версии.",
     awgHint:
@@ -1816,8 +1795,6 @@ const ru = {
     takesSeconds: "Занимает 10–30 секунд (проверка через порт 80).",
   },
 
-  // Webhook events. Keys mirror model.WebhookEventCatalog with the dot slugged, so
-  // i18next reads each as one key rather than a nested subtree.
   webhookEvent: {
     user_created: "Пользователь создан",
     user_deleted: "Пользователь удалён",
@@ -2009,9 +1986,6 @@ const ru = {
     filecloud: "Файловое облако",
   },
 
-  // Payment-provider form fields. The registry stores a key here; td() falls back to
-  // the raw string, so a provider label that is not a key (a brand name) is
-  // untouched.
   payField: {
     allMethods: "Все методы (выбор на странице)",
     apiKey: "API-ключ",
@@ -2611,8 +2585,6 @@ const ru = {
     needTokenAndChat: "Нужен токен и хотя бы один привязанный чат.",
   },
 
-  // Системный прокси: SOCKS/HTTP-слушатели сервера для не-VPN трафика.
-  // Двухфакторная аутентификация администратора (TOTP).
   totp: {
     title: "Двухфакторная аутентификация",
     hint: "Одноразовый код из приложения (Google Authenticator, Aegis, 1Password и другие).",
@@ -2814,13 +2786,9 @@ const ru = {
   },
 };
 
-// Compile-time assertion, not a value anyone reads: PluralComplete maps a plural
-// key that is missing a form to `never`, so this assignment stops compiling and
-// names the offending key. See plural.ts for the bug this prevents.
 const _pluralsAreComplete: PluralComplete<typeof ru> = ru;
 void _pluralsAreComplete;
 
-// Dict is the shape every other dictionary must satisfy exactly.
 export type Dict = typeof ru;
 
 export default ru;

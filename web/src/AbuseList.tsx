@@ -5,6 +5,12 @@ import { useShowMore } from './hooks'
 import { currentLang } from './i18n'
 import { cn, EmptyState, Mono, ShowMore } from './ui'
 
+// Mirrors model.AbuseRetentionDays. Deliberately shorter than every other window in
+// the panel — this is the one table that names what a person reached, not merely that
+// they connected — so the two reports that sit side by side on the statistics page do
+// NOT cover the same days, and each says which.
+export const ABUSE_WINDOW_DAYS = 14
+
 // AbuseList shows destinations that matched a threat, piracy or gambling blocklist
 // — for the whole fleet, or for one user when userId is given.
 //

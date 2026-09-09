@@ -56,7 +56,7 @@ import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
-import { AbuseList } from './AbuseList'
+import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { UserEventsModal } from './UserEventsModal'
 import {
   Button,
@@ -1049,7 +1049,14 @@ export function UserDetail({
             )}
           </Panel>
 
-          <Panel title={t('stats.blocklistMatches')}>
+          <Panel
+            title={t('stats.blocklistMatches')}
+            aside={
+              <span className="text-xs text-ink-muted">
+                {t('stats.window', { count: ABUSE_WINDOW_DAYS })}
+              </span>
+            }
+          >
             <AbuseList userId={user.id} first={5} />
           </Panel>
 

@@ -11,7 +11,7 @@ import { fmtBytes, localDay, ranges } from './format'
 import { useAction, useShowMore } from './hooks'
 import { useIsAdmin } from './role'
 import { ShareBar, TrafficArea } from './charts'
-import { AbuseList } from './AbuseList'
+import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { BlockedList, ProbeList } from './SecurityLists'
@@ -175,7 +175,14 @@ export function StatsPanel() {
       <div className="grid gap-3.5 lg:grid-cols-2">
         <ConnectionCountries />
 
-        <Panel title={t('stats.blocklistMatches')}>
+        <Panel
+          title={t('stats.blocklistMatches')}
+          aside={
+            <span className="text-xs text-ink-muted">
+              {t('stats.window', { count: ABUSE_WINDOW_DAYS })}
+            </span>
+          }
+        >
           <AbuseList limit={50} />
         </Panel>
       </div>
