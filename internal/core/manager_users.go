@@ -201,7 +201,9 @@ func (m *Manager) DeleteUser(ctx context.Context, id int64) error {
 
 // ResetTraffic zeroes a user's usage and re-enables them. The raw counters are
 // re-baselined to the live Xray value so the next stats poll doesn't re-add the
-// user's whole lifetime total back (see store.ResetTraffic).
+// user's whole lifetime total back (see store.ResetTraffic), and a rolling quota
+// cycle starts over from now — a reset the day before the cycle rolled used to hand
+// out a fresh quota that expired the next morning.
 func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 	up, down := m.liveCounter(id)
 	// Record what was wiped — after the reset the used totals read 0, so the audit row
@@ -211,7 +213,7 @@ func (m *Manager) ResetTraffic(ctx context.Context, id int64) error {
 		used = u.UsedUp + u.UsedDown
 	}
 	err := m.mutateUser(fmt.Sprintf("user %d traffic counters reset", id),
-		func() error { return m.store.ResetTraffic(id, up, down) })
+		func() error { return m.store.ResetTraffic(id, up, down, time.Now().Unix()) })
 	if err == nil {
 		m.audit(ctx, id, model.EventTrafficReset, map[string]any{"used_before": used})
 	}

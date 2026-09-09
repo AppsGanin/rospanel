@@ -101,7 +101,7 @@ func TestTrafficWarningReArmsOnReset(t *testing.T) {
 	}
 
 	// A reset drops usage back under the threshold.
-	if err := m.store.ResetTraffic(id, 0, 0); err != nil {
+	if err := m.store.ResetTraffic(id, 0, 0, time.Now().Unix()); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	users, _ = m.store.ListUsers()

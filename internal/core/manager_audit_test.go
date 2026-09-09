@@ -310,6 +310,53 @@ func TestAuditNoRowForUnchangedRecord(t *testing.T) {
 	}
 }
 
+// Resetting the traffic restarts a rolling cycle: without this the reset handed a
+// fresh quota to a user whose cycle rolled the next morning, and — since re-saving
+// the same period is a no-op — nothing else could move the anchor.
+func TestResetTrafficRestartsTheCycle(t *testing.T) {
+	m := bulkTestManager(t)
+	ctx := adminCtx()
+	u, _ := m.CreateUser(ctx, "Цикл", 0, 0)
+
+	// No period: the anchor is not something the user has, so it must not move.
+	before, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResetTraffic(ctx, u.ID); err != nil {
+		t.Fatalf("reset without a period: %v", err)
+	}
+	after, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LastResetAt != before.LastResetAt {
+		t.Errorf("a user with no cycle had their anchor moved: %d → %d", before.LastResetAt, after.LastResetAt)
+	}
+
+	// With a period, the reset is the start of a new cycle.
+	if err := m.SetResetPeriod(ctx, u.ID, "monthly"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetResetPeriod(u.ID, "monthly", time.Now().Add(-20*24*time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	old, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ResetTraffic(ctx, u.ID); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	now, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now.LastResetAt <= old.LastResetAt {
+		t.Errorf("the cycle did not restart: %d → %d", old.LastResetAt, now.LastResetAt)
+	}
+}
+
 // A bulk extend must carry the limits it did NOT touch: the row renders as a full
 // "limits changed" statement, and omitting the quota made it read "unlimited".
 func TestAuditBulkExtendKeepsLimits(t *testing.T) {
