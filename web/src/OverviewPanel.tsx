@@ -15,7 +15,7 @@ import {
 } from "./api";
 import { type Bar, DayBars } from "./charts";
 import { actionMeta, eventDetails } from "./events";
-import { fmtBytes, fmtDuration, localDay } from "./format";
+import { fmtBytes, fmtDuration, fmtStamp, localDay } from "./format";
 import { useAction } from "./hooks";
 import { nodeState, serverName, servingCount } from "./NodesPanel";
 import { openStream } from "./livestream";
@@ -604,13 +604,13 @@ function EventLine({ event }: { event: UserEvent }) {
   const details = eventDetails(event);
   const who = event.user_name || (event.user_id ? `#${event.user_id}` : "");
   const what = [actionMeta(event.action).label, details].filter(Boolean).join(", ");
-  const time = new Date(event.created_at * 1000).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // The panel's one way of writing "when": numeric, fixed width, in mono, the same
+  // 10.09.2026, 00:42 the journal and every other stamp uses. A clock alone read as
+  // "today" on a quiet panel, where the newest event can be days old.
+  const when = fmtStamp(event.created_at);
   return (
     <div className="flex gap-2.5 border-b border-gray-100 px-3.5 py-2 last:border-0">
-      <Mono className="shrink-0 text-[11px] leading-4 text-ink-muted">{time}</Mono>
+      <Mono className="shrink-0 text-[11px] leading-4 text-ink-muted">{when}</Mono>
       <span className="min-w-0 flex-1 truncate text-xs leading-4 text-gray-800">
         {who ? `${who} — ${what}` : what}
       </span>
