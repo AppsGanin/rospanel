@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type ApiKey,
@@ -10,111 +10,29 @@ import {
 } from "./api";
 import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
-import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   Button,
   CenterLoader,
   cn,
+  Code,
+  EmptyState,
   IconButton,
   IconClose,
-  IconChevron,
-  IconCopy,
-  IconShield,
+  IconExternal,
+  IconPlus,
   MICRO,
   Modal,
   Mono,
+  Panel,
   SaveBar,
-  SettingCard,
+  SettingRow,
   ShowMore,
   Switch,
   TextInput,
   useConfirm,
-  useCopy,
   useWideBox,
 } from "./ui";
-
-/* small inline glyphs for the docs tiles (match the stroke style of ui.tsx) */
-const IconDoc = ({ size = 18 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-    <path d="M14 2v6h6" />
-    <path d="M8 13h8M8 17h5" />
-  </svg>
-);
-const IconBraces = ({ size = 18 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1" />
-    <path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 1 2 2 2 2 0 0 1-2 2v4a2 2 0 0 1-2 2h-1" />
-  </svg>
-);
-
-// CopyField is a read-only monospace value with a copy button.
-function CopyField({ value }: { value: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <div className="flex items-stretch gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-ink">
-        {value}
-      </code>
-      <Button variant="light" color="gray" onClick={() => copy(value)}>
-        <IconCopy /> {i18n.t(copied ? "common.copied" : "common.copy")}
-      </Button>
-    </div>
-  );
-}
-
-// DocTile is one clickable documentation destination.
-function DocTile({
-  href,
-  icon,
-  title,
-  subtitle,
-}: {
-  href: string;
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 transition hover:border-accent hover:accent-tint"
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg accent-tint text-accent">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-ink">{title}</span>
-        <span className="block truncate text-xs text-ink-muted">{subtitle}</span>
-      </span>
-      <IconChevron
-        className="-rotate-90 text-ink-muted transition group-hover:text-accent"
-        size={18}
-      />
-    </a>
-  );
-}
 
 // The key roster's columns, the same shape every other list in the panel has.
 const TPL =
@@ -192,6 +110,7 @@ export function ApiSettings() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [created, setCreated] = useState<ApiKey | null>(null);
   // Ten at a time: the roster grows with every key ever minted (revoked ones stay
   // as a record), and the card is a list to scan, not to scroll.
@@ -236,6 +155,7 @@ export function ApiSettings() {
     setCreating(true);
     try {
       const res = await createApiKey(n);
+      setAdding(false);
       setCreated(res.key);
       setName("");
       await refresh();
@@ -304,89 +224,92 @@ export function ApiSettings() {
 
   return (
     <div className="flex flex-col gap-3.5">
-      <SettingCard
+      {/* The API's own switch belongs to the whole section, so it sits in the header
+          band beside its name. */}
+      <Panel
         title={t("api.title")}
-        description={t("api.description")}
-        action={<Switch checked={enabledDraft} onChange={setEnabledDraft} />}
+        aside={<Switch checked={enabledDraft} onChange={setEnabledDraft} />}
       >
+        <SettingRow hint={t("api.description")} />
         {info.enabled ? (
-          <div className="flex flex-col gap-3">
-            <div>
-              <div className="mb-1 text-sm font-semibold text-ink">
-                {t("api.baseUrl")}
-              </div>
-              <CopyField value={info.base_url} />
-            </div>
-            <div className="flex flex-wrap gap-2 pt-2">
-              <Button size="sm" variant="light" color="gray" onClick={rotatePath}>
+          <SettingRow
+            label={t("api.baseUrl")}
+            control={
+              <Button size="xs" variant="light" color="gray" onClick={rotatePath}>
                 {t("api.rotateConfirm")}
               </Button>
-            </div>
-          </div>
+            }
+          >
+            <Code block copy>
+              {info.base_url}
+            </Code>
+          </SettingRow>
         ) : (
-          <div className="flex items-center gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full accent-tint text-accent">
-              <IconShield size={20} />
-            </span>
-            <p className="text-sm text-ink-muted">
-              {t("api.offHint")}
-            </p>
-          </div>
+          <SettingRow hint={t("api.offHint")} />
         )}
-      </SettingCard>
+      </Panel>
 
       {info.enabled && (
-        <SettingCard
-          title={t("api.docs")}
-          description={t("api.docsHint")}
-        >
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <DocTile
-              href={`${info.base_url}/v1/docs`}
-              icon={<IconDoc />}
-              title="Swagger UI"
-              subtitle={t("api.swaggerHint")}
-            />
-            <DocTile
-              href={`${info.base_url}/v1/openapi.json`}
-              icon={<IconBraces />}
-              title="openapi.json"
-              subtitle={t("api.openapiHint")}
-            />
-          </div>
-          {/* The scrape target is a URL an operator pastes into a Prometheus config
-              rather than opens, so it's a copy field and not a tile. */}
-          <div className="pt-3">
-            <p className="mb-1 text-sm font-medium text-ink">{t("api.metrics")}</p>
-            <CopyField value={`${info.base_url}/v1/metrics`} />
-            <p className="mt-1 text-xs text-ink-muted">{t("api.metricsHint")}</p>
-          </div>
-        </SettingCard>
+        <Panel title={t("api.docs")}>
+          <SettingRow hint={t("api.docsHint")} />
+          <SettingRow
+            label="Swagger UI"
+            hint={t("api.swaggerHint")}
+            control={
+              <IconButton
+                href={`${info.base_url}/v1/docs`}
+                target="_blank"
+                title="Swagger UI"
+              >
+                <IconExternal />
+              </IconButton>
+            }
+          />
+          <SettingRow
+            label="openapi.json"
+            hint={t("api.openapiHint")}
+            control={
+              <IconButton
+                href={`${info.base_url}/v1/openapi.json`}
+                target="_blank"
+                title="openapi.json"
+              >
+                <IconExternal />
+              </IconButton>
+            }
+          />
+          {/* A scrape target is pasted into a Prometheus config, not clicked. */}
+          <SettingRow label={t("api.metrics")} hint={t("api.metricsHint")}>
+            <Code block copy>{`${info.base_url}/v1/metrics`}</Code>
+          </SettingRow>
+        </Panel>
       )}
 
-      <SettingCard
+      <Panel
         title={t("api.keys")}
-        description={t("api.keysHint")}
+        aside={
+          <IconButton
+            variant="filled"
+            color="brand"
+            title={t("common.create")}
+            onClick={() => {
+              setName("");
+              setAdding(true);
+            }}
+          >
+            <IconPlus />
+          </IconButton>
+        }
       >
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <TextInput
-              label={t("api.newKeyName")}
-              value={name}
-              onChange={setName}
-              placeholder={t("api.newKeyPlaceholder")}
-            />
-          </div>
-          <Button onClick={create} loading={creating} disabled={!name.trim()}>
-            {t("common.create")}
-          </Button>
-        </div>
-
+        <SettingRow hint={t("api.keysHint")} />
         {info.keys.length > 0 ? (
-          <div ref={keysRef} className="-mx-3.5 mt-3">
+          <div ref={keysRef}>
             {wideKeys && (
               <div
-                className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
+                className={cn(
+                  MICRO,
+                  "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2",
+                )}
                 style={{ gridTemplateColumns: TPL }}
               >
                 <span className="truncate">{t("api.colName")}</span>
@@ -402,23 +325,64 @@ export function ApiSettings() {
             {/* Keys accumulate — a revoked one is kept as a record — so an install
                 that has been running for a while lists more of them than anybody
                 reads at once. */}
-            <ShowMore rest={shownKeys.rest} onClick={shownKeys.showMore} className="p-3.5" />
+            <ShowMore
+              rest={shownKeys.rest}
+              onClick={shownKeys.showMore}
+              className="p-3.5"
+            />
           </div>
         ) : (
-          <p className="mt-4 text-center text-sm text-ink-muted">
-            {t("api.noKeys")}
-          </p>
+          <EmptyState title={t("api.noKeys")} />
         )}
-      </SettingCard>
+      </Panel>
+
+      {/* Minting a key: a name, and then the one look anyone gets at the key. */}
+      <Modal
+        open={adding}
+        onClose={() => setAdding(false)}
+        title={t("api.keys")}
+      >
+        <div className="flex flex-col gap-3">
+          <TextInput
+            label={t("api.newKeyName")}
+            value={name}
+            onChange={setName}
+            placeholder={t("api.newKeyPlaceholder")}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              color="gray"
+              size="sm"
+              onClick={() => setAdding(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              onClick={create}
+              loading={creating}
+              disabled={!name.trim()}
+            >
+              {t("common.create")}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* One-time reveal of a freshly created key. */}
-      <Modal open={!!created} onClose={() => setCreated(null)} title={t("api.keyCreated")}>
-        <p className="text-sm text-ink-muted">
-          {t("api.keyCreatedHint")}
-        </p>
+      <Modal
+        open={!!created}
+        onClose={() => setCreated(null)}
+        title={t("api.keyCreated")}
+      >
+        <p className="text-sm text-ink-muted">{t("api.keyCreatedHint")}</p>
         {created?.raw_key && (
           <div className="mt-3">
-            <CopyField value={created.raw_key} />
+            <Code block copy>
+              {created.raw_key}
+            </Code>
           </div>
         )}
         <div className="mt-5 flex justify-end">

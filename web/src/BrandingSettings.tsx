@@ -9,7 +9,15 @@ import {
 import { useBrand } from "./brand";
 import { useAction } from "./hooks";
 import { notifySuccess } from "./notify";
-import { Button, SaveBar, SettingCard, TextInput } from "./ui";
+import {
+  Button,
+  IconButton,
+  IconRestart,
+  Panel,
+  SaveBar,
+  SettingRow,
+  TextInput,
+} from "./ui";
 
 // Curated accent swatches; the accent also drives the whole brand-* ramp.
 const ACCENT_PRESETS = [
@@ -47,37 +55,38 @@ function ColorField({
   const { t } = useTranslation();
   const isDefault = value.toLowerCase() === def.toLowerCase();
   return (
-    <div className="flex items-center gap-3">
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className="h-9 w-11 shrink-0 cursor-pointer rounded border border-gray-300 bg-white p-0.5"
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-ink">{label}</p>
-        <p className="truncate text-xs text-ink-muted">{hint}</p>
-      </div>
-      <input
-        value={value}
-        onChange={(e) => {
-          const h = normHex(e.target.value);
-          onChange(h || e.target.value);
-        }}
-        spellCheck={false}
-        className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm font-mono uppercase text-ink outline-none focus:border-brand-500"
-      />
-      {!isDefault && (
-        <button
-          type="button"
-          onClick={() => onChange(def)}
-          className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-        >
-          {t("brand.reset")}
-        </button>
-      )}
-    </div>
+    <SettingRow
+      label={label}
+      hint={hint}
+      field={
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-label={label}
+            className="h-7 w-9 shrink-0 cursor-pointer rounded border border-gray-300 bg-white p-0.5"
+          />
+          <div className="min-w-0 flex-1">
+            <TextInput
+              value={value}
+              mono
+              className="uppercase"
+              onChange={(v) => onChange(normHex(v) || v)}
+            />
+          </div>
+          {/* Back to the shipped colour — shown only when this one has been changed,
+              so the row is quiet until there is something to undo. */}
+          <IconButton
+            title={t("brand.reset")}
+            disabled={isDefault}
+            onClick={() => onChange(def)}
+          >
+            <IconRestart size={14} />
+          </IconButton>
+        </div>
+      }
+    />
   );
 }
 
@@ -163,32 +172,79 @@ export function BrandingSettings() {
     );
 
   return (
-    <>
-    <SettingCard
-      title={t("settings.tabBranding")}
-      description={t("brand.description")}
-    >
-      <div className="flex flex-col gap-3.5">
-        <TextInput
+    <div className="flex flex-1 flex-col gap-3.5">
+      <Panel title={t("settings.tabBranding")}>
+        <SettingRow
           label={t("brand.panelName")}
-          placeholder={brand.default_name}
-          value={name}
-          onChange={setName}
+          hint={t("brand.description")}
+          field={
+            <TextInput
+              placeholder={brand.default_name}
+              value={name}
+              onChange={setName}
+            />
+          }
         />
+        <SettingRow
+          label={t("brand.logo")}
+          hint={t("brand.logoHint")}
+          control={
+            <div className="flex items-center gap-2">
+              {brand.has_custom_logo && (
+                <img
+                  src={brand.logoURL}
+                  alt=""
+                  className="size-8 rounded border border-gray-300 bg-white object-contain p-0.5"
+                />
+              )}
+              <Button
+                size="xs"
+                variant="light"
+                color="gray"
+                loading={isBusy("logo")}
+                onClick={onPickLogo}
+              >
+                {t("brand.uploadLogo")}
+              </Button>
+              {brand.has_custom_logo && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  color="red"
+                  loading={isBusy("logo")}
+                  onClick={removeLogo}
+                >
+                  {t("usersPanel.reset")}
+                </Button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="hidden"
+                onChange={onLogoFile}
+              />
+            </div>
+          }
+        />
+      </Panel>
 
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-medium text-ink">{t("brand.colors")}</p>
-            <button
-              type="button"
-              onClick={resetAll}
-              className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-            >
-              {t("brand.resetAll")}
-            </button>
-          </div>
-
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+      {/* Five colours, and everything else in the panel derives from them. The
+          presets are a shortcut to the one that drives the rest. */}
+      <Panel
+        title={t("brand.colors")}
+        aside={
+          <button
+            type="button"
+            onClick={resetAll}
+            className="text-[11px] text-ink-muted underline-offset-2 transition hover:text-accent hover:underline"
+          >
+            {t("brand.resetAll")}
+          </button>
+        }
+      >
+        <SettingRow>
+          <div className="flex flex-wrap items-center gap-2">
             {ACCENT_PRESETS.map((c) => (
               <button
                 key={c}
@@ -197,7 +253,8 @@ export function BrandingSettings() {
                 title={c}
                 aria-label={t("brand.accentSwatch", { color: c })}
                 className={
-                  "h-7 w-7 rounded-full border transition " +
+                  // 28px of colour; the ring says which one is picked.
+                  "size-7 rounded-full border transition ring-offset-2 " +
                   (theme.accent.toLowerCase() === c.toLowerCase()
                     ? "border-white ring-2 ring-brand-600 ring-offset-2"
                     : "border-gray-300 hover:scale-110")
@@ -206,71 +263,25 @@ export function BrandingSettings() {
               />
             ))}
           </div>
+        </SettingRow>
+        {COLOR_FIELDS.map((f) => (
+          <ColorField
+            key={f.key}
+            label={t(f.label as "brand.accent")}
+            hint={t(f.hint as "brand.accentHint")}
+            value={theme[f.key]}
+            def={brand.default_theme[f.key]}
+            onChange={(v) => setColor(f.key, v)}
+          />
+        ))}
+      </Panel>
 
-          <div className="flex flex-col gap-3">
-            {COLOR_FIELDS.map((f) => (
-              <ColorField
-                key={f.key}
-                label={t(f.label as "brand.accent")}
-                hint={t(f.hint as "brand.accentHint")}
-                value={theme[f.key]}
-                def={brand.default_theme[f.key]}
-                onChange={(v) => setColor(f.key, v)}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-ink">{t("brand.logo")}</p>
-          <div className="flex items-center gap-3">
-            {brand.has_custom_logo && (
-              <img
-                src={brand.logoURL}
-                alt=""
-                className="h-12 w-12 rounded-lg border border-gray-300 bg-white object-contain p-1"
-              />
-            )}
-            <Button
-              variant="light"
-              color="gray"
-              loading={isBusy("logo")}
-              onClick={onPickLogo}
-            >
-              {t("brand.uploadLogo")}
-            </Button>
-            {brand.has_custom_logo && (
-              <Button
-                variant="subtle"
-                color="red"
-                loading={isBusy("logo")}
-                onClick={removeLogo}
-              >
-                {t("usersPanel.reset")}
-              </Button>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/png,image/jpeg"
-              className="hidden"
-              onChange={onLogoFile}
-            />
-          </div>
-          <p className="mt-1.5 text-xs text-ink-muted">
-            {t("brand.logoHint")}
-          </p>
-        </div>
-
-      </div>
-    </SettingCard>
-
-    <SaveBar
-      dirty={dirty}
-      busy={isBusy("brand")}
-      onSave={save}
-      onCancel={cancel}
-    />
-    </>
+      <SaveBar
+        dirty={dirty}
+        busy={isBusy("brand")}
+        onSave={save}
+        onCancel={cancel}
+      />
+    </div>
   );
 }

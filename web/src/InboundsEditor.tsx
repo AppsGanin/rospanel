@@ -22,12 +22,21 @@ import { NameVarsHint } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  Badge,
   Button,
   CenterLoader,
+  cn,
+  Code,
+  IconButton,
   IconChevron,
+  IconPencil,
+  IconPlus,
+  IconRestart,
+  IconTrash,
   Modal,
+  Mono,
+  Section,
   Select,
+  SettingRow,
   Switch,
   TagsInput,
   Textarea,
@@ -222,48 +231,41 @@ export function InboundsEditor({
   const full = list.length >= catalog.max;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <h3 className="mb-1 font-bold text-ink">{t("inb.title")}</h3>
-        <p className="text-sm text-ink-muted">
-          {t("inb.description", { max: catalog.max })}
-        </p>
-      </div>
+    <div className="flex flex-col gap-3.5">
+      <Section
+        title={t("inb.title")}
+        desc={
+          full
+            ? t("inb.limitReached", { max: catalog.max })
+            : t("inb.description", { max: catalog.max })
+        }
+        action={
+          <IconButton
+            variant="filled"
+            color="brand"
+            title={t("inb.add")}
+            disabled={busy || applying || full}
+            onClick={() => setEditing({ id: 0, v: blank() })}
+          >
+            <IconPlus />
+          </IconButton>
+        }
+        flush
+      >
+        {list.length === 0 && <SettingRow hint={t("inb.empty")} />}
+      </Section>
 
-      {list.length === 0 && (
-        <p className="px-1 text-sm text-ink-muted">
-          {t("inb.empty")}
-        </p>
-      )}
-
-      <div className="flex flex-col gap-2">
-        {list.map((v) => (
-          <InboundRow
-            key={v.id}
-            v={v}
-            busy={busy || applying}
-            onToggle={(en) => toggle(v, en)}
-            onEdit={() => setEditing({ id: v.id, v: toInput(v) })}
-            onDelete={() => setConfirmDel(v)}
-            onRegen={() => regen(v)}
-          />
-        ))}
-      </div>
-
-      <div>
-        <Button
-          variant="light"
-          onClick={() => setEditing({ id: 0, v: blank() })}
-          disabled={busy || applying || full}
-        >
-          {t("inb.add")}
-        </Button>
-        {full && (
-          <p className="mt-2 text-xs text-ink-muted">
-            {t("inb.limitReached", { max: catalog.max })}
-          </p>
-        )}
-      </div>
+      {list.map((v) => (
+        <InboundRow
+          key={v.id}
+          v={v}
+          busy={busy || applying}
+          onToggle={(en) => toggle(v, en)}
+          onEdit={() => setEditing({ id: v.id, v: toInput(v) })}
+          onDelete={() => setConfirmDel(v)}
+          onRegen={() => regen(v)}
+        />
+      ))}
 
       <Modal
         open={!!editing}
@@ -336,95 +338,114 @@ function InboundRow({
   // instead — dropping the "2022-blake3-" prefix every method shares.
   const ssMethod = (o.method ?? "").replace("2022-blake3-", "");
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/60">
-      <button
-        type="button"
-        onClick={() => setOpen((x) => !x)}
-        className="flex w-full items-center justify-between gap-2 p-4 text-left"
-      >
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <Section
+      title={
+        <button
+          type="button"
+          onClick={() => setOpen((x) => !x)}
+          className="flex min-w-0 flex-wrap items-center gap-2 text-left"
+        >
           <IconChevron
-            className={`shrink-0 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+            className={cn(
+              "shrink-0 text-gray-400 transition-transform",
+              open && "rotate-180",
+            )}
           />
-          <span className="font-medium text-ink">{v.name}</span>
-          <Badge color="gray">{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Badge>
-          {!isSS && <Badge color="gray">{TRANSPORT_LABELS[o.transport] ?? o.transport}</Badge>}
-          {isSS && ssMethod && <Badge color="green">{ssMethod}</Badge>}
-          {o.security === "reality" && <Badge color="green">REALITY</Badge>}
-          {o.security === "none" && !isSS && <Badge color="orange">{t("inb.noTls")}</Badge>}
-          <Badge color="gray">{v.port}</Badge>
-          {!v.enabled && <Badge color="gray">{t("conn.off")}</Badge>}
-        </div>
-        <span onClick={(e) => e.stopPropagation()} className="flex items-center">
+          <span className="truncate">{v.name}</span>
+          <span className="flex flex-wrap items-center gap-2 text-[11px] font-normal text-ink-muted">
+            <Mono>{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Mono>
+            {!isSS && <Mono>{TRANSPORT_LABELS[o.transport] ?? o.transport}</Mono>}
+            {isSS && ssMethod && <Mono className="text-success">{ssMethod}</Mono>}
+            {o.security === "reality" && <Mono className="text-success">REALITY</Mono>}
+            {o.security === "none" && !isSS && (
+              <span className="text-warning">{t("inb.noTls")}</span>
+            )}
+            <Mono>{v.port}</Mono>
+            {!v.enabled && <span>{t("conn.off")}</span>}
+          </span>
+        </button>
+      }
+      action={
+        // The actions do not wait for the row to be unfolded: appearing on expand
+        // grew the header band by the height of a button and made the whole list
+        // jump under the cursor.
+        <span className="flex items-center gap-0.5">
+          {o.security === "reality" && (
+            <IconButton
+              color="orange"
+              title={t("conn.regenKeys")}
+              onClick={onRegen}
+              disabled={busy}
+            >
+              <IconRestart />
+            </IconButton>
+          )}
+          <IconButton title={t("common.edit")} onClick={onEdit} disabled={busy}>
+            <IconPencil />
+          </IconButton>
+          <IconButton
+            color="red"
+            title={t("common.delete")}
+            onClick={onDelete}
+            disabled={busy}
+          >
+            <IconTrash />
+          </IconButton>
           <Switch checked={v.enabled} onChange={onToggle} disabled={busy} />
         </span>
-      </button>
-
+      }
+      flush
+    >
       {open && (
-        <div className="flex flex-col gap-3 border-t border-gray-100 px-4 pb-4 pt-3">
-          {hasAdvanced(v) && (
-            <p className="rounded-lg bg-gray-100 px-3 py-2 text-xs text-ink-muted">
-              {t("inb.hasExtras")}
-            </p>
-          )}
+        <>
+          {hasAdvanced(v) && <SettingRow hint={t("inb.hasExtras")} />}
           {v.unsupported && v.unsupported.length > 0 && (
-            <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
-              {t("inb.unsupportedBy", { clients: v.unsupported.join(", ") })}
-            </p>
+            <SettingRow
+              hint={
+                <span className="text-warning">
+                  {t("inb.unsupportedBy", { clients: v.unsupported.join(", ") })}
+                </span>
+              }
+            />
           )}
-          <div className="flex flex-col gap-1 text-sm">
-            <Row label={t("conn.port")} value={String(v.port)} />
-            {isSS ? (
-              <Row label={t("inb.ssMethod")} value={o.method ?? ""} />
-            ) : (
-              <>
-                <Row
-                  label={t("conn.transport")}
-                  value={TRANSPORT_LABELS[o.transport] ?? o.transport}
-                />
-                <Row
-                  label={t("inb.security")}
-                  value={securityLabels()[o.security] ?? o.security}
-                />
-              </>
-            )}
-            {o.path && <Row label={t("inb.path")} value={o.path} />}
-            {o.service_name && <Row label={t("inb.grpcService")} value={o.service_name} />}
-            {o.mode && <Row label={t("inb.xhttpMode")} value={o.mode} />}
-            {o.header_type === "http" && (
-              <Row label={t("inb.httpMasq")} value={(o.header_hosts ?? []).join(", ")} />
-            )}
-            {o.authority && <Row label="Authority" value={o.authority} />}
-            {o.multi_mode && <Row label="gRPC" value="multi-mode" />}
-            {o.host && <Row label="Host" value={o.host} />}
-            {o.sni && <Row label="SNI" value={o.sni} />}
-            {o.reality_dest && <Row label={t("inb.masquerade")} value={o.reality_dest} />}
-            {(o.hop_end ?? 0) > v.port && (
-              <Row label={t("inb.hop")} value={`${o.hop_start}–${o.hop_end}`} />
-            )}
-          </div>
+          <Row label={t("conn.port")} value={String(v.port)} />
+          {isSS ? (
+            <Row label={t("inb.ssMethod")} value={o.method ?? ""} />
+          ) : (
+            <>
+              <Row
+                label={t("conn.transport")}
+                value={TRANSPORT_LABELS[o.transport] ?? o.transport}
+              />
+              <Row
+                label={t("inb.security")}
+                value={securityLabels()[o.security] ?? o.security}
+              />
+            </>
+          )}
+          {o.path && <Row label={t("inb.path")} value={o.path} />}
+          {o.service_name && <Row label={t("inb.grpcService")} value={o.service_name} />}
+          {o.mode && <Row label={t("inb.xhttpMode")} value={o.mode} />}
+          {o.header_type === "http" && (
+            <Row label={t("inb.httpMasq")} value={(o.header_hosts ?? []).join(", ")} />
+          )}
+          {o.authority && <Row label="Authority" value={o.authority} />}
+          {o.multi_mode && <Row label="gRPC" value="multi-mode" />}
+          {o.host && <Row label="Host" value={o.host} />}
+          {o.sni && <Row label="SNI" value={o.sni} />}
+          {o.reality_dest && <Row label={t("inb.masquerade")} value={o.reality_dest} />}
+          {(o.hop_end ?? 0) > v.port && (
+            <Row label={t("inb.hop")} value={`${o.hop_start}–${o.hop_end}`} />
+          )}
           {o.security === "reality" && (
-            <div className="flex flex-col gap-1 border-t border-gray-100 pt-3">
+            <>
               <LongRow label="Public key" value={v.reality_public_key ?? ""} />
               <LongRow label="Short IDs" value={v.reality_short_id ?? ""} />
-            </div>
+            </>
           )}
-          <div className="flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-3">
-            {o.security === "reality" && (
-              <Button size="sm" variant="light" color="orange" onClick={onRegen} disabled={busy}>
-                {t("conn.regenKeys")}
-              </Button>
-            )}
-            <Button size="sm" variant="light" color="gray" onClick={onEdit} disabled={busy}>
-              {t("common.edit")}
-            </Button>
-            <Button size="sm" variant="light" color="red" onClick={onDelete} disabled={busy}>
-              {t("common.delete")}
-            </Button>
-          </div>
-        </div>
+        </>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -779,23 +800,24 @@ function AdvancedSection({
   );
 }
 
+// One read-only fact about an inbound, in the shape every settings row has.
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-ink-muted">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
+    <SettingRow
+      label={label}
+      control={<Mono className="text-[11px] text-ink-muted">{value}</Mono>}
+    />
   );
 }
 
+// The same for a value no row edge can hold — a key, a set of short IDs.
 function LongRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm text-ink-muted">{label}</span>
-      <code className="block break-all rounded border border-gray-200 bg-white/60 px-2 py-1 font-mono text-xs text-ink">
+    <SettingRow label={label}>
+      <Code block copy>
         {value}
-      </code>
-    </div>
+      </Code>
+    </SettingRow>
   );
 }
 

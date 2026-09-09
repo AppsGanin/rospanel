@@ -1458,7 +1458,6 @@ export const login = (username: string, password: string, code?: string) =>
 export interface ConnPolicy {
   mode: 'off' | 'allow' | 'block'
   countries: string[]
-  asns: number[]
   enforce: boolean
   block_hours: number
 }

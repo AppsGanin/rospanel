@@ -16,8 +16,9 @@ import {
   Button,
   CenterLoader,
   Mono,
+  Panel,
   SaveBar,
-  SettingCard,
+  SettingRow,
   Switch,
   TextInput,
   Textarea,
@@ -154,59 +155,43 @@ export function AbuseSettings() {
 
   if (!loaded) return <CenterLoader />;
 
-  return (
-    <div className="flex flex-1 flex-col gap-4">
-      <SettingCard
-        title={t("abuse.title")}
-        description={t("abuse.description")}
-        action={<Switch checked={enabled} onChange={setEnabled} />}
-      />
+  // Every measure is a threshold in matches-per-day, so they share one row shape.
+  const measureRow = (
+    k: keyof AbuseMeasures,
+    label: string,
+    hint?: string,
+    disabled?: boolean,
+  ) => (
+    <SettingRow
+      label={label}
+      hint={hint}
+      field={
+        <TextInput
+          type="number"
+          value={String(measures[k])}
+          disabled={!enabled || disabled}
+          onChange={(v) => num(k, v)}
+        />
+      }
+    />
+  );
 
-      <SettingCard
-        title={t("abuse.lists")}
-        description={t("abuse.listsDescription")}
+  return (
+    <div className="flex flex-1 flex-col gap-3.5">
+      {/* The feature's own switch lives in the section header: it governs every row
+          below it, not one of them. */}
+      <Panel
+        title={t("abuse.title")}
+        aside={<Switch checked={enabled} onChange={setEnabled} />}
       >
-        <div className="flex flex-col">
-          {CATEGORIES.map((c) => {
-            const st = status.find((s) => s.category === c.key);
-            return (
-              <div
-                key={c.key}
-                className="flex items-start justify-between gap-3 border-t border-gray-100 py-2.5 first:border-t-0 first:pt-0"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-xs font-medium text-ink">
-                      {abuseCategoryLabel(c.key)}
-                    </span>
-                    {st && st.entries > 0 && (
-                      <Mono className="text-[11px] text-ink-muted">
-                        {fmtEntries(st.entries)}
-                        {st.size ? ` · ${fmtBytes(st.size)}` : ""}
-                      </Mono>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">
-                    {t(c.desc as "abuse.badipDesc")}
-                  </p>
-                  {st && (
-                    <Mono className="text-[11px] text-ink-muted">
-                      {t("abuse.updatedAt", { when: fmtWhen(st.updated) })}
-                    </Mono>
-                  )}
-                </div>
-                <Switch
-                  checked={!!cats[c.key]}
-                  disabled={!enabled}
-                  onChange={(v) => setCats((p) => ({ ...p, [c.key]: v }))}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-3">
+        <SettingRow hint={t("abuse.description")} />
+      </Panel>
+
+      <Panel
+        title={t("abuse.lists")}
+        aside={
           <Button
-            size="sm"
+            size="xs"
             variant="outline"
             color="gray"
             loading={isBusy("refresh")}
@@ -215,81 +200,87 @@ export function AbuseSettings() {
           >
             {t("abuse.refreshNow")}
           </Button>
-        </div>
-      </SettingCard>
-
-      <SettingCard
-        title={t("abuse.customList")}
-        description={t("abuse.customListDescription")}
+        }
       >
-        <Textarea
-          value={custom}
-          onChange={setCustom}
-          rows={6}
-          placeholder={"203.0.113.0/24\n198.51.100.7\n2001:db8::/32"}
-          hint={t("abuse.customHint")}
-        />
-      </SettingCard>
+        <SettingRow hint={t("abuse.listsDescription")} />
+        {CATEGORIES.map((c) => {
+          const st = status.find((s) => s.category === c.key);
+          return (
+            <SettingRow
+              key={c.key}
+              label={
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  {abuseCategoryLabel(c.key)}
+                  {st && st.entries > 0 && (
+                    <Mono className="text-[11px] font-normal text-ink-muted">
+                      {fmtEntries(st.entries)}
+                      {st.size ? ` · ${fmtBytes(st.size)}` : ""}
+                    </Mono>
+                  )}
+                </span>
+              }
+              hint={
+                <>
+                  {t(c.desc as "abuse.badipDesc")}
+                  {st && (
+                    <>
+                      {" "}
+                      <Mono className="text-[11px]">
+                        {t("abuse.updatedAt", { when: fmtWhen(st.updated) })}
+                      </Mono>
+                    </>
+                  )}
+                </>
+              }
+              control={
+                <Switch
+                  checked={!!cats[c.key]}
+                  disabled={!enabled}
+                  onChange={(v) => setCats((p) => ({ ...p, [c.key]: v }))}
+                />
+              }
+            />
+          );
+        })}
+      </Panel>
 
-      <SettingCard
-        title={t("abuse.threshold")}
-        description={t("abuse.thresholdDescription")}
-      >
-        <TextInput
-          type="number"
-          value={String(alertMin)}
-          onChange={(v) => setAlertMin(Math.max(1, Number(v) || 1))}
-        />
-      </SettingCard>
+      <Panel title={t("abuse.customList")}>
+        <SettingRow hint={t("abuse.customListDescription")}>
+          <Textarea
+            value={custom}
+            onChange={setCustom}
+            rows={6}
+            placeholder={"203.0.113.0/24\n198.51.100.7\n2001:db8::/32"}
+            hint={t("abuse.customHint")}
+          />
+        </SettingRow>
+      </Panel>
 
-      <SettingCard
-        title={t("abuse.measures")}
-        description={t("abuse.measuresDescription")}
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
+      {/* The ladder: one row per rung, each a count of matches per day. */}
+      <Panel title={t("abuse.measures")}>
+        <SettingRow hint={t("abuse.measuresDescription")} />
+        <SettingRow
+          label={t("abuse.threshold")}
+          hint={t("abuse.thresholdDescription")}
+          field={
             <TextInput
               type="number"
-              label={t("abuse.warnMin")}
-              value={String(measures.warn_min)}
-              disabled={!enabled}
-              onChange={(v) => num("warn_min", v)}
+              value={String(alertMin)}
+              onChange={(v) => setAlertMin(Math.max(1, Number(v) || 1))}
             />
-            <p className="mt-1 text-xs text-ink-muted">{t("abuse.warnMinHint")}</p>
-          </div>
-          <TextInput
-            type="number"
-            label={t("abuse.disableMin")}
-            value={String(measures.disable_min)}
-            disabled={!enabled}
-            onChange={(v) => num("disable_min", v)}
-          />
-          <TextInput
-            type="number"
-            label={t("abuse.throttleMin")}
-            value={String(measures.throttle_min)}
-            disabled={!enabled}
-            onChange={(v) => num("throttle_min", v)}
-          />
-          <TextInput
-            type="number"
-            label={t("abuse.throttleKbps")}
-            value={String(measures.throttle_kbps)}
-            disabled={!enabled || measures.throttle_min === 0}
-            onChange={(v) => num("throttle_kbps", v)}
-          />
-          <div>
-            <TextInput
-              type="number"
-              label={t("abuse.hours")}
-              value={String(measures.hours)}
-              disabled={!enabled || !measuresOn}
-              onChange={(v) => num("hours", v)}
-            />
-            <p className="mt-1 text-xs text-ink-muted">{t("abuse.hoursHint")}</p>
-          </div>
-        </div>
-      </SettingCard>
+          }
+        />
+        {measureRow("warn_min", t("abuse.warnMin"), t("abuse.warnMinHint"))}
+        {measureRow("throttle_min", t("abuse.throttleMin"))}
+        {measureRow(
+          "throttle_kbps",
+          t("abuse.throttleKbps"),
+          undefined,
+          measures.throttle_min === 0,
+        )}
+        {measureRow("disable_min", t("abuse.disableMin"))}
+        {measureRow("hours", t("abuse.hours"), t("abuse.hoursHint"), !measuresOn)}
+      </Panel>
 
       <SaveBar
         dirty={dirty}

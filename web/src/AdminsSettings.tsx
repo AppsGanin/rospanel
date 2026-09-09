@@ -365,7 +365,7 @@ export function AdminsSettings() {
                 color="gray"
                 onClick={() => copy(`${created.username} / ${created.password}`)}
               >
-                {t(copied ? "hooks.ok" : "common.copy")}
+                {t(copied ? "common.copied" : "common.copy")}
               </Button>
               <Button size="xs" variant="light" color="gray" onClick={() => setCreated(null)}>
                 {t("common.done")}

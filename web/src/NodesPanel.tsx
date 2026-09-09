@@ -70,11 +70,10 @@ import {
   effectiveCfg,
   EMPTY,
   GeoSection,
-  IPListSection,
   hydrateRouting,
+  IPListSection,
   laneSources,
   RoutingEditor,
-  Section,
   type LaneSource,
   type StatusBadge,
 } from "./RoutingEditor";
@@ -84,28 +83,32 @@ import {
   CenterLoader,
   cn,
   Code,
+  Drawer,
   Dropdown,
   DropdownDivider,
   DropdownItem,
   IconBraces,
   IconButton,
-  IconTrash,
   IconDots,
   IconGear,
   IconPulse,
   IconRestart,
   IconTerminal,
+  IconTrash,
+  MiniBar,
   Modal,
+  Mono,
   PasswordInput,
+  Section,
   SegmentedControl,
   Select,
+  SettingRow,
   Switch,
   Textarea,
   TextInput,
-  useConfirm,
   type Tone,
-  MiniBar,
-  Mono,
+  ToolDialog,
+  useConfirm,
 } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
 
@@ -291,55 +294,49 @@ function SystemProxyEditor({
       : "";
 
   return (
-    <div className="flex flex-col gap-3 border-t border-gray-200/70 pt-4">
-      <div>
-        <p className="font-medium text-ink">{t("proxy.title")}</p>
-        <p className="mt-0.5 text-sm text-ink-muted">{t("proxy.hint")}</p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <ProxyListenerRow
-          label="SOCKS5"
-          enabled={cur.socks_enabled}
-          port={cur.socks_port}
-          defaultPort={1080}
-          onToggle={(v) => enable("socks_enabled", v)}
-          onPort={(v) => patch({ socks_port: v })}
-        />
-        <ProxyListenerRow
-          label="HTTP"
-          enabled={cur.http_enabled}
-          port={cur.http_port}
-          defaultPort={3128}
-          onToggle={(v) => enable("http_enabled", v)}
-          onPort={(v) => patch({ http_port: v })}
-        />
-      </div>
+    <Section
+      title={t("proxy.title")}
+      desc={t("proxy.hint")}
+      action={
+        on ? (
+          <Button size="xs" variant="light" onClick={addAccount}>
+            {t("proxy.addAccount")}
+          </Button>
+        ) : undefined
+      }
+      flush
+    >
+      <ProxyListenerRow
+        label="SOCKS5"
+        enabled={cur.socks_enabled}
+        port={cur.socks_port}
+        defaultPort={1080}
+        onToggle={(v) => enable("socks_enabled", v)}
+        onPort={(v) => patch({ socks_port: v })}
+      />
+      <ProxyListenerRow
+        label="HTTP"
+        enabled={cur.http_enabled}
+        port={cur.http_port}
+        defaultPort={3128}
+        onToggle={(v) => enable("http_enabled", v)}
+        onPort={(v) => patch({ http_port: v })}
+      />
 
       {/* The accounts appear once something is listening: with both protocols off
           there is nobody to authenticate, and empty rows would just be noise. Each
           account is its own row so one consumer can be revoked without touching the
           others — which is the whole reason there is a list rather than one login. */}
-      {on && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-ink">{t("proxy.accounts")}</span>
-            <Button size="sm" variant="light" onClick={addAccount}>
-              {t("proxy.addAccount")}
-            </Button>
-          </div>
-          {accounts.length === 0 && (
-            <p className="text-xs text-ink-muted">{t("proxy.noAccounts")}</p>
-          )}
-          {accounts.map((a, i) => (
-            <div
-              key={i}
-              className="flex flex-col gap-2 rounded-xl border border-gray-200/80 bg-white/60 p-3"
-            >
+      {on && accounts.length === 0 && (
+        <SettingRow hint={t("proxy.noAccounts")} />
+      )}
+      {on &&
+        accounts.map((a, i) => (
+          <SettingRow key={i}>
+            <div className="flex flex-col gap-2">
               {/* Login, password and the delete control on ONE line: the button
                   belongs to this account, and on its own row it read as an action on
-                  the whole list. It is bottom-aligned so it sits on the inputs' line
-                  rather than on their labels'. */}
+                  the whole list. */}
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
                   <TextInput
@@ -360,7 +357,6 @@ function SystemProxyEditor({
                   color="red"
                   title={t("common.delete")}
                   onClick={() => removeAccount(i)}
-                  className="mb-0.5"
                 >
                   <IconTrash />
                 </IconButton>
@@ -382,10 +378,9 @@ function SystemProxyEditor({
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+          </SettingRow>
+        ))}
+    </Section>
   );
 }
 
@@ -410,28 +405,28 @@ function ProxyListenerRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200/80 bg-white/60 px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="font-medium text-ink">{label}</span>
-        {!enabled && <Badge color="gray">{t("conn.off")}</Badge>}
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-ink-muted">{t("conn.port")}</span>
-        <div className="w-24">
-          {/* A listener that was never given a port shows the one it will get when
-              switched on, as a value rather than a placeholder: next to a row whose
-              port was saved, a grey hint reads as a different kind of number. */}
-          <TextInput
-            type="number"
-            value={port ? String(port) : enabled ? "" : String(defaultPort)}
-            onChange={(v) => onPort(Number(v) || 0)}
-            placeholder={String(defaultPort)}
-            disabled={!enabled}
-          />
+    <SettingRow
+      label={label}
+      hint={!enabled ? t("conn.off") : undefined}
+      control={
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-ink-muted">{t("conn.port")}</span>
+          <div className="w-24">
+            {/* A listener that was never given a port shows the one it will get when
+                switched on, as a value rather than a placeholder: next to a row whose
+                port was saved, a grey hint reads as a different kind of number. */}
+            <TextInput
+              type="number"
+              value={port ? String(port) : enabled ? "" : String(defaultPort)}
+              onChange={(v) => onPort(Number(v) || 0)}
+              placeholder={String(defaultPort)}
+              disabled={!enabled}
+            />
+          </div>
+          <Switch checked={enabled} onChange={onToggle} />
         </div>
-        <Switch checked={enabled} onChange={onToggle} />
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -1194,11 +1189,11 @@ function NodeSettingsDialog({
   };
 
   return (
-    <Modal
+    <Drawer
       open
       onClose={onClose}
+      wide
       title={t("nodes.settingsOf", { name: node.name })}
-      size="xl"
       subtitle={node.host}
       toolbar={
         <DialogTabs
@@ -1218,38 +1213,53 @@ function NodeSettingsDialog({
     >
 
       {tab === "general" && (
-        <div className="flex flex-col gap-4">
-          <Section title={t("nodes.server")}>
-            <TextInput label={t("groups.name")} value={name} onChange={setName} placeholder={t("nodes.namePlaceholder")} />
-            <Select
+        <div className="flex flex-col gap-3.5">
+          <Section title={t("nodes.server")} flush>
+            <SettingRow
+              label={t("groups.name")}
+              field={
+                <TextInput
+                  value={name}
+                  onChange={setName}
+                  placeholder={t("nodes.namePlaceholder")}
+                />
+              }
+            />
+            <SettingRow
               label={t("nodes.decoy")}
-              value={decoy}
-              onChange={setDecoy}
-              data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
+              field={
+                <Select
+                  value={decoy}
+                  onChange={setDecoy}
+                  data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
+                />
+              }
             />
-            <div className="flex flex-col gap-1">
-              <TextInput
-                label={t("nodes.coefficient")}
-                type="number"
-                value={coef}
-                onChange={setCoef}
-                placeholder="1.0"
-              />
-              <p className="text-xs text-ink-muted">{t("nodes.coefficientHint")}</p>
-            </div>
-            <PlacementFields
-              value={pl}
-              onChange={setPl}
-              online={node.online_users ?? 0}
-              trafficUsed={node.traffic_period_used}
-            />
-            <SystemProxyEditor
-              host={node.host}
-              value={proxy}
-              saved={proxyBase}
-              onChange={setProxy}
+            <SettingRow
+              label={t("nodes.coefficient")}
+              hint={t("nodes.coefficientHint")}
+              field={
+                <TextInput
+                  type="number"
+                  value={coef}
+                  onChange={setCoef}
+                  placeholder="1.0"
+                />
+              }
             />
           </Section>
+          <PlacementFields
+            value={pl}
+            onChange={setPl}
+            online={node.online_users ?? 0}
+            trafficUsed={node.traffic_period_used}
+          />
+          <SystemProxyEditor
+            host={node.host}
+            value={proxy}
+            saved={proxyBase}
+            onChange={setProxy}
+          />
           <TabSaveBar
             onSave={saveGeneral}
             onReset={() => {
@@ -1278,7 +1288,7 @@ function NodeSettingsDialog({
       {tab === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
 
       {tab === "routing" && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3.5">
           {/* Routing + egress — always the node's own (independent of the master). */}
           <RoutingEditor
             cfg={r.cfg}
@@ -1305,8 +1315,8 @@ function NodeSettingsDialog({
       )}
 
       {tab === "dns" && (
-        <div className="flex flex-col gap-4">
-          <Section title="DNS" desc={t("nodes.dnsNodeHint")}>
+        <div className="flex flex-col gap-3.5">
+          <Section title="DNS" desc={t("nodes.dnsNodeHint")} flush>
             <DnsEditor value={dns} onChange={setDns} />
           </Section>
           <TabSaveBar
@@ -1328,7 +1338,7 @@ function NodeSettingsDialog({
           onChanged={onRefresh}
         />
       )}
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -1533,11 +1543,12 @@ function MasterSettingsDialog({
     });
 
   return (
-    <Modal
+    <Drawer
       open
       onClose={onClose}
+      wide
       title={t("nodes.masterSettings")}
-      size="xl"
+      subtitle={node.host}
       toolbar={
         loaded ? (
           <DialogTabs
@@ -1564,33 +1575,41 @@ function MasterSettingsDialog({
         <>
 
           {tab === "general" && (
-            <div className="flex flex-col gap-4">
-              <Section title={t("nodes.server")}>
-                <TextInput
+            <div className="flex flex-col gap-3.5">
+              <Section title={t("nodes.server")} flush>
+                <SettingRow
                   label={t("groups.name")}
-                  value={name}
-                  onChange={setName}
-                  placeholder={t("nodes.masterNamePlaceholder")}
+                  field={
+                    <TextInput
+                      value={name}
+                      onChange={setName}
+                      placeholder={t("nodes.masterNamePlaceholder")}
+                    />
+                  }
                 />
-                <Select
+                <SettingRow
                   label={t("nodes.decoy")}
-                  value={decoy}
-                  onChange={setDecoy}
-                  data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
-                />
-                <PlacementFields
-              value={pl}
-              onChange={setPl}
-              online={node.online_users ?? 0}
-              trafficUsed={node.traffic_period_used}
-            />
-                <SystemProxyEditor
-                  host={node.host}
-                  value={proxy}
-                  saved={proxyBase}
-                  onChange={setProxy}
+                  field={
+                    <Select
+                      value={decoy}
+                      onChange={setDecoy}
+                      data={decoys.map((d) => ({ value: d, label: decoyLabel(d) }))}
+                    />
+                  }
                 />
               </Section>
+              <PlacementFields
+                value={pl}
+                onChange={setPl}
+                online={node.online_users ?? 0}
+                trafficUsed={node.traffic_period_used}
+              />
+              <SystemProxyEditor
+                host={node.host}
+                value={proxy}
+                saved={proxyBase}
+                onChange={setProxy}
+              />
               <TabSaveBar
                 onSave={saveGeneral}
                 onReset={() => {
@@ -1613,7 +1632,7 @@ function MasterSettingsDialog({
           {tab === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
 
           {tab === "routing" && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3.5">
               <RoutingEditor
                 cfg={r.cfg}
                 onCfg={r.onCfg}
@@ -1645,8 +1664,8 @@ function MasterSettingsDialog({
           )}
 
           {tab === "dns" && (
-            <div className="flex flex-col gap-4">
-              <Section title="DNS" desc={t("nodes.dnsMasterHint")}>
+            <div className="flex flex-col gap-3.5">
+              <Section title="DNS" desc={t("nodes.dnsMasterHint")} flush>
                 <DnsEditor value={dns} onChange={setDns} />
               </Section>
               <TabSaveBar
@@ -1693,7 +1712,7 @@ function MasterSettingsDialog({
         </>
       )}
       <ApplyingModal open={applying} />
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -2123,41 +2142,38 @@ function NodeLogsDialog({ node, onClose }: { node: NodeView; onClose: () => void
       : lines.filter((l) => classifyNodeLog(l) === level);
 
   return (
-    <Modal open onClose={onClose} title={t("nodes.logsOf", { name: node.name })} size="xl">
-      <div className="mb-3 overflow-x-auto">
+    // The same frame the panel's own log viewer uses: a fixed-height window. A modal
+    // that sizes to its content shrank to a couple of lines while a node was still
+    // sending its first ones, and grew under the reader as they arrived.
+    <ToolDialog
+      title={t("nodes.logsOf", { name: node.name })}
+      onClose={onClose}
+      headerExtra={
         <SegmentedControl data={nodeLogFilters()} value={level} onChange={setLevel} />
+      }
+    >
+      <div className="flex-1 overflow-auto bg-gray-50 p-3 font-mono text-xs leading-relaxed">
+        {!loaded ? (
+          <p className="text-gray-400">{t("nodes.requestingLogs")}</p>
+        ) : lines.length === 0 ? (
+          <p className="text-gray-400">{t("nodes.logsPending")}</p>
+        ) : shown.length === 0 ? (
+          <p className="text-gray-400">{t("logs.noLinesAtLevel")}</p>
+        ) : (
+          shown.map((l, i) => (
+            <div
+              key={i}
+              className={cn(
+                "whitespace-pre-wrap break-all",
+                NODE_LOG_COLORS[classifyNodeLog(l)],
+              )}
+            >
+              {l}
+            </div>
+          ))
+        )}
       </div>
-      {!loaded ? (
-        <p className="text-sm text-ink-muted">{t("nodes.requestingLogs")}</p>
-      ) : lines.length === 0 ? (
-        <p className="text-sm text-ink-muted">
-          {t("nodes.logsPending")}
-        </p>
-      ) : (
-        <div className="max-h-[60vh] overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs leading-relaxed">
-          {shown.length === 0 ? (
-            <p className="text-gray-400">{t("logs.noLinesAtLevel")}</p>
-          ) : (
-            shown.map((l, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "whitespace-pre-wrap break-all",
-                  NODE_LOG_COLORS[classifyNodeLog(l)],
-                )}
-              >
-                {l}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-      <div className="mt-4 flex justify-end">
-        <Button variant="light" color="gray" onClick={onClose}>
-          {t("common.close")}
-        </Button>
-      </div>
-    </Modal>
+    </ToolDialog>
   );
 }
 

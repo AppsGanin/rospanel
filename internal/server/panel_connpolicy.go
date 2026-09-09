@@ -37,7 +37,7 @@ func (rt *Router) saveConnPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auditDetails(r, map[string]any{
-		"mode": req.Mode, "countries": len(req.Countries), "asns": len(req.ASNs), "enforce": req.Enforce,
+		"mode": req.Mode, "countries": len(req.Countries), "enforce": req.Enforce,
 	})
 	writeOK(w)
 }

@@ -590,9 +590,7 @@ IP.
 Matches are kept for **14 days** — enough to handle a complaint.
 
 **Where clients may connect from** (*Settings → General*). A country rule — only these
-countries, or everywhere except these — plus a list of **networks (ASN)** that may never
-connect, which is how a resold account is usually spotted: it appears from a hosting provider
-rather than a home line. Both are checked against what the panel already records for every
+countries, or everywhere except these — checked against what the panel already records for every
 connection, on the master and on every node, so the rule covers every protocol including the
 ones Xray does not carry. **The address is dropped, not the account**: the offender's IP goes
 into an nftables set on every server (with a length the operator sets, self-expiring), while the

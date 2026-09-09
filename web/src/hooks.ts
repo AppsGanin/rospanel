@@ -128,3 +128,25 @@ export function useViewMode(key: string): [ViewMode, (v: string) => void] {
   };
   return [view, change];
 }
+
+// MOBILE_MAX is the design system's one breakpoint — the same 640px Tailwind's `sm`
+// uses, so a media query here and an `sm:` class there can never disagree.
+export const MOBILE_MAX = 640;
+
+// useIsMobile answers "is this a phone" for the handful of things a CSS class cannot
+// express: a dialog that becomes a bottom sheet, a control that has to be a finger
+// wide. Layout that can be done in classes should still be done in classes.
+export function useIsMobile(): boolean {
+  const query = `(max-width:${MOBILE_MAX}px)`;
+  const [mobile, setMobile] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const q = window.matchMedia(query);
+    const on = (e: MediaQueryListEvent) => setMobile(e.matches);
+    setMobile(q.matches);
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  }, [query]);
+  return mobile;
+}

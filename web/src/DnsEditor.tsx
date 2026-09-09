@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Checkbox } from "./ui";
+import { Checkbox, SettingRow, Textarea } from "./ui";
 
 // DnsPreset contributes its servers IN ORDER — primary first, then the secondary —
 // so ticking one preset gives redundancy in a single click. Xray queries them in the
@@ -109,30 +109,28 @@ export function DnsEditor({
     );
 
   return (
-    <div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {POPULAR_DNS.map((d) => (
-          <Checkbox
-            key={d.key}
-            checked={st.sel.includes(d.key)}
-            onChange={() => toggle(d.key)}
-            label={d.label}
-          />
-        ))}
-      </div>
-      <div className="mt-4">
-        <p className="mb-1 text-sm font-medium text-ink">{t("dns.customServers")}</p>
-        <p className="mb-2 text-xs text-ink-muted">
-          {t("dns.customHint")}
-        </p>
-        <textarea
+    <>
+      <SettingRow label={t("dns.presets")}>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {POPULAR_DNS.map((d) => (
+            <Checkbox
+              key={d.key}
+              checked={st.sel.includes(d.key)}
+              onChange={() => toggle(d.key)}
+              label={d.label}
+            />
+          ))}
+        </div>
+      </SettingRow>
+      <SettingRow label={t("dns.customServers")} hint={t("dns.customHint")}>
+        <Textarea
           value={st.custom}
-          onChange={(e) => emit(st.sel, e.currentTarget.value)}
+          onChange={(v) => emit(st.sel, v)}
           rows={3}
+          mono
           placeholder={"1.0.0.1\nhttps://dns.quad9.net/dns-query"}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-      </div>
-    </div>
+      </SettingRow>
+    </>
   );
 }

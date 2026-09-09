@@ -140,15 +140,18 @@ export function Dashboard({
     setMoreOpen(false);
   };
 
-  // Everything about the person signed in, in one list: the desktop dropdown and the
-  // phone's "More" sheet render the same entries rather than drifting apart.
-  const accountItems: { label: string; onClick: () => void; danger?: boolean }[] = [
-    { label: t("nav.credentials"), onClick: () => setCredsOpen(true) },
+  // The phone's "More" sheet in two blocks: what the panel is (documents, source),
+  // then who you are signed in as — with the way out at the very bottom, where a
+  // destructive action belongs.
+  type MoreItem = { label: string; onClick: () => void; danger?: boolean };
+  const docItems: MoreItem[] = [
     { label: t("nav.agreement"), onClick: onShowAgreement },
     { label: t("nav.donate"), onClick: onShowDonate },
     { label: t("nav.changelog"), onClick: () => setChangelogOpen(true) },
     { label: t("nav.sourceOnGithub"), onClick: () => window.open(SOURCE_URL, "_blank") },
-    { label: t("nav.logout"), onClick: doLogout, danger: true },
+  ];
+  const accountItems: MoreItem[] = [
+    { label: t("nav.credentials"), onClick: () => setCredsOpen(true) },
   ];
 
   // The account menu: everything about the person signed in, plus the two document
@@ -285,28 +288,27 @@ export function Dashboard({
                 </Panel>
               )}
 
-              {/* …and everything about the account, which the desktop keeps in the
-                  sidebar footer. */}
+              {/* What the panel is: the documents and where its source lives. */}
+              <Panel>
+                {docItems.map((it) => (
+                  <MoreRow key={it.label} item={it} onDone={() => setMoreOpen(false)} />
+                ))}
+              </Panel>
+
+              {/* …and who is signed in, which the desktop keeps in the sidebar
+                  footer. The way out is the last row of the last block. */}
               <Panel title={username}>
                 {accountItems.map((it) => (
-                  <button
-                    key={it.label}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      it.onClick();
-                    }}
-                    className={cn(
-                      "flex w-full items-center border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium first:border-t-0",
-                      it.danger ? "text-danger" : "text-accent",
-                    )}
-                  >
-                    {it.label}
-                  </button>
+                  <MoreRow key={it.label} item={it} onDone={() => setMoreOpen(false)} />
                 ))}
                 <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-2.5">
                   <span className={MICRO}>{t("common.language")}</span>
                   <LangPills />
                 </div>
+                <MoreRow
+                  item={{ label: t("nav.logout"), onClick: doLogout, danger: true }}
+                  onDone={() => setMoreOpen(false)}
+                />
               </Panel>
             </div>
           </div>
@@ -328,7 +330,7 @@ export function Dashboard({
                   go(n.value);
                 }}
                 className={cn(
-                  "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
+                  "flex flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
                   active ? "text-accent" : "text-ink-muted",
                 )}
               >
@@ -340,7 +342,7 @@ export function Dashboard({
           <button
             onClick={() => setMoreOpen((o) => !o)}
             className={cn(
-              "flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
+              "flex flex-1 flex-col items-center justify-center gap-1 rounded-lg text-xs font-semibold transition",
               moreOpen ? "text-accent" : "text-ink-muted",
             )}
           >
@@ -391,6 +393,31 @@ function NavItem({
         )}
       />
       <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+// MoreRow is one line of the phone's "More" sheet: a full-width target, the action
+// in accent, the way out in danger.
+function MoreRow({
+  item,
+  onDone,
+}: {
+  item: { label: string; onClick: () => void; danger?: boolean };
+  onDone: () => void;
+}) {
+  return (
+    <button
+      onClick={() => {
+        onDone();
+        item.onClick();
+      }}
+      className={cn(
+        "flex w-full items-center border-t border-gray-100 px-3.5 py-2.5 text-left text-[13px] font-medium first:border-t-0",
+        item.danger ? "text-danger" : "text-accent",
+      )}
+    >
+      {item.label}
     </button>
   );
 }

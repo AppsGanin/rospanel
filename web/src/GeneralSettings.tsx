@@ -40,17 +40,20 @@ import {
   CenterLoader,
   cn,
   Code,
+  IconButton,
+  IconRestart,
   Modal,
+  Mono,
+  Panel,
   SaveBar,
   Select,
-  SettingCard,
-  ShowMore,
+  SettingRow,
   Spinner,
+  Switch,
   TextInput,
   ToggleRow,
   useConfirm,
 } from "./ui";
-import { countryFlag, countryName } from "./format";
 
 // LocalBackup is the scheduled on-disk backup: a schedule plus how many archives to
 // keep. Independent of the Telegram backup schedule — an operator with no bot still
@@ -328,23 +331,13 @@ export function GeneralSettings() {
 
   return (
     <div className="flex flex-1 flex-col gap-3.5">
-      <SettingCard
+      {/* What is running, and what could be. The check is a section action: it
+          answers the whole section, not one of its rows. */}
+      <Panel
         title={t("general.updateSection")}
-        description={
-          <>
-            {t("general.currentVersion")} <b>v{version || "—"}</b>
-            {upd?.available && upd.latest && (
-              <>
-                {" · "}
-                {t("general.availableVersion")}{" "}
-                <b className="text-accent">v{upd.latest}</b>
-              </>
-            )}
-          </>
-        }
-      >
-        <div className="flex flex-wrap gap-2">
+        aside={
           <Button
+            size="xs"
             variant="light"
             color="gray"
             loading={isBusy("upd-check")}
@@ -353,12 +346,25 @@ export function GeneralSettings() {
           >
             {t("general.checkUpdates")}
           </Button>
-          {upd?.available && (
-            <Button loading={updating} onClick={doUpdate}>
-              {t("general.updateTo", { version: upd.latest })}
-            </Button>
-          )}
-        </div>
+        }
+      >
+        <SettingRow
+          label={t("general.currentVersion")}
+          control={<Mono className="text-xs text-ink">v{version || "—"}</Mono>}
+        />
+        {upd?.available && upd.latest && (
+          <SettingRow
+            label={t("general.availableVersion")}
+            control={
+              <div className="flex items-center gap-2">
+                <Mono className="text-xs text-accent">v{upd.latest}</Mono>
+                <Button size="xs" loading={updating} onClick={doUpdate}>
+                  {t("general.update")}
+                </Button>
+              </div>
+            }
+          />
+        )}
         <Modal
           open={updating}
           onClose={() => {}}
@@ -367,78 +373,152 @@ export function GeneralSettings() {
         >
           <div className="flex items-start gap-3">
             <Spinner size={22} className="mt-0.5 shrink-0" />
-            <p className="text-sm text-ink">
-              {t("general.updatingHint")}
-            </p>
+            <p className="text-sm text-ink">{t("general.updatingHint")}</p>
           </div>
         </Modal>
-      </SettingCard>
+      </Panel>
 
-      <SettingCard
-        title={t("wizard.timezone")}
-        description={t("general.timezoneHint")}
-      >
-        <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
-      </SettingCard>
-
-      <SettingCard
-        title={t("general.autoBackups")}
-        description={t("general.autoBackupsHint")}
-      >
-        <CronPicker
-          value={bk.schedule}
-          onChange={(schedule) => setBk((b) => ({ ...b, schedule }))}
-          offLabel={t("general.autoBackupsOff")}
-          // Retention only means something once a schedule exists, and it belongs
-          // beside it: "every day at 03:00, keep 7 copies" is one sentence.
-          extra={
-            bkCron ? (
-              <TextInput
-                label={t("general.keepCopies")}
-                type="number"
-                value={String(bk.keep)}
-                onChange={(v) =>
-                  setBk((b) => ({ ...b, keep: Number(v.replace(/\D/g, "")) || 0 }))
-                }
-              />
-            ) : undefined
+      {/* The panel itself: where it can be reached from, what it shows the world,
+          and what clock its numbers are counted on. */}
+      <Panel title={t("general.secPanel")}>
+        <SettingRow
+          label={t("wizard.timezone")}
+          hint={t("general.timezoneHint")}
+          wideField
+          field={
+            <Select data={tzList} value={timezone} onChange={setTimezone} searchable />
           }
         />
-        {bkCron && (
-          <p className="mt-1 text-xs text-ink-muted">
-            {t("general.keepCopiesHint")}
-          </p>
-        )}
-        <p className="mt-3 text-xs text-warning">
-          {t("general.backupWarn")}
-        </p>
-      </SettingCard>
-
-      <SettingCard
-        title={t("general.maintenance")}
-        description={t("general.maintenanceHint")}
-      >
+        <SettingRow
+          label={t("general.secretPath")}
+          hint={t("general.secretPathHint")}
+          control={
+            <IconButton
+              color="red"
+              title={t("general.regen")}
+              disabled={isBusy("secret")}
+              onClick={doRegenSecret}
+            >
+              <IconRestart />
+            </IconButton>
+          }
+        >
+          <Code block>/{settings?.secret_path}/</Code>
+        </SettingRow>
+        <SettingRow
+          label={t("general.statusPage")}
+          hint={t("general.statusPageHint")}
+          control={
+            <Switch
+              checked={status.enabled}
+              onChange={(enabled) => setStatus((s) => ({ ...s, enabled }))}
+            />
+          }
+        >
+          {status.enabled && (
+            <>
+              <TextInput
+                label={t("general.statusPagePath")}
+                value={status.path}
+                mono
+                onChange={(path) =>
+                  setStatus((s) => ({
+                    ...s,
+                    path: path.replace(/[^A-Za-z0-9_-]/g, ""),
+                  }))
+                }
+              />
+              <p
+                className={cn(
+                  "mt-1 text-[11px]",
+                  statusPathErr ? "text-danger" : "text-ink-muted",
+                )}
+              >
+                {statusPathErr ||
+                  t("general.statusPagePathHint", { path: status.path || "status" })}
+              </p>
+            </>
+          )}
+        </SettingRow>
+        {/* Live switch: it takes effect on the flip, not on Save. */}
         <ToggleRow
-          label={t("general.maintenanceOn")}
-          hint={t("general.maintenanceOnHint")}
+          label={t("general.maintenance")}
+          hint={t("general.maintenanceHint")}
           checked={maintenance}
           onChange={(v) =>
             run(async () => {
               await saveMaintenance(v);
               setMaintenanceState(v);
-              notifySuccess(v ? t("general.maintenanceEnabled") : t("general.maintenanceDisabled"));
+              notifySuccess(
+                v
+                  ? t("general.maintenanceEnabled")
+                  : t("general.maintenanceDisabled"),
+              );
             })
           }
         />
-      </SettingCard>
+      </Panel>
 
-      <SettingCard
-        title={t("general.probeDetect")}
-        description={t("general.probeDetectHint")}
-      >
+      {/* What the panel keeps and for how long. */}
+      <Panel title={t("general.secData")}>
+        <SettingRow
+          label={t("general.autoBackups")}
+          hint={t("general.autoBackupsHint")}
+        >
+          <CronPicker
+            value={bk.schedule}
+            onChange={(schedule) => setBk((b) => ({ ...b, schedule }))}
+            offLabel={t("general.autoBackupsOff")}
+            // Retention only means something once a schedule exists, and it belongs
+            // beside it: "every day at 03:00, keep 7 copies" is one sentence.
+            extra={
+              bkCron ? (
+                <TextInput
+                  label={t("general.keepCopies")}
+                  type="number"
+                  value={String(bk.keep)}
+                  onChange={(v) =>
+                    setBk((b) => ({
+                      ...b,
+                      keep: Number(v.replace(/\D/g, "")) || 0,
+                    }))
+                  }
+                />
+              ) : undefined
+            }
+          />
+          {bkCron && (
+            <p className="mt-1.5 text-[11px] text-ink-muted">
+              {t("general.keepCopiesHint")}
+            </p>
+          )}
+          <p className="mt-2 text-[11px] leading-relaxed text-warning">
+            {t("general.backupWarn")}
+          </p>
+        </SettingRow>
+        <SettingRow
+          label={t("general.autodelete")}
+          hint={t("general.autodeleteHint")}
+          field={
+            <Select
+              data={autodeleteOptions()}
+              value={String(autoDel)}
+              onChange={(v) => setAutoDel(Number(v))}
+            />
+          }
+        >
+          <p className="text-[11px] leading-relaxed text-ink-muted">
+            {autoDel === 0 ? t("general.autodeleteOff") : t("general.autodeleteOn")}
+          </p>
+        </SettingRow>
+      </Panel>
+
+      {/* Two live switches and a counter: what the panel does about being poked at,
+          and about its own Xray hanging. */}
+      <Panel title={t("general.secProtect")}>
         <ToggleRow
-          label={t("general.probeDetectOn")}
-          hint={t("general.probeDetectOnHint")}
+          label={t("general.probeDetect")}
+          hint={t("general.probeDetectHint")}
           checked={probeDetect}
           onChange={(v) =>
             run(async () => {
@@ -448,33 +528,22 @@ export function GeneralSettings() {
           }
         />
         {probeDetect && (
-          <div className="flex flex-col">
-            <ToggleRow
-              label={t("general.probeBlock")}
-              hint={t("general.probeBlockHint")}
-              checked={probeBlock}
-              onChange={(v) =>
-                run(async () => {
-                  await saveProbeBlock(v);
-                  setProbeBlockState(v);
-                })
-              }
-            />
-          </div>
-        )}
-        <p className="mt-3 text-xs text-ink-muted">{t("general.probeSeeStats")}</p>
-      </SettingCard>
-
-      <ConnPolicyCard value={policy} onChange={setPolicy} />
-
-      {watchdog && (
-        <SettingCard
-          title={t("general.watchdog")}
-          description={t("general.watchdogHint")}
-        >
           <ToggleRow
-            label={t("general.watchdogOn")}
-            hint={t("general.watchdogOnHint")}
+            label={t("general.probeBlock")}
+            hint={t("general.probeBlockHint")}
+            checked={probeBlock}
+            onChange={(v) =>
+              run(async () => {
+                await saveProbeBlock(v);
+                setProbeBlockState(v);
+              })
+            }
+          />
+        )}
+        {watchdog && (
+          <ToggleRow
+            label={t("general.watchdog")}
+            hint={t("general.watchdogHint")}
             checked={watchdog.enabled}
             onChange={(v) =>
               run(async () => {
@@ -483,81 +552,10 @@ export function GeneralSettings() {
               })
             }
           />
-          <p className="mt-3 text-sm text-ink-muted">
-            {watchdog.restarts === 0
-              ? t("general.watchdogNone")
-              : t("general.watchdogCount", {
-                  n: watchdog.restarts,
-                  when: new Date(watchdog.last_at * 1000).toLocaleString(i18n.language),
-                })}
-          </p>
-        </SettingCard>
-      )}
-
-      <SettingCard
-        title={t("general.statusPage")}
-        description={t("general.statusPageHint")}
-      >
-        <ToggleRow
-          label={t("general.statusPageOn")}
-          hint={t("general.statusPageOnHint")}
-          checked={status.enabled}
-          onChange={(enabled) => setStatus((s) => ({ ...s, enabled }))}
-        />
-        {status.enabled && (
-          <div className="mt-3">
-            <TextInput
-              label={t("general.statusPagePath")}
-              value={status.path}
-              onChange={(path) =>
-                setStatus((s) => ({ ...s, path: path.replace(/[^A-Za-z0-9_-]/g, "") }))
-              }
-            />
-            <p
-              className={cn(
-                "mt-1 text-xs",
-                statusPathErr ? "text-danger" : "text-ink-muted",
-              )}
-            >
-              {statusPathErr || t("general.statusPagePathHint", { path: status.path || "status" })}
-            </p>
-          </div>
         )}
-      </SettingCard>
+      </Panel>
 
-      <SettingCard
-        title={t("general.autodelete")}
-        description={t("general.autodeleteHint")}
-      >
-        <Select
-          label={t("general.deleteAfter")}
-          data={autodeleteOptions()}
-          value={String(autoDel)}
-          onChange={(v) => setAutoDel(Number(v))}
-        />
-        <p className="mt-2 text-xs text-ink-muted">
-          {autoDel === 0
-            ? t("general.autodeleteOff")
-            : t("general.autodeleteOn")}
-        </p>
-      </SettingCard>
-
-      <SettingCard
-        title={t("general.secretPath")}
-        description={t("general.secretPathHint")}
-      >
-        <Code block className="mb-3">
-          /{settings?.secret_path}/
-        </Code>
-        <Button
-          color="red"
-          variant="light"
-          loading={isBusy("secret")}
-          onClick={doRegenSecret}
-        >
-          {t("general.regen")}
-        </Button>
-      </SettingCard>
+      <ConnPolicyCard value={policy} onChange={setPolicy} />
 
       <SaveBar
         dirty={dirty}

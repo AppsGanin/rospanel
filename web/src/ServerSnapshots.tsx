@@ -10,8 +10,17 @@ import {
 import { currentLang } from "./i18n";
 import { useAction } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Section } from "./RoutingEditor";
-import { Button, TextInput, useConfirm } from "./ui";
+import {
+  Button,
+  IconButton,
+  IconRestart,
+  IconTrash,
+  Mono,
+  Section,
+  SettingRow,
+  TextInput,
+  useConfirm,
+} from "./ui";
 
 // ServerSnapshots is the master's config save-points: capture the whole server config
 // (protocols, ports, REALITY, routing, egress, DNS, decoy, inbounds) and roll back to
@@ -36,18 +45,51 @@ export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void })
 
   const stamp = (sec: number) => new Date(sec * 1000).toLocaleString(currentLang());
 
+  const rollback = (sn: ConfigSnapshot) => async () => {
+    const ok = await confirm({
+      title: t("snapshot.rollbackTitle"),
+      body: t("snapshot.rollbackBody"),
+      confirmLabel: t("snapshot.rollback"),
+      danger: true,
+    });
+    if (!ok) return;
+    run(async () => {
+      try {
+        await rollbackConfigSnapshot(sn.id);
+        await reload();
+        notifySuccess(t("snapshot.rolledBack"));
+        // The rollback replaced the whole server config, so the sibling settings tabs
+        // still hold pre-rollback values as their save baseline — hand back to the
+        // parent to refresh/close rather than let a later Save silently re-persist the
+        // superseded config.
+        onRolledBack?.();
+      } catch (e) {
+        notifyError(errMessage(e));
+      }
+    });
+  };
+
+  const remove = (sn: ConfigSnapshot) => async () => {
+    const ok = await confirm({
+      body: t("snapshot.deleteConfirm"),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    run(async () => {
+      await deleteConfigSnapshot(sn.id);
+      await reload();
+    });
+  };
+
   return (
-    <Section title={t("snapshot.title")} desc={t("snapshot.hint")}>
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="flex-1">
-          <TextInput
-            label={t("snapshot.label")}
-            value={label}
-            onChange={setLabel}
-            placeholder={t("snapshot.labelPlaceholder")}
-          />
-        </div>
+    <Section
+      title={t("snapshot.title")}
+      desc={t("snapshot.hint")}
+      action={
         <Button
+          size="xs"
+          variant="light"
           onClick={() =>
             run(async () => {
               await createConfigSnapshot(label.trim());
@@ -60,77 +102,54 @@ export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void })
         >
           {t("snapshot.save")}
         </Button>
-      </div>
+      }
+      flush
+    >
+      <SettingRow
+        label={t("snapshot.label")}
+        wideField
+        field={
+          <TextInput
+            value={label}
+            onChange={setLabel}
+            placeholder={t("snapshot.labelPlaceholder")}
+          />
+        }
+      />
 
       {snaps === null ? (
-        <p className="text-sm text-ink-muted">{t("common.loading")}</p>
+        <SettingRow hint={t("common.loading")} />
       ) : snaps.length === 0 ? (
-        <p className="text-sm text-ink-muted">{t("snapshot.empty")}</p>
+        <SettingRow hint={t("snapshot.empty")} />
       ) : (
-        <div className="flex flex-col gap-1">
-          {snaps.map((sn) => (
-            <div
-              key={sn.id}
-              className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-2 text-sm"
+        snaps.map((sn) => (
+          <div
+            key={sn.id}
+            className="flex items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]"
+          >
+            <Mono className="shrink-0 text-[11px] text-ink-muted">
+              {stamp(sn.created_at)}
+            </Mono>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
+              {sn.label || (sn.auto ? t("snapshot.auto") : t("snapshot.manual"))}
+            </span>
+            <IconButton
+              title={t("snapshot.rollback")}
+              disabled={busy}
+              onClick={rollback(sn)}
             >
-              <span className="text-ink-muted">{stamp(sn.created_at)}</span>
-              <span className="font-medium text-ink">
-                {sn.label || (sn.auto ? t("snapshot.auto") : t("snapshot.manual"))}
-              </span>
-              <span className="ml-auto flex gap-3">
-                <button
-                  type="button"
-                  className="text-accent hover:underline disabled:opacity-50"
-                  disabled={busy}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: t("snapshot.rollbackTitle"),
-                      body: t("snapshot.rollbackBody"),
-                      confirmLabel: t("snapshot.rollback"),
-                      danger: true,
-                    });
-                    if (!ok) return;
-                    run(async () => {
-                      try {
-                        await rollbackConfigSnapshot(sn.id);
-                        await reload();
-                        notifySuccess(t("snapshot.rolledBack"));
-                        // The rollback replaced the whole server config, so the sibling
-                        // settings tabs still hold pre-rollback values as their save
-                        // baseline — hand back to the parent to refresh/close rather than
-                        // let a later Save silently re-persist the superseded config.
-                        onRolledBack?.();
-                      } catch (e) {
-                        notifyError(errMessage(e));
-                      }
-                    });
-                  }}
-                >
-                  {t("snapshot.rollback")}
-                </button>
-                <button
-                  type="button"
-                  className="text-red-500 hover:underline disabled:opacity-50"
-                  disabled={busy}
-                  onClick={async () => {
-                    const ok = await confirm({
-                      body: t("snapshot.deleteConfirm"),
-                      confirmLabel: t("common.delete"),
-                      danger: true,
-                    });
-                    if (!ok) return;
-                    run(async () => {
-                      await deleteConfigSnapshot(sn.id);
-                      await reload();
-                    });
-                  }}
-                >
-                  {t("common.delete")}
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
+              <IconRestart />
+            </IconButton>
+            <IconButton
+              color="red"
+              title={t("common.delete")}
+              disabled={busy}
+              onClick={remove(sn)}
+            >
+              <IconTrash />
+            </IconButton>
+          </div>
+        ))
       )}
       {confirmNode}
     </Section>

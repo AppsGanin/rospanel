@@ -47,6 +47,7 @@
   --animate-fade-in: fade-in 0.18s ease-out both;
   --animate-fade-in-up: fade-in-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-scale-in: scale-in 0.15s ease-out both;
+  --animate-slide-in-up: slide-in-up 0.26s cubic-bezier(0.32, 0.72, 0, 1) both;
   --animate-slide-in-right: slide-in-right 0.26s cubic-bezier(0.32, 0.72, 0, 1)
     both;
   --animate-slide-in-left: slide-in-left 0.26s cubic-bezier(0.32, 0.72, 0, 1)
@@ -78,6 +79,15 @@
   }
   to {
     opacity: 1;
+    transform: none;
+  }
+}
+/* A sheet rising from the bottom edge — the phone shape of a dialog. */
+@keyframes slide-in-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
     transform: none;
   }
 }

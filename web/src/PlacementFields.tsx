@@ -1,7 +1,15 @@
 import { useTranslation } from 'react-i18next'
 import type { Placement } from './api'
 import { fmtBytes } from './format'
-import { Badge, Checkbox, Select, TextInput } from './ui'
+import {
+  cn,
+  Mono,
+  Section,
+  Select,
+  SettingRow,
+  Switch,
+  TextInput,
+} from './ui'
 
 // placementOf lifts a server's placement out of the node view it arrives in.
 export function placementOf(n: {
@@ -59,75 +67,107 @@ export function PlacementFields({
   const full = value.capacity > 0 && online >= value.capacity
   const over = value.traffic_limit > 0 && (trafficUsed ?? 0) >= value.traffic_limit
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-ink">{t('nodes.placement.title')}</span>
-        <Badge color={full ? 'orange' : 'gray'} size="xs">
-          {t('nodes.placement.online', { count: online })}
-          {value.capacity > 0 ? ` / ${value.capacity}` : ''}
-        </Badge>
-      </div>
-      <p className="text-xs text-ink-muted">{t('nodes.placement.hint')}</p>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <TextInput
+    <>
+      {/* Where this server sits in a subscription, and how many people it is meant
+          to carry — with the live count in the header, so "full" is a number. */}
+      <Section
+        title={t('nodes.placement.title')}
+        desc={t('nodes.placement.hint')}
+        action={
+          <Mono className={cn('text-[11px]', full ? 'text-warning' : 'text-ink-muted')}>
+            {t('nodes.placement.online', { count: online })}
+            {value.capacity > 0 ? ` / ${value.capacity}` : ''}
+          </Mono>
+        }
+        flush
+      >
+        <SettingRow
           label={t('nodes.placement.weight')}
-          type="number"
-          value={String(value.sort_weight)}
-          onChange={(v) => patch({ sort_weight: num(v) })}
+          field={
+            <TextInput
+              type="number"
+              value={String(value.sort_weight)}
+              onChange={(v) => patch({ sort_weight: num(v) })}
+            />
+          }
         />
-        <TextInput
+        <SettingRow
           label={t('nodes.placement.capacity')}
-          type="number"
-          value={String(value.capacity)}
-          onChange={(v) => patch({ capacity: Math.max(0, num(v)) })}
-          placeholder="0"
+          field={
+            <TextInput
+              type="number"
+              value={String(value.capacity)}
+              onChange={(v) => patch({ capacity: Math.max(0, num(v)) })}
+              placeholder="0"
+            />
+          }
         />
-      </div>
-      <Checkbox
-        label={t('nodes.placement.hideWhenFull')}
-        hint={value.capacity > 0 ? undefined : t('nodes.placement.hideNeedsCapacity')}
-        checked={value.hide_when_full}
-        onChange={(v) => patch({ hide_when_full: v })}
-      />
+        <SettingRow
+          label={t('nodes.placement.hideWhenFull')}
+          hint={t('nodes.placement.hideNeedsCapacity')}
+          control={
+            // Nothing to hide against without a capacity, so the switch is off the
+            // table until there is one — the hint says why.
+            <Switch
+              checked={value.hide_when_full}
+              disabled={value.capacity <= 0}
+              onChange={(v) => patch({ hide_when_full: v })}
+            />
+          }
+        />
+      </Section>
 
-      {/* Traffic cap. Separate block: capacity above is about how many people the
-          server carries, this is about how much the hosting will let it carry. */}
-      <div className="flex flex-col gap-2 border-t border-gray-200/70 pt-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-ink">{t('nodes.traffic.title')}</span>
-          {trafficUsed !== undefined && (
-            <Badge color={over ? 'orange' : 'gray'} size="xs">
+      {/* The traffic cap. Its own section: capacity above is how many people the
+          server carries, this is how much the hosting will let it carry. */}
+      <Section
+        title={t('nodes.traffic.title')}
+        desc={t('nodes.traffic.hint')}
+        action={
+          trafficUsed !== undefined ? (
+            <Mono className={cn('text-[11px]', over ? 'text-warning' : 'text-ink-muted')}>
               {fmtBytes(trafficUsed)}
               {value.traffic_limit > 0 ? ` / ${fmtBytes(value.traffic_limit)}` : ''}
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-ink-muted">{t('nodes.traffic.hint')}</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <TextInput
-            label={t('nodes.traffic.limit')}
-            value={gbOf(value.traffic_limit)}
-            onChange={(v) => patch({ traffic_limit: bytesOf(v) })}
-            placeholder={t('nodes.traffic.noLimit')}
-          />
-          <Select
-            label={t('nodes.traffic.period')}
-            data={[
-              { value: 'month', label: t('nodes.traffic.perMonth') },
-              { value: 'day', label: t('nodes.traffic.perDay') },
-            ]}
-            value={value.traffic_period || 'month'}
-            disabled={value.traffic_limit <= 0}
-            onChange={(v) => patch({ traffic_period: v })}
-          />
-        </div>
-        <Checkbox
-          label={t('nodes.traffic.hideWhenOver')}
-          hint={value.traffic_limit > 0 ? t('nodes.traffic.hideHint') : t('nodes.traffic.hideNeedsLimit')}
-          checked={value.hide_when_over}
-          onChange={(v) => patch({ hide_when_over: v })}
+            </Mono>
+          ) : undefined
+        }
+        flush
+      >
+        <SettingRow
+          label={t('nodes.traffic.limit')}
+          field={
+            <TextInput
+              value={gbOf(value.traffic_limit)}
+              onChange={(v) => patch({ traffic_limit: bytesOf(v) })}
+              placeholder={t('nodes.traffic.noLimit')}
+            />
+          }
         />
-      </div>
-    </div>
+        <SettingRow
+          label={t('nodes.traffic.period')}
+          field={
+            <Select
+              data={[
+                { value: 'month', label: t('nodes.traffic.perMonth') },
+                { value: 'day', label: t('nodes.traffic.perDay') },
+              ]}
+              value={value.traffic_period || 'month'}
+              disabled={value.traffic_limit <= 0}
+              onChange={(v) => patch({ traffic_period: v })}
+            />
+          }
+        />
+        <SettingRow
+          label={t('nodes.traffic.hideWhenOver')}
+          hint={t('nodes.traffic.hideHint')}
+          control={
+            <Switch
+              checked={value.hide_when_over}
+              disabled={value.traffic_limit <= 0}
+              onChange={(v) => patch({ hide_when_over: v })}
+            />
+          }
+        />
+      </Section>
+    </>
   )
 }

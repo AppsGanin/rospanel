@@ -266,6 +266,26 @@ export const IconDots = ({ size = 16, className }: IconProps) =>
       <circle cx="12" cy="19" r="1" />
     </>,
   );
+// IconSend is Lucide's "send" — a message on its way, for the one-off note the
+// operator writes to a single user.
+export const IconSend = ({ size = 16, className }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden
+  >
+    <path d="M22 2 11 13" />
+    <path d="M22 2 15 22l-4-9-9-4Z" />
+  </svg>
+);
+
 export const IconRestart = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -489,7 +509,7 @@ export function IconButton({
   title?: string;
 }) {
   const cls = cn(
-    "inline-flex h-8 w-8 items-center justify-center rounded-lg transition active:scale-90",
+    "inline-flex size-8 items-center justify-center rounded-lg transition active:scale-90",
     BTN[variant][color],
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
     className,
@@ -570,7 +590,7 @@ export function TableShell({
 }: {
   children: ReactNode;
   className?: string;
-  // bare drops the surface for a table that already sits inside a Card or SettingCard.
+  // bare drops the surface for a table that already sits inside a Card or Section.
   // Without it the operator sees a white rounded panel with its own border and shadow
   // nested 16px inside an identical one.
   bare?: boolean;
@@ -674,54 +694,6 @@ export function Card({
   );
 }
 
-// SettingCard is a settings section: a padded Card with a bold title, an optional
-// muted description, and an optional right-aligned action (a Switch/Button in the
-// header). The body renders below the header.
-export function SettingCard({
-  title,
-  description,
-  action,
-  stackAction,
-  children,
-  className,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  action?: ReactNode;
-  // stackAction drops the action below the text on phones instead of keeping it on
-  // the title row. Off by default: most actions here are a Switch, which stays put
-  // happily in a corner at any width. Turn it on for a real button, which a long
-  // description would otherwise squeeze into a sliver on a narrow screen.
-  stackAction?: boolean;
-  children?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section
-      className={cn("rounded-xl border border-brand-600/10 bg-white p-3.5", className)}
-    >
-      <div
-        className={cn(
-          "flex items-start justify-between gap-3",
-          children ? "mb-3" : "",
-          stackAction && "flex-col sm:flex-row",
-        )}
-      >
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-ink">{title}</h3>
-          {description && (
-            <p className="mt-[3px] text-xs leading-relaxed text-ink-muted">
-              {description}
-            </p>
-          )}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 // SaveBar is the sticky bottom action bar shown while a page has unsaved edits.
 // Leaving the page (it unmounts) discards the in-memory changes, which the hint
 // makes explicit. Render it once per page; it returns null when not dirty.
@@ -789,6 +761,7 @@ function Field({ label, children }: { label?: string; children: ReactNode }) {
 
 const inputCls =
   "w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-[13px] text-ink outline-none " +
+  "" +
   "placeholder:text-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 
 export function TextInput({
@@ -853,6 +826,7 @@ export function Textarea({
   placeholder,
   rows = 3,
   hint,
+  mono,
   inputRef,
 }: {
   label?: string;
@@ -861,6 +835,8 @@ export function Textarea({
   placeholder?: string;
   rows?: number;
   hint?: string;
+  // mono for content that is a list of machine values — addresses, templates.
+  mono?: boolean;
   // inputRef exposes the element so a caller can act on the selection — wrapping
   // the highlighted text in a tag, for instance.
   inputRef?: React.Ref<HTMLTextAreaElement>;
@@ -869,7 +845,7 @@ export function Textarea({
     <Field label={label}>
       <textarea
         ref={inputRef}
-        className={cn(inputCls, "resize-y")}
+        className={cn(inputCls, "resize-y", mono && "font-mono")}
         value={value}
         rows={rows}
         placeholder={placeholder}
@@ -957,6 +933,7 @@ function AnchoredPopover({
 
 const triggerCls =
   'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-[13px] text-ink ' +
+  '' +
   'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
 
 export function Select({
@@ -1439,7 +1416,8 @@ export function CustomizableSelect({
   onChange,
   disabled,
 }: {
-  label: string;
+  // Optional: in a settings row the label is the row's, not the field's.
+  label?: string;
   data: { value: string; label: string }[];
   value: string;
   // format words a value that is not one of the presets — one the operator typed,
@@ -1541,6 +1519,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
+        // A 20px track: it is read at a glance far more often than it is flipped.
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition disabled:opacity-50",
         checked ? "bg-brand-600" : "bg-gray-300",
       )}
@@ -1555,34 +1534,128 @@ export function Switch({
   );
 }
 
-// ToggleRow is a labelled switch row: label (+ optional hint) on the left, a
-// Switch on the right — the shared form for an on/off setting.
-// ToggleRow is a setting card's sub-item: what it does, what it costs, and its own
-// switch. Rows divide themselves with a rule rather than floating apart on a gap —
-// the first one in a card has nothing above it to divide from.
+// SettingRow is one setting inside a section: what it is on the left, what changes
+// it on the right, divided from its neighbours by a rule rather than by a gap.
+// Three slots, because settings controls come in three widths:
+//   control — a switch, a button, a read-only value: it stays at the right edge.
+//   field   — a select or a text box: right-aligned when there is room, full width
+//             under the label on a phone, where a 200px field beside a label is a
+//             sliver.
+//   children — anything that needs the whole row (a picker, a chip list, a table).
+export function SettingRow({
+  label,
+  hint,
+  control,
+  field,
+  wideField,
+  children,
+  inset,
+  className,
+}: {
+  label?: ReactNode;
+  hint?: ReactNode;
+  control?: ReactNode;
+  field?: ReactNode;
+  // wideField widens the field column for values that are sentences rather than
+  // words — a timezone name, a cron preset.
+  wideField?: boolean;
+  children?: ReactNode;
+  // inset drops the horizontal padding for a row that already sits inside a padded
+  // box (a dialog, a card) instead of flush against a section's edges.
+  inset?: boolean;
+  className?: string;
+}) {
+  const head = !!(label || hint || control || field);
+  return (
+    <div
+      className={cn(
+        "border-t border-gray-100 py-2.5 first:border-t-0",
+        inset ? "first:pt-0 last:pb-0" : "px-3.5",
+        className,
+      )}
+    >
+      {head && (
+        <div
+          className={cn(
+            "flex gap-3",
+            field
+              ? "flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+              : cn(
+                  // Wrapping, not squeezing: the text keeps a floor width, so a
+                  // control too wide to sit beside it — a button with a real label —
+                  // drops onto its own line instead of pressing the sentence into a
+                  // column.
+                  "flex-wrap justify-between gap-y-2",
+                  // A label on its own is one line, and so is the value beside it:
+                  // centring the two puts them on the same optical line. With a hint
+                  // the text block is taller than the control, and the control belongs
+                  // at the top of it.
+                  hint ? "items-start" : "items-center",
+                ),
+          )}
+        >
+          {/* A hint is prose: capped at a readable measure so a wide screen does not
+              stretch one sentence across the whole panel. */}
+          <div
+            className={cn(
+              "min-w-0 max-w-[76ch]",
+              !field && "flex-1",
+              // The floor belongs to prose only: a hint keeps 10rem before the control
+              // beside it is allowed to wrap, so a button with a real label drops below
+              // instead of squeezing the sentence into a column. A row that is just a
+              // label and a value needs no floor — it was the floor that pushed short
+              // values onto a second line on a narrow screen.
+              !field && !!hint && "min-w-[min(100%,10rem)]",
+            )}
+          >
+            {label && <p className="text-xs font-medium text-ink">{label}</p>}
+            {hint && (
+              <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">
+                {hint}
+              </p>
+            )}
+          </div>
+          {control && (
+            // leading-4: the same line box the label has. Without it the wrapper keeps
+            // the row's own 24px leading, and a value set in it sits 2px lower than the
+            // label it is supposed to sit beside.
+            <div className="ml-auto shrink-0 text-xs leading-4">{control}</div>
+          )}
+          {field && (
+            <div className={cn("w-full sm:shrink-0", wideField ? "sm:w-72" : "sm:w-56")}>
+              {field}
+            </div>
+          )}
+        </div>
+      )}
+      {children && <div className={cn(head && "mt-2.5")}>{children}</div>}
+    </div>
+  );
+}
+
+// ToggleRow is the switch case of SettingRow, which is most of them.
 export function ToggleRow({
   label,
   hint,
   checked,
   onChange,
   disabled,
+  inset,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  inset?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-t border-gray-100 py-2.5 first:border-t-0 first:pt-0 last:pb-0">
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-ink">{label}</p>
-        {hint && (
-          <p className="mt-0.5 text-[11px] leading-relaxed text-ink-muted">{hint}</p>
-        )}
-      </div>
-      <Switch checked={checked} onChange={onChange} disabled={disabled} />
-    </div>
+    <SettingRow
+      label={label}
+      hint={hint}
+      inset={inset}
+      control={<Switch checked={checked} onChange={onChange} disabled={disabled} />}
+    />
   );
 }
 
@@ -1798,6 +1871,40 @@ export function Panel({
   );
 }
 
+// Section is the settings block used across the server settings dialogs — the same
+// surface the settings screens use: a white panel with a header band, its
+// description as the first row, and either dense rows (flush) or a padded form
+// underneath. One shape for every settings surface in the panel.
+export function Section({
+  title,
+  desc,
+  action,
+  children,
+  className,
+  flush,
+}: {
+  title?: ReactNode;
+  desc?: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  // flush hands the body straight to the section: for content that is already a
+  // list of rows, which draw their own dividers and padding.
+  flush?: boolean;
+}) {
+  return (
+    <Panel title={title} aside={action} className={className}>
+      {desc && <SettingRow hint={desc} />}
+      {children != null &&
+        (flush ? (
+          children
+        ) : (
+          <div className="flex flex-col gap-3 p-3.5">{children}</div>
+        ))}
+    </Panel>
+  );
+}
+
 // Tone is how a figure reads at a glance, independent of what produced it.
 export type Tone = "default" | "success" | "warning" | "danger";
 
@@ -1967,6 +2074,7 @@ export function SegmentedControl({
           aria-pressed={value === o.value}
           className={cn(
             "font-semibold transition",
+            "",
             xs
               ? "rounded-md px-2.5 py-0.5 text-[11px]"
               : "rounded-md px-3 py-1 text-[13px]",
@@ -2067,19 +2175,26 @@ export function Modal({
   if (!open) return null;
   const sz = MODAL_SIZES[size];
   return createPortal(
-    <div className="fixed inset-0 z-200 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-200 flex items-end justify-center sm:items-center sm:p-4">
       <div
         className="absolute inset-0 animate-fade-in bg-black/40"
         onClick={dismissible ? onClose : undefined}
       />
-      {/* 92dvh on a phone, 86dvh above it: a dialog may fill a small screen, but on
-          a desktop it has to read as a dialog rather than as a second page. */}
+      {/* On a phone a dialog is a sheet: it comes up from the bottom edge, keeps the
+          rounding only where it meets the page, and carries a handle — the shape a
+          thumb expects to be able to push back down. Above 640px it is a dialog. */}
       <div
         className={cn(
-          "relative z-10 flex max-h-[92dvh] w-full animate-fade-in-up flex-col overflow-clip rounded-2xl bg-white shadow-xl sm:max-h-[86dvh]",
+          "relative z-10 flex w-full flex-col overflow-clip bg-white shadow-xl",
+          "max-h-[92dvh] rounded-t-2xl animate-slide-in-up",
+          "sm:max-h-[86dvh] sm:rounded-2xl sm:animate-fade-in-up",
           sz.w,
         )}
       >
+        <span
+          aria-hidden
+          className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-gray-300 sm:hidden"
+        />
         {title && (
           <div className="flex min-w-0 shrink-0 items-start justify-between gap-2 border-b border-gray-100 px-5 py-4">
             <div className="min-w-0 flex-1">
@@ -2110,7 +2225,12 @@ export function Modal({
           {children}
         </div>
         {footer && (
-          <div className="shrink-0 border-t border-gray-100 px-5 py-3.5">
+          <div
+            className="shrink-0 border-t border-gray-100 px-5 py-3.5"
+            style={{
+              paddingBottom: "calc(0.875rem + env(safe-area-inset-bottom))",
+            }}
+          >
             {footer}
           </div>
         )}
@@ -2170,15 +2290,25 @@ export function Drawer({
   onClose,
   side = "right",
   title,
+  subtitle,
+  toolbar,
   children,
   full,
+  wide,
 }: {
   open: boolean;
   onClose: () => void;
   side?: "right" | "left";
   title?: ReactNode;
+  // A second line under the title: what this drawer is about — an address, an id.
+  subtitle?: ReactNode;
+  // A strip pinned under the header, above the scrolling body: a tab bar.
+  toolbar?: ReactNode;
   children: ReactNode;
   full?: boolean;
+  // wide is for a drawer that holds a form rather than a card: the server settings
+  // carry nine tabs of fields, and 520px turns every one of them into a column.
+  wide?: boolean;
 }) {
   useLockBody(open);
   useEscape(onClose, open);
@@ -2195,20 +2325,28 @@ export function Drawer({
           side === "right"
             ? "right-0 animate-slide-in-right"
             : "left-0 animate-slide-in-left",
-          full ? "w-full" : "w-full max-w-[520px]",
+          full ? "w-full" : wide ? "w-full max-w-[760px]" : "w-full max-w-[520px]",
           // Rounded inner edge on desktop only (on mobile the drawer is full-width).
           !full && (side === "right" ? "sm:rounded-l-2xl" : "sm:rounded-r-2xl"),
         )}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-brand-600/10 px-3.5 py-[11px]">
-          <div className="min-w-0 font-bold text-ink">{title}</div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-brand-600/10 px-3.5 py-[11px]">
+          <div className="min-w-0 flex-1">
+            <div className="min-w-0 font-bold text-ink">{title}</div>
+            {subtitle && (
+              <div className="mt-0.5 truncate text-xs text-ink-muted">{subtitle}</div>
+            )}
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="shrink-0 text-gray-400 hover:text-gray-600"
           >
             <IconClose />
           </button>
         </div>
+        {toolbar && (
+          <div className="shrink-0 border-b border-brand-600/10 px-3.5">{toolbar}</div>
+        )}
         <div className="grow overflow-y-auto p-4">{children}</div>
       </div>
     </div>,

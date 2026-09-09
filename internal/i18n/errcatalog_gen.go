@@ -219,7 +219,6 @@ var errEN = map[string]string{
 	"err.policyAllowEmpty":         "an \"only these countries\" rule with no country would cut everyone off",
 	"err.policyBlockHours":         "block length: from 0 (the default) to 8760 hours",
 	"err.policyCountry":            "country \"{{value}}\": two Latin letters (RU, KZ)",
-	"err.policyTooManyASNs":        "at most {{max}} networks (ASNs)",
 	"err.policyTooManyCountries":   "at most {{max}} countries",
 	"err.portRange":                "the port is outside 1–65535",
 	"err.portTaken":                "port {{port}} is already taken by {{who}}",

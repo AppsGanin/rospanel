@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { getTLS, setACME, type TLSStatus } from "./api";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Badge, Button, Select, Skeleton, TextInput } from "./ui";
+import {
+  Button,
+  cn,
+  Mono,
+  Section,
+  Select,
+  SettingRow,
+  Skeleton,
+  TextInput,
+} from "./ui";
 import { isValidACMETarget, isValidEmail } from "./validate";
 
 // TLSPanel is the domain/TLS editor. By default it edits the panel's own domain
@@ -66,21 +75,21 @@ export function TLSPanel({
     }
   };
 
-  if (!loaded) return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-6 w-20 rounded-full" />
-        </div>
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-10 w-full rounded-lg" />
-          <Skeleton className="h-9 w-32 rounded-lg" />
-        </div>
+  if (!loaded)
+    return (
+      <div className="flex flex-col gap-3.5">
+        <Section flush>
+          <SettingRow>
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-9 w-32 rounded-lg" />
+            </div>
+          </SettingRow>
+        </Section>
       </div>
-    </div>
-  );
+    );
 
   const cert = status?.cert;
   const valid = cert && cert.issuer && cert.issuer !== cert.subject;
@@ -99,102 +108,101 @@ export function TLSPanel({
   const disabled = host === "" || targetErr || emailErr || emailMissing;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <div className="min-w-0">
-            <p className="text-sm text-ink-muted">{t("tls.currentAddress")}</p>
-            <p className="break-all text-lg font-bold text-ink">
-              {status?.domain || "—"}
-            </p>
-            {cert && (
-              <p className="mt-1 text-sm text-ink-muted">
-                {t("tls.certLine", { issuer: cert.issuer || "—", days: cert.days_left })}
-              </p>
-            )}
-          </div>
-          {cert && (
-            <Badge color={valid ? "teal" : "orange"} className="self-start sm:self-auto">
+    <div className="flex flex-col gap-3.5">
+      <Section
+        title={t("tls.currentAddress")}
+        action={
+          cert ? (
+            <span
+              className={cn(
+                "text-[11px]",
+                valid ? "text-success" : "text-warning",
+              )}
+            >
               {certLabel}
-            </Badge>
-          )}
-        </div>
-      </div>
+            </span>
+          ) : undefined
+        }
+        flush
+      >
+        <SettingRow
+          hint={
+            cert
+              ? t("tls.certLine", { issuer: cert.issuer || "—", days: cert.days_left })
+              : undefined
+          }
+          control={
+            <Mono className="text-xs text-ink">{status?.domain || "—"}</Mono>
+          }
+        />
+      </Section>
 
-      <div className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-4">
-        <div className="flex flex-col gap-3">
-          <p className="font-semibold">{t("tls.changeDomain")}</p>
-          <p className="text-sm text-ink-muted">
-            <Trans
-              i18nKey={
-                redirectOnSuccess ? "tls.changeHintPanel" : "tls.changeHintNode"
-              }
-              components={{ b: <b /> }}
-            />
-          </p>
-          <div>
+      <Section
+        title={t("tls.changeDomain")}
+        desc={
+          <Trans
+            i18nKey={redirectOnSuccess ? "tls.changeHintPanel" : "tls.changeHintNode"}
+            components={{ b: <b /> }}
+          />
+        }
+        flush
+      >
+        <SettingRow
+          label={isZeroSSL ? t("tls.newDomain") : t("tls.newDomainOrIp")}
+          hint={
+            targetErr ? (
+              <span className="text-danger">
+                {isZeroSSL ? t("wizard.errDomainOnly") : t("wizard.errBadTarget")}
+              </span>
+            ) : undefined
+          }
+          wideField
+          field={
             <TextInput
-              label={isZeroSSL ? t("tls.newDomain") : t("tls.newDomainOrIp")}
               placeholder={
-                isZeroSSL
-                  ? "vpn.example.com"
-                  : t("wizard.domainOrIpPlaceholder")
+                isZeroSSL ? "vpn.example.com" : t("wizard.domainOrIpPlaceholder")
               }
               value={target}
               onChange={setTarget}
+              mono
             />
-            {targetErr && (
-              <p className="mt-1 text-xs text-danger">
-                {isZeroSSL
-                  ? t("wizard.errDomainOnly")
-                  : t("wizard.errBadTarget")}
-              </p>
-            )}
-          </div>
-          <div>
-            <TextInput
-              label={
-                isZeroSSL
-                  ? t("wizard.emailRequired")
-                  : t("wizard.emailOptional")
-              }
-              placeholder="you@example.com"
-              value={email}
-              onChange={setEmail}
+          }
+        />
+        <SettingRow
+          label={isZeroSSL ? t("wizard.emailRequired") : t("wizard.emailOptional")}
+          hint={
+            emailErr ? (
+              <span className="text-danger">{t("wizard.errBadEmail")}</span>
+            ) : undefined
+          }
+          wideField
+          field={
+            <TextInput placeholder="you@example.com" value={email} onChange={setEmail} />
+          }
+        />
+        <SettingRow
+          label={t("wizard.certAuthority")}
+          hint={isZeroSSL ? t("wizard.zerosslNote") : t("wizard.letsencryptNote")}
+          field={
+            <Select
+              value={provider}
+              onChange={setProvider}
+              data={[
+                { value: "letsencrypt", label: "Let's Encrypt" },
+                { value: "zerossl", label: "ZeroSSL" },
+              ]}
             />
-            {emailErr && (
-              <p className="mt-1 text-xs text-danger">
-                {t("wizard.errBadEmail")}
-              </p>
-            )}
-          </div>
-          <Select
-            label={t("wizard.certAuthority")}
-            value={provider}
-            onChange={setProvider}
-            data={[
-              { value: "letsencrypt", label: "Let's Encrypt" },
-              { value: "zerossl", label: "ZeroSSL" },
-            ]}
-          />
-          {isZeroSSL && (
-            <p className="text-sm text-ink-muted">
-              {t("wizard.zerosslNote")}
-            </p>
-          )}
-          {!isZeroSSL && (
-            <p className="text-sm text-ink-muted">
-              {t("wizard.letsencryptNote")}
-            </p>
-          )}
-          <Button loading={busy} disabled={disabled} onClick={issue}>
-            {busy ? t("tls.changing") : t("tls.changeDomain")}
-          </Button>
-          <p className="text-xs text-ink-muted">
-            {t("tls.takesSeconds")}
-          </p>
-        </div>
-      </div>
+          }
+        />
+        <SettingRow
+          hint={t("tls.takesSeconds")}
+          control={
+            <Button size="xs" loading={busy} disabled={disabled} onClick={issue}>
+              {busy ? t("tls.changing") : t("tls.changeDomain")}
+            </Button>
+          }
+        />
+      </Section>
     </div>
   );
 }

@@ -217,6 +217,40 @@ func TestAuditNoRowForNoOpToggle(t *testing.T) {
 	}
 }
 
+// The panel's limits form posts the speed cap with every save, so a quota edit that
+// leaves the speed alone must not file a "speed limit" row next to the limits row.
+func TestAuditNoRowForUnchangedSpeed(t *testing.T) {
+	m := bulkTestManager(t)
+	ctx := adminCtx()
+	u, _ := m.CreateUser(ctx, "Ваня", 0, 0)
+
+	if err := m.SetUserSpeedLimit(ctx, u.ID, 0); err != nil { // 0 is what it already is
+		t.Fatalf("set speed: %v", err)
+	}
+	if hasAction(trail(t, m, u.ID), model.EventSpeedLimit) {
+		t.Error("an unchanged speed cap filed an audit row")
+	}
+	if err := m.SetUserSpeedLimit(ctx, u.ID, 4096); err != nil {
+		t.Fatalf("raise speed: %v", err)
+	}
+	if !hasAction(trail(t, m, u.ID), model.EventSpeedLimit) {
+		t.Error("a real speed change filed no audit row")
+	}
+	// And re-saving that same cap adds nothing on top.
+	if err := m.SetUserSpeedLimit(ctx, u.ID, 4096); err != nil {
+		t.Fatalf("re-save speed: %v", err)
+	}
+	var rows int
+	for _, e := range trail(t, m, u.ID) {
+		if e.Action == model.EventSpeedLimit {
+			rows++
+		}
+	}
+	if rows != 1 {
+		t.Errorf("got %d speed rows, want 1", rows)
+	}
+}
+
 // A bulk extend must carry the limits it did NOT touch: the row renders as a full
 // "limits changed" statement, and omitting the quota made it read "unlimited".
 func TestAuditBulkExtendKeepsLimits(t *testing.T) {

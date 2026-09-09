@@ -104,7 +104,14 @@ func (m *Manager) SetUserSpeedLimit(ctx context.Context, id int64, kbps int) err
 	if err := m.store.SetUserSpeedLimit(id, kbps); err != nil {
 		return err
 	}
-	m.audit(ctx, id, model.EventSpeedLimit, map[string]any{"speed_limit": kbps, "was": u.SpeedLimit})
+	// Only a real change earns a journal row. The panel's limits form posts the speed
+	// with every save, so auditing unconditionally put a "speed limit" entry next to
+	// every quota edit that never touched the speed. The work below still runs: an
+	// operator re-typing the cap a throttle imposed means to overrule it, and that
+	// records itself (EventAbuseLifted).
+	if u.SpeedLimit != kbps {
+		m.audit(ctx, id, model.EventSpeedLimit, map[string]any{"speed_limit": kbps, "was": u.SpeedLimit})
+	}
 	// A speed set by hand replaces the panel's throttle rather than layering on it.
 	m.overruleAbuseMeasure(ctx, u, model.AbuseActionThrottle)
 	m.runAsync(m.ApplyShaping)

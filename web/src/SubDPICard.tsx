@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { type SubDPI } from './api'
-import { Select, SettingCard, TextInput, ToggleRow } from './ui'
+import { Panel, Select, SettingRow, Switch, TextInput, ToggleRow } from './ui'
 
 // SubDPICard is the client-side DPI evasion block: what the subscription tells
 // Xray-core apps (through the Xray JSON format) and sing-box to do with the TLS
@@ -31,22 +31,23 @@ export function SubDPICard({
   const xrayOffNote = (d.fragment || d.noise) && !d.json_clients
 
   return (
-    <SettingCard title={t('subs.dpi.title')} description={t('subs.dpi.intro')}>
-      <div className="flex flex-col">
-        <ToggleRow
-          label={t('subs.dpi.jsonClients')}
-          hint={t('subs.dpi.jsonClientsHint')}
-          checked={d.json_clients}
-          onChange={(v) => patch({ json_clients: v })}
-        />
-        <ToggleRow
-          label={t('subs.dpi.fragment')}
-          hint={t('subs.dpi.fragmentHint')}
-          checked={d.fragment}
-          onChange={(v) => patch({ fragment: v })}
-        />
+    <Panel title={t('subs.dpi.title')}>
+      <SettingRow hint={t('subs.dpi.intro')} />
+      <ToggleRow
+        label={t('subs.dpi.jsonClients')}
+        hint={t('subs.dpi.jsonClientsHint')}
+        checked={d.json_clients}
+        onChange={(v) => patch({ json_clients: v })}
+      />
+      <SettingRow
+        label={t('subs.dpi.fragment')}
+        hint={t('subs.dpi.fragmentHint')}
+        control={
+          <Switch checked={d.fragment} onChange={(v) => patch({ fragment: v })} />
+        }
+      >
         {d.fragment && (
-          <div className="grid grid-cols-1 gap-2 pl-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Select
               label={t('subs.dpi.packets')}
               data={packets}
@@ -67,14 +68,14 @@ export function SubDPICard({
             />
           </div>
         )}
-        <ToggleRow
-          label={t('subs.dpi.noise')}
-          hint={t('subs.dpi.noiseHint')}
-          checked={d.noise}
-          onChange={(v) => patch({ noise: v })}
-        />
+      </SettingRow>
+      <SettingRow
+        label={t('subs.dpi.noise')}
+        hint={t('subs.dpi.noiseHint')}
+        control={<Switch checked={d.noise} onChange={(v) => patch({ noise: v })} />}
+      >
         {d.noise && (
-          <div className="grid grid-cols-1 gap-2 pl-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Select
               label={t('subs.dpi.noiseType')}
               data={noiseTypes}
@@ -82,7 +83,11 @@ export function SubDPICard({
               onChange={(v) => patch({ noise_type: v })}
             />
             <TextInput
-              label={d.noise_type === 'rand' ? t('subs.dpi.noiseLength') : t('subs.dpi.noisePayload')}
+              label={
+                d.noise_type === 'rand'
+                  ? t('subs.dpi.noiseLength')
+                  : t('subs.dpi.noisePayload')
+              }
               placeholder={d.noise_type === 'rand' ? '10-20' : ''}
               value={d.noise_packet}
               onChange={(v) => patch({ noise_packet: v })}
@@ -95,18 +100,20 @@ export function SubDPICard({
             />
           </div>
         )}
-        {xrayOffNote && (
-          <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">
-            {t('subs.dpi.jsonOffWarning')}
-          </p>
-        )}
-        <ToggleRow
-          label={t('subs.dpi.recordFragment')}
-          hint={t('subs.dpi.recordFragmentHint')}
-          checked={d.record_fragment}
-          onChange={(v) => patch({ record_fragment: v })}
+      </SettingRow>
+      {/* The Xray-side switches only do anything when Xray-core clients receive JSON —
+          say so next to them rather than letting an operator wonder why nothing changed. */}
+      {xrayOffNote && (
+        <SettingRow
+          hint={<span className="text-warning">{t('subs.dpi.jsonOffWarning')}</span>}
         />
-      </div>
-    </SettingCard>
+      )}
+      <ToggleRow
+        label={t('subs.dpi.recordFragment')}
+        hint={t('subs.dpi.recordFragmentHint')}
+        checked={d.record_fragment}
+        onChange={(v) => patch({ record_fragment: v })}
+      />
+    </Panel>
   )
 }

@@ -8,59 +8,31 @@ import {
   Button,
   cn,
   Code,
+  IconButton,
   IconChevron,
-  Select,
+  IconPlus,
+  IconTrash,
+  Mono,
+  Section,
   SegmentedControl,
+  Select,
+  SettingRow,
   Switch,
   TagsInput,
   TextInput,
   ToggleRow,
 } from "./ui";
 
-// Section is the flat settings block used across the server settings dialogs: a
-// subtly-tinted bordered panel with an optional header (title + description) and a
-// right-aligned action slot (a toggle, a badge, a button). Replaces the heavier
-// shadowed Card so the blocks read as one calm settings surface inside the modal.
-export function Section({
-  title,
-  desc,
-  action,
-  children,
-  className,
-}: {
-  title?: ReactNode;
-  desc?: string;
-  action?: ReactNode;
-  children?: ReactNode;
-  className?: string;
-}) {
-  const hasHeader = !!(title || action);
-  return (
-    <section
-      className={cn(
-        "rounded-xl border border-gray-200/80 bg-gray-50/60 p-4",
-        className,
-      )}
-    >
-      {hasHeader && (
-        <div
-          className={cn(
-            "flex items-start justify-between gap-3",
-            children != null && "mb-4",
-          )}
-        >
-          <div className="min-w-0">
-            {title && <p className="font-semibold text-ink">{title}</p>}
-            {desc && <p className="mt-0.5 text-sm text-ink-muted">{desc}</p>}
-          </div>
-          {action && <div className="shrink-0">{action}</div>}
-        </div>
-      )}
-      {children != null && (
-        <div className="flex flex-col gap-4">{children}</div>
-      )}
-    </section>
-  );
+// toneText paints a status word the way a badge used to: the colour is the signal,
+// the word is the message, and neither needs a pill around it.
+export function toneText(color: BadgeColor): string {
+  return color === "green"
+    ? "text-success"
+    : color === "orange"
+      ? "text-warning"
+      : color === "red"
+        ? "text-danger"
+        : "text-ink-muted";
 }
 
 // A small colour union shared by the status badges the parent computes.
@@ -268,19 +240,17 @@ function FileRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
-        <span className="break-all font-mono text-xs text-ink">
-          {label ?? file.name}
-        </span>
-        <span className="text-xs text-ink-muted sm:shrink-0">
+    <SettingRow
+      label={<Mono className="break-all">{label ?? file.name}</Mono>}
+      hint={note}
+      control={
+        <Mono className="text-[11px] text-ink-muted">
           {file.present
             ? `${fmtBytes(file.size)} · ${t("route.updatedAt", { when: fmtWhen(file.modified_at) })}`
             : t("route.noFile")}
-        </span>
-      </div>
-      {note}
-    </div>
+        </Mono>
+      }
+    />
   );
 }
 
@@ -288,11 +258,11 @@ function FileRow({
 // iplist tabs so both read identically.
 function GeoFileRows({ status }: { status: GeoFile[] }) {
   return (
-    <div className="flex flex-col gap-2 text-sm">
+    <>
       {status.map((f) => (
         <FileRow key={f.name} file={f} />
       ))}
-    </div>
+    </>
   );
 }
 
@@ -309,11 +279,15 @@ function CadenceSelect({
 }) {
   const { t } = useTranslation();
   return (
-    <Select
+    <SettingRow
       label={t("route.autoUpdate")}
-      data={options}
-      value={String(cadence)}
-      onChange={(v) => onCadence(Number(v))}
+      field={
+        <Select
+          data={options}
+          value={String(cadence)}
+          onChange={(v) => onCadence(Number(v))}
+        />
+      }
     />
   );
 }
@@ -337,20 +311,16 @@ export function GeoSection({
 }) {
   const { t } = useTranslation();
   return (
-    // The description goes in the BODY, not Section's `desc` slot: that slot sits
-    // beside the action button, which on a phone leaves it ~180px and wraps a plain
-    // sentence into a four-line column. As a child it gets the full width.
     <Section
       title={t("route.geoDbs")}
+      desc={t("route.geoHint")}
       action={
-        <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
+        <Button variant="light" size="xs" loading={refreshing} onClick={onRefresh}>
           {t("common.refresh")}
         </Button>
       }
+      flush
     >
-      <p className="text-sm text-ink-muted">
-        {t("route.geoHint")}
-      </p>
       <GeoFileRows status={status} />
       <CadenceSelect cadence={cadence} onCadence={onCadence} options={geoCadence()} />
     </Section>
@@ -404,67 +374,62 @@ export function IPListSection({
   const { t } = useTranslation();
   const byFile = (name: string) => IPLIST_SOURCES.find((s) => s.file === name);
   return (
-    // Description in the body rather than Section's `desc` slot — see GeoSection.
     <Section
       title={t("route.iplists")}
+      desc={t("route.iplistHint")}
       action={
-        <Button variant="light" size="sm" loading={refreshing} onClick={onRefresh}>
+        <Button variant="light" size="xs" loading={refreshing} onClick={onRefresh}>
           {t("common.refresh")}
         </Button>
       }
+      flush
     >
-      <p className="text-sm text-ink-muted">
-        {t("route.iplistHint")}
-      </p>
-
-      <div className="flex flex-col gap-3">
-        {status.map((f) => {
-          const src = byFile(f.name);
-          return (
-            <FileRow
-              key={f.name}
-              file={f}
-              label={src?.source}
-              note={
-                src && (
-                  <p className="text-xs text-ink-muted">
-                    <a
-                      href={src.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="underline decoration-dotted underline-offset-2 hover:text-ink"
-                    >
-                      {src.host}
-                    </a>{" "}
-                    · {t(src.about as "route.iplistGlobalAbout")}
-                  </p>
-                )
-              }
-            />
-          );
-        })}
-      </div>
-
-      <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white/60 px-3 py-2 text-xs text-ink-muted">
-        <p>
-          <Trans
-            i18nKey="route.iplistUsage"
-            components={{ m: <span className="font-mono" /> }}
+      {status.map((f) => {
+        const src = byFile(f.name);
+        return (
+          <FileRow
+            key={f.name}
+            file={f}
+            label={src?.source}
+            note={
+              src && (
+                <>
+                  <a
+                    href={src.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="underline decoration-dotted underline-offset-2 hover:text-ink"
+                  >
+                    {src.host}
+                  </a>{" "}
+                  · {t(src.about as "route.iplistGlobalAbout")}
+                </>
+              )
+            }
           />
-        </p>
-        <p>
-          {t("route.iplistSources")}{" "}
-          <a
-            href="https://github.com/rekryt/iplist"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="underline decoration-dotted underline-offset-2 hover:text-ink"
-          >
-            rekryt/iplist
-          </a>
-          {t("route.iplistSourcesTail")}
-        </p>
-      </div>
+        );
+      })}
+
+      <SettingRow
+        hint={
+          <>
+            <Trans
+              i18nKey="route.iplistUsage"
+              components={{ m: <span className="font-mono" /> }}
+            />{" "}
+            {t("route.iplistSources")}{" "}
+            <a
+              href="https://github.com/rekryt/iplist"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
+            >
+              rekryt/iplist
+            </a>
+            {t("route.iplistSourcesTail")}
+          </>
+        }
+      />
 
       <CadenceSelect cadence={cadence} onCadence={onCadence} options={iplistCadence()} />
     </Section>
@@ -494,11 +459,14 @@ export function effectiveCfg(
 // reason it exists. Rendered only when the lane is actually up: an address for a
 // switched-off egress is a dead port dressed as an instruction.
 function LocalEgressAddress({ url }: { url?: string }) {
+  const { t } = useTranslation();
   if (!url) return null;
   return (
-    <Code copy block>
-      {url}
-    </Code>
+    <SettingRow label={t("route.localAddress")}>
+      <Code copy block>
+        {url}
+      </Code>
+    </SettingRow>
   );
 }
 
@@ -685,9 +653,9 @@ export function RoutingEditor({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3.5">
       {/* Block */}
-      <Section title={t("route.blocks")}>
+      <Section title={t("route.blocks")} flush>
         <ToggleRow
           label={t("route.blockAds")}
           checked={cfg.block_ads}
@@ -698,91 +666,98 @@ export function RoutingEditor({
           checked={cfg.block_bittorrent}
           onChange={(v) => set({ block_bittorrent: v })}
         />
-        <TagsInput
-          label={t("route.blockedIps")}
-          value={cfg.block_ips}
-          onChange={(v) => set({ block_ips: v })}
-          options={ipOpts(cfg.block_ips)}
-          placeholder={t("route.ipPlaceholder")}
-        />
-        <TagsInput
-          label={t("route.blockedDomains")}
-          value={cfg.block_domains}
-          onChange={(v) => set({ block_domains: v })}
-          options={domainOpts(cfg.block_domains)}
-          placeholder={t("route.domainPlaceholder")}
-        />
+        <SettingRow label={t("route.blockedIps")}>
+          <TagsInput
+            value={cfg.block_ips}
+            onChange={(v) => set({ block_ips: v })}
+            options={ipOpts(cfg.block_ips)}
+            placeholder={t("route.ipPlaceholder")}
+          />
+        </SettingRow>
+        <SettingRow label={t("route.blockedDomains")}>
+          <TagsInput
+            value={cfg.block_domains}
+            onChange={(v) => set({ block_domains: v })}
+            options={domainOpts(cfg.block_domains)}
+            placeholder={t("route.domainPlaceholder")}
+          />
+        </SettingRow>
       </Section>
 
       {/* Routing order */}
-      <Section
-        title={t("route.order")}
-        desc={t("route.orderHint")}
-      >
-        <div className="flex flex-col gap-1.5">
-          {cfg.routing_order.map((lane, i) => {
-            const last = i === cfg.routing_order.length - 1;
-            return (
-              <div
-                key={lane}
-                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-              >
-                <span className="w-5 text-sm font-bold text-ink-muted">
-                  {i + 1}
-                </span>
-                <span className="flex-1 text-sm font-medium text-ink">
+      <Section title={t("route.order")} desc={t("route.orderHint")} flush>
+        {cfg.routing_order.map((lane, i) => {
+          const last = i === cfg.routing_order.length - 1;
+          return (
+            <SettingRow
+              key={lane}
+              label={
+                <span className="flex items-baseline gap-2">
+                  <Mono className="text-[11px] text-ink-muted">{i + 1}</Mono>
                   {laneLabel(lane)}
                   {last && (
-                    <span className="ml-2 text-xs font-normal text-ink-muted">
+                    <span className="text-[11px] font-normal text-ink-muted">
                       · {t("route.everythingElse")}
                     </span>
                   )}
                 </span>
-                <button
-                  type="button"
-                  disabled={i === 0}
-                  onClick={() => moveLane(i, -1)}
-                  className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30"
-                >
-                  <IconChevron className="rotate-180" />
-                </button>
-                <button
-                  type="button"
-                  disabled={last}
-                  onClick={() => moveLane(i, 1)}
-                  className="rounded p-1 text-gray-500 hover:bg-gray-200 disabled:opacity-30"
-                >
-                  <IconChevron />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+              }
+              control={
+                <span className="flex items-center">
+                  <IconButton
+                    title={t("subs.ruleUp")}
+                    disabled={i === 0}
+                    onClick={() => moveLane(i, -1)}
+                  >
+                    <IconChevron className="rotate-180" />
+                  </IconButton>
+                  <IconButton
+                    title={t("subs.ruleDown")}
+                    disabled={last}
+                    onClick={() => moveLane(i, 1)}
+                  >
+                    <IconChevron />
+                  </IconButton>
+                </span>
+              }
+            />
+          );
+        })}
       </Section>
 
       {/* Direct */}
-      <Section title={t("route.direct")} desc={withCatchAllNote(t("route.directHint"), "direct")}>
-        <Select
+      <Section
+        title={t("route.direct")}
+        desc={withCatchAllNote(t("route.directHint"), "direct")}
+        flush
+      >
+        <SettingRow
           label={t("route.directStrategy")}
-          data={directStrategies()}
-          value={cfg.direct_strategy ?? ""}
-          onChange={(v) => set({ direct_strategy: v })}
+          hint={t("route.directStrategyHint")}
+          field={
+            <Select
+              data={directStrategies()}
+              value={cfg.direct_strategy ?? ""}
+              onChange={(v) => set({ direct_strategy: v })}
+            />
+          }
         />
-        <p className="-mt-1 text-xs text-ink-muted">{t("route.directStrategyHint")}</p>
-        <TagsInput
-          label={t("route.domains")}
-          value={cfg.direct_domains}
-          onChange={(v) => set({ direct_domains: v })}
-          options={domainOpts(cfg.direct_domains)}
-          placeholder={t("route.domainPlaceholder")}
-        />
-        <TagsInput
-          label="IP"
-          value={cfg.direct_ips}
-          onChange={(v) => set({ direct_ips: v })}
-          options={ipOpts(cfg.direct_ips)}
-          placeholder={t("route.ipPlaceholder")}
-        />
+        <SettingRow label={t("route.domains")}>
+          <TagsInput
+            value={cfg.direct_domains}
+            onChange={(v) => set({ direct_domains: v })}
+            options={domainOpts(cfg.direct_domains)}
+            placeholder={t("route.domainPlaceholder")}
+          />
+        </SettingRow>
+        <SettingRow label="IP">
+          <TagsInput
+            value={cfg.direct_ips}
+            onChange={(v) => set({ direct_ips: v })}
+            options={ipOpts(cfg.direct_ips)}
+            placeholder={t("route.ipPlaceholder")}
+          />
+        </SettingRow>
       </Section>
 
       {/* WARP */}
@@ -790,32 +765,33 @@ export function RoutingEditor({
         title={
           <span className="flex items-center gap-2">
             Cloudflare WARP
-            <Badge color={warpBadge.color}>{warpBadge.label}</Badge>
+            <span className={cn("text-[11px] font-normal", toneText(warpBadge.color))}>
+              {warpBadge.label}
+            </span>
           </span>
         }
         desc={withCatchAllNote(t("route.warpHint"), "warp")}
         action={
-          <Switch
-            checked={warpEnabled}
-            disabled={applying}
-            onChange={setWarpEnabled}
-          />
+          <Switch checked={warpEnabled} disabled={applying} onChange={setWarpEnabled} />
         }
+        flush
       >
-        <TagsInput
-          label={t("route.warpDomains")}
-          value={cfg.warp_domains}
-          onChange={(v) => set({ warp_domains: v })}
-          options={domainOpts(cfg.warp_domains)}
-          placeholder={t("route.domainPlaceholder")}
-        />
-        <TagsInput
-          label={t("route.warpIps")}
-          value={cfg.warp_ips}
-          onChange={(v) => set({ warp_ips: v })}
-          options={ipOpts(cfg.warp_ips)}
-          placeholder={t("route.ipPlaceholder")}
-        />
+        <SettingRow label={t("route.warpDomains")}>
+          <TagsInput
+            value={cfg.warp_domains}
+            onChange={(v) => set({ warp_domains: v })}
+            options={domainOpts(cfg.warp_domains)}
+            placeholder={t("route.domainPlaceholder")}
+          />
+        </SettingRow>
+        <SettingRow label={t("route.warpIps")}>
+          <TagsInput
+            value={cfg.warp_ips}
+            onChange={(v) => set({ warp_ips: v })}
+            options={ipOpts(cfg.warp_ips)}
+            placeholder={t("route.ipPlaceholder")}
+          />
+        </SettingRow>
         <LocalEgressAddress url={warpProxyURL} />
       </Section>
 
@@ -824,162 +800,172 @@ export function RoutingEditor({
         title={
           <span className="flex items-center gap-2">
             Opera VPN
-            <Badge color={operaBadge.color}>{operaBadge.label}</Badge>
+            <span className={cn("text-[11px] font-normal", toneText(operaBadge.color))}>
+              {operaBadge.label}
+            </span>
           </span>
         }
         desc={withCatchAllNote(t("route.operaHint"), "opera")}
         action={
-          <Switch
-            checked={operaEnabled}
-            disabled={applying}
-            onChange={setOperaEnabled}
-          />
+          <Switch checked={operaEnabled} disabled={applying} onChange={setOperaEnabled} />
         }
+        flush
       >
-        <Select
+        <SettingRow
           label={t("route.region")}
-          data={operaCountries()}
-          value={operaCountry}
-          onChange={setOperaCountry}
+          field={
+            <Select
+              data={operaCountries()}
+              value={operaCountry}
+              onChange={setOperaCountry}
+            />
+          }
         />
-        <TagsInput
-          label={t("route.operaDomains")}
-          value={cfg.opera_domains}
-          onChange={(v) => set({ opera_domains: v })}
-          options={domainOpts(cfg.opera_domains)}
-          placeholder={t("route.domainPlaceholder")}
-        />
-        <TagsInput
-          label={t("route.operaIps")}
-          value={cfg.opera_ips}
-          onChange={(v) => set({ opera_ips: v })}
-          options={ipOpts(cfg.opera_ips)}
-          placeholder={t("route.ipPlaceholder")}
-        />
+        <SettingRow label={t("route.operaDomains")}>
+          <TagsInput
+            value={cfg.opera_domains}
+            onChange={(v) => set({ opera_domains: v })}
+            options={domainOpts(cfg.opera_domains)}
+            placeholder={t("route.domainPlaceholder")}
+          />
+        </SettingRow>
+        <SettingRow label={t("route.operaIps")}>
+          <TagsInput
+            value={cfg.opera_ips}
+            onChange={(v) => set({ opera_ips: v })}
+            options={ipOpts(cfg.opera_ips)}
+            placeholder={t("route.ipPlaceholder")}
+          />
+        </SettingRow>
         <LocalEgressAddress url={operaProxyURL} />
       </Section>
 
-      {/* Proxy lanes */}
+      {/* Proxy lanes — one section each, so a lane reads as its own egress. */}
       <Section
         title={t("route.lanes")}
-        desc={t("route.lanesHint")}
+        desc={
+          cfg.lanes.length >= MAX_LANES
+            ? t("route.maxLanes", { count: MAX_LANES })
+            : t("route.lanesHint")
+        }
+        action={
+          <IconButton
+            variant="filled"
+            color="brand"
+            title={t("route.addLane")}
+            disabled={cfg.lanes.length >= MAX_LANES}
+            onClick={addLane}
+          >
+            <IconPlus />
+          </IconButton>
+        }
+        flush
       >
-        {cfg.lanes.length === 0 && (
-          <p className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-sm text-ink-muted">
-            {t("route.noLanes")}
-          </p>
-        )}
+        {cfg.lanes.length === 0 && <SettingRow hint={t("route.noLanes")} />}
 
         {cfg.lanes.map((lane) => {
           const status = laneStatus(lane);
           return (
-            <div
+            <SettingRow
               key={lane.id}
-              className="flex flex-col gap-4 rounded-xl border border-gray-200 p-3"
+              label={
+                <span className="flex items-center gap-2">
+                  {lane.name || t("route.laneNamePlaceholder")}
+                  <span className={cn("text-[11px] font-normal", toneText(status.color))}>
+                    {status.label}
+                  </span>
+                </span>
+              }
+              control={
+                <span className="flex items-center gap-1">
+                  <IconButton
+                    color="red"
+                    title={t("route.deleteLane")}
+                    onClick={() => removeLane(lane.id)}
+                  >
+                    <IconTrash />
+                  </IconButton>
+                  <Switch
+                    checked={lane.enabled}
+                    disabled={applying}
+                    onChange={(v) => patchLane(lane.id, { enabled: v })}
+                  />
+                </span>
+              }
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <div className="flex items-center gap-2">
-                    <Badge color={status.color}>{status.label}</Badge>
-                  </div>
-                  <TextInput
-                    value={lane.name}
-                    onChange={(v) => patchLane(lane.id, { name: v })}
-                    placeholder={t("route.laneNamePlaceholder")}
+              <div className="flex flex-col gap-2.5">
+                <TextInput
+                  label={t("route.laneName")}
+                  value={lane.name}
+                  onChange={(v) => patchLane(lane.id, { name: v })}
+                  placeholder={t("route.laneNamePlaceholder")}
+                />
+                <div>
+                  <span className="mb-1.5 block text-xs text-ink-muted">
+                    {t("route.proxySource")}
+                  </span>
+                  <SegmentedControl
+                    size="xs"
+                    value={laneSrc[lane.id] ?? "manual"}
+                    onChange={(v) =>
+                      setLaneSrc((s) => ({ ...s, [lane.id]: v as LaneSource }))
+                    }
+                    data={[
+                      { value: "manual", label: t("userDetail.manual") },
+                      { value: "urls", label: t("route.filesUrls") },
+                    ]}
                   />
                 </div>
-                <Switch
-                  checked={lane.enabled}
-                  disabled={applying}
-                  onChange={(v) => patchLane(lane.id, { enabled: v })}
-                />
-              </div>
-
-              <div>
-                <span className="mb-1.5 block text-sm text-ink-muted">
-                  {t("route.proxySource")}
-                </span>
-                <SegmentedControl
-                  value={laneSrc[lane.id] ?? "manual"}
-                  onChange={(v) =>
-                    setLaneSrc((s) => ({ ...s, [lane.id]: v as LaneSource }))
-                  }
-                  data={[
-                    { value: "manual", label: t("userDetail.manual") },
-                    { value: "urls", label: t("route.filesUrls") },
-                  ]}
-                />
-              </div>
-              {(laneSrc[lane.id] ?? "manual") === "manual" ? (
+                {(laneSrc[lane.id] ?? "manual") === "manual" ? (
+                  <TagsInput
+                    label={t("route.proxiesManual")}
+                    value={lane.manual}
+                    onChange={(v) => patchLane(lane.id, { manual: v })}
+                    placeholder={t("route.proxyPlaceholder")}
+                  />
+                ) : (
+                  <TagsInput
+                    label={t("route.proxyUrlLists")}
+                    value={lane.urls}
+                    onChange={(v) => patchLane(lane.id, { urls: v })}
+                    placeholder={t("route.proxyUrlPlaceholder")}
+                  />
+                )}
+                {lane.id === catchAll && (
+                  <p className="warning-tint rounded-lg px-2.5 py-1.5 text-[11px] text-warning">
+                    {CATCH_ALL_NOTE}
+                  </p>
+                )}
                 <TagsInput
-                  label={t("route.proxiesManual")}
-                  value={lane.manual}
-                  onChange={(v) => patchLane(lane.id, { manual: v })}
-                  placeholder={t("route.proxyPlaceholder")}
+                  label={t("route.laneDomains")}
+                  value={lane.domains}
+                  onChange={(v) => patchLane(lane.id, { domains: v })}
+                  options={domainOpts(lane.domains)}
+                  placeholder={t("route.domainPlaceholder")}
                 />
-              ) : (
                 <TagsInput
-                  label={t("route.proxyUrlLists")}
-                  value={lane.urls}
-                  onChange={(v) => patchLane(lane.id, { urls: v })}
-                  placeholder={t("route.proxyUrlPlaceholder")}
+                  label={t("route.laneIps")}
+                  value={lane.ips}
+                  onChange={(v) => patchLane(lane.id, { ips: v })}
+                  options={ipOpts(lane.ips)}
+                  placeholder={t("route.ipPlaceholder")}
                 />
-              )}
-              {lane.id === catchAll && (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  {CATCH_ALL_NOTE}
-                </p>
-              )}
-              <TagsInput
-                label={t("route.laneDomains")}
-                value={lane.domains}
-                onChange={(v) => patchLane(lane.id, { domains: v })}
-                options={domainOpts(lane.domains)}
-                placeholder={t("route.domainPlaceholder")}
-              />
-              <TagsInput
-                label={t("route.laneIps")}
-                value={lane.ips}
-                onChange={(v) => patchLane(lane.id, { ips: v })}
-                options={ipOpts(lane.ips)}
-                placeholder={t("route.ipPlaceholder")}
-              />
-              <div className="flex justify-end">
-                <Button
-                  variant="light"
-                  size="sm"
-                  onClick={() => removeLane(lane.id)}
-                >
-                  {t("route.deleteLane")}
-                </Button>
               </div>
-            </div>
+            </SettingRow>
           );
         })}
 
-        <div className="flex items-center justify-between gap-3">
-          <Button
-            variant="light"
-            size="sm"
-            disabled={cfg.lanes.length >= MAX_LANES}
-            onClick={addLane}
-          >
-            + {t("route.addLane")}
-          </Button>
-          {cfg.lanes.length >= MAX_LANES && (
-            <span className="text-xs text-ink-muted">
-              {t("route.maxLanes", { count: MAX_LANES })}
-            </span>
-          )}
-        </div>
-
         {/* One cadence for every URL-sourced lane. */}
         {cfg.lanes.some((l) => laneSrc[l.id] === "urls") && (
-          <Select
+          <SettingRow
             label={t("route.autoRefreshUrls")}
-            data={proxyRefresh()}
-            value={String(cfg.proxy_refresh_minutes)}
-            onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
+            field={
+              <Select
+                data={proxyRefresh()}
+                value={String(cfg.proxy_refresh_minutes)}
+                onChange={(v) => set({ proxy_refresh_minutes: Number(v) })}
+              />
+            }
           />
         )}
       </Section>

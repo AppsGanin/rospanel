@@ -11,7 +11,6 @@ import (
 func TestConnPolicyDecide(t *testing.T) {
 	allow := model.ConnPolicy{Mode: model.ConnPolicyAllow, Countries: []string{"RU", "BY"}}
 	block := model.ConnPolicy{Mode: model.ConnPolicyBlock, Countries: []string{"NL"}}
-	asn := model.ConnPolicy{Mode: model.ConnPolicyOff, ASNs: []uint32{16509}}
 
 	cases := []struct {
 		name    string
@@ -26,11 +25,9 @@ func TestConnPolicyDecide(t *testing.T) {
 		{"allow: unknown country is never refused", allow, "", 0, false, ""},
 		{"block: listed", block, "NL", 0, true, model.PolicyReasonCountry},
 		{"block: elsewhere", block, "RU", 0, false, ""},
-		{"asn: refused whatever the country", asn, "RU", 16509, true, model.PolicyReasonASN},
-		{"asn: another network", asn, "RU", 1299, false, ""},
-		{"asn beats the country rule", model.ConnPolicy{Mode: model.ConnPolicyAllow, Countries: []string{"RU"}, ASNs: []uint32{16509}},
-			"RU", 16509, true, model.PolicyReasonASN},
-		{"unknown ASN (0) matches nothing", model.ConnPolicy{ASNs: []uint32{16509}}, "RU", 0, false, ""},
+		// The network an address belongs to is carried into the verdict for the
+		// record, but it decides nothing: the ASN list was removed from the panel.
+		{"the network never refuses on its own", allow, "RU", 16509, false, ""},
 	}
 	for _, c := range cases {
 		v := c.p.Decide(c.cc, c.asn, "org")
@@ -41,13 +38,10 @@ func TestConnPolicyDecide(t *testing.T) {
 }
 
 func TestConnPolicyValidateAndNormalize(t *testing.T) {
-	p := model.ConnPolicy{Mode: "allow", Countries: []string{" ru ", "RU", "by"}, ASNs: []uint32{7, 7, 0, 3}}
+	p := model.ConnPolicy{Mode: "allow", Countries: []string{" ru ", "RU", "by"}}
 	n := p.Normalized()
 	if strings.Join(n.Countries, ",") != "BY,RU" {
 		t.Errorf("countries: %v", n.Countries)
-	}
-	if len(n.ASNs) != 2 || n.ASNs[0] != 3 || n.ASNs[1] != 7 {
-		t.Errorf("asns: %v", n.ASNs)
 	}
 	if err := n.Validate(); err != nil {
 		t.Errorf("a normal policy was refused: %v", err)
@@ -62,12 +56,12 @@ func TestConnPolicyValidateAndNormalize(t *testing.T) {
 	if err := (model.ConnPolicy{Mode: "off", BlockHours: -1}).Validate(); err == nil {
 		t.Error("a negative block length was accepted")
 	}
-	// Off with no lists refuses nothing.
+	// Off with no countries refuses nothing.
 	if model.DefaultConnPolicy().Active() {
 		t.Error("the default policy is active")
 	}
-	if !(model.ConnPolicy{ASNs: []uint32{1}}).Active() {
-		t.Error("an ASN list alone should be active")
+	if (model.ConnPolicy{Mode: "block"}).Active() {
+		t.Error("a mode with an empty list should refuse nothing")
 	}
 }
 

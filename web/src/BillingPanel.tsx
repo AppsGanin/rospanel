@@ -21,21 +21,23 @@ import i18n, { td, currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
   CustomizableSelect,
-  Badge,
   Button,
   CenterLoader,
   Checkbox,
   cn,
   Code,
+  EmptyState,
   IconButton,
   IconPencil,
+  IconPlus,
   IconTrash,
   MICRO,
   Modal,
   Mono,
+  Panel,
   SaveBar,
   Select,
-  SettingCard,
+  SettingRow,
   Switch,
   Textarea,
   TextInput,
@@ -102,46 +104,41 @@ function ProviderCard({
       : { label: i18n.t("bill.provUnset"), color: "orange" as const };
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-2xl border transition-colors",
-        draft.enabled ? "border-gray-200 bg-white" : "border-gray-200 bg-gray-50/50",
-      )}
-    >
-      {/* Header: monogram, name + note, status, toggle. */}
-      <div className="flex items-center gap-3 p-3.5">
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-base font-bold",
-            draft.enabled ? "accent-tint text-accent" : "bg-gray-100 text-ink-muted",
-          )}
-        >
-          {provider.label.charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-ink">{provider.label}</span>
-            <Badge color={status.color} size="xs">
-              {status.label}
-            </Badge>
-          </div>
-          <p className="truncate text-xs text-ink-muted">{td(provider.note)}</p>
-        </div>
+    <SettingRow
+      label={
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          {provider.label}
+          <span
+            className={cn(
+              "text-[11px] font-normal",
+              status.color === "green"
+                ? "text-success"
+                : status.color === "orange"
+                  ? "text-warning"
+                  : "text-ink-muted",
+            )}
+          >
+            {status.label}
+          </span>
+        </span>
+      }
+      hint={td(provider.note)}
+      control={
         <Switch
           checked={draft.enabled}
           onChange={(v) => onChange({ ...draft, enabled: v })}
         />
-      </div>
-
-      {/* Credentials form, revealed when the provider is on. */}
+      }
+    >
+      {/* Credentials, revealed when the provider is on. */}
       {draft.enabled && (
-        <div className="flex flex-col gap-3 border-t border-gray-100 px-3.5 py-3.5">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           {provider.fields.map((f) => {
             if (f.kind === "bool") {
               return (
                 <label
                   key={f.key}
-                  className="flex items-center gap-2 text-sm text-ink"
+                  className="flex items-center gap-2 text-xs text-ink"
                 >
                   <Switch
                     checked={draft.config[f.key] === "1"}
@@ -149,7 +146,7 @@ function ProviderCard({
                   />
                   {td(f.label)}
                   {f.help && (
-                    <span className="text-xs text-ink-muted">— {td(f.help)}</span>
+                    <span className="text-[11px] text-ink-muted">— {td(f.help)}</span>
                   )}
                 </label>
               );
@@ -165,7 +162,7 @@ function ProviderCard({
                     onChange={(v) => setField(f.key, v)}
                   />
                   {f.help && (
-                    <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
+                    <p className="mt-1 text-[11px] text-ink-muted">{td(f.help)}</p>
                   )}
                 </div>
               );
@@ -185,17 +182,15 @@ function ProviderCard({
                   placeholder={isSecret && f.is_set ? "••••••••" : td(f.placeholder ?? "")}
                 />
                 {f.help && !isSecret && (
-                  <p className="mt-1 text-xs text-ink-muted">{td(f.help)}</p>
+                  <p className="mt-1 text-[11px] text-ink-muted">{td(f.help)}</p>
                 )}
               </div>
             );
           })}
 
           {provider.webhook_url && (
-            <div>
-              <p className="mb-1 text-xs text-ink-muted">
-                {t("bill.webhookUrl")}
-              </p>
+            <div className="sm:col-span-2">
+              <p className="mb-1 text-[11px] text-ink-muted">{t("bill.webhookUrl")}</p>
               <Code block copy>
                 {provider.webhook_url}
               </Code>
@@ -203,7 +198,7 @@ function ProviderCard({
           )}
         </div>
       )}
-    </div>
+    </SettingRow>
   );
 }
 
@@ -224,27 +219,23 @@ function PaymentIntegrations({
 }) {
   const { t } = useTranslation();
   return (
-    <SettingCard
-      title={t("bill.acceptTitle")}
-      description={t("bill.acceptDescription")}
-    >
+    <Panel title={t("bill.acceptTitle")}>
+      <SettingRow hint={t("bill.acceptDescription")} />
       {err ? (
-        <p className="text-sm text-danger">{err}</p>
+        <SettingRow hint={<span className="text-danger">{err}</span>} />
       ) : !providers ? (
         <CenterLoader />
       ) : (
-        <div className="flex flex-col gap-3">
-          {providers.map((p) => (
-            <ProviderCard
-              key={p.key}
-              provider={p}
-              draft={drafts[p.key] ?? draftFromProvider(p)}
-              onChange={(d) => onChange(p.key, d)}
-            />
-          ))}
-        </div>
+        providers.map((p) => (
+          <ProviderCard
+            key={p.key}
+            provider={p}
+            draft={drafts[p.key] ?? draftFromProvider(p)}
+            onChange={(d) => onChange(p.key, d)}
+          />
+        ))
       )}
-    </SettingCard>
+    </Panel>
   );
 }
 
@@ -460,7 +451,9 @@ function PlanForm({
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-ink">{t("bill.planGroups")}</span>
           {selected.size > 0 && (
-            <Badge color="gray">{t("groups.nSelected", { count: selected.size })}</Badge>
+            <span className="text-[11px] text-ink-muted">
+              {t("groups.nSelected", { count: selected.size })}
+            </span>
           )}
         </div>
         {groups.length === 0 ? (
@@ -577,14 +570,18 @@ export function BillingPanel() {
 
   if (loadErr || !cfg || !saved) {
     return (
-      <SettingCard title={t("bill.plans")}>
-        <p className="text-sm text-danger">
-          {loadErr || t("bill.loadFailed")}
-        </p>
-        <Button className="mt-3" onClick={() => reload()}>
-          {t("common.retry")}
-        </Button>
-      </SettingCard>
+      <Panel
+        title={t("bill.plans")}
+        aside={
+          <Button size="xs" variant="light" color="gray" onClick={() => reload()}>
+            {t("common.retry")}
+          </Button>
+        }
+      >
+        <SettingRow
+          hint={<span className="text-danger">{loadErr || t("bill.loadFailed")}</span>}
+        />
+      </Panel>
     );
   }
 
@@ -693,42 +690,49 @@ export function BillingPanel() {
   return (
     <>
       {confirmNode}
-      <div className="flex flex-1 flex-col gap-4">
-        <SettingCard
+      <div className="flex flex-1 flex-col gap-3.5">
+        <Panel
           title={t("settings.tabBilling")}
-          description={t("bill.globalHint")}
-          action={
+          aside={
             <Switch
               checked={cfg.enabled}
               onChange={(v) => setCfg({ ...cfg, enabled: v })}
             />
           }
         >
-          <p className="text-sm text-ink-muted">
-            <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
-          </p>
-        </SettingCard>
+          <SettingRow
+            hint={
+              <>
+                {t("bill.globalHint")}{" "}
+                <Trans i18nKey="bill.existingUsers" components={{ b: <b /> }} />
+              </>
+            }
+          />
+        </Panel>
         <PaymentIntegrations
           providers={providers}
           drafts={payDrafts}
           err={payErr}
           onChange={patchProvider}
         />
-        <SettingCard
+        <Panel
           title={t("bill.plansTitle")}
-          description={t("bill.plansHint")}
-          action={
-            <Button size="sm" onClick={openCreate}>
-              {t("common.create")}
-            </Button>
+          aside={
+            <IconButton
+              variant="filled"
+              color="brand"
+              title={t("bill.newPlan")}
+              onClick={openCreate}
+            >
+              <IconPlus />
+            </IconButton>
           }
         >
+          <SettingRow hint={t("bill.plansHint")} />
           {safePlans.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              {t("bill.noPlans")}
-            </p>
+            <EmptyState title={t("bill.noPlans")} />
           ) : (
-            <div ref={plansRef} className="-mx-3.5 mt-1">
+            <div ref={plansRef}>
               {widePlans && (
                 <div
                   className={cn(MICRO, "grid items-center gap-3 border-t border-gray-100 px-3.5 py-2")}
@@ -828,16 +832,15 @@ export function BillingPanel() {
               })}
             </div>
           )}
-        </SettingCard>
+        </Panel>
 
-        <SettingCard
-          title={t("bill.pricing")}
-          description={t("bill.pricingHint")}
-        >
-          <div className="flex flex-col gap-4">
-            <div>
+        <Panel title={t("bill.pricing")}>
+          <SettingRow hint={t("bill.pricingHint")} />
+          <SettingRow
+            label={t("bill.freePlan")}
+            hint={t("bill.freePlanHint")}
+            field={
               <Select
-                label={t("bill.freePlan")}
                 data={[
                   { value: "0", label: t("bill.notSelected") },
                   // One plan cannot hold both roles: the trial has to expire into
@@ -848,13 +851,13 @@ export function BillingPanel() {
                 value={String(cfg.free_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, free_plan_id: Number(v) })}
               />
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("bill.freePlanHint")}
-              </p>
-            </div>
-            <div>
+            }
+          />
+          <SettingRow
+            label={t("bill.trialPlan")}
+            hint={t("bill.trialPlanHint")}
+            field={
               <Select
-                label={t("bill.trialPlan")}
                 data={[
                   { value: "0", label: t("bill.notSelected") },
                   ...planOptions.filter((o) => o.value !== String(cfg.free_plan_id)),
@@ -862,22 +865,17 @@ export function BillingPanel() {
                 value={String(cfg.trial_plan_id)}
                 onChange={(v) => setCfg({ ...cfg, trial_plan_id: Number(v) })}
               />
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("bill.trialPlanHint")}
-              </p>
-            </div>
+            }
+          />
+          <SettingRow label={t("bill.manualDetails")} hint={t("bill.manualHint")}>
             <Textarea
-              label={t("bill.manualDetails")}
               value={cfg.payment_note}
               onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-              placeholder={
-                t("bill.manualPlaceholder")
-              }
+              placeholder={t("bill.manualPlaceholder")}
               rows={4}
-              hint={t("bill.manualHint")}
             />
-          </div>
-        </SettingCard>
+          </SettingRow>
+        </Panel>
 
         <SaveBar
           dirty={dirty}

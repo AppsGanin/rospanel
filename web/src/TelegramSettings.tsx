@@ -29,10 +29,11 @@ import {
   IconButton,
   IconClose,
   Mono,
+  Panel,
   PasswordInput,
   SaveBar,
   Select,
-  SettingCard,
+  SettingRow,
   Switch,
   TextInput,
   Textarea,
@@ -47,9 +48,13 @@ const ADMIN_EVENTS: { key: string; label: string; desc?: string }[] = [
     label: "tg.evRegLabel",
     desc: "tg.evRegDesc",
   },
-  { key: "expired", label: "tg.evExpired" },
-  { key: "limited", label: "tg.evLimited" },
-  { key: "device_limited", label: "tg.evDeviceLimited" },
+  { key: "expired", label: "tg.evExpired", desc: "tg.evExpiredDesc" },
+  { key: "limited", label: "tg.evLimited", desc: "tg.evLimitedDesc" },
+  {
+    key: "device_limited",
+    label: "tg.evDeviceLimited",
+    desc: "tg.evDeviceLimitedDesc",
+  },
   {
     key: "xray_down",
     label: "tg.evXrayLabel",
@@ -91,13 +96,13 @@ const USER_EVENTS: { key: string; label: string; desc?: string }[] = [
     label: "tg.uEndingLabel",
     desc: "tg.uEndingDesc",
   },
-  { key: "expired", label: "tg.evExpired" },
+  { key: "expired", label: "tg.evExpired", desc: "tg.uExpiredDesc" },
   {
     key: "traffic_low",
     label: "tg.uLowTrafficLabel",
     desc: "tg.uLowTrafficDesc",
   },
-  { key: "limited", label: "tg.uOutOfTraffic" },
+  { key: "limited", label: "tg.uOutOfTraffic", desc: "tg.uOutOfTrafficDesc" },
   {
     key: "device_limited",
     label: "tg.uDevicesLabel",
@@ -465,80 +470,108 @@ export function TelegramSettings() {
       ? `https://t.me/${botUsername}?start=${linkCode}`
       : "";
 
+  // Every bot says which account it turned out to be — the token alone does not.
+  const botLink = (username: string) => (
+    <SettingRow
+      label={t("tg.botIs")}
+      control={
+        <a
+          href={`https://t.me/${username}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs font-medium text-accent hover:underline"
+        >
+          @{username}
+        </a>
+      }
+    />
+  );
+
+  // A saved group the candidate list does not contain — the usual case, since
+  // Telegram never replays "the bot was added" and a group joined earlier stays
+  // invisible until something happens in it. The id is set either way, so it has to
+  // be shown: an empty-looking field next to a working support bot reads as lost
+  // configuration.
+  const savedGroup = supportGroupID.trim();
+  const savedListed = supportGroups.some((g) => String(g.chat_id) === savedGroup);
+  const showManualGroup = manualGroup || (!!savedGroup && !savedListed && supportGroups.length === 0);
+
   return (
-    <div className="flex flex-1 flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-3.5">
       {/* First on the page because it decides whether anything below it can work
           at all: on a server that cannot reach Telegram, all three bots go silent
           and the subscription page's "open in app" buttons die with them. */}
-      <SettingCard title={t("tg.proxy")} description={t("tg.proxyHint")}>
-        <div className="flex flex-col gap-3">
-          {/* Two choices only. WARP and Opera are not modes here: Routing owns those
-              egresses and publishes the address of each one it has running, so
-              sending Telegram through one is just pasting it below. */}
-          <Select
-            label={t("tg.proxyMode")}
-            value={proxyMode}
-            onChange={setProxyMode}
-            data={[
-              { value: "direct", label: t("tg.proxyModeDirect") },
-              { value: "custom", label: t("tg.proxyModeCustom") },
-            ]}
-          />
-          {proxyMode === "custom" && (
-            <PasswordInput
-              label={t("tg.proxyUrl")}
-              value={proxy}
-              onChange={setProxy}
-              placeholder="socks5://127.0.0.1:1080"
-            />
-          )}
-        </div>
-      </SettingCard>
-      <SettingCard
-        title={t("tg.adminBot")}
-        description={t("tg.adminBotHint")}
-        action={<Switch checked={enabled} onChange={onToggleEnabled} />}
-      >
-        <div className="flex flex-col gap-3">
-          <PasswordInput
-            label={t("tg.adminToken")}
-            value={token}
-            onChange={setToken}
-            placeholder="123456789:AA..."
-          />
-          {/* Panel-wide on purpose: the admin bot also pushes unprompted alerts,
-              which carry no Telegram update to read a language from. The client and
-              support bots ignore this and follow each person's own language. */}
-          <div>
+      <Panel title={t("tg.proxy")}>
+        <SettingRow hint={t("tg.proxyHint")} />
+        {/* Two choices only. WARP and Opera are not modes here: Routing owns those
+            egresses and publishes the address of each one it has running, so
+            sending Telegram through one is just pasting it below. */}
+        <SettingRow
+          label={t("tg.proxyMode")}
+          field={
             <Select
-              label={t("tg.botLang")}
+              value={proxyMode}
+              onChange={setProxyMode}
+              data={[
+                { value: "direct", label: t("tg.proxyModeDirect") },
+                { value: "custom", label: t("tg.proxyModeCustom") },
+              ]}
+            />
+          }
+        />
+        {proxyMode === "custom" && (
+          <SettingRow
+            label={t("tg.proxyUrl")}
+            wideField
+            field={
+              <PasswordInput
+                value={proxy}
+                onChange={setProxy}
+                placeholder="socks5://127.0.0.1:1080"
+              />
+            }
+          />
+        )}
+      </Panel>
+
+      <Panel
+        title={t("tg.adminBot")}
+        aside={<Switch checked={enabled} onChange={onToggleEnabled} />}
+      >
+        <SettingRow hint={t("tg.adminBotHint")} />
+        <SettingRow
+          label={t("tg.adminToken")}
+          wideField
+          field={
+            <PasswordInput
+              value={token}
+              onChange={setToken}
+              placeholder="123456789:AA..."
+            />
+          }
+        />
+        {/* Panel-wide on purpose: the admin bot also pushes unprompted alerts,
+            which carry no Telegram update to read a language from. The client and
+            support bots ignore this and follow each person's own language. */}
+        <SettingRow
+          label={t("tg.botLang")}
+          hint={t("tg.botLangHint")}
+          field={
+            <Select
               value={botLang}
               onChange={setBotLang}
               data={LANGS.map((l) => ({ value: l.code, label: l.label }))}
             />
-            <p className="mt-1 text-xs text-ink-muted">{t("tg.botLangHint")}</p>
-          </div>
-          {botUsername && (
-            <p className="text-sm font-medium text-ink-muted">
-              {t("tg.botIs")}{" "}
-              <a
-                href={`https://t.me/${botUsername}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-accent hover:underline"
-              >
-                @{botUsername}
-              </a>
-            </p>
-          )}
-        </div>
-      </SettingCard>
+          }
+        />
+        {botUsername && botLink(botUsername)}
+      </Panel>
 
-      <SettingCard
+      <Panel
         title={t("tg.linkChat")}
-        description={t("tg.linkChatHint")}
-        action={
+        aside={
           <Button
+            size="xs"
             variant="light"
             loading={linking}
             onClick={generate}
@@ -548,123 +581,103 @@ export function TelegramSettings() {
           </Button>
         }
       >
-        <div className="flex flex-col gap-3">
-          {enabled && linkCode ? (
-            <div className="relative rounded-lg border border-accent accent-tint p-3 pr-11">
-              <div className="absolute right-1.5 top-1.5">
-                <IconButton title={t("tg.cancelLink")} onClick={cancelLink}>
-                  <IconClose size={18} />
-                </IconButton>
-              </div>
-              <p className="text-sm text-ink">
+        <SettingRow hint={t("tg.linkChatHint")} />
+        {enabled && linkCode ? (
+          <SettingRow
+            control={
+              <IconButton title={t("tg.cancelLink")} onClick={cancelLink}>
+                <IconClose size={18} />
+              </IconButton>
+            }
+          >
+            <div className="accent-tint rounded-lg border border-accent p-2.5">
+              <p className="text-xs text-ink">
                 {t("tg.sendToBot")} <Code>/start {linkCode}</Code>
               </p>
               {startLink && (
-                <Button
-                  className="mt-2"
-                  size="sm"
-                  href={startLink}
-                  target="_blank"
-                >
+                <Button className="mt-2" size="xs" href={startLink} target="_blank">
                   {t("tg.openBotAndLink")}
                 </Button>
               )}
             </div>
-          ) : !enabled ? (
-            <p className="text-sm text-ink-muted">
-              {t("tg.enableBotFirst")}
-            </p>
-          ) : botConfigDirty ? (
-            <p className="text-sm text-ink-muted">
-              {t("tg.saveThenCode")}
-            </p>
-          ) : (
-            <p className="text-sm text-ink-muted">
-              {t("tg.noActiveCode")}
-            </p>
-          )}
-
-          <div>
-            <p className="mb-1 text-sm font-medium text-ink">
-              {t("tg.linkedChats", { count: chats.length })}
-            </p>
-            {chats.length === 0 ? (
-              <p className="text-xs text-ink-muted">{t("tg.noneYet")}</p>
-            ) : (
-              <div className="flex flex-col">
-                {chats.map((id) => (
-                  <div
-                    key={id}
-                    className="flex items-center justify-between gap-3 border-t border-gray-100 py-1.5 first:border-t-0 first:pt-0"
-                  >
-                    <Mono className="truncate text-xs text-ink">{id}</Mono>
-                    <IconButton
-                      color="red"
-                      title={t("userDetail.unlink")}
-                      onClick={() => unlink(id)}
-                    >
-                      <IconClose size={16} />
-                    </IconButton>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </SettingCard>
-
-      <SettingCard
-        title={t("tg.adminNotifs")}
-        description={t("tg.adminNotifsHint")}
-      >
-        <div className="flex flex-col">
-          {ADMIN_EVENTS.map((e) => (
-            <ToggleRow
-              key={e.key}
-              label={t(e.label as "tg.evExpired")}
-              hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
-              checked={!!adminEvents[e.key]}
-              onChange={(v) => setAdminEvents((cur) => ({ ...cur, [e.key]: v }))}
-              disabled={!enabled}
-            />
-          ))}
-        </div>
-      </SettingCard>
-
-      <SettingCard
-        title={t("tg.userBot")}
-        description={t("tg.userBotHint")}
-        action={<Switch checked={userEnabled} onChange={setUserEnabled} />}
-      >
-        <div className="flex flex-col gap-3">
-          <PasswordInput
-            label={t("tg.userToken")}
-            value={userToken}
-            onChange={setUserToken}
-            placeholder="987654321:BB..."
+          </SettingRow>
+        ) : (
+          <SettingRow
+            hint={
+              !enabled
+                ? t("tg.enableBotFirst")
+                : botConfigDirty
+                  ? t("tg.saveThenCode")
+                  : t("tg.noActiveCode")
+            }
           />
-          {userBotUsername && (
-            <p className="text-sm text-ink-muted">
-              {t("tg.botIs")}{" "}
-              <a
-                href={`https://t.me/${userBotUsername}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-accent hover:underline"
+        )}
+        {chats.length === 0 ? (
+          <SettingRow
+            label={t("tg.linkedChats", { count: chats.length })}
+            hint={t("tg.noneYet")}
+          />
+        ) : (
+          <>
+            <SettingRow label={t("tg.linkedChats", { count: chats.length })} />
+            {chats.map((id) => (
+              <div
+                key={id}
+                className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-[7px]"
               >
-                @{userBotUsername}
-              </a>
-            </p>
-          )}
-          <div className="flex flex-col gap-2">
-            <div>
-              <p className="text-sm font-medium text-ink">
-                {t("tg.selfSignup")}
-              </p>
-              <p className="text-xs text-ink-muted">
-                {t("tg.selfSignupHint")}
-              </p>
-            </div>
+                <Mono className="truncate text-xs text-ink">{id}</Mono>
+                <IconButton
+                  color="red"
+                  title={t("userDetail.unlink")}
+                  onClick={() => unlink(id)}
+                >
+                  <IconClose size={16} />
+                </IconButton>
+              </div>
+            ))}
+          </>
+        )}
+      </Panel>
+
+      <Panel title={t("tg.adminNotifs")}>
+        <SettingRow hint={t("tg.adminNotifsHint")} />
+        {ADMIN_EVENTS.map((e) => (
+          <ToggleRow
+            key={e.key}
+            label={t(e.label as "tg.evExpired")}
+            hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
+            checked={!!adminEvents[e.key]}
+            onChange={(v) => setAdminEvents((cur) => ({ ...cur, [e.key]: v }))}
+            disabled={!enabled}
+          />
+        ))}
+      </Panel>
+
+      <Panel
+        title={t("tg.userBot")}
+        aside={<Switch checked={userEnabled} onChange={setUserEnabled} />}
+      >
+        <SettingRow hint={t("tg.userBotHint")} />
+        <SettingRow
+          label={t("tg.userToken")}
+          wideField
+          field={
+            <PasswordInput
+              value={userToken}
+              onChange={setUserToken}
+              placeholder="987654321:BB..."
+            />
+          }
+        />
+        {userBotUsername && botLink(userBotUsername)}
+        <SettingRow
+          label={t("tg.selfSignup")}
+          hint={
+            userRegMode === "moderation"
+              ? t("tg.moderationHint")
+              : t("tg.selfSignupHint")
+          }
+          field={
             <Select
               data={[
                 { value: "off", label: t("tg.regOff") },
@@ -675,107 +688,127 @@ export function TelegramSettings() {
               value={userRegMode}
               onChange={(v) => setUserRegMode(v as RegMode)}
             />
-            {userRegMode === "moderation" && (
-              <p className="text-xs text-ink-muted">
-                {t("tg.moderationHint")}
-              </p>
-            )}
-            {userRegMode === "invite" && (
+          }
+        />
+        {userRegMode === "invite" && (
+          <SettingRow
+            label={t("tg.inviteCode")}
+            field={
               <TextInput
-                label={t("tg.inviteCode")}
                 value={userRegCode}
                 onChange={setUserRegCode}
                 placeholder={t("tg.invitePlaceholder")}
                 disabled={!userEnabled}
               />
-            )}
-          </div>
-        </div>
-      </SettingCard>
-
-      <SettingCard
-        title={t("tg.userNotifs")}
-        description={t("tg.userNotifsHint")}
-      >
-        <div className="flex flex-col gap-3">
-          {!userEnabled && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
-              {t("tg.userBotOff")}
-            </p>
-          )}
-          {USER_EVENTS.map((e) => (
-            <div key={e.key}>
-              <ToggleRow
-                label={t(e.label as "tg.evExpired")}
-                hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
-                checked={!!userEvents[e.key]}
-                onChange={(v) => setUserEvents((cur) => ({ ...cur, [e.key]: v }))}
-                disabled={!userEnabled}
-              />
-              {e.key === "expiring" && userEvents.expiring && (
-                <div className="pb-2.5">
-                  <Select
-                    data={expiringDayOptions()}
-                    value={expiringDays}
-                    onChange={setExpiringDays}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </SettingCard>
-
-      <SettingCard
-        title={t("tg.support")}
-        description={t("tg.supportHint")}
-        action={<Switch checked={supportEnabled} onChange={setSupportEnabled} />}
-      >
-        <div className="flex flex-col gap-3">
-          <PasswordInput
-            label={t("tg.supportToken")}
-            value={supportToken}
-            onChange={setSupportToken}
-            placeholder="555555555:CC..."
+            }
           />
-          {supportBotUsername && (
-            <p className="text-sm text-ink-muted">
-              {t("tg.botIs")}{" "}
-              <a
-                href={`https://t.me/${supportBotUsername}`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-accent hover:underline"
-              >
-                @{supportBotUsername}
-              </a>
-            </p>
-          )}
-          {manualGroup ? (
-            <>
+        )}
+      </Panel>
+
+      <Panel title={t("tg.userNotifs")}>
+        <SettingRow hint={t("tg.userNotifsHint")} />
+        {!userEnabled && (
+          <SettingRow
+            hint={<span className="text-warning">{t("tg.userBotOff")}</span>}
+          />
+        )}
+        {USER_EVENTS.map((e) => (
+          <ToggleRow
+            key={e.key}
+            label={t(e.label as "tg.evExpired")}
+            hint={e.desc ? t(e.desc as "tg.evRegDesc") : undefined}
+            checked={!!userEvents[e.key]}
+            onChange={(v) => setUserEvents((cur) => ({ ...cur, [e.key]: v }))}
+            disabled={!userEnabled}
+          />
+        ))}
+        {/* How early "your subscription is ending" goes out — a setting of the
+            notice above it, so it follows it and only when it is on. */}
+        {userEvents.expiring && (
+          <SettingRow
+            label={t("tg.remindDays")}
+            field={
+              <Select
+                data={expiringDayOptions()}
+                value={expiringDays}
+                onChange={setExpiringDays}
+              />
+            }
+          />
+        )}
+      </Panel>
+
+      <Panel
+        title={t("tg.support")}
+        aside={<Switch checked={supportEnabled} onChange={setSupportEnabled} />}
+      >
+        <SettingRow hint={t("tg.supportHint")} />
+        <SettingRow
+          label={t("tg.supportToken")}
+          wideField
+          field={
+            <PasswordInput
+              value={supportToken}
+              onChange={setSupportToken}
+              placeholder="555555555:CC..."
+            />
+          }
+        />
+        {supportBotUsername && botLink(supportBotUsername)}
+        {showManualGroup ? (
+          <SettingRow
+            label={t("tg.supportGroupId")}
+            hint={
+              <>
+                {t("tg.groupIdHint")}{" "}
+                {/* Only when there is a list to go back to: with no candidates the
+                    link would switch to a picker with nothing in it. */}
+                {supportGroups.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-accent hover:underline"
+                    onClick={() => setManualGroup(false)}
+                  >
+                    {t("tg.pickFromList")}
+                  </button>
+                )}
+              </>
+            }
+            field={
               <TextInput
-                label={t("tg.supportGroupId")}
                 value={supportGroupID}
                 onChange={setSupportGroupID}
                 placeholder="-1001234567890"
+                mono
               />
-              <p className="text-xs text-ink-muted">
-                {t("tg.groupIdHint")}{" "}
+            }
+          />
+        ) : supportGroups.length > 0 ? (
+          <SettingRow
+            label={t("tg.supportGroup")}
+            hint={
+              <>
+                {t("tg.groupsWithBot")}{" "}
                 <button
                   type="button"
                   className="text-accent hover:underline"
-                  onClick={() => setManualGroup(false)}
+                  onClick={() => setManualGroup(true)}
                 >
-                  {t("tg.pickFromList")}
+                  {t("tg.enterIdManually")}
                 </button>
-              </p>
-            </>
-          ) : supportGroups.length > 0 ? (
-            <>
+              </>
+            }
+            wideField
+            field={
               <Select
-                label={t("tg.supportGroup")}
                 data={[
                   { value: "", label: t("tg.pickGroup") },
+                  // The saved group first when the list does not carry it, so the
+                  // menu opens on what is actually configured rather than on
+                  // "pick a group".
+                  ...(savedGroup && !savedListed
+                    ? [{ value: savedGroup, label: savedGroup }]
+                    : []),
                   ...supportGroups.map((g) => ({
                     value: String(g.chat_id),
                     // The id is shown alongside the name because names repeat and
@@ -786,29 +819,20 @@ export function TelegramSettings() {
                 value={supportGroupID}
                 onChange={setSupportGroupID}
               />
-              <p className="text-xs text-ink-muted">
-                {t("tg.groupsWithBot")}{" "}
-                <button
-                  type="button"
-                  className="text-accent hover:underline"
-                  onClick={() => setManualGroup(true)}
-                >
-                  {t("tg.enterIdManually")}
-                </button>
-              </p>
-            </>
-          ) : (
-            /* No candidates yet. Showing a bare ID field here would contradict the
-               very promise printed next to it — so the empty state says what the
-               panel is waiting for instead, and manual entry stays one click away. */
-            <div className="rounded-lg border border-dashed border-gray-300 p-3">
-              <p className="mb-1 text-sm font-medium text-ink">{t("tg.supportGroup")}</p>
+            }
+          />
+        ) : (
+          /* No candidates yet. Showing a bare ID field here would contradict the
+             very promise printed next to it — so the empty state says what the
+             panel is waiting for instead, and manual entry stays one click away. */
+          <SettingRow label={t("tg.supportGroup")}>
+            <div className="flex flex-col gap-1.5 text-[11px] leading-relaxed text-ink-muted">
               {saved.supportToken.trim() ? (
                 /* No spinner: nothing is loading — the panel is waiting on the
                    operator, and an animation that never resolves would promise
                    progress that isn't happening. */
                 <>
-                  <p className="text-sm text-ink-muted">
+                  <p>
                     {t("tg.addBotHint", {
                       bot: supportBotUsername ? ` @${supportBotUsername}` : "",
                     })}
@@ -819,99 +843,96 @@ export function TelegramSettings() {
                       belongs to and never replays the "you were added" event, so a
                       group joined earlier stays invisible until something happens in
                       it. Neither recovery is guessable, so both are spelled out. */}
-                  <p className="mt-2 text-sm text-ink-muted">
+                  <p>
                     <Trans i18nKey="tg.groupMissingHint" components={{ b: <b /> }} />
                   </p>
-                  <p className="mt-1 text-sm text-ink-muted">
-                    {t("tg.reAddHint")}
-                  </p>
+                  <p>{t("tg.reAddHint")}</p>
                 </>
               ) : (
-                <p className="text-sm text-ink-muted">
-                  {t("tg.tokenFirst")}
-                </p>
+                <p>{t("tg.tokenFirst")}</p>
               )}
               <button
                 type="button"
-                className="mt-2 text-xs text-accent hover:underline"
+                className="self-start text-[11px] text-accent hover:underline"
                 onClick={() => setManualGroup(true)}
               >
                 {t("tg.enterIdManually")}
               </button>
             </div>
-          )}
-          {supportEnabled && !supportGroupID.trim() && (
-            /* Says why the save will be refused, instead of leaving the operator to
-               discover it from an error toast — and names the way out, which is not
-               obvious: the bot starts polling on a token alone, so saving with the
-               switch OFF is what makes the group list appear. */
-            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-ink">
-              {t("tg.needGroupHint")}
-            </p>
-          )}
-          <p className="text-xs text-ink-muted">
-            {t("tg.setupHint")}
-          </p>
-          <p className="text-xs text-ink-muted">
-            <Trans i18nKey="tg.keepPrivate" components={{ b: <b /> }} />
-          </p>
+          </SettingRow>
+        )}
+        {supportEnabled && !supportGroupID.trim() && (
+          /* Says why the save will be refused, instead of leaving the operator to
+             discover it from an error toast — and names the way out, which is not
+             obvious: the bot starts polling on a token alone, so saving with the
+             switch OFF is what makes the group list appear. */
+          <SettingRow
+            hint={<span className="text-warning">{t("tg.needGroupHint")}</span>}
+          />
+        )}
+        <SettingRow
+          hint={
+            <>
+              {t("tg.setupHint")}{" "}
+              <Trans i18nKey="tg.keepPrivate" components={{ b: <b /> }} />
+            </>
+          }
+        />
+        <SettingRow label={t("tg.supportGreeting")} hint={t("tg.greetingHint")}>
           <Textarea
-            label={t("tg.supportGreeting")}
             value={supportGreeting}
             onChange={setSupportGreeting}
             rows={2}
             placeholder={t("tg.greetingPlaceholder")}
-            hint={t("tg.greetingHint")}
           />
-          <div>
+        </SettingRow>
+        <SettingRow
+          hint={supportConfigDirty ? t("tg.saveThenCheck") : t("tg.checkWhat")}
+          control={
             <Button
+              size="xs"
               variant="light"
               loading={checking}
               onClick={runCheck}
               disabled={
-                !supportToken.trim() ||
-                !supportGroupID.trim() ||
-                supportConfigDirty
+                !supportToken.trim() || !supportGroupID.trim() || supportConfigDirty
               }
             >
               {t("tg.check")}
             </Button>
-            <p className="mt-1 text-xs text-ink-muted">
-              {supportConfigDirty
-                ? t("tg.saveThenCheck")
-                : t("tg.checkWhat")}
-            </p>
-          </div>
-        </div>
-      </SettingCard>
+          }
+        />
+      </Panel>
 
-      <SettingCard
+      <Panel
         title={t("tg.scheduledBackups")}
-        description={t("tg.scheduledBackupsHint")}
+        aside={
+          <Button
+            size="xs"
+            variant="light"
+            loading={testing}
+            onClick={sendTest}
+            disabled={chats.length === 0 || !token.trim()}
+          >
+            {t("tg.sendTestBackup")}
+          </Button>
+        }
       >
-        <div className="flex flex-col gap-3">
+        <SettingRow
+          hint={
+            chats.length === 0 || !token.trim()
+              ? t("tg.needTokenAndChat")
+              : t("tg.scheduledBackupsHint")
+          }
+        />
+        <SettingRow>
           <CronPicker
             value={schedule}
             onChange={setSchedule}
             offLabel={t("general.autoBackupsOff")}
           />
-          <div>
-            <Button
-              variant="light"
-              loading={testing}
-              onClick={sendTest}
-              disabled={chats.length === 0 || !token.trim()}
-            >
-              {t("tg.sendTestBackup")}
-            </Button>
-            {(chats.length === 0 || !token.trim()) && (
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("tg.needTokenAndChat")}
-              </p>
-            )}
-          </div>
-        </div>
-      </SettingCard>
+        </SettingRow>
+      </Panel>
 
       <SaveBar
         dirty={dirty}

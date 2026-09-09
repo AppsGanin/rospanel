@@ -335,9 +335,9 @@ export function EventList({
   load: (before: number) => Promise<EventPage>;
   showUser?: boolean;
   empty?: string;
-  // table renders the trail as columns instead of stacked cards. Used by the global
-  // journal, where every row has the same four facts and scanning down a column is the
-  // point; the per-user trail inside a modal keeps the cards, which read better narrow.
+  // table renders the trail as columns instead of stacked cards — every row carries
+  // the same facts, and scanning down a column is the point. The grid stacks itself
+  // below 560px, so it fits a dialog and a phone as well as the journal page.
   table?: boolean;
 }) {
   const { t } = useTranslation();

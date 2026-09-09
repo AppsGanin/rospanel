@@ -22,11 +22,17 @@ import i18n from "./i18n";
 import { notifySuccess } from "./notify";
 import { subPathError } from "./validate";
 import {
+  Button,
   CenterLoader,
   cn,
+  IconButton,
+  IconChevron,
+  IconPlus,
+  IconTrash,
+  Panel,
   SaveBar,
   Select,
-  SettingCard,
+  SettingRow,
   Switch,
   Textarea,
   TextInput,
@@ -181,52 +187,63 @@ export function SubscriptionsPanel() {
 
   return (
     <div className="flex flex-1 flex-col gap-3.5">
-      <SettingCard title={t("subs.format")}>
-        <div className="flex flex-col gap-4">
-          <div>
+      {/* What the subscription link is and what comes back from it. */}
+      <Panel title={t("subs.format")}>
+        <SettingRow
+          label={t("subs.path")}
+          hint={
+            pathErr ? (
+              <span className="text-danger">{pathErr}</span>
+            ) : (
+              t("subs.pathHint", { path: s.sub_path || "sub" })
+            )
+          }
+          field={
             <TextInput
-              label={t("subs.path")}
               placeholder="sub"
               value={s.sub_path}
-              onChange={(v) =>
-                patch({ sub_path: v.replace(/[^A-Za-z0-9_-]/g, "") })
-              }
+              mono
+              onChange={(v) => patch({ sub_path: v.replace(/[^A-Za-z0-9_-]/g, "") })}
             />
-            {pathErr ? (
-              <p className="mt-1 text-xs text-danger">{pathErr}</p>
-            ) : (
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("subs.pathHint", { path: s.sub_path || "sub" })}
-              </p>
-            )}
-          </div>
-          <ToggleRow
-            label={t("subs.base64")}
-            hint={t("subs.base64Hint")}
-            checked={s.sub_base64}
-            onChange={(v) => patch({ sub_base64: v })}
-          />
-          <TextInput
-            label={t("subs.title")}
-            placeholder={t("subs.titlePlaceholder")}
-            value={s.sub_title}
-            onChange={(v) => patch({ sub_title: v })}
-          />
-          <ToggleRow
-            label={t("subs.nameInTitle")}
-            hint={t("subs.nameInTitleHint")}
-            checked={s.sub_name_in_title}
-            onChange={(v) => patch({ sub_name_in_title: v })}
-          />
-          <Select
-            label={t("subs.updateInterval")}
-            data={intervals()}
-            value={String(s.sub_update_interval)}
-            onChange={(v) => patch({ sub_update_interval: Number(v) })}
-          />
-          <div className="flex flex-col gap-1">
+          }
+        />
+        <ToggleRow
+          label={t("subs.base64")}
+          hint={t("subs.base64Hint")}
+          checked={s.sub_base64}
+          onChange={(v) => patch({ sub_base64: v })}
+        />
+        <SettingRow
+          label={t("subs.title")}
+          field={
+            <TextInput
+              placeholder={t("subs.titlePlaceholder")}
+              value={s.sub_title}
+              onChange={(v) => patch({ sub_title: v })}
+            />
+          }
+        />
+        <ToggleRow
+          label={t("subs.nameInTitle")}
+          hint={t("subs.nameInTitleHint")}
+          checked={s.sub_name_in_title}
+          onChange={(v) => patch({ sub_name_in_title: v })}
+        />
+        <SettingRow
+          label={t("subs.updateInterval")}
+          field={
             <Select
-              label={t("subs.orderMode.label")}
+              data={intervals()}
+              value={String(s.sub_update_interval)}
+              onChange={(v) => patch({ sub_update_interval: Number(v) })}
+            />
+          }
+        />
+        <SettingRow
+          label={t("subs.orderMode.label")}
+          hint={t("subs.orderMode.hint")}
+          field={
+            <Select
               data={[
                 { value: "manual", label: t("subs.orderMode.manual") },
                 { value: "load", label: t("subs.orderMode.load") },
@@ -234,157 +251,175 @@ export function SubscriptionsPanel() {
               value={s.sub_order_mode}
               onChange={(v) => patch({ sub_order_mode: v })}
             />
-            <p className="text-xs text-ink-muted">{t("subs.orderMode.hint")}</p>
-          </div>
-          <ToggleRow
-            label={t("subs.hideOffline")}
-            hint={t("subs.hideOfflineHint")}
-            checked={s.sub_hide_offline}
-            onChange={(v) => patch({ sub_hide_offline: v })}
-          />
-          <div>
-            <Textarea
-              label={t("subs.announce")}
-              placeholder={t("subs.announcePlaceholder")}
-              rows={2}
-              value={s.sub_announce}
-              onChange={(v) => patch({ sub_announce: v })}
-            />
-            <p
-              className={cn(
-                "mt-1 text-xs",
-                announceErr ? "text-danger" : "text-ink-muted",
-              )}
-            >
+          }
+        />
+        <ToggleRow
+          label={t("subs.hideOffline")}
+          hint={t("subs.hideOfflineHint")}
+          checked={s.sub_hide_offline}
+          onChange={(v) => patch({ sub_hide_offline: v })}
+        />
+        <SettingRow
+          label={t("subs.announce")}
+          hint={
+            <span className={cn(announceErr && "text-danger")}>
               {t("subs.announceHint")} {announceLen}/{ANNOUNCE_MAX}
-            </p>
-          </div>
-          <ToggleRow
-            label={t("subs.showConfigs")}
-            hint={t("subs.showConfigsHint")}
-            checked={s.sub_show_configs}
-            onChange={(v) => patch({ sub_show_configs: v })}
+            </span>
+          }
+        >
+          <Textarea
+            placeholder={t("subs.announcePlaceholder")}
+            rows={2}
+            value={s.sub_announce}
+            onChange={(v) => patch({ sub_announce: v })}
           />
-        </div>
-      </SettingCard>
+        </SettingRow>
+        <ToggleRow
+          label={t("subs.showConfigs")}
+          hint={t("subs.showConfigsHint")}
+          checked={s.sub_show_configs}
+          onChange={(v) => patch({ sub_show_configs: v })}
+        />
+      </Panel>
 
-      <SettingCard
+      {/* Device binding: off is one row, on is five. */}
+      <Panel
         title={t("subs.hwid")}
-        description={t("subs.hwidHint")}
-        action={
+        aside={
           <Switch
             checked={h.enabled}
             onChange={(v) => patchHwid({ enabled: v })}
           />
         }
       >
+        <SettingRow hint={t("subs.hwidHint")} />
         {h.enabled && (
-          <div className="flex flex-col">
+          <>
             <ToggleRow
               label={t("subs.hwidRequire")}
               hint={t("subs.hwidRequireHint")}
               checked={h.require}
               onChange={(v) => patchHwid({ require: v })}
             />
-            <div>
-              <Select
-                label={t("subs.countMode")}
-                // "both" is a stored value from before the handover grace was removed.
-                // It now behaves exactly as "auto", so it shows as "auto" rather than as
-                // a third choice that does the same thing under a different name.
-                value={h.count_mode === "hwid" ? "hwid" : "auto"}
-                onChange={(v) => patchHwid({ count_mode: v })}
-                data={[
-                  { value: "auto", label: t("subs.countModeAuto") },
-                  { value: "hwid", label: t("subs.countModeHWID") },
-                ]}
-              />
-              <p className="mt-1 text-xs text-ink-muted">{t("subs.countModeHint")}</p>
-            </div>
-            <div>
-              <TextInput
-                label={t("subs.hwidFallback")}
-                type="number"
-                value={String(h.fallback_limit)}
-                onChange={(v) =>
-                  patchHwid({ fallback_limit: Math.max(0, Number(v) || 0) })
-                }
-              />
-              <p className="mt-1 text-xs text-ink-muted">
-                {t("subs.hwidFallbackHint")}
-              </p>
-            </div>
-            <div>
-              <TextInput
-                label={t("subs.hwidTTL")}
-                type="number"
-                value={String(h.ttl_days)}
-                onChange={(v) => patchHwid({ ttl_days: Math.max(0, Number(v) || 0) })}
-              />
-              <p className="mt-1 text-xs text-ink-muted">{t("subs.hwidTTLHint")}</p>
-            </div>
-          </div>
-        )}
-      </SettingCard>
-
-      <SettingCard
-        title={t("subs.routing")}
-        description={
-          <>
-            {t("subs.routingHint")}{" "}
-            <a
-              href={ROUTING_REPO}
-              target="_blank"
-              rel="noreferrer"
-              className="text-accent hover:underline"
-            >
-              roscomvpn-routing
-            </a>
-            .
+            <SettingRow
+              label={t("subs.countMode")}
+              hint={t("subs.countModeHint")}
+              field={
+                <Select
+                  // "both" is a stored value from before the handover grace was
+                  // removed. It behaves exactly as "auto", so it shows as "auto"
+                  // rather than as a third choice that does the same thing.
+                  value={h.count_mode === "hwid" ? "hwid" : "auto"}
+                  onChange={(v) => patchHwid({ count_mode: v })}
+                  data={[
+                    { value: "auto", label: t("subs.countModeAuto") },
+                    { value: "hwid", label: t("subs.countModeHWID") },
+                  ]}
+                />
+              }
+            />
+            <SettingRow
+              label={t("subs.hwidFallback")}
+              hint={t("subs.hwidFallbackHint")}
+              field={
+                <TextInput
+                  type="number"
+                  value={String(h.fallback_limit)}
+                  onChange={(v) =>
+                    patchHwid({ fallback_limit: Math.max(0, Number(v) || 0) })
+                  }
+                />
+              }
+            />
+            <SettingRow
+              label={t("subs.hwidTTL")}
+              hint={t("subs.hwidTTLHint")}
+              field={
+                <TextInput
+                  type="number"
+                  value={String(h.ttl_days)}
+                  onChange={(v) =>
+                    patchHwid({ ttl_days: Math.max(0, Number(v) || 0) })
+                  }
+                />
+              }
+            />
           </>
-        }
-        action={
+        )}
+      </Panel>
+
+      {/* Routing rule sets handed to the clients that understand them. */}
+      <Panel
+        title={t("subs.routing")}
+        aside={
           <Switch
             checked={s.sub_routing}
             onChange={(v) => patch({ sub_routing: v })}
           />
         }
       >
+        <SettingRow
+          hint={
+            <>
+              {t("subs.routingHint")}{" "}
+              <a
+                href={ROUTING_REPO}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                roscomvpn-routing
+              </a>
+              .
+            </>
+          }
+        />
         {s.sub_routing && (
-          <div className="flex flex-col gap-3">
-            <TextInput
+          <>
+            <SettingRow
               label={t("subs.happRules")}
-              placeholder="https://.../HAPP/DEFAULT.DEEPLINK"
-              value={s.sub_routing_happ}
-              onChange={(v) => patch({ sub_routing_happ: v })}
+              wideField
+              field={
+                <TextInput
+                  placeholder="https://.../HAPP/DEFAULT.DEEPLINK"
+                  value={s.sub_routing_happ}
+                  onChange={(v) => patch({ sub_routing_happ: v })}
+                />
+              }
             />
-            <TextInput
+            <SettingRow
               label={t("subs.incyRules")}
-              placeholder="https://.../INCY/DEFAULT.DEEPLINK"
-              value={s.sub_routing_incy}
-              onChange={(v) => patch({ sub_routing_incy: v })}
+              wideField
+              field={
+                <TextInput
+                  placeholder="https://.../INCY/DEFAULT.DEEPLINK"
+                  value={s.sub_routing_incy}
+                  onChange={(v) => patch({ sub_routing_incy: v })}
+                />
+              }
             />
-            <div>
-              <TextInput
-                label={t("subs.mihomoRules")}
-                placeholder="https://.../MIHOMO/default.yaml"
-                value={s.sub_routing_mihomo}
-                onChange={(v) => patch({ sub_routing_mihomo: v })}
-              />
-              <p className="mt-1 text-xs text-ink-muted">
+            <SettingRow
+              label={t("subs.mihomoRules")}
+              hint={
                 <Trans
                   i18nKey="subs.mihomoHint"
                   components={{
-                    marker: (
-                      <code className="rounded bg-gray-100 px-1 font-mono" />
-                    ),
+                    marker: <code className="rounded bg-gray-100 px-1 font-mono" />,
                   }}
                 />
-              </p>
-            </div>
-          </div>
+              }
+              wideField
+              field={
+                <TextInput
+                  placeholder="https://.../MIHOMO/default.yaml"
+                  value={s.sub_routing_mihomo}
+                  onChange={(v) => patch({ sub_routing_mihomo: v })}
+                />
+              }
+            />
+          </>
         )}
-      </SettingCard>
+      </Panel>
 
       <SubDPICard value={dpi} onChange={setDpi} />
 
@@ -461,75 +496,87 @@ function SubRulesEditor({
   ];
 
   return (
-    <SettingCard title={t("subs.rules")} description={t("subs.rulesHint")}>
-      <div className="flex flex-col gap-2">
-        {rules.map((r, i) => (
-          <div
-            key={i}
-            className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200/70 bg-gray-50/60 p-2"
-          >
-            <Switch checked={r.enabled} onChange={(v) => patchRule(i, { enabled: v })} />
-            <Select
-              value={r.field}
-              onChange={(v) => patchRule(i, { field: v as SubRule["field"] })}
-              data={fieldOpts}
-            />
-            <Select
-              value={r.op}
-              onChange={(v) => patchRule(i, { op: v as SubRule["op"] })}
-              data={opOpts}
-            />
-            <TextInput
-              className="min-w-32 flex-1"
-              value={r.value}
-              onChange={(v) => patchRule(i, { value: v })}
-              placeholder={t("subs.ruleValue")}
-            />
-            <span className="text-ink-muted">→</span>
-            <Select
-              value={r.action}
-              onChange={(v) => patchRule(i, { action: v as SubRule["action"] })}
-              data={actionOpts}
-            />
-            <button
-              type="button"
-              className="px-1 text-ink-muted hover:text-ink"
-              onClick={() => move(i, -1)}
-              title="↑"
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              className="px-1 text-ink-muted hover:text-ink"
-              onClick={() => move(i, 1)}
-              title="↓"
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              className="px-1 text-red-500 hover:text-red-700"
-              onClick={() => removeRule(i)}
-              title={t("common.delete")}
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-        {rules.length === 0 && (
-          <p className="text-sm text-ink-muted">{t("subs.rulesEmpty")}</p>
-        )}
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+    <Panel
+      title={t("subs.rules")}
+      aside={
+        <IconButton
+          variant="filled"
+          color="brand"
+          title={t("subs.ruleAdd")}
           onClick={addRule}
         >
-          + {t("subs.ruleAdd")}
-        </button>
-      </div>
-    </SettingCard>
+          <IconPlus />
+        </IconButton>
+      }
+    >
+      <SettingRow hint={t("subs.rulesHint")} />
+      {rules.length === 0 ? (
+        <SettingRow hint={t("subs.rulesEmpty")} />
+      ) : (
+        rules.map((r, i) => (
+          // One rule per line: on/off, what is matched, how, against what, and what
+          // the panel answers with. Order matters, so each row can walk up or down.
+          <div
+            key={i}
+            className="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3.5 py-2"
+          >
+            <Switch checked={r.enabled} onChange={(v) => patchRule(i, { enabled: v })} />
+            <div className="w-36">
+              <Select
+                value={r.field}
+                onChange={(v) => patchRule(i, { field: v as SubRule["field"] })}
+                data={fieldOpts}
+              />
+            </div>
+            <div className="w-32">
+              <Select
+                value={r.op}
+                onChange={(v) => patchRule(i, { op: v as SubRule["op"] })}
+                data={opOpts}
+              />
+            </div>
+            <div className="min-w-32 flex-1">
+              <TextInput
+                value={r.value}
+                onChange={(v) => patchRule(i, { value: v })}
+                placeholder={t("subs.ruleValue")}
+                mono
+              />
+            </div>
+            <span className="text-ink-muted">→</span>
+            <div className="w-32">
+              <Select
+                value={r.action}
+                onChange={(v) => patchRule(i, { action: v as SubRule["action"] })}
+                data={actionOpts}
+              />
+            </div>
+            <div className="ml-auto flex items-center">
+              <IconButton
+                title={t("subs.ruleUp")}
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
+                <IconChevron className="rotate-180" />
+              </IconButton>
+              <IconButton
+                title={t("subs.ruleDown")}
+                disabled={i === rules.length - 1}
+                onClick={() => move(i, 1)}
+              >
+                <IconChevron />
+              </IconButton>
+              <IconButton
+                color="red"
+                title={t("common.delete")}
+                onClick={() => removeRule(i)}
+              >
+                <IconTrash />
+              </IconButton>
+            </div>
+          </div>
+        ))
+      )}
+    </Panel>
   );
 }

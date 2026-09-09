@@ -61,18 +61,28 @@ import { UserEventsModal } from './UserEventsModal'
 import {
   Button,
   cn,
-  CustomizableSelect,
   Code,
+  CustomizableSelect,
   DatePicker,
   Drawer,
-  Modal,
-  Mono,
+  IconButton,
+  IconCalendar,
   IconCheck,
   IconClose,
   IconCopy,
+  IconExternal,
+  IconKey,
+  IconPencil,
+  IconRestart,
+  IconSend,
+  IconTable,
+  IconTrash,
+  Modal,
+  Mono,
   Panel,
   SegmentedControl,
   Select,
+  SettingRow,
   ShowMore,
   Switch,
   TagsInput,
@@ -142,12 +152,13 @@ function dateLabel(v: number | string): string {
 
 // StateRow is one fact about the account: what it is on the left, muted; what it
 // says on the right, mono when it is a number. Rows divide; they are not boxed.
+// One read-only fact about the account, in the row shape the settings screens use.
 function StateRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0">
-      <span className="shrink-0 text-xs text-ink-muted">{label}</span>
-      <span className="min-w-0 truncate text-right text-xs text-ink">{children}</span>
-    </div>
+    <SettingRow
+      label={label}
+      control={<span className="text-xs text-ink">{children}</span>}
+    />
   )
 }
 
@@ -589,18 +600,24 @@ export function UserDetail({
             </p>
           )}
 
-          {/* 2. The three things done to an account most often. */}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" href={user.sub_url} target="_blank">
-              {t('userDetail.subLink')}
-            </Button>
-            <Button size="sm" variant="outline" color="gray" onClick={() => setExtendOpen(true)}>
-              {t('usersPanel.extend')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              color="gray"
+          {/* 2. What is done to an account most often, and then what is done to the
+                 account itself. Icons with their word in the title, like every other
+                 row of actions in the panel. */}
+          <div className="flex flex-wrap items-center gap-1">
+            <IconButton
+              variant="filled"
+              color="brand"
+              title={t('userDetail.subLink')}
+              href={user.sub_url}
+              target="_blank"
+            >
+              <IconExternal />
+            </IconButton>
+            <IconButton title={t('usersPanel.extend')} onClick={() => setExtendOpen(true)}>
+              <IconCalendar size={16} />
+            </IconButton>
+            <IconButton
+              title={t('usersPanel.resetTraffic')}
               onClick={async () => {
                 const ok = await confirm({
                   title: t('userDetail.resetTrafficTitle'),
@@ -611,8 +628,56 @@ export function UserDetail({
                 if (ok) resetUserTraffic(user.id).then(onChanged).catch(fail)
               }}
             >
-              {t('usersPanel.resetTraffic')}
-            </Button>
+              <IconRestart />
+            </IconButton>
+            <IconButton title={t('userDetail.rename')} onClick={() => setRenaming(true)}>
+              <IconPencil />
+            </IconButton>
+            <IconButton
+              title={t('userDetail.rotate')}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t('userDetail.rotateTitle'),
+                  body: t('userDetail.rotateBody'),
+                  confirmLabel: t('userDetail.rotateConfirm'),
+                  danger: true,
+                })
+                if (!ok) return
+                rotateSubToken(user.id)
+                  .then(() => {
+                    notifySuccess(t('userDetail.rotated'))
+                    onChanged()
+                  })
+                  .catch(fail)
+              }}
+            >
+              <IconKey />
+            </IconButton>
+            <IconButton title={t('events.title')} onClick={() => setEventsOpen(true)}>
+              <IconTable />
+            </IconButton>
+            <IconButton
+              color="red"
+              title={t('userDetail.deleteUser')}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: t('userDetail.deleteTitle'),
+                  body: t('userDetail.deleteBody', { name: user.name }),
+                  confirmLabel: t('common.delete'),
+                  danger: true,
+                })
+                if (ok) {
+                  deleteUser(user.id)
+                    .then(() => {
+                      onChanged()
+                      onClose()
+                    })
+                    .catch(fail)
+                }
+              }}
+            >
+              <IconTrash />
+            </IconButton>
           </div>
 
           {/* 3. State: what the account is right now. The switch applies at once —
@@ -689,12 +754,13 @@ export function UserDetail({
                     </span>
                     <span className="flex shrink-0 items-center gap-3">
                       <Mono className="text-[11px] text-ink-muted">{fmtLastSeen(d.last_seen)}</Mono>
-                      <button
+                      <IconButton
+                        color="red"
+                        title={t('userDetail.unbind')}
                         onClick={() => unbindDevice(d.hwid)}
-                        className="text-xs text-danger hover:underline"
                       >
-                        {t('userDetail.unbind')}
-                      </button>
+                        <IconClose size={16} />
+                      </IconButton>
                     </span>
                   </div>
                 ))
@@ -744,77 +810,103 @@ export function UserDetail({
                  reset cycle, so under one the fields are shown disabled rather than
                  hidden: the operator sees what the plan set, and why they cannot
                  edit it. Fields are a draft until Save. */}
-          <Panel title={t('userDetail.planAndLimits')} pad bodyClassName="flex flex-col gap-3">
+          <Panel title={t('userDetail.planAndLimits')}>
             {billingOn && (
-              <>
-                <Select
-                  label={t('userDetail.plan')}
-                  data={planSelectData(plans, user)}
-                  value={dPlan}
-                  onChange={setDPlan}
-                />
-                {planManaged && (
-                  <p className="-mt-1.5 text-xs text-ink-muted">{t('userDetail.planHint')}</p>
-                )}
-              </>
+              <SettingRow
+                label={t('userDetail.plan')}
+                hint={planManaged ? t('userDetail.planHint') : undefined}
+                field={
+                  <Select
+                    data={planSelectData(plans, user)}
+                    value={dPlan}
+                    onChange={setDPlan}
+                  />
+                }
+              />
             )}
-            <DatePicker
+            <SettingRow
               label={t('usersPanel.validUntil')}
-              value={dExpire}
-              onChange={setDExpire}
-              disabled={planManaged}
+              field={
+                <DatePicker value={dExpire} onChange={setDExpire} disabled={planManaged} />
+              }
             />
-            <Select
+            <SettingRow
               label={t('usersPanel.trafficLimit')}
-              data={quotaData}
-              value={dLimitGb}
-              onChange={setDLimitGb}
-              disabled={planManaged}
+              field={
+                <Select
+                  data={quotaData}
+                  value={dLimitGb}
+                  onChange={setDLimitGb}
+                  disabled={planManaged}
+                />
+              }
             />
-            <CustomizableSelect
+            <SettingRow
               label={t('userDetail.deviceLimit')}
-              data={deviceLimitOptions()}
-              value={dDeviceLimit}
-              format={(n) => t('devices.count', { count: n })}
-              max={MAX_DEVICE_LIMIT}
-              onChange={setDDeviceLimit}
-              disabled={planManaged}
+              hint={t('userDetail.deviceLimitHint')}
+              field={
+                <CustomizableSelect
+                  data={deviceLimitOptions()}
+                  value={dDeviceLimit}
+                  format={(n) => t('devices.count', { count: n })}
+                  max={MAX_DEVICE_LIMIT}
+                  onChange={setDDeviceLimit}
+                  disabled={planManaged}
+                />
+              }
             />
-            <p className="-mt-1.5 text-xs text-ink-muted">{t('userDetail.deviceLimitHint')}</p>
-            <CustomizableSelect
+            <SettingRow
               label={t('userDetail.speedLimit')}
-              data={speedData}
-              value={dSpeedLimit}
-              format={fmtSpeed}
-              units={[
-                { factor: 1, label: t('speed.unitKbit') },
-                { factor: 1000, label: t('speed.unitMbit') },
-              ]}
-              onChange={setDSpeedLimit}
-              disabled={planManaged}
+              hint={t('userDetail.speedLimitHint')}
+              field={
+                <CustomizableSelect
+                  data={speedData}
+                  value={dSpeedLimit}
+                  format={fmtSpeed}
+                  units={[
+                    { factor: 1, label: t('speed.unitKbit') },
+                    { factor: 1000, label: t('speed.unitMbit') },
+                  ]}
+                  onChange={setDSpeedLimit}
+                  disabled={planManaged}
+                />
+              }
             />
-            <p className="-mt-1.5 text-xs text-ink-muted">{t('userDetail.speedLimitHint')}</p>
-            <Select
+            <SettingRow
               label={t('usersPanel.autoReset')}
-              data={resetPeriods()}
-              value={dReset}
-              onChange={setDReset}
-              disabled={planManaged}
+              field={
+                <Select
+                  data={resetPeriods()}
+                  value={dReset}
+                  onChange={setDReset}
+                  disabled={planManaged}
+                />
+              }
             />
             {limitsDirty && (
-              <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
-                <Button size="sm" variant="light" color="gray" onClick={resetLimitDraft} disabled={savingLimits}>
-                  {t('common.cancel')}
-                </Button>
-                <Button size="sm" loading={savingLimits} onClick={saveLimitDraft}>
-                  {t('common.save')}
-                </Button>
-              </div>
+              <SettingRow
+                control={
+                  <span className="flex gap-2">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="gray"
+                      onClick={resetLimitDraft}
+                      disabled={savingLimits}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                    <Button size="xs" loading={savingLimits} onClick={saveLimitDraft}>
+                      {t('common.save')}
+                    </Button>
+                  </span>
+                }
+              />
             )}
           </Panel>
 
           {/* 6. The operator's own annotation of the account. */}
-          <Panel title={t('userDetail.noteAndTags')} pad>
+          <Panel title={t('userDetail.noteAndTags')}>
             <NoteAndTags user={user} onChanged={onChanged} />
           </Panel>
 
@@ -824,75 +916,88 @@ export function UserDetail({
           {allGroups.length > 0 && (
             <Panel
               title={t('groups.title')}
-              pad
-              bodyClassName="flex flex-col gap-2.5"
               aside={
-                <span className="text-xs text-ink-muted">
+                <span className="text-[11px] text-ink-muted">
                   {sel.size === 0
                     ? t('userDetail.allConnections')
                     : t('groups.nSelected', { count: sel.size })}
                 </span>
               }
             >
-              {selectedGroups.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedGroups.map((g) => (
-                    <GroupChip
-                      key={g.id}
-                      name={g.name}
-                      count={g.grants?.length ?? 0}
-                      state="on"
-                      onClick={() => toggleGroup(g.id, false)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-ink-muted">{t('userDetail.noGroups')}</p>
-              )}
+              <SettingRow>
+                {selectedGroups.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedGroups.map((g) => (
+                      <GroupChip
+                        key={g.id}
+                        name={g.name}
+                        count={g.grants?.length ?? 0}
+                        state="on"
+                        onClick={() => toggleGroup(g.id, false)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-ink-muted">{t('userDetail.noGroups')}</p>
+                )}
+              </SettingRow>
 
               {(availableGroups.length > 0 || groupQ) && (
-                <div className="flex flex-col gap-1.5 border-t border-gray-100 pt-2.5">
-                  <span className="text-xs text-ink-muted">{t('userDetail.addToGroup')}</span>
-                  {showGroupSearch && (
-                    <TextInput
-                      value={groupQuery}
-                      onChange={setGroupQuery}
-                      placeholder={t('userDetail.searchGroup')}
-                    />
-                  )}
-                  {availableGroups.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableGroups.map((g) => (
-                        <GroupChip
-                          key={g.id}
-                          name={g.name}
-                          count={g.grants?.length ?? 0}
-                          state="add"
-                          onClick={() => toggleGroup(g.id, true)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="px-0.5 text-xs text-ink-muted">{t('common.nothingFound')}</p>
-                  )}
-                </div>
+                <SettingRow label={t('userDetail.addToGroup')}>
+                  <div className="flex flex-col gap-1.5">
+                    {showGroupSearch && (
+                      <TextInput
+                        value={groupQuery}
+                        onChange={setGroupQuery}
+                        placeholder={t('userDetail.searchGroup')}
+                      />
+                    )}
+                    {availableGroups.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {availableGroups.map((g) => (
+                          <GroupChip
+                            key={g.id}
+                            name={g.name}
+                            count={g.grants?.length ?? 0}
+                            state="add"
+                            onClick={() => toggleGroup(g.id, true)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-ink-muted">{t('common.nothingFound')}</p>
+                    )}
+                  </div>
+                </SettingRow>
               )}
 
               {sel.size > 0 && selectedGrantCount === 0 && (
-                <p className="warning-tint rounded-lg px-2.5 py-1.5 text-xs text-warning">
-                  {t('userDetail.groupsGrantNothing')}
-                </p>
+                <SettingRow
+                  hint={
+                    <span className="text-warning">{t('userDetail.groupsGrantNothing')}</span>
+                  }
+                />
               )}
 
               {groupsDirty && (
-                <div className="flex justify-end gap-2 border-t border-gray-100 pt-2.5">
-                  <Button size="sm" variant="light" color="gray" onClick={resetGroups} disabled={savingGroups}>
-                    {t('common.cancel')}
-                  </Button>
-                  <Button size="sm" loading={savingGroups} onClick={applyGroups}>
-                    {t('common.apply')}
-                  </Button>
-                </div>
+                <SettingRow
+                  control={
+                    <span className="flex gap-2">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="gray"
+                        onClick={resetGroups}
+                        disabled={savingGroups}
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                      <Button size="xs" loading={savingGroups} onClick={applyGroups}>
+                        {t('common.apply')}
+                      </Button>
+                    </span>
+                  }
+                />
               )}
             </Panel>
           )}
@@ -907,71 +1012,73 @@ export function UserDetail({
             <Code block copy>{user.sub_url}</Code>
           </Panel>
 
-          <Panel title="Telegram" pad bodyClassName="flex flex-col gap-2">
+          <Panel title="Telegram">
             {user.telegram_linked ? (
               <>
-                <p className="text-xs text-success">{t('userDetail.botLinked')}</p>
+                <SettingRow
+                  label={t('userDetail.botLinked')}
+                  control={
+                    <span className="flex items-center gap-2">
+                      {/* A broadcast to one person. Shown only with a linked chat AND a
+                          running user bot — it is the bot that delivers, so without it
+                          the button could only ever produce an error. */}
+                      {userBotEnabled && (
+                        <IconButton
+                          title={t('userDetail.sendMessage')}
+                          onClick={() => setMsgOpen(true)}
+                        >
+                          <IconSend />
+                        </IconButton>
+                      )}
+                      <IconButton
+                        color="red"
+                        title={t('userDetail.unlink')}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: t('userDetail.unlinkTitle'),
+                            body: t('userDetail.unlinkBody'),
+                            confirmLabel: t('userDetail.unlink'),
+                            danger: true,
+                          })
+                          if (ok) unlinkUserTelegram(user.id).then(onChanged).catch(fail)
+                        }}
+                      >
+                        <IconClose size={16} />
+                      </IconButton>
+                    </span>
+                  }
+                />
                 {!!user.tg_chat_id && (
-                  <p className="text-xs text-ink-muted">
-                    Telegram ID: <Code copy>{String(user.tg_chat_id)}</Code>
-                  </p>
+                  <SettingRow
+                    label="Telegram ID"
+                    control={<Code copy>{String(user.tg_chat_id)}</Code>}
+                  />
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {/* A broadcast to one person. Shown only with a linked chat AND a
-                      running user bot — it is the bot that delivers, so without it the
-                      button could only ever produce an error. */}
-                  {userBotEnabled && (
-                    <Button size="xs" variant="outline" color="gray" onClick={() => setMsgOpen(true)}>
-                      {t('userDetail.sendMessage')}
-                    </Button>
-                  )}
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    color="gray"
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: t('userDetail.unlinkTitle'),
-                        body: t('userDetail.unlinkBody'),
-                        confirmLabel: t('userDetail.unlink'),
-                        danger: true,
-                      })
-                      if (ok) unlinkUserTelegram(user.id).then(onChanged).catch(fail)
-                    }}
-                  >
-                    {t('userDetail.unlinkTelegram')}
-                  </Button>
-                </div>
               </>
             ) : user.telegram_link ? (
-              <>
-                <p className="text-xs text-ink-muted">{t('userDetail.linkHint')}</p>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  color="gray"
-                  className="self-start"
-                  onClick={() =>
-                    genUserTelegramLink(user.id)
-                      .then((r) =>
-                        setTgLink({ url: r.deep_link, mins: Math.round(r.expires_sec / 60) }),
-                      )
-                      .catch(fail)
-                  }
-                >
-                  {t('userDetail.getLink')}
-                </Button>
-                {tgLink && (
-                  <>
-                    <Code block copy>{tgLink.url}</Code>
-                    <p className="text-xs text-ink-muted">
-                      {t('userDetail.linkNote', { mins: tgLink.mins })}
-                    </p>
-                  </>
-                )}
-              </>
+              <SettingRow
+                hint={
+                  tgLink ? t('userDetail.linkNote', { mins: tgLink.mins }) : t('userDetail.linkHint')
+                }
+                control={
+                  <IconButton
+                    title={t('userDetail.getLink')}
+                    onClick={() =>
+                      genUserTelegramLink(user.id)
+                        .then((r) =>
+                          setTgLink({ url: r.deep_link, mins: Math.round(r.expires_sec / 60) }),
+                        )
+                        .catch(fail)
+                    }
+                  >
+                    <IconKey />
+                  </IconButton>
+                }
+              >
+                {tgLink && <Code block copy>{tgLink.url}</Code>}
+              </SettingRow>
             ) : (
-              <p className="text-xs text-ink-muted">{t('userDetail.enableUserBot')}</p>
+              <SettingRow hint={t('userDetail.enableUserBot')} />
             )}
           </Panel>
 
@@ -995,60 +1102,6 @@ export function UserDetail({
             )}
           </Panel>
 
-          {/* 7. What is done to the account itself, rather than to its settings. */}
-          <div className="flex flex-wrap gap-2 pb-2">
-            <Button size="sm" variant="outline" color="gray" onClick={() => setRenaming(true)}>
-              {t('userDetail.rename')}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              color="gray"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: t('userDetail.rotateTitle'),
-                  body: t('userDetail.rotateBody'),
-                  confirmLabel: t('userDetail.rotateConfirm'),
-                  danger: true,
-                })
-                if (!ok) return
-                rotateSubToken(user.id)
-                  .then(() => {
-                    notifySuccess(t('userDetail.rotated'))
-                    onChanged()
-                  })
-                  .catch(fail)
-              }}
-            >
-              {t('userDetail.rotate')}
-            </Button>
-            <Button size="sm" variant="outline" color="gray" onClick={() => setEventsOpen(true)}>
-              {t('events.title')}
-            </Button>
-            <Button
-              size="sm"
-              variant="light"
-              color="red"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: t('userDetail.deleteTitle'),
-                  body: t('userDetail.deleteBody', { name: user.name }),
-                  confirmLabel: t('common.delete'),
-                  danger: true,
-                })
-                if (ok) {
-                  deleteUser(user.id)
-                    .then(() => {
-                      onChanged()
-                      onClose()
-                    })
-                    .catch(fail)
-                }
-              }}
-            >
-              {t('userDetail.deleteUser')}
-            </Button>
-          </div>
         </div>
       )}
     </Drawer>
@@ -1218,40 +1271,46 @@ function NoteAndTags({ user, onChanged }: { user: User; onChanged: () => void })
     })
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <TagsInput
+    <>
+      <SettingRow
         label={t('userDetail.tags')}
-        value={tags}
-        onChange={saveTags}
-        options={known.map((k) => ({ value: k.tag, label: k.tag }))}
         hint={t('userDetail.tagsHint', { maxLen: TAG_MAX_LEN })}
-      />
-      <div>
+      >
+        <TagsInput
+          value={tags}
+          onChange={saveTags}
+          options={known.map((k) => ({ value: k.tag, label: k.tag }))}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t('userDetail.note')}
+        control={
+          noteDirty ? (
+            <span className="flex gap-2">
+              <Button
+                size="xs"
+                variant="light"
+                color="gray"
+                disabled={busy}
+                onClick={() => setNote(saved)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button size="xs" loading={busy} onClick={saveNote}>
+                {t('common.save')}
+              </Button>
+            </span>
+          ) : undefined
+        }
+      >
         <Textarea
-          label={t('userDetail.note')}
           value={note}
           onChange={setNote}
           rows={2}
           placeholder={t('userDetail.notePlaceholder')}
         />
-        {noteDirty && (
-          <div className="mt-1.5 flex justify-end gap-2">
-            <Button
-              size="sm"
-              variant="light"
-              color="gray"
-              onClick={() => setNote(saved)}
-              disabled={busy}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button size="sm" loading={busy} onClick={saveNote}>
-              {t('common.save')}
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
+      </SettingRow>
+    </>
   )
 }
 

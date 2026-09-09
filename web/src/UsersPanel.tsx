@@ -5,9 +5,12 @@ import {
   type BulkAction,
   bulkUsers,
   createUser,
+  getBilling,
   listUsers,
   setResetPeriod,
   setUserEnabled,
+  setUserPlan,
+  type TariffPlan,
   type User,
 } from "./api";
 import { useAction, useShowMore } from "./hooks";
@@ -989,18 +992,45 @@ function AddUser({
   const [limitGb, setLimitGb] = useState("0");
   const [resetPeriod, setResetPeriodState] = useState("none");
   const [expDate, setExpDate] = useState("");
+  // "0" is manual — the limits below. Any other value is a tariff, which owns them.
+  const [plan, setPlan] = useState("0");
+  const [plans, setPlans] = useState<TariffPlan[]>([]);
+  const [billingOn, setBillingOn] = useState(false);
   const [created, setCreated] = useState<User | null>(null);
   const { t } = useTranslation();
   const { busy, run } = useAction();
   const { copied, copy } = useCopy();
 
+  // The tariff list is read when the dialog opens, not with the page: most sessions
+  // never open it, and an install with billing off has nothing to show here at all.
+  useEffect(() => {
+    if (!opened) return;
+    let alive = true;
+    getBilling()
+      .then((b) => {
+        if (!alive) return;
+        setBillingOn(!!b.enabled);
+        setPlans((b.plans ?? []).filter((p) => p.enabled));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [opened]);
+
+  const onPlan = plan !== "0";
+
   const submit = async () => {
     if (!name.trim()) return;
     run(async () => {
-      const dl = gbToBytes(Number(limitGb) || 0);
-      const ea = dateToUnixEndOfDay(expDate);
+      // Under a tariff the account is created bare: applying the plan writes the
+      // quota, the device cap and the reset cycle itself (planWriteFor), so sending
+      // hand-set limits first would only be overwritten a moment later.
+      const dl = onPlan ? 0 : gbToBytes(Number(limitGb) || 0);
+      const ea = onPlan ? 0 : dateToUnixEndOfDay(expDate);
       const u = await createUser(name.trim(), dl, ea);
-      if (resetPeriod !== "none") await setResetPeriod(u.id, resetPeriod);
+      if (onPlan) await setUserPlan(u.id, Number(plan));
+      else if (resetPeriod !== "none") await setResetPeriod(u.id, resetPeriod);
       setCreated(u);
     });
   };
@@ -1010,6 +1040,7 @@ function AddUser({
     setLimitGb("0");
     setResetPeriodState("none");
     setExpDate("");
+    setPlan("0");
     setCreated(null);
     onClose();
   };
@@ -1029,26 +1060,46 @@ function AddUser({
             onChange={setName}
             autoFocus
           />
-          <div className="grid grid-cols-2 gap-3">
-            <DatePicker
-              label={t("usersPanel.validUntil")}
-              value={expDate}
-              onChange={setExpDate}
-              min={unixToLocalDate(Math.floor(Date.now() / 1000))}
-            />
+          {/* A tariff instead of the three fields below it: it carries the expiry,
+              the quota and the reset cycle, so showing them under one would offer
+              edits the plan overwrites on the next line of the same save. */}
+          {billingOn && plans.length > 0 && (
             <Select
-              label={t("usersPanel.trafficLimit")}
-              data={quotaOptions()}
-              value={limitGb}
-              onChange={setLimitGb}
+              label={t("userDetail.plan")}
+              data={[
+                { value: "0", label: t("userDetail.manual") },
+                ...plans.map((p) => ({ value: String(p.id), label: p.name })),
+              ]}
+              value={plan}
+              onChange={setPlan}
             />
-          </div>
-          <Select
-            label={t("usersPanel.autoReset")}
-            data={resetPeriods()}
-            value={resetPeriod}
-            onChange={setResetPeriodState}
-          />
+          )}
+          {onPlan ? (
+            <p className="text-xs text-ink-muted">{t("usersPanel.planSetsLimits")}</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <DatePicker
+                  label={t("usersPanel.validUntil")}
+                  value={expDate}
+                  onChange={setExpDate}
+                  min={unixToLocalDate(Math.floor(Date.now() / 1000))}
+                />
+                <Select
+                  label={t("usersPanel.trafficLimit")}
+                  data={quotaOptions()}
+                  value={limitGb}
+                  onChange={setLimitGb}
+                />
+              </div>
+              <Select
+                label={t("usersPanel.autoReset")}
+                data={resetPeriods()}
+                value={resetPeriod}
+                onChange={setResetPeriodState}
+              />
+            </>
+          )}
           <Button loading={busy} onClick={submit}>
             {t("usersPanel.createAndShowLink")}
           </Button>
