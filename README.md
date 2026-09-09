@@ -587,7 +587,7 @@ Checks run against addresses, not domains, and that isn't a simplification. Mode
 resolve DNS outside the tunnel and encrypt SNI (ECH), so all that reaches the server is a bare
 IP.
 
-Matches are kept for **14 days** — enough to handle a complaint.
+Matches are kept for **30 days** — enough to handle a complaint.
 
 **Where clients may connect from** (*Settings → General*). A country rule — only these
 countries, or everywhere except these — checked against what the panel already records for every

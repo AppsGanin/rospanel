@@ -5,20 +5,19 @@ import { useShowMore } from './hooks'
 import { currentLang } from './i18n'
 import { cn, EmptyState, Mono, ShowMore } from './ui'
 
-// Mirrors model.AbuseRetentionDays. Deliberately shorter than every other window in
-// the panel — this is the one table that names what a person reached, not merely that
-// they connected — so the two reports that sit side by side on the statistics page do
-// NOT cover the same days, and each says which.
-export const ABUSE_WINDOW_DAYS = 14
+// Mirrors model.AbuseRetentionDays. Stated on the panel because it is not the period
+// the page's own selector drives — the same reason the connection map states its own,
+// which this now matches.
+export const ABUSE_WINDOW_DAYS = 30
 
 // AbuseList shows destinations that matched a threat, piracy or gambling blocklist
 // — for the whole fleet, or for one user when userId is given.
 //
 // Unlike TopSites this IS stored, which is the point: it answers "is this account a
 // problem" days after the fact, when an abuse complaint arrives. It is also the
-// most sensitive thing the panel holds, so the window is deliberately short (see
-// model.AbuseRetentionDays) and only matches are ever written — ordinary browsing
-// never reaches the database.
+// most sensitive thing the panel holds, so it is kept no longer than it is useful for
+// (see model.AbuseRetentionDays) and only matches are ever written — ordinary
+// browsing never reaches the database.
 //
 // A match is a signal, not a verdict. Feeds carry false positives, an ad-adjacent
 // CDN can land in a threat list, and malware hits usually mean the user's device is

@@ -69,11 +69,17 @@ const MaxShapedIPsPerUser = 16
 
 // AbuseRetentionDays is how long a blocklist match is kept.
 //
-// Short on purpose. This is the most sensitive data the panel holds — it names what
-// a person reached, not merely that they connected — and its job is to answer "is
-// this account a problem right now", which two weeks covers. An abuse complaint
-// that arrives later is answered from the complaint's own timestamp, not from here.
-const AbuseRetentionDays = 14
+// This is the most sensitive data the panel holds — it names what a person reached,
+// not merely that they connected — so it is kept no longer than it is useful for. A
+// month is what the operator asked for: it matches ConnectionRetentionDays, so the
+// two reports that sit side by side on the statistics page cover the same days
+// instead of quietly disagreeing about what "recent" means. An abuse complaint that
+// arrives later than that is answered from the complaint's own timestamp, not here.
+//
+// The two windows are separate constants on purpose: they are separate decisions
+// that happen to agree, and shortening this one must not need a reason about
+// connections.
+const AbuseRetentionDays = 30
 
 // TrafficDailyRetentionDays is how long per-day traffic history is kept. It sits
 // well above the journals' 30/90 days because this is reporting data rather than a
