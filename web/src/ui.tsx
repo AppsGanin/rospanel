@@ -2292,6 +2292,7 @@ export function Drawer({
   title,
   subtitle,
   toolbar,
+  footer,
   children,
   full,
   wide,
@@ -2304,6 +2305,10 @@ export function Drawer({
   subtitle?: ReactNode;
   // A strip pinned under the header, above the scrolling body: a tab bar.
   toolbar?: ReactNode;
+  // Pinned to the bottom edge, out of the scroll: the actions that finish the job.
+  // A drawer is full-height, so buttons left in the body scroll away under a long
+  // list — which is the one place they must never be.
+  footer?: ReactNode;
   children: ReactNode;
   full?: boolean;
   // wide is for a drawer that holds a form rather than a card: the server settings
@@ -2348,6 +2353,16 @@ export function Drawer({
           <div className="shrink-0 border-b border-brand-600/10 px-3.5">{toolbar}</div>
         )}
         <div className="grow overflow-y-auto p-4">{children}</div>
+        {footer && (
+          <div
+            className="shrink-0 border-t border-gray-100 px-4 py-3"
+            style={{
+              paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))",
+            }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

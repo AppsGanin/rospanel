@@ -20,19 +20,19 @@ import { useAction } from "./hooks";
 import i18n, { td, currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
-  CustomizableSelect,
   Button,
   CenterLoader,
   Checkbox,
   cn,
   Code,
+  CustomizableSelect,
+  Drawer,
   EmptyState,
   IconButton,
   IconPencil,
   IconPlus,
   IconTrash,
   MICRO,
-  Modal,
   Mono,
   Panel,
   SaveBar,
@@ -41,8 +41,8 @@ import {
   Switch,
   Textarea,
   TextInput,
-  useWideBox,
   useConfirm,
+  useWideBox,
 } from "./ui";
 
 // ProviderDraft is one provider's editable state (mirrors PaymentField kinds:
@@ -886,11 +886,29 @@ export function BillingPanel() {
 
       </div>
 
-      <Modal
+      {/* A tariff is a form of a dozen fields plus a migration block — a side drawer
+          holds it at full height, with Save pinned where it can always be reached. */}
+      <Drawer
         open={!!editor}
         onClose={() => setEditor(null)}
         title={editor?.id ? t("bill.planOf", { name: editor.name }) : t("bill.newPlan")}
-        size="md"
+        footer={
+          editor ? (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="light"
+                color="gray"
+                size="sm"
+                onClick={() => setEditor(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button size="sm" onClick={savePlan} loading={busy}>
+                {t(editor.id ? "common.save" : "common.create")}
+              </Button>
+            </div>
+          ) : undefined
+        }
       >
         {editor && (
           <div className="flex flex-col gap-4">
@@ -906,9 +924,7 @@ export function BillingPanel() {
                 <p className="text-sm font-semibold text-accent">
                   {t("bill.onPlanN", { count: planUsers[String(editor.id)] })}
                 </p>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {t("bill.migrateHint")}
-                </p>
+                <p className="mt-0.5 text-xs text-ink-muted">{t("bill.migrateHint")}</p>
                 <Select
                   className="mt-2"
                   label={t("bill.migrateTo")}
@@ -923,6 +939,7 @@ export function BillingPanel() {
                 />
                 <Button
                   className="mt-2"
+                  size="sm"
                   onClick={migratePlan}
                   disabled={!migrateTo || busy}
                   loading={busy}
@@ -931,17 +948,9 @@ export function BillingPanel() {
                 </Button>
               </div>
             )}
-            <div className="flex justify-end gap-2">
-              <Button variant="subtle" onClick={() => setEditor(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button onClick={savePlan} loading={busy}>
-                {t(editor.id ? "common.save" : "common.create")}
-              </Button>
-            </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
     </>
   );
 }

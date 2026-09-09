@@ -251,6 +251,65 @@ func TestAuditNoRowForUnchangedSpeed(t *testing.T) {
 	}
 }
 
+// The panel, the API and the bots all post whole records back, so a save that
+// changed nothing must leave the journal — and the user — untouched.
+func TestAuditNoRowForUnchangedRecord(t *testing.T) {
+	m := bulkTestManager(t)
+	ctx := adminCtx()
+	u, _ := m.CreateUser(ctx, "Ваня", 0, 0)
+
+	if err := m.RenameUser(ctx, u.ID, "Ваня"); err != nil {
+		t.Fatalf("rename to the same name: %v", err)
+	}
+	if hasAction(trail(t, m, u.ID), model.EventUserRenamed) {
+		t.Error("renaming to the same name filed an audit row")
+	}
+
+	if err := m.SetUserLimits(ctx, u.ID, 0, 0, 0); err != nil { // what CreateUser set
+		t.Fatalf("re-save limits: %v", err)
+	}
+	if hasAction(trail(t, m, u.ID), model.EventUserLimits) {
+		t.Error("re-saving identical limits filed an audit row")
+	}
+
+	// The reset period is left alone entirely, anchor included: re-saving it must not
+	// move the day the user's quota rolls over.
+	if err := m.SetResetPeriod(ctx, u.ID, "monthly"); err != nil {
+		t.Fatalf("set period: %v", err)
+	}
+	before, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetResetPeriod(ctx, u.ID, "monthly"); err != nil {
+		t.Fatalf("re-save period: %v", err)
+	}
+	after, err := m.store.GetUser(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LastResetAt != before.LastResetAt {
+		t.Errorf("re-saving the period moved the cycle anchor: %d → %d", before.LastResetAt, after.LastResetAt)
+	}
+	var periods int
+	for _, e := range trail(t, m, u.ID) {
+		if e.Action == model.EventResetPeriod {
+			periods++
+		}
+	}
+	if periods != 1 {
+		t.Errorf("got %d reset-period rows, want 1", periods)
+	}
+
+	// A real edit still files its row.
+	if err := m.SetUserLimits(ctx, u.ID, 5<<30, 0, 0); err != nil {
+		t.Fatalf("raise the quota: %v", err)
+	}
+	if !hasAction(trail(t, m, u.ID), model.EventUserLimits) {
+		t.Error("a real limits change filed no audit row")
+	}
+}
+
 // A bulk extend must carry the limits it did NOT touch: the row renders as a full
 // "limits changed" statement, and omitting the quota made it read "unlimited".
 func TestAuditBulkExtendKeepsLimits(t *testing.T) {

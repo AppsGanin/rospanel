@@ -20,6 +20,7 @@ import {
   Button,
   CenterLoader,
   cn,
+  Drawer,
   EmptyState,
   IconButton,
   IconCheck,
@@ -211,25 +212,17 @@ export function GroupsPanel() {
         )}
       </Panel>
 
-      <Modal
+      {/* A side drawer, like the server settings: two tables that grow with the
+          install do not belong in a box that grows with them. */}
+      <Drawer
         open={!!editing}
         onClose={() => setEditing(null)}
+        wide
         title={editing?.id ? t("groups.group") : t("groups.newGroup")}
-        size="lg"
-      >
-        {editing && (
-          <div className="flex flex-col gap-3.5">
-            <TextInput
-              label={t("groups.name")}
-              value={editing.name}
-              onChange={(v) => setEditing({ ...editing, name: v })}
-              placeholder={t("groups.namePlaceholder")}
-            />
-
-            {/* Two lists, one dialog: what the group hands out, and who is in it.
-                Tabs rather than one long scroll — the buttons at the bottom were
-                pushed out of reach by whichever list happened to be long. */}
-            <div className="-mx-5 flex gap-0.5 border-b border-brand-600/10 px-5">
+        subtitle={editing?.id ? editing.name : undefined}
+        toolbar={
+          editing ? (
+            <div className="flex gap-0.5">
               {(
                 [
                   ["grants", t("groups.tabGrants"), editing.grants.size],
@@ -252,7 +245,40 @@ export function GroupsPanel() {
                 </button>
               ))}
             </div>
-
+          ) : undefined
+        }
+        footer={
+          editing ? (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="light"
+                color="gray"
+                size="sm"
+                onClick={() => setEditing(null)}
+                disabled={busy}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                size="sm"
+                onClick={save}
+                loading={busy}
+                disabled={!editing.name.trim()}
+              >
+                {t("common.save")}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {editing && (
+          <div className="flex flex-col gap-3.5">
+            <TextInput
+              label={t("groups.name")}
+              value={editing.name}
+              onChange={(v) => setEditing({ ...editing, name: v })}
+              placeholder={t("groups.namePlaceholder")}
+            />
             {tab === "grants" ? (
               <GrantsTable
                 targets={targets}
@@ -266,18 +292,9 @@ export function GroupsPanel() {
                 onChange={(m) => setEditing({ ...editing, members: m })}
               />
             )}
-
-            <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
-              <Button variant="light" color="gray" onClick={() => setEditing(null)} disabled={busy}>
-                {t("common.cancel")}
-              </Button>
-              <Button onClick={save} loading={busy} disabled={!editing.name.trim()}>
-                {t("common.save")}
-              </Button>
-            </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
 
       <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title={t("groups.deleteTitle")}>
         <div className="flex flex-col gap-3">
