@@ -2354,6 +2354,7 @@ const en: Dict = {
     laneN: "Lane {{n}}",
     catchAllNote: "This lane is last: all unmatched traffic already lands in it, so its own rules change nothing. Move it up to take traffic from the lane above.",
     laneOff: "off",
+    unsaved: "unsaved",
     laneOn: "on",
     nProxies: "{{count}} proxies",
     noProxies: "no proxies",

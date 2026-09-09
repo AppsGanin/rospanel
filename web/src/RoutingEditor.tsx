@@ -239,16 +239,21 @@ function FileRow({
   note?: ReactNode;
 }) {
   const { t } = useTranslation();
+  // The size and the timestamp go UNDER the file name, not beside it: together they
+  // are ~230px of mono, which on a phone leaves the name a couple of characters and
+  // the two collide. They describe the file rather than answer a column.
   return (
     <SettingRow
       label={<Mono className="break-all">{label ?? file.name}</Mono>}
-      hint={note}
-      control={
-        <Mono className="text-[11px] text-ink-muted">
-          {file.present
-            ? `${fmtBytes(file.size)} · ${t("route.updatedAt", { when: fmtWhen(file.modified_at) })}`
-            : t("route.noFile")}
-        </Mono>
+      hint={
+        <>
+          <Mono className="text-[11px]">
+            {file.present
+              ? `${fmtBytes(file.size)} · ${t("route.updatedAt", { when: fmtWhen(file.modified_at) })}`
+              : t("route.noFile")}
+          </Mono>
+          {note && <span className="mt-0.5 block">{note}</span>}
+        </>
       }
     />
   );

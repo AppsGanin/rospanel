@@ -974,6 +974,10 @@ function useServerRouting(init: {
     setOperaEnabled,
     operaCountry,
     setOperaCountry,
+    // What the server currently has, as against the draft above: a status word must
+    // describe the running egress, not a switch nobody has saved yet.
+    savedWarp: base.warp,
+    savedOpera: base.opera,
     effective: () => effectiveCfg(cfg, laneSrc),
     dirty,
     // revert restores the editor to the last-saved snapshot.
@@ -1107,16 +1111,23 @@ function NodeSettingsDialog({
     name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || proxyDirty || plDirty;
   const dnsDirty = dns !== dnsBase;
 
-  // Status badges: WARP registration is known from the node's report; Opera runs
-  // remotely, so the panel only shows enabled/disabled.
-  const warpBadge: StatusBadge = !r.warpEnabled
-    ? { label: t("conn.off"), color: "gray" }
-    : node.warp_registered
-      ? { label: t("egress.alive"), color: "green" }
-      : { label: t("nodes.willRegister"), color: "orange" };
-  const operaBadge: StatusBadge = r.operaEnabled
-    ? { label: t("nodes.on"), color: "green" }
-    : { label: t("conn.off"), color: "gray" };
+  // Status words describe the SAVED egress: WARP registration is known from the
+  // node's report, Opera runs remotely so the panel only knows on/off. A flipped but
+  // unsaved switch says so rather than claiming the lane is already up.
+  const warpBadge: StatusBadge =
+    r.warpEnabled !== r.savedWarp
+      ? { label: t("route.unsaved"), color: "orange" }
+      : !r.savedWarp
+        ? { label: t("conn.off"), color: "gray" }
+        : node.warp_registered
+          ? { label: t("egress.alive"), color: "green" }
+          : { label: t("nodes.willRegister"), color: "orange" };
+  const operaBadge: StatusBadge =
+    r.operaEnabled !== r.savedOpera
+      ? { label: t("route.unsaved"), color: "orange" }
+      : r.savedOpera
+        ? { label: t("nodes.on"), color: "green" }
+        : { label: t("conn.off"), color: "gray" };
 
   // Each tab saves on its own (like Connections/Geo/Domain) and stays open; onRefresh
   // updates the background list. General persists name/decoy, Routing the routing +
@@ -1485,17 +1496,20 @@ function MasterSettingsDialog({
     }
   };
 
-  const warpBadge: StatusBadge = !r.warpEnabled
-    ? { label: t("conn.off"), color: "gray" }
-    : warpRegistered
-      ? { label: t("egress.alive"), color: "green" }
-      : { label: t("nodes.notRegistered"), color: "orange" };
-  const operaBadge = helperStatus(
-    r.operaEnabled,
-    operaRunning,
-    operaAlive,
-    "",
-  ) as StatusBadge;
+  // Same rule as the node dialog: the word follows what is saved, and an unsaved
+  // switch says so.
+  const warpBadge: StatusBadge =
+    r.warpEnabled !== r.savedWarp
+      ? { label: t("route.unsaved"), color: "orange" }
+      : !r.savedWarp
+        ? { label: t("conn.off"), color: "gray" }
+        : warpRegistered
+          ? { label: t("egress.alive"), color: "green" }
+          : { label: t("nodes.notRegistered"), color: "orange" };
+  const operaBadge: StatusBadge =
+    r.operaEnabled !== r.savedOpera
+      ? { label: t("route.unsaved"), color: "orange" }
+      : (helperStatus(r.savedOpera, operaRunning, operaAlive, "") as StatusBadge);
 
   // Each tab saves on its own (like Connections/Geo/Domain) and stays open; onRefresh
   // updates the background list. These map to the panel's global settings behind the
