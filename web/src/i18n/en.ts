@@ -1606,6 +1606,7 @@ const en: Dict = {
   // and not there.
 
   health: {
+    panelUpdateHint: "Update the panel itself — the node already runs a newer version.",
     awgHint:
       "The lane is switched on but its tunnel is not running, so nobody can connect through it — while the panel keeps handing out keys and configs for it. Check this server's log and that the AmneziaWG port is open.",
     awg: "AmneziaWG",
