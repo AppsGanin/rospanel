@@ -6,6 +6,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/updater"
 	"github.com/AppsGanin/rospanel/internal/version"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
@@ -275,8 +276,15 @@ func nodeAgentHealth(n *model.Node) HealthCheck {
 			DetailKey: "health.agentUnknown"}
 	}
 	if n.NodeVersion != version.Version {
+		// Which of the two is behind decides the advice: a node ahead of the panel is
+		// updated by updating the panel, and telling the operator to "update the node"
+		// there would ask for a downgrade.
+		hint := "health.nodeUpdateHint"
+		if updater.IsNewer(n.NodeVersion, version.Version) {
+			hint = "health.panelUpdateHint"
+		}
 		return HealthCheck{Key: "agent", LabelKey: label, Status: healthWarn,
-			DetailKey: "health.agentStale", HintKey: "health.nodeUpdateHint",
+			DetailKey: "health.agentStale", HintKey: hint,
 			Args: map[string]any{"version": n.NodeVersion, "panel": version.Version}}
 	}
 	return HealthCheck{Key: "agent", LabelKey: label, Status: healthOK,

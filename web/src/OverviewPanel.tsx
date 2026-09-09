@@ -53,7 +53,10 @@ const ABUSE_DAYS = 14;
 // the SSE stream; re-reading a whole user list every two seconds to find out that
 // nothing expires today would be a query storm for a figure that cannot change.
 const SLOW_POLL = 5 * 60_000;
-const NODE_POLL = 30_000;
+// The fleet strip follows the servers page rather than lagging a minute behind it:
+// a node dropping out is what the dashboard exists to show. Still bounded by the
+// node's own 30–60s report cadence.
+const NODE_POLL = 12_000;
 
 /* ------------------------------------------------------------------ pieces */
 

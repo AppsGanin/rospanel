@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// A hold pinned to exactly 45s turns the panel↔node link into a flat line at one
+// A hold pinned to a single value turns the panel↔node link into a flat line at one
 // frequency — the payload is opaque but the schedule is not, and nothing a person
 // does looks like that. The hold must stay inside the agent's 90s syncTimeout at
 // the top and stay useful at the bottom.

@@ -1730,12 +1730,38 @@ function MasterSettingsDialog({
   );
 }
 
+// cmpVersion orders two release strings the way semver does: the numbers first,
+// left to right, then the pre-release suffix — "2.14.0-rc1" comes before the
+// "2.14.0" it precedes, and a part that is missing counts as zero.
+function cmpVersion(a: string, b: string): number {
+  const parse = (v: string) => {
+    const [core, ...pre] = v.replace(/^v/, "").split("-");
+    return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre: pre.join("-") };
+  };
+  const x = parse(a);
+  const y = parse(b);
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length); i++) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  if (x.pre === y.pre) return 0;
+  if (!x.pre) return 1;
+  if (!y.pre) return -1;
+  return x.pre < y.pre ? -1 : 1;
+}
+
 // NodeCard renders one node with its status, traffic, protocol toggles and decoy.
-// agentStale is "this node runs an older build of the agent than the panel". Not the
+// agentSkew says which way this node's agent build differs from the panel's own
+// version: "older" is the one "Update all" fixes, "newer" happens when a server was
+// updated by hand ahead of the panel and it is the panel that is behind. Not the
 // same question as NodeView.version_skew, which is about the Xray build the panel
 // pins — a node can be current on one and behind on the other.
-function agentStale(node: NodeView, panelVersion: string): boolean {
-  return !node.is_local && !!node.node_version && !!panelVersion && node.node_version !== panelVersion;
+type AgentSkew = "" | "older" | "newer";
+
+function agentSkew(node: NodeView, panelVersion: string): AgentSkew {
+  if (node.is_local || !node.node_version || !panelVersion) return "";
+  const d = cmpVersion(node.node_version, panelVersion);
+  return d < 0 ? "older" : d > 0 ? "newer" : "";
 }
 
 function NodeCard({
@@ -1869,6 +1895,7 @@ function NodeCard({
   // The line under the address: whether we are hearing from it, and what it runs.
   // The master answers for itself, so it has no "last seen" to report.
   const version = node.is_local ? panelVersion : node.node_version;
+  const skew = agentSkew(node, panelVersion);
   // The line under the address: how the server is, and when we last heard it say so.
   // The master answers for itself — there is no "last seen" for the machine you are
   // talking to, and its Xray version is a click away in the config it serves.
@@ -1900,9 +1927,13 @@ function NodeCard({
           </Badge>
         )}
         <RestartChip node={node} />
-        {agentStale(node, panelVersion) && (
-          <Badge size="xs" color="orange" className="shrink-0 max-sm:hidden">
-            {t("nodes.agentOutdated")}
+        {skew && (
+          <Badge
+            size="xs"
+            color={skew === "older" ? "orange" : "gray"}
+            className="shrink-0 max-sm:hidden"
+          >
+            {t(skew === "older" ? "nodes.agentOutdated" : "nodes.agentAhead")}
           </Badge>
         )}
 
@@ -2234,14 +2265,23 @@ export function NodesPanel() {
   // refresh keeping online/offline badges current, and it stays lazy.
   const showingRestart = !!nodes?.some((n) => n.xray_restart);
   useEffect(() => {
-    const t = setInterval(load, showingRestart ? 2000 : 15000);
+    // 8s while the page is open. A node's own report lands every 30–60s (the panel
+    // holds its long-poll that long), so this cannot make node data fresher than the
+    // node makes it — but everything the PANEL knows already, an enable, a queued
+    // restart, an agent version after an update, shows up within a tick instead of
+    // sitting on screen stale for a quarter of a minute.
+    const t = setInterval(load, showingRestart ? 2000 : 8000);
     return () => clearInterval(t);
   }, [showingRestart]);
 
   if (nodes === null) return <CenterLoader />;
 
   const remoteCount = nodes.filter((n) => !n.is_local).length;
-  const anyStale = nodes.some((n) => n.online && agentStale(n, panelVersion));
+  // Two different problems, two different fixes: nodes behind the panel are what
+  // "Update all" is for, while a node ahead of the panel means the panel is the
+  // one to update — telling the operator to pull those "up" would be backwards.
+  const anyBehind = nodes.some((n) => n.online && agentSkew(n, panelVersion) === "older");
+  const anyAhead = nodes.some((n) => n.online && agentSkew(n, panelVersion) === "newer");
 
   const updateAll = async () => {
     try {
@@ -2260,14 +2300,20 @@ export function NodesPanel() {
         </Button>
         {remoteCount > 0 && (
           <Button size="sm" variant="outline" color="gray" onClick={updateAll}>
-            {t("nodes.updateAll")}{anyStale ? " ⚠" : ""}
+            {t("nodes.updateAll")}{anyBehind ? " ⚠" : ""}
           </Button>
         )}
       </div>
 
-      {anyStale && (
+      {anyBehind && (
         <p className="accent-tint rounded-lg px-3 py-2 text-xs text-accent">
           {t("nodes.someAgentsOutdated")}
+        </p>
+      )}
+
+      {anyAhead && (
+        <p className="accent-tint rounded-lg px-3 py-2 text-xs text-accent">
+          {t("nodes.someAgentsAhead")}
         </p>
       )}
 

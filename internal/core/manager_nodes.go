@@ -1063,7 +1063,7 @@ const (
 
 const (
 	// nodeRestartWait is how long an unconfirmed request stays pending. It covers the
-	// whole round trip — deliver on the node's poll (held up to 45s), bounce Xray,
+	// whole round trip — deliver on the node's poll (held up to 27s), bounce Xray,
 	// report the new start time on the next sync — with room to spare.
 	//
 	// Giving up matters as much as waiting: a node that is offline, or whose Xray
@@ -1688,7 +1688,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	ack := req.ReportID
 	if req.ReportID > 0 {
 		// One commit for the node's whole batch, watermark included. Written per user
-		// this was three fsyncs each on the panel's single connection, every 45s, per
+		// this was three fsyncs each on the panel's single connection, every 20s, per
 		// node — the last write path whose cost still scaled with the user count.
 		today := now.In(m.loc()).Format("2006-01-02")
 		// The node's quota coefficient: real bytes go to the per-node stats, scaled

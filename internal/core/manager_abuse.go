@@ -44,7 +44,7 @@ const (
 	// operator is told. One hit is noise — an ad-adjacent CDN, a mistyped domain;
 	// a pattern is not.
 	abuseAlertMin = 20
-	// maxAbuseCount clamps one node-reported match count. A node syncs every ~45s, so
+	// maxAbuseCount clamps one node-reported match count. A node syncs every ~20s, so
 	// a real count is far below this; the clamp stops a hostile count from overflowing
 	// the int64 rollup negative.
 	maxAbuseCount = 1 << 20

@@ -47,7 +47,7 @@ import (
 )
 
 const (
-	// syncTimeout bounds one long-poll: the panel holds ≤45s, so 90s leaves ample
+	// syncTimeout bounds one long-poll: the panel holds ≤27s, so 90s leaves ample
 	// headroom for the round trip before we consider the request stuck.
 	syncTimeout = 90 * time.Second
 	// backoffMin/Max bound the reconnect backoff when the panel is unreachable.
@@ -77,12 +77,13 @@ const (
 	syncFailWindow = time.Hour
 	// minHeldPoll is how long a long-poll must have been in flight for a poll-cut
 	// (EOF/GOAWAY/reset) to count as the panel merely recycling a HELD request rather
-	// than an actual failure. The panel holds a no-change poll 30–60s, so a benign-
+	// than an actual failure. The panel holds a no-change poll 13–27s, so a benign-
 	// looking error that returns well inside that (well under this threshold) means the
 	// request never landed — the panel process is down while its Xray :443 stays up, or
 	// a middlebox reset the connection — and must escalate the backoff, not re-poll at
-	// the floor. Kept comfortably below the 30s minimum hold.
-	minHeldPoll = 20 * time.Second
+	// the floor. Kept comfortably below the 13s minimum hold: this constant follows
+	// nodeSyncHoldSec/Jitter on the panel and must be lowered with them.
+	minHeldPoll = 10 * time.Second
 )
 
 // jitterPct is how far a recurring interval is spread around its nominal value.
@@ -408,7 +409,7 @@ func geoStale(dir string, maxAge time.Duration) bool {
 
 // syncTransport builds the transport for the node's long-poll. It forces HTTP/1.1.
 //
-// The sync is a 30-60s HELD request, reached through the panel's :443 — which is Xray
+// The sync is a 13-27s HELD request, reached through the panel's :443 — which is Xray
 // (VLESS-Vision), with the panel served behind its fallback. Over HTTP/2 that path
 // recycles the connection with a GOAWAY before the hold completes, so every poll ends
 // in "unexpected EOF": the node then treats each as a failure, backs off to the 60s
@@ -479,7 +480,7 @@ type siteKey struct {
 const (
 	// sitesMax bounds the destination buffer between syncs. Larger than the conns
 	// bound because it is keyed per host rather than per source IP, and a sync is
-	// only ~45s apart.
+	// only ~20s apart.
 	sitesMax = 32768
 	// sitesPerUser is how many hosts per user survive into the sync request. The
 	// panel only ever renders a top-N, so shipping the long tail would cost payload

@@ -931,6 +931,28 @@ function AnchoredPopover({
   )
 }
 
+// popoverDrop places a list panel whose height the contents decide. It hangs under
+// the trigger while the list fits there, and flips above it when the trigger sits
+// near the bottom edge — which on a phone is every field of a sheet. Either way the
+// panel is capped to the room on the side it took, so a long list scrolls inside
+// the screen instead of running off it.
+const DROP_MIN = 120
+function popoverDrop(rect: DOMRect, want: number, gutter = 8, gap = 4) {
+  const below = window.innerHeight - rect.bottom - gap - gutter
+  const above = rect.top - gap - gutter
+  const up = below < Math.min(want, above)
+  const maxHeight = Math.min(want, Math.max(up ? above : below, DROP_MIN))
+  // Flipped, the panel hangs from its bottom edge rather than a computed top: the
+  // list is usually shorter than its cap — a search box shrinks it further — and a
+  // top-anchored panel would float away from the field it belongs to.
+  // The clamps only bite when neither side has DROP_MIN to give: the panel then
+  // overlaps its trigger rather than leaving the viewport.
+  const style: { top?: number; bottom?: number } = up
+    ? { bottom: Math.max(gutter, window.innerHeight - rect.top + gap) }
+    : { top: Math.max(gutter, Math.min(rect.bottom + gap, window.innerHeight - gutter - maxHeight)) }
+  return { up, maxHeight, style }
+}
+
 const triggerCls =
   'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-[13px] text-ink ' +
   '' +
@@ -987,43 +1009,55 @@ export function Select({
       </button>
       {open && (
         <AnchoredPopover anchor={ref.current} onClose={() => setOpen(false)}>
-          {(rect) => (
-            <div
-              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
-            >
-              {searchable && (
-                <div className="border-b border-gray-100 p-2">
-                  <input
-                    autoFocus
-                    value={q}
-                    onChange={(e) => setQ(e.currentTarget.value)}
-                    placeholder={t('common.search')}
-                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
-                  />
-                </div>
-              )}
-              <div className="max-h-60 overflow-y-auto py-1">
-                {filtered.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+          {(rect) => {
+            const drop = popoverDrop(rect, 320)
+            return (
+              <div
+                className={cn(
+                  'animate-scale-in flex flex-col overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg',
+                  drop.up ? 'origin-bottom' : 'origin-top',
                 )}
-                {filtered.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => pick(o.value)}
-                    className={cn(
-                      'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
-                      o.value === value ? 'font-semibold text-accent' : 'text-ink',
-                    )}
-                  >
-                    <span className="truncate">{o.label}</span>
-                    {o.value === value && <IconCheck className="shrink-0 text-accent" />}
-                  </button>
-                ))}
+                style={{
+                  position: 'fixed',
+                  left: rect.left,
+                  width: rect.width,
+                  maxHeight: drop.maxHeight,
+                  ...drop.style,
+                }}
+              >
+                {searchable && (
+                  <div className="shrink-0 border-b border-gray-100 p-2">
+                    <input
+                      autoFocus
+                      value={q}
+                      onChange={(e) => setQ(e.currentTarget.value)}
+                      placeholder={t('common.search')}
+                      className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                    />
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                  {filtered.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+                  )}
+                  {filtered.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => pick(o.value)}
+                      className={cn(
+                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-gray-50',
+                        o.value === value ? 'font-semibold text-accent' : 'text-ink',
+                      )}
+                    >
+                      <span className="truncate">{o.label}</span>
+                      {o.value === value && <IconCheck className="shrink-0 text-accent" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          }}
         </AnchoredPopover>
       )}
     </Field>
@@ -1145,43 +1179,55 @@ export function TagsInput({
       {hint && <p className="mt-1 text-xs text-ink-muted">{hint}</p>}
       {open && avail.length > 0 && (
         <AnchoredPopover anchor={boxRef.current} onClose={closePopover}>
-          {(rect) => (
-            <div
-              className="animate-scale-in origin-top overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg"
-              style={{ position: 'fixed', left: rect.left, top: rect.bottom + 4, width: rect.width }}
-            >
-              <div className="border-b border-gray-100 p-2">
-                <input
-                  autoFocus
-                  value={q}
-                  onChange={(e) => setQ(e.currentTarget.value)}
-                  placeholder={t('common.searchCategory')}
-                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
-                />
-              </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {shown.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+          {(rect) => {
+            const drop = popoverDrop(rect, 340)
+            return (
+              <div
+                className={cn(
+                  'animate-scale-in flex flex-col overflow-clip rounded-xl border border-gray-200 bg-white shadow-lg',
+                  drop.up ? 'origin-bottom' : 'origin-top',
                 )}
-                {shown.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => add(o.value)}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-gray-50"
-                  >
-                    <span className="truncate">{o.label}</span>
-                    <span className="ml-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
-                  </button>
-                ))}
-                {matched.length > SHOWN && (
-                  <p className="px-3 py-2 text-xs text-gray-400">
-                    {t('common.shownOfMatched', { shown: SHOWN, total: matched.length })}
-                  </p>
-                )}
+                style={{
+                  position: 'fixed',
+                  left: rect.left,
+                  width: rect.width,
+                  maxHeight: drop.maxHeight,
+                  ...drop.style,
+                }}
+              >
+                <div className="shrink-0 border-b border-gray-100 p-2">
+                  <input
+                    autoFocus
+                    value={q}
+                    onChange={(e) => setQ(e.currentTarget.value)}
+                    placeholder={t('common.searchCategory')}
+                    className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                  />
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                  {shown.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-gray-400">{t('common.nothingFound')}</p>
+                  )}
+                  {shown.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => add(o.value)}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink transition hover:bg-gray-50"
+                    >
+                      <span className="truncate">{o.label}</span>
+                      <span className="ml-2 shrink-0 font-mono text-xs text-gray-400">{o.value}</span>
+                    </button>
+                  ))}
+                  {matched.length > SHOWN && (
+                    <p className="px-3 py-2 text-xs text-gray-400">
+                      {t('common.shownOfMatched', { shown: SHOWN, total: matched.length })}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          }}
         </AnchoredPopover>
       )}
     </div>

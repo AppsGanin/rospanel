@@ -858,7 +858,7 @@ const en: Dict = {
     resetTitle: "Clear the statistics?",
     resetBody:
       "All accumulated traffic statistics will be deleted. This cannot be undone.",
-    trafficByDay: "Traffic by day",
+    trafficByDay: "Traffic",
     noDataForRange: "No data for the selected period",
     noDataForRangeHint:
       "Pick another period, or wait for the first full day of accounting.",
@@ -1695,6 +1695,7 @@ const en: Dict = {
     nodeXrayStale: "running · version {{version}}, the panel expects {{want}}",
     nodeXrayOK: "running · version {{version}}",
     nodeUpdateHint: "Update the node: Manage → Update.",
+    panelUpdateHint: "Update the panel itself — the node already runs a newer version.",
     nodeConfigBuildFailed:
       "the panel cannot build a config for this node: {{err}}",
     nodeConfigHint: "Check the node's settings (protocols, routing, DNS).",
@@ -2703,10 +2704,12 @@ const en: Dict = {
     },
     master: "Master",
     agentOutdated: "agent older than panel",
+    agentAhead: "agent newer than panel",
     trafficToday: "traffic today",
     onlyThisServer: "Only this server so far",
     onlyThisServerHint: "Add a node: the panel hands you an install command and the server shows up within a minute.",
     someAgentsOutdated: "Some nodes run an agent older than the panel. “Update all” brings them to the current version.",
+    someAgentsAhead: "Some nodes run an agent newer than the panel — update the panel itself so the versions match.",
     server: "Server",
     neverJoined: "has never joined",
     disabled: "disabled",
