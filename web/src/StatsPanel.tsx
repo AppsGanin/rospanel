@@ -10,7 +10,7 @@ import {
 import { fmtBytes, localDay, ranges } from './format'
 import { useAction, useShowMore } from './hooks'
 import { useIsAdmin } from './role'
-import { DayBars, ShareBar } from './charts'
+import { ShareBar, TrafficArea } from './charts'
 import { AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
@@ -73,13 +73,13 @@ export function StatsPanel() {
     })
   }
 
-  const today = localDay(0)
-  const days = series.map((p) => ({
-    day: p.day,
-    value: p.up + p.down,
-    today: p.day === today,
-  }))
-  const sumDays = days.reduce((a, d) => a + d.value, 0)
+  // The chart takes the day without its year — the range picker above already says
+  // which window this is, and "2026-06-12" under every tick is four characters of
+  // noise per column.
+  const chart = series.map((p) => ({ day: p.day.slice(5), up: p.up, down: p.down }))
+  const sumDown = series.reduce((a, p) => a + p.down, 0)
+  const sumUp = series.reduce((a, p) => a + p.up, 0)
+  const sumDays = sumDown + sumUp
 
   // Sorted by what they spent, largest first — the list is read as a ranking, and the
   // server returns it in whatever order the query produced.
@@ -125,24 +125,27 @@ export function StatsPanel() {
         )}
       </div>
 
+      {/* The same area chart the user card draws, for the same reason: two series
+          side by side answer "how much came in against how much went out", which a
+          single column per day cannot. */}
       <Panel
         title={t('stats.trafficByDay')}
         aside={
           sumDays > 0 && (
             <Mono className="shrink-0 text-xs text-ink-muted">
-              {fmtBytes(sumDays)}
+              ↓ {fmtBytes(sumDown)} · ↑ {fmtBytes(sumUp)}
             </Mono>
           )
         }
         pad
       >
-        {days.length === 0 || sumDays === 0 ? (
+        {series.length === 0 || sumDays === 0 ? (
           <EmptyState
             title={t('stats.noDataForRange')}
             body={t('stats.noDataForRangeHint')}
           />
         ) : (
-          <DayBars data={days} fmt={fmtBytes} />
+          <TrafficArea data={chart} height={220} fmt={fmtBytes} />
         )}
       </Panel>
 
