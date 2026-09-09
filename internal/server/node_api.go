@@ -12,24 +12,12 @@ import (
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 )
 
-// nodeSyncHoldSec is the nominal time a no-change sync request is held before
-// returning Changed=false, so a connected node makes roughly one request per this
-// interval in steady state (carrying its traffic report). It is also the ceiling on
-// how fresh anything a node reports — last_seen, machine load, Xray state — can be
-// in the panel, which is why it is 20 and not a minute: the operator watches these
-// on a page that updates every few seconds. Comfortably inside the server's idle
-// timeout. Reported to a joining node as the round-trip budget to expect.
-const nodeSyncHoldSec = 20
-
-// nodeSyncHoldJitter spreads the actual hold over ±1/3 of the nominal value
-// (13–27s). A panel↔node link in steady state is a small encrypted exchange that
-// never ends, so its TIMING is the only thing left to look at — and a hold pinned
-// to one value makes that timing a flat line at a single frequency, which is the
-// textbook signature of a control channel and nothing like a person browsing.
-// Under jitter the same link has no period to lock onto; the spread matters more
-// than the mean, which is what makes a shorter hold affordable. Kept below the
-// agent's 90s syncTimeout so the longest hold still lands well inside it.
-const nodeSyncHoldJitter = 7
+// The hold and its jitter belong to the protocol, not to this file: the agent reads
+// the same numbers (see nodeapi) to tell a recycled poll from a dead panel.
+const (
+	nodeSyncHoldSec    = nodeapi.HoldSec
+	nodeSyncHoldJitter = nodeapi.HoldJitter
+)
 
 // nodeSyncHold returns one jittered hold duration. Independent per request, so
 // even a single node's own successive polls don't line up into a period.

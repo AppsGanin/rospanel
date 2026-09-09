@@ -47,9 +47,10 @@ import (
 )
 
 const (
-	// syncTimeout bounds one long-poll: the panel holds ≤27s, so 90s leaves ample
-	// headroom for the round trip before we consider the request stuck.
-	syncTimeout = 90 * time.Second
+	// syncTimeout bounds one long-poll. Both this and minHeldPoll below come from the
+	// protocol package, where the panel reads them too — the two sides must agree on
+	// the cadence or a recycled hold looks like a failure.
+	syncTimeout = nodeapi.SyncTimeoutSec * time.Second
 	// backoffMin/Max bound the reconnect backoff when the panel is unreachable.
 	backoffMin = 2 * time.Second
 	backoffMax = 60 * time.Second
@@ -77,13 +78,10 @@ const (
 	syncFailWindow = time.Hour
 	// minHeldPoll is how long a long-poll must have been in flight for a poll-cut
 	// (EOF/GOAWAY/reset) to count as the panel merely recycling a HELD request rather
-	// than an actual failure. The panel holds a no-change poll 13–27s, so a benign-
-	// looking error that returns well inside that (well under this threshold) means the
-	// request never landed — the panel process is down while its Xray :443 stays up, or
-	// a middlebox reset the connection — and must escalate the backoff, not re-poll at
-	// the floor. Kept comfortably below the 13s minimum hold: this constant follows
-	// nodeSyncHoldSec/Jitter on the panel and must be lowered with them.
-	minHeldPoll = 10 * time.Second
+	// than an actual failure. A benign-looking error that returns well inside the hold
+	// means the request never landed — the panel process is down while its Xray :443
+	// stays up, or a middlebox reset the connection — and must escalate the backoff.
+	minHeldPoll = nodeapi.MinHeldPollSec * time.Second
 )
 
 // jitterPct is how far a recurring interval is spread around its nominal value.
