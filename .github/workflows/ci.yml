@@ -42,6 +42,11 @@ jobs:
       - name: Install deps
         working-directory: web
         run: npm ci
+      # Lint before the build so a dead import or a form-submitting button fails the
+      # job on its own line, instead of hiding inside a build log.
+      - name: Lint SPA
+        working-directory: web
+        run: npm run lint
       - name: Build SPA
         working-directory: web
         run: npm run build

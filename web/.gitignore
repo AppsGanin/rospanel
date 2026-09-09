@@ -1,0 +1,4 @@
+# Playwright artefacts: traces and screenshots of a failed run
+test-results/
+playwright-report/
+.playwright/
