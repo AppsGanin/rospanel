@@ -345,7 +345,6 @@ export function OverviewPanel() {
   const sparkDays = (series ?? []).map((p) => ({
     day: p.day,
     value: p.up + p.down,
-    today: p.day === today,
   }));
 
   /* --- what needs doing ------------------------------------------------ */

@@ -175,99 +175,19 @@ function dm(day: string): string {
   return `${day.slice(8, 10)}.${day.slice(5, 7)}`
 }
 
-type Day = { day: string; value: number; today?: boolean }
-export type Bar = { key: string; label: string; title: string; value: number; today: boolean }
+type Day = { day: string; value: number }
+export type Bar = { key: string; label: string; title: string; value: number }
 
-// bucketize keeps the number of columns readable whatever the period is. A month of
-// days fits as days; a quarter is read by weeks; a year by months. Without this a
-// 365-day range asks for 365 columns, the gaps alone are wider than the panel, and
-// every bar is squeezed to nothing — which is exactly what it looked like.
-// MIN_COL is the narrowest a column may get before the chart stops being a chart:
-// thirty days across a phone is 11px a column, which reads as a comb. COL_GAP is the
-// space between two columns (gap-1), counted in so the floor is the width of the bar
-// itself rather than of the bar plus its gap.
-const MIN_COL = 26
-const COL_GAP = 4
 // LABEL_W is what one date needs: "03.09" is 30px at 10px mono, plus the air that
-// keeps it from touching the next one. Dates thin out to fit this, which is not the
-// same rule as the columns' — three columns can share one date, and on a phone they
-// often do.
+// keeps it from touching the next one. Dates thin out to fit it — on a narrow tile
+// two columns can share one date.
 const LABEL_W = 38
 
-// merge folds neighbouring columns together until they fit, so a period the panel
-// can show as days on a desktop is shown as pairs or triples on a phone rather than
-// as slivers. Grouped from the end, like the weekly buckets: the newest column is
-// whole, and any remainder lands at the far left where it is oldest.
-function merge(bars: Bar[], maxBars: number): Bar[] {
-  if (maxBars < 1 || bars.length <= maxBars) return bars
-  const size = Math.ceil(bars.length / maxBars)
-  const out: Bar[] = []
-  for (let end = bars.length; end > 0; end -= size) {
-    const chunk = bars.slice(Math.max(0, end - size), end)
-    const first = chunk[0]
-    const last = chunk[chunk.length - 1]
-    out.unshift({
-      key: first.key,
-      label: first.label,
-      title: chunk.length === 1 ? first.title : `${first.label} — ${last.label}`,
-      value: chunk.reduce((a, b) => a + b.value, 0),
-      today: chunk.some((b) => b.today),
-    })
-  }
-  return out
-}
-
-function bucketize(data: Day[]): Bar[] {
-  const one = (d: Day): Bar => ({
-    key: d.day,
-    label: dm(d.day),
-    title: dm(d.day),
-    value: d.value,
-    today: !!d.today,
-  })
-  if (data.length <= 31) return data.map(one)
-
-  if (data.length <= 120) {
-    // Chunked from the end, so the newest bucket is the week that ends today rather
-    // than a partial week left over at the front.
-    const out: Bar[] = []
-    for (let end = data.length; end > 0; end -= 7) {
-      const chunk = data.slice(Math.max(0, end - 7), end)
-      out.unshift({
-        key: chunk[0].day,
-        label: dm(chunk[0].day),
-        title: `${dm(chunk[0].day)} — ${dm(chunk[chunk.length - 1].day)}`,
-        value: chunk.reduce((a, d) => a + d.value, 0),
-        today: chunk.some((d) => d.today),
-      })
-    }
-    return out
-  }
-
-  const months = new Map<string, Bar>()
-  for (const d of data) {
-    const k = d.day.slice(0, 7) // YYYY-MM
-    const b = months.get(k)
-    if (b) {
-      b.value += d.value
-      b.today = b.today || !!d.today
-    } else {
-      months.set(k, {
-        key: k,
-        label: `${k.slice(5, 7)}.${k.slice(2, 4)}`,
-        title: k,
-        value: d.value,
-        today: !!d.today,
-      })
-    }
-  }
-  return [...months.values()]
-}
-
-
-// DayBars is the traffic-per-period column chart: grey columns, heights taken from
-// the largest one, and the accent reserved for the one the reader picked — today is
-// already named under the last column and does not need a second marker. Dates thin out as the period
+// DayBars is the short traffic series as columns — a week on the dashboard tile:
+// grey columns, heights taken from the largest one, and the accent reserved for the
+// one the reader picked. It expects a handful of days and nothing more; a range that
+// runs to months is drawn by TrafficArea, which is a line and does not care how many
+// points it is given. Dates thin out as the period
 // grows — they cannot be read side by side past a handful — and the figure is not
 // printed over the columns at all: a month of them is 29px wide each, and no type
 // size fits "412.6 ГБ" there. Tap a column and it says its own span and figure.
@@ -288,10 +208,12 @@ export function DayBars({
   // a panel, a drawer and a dashboard tile, each a different width at the same
   // viewport.
   const [measureRef, , boxW] = useWideBox(0)
-  const bars = merge(
-    bucketize(data),
-    boxW > 0 ? Math.floor((boxW + COL_GAP) / (MIN_COL + COL_GAP)) : 999,
-  )
+  const bars: Bar[] = data.map((d) => ({
+    key: d.day,
+    label: dm(d.day),
+    title: dm(d.day),
+    value: d.value,
+  }))
   const max = bars.reduce((a, d) => Math.max(a, d.value), 0)
   const every = Math.max(
     1,

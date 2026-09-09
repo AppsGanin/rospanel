@@ -867,7 +867,7 @@ const ru = {
     resetTitle: "Очистить статистику?",
     resetBody:
       "Вся накопленная статистика трафика будет удалена. Действие необратимо.",
-    trafficByDay: "Трафик",
+    traffic: "Трафик",
     noDataForRange: "Нет данных за выбранный период",
     noDataForRangeHint:
       "Смените период или дождитесь первых суток учёта.",
@@ -905,7 +905,6 @@ const ru = {
     attnXrayDown: "{{name}}: агент на связи, Xray не запущен",
     attnNotJoined: "{{name}}: нода добавлена, но не подключена",
     attnOffline: "{{name}}: нода не отвечает",
-    attnUnstable: "{{name}}: связь с нодой нестабильна",
     attnExpiring_one: "{{count}} подписка истекает в течение недели",
     attnExpiring_few: "{{count}} подписки истекают в течение недели",
     attnExpiring_many: "{{count}} подписок истекают в течение недели",
@@ -1308,7 +1307,6 @@ const ru = {
     selectedN: "Выбрано: {{count}}",
     online: "● онлайн",
     offline: "офлайн",
-    onlineWord: "онлайн",
     until: "до {{date}}",
     devicesShort: "{{active}}/{{limit}} устр.",
     subscription: "Подписка",
@@ -1358,8 +1356,6 @@ const ru = {
 
   importUsers: {
     buttonHint: "Импорт пользователей: файл Marzban, 3x-ui или экспорт этой панели",
-    importShort: "Импорт",
-    exportShort: "Экспорт",
     exportHint: "Экспорт пользователей — скачать всех файлом этой панели: те же UUID, пароли, ссылки подписки, лимиты, трафик, заметки и теги. Его же принимает импорт — так база переезжает на другую установку.",
     srcRosPanel: "RosPanel: файл экспорта этой панели (кнопка со стрелкой вверх рядом)",
     title: "Импорт пользователей из другой панели",
@@ -1708,7 +1704,6 @@ const ru = {
     nodeXrayStale: "работает · версия {{version}}, панель ожидает {{want}}",
     nodeXrayOK: "работает · версия {{version}}",
     nodeUpdateHint: "Обновите ноду: «Управление» → «Обновить».",
-    panelUpdateHint: "Обновите саму панель — нода уже на более новой версии.",
     nodeConfigBuildFailed:
       "панель не может собрать конфиг для этой ноды: {{err}}",
     nodeConfigHint: "Проверьте настройки ноды (протоколы, роутинг, DNS).",

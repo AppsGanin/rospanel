@@ -31,16 +31,6 @@ export const IconChevron = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M6 9l6 6 6-6" />);
 export const IconClose = ({ size = 20, className }: IconProps) =>
   svg(size, className, <path d="M18 6 6 18M6 6l12 12" />);
-export const IconBurger = ({ size = 22, className }: IconProps) =>
-  svg(
-    size,
-    className,
-    <>
-      <path d="M3 6h18" />
-      <path d="M3 12h18" />
-      <path d="M3 18h18" />
-    </>,
-  );
 export const IconExternal = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -62,19 +52,6 @@ export const IconTable = ({ size = 16, className }: IconProps) =>
       <path d="M9 10v10" />
     </>,
   );
-export const IconCards = ({ size = 16, className }: IconProps) =>
-  svg(
-    size,
-    className,
-    <>
-      <rect x="3" y="4" width="7" height="7" rx="1.5" />
-      <rect x="14" y="4" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </>,
-  );
-// Borrowed from Lucide ("plus"): the panel's own set has no add glyph, and the design
-// system says to take the nearest Lucide one rather than draw a new shape.
 export const IconSearch = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -295,21 +272,6 @@ export const IconRestart = ({ size = 16, className }: IconProps) =>
       <path d="M3 3v5h5" />
     </>,
   );
-// GitHub mark — a filled glyph, so it doesn't use the stroke-based `svg` helper.
-export const IconGithub = ({ size = 20, className }: IconProps) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    className={className}
-    aria-hidden
-  >
-    <path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.438 9.8 8.205 11.387.6.113.82-.26.82-.577 0-.285-.01-1.04-.015-2.04-3.338.726-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.082-.73.082-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.835 2.807 1.305 3.492.997.108-.776.42-1.305.762-1.605-2.665-.303-5.467-1.332-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.123-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.5 11.5 0 0 1 3.003-.404c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.24 2.873.118 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.806 5.624-5.48 5.92.43.372.823 1.102.823 2.222 0 1.604-.015 2.898-.015 3.293 0 .32.216.695.825.577C20.565 22.297 24 17.797 24 12.5 24 5.87 18.63.5 12 .5z" />
-  </svg>
-);
-
-/* ----------------------------------------------------------------- spinner */
 export function Spinner({ size = 16, className }: IconProps) {
   return (
     <svg
@@ -541,39 +503,6 @@ export function IconButton({
     >
       {children}
     </button>
-  );
-}
-
-// ViewSwitch is the table/cards toggle every list view carries. Icons rather than words:
-// it repeats on several screens and the words would be the widest thing in a toolbar that
-// already holds a search box and two selects. The words stay as the accessible name and
-// the hover title (see SegmentedControl).
-export function ViewSwitch({
-  value,
-  onChange,
-  tableLabel,
-  cardsLabel,
-  label,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  tableLabel: string;
-  cardsLabel: string;
-  // label names WHICH list this switch drives. Two of them on one page otherwise present
-  // four buttons all called "Table"/"Cards", and nothing says which pair is which.
-  label?: string;
-}) {
-  return (
-    <div role="group" aria-label={label}>
-    <SegmentedControl
-      value={value}
-      onChange={onChange}
-      data={[
-        { value: "table", label: <IconTable size={18} />, title: tableLabel },
-        { value: "cards", label: <IconCards size={18} />, title: cardsLabel },
-      ]}
-    />
-    </div>
   );
 }
 
@@ -1795,18 +1724,6 @@ export function Badge({
   );
 }
 
-/* ----------------------------------------------------------------- divider */
-export function Divider({ label }: { label?: string }) {
-  if (!label) return <hr className="border-gray-200" />;
-  return (
-    <div className="flex items-center gap-3 text-sm font-medium text-ink-muted">
-      <span className="whitespace-nowrap">{label}</span>
-      <hr className="grow border-gray-200" />
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------- breakpoint */
 // Grid tracks are inline styles (a shared template is the only way a header and its
 // rows cannot drift apart), and an inline style carries no media query — so the few
 // components whose columns change with width ask for the answer instead of guessing

@@ -858,7 +858,7 @@ const en: Dict = {
     resetTitle: "Clear the statistics?",
     resetBody:
       "All accumulated traffic statistics will be deleted. This cannot be undone.",
-    trafficByDay: "Traffic",
+    traffic: "Traffic",
     noDataForRange: "No data for the selected period",
     noDataForRangeHint:
       "Pick another period, or wait for the first full day of accounting.",
@@ -896,7 +896,6 @@ const en: Dict = {
     attnXrayDown: "{{name}}: agent is reachable, Xray is not running",
     attnNotJoined: "{{name}}: node added but never connected",
     attnOffline: "{{name}}: node is not answering",
-    attnUnstable: "{{name}}: the link to this node keeps dropping",
     attnExpiring_one: "{{count}} subscription expires within the week",
     attnExpiring_few: "{{count}} subscriptions expire within the week",
     attnExpiring_many: "{{count}} subscriptions expire within the week",
@@ -1297,7 +1296,6 @@ const en: Dict = {
     selectedN: "Selected: {{count}}",
     online: "● online",
     offline: "offline",
-    onlineWord: "online",
     until: "until {{date}}",
     devicesShort: "{{active}}/{{limit}} dev.",
     subscription: "Subscription",
@@ -1346,8 +1344,6 @@ const en: Dict = {
   },
 
   importUsers: {
-    importShort: "Import",
-    exportShort: "Export",
     buttonHint: "Import users: a Marzban or 3x-ui file, or this panel's export",
     exportHint: "Export users — download every one as this panel's own file: the same UUIDs, passwords, subscription links, limits, traffic, notes and tags. The import reads it back — that is how a user base moves to another install.",
     srcRosPanel: "RosPanel: this panel's export file (the up-arrow button next to Import)",
@@ -1695,7 +1691,6 @@ const en: Dict = {
     nodeXrayStale: "running · version {{version}}, the panel expects {{want}}",
     nodeXrayOK: "running · version {{version}}",
     nodeUpdateHint: "Update the node: Manage → Update.",
-    panelUpdateHint: "Update the panel itself — the node already runs a newer version.",
     nodeConfigBuildFailed:
       "the panel cannot build a config for this node: {{err}}",
     nodeConfigHint: "Check the node's settings (protocols, routing, DNS).",

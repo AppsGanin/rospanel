@@ -94,7 +94,7 @@ export function StatsPanel() {
     return (
       <div className="flex flex-col gap-3.5">
         <Skeleton className="h-8 w-64 rounded-lg" />
-        <Panel title={t('stats.trafficByDay')} pad>
+        <Panel title={t('stats.traffic')} pad>
           <Skeleton className="h-32 w-full rounded-lg" />
         </Panel>
         <Panel title={t('stats.shareByUser')} pad>
@@ -129,7 +129,7 @@ export function StatsPanel() {
           side by side answer "how much came in against how much went out", which a
           single column per day cannot. */}
       <Panel
-        title={t('stats.trafficByDay')}
+        title={t('stats.traffic')}
         aside={
           sumDays > 0 && (
             <Mono className="shrink-0 text-xs text-ink-muted">
