@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.2](https://github.com/AppsGanin/rospanel/compare/v2.14.1...v2.14.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **warp:** use IP endpoints and multi-endpoint pool for WARP lane ([3cfaf19](https://github.com/AppsGanin/rospanel/commit/3cfaf192ef52cc88802f560e351004c952833ec2))
+
 ## [2.14.1](https://github.com/AppsGanin/rospanel/compare/v2.14.0...v2.14.1) (2026-09-08)
 
 
