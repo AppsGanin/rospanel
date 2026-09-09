@@ -138,6 +138,9 @@ func TestNodeAWGStateUsesTheNodesIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	node, _ := m.store.GetNode(n.ID)
+	// The parameters generated above are 3.1, so the node has to be new enough to
+	// read them — see TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt.
+	node.NodeVersion = "3.0.0"
 	ns := nodeSettings(set, node)
 	if ns.AWGPrivateKey != node.AWGPrivateKey || ns.AWGPort != 41000 || !ns.AWGEnabled {
 		t.Fatalf("node settings: key ok=%v port=%d on=%v", ns.AWGPrivateKey == node.AWGPrivateKey, ns.AWGPort, ns.AWGEnabled)
@@ -154,5 +157,56 @@ func TestNodeAWGStateUsesTheNodesIdentity(t *testing.T) {
 	ns.AWGEnabled = false
 	if st := m.nodeAWGState(node, ns, users, nil); st != nil {
 		t.Error("state produced for a node with the lane off")
+	}
+}
+
+// A node still on a 2.x agent reads h1–h4 as numbers. Hand it a 3.1 block, whose
+// headers are ranges, and its decode of the WHOLE sync response fails — so it
+// stops syncing at all rather than merely losing its tunnel. The panel withholds
+// the state instead, and the node keeps running what it already has.
+func TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt(t *testing.T) {
+	m := bulkTestManager(t)
+	ctx := adminCtx()
+	if _, err := m.CreateUser(ctx, "u", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	n, err := m.CreateNode("nl", "nl.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _ := m.store.GetSettings()
+	if err := m.ensureNodeAWGIdentity(n, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetNodeAWGEnabled(n.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetNodeConnections(n.ID, &model.NodeConnections{AWGPort: 41000}); err != nil {
+		t.Fatal(err)
+	}
+	node, _ := m.store.GetNode(n.ID)
+	ns := nodeSettings(set, node)
+	users, _ := m.store.WorkingUsers(1)
+
+	for _, v := range []string{"", "2.14.2", "v2.9.0"} {
+		node.NodeVersion = v
+		if st := m.nodeAWGState(node, ns, users, nil); st != nil {
+			t.Errorf("agent %q was handed a 3.1 tunnel it cannot decode", v)
+		}
+	}
+	for _, v := range []string{"3.0.0", "v3.1.0", "4.0.0"} {
+		node.NodeVersion = v
+		if st := m.nodeAWGState(node, ns, users, nil); st == nil {
+			t.Errorf("agent %q was refused a tunnel it can read", v)
+		}
+	}
+
+	// A block from before 3.1 has no ranges in it, so every agent can read it and
+	// none of them is refused — the gate is about the parameters, not the version.
+	node.AWGParams = model.AWGParams{Jc: 4, Jmin: 50, Jmax: 1000, S1: 30, S2: 40,
+		H1: "11", H2: "12", H3: "13", H4: "14"}
+	node.NodeVersion = "2.14.2"
+	if st := m.nodeAWGState(node, ns, users, nil); st == nil {
+		t.Error("a pre-3.1 block was withheld from an agent that can read it")
 	}
 }

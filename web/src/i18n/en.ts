@@ -1605,6 +1605,7 @@ const en: Dict = {
     awgDown: "the tunnel is not up",
     awgFailed: "the tunnel did not come up: {{err}}",
     awgUnknown: "the node does not report the tunnel's state",
+    awgAgentOld: "the node agent cannot read AmneziaWG 3.1 parameters — the tunnel is withheld until it updates",
     nodeAWGHint:
       "The lane is switched on for this server but its tunnel is not running, so nobody can connect through it — while the panel keeps handing out keys and configs for it. Check the node's log and that the AmneziaWG port is open.",
     xray: "Xray proxy engine",
@@ -2161,7 +2162,7 @@ const en: Dict = {
     awgDns: "DNS inside the tunnel",
     awgDnsAuto: "same as the server's DNS settings",
     awgParams: "Obfuscation parameters",
-    awgHint: "AmneziaWG — WireGuard with a masked handshake (AmneziaVPN, AmneziaWG clients). The panel mints the keys; after a regen the configs already handed out stop working. Empty DNS — this server's resolvers (DoH addresses are skipped). The client takes the config from the subscription page.",
+    awgHint: "AmneziaWG 3.1 — WireGuard with a masked handshake and header protection (AmneziaVPN and AmneziaWG clients from 5.0.1.5). The panel mints the keys; after a regen the configs already handed out stop working. Empty DNS — this server's resolvers (DoH addresses are skipped). The client takes the config from the subscription page.",
     enableAwg: "Turn AmneziaWG on to set the port and DNS.",
     off: "disabled",
     name: "Connection name",

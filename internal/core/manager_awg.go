@@ -18,13 +18,17 @@ import (
 // Users become peers through the same working-set and access rules as every
 // other lane, and their counters land in the same traffic and sighting paths.
 
-// awgParams converts the stored parameter block to the engine's.
+// awgParams converts the stored parameter block to the engine's. A block that
+// will not parse is a corrupt row, not a reason to run an empty configuration —
+// the caller gets the zero Params and the tunnel refuses to come up saying why,
+// rather than coming up with the obfuscation silently switched off.
 func awgParams(p model.AWGParams) awg.Params {
-	return awg.Params{Jc: p.Jc, Jmin: p.Jmin, Jmax: p.Jmax, S1: p.S1, S2: p.S2, H1: p.H1, H2: p.H2, H3: p.H3, H4: p.H4}
-}
-
-func modelAWGParams(p awg.Params) model.AWGParams {
-	return model.AWGParams{Jc: p.Jc, Jmin: p.Jmin, Jmax: p.Jmax, S1: p.S1, S2: p.S2, H1: p.H1, H2: p.H2, H3: p.H3, H4: p.H4}
+	out, err := awg.FromModel(p)
+	if err != nil {
+		logErr("awg: stored parameters are unreadable", "err", err)
+		return awg.Params{}
+	}
+	return out
 }
 
 // awgOnlineWindow is how recent a peer's last handshake must be to count as a
@@ -218,10 +222,10 @@ func (m *Manager) ensureMasterAWGIdentity(set *model.Settings, regen bool) error
 		return err
 	}
 	params := awg.RandomParams()
-	if err := m.store.SaveAWGKeys(priv, pub, modelAWGParams(params)); err != nil {
+	if err := m.store.SaveAWGKeys(priv, pub, awg.ToModel(params)); err != nil {
 		return err
 	}
-	set.AWGPrivateKey, set.AWGPublicKey, set.AWGParams = priv, pub, modelAWGParams(params)
+	set.AWGPrivateKey, set.AWGPublicKey, set.AWGParams = priv, pub, awg.ToModel(params)
 	return nil
 }
 
@@ -235,10 +239,10 @@ func (m *Manager) ensureNodeAWGIdentity(n *model.Node, regen bool) error {
 		return err
 	}
 	params := awg.RandomParams()
-	if err := m.store.SaveNodeAWGKeys(n.ID, priv, pub, modelAWGParams(params)); err != nil {
+	if err := m.store.SaveNodeAWGKeys(n.ID, priv, pub, awg.ToModel(params)); err != nil {
 		return err
 	}
-	n.AWGPrivateKey, n.AWGPublicKey, n.AWGParams = priv, pub, modelAWGParams(params)
+	n.AWGPrivateKey, n.AWGPublicKey, n.AWGParams = priv, pub, awg.ToModel(params)
 	return nil
 }
 
@@ -333,10 +337,37 @@ func (m *Manager) nodeAWGState(n *model.Node, ns *model.Settings, users []model.
 	if !ns.AWGEnabled || n.AWGPrivateKey == "" || ns.AWGPort == 0 {
 		return nil
 	}
+	params := awgParams(n.AWGParams)
+	// An agent that predates AmneziaWG 3.1 reads h1–h4 as numbers, and a range
+	// arriving as a string fails its decode of the WHOLE sync response — the node
+	// would stop syncing altogether, not merely lose its tunnel. So a node too old
+	// to read these parameters is not sent them: it keeps the tunnel it is already
+	// running until it updates, and says so in its diagnostics.
+	if params.NeedsAgent31() && !nodeSpeaks31(n.NodeVersion) {
+		logWarn("awg: node too old for the 3.1 parameters, tunnel state withheld",
+			"node", n.ID, "node_version", n.NodeVersion)
+		return nil
+	}
 	peers := m.awgPeers(n.ID, users, access)
-	out := &nodeapi.AWGState{Port: ns.AWGPort, PrivateKey: n.AWGPrivateKey, Params: awgParams(n.AWGParams)}
+	out := &nodeapi.AWGState{Port: ns.AWGPort, PrivateKey: n.AWGPrivateKey, Params: params}
 	for _, p := range peers {
 		out.Peers = append(out.Peers, nodeapi.AWGPeer{PublicKey: p.PublicKey, Addr: p.Addr.String(), Email: p.Email})
 	}
 	return out
+}
+
+// awgAgent31 is the first panel release whose node agent reads AmneziaWG 3.1
+// parameters. A node reporting anything older cannot be handed them.
+const awgAgent31 = 3
+
+// nodeSpeaks31 reports whether a node's agent can read a 3.1 parameter block. An
+// empty version is a node that has not reported yet, and the safe reading of "not
+// reported" is "not new enough".
+func nodeSpeaks31(nodeVersion string) bool {
+	major, _, ok := strings.Cut(strings.TrimPrefix(strings.TrimSpace(nodeVersion), "v"), ".")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(major)
+	return err == nil && n >= awgAgent31
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 	"github.com/AppsGanin/rospanel/internal/updater"
@@ -110,6 +111,14 @@ func awgEnabledOn(n *model.Node) bool {
 // AWG keys and configs for it, and the operator found out from the users.
 func (m *Manager) nodeAWGHealth(n *model.Node) HealthCheck {
 	const label = "health.awg"
+	// The panel is holding this node's tunnel state back because its agent cannot
+	// read 3.1 parameters. Without a line here the operator sees a lane switched on
+	// and a tunnel that never arrives, with nothing connecting the two.
+	if params, err := awg.FromModel(n.AWGParams); err == nil &&
+		params.NeedsAgent31() && !nodeSpeaks31(n.NodeVersion) {
+		return HealthCheck{Key: "awg", LabelKey: label, Status: healthWarn,
+			DetailKey: "health.awgAgentOld", HintKey: "health.nodeUpdateHint"}
+	}
 	st, ok := m.NodeAWG(n.ID)
 	if !ok {
 		// The node has never mentioned AWG: an agent older than this feature. Say so

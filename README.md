@@ -239,8 +239,14 @@ material — and it goes into every link and profile the panel hands out, so cli
 it up on their next subscription refresh. Available on the built-in lane and on any
 custom Hysteria2 inbound, each with its own key.
 
-**AmneziaWG** is the fourth built-in lane: WireGuard whose handshake hides behind junk packets
-and random-looking headers, for the AmneziaVPN and AmneziaWG apps. The protocol engine
+**AmneziaWG 3.1** is the fourth built-in lane: WireGuard whose handshake hides behind junk
+packets and random-looking headers, for the AmneziaVPN and AmneziaWG apps. 3.1 adds header
+protection — the parts of the packet header that stayed in the clear were a static fingerprint
+a DPI box could match without ever seeing a handshake — plus padding on all four message types,
+headers drawn from a band rather than fixed, and timers spread instead of constant, so a session
+has no period to lock onto. It needs Amnezia VPN 5.0.1.5 or newer; a server whose parameters
+were generated before 3.1 keeps running them unchanged until you regenerate it, and regenerating
+invalidates the configs already handed out for that server, as it always has. The protocol engine
 (amneziawg-go) runs inside the panel process — no daemon, no extra binary — one tunnel per
 server (master and every node), each with its own
 keypair and obfuscation parameters the panel generates; a user is a peer on every server they
