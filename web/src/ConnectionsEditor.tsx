@@ -86,6 +86,36 @@ type Awg = { port: number; dns: string };
 // restartsPanel: when true (the master), a config-restarting save shows the panel's
 // "restarting" modal and waits for it to come back. For a node the panel doesn't
 // restart — the node applies the pushed config itself — so it's a plain save.
+// awgParamSummary is the obfuscation, in the order the client config lists it and
+// omitting what is not set. It used to be a fixed nine-field string, which after
+// the move to 3.1 quietly showed a server's parameters as if they were still the
+// old set: no header key, no imitation, no padding beyond S1/S2.
+function awgParamSummary(p: ConnectionsStatus["awg_params"]): string {
+  const parts = [
+    `Jc=${p.jc}`,
+    `Jmin=${p.jmin}`,
+    `Jmax=${p.jmax}`,
+    `S1=${p.s1}`,
+    `S2=${p.s2}`,
+    p.s3 ? `S3=${p.s3}` : "",
+    p.s4 ? `S4=${p.s4}` : "",
+    `H1=${p.h1}`,
+    `H2=${p.h2}`,
+    `H3=${p.h3}`,
+    `H4=${p.h4}`,
+    // The chains are long and the operator only needs to know they are there;
+    // the file the client downloads carries them in full.
+    p.i1 ? "I1,I2" : "",
+    p.header_key ? "HPK" : "",
+    p.padding ? `Pad=${p.padding}` : "",
+    p.trailers ? "Trailers" : "",
+    p.rekey_after ? `Rekey=${p.rekey_after}` : "",
+    p.reject_after ? `Reject=${p.reject_after}` : "",
+    p.keepalive ? `Keepalive=${p.keepalive}` : "",
+  ]
+  return parts.filter(Boolean).join(" ")
+}
+
 export function ConnectionsEditor({
   load,
   save,
@@ -530,7 +560,7 @@ export function ConnectionsEditor({
                           <LongField label="Public key" value={status.awg_public_key} />
                           <LongField
                             label={t("conn.awgParams")}
-                            value={`Jc=${status.awg_params.jc} Jmin=${status.awg_params.jmin} Jmax=${status.awg_params.jmax} S1=${status.awg_params.s1} S2=${status.awg_params.s2} H1=${status.awg_params.h1} H2=${status.awg_params.h2} H3=${status.awg_params.h3} H4=${status.awg_params.h4}`}
+                            value={awgParamSummary(status.awg_params)}
                           />
                         </>
                       )}

@@ -294,7 +294,32 @@ export interface ConnectionsStatus {
   // tunnel and mean nothing for a node.
   awg_port: number
   awg_public_key: string
-  awg_params: { jc: number; jmin: number; jmax: number; s1: number; s2: number; h1: number; h2: number; h3: number; h4: number }
+  // The obfuscation parameters as the server stores them. The headers and the
+  // ranges are strings because in AmneziaWG 3.1 each is a band ("110-130"); a
+  // block written before it holds a single number, which arrives as one.
+  awg_params: {
+    jc: number
+    jmin: number
+    jmax: number
+    s1: number
+    s2: number
+    s3?: number
+    s4?: number
+    h1: number | string
+    h2: number | string
+    h3: number | string
+    h4: number | string
+    i1?: string
+    i2?: string
+    header_key?: string
+    padding?: string
+    trailers?: boolean
+    rekey_after?: string
+    rekey_timeout?: string
+    reject_after?: string
+    keepalive?: string
+    handshakes?: string
+  }
   awg_dns: string
   awg_running: boolean
   awg_error?: string
