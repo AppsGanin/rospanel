@@ -165,6 +165,13 @@ type Params struct {
 	I1 string `json:"i1,omitempty"`
 	I2 string `json:"i2,omitempty"`
 
+	// Imitation names the profile I1/I2 came from ("dns", "quic", "stun"). It is
+	// the panel's own note, never written to the config or the engine: what a
+	// server pretends to be is a thing the operator should be able to read off a
+	// screen without decoding a hex chain, and printing the chains themselves
+	// where the other parameters are read as empty values. [3.1]
+	Imitation string `json:"imitation,omitempty"`
+
 	// The timers, in seconds. WireGuard's are constants, and a constant is a
 	// clock a classifier can lock onto; these spread each one over a band. Zero
 	// leaves the protocol default, which is what a 1.5 row gets. [3.1]
@@ -256,7 +263,7 @@ func RandomParams() Params {
 	}
 
 	im := randomImitation()
-	p.I1, p.I2 = im.I1, im.I2
+	p.I1, p.I2, p.Imitation = im.I1, im.I2, im.Name
 	return p
 }
 

@@ -103,12 +103,15 @@ function awgParamSummary(p: ConnectionsStatus["awg_params"]): string {
     `H2=${p.h2}`,
     `H3=${p.h3}`,
     `H4=${p.h4}`,
-    // The chains are long and the operator only needs to know they are there;
-    // the file the client downloads carries them in full.
-    p.i1 ? "I1,I2" : "",
-    p.header_key ? "HPK" : "",
+    // Every entry carries a value. A bare word next to "S1=53" reads as a
+    // parameter that exists and is empty — which is what the first version of
+    // this line did with the imitation chains, and it was read exactly that way.
+    // So: the profile is named rather than dumped as hex, and the header key
+    // shows enough of itself to be visibly a key.
+    p.imitation ? `Imit=${p.imitation}` : p.i1 ? "Imit=on" : "",
+    p.header_key ? `HPK=${p.header_key.slice(0, 8)}…` : "",
     p.padding ? `Pad=${p.padding}` : "",
-    p.trailers ? "Trailers" : "",
+    p.trailers ? "Trailers=on" : "",
     p.rekey_after ? `Rekey=${p.rekey_after}` : "",
     p.reject_after ? `Reject=${p.reject_after}` : "",
     p.keepalive ? `Keepalive=${p.keepalive}` : "",

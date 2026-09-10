@@ -2,6 +2,7 @@ package awg
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +38,32 @@ func TestA31BlockCarriesRangesAndTheNewFields(t *testing.T) {
 	}
 	if back.HeaderKey == "" || back.H1.Min == back.H1.Max || !back.Trailers {
 		t.Errorf("3.1 fields lost in the round trip: %s", b)
+	}
+}
+
+// Imitation is the panel's own note about which profile a server was given. It
+// must never reach the engine or the client: the IPC would refuse an unknown key
+// outright, and a config file carrying it would be a line no client asked for.
+func TestTheProfileNameStaysOutOfBothConfigs(t *testing.T) {
+	p := RandomParams()
+	if p.Imitation == "" {
+		t.Fatal("a generated block does not say what it imitates")
+	}
+	priv, pub, _ := GenerateKey()
+	addr, _ := ClientAddr(7)
+	uapi, err := Config{PrivateKey: priv, ListenPort: 51820, Params: p,
+		Peers: []Peer{{PublicKey: pub, Addr: addr, Email: "u7"}}}.UAPI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := ClientConfig{PrivateKey: priv, Address: addr, Params: p,
+		ServerPublicKey: pub, Endpoint: "h:1"}.Render()
+	for name, out := range map[string]string{"uapi": uapi, "client config": conf} {
+		if strings.Contains(strings.ToLower(out), "imitation") {
+			t.Errorf("the %s carries the profile name:\n%s", name, out)
+		}
+		if strings.Contains(out, p.Imitation) {
+			t.Errorf("the %s carries %q:\n%s", name, p.Imitation, out)
+		}
 	}
 }

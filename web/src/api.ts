@@ -311,6 +311,7 @@ export interface ConnectionsStatus {
     h4: number | string
     i1?: string
     i2?: string
+    imitation?: string
     header_key?: string
     padding?: string
     trailers?: boolean

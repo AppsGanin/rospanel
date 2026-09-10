@@ -27,6 +27,7 @@ func FromModel(m model.AWGParams) (Params, error) {
 		S4:        m.S4,
 		I1:        m.I1,
 		I2:        m.I2,
+		Imitation: m.Imitation,
 		HeaderKey: m.HeaderKey,
 		Trailers:  m.Trailers,
 	}
@@ -69,6 +70,7 @@ func ToModel(p Params) model.AWGParams {
 		H4:           p.H4.String(),
 		I1:           p.I1,
 		I2:           p.I2,
+		Imitation:    p.Imitation,
 		HeaderKey:    p.HeaderKey,
 		Padding:      p.Padding.String(),
 		Trailers:     p.Trailers,
