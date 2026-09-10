@@ -481,8 +481,11 @@ func (c ClientConfig) Render() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\nPrivateKey = %s\nAddress = %s/32\nDNS = %s\nMTU = %d\n",
 		c.PrivateKey, c.Address, dns, mtu)
+	// The order is Amnezia's own: the junk counts, then the four paddings, then the
+	// four headers, then the rest. An INI parser should not care, but this is a file
+	// people compare against the examples in the docs by eye, and S3/S4 sitting
+	// apart from S1/S2 reads as a mistake even when it is not one.
 	fmt.Fprintf(&b, "Jc = %d\nJmin = %d\nJmax = %d\nS1 = %d\nS2 = %d\n", p.Jc, p.Jmin, p.Jmax, p.S1, p.S2)
-	fmt.Fprintf(&b, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", p.H1, p.H2, p.H3, p.H4)
 	// The 3.1 half, written only when it is set. An older client reading a 1.5
 	// block sees exactly the file it has always seen; the keys below are the ones
 	// amneziawg-tools names, so a 3.1 client reads them as the engine does.
@@ -492,6 +495,7 @@ func (c ClientConfig) Render() string {
 	if p.S4 > 0 {
 		fmt.Fprintf(&b, "S4 = %d\n", p.S4)
 	}
+	fmt.Fprintf(&b, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", p.H1, p.H2, p.H3, p.H4)
 	if p.HeaderKey != "" {
 		fmt.Fprintf(&b, "HeaderProtectionKey = %s\n", p.HeaderKey)
 	}
