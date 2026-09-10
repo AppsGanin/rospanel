@@ -2162,7 +2162,7 @@ const en: Dict = {
     awgDns: "DNS inside the tunnel",
     awgDnsAuto: "same as the server's DNS settings",
     awgParams: "Obfuscation parameters",
-    awgHint: "AmneziaWG 3.1 — WireGuard with a masked handshake and header protection (AmneziaVPN and AmneziaWG clients from 5.0.1.5). The panel mints the keys; after a regen the configs already handed out stop working. Empty DNS — this server's resolvers (DoH addresses are skipped). The client takes the config from the subscription page.",
+    awgHint: "AmneziaWG 3.1 — WireGuard with a masked handshake and header protection (AmneziaVPN and AmneziaWG clients from 5.0.1.5). The panel mints the keys; after a regen the configs already handed out stop working.",
     enableAwg: "Turn AmneziaWG on to set the port and DNS.",
     off: "disabled",
     name: "Connection name",
