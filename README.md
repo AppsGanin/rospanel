@@ -244,7 +244,13 @@ packets and random-looking headers, for the AmneziaVPN and AmneziaWG apps. 3.1 a
 protection — the parts of the packet header that stayed in the clear were a static fingerprint
 a DPI box could match without ever seeing a handshake — plus padding on all four message types,
 headers drawn from a band rather than fixed, and timers spread instead of constant, so a session
-has no period to lock onto. It needs Amnezia VPN 5.0.1.5 or newer; a server whose parameters
+has no period to lock onto. Ahead of every handshake the client also sends a short chain of decoy datagrams
+(I1/I2) shaped like an ordinary UDP protocol — a QUIC Initial, a DNS query or a STUN
+binding request, one profile drawn per server — so the first packet of a new flow is
+something a DPI box recognises rather than an unknown blob. The panel generates them;
+there is nothing to paste, and the parts a protocol leaves free (connection ids, query
+names, transaction ids) are redrawn on every packet rather than captured once. It needs
+Amnezia VPN 5.0.1.5 or newer; a server whose parameters
 were generated before 3.1 keeps running them unchanged until you regenerate it, and regenerating
 invalidates the configs already handed out for that server, as it always has. The protocol engine
 (amneziawg-go) runs inside the panel process — no daemon, no extra binary — one tunnel per

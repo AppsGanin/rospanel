@@ -157,6 +157,14 @@ type Params struct {
 	// Trailers appends random bytes after the payload. [3.1]
 	Trailers bool `json:"trailers,omitempty"`
 
+	// I1/I2 are the decoy datagrams sent ahead of a handshake, in the engine's
+	// tag language — see imitate.go. Empty means "send none", which is what a
+	// block written before 3.1 has and what a client must see rather than an
+	// empty value: the upstream tools crash on I-parameters that are present but
+	// blank. [3.1]
+	I1 string `json:"i1,omitempty"`
+	I2 string `json:"i2,omitempty"`
+
 	// The timers, in seconds. WireGuard's are constants, and a constant is a
 	// clock a classifier can lock onto; these spread each one over a band. Zero
 	// leaves the protocol default, which is what a 1.5 row gets. [3.1]
@@ -175,7 +183,7 @@ func (p Params) IsZero() bool { return p == Params{} }
 // including a header written as a band rather than a single value, which is the
 // field an older agent would fail to decode.
 func (p Params) NeedsAgent31() bool {
-	if p.S3 != 0 || p.S4 != 0 || p.HeaderKey != "" || p.Trailers ||
+	if p.S3 != 0 || p.S4 != 0 || p.HeaderKey != "" || p.Trailers || p.I1 != "" || p.I2 != "" ||
 		!p.Padding.IsZero() || !p.RekeyAfter.IsZero() || !p.RekeyTimeout.IsZero() ||
 		!p.RejectAfter.IsZero() || !p.Keepalive.IsZero() || !p.Handshakes.IsZero() {
 		return true
@@ -246,6 +254,9 @@ func RandomParams() Params {
 	if _, err := rand.Read(key); err == nil {
 		p.HeaderKey = base64.StdEncoding.EncodeToString(key)
 	}
+
+	im := randomImitation()
+	p.I1, p.I2 = im.I1, im.I2
 	return p
 }
 
@@ -287,6 +298,11 @@ func (p Params) Validate() error {
 	if p.HeaderKey != "" {
 		if _, err := keyBytes(p.HeaderKey); err != nil {
 			return fmt.Errorf("awg: header key: %w", err)
+		}
+	}
+	for i, chain := range []string{p.I1, p.I2} {
+		if err := validateChain(chain); err != nil {
+			return fmt.Errorf("i%d: %w", i+1, err)
 		}
 	}
 	return nil
@@ -418,6 +434,14 @@ func (c Config) UAPI() (string, error) {
 		}
 		fmt.Fprintf(&b, "header_protection_key=%s\n", hk)
 	}
+	// Written only when set: an I-parameter that is present but empty is what
+	// crashes the upstream tools, so "no imitation" must be silence, not a blank.
+	if p.I1 != "" {
+		fmt.Fprintf(&b, "i1=%s\n", p.I1)
+	}
+	if p.I2 != "" {
+		fmt.Fprintf(&b, "i2=%s\n", p.I2)
+	}
 	if !p.Padding.IsZero() {
 		fmt.Fprintf(&b, "content_padding_addition=%s\n", p.Padding)
 	}
@@ -496,6 +520,12 @@ func (c ClientConfig) Render() string {
 		fmt.Fprintf(&b, "S4 = %d\n", p.S4)
 	}
 	fmt.Fprintf(&b, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", p.H1, p.H2, p.H3, p.H4)
+	if p.I1 != "" {
+		fmt.Fprintf(&b, "I1 = %s\n", p.I1)
+	}
+	if p.I2 != "" {
+		fmt.Fprintf(&b, "I2 = %s\n", p.I2)
+	}
 	if p.HeaderKey != "" {
 		fmt.Fprintf(&b, "HeaderProtectionKey = %s\n", p.HeaderKey)
 	}

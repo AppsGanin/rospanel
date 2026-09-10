@@ -90,7 +90,10 @@ func TestAWGConfigEndpointsAndPageCard(t *testing.T) {
 	body := conf.Body.String()
 	for _, want := range []string{"S3 = ", "S4 = ", "HeaderProtectionKey = ",
 		"ContentPaddingAddition = ", "RandomTrailers = on", "RekeyAfterTime = ",
-		"RejectAfterTime = ", "KeepaliveTimeout = ", "MaxHandshakeAttempts = "} {
+		"RejectAfterTime = ", "KeepaliveTimeout = ", "MaxHandshakeAttempts = ",
+		// The decoy chain: without it the first packet of a new flow is an
+		// unrecognised blob, which is the shape the blocking looks for.
+		"I1 = <", "I2 = <"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the served config is not 3.1 — no %q:\n%s", want, body)
 		}

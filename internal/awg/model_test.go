@@ -25,6 +25,8 @@ func TestParamsSurviveTheModelRoundTrip(t *testing.T) {
 		H2:           Range{1001, 1101},
 		H3:           Range{2001, 2101},
 		H4:           Range{3001, 3101},
+		I1:           "<b 0x000100002112a442><r 12>",
+		I2:           "<r 2><b 0x0100><t>",
 		HeaderKey:    "3q2+796tvu/erb7v3q2+796tvu/erb7v3q2+796tvu8=",
 		Padding:      Range{1, 32},
 		Trailers:     true,

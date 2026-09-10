@@ -29,6 +29,9 @@ type AWGParams struct {
 	H3 string `json:"h3"`
 	H4 string `json:"h4"`
 
+	I1 string `json:"i1,omitempty"`
+	I2 string `json:"i2,omitempty"`
+
 	HeaderKey string `json:"header_key,omitempty"`
 	Padding   string `json:"padding,omitempty"`
 	Trailers  bool   `json:"trailers,omitempty"`
