@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.1.0](https://github.com/AppsGanin/rospanel/compare/v3.0.0...v3.1.0) (2026-09-10)
+
+
+### Features
+
+* **awg:** AmneziaWG 3.1 ([59d9a9f](https://github.com/AppsGanin/rospanel/commit/59d9a9ff128c0698718f8a23e70a4ca9020a3458))
+* **awg:** imitate a real protocol ahead of the handshake ([b14c81d](https://github.com/AppsGanin/rospanel/commit/b14c81d5d4867428de497b3712b078d25f2d099a))
+
+
+### Bug Fixes
+
+* **awg:** the panel says which protocol a server imitates ([f957d81](https://github.com/AppsGanin/rospanel/commit/f957d810e83bcc298d61c92ab4a17d887a2fece2))
+* **conn:** the obfuscation summary shows the whole 3.1 parameter set ([4a31102](https://github.com/AppsGanin/rospanel/commit/4a31102c1d99973601e346c7916b2f5ca515ce86))
+* **i18n:** shorten the AmneziaWG settings hint ([d1184f6](https://github.com/AppsGanin/rospanel/commit/d1184f6880cedd66ae82494cc564d0d83cb431fd))
+* **overview:** recent events carry a date, not just a clock ([5e69b62](https://github.com/AppsGanin/rospanel/commit/5e69b62520ec1d551a0b36aae8fb8ead41692698))
+
 ## [3.0.0](https://github.com/AppsGanin/rospanel/compare/v2.14.2...v3.0.0) (2026-09-09)
 
 
