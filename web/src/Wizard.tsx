@@ -5,6 +5,7 @@ import type { TLSStatus } from './api'
 import { AuthShell } from './AuthShell'
 import { errMessage, notifyError } from './notify'
 import { BACKUP_ACCEPT, ManifestCard, RestoreWaiting, useRestore, ValidationNote } from './restore'
+import { useStepUpDialog } from './stepup'
 import { browserTimezone, tzOptions } from './tz'
 import { Button, cn, Code, IconCheck, PasswordInput, Select, TextInput } from './ui'
 import { isIP, isValidACMETarget, isValidEmail } from './validate'
@@ -78,6 +79,27 @@ function currentSecret(): string {
 function RestoreFlow({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation()
   const { fileRef, file, inspection, manifest, inspecting, restoring, done, pick, restore } = useRestore()
+  const { ask, stepUpNode } = useStepUpDialog()
+
+  // First run has no admin of its own to ask anything of, so the only credential here is
+  // the backup's: a backup of a 2FA-protected panel is not restorable by someone who
+  // holds the file but not the authenticator (verifyBackupTOTP). The shared step-up
+  // dialog asks for it, with the password field switched off.
+  const doRestore = async () => {
+    if (!inspection?.totp) {
+      await restore('')
+      return
+    }
+    const creds = await ask({
+      title: t('wizard.restoreAndRestart'),
+      confirmLabel: t('wizard.restoreAndRestart'),
+      danger: true,
+      password: false,
+      backupCode: true,
+    })
+    if (!creds) return
+    await restore('', '', creds.backupCode)
+  }
 
   if (done) return <RestoreWaiting manifest={done} currentDomain={window.location.hostname} />
 
@@ -97,6 +119,7 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
 
       {manifest && <ManifestCard m={manifest} label={t('wizard.inBackup')} />}
       {inspection && <ValidationNote inspection={inspection} />}
+      {stepUpNode}
 
       <div className="flex items-center justify-between">
         <Button variant="outline" color="gray" onClick={onBack}>
@@ -108,8 +131,9 @@ function RestoreFlow({ onBack }: { onBack: () => void }) {
             loading={restoring}
             disabled={!inspection?.valid}
             // First run: there is no admin password to step up against yet, and the
-            // panel's verifyStepUp waives the check until setup is done.
-            onClick={() => restore('')}
+            // panel's verifyStepUp waives the check until setup is done. The backup's
+            // own second factor is still asked for (verifyBackupTOTP).
+            onClick={doRestore}
           >
             {t('wizard.restoreAndRestart')}
           </Button>

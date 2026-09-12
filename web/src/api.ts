@@ -432,9 +432,12 @@ export interface BackupInspection {
   db_users: number
   db_admins: number
   issue: string // dictionary key naming the problem when !valid
+  // The backup's own owner/admins had 2FA: restoring it asks for a code from their
+  // authenticator. Only the fact — the secrets never leave the server.
+  totp?: boolean
 }
 
-const backupForm = (file: File, currentPassword?: string, code?: string) => {
+const backupForm = (file: File, currentPassword?: string, code?: string, backupCode?: string) => {
   const fd = new FormData()
   fd.append('backup', file)
   // The restore endpoint re-authenticates (it replaces the admin roster this session
@@ -443,14 +446,16 @@ const backupForm = (file: File, currentPassword?: string, code?: string) => {
   // does not.
   if (currentPassword !== undefined) fd.append('current_password', currentPassword)
   if (code) fd.append('code', code)
+  // A code from the BACKUP's authenticator, when its admins had 2FA.
+  if (backupCode) fd.append('backup_code', backupCode)
   return fd
 }
 
 export const inspectBackup = (file: File) =>
   apiForm<BackupInspection>('api/backup/inspect', backupForm(file))
 
-export const restoreBackup = (file: File, currentPassword: string, code = '') =>
-  apiForm<{ ok?: boolean }>('api/restore', backupForm(file, currentPassword, code)).then(() => {})
+export const restoreBackup = (file: File, currentPassword: string, code = '', backupCode = '') =>
+  apiForm<{ ok?: boolean }>('api/restore', backupForm(file, currentPassword, code, backupCode)).then(() => {})
 
 // resetPanel wipes all state and restarts the panel into first-run mode. It
 // returns the URL the panel will come back on (auto-detected IP + default path),

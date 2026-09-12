@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -18,7 +19,10 @@ import (
 // scheduleRestart sends the process SIGTERM after a short delay so the current
 // HTTP response flushes first; the systemd / Docker restart policy brings it back
 // up (and the next boot reflects whatever state was just written/wiped).
-func scheduleRestart() {
+//
+// A variable so a test can drive a restore all the way through: the real one signals
+// the process it runs in, which under `go test` is the test binary itself.
+var scheduleRestart = func() {
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		p, _ := os.FindProcess(os.Getpid())
@@ -147,15 +151,17 @@ func (rt *Router) inspectBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract to a throwaway dir and validate the embedded database.
-	issue, dbUsers, dbAdmins := inspectArchive(tmp.Name())
-	valid := issue == ""
+	rep := inspectArchive(tmp.Name())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"manifest":  m,
-		"valid":     valid,
-		"db_users":  dbUsers,
-		"db_admins": dbAdmins,
-		"issue":     issue,
+		"valid":     rep.issue == "",
+		"db_users":  rep.users,
+		"db_admins": rep.admins,
+		"issue":     rep.issue,
+		// Whether restoring it will ask for a code from ITS authenticator. Only the
+		// fact, never the secrets: the dialog needs to know to show the field.
+		"totp": len(rep.totpSecrets) > 0,
 	})
 }
 
@@ -204,8 +210,12 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 	// staging is the point of no return (ApplyPending replaces only the entries the
 	// archive HAS, so one carrying secrets.key but no database swaps the encryption key
 	// out from under an unchanged DB, and every secret then decrypts to "").
-	if issue, _, _ := inspectArchive(tmp.Name()); issue != "" {
-		writeErrCode(w, http.StatusBadRequest, archiveIssueErr[issue], "архив не прошёл проверку")
+	rep := inspectArchive(tmp.Name())
+	if rep.issue != "" {
+		writeErrCode(w, http.StatusBadRequest, archiveIssueErr[rep.issue], "архив не прошёл проверку")
+		return
+	}
+	if !rt.verifyBackupTOTP(w, r, rep.totpSecrets, r.FormValue("backup_code"), r.FormValue("code")) {
 		return
 	}
 
@@ -227,6 +237,7 @@ var archiveIssueErr = map[string]string{
 	"restore.dbUnreadable":   "err.backupDbUnreadable",
 	"restore.noAdmin":        "err.backupNoAdmin",
 	"restore.schemaTooNew":   "err.backupSchemaTooNew",
+	"restore.totpUnreadable": "err.backupTotpUnreadable",
 }
 
 // inspectArchive extracts a backup to a throwaway dir and reports whether it can be
@@ -235,23 +246,25 @@ var archiveIssueErr = map[string]string{
 //
 // Shared by the inspect call and the restore itself — the SPA asks first, but the
 // restore endpoint must not depend on a client having done so.
-func inspectArchive(path string) (issue string, users, admins int) {
+func inspectArchive(path string) archiveReport {
 	dir, err := os.MkdirTemp("", "rospanel-inspect-*")
 	if err != nil {
-		return "restore.archiveCorrupt", 0, 0
+		return archiveReport{issue: "restore.archiveCorrupt"}
 	}
 	defer os.RemoveAll(dir)
 
 	if err := backup.Restore(path, dir); err != nil {
-		return "restore.archiveCorrupt", 0, 0
+		return archiveReport{issue: "restore.archiveCorrupt"}
 	}
 	dbPath := filepath.Join(dir, "rospanel.db")
 	u, a, _, err := store.InspectDB(dbPath)
 	if err != nil {
-		return "restore.dbUnreadable", 0, 0
+		return archiveReport{issue: "restore.dbUnreadable"}
 	}
+	rep := archiveReport{users: u, admins: a}
 	if a == 0 {
-		return "restore.noAdmin", u, a
+		rep.issue = "restore.noAdmin"
+		return rep
 	}
 	// A database from a NEWER panel cannot be restored into this one: the migration
 	// runner skips versions already recorded, so nothing would run and the binary would
@@ -262,9 +275,29 @@ func inspectArchive(path string) (issue string, users, admins int) {
 	// unrecoverable from inside the panel.
 	v, err := store.DBSchemaVersion(dbPath)
 	if err != nil || v > store.SchemaVersion() {
-		return "restore.schemaTooNew", u, a
+		rep.issue = "restore.schemaTooNew"
+		return rep
 	}
-	return "", u, a
+	// The backup's own second factor, if its admins had one. Unreadable is an issue,
+	// not "none": a restored panel whose 2FA secrets will not decrypt is one nobody
+	// can sign in to — the login refuses an unreadable secret rather than waving the
+	// password through — and it is better found out here than after the reboot.
+	secrets, err := store.BackupAdminTOTPSecrets(dir)
+	if err != nil {
+		rep.issue = "restore.totpUnreadable"
+		return rep
+	}
+	rep.totpSecrets = secrets
+	return rep
+}
+
+// archiveReport is what inspectArchive found. totpSecrets are the decrypted
+// second-factor secrets of the backup's owner and admins, held only for as long as
+// the request that checks a code against them.
+type archiveReport struct {
+	issue         string
+	users, admins int
+	totpSecrets   []string
 }
 
 // verifyRestoreStepUp gates a restore once the panel is set up exactly as the factory
@@ -292,4 +325,59 @@ func (rt *Router) verifyRestoreStepUp(w http.ResponseWriter, r *http.Request, pa
 		return rt.verifyStepUp(w, r, password)
 	}
 	return rt.verifyStepUpTOTP(w, r, password, code)
+}
+
+// verifyBackupTOTP asks for the second factor of the BACKUP being restored, whenever
+// that backup's owner or admins had one — on top of whatever verifyRestoreStepUp
+// already asked of the admin doing it.
+//
+// The step-up proves who is at this panel; this proves they can operate the panel they
+// are about to bring back. It matters most where the step-up can ask nothing: in the
+// first-run wizard there is no admin of this install yet, so a backup of a
+// 2FA-protected panel could be restored by anyone holding the file. Now it needs a
+// code from that panel's authenticator too. And it catches the honest mistake of
+// restoring a backup whose authenticator is long gone, before the reboot rather than
+// at a login that will never succeed.
+//
+// A code that matches any one of those admins is enough. The admin restoring does
+// not have to be the one who made the backup, only someone that panel trusted to
+// restore one. backupCode is the field the dialog fills; when it is empty the
+// step-up code is tried against the backup too, so rolling back a panel to its own
+// backup — the commonest restore, where both come from the same authenticator —
+// needs one code, not the same six digits typed twice.
+//
+// Guesses count against the same per-IP step-up throttle as every other code asked
+// for here: a restore is not a softer place to try six-digit numbers.
+//
+// What it does not do is mark the code spent: the backup's replay marker lives in the
+// backup's own database, which is not opened for writing before it is applied. So a
+// code that authorised a restore can still sign in to the restored panel within its
+// window — to the same person who just proved they hold it.
+func (rt *Router) verifyBackupTOTP(w http.ResponseWriter, r *http.Request, secrets []string, backupCode, stepUpCode string) bool {
+	if len(secrets) == 0 {
+		return true
+	}
+	code := strings.TrimSpace(backupCode)
+	if code == "" {
+		code = strings.TrimSpace(stepUpCode)
+	}
+	if code == "" {
+		writeErrCode(w, http.StatusForbidden, "err.backupTotpRequired", "введите код из приложения для этого бэкапа")
+		return false
+	}
+	ip := clientIP(r)
+	if rt.stepUp.blocked(ip, "") {
+		writeErrCode(w, http.StatusTooManyRequests, "err.tooManyAttempts", "слишком много попыток, попробуйте позже")
+		return false
+	}
+	now := time.Now()
+	for _, secret := range secrets {
+		if _, ok := auth.VerifyTOTP(secret, code, now, 0); ok {
+			rt.stepUp.success(ip, "")
+			return true
+		}
+	}
+	rt.stepUp.fail(ip, "")
+	writeErrCode(w, http.StatusForbidden, "err.backupTotpInvalid", "код не подходит к этому бэкапу")
+	return false
 }

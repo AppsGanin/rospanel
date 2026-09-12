@@ -139,10 +139,20 @@ func Encrypt(s string) (string, error) {
 	if s == "" || key == nil {
 		return s, nil
 	}
-	if strings.HasPrefix(s, encPrefix) {
+	return EncryptWith(key, s)
+}
+
+// EncryptWith encrypts one value under the given key rather than the installed one —
+// the counterpart of DecryptWith, for writing a secret that belongs to a data
+// directory other than the running panel's.
+func EncryptWith(k []byte, s string) (string, error) {
+	if s == "" || strings.HasPrefix(s, encPrefix) {
 		return s, nil
 	}
-	block, err := aes.NewCipher(key)
+	if len(k) != keySize {
+		return "", errors.New("no key to encrypt with")
+	}
+	block, err := aes.NewCipher(k)
 	if err != nil {
 		return "", err
 	}
@@ -163,11 +173,40 @@ func Decrypt(s string) (string, error) {
 	if s == "" || !strings.HasPrefix(s, encPrefix) || key == nil {
 		return s, nil
 	}
+	return DecryptWith(key, s)
+}
+
+// ReadKey loads the encryption key a data directory carries, without installing it.
+// It is how a backup's own secrets are read before the backup is restored: the
+// process-wide key belongs to the panel that is running, and a backup from another
+// install is encrypted under a different one.
+func ReadKey(dataDir string) ([]byte, error) {
+	b, err := os.ReadFile(filepath.Join(dataDir, keyFile))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) != keySize {
+		return nil, errors.New("secrets.key: wrong size")
+	}
+	return b, nil
+}
+
+// DecryptWith decrypts one value under the given key rather than the installed one.
+// Plaintext passes through as in Decrypt, but an enc:v1: value with no key to open
+// it is an error, never a pass-through: a caller asking "does this hold a secret"
+// must not be told "no" because the key was missing.
+func DecryptWith(k []byte, s string) (string, error) {
+	if s == "" || !strings.HasPrefix(s, encPrefix) {
+		return s, nil
+	}
+	if len(k) != keySize {
+		return "", errors.New("no key to decrypt with")
+	}
 	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(s, encPrefix))
 	if err != nil {
 		return "", err
 	}
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(k)
 	if err != nil {
 		return "", err
 	}
