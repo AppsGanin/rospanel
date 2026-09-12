@@ -373,6 +373,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	// Every one of these goes through runAsync, so Close can wait for it. A loop that
 	// is started with a bare `go` is one Close cannot account for, and the failure is
 	// invisible until something it writes to has already been torn down.
+	m.runAsync(func() { m.guard.cleanupLoop(m.done) })
 	m.runAsync(m.nodeWatchLoop)
 	m.runAsync(m.reconcileLoop)
 	m.runAsync(m.proxyLoop)
