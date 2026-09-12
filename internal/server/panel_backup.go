@@ -174,8 +174,8 @@ func (rt *Router) uploadRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	// Re-authenticate: a restore replaces the whole data directory, including the admin
 	// roster the caller is authenticated against, and it is applied on the next boot
-	// with no undo. Carried as a form field because this endpoint is multipart, not JSON.
-	if !rt.verifyStepUp(w, r, r.FormValue("current_password")) {
+	// with no undo. Carried as form fields because this endpoint is multipart, not JSON.
+	if !rt.verifyRestoreStepUp(w, r, r.FormValue("current_password"), r.FormValue("code")) {
 		return
 	}
 	f, _, err := r.FormFile("backup")
@@ -265,4 +265,31 @@ func inspectArchive(path string) (issue string, users, admins int) {
 		return "restore.schemaTooNew", u, a
 	}
 	return "", u, a
+}
+
+// verifyRestoreStepUp gates a restore once the panel is set up exactly as the factory
+// reset is gated: the password and, when this admin has bound an authenticator, a
+// fresh code.
+//
+// It used to ask for the password alone, which put the more dangerous of the two
+// behind the lower bar. A factory reset wipes the panel; a restore REPLACES it with a
+// database the uploader chose — its admin roster included, so whoever holds a stolen
+// session and a reused password could install an admin of their own with no second
+// factor on it, the next boot applies it, and nothing undoes it. That is a takeover,
+// not a wipe, and it was the one of the two that did not ask for the code.
+//
+// During first run it keeps verifyStepUp's waiver, deliberately: the wizard's own
+// "restore from backup" is how a new install becomes an old one, it runs before this
+// install has an admin worth protecting or any second factor to ask for, and the
+// wizard sends no credentials at all.
+func (rt *Router) verifyRestoreStepUp(w http.ResponseWriter, r *http.Request, password, code string) bool {
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeErrCode(w, http.StatusInternalServerError, "err.internal", "внутренняя ошибка сервера")
+		return false
+	}
+	if !set.SetupDone {
+		return rt.verifyStepUp(w, r, password)
+	}
+	return rt.verifyStepUpTOTP(w, r, password, code)
 }
