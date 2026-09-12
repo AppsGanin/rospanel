@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.2.0](https://github.com/AppsGanin/rospanel/compare/v3.1.0...v3.2.0) (2026-09-12)
+
+
+### Features
+
+* **routing:** never fall back to direct when a lane is down ([55be958](https://github.com/AppsGanin/rospanel/commit/55be9580c6b4abd8d0a1547db8f78efb88fe4b1e)), closes [#85](https://github.com/AppsGanin/rospanel/issues/85)
+
+
+### Bug Fixes
+
+* **proxy:** a list host that fails a refresh no longer empties the lane ([8b7eab4](https://github.com/AppsGanin/rospanel/commit/8b7eab41d0cc215bd1b86b15550cfc97f8e3cbd3))
+
 ## [3.1.0](https://github.com/AppsGanin/rospanel/compare/v3.0.0...v3.1.0) (2026-09-10)
 
 
