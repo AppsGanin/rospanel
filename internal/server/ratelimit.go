@@ -199,16 +199,8 @@ func (l *ipRateLimiter) allow(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
-	if now.Sub(l.swept) > l.window || len(l.hits) > l.maxKeys {
-		l.swept = now
-		for k, r := range l.hits {
-			if now.After(r.reset) {
-				delete(l.hits, k)
-			}
-		}
-		if len(l.hits) > l.maxKeys {
-			l.hits = make(map[string]*windowRec)
-		}
+	if now.Sub(l.swept) > l.window || len(l.hits) >= l.maxKeys {
+		l.sweepLocked(now)
 	}
 	r := l.hits[ip]
 	if r == nil || now.After(r.reset) {
@@ -220,6 +212,57 @@ func (l *ipRateLimiter) allow(ip string) bool {
 	}
 	r.count++
 	return true
+}
+
+// sweepLocked drops expired windows and, when the map is still at its cap, sheds
+// entries down to a low-water mark. Caller holds l.mu.
+//
+// It used to wipe the whole map once it overflowed, and that was a way out of the
+// limit: an IP already throttled could spray requests from a few thousand other
+// addresses — an IPv6 /64 holds more than enough — until the map passed its cap, and
+// the wipe handed the throttled address a fresh window along with everyone else. This
+// limiter guards the public subscription endpoint and the /v1 API.
+//
+// So it sheds the way loginLimiter does. First the addresses that are NOT at their
+// limit: losing one costs that address nothing it could not get from a fresh one of
+// its own. Only if the throttled addresses alone still fill the map — someone burned
+// a full window from each of thousands of addresses purely to bloat it — do those go,
+// soonest-to-reset first, since they have the least throttling left to give. And it
+// cuts to three quarters rather than to the cap, so a sustained spray pays one shed
+// per maxKeys/4 new addresses instead of a full sort per request.
+func (l *ipRateLimiter) sweepLocked(now time.Time) {
+	l.swept = now
+	for k, r := range l.hits {
+		if now.After(r.reset) {
+			delete(l.hits, k)
+		}
+	}
+	if len(l.hits) < l.maxKeys {
+		return
+	}
+	lowWater := l.maxKeys * 3 / 4
+	for k, r := range l.hits {
+		if len(l.hits) <= lowWater {
+			break
+		}
+		if r.count < l.limit {
+			delete(l.hits, k)
+		}
+	}
+	if len(l.hits) > lowWater {
+		type entry struct {
+			key   string
+			reset time.Time
+		}
+		all := make([]entry, 0, len(l.hits))
+		for k, r := range l.hits {
+			all = append(all, entry{k, r.reset})
+		}
+		slices.SortFunc(all, func(a, b entry) int { return a.reset.Compare(b.reset) })
+		for _, e := range all[:len(all)-lowWater] {
+			delete(l.hits, e.key)
+		}
+	}
 }
 
 // streamGate caps concurrent Server-Sent Events streams, both globally and per
