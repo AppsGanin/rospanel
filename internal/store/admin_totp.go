@@ -3,6 +3,11 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"path/filepath"
+
+	"github.com/AppsGanin/rospanel/internal/datasec"
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // The admin second factor. The secret is encrypted at rest like every other secret in
@@ -102,4 +107,63 @@ func (s *Store) MarkAdminTOTPStep(id int64, step int64) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// BackupAdminTOTPSecrets reads the second-factor secrets of the admins in an unpacked
+// backup who could restore a backup themselves — owner and admin; an operator cannot
+// — decrypted under the backup's own secrets.key, not the running panel's.
+//
+// It is what lets a restore ask for the second factor OF THE BACKUP: a panel whose
+// admins used 2FA should not be restorable by someone who holds the file but not the
+// authenticator, and that includes a fresh install still in its first-run wizard,
+// where there is no admin of this panel to ask anything of.
+//
+// Fails closed on anything it cannot read. A secret that will not decrypt — a backup
+// with no secrets.key, a key that is not the one it was written with, a mangled
+// column — is an error, never an empty result: an empty result means "this backup
+// has no second factor", and answering that about one that does would wave the
+// restore through on exactly the backups that asked for more.
+func BackupAdminTOTPSecrets(dir string) ([]string, error) {
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dir, "rospanel.db")+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(
+		`SELECT totp_secret FROM admins WHERE totp_secret != '' AND role IN (?, ?)`,
+		model.RoleOwner, model.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	var enc []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		enc = append(enc, s)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(enc) == 0 {
+		return nil, nil
+	}
+
+	// Only now is the key needed — a backup whose admins have no second factor, from
+	// an install that never encrypted anything, may carry no key at all and is fine.
+	key, keyErr := datasec.ReadKey(dir)
+	out := make([]string, 0, len(enc))
+	for _, e := range enc {
+		plain, err := datasec.DecryptWith(key, e)
+		if err != nil || plain == "" {
+			if keyErr != nil {
+				return nil, fmt.Errorf("%w: %v", ErrTOTPUnreadable, keyErr)
+			}
+			return nil, ErrTOTPUnreadable
+		}
+		out = append(out, plain)
+	}
+	return out, nil
 }

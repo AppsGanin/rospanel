@@ -2,7 +2,14 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { AppLogs } from "./AppLogs";
 import { getBackupInfo, resetPanel, restartPanel } from "./api";
-import { EMPTY_STEP_UP, type StepUp, StepUpFields, stepUpReady, useTotpEnabled } from "./stepup";
+import {
+  EMPTY_STEP_UP,
+  type StepUp,
+  StepUpFields,
+  stepUpReady,
+  useStepUpDialog,
+  useTotpEnabled,
+} from "./stepup";
 import { useFetch } from "./hooks";
 import { errMessage, notifyError } from "./notify";
 import {
@@ -118,7 +125,7 @@ export function ManagementCard() {
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetCreds, setResetCreds] = useState<StepUp>(EMPTY_STEP_UP);
-  const [restoreCreds, setRestoreCreds] = useState<StepUp>(EMPTY_STEP_UP);
+  const { ask, stepUpNode } = useStepUpDialog();
   const [resetting, setResetting] = useState(false);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -130,6 +137,24 @@ export function ManagementCard() {
   const closeReset = () => {
     setResetOpen(false);
     setResetCreds(EMPTY_STEP_UP);
+  };
+
+  // A restore replaces the admin roster this session is authenticated against — a
+  // takeover if the backup is not theirs — so it is re-authorised in the shared
+  // step-up dialog: the password and, when this admin has one, a fresh code
+  // (verifyRestoreStepUp); and a code from the BACKUP's authenticator when its admins
+  // had 2FA (verifyBackupTOTP).
+  const doRestore = async () => {
+    const creds = await ask({
+      title: t("manage.restore"),
+      body: t("manage.restoreWarn"),
+      confirmLabel: t("manage.restore"),
+      danger: true,
+      withCode: true,
+      backupCode: !!inspection?.totp,
+    });
+    if (!creds) return;
+    await restore(creds.password, creds.code, creds.backupCode);
   };
 
   const doReset = async () => {
@@ -239,24 +264,13 @@ export function ManagementCard() {
                 {t("manage.restoreWarn")}
               </p>
             )}
-            {/* A restore replaces the admin roster this session is authenticated
-                against — a takeover if it is not theirs — so the panel re-asks for the
-                password and, when this admin has one, a fresh authenticator code, the
-                same bar as the factory reset (verifyRestoreStepUp). */}
-            {inspection?.valid && (
-              <div className="mt-3">
-                <StepUpFields value={restoreCreds} onChange={setRestoreCreds} withCode />
-              </div>
-            )}
+
             <div className="mt-4 flex justify-end gap-2">
               <Button
                 variant="outline"
                 color="gray"
                 size="sm"
-                onClick={() => {
-                  setRestoreCreds(EMPTY_STEP_UP);
-                  pick(null);
-                }}
+                onClick={() => pick(null)}
               >
                 {t("common.back")}
               </Button>
@@ -265,8 +279,8 @@ export function ManagementCard() {
                 color="red"
                 size="sm"
                 loading={restoring}
-                disabled={!inspection?.valid || !stepUpReady(restoreCreds, totpEnabled)}
-                onClick={() => restore(restoreCreds.password, restoreCreds.code)}
+                disabled={!inspection?.valid}
+                onClick={doRestore}
               >
                 {t("manage.restore")}
               </Button>
@@ -274,6 +288,8 @@ export function ManagementCard() {
           </>
         )}
       </Modal>
+
+      {stepUpNode}
 
       {/* Restart the panel process */}
       <Modal open={restartOpen} onClose={() => setRestartOpen(false)} title={t("manage.restartTitle")}>

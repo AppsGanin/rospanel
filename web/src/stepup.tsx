@@ -24,9 +24,12 @@ export const useTotpEnabled = () => useContext(TotpCtx);
 export interface StepUp {
   password: string;
   code: string;
+  // A code from the authenticator of a BACKUP being restored, when its admins had one
+  // (verifyBackupTOTP). Empty everywhere else.
+  backupCode: string;
 }
 
-export const EMPTY_STEP_UP: StepUp = { password: "", code: "" };
+export const EMPTY_STEP_UP: StepUp = { password: "", code: "", backupCode: "" };
 
 // stepUpReady reports whether the form has enough to be worth sending. Six digits is
 // the length every authenticator produces; anything shorter is a half-typed code, and
@@ -35,12 +38,28 @@ export function stepUpReady(v: StepUp, totpEnabled: boolean): boolean {
   return v.password !== "" && (!totpEnabled || v.code.length === 6);
 }
 
+// askReady is stepUpReady for the dialog, which can also skip the password and ask for
+// a backup's code. The backup's code may be left empty when this admin's own code is
+// there: the server tries that one against the backup too, so rolling a panel back to
+// its own backup takes one code, not the same six digits typed twice.
+function askReady(v: StepUp, ask: StepUpAsk, hasTotp: boolean): boolean {
+  if (ask.password !== false && v.password === "") return false;
+  const ownCode = hasTotp && !!ask.withCode;
+  if (ownCode && v.code.length !== 6) return false;
+  if (ask.backupCode && v.backupCode.length !== 6 && !(ownCode && v.code.length === 6)) {
+    return false;
+  }
+  return true;
+}
+
 // StepUpFields renders the credentials an irreversible action asks for. One component
 // so the dialogs cannot drift apart on which of them asks for the second factor.
 export function StepUpFields({
   value,
   onChange,
   withCode,
+  password = true,
+  backupCode,
 }: {
   value: StepUp;
   onChange: (v: StepUp) => void;
@@ -48,16 +67,23 @@ export function StepUpFields({
   // deleting a node — verifyStepUpTOTP on the server). Asking for a code where the
   // server ignores it would block the button on an account that has 2FA.
   withCode?: boolean;
+  // false in the first-run wizard, which has no admin of its own to ask for one.
+  password?: boolean;
+  // Ask for a code from the backup being restored, too.
+  backupCode?: boolean;
 }) {
   const { t } = useTranslation();
   const totp = useTotpEnabled() && !!withCode;
+  const digits = (v: string) => v.replace(/\D/g, "").slice(0, 6);
   return (
     <div className="flex flex-col gap-3">
-      <PasswordInput
-        label={t("creds.currentPassword")}
-        value={value.password}
-        onChange={(password) => onChange({ ...value, password })}
-      />
+      {password && (
+        <PasswordInput
+          label={t("creds.currentPassword")}
+          value={value.password}
+          onChange={(password) => onChange({ ...value, password })}
+        />
+      )}
       {totp && (
         <div className="flex flex-col gap-1">
           <TextInput
@@ -66,9 +92,25 @@ export function StepUpFields({
             placeholder="000000"
             inputMode="numeric"
             autoComplete="one-time-code"
-            onChange={(code) => onChange({ ...value, code: code.replace(/\D/g, "").slice(0, 6) })}
+            onChange={(code) => onChange({ ...value, code: digits(code) })}
           />
           <p className="text-xs text-ink-muted">{t("stepUp.codeHint")}</p>
+        </div>
+      )}
+      {backupCode && (
+        <div className="flex flex-col gap-1">
+          <TextInput
+            label={t("restore.backupCode")}
+            value={value.backupCode}
+            placeholder="000000"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            onChange={(v) => onChange({ ...value, backupCode: digits(v) })}
+          />
+          <p className="text-xs text-ink-muted">
+            {t("restore.backupCodeHint")}
+            {totp && ` ${t("restore.backupCodeSameHint")}`}
+          </p>
         </div>
       )}
     </div>
@@ -114,7 +156,7 @@ export function useStepUpDialog() {
           <Button
             color={req?.danger ? "red" : "brand"}
             loading={busy}
-            disabled={!stepUpReady(value, hasTotp && !!req?.withCode)}
+            disabled={!req || !askReady(value, req, hasTotp)}
             onClick={() => {
               setBusy(true);
               close(value);
@@ -125,7 +167,13 @@ export function useStepUpDialog() {
         </div>
       }
     >
-      <StepUpFields value={value} onChange={setValue} withCode={req?.withCode} />
+      <StepUpFields
+        value={value}
+        onChange={setValue}
+        withCode={req?.withCode}
+        password={req?.password}
+        backupCode={req?.backupCode}
+      />
     </Modal>
   );
 
@@ -142,4 +190,8 @@ export interface StepUpAsk {
   // Ask for an authenticator code as well — for the two actions whose endpoint
   // checks one (verifyStepUpTOTP).
   withCode?: boolean;
+  // Ask for the password. Default true; the first-run wizard's restore passes false.
+  password?: boolean;
+  // Ask for a code from the backup being restored — when its owner/admins had 2FA.
+  backupCode?: boolean;
 }

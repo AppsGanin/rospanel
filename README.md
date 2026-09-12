@@ -625,7 +625,10 @@ working service is the one failure this must not have.
 database freshness, egress health — every check with a hint. A separate **connection self-test**
 connects to each protocol as a real client and confirms traffic actually goes out — catching
 credential, TLS or ALPN drift before a user does. **Backup / restore** and reset are available
-from the panel and the CLI.
+from the panel and the CLI. Restoring from the panel asks for your password and, with 2FA on, a
+fresh code — and when the **backup's** owner or admins had 2FA, a code from that backup's
+authenticator too, including in the first-run wizard, so a backup of a 2FA-protected panel cannot
+be restored by someone who has the file but not the authenticator.
 
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
 only then replaces itself, keeping the previous version next to it. **"What's new"** in the

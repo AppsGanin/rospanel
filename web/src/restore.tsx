@@ -102,12 +102,13 @@ export function useRestore() {
 
   // password (and code, when this admin has 2FA) is the step-up the panel requires: a
   // restore replaces the admin roster this session authenticates against, so a session
-  // cookie alone must not be enough. The first-run wizard passes neither.
-  const restore = async (password: string, code = "") => {
+  // cookie alone must not be enough. The first-run wizard passes neither. backupCode is
+  // a code from the backup's own authenticator, asked for when inspection.totp.
+  const restore = async (password: string, code = "", backupCode = "") => {
     if (!file) return;
     setRestoring(true);
     try {
-      await restoreBackup(file, password, code);
+      await restoreBackup(file, password, code, backupCode);
       setDone(inspection?.manifest ?? null);
     } catch (e) {
       notifyError(errMessage(e));
