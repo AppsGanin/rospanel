@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -305,5 +307,88 @@ func TestDeleteAdminAcceptsANonASCIIPassword(t *testing.T) {
 	}
 	if _, err := st.GetAdmin(victimID); err == nil {
 		t.Error("the account was not removed")
+	}
+}
+
+// sendRestore drives the multipart restore endpoint with the given step-up fields and
+// a file that is not a real backup. The step-up runs before the archive is read, so
+// a refusal names the credential, and anything else — "not a backup" — is proof the
+// gate opened without anything being restored.
+func sendRestore(t *testing.T, rt *Router, c *http.Cookie, password, code string) (int, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("backup", "b.tar.gz")
+	if err != nil {
+		t.Fatalf("form file: %v", err)
+	}
+	_, _ = fw.Write([]byte("not a real archive"))
+	if password != "" {
+		_ = mw.WriteField("current_password", password)
+	}
+	if code != "" {
+		_ = mw.WriteField("code", code)
+	}
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/restore", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if c != nil {
+		req.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	rt.panelMux().ServeHTTP(w, req)
+	var env struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &env)
+	return w.Code, env.Code
+}
+
+// A restore replaces the panel with a database the uploader chose, its admin roster
+// included — a takeover if it is not theirs. It asked for the password alone, while
+// the factory reset, which only wipes, asked for a fresh code too. Now it asks for
+// the same pair.
+func TestRestoreRequiresFreshTOTP(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	cookie, secret := adminWithTOTP(t, st, "owner")
+
+	if code, errCode := sendRestore(t, rt, cookie, "a-password", ""); errCode != "err.totpRequired" {
+		t.Fatalf("password alone: %d %s — want err.totpRequired", code, errCode)
+	}
+	if code, errCode := sendRestore(t, rt, cookie, "a-password", "000000"); errCode != "err.totpInvalid" {
+		t.Fatalf("wrong code: %d %s — want err.totpInvalid", code, errCode)
+	}
+	// Past the gate the handler reads the archive and rejects this fake one — that
+	// answer, and only that one, proves the step-up let it through.
+	if code, errCode := sendRestore(t, rt, cookie, "a-password", codeNow(t, secret)); errCode != "err.backupCorrupt" {
+		t.Fatalf("password and a fresh code: %d %s — want the gate to open (err.backupCorrupt)", code, errCode)
+	}
+}
+
+// An admin with no authenticator is not asked for one: turning 2FA on must not become
+// a prerequisite for restoring a backup.
+func TestRestoreWithout2FAStillNeedsOnlyThePassword(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	setupDone(t, st)
+	cookie := signIn(t, st, "owner", model.RoleOwner, false)
+
+	if code, errCode := sendRestore(t, rt, cookie, "wrong", ""); errCode != "err.wrongPassword" {
+		t.Fatalf("wrong password: %d %s — want err.wrongPassword", code, errCode)
+	}
+	if code, errCode := sendRestore(t, rt, cookie, "a-password", ""); errCode != "err.backupCorrupt" {
+		t.Fatalf("right password, no 2FA bound: %d %s — want the gate to open (err.backupCorrupt)", code, errCode)
+	}
+}
+
+// The first-run wizard restores with no credentials at all — it is how a new install
+// becomes an old one, before there is an admin worth protecting. That path must keep
+// working; tightening the restore after setup must not reach back into it.
+func TestTheWizardRestoreStillNeedsNoCredentials(t *testing.T) {
+	rt, st := rolesTestRouter(t) // setup not done
+	cookie := signIn(t, st, "owner", model.RoleOwner, false)
+
+	if code, errCode := sendRestore(t, rt, cookie, "", ""); errCode != "err.backupCorrupt" {
+		t.Fatalf("the wizard's credential-less restore: %d %s — want the gate to open (err.backupCorrupt)", code, errCode)
 	}
 }

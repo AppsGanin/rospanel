@@ -434,20 +434,23 @@ export interface BackupInspection {
   issue: string // dictionary key naming the problem when !valid
 }
 
-const backupForm = (file: File, currentPassword?: string) => {
+const backupForm = (file: File, currentPassword?: string, code?: string) => {
   const fd = new FormData()
   fd.append('backup', file)
   // The restore endpoint re-authenticates (it replaces the admin roster this session
-  // is authenticated against); the inspect endpoint reads nothing and does not.
+  // is authenticated against) — with a fresh authenticator code as well, once the
+  // panel is set up and this admin has one; the inspect endpoint reads nothing and
+  // does not.
   if (currentPassword !== undefined) fd.append('current_password', currentPassword)
+  if (code) fd.append('code', code)
   return fd
 }
 
 export const inspectBackup = (file: File) =>
   apiForm<BackupInspection>('api/backup/inspect', backupForm(file))
 
-export const restoreBackup = (file: File, currentPassword: string) =>
-  apiForm<{ ok?: boolean }>('api/restore', backupForm(file, currentPassword)).then(() => {})
+export const restoreBackup = (file: File, currentPassword: string, code = '') =>
+  apiForm<{ ok?: boolean }>('api/restore', backupForm(file, currentPassword, code)).then(() => {})
 
 // resetPanel wipes all state and restarts the panel into first-run mode. It
 // returns the URL the panel will come back on (auto-detected IP + default path),

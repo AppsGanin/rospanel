@@ -12,7 +12,7 @@ import {
   useRestore,
   ValidationNote,
 } from "./restore";
-import { Button, cn, Modal, Panel, PasswordInput } from "./ui";
+import { Button, cn, Modal, Panel } from "./ui";
 
 /* ----------------------------------------------------------------- icons */
 function IconList() {
@@ -118,7 +118,7 @@ export function ManagementCard() {
   const [backupOpen, setBackupOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetCreds, setResetCreds] = useState<StepUp>(EMPTY_STEP_UP);
-  const [restorePw, setRestorePw] = useState("");
+  const [restoreCreds, setRestoreCreds] = useState<StepUp>(EMPTY_STEP_UP);
   const [resetting, setResetting] = useState(false);
   const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -240,14 +240,12 @@ export function ManagementCard() {
               </p>
             )}
             {/* A restore replaces the admin roster this session is authenticated
-                against, so the panel re-asks for the password before staging it. */}
+                against — a takeover if it is not theirs — so the panel re-asks for the
+                password and, when this admin has one, a fresh authenticator code, the
+                same bar as the factory reset (verifyRestoreStepUp). */}
             {inspection?.valid && (
               <div className="mt-3">
-                <PasswordInput
-                  label={t("creds.currentPassword")}
-                  value={restorePw}
-                  onChange={setRestorePw}
-                />
+                <StepUpFields value={restoreCreds} onChange={setRestoreCreds} withCode />
               </div>
             )}
             <div className="mt-4 flex justify-end gap-2">
@@ -256,7 +254,7 @@ export function ManagementCard() {
                 color="gray"
                 size="sm"
                 onClick={() => {
-                  setRestorePw("");
+                  setRestoreCreds(EMPTY_STEP_UP);
                   pick(null);
                 }}
               >
@@ -267,8 +265,8 @@ export function ManagementCard() {
                 color="red"
                 size="sm"
                 loading={restoring}
-                disabled={!inspection?.valid || !restorePw}
-                onClick={() => restore(restorePw)}
+                disabled={!inspection?.valid || !stepUpReady(restoreCreds, totpEnabled)}
+                onClick={() => restore(restoreCreds.password, restoreCreds.code)}
               >
                 {t("manage.restore")}
               </Button>
