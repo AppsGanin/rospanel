@@ -36,7 +36,6 @@ func newBruteGuard() *bruteGuard {
 		banned:   make(map[string]time.Time),
 		blocker:  ipblock.New(ipblock.TableBrute).WithTTL(bruteBanTime),
 	}
-	go g.cleanupLoop()
 	return g
 }
 
@@ -80,12 +79,22 @@ func (g *bruteGuard) ban(ip string) {
 	logWarn("brute-guard: banned", "ip", ip, "duration", bruteBanTime)
 }
 
-// cleanupLoop forgets expired bans and stale attempt lists once a minute. The
-// firewall side needs nothing: the elements time out on their own.
-func (g *bruteGuard) cleanupLoop() {
+// cleanupLoop forgets expired bans and stale attempt lists once a minute, until done
+// closes. The firewall side needs nothing: the elements time out on their own.
+//
+// It is started by the manager through runAsync rather than from the constructor with
+// a bare go, which is what it used to be — and a loop over a ticker with no way out
+// outlives the manager that made it. Close could not wait for it, so every manager
+// ever built (every test builds several) left one ticking forever.
+func (g *bruteGuard) cleanupLoop(done <-chan struct{}) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+		}
 		now := time.Now()
 		cutoff := now.Add(-bruteWindow)
 		g.mu.Lock()
