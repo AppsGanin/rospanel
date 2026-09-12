@@ -988,6 +988,9 @@ export interface RoutingConfig {
   // How the direct outbound resolves a name before dialling it (Xray's freedom
   // domainStrategy). "" = Xray's own default (AsIs).
   direct_strategy?: string
+  // Drop a lane's traffic when that lane cannot carry it, instead of letting it
+  // leave through the server's own address. Absent = off, the default.
+  strict_egress?: boolean
   routing_order: string[]
   lanes: EgressLane[]
   proxy_refresh_minutes: number

@@ -258,16 +258,30 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// only active when it's enabled, HAS proxies, and something routes to it —
 	// otherwise its balancer would be empty (Xray rejects that) or unused.
 	active := make(map[string]bool, len(rc.Lanes))
+	// unusable are the lanes the operator switched on and routed traffic to, that
+	// this config cannot build a way out for: a proxy lane with no upstream resolved
+	// (every list URL failing is the usual cause), WARP with no account. Without
+	// StrictEgress their traffic falls through to whatever comes next, direct in the
+	// end; with it, that traffic is dropped — see RoutingConfig.StrictEgress.
+	unusable := map[string]bool{}
 	for _, lane := range rc.Lanes {
-		pool := proxies[lane.ID]
-		if !lane.Enabled || len(pool) == 0 {
+		if !lane.Enabled {
 			continue
 		}
-		if len(lane.Domains) == 0 && len(lane.IPs) == 0 && catchAll != lane.ID {
+		routed := len(lane.Domains) > 0 || len(lane.IPs) > 0 || catchAll == lane.ID
+		if !routed {
+			continue
+		}
+		pool := proxies[lane.ID]
+		if len(pool) == 0 {
+			unusable[lane.ID] = true
 			continue
 		}
 		active[lane.ID] = true
 		outbounds = append(outbounds, proxyOutbounds(lane.ID, pool)...)
+	}
+	if set.WarpEnabled && !warpActive {
+		unusable["warp"] = true
 	}
 
 	// One Observatory probes every health-checked egress (every active lane + Opera)
@@ -320,7 +334,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable),
 		Observatory: observatory,
 	}, nil
 }
@@ -1000,13 +1014,27 @@ func operaOutbound(set *model.Settings) Outbound {
 }
 
 // healthBalancer is a single-/multi-member balancer whose Observatory probe lets
-// it drop to "direct" when its members are unhealthy.
-func healthBalancer(tag, selector string) Balancer {
+// it route round a dead member. When every member is dead it uses fallback: direct
+// by default, which keeps the traffic flowing out the server's own address, or
+// block under StrictEgress, which drops it.
+//
+// The fallback is ALWAYS written. Measured on Xray 26.7.28: with it omitted and
+// every member down, the balancer does not fail the request, it falls through to
+// the first outbound in the config — which is direct — so an empty fallbackTag is
+// a leak that reads as a fail-closed setting. And a strict balancer still carries
+// traffic through a live member from the first request after a restart, before
+// the Observatory has probed anything: leastPing with no data picks a member, not
+// the fallback, so strict mode has no blackout window.
+func healthBalancer(tag, selector string, strict bool) Balancer {
+	fallback := "direct"
+	if strict {
+		fallback = "block"
+	}
 	return Balancer{
 		Tag:         tag,
 		Selector:    []string{selector},
 		Strategy:    &BalancerStrategy{Type: "leastPing"},
-		FallbackTag: "direct",
+		FallbackTag: fallback,
 	}
 }
 
@@ -1069,17 +1097,18 @@ var privateEgressDomains = []string{
 	"full:instance-data.ec2.internal",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active map[string]bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
+	strict := rc.StrictEgress
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
-	// the Observatory) routes to a live member, else falls back to direct.
+	// the Observatory) routes to a live member, else to the fallback.
 	for _, lane := range rc.Lanes {
 		if active[lane.ID] {
-			out.Balancers = append(out.Balancers, healthBalancer(laneBalancerTag(lane.ID), laneTagPrefix(lane.ID)))
+			out.Balancers = append(out.Balancers, healthBalancer(laneBalancerTag(lane.ID), laneTagPrefix(lane.ID), strict))
 		}
 	}
 	if operaActive {
-		out.Balancers = append(out.Balancers, healthBalancer(operaBalancerTag, "opera"))
+		out.Balancers = append(out.Balancers, healthBalancer(operaBalancerTag, "opera", strict))
 	}
 	if warpActive {
 		out.Balancers = append(out.Balancers, warpBalancer())
@@ -1144,9 +1173,15 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 			addDomainRule(out, "direct", rc.DirectDomains)
 			addIPRule(out, "direct", rc.DirectIPs)
 		case "warp":
-			if warpActive {
+			switch {
+			case warpActive:
 				addBalancerRule(out, warpBalancerTag, rc.WarpDomains, rc.WarpIPs)
-			} else {
+			case strict && unusable["warp"]:
+				// Switched on, no account: under StrictEgress this traffic was sent to
+				// a tunnel that does not exist, and leaving directly is not a stand-in.
+				addDomainRule(out, "block", rc.WarpDomains)
+				addIPRule(out, "block", rc.WarpIPs)
+			default:
 				// No account provisioned: the lane's traffic keeps flowing out directly
 				// rather than black-holing, which is how every inactive lane behaves.
 				addDomainRule(out, "direct", rc.WarpDomains)
@@ -1157,8 +1192,16 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 				addBalancerRule(out, operaBalancerTag, rc.OperaDomains, rc.OperaIPs)
 			}
 		default: // a proxy lane; an inactive one emits nothing and falls through
-			if l, ok := byID[lane]; ok && active[lane] {
+			l, ok := byID[lane]
+			switch {
+			case !ok:
+			case active[lane]:
 				addBalancerRule(out, laneBalancerTag(lane), l.Domains, l.IPs)
+			case strict && unusable[lane]:
+				// On, routed to, and no upstream to carry it: drop rather than let
+				// these destinations fall through to a later lane and out directly.
+				addDomainRule(out, "block", l.Domains)
+				addIPRule(out, "block", l.IPs)
 			}
 		}
 	}
@@ -1167,10 +1210,17 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	for _, lane := range order[:len(order)-1] {
 		emitLane(lane)
 	}
+	// A catch-all that cannot be built drops everything under StrictEgress: the
+	// operator sent all remaining traffic to that lane, and "all of it leaves
+	// directly instead" is the widest leak this setting exists to rule out.
+	blockAll := RouteRule{Type: "field", Network: "tcp,udp", OutboundTag: "block"}
 	switch last := order[len(order)-1]; last {
 	case "warp":
-		if warpActive {
+		switch {
+		case warpActive:
 			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: warpBalancerTag})
+		case strict && unusable["warp"]:
+			out.Rules = append(out.Rules, blockAll)
 		}
 	case "opera":
 		if operaActive {
@@ -1179,11 +1229,14 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	case "direct":
 		// The natural fallthrough to the first outbound (direct) — no rule needed.
 	default:
-		if active[last] {
+		switch {
+		case active[last]:
 			out.Rules = append(out.Rules, RouteRule{Type: "field", Network: "tcp,udp", BalancerTag: laneBalancerTag(last)})
+		case strict && unusable[last]:
+			out.Rules = append(out.Rules, blockAll)
 		}
-		// An inactive catch-all lane (disabled / no live proxies) also falls through
-		// to direct, so its traffic keeps flowing instead of black-holing.
+		// Otherwise an inactive catch-all lane (disabled / no live proxies) falls
+		// through to direct, so its traffic keeps flowing instead of black-holing.
 	}
 	return out
 }

@@ -2351,6 +2351,8 @@ const en: Dict = {
     blockedDomains: "Blocked domains",
     order: "Routing order",
     orderHint: "Rules are checked top down, blocks first. The last lane takes everything unmatched.",
+    strictEgress: "Never fall back to direct when a lane is down",
+    strictEgressHint: "When an enabled lane has no live proxies, or Opera or WARP is not working, its traffic is blocked instead of leaving from the server's own address. Lanes that are switched off are not affected.",
     everythingElse: "everything else",
     directHint: "These domains/IPs go out directly from this server.",
     directStrategy: "How the direct egress resolves domains",

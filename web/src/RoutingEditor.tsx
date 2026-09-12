@@ -79,6 +79,7 @@ export const EMPTY: RoutingConfig = {
   direct_domains: [],
   direct_ips: [],
   direct_strategy: "",
+  strict_egress: false,
   routing_order: ["warp", "opera", "direct"],
   lanes: [],
   proxy_refresh_minutes: 30,
@@ -188,6 +189,7 @@ export function hydrateRouting(
     direct_ips: src.direct_ips ?? [],
     // "AsIs" and "" mean the same to Xray; the editor shows one of them.
     direct_strategy: src.direct_strategy === "AsIs" ? "" : (src.direct_strategy ?? ""),
+    strict_egress: !!src.strict_egress,
     lanes,
     routing_order: normalizeOrder(
       src.routing_order,
@@ -690,6 +692,14 @@ export function RoutingEditor({
 
       {/* Routing order */}
       <Section title={t("route.order")} desc={t("route.orderHint")} flush>
+        {/* What happens when a lane in this list cannot carry its traffic belongs
+            with the list itself, above the lanes it applies to. */}
+        <ToggleRow
+          label={t("route.strictEgress")}
+          hint={t("route.strictEgressHint")}
+          checked={!!cfg.strict_egress}
+          onChange={(v) => set({ strict_egress: v })}
+        />
         {cfg.routing_order.map((lane, i) => {
           const last = i === cfg.routing_order.length - 1;
           return (

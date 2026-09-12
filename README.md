@@ -424,7 +424,12 @@ that depends on them dies silently wherever those are filtered. **Proxy lanes** 
 own upstreams and zone rules, balanced across whatever is alive (Observatory). An upstream is a
 socks5/http proxy **or somebody else's VPN server**: a vless:// / trojan:// / ss:// / vmess:// /
 hysteria2:// link, or a whole subscription (https://…, `happ://crypt…`, base64) — the panel
-decrypts it and keeps re-reading it.
+decrypts it and keeps re-reading it. When a lane cannot carry its traffic — every upstream
+failing its probe, no upstream resolved at all, Opera's helper unreachable, WARP enabled with no
+account — that traffic falls back to **direct** by default, so it keeps flowing, from the server's
+own address. **"Never fall back to direct when a lane is down"** (per server, under the routing
+order) drops it instead, for clients routed through a lane precisely so their traffic does not
+leave from that address. Lanes switched off are not affected.
 **Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
 **whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
 save a restore point by hand, and roll back to it if an edit breaks something. A rollback

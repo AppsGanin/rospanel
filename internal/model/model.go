@@ -1563,6 +1563,20 @@ type RoutingConfig struct {
 	// slow only through the tunnel".
 	DirectStrategy string `json:"direct_strategy,omitempty"`
 
+	// StrictEgress keeps a lane's traffic off the server's own address when the lane
+	// cannot carry it. Off (the default, and every config saved before this existed),
+	// an egress that is down fails open: a proxy lane whose upstreams are all dead,
+	// or Opera with its helper unreachable, sends the traffic out directly — which
+	// for a client routed through that lane to hide the server's address, or to reach
+	// something from another country, is the one outcome it was routed there to avoid.
+	// On, the same traffic is dropped instead.
+	//
+	// It covers a lane that is switched on and cannot work — every upstream failing
+	// its health probe, no upstream resolved at all, WARP enabled without an account.
+	// A lane the operator switched OFF is not "unavailable", it is not in use, and its
+	// rules stay as inert as they always were.
+	StrictEgress bool `json:"strict_egress,omitempty"`
+
 	// RoutingOrder is the precedence of the egress lanes; first-match-wins. It is a
 	// permutation of the built-in lanes ("warp"/"opera"/"direct") plus the ID of
 	// every proxy lane in Lanes. The LAST lane is the catch-all ("everything else")
