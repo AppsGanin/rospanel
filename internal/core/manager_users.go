@@ -437,7 +437,7 @@ func (m *Manager) bulkResetTraffic(ids []int64) []int64 {
 		t := stats[fmt.Sprintf("u%d", id)]
 		baselines[id] = [2]int64{t.Up, t.Down}
 	}
-	done, err := m.store.ResetTrafficMany(baselines)
+	done, err := m.store.ResetTrafficMany(baselines, time.Now().Unix())
 	if err != nil {
 		logErr("bulk: resetting traffic failed", "users", len(ids), "err", err)
 		return nil
