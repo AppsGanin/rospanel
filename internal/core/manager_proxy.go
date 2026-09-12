@@ -53,12 +53,22 @@ func (m *Manager) buildProxies(rc model.RoutingConfig) map[string][]model.ProxyE
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			fetched, err := proxypool.Fetch(ctx, url)
+			fetched, err := fetchProxyList(ctx, url)
 			cancel()
 			if err != nil {
-				logWarn("proxypool: fetch failed", "lane", lane.ID, "url", url, "err", err)
+				// The list host being unreachable says nothing about the proxies it
+				// listed last time. Dropping them used to empty the lane until the next
+				// refresh — up to its whole interval — and an empty lane is one the
+				// config cannot build: its traffic leaked out directly, or under
+				// StrictEgress was dropped, while every upstream was still alive. Keep
+				// what the last good fetch returned; whether those proxies work is the
+				// Observatory's call, made against the proxies themselves.
+				last, ok := m.lastProxyList(url)
+				logWarn("proxypool: fetch failed", "lane", lane.ID, "url", url, "err", err, "kept_last", ok)
+				lines = append(lines, last...)
 				continue
 			}
+			m.rememberProxyList(url, fetched)
 			lines = append(lines, fetched...)
 		}
 		if eps := proxypool.Parse(lines); len(eps) > 0 {
@@ -66,6 +76,33 @@ func (m *Manager) buildProxies(rc model.RoutingConfig) map[string][]model.ProxyE
 		}
 	}
 	return out
+}
+
+// fetchProxyList is proxypool.Fetch, as a seam: the fetcher refuses loopback and
+// private addresses by design, so a test of what happens when a list host goes away
+// cannot stand one up on 127.0.0.1 and has to swap the fetch instead.
+var fetchProxyList = proxypool.Fetch
+
+// rememberProxyList records what a list URL returned on a successful fetch. A
+// successful fetch is authoritative even when it lists nothing: an operator who
+// empties a list means it, and only a failed fetch falls back to the last one.
+func (m *Manager) rememberProxyList(url string, lines []string) {
+	m.proxyListMu.Lock()
+	defer m.proxyListMu.Unlock()
+	if m.proxyLists == nil {
+		m.proxyLists = map[string][]string{}
+	}
+	m.proxyLists[url] = append([]string(nil), lines...)
+}
+
+// lastProxyList returns what a list URL returned the last time it answered, and
+// whether it ever has. It lives in memory only, so it does not outlast a restart —
+// a list that cannot be fetched at boot starts empty, which is the truth then.
+func (m *Manager) lastProxyList(url string) ([]string, bool) {
+	m.proxyListMu.Lock()
+	defer m.proxyListMu.Unlock()
+	lines, ok := m.proxyLists[url]
+	return append([]string(nil), lines...), ok
 }
 
 // seedProxiesFromManual resolves only the manual entries of each enabled lane —

@@ -179,6 +179,12 @@ type Manager struct {
 	// master), so its lanes are resolved separately. Refreshed on the same cadence.
 	nodeProxies map[int64]map[string][]model.ProxyEndpoint
 
+	// proxyListMu guards proxyLists: the lines each proxy-list URL returned on its
+	// last successful fetch, which a failed fetch falls back to. Its own lock, not
+	// proxyMu, because buildProxies runs while callers are about to take proxyMu.
+	proxyListMu sync.Mutex
+	proxyLists  map[string][]string
+
 	guard *bruteGuard
 
 	// shaper installs the per-user speed caps on this machine; wan is the interface

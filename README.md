@@ -429,7 +429,9 @@ failing its probe, no upstream resolved at all, Opera's helper unreachable, WARP
 account — that traffic falls back to **direct** by default, so it keeps flowing, from the server's
 own address. **"Never fall back to direct when a lane is down"** (per server, under the routing
 order) drops it instead, for clients routed through a lane precisely so their traffic does not
-leave from that address. Lanes switched off are not affected.
+leave from that address. Lanes switched off are not affected. A proxy list whose host fails a
+refresh keeps the proxies it returned last time rather than emptying the lane — whether those still
+work is the health probe's call, made against the proxies themselves.
 **Config snapshots** (a *Snapshots* tab in the server settings) give an undo history for the
 **whole server config** — protocols, ports, REALITY, routing, egress, DNS, decoy and inbounds:
 save a restore point by hand, and roll back to it if an edit breaks something. A rollback

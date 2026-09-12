@@ -221,7 +221,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// Cloudflare WARP egress (WireGuard), one outbound per endpoint in the pool,
 	// routed through a health-probed balancer so losing an endpoint costs the lane
 	// nothing. Only emitted when enabled AND a WARP account has been provisioned;
-	// otherwise "warp" rules fall back to direct.
+	// otherwise "warp" rules fall back to direct, or are dropped under StrictEgress.
 	warpActive := set.WarpEnabled && set.WarpRegistered()
 	if warpActive {
 		outbounds = append(outbounds, warpOutbounds(set)...)
@@ -243,7 +243,8 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// Opera VPN egress: an http outbound to the local helper. The lane is routed
 	// through a single-member balancer with an Observatory health-probe (below),
 	// so if the free VPN upstream goes unreachable the lane auto-falls-back to
-	// "direct" and auto-recovers — instead of black-holing traffic. A lane is
+	// "direct" and auto-recovers — instead of black-holing traffic — unless
+	// StrictEgress asks for the black hole, in which case it drops. A lane is
 	// "active" only when enabled AND referenced by a rule (else the balancer would
 	// be unused).
 	if set.OperaEnabled {
@@ -285,7 +286,8 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	}
 
 	// One Observatory probes every health-checked egress (every active lane + Opera)
-	// so their balancers can drop to "direct" on a failed probe and recover.
+	// so their balancers can route round a failed probe — to the fallback when every
+	// member fails, which is direct, or block under StrictEgress — and recover.
 	var subjects []string
 	for _, lane := range rc.Lanes {
 		if active[lane.ID] {
@@ -458,8 +460,8 @@ func laneTagPrefix(laneID string) string { return "proxy-" + laneID + "-" }
 func laneBalancerTag(laneID string) string { return "pool-" + laneID }
 
 // operaBalancerTag is a single-member balancer wrapping the Opera outbound: an
-// Observatory health-probe lets it fall back to "direct" when the free VPN
-// upstream is unreachable, and recover when it's back.
+// Observatory health-probe lets it fall back when the free VPN upstream is
+// unreachable — to direct, or to block under StrictEgress — and recover when it's back.
 const operaBalancerTag = "opera-out"
 
 // proxyOutbounds builds one outbound per upstream of a lane: a socks/http proxy
@@ -1044,9 +1046,10 @@ func healthBalancer(tag, selector string, strict bool) Balancer {
 // traffic falls through to the first real outbound (direct). Every lane with more
 // than one way out — WARP's endpoint members, a proxy lane's pool, Opera — is routed
 // through its health-probed balancer; the proxy and Opera balancers fall back to
-// direct on failure, while WARP's falls back to one of its own members so the lane
-// can never silently leave the tunnel (see warpBalancer). A WARP lane with no account
-// provisioned routes to direct, same as any other inactive lane.
+// direct on failure (block under StrictEgress), while WARP's falls back to one of its
+// own members so the lane can never silently leave the tunnel (see warpBalancer). A
+// WARP lane with no account provisioned routes to direct, same as any other inactive
+// lane — or is dropped under StrictEgress, as any switched-on lane that cannot run is.
 // privateEgressCIDRs are destination ranges a tunnelled client is never allowed to
 // reach: loopback, RFC1918 private space, link-local (covers the 169.254.169.254
 // cloud-metadata endpoint), CGNAT, and their IPv6 equivalents. Explicit CIDRs (not
