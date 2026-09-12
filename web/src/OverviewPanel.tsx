@@ -13,6 +13,7 @@ import {
   type User,
   type UserEvent,
 } from "./api";
+import { ABUSE_WINDOW_DAYS } from "./AbuseList";
 import { type Bar, DayBars } from "./charts";
 import { actionMeta, eventDetails } from "./events";
 import { fmtBytes, fmtDuration, fmtStamp, localDay } from "./format";
@@ -44,10 +45,6 @@ const EXPIRY_SOON_DAYS = 7;
 // rather than a 24-hour curve — and at seven columns every day still gets its date
 // and its figure, which is what makes the chart readable at a glance.
 const SPARK_DAYS = 7;
-
-// ABUSE_DAYS mirrors model.AbuseRetentionDays: the store keeps a blocklist match for
-// two weeks, so a longer window here would count a period the panel cannot see.
-const ABUSE_DAYS = 14;
 
 // SLOW_POLL is the cadence for the figures that move by the day — expiring
 // subscriptions, the traffic history, blocklist matches. The live numbers come off
@@ -264,7 +261,7 @@ export function OverviewPanel() {
         .catch(() => setSeries([]));
       getRecentAbuse(200)
         .then((rows) => {
-          const cutoff = Date.now() / 1000 - ABUSE_DAYS * 86400;
+          const cutoff = Date.now() / 1000 - ABUSE_WINDOW_DAYS * 86400;
           setAbuse(rows.filter((r) => r.last_seen >= cutoff).length);
         })
         .catch(() => setAbuse(0));
@@ -490,7 +487,7 @@ export function OverviewPanel() {
         <KpiTile
           label={t("overview.blocklists")}
           value={abuse === null ? dash : abuse}
-          note={t("overview.blocklistNote", { n: ABUSE_DAYS })}
+          note={t("overview.blocklistNote", { n: ABUSE_WINDOW_DAYS })}
           tone={abuse ? "warning" : "default"}
         />
       </div>
