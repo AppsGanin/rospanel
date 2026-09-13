@@ -88,7 +88,12 @@ func (m *Manager) applyAbuseMeasure(set *model.Settings, userID int64, day strin
 		if u.AbuseAction != "" {
 			return // throttled already, or off — which is more
 		}
-		if u.SpeedLimit > 0 && u.SpeedLimit <= a.ThrottleKbps {
+		// The cap in force is a group's when one of the user's groups sets it.
+		inForce := u.SpeedLimit
+		if g, err := m.store.GroupSpeedLimit(u.ID); err == nil && g > 0 {
+			inForce = g
+		}
+		if inForce > 0 && inForce <= a.ThrottleKbps {
 			return // already slower than the throttle would make them
 		}
 		if err := m.store.SetUserSpeedLimit(u.ID, a.ThrottleKbps); err != nil {

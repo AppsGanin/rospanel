@@ -79,6 +79,20 @@ export const speedLimitOptions = () => [
   })),
 ]
 
+// groupSpeedCap is the cap a user's groups put in force: the highest among the
+// groups that set one, with the group it comes from; null when none does. The same
+// rule the server shapes by (store.ShapedUsers).
+export function groupSpeedCap(
+  groups: { name: string; speed_limit?: number }[] | null | undefined,
+): { kbps: number; name: string } | null {
+  let best: { kbps: number; name: string } | null = null
+  for (const g of groups ?? []) {
+    const kbps = g.speed_limit ?? 0
+    if (kbps > 0 && (!best || kbps > best.kbps)) best = { kbps, name: g.name }
+  }
+  return best
+}
+
 // fmtSpeed renders a stored kbit/s cap the way the options above label it, for a
 // value that isn't one of the presets (set through the API, say).
 export const fmtSpeed = (kbps: number): string => {

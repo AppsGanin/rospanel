@@ -50,6 +50,8 @@ export interface User {
 export interface GroupRef {
   id: number
   name: string
+  // The group's speed cap in kbit/s (0 = none); see Group.speed_limit.
+  speed_limit: number
 }
 
 export interface DailyPoint {
@@ -2519,6 +2521,9 @@ export interface Group {
   grants: string[] | null
   members: number
   member_ids: number[] | null
+  // Members' speed cap in kbit/s, 0 = none. Takes priority over the cap a member's
+  // tariff or card gives them; a member of several capped groups gets the highest.
+  speed_limit: number
 }
 
 export interface GroupLaneOpt {
@@ -2554,10 +2559,13 @@ export interface GroupTarget {
 
 export const listGroups = () => api<Group[]>('api/groups')
 export const getGroupTargets = () => api<GroupTarget[]>('api/groups/targets')
-export const createGroup = (name: string, grants: string[]) =>
-  api<Group>('api/groups', { method: 'POST', body: JSON.stringify({ name, grants }) })
-export const updateGroup = (id: number, name: string, grants: string[]) =>
-  api<{ ok: boolean }>(`api/groups/${id}`, { method: 'POST', body: JSON.stringify({ name, grants }) })
+export const createGroup = (name: string, grants: string[], speed_limit: number) =>
+  api<Group>('api/groups', { method: 'POST', body: JSON.stringify({ name, grants, speed_limit }) })
+export const updateGroup = (id: number, name: string, grants: string[], speed_limit: number) =>
+  api<{ ok: boolean }>(`api/groups/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ name, grants, speed_limit }),
+  })
 export const deleteGroup = (id: number) =>
   api<{ ok: boolean }>(`api/groups/${id}`, { method: 'DELETE' })
 export const setGroupMembers = (groupId: number, userIds: number[]) =>

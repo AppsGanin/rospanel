@@ -45,6 +45,7 @@ import {
   fmtSpeed,
   fmtTerm,
   gbToBytes,
+  groupSpeedCap,
   isOnline,
   localDay,
   quotaOptions,
@@ -442,6 +443,16 @@ export function UserDetail({
   }
 
   const planManaged = billingOn && dPlan !== '0'
+  // A group that sets a speed cap overrides the one below, whatever the tariff says —
+  // unless a blocklist throttle is stricter, which nothing loosens.
+  const groupCapRaw = groupSpeedCap(user?.groups)
+  const throttledBelow =
+    !!user &&
+    user.abuse_action === 'throttle' &&
+    user.speed_limit > 0 &&
+    !!groupCapRaw &&
+    user.speed_limit < groupCapRaw.kbps
+  const groupCap = throttledBelow ? null : groupCapRaw
   // Whether the account is waiting for its first connection right now, and what the
   // draft says its term should be.
   const heldNow = !!user && user.expire_at === 0 && (user.hold_seconds ?? 0) > 0
@@ -479,7 +490,10 @@ export function UserDetail({
         await setUserLimits(user.id, {
           data_limit: gbToBytes(Number(dLimitGb)),
           device_limit: Number(dDeviceLimit),
-          speed_limit: Number(dSpeedLimit),
+          // Only when changed: the server reads a speed it is sent as the operator
+          // overruling a blocklist throttle, and a quota save is not that.
+          speed_limit:
+            Number(dSpeedLimit) !== (user.speed_limit ?? 0) ? Number(dSpeedLimit) : undefined,
           term: termDirty
             ? {
                 expire_at: dTerm === 'hold' ? 0 : dateToUnixEndOfDay(dExpire),
@@ -907,7 +921,18 @@ export function UserDetail({
             />
             <SettingRow
               label={t('userDetail.speedLimit')}
-              hint={t('userDetail.speedLimitHint')}
+              hint={
+                groupCap ? (
+                  <span className="text-warning">
+                    {t('userDetail.groupSpeedInForce', {
+                      name: groupCap.name,
+                      speed: fmtSpeed(groupCap.kbps),
+                    })}
+                  </span>
+                ) : (
+                  t('userDetail.speedLimitHint')
+                )
+              }
               field={
                 <CustomizableSelect
                   data={speedData}

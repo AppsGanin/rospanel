@@ -172,7 +172,7 @@ func TestAPIJournalsAreReadable(t *testing.T) {
 func TestAPICreateUserAppliesEverything(t *testing.T) {
 	rt, st := apiTestRouter(t)
 
-	g, err := st.CreateGroup("VIP", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)})
+	g, err := st.CreateGroup("VIP", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}

@@ -63,11 +63,11 @@ func TestPlanGroupsFollowThePlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	basic, err := st.CreateGroup("Basic", []string{model.BuiltinToken(0, model.LaneVLESS)})
+	basic, err := st.CreateGroup("Basic", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	premium, err := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
+	premium, err := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
@@ -111,8 +111,8 @@ func TestPlanGroupsFollowThePlan(t *testing.T) {
 func TestManualGroupsSurvivePlanChanges(t *testing.T) {
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
-	testers, _ := st.CreateGroup("Testers", []string{model.BuiltinToken(0, model.LaneReality)})
-	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
+	testers, _ := st.CreateGroup("Testers", []string{model.BuiltinToken(0, model.LaneReality)}, 0)
+	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
 
 	// By hand: the operator puts them in Testers AND in Premium.
 	if err := st.SetUserGroups(u.ID, []int64{testers.ID, premium.ID}); err != nil {
@@ -147,8 +147,8 @@ func TestManualGroupsSurvivePlanChanges(t *testing.T) {
 func TestUserGroupEditKeepsPlanOwnership(t *testing.T) {
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
-	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
-	extra, _ := st.CreateGroup("Extra", nil)
+	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
+	extra, _ := st.CreateGroup("Extra", nil, 0)
 
 	plan := &model.TariffPlan{Slug: "p", Name: "P", PriceRub: 100, PeriodDays: 30, Enabled: true, GroupIDs: []int64{premium.ID}}
 	if err := st.SaveTariffPlan(plan); err != nil {
@@ -183,7 +183,7 @@ func TestGroupMemberEditKeepsPlanOwnership(t *testing.T) {
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	other, _ := st.CreateUser("second", "uuid2", "pw", "tok2", 0, 0, 0)
-	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
+	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
 
 	plan := &model.TariffPlan{Slug: "p", Name: "P", PriceRub: 100, PeriodDays: 30, Enabled: true, GroupIDs: []int64{premium.ID}}
 	if err := st.SaveTariffPlan(plan); err != nil {
@@ -209,7 +209,7 @@ func TestGroupMemberEditKeepsPlanOwnership(t *testing.T) {
 // nothing and look like a success.
 func TestSaveTariffPlanRollbackClearsTheID(t *testing.T) {
 	st := newStore(t)
-	g, _ := st.CreateGroup("G", nil)
+	g, _ := st.CreateGroup("G", nil, 0)
 	if _, err := st.db.Exec(
 		`CREATE TRIGGER t_fail_plan_groups BEFORE INSERT ON plan_groups
 		 BEGIN SELECT RAISE(ABORT, 'simulated crash'); END`); err != nil {
@@ -239,8 +239,8 @@ func TestSaveTariffPlanRollbackClearsTheID(t *testing.T) {
 func TestEditingAPlanMovesItsUsers(t *testing.T) {
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
-	basic, _ := st.CreateGroup("Basic", []string{model.BuiltinToken(0, model.LaneVLESS)})
-	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
+	basic, _ := st.CreateGroup("Basic", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
+	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
 
 	plan := &model.TariffPlan{Slug: "p", Name: "P", PriceRub: 100, PeriodDays: 30, Enabled: true, GroupIDs: []int64{basic.ID}}
 	if err := st.SaveTariffPlan(plan); err != nil {
@@ -298,7 +298,7 @@ func TestConfirmPaymentAppliesPlanGroups(t *testing.T) {
 	st, u, plan, order, w := planWriteFixture(t)
 	defer st.Close()
 
-	premium, err := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)})
+	premium, err := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}

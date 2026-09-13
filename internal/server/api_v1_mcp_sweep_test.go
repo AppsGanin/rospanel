@@ -421,7 +421,7 @@ func TestAPIRejectsUnknownBodyFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	group, err := st.CreateGroup("strict-group", nil)
+	group, err := st.CreateGroup("strict-group", nil, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
@@ -476,7 +476,7 @@ func firstEventKey(t *testing.T, text string) string {
 // `member_ids` that changes no membership — the very failure the strictness is for.
 func TestAPINamesTheKindOfBadField(t *testing.T) {
 	h, _, st := nodeAPITestServer(t)
-	group, err := st.CreateGroup("round-trip", nil)
+	group, err := st.CreateGroup("round-trip", nil, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}

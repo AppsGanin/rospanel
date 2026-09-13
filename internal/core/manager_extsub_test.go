@@ -45,7 +45,7 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 	if len(targets[0].External) != 2 || targets[0].External[1].Token != model.ExtToken(servers[1].ID) {
 		t.Fatalf("group targets: %+v", targets[0].External)
 	}
-	g, err := m.CreateGroup("vip", []string{model.ExtToken(servers[1].ID), "ext:nonsense", "junk"})
+	g, err := m.CreateGroup("vip", []string{model.ExtToken(servers[1].ID), "ext:nonsense", "junk"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,11 +25,11 @@ func TestAccessResolution(t *testing.T) {
 	u1, _ := st.CreateUser("free", "uuid1", "pw", "tok1", 0, 0, 0)
 	u2, _ := st.CreateUser("vip", "uuid2", "pw", "tok2", 0, 0, 0)
 
-	ga, err := st.CreateGroup("A", []string{model.BuiltinToken(0, model.LaneVLESS), model.InboundToken(5)})
+	ga, err := st.CreateGroup("A", []string{model.BuiltinToken(0, model.LaneVLESS), model.InboundToken(5)}, 0)
 	if err != nil {
 		t.Fatalf("create A: %v", err)
 	}
-	gb, _ := st.CreateGroup("B", []string{model.BuiltinToken(0, model.LaneReality)})
+	gb, _ := st.CreateGroup("B", []string{model.BuiltinToken(0, model.LaneReality)}, 0)
 	if err := st.SetUserGroups(u2.ID, []int64{ga.ID, gb.ID}); err != nil {
 		t.Fatalf("set groups: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestAccessResolution(t *testing.T) {
 func TestEmptyGroupGrantsNothing(t *testing.T) {
 	st := openGroupStore(t)
 	u, _ := st.CreateUser("x", "uuid", "pw", "tok", 0, 0, 0)
-	g, _ := st.CreateGroup("locked", nil)
+	g, _ := st.CreateGroup("locked", nil, 0)
 	_ = st.SetUserGroups(u.ID, []int64{g.ID})
 
 	a, _ := st.UserAccess(u.ID)
@@ -87,7 +87,7 @@ func TestEmptyGroupGrantsNothing(t *testing.T) {
 func TestGroupCascades(t *testing.T) {
 	st := openGroupStore(t)
 	u, _ := st.CreateUser("x", "uuid", "pw", "tok", 0, 0, 0)
-	g, _ := st.CreateGroup("g", []string{model.BuiltinToken(0, model.LaneVLESS)})
+	g, _ := st.CreateGroup("g", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
 	_ = st.SetUserGroups(u.ID, []int64{g.ID})
 
 	count := func(table string) int {
@@ -110,7 +110,7 @@ func TestGroupCascades(t *testing.T) {
 	}
 
 	// And deleting a user cascades their membership.
-	g2, _ := st.CreateGroup("g2", nil)
+	g2, _ := st.CreateGroup("g2", nil, 0)
 	_ = st.SetGroupMembers(g2.ID, []int64{u.ID})
 	if count("group_members") != 1 {
 		t.Fatalf("member not set")
@@ -126,10 +126,10 @@ func TestGroupCascades(t *testing.T) {
 // Group names are unique case-insensitively, so a chip can't be ambiguous.
 func TestGroupNameUniqueCI(t *testing.T) {
 	st := openGroupStore(t)
-	if _, err := st.CreateGroup("VIP", nil); err != nil {
+	if _, err := st.CreateGroup("VIP", nil, 0); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, err := st.CreateGroup("vip", nil); err == nil {
+	if _, err := st.CreateGroup("vip", nil, 0); err == nil {
 		t.Error("expected a case-insensitive name conflict")
 	}
 }

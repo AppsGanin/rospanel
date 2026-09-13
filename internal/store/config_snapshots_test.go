@@ -83,7 +83,7 @@ func TestRestoreServerConfigKeepsInboundIDsAndGrants(t *testing.T) {
 	}
 	grp, err := st.CreateGroup("VIP", []string{
 		model.InboundToken(inA.ID), model.InboundToken(inB.ID),
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("group: %v", err)
 	}

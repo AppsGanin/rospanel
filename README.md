@@ -342,7 +342,10 @@ union of their connections. The restriction is **server-side** — the account s
 added to the forbidden Xray inbounds (rather than being hidden in the UI), so both the
 subscription and a hand-crafted link only ever hand out what's allowed. Membership is editable
 from both sides — in the user's card and in the group itself — and a user's groups are visible
-in their card and in the list.
+in their card and in the list. A group can also carry a **speed cap**: when set, it takes
+priority over the members' tariff and personal caps (a member of several groups gets the
+highest), and a throttle for suspicious traffic is not lifted by it. A tariff that grants such a
+group gives its users that speed.
 
 #### 📲 Subscriptions
 

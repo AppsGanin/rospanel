@@ -34,12 +34,18 @@ type Group struct {
 	// MemberIDs are the users in the group, for the editor's member picker. Populated
 	// by the group reads (list + get); the count above stays for a cheap display.
 	MemberIDs []int64 `json:"member_ids"`
+	// SpeedLimit caps the members' speed in kbit/s; 0 sets nothing. When set it takes
+	// priority over the cap a member's tariff or card gives them, and a member of
+	// several capped groups gets the highest. A blocklist throttle still applies.
+	SpeedLimit int `json:"speed_limit"`
 }
 
-// GroupRef is the minimal group identity shown on a user (list + detail).
+// GroupRef is the minimal group identity shown on a user (list + detail), with the
+// group's speed cap so a user's card can say which cap is in force.
 type GroupRef struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	SpeedLimit int    `json:"speed_limit"`
 }
 
 // BuiltinToken is a group-grant token for a built-in lane on one server (serverID 0 =
