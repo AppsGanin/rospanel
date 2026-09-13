@@ -247,6 +247,7 @@ export function SubscriptionsPanel() {
               data={[
                 { value: "manual", label: t("subs.orderMode.manual") },
                 { value: "load", label: t("subs.orderMode.load") },
+                { value: "random", label: t("subs.orderMode.random") },
               ]}
               value={s.sub_order_mode}
               onChange={(v) => patch({ sub_order_mode: v })}

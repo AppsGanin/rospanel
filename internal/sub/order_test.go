@@ -96,3 +96,62 @@ func TestOrderHidesFullServersButNeverAll(t *testing.T) {
 		t.Error("Order mutated its input")
 	}
 }
+
+// Random mode exists so the fleet, not the first server, takes the clients that
+// connect to whatever comes first. So over many fetches every server has to lead,
+// and every fetch has to carry the whole list.
+func TestOrderRandomLetsEveryServerLead(t *testing.T) {
+	servers := []Server{
+		placed(0, "NL", 9, 0, false), // weight would pin it first under manual
+		placed(1, "DE", 0, 0, false),
+		placed(2, "NL", 0, 0, false),
+		placed(3, "", 0, 0, false),
+	}
+	led := map[int64]int{}
+	for range 400 {
+		got := Order(servers, model.OrderRandom, "NL", nil, nil)
+		if len(got) != len(servers) {
+			t.Fatalf("a random fetch dropped servers: %v", ids(got))
+		}
+		seen := map[int64]bool{}
+		for _, s := range got {
+			seen[s.Set.ServerID] = true
+		}
+		if len(seen) != len(servers) {
+			t.Fatalf("a random fetch repeated a server: %v", ids(got))
+		}
+		led[got[0].Set.ServerID]++
+	}
+	for _, s := range servers {
+		if led[s.Set.ServerID] == 0 {
+			t.Errorf("server %d never came first in 400 random fetches: %v", s.Set.ServerID, led)
+		}
+	}
+}
+
+// Shuffling is only the order. What hides a server — full with hide-when-full, or
+// over its traffic cap with hide-when-over — hides it here too, and the rescue that
+// never hands out an empty list still applies.
+func TestOrderRandomKeepsTheHidingRules(t *testing.T) {
+	prev := shuffle
+	t.Cleanup(func() { shuffle = prev })
+	shuffle = func(n int, swap func(i, j int)) { // reverse: a known, non-identity order
+		for i := 0; i < n/2; i++ {
+			swap(i, n-1-i)
+		}
+	}
+
+	over := placed(2, "", 0, 0, false)
+	over.Set.ServerPlacement.HideWhenOver = true
+	servers := []Server{placed(0, "", 0, 10, true), placed(1, "", 0, 10, true), over, placed(3, "", 0, 0, false)}
+	got := ids(Order(servers, model.OrderRandom, "", map[int64]int{0: 10}, map[int64]bool{2: true}))
+	if !equal(got, []int64{3, 1}) {
+		t.Errorf("random with a full and an over-cap server: got %v, want [3 1]", got)
+	}
+
+	full := []Server{placed(0, "", 0, 1, true), placed(1, "", 0, 1, true)}
+	got = ids(Order(full, model.OrderRandom, "", map[int64]int{0: 1, 1: 1}, nil))
+	if !equal(got, []int64{1, 0}) {
+		t.Errorf("random with every server full: got %v, want both kept [1 0]", got)
+	}
+}

@@ -391,8 +391,9 @@ who would rather hide a dead server.
 
 **Server order** (*Settings → Subscriptions*) decides which server a client sees first — and
 whether a full one is shown at all. Every server carries a manual **weight** and a **capacity**
-in users, set on its card under *Servers*. Two modes: manual (weight, then the list) and **least
-loaded** first (online users against capacity). A server marked *hide when full*
+in users, set on its card under *Servers*. Three modes: manual (weight, then the list), **least
+loaded** first (online users against capacity) and **random** — a new order on every refresh, so
+clients that connect to the first server spread across all of them. A server marked *hide when full*
 drops out of the subscription while it is at capacity — never the last one, since an empty
 subscription strands every client. Load is counted per server from the same sightings that feed
 the device limit, and the servers page shows the live number next to each capacity.

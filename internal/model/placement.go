@@ -74,10 +74,11 @@ const (
 	OrderNearest     = "nearest"      // the client's country first, then manual
 	OrderLoad        = "load"         // least loaded first, then manual
 	OrderNearestLoad = "nearest_load" // the client's country first, least loaded within
+	OrderRandom      = "random"       // a fresh shuffle on every fetch
 )
 
 var orderModes = map[string]bool{
-	OrderManual: true, OrderNearest: true, OrderLoad: true, OrderNearestLoad: true,
+	OrderManual: true, OrderNearest: true, OrderLoad: true, OrderNearestLoad: true, OrderRandom: true,
 }
 
 // OrderModeOr returns a valid ordering mode, falling back to manual for blank or
@@ -89,7 +90,7 @@ func OrderModeOr(mode string) string {
 	return OrderManual
 }
 
-// ValidOrderMode reports whether mode is one of the four.
+// ValidOrderMode reports whether mode is one of the five.
 func ValidOrderMode(mode string) bool { return orderModes[mode] }
 
 var countryCodeRe = regexp.MustCompile(`^[A-Z]{2}$`)
