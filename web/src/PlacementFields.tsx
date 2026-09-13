@@ -19,6 +19,7 @@ export function placementOf(n: {
   hide_when_full?: boolean
   traffic_limit?: number
   traffic_period?: string
+  traffic_reset_day?: number
   hide_when_over?: boolean
 }): Placement {
   return {
@@ -28,11 +29,14 @@ export function placementOf(n: {
     hide_when_full: n.hide_when_full ?? false,
     traffic_limit: n.traffic_limit ?? 0,
     traffic_period: n.traffic_period || 'month',
+    traffic_reset_day: n.traffic_reset_day ?? 0,
     hide_when_over: n.hide_when_over ?? false,
   }
 }
 
 const GB = 1024 ** 3
+
+const RESET_DAYS = Array.from({ length: 31 }, (_, i) => i + 1)
 
 // gbOf / bytesOf keep the field in gigabytes, which is the unit hosting quotes.
 const gbOf = (bytes: number) => (bytes > 0 ? String(Math.round((bytes / GB) * 100) / 100) : '')
@@ -156,6 +160,25 @@ export function PlacementFields({
             />
           }
         />
+        {/* Hosting bills from the day the server was bought, so the month can start on
+            any day; 0 from the server is the 1st. */}
+        {(value.traffic_period || 'month') === 'month' && (
+          <SettingRow
+            label={t('nodes.traffic.resetDay')}
+            hint={t('nodes.traffic.resetDayHint')}
+            field={
+              <Select
+                data={RESET_DAYS.map((d) => ({
+                  value: String(d),
+                  label: t('nodes.traffic.dayOfMonth', { day: d }),
+                }))}
+                value={String(value.traffic_reset_day || 1)}
+                disabled={value.traffic_limit <= 0}
+                onChange={(v) => patch({ traffic_reset_day: Number(v) })}
+              />
+            }
+          />
+        )}
         <SettingRow
           label={t('nodes.traffic.hideWhenOver')}
           hint={t('nodes.traffic.hideHint')}

@@ -64,11 +64,8 @@ func (c *nodeTrafficCache) replace(v map[int64]NodeTrafficUsage) {
 // trafficPeriodStart is the first day of the window a cap is measured over, as the
 // YYYY-MM-DD key traffic_daily is bucketed by. In the operator's timezone, because
 // that is the day boundary every other number in the panel already uses.
-func trafficPeriodStart(period string, now time.Time) string {
-	if model.TrafficPeriodOr(period) == model.TrafficDay {
-		return now.Format("2006-01-02")
-	}
-	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+func trafficPeriodStart(p model.Placement, now time.Time) string {
+	return p.TrafficPeriodStart(now).Format("2006-01-02")
 }
 
 // NodeTrafficUsage reports what one server has carried in its cap period and whether
@@ -119,7 +116,7 @@ func (m *Manager) refreshNodeTraffic() {
 	// default month (the common case) that is a single SUM over traffic_daily.
 	sums := map[string]map[int64][2]int64{}
 	for _, p := range places {
-		from := trafficPeriodStart(p.TrafficPeriod, now)
+		from := trafficPeriodStart(p, now)
 		if _, done := sums[from]; done {
 			continue
 		}
@@ -138,7 +135,7 @@ func (m *Manager) refreshNodeTraffic() {
 
 	out := make(map[int64]NodeTrafficUsage, len(places))
 	for id, p := range places {
-		totals := sums[trafficPeriodStart(p.TrafficPeriod, now)]
+		totals := sums[trafficPeriodStart(p, now)]
 		t := totals[id]
 		used := t[0] + t[1]
 		out[id] = NodeTrafficUsage{Used: used, Over: p.OverTrafficLimit(used)}

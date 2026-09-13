@@ -49,7 +49,7 @@ const nodeColumns = `id, name, host, enabled,
 	proxy_socks_enabled, proxy_socks_port, proxy_http_enabled, proxy_http_port,
 	proxy_accounts, traffic_coefficient,
 	country, sort_weight, capacity, hide_when_full,
-	traffic_limit, traffic_period, hide_when_over,
+	traffic_limit, traffic_period, hide_when_over, traffic_reset_day,
 	awg_enabled, awg_private_key, awg_public_key, awg_params`
 
 // generateNodeToken mints a raw token ("rpn_<43 url-safe chars>", 256 bits).
@@ -88,7 +88,7 @@ func scanNode(sc interface{ Scan(...any) error }) (*model.Node, error) {
 		&proxySocksEn, &n.Proxy.SocksPort, &proxyHTTPEn, &n.Proxy.HTTPPort,
 		&proxyAccounts, &n.TrafficCoefficient,
 		&n.Country, &n.Weight, &n.Capacity, &hideFull,
-		&n.TrafficLimit, &n.TrafficPeriod, &hideOver,
+		&n.TrafficLimit, &n.TrafficPeriod, &hideOver, &n.TrafficResetDay,
 		&awgEn, &n.AWGPrivateKey, &n.AWGPublicKey, &awgParamsJSON,
 	); err != nil {
 		return nil, err
@@ -437,7 +437,7 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 			warp_enabled = ?, opera_enabled = ?, opera_country = ?,
 			traffic_coefficient = ?,
 			country = ?, sort_weight = ?, capacity = ?, hide_when_full = ?,
-			traffic_limit = ?, traffic_period = ?, hide_when_over = ?
+			traffic_limit = ?, traffic_period = ?, hide_when_over = ?, traffic_reset_day = ?
 		WHERE id = ?`,
 		e.Name, e.Host, e.DecoyTemplate,
 		boolToNull(e.VLESS), boolToNull(e.Hysteria), boolToNull(e.Reality),
@@ -445,7 +445,7 @@ func (s *Store) UpdateNode(id int64, e NodeEdit) error {
 		boolToInt(e.WarpEnabled), boolToInt(e.OperaEnabled), e.OperaCountry,
 		model.NodeCoefficientOr(e.TrafficCoefficient),
 		model.NormalizeCountry(e.Placement.Country), e.Placement.Weight, e.Placement.Capacity, boolToInt(e.Placement.HideWhenFull),
-		place.TrafficLimit, place.TrafficPeriod, boolToInt(place.HideWhenOver),
+		place.TrafficLimit, place.TrafficPeriod, boolToInt(place.HideWhenOver), place.TrafficResetDay,
 		id,
 	)
 	if isNameConflict(err) {
