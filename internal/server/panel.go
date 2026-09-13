@@ -314,6 +314,8 @@ func (rt *Router) panelMux() http.Handler {
 	// Where clients may connect from (panel_connpolicy.go).
 	authed("GET /api/security/conn-policy", rt.getConnPolicy)
 	authed("POST /api/security/conn-policy", rt.saveConnPolicy)
+	authed("GET /api/security/trusted", rt.getTrustedNets)
+	authed("POST /api/security/trusted", rt.saveTrustedNets)
 	authed("POST /api/security/unblock", rt.unblockIP)
 	authed("GET /api/settings/status-page", rt.getStatusPage)
 	authed("POST /api/settings/status-page", rt.saveStatusPage)

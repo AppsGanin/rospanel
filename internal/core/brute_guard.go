@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/ipblock"
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 const (
@@ -64,6 +65,24 @@ func (g *bruteGuard) record(ip string) bool {
 		return true
 	}
 	return false
+}
+
+// forget drops what the guard remembers about addresses inside nets: a network the
+// operator has just trusted, whose ban is being lifted. Left behind, a remembered ban
+// would stop the guard from banning the address again should the trust be revoked.
+func (g *bruteGuard) forget(nets model.TrustedNets) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for ip := range g.banned {
+		if nets.Contains(ip) {
+			delete(g.banned, ip)
+		}
+	}
+	for ip := range g.attempts {
+		if nets.Contains(ip) {
+			delete(g.attempts, ip)
+		}
+	}
 }
 
 // ban drops the address at the firewall for bruteBanTime. The kernel lifts it;
@@ -133,14 +152,19 @@ func (m *Manager) bruteGuardLoop() {
 			}
 			line = l
 		}
-		ip := parseRejectIP(line)
-		if ip == "" {
-			continue
-		}
-		if m.guard.record(ip) {
+		if ip := parseRejectIP(line); m.noteProxyAuthReject(ip) {
 			go m.guard.ban(ip)
 		}
 	}
+}
+
+// noteProxyAuthReject counts one failed proxy sign-in from ip and reports whether it
+// has just earned a ban. A trusted address is not counted at all.
+func (m *Manager) noteProxyAuthReject(ip string) bool {
+	if ip == "" || m.guard == nil || m.Trusted(ip) {
+		return false
+	}
+	return m.guard.record(ip)
 }
 
 // parseRejectIP extracts the source IP from an Xray "rejected proxy/socks:"

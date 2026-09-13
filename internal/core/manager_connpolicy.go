@@ -147,15 +147,19 @@ func (m *Manager) policyActOnce(ip string) bool {
 
 // applyPolicyVerdict records a refusal and, when the policy enforces, drops the
 // address at this server's firewall and hands it to the nodes.
+//
+// A trusted address is refused on the record and never dropped: the policy still
+// says where it came from, and the operator's trust says it stays in.
 func (m *Manager) applyPolicyVerdict(userID int64, ip string, v model.Verdict, p model.ConnPolicy) {
-	logInfo("policy: connection refused", "ip", ip, "user", userID, "why", v.String(), "enforced", p.Enforce)
+	enforce := p.Enforce && !m.Trusted(ip)
+	logInfo("policy: connection refused", "ip", ip, "user", userID, "why", v.String(), "enforced", enforce)
 	if userID > 0 {
 		m.audit(context.Background(), userID, model.EventPolicyRefused, map[string]any{
 			"reason": v.Reason, "country": v.Country, "asn": v.ASN, "org": v.Org,
-			"blocked": p.Enforce,
+			"blocked": enforce,
 		})
 	}
-	if !p.Enforce {
+	if !enforce {
 		return
 	}
 	now := time.Now()

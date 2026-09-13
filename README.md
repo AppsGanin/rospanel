@@ -620,6 +620,11 @@ read before letting the rule cut anything, and any block can be lifted by hand. 
 geo table cannot place is never refused: that table is incomplete, and cutting real users off a
 working service is the one failure this must not have.
 
+**Trusted addresses** (*Settings → General → Protection & resilience*) are IPs and networks the panel never
+blocks on its own: not for guessing the SOCKS/HTTP password, not for scanning the panel, not
+under the source policy (a policy refusal is only recorded for them). For an office or your own
+server behind a shared address; blocks already in place on them are lifted on save.
+
 #### 🧰 Operations and security
 
 **Diagnostics** in one click: the Xray process, the AmneziaWG tunnel, config application, TLS expiry, disk space, geo

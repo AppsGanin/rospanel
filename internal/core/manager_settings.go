@@ -822,11 +822,19 @@ func (m *Manager) RecordProbe(ip string, paths int) {
 	}
 	// If auto-blocking is on, drop the scanner at the firewall too. Best-effort and
 	// gated so recording stays the default; a lost block must not affect the request.
-	if set, err := m.store.GetSettings(); err == nil && set.ProbeBlock {
+	if m.probeBlockDue(ip) {
 		if err := m.probeBlock.BlockIP(ip); err != nil {
 			logErr("probe: firewall block failed", "ip", ip, "err", err)
 		}
 	}
+}
+
+// probeBlockDue reports whether a detected scanner is to be dropped at the firewall:
+// auto-blocking is on and the address is not trusted. A trusted one is still
+// recorded — the operator should see that their office tripped the detector.
+func (m *Manager) probeBlockDue(ip string) bool {
+	set, err := m.store.GetSettings()
+	return err == nil && set.ProbeBlock && !m.Trusted(ip)
 }
 
 // SetProbeBlock toggles firewall auto-blocking of flagged scanner IPs. Turning it off

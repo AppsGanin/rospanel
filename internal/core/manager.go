@@ -269,6 +269,8 @@ type Manager struct {
 	// policy caches the source policy and the addresses it has recently ruled on
 	// (manager_connpolicy.go); the check runs on the connection path.
 	policy policyState
+	// trusted caches the networks no automatic ban may touch (manager_trusted.go).
+	trusted trustedState
 
 	// awg is the master's AmneziaWG tunnel (see manager_awg.go); awgLast holds the
 	// counters read at the previous poll, per peer public key.

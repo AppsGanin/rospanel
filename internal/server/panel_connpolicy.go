@@ -64,3 +64,26 @@ func (rt *Router) unblockIP(w http.ResponseWriter, r *http.Request) {
 	auditTarget(r, ip)
 	writeOK(w)
 }
+
+// getTrustedNets returns the networks no automatic ban may touch.
+func (rt *Router) getTrustedNets(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"nets": rt.mgr.TrustedNets()})
+}
+
+// saveTrustedNets replaces the list, lifting any automatic ban already inside it.
+// Owner and admin only, like the policy: a trusted network is one the panel's own
+// defences stop answering for.
+func (rt *Router) saveTrustedNets(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Nets []string `json:"nets"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SaveTrustedNets(req.Nets); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"nets": rt.mgr.TrustedNets()})
+	writeOK(w)
+}
