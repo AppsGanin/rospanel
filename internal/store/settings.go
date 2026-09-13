@@ -26,7 +26,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	var subShowConfigs, statusEn, maintenanceMode, probeDetect, watchdogEnabled int
 	var probeBlock int
 	var routingCfg, subRulesJSON, subDPIJSON string
-	var masterHideFull, masterHideOver, awgEn, hideOffline int
+	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt int
 	var awgParamsJSON, connPolicyJSON string
 	err := s.db.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -71,7 +71,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		       probe_detect, watchdog_enabled, probe_block, sub_dpi,
 		       sub_order_mode, master_country, master_sort_weight, master_capacity, master_hide_when_full,
 		       master_traffic_limit, master_traffic_period, master_hide_when_over, master_traffic_reset_day,
-		       sub_hide_offline, conn_policy,
+		       sub_hide_offline, conn_policy, sub_happ_crypt,
 		       sub_tpl_clash, sub_tpl_singbox, sub_tpl_xray,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns
 		FROM settings WHERE id = 1`,
@@ -121,7 +121,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		&st.MasterPlacement.Capacity, &masterHideFull,
 		&st.MasterPlacement.TrafficLimit, &st.MasterPlacement.TrafficPeriod, &masterHideOver,
 		&st.MasterPlacement.TrafficResetDay,
-		&hideOffline, &connPolicyJSON,
+		&hideOffline, &connPolicyJSON, &subHappCrypt,
 		&st.SubTplClash, &st.SubTplSingBox, &st.SubTplXray,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 	)
@@ -192,6 +192,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	st.HWIDEnabled = hwidEn != 0
 	st.HWIDRequire = hwidRequire != 0
 	st.SubShowConfigs = subShowConfigs != 0
+	st.SubHappCrypt = subHappCrypt != 0
 	st.StatusEnabled = statusEn != 0
 	st.MaintenanceMode = maintenanceMode != 0
 	st.ProbeDetect = probeDetect != 0
@@ -425,14 +426,14 @@ func (s *Store) SetSubSettings(st *model.Settings) error {
 			sub_base64 = ?, sub_email_in_name = ?, sub_title = ?, sub_routing = ?,
 			sub_routing_happ = ?, sub_routing_incy = ?, sub_routing_mihomo = ?,
 			sub_update_interval = ?, sub_announce = ?, sub_show_configs = ?,
-			sub_order_mode = ?, sub_hide_offline = ?,
+			sub_order_mode = ?, sub_hide_offline = ?, sub_happ_crypt = ?,
 			updated_at = unixepoch()
 		WHERE id = 1`,
 		st.SubPath,
 		st.SubBase64, st.SubNameInTitle, st.SubTitle, st.SubRouting,
 		st.SubRoutingHapp, st.SubRoutingIncy, st.SubRoutingMihomo,
 		st.SubUpdateInterval, st.SubAnnounce, boolToInt(st.SubShowConfigs),
-		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline),
+		model.OrderModeOr(st.SubOrderMode), boolToInt(st.SubHideOffline), boolToInt(st.SubHappCrypt),
 	)
 	return err
 }

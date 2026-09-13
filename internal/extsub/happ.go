@@ -44,6 +44,32 @@ func DecryptHapp(link string) ([]byte, error) {
 	return nil, errors.New("unsupported happ link format")
 }
 
+// happCryptMax is the most a crypt4 link can carry: one RSA-4096 block under
+// PKCS#1 v1.5 padding, 512 bytes less the 11 the padding takes.
+const happCryptMax = 4096/8 - 11
+
+// EncryptHapp wraps plain — a subscription URL — as a happ://crypt4/ link, the
+// inverse of DecryptHapp for the one scheme Happ publishes a key for panels to
+// encrypt with (the public half of happRSAKeys[3]). Happ adds the subscription from
+// it without ever showing the address. One RSA block, so it holds a URL and not a
+// server list; the padding is random, so every call yields a different link to the
+// same address.
+func EncryptHapp(plain string) (string, error) {
+	if len(plain) > happCryptMax {
+		return "", fmt.Errorf("happ crypt4: %d bytes, at most %d fit", len(plain), happCryptMax)
+	}
+	key, err := happRSAKey(3)
+	if err != nil {
+		return "", err
+	}
+	// PKCS#1 v1.5 again for the same reason as decryptRSA: it is the app's scheme.
+	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, &key.PublicKey, []byte(plain)) //nolint:staticcheck // Happ's scheme, see decryptRSA
+	if err != nil {
+		return "", fmt.Errorf("happ crypt4: %w", err)
+	}
+	return "happ://crypt4/" + base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
 // ── crypt … crypt4: one RSA PKCS#1 v1.5 block ─────────────────────────────
 
 var (

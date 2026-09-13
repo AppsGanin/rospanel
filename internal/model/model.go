@@ -754,6 +754,11 @@ type Settings struct {
 	// subscription link, the QR and the client buttons, which is what an operator
 	// selling access usually wants handed out.
 	SubShowConfigs bool `json:"-"`
+	// SubHappCrypt makes the page's Happ button add the subscription through an
+	// encrypted happ://crypt4/ link instead of the plain address, so Happ never shows
+	// the address to the person using it. Off by default: an older Happ that does not
+	// know crypt4 would get a button that does nothing.
+	SubHappCrypt bool `json:"-"`
 
 	// SubRules are the subscription response rules, evaluated in order before the
 	// automatic format detection (see EvalSubRules). Stored as JSON in one column.

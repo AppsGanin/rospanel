@@ -56,6 +56,7 @@ const EMPTY_SUB: SubSettings = {
   sub_update_interval: 1,
   sub_announce: "",
   sub_show_configs: true,
+  sub_happ_crypt: false,
   sub_order_mode: "manual",
   sub_hide_offline: false,
 };
@@ -124,6 +125,7 @@ export function SubscriptionsPanel() {
           sub_update_interval: d.sub_update_interval,
           sub_announce: d.sub_announce,
           sub_show_configs: d.sub_show_configs,
+          sub_happ_crypt: d.sub_happ_crypt ?? false,
           sub_order_mode: d.sub_order_mode ?? "manual",
           sub_hide_offline: d.sub_hide_offline ?? false,
         };
@@ -280,6 +282,12 @@ export function SubscriptionsPanel() {
           hint={t("subs.showConfigsHint")}
           checked={s.sub_show_configs}
           onChange={(v) => patch({ sub_show_configs: v })}
+        />
+        <ToggleRow
+          label={t("subs.happCrypt")}
+          hint={t("subs.happCryptHint")}
+          checked={s.sub_happ_crypt}
+          onChange={(v) => patch({ sub_happ_crypt: v })}
         />
       </Panel>
 

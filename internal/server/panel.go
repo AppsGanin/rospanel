@@ -394,6 +394,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedOpID("POST /api/users/{id}/devices/unbind", rt.unbindUserDevice)
 	authedOpID("GET /api/users/{id}/abuse", rt.userAbuse)
 	authedOpID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
+	authedOpID("GET /api/users/{id}/happ-link", rt.userHappLink)
 	authedOpID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
 	authedOpID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
 	authedOpID("POST /api/users/{id}/telegram/message", rt.messageUser)

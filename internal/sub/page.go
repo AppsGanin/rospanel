@@ -401,7 +401,7 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 		SubURL:      subURL,
 		Links:       protoLinks,
 		AWG:         awgCards,
-		DeepLinks:   DeepLinks(subURL, lang),
+		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,
 		Used:        fmtBytes(used),
