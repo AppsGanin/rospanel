@@ -64,6 +64,7 @@ func (rt *Router) getSettings(w http.ResponseWriter, _ *http.Request) {
 		"sub_update_interval":  set.SubUpdateInterval,
 		"sub_announce":         set.SubAnnounce,
 		"sub_show_configs":     set.SubShowConfigs,
+		"sub_happ_crypt":       set.SubHappCrypt,
 		"sub_dpi":              set.SubDPI,
 		"sub_order_mode":       set.SubOrderMode,
 		"sub_hide_offline":     set.SubHideOffline,
@@ -411,6 +412,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		UpdateInterval int    `json:"sub_update_interval"`
 		Announce       string `json:"sub_announce"`
 		ShowConfigs    bool   `json:"sub_show_configs"`
+		HappCrypt      bool   `json:"sub_happ_crypt"`
 		OrderMode      string `json:"sub_order_mode"`
 		HideOffline    bool   `json:"sub_hide_offline"`
 	}
@@ -433,6 +435,7 @@ func (rt *Router) saveSubSettings(w http.ResponseWriter, r *http.Request) {
 		SubUpdateInterval: req.UpdateInterval,
 		SubAnnounce:       req.Announce,
 		SubShowConfigs:    req.ShowConfigs,
+		SubHappCrypt:      req.HappCrypt,
 		SubOrderMode:      strings.TrimSpace(req.OrderMode),
 		SubHideOffline:    req.HideOffline,
 	})

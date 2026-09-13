@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
@@ -141,6 +142,29 @@ func (rt *Router) rotateSubToken(w http.ResponseWriter, r *http.Request, id int6
 	}
 	rt.applyTLSHints(set)
 	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
+}
+
+// userHappLink returns the user's subscription as an encrypted Happ link, "" while
+// encrypted links are switched off. Asked for one user at a time, not carried in the
+// user list: each link is an RSA-4096 encryption, and a list of thousands would pay
+// for thousands of links nobody opened.
+func (rt *Router) userHappLink(w http.ResponseWriter, _ *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	link, err := sub.HappLink(set, u.SubToken)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"link": link})
 }
 
 // unlinkUserTelegram detaches a VPN user's linked Telegram chat (admin action).

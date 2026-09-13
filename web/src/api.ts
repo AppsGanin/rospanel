@@ -889,6 +889,9 @@ export interface SubSettings {
   // link of every lane). On by default; off leaves the page offering the
   // subscription link and the client buttons only.
   sub_show_configs: boolean
+  // The page's Happ button adds the subscription through an encrypted happ://crypt4/
+  // link, so Happ never shows the address. Off by default.
+  sub_happ_crypt: boolean
   // How servers are ordered in a subscription: manual | nearest | load | nearest_load | random.
   sub_order_mode: string
   // Drop a node from subscriptions while it is offline (off by default).
@@ -1573,6 +1576,8 @@ export const disableTOTP = (current_password: string) =>
 export const logout = () => api<{ ok: boolean }>('api/logout', { method: 'POST' })
 
 export const listUsers = () => api<User[]>('api/users')
+// The user's subscription as an encrypted Happ link; "" while those are switched off.
+export const getUserHappLink = (id: number) => api<{ link: string }>(`api/users/${id}/happ-link`)
 
 export const createUser = (name: string, data_limit = 0, expire_at = 0) =>
   api<User>('api/users', {

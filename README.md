@@ -345,7 +345,10 @@ in their card and in the list.
 `/<path>/<token>` — a base64 list plus a page with a QR code, deep links and import into
 popular clients (auto-routing headers for Happ / INCY / Mihomo), with your own node names. The
 link can be **reset** (token rotation) without changing UUIDs and passwords. An
-**announcement** inside the client (Happ, v2RayTun) puts a short text right in the app.
+**announcement** inside the client (Happ, v2RayTun) puts a short text right in the app. An
+**encrypted link for Happ** (*Settings → Subscriptions*): the Happ button adds the subscription
+through `happ://crypt4/…`, so the app never shows its address; the same link can be copied from
+the user's card.
 
 **Variables in connection names.** A lane's or a custom inbound's name can carry
 `{flag}`, `{country}`, `{server}`, `{user}`, `{used}`, `{left}`, `{total}`, `{expire}`

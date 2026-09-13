@@ -11,6 +11,7 @@ import {
   getStatsSeries,
   getUserConnections,
   getUserDevices,
+  getUserHappLink,
   unbindUserDevice,
   renameUser,
   resetUserTraffic,
@@ -288,7 +289,14 @@ export function UserDetail({
   const [renaming, setRenaming] = useState(false)
   const [extendOpen, setExtendOpen] = useState(false)
   const email = useCopy()
+  const happCopy = useCopy()
   const { confirm, confirmNode } = useConfirm()
+  // The encrypted Happ link is asked for on its own — each one is an RSA encryption,
+  // too dear to carry in the user list — and exists only while the operator has it
+  // switched on: "" hides the row. A rotated token is a new address, so a new link.
+  const [happLink, setHappLink] = useState('')
+  const userId = user?.id
+  const subUrl = user?.sub_url
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: resets the card for a new user; resetLimitDraft is defined below and closes over `user`, so re-running it on a user change is the whole point
   useEffect(() => {
@@ -300,6 +308,18 @@ export function UserDetail({
     setGroupQuery('')
     resetLimitDraft()
   }, [user])
+
+  useEffect(() => {
+    setHappLink('')
+    if (!userId || !subUrl) return
+    let alive = true
+    getUserHappLink(userId)
+      .then((d) => alive && setHappLink(d.link))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [userId, subUrl])
 
   // All groups, for the access-group selector. Loaded once the card opens.
   useEffect(() => {
@@ -977,6 +997,14 @@ export function UserDetail({
               </div>
             </div>
             <Code block copy>{user.sub_url}</Code>
+            {happLink && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-ink-muted">{t('userDetail.happLink')}</span>
+                <Button size="xs" variant="light" onClick={() => happCopy.copy(happLink)}>
+                  {t(happCopy.copied ? 'common.copied' : 'common.copy')}
+                </Button>
+              </div>
+            )}
           </Panel>
 
           <Panel title="Telegram">

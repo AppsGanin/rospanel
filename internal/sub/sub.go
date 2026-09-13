@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/extsub"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -84,7 +85,12 @@ type DeepLink struct {
 
 // DeepLinks builds best-effort import deep-links for the popular clients, most
 // popular first. Schemes drift across client releases — verify periodically.
-func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
+//
+// happCrypt hands Happ the subscription as an encrypted happ://crypt4/ link, which
+// it adds without showing the address. Should encrypting fail — it cannot for any
+// address this panel builds — the button falls back to the plain link rather than
+// disappearing: the page is how a user gets connected at all.
+func DeepLinks(subURL string, lang i18n.Lang, happCrypt bool) []DeepLink {
 	enc := url.QueryEscape(subURL)
 	// Only the generic platform blurbs are translated; the OS names below are
 	// proper nouns and read the same in every language.
@@ -93,8 +99,14 @@ func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
 	// Shadowrocket's sub:// URI carries the subscription URL base64-encoded (NOT
 	// percent-encoded) — feeding it a %-escaped URL makes it fail with "invalid URL".
 	subB64 := base64.StdEncoding.EncodeToString([]byte(subURL))
+	happ := "happ://add/" + subURL
+	if happCrypt {
+		if l, err := extsub.EncryptHapp(subURL); err == nil {
+			happ = l
+		}
+	}
 	return []DeepLink{
-		{"Happ", allTV, template.URL("happ://add/" + subURL)},
+		{"Happ", allTV, template.URL(happ)},
 		{"INCY", allTV, template.URL("incy://import/" + subURL)},
 		{"v2RayTun", allTV, template.URL("v2raytun://import/" + subURL)},
 		{"Hiddify", all, template.URL("hiddify://import/" + subURL)},
@@ -107,6 +119,15 @@ func DeepLinks(subURL string, lang i18n.Lang) []DeepLink {
 		{"Streisand", "iOS · macOS · tvOS", template.URL("streisand://import/" + subURL)},
 		{"Shadowrocket", "iOS · macOS · tvOS", template.URL("shadowrocket://add/sub://" + subB64)},
 	}
+}
+
+// HappLink is the user's subscription as an encrypted happ://crypt4/ link, or ""
+// when the operator has not switched encrypted Happ links on.
+func HappLink(set *model.Settings, token string) (string, error) {
+	if !set.SubHappCrypt {
+		return "", nil
+	}
+	return extsub.EncryptHapp(URL(set, token))
 }
 
 // AWGConfURL is where a user downloads their AmneziaWG config for one server

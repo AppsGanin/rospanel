@@ -1118,6 +1118,8 @@ const en: Dict = {
   subs: {
     showConfigs: "Individual configs on the page",
     showConfigsHint: "A card with per-protocol links and copy buttons. Off — the subscription link only.",
+    happCrypt: "Encrypted link for Happ",
+    happCryptHint: "The Happ button adds the subscription through happ://crypt4 — the app never shows the subscription address. Needs a Happ that supports crypt4.",
     hwid: "Device binding (HWID)",
     hwidHint: "The client (Happ, v2RayTun) sends an install id when it refreshes. A device takes a slot; once slots run out, a new one gets no subscription.",
     countMode: "Count devices by",
@@ -1472,6 +1474,7 @@ const en: Dict = {
     noteAndTags: "Note and tags",
     lastOnline: "Last online",
     subLink: "Subscription link",
+    happLink: "Encrypted Happ link",
     bannerDeviceLimit: "Device limit reached: {{active}} of {{limit}}. New connections are refused.",
     bannerExpired: "The subscription expired on {{date}} — access is closed until you extend it.",
     extendUserBody: "“{{name}}” will be extended. Currently: {{date}}.",
