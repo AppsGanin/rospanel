@@ -1,10 +1,14 @@
 package sub
 
 import (
+	"math/rand/v2"
 	"sort"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
+
+// shuffle is the random mode's source, swapped out by tests that need a known order.
+var shuffle = rand.Shuffle
 
 // Order arranges the servers a subscription spans for one client, and drops the
 // ones that have no room, according to the operator's mode:
@@ -15,6 +19,8 @@ import (
 //   - load: least loaded first — the load being online users over capacity, or
 //     the bare online count where no capacity is stated.
 //   - nearest_load: the client's country first, least loaded within.
+//   - random: a new order on every fetch, weights ignored. Clients that connect
+//     to the first entry then spread across the fleet instead of piling onto one.
 //
 // A server marked hide-when-full with a capacity it has reached is left out —
 // unless that would leave nothing, in which case everything stays: an empty
@@ -70,19 +76,23 @@ func Order(servers []Server, mode, clientCC string, online map[int64]int, overTr
 	}
 	byNear := mode == model.OrderNearest || mode == model.OrderNearestLoad
 	byLoad := mode == model.OrderLoad || mode == model.OrderNearestLoad
-	sort.SliceStable(list, func(i, j int) bool {
-		a, b := list[i], list[j]
-		if byNear && a.near != b.near {
-			return a.near < b.near
-		}
-		if byLoad && a.load != b.load {
-			return a.load < b.load
-		}
-		if a.weigh != b.weigh {
-			return a.weigh > b.weigh
-		}
-		return a.idx < b.idx
-	})
+	if mode == model.OrderRandom {
+		shuffle(len(list), func(i, j int) { list[i], list[j] = list[j], list[i] })
+	} else {
+		sort.SliceStable(list, func(i, j int) bool {
+			a, b := list[i], list[j]
+			if byNear && a.near != b.near {
+				return a.near < b.near
+			}
+			if byLoad && a.load != b.load {
+				return a.load < b.load
+			}
+			if a.weigh != b.weigh {
+				return a.weigh > b.weigh
+			}
+			return a.idx < b.idx
+		})
+	}
 	out := make([]Server, 0, len(list))
 	for _, r := range list {
 		if !r.full {

@@ -889,7 +889,7 @@ export interface SubSettings {
   // link of every lane). On by default; off leaves the page offering the
   // subscription link and the client buttons only.
   sub_show_configs: boolean
-  // How servers are ordered in a subscription: manual | nearest | load | nearest_load.
+  // How servers are ordered in a subscription: manual | nearest | load | nearest_load | random.
   sub_order_mode: string
   // Drop a node from subscriptions while it is offline (off by default).
   sub_hide_offline: boolean

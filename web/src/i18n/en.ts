@@ -1148,7 +1148,8 @@ const en: Dict = {
       label: "Server order",
       manual: "Manual (weight, then the list)",
       load: "Least loaded first",
-      hint: "Load is online users against capacity. Weight and capacity are set on each server's card.",
+      random: "Random",
+      hint: "Load is online users against capacity. Weight and capacity are set on each server's card. A random order changes on every subscription refresh and spreads clients that connect to the first server across the fleet; weight is ignored.",
     },
     dpi: {
       title: "DPI evasion on the client",

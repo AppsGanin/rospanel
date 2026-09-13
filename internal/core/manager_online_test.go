@@ -64,7 +64,7 @@ func TestMasterPlacementValidatesAndNormalises(t *testing.T) {
 	if again, _ := m.store.GetSettings(); again.SubOrderMode != model.OrderNearestLoad {
 		t.Errorf("order mode not stored: %q", again.SubOrderMode)
 	}
-	set.SubOrderMode = "random"
+	set.SubOrderMode = "fastest"
 	if err := m.SaveSubSettings(set); err == nil {
 		t.Error("an unknown order mode was accepted")
 	}

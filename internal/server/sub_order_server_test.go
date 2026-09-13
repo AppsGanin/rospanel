@@ -126,3 +126,18 @@ func TestExternalServersOutliveAHiddenFullMaster(t *testing.T) {
 		t.Errorf("external server lost with the hidden master: %q", body)
 	}
 }
+
+// The random order is a mode the settings accept and the store keeps: a value the
+// store did not know would read back as manual, silently.
+func TestRandomOrderModeIsSaved(t *testing.T) {
+	_, mgr, st := nodeAPITestServer(t)
+	set, _ := st.GetSettings()
+	set.SubOrderMode = model.OrderRandom
+	if err := mgr.SaveSubSettings(set); err != nil {
+		t.Fatalf("save random order: %v", err)
+	}
+	got, _ := st.GetSettings()
+	if got.SubOrderMode != model.OrderRandom {
+		t.Errorf("order mode read back as %q, want %q", got.SubOrderMode, model.OrderRandom)
+	}
+}
