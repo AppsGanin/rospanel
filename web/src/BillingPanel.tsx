@@ -15,7 +15,7 @@ import {
   type PaymentProvider,
   type TariffPlan,
 } from "./api";
-import { fmtBytes, fmtSpeed, gbToBytes, quotaOptions, resetPeriods, speedLimitOptions } from "./format";
+import { fmtBytes, fmtSpeed, gbToBytes, groupSpeedCap, quotaOptions, resetPeriods, speedLimitOptions } from "./format";
 import { useAction } from "./hooks";
 import i18n, { td, currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -347,6 +347,8 @@ function PlanForm({
   const { t } = useTranslation();
   const patch = (p: Partial<TariffPlan>) => onChange({ ...plan, ...p });
   const selected = new Set(plan.group_ids ?? []);
+  // A granted group with a speed cap overrides the plan's own for its users.
+  const planGroupCap = groupSpeedCap(groups.filter((g) => selected.has(g.id)));
   // A plan is free because it is designated free/trial in the pricing card — never
   // because someone typed 0 here. The server enforces both halves of that.
   const designated = isFree || isTrial;
@@ -471,12 +473,24 @@ function PlanForm({
                   patch({ group_ids: [...next] });
                 }}
                 label={g.name}
-                hint={t("groups.nConnections", { count: g.grants?.length ?? 0 })}
+                hint={
+                  g.speed_limit > 0
+                    ? `${t("groups.nConnections", { count: g.grants?.length ?? 0 })} · ${fmtSpeed(g.speed_limit)}`
+                    : t("groups.nConnections", { count: g.grants?.length ?? 0 })
+                }
               />
             ))}
           </div>
         )}
         <p className="text-xs text-ink-muted">{t("bill.planGroupsHint")}</p>
+        {planGroupCap && (
+          <p className="text-xs text-warning">
+            {t("bill.groupSpeedInForce", {
+              name: planGroupCap.name,
+              speed: fmtSpeed(planGroupCap.kbps),
+            })}
+          </p>
+        )}
       </div>
     </div>
   );

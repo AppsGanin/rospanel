@@ -136,13 +136,17 @@ func sanitizeGrants(tokens []string) []string {
 	return out
 }
 
-// CreateGroup validates and stores a new group.
-func (m *Manager) CreateGroup(name string, grants []string) (*model.Group, error) {
+// CreateGroup validates and stores a new group. speedLimit is the members' cap in
+// kbit/s, 0 for none (see model.Group.SpeedLimit).
+func (m *Manager) CreateGroup(name string, grants []string, speedLimit int) (*model.Group, error) {
 	name = strings.TrimSpace(name)
 	if err := model.ValidateGroupName(name); err != nil {
 		return nil, fromFieldErr(err)
 	}
-	g, err := m.store.CreateGroup(name, sanitizeGrants(grants))
+	if speedLimit < 0 {
+		return nil, invalidCode("err.badValue", "скорость не может быть отрицательной")
+	}
+	g, err := m.store.CreateGroup(name, sanitizeGrants(grants), speedLimit)
 	if err != nil {
 		return nil, groupErr(err)
 	}
@@ -150,17 +154,60 @@ func (m *Manager) CreateGroup(name string, grants []string) (*model.Group, error
 	return g, nil
 }
 
-// UpdateGroup validates and stores an edit (rename + grants).
-func (m *Manager) UpdateGroup(id int64, name string, grants []string) error {
+// UpdateGroup validates and stores an edit: the name, the grants and — unless
+// speedLimit is nil, which keeps it — the members' speed cap.
+//
+// Only a change of grants reconciles Xray: that is what alters who may reach which
+// lane. A new name or a new cap alters neither, and restarting every tunnel on the
+// panel to retitle a group, or to re-shape its members, would cut every connection
+// for nothing.
+func (m *Manager) UpdateGroup(id int64, name string, grants []string, speedLimit *int) error {
 	name = strings.TrimSpace(name)
 	if err := model.ValidateGroupName(name); err != nil {
 		return fromFieldErr(err)
 	}
-	if err := m.store.UpdateGroup(id, name, sanitizeGrants(grants)); err != nil {
+	if speedLimit != nil && *speedLimit < 0 {
+		return invalidCode("err.badValue", "скорость не может быть отрицательной")
+	}
+	old, err := m.store.GetGroup(id)
+	if err != nil {
+		return err
+	}
+	if old == nil {
+		return invalidCode("err.groupNotFound", "группа не найдена")
+	}
+	kbps := old.SpeedLimit
+	if speedLimit != nil {
+		kbps = *speedLimit
+	}
+	clean := sanitizeGrants(grants)
+	if err := m.store.UpdateGroup(id, name, clean, kbps); err != nil {
 		return groupErr(err)
 	}
-	m.applyAccessChange()
+	switch {
+	case !sameTokens(old.Grants, clean):
+		m.applyAccessChange()
+	case kbps != old.SpeedLimit:
+		m.applySpeedChange()
+	}
 	return nil
+}
+
+// sameTokens reports whether two grant lists hold the same tokens, in any order.
+func sameTokens(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]bool, len(a))
+	for _, t := range a {
+		set[t] = true
+	}
+	for _, t := range b {
+		if !set[t] {
+			return false
+		}
+	}
+	return true
 }
 
 // DeleteGroup removes a group; its members lose that grant.
@@ -182,11 +229,34 @@ func (m *Manager) SetGroupMembers(groupID int64, userIDs []int64) error {
 	if g == nil {
 		return invalidCode("err.groupNotFound", "группа не найдена")
 	}
+	// The group editor posts the member list with every save. The same members are
+	// not a change, and answering them with a reconcile restarted every tunnel on the
+	// panel to rename a group or change its speed cap.
+	if sameMembers(g.MemberIDs, userIDs) {
+		return nil
+	}
 	if err := m.store.SetGroupMembers(groupID, userIDs); err != nil {
 		return err
 	}
 	m.applyAccessChange()
 	return nil
+}
+
+// sameMembers reports whether two user-id lists name the same users, duplicates and
+// order aside.
+func sameMembers(a, b []int64) bool {
+	set := make(map[int64]bool, len(a))
+	for _, id := range a {
+		set[id] = true
+	}
+	other := make(map[int64]bool, len(b))
+	for _, id := range b {
+		if !set[id] {
+			return false
+		}
+		other[id] = true
+	}
+	return len(other) == len(set)
 }
 
 // SetUserGroups replaces a user's group membership.
@@ -212,9 +282,20 @@ func (m *Manager) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 // applyAccessChange reconciles the master and wakes the nodes so a group change takes
 // effect. A group edit changes which users belong to which lanes but adds/removes no
 // users, so the live user-sync would see nothing — a full reconcile is the change.
+//
+// Membership also decides a member's speed cap when a group sets one, so the local
+// shaping is recomputed with it rather than at the next tick.
 func (m *Manager) applyAccessChange() {
 	m.TriggerReconcile()
 	m.notifyNodes()
+	m.runAsync(m.ApplyShaping)
+}
+
+// applySpeedChange puts a group's new speed cap in force: the local shaping now, and
+// the nodes, which shape from the limits in their sync payload, on their next sync.
+func (m *Manager) applySpeedChange() {
+	m.runAsync(m.ApplyShaping)
+	m.TriggerUserSync()
 }
 
 // groupErr maps the store's name-conflict sentinel to a user-facing message.

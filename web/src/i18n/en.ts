@@ -1259,6 +1259,10 @@ const en: Dict = {
     nMembers_many: "{{count}} members",
     nMembers_other: "{{count}} members",
     nSelected: "{{count}} selected",
+    colSpeed: "speed",
+    speedNone: "Not set",
+    noGrantsWarn: "No connection is ticked: the group's members will not be able to connect anywhere.",
+    speedHint: "When set, it takes priority over the members' tariff and personal caps. A member of several groups gets the highest of their caps; a group does not lift a throttle for suspicious traffic.",
   },
 
   usersPanel: {
@@ -1575,6 +1579,7 @@ const en: Dict = {
     boundDevices: "Bound devices (HWID)",
     speedLimit: "Speed limit",
     speedLimitHint: "A both-directions kernel cap, per source address: everyone behind one NAT shares it.",
+    groupSpeedInForce: "The cap of group “{{name}}” is in force: {{speed}} — it takes priority over this field.",
     boundOfLimit: "{{count}} of {{limit}} bound",
     boundTotal: "{{count}} bound · no limit",
     noBoundDevices: "No devices yet",
@@ -2296,6 +2301,7 @@ const en: Dict = {
     noPlans: "No plans yet. Press “Create” to add the first one.",
     planGroups: "Access groups",
     planGroupsHint: "A user on this plan joins the ticked groups and leaves them when the plan changes. Groups granted by hand are kept. Nothing ticked — the plan grants none and takes back what the previous one gave.",
+    groupSpeedInForce: "This plan's users get the speed of group “{{name}}”: {{speed}} — it takes priority over the plan's cap.",
     planGroupsNone: "No groups yet — create them under Users → Groups.",
     resetPeriod: "Traffic refill",
     resetAutoPaid: "No — the quota covers the whole term",

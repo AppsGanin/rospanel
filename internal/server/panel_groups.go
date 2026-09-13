@@ -32,6 +32,17 @@ func (rt *Router) groupTargets(w http.ResponseWriter, _ *http.Request) {
 type groupReq struct {
 	Name   string   `json:"name"`
 	Grants []string `json:"grants"`
+	// SpeedLimit caps the members' speed in kbit/s (0 = none). Pointer so an edit
+	// that does not mention it keeps the group's cap instead of lifting it.
+	SpeedLimit *int `json:"speed_limit,omitempty"`
+}
+
+// speedOrZero is a create's cap: none unless stated.
+func (r groupReq) speedOrZero() int {
+	if r.SpeedLimit == nil {
+		return 0
+	}
+	return *r.SpeedLimit
 }
 
 // createGroup adds a group.
@@ -40,7 +51,7 @@ func (rt *Router) createGroup(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	g, err := rt.mgr.CreateGroup(req.Name, req.Grants)
+	g, err := rt.mgr.CreateGroup(req.Name, req.Grants, req.speedOrZero())
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -54,7 +65,7 @@ func (rt *Router) updateGroup(w http.ResponseWriter, r *http.Request, id int64) 
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.UpdateGroup(id, req.Name, req.Grants); err != nil {
+	if err := rt.mgr.UpdateGroup(id, req.Name, req.Grants, req.SpeedLimit); err != nil {
 		writeManagerErr(w, err)
 		return
 	}

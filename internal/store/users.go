@@ -457,6 +457,42 @@ func setUserSpeedLimitOn(ex execer, id int64, kbps int) error {
 	return err
 }
 
+// groupSpeedJoin attaches to each user row `u` the highest speed cap among the
+// groups they belong to, as gs.kbps (NULL when none of their groups sets one).
+// Highest, not lowest: groups add to what a member gets, the way their grants do.
+const groupSpeedJoin = `LEFT JOIN (
+		SELECT m.user_id, MAX(g.speed_limit) AS kbps
+		FROM group_members m JOIN groups g ON g.id = m.group_id
+		WHERE g.speed_limit > 0
+		GROUP BY m.user_id) gs ON gs.user_id = u.id`
+
+// effectiveSpeedExpr is the cap in force for a row joined with groupSpeedJoin: a
+// group's when one is set, taking priority over the user's own column (their
+// tariff's cap, or one set on their card); the user's own otherwise.
+//
+// A blocklist throttle is the exception nothing loosens. While one is in force the
+// user's column holds the throttle and abuse_prev_speed the cap it replaced, so the
+// stricter applies: of the throttle and a group's cap, or — with no group cap — of
+// the throttle and the user's own cap, which a tariff edit or leaving a group may
+// have made the stricter since.
+const effectiveSpeedExpr = `(CASE
+		WHEN COALESCE(gs.kbps, 0) = 0 THEN (CASE
+			WHEN u.abuse_action = '` + model.AbuseActionThrottle + `' AND u.abuse_prev_speed > 0 AND u.abuse_prev_speed < u.speed_limit THEN u.abuse_prev_speed
+			ELSE u.speed_limit END)
+		WHEN u.abuse_action = '` + model.AbuseActionThrottle + `' AND u.speed_limit > 0 AND u.speed_limit < gs.kbps THEN u.speed_limit
+		ELSE gs.kbps END)`
+
+// GroupSpeedLimit is the cap a user's groups give them: the highest among the groups
+// that set one, 0 when none does.
+func (s *Store) GroupSpeedLimit(userID int64) (int, error) {
+	var kbps int
+	err := s.db.QueryRow(`
+		SELECT COALESCE(MAX(g.speed_limit), 0)
+		FROM group_members m JOIN groups g ON g.id = m.group_id
+		WHERE m.user_id = ? AND g.speed_limit > 0`, userID).Scan(&kbps)
+	return kbps, err
+}
+
 // ShapedUsers returns every user with a speed cap, paired with the source addresses
 // they have been seen on since `since` — everything internal/shaper needs, in one
 // query rather than one per user.
@@ -472,10 +508,11 @@ func setUserSpeedLimitOn(ex execer, id int64, kbps int) error {
 // newest few are also the right ones: they are where the traffic being shaped is.
 func (s *Store) ShapedUsers(since int64) (map[int64]SpeedTarget, error) {
 	rows, err := s.db.Query(`
-		SELECT u.id, u.speed_limit, COALESCE(c.ip, '')
+		SELECT u.id, `+effectiveSpeedExpr+`, COALESCE(c.ip, '')
 		FROM users u
+		`+groupSpeedJoin+`
 		LEFT JOIN connections c ON c.user_id = u.id AND c.last_seen > ?
-		WHERE u.speed_limit > 0 AND u.enabled = 1
+		WHERE `+effectiveSpeedExpr+` > 0 AND u.enabled = 1
 		ORDER BY u.id, c.last_seen DESC`, since)
 	if err != nil {
 		return nil, err
@@ -509,10 +546,11 @@ func (s *Store) ShapedUsers(since int64) (map[int64]SpeedTarget, error) {
 // still worth shaping, since the limit is derived on read and they keep connecting.
 func (s *Store) CappedUsers(now int64) (map[int64]int, error) {
 	rows, err := s.db.Query(`
-		SELECT id, speed_limit FROM users
-		WHERE speed_limit > 0 AND enabled = 1
-		  AND (expire_at = 0 OR expire_at > ?)
-		  AND (data_limit = 0 OR used_up + used_down < data_limit)`, now)
+		SELECT u.id, `+effectiveSpeedExpr+` FROM users u
+		`+groupSpeedJoin+`
+		WHERE `+effectiveSpeedExpr+` > 0 AND u.enabled = 1
+		  AND (u.expire_at = 0 OR u.expire_at > ?)
+		  AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)`, now)
 	if err != nil {
 		return nil, err
 	}

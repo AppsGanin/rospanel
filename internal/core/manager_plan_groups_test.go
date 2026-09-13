@@ -20,14 +20,14 @@ func TestPlanGroupsGateAccess(t *testing.T) {
 	defer st.Close()
 	m := &Manager{store: st}
 
-	vlessOnly, err := st.CreateGroup("VLESS only", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)})
+	vlessOnly, err := st.CreateGroup("VLESS only", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
 	all, err := st.CreateGroup("Everything", []string{
 		model.BuiltinToken(model.LocalNodeID, model.LaneVLESS),
 		model.BuiltinToken(model.LocalNodeID, model.LaneHysteria),
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
@@ -95,11 +95,11 @@ func TestPlanGroupsChangedOnlyOnRealMovement(t *testing.T) {
 	defer st.Close()
 	m := &Manager{store: st}
 
-	g, err := st.CreateGroup("Premium", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)})
+	g, err := st.CreateGroup("Premium", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}
-	other, _ := st.CreateGroup("Other", nil)
+	other, _ := st.CreateGroup("Other", nil, 0)
 	u, _ := st.CreateUser("u", "uuid", "pw", "tok", 0, 0, 0)
 
 	w := store.UserPlanWrite{UserID: u.ID, PlanID: 1, GroupIDs: []int64{g.ID}, ResetPeriod: "none"}
@@ -138,7 +138,7 @@ func TestSaveTariffPlanDropsUnknownGroups(t *testing.T) {
 	defer st.Close()
 	m := &Manager{store: st}
 
-	g, err := st.CreateGroup("Real", nil)
+	g, err := st.CreateGroup("Real", nil, 0)
 	if err != nil {
 		t.Fatalf("create group: %v", err)
 	}

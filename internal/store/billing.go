@@ -7,13 +7,22 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
+// planSpeedSet writes a tariff's speed cap onto a user row (two ? placeholders, both
+// the cap). While a blocklist throttle is in force the row's speed_limit holds the
+// throttle and abuse_prev_speed the cap its lift will put back — so the tariff's cap
+// goes to the second. Written to the first, it would lift the throttle early and be
+// replaced by a stale cap when the throttle ran out.
+const planSpeedSet = `speed_limit = CASE WHEN abuse_action = '` + model.AbuseActionThrottle + `' THEN speed_limit ELSE ? END,
+	abuse_prev_speed = CASE WHEN abuse_action = '` + model.AbuseActionThrottle + `' THEN ? ELSE abuse_prev_speed END`
+
 // SetPlanUsersSpeedLimit stamps a plan's speed cap onto every user currently on it,
 // returning how many rows changed. Called when the plan's cap is edited — see
 // Manager.SaveTariffPlan for why this one limit is retroactive and the others aren't.
 func (s *Store) SetPlanUsersSpeedLimit(planID int64, kbps int) (int64, error) {
 	res, err := s.db.Exec(
-		`UPDATE users SET speed_limit = ? WHERE plan_id = ? AND speed_limit != ?`,
-		kbps, planID, kbps)
+		`UPDATE users SET `+planSpeedSet+`
+		 WHERE plan_id = ? AND (CASE WHEN abuse_action = '`+model.AbuseActionThrottle+`' THEN abuse_prev_speed ELSE speed_limit END) != ?`,
+		kbps, kbps, planID, kbps)
 	if err != nil {
 		return 0, err
 	}
@@ -357,7 +366,7 @@ func applyUserPlanOn(ex execer, p UserPlanWrite) error {
 	}
 	// The speed cap is part of what the plan sells, so it is overwritten with the
 	// rest of the limits — a user moved to a slower tariff must actually get slower.
-	if err := setUserSpeedLimitOn(ex, p.UserID, p.SpeedLimit); err != nil {
+	if _, err := ex.Exec(`UPDATE users SET `+planSpeedSet+` WHERE id = ?`, p.SpeedLimit, p.SpeedLimit, p.UserID); err != nil {
 		return err
 	}
 	if err := setResetPeriodOn(ex, p.UserID, p.ResetPeriod, p.ResetAnchor); err != nil {

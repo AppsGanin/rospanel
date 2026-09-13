@@ -19,7 +19,7 @@ func (rt *Router) apiCreateGroup(w http.ResponseWriter, r *http.Request) {
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	g, err := rt.mgr.CreateGroup(req.Name, req.Grants)
+	g, err := rt.mgr.CreateGroup(req.Name, req.Grants, req.speedOrZero())
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -32,7 +32,7 @@ func (rt *Router) apiUpdateGroup(w http.ResponseWriter, r *http.Request, id int6
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	if err := rt.mgr.UpdateGroup(id, req.Name, req.Grants); err != nil {
+	if err := rt.mgr.UpdateGroup(id, req.Name, req.Grants, req.SpeedLimit); err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}

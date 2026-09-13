@@ -21,7 +21,7 @@ func isGroupNameConflict(err error) bool {
 // management list.
 func (s *Store) Groups() ([]model.Group, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.name, g.created_at,
+		SELECT g.id, g.name, g.created_at, g.speed_limit,
 		       (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
 		FROM groups g ORDER BY lower(g.name)`)
 	if err != nil {
@@ -32,7 +32,7 @@ func (s *Store) Groups() ([]model.Group, error) {
 	byID := map[int64]int{} // group id → index in out, to attach grants below
 	for rows.Next() {
 		var g model.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.Members); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit, &g.Members); err != nil {
 			return nil, err
 		}
 		byID[g.ID] = len(out)
@@ -81,8 +81,8 @@ func (s *Store) Groups() ([]model.Group, error) {
 // GetGroup returns one group with its grants, or nil.
 func (s *Store) GetGroup(id int64) (*model.Group, error) {
 	var g model.Group
-	err := s.db.QueryRow(`SELECT id, name, created_at FROM groups WHERE id = ?`, id).
-		Scan(&g.ID, &g.Name, &g.CreatedAt)
+	err := s.db.QueryRow(`SELECT id, name, created_at, speed_limit FROM groups WHERE id = ?`, id).
+		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -128,14 +128,14 @@ func (s *Store) groupGrants(id int64) ([]string, error) {
 	return out, rows.Err()
 }
 
-// CreateGroup inserts a group and its grants in one transaction.
-func (s *Store) CreateGroup(name string, grants []string) (*model.Group, error) {
+// CreateGroup inserts a group, its speed cap and its grants in one transaction.
+func (s *Store) CreateGroup(name string, grants []string, speedLimit int) (*model.Group, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	res, err := tx.Exec(`INSERT INTO groups (name) VALUES (?)`, name)
+	res, err := tx.Exec(`INSERT INTO groups (name, speed_limit) VALUES (?, ?)`, name, speedLimit)
 	if err != nil {
 		if isGroupNameConflict(err) {
 			return nil, ErrGroupNameTaken
@@ -152,14 +152,15 @@ func (s *Store) CreateGroup(name string, grants []string) (*model.Group, error) 
 	return s.GetGroup(id)
 }
 
-// UpdateGroup renames a group and replaces its grants in one transaction.
-func (s *Store) UpdateGroup(id int64, name string, grants []string) error {
+// UpdateGroup renames a group, sets its speed cap and replaces its grants in one
+// transaction.
+func (s *Store) UpdateGroup(id int64, name string, grants []string, speedLimit int) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if _, err := tx.Exec(`UPDATE groups SET name = ? WHERE id = ?`, name, id); err != nil {
+	if _, err := tx.Exec(`UPDATE groups SET name = ?, speed_limit = ? WHERE id = ?`, name, speedLimit, id); err != nil {
 		if isGroupNameConflict(err) {
 			return ErrGroupNameTaken
 		}
@@ -329,7 +330,7 @@ func (s *Store) ExistingGroupIDs(ids []int64) ([]int64, error) {
 // GroupsForUser returns the groups a user belongs to (id + name), for the user views.
 func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.name FROM group_members m
+		SELECT g.id, g.name, g.speed_limit FROM group_members m
 		JOIN groups g ON g.id = m.group_id
 		WHERE m.user_id = ? ORDER BY lower(g.name)`, userID)
 	if err != nil {
@@ -339,7 +340,7 @@ func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 	out := []model.GroupRef{}
 	for rows.Next() {
 		var g model.GroupRef
-		if err := rows.Scan(&g.ID, &g.Name); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.SpeedLimit); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -351,7 +352,7 @@ func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 // can show chips without a query per row.
 func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 	rows, err := s.db.Query(`
-		SELECT m.user_id, g.id, g.name FROM group_members m
+		SELECT m.user_id, g.id, g.name, g.speed_limit FROM group_members m
 		JOIN groups g ON g.id = m.group_id
 		ORDER BY lower(g.name)`)
 	if err != nil {
@@ -362,7 +363,7 @@ func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 	for rows.Next() {
 		var uid int64
 		var g model.GroupRef
-		if err := rows.Scan(&uid, &g.ID, &g.Name); err != nil {
+		if err := rows.Scan(&uid, &g.ID, &g.Name, &g.SpeedLimit); err != nil {
 			return nil, err
 		}
 		out[uid] = append(out[uid], g)

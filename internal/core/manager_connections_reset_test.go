@@ -36,7 +36,7 @@ func TestResetNodeConnectionsRestoresTheFactoryState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inbound: %v", err)
 	}
-	if _, err := m.CreateGroup("cdn", []string{model.InboundToken(in.ID)}); err != nil {
+	if _, err := m.CreateGroup("cdn", []string{model.InboundToken(in.ID)}, 0); err != nil {
 		t.Fatal(err)
 	}
 

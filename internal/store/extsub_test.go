@@ -94,7 +94,7 @@ func TestDeletingAnExternalSubscriptionSweepsItsGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 	servers, _ := st.ExtServers()
-	g, err := st.CreateGroup("vip", []string{model.ExtToken(servers[0].ID), model.BuiltinToken(0, model.LaneVLESS)})
+	g, err := st.CreateGroup("vip", []string{model.ExtToken(servers[0].ID), model.BuiltinToken(0, model.LaneVLESS)}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
