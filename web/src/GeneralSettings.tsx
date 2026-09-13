@@ -8,6 +8,8 @@ import {
   getSettings,
   getConnPolicy,
   saveConnPolicy,
+  getTrustedNets,
+  saveTrustedNets,
   type ConnPolicy,
   saveMaintenance,
   saveProbeDetect,
@@ -50,6 +52,7 @@ import {
   SettingRow,
   Spinner,
   Switch,
+  TagsInput,
   TextInput,
   ToggleRow,
   useConfirm,
@@ -122,6 +125,10 @@ export function GeneralSettings() {
   const [status, setStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
   const [policy, setPolicy] = useState<ConnPolicy>(EMPTY_POLICY);
   const [policySaved, setPolicySaved] = useState<ConnPolicy>(EMPTY_POLICY);
+  // Trusted networks ride the Save bar like the policy: an address list is typed, and
+  // half of one should not be in force.
+  const [trusted, setTrusted] = useState<string[]>([]);
+  const [trustedSaved, setTrustedSaved] = useState<string[]>([]);
   const [savedStatus, setSavedStatus] = useState<StatusPageSettings>(EMPTY_STATUS);
   // Maintenance is a live toggle (it takes effect the moment it's flipped), so it
   // saves on change rather than riding the page's Save bar.
@@ -164,6 +171,12 @@ export function GeneralSettings() {
           setPolicySaved(info.policy);
         })
         .catch(() => {}),
+      getTrustedNets()
+        .then(({ nets }) => {
+          setTrusted(nets);
+          setTrustedSaved(nets);
+        })
+        .catch(() => {}),
       getSettings()
         .then((s) => {
           setSettings(s);
@@ -197,7 +210,9 @@ export function GeneralSettings() {
   // The source policy is a draft like everything else on this page: one Save at the
   // bottom, one Cancel.
   const policyDirty = JSON.stringify(policy) !== JSON.stringify(policySaved);
-  const dirty = timezone !== savedTz || bkDirty || adDirty || statusDirty || policyDirty;
+  const trustedDirty = trusted.join() !== trustedSaved.join();
+  const dirty =
+    timezone !== savedTz || bkDirty || adDirty || statusDirty || policyDirty || trustedDirty;
   // The path is a bare URL segment; the server refuses anything else (and any
   // collision with the panel's other surfaces), but there is no reason to let the
   // operator get that far with an obviously wrong value.
@@ -232,6 +247,13 @@ export function GeneralSettings() {
           await saveConnPolicy(policy);
           setPolicySaved(policy);
         }
+        if (trustedDirty) {
+          await saveTrustedNets(trusted);
+          // Shown back as the server stored them: "198.51.100.7/24" is 198.51.100.0/24.
+          const { nets } = await getTrustedNets();
+          setTrusted(nets);
+          setTrustedSaved(nets);
+        }
         notifySuccess(t("general.saved"));
       },
       { key: "save" },
@@ -243,6 +265,7 @@ export function GeneralSettings() {
     setAutoDel(savedAutoDel);
     setStatus(savedStatus);
     setPolicy(policySaved);
+    setTrusted(trustedSaved);
   };
 
   const doRegenSecret = async () => {
@@ -513,8 +536,8 @@ export function GeneralSettings() {
         </SettingRow>
       </Panel>
 
-      {/* Two live switches and a counter: what the panel does about being poked at,
-          and about its own Xray hanging. */}
+      {/* What the panel does about being poked at, and about its own Xray hanging.
+          The switches are live; the trusted list is a draft on the Save bar. */}
       <Panel title={t("general.secProtect")}>
         <ToggleRow
           label={t("general.probeDetect")}
@@ -540,6 +563,9 @@ export function GeneralSettings() {
             }
           />
         )}
+        <SettingRow label={t("general.trusted")} hint={t("general.trustedHint")}>
+          <TagsInput value={trusted} onChange={setTrusted} placeholder="203.0.113.10" />
+        </SettingRow>
         {watchdog && (
           <ToggleRow
             label={t("general.watchdog")}

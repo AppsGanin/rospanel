@@ -262,6 +262,23 @@ func (b *Blocker) Sync(ips []string) error {
 	return nil
 }
 
+// Addresses lists what the kernel sets hold right now — what an operator trusting a
+// network needs to lift from them. No table, or no nftables at all, is an empty list.
+func (b *Blocker) Addresses() ([]string, error) {
+	if b == nil || !Available() {
+		return nil, nil
+	}
+	have, err := b.blocked()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(have))
+	for ip := range have {
+		out = append(out, ip)
+	}
+	return out, nil
+}
+
 // blocked reads the addresses currently in the kernel sets.
 func (b *Blocker) blocked() (map[string]struct{}, error) {
 	out := map[string]struct{}{}

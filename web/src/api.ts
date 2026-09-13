@@ -1517,6 +1517,9 @@ export interface ConnPolicyInfo {
 export const getConnPolicy = () => api<ConnPolicyInfo>('api/security/conn-policy')
 export const saveConnPolicy = (p: ConnPolicy) =>
   api<{ ok: boolean }>('api/security/conn-policy', { method: 'POST', body: JSON.stringify(p) })
+export const getTrustedNets = () => api<{ nets: string[] }>('api/security/trusted')
+export const saveTrustedNets = (nets: string[]) =>
+  api<{ ok: boolean }>('api/security/trusted', { method: 'POST', body: JSON.stringify({ nets }) })
 export const unblockIP = (ip: string) =>
   api<{ ok: boolean }>('api/security/unblock', { method: 'POST', body: JSON.stringify({ ip }) })
 
