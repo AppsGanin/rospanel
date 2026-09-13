@@ -43,6 +43,7 @@ import {
   fmtLastSeen,
   fmtQuota,
   fmtSpeed,
+  fmtTerm,
   gbToBytes,
   isOnline,
   localDay,
@@ -50,6 +51,7 @@ import {
   ranges,
   resetPeriods,
   speedLimitOptions,
+  termModes,
   unixToLocalDate,
 } from './format'
 import { useAction, useShowMore } from './hooks'
@@ -202,7 +204,7 @@ function ExtendUserModal({
     <Modal open={open} onClose={onClose} title={t('usersPanel.extendTitle')}>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-ink-muted">
-          {t('userDetail.extendUserBody', { name: user.name, date: fmtExpire(user.expire_at) })}
+          {t('userDetail.extendUserBody', { name: user.name, date: fmtTerm(user.expire_at, user.hold_seconds) })}
         </p>
         <div className="flex flex-wrap gap-2">
           {EXTEND_PRESETS.map((p) => (
@@ -281,6 +283,13 @@ export function UserDetail({
   // applying each keystroke would reconcile Xray five times for one edit.
   const [dPlan, setDPlan] = useState('0')
   const [dExpire, setDExpire] = useState('')
+  // The manual term: an end date, or a number of days starting on the first connection.
+  const [dTerm, setDTerm] = useState('date')
+  const [dHoldDays, setDHoldDays] = useState('30')
+  // Whether the days were typed. Until they are, a pending term keeps its exact
+  // seconds — one set through the API need not be whole days, and rounding it for the
+  // field must not rewrite it on an unrelated save.
+  const [dHoldEdited, setDHoldEdited] = useState(false)
   const [dLimitGb, setDLimitGb] = useState('0')
   const [dDeviceLimit, setDDeviceLimit] = useState('0')
   const [dSpeedLimit, setDSpeedLimit] = useState('0')
@@ -422,6 +431,10 @@ export function UserDetail({
   function resetLimitDraft() {
     setDPlan(String(user?.plan_id || 0))
     setDExpire(unixToLocalDate(user?.expire_at ?? 0))
+    const holding = !!user && user.expire_at === 0 && (user.hold_seconds ?? 0) > 0
+    setDTerm(holding ? 'hold' : 'date')
+    setDHoldDays(holding && user ? String(Math.floor(user.hold_seconds / 86400)) : '30')
+    setDHoldEdited(false)
     setDLimitGb(user && user.data_limit ? String(user.data_limit / (1024 * 1024 * 1024)) : '0')
     setDDeviceLimit(String(user?.device_limit ?? 0))
     setDSpeedLimit(String(user?.speed_limit ?? 0))
@@ -429,12 +442,24 @@ export function UserDetail({
   }
 
   const planManaged = billingOn && dPlan !== '0'
+  // Whether the account is waiting for its first connection right now, and what the
+  // draft says its term should be.
+  const heldNow = !!user && user.expire_at === 0 && (user.hold_seconds ?? 0) > 0
+  const dHoldSeconds =
+    heldNow && user && !dHoldEdited
+      ? user.hold_seconds
+      : Math.floor(Number(dHoldDays) || 0) * 86400
+  const termDirty =
+    user != null &&
+    (dTerm === 'hold'
+      ? !heldNow || dHoldSeconds !== user.hold_seconds
+      : heldNow || dExpire !== unixToLocalDate(user.expire_at))
 
   const limitsDirty =
     user != null &&
     (dPlan !== String(user.plan_id || 0) ||
       (!planManaged &&
-        (dExpire !== unixToLocalDate(user.expire_at) ||
+        (termDirty ||
           gbToBytes(Number(dLimitGb)) !== user.data_limit ||
           Number(dDeviceLimit) !== (user.device_limit ?? 0) ||
           Number(dSpeedLimit) !== (user.speed_limit ?? 0) ||
@@ -449,19 +474,29 @@ export function UserDetail({
     try {
       if (dPlan !== String(user.plan_id || 0)) await setUserPlan(user.id, Number(dPlan))
       if (dPlan === '0') {
-        await setUserLimits(
-          user.id,
-          gbToBytes(Number(dLimitGb)),
-          dateToUnixEndOfDay(dExpire),
-          Number(dDeviceLimit),
-          Number(dSpeedLimit),
-        )
+        // The term only when it was edited: an untouched one is left to the server,
+        // which may know better by now. A hold goes with no date, a date with no hold.
+        await setUserLimits(user.id, {
+          data_limit: gbToBytes(Number(dLimitGb)),
+          device_limit: Number(dDeviceLimit),
+          speed_limit: Number(dSpeedLimit),
+          term: termDirty
+            ? {
+                expire_at: dTerm === 'hold' ? 0 : dateToUnixEndOfDay(dExpire),
+                hold_seconds: dTerm === 'hold' ? dHoldSeconds : 0,
+                seen_expire_at: user.expire_at,
+                seen_hold_seconds: user.hold_seconds ?? 0,
+              }
+            : undefined,
+        })
         if (dReset !== (user.reset_period || 'none')) await setResetPeriod(user.id, dReset)
       }
       onChanged()
       notifySuccess(t('common.saved'))
     } catch (e) {
       fail(e)
+      // A refused term means the card is out of date; bring it up to the server's.
+      onChanged()
     } finally {
       setSavingLimits(false)
     }
@@ -680,7 +715,7 @@ export function UserDetail({
               <Mono>{fmtQuota(user.used_up + user.used_down, user.data_limit)}</Mono>
             </StateRow>
             <StateRow label={t('usersPanel.colExpires')}>
-              <Mono>{fmtExpire(user.expire_at)}</Mono>
+              <Mono>{fmtTerm(user.expire_at, user.hold_seconds)}</Mono>
             </StateRow>
             <StateRow label={t('userDetail.devices')}>
               <Mono className={user.status === 'device_limited' ? 'text-warning' : undefined}>
@@ -812,11 +847,39 @@ export function UserDetail({
               />
             )}
             <SettingRow
-              label={t('usersPanel.validUntil')}
+              label={t('usersPanel.termMode')}
               field={
-                <DatePicker value={dExpire} onChange={setDExpire} disabled={planManaged} />
+                <Select
+                  data={termModes()}
+                  value={dTerm}
+                  onChange={setDTerm}
+                  disabled={planManaged}
+                />
               }
             />
+            {dTerm === 'hold' && !planManaged ? (
+              <SettingRow
+                label={t('usersPanel.holdDays')}
+                hint={t('userDetail.holdHint')}
+                field={
+                  <TextInput
+                    type="number"
+                    value={dHoldDays}
+                    onChange={(v) => {
+                      setDHoldDays(v.replace(/\D/g, ''))
+                      setDHoldEdited(true)
+                    }}
+                  />
+                }
+              />
+            ) : (
+              <SettingRow
+                label={t('usersPanel.validUntil')}
+                field={
+                  <DatePicker value={dExpire} onChange={setDExpire} disabled={planManaged} />
+                }
+              />
+            )}
             <SettingRow
               label={t('usersPanel.trafficLimit')}
               field={
@@ -883,7 +946,12 @@ export function UserDetail({
                     >
                       {t('common.cancel')}
                     </Button>
-                    <Button size="xs" loading={savingLimits} onClick={saveLimitDraft}>
+                    <Button
+                      size="xs"
+                      loading={savingLimits}
+                      disabled={!planManaged && dTerm === 'hold' && dHoldSeconds <= 0}
+                      onClick={saveLimitDraft}
+                    >
                       {t('common.save')}
                     </Button>
                   </span>

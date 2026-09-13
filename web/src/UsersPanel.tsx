@@ -18,11 +18,13 @@ import {
   dateToUnixEndOfDay,
   fmtExpire,
   fmtQuota,
+  fmtTerm,
   gbToBytes,
   isOnline,
   quotaOptions,
   resetPeriods,
   statusInfo,
+  termModes,
   unixToLocalDate,
 } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -98,8 +100,14 @@ const FIRST_CHUNK = 50;
 // dashboard's own tile — the two must count the same accounts.
 const EXPIRY_SOON_DAYS = 7;
 
-// expSortKey orders by soonest expiry; "never" (0) sorts last.
-const expSortKey = (u: User) => (u.expire_at > 0 ? u.expire_at : Infinity);
+// expSortKey orders by soonest expiry; "never" (0) sorts last. A term still waiting
+// for its first connection cannot end sooner than its full length from now.
+const expSortKey = (u: User) =>
+  u.expire_at > 0
+    ? u.expire_at
+    : u.hold_seconds > 0
+      ? Date.now() / 1000 + u.hold_seconds
+      : Infinity;
 
 const sorts = () => [
   { value: "new", label: i18n.t("usersPanel.sNew") },
@@ -872,8 +880,15 @@ function UserRow({
       {/* The tail columns exist only where they fit — narrow they are not hidden but
           absent, so nothing has to be placed around them. */}
       {wide && (
-        <Mono className="truncate text-[11px] text-ink-muted">
-          {u.expire_at > 0 ? fmtExpire(u.expire_at) : "—"}
+        <Mono
+          className="truncate text-[11px] text-ink-muted"
+          title={u.expire_at === 0 && u.hold_seconds > 0 ? fmtTerm(0, u.hold_seconds) : undefined}
+        >
+          {u.expire_at > 0
+            ? fmtExpire(u.expire_at)
+            : u.hold_seconds > 0
+              ? t("usersPanel.holdShort", { count: Math.floor(u.hold_seconds / 86400) })
+              : "—"}
         </Mono>
       )}
 
@@ -979,6 +994,9 @@ function AddUser({
   const [limitGb, setLimitGb] = useState("0");
   const [resetPeriod, setResetPeriodState] = useState("none");
   const [expDate, setExpDate] = useState("");
+  // The term is a date, or a number of days that starts on the first connection.
+  const [termMode, setTermMode] = useState("date");
+  const [holdDays, setHoldDays] = useState("30");
   // "0" is manual — the limits below. Any other value is a tariff, which owns them.
   const [plan, setPlan] = useState("0");
   const [plans, setPlans] = useState<TariffPlan[]>([]);
@@ -1006,6 +1024,8 @@ function AddUser({
   }, [opened]);
 
   const onPlan = plan !== "0";
+  const held = !onPlan && termMode === "hold";
+  const holdN = Math.floor(Number(holdDays) || 0);
 
   const submit = async () => {
     if (!name.trim()) return;
@@ -1014,8 +1034,8 @@ function AddUser({
       // quota, the device cap and the reset cycle itself (planWriteFor), so sending
       // hand-set limits first would only be overwritten a moment later.
       const dl = onPlan ? 0 : gbToBytes(Number(limitGb) || 0);
-      const ea = onPlan ? 0 : dateToUnixEndOfDay(expDate);
-      const u = await createUser(name.trim(), dl, ea);
+      const ea = onPlan || held ? 0 : dateToUnixEndOfDay(expDate);
+      const u = await createUser(name.trim(), dl, ea, held ? holdN * 86400 : 0);
       if (onPlan) await setUserPlan(u.id, Number(plan));
       else if (resetPeriod !== "none") await setResetPeriod(u.id, resetPeriod);
       setCreated(u);
@@ -1027,6 +1047,8 @@ function AddUser({
     setLimitGb("0");
     setResetPeriodState("none");
     setExpDate("");
+    setTermMode("date");
+    setHoldDays("30");
     setPlan("0");
     setCreated(null);
     onClose();
@@ -1065,13 +1087,28 @@ function AddUser({
             <p className="text-xs text-ink-muted">{t("usersPanel.planSetsLimits")}</p>
           ) : (
             <>
+              <Select
+                label={t("usersPanel.termMode")}
+                data={termModes()}
+                value={termMode}
+                onChange={setTermMode}
+              />
               <div className="grid grid-cols-2 gap-3">
-                <DatePicker
-                  label={t("usersPanel.validUntil")}
-                  value={expDate}
-                  onChange={setExpDate}
-                  min={unixToLocalDate(Math.floor(Date.now() / 1000))}
-                />
+                {held ? (
+                  <TextInput
+                    label={t("usersPanel.holdDays")}
+                    type="number"
+                    value={holdDays}
+                    onChange={(v) => setHoldDays(v.replace(/\D/g, ""))}
+                  />
+                ) : (
+                  <DatePicker
+                    label={t("usersPanel.validUntil")}
+                    value={expDate}
+                    onChange={setExpDate}
+                    min={unixToLocalDate(Math.floor(Date.now() / 1000))}
+                  />
+                )}
                 <Select
                   label={t("usersPanel.trafficLimit")}
                   data={quotaOptions()}
@@ -1087,7 +1124,7 @@ function AddUser({
               />
             </>
           )}
-          <Button loading={busy} onClick={submit}>
+          <Button loading={busy} disabled={held && holdN < 1} onClick={submit}>
             {t("usersPanel.createAndShowLink")}
           </Button>
         </div>

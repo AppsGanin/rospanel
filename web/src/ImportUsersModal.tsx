@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { importUsers, inspectImport, type ImportCandidate, type ImportPreview } from './api'
-import { fmtBytes, fmtExpire } from './format'
+import { fmtBytes, fmtTerm } from './format'
 import { useAction } from './hooks'
 import { td } from './i18n'
 import { notifySuccess } from './notify'
@@ -203,7 +203,9 @@ export function ImportUsersModal({
                         {u.data_limit > 0 ? ` / ${fmtBytes(u.data_limit)}` : ''}
                       </TD>
                       <TD className="hidden whitespace-nowrap text-ink-muted md:table-cell">
-                        {u.expire_at > 0 ? fmtExpire(u.expire_at) : '—'}
+                        {u.expire_at > 0 || (u.hold_seconds ?? 0) > 0
+                          ? fmtTerm(u.expire_at, u.hold_seconds)
+                          : '—'}
                       </TD>
                       <TD>
                         <div className="flex flex-wrap gap-1">

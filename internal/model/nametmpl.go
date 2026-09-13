@@ -134,6 +134,9 @@ func quotaLeft(u *User) string {
 }
 
 func expireOn(u *User, loc *time.Location) string {
+	if u.ExpireAt <= 0 && u.HoldSeconds > 0 {
+		return NameUnknown // the term has a length but no date until the first connection
+	}
 	if u.ExpireAt <= 0 {
 		return NameInfinite
 	}
@@ -144,6 +147,9 @@ func expireOn(u *User, loc *time.Location) string {
 }
 
 func daysLeft(u *User) string {
+	if u.ExpireAt <= 0 && u.HoldSeconds > 0 {
+		return fmt.Sprintf("%d", u.HoldSeconds/86400) // all of it: the term has not started
+	}
 	if u.ExpireAt <= 0 {
 		return NameInfinite
 	}

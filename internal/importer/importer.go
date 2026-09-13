@@ -59,7 +59,6 @@ type Export struct {
 const (
 	IssueUUIDGenerated     = "uuid_generated"     // the source had no usable UUID; a fresh one was minted
 	IssuePasswordGenerated = "password_generated" // no Trojan/Shadowsocks password; a fresh one was minted
-	IssueExpiryRelative    = "expiry_relative"    // 3x-ui "N days after first use": no date to carry over
 	IssueNameEmpty         = "name_empty"         // no username; named after its UUID
 )
 
@@ -71,8 +70,9 @@ type Candidate struct {
 	Name        string   `json:"name"`
 	UUID        string   `json:"uuid"`
 	Password    string   `json:"password"`
-	DataLimit   int64    `json:"data_limit"` // bytes, 0 = unlimited
-	ExpireAt    int64    `json:"expire_at"`  // unix seconds, 0 = never
+	DataLimit   int64    `json:"data_limit"`             // bytes, 0 = unlimited
+	ExpireAt    int64    `json:"expire_at"`              // unix seconds, 0 = never
+	HoldSeconds int64    `json:"hold_seconds,omitempty"` // a term starting on the first connection; only with no ExpireAt
 	UsedUp      int64    `json:"used_up"`
 	UsedDown    int64    `json:"used_down"`
 	DeviceLimit int      `json:"device_limit"`
@@ -221,14 +221,18 @@ type marzbanUser struct {
 	Expire      *int64         `json:"expire"`
 	Note        *string        `json:"note"`
 	Proxies     marzbanProxies `json:"proxies"`
+
+	// OnHoldExpireDuration is the term, in seconds, of a user Marzban holds until
+	// their first connection; its expire is empty meanwhile.
+	OnHoldExpireDuration *int64 `json:"on_hold_expire_duration"`
 }
 
 func (u marzbanUser) candidate() Candidate {
 	c := Candidate{
 		Name: strings.TrimSpace(u.Username),
-		// Marzban's "disabled" is the one operator-set state; limited / expired /
-		// on_hold are derived there as they are here, and come back on their own
-		// from the limits and the expiry.
+		// Marzban's "disabled" is the one operator-set state; limited and expired are
+		// derived there as they are here, and come back on their own from the limits
+		// and the expiry. on_hold is carried as the pending term below.
 		Enabled:  !strings.EqualFold(u.Status, "disabled"),
 		UsedDown: max(u.UsedTraffic, 0), // one counter there; all of it counts as usage here
 	}
@@ -237,6 +241,10 @@ func (u marzbanUser) candidate() Candidate {
 	}
 	if u.Expire != nil && *u.Expire > 0 {
 		c.ExpireAt = *u.Expire
+	} else if u.OnHoldExpireDuration != nil && *u.OnHoldExpireDuration > 0 {
+		// Only with no expiry: Marzban refuses a hold beside a date, and a row that has
+		// both anyway is one whose term already started — the date is the truth.
+		c.HoldSeconds = *u.OnHoldExpireDuration
 	}
 	if u.Note != nil {
 		c.Note = strings.TrimSpace(*u.Note)
@@ -260,8 +268,14 @@ func parseMarzbanDB(db *sql.DB) ([]Candidate, error) {
 	if cols["note"] {
 		noteExpr = "COALESCE(note, '')"
 	}
+	// on_hold_expire_duration came with Marzban's "start on first connection", later
+	// still; an older database simply has no held users.
+	holdExpr := "NULL"
+	if cols["on_hold_expire_duration"] {
+		holdExpr = "on_hold_expire_duration"
+	}
 	rows, err := db.Query(`SELECT id, username, COALESCE(status, 'active'), COALESCE(used_traffic, 0),
-		data_limit, expire, ` + noteExpr + ` FROM users ORDER BY id`)
+		data_limit, expire, ` + noteExpr + `, ` + holdExpr + ` FROM users ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("importer: marzban users: %w", err)
 	}
@@ -271,10 +285,14 @@ func parseMarzbanDB(db *sql.DB) ([]Candidate, error) {
 	for rows.Next() {
 		var id int64
 		var u marzbanUser
-		var dataLimit, expire sql.NullInt64
+		var dataLimit, expire, hold sql.NullInt64
 		var note string
-		if err := rows.Scan(&id, &u.Username, &u.Status, &u.UsedTraffic, &dataLimit, &expire, &note); err != nil {
+		if err := rows.Scan(&id, &u.Username, &u.Status, &u.UsedTraffic, &dataLimit, &expire, &note, &hold); err != nil {
 			return nil, err
+		}
+		if hold.Valid {
+			v := hold.Int64
+			u.OnHoldExpireDuration = &v
 		}
 		if dataLimit.Valid {
 			v := dataLimit.Int64
@@ -481,12 +499,15 @@ func parseXUIDB(db *sql.DB) ([]Candidate, error) {
 			if cl.TotalGB > 0 && a.c.DataLimit == 0 {
 				a.c.DataLimit = cl.TotalGB
 			}
-			// Milliseconds; a negative value is "N days after first connection",
-			// which has no date to carry over.
+			// Milliseconds. A negative value is "start after first use": the term's
+			// length, which 3x-ui turns into a deadline on the first connection — the
+			// same thing a held term is here. A date from another inbound of the same
+			// client wins over it, since there the term has already started.
 			if cl.ExpiryTime > 0 && a.c.ExpireAt == 0 {
 				a.c.ExpireAt = cl.ExpiryTime / 1000
-			} else if cl.ExpiryTime < 0 {
-				a.c.Issues = appendIssue(a.c.Issues, IssueExpiryRelative)
+				a.c.HoldSeconds = 0
+			} else if cl.ExpiryTime < 0 && a.c.ExpireAt == 0 && a.c.HoldSeconds == 0 {
+				a.c.HoldSeconds = -cl.ExpiryTime / 1000
 			}
 			if cl.LimitIP > 0 && a.c.DeviceLimit == 0 {
 				a.c.DeviceLimit = cl.LimitIP

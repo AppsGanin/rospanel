@@ -134,11 +134,12 @@ func TestParseXUIDatabase(t *testing.T) {
 		t.Errorf("eve: %+v", eve)
 	}
 	frank := users[1]
-	if frank.Enabled || frank.ExpireAt != 0 || frank.Password == "" {
+	// -2592000000 ms is "30 days, starting on the first connection".
+	if frank.Enabled || frank.ExpireAt != 0 || frank.HoldSeconds != 30*86400 || frank.Password == "" {
 		t.Errorf("frank: %+v", frank)
 	}
-	if !reflect.DeepEqual(frank.Issues, []string{IssueExpiryRelative, IssuePasswordGenerated}) {
-		t.Errorf("frank should carry the relative-expiry and generated-password flags: %v", frank.Issues)
+	if !reflect.DeepEqual(frank.Issues, []string{IssuePasswordGenerated}) {
+		t.Errorf("frank should carry only the generated-password flag: %v", frank.Issues)
 	}
 }
 
@@ -205,5 +206,44 @@ func TestParseRosPanelExport(t *testing.T) {
 	}
 	if src, _, _ := Parse(other); src == SourceRosPanel {
 		t.Error("a foreign file was read as this panel's export")
+	}
+}
+
+// Marzban's on_hold users carry their term as on_hold_expire_duration with no expire:
+// they came over with no expiry at all, which was an unlimited account for someone
+// who had bought thirty days. Both shapes of the source are read — the database of a
+// Marzban new enough to have the column, and the API dump.
+func TestParseMarzbanOnHold(t *testing.T) {
+	path := fixtureDB(t, "db.sqlite3",
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, status TEXT, used_traffic INTEGER,
+			data_limit INTEGER, expire INTEGER, note TEXT, on_hold_expire_duration INTEGER, on_hold_timeout TEXT)`,
+		`CREATE TABLE proxies (id INTEGER PRIMARY KEY, user_id INTEGER, type TEXT, settings TEXT)`,
+		`INSERT INTO users VALUES
+			(1, 'waiting', 'on_hold', 0, NULL, NULL, '', 2592000, NULL),
+			(2, 'started', 'active', 10, NULL, 1900000000, '', 2592000, NULL)`,
+		`INSERT INTO proxies VALUES
+			(1, 1, 'VLESS', '{"id": "6BBD16CD-DFC1-47C4-9426-59B57B92B173"}'),
+			(2, 2, 'VLESS', '{"id": "1fa689ce-9afd-415e-b250-dcf755ff8b4e"}')`,
+	)
+	_, users, err := Parse(path)
+	if err != nil || len(users) != 2 {
+		t.Fatalf("parse: %v, %d users", err, len(users))
+	}
+	if users[0].HoldSeconds != 2592000 || users[0].ExpireAt != 0 {
+		t.Errorf("waiting: hold %d expire %d — want 30 days pending, no date", users[0].HoldSeconds, users[0].ExpireAt)
+	}
+	if users[1].HoldSeconds != 0 || users[1].ExpireAt != 1900000000 {
+		t.Errorf("started: hold %d expire %d — the date is the truth once there is one", users[1].HoldSeconds, users[1].ExpireAt)
+	}
+
+	dump := filepath.Join(t.TempDir(), "users.json")
+	if err := os.WriteFile(dump, []byte(`{"users": [{"username": "waiting", "status": "on_hold",
+		"expire": null, "on_hold_expire_duration": 604800,
+		"proxies": {"vless": {"id": "73ab3f5f-209b-4423-9fad-263e5baa37c4"}}}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, users, err = Parse(dump)
+	if err != nil || len(users) != 1 || users[0].HoldSeconds != 604800 || users[0].ExpireAt != 0 {
+		t.Fatalf("dump: %v %+v", err, users)
 	}
 }

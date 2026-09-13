@@ -36,6 +36,21 @@ func validateUserLimits(dataLimit, expireAt int64, deviceLimit int) error {
 	return nil
 }
 
+// ValidateHold is validateHold for a handler that has to judge a hold before it
+// writes the limits posted alongside it.
+func ValidateHold(seconds int64) error { return validateHold(seconds) }
+
+// validateHold bounds a term that starts on the first connection: not negative, and
+// no longer than the longest extension (ten years), which also keeps the seconds
+// far from overflowing when the start is added to them.
+func validateHold(seconds int64) error {
+	if seconds < 0 || seconds > int64(maxExtendDays)*86400 {
+		return invalidCode("err.badHold", "срок с первого подключения — не больше {{max}} дней",
+			map[string]any{"max": maxExtendDays})
+	}
+	return nil
+}
+
 // cleanUserName trims, non-empty-checks, and length-caps a display name.
 func cleanUserName(name string) (string, error) {
 	name = strings.TrimSpace(name)

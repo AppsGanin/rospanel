@@ -10,6 +10,8 @@ export interface User {
   enabled: boolean
   data_limit: number
   expire_at: number
+  // A term that starts on the first connection, in seconds; only with expire_at 0.
+  hold_seconds: number
   used_up: number
   used_down: number
   created_at: string
@@ -481,18 +483,30 @@ export const deleteUser = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}`, { method: 'DELETE' })
 export const resetUserTraffic = (id: number) =>
   api<{ ok: boolean }>(`api/users/${id}/reset`, { method: 'POST' })
-export const setUserLimits = (
-  id: number,
-  data_limit: number,
-  expire_at: number,
-  device_limit: number,
-  // Omitted leaves the speed cap untouched — the server reads a missing field as
-  // "no opinion", not as "unlimited".
-  speed_limit?: number,
-) =>
+// UserLimitsSave is one save of the limits form. A field left out is left alone on
+// the server: the speed cap, and the whole term. The term goes with the one the form
+// was opened on (seen_*), and the server refuses it if that is no longer the user's —
+// a key picked up or a period paid for while the card sat open.
+export interface UserLimitsSave {
+  data_limit: number
+  device_limit: number
+  speed_limit?: number
+  term?: {
+    expire_at: number
+    hold_seconds: number
+    seen_expire_at: number
+    seen_hold_seconds: number
+  }
+}
+export const setUserLimits = (id: number, s: UserLimitsSave) =>
   api<{ ok: boolean }>(`api/users/${id}/limits`, {
     method: 'POST',
-    body: JSON.stringify({ data_limit, expire_at, device_limit, speed_limit }),
+    body: JSON.stringify({
+      data_limit: s.data_limit,
+      device_limit: s.device_limit,
+      speed_limit: s.speed_limit,
+      ...(s.term ?? {}),
+    }),
   })
 export const setUserEnabled = (id: number, enabled: boolean) =>
   api<{ ok: boolean }>(`api/users/${id}/enabled`, {
@@ -1579,10 +1593,10 @@ export const listUsers = () => api<User[]>('api/users')
 // The user's subscription as an encrypted Happ link; "" while those are switched off.
 export const getUserHappLink = (id: number) => api<{ link: string }>(`api/users/${id}/happ-link`)
 
-export const createUser = (name: string, data_limit = 0, expire_at = 0) =>
+export const createUser = (name: string, data_limit = 0, expire_at = 0, hold_seconds = 0) =>
   api<User>('api/users', {
     method: 'POST',
-    body: JSON.stringify({ name, data_limit, expire_at }),
+    body: JSON.stringify({ name, data_limit, expire_at, hold_seconds }),
   })
 
 export type HealthStatus = 'ok' | 'warn' | 'error' | 'info'
@@ -1635,6 +1649,7 @@ export interface ImportCandidate {
   password: string
   data_limit: number
   expire_at: number
+  hold_seconds?: number
   used_up: number
   used_down: number
   device_limit: number

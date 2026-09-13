@@ -508,7 +508,8 @@ func (m *Manager) FlushAccess() {
 	clear(m.accPending)
 	m.accMu.Unlock()
 
-	if err := m.store.AddConnections(hits); err != nil {
+	started, err := m.store.RecordConnections(hits)
+	if err != nil {
 		// Put them back rather than drop them: the buffer was already drained, so
 		// returning here would silently lose the sightings, and stale last_seen /
 		// undercounted devices feed straight into the device cap. Merging (rather than
@@ -531,6 +532,7 @@ func (m *Manager) FlushAccess() {
 		logErr("access: flush failed, sightings requeued", "sightings", len(hits), "err", err)
 		return
 	}
+	m.noteTermsStarted(started)
 	now := time.Now().Unix()
 	// Stamp who is over their device limit before asking who should be in the config:
 	// the cut waits out model.DeviceLimitGrace, and the grace measures from this stamp.
