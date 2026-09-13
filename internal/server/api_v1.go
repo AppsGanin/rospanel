@@ -35,6 +35,9 @@ type (
 		Name      string `json:"name"`
 		DataLimit int64  `json:"data_limit"` // bytes, 0 = unlimited
 		ExpireAt  int64  `json:"expire_at"`  // unix seconds, 0 = never
+		// HoldSeconds starts the term on the user's first connection instead of on a
+		// date: expire_at is set then, to that moment plus this. Not with expire_at.
+		HoldSeconds int64 `json:"hold_seconds,omitempty"`
 		// The rest are optional and applied to the fresh account in one call, because
 		// the alternative was three: create, then set a device limit, then a plan. Each
 		// of those is a separate reconcile, and a caller that failed halfway left a user
@@ -57,6 +60,11 @@ type (
 		ExpireAt    *int64  `json:"expire_at,omitempty"`
 		DeviceLimit *int    `json:"device_limit,omitempty"`
 		SpeedLimit  *int    `json:"speed_limit,omitempty"` // kbit/s, 0 = unlimited
+		// ExpireAt 0 is "never", which also takes away a term waiting for the first
+		// connection. HoldSeconds puts the term on hold until that connection instead
+		// (see apiCreateUserReq); 0 takes a pending term away. Not with a non-zero
+		// expire_at.
+		HoldSeconds *int64 `json:"hold_seconds,omitempty"`
 		// Note and Tags are the operator's own annotations; see model.User. An empty
 		// note or an empty tag list clears the field; a missing one leaves it alone.
 		Note *string   `json:"note,omitempty"` // up to model.MaxUserNoteLen characters
@@ -705,14 +713,14 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 	if !apiNonNegative(w, map[string]int64{
 		"data_limit": req.DataLimit, "expire_at": req.ExpireAt,
 		"device_limit": int64(req.DeviceLimit), "speed_limit": int64(req.SpeedLimit),
-		"plan_id": req.PlanID,
+		"plan_id": req.PlanID, "hold_seconds": req.HoldSeconds,
 	}) {
 		return
 	}
 	if req.PlanID > 0 && !rt.apiPlanExists(w, req.PlanID) {
 		return
 	}
-	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
+	u, err := rt.mgr.CreateUserWithTerm(r.Context(), req.Name, req.DataLimit, req.ExpireAt, req.HoldSeconds)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -830,22 +838,54 @@ func (rt *Router) apiPatchUser(w http.ResponseWriter, r *http.Request, id int64)
 	if req.SpeedLimit != nil {
 		check["speed_limit"] = int64(*req.SpeedLimit)
 	}
+	if req.HoldSeconds != nil {
+		check["hold_seconds"] = *req.HoldSeconds
+	}
 	if !apiNonNegative(w, check) {
 		return
 	}
-	// Limits are set as a unit; unspecified fields keep the user's current value.
-	if req.DataLimit != nil || req.ExpireAt != nil || req.DeviceLimit != nil {
-		dataLimit, expireAt, deviceLimit := cur.DataLimit, cur.ExpireAt, cur.DeviceLimit
-		if req.DataLimit != nil {
-			dataLimit = *req.DataLimit
+	if req.HoldSeconds != nil {
+		if err := core.ValidateHold(*req.HoldSeconds); err != nil {
+			writeAPIManagerErr(w, err)
+			return
 		}
-		if req.ExpireAt != nil {
-			expireAt = *req.ExpireAt
+		if *req.HoldSeconds > 0 && req.ExpireAt != nil && *req.ExpireAt > 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "hold_seconds and a non-zero expire_at contradict each other")
+			return
 		}
-		if req.DeviceLimit != nil {
-			deviceLimit = *req.DeviceLimit
+	}
+	// Unspecified fields keep the user's current value. The term is written only when
+	// the request names it: a PATCH of the quota alone must not post back the expiry
+	// read a moment ago, which a first connection may have replaced since.
+	dataLimit, deviceLimit := cur.DataLimit, cur.DeviceLimit
+	if req.DataLimit != nil {
+		dataLimit = *req.DataLimit
+	}
+	if req.DeviceLimit != nil {
+		deviceLimit = *req.DeviceLimit
+	}
+	switch {
+	case req.ExpireAt != nil:
+		if err := rt.mgr.SetUserLimits(r.Context(), id, dataLimit, *req.ExpireAt, deviceLimit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
 		}
-		if err := rt.mgr.SetUserLimits(r.Context(), id, dataLimit, expireAt, deviceLimit); err != nil {
+		// expire_at 0 is documented as "never": a term waiting for the first connection
+		// would contradict it, so it goes too — unless hold_seconds sets a new one.
+		if *req.ExpireAt == 0 && req.HoldSeconds == nil {
+			if err := rt.mgr.SetUserHold(r.Context(), id, 0); err != nil {
+				writeAPIManagerErr(w, err)
+				return
+			}
+		}
+	case req.DataLimit != nil || req.DeviceLimit != nil:
+		if err := rt.mgr.SetUserQuota(r.Context(), id, dataLimit, deviceLimit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	if req.HoldSeconds != nil {
+		if err := rt.mgr.SetUserHold(r.Context(), id, *req.HoldSeconds); err != nil {
 			writeAPIManagerErr(w, err)
 			return
 		}

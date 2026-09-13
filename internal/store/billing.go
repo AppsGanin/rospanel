@@ -349,6 +349,12 @@ func applyUserPlanOn(ex execer, p UserPlanWrite) error {
 	if err := setUserLimitsOn(ex, p.UserID, p.DataLimit, p.ExpireAt, p.DeviceLimit); err != nil {
 		return err
 	}
+	// A plan decides the term — a date, or none on a free plan — so a hold set by
+	// hand goes with the rest of the manual limits. Left in place, the next
+	// connection would start it and write its own date over the plan's.
+	if _, err := ex.Exec(`UPDATE users SET hold_seconds = 0 WHERE id = ?`, p.UserID); err != nil {
+		return err
+	}
 	// The speed cap is part of what the plan sells, so it is overwritten with the
 	// rest of the limits — a user moved to a slower tariff must actually get slower.
 	if err := setUserSpeedLimitOn(ex, p.UserID, p.SpeedLimit); err != nil {

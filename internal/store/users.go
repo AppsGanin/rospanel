@@ -14,7 +14,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
-	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day`
+	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds`
 
 // errTagsInvalid is returned by SetUserTags for a list model.NormalizeTags refuses.
 // Callers validate before writing, so reaching this means a bug, not user input.
@@ -23,11 +23,22 @@ var errTagsInvalid = errors.New("store: invalid user tags")
 // CreateUser inserts a user with one credential set (UUID for VLESS, password
 // for Trojan + Hysteria2), a subscription token, and optional quota/expiry.
 func (s *Store) CreateUser(name, uuid, password, subToken string, dataLimit, expireAt int64, deviceLimit int) (*model.User, error) {
+	return s.createUser(name, uuid, password, subToken, dataLimit, expireAt, 0, deviceLimit)
+}
+
+// CreateUserOnHold inserts a user whose term starts on their first connection:
+// no expiry date yet, holdSeconds long once it starts. One statement, so a user
+// that should be on hold never exists for a moment without an end.
+func (s *Store) CreateUserOnHold(name, uuid, password, subToken string, dataLimit, holdSeconds int64) (*model.User, error) {
+	return s.createUser(name, uuid, password, subToken, dataLimit, 0, holdSeconds, 0)
+}
+
+func (s *Store) createUser(name, uuid, password, subToken string, dataLimit, expireAt, holdSeconds int64, deviceLimit int) (*model.User, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, device_limit)
-		 VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		name, uuid, encField(password), subToken, dataLimit, expireAt, deviceLimit,
+		`INSERT INTO users (name, uuid, password, sub_token, data_limit, expire_at, hold_seconds, device_limit)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		name, uuid, encField(password), subToken, dataLimit, expireAt, holdSeconds, deviceLimit,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -48,6 +59,7 @@ type ImportedUser struct {
 	SubToken    string
 	DataLimit   int64
 	ExpireAt    int64
+	HoldSeconds int64 // a term starting on the first connection; ignored with an ExpireAt
 	UsedUp      int64
 	UsedDown    int64
 	DeviceLimit int
@@ -81,12 +93,13 @@ func (s *Store) ImportUser(in ImportedUser) (*model.User, error) {
 	// with a monthly quota kept whatever usage they arrived with and never refilled.
 	// The cycle starts at the import, which is the only moment this panel knows about.
 	err := s.db.QueryRow(
-		`INSERT INTO users (name, uuid, password, sub_token, enabled, data_limit, expire_at,
+		`INSERT INTO users (name, uuid, password, sub_token, enabled, data_limit, expire_at, hold_seconds,
 		   used_up, used_down, device_limit, speed_limit, reset_period, last_reset_at, note, tags, wg_private_key)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? > 0 THEN 0 ELSE ? END, ?, ?, ?, ?, ?,
 		   CASE WHEN ? = 'none' THEN 0 ELSE unixepoch() END,
 		   ?, ?, ?) RETURNING id`,
 		in.Name, in.UUID, encField(in.Password), in.SubToken, enabled, in.DataLimit, in.ExpireAt,
+		in.ExpireAt, max(in.HoldSeconds, 0),
 		in.UsedUp, in.UsedDown, in.DeviceLimit, in.SpeedLimit, period, period, in.Note,
 		model.EncodeTags(in.Tags), encField(in.WGPrivateKey),
 	).Scan(&id)
@@ -375,15 +388,58 @@ func updateTrafficOn(ex execer, id, addUp, addDown, lastUp, lastDown int64) erro
 // SetUserLimits sets the data limit (bytes), expiry (unix, 0 = none), and the
 // simultaneous device cap (0 = unlimited). Does not touch the manual enabled
 // flag; status is derived on read.
+//
+// An expiry date replaces a term waiting for the first connection; an expiry of 0
+// leaves one alone. That is what the limits form means by it: a user on hold has no
+// date to post back, and saving their quota must not cancel the term they were sold.
 func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) error {
 	return setUserLimitsOn(s.db, id, dataLimit, expireAt, deviceLimit)
 }
 
 func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) error {
 	_, err := ex.Exec(
-		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ? WHERE id = ?`,
-		dataLimit, expireAt, deviceLimit, id,
+		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ?,
+		   hold_seconds = CASE WHEN ? > 0 THEN 0 ELSE hold_seconds END
+		 WHERE id = ?`,
+		dataLimit, expireAt, deviceLimit, expireAt, id,
 	)
+	return err
+}
+
+// SetUserQuota sets the data limit and the device cap and nothing else. The term is
+// not part of the write, so a quota saved by a caller that last read the user before
+// their first connection cannot write back the term that connection replaced.
+func (s *Store) SetUserQuota(id, dataLimit int64, deviceLimit int) error {
+	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, device_limit = ? WHERE id = ?`,
+		dataLimit, deviceLimit, id)
+	return err
+}
+
+// SetUserLimitsIfTerm writes the quota, the device cap and the term — an expiry
+// date or a pending hold, never both — but only while the user's term is still the
+// one the caller saw. It reports false, having written nothing, when it is not: a
+// first connection or a payment moved it in the meantime, and the caller's picture
+// of the user is out of date. The check and the write are one statement, so nothing
+// can land between them.
+func (s *Store) SetUserLimitsIfTerm(id, dataLimit, expireAt, holdSeconds int64, deviceLimit int, seenExpireAt, seenHoldSeconds int64) (bool, error) {
+	res, err := s.db.Exec(`
+		UPDATE users SET data_limit = ?, expire_at = ?, hold_seconds = ?, device_limit = ?
+		WHERE id = ? AND expire_at = ? AND hold_seconds = ?`,
+		dataLimit, expireAt, holdSeconds, deviceLimit, id, seenExpireAt, seenHoldSeconds)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// SetUserHold puts a user's term on hold until their first connection: seconds long
+// once it starts, and no expiry date until then. 0 takes the hold away and leaves
+// the user with no expiry — the operator sets a date separately if they want one.
+func (s *Store) SetUserHold(id, seconds int64) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET hold_seconds = ?, expire_at = CASE WHEN ? > 0 THEN 0 ELSE expire_at END
+		 WHERE id = ?`, max(seconds, 0), seconds, id)
 	return err
 }
 
@@ -684,19 +740,24 @@ func (s *Store) ResetTrafficMany(baselines map[int64][2]int64, now int64) ([]int
 	return done, nil
 }
 
-// SetUserExpiryMany writes a new expiry for several users in one transaction.
-func (s *Store) SetUserExpiryMany(expiries map[int64]int64) error {
-	if len(expiries) == 0 {
+// SetUserTermsMany writes new terms for several users in one transaction: an expiry
+// date for some, a longer pending term for those still waiting for their first
+// connection. A date clears a hold, as everywhere else.
+func (s *Store) SetUserTermsMany(expiries, holds map[int64]int64) error {
+	if len(expiries) == 0 && len(holds) == 0 {
 		return nil
 	}
 	return s.withTx(func(tx *sql.Tx) error {
-		stmt, err := tx.Prepare(`UPDATE users SET expire_at = ? WHERE id = ?`)
-		if err != nil {
-			return err
-		}
-		defer stmt.Close()
 		for id, expire := range expiries {
-			if _, err := stmt.Exec(expire, id); err != nil {
+			if _, err := tx.Exec(`UPDATE users SET expire_at = ?, hold_seconds = 0 WHERE id = ?`, expire, id); err != nil {
+				return err
+			}
+		}
+		// expire_at = 0 in the guard: a term that started between the caller's read and
+		// this write has a date now, and lengthening the spent hold would do nothing but
+		// claim it had been extended.
+		for id, hold := range holds {
+			if _, err := tx.Exec(`UPDATE users SET hold_seconds = ? WHERE id = ? AND expire_at = 0`, hold, id); err != nil {
 				return err
 			}
 		}
@@ -876,7 +937,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
-			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay,
+			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds,
 		); err != nil {
 			return nil, err
 		}

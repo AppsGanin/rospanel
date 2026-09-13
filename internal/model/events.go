@@ -43,6 +43,7 @@ const (
 	EventResetPeriod    = "user.reset_period"   // autoreset period changed
 	EventSubRotated     = "user.sub_rotated"    // subscription link reissued
 	EventUserExpired    = "user.expired"        // system: subscription lapsed
+	EventTermStarted    = "user.term_started"   // system: the first connection started a held term
 	EventUserLimited    = "user.limited"        // system: quota exhausted
 	EventDeviceLimited  = "user.device_limited" // system: too many devices
 	EventDeviceBound    = "user.device_bound"   // a client install claimed a device slot
@@ -87,6 +88,7 @@ var UserEventCatalog = []string{
 	EventResetPeriod,
 	EventSubRotated,
 	EventUserExpired,
+	EventTermStarted,
 	EventUserLimited,
 	EventDeviceLimited,
 	EventDeviceBound,

@@ -15,6 +15,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -38,13 +39,29 @@ func (m *Manager) ListUsers() ([]model.User, error) { return m.store.ListUsers()
 // CreateUser creates a user (one credential set for all protocols) with optional
 // data limit (bytes, 0=unlimited) and expiry (unix, 0=never), then reconciles.
 func (m *Manager) CreateUser(ctx context.Context, name string, dataLimit, expireAt int64) (*model.User, error) {
-	u, err := m.createUser(name, dataLimit, expireAt)
+	return m.CreateUserWithTerm(ctx, name, dataLimit, expireAt, 0)
+}
+
+// CreateUserWithTerm is CreateUser with the term given either way: an expiry date,
+// or holdSeconds — a term that starts on the user's first connection. Not both: a
+// date and a pending term would contradict each other, and which one wins would be
+// a guess.
+func (m *Manager) CreateUserWithTerm(ctx context.Context, name string, dataLimit, expireAt, holdSeconds int64) (*model.User, error) {
+	if err := validateHold(holdSeconds); err != nil {
+		return nil, err
+	}
+	if holdSeconds > 0 && expireAt > 0 {
+		return nil, invalidCode("err.holdWithExpiry", "либо дата окончания, либо срок с первого подключения — не оба сразу")
+	}
+	u, err := m.createUserTerm(name, dataLimit, expireAt, holdSeconds)
 	if err != nil {
 		return nil, err
 	}
-	m.auditNamed(ctx, u.ID, u.Name, model.EventUserCreated, map[string]any{
-		"data_limit": dataLimit, "expire_at": expireAt,
-	})
+	details := map[string]any{"data_limit": dataLimit, "expire_at": expireAt}
+	if holdSeconds > 0 {
+		details = map[string]any{"data_limit": dataLimit, "hold_seconds": holdSeconds}
+	}
+	m.auditNamed(ctx, u.ID, u.Name, model.EventUserCreated, details)
 	return u, nil
 }
 
@@ -52,6 +69,10 @@ func (m *Manager) CreateUser(ctx context.Context, name string, dataLimit, expire
 // (via CreateRegisteredUser) so a signup records a single "user.registered" event
 // rather than that plus a "user.created" — one action, one row.
 func (m *Manager) createUser(name string, dataLimit, expireAt int64) (*model.User, error) {
+	return m.createUserTerm(name, dataLimit, expireAt, 0)
+}
+
+func (m *Manager) createUserTerm(name string, dataLimit, expireAt, holdSeconds int64) (*model.User, error) {
 	name, err := cleanUserName(name)
 	if err != nil {
 		return nil, err
@@ -67,7 +88,12 @@ func (m *Manager) createUser(name string, dataLimit, expireAt int64) (*model.Use
 	if err != nil {
 		return nil, err
 	}
-	u, err := m.store.CreateUser(name, uuid.NewString(), password, subToken, dataLimit, expireAt, 0)
+	var u *model.User
+	if holdSeconds > 0 {
+		u, err = m.store.CreateUserOnHold(name, uuid.NewString(), password, subToken, dataLimit, holdSeconds)
+	} else {
+		u, err = m.store.CreateUser(name, uuid.NewString(), password, subToken, dataLimit, expireAt, 0)
+	}
 	if err != nil {
 		logErr("user create failed", "name", name, "err", err)
 		return nil, err
@@ -267,6 +293,111 @@ func (m *Manager) SetUserLimits(ctx context.Context, id, dataLimit, expireAt int
 	return err
 }
 
+// errTermChanged is the answer to a limits save whose picture of the user's term is
+// out of date.
+func errTermChanged() error {
+	return invalidCode("err.userTermChanged", "срок пользователя изменился, пока карточка была открыта — обновите её и сохраните снова")
+}
+
+// SetUserQuota changes a user's traffic limit and device cap and leaves their term
+// exactly as it is in the store — for every save that did not set out to change the
+// term. Reading the term and posting it back is what this replaces: a first connection
+// between the read and the write turned a started term back into a pending one.
+func (m *Manager) SetUserQuota(ctx context.Context, id, dataLimit int64, deviceLimit int) error {
+	if err := validateUserLimits(dataLimit, 0, deviceLimit); err != nil {
+		return err
+	}
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if u.DataLimit == dataLimit && u.DeviceLimit == deviceLimit {
+		return nil
+	}
+	err = m.mutateUser(fmt.Sprintf("user %d quota updated: limit=%d devices=%d", id, dataLimit, deviceLimit),
+		func() error { return m.store.SetUserQuota(id, dataLimit, deviceLimit) })
+	if err == nil {
+		m.audit(ctx, id, model.EventUserLimits, map[string]any{"data_limit": dataLimit, "device_limit": deviceLimit})
+	}
+	return err
+}
+
+// SetUserLimitsSeen is the limits form's save when it changes the term: the quota,
+// the device cap and the term together, applied only if the term is still the one
+// the form was opened on (seenExpireAt, seenHoldSeconds). Otherwise nothing is
+// written and the operator is told to look again — a key that was picked up, or a
+// period that was paid for, while the card sat open is not theirs to overwrite blind.
+func (m *Manager) SetUserLimitsSeen(ctx context.Context, id, dataLimit, expireAt, holdSeconds int64, deviceLimit int, seenExpireAt, seenHoldSeconds int64) error {
+	if err := validateUserLimits(dataLimit, expireAt, deviceLimit); err != nil {
+		return err
+	}
+	if err := validateHold(holdSeconds); err != nil {
+		return err
+	}
+	if holdSeconds > 0 && expireAt > 0 {
+		return invalidCode("err.holdWithExpiry", "либо дата окончания, либо срок с первого подключения — не оба сразу")
+	}
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if u.ExpireAt != seenExpireAt || u.HoldSeconds != seenHoldSeconds {
+		return errTermChanged()
+	}
+	if u.DataLimit == dataLimit && u.DeviceLimit == deviceLimit && u.ExpireAt == expireAt && u.HoldSeconds == holdSeconds {
+		return nil
+	}
+	ok, err := m.store.SetUserLimitsIfTerm(id, dataLimit, expireAt, holdSeconds, deviceLimit, seenExpireAt, seenHoldSeconds)
+	if err != nil {
+		logErr("mutation failed", "op", fmt.Sprintf("user %d limits", id), "err", err)
+		return err
+	}
+	if !ok {
+		return errTermChanged() // the first connection landed between the read and the write
+	}
+	logInfo(fmt.Sprintf("user %d limits updated: limit=%d expire=%d hold=%d devices=%d", id, dataLimit, expireAt, holdSeconds, deviceLimit))
+	m.TriggerUserSync()
+	details := map[string]any{"data_limit": dataLimit, "expire_at": expireAt, "device_limit": deviceLimit}
+	if holdSeconds > 0 {
+		details = map[string]any{"data_limit": dataLimit, "hold_seconds": holdSeconds, "device_limit": deviceLimit}
+	}
+	m.audit(ctx, id, model.EventUserLimits, details)
+	return nil
+}
+
+// SetUserHold gives a user a term that starts on their first connection, seconds
+// long, in place of whatever expiry they had — or, with 0, takes a pending one away
+// and leaves them with no expiry. A term that has already started is a date, and is
+// changed with SetUserLimits like any other.
+func (m *Manager) SetUserHold(ctx context.Context, id, seconds int64) error {
+	if err := validateHold(seconds); err != nil {
+		return err
+	}
+	// It writes expire_at, so it takes the lock every other expiry write holds.
+	m.applyPlanMu.Lock()
+	defer m.applyPlanMu.Unlock()
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if u.HoldSeconds == seconds && (seconds == 0 || u.ExpireAt == 0) {
+		return nil
+	}
+	err = m.mutateUser(fmt.Sprintf("user %d hold set: %ds", id, seconds),
+		func() error { return m.store.SetUserHold(id, seconds) })
+	if err != nil {
+		return err
+	}
+	details := map[string]any{"data_limit": u.DataLimit, "device_limit": u.DeviceLimit, "hold_seconds": seconds}
+	if seconds == 0 {
+		details = map[string]any{"data_limit": u.DataLimit, "device_limit": u.DeviceLimit, "expire_at": u.ExpireAt}
+	}
+	m.audit(ctx, id, model.EventUserLimits, details)
+	return nil
+}
+
 // maxBulkUsers caps one bulk action. High enough that no operator meets it working
 // through the panel, low enough that a single call cannot monopolise the one DB
 // connection or overrun the webhook queue.
@@ -333,8 +464,8 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 		if days > maxExtendDays {
 			return 0, invalidCode("err.extendTooLong", "слишком большой срок продления (макс. {{max}} дней)", map[string]any{"max": maxExtendDays})
 		}
-		extended := m.bulkExtendExpiry(ids, days)
-		affected = int64(len(extended))
+		extended, held := m.bulkExtendExpiry(ids, days)
+		affected = int64(len(extended) + len(held))
 		for id, expire := range extended {
 			u := before[id]
 			// Carry the untouched limits too: the row renders as a full "limits changed"
@@ -342,6 +473,13 @@ func (m *Manager) BulkUserAction(ctx context.Context, ids []int64, action string
 			m.auditNamed(ctx, id, u.Name, model.EventUserLimits, map[string]any{
 				"data_limit": u.DataLimit, "device_limit": u.DeviceLimit,
 				"expire_at": expire, "extended_days": days, "bulk": true,
+			})
+		}
+		for id, hold := range held {
+			u := before[id]
+			m.auditNamed(ctx, id, u.Name, model.EventUserLimits, map[string]any{
+				"data_limit": u.DataLimit, "device_limit": u.DeviceLimit,
+				"hold_seconds": hold, "extended_days": days, "bulk": true,
 			})
 		}
 	default:
@@ -447,9 +585,11 @@ func (m *Manager) bulkResetTraffic(ids []int64) []int64 {
 
 // bulkExtendExpiry pushes each selected user's expiry out by `days`, anchored at the
 // later of now and their current expiry so stacking adds time rather than resetting
-// it. Users with no expiry (0 = never) are skipped. It returns each extended user's
-// new expiry.
-func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
+// it. A user whose term has not started yet gets the days added to that term instead
+// — extending what they will get, from whenever they start. Users with no expiry
+// and no pending term (never expires) are skipped. It returns each extended user's
+// new expiry, and each held user's new term.
+func (m *Manager) bulkExtendExpiry(ids []int64, days int) (map[int64]int64, map[int64]int64) {
 	// expire_at is read-modify-written here, so it takes the same lock every plan and
 	// payment write holds — otherwise a purchase confirming concurrently is extended
 	// from a baseline this loop already read, and one of the two periods is lost.
@@ -460,10 +600,15 @@ func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
 	users, err := m.store.UsersByIDs(ids)
 	if err != nil {
 		logErr("bulk: reading the selected users failed", "users", len(ids), "err", err)
-		return nil
+		return nil, nil
 	}
 	out := make(map[int64]int64, len(users))
+	held := map[int64]int64{}
 	for _, u := range users {
+		if u.ExpireAt == 0 && u.HoldSeconds > 0 {
+			held[u.ID] = min(u.HoldSeconds+add, int64(maxExtendDays)*86400)
+			continue
+		}
 		if u.ExpireAt == 0 {
 			continue // never expires; there is nothing to push out
 		}
@@ -473,11 +618,11 @@ func (m *Manager) bulkExtendExpiry(ids []int64, days int) map[int64]int64 {
 		}
 		out[u.ID] = base + add
 	}
-	if err := m.store.SetUserExpiryMany(out); err != nil {
-		logErr("bulk: extending expiry failed", "users", len(out), "err", err)
-		return nil
+	if err := m.store.SetUserTermsMany(out, held); err != nil {
+		logErr("bulk: extending expiry failed", "users", len(out)+len(held), "err", err)
+		return nil, nil
 	}
-	return out
+	return out, held
 }
 
 // RotateSubToken issues a new subscription URL token for a user. Protocol
@@ -646,4 +791,16 @@ func scaleQuota(bytes int64, coef float64) int64 {
 		return bytes
 	}
 	return int64(math.Round(float64(bytes) * coef))
+}
+
+// noteTermsStarted records, for each held term the last flush of connections started,
+// that it started and when it now ends. The journal is the only place an operator can
+// see the moment: the users list just shows a date from then on.
+func (m *Manager) noteTermsStarted(started []store.TermStart) {
+	for _, t := range started {
+		logInfo("user term started on first connection", "user", t.UserID, "expire", t.ExpireAt)
+		m.audit(context.Background(), t.UserID, model.EventTermStarted, map[string]any{
+			"expire_at": t.ExpireAt, "hold_seconds": t.HoldSeconds,
+		})
+	}
 }

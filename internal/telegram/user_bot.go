@@ -634,6 +634,8 @@ func userSelfCard(u model.User, set *model.Settings, panel Panel, lang i18n.Lang
 		} else {
 			fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardExpiredOn", exp))
 		}
+	} else if u.HoldSeconds > 0 {
+		fmt.Fprintf(&b, "%s\n", i18n.T(lang, "user.cardHold", i18n.TN(lang, "notify.days", int(u.HoldSeconds/86400))))
 	} else {
 		b.WriteString(i18n.T(lang, "user.cardNoExpiry") + "\n")
 	}

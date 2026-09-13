@@ -123,6 +123,12 @@ type User struct {
 	LastDown  int64     `json:"-"` // last raw Xray downlink counter
 	CreatedAt time.Time `json:"created_at"`
 
+	// HoldSeconds is a term that has not started yet: the first connection the panel
+	// records sets ExpireAt to that moment plus this, and puts this back to 0. 0 = no
+	// pending term. Only ever above 0 while ExpireAt is 0 — the store keeps the two
+	// apart, so a date and a pending term never coexist.
+	HoldSeconds int64 `json:"hold_seconds"`
+
 	ResetPeriod string `json:"reset_period"` // none | daily | weekly | monthly | yearly
 	LastResetAt int64  `json:"-"`            // unix of the last automatic quota reset
 	LastSeen    int64  `json:"last_seen"`    // unix of last activity (0 = never); 0 ⇒ offline

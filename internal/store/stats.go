@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -312,17 +313,33 @@ type ConnectionHit struct {
 	Hits   int64
 }
 
+// TermStart is a held term that a connection just started.
+type TermStart struct {
+	UserID      int64
+	HoldSeconds int64 // the term that started
+	ExpireAt    int64 // its end, as now stored
+}
+
 // AddConnections records a batch of sightings in one transaction.
+func (s *Store) AddConnections(hits []ConnectionHit) error {
+	_, err := s.RecordConnections(hits)
+	return err
+}
+
+// RecordConnections is AddConnections that also reports the held terms the batch
+// started: a user on hold who appears in it is connected, so their term begins at
+// their sighting, in the same commit as the sighting itself.
 //
 // The access-log tap is the panel's highest-frequency write source — it fires per
 // user per source IP — and it used to do two separate statements per sighting.
 // Folding a few seconds' worth into one commit is what stops the write rate from
 // scaling with the number of connected devices.
-func (s *Store) AddConnections(hits []ConnectionHit) error {
+func (s *Store) RecordConnections(hits []ConnectionHit) ([]TermStart, error) {
 	if len(hits) == 0 {
-		return nil
+		return nil, nil
 	}
-	return s.withTx(func(tx *sql.Tx) error {
+	var started []TermStart
+	err := s.withTx(func(tx *sql.Tx) error {
 		seen := make(map[int64]int64, len(hits)) // user → newest sighting in the batch
 		for _, h := range hits {
 			if h.Hits <= 0 {
@@ -354,8 +371,61 @@ func (s *Store) AddConnections(hits []ConnectionHit) error {
 				return err
 			}
 		}
-		return nil
+		var err error
+		started, err = startHeldTermsOn(tx, seen)
+		return err
 	})
+	if err != nil {
+		return nil, err
+	}
+	return started, nil
+}
+
+// startHeldTermsOn starts the term of every user in seen who is still on hold, from
+// their sighting. The users on hold are read first — through their own partial index,
+// so the cost follows how many are waiting, not how many connected — and only those
+// who also connected are written.
+//
+// expire_at = 0 in the guard is part of the rule, not decoration: a user given a date
+// by hand or by a plan while a stale hold survived must never have that date
+// overwritten by the next connection.
+func startHeldTermsOn(tx *sql.Tx, seen map[int64]int64) ([]TermStart, error) {
+	rows, err := tx.Query(`SELECT id FROM users INDEXED BY idx_users_held WHERE hold_seconds > 0`)
+	if err != nil {
+		return nil, err
+	}
+	var due []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if _, ok := seen[id]; ok {
+			due = append(due, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []TermStart
+	for _, id := range due {
+		var t TermStart
+		err := tx.QueryRow(`
+			UPDATE users SET expire_at = ? + hold_seconds, hold_seconds = 0
+			WHERE id = ? AND hold_seconds > 0 AND expire_at = 0
+			RETURNING id, expire_at`, seen[id], id).Scan(&t.UserID, &t.ExpireAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		t.HoldSeconds = t.ExpireAt - seen[id]
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 // TouchLastSeen updates a user's last activity time (used by the poller too).

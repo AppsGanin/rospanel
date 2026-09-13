@@ -266,7 +266,10 @@ NET_ADMIN`), as a container is given no TUN device by default. `nftables` for th
 
 #### 👤 Users
 
-Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year), a
+Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year) — and,
+instead of an end date, a **term that starts on the first connection**: N days that do not run
+while a key sits unused and begin with its first connection (extending adds days to such a term,
+a tariff replaces it with its own), a
 **device limit** (see *Device binding* below for exactly what it counts) and a per-user
 **speed cap**. Traffic accounting via Xray Stats, online status, connection
 list; expired users can be auto-deleted. Every user carries an operator's **note** (where they
@@ -275,7 +278,8 @@ came from, what was agreed — panel and API only, never shown to the client) an
 (`u12`) shown next to the name so a log line maps to an account at a glance. **Import and
 export**: the users page reads a **Marzban** database or `GET /api/users` dump, a **3x-ui**
 `x-ui.db`, and this panel's **own export** — and writes that export with one button. Users arrive
-with the **same UUIDs and passwords**, limits, expiry, used traffic, notes and tags, so nobody
+with the **same UUIDs and passwords**, limits, expiry (a term that starts on the first connection
+too — Marzban's `on_hold`, 3x-ui's "start after first use"), used traffic, notes and tags, so nobody
 re-adds a server in their app; the subscription token comes across too where the source has one
 (3x-ui's `subId`, Marzban's dump, and always from this panel's own export), so moving a domain to
 a new install keeps every existing subscription link working. A user already here (same UUID) is

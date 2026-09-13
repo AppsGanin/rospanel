@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -38,6 +39,8 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		Name      string `json:"name"`
 		DataLimit int64  `json:"data_limit"`
 		ExpireAt  int64  `json:"expire_at"`
+		// HoldSeconds starts the term on the first connection instead of a date.
+		HoldSeconds int64 `json:"hold_seconds"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -47,7 +50,7 @@ func (rt *Router) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, http.StatusBadRequest, "err.nameRequired2", "укажите имя")
 		return
 	}
-	u, err := rt.mgr.CreateUser(r.Context(), req.Name, req.DataLimit, req.ExpireAt)
+	u, err := rt.mgr.CreateUserWithTerm(r.Context(), req.Name, req.DataLimit, req.ExpireAt, req.HoldSeconds)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -99,13 +102,25 @@ func (rt *Router) resetUserTraffic(w http.ResponseWriter, r *http.Request, id in
 func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {
 		DataLimit   int64 `json:"data_limit"`
-		ExpireAt    int64 `json:"expire_at"`
 		DeviceLimit int   `json:"device_limit"`
+		// ExpireAt is the end date (0 = none). Pointer, like everything about the term
+		// below: a save that does not mention the term leaves it exactly as the store
+		// has it, rather than posting back whatever the caller last read.
+		ExpireAt *int64 `json:"expire_at"`
 		// SpeedLimit is kbit/s (0 = unlimited). Pointer so a caller that doesn't
 		// mention it leaves the cap alone — the bots and older integrations post this
 		// body without it, and reading a missing field as 0 would silently lift
 		// everyone's cap the first time they change a quota.
 		SpeedLimit *int `json:"speed_limit"`
+		// HoldSeconds is a term that starts on the first connection, in place of
+		// expire_at. 0 takes a pending one away.
+		HoldSeconds *int64 `json:"hold_seconds"`
+		// SeenExpireAt and SeenHoldSeconds are the term the panel's form was opened on.
+		// With them the term is changed only if it is still that one: a key picked up,
+		// or a period paid for, while the card sat open is refused instead of being
+		// written over.
+		SeenExpireAt    *int64 `json:"seen_expire_at"`
+		SeenHoldSeconds *int64 `json:"seen_hold_seconds"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -114,7 +129,44 @@ func (rt *Router) setUserLimits(w http.ResponseWriter, r *http.Request, id int64
 		writeErrCode(w, http.StatusBadRequest, "err.deviceLimitNegative2", "лимит устройств не может быть отрицательным")
 		return
 	}
-	if err := rt.mgr.SetUserLimits(r.Context(), id, req.DataLimit, req.ExpireAt, req.DeviceLimit); err != nil {
+	expireAt, hold := int64(0), int64(0)
+	if req.ExpireAt != nil {
+		expireAt = *req.ExpireAt
+	}
+	if req.HoldSeconds != nil {
+		hold = *req.HoldSeconds
+	}
+	// Judged before anything is written: a hold refused after the limits landed would
+	// leave half of one save applied.
+	if req.HoldSeconds != nil {
+		if err := core.ValidateHold(hold); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
+		if hold > 0 && expireAt > 0 {
+			writeErrCode(w, http.StatusBadRequest, "err.holdWithExpiry", "либо дата окончания, либо срок с первого подключения — не оба сразу")
+			return
+		}
+	}
+	var err error
+	switch {
+	case req.ExpireAt == nil && req.HoldSeconds == nil:
+		err = rt.mgr.SetUserQuota(r.Context(), id, req.DataLimit, req.DeviceLimit)
+	case req.SeenExpireAt != nil && req.SeenHoldSeconds != nil:
+		err = rt.mgr.SetUserLimitsSeen(r.Context(), id, req.DataLimit, expireAt, hold, req.DeviceLimit,
+			*req.SeenExpireAt, *req.SeenHoldSeconds)
+	default:
+		// A caller that states a term without saying what it saw: applied as stated.
+		if req.ExpireAt != nil {
+			err = rt.mgr.SetUserLimits(r.Context(), id, req.DataLimit, expireAt, req.DeviceLimit)
+		} else {
+			err = rt.mgr.SetUserQuota(r.Context(), id, req.DataLimit, req.DeviceLimit)
+		}
+		if err == nil && req.HoldSeconds != nil {
+			err = rt.mgr.SetUserHold(r.Context(), id, hold)
+		}
+	}
+	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}

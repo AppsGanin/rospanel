@@ -40,6 +40,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.reset_period": "gray",
   "user.sub_rotated": "brand",
   "user.expired": "orange",
+  "user.term_started": "green",
   "user.limited": "orange",
   "user.device_limited": "orange",
   "user.device_bound": "gray",
@@ -166,7 +167,13 @@ export function eventDetails(e: UserEvent): string {
             : i18n.t("events.det.noTrafficLimit"),
         );
       }
-      if (has(d, "expire_at")) {
+      if (num(d, "hold_seconds") > 0) {
+        parts.push(
+          i18n.t("events.det.holdTerm", {
+            count: Math.floor(num(d, "hold_seconds") / 86400),
+          }),
+        );
+      } else if (has(d, "expire_at")) {
         const expire = num(d, "expire_at");
         parts.push(
           expire
@@ -208,6 +215,8 @@ export function eventDetails(e: UserEvent): string {
       return i18n.t("events.det.expiredOn", {
         date: fmtDate(num(d, "expire_at")),
       });
+    case "user.term_started":
+      return i18n.t("events.det.until", { date: fmtDate(num(d, "expire_at")) });
     case "user.limited":
       return i18n.t("events.det.usedOf", {
         used: fmtBytes(num(d, "used")),

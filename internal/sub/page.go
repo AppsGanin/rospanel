@@ -432,6 +432,11 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 	if u.ExpireAt > 0 {
 		data.HasExpire = true
 		data.Expire = i18n.T(lang, "sub.until", time.Unix(u.ExpireAt, 0).Format("02.01.2006"))
+	} else if u.HoldSeconds > 0 {
+		// No date to show yet: the term is waiting for the first connection, and the
+		// person looking at this page is the one who starts it.
+		data.HasExpire = true
+		data.Expire = i18n.T(lang, "sub.holdTerm", i18n.TN(lang, "notify.days", int(u.HoldSeconds/86400)))
 	}
 	if !data.Online && u.LastSeen > 0 {
 		data.LastSeen = relTime(time.Now().Unix()-u.LastSeen, lang)

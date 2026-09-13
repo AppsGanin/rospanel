@@ -146,6 +146,22 @@ export function fmtExpire(unix: number): string {
   return d.toLocaleDateString()
 }
 
+// termModes are the two ways a manual term is given: an end date, or a length that
+// starts counting on the user's first connection.
+export const termModes = () => [
+  { value: 'date', label: i18n.t('usersPanel.termDate') },
+  { value: 'hold', label: i18n.t('usersPanel.termHold') },
+]
+
+// fmtTerm is a user's term as it reads today: the expiry date, or — while the term
+// waits for the first connection — its length, since there is no date to show yet.
+export function fmtTerm(expire_at: number, hold_seconds = 0): string {
+  if (!expire_at && hold_seconds > 0) {
+    return i18n.t('usersPanel.holdTerm', { count: Math.floor(hold_seconds / 86400) })
+  }
+  return fmtExpire(expire_at)
+}
+
 export function fmtQuota(used: number, limit: number): string {
   if (!limit) return fmtBytes(used)
   return `${fmtBytes(used)} / ${fmtBytes(limit)}`

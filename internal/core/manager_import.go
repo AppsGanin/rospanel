@@ -169,7 +169,7 @@ func (m *Manager) ImportUsers(ctx context.Context, req ImportRequest) (*ImportRe
 		}
 		u, err := m.store.ImportUser(store.ImportedUser{
 			Name: name, UUID: id.String(), Password: password, SubToken: subToken,
-			DataLimit: c.DataLimit, ExpireAt: c.ExpireAt,
+			DataLimit: c.DataLimit, ExpireAt: c.ExpireAt, HoldSeconds: importedHold(c),
 			UsedUp: max(c.UsedUp, 0), UsedDown: max(c.UsedDown, 0),
 			DeviceLimit: c.DeviceLimit, SpeedLimit: max(c.SpeedLimit, 0),
 			ResetPeriod: resetPeriodOr(c.ResetPeriod), Enabled: c.Enabled,
@@ -185,9 +185,11 @@ func (m *Manager) ImportUsers(ctx context.Context, req ImportRequest) (*ImportRe
 		// second is a skip, not an insert error.
 		existing[strings.ToLower(id.String())] = u.ID
 		res.Created++
-		m.auditNamed(ctx, u.ID, u.Name, model.EventUserCreated, map[string]any{
-			"data_limit": u.DataLimit, "expire_at": u.ExpireAt, "imported_from": source,
-		})
+		details := map[string]any{"data_limit": u.DataLimit, "expire_at": u.ExpireAt, "imported_from": source}
+		if u.HoldSeconds > 0 {
+			details = map[string]any{"data_limit": u.DataLimit, "hold_seconds": u.HoldSeconds, "imported_from": source}
+		}
+		m.auditNamed(ctx, u.ID, u.Name, model.EventUserCreated, details)
 		m.EmitWebhook(model.WebhookUserCreated, userEventData(*u))
 	}
 	if res.Created > 0 {
@@ -247,7 +249,7 @@ func (m *Manager) ExportUsers() (*importer.Export, error) {
 	for _, u := range users {
 		out.Users = append(out.Users, importer.Candidate{
 			Name: u.Name, UUID: u.UUID, Password: u.Password,
-			DataLimit: u.DataLimit, ExpireAt: u.ExpireAt,
+			DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 			UsedUp: u.UsedUp, UsedDown: u.UsedDown,
 			DeviceLimit: u.DeviceLimit, Enabled: u.Enabled,
 			Note: u.Note, Issues: []string{},
@@ -256,4 +258,16 @@ func (m *Manager) ExportUsers() (*importer.Export, error) {
 		})
 	}
 	return out, nil
+}
+
+// importedHold is the pending term a candidate brings, within the bounds a term set
+// here has: a file is somebody else's data, and a hold of a century would be carried
+// over as quietly as a hold of a month. Out of bounds it is capped, not dropped — the
+// user was sold a term, and the longest one this panel keeps is closer to it than none.
+// A candidate with a date has no pending term.
+func importedHold(c importer.Candidate) int64 {
+	if c.ExpireAt > 0 || c.HoldSeconds <= 0 {
+		return 0
+	}
+	return min(c.HoldSeconds, int64(maxExtendDays)*86400)
 }
