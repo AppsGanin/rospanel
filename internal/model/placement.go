@@ -3,6 +3,7 @@ package model
 import (
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Placement is what decides where a server lands in a subscription and whether
@@ -31,6 +32,11 @@ type Placement struct {
 	// TrafficPeriod is what the cap is measured over: TrafficMonth or TrafficDay.
 	// Blank reads as TrafficMonth, the shape hosting actually sells.
 	TrafficPeriod string `json:"traffic_period"`
+	// TrafficResetDay is the day of the month a monthly cap starts over, 1–31, so the
+	// panel's month is the hosting's billing month rather than the calendar's. 0 reads
+	// as the 1st. A day the month does not have is its last day — a server bought on
+	// the 31st rolls over on the 30th in a thirty-day month. Ignored for TrafficDay.
+	TrafficResetDay int `json:"traffic_reset_day"`
 	// HideWhenOver drops the server out of subscriptions once the cap is reached,
 	// until the period rolls over — the same treatment HideWhenFull gives a server
 	// that is out of user slots, and subject to the same rule that the subscription
@@ -40,7 +46,7 @@ type Placement struct {
 
 // Traffic-cap periods (Placement.TrafficPeriod).
 const (
-	TrafficMonth = "month" // since the 1st, in the operator timezone
+	TrafficMonth = "month" // since the reset day (the 1st by default), in the operator timezone
 	TrafficDay   = "day"   // since local midnight
 )
 
@@ -127,6 +133,9 @@ func (p Placement) Validate() error {
 	if !ValidTrafficPeriod(p.TrafficPeriod) {
 		return fieldErr("err.placementTrafficPeriod", "период лимита: month или day", nil)
 	}
+	if p.TrafficResetDay < 0 || p.TrafficResetDay > 31 {
+		return fieldErr("err.placementTrafficResetDay", "день начала периода: от 1 до 31", nil)
+	}
 	return nil
 }
 
@@ -142,9 +151,43 @@ func (p Placement) Normalized() Placement {
 	if !ValidTrafficPeriod(p.TrafficPeriod) {
 		p.TrafficPeriod = ""
 	}
+	// The 1st is stored as 0, the default, so a server that never picked a day and one
+	// that picked the 1st are the same row. A day only a month has means nothing to a
+	// daily cap.
+	if p.TrafficResetDay <= 1 || p.TrafficResetDay > 31 || TrafficPeriodOr(p.TrafficPeriod) == TrafficDay {
+		p.TrafficResetDay = 0
+	}
 	if p.TrafficLimit == 0 {
 		// No cap means nothing to hide behind and no period to measure.
-		p.TrafficPeriod, p.HideWhenOver = "", false
+		p.TrafficPeriod, p.HideWhenOver, p.TrafficResetDay = "", false, 0
 	}
 	return p
+}
+
+// TrafficPeriodStart is the first day of the window the cap is measured over, as
+// a local midnight in now's location: today for a daily cap, the latest reset day on
+// or before today for a monthly one.
+func (p Placement) TrafficPeriodStart(now time.Time) time.Time {
+	y, m, d := now.Date()
+	if TrafficPeriodOr(p.TrafficPeriod) == TrafficDay {
+		return time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	}
+	if start := resetDayIn(y, m, p.TrafficResetDay, now.Location()); d >= start.Day() {
+		return start
+	}
+	// Not there yet this month: the period began on last month's reset day.
+	prev := time.Date(y, m, 1, 0, 0, 0, 0, now.Location()).AddDate(0, -1, 0)
+	return resetDayIn(prev.Year(), prev.Month(), p.TrafficResetDay, now.Location())
+}
+
+// resetDayIn is the reset day in one month, pulled back to the month's last day when
+// the month is shorter. 0 is the 1st.
+func resetDayIn(y int, m time.Month, day int, loc *time.Location) time.Time {
+	if day < 1 {
+		day = 1
+	}
+	if last := time.Date(y, m+1, 0, 0, 0, 0, 0, loc).Day(); day > last {
+		day = last
+	}
+	return time.Date(y, m, day, 0, 0, 0, 0, loc)
 }

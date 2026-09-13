@@ -43,6 +43,9 @@ type (
 		TrafficLimit  *int64  `json:"traffic_limit,omitempty"`
 		TrafficPeriod *string `json:"traffic_period,omitempty"`
 		HideWhenOver  *bool   `json:"hide_when_over,omitempty"`
+		// The day of the month a monthly cap starts over (1–31; a shorter month uses
+		// its last day).
+		TrafficResetDay *int `json:"traffic_reset_day,omitempty"`
 	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
@@ -223,6 +226,9 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	}
 	if req.HideWhenOver != nil {
 		edit.Placement.HideWhenOver = *req.HideWhenOver
+	}
+	if req.TrafficResetDay != nil {
+		edit.Placement.TrafficResetDay = *req.TrafficResetDay
 	}
 	if err := edit.Placement.Validate(); err != nil {
 		writeAPIManagerErr(w, err)

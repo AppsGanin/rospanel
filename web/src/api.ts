@@ -1995,6 +1995,7 @@ export interface NodeView {
   // Traffic cap and what has been used against it in the current period.
   traffic_limit: number
   traffic_period: string
+  traffic_reset_day: number
   hide_when_over: boolean
   traffic_period_used: number
   traffic_over: boolean
@@ -2114,9 +2115,12 @@ export interface Placement {
   capacity: number
   hide_when_full: boolean
   // Bytes the server may carry per traffic_period ('month' | 'day'); 0 = no cap.
-  // hide_when_over drops it out of subscriptions once the cap is reached.
+  // A monthly cap starts over on traffic_reset_day (1–31, 0 = the 1st; a shorter
+  // month uses its last day). hide_when_over drops the server out of subscriptions
+  // once the cap is reached.
   traffic_limit: number
   traffic_period: string
+  traffic_reset_day: number
   hide_when_over: boolean
 }
 

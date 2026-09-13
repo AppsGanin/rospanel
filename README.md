@@ -377,7 +377,8 @@ client / OS / version (contains, equals, prefix, regex), or **block** a client e
 served the decoy). The first matching rule wins; no match falls through to normal detection.
 
 **A traffic limit per server** (on the server card, next to its capacity) is what the
-hosting sells you: a monthly or daily allowance in gigabytes. The panel counts what it
+hosting sells you: a monthly or daily allowance in gigabytes. The month starts on the day the
+hosting counts from (a month without that day starts on its last one). The panel counts what it
 attributes to that server — slightly under what the hosting bills, which is the safe
 side of a threshold — tells you once when the allowance runs out and once when the new
 period starts, and can drop the server out of subscriptions in between. Never all of

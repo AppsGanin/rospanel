@@ -16,12 +16,75 @@ import (
 // the month would trip on the 2nd.
 func TestTrafficPeriodStart(t *testing.T) {
 	now := time.Date(2026, 9, 17, 13, 45, 0, 0, time.UTC)
-	if got := trafficPeriodStart(model.TrafficDay, now); got != "2026-09-17" {
-		t.Errorf("day window starts %q, want today", got)
+	if got := trafficPeriodStart(model.Placement{TrafficPeriod: model.TrafficDay, TrafficResetDay: 14}, now); got != "2026-09-17" {
+		t.Errorf("day window starts %q, want today — a reset day means nothing to a daily cap", got)
 	}
 	for _, p := range []string{model.TrafficMonth, "", "nonsense"} {
-		if got := trafficPeriodStart(p, now); got != "2026-09-01" {
+		if got := trafficPeriodStart(model.Placement{TrafficPeriod: p}, now); got != "2026-09-01" {
 			t.Errorf("period %q starts %q, want the 1st", p, got)
+		}
+	}
+}
+
+// The billing month: the window opens on the reset day, reaches back into the previous
+// month until that day comes round, and a day the month does not have is its last.
+func TestTrafficPeriodStartOnAResetDay(t *testing.T) {
+	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 13, 45, 0, 0, time.UTC) }
+	for _, c := range []struct {
+		name  string
+		now   time.Time
+		reset int
+		want  string
+	}{
+		{"on the reset day", day(2026, 9, 14), 14, "2026-09-14"},
+		{"after it", day(2026, 9, 17), 14, "2026-09-14"},
+		{"the day before", day(2026, 9, 13), 14, "2026-08-14"},
+		{"before it, across the new year", day(2026, 1, 10), 15, "2025-12-15"},
+		{"the 31st in a 30-day month is its last day", day(2026, 9, 30), 31, "2026-09-30"},
+		{"before that, last month had a 31st", day(2026, 9, 29), 31, "2026-08-31"},
+		{"the 30th in February is the 28th", day(2026, 2, 28), 30, "2026-02-28"},
+		{"just before it, January had a 30th", day(2026, 2, 27), 30, "2026-01-30"},
+		{"March 1st with a reset on the 31st", day(2026, 3, 1), 31, "2026-02-28"},
+		{"a leap February", day(2028, 2, 29), 31, "2028-02-29"},
+		{"0 is the 1st", day(2026, 9, 17), 0, "2026-09-01"},
+	} {
+		p := model.Placement{TrafficPeriod: model.TrafficMonth, TrafficResetDay: c.reset}
+		if got := trafficPeriodStart(p, c.now); got != c.want {
+			t.Errorf("%s: %s with reset day %d starts %s, want %s", c.name, c.now.Format("2006-01-02"), c.reset, got, c.want)
+		}
+	}
+	// A local midnight in the operator's zone, not UTC's: late evening in Moscow on the
+	// 13th is the 13th there, before a reset on the 14th.
+	msk := time.FixedZone("MSK", 3*3600)
+	p := model.Placement{TrafficPeriod: model.TrafficMonth, TrafficResetDay: 14}
+	if got := p.TrafficPeriodStart(time.Date(2026, 9, 13, 23, 30, 0, 0, msk)); !got.Equal(time.Date(2026, 8, 14, 0, 0, 0, 0, msk)) {
+		t.Errorf("Moscow, 13th 23:30: period starts %v, want 14 Aug 00:00 MSK", got)
+	}
+}
+
+func TestTrafficResetDayValidateAndNormalize(t *testing.T) {
+	for _, d := range []int{-1, 32} {
+		if err := (model.Placement{TrafficLimit: 1, TrafficResetDay: d}).Validate(); err == nil {
+			t.Errorf("reset day %d was accepted", d)
+		}
+	}
+	for _, d := range []int{0, 1, 28, 31} {
+		if err := (model.Placement{TrafficLimit: 1, TrafficResetDay: d}).Validate(); err != nil {
+			t.Errorf("reset day %d was refused: %v", d, err)
+		}
+	}
+	for _, c := range []struct {
+		name string
+		in   model.Placement
+		want int
+	}{
+		{"a monthly cap keeps its day", model.Placement{TrafficLimit: 1, TrafficResetDay: 14}, 14},
+		{"the 1st is the default, stored as 0", model.Placement{TrafficLimit: 1, TrafficResetDay: 1}, 0},
+		{"a daily cap has no reset day", model.Placement{TrafficLimit: 1, TrafficPeriod: model.TrafficDay, TrafficResetDay: 14}, 0},
+		{"no cap, no reset day", model.Placement{TrafficResetDay: 14}, 0},
+	} {
+		if got := c.in.Normalized().TrafficResetDay; got != c.want {
+			t.Errorf("%s: normalized to %d, want %d", c.name, got, c.want)
 		}
 	}
 }
@@ -312,5 +375,69 @@ func TestNodeTrafficKeepsFiguresWhenTheQueryFails(t *testing.T) {
 	}
 	if len(msgs) != before {
 		t.Errorf("a failed refresh sent %d extra messages (a false all-clear)", len(msgs)-before)
+	}
+}
+
+// The reset day is stored for the master and for a node, and it is what the usage is
+// summed from. The clock is real here, so the dates are picked around today: traffic
+// yesterday and today, and a reset day of today puts only today's in the window.
+func TestRefreshNodeTrafficCountsFromTheResetDay(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "reset.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	m := &Manager{store: st}
+
+	u, err := st.CreateUser("u", "uuid", "pw", "tok", 0, 0, 0)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	n, err := st.CreateNode("billed", "billed.example.com", "")
+	if err != nil {
+		t.Fatalf("create node: %v", err)
+	}
+	now := time.Now().In(m.loc())
+	today, yesterday := now.Format("2006-01-02"), now.AddDate(0, 0, -1).Format("2006-01-02")
+	for _, id := range []int64{model.LocalNodeID, n.ID} {
+		if err := st.AddDailyTrafficNode(u.ID, id, today, 1<<30, 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.AddDailyTrafficNode(u.ID, id, yesterday, 5<<30, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resetToday := model.Placement{TrafficLimit: 100 << 30, TrafficResetDay: now.Day()}
+	if err := st.SetMasterPlacement(resetToday); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateNode(n.ID, store.NodeEdit{Name: "billed", Host: "billed.example.com", Placement: resetToday}); err != nil {
+		t.Fatal(err)
+	}
+	want := resetToday.Normalized().TrafficResetDay // 0 on the 1st, which is the same day
+	if set, _ := st.GetSettings(); set.MasterPlacement.TrafficResetDay != want {
+		t.Errorf("master reset day read back as %d, want %d", set.MasterPlacement.TrafficResetDay, want)
+	}
+	if got, _ := st.GetNode(n.ID); got == nil || got.TrafficResetDay != want {
+		t.Errorf("node reset day read back as %+v, want %d", got, want)
+	}
+
+	m.refreshNodeTraffic()
+	for _, id := range []int64{model.LocalNodeID, n.ID} {
+		if got := m.NodeTrafficUsage(id).Used; got != 1<<30 {
+			t.Errorf("server %d, reset day today: used %d, want only today's 1 GiB", id, got)
+		}
+	}
+
+	// From the 1st, yesterday is in the window — unless today is the 1st.
+	if now.Day() != 1 {
+		if err := st.SetMasterPlacement(model.Placement{TrafficLimit: 100 << 30}); err != nil {
+			t.Fatal(err)
+		}
+		m.refreshNodeTraffic()
+		if got := m.NodeTrafficUsage(model.LocalNodeID).Used; got != 6<<30 {
+			t.Errorf("reset on the 1st: used %d, want yesterday's and today's 6 GiB", got)
+		}
 	}
 }
