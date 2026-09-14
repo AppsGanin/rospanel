@@ -1111,17 +1111,19 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
 	//
-	// IfChanged, not ApplyRaw: the desired state also carries host-level settings
-	// (certs, hop ranges, the connection guard, per-user speed caps) that change
-	// without the Xray config changing at all. Applying an identical config would
-	// restart Xray and drop every live connection on this node — an operator editing
-	// one user's speed limit would bounce the fleet.
-	changed, err := a.sup.ApplyRawIfChanged(substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath))
+	// Live, not ApplyRaw: the desired state also carries host-level settings (certs,
+	// hop ranges, the connection guard, per-user speed caps) that change without the
+	// Xray config changing at all, and most config changes are users coming and going.
+	// Restarting for either drops every live connection on this node.
+	how, err := a.sup.ApplyRawLive(a.sup.APIAddr(), substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath))
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
-	if !changed {
+	switch how {
+	case xray.RawUnchanged:
 		slog.Info("node: state applied without an Xray restart (config unchanged)")
+	case xray.RawLive:
+		slog.Info("node: users changed without an Xray restart")
 	}
 	// The panel may have changed who is capped; put it in force now rather than at
 	// the shaper's next tick.
