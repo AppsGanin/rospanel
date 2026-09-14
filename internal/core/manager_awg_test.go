@@ -43,7 +43,7 @@ func TestAWGIdentityPeersAndClientConfig(t *testing.T) {
 	}
 
 	// Peers: the working set (b is disabled) filtered by access.
-	users, _ := m.store.WorkingUsers(1)
+	users, _ := m.store.WorkingCredentials(1)
 	peers := m.awgPeers(model.LocalNodeID, users, nil)
 	if len(peers) != 1 || peers[0].Email != model.UserEmail(a.ID) {
 		t.Fatalf("peers: %+v", peers)
@@ -145,7 +145,7 @@ func TestNodeAWGStateUsesTheNodesIdentity(t *testing.T) {
 	if ns.AWGPrivateKey != node.AWGPrivateKey || ns.AWGPort != 41000 || !ns.AWGEnabled {
 		t.Fatalf("node settings: key ok=%v port=%d on=%v", ns.AWGPrivateKey == node.AWGPrivateKey, ns.AWGPort, ns.AWGEnabled)
 	}
-	users, _ := m.store.WorkingUsers(1)
+	users, _ := m.store.WorkingCredentials(1)
 	st := m.nodeAWGState(node, ns, users, nil)
 	if st == nil || st.Port != 41000 || st.PrivateKey != node.AWGPrivateKey || len(st.Peers) != 1 || st.Peers[0].Email != model.UserEmail(u.ID) {
 		t.Fatalf("node awg state: %+v", st)
@@ -186,7 +186,7 @@ func TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt(t *testing.T) {
 	}
 	node, _ := m.store.GetNode(n.ID)
 	ns := nodeSettings(set, node)
-	users, _ := m.store.WorkingUsers(1)
+	users, _ := m.store.WorkingCredentials(1)
 
 	for _, v := range []string{"", "2.14.2", "v2.9.0"} {
 		node.NodeVersion = v

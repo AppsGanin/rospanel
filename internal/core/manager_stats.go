@@ -80,11 +80,11 @@ func (m *Manager) enforceAfterTraffic(users []model.User) error {
 	m.LiftAbuseMeasures(time.Now().Unix())
 	// Reconcile if the working set changed since the last applied config — e.g. a
 	// user just crossed their data limit (traffic) or expiry (time).
-	working, err := m.store.WorkingUsers(time.Now().Unix())
+	working, err := m.store.WorkingUserIDs(time.Now().Unix())
 	if err != nil {
 		return err
 	}
-	if m.workingChanged(working) {
+	if m.workingIDsChanged(working) {
 		slog.Info("working set changed (limit/expiry), syncing users")
 		m.TriggerUserSync()
 	}

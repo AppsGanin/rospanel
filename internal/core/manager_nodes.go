@@ -141,7 +141,7 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
-	users, err := m.store.WorkingUsers(time.Now().Unix())
+	users, err := m.store.WorkingCredentials(time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}

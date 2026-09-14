@@ -1,8 +1,12 @@
 package store
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // WorkingUserIDs answers the access flush's question — who belongs in the proxy
@@ -19,7 +23,7 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 		}
 		return u.ID
 	}
-	mk("plain", 0, 0, 0)
+	plain := mk("plain", 0, 0, 0)
 	mk("dated", 0, now+3600, 0)
 	mk("expired", 0, now-3600, 0)
 	over := mk("over-quota", 1000, 0, 0)
@@ -32,6 +36,13 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 	}
 	if _, err := st.CreateUserOnHold("held", "uuid-held", "pw", "tok-held", 0, 86400); err != nil {
 		t.Fatal(err)
+	}
+	// Keys on a working user and on one who is not, so the credentials read is held to
+	// the working user's key and cannot pass by leaving every key blank.
+	for _, id := range []int64{plain, off} {
+		if err := st.SetUserWGKey(id, fmt.Sprintf("wg-key-of-%d", id)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	crowded := mk("device-limited", 0, 0, 1)
 	for _, ip := range []string{"198.51.100.1", "198.51.100.2"} {
@@ -62,5 +73,24 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 	// And the set is the one expected, so the comparison is not two empty lists.
 	if len(ids) != 3 {
 		t.Errorf("working ids %v — want plain, dated and held", ids)
+	}
+
+	// WorkingCredentials names the same users in the same order, carrying exactly the
+	// credentials the full read decrypts and nothing else.
+	creds, err := st.WorkingCredentials(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(creds) != len(full) {
+		t.Fatalf("WorkingUsers has %d users, WorkingCredentials %d", len(full), len(creds))
+	}
+	for i, u := range full {
+		want := model.User{ID: u.ID, UUID: u.UUID, Password: u.Password, WGPrivateKey: u.WGPrivateKey}
+		if !reflect.DeepEqual(creds[i], want) {
+			t.Errorf("position %d: WorkingCredentials %+v, want %+v", i, creds[i], want)
+		}
+	}
+	if creds[0].ID != plain || creds[0].Password != "pw" || creds[0].WGPrivateKey != fmt.Sprintf("wg-key-of-%d", plain) {
+		t.Errorf("first working user's credentials came back as %+v", creds[0])
 	}
 }

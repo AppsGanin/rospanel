@@ -285,9 +285,10 @@ func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 
 // WorkingUserIDs is WorkingUsers for a caller that only needs to know WHO: the ids,
 // from the same condition, without reading every column, deriving statuses and
-// decrypting every password and key. The access flush asks this every few seconds to
-// learn whether the working set moved, and with a couple of thousand users the full
-// read was ~9x slower and allocated ~250x more for an answer it threw away.
+// decrypting every password and key. The access flush asks this every few seconds, and
+// every traffic pass after a stats poll or a node's report, to learn whether the
+// working set moved; with a couple of thousand users the full read was ~9x slower and
+// allocated ~250x more for an answer it threw away.
 func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
 		SELECT id FROM users `+workingUsersWhere+`
@@ -307,9 +308,50 @@ func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 	return out, rows.Err()
 }
 
+// WorkingCredentials is WorkingUsers for building a proxy config: the same users in
+// the same order, each carrying only what a config is made of — ID, UUID, Password and
+// WGPrivateKey. Every other field is zero, and no status is derived.
+//
+// A node asks for its config twice a poll and again on every wake, and the master
+// rebuilds its own on every user sync. With 5000 users the full read took ~20ms of
+// that, scanning thirty-odd columns and counting devices a config never looks at;
+// these four columns take ~4ms.
+func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
+	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT id, uuid, password, wg_private_key FROM users `+workingUsersWhere+`
+		ORDER BY id ASC`, workingUsersArgs(now)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	// Scanned into four fields and widened once at the end: appending whole users grew
+	// a slice of large structs over and over, and decrypting after the last row gives
+	// the one connection back sooner.
+	type cred struct {
+		id                 int64
+		uuid, password, wg string
+	}
+	var creds []cred
+	for rows.Next() {
+		var c cred
+		if err := rows.Scan(&c.id, &c.uuid, &c.password, &c.wg); err != nil {
+			return nil, err
+		}
+		creds = append(creds, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]model.User, len(creds))
+	for i, c := range creds {
+		out[i] = model.User{ID: c.id, UUID: c.uuid, Password: decField(c.password), WGPrivateKey: decField(c.wg)}
+	}
+	return out, nil
+}
+
 // workingUsersWhere is the one statement of who belongs in the proxy config, shared by
-// WorkingUsers and WorkingUserIDs so the two cannot drift apart. It expects the
-// device_count CTE and workingUsersArgs.
+// WorkingUsers, WorkingUserIDs and WorkingCredentials so they cannot drift apart. It
+// expects the device_count CTE and workingUsersArgs.
 //
 // device_count decides, once, whether source addresses still enforce the limit — the
 // same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
