@@ -710,7 +710,7 @@ func (m *Manager) syncUsers() error {
 	if err != nil {
 		return err
 	}
-	users, err := m.store.WorkingUsers(time.Now().Unix())
+	users, err := m.store.WorkingCredentials(time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -838,7 +838,7 @@ func (m *Manager) reconcileLocked() error {
 	if err != nil {
 		return err
 	}
-	users, err := m.store.WorkingUsers(time.Now().Unix())
+	users, err := m.store.WorkingCredentials(time.Now().Unix())
 	if err != nil {
 		return err
 	}
@@ -876,7 +876,9 @@ func (m *Manager) setApplied(users []model.User) {
 	m.appliedMu.Unlock()
 }
 
-// workingIDsChanged is workingChanged for the ids alone, which is all it compares.
+// workingIDsChanged reports whether the given working set differs from what's
+// currently applied (someone crossed a limit/expiry, or was reset/extended). It takes
+// ids alone, which is all it compares: see store.WorkingUserIDs.
 func (m *Manager) workingIDsChanged(ids []int64) bool {
 	m.appliedMu.Lock()
 	defer m.appliedMu.Unlock()
@@ -885,22 +887,6 @@ func (m *Manager) workingIDsChanged(ids []int64) bool {
 	}
 	for _, id := range ids {
 		if _, ok := m.applied[id]; !ok {
-			return true
-		}
-	}
-	return false
-}
-
-// workingChanged reports whether the given working set differs from what's
-// currently applied (someone crossed a limit/expiry, or was reset/extended).
-func (m *Manager) workingChanged(users []model.User) bool {
-	m.appliedMu.Lock()
-	defer m.appliedMu.Unlock()
-	if len(users) != len(m.applied) {
-		return true
-	}
-	for _, u := range users {
-		if _, ok := m.applied[u.ID]; !ok {
 			return true
 		}
 	}
