@@ -40,7 +40,7 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 	// Keys on a working user and on one who is not, so the credentials read is held to
 	// the working user's key and cannot pass by leaving every key blank.
 	for _, id := range []int64{plain, off} {
-		if _, err := st.ClaimUserWGKey(id, fmt.Sprintf("wg-key-of-%d", id)); err != nil {
+		if _, err := st.ClaimUsersAWG([]AWGClaim{{UserID: id, Key: fmt.Sprintf("wg-key-of-%d", id)}}, 2, 65534); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -85,7 +85,7 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 		t.Fatalf("WorkingUsers has %d users, WorkingCredentials %d", len(full), len(creds))
 	}
 	for i, u := range full {
-		want := model.User{ID: u.ID, UUID: u.UUID, Password: u.Password, WGPrivateKey: u.WGPrivateKey}
+		want := model.User{ID: u.ID, UUID: u.UUID, Password: u.Password, WGPrivateKey: u.WGPrivateKey, AWGSlot: u.AWGSlot}
 		if !reflect.DeepEqual(creds[i], want) {
 			t.Errorf("position %d: WorkingCredentials %+v, want %+v", i, creds[i], want)
 		}

@@ -36,54 +36,87 @@ func awgParams(p model.AWGParams) awg.Params {
 // "connected now" with a margin.
 const awgOnlineWindow = 180
 
-// userWGKey returns a user's tunnel private key, minting and storing one the first
-// time it is asked for. The key is the user's identity on every server, so it is
-// made once and never rotated on its own.
-func (m *Manager) userWGKey(u *model.User) (string, error) {
-	if u.WGPrivateKey != "" {
-		return u.WGPrivateKey, nil
+// claimAWG gives the users who lack one their tunnel identity — a private key and a
+// slot on the subnet — and records it on the users handed in. The key is the user's
+// identity on every server and the slot their address on every server, so both are
+// made once and never changed on their own. A user left without a slot after a
+// successful claim is one the subnet has no room for.
+//
+// One store transaction for the lot: the first tunnel a big panel brings up claims for
+// every user it has.
+func (m *Manager) claimAWG(users []*model.User) error {
+	var claims []store.AWGClaim
+	for _, u := range users {
+		if u.WGPrivateKey != "" && u.AWGSlot != 0 {
+			continue
+		}
+		key := u.WGPrivateKey
+		if key == "" {
+			priv, _, err := awg.GenerateKey()
+			if err != nil {
+				return err
+			}
+			key = priv
+		}
+		claims = append(claims, store.AWGClaim{UserID: u.ID, Key: key})
 	}
-	priv, _, err := awg.GenerateKey()
+	if len(claims) == 0 {
+		return nil
+	}
+	// Another server may have claimed first; what the store kept is what counts.
+	got, err := m.store.ClaimUsersAWG(claims, awg.FirstSlot, awg.LastSlot)
 	if err != nil {
-		return "", err
+		return err
 	}
-	// Another server may have minted one first; theirs is the one that counts.
-	if priv, err = m.store.ClaimUserWGKey(u.ID, priv); err != nil {
-		return "", err
+	for _, u := range users {
+		if id, ok := got[u.ID]; ok {
+			u.WGPrivateKey, u.AWGSlot = id.Key, id.Slot
+		}
 	}
-	if priv == "" {
-		return "", fmt.Errorf("awg: stored key for user %d is unreadable", u.ID)
-	}
-	u.WGPrivateKey = priv
-	return priv, nil
+	// The users every node's state is built from were read before these existed.
+	m.dropNodeInputs()
+	return nil
 }
 
-// awgPeers turns the working users allowed on a server's AWG lane into peers.
-// Users beyond the subnet (ids past 65,000) or without a derivable key are left
-// out and logged rather than failing the whole tunnel.
+// awgPeers turns the working users allowed on a server's AWG lane into peers. A user
+// without an address (the subnet is full) or without a usable key is left out and
+// logged rather than failing the whole tunnel.
 func (m *Manager) awgPeers(serverID int64, users []model.User, access map[int64]model.Access) []awg.Peer {
-	peers := make([]awg.Peer, 0, len(users))
+	allowed := make([]*model.User, 0, len(users))
 	for i := range users {
-		u := &users[i]
-		if !model.AccessOf(access, u.ID).AllowsBuiltin(serverID, model.LaneAWG) {
-			continue
+		if model.AccessOf(access, users[i].ID).AllowsBuiltin(serverID, model.LaneAWG) {
+			allowed = append(allowed, &users[i])
 		}
-		addr, ok := awg.ClientAddr(u.ID)
+	}
+	claimed := true
+	if err := m.claimAWG(allowed); err != nil {
+		logErr("awg: user tunnel identities", "server", serverID, "err", err)
+		claimed = false
+	}
+	peers := make([]awg.Peer, 0, len(allowed))
+	unplaced := 0
+	for _, u := range allowed {
+		addr, ok := awg.ClientAddr(u.AWGSlot)
 		if !ok {
-			logWarn("awg: user id beyond the tunnel subnet, skipped", "user", u.ID)
+			if claimed {
+				unplaced++
+			}
 			continue
 		}
-		priv, err := m.userWGKey(u)
-		if err != nil {
-			logErr("awg: user key", "user", u.ID, "err", err)
+		if u.WGPrivateKey == "" {
+			logErr("awg: user key unreadable (wrong or missing secrets.key?)", "user", u.ID)
 			continue
 		}
-		pub, err := awg.PublicKey(priv)
+		pub, err := awg.PublicKey(u.WGPrivateKey)
 		if err != nil {
 			logErr("awg: user key unusable", "user", u.ID, "err", err)
 			continue
 		}
 		peers = append(peers, awg.Peer{PublicKey: pub, Addr: addr, Email: model.UserEmail(u.ID)})
+	}
+	if unplaced > 0 && claimed {
+		logWarn("awg: no address left on the tunnel subnet, users left out",
+			"server", serverID, "users", unplaced, "capacity", awg.LastSlot-awg.FirstSlot+1)
 	}
 	return peers
 }
@@ -289,16 +322,18 @@ func (m *Manager) AWGClientConfig(u *model.User, s *model.Settings) (string, err
 	if !s.AWGEnabled || s.AWGPublicKey == "" || s.AWGPort == 0 {
 		return "", fmt.Errorf("awg: lane is off on server %d", s.ServerID)
 	}
-	addr, ok := awg.ClientAddr(u.ID)
-	if !ok {
-		return "", fmt.Errorf("awg: user %d is beyond the tunnel subnet", u.ID)
-	}
-	priv, err := m.userWGKey(u)
-	if err != nil {
+	if err := m.claimAWG([]*model.User{u}); err != nil {
 		return "", err
 	}
+	addr, ok := awg.ClientAddr(u.AWGSlot)
+	if !ok {
+		return "", fmt.Errorf("awg: no address left on the tunnel subnet for user %d", u.ID)
+	}
+	if u.WGPrivateKey == "" {
+		return "", fmt.Errorf("awg: stored key for user %d is unreadable", u.ID)
+	}
 	return awg.ClientConfig{
-		PrivateKey:      priv,
+		PrivateKey:      u.WGPrivateKey,
 		Address:         addr,
 		DNS:             awgDNSOr(s),
 		Params:          awgParams(s.AWGParams),

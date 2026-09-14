@@ -399,25 +399,34 @@ func keyHex(b64 string) (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
-// Subnet is the tunnel network every server uses: /16 leaves room for 65,000
-// users, each at the address ClientAddr derives from their id, the same on
-// every server so a config for one server differs from the next only in the
-// endpoint and keys.
+// Subnet is the tunnel network every server uses: /16 leaves room for 65,533 users,
+// each at the address of the slot the panel handed them (ClientAddr), the same on
+// every server so a config for one server differs from the next only in the endpoint
+// and keys.
 var Subnet = netip.MustParsePrefix("10.66.0.0/16")
 
 // ServerAddr is the server's own tunnel address, the first host of Subnet.
 var ServerAddr = netip.MustParseAddr("10.66.0.1")
 
-// ClientAddr is a user's tunnel address: host index id+1 inside Subnet, so user
-// 1 is 10.66.0.2 and the two reserved hosts (.0.0, .0.1) are never handed out.
-// false when the id is beyond what the subnet holds.
-func ClientAddr(userID int64) (netip.Addr, bool) {
-	idx := userID + 1
-	if userID <= 0 || idx >= 65535 {
+// FirstSlot and LastSlot bound the host indexes a user can be given inside Subnet:
+// .0.0 is the network, .0.1 the server (ServerAddr) and .255.255 the broadcast.
+const (
+	FirstSlot = 2
+	LastSlot  = 65534
+)
+
+// ClientAddr is the tunnel address of a slot: host index slot inside Subnet, so slot
+// 2 is 10.66.0.2. false for a slot outside [FirstSlot, LastSlot], including 0 — a user
+// not given one.
+//
+// Slots used to be the user id plus one, and every address handed out before slots
+// were stored is still exactly that: those users kept it.
+func ClientAddr(slot int) (netip.Addr, bool) {
+	if slot < FirstSlot || slot > LastSlot {
 		return netip.Addr{}, false
 	}
 	base := Subnet.Addr().As4()
-	return netip.AddrFrom4([4]byte{base[0], base[1], byte(idx >> 8), byte(idx)}), true
+	return netip.AddrFrom4([4]byte{base[0], base[1], byte(slot >> 8), byte(slot)}), true
 }
 
 // Peer is one client on a server's tunnel.
