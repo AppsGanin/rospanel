@@ -597,27 +597,6 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	return nil
 }
 
-// ApplyRawIfChanged writes and applies data only when it differs from the config
-// already on disk, reporting whether it did.
-//
-// This exists because the node's desired state carries more than the Xray config —
-// certificates, hop ranges, the connection guard, per-user speed caps — and ANY
-// change to it re-runs the whole apply. Routing an unchanged config through
-// ApplyRaw restarts Xray, which drops every live connection on that node: changing
-// one user's speed limit would bounce the whole fleet.
-//
-// The "config unchanged" shortcut is conditional on Xray actually running. A stopped
-// process with a matching config on disk still needs starting, and skipping that
-// would leave the node dark until something else happened to reload it.
-func (s *Supervisor) ApplyRawIfChanged(data []byte) (bool, error) {
-	if s.Running() {
-		if cur, err := os.ReadFile(s.configPath); err == nil && bytes.Equal(cur, data) {
-			return false, nil
-		}
-	}
-	return true, s.ApplyRaw(data)
-}
-
 // ApplyRaw is Apply for a config that is already marshaled JSON — used by the node
 // agent, which receives the exact config the panel generated and applies it
 // verbatim (after substituting its own cert paths) rather than round-tripping it
@@ -847,39 +826,32 @@ func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
 		return fmt.Errorf("xray binary unavailable")
 	}
 	for _, in := range inbounds {
-		if in.Tag == "" {
-			return fmt.Errorf("inbound with no tag")
-		}
-		data, err := json.Marshal(map[string]any{"inbounds": []Inbound{in}})
-		if err != nil {
+		if err := s.replaceInbound(apiAddr, in.Tag, in); err != nil {
 			return err
 		}
-		f, err := os.CreateTemp("", "xray-adi-*.json")
-		if err != nil {
-			return err
-		}
-		if _, err := f.Write(data); err != nil {
-			f.Close()
-			os.Remove(f.Name())
-			return err
-		}
-		f.Close()
+	}
+	return nil
+}
 
-		// A failed removal is not fatal on its own — an inbound that isn't there is
-		// exactly the state the add below wants. Only the add has to succeed.
-		if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, in.Tag); err != nil {
-			slog.Warn("xray: could not remove inbound before re-adding it", "tag", in.Tag, "err", err)
-		}
-		out, err := s.runXray(statsTimeout, "api", "adi", "--server="+apiAddr, f.Name())
-		os.Remove(f.Name())
-		if err != nil {
-			return fmt.Errorf("api adi tag=%s: %w", in.Tag, err)
-		}
-		// The CLI exits 0 even when it added nothing, so the output is the only
-		// evidence. Leaving that unchecked is how a lane could quietly stay down.
-		if bytes.Contains(out, []byte("failed to")) {
-			return fmt.Errorf("api adi tag=%s: %s", in.Tag, bytes.TrimSpace(out))
-		}
+// replaceInbound is ReplaceInbounds for one inbound, given in any form that marshals
+// to an inbound — a typed Inbound from the generator or a node's decoded config entry.
+func (s *Supervisor) replaceInbound(apiAddr, tag string, inbound any) error {
+	if tag == "" {
+		return fmt.Errorf("inbound with no tag")
+	}
+	// A failed removal is not fatal on its own — an inbound that isn't there is
+	// exactly the state the add below wants. Only the add has to succeed.
+	if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, tag); err != nil {
+		slog.Warn("xray: could not remove inbound before re-adding it", "tag", tag, "err", err)
+	}
+	out, err := s.runXrayFile(statsTimeout, "xray-adi-*.json", map[string]any{"inbounds": []any{inbound}}, "api", "adi", "--server="+apiAddr)
+	if err != nil {
+		return fmt.Errorf("api adi tag=%s: %w", tag, err)
+	}
+	// The CLI exits 0 even when it added nothing, so the output is the only
+	// evidence. Leaving that unchecked is how a lane could quietly stay down.
+	if bytes.Contains(out, []byte("failed to")) {
+		return fmt.Errorf("api adi tag=%s: %s", tag, bytes.TrimSpace(out))
 	}
 	return nil
 }
