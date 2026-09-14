@@ -3,6 +3,7 @@ package datasec
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -126,5 +127,56 @@ func TestGuardSurvivesOlderSchema(t *testing.T) {
 	}
 	if !got {
 		t.Fatal("guard missed the one encrypted column an older install has")
+	}
+}
+
+// TestInstalledKeyCipher holds the cipher Init keeps to the one built from the key on
+// demand: a value sealed either way opens either way, a second Init with another key
+// seals and opens under that key only, and plaintext passes through untouched.
+func TestInstalledKeyCipher(t *testing.T) {
+	saved, savedAEAD := key, keyAEAD
+	t.Cleanup(func() { key, keyAEAD = saved, savedAEAD })
+
+	dirA := t.TempDir()
+	if err := Init(dirA); err != nil {
+		t.Fatal(err)
+	}
+	kA, err := ReadKey(dirA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := Encrypt("hunter2")
+	if err != nil || !strings.HasPrefix(sealed, encPrefix) {
+		t.Fatalf("encrypt: %q %v", sealed, err)
+	}
+	if pt, err := DecryptWith(kA, sealed); err != nil || pt != "hunter2" {
+		t.Fatalf("installed seal, explicit open: %q %v", pt, err)
+	}
+	byHand, err := EncryptWith(kA, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pt, err := Decrypt(byHand); err != nil || pt != "correct horse" {
+		t.Fatalf("explicit seal, installed open: %q %v", pt, err)
+	}
+	if again, _ := Encrypt(sealed); again != sealed {
+		t.Fatal("an already sealed value was sealed twice")
+	}
+	if pt, err := Decrypt("plain"); err != nil || pt != "plain" {
+		t.Fatalf("plaintext: %q %v", pt, err)
+	}
+
+	if err := Init(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decrypt(sealed); err == nil {
+		t.Fatal("a value sealed under the old key opened under the new one")
+	}
+	fresh, _ := Encrypt("hunter2")
+	if _, err := DecryptWith(kA, fresh); err == nil {
+		t.Fatal("the new key's value opened under the old key: the cipher was not rebuilt")
+	}
+	if pt, err := Decrypt(fresh); err != nil || pt != "hunter2" {
+		t.Fatalf("new key round trip: %q %v", pt, err)
 	}
 }
