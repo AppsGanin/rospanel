@@ -30,7 +30,12 @@ const (
 	encPrefix = "enc:v1:"
 )
 
-var key []byte
+// key is the installed key and keyAEAD the cipher built from it; installKey sets
+// both, so one is never there without the other.
+var (
+	key     []byte
+	keyAEAD cipher.AEAD
+)
 
 // Init loads or creates the per-install encryption key. Call once before opening the store.
 func Init(dataDir string) error {
@@ -40,8 +45,7 @@ func Init(dataDir string) error {
 		if len(b) != keySize {
 			return errors.New("secrets.key: wrong size")
 		}
-		key = b
-		return nil
+		return installKey(b)
 	}
 	if !os.IsNotExist(err) {
 		return err
@@ -63,8 +67,7 @@ func Init(dataDir string) error {
 	if err := os.WriteFile(path, k, 0o600); err != nil {
 		return err
 	}
-	key = k
-	return nil
+	return installKey(k)
 }
 
 func dbHasEncryptedSecrets(dbPath string) (bool, error) {
@@ -136,10 +139,10 @@ func Derive(label string) ([]byte, bool) {
 
 // Encrypt returns s unchanged when empty; otherwise an enc:v1:… blob.
 func Encrypt(s string) (string, error) {
-	if s == "" || key == nil {
+	if s == "" || key == nil || strings.HasPrefix(s, encPrefix) {
 		return s, nil
 	}
-	return EncryptWith(key, s)
+	return seal(keyAEAD, s)
 }
 
 // EncryptWith encrypts one value under the given key rather than the installed one —
@@ -152,20 +155,11 @@ func EncryptWith(k []byte, s string) (string, error) {
 	if len(k) != keySize {
 		return "", errors.New("no key to encrypt with")
 	}
-	block, err := aes.NewCipher(k)
+	gcm, err := newAEAD(k)
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", err
-	}
-	out := gcm.Seal(nonce, nonce, []byte(s), nil)
-	return encPrefix + base64.RawStdEncoding.EncodeToString(out), nil
+	return seal(gcm, s)
 }
 
 // Decrypt returns plaintext; values without enc:v1: pass through (legacy rows).
@@ -173,7 +167,7 @@ func Decrypt(s string) (string, error) {
 	if s == "" || !strings.HasPrefix(s, encPrefix) || key == nil {
 		return s, nil
 	}
-	return DecryptWith(key, s)
+	return open(keyAEAD, s)
 }
 
 // ReadKey loads the encryption key a data directory carries, without installing it.
@@ -202,15 +196,45 @@ func DecryptWith(k []byte, s string) (string, error) {
 	if len(k) != keySize {
 		return "", errors.New("no key to decrypt with")
 	}
-	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(s, encPrefix))
+	gcm, err := newAEAD(k)
 	if err != nil {
 		return "", err
 	}
+	return open(gcm, s)
+}
+
+// installKey makes k the panel's key, together with the cipher built from it. The
+// cipher is built here once rather than per value: its setup cost more than the
+// decryption itself (~800ns a value against ~100ns), and a read of the user list
+// decrypts two fields per user — with 5000 users that setup was a quarter of the read.
+func installKey(k []byte) error {
+	gcm, err := newAEAD(k)
+	if err != nil {
+		return err
+	}
+	key, keyAEAD = k, gcm
+	return nil
+}
+
+func newAEAD(k []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(k)
 	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func seal(gcm cipher.AEAD, s string) (string, error) {
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
+	out := gcm.Seal(nonce, nonce, []byte(s), nil)
+	return encPrefix + base64.RawStdEncoding.EncodeToString(out), nil
+}
+
+func open(gcm cipher.AEAD, s string) (string, error) {
+	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(s, encPrefix))
 	if err != nil {
 		return "", err
 	}
