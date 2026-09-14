@@ -30,9 +30,13 @@ func TestCountInboundUsers(t *testing.T) {
 		{Tag: "v", Settings: VLESSInboundSettings{Clients: []VLESSClient{{Email: "a"}, {Email: "b"}}}},
 		{Tag: "t", Settings: TrojanInboundSettings{Clients: []TrojanClient{{Email: "c"}}}},
 		{Tag: "h", Settings: HysteriaInboundSettings{Users: []HysteriaClient{{Email: "d"}, {Email: "e"}}}},
+		// Shadowsocks-2022 takes adu, and xray counts its users in the total (checked
+		// against 26.7.28). Leaving it out made every live add to a user granted a
+		// Shadowsocks inbound report one more than expected, fail, and restart Xray.
+		{Tag: "s", Settings: ShadowsocksInboundSettings{Users: []ShadowsocksClient{{Email: "f"}}}},
 		{Tag: "unknown", Settings: struct{}{}},
 	}
-	if got, want := countInboundUsers(in), 5; got != want {
+	if got, want := countInboundUsers(in), 6; got != want {
 		t.Errorf("countInboundUsers = %d, want %d", got, want)
 	}
 	if got := countInboundUsers(nil); got != 0 {
