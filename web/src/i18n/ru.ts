@@ -996,6 +996,7 @@ const ru = {
       apiPaymentProvider: "API · платёжный провайдер",
       apiRegApproved: "API · заявка одобрена",
       apiSystemProxy: "API · системный прокси",
+      apiPlacement: "API · размещение сервера",
       apiRegRejected: "API · заявка отклонена",
       apiUserGroups: "API · группы пользователя",
       apiWebhookAdded: "API · вебхук добавлен",

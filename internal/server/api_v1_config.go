@@ -51,6 +51,14 @@ type apiSettingsView struct {
 	SubPath            string   `json:"sub_path"`
 	WarpEnabled        bool     `json:"warp_enabled"`
 	WarpRegistered     bool     `json:"warp_registered"`
+	// SubOrderMode is how a subscription orders servers: manual | nearest | load |
+	// nearest_load | random.
+	SubOrderMode string `json:"sub_order_mode"`
+	// SubHappCrypt hands Happ the subscription as an encrypted happ://crypt4/ link.
+	SubHappCrypt bool `json:"sub_happ_crypt"`
+	// TrustedNets are the IPs and networks no automatic ban touches, as stored
+	// (normalised to prefixes).
+	TrustedNets []string `json:"trusted_nets"`
 }
 
 // apiSettingsReq is a PARTIAL update: every field is a pointer, and only the ones
@@ -72,6 +80,10 @@ type apiSettingsReq struct {
 	DeviceCountMode    *string `json:"device_count_mode"`
 	LocalBackupCron    *string `json:"local_backup_cron"`
 	LocalBackupKeep    *int    `json:"local_backup_keep"`
+	SubOrderMode       *string `json:"sub_order_mode"`
+	SubHappCrypt       *bool   `json:"sub_happ_crypt"`
+	// TrustedNets replaces the whole list; an empty array trusts nobody.
+	TrustedNets *[]string `json:"trusted_nets"`
 }
 
 func (rt *Router) apiSettingsPayload() (*apiSettingsView, error) {
@@ -101,6 +113,9 @@ func (rt *Router) apiSettingsPayload() (*apiSettingsView, error) {
 		SubPath:            set.SubPathOr(),
 		WarpEnabled:        set.WarpEnabled,
 		WarpRegistered:     set.WarpRegistered(),
+		SubOrderMode:       set.SubOrderMode,
+		SubHappCrypt:       set.SubHappCrypt,
+		TrustedNets:        rt.mgr.TrustedNets(),
 	}, nil
 }
 
@@ -138,6 +153,18 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		newDecoy = h
+	}
+	// The same up-front judgement for the two fields whose refusal would otherwise come
+	// after the fields ahead of them had already been written.
+	if req.SubOrderMode != nil && !model.ValidOrderMode(*req.SubOrderMode) {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "unknown sub_order_mode")
+		return
+	}
+	if req.TrustedNets != nil {
+		if _, err := model.NormalizeTrustedNets(*req.TrustedNets); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
 	}
 	// Each apply is the manager method the panel screen calls, so validation, audit
 	// rows and the Xray reconcile that some of them trigger all behave identically.
@@ -199,6 +226,16 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 	if err := rt.apiApplyLocalBackup(req); err != nil {
 		writeAPIManagerErr(w, err)
 		return
+	}
+	if err := rt.apiApplySub(req); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if req.TrustedNets != nil {
+		if err := rt.mgr.SaveTrustedNets(*req.TrustedNets); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
 	}
 	view, err := rt.apiSettingsPayload()
 	if err != nil {
@@ -591,4 +628,24 @@ func (rt *Router) syncDecoyFromSettings() {
 		return // an unknown template: keep serving the one that works
 	}
 	rt.setDecoy(h)
+}
+
+// apiApplySub writes the subscription fields. They are saved together with the rest
+// of the subscription settings, so the current row is read and only what was sent is
+// overlaid — the same save the panel's subscriptions screen makes.
+func (rt *Router) apiApplySub(req apiSettingsReq) error {
+	if req.SubOrderMode == nil && req.SubHappCrypt == nil {
+		return nil
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		return err
+	}
+	if req.SubOrderMode != nil {
+		set.SubOrderMode = *req.SubOrderMode
+	}
+	if req.SubHappCrypt != nil {
+		set.SubHappCrypt = *req.SubHappCrypt
+	}
+	return rt.mgr.SaveSubSettings(set)
 }

@@ -47,6 +47,18 @@ type (
 		// its last day).
 		TrafficResetDay *int `json:"traffic_reset_day,omitempty"`
 	}
+	// apiPlacementReq is a partial edit of one server's placement: where it sits in
+	// subscriptions and its traffic cap. A nil field keeps the current value.
+	apiPlacementReq struct {
+		Country         *string `json:"country,omitempty"`           // ISO-2, "" = detect from the host
+		SortWeight      *int    `json:"sort_weight,omitempty"`       // higher sorts first, -1000..1000
+		Capacity        *int    `json:"capacity,omitempty"`          // users the server is meant to carry, 0 = none stated
+		HideWhenFull    *bool   `json:"hide_when_full,omitempty"`    // drop out of subscriptions while at capacity
+		TrafficLimit    *int64  `json:"traffic_limit,omitempty"`     // bytes per period, 0 = no cap
+		TrafficPeriod   *string `json:"traffic_period,omitempty"`    // month | day
+		TrafficResetDay *int    `json:"traffic_reset_day,omitempty"` // 1-31: the day a monthly cap starts over
+		HideWhenOver    *bool   `json:"hide_when_over,omitempty"`    // drop out of subscriptions once the cap is reached
+	}
 	apiSetNodeEnabledReq struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -75,6 +87,98 @@ func (rt *Router) apiSetServerProxy(w http.ResponseWriter, r *http.Request, id i
 	for _, v := range views {
 		if v.ID == id {
 			writeAPIData(w, http.StatusOK, v.Proxy)
+			return
+		}
+	}
+	writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+}
+
+// applyTo overlays the fields the request carries onto a placement.
+func (r apiPlacementReq) applyTo(p *model.Placement) {
+	if r.Country != nil {
+		p.Country = *r.Country
+	}
+	if r.SortWeight != nil {
+		p.Weight = *r.SortWeight
+	}
+	if r.Capacity != nil {
+		p.Capacity = *r.Capacity
+	}
+	if r.HideWhenFull != nil {
+		p.HideWhenFull = *r.HideWhenFull
+	}
+	if r.TrafficLimit != nil {
+		p.TrafficLimit = *r.TrafficLimit
+	}
+	if r.TrafficPeriod != nil {
+		p.TrafficPeriod = *r.TrafficPeriod
+	}
+	if r.TrafficResetDay != nil {
+		p.TrafficResetDay = *r.TrafficResetDay
+	}
+	if r.HideWhenOver != nil {
+		p.HideWhenOver = *r.HideWhenOver
+	}
+}
+
+// apiSetServerPlacement edits one server's placement — {id} 0 is the panel's own
+// machine, which PATCH /v1/nodes/{id} cannot reach: the master has no node row, and
+// its placement lives in settings. Answers with the placement as stored, so a caller
+// learns what a value was normalised to (a country upper-cased, a reset day of 1
+// stored as the default, a cleared cap taking its period with it).
+func (rt *Router) apiSetServerPlacement(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiPlacementReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if id == model.LocalNodeID {
+		set, err := rt.mgr.Settings()
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		p := set.MasterPlacement
+		req.applyTo(&p)
+		if err := rt.mgr.SetMasterPlacement(p); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	} else {
+		node, err := rt.mgr.GetNode(id)
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		if node == nil {
+			writeAPIErr(w, http.StatusNotFound, "not_found", "no such server")
+			return
+		}
+		edit := store.NodeEdit{
+			Name: node.Name, Host: node.Host, DecoyTemplate: node.DecoyTemplate,
+			VLESS: node.VLESSEnabled, Hysteria: node.HysteriaEnabled, Reality: node.RealityEnabled,
+			Routing: node.Routing, XrayDNS: node.XrayDNS,
+			WarpEnabled: node.WarpEnabled, OperaEnabled: node.OperaEnabled, OperaCountry: node.OperaCountry,
+			TrafficCoefficient: node.TrafficCoefficient, Placement: node.Placement,
+		}
+		req.applyTo(&edit.Placement)
+		if err := edit.Placement.Validate(); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		edit.Placement = edit.Placement.Normalized()
+		if err := rt.mgr.UpdateNode(id, edit); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+	}
+	views, err := rt.mgr.NodeViews()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	for _, v := range views {
+		if v.ID == id {
+			writeAPIData(w, http.StatusOK, v.Placement)
 			return
 		}
 	}
@@ -206,30 +310,11 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	if req.TrafficCoefficient != nil {
 		edit.TrafficCoefficient = *req.TrafficCoefficient
 	}
-	if req.Country != nil {
-		edit.Placement.Country = *req.Country
-	}
-	if req.SortWeight != nil {
-		edit.Placement.Weight = *req.SortWeight
-	}
-	if req.Capacity != nil {
-		edit.Placement.Capacity = *req.Capacity
-	}
-	if req.HideWhenFull != nil {
-		edit.Placement.HideWhenFull = *req.HideWhenFull
-	}
-	if req.TrafficLimit != nil {
-		edit.Placement.TrafficLimit = *req.TrafficLimit
-	}
-	if req.TrafficPeriod != nil {
-		edit.Placement.TrafficPeriod = *req.TrafficPeriod
-	}
-	if req.HideWhenOver != nil {
-		edit.Placement.HideWhenOver = *req.HideWhenOver
-	}
-	if req.TrafficResetDay != nil {
-		edit.Placement.TrafficResetDay = *req.TrafficResetDay
-	}
+	apiPlacementReq{
+		Country: req.Country, SortWeight: req.SortWeight, Capacity: req.Capacity,
+		HideWhenFull: req.HideWhenFull, TrafficLimit: req.TrafficLimit, TrafficPeriod: req.TrafficPeriod,
+		TrafficResetDay: req.TrafficResetDay, HideWhenOver: req.HideWhenOver,
+	}.applyTo(&edit.Placement)
 	if err := edit.Placement.Validate(); err != nil {
 		writeAPIManagerErr(w, err)
 		return
