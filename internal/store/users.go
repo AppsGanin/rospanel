@@ -1032,7 +1032,7 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 	if len(users) == 0 {
 		return
 	}
-	counts, _ := s.ActiveDeviceCounts(now - model.DeviceOnlineWindow)
+	counts, _ := s.activeDeviceCounts(users, now-model.DeviceOnlineWindow)
 	// The displayed count stays honest — it is how many addresses were seen — but it only
 	// DRIVES the status while addresses are what enforces the limit. In "hwid" mode they
 	// do not, and a phone changing network still read as "device limit exceeded" (issue
@@ -1060,6 +1060,24 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 			active, limit,
 		)
 	}
+}
+
+// activeDeviceCounts is ActiveDeviceCounts for the users being read. A read of one
+// user — every subscription fetch, bot command and API lookup — counted the devices
+// of everyone online to keep a single number: 2.7ms with 5000 users online. One user
+// is counted from their own rows instead, the way the working-set condition does, in
+// 0.05ms.
+func (s *Store) activeDeviceCounts(users []model.User, since int64) (map[int64]int, error) {
+	if len(users) != 1 {
+		return s.ActiveDeviceCounts(since)
+	}
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(DISTINCT ip) FROM connections WHERE user_id = ? AND last_seen > ?`,
+		users[0].ID, since).Scan(&n); err != nil {
+		return nil, err
+	}
+	return map[int64]int{users[0].ID: n}, nil
 }
 
 // StampDeviceOverLimit records, for every user, when they first went over their device
