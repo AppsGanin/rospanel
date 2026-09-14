@@ -5,12 +5,12 @@ import {
   deleteGroup,
   getGroupTargets,
   listGroups,
-  listUsers,
+  listUsersBrief,
   setGroupMembers,
   updateGroup,
   type Group,
   type GroupTarget,
-  type User,
+  type UserBrief,
 } from "./api";
 import { fmtSpeed, speedLimitOptions, statusInfo } from "./format";
 import { useAction, useShowMore } from "./hooks";
@@ -70,7 +70,7 @@ export function GroupsPanel() {
   const { t } = useTranslation();
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [targets, setTargets] = useState<GroupTarget[] | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserBrief[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [confirmDel, setConfirmDel] = useState<Group | null>(null);
   const { busy, run } = useAction();
@@ -80,7 +80,7 @@ export function GroupsPanel() {
   const reload = () => listGroups().then(setGroups);
 
   useEffect(() => {
-    Promise.all([listGroups(), getGroupTargets(), listUsers()])
+    Promise.all([listGroups(), getGroupTargets(), listUsersBrief()])
       .then(([g, t, u]) => {
         setGroups(g);
         setTargets(t);
@@ -532,7 +532,7 @@ function MembersTable({
   members,
   onChange,
 }: {
-  users: User[];
+  users: UserBrief[];
   members: Set<number>;
   onChange: (m: Set<number>) => void;
 }) {
@@ -544,7 +544,7 @@ function MembersTable({
       ? users.filter(
           (u) =>
             u.name.toLowerCase().includes(q) ||
-            u.system_email.toLowerCase().includes(q),
+            `u${u.id}`.includes(q),
         )
       : users;
     // Selected members first, so the current set is visible without scrolling.
@@ -624,7 +624,7 @@ function MembersTable({
                       {u.name}
                     </span>
                     <Mono className="truncate text-[11px] text-ink-muted">
-                      {u.system_email}
+                      {`u${u.id}`}
                     </Mono>
                     <span
                       className={cn(

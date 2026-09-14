@@ -374,6 +374,9 @@ func (rt *Router) panelMux() http.Handler {
 	// End users, the journal and stats are the operator's job — everything below is
 	// open from RoleOperator up.
 	authedOp("GET /api/users", rt.listUsers)
+	authedOp("GET /api/users/page", rt.listUsersPage)
+	authedOp("GET /api/users/brief", rt.listUsersBrief)
+	authedOpID("GET /api/users/{id}", rt.getUser)
 	authedOp("POST /api/users", rt.createUser)
 	authedOp("POST /api/users/bulk", rt.bulkUsers)
 	authedOpID("DELETE /api/users/{id}", rt.deleteUser)

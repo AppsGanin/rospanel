@@ -1593,7 +1593,65 @@ export const disableTOTP = (current_password: string) =>
 
 export const logout = () => api<{ ok: boolean }>('api/logout', { method: 'POST' })
 
-export const listUsers = () => api<User[]>('api/users')
+// A user as one line of the users list: what the row draws and the filters read. The
+// links and the subscription URL come with the whole user (getUser), for the card.
+export type UserRow = Pick<
+  User,
+  | 'id'
+  | 'name'
+  | 'system_email'
+  | 'status'
+  | 'enabled'
+  | 'data_limit'
+  | 'expire_at'
+  | 'hold_seconds'
+  | 'used_up'
+  | 'used_down'
+  | 'last_seen'
+  | 'device_limit'
+  | 'active_devices'
+  | 'tags'
+  | 'groups'
+>
+// One window of the users list, and what the page's controls need beside it.
+export interface UsersPage {
+  users: UserRow[]
+  total: number // users the filter matches
+  all: number // every user
+  counts: Record<string, number> // per filter chip, over every user
+  tags: TagCount[]
+  ids?: number[] // every matching id, in list order, when asked for
+}
+export interface UsersPageQuery {
+  q?: string
+  filter?: string
+  tag?: string
+  sort?: string
+  lang?: string
+  offset?: number
+  limit?: number
+  ids?: boolean
+}
+export const listUsersPage = (p: UsersPageQuery) => {
+  const q = new URLSearchParams()
+  if (p.q) q.set('q', p.q)
+  if (p.filter && p.filter !== 'all') q.set('filter', p.filter)
+  if (p.tag) q.set('tag', p.tag)
+  if (p.sort) q.set('sort', p.sort)
+  if (p.lang) q.set('lang', p.lang)
+  if (p.offset) q.set('offset', String(p.offset))
+  if (p.limit !== undefined) q.set('limit', String(p.limit))
+  if (p.ids) q.set('ids', '1')
+  return api<UsersPage>(`api/users/page?${q}`)
+}
+export const getUser = (id: number) => api<User>(`api/users/${id}`)
+// A user as a picker names them.
+export interface UserBrief {
+  id: number
+  name: string
+  status: string
+}
+export const listUsersBrief = () => api<UserBrief[]>('api/users/brief')
 // The user's subscription as an encrypted Happ link; "" while those are switched off.
 export const getUserHappLink = (id: number) => api<{ link: string }>(`api/users/${id}/happ-link`)
 

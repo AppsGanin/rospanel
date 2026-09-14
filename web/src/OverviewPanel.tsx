@@ -5,12 +5,11 @@ import {
   getStatsSeries,
   listEvents,
   listNodes,
-  listUsers,
+  listUsersPage,
   restartNodeXray,
   type DailyPoint,
   type NodeView,
   type SystemStatus,
-  type User,
   type UserEvent,
 } from "./api";
 import { ABUSE_WINDOW_DAYS } from "./AbuseList";
@@ -34,11 +33,6 @@ import {
   Skeletons,
 } from "./ui";
 import { ManagementCard } from "./Management";
-
-// EXPIRY_SOON is the window the dashboard counts subscriptions as running out in.
-// A week is what an operator can still act on: renew, message the customer, or let
-// it lapse deliberately.
-const EXPIRY_SOON_DAYS = 7;
 
 // SPARK_DAYS is how far back the traffic chart reaches. The panel keeps traffic per
 // DAY (model.TrafficDailyRetentionDays), not per hour, so this is a week of days
@@ -201,7 +195,10 @@ export function OverviewPanel() {
   const [live, setLive] = useState(true);
   const [nodes, setNodes] = useState<NodeView[]>([]);
   const [events, setEvents] = useState<UserEvent[] | null>(null);
-  const [users, setUsers] = useState<User[] | null>(null);
+  // How many subscriptions end within the week — counted by the server, the same count
+  // as the users page's "expiring" chip. A week is what an operator can still act on:
+  // renew, message the customer, or let it lapse deliberately.
+  const [expiring, setExpiring] = useState<number | null>(null);
   const [series, setSeries] = useState<DailyPoint[] | null>(null);
   const [hoverDay, setHoverDay] = useState<Bar | null>(null);
   const [abuse, setAbuse] = useState<number | null>(null);
@@ -253,9 +250,9 @@ export function OverviewPanel() {
   // flight shows a dash rather than holding the whole dashboard back.
   useEffect(() => {
     const load = () => {
-      listUsers()
-        .then(setUsers)
-        .catch(() => setUsers([]));
+      listUsersPage({ limit: 0 })
+        .then((p) => setExpiring(p.counts.expiring ?? 0))
+        .catch(() => setExpiring(0));
       getStatsSeries({ from: localDay(SPARK_DAYS - 1), to: localDay(0) })
         .then(setSeries)
         .catch(() => setSeries([]));
@@ -309,15 +306,6 @@ export function OverviewPanel() {
     .join(", ");
 
   const now = Date.now() / 1000;
-  const expiring =
-    users === null
-      ? null
-      : users.filter(
-          (u) =>
-            u.expire_at > 0 &&
-            u.expire_at > now &&
-            u.expire_at - now <= EXPIRY_SOON_DAYS * 86400,
-        ).length;
 
   // "vs yesterday" needs both days to be real: yesterday at zero makes any change
   // infinite, and a panel installed today has no yesterday to compare with.

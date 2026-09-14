@@ -1,18 +1,21 @@
 import { QRCodeSVG } from "qrcode.react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type BulkAction,
   bulkUsers,
   createUser,
   getBilling,
-  listUsers,
+  getUser,
+  listUsersPage,
   setResetPeriod,
   setUserPlan,
   type TariffPlan,
   type User,
+  type UserRow,
+  type UsersPage,
 } from "./api";
-import { useAction, useShowMore } from "./hooks";
+import { useAction, useDebounced } from "./hooks";
 import i18n, { currentLang } from "./i18n";
 import {
   dateToUnixEndOfDay,
@@ -93,21 +96,12 @@ const M_TRAFFIC = "col-start-3 row-start-2 flex justify-end";
 const EXTEND_PRESETS = [7, 30, 90, 180];
 
 // The list is chunked rather than paged: these are rows an operator scrolls, and a
-// page number is a second thing to keep track of for no gain.
+// page number is a second thing to keep track of for no gain. Each chunk is a request:
+// the server filters, sorts and counts, and sends only the rows asked for.
 const FIRST_CHUNK = 50;
-
-// EXPIRY_SOON_DAYS is what the "expiring" filter means, and it matches the
-// dashboard's own tile — the two must count the same accounts.
-const EXPIRY_SOON_DAYS = 7;
-
-// expSortKey orders by soonest expiry; "never" (0) sorts last. A term still waiting
-// for its first connection cannot end sooner than its full length from now.
-const expSortKey = (u: User) =>
-  u.expire_at > 0
-    ? u.expire_at
-    : u.hold_seconds > 0
-      ? Date.now() / 1000 + u.hold_seconds
-      : Infinity;
+// The most rows one request brings back (the server's own cap) — a refresh reloads
+// what is on screen in one go, up to this.
+const WINDOW_MAX = 1000;
 
 const sorts = () => [
   { value: "new", label: i18n.t("usersPanel.sNew") },
@@ -119,7 +113,8 @@ const sorts = () => [
 
 // Filter is what the chips above the list select. It is wider than User.status on
 // purpose: "online" and "expiring" are facts about a user that no status field
-// carries, and they are the two an operator filters by most.
+// carries, and they are the two an operator filters by most. The server decides who
+// falls under each; "expiring" means the same seven days as the dashboard's tile.
 type Filter =
   | "all"
   | "active"
@@ -137,29 +132,6 @@ const CHIPS: { value: Filter; key: string }[] = [
   { value: "disabled", key: "usersPanel.chipDisabled" },
   { value: "expired", key: "usersPanel.chipExpired" },
 ];
-
-function matches(u: User, f: Filter, now: number): boolean {
-  switch (f) {
-    case "active":
-      return u.status === "active";
-    case "online":
-      return isOnline(u.last_seen);
-    case "expiring":
-      return (
-        u.expire_at > 0 &&
-        u.expire_at > now &&
-        u.expire_at - now <= EXPIRY_SOON_DAYS * 86400
-      );
-    case "limited":
-      return u.status === "limited" || u.status === "device_limited";
-    case "disabled":
-      return u.status === "disabled";
-    case "expired":
-      return u.status === "expired";
-    default:
-      return true;
-  }
-}
 
 // The skeleton repeats the shape of the table, so the page does not rebuild itself
 // under the operator when the list lands.
@@ -229,18 +201,27 @@ export function UsersPanel({
   onTotal: (n: number) => void;
 }) {
   const { t } = useTranslation();
-  const [users, setUsers] = useState<User[]>([]);
+  // page is the latest answer — the counts, the tags and how many match; rows are the
+  // lines loaded so far under the current filter, one chunk after another.
+  const [page, setPage] = useState<UsersPage | null>(null);
+  const [rows, setRows] = useState<UserRow[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const [query, setQuery] = useState("");
+  const search = useDebounced(query.trim(), 250);
   const [filter, setFilter] = useState<Filter>("all");
-  // "" = any tag. Derived from the loaded list rather than fetched: the list already
-  // carries every user's tags, so the dropdown can never disagree with the rows.
+  // "" = any tag. The options come with every page, counted over all users, so the
+  // dropdown can never disagree with the rows.
   const [tagFilter, setTagFilter] = useState("");
   const [sort, setSort] = useState("new");
+  const filterKey = `${search}|${filter}|${tagFilter}|${sort}`;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Every id the current filter matches, fetched when "select all" is pressed: the
+  // rows on screen are only the chunks loaded so far.
+  const [matchIds, setMatchIds] = useState<{ key: string; ids: number[] } | null>(null);
   // pending is the bulk action currently in flight (null = none). Tracking the
   // specific action lets only the clicked button show a spinner, and keeps the
   // action bar from reflowing/jumping while one runs.
@@ -254,107 +235,109 @@ export function UsersPanel({
   const [listRef, wide, listWidth] = useWideBox(LIST_WIDE_MIN);
   const roomy = listWidth >= LIST_ROOMY_MIN;
 
+  // seq numbers the requests that replace the list, so an answer that arrives after
+  // the filter has moved on is dropped instead of drawn.
+  const seq = useRef(0);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
+  const filterKeyRef = useRef(filterKey);
+  filterKeyRef.current = filterKey;
+
+  const fetchWindow = useCallback(
+    (offset: number, limit: number) =>
+      listUsersPage({ q: search, filter, tag: tagFilter, sort, lang: currentLang(), offset, limit }),
+    [search, filter, tagFilter, sort],
+  );
+
+  // load replaces the list with its first `limit` rows under the current filter.
+  const load = useCallback(
+    (limit: number) => {
+      const my = ++seq.current;
+      return fetchWindow(0, limit)
+        .then((p) => {
+          if (my !== seq.current) return;
+          setPage(p);
+          setRows(p.users);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (my === seq.current) setLoaded(true);
+        });
+    },
+    [fetchWindow],
+  );
+
+  // A new question starts from the first chunk.
+  useEffect(() => {
+    load(FIRST_CHUNK);
+  }, [load]);
+
+  // refresh reloads what is on screen after a change, and the open card with it.
   const refresh = useCallback(() => {
-    listUsers()
-      .then((us) => {
-        setUsers(us);
-        setDetail((d) => (d ? (us.find((x) => x.id === d.id) ?? d) : d));
-        // Drop any selection that refers to users no longer present.
-        setSelected((prev) => {
-          const live = new Set(us.map((u) => u.id));
-          const kept = [...prev].filter((id) => live.has(id));
-          return kept.length === prev.size ? prev : new Set(kept);
+    setMatchIds(null);
+    load(Math.min(Math.max(rowsRef.current.length, FIRST_CHUNK), WINDOW_MAX));
+    const open = detailRef.current;
+    if (open) {
+      getUser(open.id)
+        .then((u) => setDetail((d) => (d && d.id === u.id ? u : d)))
+        .catch(() => {});
+    }
+  }, [load]);
+
+  const showMore = () => {
+    const my = seq.current;
+    setLoadingMore(true);
+    fetchWindow(rowsRef.current.length, FIRST_CHUNK)
+      .then((p) => {
+        if (my !== seq.current) return;
+        setPage(p);
+        // Users created or removed since the last chunk shift the offsets; a row that
+        // is already on screen is not drawn twice.
+        setRows((prev) => {
+          const have = new Set(prev.map((u) => u.id));
+          return [...prev, ...p.users.filter((u) => !have.has(u.id))];
         });
       })
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
+      .catch((e) => notifyError(errMessage(e)))
+      .finally(() => setLoadingMore(false));
+  };
+
+  // The card needs the whole user — the links and the subscription — which the list
+  // does not carry.
+  const openDetail = (id: number) => {
+    getUser(id)
+      .then(setDetail)
+      .catch((e) => notifyError(errMessage(e)));
+  };
+
+  const all = page?.all ?? 0;
+  const total = page?.total ?? 0;
+  const counts = page?.counts ?? {};
+  const tagOptions = page?.tags ?? [];
+  const rest = Math.max(0, total - rows.length);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    onTotal(all);
+  }, [all, onTotal]);
 
+  // A tag that disappears from every user drops out of the options, and a filter
+  // pinned to it falls back to "any".
   useEffect(() => {
-    onTotal(users.length);
-  }, [users.length, onTotal]);
+    if (page && tagFilter && !page.tags.some((o) => o.tag === tagFilter)) setTagFilter("");
+  }, [page, tagFilter]);
 
-  const now = Date.now() / 1000;
-
-  // Filtering and sorting are client-side: the full list is already loaded and stays
-  // snappy well into the hundreds, so this avoids any API round-trips.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `now` is deliberately out: it changes on every render and only the expiring chip reads it, where a second's drift cannot change the answer
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return users.filter(
-      (u) =>
-        matches(u, filter, now) &&
-        (tagFilter === "" || (u.tags ?? []).includes(tagFilter)) &&
-        (q === "" ||
-          u.name.toLowerCase().includes(q) ||
-          String(u.id) === q ||
-          u.system_email.toLowerCase() === q ||
-          (u.note ?? "").toLowerCase().includes(q) ||
-          (u.tags ?? []).some((tag) => tag.includes(q))),
-    );
-  }, [users, query, filter, tagFilter]);
-
-  // What each chip would find, so the operator can see the shape of the list before
-  // clicking. Counted over every user, not over the current filter — a chip that
-  // counted only what is already on screen would always read the same.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `now` is deliberately out: it changes on every render and only the expiring chip reads it, where a second's drift cannot change the answer
-  const counts = useMemo(() => {
-    const out = {} as Record<Filter, number>;
-    for (const c of CHIPS) out[c.value] = users.filter((u) => matches(u, c.value, now)).length;
-    out.all = users.length;
-    return out;
-  }, [users]);
-
-  // Every tag in use with how many users carry it, most used first, for the
-  // toolbar filter. A tag that disappears from every user drops out of the list,
-  // and a filter pinned to it falls back to "any" in the effect below.
-  const tagOptions = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const u of users) for (const tag of u.tags ?? []) map.set(tag, (map.get(tag) ?? 0) + 1);
-    return [...map.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([tag, count]) => ({ tag, count }));
-  }, [users]);
-  useEffect(() => {
-    if (tagFilter && !tagOptions.some((o) => o.tag === tagFilter)) setTagFilter("");
-  }, [tagFilter, tagOptions]);
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    switch (sort) {
-      case "name":
-        arr.sort((a, b) => a.name.localeCompare(b.name, currentLang()));
-        break;
-      case "traffic":
-        arr.sort((a, b) => b.used_up + b.used_down - (a.used_up + a.used_down));
-        break;
-      case "expiry":
-        arr.sort((a, b) => expSortKey(a) - expSortKey(b));
-        break;
-      case "online":
-        arr.sort((a, b) => b.last_seen - a.last_seen);
-        break;
-      default:
-        arr.sort((a, b) => b.id - a.id); // newest first
-    }
-    return arr;
-  }, [filtered, sort]);
-
-  // Chunked, not paged: `resetKey` collapses back to the first chunk whenever the
-  // result set becomes about something else.
-  const { shown, rest, showMore } = useShowMore(sorted, {
-    first: FIRST_CHUNK,
-    step: FIRST_CHUNK,
-    resetKey: `${query}|${filter}|${tagFilter}|${sort}`,
-  });
-
-  const filteredIds = useMemo(() => filtered.map((u) => u.id), [filtered]);
+  // Which ids "all matching" means, when it is known: fetched for this filter, or
+  // every matching row already on screen.
+  const knownIds =
+    matchIds && matchIds.key === filterKey
+      ? matchIds.ids
+      : page && rows.length >= total
+        ? rows.map((u) => u.id)
+        : null;
   const allFilteredSelected =
-    filteredIds.length > 0 && filteredIds.every((id) => selected.has(id));
+    !!knownIds && knownIds.length > 0 && knownIds.every((id) => selected.has(id));
 
   const toggleOne = (id: number, on: boolean) =>
     setSelected((prev) => {
@@ -364,15 +347,33 @@ export function UsersPanel({
       return next;
     });
 
-  const toggleAllFiltered = () =>
-    setSelected((prev) => {
-      if (allFilteredSelected) {
+  const toggleAllFiltered = async () => {
+    if (allFilteredSelected && knownIds) {
+      setSelected((prev) => {
         const next = new Set(prev);
-        filteredIds.forEach((id) => next.delete(id));
+        for (const id of knownIds) next.delete(id);
         return next;
+      });
+      return;
+    }
+    let ids = knownIds;
+    if (!ids) {
+      const key = filterKey;
+      try {
+        ids = (await listUsersPage({ q: search, filter, tag: tagFilter, sort, limit: 0, ids: true })).ids ?? [];
+      } catch (e) {
+        notifyError(errMessage(e));
+        return;
       }
-      return new Set([...prev, ...filteredIds]);
-    });
+      // The filter moved on while the ids were on their way: they answer a question
+      // no longer on screen, and selecting them would pick users the operator no
+      // longer sees.
+      if (key !== filterKeyRef.current) return;
+      setMatchIds({ key, ids });
+    }
+    const add = ids;
+    setSelected((prev) => new Set([...prev, ...add]));
+  };
 
   const clearSelection = () => setSelected(new Set());
   const clearFilters = () => {
@@ -499,7 +500,7 @@ export function UsersPanel({
 
   // Nothing created yet is a different screen from "your filter matched nothing":
   // one needs a first user, the other needs the filter cleared.
-  if (users.length === 0) {
+  if (all === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <EmptyState
@@ -530,12 +531,12 @@ export function UsersPanel({
 
         <FilterChip
           label={t("usersPanel.chipAll")}
-          count={counts.all}
+          count={all}
           active={filter === "all"}
           onClick={() => setFilter("all")}
         />
         {/* A chip nothing matches is a question with no answer — it is not drawn. */}
-        {CHIPS.filter((c) => counts[c.value] > 0).map((c) => (
+        {CHIPS.filter((c) => (counts[c.value] ?? 0) > 0).map((c) => (
           <FilterChip
             key={c.value}
             label={t(c.key as "usersPanel.chipActive")}
@@ -598,7 +599,7 @@ export function UsersPanel({
       </div>
 
       <div ref={listRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {filtered.length === 0 ? (
+        {total === 0 ? (
           <EmptyState
             title={t("usersPanel.notFoundTitle")}
             body={t("usersPanel.notFoundBody")}
@@ -621,7 +622,7 @@ export function UsersPanel({
             <SelectCheck
               checked={allFilteredSelected}
               onChange={toggleAllFiltered}
-              label={t("usersPanel.selectAll", { count: filtered.length })}
+              label={t("usersPanel.selectAll", { count: total })}
             />
             <span className="truncate">{t("usersPanel.colUser")}</span>
             <span className="truncate">{t("usersPanel.colStatus")}</span>
@@ -635,7 +636,7 @@ export function UsersPanel({
             )}
           </div>
           )}
-          {shown.map((u) => (
+          {rows.map((u) => (
             <UserRow
               key={u.id}
               u={u}
@@ -643,7 +644,7 @@ export function UsersPanel({
               roomy={roomy}
               checked={selected.has(u.id)}
               onToggle={(v) => toggleOne(u.id, v)}
-              onDetail={() => setDetail(u)}
+              onDetail={() => openDetail(u.id)}
             />
           ))}
           </>
@@ -687,13 +688,13 @@ export function UsersPanel({
                 {t("usersPanel.clearSelection")}
               </button>
               <span className="ml-auto text-xs text-ink-muted">
-                {t("usersPanel.shownOf", { shown: shown.length, total: users.length })}
+                {t("usersPanel.shownOf", { shown: rows.length, total: all })}
               </span>
             </div>
           ) : (
             <div className="flex items-center gap-3">
               <span className="text-xs text-ink-muted">
-                {t("usersPanel.shownOf", { shown: shown.length, total: users.length })}
+                {t("usersPanel.shownOf", { shown: rows.length, total: all })}
               </span>
               {rest > 0 && (
                 <Button
@@ -701,6 +702,7 @@ export function UsersPanel({
                   variant="outline"
                   color="gray"
                   className="ml-auto"
+                  loading={loadingMore}
                   onClick={showMore}
                 >
                   {t("common.showMoreCount", { n: Math.min(rest, FIRST_CHUNK) })}
@@ -773,7 +775,7 @@ function statusTone(status: string): string {
 // TrafficCell is used-against-limit at a glance: a 52px bar and the figures. Without
 // a limit there is nothing to fill, so it is the figure alone — a full bar for
 // "unlimited" would read as an account about to be cut off.
-function TrafficCell({ u }: { u: User }) {
+function TrafficCell({ u }: { u: UserRow }) {
   const used = u.used_up + u.used_down;
   const pct = u.data_limit > 0 ? Math.min(100, (used / u.data_limit) * 100) : 0;
   return (
@@ -802,7 +804,7 @@ function UserRow({
   onToggle,
   onDetail,
 }: {
-  u: User;
+  u: UserRow;
   wide: boolean;
   roomy: boolean;
   checked: boolean;
