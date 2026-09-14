@@ -18,6 +18,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 )
 
 // The external REST API is a stable, versioned contract for a surrounding system
@@ -191,6 +192,7 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/devices/unbind", rt.apiUnbindDevice)
 	id("GET /v1/users/{id}/events", rt.apiUserEvents)
 	id("GET /v1/users/{id}/abuse", rt.apiUserAbuse)
+	id("GET /v1/users/{id}/happ-link", rt.apiUserHappLink)
 
 	hf("GET /v1/billing/providers", rt.apiListProviders)
 	hf("GET /v1/billing/plans", rt.apiListPlans)
@@ -253,6 +255,7 @@ func (rt *Router) apiMux() http.Handler {
 	nodeAudit("POST /v1/nodes/{id}/update", "apiNodeUpdate", idFn(rt.apiUpdateNode))
 	nodeAudit("POST /v1/nodes/update-all", "apiNodesUpdateAll", rt.apiUpdateAllNodes)
 	nodeAudit("POST /v1/nodes/{id}/proxy", "apiSystemProxy", idFn(rt.apiSetServerProxy))
+	nodeAudit("POST /v1/nodes/{id}/placement", "apiPlacement", idFn(rt.apiSetServerPlacement))
 	id("GET /v1/nodes/{id}/health", rt.apiNodeHealth)
 	id("GET /v1/nodes/{id}/logs", rt.apiNodeLogs)
 
@@ -782,6 +785,39 @@ func (rt *Router) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.apiUserViewStatus(w, *fresh, http.StatusCreated)
+}
+
+// apiHappLinkResp is the answer of GET /v1/users/{id}/happ-link.
+type apiHappLinkResp struct {
+	// Link is the user's subscription as a happ://crypt4/ link, "" while encrypted
+	// Happ links are switched off (sub_happ_crypt).
+	Link string `json:"link"`
+}
+
+// apiUserHappLink returns the user's subscription as an encrypted Happ link. Its own
+// call rather than a field of the user object: each link is an RSA-4096 encryption,
+// and a user list of thousands would pay for thousands nobody asked for.
+func (rt *Router) apiUserHappLink(w http.ResponseWriter, _ *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeAPIErr(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		writeAPIManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	link, err := sub.HappLink(set, u.SubToken)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, apiHappLinkResp{Link: link})
 }
 
 func (rt *Router) apiGetUser(w http.ResponseWriter, _ *http.Request, id int64) {

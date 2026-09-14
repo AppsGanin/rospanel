@@ -143,6 +143,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	readIDs := map[string]int64{
 		"get_users_by_id":             user.ID,
 		"get_users_by_id_abuse":       user.ID,
+		"get_users_by_id_happ_link":   user.ID,
 		"get_users_by_id_connections": user.ID,
 		"get_users_by_id_devices":     user.ID,
 		"get_users_by_id_events":      user.ID,
@@ -327,6 +328,9 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 			"http_enabled": false, "http_port": 0, "accounts": []any{},
 		},
 	})
+	call("post_nodes_by_id_placement", map[string]any{
+		"id": model.LocalNodeID, "body": map[string]any{"traffic_limit": 1 << 40, "traffic_reset_day": 14},
+	})
 	call("post_nodes_by_id_update", map[string]any{"id": added})
 	call("post_nodes_update_all", map[string]any{})
 
@@ -372,7 +376,8 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 			"name": "ghost", "protocol": model.InbVLESS, "port": 21050,
 			"transport": model.TrWS, "security": model.SecTLS, "path": "/ghost",
 		},
-		"post_nodes_by_id_enabled": map[string]any{"enabled": false},
+		"post_nodes_by_id_enabled":   map[string]any{"enabled": false},
+		"post_nodes_by_id_placement": map[string]any{"sort_weight": 1},
 		"post_nodes_by_id_proxy": map[string]any{
 			"socks_enabled": false, "socks_port": 0,
 			"http_enabled": false, "http_port": 0, "accounts": []any{},

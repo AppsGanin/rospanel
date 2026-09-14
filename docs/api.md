@@ -172,7 +172,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users` | Create a user. |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
-| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry / device limit / speed limit / enabled. |
+| `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled. |
 | `DELETE` | `/v1/users/{id}` | Delete a user. |
 | `POST` | `/v1/users/{id}/reset` | Reset the user's traffic counters. |
 | `POST` | `/v1/users/{id}/reset-period` | Set auto-reset period. |
@@ -184,6 +184,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users/{id}/devices/unbind` | Release one bound device (or all), freeing the slot. |
 | `GET` | `/v1/users/{id}/events` | The user's own journal (paged). |
 | `GET` | `/v1/users/{id}/abuse` | The user's blocklist matches (`limit`, default 20). |
+| `GET` | `/v1/users/{id}/happ-link` | The user's subscription as an encrypted `happ://crypt4/` link. |
 
 **Create** — `name` is required; everything else is optional and applied to the fresh
 account in the same call:
@@ -219,7 +220,34 @@ directions. It is enforced by the host kernel on the addresses the user is conne
 not by Xray — so everyone behind one NAT address shares a cap, and with Hysteria2 the cap
 manifests as packet loss rather than a smooth slowdown. A tariff plan carries its own
 `speed_limit` and overwrites the user's when it is applied, exactly as it does for the
-traffic and device limits.
+traffic and device limits. An access group can carry a `speed_limit` too, and when one of
+the user's groups does, **the group's cap is the one in force** — the user's own field
+(their tariff's or a hand-set one) is kept but overridden; see *Groups*.
+
+**A term that starts on the first connection** — instead of `expire_at`, send
+`hold_seconds`: the length of a term that does not run until the user first connects.
+The first connection the panel records sets `expire_at` to that moment plus
+`hold_seconds` and puts `hold_seconds` back to `0` (the journal records it as
+`user.term_started`). The two are exclusive — a body with both a non-zero `expire_at` and
+`hold_seconds` is refused. A term waiting to start is at most 3650 days.
+
+```json
+{ "name": "gift-card-17", "hold_seconds": 2592000 }
+```
+
+On `PATCH`, `hold_seconds` puts the user on hold (replacing any date) and `0` takes a
+pending term away; `expire_at: 0` means *never*, and takes a pending term away too. A
+`PATCH` that names neither leaves the term exactly as it is — including a term that
+started a moment ago. `extend` in `/v1/users/bulk` lengthens a pending term by the given
+days, and applying a plan replaces it with the plan's own. A user object carries the
+pending term as `hold_seconds` (0 when none).
+
+**Happ link** — `GET /v1/users/{id}/happ-link` answers `{ "data": { "link": "happ://crypt4/…" } }`:
+the user's subscription URL encrypted to the key the Happ app carries, which Happ adds
+without ever showing the address. The link is `""` while `sub_happ_crypt` is off (see
+*Server configuration*). A separate call rather than a field on the user: every link is
+an RSA-4096 encryption, and the padding is random, so two calls return different links
+to the same subscription.
 
 `plan_id` rewrites `data_limit` and `expire_at` with the plan's own — a plan *is* the
 limits — while an explicit `device_limit` is applied after it and wins. If one of the
@@ -358,6 +386,7 @@ enabled node automatically, and each server can be edited independently.
 | `POST` | `/v1/nodes/{id}/update` | Ask a node to self-update to the latest release. |
 | `POST` | `/v1/nodes/update-all` | Ask every connected node to self-update (sequentially). |
 | `POST` | `/v1/nodes/{id}/proxy` | Configure that server's system proxy (`id` 0 = the master). |
+| `POST` | `/v1/nodes/{id}/placement` | Edit that server's placement and traffic cap (`id` 0 = the master). |
 | `GET` | `/v1/nodes/{id}/health` | One server's self-diagnostics. |
 | `GET` | `/v1/nodes/{id}/logs` | A node's recent log lines. |
 
@@ -376,6 +405,23 @@ command for a fresh Ubuntu server:
 ```
 
 The join token is embedded once and expires in 24h; `/regen-join` issues a new one.
+
+**Placement** — where a server sits in subscriptions and how much traffic it may carry.
+A partial edit: only the fields sent change. The same fields are accepted by
+`PATCH /v1/nodes/{id}`; this route also reaches the master (`id` 0), which has no node
+row. The answer is the placement as stored.
+
+```json
+{ "country": "NL", "sort_weight": 10, "capacity": 300, "hide_when_full": true,
+  "traffic_limit": 1099511627776, "traffic_period": "month", "traffic_reset_day": 14,
+  "hide_when_over": false }
+```
+
+`traffic_limit` is bytes per `traffic_period` (`month` or `day`; 0 = no cap).
+`traffic_reset_day` (1–31) is the day a monthly cap starts over, to match the day the
+hosting bills from; a month without that day starts on its last day, and `1` is stored as
+the default `0`. Clearing the cap clears its period, its reset day and `hide_when_over`
+with it.
 
 **System proxy** — a SOCKS5 and/or HTTP forward listener on that server, for traffic
 that is not a VPN client: a scraper, a bot, another panel chaining its egress here.
@@ -442,6 +488,8 @@ reject.
 
 Access groups gate which connections a user may use. A user in **no** group reaches
 everything; a user in one or more groups reaches the **union** of their groups' grants.
+Only groups that **limit access** take part (`limits_access`, below): a user whose groups
+all leave access open reaches everything too.
 Enforcement is **server-side** — a disallowed lane's credential is withheld from Xray,
 not merely hidden — so the user object's `links`, the subscription, and a hand-built
 link all expose only what's granted.
@@ -450,16 +498,22 @@ link all expose only what's granted.
 | --- | --- | --- |
 | `GET` | `/v1/groups` | List groups, each with its `grants`, `member_ids` and member count. |
 | `POST` | `/v1/groups` | Create a group. |
-| `POST` | `/v1/groups/{id}` | Update a group (name + grants). |
-| `DELETE` | `/v1/groups/{id}` | Delete a group (members left in no group revert to unrestricted). |
+| `POST` | `/v1/groups/{id}` | Update a group (name, grants, speed cap). |
+| `DELETE` | `/v1/groups/{id}` | Delete a group (members left in no group that limits access revert to unrestricted). |
 | `POST` | `/v1/groups/{id}/members` | Replace the group's members. |
 | `POST` | `/v1/users/{id}/groups` | Replace one user's group membership. |
 
 **Create / update** — body:
 
 ```json
-{ "name": "VIP", "grants": ["builtin:0:vless", "builtin:0:reality", "inbound:7"] }
+{ "name": "VIP", "grants": ["builtin:0:vless", "builtin:0:reality", "inbound:7"],
+  "speed_limit": 20000 }
 ```
+
+`speed_limit` caps the members' speed in **kbit/s** (0 = the group sets none). When set it
+**takes priority** over the cap a member's tariff or card gives them; a member of several
+capped groups gets the **highest** of their caps. A blocklist throttle is never loosened
+by it — the stricter of the two applies. Omitted on an update, the cap is kept.
 
 A **grant token** names one connection:
 
@@ -467,8 +521,14 @@ A **grant token** names one connection:
   or `hysteria2` and `<server_id>` is `0` for the master or a node id from `GET /v1/nodes`.
 - `inbound:<id>` — a custom inbound, by the id from `GET /v1/servers/{id}/inbounds`.
 
-An empty `grants` array is a real state, not a no-op: members of a group that grants
-nothing reach nothing — that's how you revoke. The response `data` is the group.
+An empty `grants` array means the group **does not limit access**: saved that way it is a
+tier for its speed cap alone, and its members keep every connection. The response carries
+this as `limits_access` — decided when the group is saved, not read off the grant list.
+Grants are also swept automatically when the inbound, node or external server they name is
+deleted, and a group that loses its last grant that way keeps `limits_access: true`: its
+members reach nothing rather than suddenly everything. Save it again with no grants to
+open it. Groups that existed before this behaviour keep limiting access until they are
+saved again. The response `data` is the group.
 
 **Set members** — body `{ "user_ids": [1, 2, 3] }`; replaces the whole member set.
 
@@ -544,9 +604,24 @@ curl -X PATCH $BASE/v1/settings -H "Authorization: Bearer $KEY" \
   "hwid_fallback_limit": 0, "hwid_ttl_days": 30,
   "device_count_mode": "auto",
   "local_backup_cron": "", "local_backup_keep": 7,
-  "sub_path": "sub", "warp_enabled": false, "warp_registered": true
+  "sub_path": "sub", "warp_enabled": false, "warp_registered": true,
+  "sub_order_mode": "manual", "sub_happ_crypt": false,
+  "trusted_nets": ["198.51.100.0/24", "203.0.113.10/32"]
 } }
 ```
+
+`sub_order_mode` is how a subscription orders servers: `manual` (weight, then the list),
+`nearest`, `load`, `nearest_load`, or `random` — a new order on every fetch, so clients
+that connect to the first entry spread across the fleet; hide-when-full and hide-when-over
+still apply. `sub_happ_crypt` makes the subscription page's Happ button, and
+`GET /v1/users/{id}/happ-link`, hand out an encrypted `happ://crypt4/` link instead of the
+plain address. `trusted_nets` are the IPs and networks the panel never bans on its own —
+not for guessing the SOCKS/HTTP password, not for scanning the panel, not under the source
+policy (a refusal is still journaled). Sending it replaces the whole list; entries are
+stored as prefixes (`198.51.100.7/24` becomes `198.51.100.0/24`), networks wider than an
+IPv4 /8 or an IPv6 /32 are refused, and bans already in place inside the list are lifted.
+An unknown `sub_order_mode` or a bad `trusted_nets` entry is refused before any field of
+the body is written.
 
 `device_count_mode` decides what a user's device limit counts. `auto` (the default) counts
 distinct source addresses seen in the last two minutes — the only thing that caps how many

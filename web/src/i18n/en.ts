@@ -997,6 +997,7 @@ const en: Dict = {
       apiPaymentProvider: "API · payment provider",
       apiRegApproved: "API · signup approved",
       apiSystemProxy: "API · system proxy",
+      apiPlacement: "API · server placement",
       apiRegRejected: "API · signup rejected",
       apiUserGroups: "API · user groups",
       apiWebhookAdded: "API · webhook added",
