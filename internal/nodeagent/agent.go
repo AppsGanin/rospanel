@@ -486,12 +486,12 @@ const (
 	sitesPerUser = 32
 	// sitesBytesMax is the payload budget for the destination rows.
 	//
-	// The panel caps a sync body at 1 MB and answers 400 above it, which the agent
-	// can only read as a generic failure — so an oversized body would stop config
-	// pushes and stall traffic reporting. An advisory view must not be able to break
-	// the channel it borrows, and a per-user row cap alone does not prevent that:
-	// nothing bounded the number of users, and at ~1000 active users the rows alone
-	// cleared 1 MB.
+	// A panel caps a sync body (1 MB on older panels, 8 MB on current ones) and answers
+	// 400 above it, which the agent can only read as a generic failure — so an
+	// oversized body would stop config pushes and stall traffic reporting. An advisory
+	// view must not be able to break the channel it borrows, and a per-user row cap
+	// alone does not prevent that: nothing bounded the number of users, and at ~1000
+	// active users the rows alone cleared 1 MB.
 	//
 	// Budgeted in bytes rather than rows because a client picks its own SNI, so
 	// hostname length is attacker-controlled: ~120 accounts using max-length names
@@ -499,10 +499,20 @@ const (
 	sitesBytesMax = 256 * 1024
 	// sitesRowOverhead approximates the JSON around one host ({"u":…,"h":"…","c":…}).
 	sitesRowOverhead = 32
-	// syncBodyCeiling is the whole-body budget sites yield to. Below the panel's 1 MB
-	// MaxBytesReader, with margin for the JSON framing not counted in the base
+	// syncBodyCeiling is the whole-body budget sites yield to. Below the 1 MB an older
+	// panel accepts, with margin for the JSON framing not counted in the base
 	// measurement.
 	syncBodyCeiling = 900 * 1024
+	// trafficChunkMax is how many users' traffic one report carries. The batch used to
+	// be every user with traffic since the last ack, with nothing bounding it: ~48
+	// bytes a user put a busy node past a panel's body cap at ~11,000 users with
+	// traffic in one poll (fewer after an outage, which piles everyone into one
+	// batch), and past the cap the panel refuses the body, the agent resends the same
+	// batch, and the node stops reporting and stops receiving config for good. The
+	// rest waits for the next report, which a panel answers at once while there is
+	// more (SyncRequest.TrafficMore). ~80 bytes a row at worst keeps a chunk near
+	// 300 KB.
+	trafficChunkMax = 4000
 )
 
 // recordConn buffers one access-log connection (a "uN" email + source IP, plus the
@@ -918,8 +928,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	if len(a.inflight) == 0 && len(a.pending) > 0 {
 		a.reportSeq++
 		a.inflightID = a.reportSeq
-		a.inflight = a.pending
-		a.pending = map[int64]*nodeapi.TrafficDelta{}
+		a.inflight = takeTrafficChunk(&a.pending, trafficChunkMax)
 		promoted = true
 	}
 	var traffic []nodeapi.TrafficDelta
@@ -927,6 +936,9 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		traffic = append(traffic, *d)
 	}
 	rid := a.inflightID
+	// A full chunk with traffic still waiting is a backlog; a partial one is not, even
+	// if a sample has landed in pending since — that goes out on the next poll.
+	trafficMore := len(a.inflight) >= trafficChunkMax && len(a.pending) > 0
 	a.statsMu.Unlock()
 
 	// Persist the watermark (outside statsMu) so a restart can't regress the report id.
@@ -966,6 +978,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		AWGError:       awgErr,
 		ReportID:       rid,
 		Traffic:        traffic,
+		TrafficMore:    trafficMore,
 		Conns:          a.takeConns(),
 		Logs:           logs,
 		GeoFiles:       geoFiles,
@@ -988,6 +1001,25 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 	req.Sites = a.takeSites(sitesBudget)
 	return req
+}
+
+// takeTrafficChunk moves at most max users' deltas out of *pending and returns them.
+// A pending batch within the limit is handed over whole, as it always was.
+func takeTrafficChunk(pending *map[int64]*nodeapi.TrafficDelta, max int) map[int64]*nodeapi.TrafficDelta {
+	if len(*pending) <= max {
+		out := *pending
+		*pending = map[int64]*nodeapi.TrafficDelta{}
+		return out
+	}
+	out := make(map[int64]*nodeapi.TrafficDelta, max)
+	for uid, d := range *pending {
+		if len(out) == max {
+			break
+		}
+		out[uid] = d
+		delete(*pending, uid)
+	}
+	return out
 }
 
 // logTail returns the node's recent log lines: the agent's own log ring (its slog
