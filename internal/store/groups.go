@@ -21,7 +21,7 @@ func isGroupNameConflict(err error) bool {
 // management list.
 func (s *Store) Groups() ([]model.Group, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.name, g.created_at, g.speed_limit,
+		SELECT g.id, g.name, g.created_at, g.speed_limit, g.limits_access,
 		       (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
 		FROM groups g ORDER BY lower(g.name)`)
 	if err != nil {
@@ -32,7 +32,7 @@ func (s *Store) Groups() ([]model.Group, error) {
 	byID := map[int64]int{} // group id → index in out, to attach grants below
 	for rows.Next() {
 		var g model.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit, &g.Members); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit, &g.LimitsAccess, &g.Members); err != nil {
 			return nil, err
 		}
 		byID[g.ID] = len(out)
@@ -81,8 +81,8 @@ func (s *Store) Groups() ([]model.Group, error) {
 // GetGroup returns one group with its grants, or nil.
 func (s *Store) GetGroup(id int64) (*model.Group, error) {
 	var g model.Group
-	err := s.db.QueryRow(`SELECT id, name, created_at, speed_limit FROM groups WHERE id = ?`, id).
-		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit)
+	err := s.db.QueryRow(`SELECT id, name, created_at, speed_limit, limits_access FROM groups WHERE id = ?`, id).
+		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit, &g.LimitsAccess)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -128,14 +128,16 @@ func (s *Store) groupGrants(id int64) ([]string, error) {
 	return out, rows.Err()
 }
 
-// CreateGroup inserts a group, its speed cap and its grants in one transaction.
+// CreateGroup inserts a group, its speed cap and its grants in one transaction. A
+// group created with no grants does not limit access (see model.Group.LimitsAccess).
 func (s *Store) CreateGroup(name string, grants []string, speedLimit int) (*model.Group, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	res, err := tx.Exec(`INSERT INTO groups (name, speed_limit) VALUES (?, ?)`, name, speedLimit)
+	res, err := tx.Exec(`INSERT INTO groups (name, speed_limit, limits_access) VALUES (?, ?, ?)`,
+		name, speedLimit, boolToInt(hasGrant(grants)))
 	if err != nil {
 		if isGroupNameConflict(err) {
 			return nil, ErrGroupNameTaken
@@ -153,14 +155,16 @@ func (s *Store) CreateGroup(name string, grants []string, speedLimit int) (*mode
 }
 
 // UpdateGroup renames a group, sets its speed cap and replaces its grants in one
-// transaction.
+// transaction. Saving decides again whether the group limits access: it does when a
+// grant is ticked, and not when none is.
 func (s *Store) UpdateGroup(id int64, name string, grants []string, speedLimit int) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if _, err := tx.Exec(`UPDATE groups SET name = ?, speed_limit = ? WHERE id = ?`, name, speedLimit, id); err != nil {
+	if _, err := tx.Exec(`UPDATE groups SET name = ?, speed_limit = ?, limits_access = ? WHERE id = ?`,
+		name, speedLimit, boolToInt(hasGrant(grants)), id); err != nil {
 		if isGroupNameConflict(err) {
 			return ErrGroupNameTaken
 		}
@@ -170,6 +174,17 @@ func (s *Store) UpdateGroup(id int64, name string, grants []string, speedLimit i
 		return err
 	}
 	return tx.Commit()
+}
+
+// hasGrant reports whether a grant list names anything once blanks are dropped —
+// what replaceGrantsTx will actually store.
+func hasGrant(grants []string) bool {
+	for _, t := range grants {
+		if strings.TrimSpace(t) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // replaceGrantsTx wipes and re-inserts a group's grants.
@@ -330,7 +345,7 @@ func (s *Store) ExistingGroupIDs(ids []int64) ([]int64, error) {
 // GroupsForUser returns the groups a user belongs to (id + name), for the user views.
 func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.name, g.speed_limit FROM group_members m
+		SELECT g.id, g.name, g.speed_limit, g.limits_access FROM group_members m
 		JOIN groups g ON g.id = m.group_id
 		WHERE m.user_id = ? ORDER BY lower(g.name)`, userID)
 	if err != nil {
@@ -340,7 +355,7 @@ func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 	out := []model.GroupRef{}
 	for rows.Next() {
 		var g model.GroupRef
-		if err := rows.Scan(&g.ID, &g.Name, &g.SpeedLimit); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.SpeedLimit, &g.LimitsAccess); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -352,7 +367,7 @@ func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
 // can show chips without a query per row.
 func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 	rows, err := s.db.Query(`
-		SELECT m.user_id, g.id, g.name, g.speed_limit FROM group_members m
+		SELECT m.user_id, g.id, g.name, g.speed_limit, g.limits_access FROM group_members m
 		JOIN groups g ON g.id = m.group_id
 		ORDER BY lower(g.name)`)
 	if err != nil {
@@ -363,7 +378,7 @@ func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 	for rows.Next() {
 		var uid int64
 		var g model.GroupRef
-		if err := rows.Scan(&uid, &g.ID, &g.Name, &g.SpeedLimit); err != nil {
+		if err := rows.Scan(&uid, &g.ID, &g.Name, &g.SpeedLimit, &g.LimitsAccess); err != nil {
 			return nil, err
 		}
 		out[uid] = append(out[uid], g)
@@ -372,11 +387,13 @@ func (s *Store) GroupsForAllUsers() (map[int64][]model.GroupRef, error) {
 }
 
 // AccessMap resolves every user's access in one pass: userID → Access. A user with no
-// group membership is absent from the result, which model.AccessOf reads as
-// unrestricted — so the map only ever lists the users who ARE restricted.
+// membership in a group that limits access is absent from the result, which
+// model.AccessOf reads as unrestricted — so the map only ever lists the users who ARE
+// restricted.
 func (s *Store) AccessMap() (map[int64]model.Access, error) {
 	rows, err := s.db.Query(`
 		SELECT m.user_id, gr.token FROM group_members m
+		JOIN groups g ON g.id = m.group_id AND g.limits_access = 1
 		LEFT JOIN group_grants gr ON gr.group_id = m.group_id`)
 	if err != nil {
 		return nil, err
@@ -391,9 +408,10 @@ func (s *Store) AccessMap() (map[int64]model.Access, error) {
 		}
 		a, ok := out[uid]
 		if !ok {
-			// The user is in at least one group ⇒ restricted (All stays false), even if
-			// that group grants nothing (then the user reaches nothing, which is the
-			// operator's choice).
+			// The user is in at least one group that limits access ⇒ restricted (All
+			// stays false), even if that group now grants nothing — its grants were
+			// swept with what they named, and the member reaches nothing rather than
+			// everything.
 			a = model.Access{Tokens: map[string]bool{}}
 		}
 		if token.Valid && token.String != "" {
@@ -405,10 +423,11 @@ func (s *Store) AccessMap() (map[int64]model.Access, error) {
 }
 
 // UserAccess resolves one user's access — the subscription path, which only needs the
-// requesting user. A user in no group is unrestricted.
+// requesting user. A user in no group that limits access is unrestricted.
 func (s *Store) UserAccess(userID int64) (model.Access, error) {
 	rows, err := s.db.Query(`
 		SELECT gr.token FROM group_members m
+		JOIN groups g ON g.id = m.group_id AND g.limits_access = 1
 		LEFT JOIN group_grants gr ON gr.group_id = m.group_id
 		WHERE m.user_id = ?`, userID)
 	if err != nil {

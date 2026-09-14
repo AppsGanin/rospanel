@@ -21,7 +21,8 @@ const (
 var BuiltinLaneKeys = []string{LaneVLESS, LaneReality, LaneHysteria, LaneAWG}
 
 // Group is a named set of connections a user is allowed to use. Membership is
-// many-to-many; a user in no group may use everything (see Access).
+// many-to-many; a user in no group may use everything (see Access), and so may a user
+// whose only groups do not limit access.
 type Group struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -38,14 +39,21 @@ type Group struct {
 	// priority over the cap a member's tariff or card gives them, and a member of
 	// several capped groups gets the highest. A blocklist throttle still applies.
 	SpeedLimit int `json:"speed_limit"`
+	// LimitsAccess is whether membership restricts the member's connections to what
+	// the group grants. Decided when the group is saved — with grants ticked it does,
+	// saved with none it does not (a tier for its speed cap alone) — and left alone
+	// when grants are swept away with the target they named, so a group that loses its
+	// last grant keeps its members restricted rather than opening everything to them.
+	LimitsAccess bool `json:"limits_access"`
 }
 
 // GroupRef is the minimal group identity shown on a user (list + detail), with the
 // group's speed cap so a user's card can say which cap is in force.
 type GroupRef struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	SpeedLimit int    `json:"speed_limit"`
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	SpeedLimit   int    `json:"speed_limit"`
+	LimitsAccess bool   `json:"limits_access"`
 }
 
 // BuiltinToken is a group-grant token for a built-in lane on one server (serverID 0 =
@@ -88,7 +96,8 @@ func ParseBuiltinToken(token string) (serverID int64, lane string, ok bool) {
 	return id, lane, true
 }
 
-// Access is a resolved answer to "what may this user connect to". It is deliberately
+// Access is a resolved answer to "what may this user connect to". Only groups that
+// limit access take part (Group.LimitsAccess). It is deliberately
 // a value, computed once per user and consulted many times during config generation
 // and link building, so the "no groups ⇒ everything" rule lives in exactly one place.
 type Access struct {

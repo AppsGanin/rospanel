@@ -65,20 +65,79 @@ func TestAccessResolution(t *testing.T) {
 	}
 }
 
-// A member in a group granting nothing reaches nothing — the deliberate "revoke via
-// empty group" semantics, not an accidental unrestricted fallback.
-func TestEmptyGroupGrantsNothing(t *testing.T) {
+// A group saved with no connection ticked is a tier for its speed cap, not for
+// access: its members keep every connection. That is decided when it is saved, not
+// read off the grant list — so a group whose grants were swept away with the
+// inbound they named keeps its members restricted, reaching nothing, instead of
+// suddenly handing them everything. And an empty group from before the flag existed
+// (every existing row got 1) keeps meaning what it always meant.
+func TestGroupsSavedWithoutGrantsDoNotLimitAccess(t *testing.T) {
 	st := openGroupStore(t)
-	u, _ := st.CreateUser("x", "uuid", "pw", "tok", 0, 0, 0)
-	g, _ := st.CreateGroup("locked", nil, 0)
-	_ = st.SetUserGroups(u.ID, []int64{g.ID})
-
-	a, _ := st.UserAccess(u.ID)
-	if a.All {
-		t.Fatal("a user in an empty group must be restricted, not unrestricted")
+	mk := func(name string) int64 {
+		t.Helper()
+		u, err := st.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.ID
 	}
-	if a.AllowsBuiltin(0, model.LaneVLESS) || a.AllowsInbound(1) {
-		t.Error("an empty group must grant nothing")
+	speedOnly, _ := st.CreateGroup("speed tier", nil, 5000)
+	vless, _ := st.CreateGroup("vless", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
+	premium, _ := st.CreateGroup("premium", []string{model.InboundToken(7)}, 0)
+	legacy, _ := st.CreateGroup("legacy locked", nil, 0)
+	if _, err := st.db.Exec(`UPDATE groups SET limits_access = 1 WHERE id = ?`, legacy.ID); err != nil {
+		t.Fatal(err) // what migration 0078 gives a group that existed empty before it
+	}
+
+	tier, both, swept, locked := mk("tier"), mk("both"), mk("swept"), mk("locked")
+	for uid, groups := range map[int64][]int64{
+		tier: {speedOnly.ID}, both: {speedOnly.ID, vless.ID}, swept: {premium.ID}, locked: {legacy.ID},
+	} {
+		if err := st.SetUserGroups(uid, groups); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// premium's only inbound is deleted, and its grant with it.
+	if err := st.DeleteInboundGrants(7); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := st.AccessMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(name string, uid int64, wantAll bool, reachesVLESS bool) {
+		t.Helper()
+		one, err := st.UserAccess(uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for src, a := range map[string]model.Access{"UserAccess": one, "AccessMap": model.AccessOf(m, uid)} {
+			if a.All != wantAll || a.AllowsBuiltin(0, model.LaneVLESS) != reachesVLESS {
+				t.Errorf("%s %s: all=%v vless=%v — want all=%v vless=%v", src, name, a.All, a.AllowsBuiltin(0, model.LaneVLESS), wantAll, reachesVLESS)
+			}
+		}
+	}
+	check("speed tier only", tier, true, true)
+	check("speed tier + vless group", both, false, true)
+	check("grants swept away", swept, false, false)
+	check("legacy empty group", locked, false, false)
+
+	if g, _ := st.GetGroup(speedOnly.ID); g.LimitsAccess {
+		t.Error("a group created with no grants reads as limiting access")
+	}
+	if g, _ := st.GetGroup(premium.ID); !g.LimitsAccess {
+		t.Error("a sweep changed whether a group limits access")
+	}
+	// Saving the swept group with nothing ticked is the operator's decision to open it.
+	if err := st.UpdateGroup(premium.ID, "premium", nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := st.UserAccess(swept); !a.All {
+		t.Error("a group re-saved with no grants still restricts its members")
+	}
+	if refs, _ := st.GroupsForUser(both); len(refs) != 2 || refs[0].LimitsAccess == refs[1].LimitsAccess {
+		t.Errorf("group refs do not say which group limits access: %+v", refs)
 	}
 }
 

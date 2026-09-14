@@ -52,6 +52,8 @@ export interface GroupRef {
   name: string
   // The group's speed cap in kbit/s (0 = none); see Group.speed_limit.
   speed_limit: number
+  // Whether membership restricts connections; see Group.limits_access.
+  limits_access: boolean
 }
 
 export interface DailyPoint {
@@ -2524,6 +2526,10 @@ export interface Group {
   // Members' speed cap in kbit/s, 0 = none. Takes priority over the cap a member's
   // tariff or card gives them; a member of several capped groups gets the highest.
   speed_limit: number
+  // Whether membership restricts a member's connections to the grants. Decided when
+  // the group is saved: with none ticked it does not (a tier for its speed alone). A
+  // group whose grants were swept with what they named still does.
+  limits_access: boolean
 }
 
 export interface GroupLaneOpt {

@@ -172,7 +172,9 @@ export function GroupsPanel() {
                   </span>
                   {wide ? (
                     <>
-                      <Mono className="text-xs text-ink-muted">{grants.length}</Mono>
+                      <Mono className="text-xs text-ink-muted">
+                        {g.limits_access ? grants.length : t("groups.allShort")}
+                      </Mono>
                       <Mono className="text-xs text-ink-muted">{g.members}</Mono>
                       <Mono className="truncate text-xs text-ink-muted">
                         {g.speed_limit > 0 ? fmtSpeed(g.speed_limit) : "—"}
@@ -180,7 +182,10 @@ export function GroupsPanel() {
                     </>
                   ) : (
                     <span className="col-start-1 row-start-2 truncate text-[11px] text-ink-muted">
-                      {t("groups.nConnections", { count: grants.length })} ·{" "}
+                      {g.limits_access
+                        ? t("groups.nConnections", { count: grants.length })
+                        : t("groups.allShort")}{" "}
+                      ·{" "}
                       {t("groups.nMembers", { count: g.members })}
                       {g.speed_limit > 0 ? ` · ${fmtSpeed(g.speed_limit)}` : ""}
                     </span>

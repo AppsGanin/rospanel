@@ -538,12 +538,12 @@ export function UserDetail({
       .catch(fail)
       .finally(() => setSavingGroups(false))
   }
-  // A user whose ONLY selected groups grant nothing sees no connections at all — a
-  // silent lockout that's easy to create by accident (an empty group revokes rather
-  // than grants). Warn before it's applied.
-  const selectedGrantCount = allGroups
-    .filter((g) => sel.has(g.id))
-    .reduce((n, g) => n + (g.grants?.length ?? 0), 0)
+  // A user whose selected groups limit access but grant nothing between them sees no
+  // connections at all — a silent lockout (a group whose grants were swept still
+  // limits). Groups that do not limit access take no part. Warn before it's applied.
+  const limitingSelected = allGroups.filter((g) => sel.has(g.id) && g.limits_access)
+  const selectedGrantCount = limitingSelected.reduce((n, g) => n + (g.grants?.length ?? 0), 0)
+  const groupsLockOut = limitingSelected.length > 0 && selectedGrantCount === 0
   const groupQ = groupQuery.trim().toLowerCase()
   const selectedGroups = allGroups.filter((g) => sel.has(g.id))
   const availableGroups = allGroups.filter(
@@ -742,7 +742,7 @@ export function UserDetail({
               <Mono>{fmtLastSeen(user.last_seen)}</Mono>
             </StateRow>
             <StateRow label={t('groups.title')}>
-              {(user.groups ?? []).length === 0 ? (
+              {!(user.groups ?? []).some((g) => g.limits_access) ? (
                 <span className="text-ink-muted">{t('userDetail.allConnections')}</span>
               ) : (
                 <span className="text-accent">
@@ -1051,7 +1051,7 @@ export function UserDetail({
                 </SettingRow>
               )}
 
-              {sel.size > 0 && selectedGrantCount === 0 && (
+              {groupsLockOut && (
                 <SettingRow
                   hint={
                     <span className="text-warning">{t('userDetail.groupsGrantNothing')}</span>
