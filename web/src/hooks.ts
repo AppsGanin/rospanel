@@ -99,6 +99,17 @@ export function useShowMore<T>(
   };
 }
 
+// useDebounced follows value, but only once it has held still for ms — so a search
+// box asks the server once a word is typed rather than once per keystroke.
+export function useDebounced<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return settled;
+}
+
 // ViewMode is how a list is drawn. The table is the default everywhere: it is the denser
 // form, and these are lists whose rows all carry the same facts.
 export type ViewMode = "table" | "cards";
