@@ -820,6 +820,8 @@ func countInboundUsers(inbounds []Inbound) int {
 			n += len(s.Clients)
 		case HysteriaInboundSettings:
 			n += len(s.Users)
+		case ShadowsocksInboundSettings:
+			n += len(s.Users)
 		}
 	}
 	return n
