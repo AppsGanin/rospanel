@@ -1,5 +1,46 @@
 # Changelog
 
+## [3.3.0](https://github.com/AppsGanin/rospanel/compare/v3.2.0...v3.3.0) (2026-09-14)
+
+
+### Features
+
+* **api:** the external API reaches the new subscription, security and server settings ([8f7dd60](https://github.com/AppsGanin/rospanel/commit/8f7dd60c86cf3436548005d182260ec923f32471))
+* **backup:** a restore asks for the backup's own second factor ([90ed9d2](https://github.com/AppsGanin/rospanel/commit/90ed9d232e8807df247eeb7364ae52f8c52b8b95))
+* **groups:** a group saved with no connection ticked leaves access open ([52ae84b](https://github.com/AppsGanin/rospanel/commit/52ae84bb15d2ea213adc7f1398891eb587b8fd41))
+* **groups:** an access group can cap its members' speed ([0dcf5c1](https://github.com/AppsGanin/rospanel/commit/0dcf5c1894056416ac1e7b66f864978777dc6aae))
+* **security:** trusted addresses are never banned automatically ([4bba9bb](https://github.com/AppsGanin/rospanel/commit/4bba9bb61183ca1832028cfedb4e297a81052586))
+* **servers:** a monthly traffic limit starts on the hosting's billing day ([23078ad](https://github.com/AppsGanin/rospanel/commit/23078ad3ec500877e49bab03ef06e915663e7c00))
+* **subscriptions:** a random server order spreads clients across the fleet ([ca0df33](https://github.com/AppsGanin/rospanel/commit/ca0df33f3f1a3c2b3bae2e110c2fac22fe865f96))
+* **subscriptions:** Happ adds the subscription through an encrypted link ([23a71c8](https://github.com/AppsGanin/rospanel/commit/23a71c87a216bca2c81f38df6b00d179ceeadd8c))
+* **users:** a term can start on the user's first connection ([1f4fd03](https://github.com/AppsGanin/rospanel/commit/1f4fd03d5e03610e058f2db4300a05c6669dd79a))
+
+
+### Bug Fixes
+
+* **awg:** tunnel addresses no longer run out with the user ids ([eb3331f](https://github.com/AppsGanin/rospanel/commit/eb3331f46471462afd65c8e8215f27252302cbd4))
+* **backup:** restoring a backup asks for the second factor ([eb21357](https://github.com/AppsGanin/rospanel/commit/eb213576e15c1bb1df8bde46d4ff3f69c5f2a6e0))
+* **core:** the brute-force guard's cleanup stops with the manager ([836ca75](https://github.com/AppsGanin/rospanel/commit/836ca75333b9121851c2df7e15115a686bb46b63))
+* **groups:** the speed limit field spans the editor's full width ([8e60568](https://github.com/AppsGanin/rospanel/commit/8e605689ff57cc8e4881370693d95795ecdfdbc9))
+* **nodes:** a busy node's traffic report no longer stalls its sync for good ([ca7792a](https://github.com/AppsGanin/rospanel/commit/ca7792a58d873d2545dd11d0a5fc5226f4e8013d))
+* **overview:** the dashboard counts blocklist matches over the real window ([9ccddc1](https://github.com/AppsGanin/rospanel/commit/9ccddc163d0a28b74423446ea1cd95f8f67ada4e))
+* **ratelimit:** a flood can no longer reset a throttled address ([414961e](https://github.com/AppsGanin/rospanel/commit/414961ea35358a3de1206ca43faa99560a4bc1b6))
+* **server:** the API and node segments are compared in constant time ([4818a7a](https://github.com/AppsGanin/rospanel/commit/4818a7a627337e279eab9e2122297ff37719a07b))
+* **users:** adding a user granted a Shadowsocks inbound no longer restarts Xray ([bb16a4b](https://github.com/AppsGanin/rospanel/commit/bb16a4b43390df50828ebe43ec59e56256f43d13))
+* **users:** bulk reset and import both anchor the quota cycle ([856c774](https://github.com/AppsGanin/rospanel/commit/856c7744c2beff0c5a96cfb664ee17696dc74394))
+
+
+### Performance Improvements
+
+* **access:** the access flush and throttle stop scaling with every user and pair ([bedba4f](https://github.com/AppsGanin/rospanel/commit/bedba4f38cfcda503aafb0fd25f58e9fdd9621f2))
+* **awg:** a tunnel's peer list stops re-deriving every user's public key ([d2f0ac8](https://github.com/AppsGanin/rospanel/commit/d2f0ac861687475424bbede9a7aa809398f29b68))
+* **nodes:** a node changes users without restarting Xray ([a1215bf](https://github.com/AppsGanin/rospanel/commit/a1215bf480e2d1d1cfe7596e62a459f62d19aa3f))
+* **nodes:** config builds and traffic passes read only what they use ([67ef8a8](https://github.com/AppsGanin/rospanel/commit/67ef8a8ff901206f207650aecb7bb931138f6da3))
+* **nodes:** nodes share one read of the fleet's users, and one enforcement pass ([35c5c46](https://github.com/AppsGanin/rospanel/commit/35c5c4627a66e75d7f43c26503a1f74aad2dded2))
+* **secrets:** encrypted fields open without rebuilding the cipher each time ([afb0e0f](https://github.com/AppsGanin/rospanel/commit/afb0e0fe50ea5cf91fad10b705d0ce9bc0967a3c))
+* **users:** reading one user counts only that user's devices ([3364abf](https://github.com/AppsGanin/rospanel/commit/3364abf02499c7469a8f3f3ce26b50a393eb04b9))
+* **users:** the users page loads one window of rows instead of every user ([ebce6e4](https://github.com/AppsGanin/rospanel/commit/ebce6e4ab1b93113aae6f6747a85232c97612186))
+
 ## [3.2.0](https://github.com/AppsGanin/rospanel/compare/v3.1.0...v3.2.0) (2026-09-12)
 
 
