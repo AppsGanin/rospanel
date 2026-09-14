@@ -9,8 +9,9 @@ import (
 )
 
 // User groups gate which connections a user may reach. A user in no group reaches
-// everything; a user in one or more groups reaches exactly the union of what those
-// groups grant, enforced in config generation (the credential is withheld from a lane
+// everything, and so does one whose groups were all saved with no connection ticked —
+// those are tiers for a speed cap, not for access; a user in one or more groups that
+// limit access reaches exactly the union of what those groups grant, enforced in config generation (the credential is withheld from a lane
 // the user isn't allowed) — see genOptsFor / xray.Generate.
 //
 // A group change doesn't add or remove users, so the live user-sync delta can't see
@@ -185,7 +186,9 @@ func (m *Manager) UpdateGroup(id int64, name string, grants []string, speedLimit
 		return groupErr(err)
 	}
 	switch {
-	case !sameTokens(old.Grants, clean):
+	// A legacy empty group saved again flips from "reaches nothing" to "limits nothing"
+	// with the grant list unchanged, so the flag is compared as well as the tokens.
+	case !sameTokens(old.Grants, clean) || old.LimitsAccess != (len(clean) > 0):
 		m.applyAccessChange()
 	case kbps != old.SpeedLimit:
 		m.applySpeedChange()

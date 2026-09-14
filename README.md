@@ -345,7 +345,9 @@ from both sides — in the user's card and in the group itself — and a user's 
 in their card and in the list. A group can also carry a **speed cap**: when set, it takes
 priority over the members' tariff and personal caps (a member of several groups gets the
 highest), and a throttle for suspicious traffic is not lifted by it. A tariff that grants such a
-group gives its users that speed.
+group gives its users that speed. A group saved with no connection ticked does not limit access —
+a speed tier in one field. A group whose connections disappeared on their own (an inbound or a
+node was deleted) still restricts its members rather than opening everything to them.
 
 #### 📲 Subscriptions
 

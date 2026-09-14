@@ -136,3 +136,35 @@ func TestGroupEditsReconcileOnlyForAccess(t *testing.T) {
 		t.Error("taking a grant away did not reconcile")
 	}
 }
+
+// A group that lost its last grant to a sweep still restricts its members; saving it
+// with nothing ticked opens it — an access change, though the grant list itself did
+// not change, so it has to reconcile all the same.
+func TestOpeningASweptGroupReconciles(t *testing.T) {
+	m := bulkTestManager(t)
+	m.reconcileCh = make(chan struct{}, 1)
+	g, err := m.CreateGroup("premium", []string{model.InboundToken(42)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid := mkUser(t, m, "member", 0)
+	if err := m.SetUserGroups(uid, []int64{g.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.DeleteInboundGrants(42); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := m.store.UserAccess(uid); a.All {
+		t.Fatal("a sweep opened the group")
+	}
+	m.structuralPending.Store(false)
+	if err := m.UpdateGroup(g.ID, "premium", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := m.store.UserAccess(uid); !a.All {
+		t.Fatal("saving the group with no grants did not open it")
+	}
+	if !m.structuralPending.Load() {
+		t.Error("opening the group changed access without a reconcile")
+	}
+}

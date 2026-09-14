@@ -1,0 +1,12 @@
+-- Whether a group restricts its members' connections at all.
+--
+-- A group saved with no connection ticked is a tier for something else — a speed cap —
+-- and should leave its members every connection. It cannot simply be read off an
+-- empty grant list: grants are also swept away when the inbound, node or external
+-- server they name is deleted, and a group whose last grant was swept must keep its
+-- members restricted, not hand them everything. So the answer is decided when the
+-- group is SAVED (grants ticked ⇒ restricts) and stored here, where a sweep leaves it.
+--
+-- Every existing group gets 1: an empty group has so far meant "reaches nothing", and
+-- an upgrade must not open access nobody chose to open.
+ALTER TABLE groups ADD COLUMN limits_access INTEGER NOT NULL DEFAULT 1;

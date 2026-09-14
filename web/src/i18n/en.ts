@@ -1249,7 +1249,7 @@ const en: Dict = {
     deleted: "Deleted",
     deleteTitle: "Delete the group?",
     deleteBody:
-      "“{{name}}” will be deleted. Members left without any group regain access to every connection.",
+      "“{{name}}” will be deleted. Members left without a group that limits connections regain access to every connection.",
     nConnections_one: "{{count}} conn.",
     nConnections_few: "{{count}} conn.",
     nConnections_many: "{{count}} conn.",
@@ -1261,7 +1261,8 @@ const en: Dict = {
     nSelected: "{{count}} selected",
     colSpeed: "speed",
     speedNone: "Not set",
-    noGrantsWarn: "No connection is ticked: the group's members will not be able to connect anywhere.",
+    noGrantsWarn: "No connection is ticked: saved like this the group does not limit access — members get every connection, and the group sets only the speed.",
+    allShort: "all",
     speedHint: "When set, it takes priority over the members' tariff and personal caps. A member of several groups gets the highest of their caps; a group does not lift a throttle for suspicious traffic.",
   },
 
