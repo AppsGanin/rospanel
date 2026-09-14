@@ -305,6 +305,14 @@ func (m *Manager) nodeInputs() (*nodeInputs, error) {
 	return in, nil
 }
 
+// dropNodeInputs forgets the shared inputs, so the next node state reads them afresh —
+// for a change made while building one, which no wake announces.
+func (m *Manager) dropNodeInputs() {
+	m.nodeInputsMu.Lock()
+	m.nodeInputsCache = nil
+	m.nodeInputsMu.Unlock()
+}
+
 // NodeXrayConfig returns one server's Xray config for the read-only viewer: the
 // master's live on-disk config.json for node 0, and for a remote node the config
 // the panel generates and pushes (the same bytes the node applies).

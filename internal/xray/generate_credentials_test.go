@@ -51,7 +51,7 @@ func TestGenerateReadsOnlyCredentials(t *testing.T) {
 	full := []model.User{filledUser(1), filledUser(2), filledUser(3)}
 	creds := make([]model.User, len(full))
 	for i, u := range full {
-		creds[i] = model.User{ID: u.ID, UUID: u.UUID, Password: u.Password, WGPrivateKey: u.WGPrivateKey}
+		creds[i] = model.User{ID: u.ID, UUID: u.UUID, Password: u.Password, WGPrivateKey: u.WGPrivateKey, AWGSlot: u.AWGSlot}
 	}
 
 	set := baseSettings()

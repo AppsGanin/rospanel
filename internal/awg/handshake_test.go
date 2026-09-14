@@ -47,7 +47,7 @@ func handshakeOnce(t *testing.T, p Params) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cliAddr, _ := ClientAddr(7)
+	cliAddr, _ := ClientAddr(8)
 
 	// The server, exactly as the panel configures it.
 	srvCfg := Config{PrivateKey: srvPriv, ListenPort: freeUDPPort(t), Params: p,
@@ -220,7 +220,7 @@ func TestTheImitationPacketsGoOnTheWire(t *testing.T) {
 			}
 			cliPriv, _, _ := GenerateKey()
 			_, srvPub, _ := GenerateKey()
-			addr, _ := ClientAddr(7)
+			addr, _ := ClientAddr(8)
 			conf := ClientConfig{PrivateKey: cliPriv, Address: addr, Params: p,
 				ServerPublicKey: srvPub, Endpoint: sock.LocalAddr().String()}.Render()
 			ipc, err := clientIPC(conf)

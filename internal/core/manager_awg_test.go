@@ -1,11 +1,13 @@
 package core
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // Switching the lane on mints the master's identity once; a user's key is minted
@@ -48,13 +50,13 @@ func TestAWGIdentityPeersAndClientConfig(t *testing.T) {
 	if len(peers) != 1 || peers[0].Email != model.UserEmail(a.ID) {
 		t.Fatalf("peers: %+v", peers)
 	}
-	addr, _ := awg.ClientAddr(a.ID)
+	fresh, _ := m.store.GetUser(a.ID)
+	if fresh.WGPrivateKey == "" || fresh.AWGSlot == 0 {
+		t.Fatalf("the user's key or slot was not stored (slot %d)", fresh.AWGSlot)
+	}
+	addr, _ := awg.ClientAddr(fresh.AWGSlot)
 	if peers[0].Addr != addr {
 		t.Errorf("peer address %v, want %v", peers[0].Addr, addr)
-	}
-	fresh, _ := m.store.GetUser(a.ID)
-	if fresh.WGPrivateKey == "" {
-		t.Fatal("the user's key was not stored")
 	}
 	if derived, _ := awg.PublicKey(fresh.WGPrivateKey); derived != peers[0].PublicKey {
 		t.Error("peer public key does not match the stored private key")
@@ -208,5 +210,104 @@ func TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt(t *testing.T) {
 	node.NodeVersion = "2.14.2"
 	if st := m.nodeAWGState(node, ns, users, nil); st == nil {
 		t.Error("a pre-3.1 block was withheld from an agent that can read it")
+	}
+}
+
+// A user's tunnel address is the slot they were handed, the same in the peer list and
+// in their config, and a deleted user's slot goes to the next user who needs one.
+func TestAWGAddressesFollowSlotsNotIDs(t *testing.T) {
+	m := nodeTestManager(t)
+	mk := func(name string) int64 {
+		t.Helper()
+		u, err := m.store.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.ID
+	}
+	a, b, c := mk("a"), mk("b"), mk("c")
+	build := func() map[string]string {
+		t.Helper()
+		users, err := m.store.WorkingCredentials(1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		seen := map[string]bool{}
+		for _, p := range m.awgPeers(model.LocalNodeID, users, nil) {
+			if seen[p.Addr.String()] {
+				t.Fatalf("two peers on %s", p.Addr)
+			}
+			seen[p.Addr.String()] = true
+			out[p.Email] = p.Addr.String()
+		}
+		return out
+	}
+	first := build()
+	if len(first) != 3 {
+		t.Fatalf("peers: %v", first)
+	}
+	if again := build(); !reflect.DeepEqual(again, first) {
+		t.Fatalf("addresses moved between builds: %v then %v", first, again)
+	}
+
+	// The config a user downloads carries the address their peer entry has.
+	set, _ := m.store.GetSettings()
+	set.AWGEnabled, set.AWGPort, set.Host, set.AWGPublicKey = true, 40000, "vpn.example.com", "c2VydmVyLXB1YmxpYy1rZXktcGxhY2Vob2xkZXItMzI="
+	u, _ := m.store.GetUser(c)
+	conf, err := m.AWGClientConfig(u, set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(conf, "Address = "+first[model.UserEmail(c)]+"/32") {
+		t.Fatalf("config address differs from the peer's %s:\n%s", first[model.UserEmail(c)], conf)
+	}
+
+	// b leaves; the next user takes b's address and nobody else moves.
+	if err := m.store.DeleteUser(b); err != nil {
+		t.Fatal(err)
+	}
+	d := mk("d")
+	m.nodeInputsCache = &nodeInputs{}
+	after := build()
+	if m.nodeInputsCache != nil {
+		t.Error("claims were made but the shared node inputs were kept")
+	}
+	if after[model.UserEmail(d)] != first[model.UserEmail(b)] {
+		t.Errorf("d got %s, want b's freed %s", after[model.UserEmail(d)], first[model.UserEmail(b)])
+	}
+	for _, id := range []int64{a, c} {
+		if after[model.UserEmail(id)] != first[model.UserEmail(id)] {
+			t.Errorf("user %d moved from %s to %s", id, first[model.UserEmail(id)], after[model.UserEmail(id)])
+		}
+	}
+}
+
+// A user who arrives with a tunnel key of their own — imported from another RosPanel —
+// has no slot yet. Their first peer build gives them one and keeps their key, so the
+// config they bring with them keeps its identity.
+func TestImportedAWGKeyGetsASlot(t *testing.T) {
+	m := nodeTestManager(t)
+	priv, pub, err := awg.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := m.store.ImportUser(store.ImportedUser{
+		Name: "moved", UUID: "uuid-moved", Password: "pw", SubToken: "tok-moved", Enabled: true, WGPrivateKey: priv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.AWGSlot != 0 || u.WGPrivateKey != priv {
+		t.Fatalf("imported user: slot %d, key kept %v", u.AWGSlot, u.WGPrivateKey == priv)
+	}
+	users, _ := m.store.WorkingCredentials(1)
+	peers := m.awgPeers(model.LocalNodeID, users, nil)
+	if len(peers) != 1 || peers[0].PublicKey != pub {
+		t.Fatalf("the imported user is not a peer with their own key: %+v", peers)
+	}
+	stored, _ := m.store.GetUser(u.ID)
+	if stored.AWGSlot == 0 || stored.WGPrivateKey != priv {
+		t.Fatalf("after the build: slot %d, key kept %v", stored.AWGSlot, stored.WGPrivateKey == priv)
 	}
 }

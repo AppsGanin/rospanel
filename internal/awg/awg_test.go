@@ -135,27 +135,23 @@ func TestRandomParamsAre31(t *testing.T) {
 }
 
 func TestClientAddr(t *testing.T) {
-	if a, ok := ClientAddr(1); !ok || a.String() != "10.66.0.2" {
-		t.Errorf("user 1: %v %v", a, ok)
+	for slot, want := range map[int]string{2: "10.66.0.2", 255: "10.66.0.255", 256: "10.66.1.0", LastSlot: "10.66.255.254"} {
+		if a, ok := ClientAddr(slot); !ok || a.String() != want {
+			t.Errorf("slot %d: %v %v, want %s", slot, a, ok, want)
+		}
 	}
-	if a, ok := ClientAddr(254); !ok || a.String() != "10.66.0.255" {
-		t.Errorf("user 254: %v %v", a, ok)
-	}
-	if a, ok := ClientAddr(255); !ok || a.String() != "10.66.1.0" {
-		t.Errorf("user 255: %v %v", a, ok)
-	}
-	if _, ok := ClientAddr(0); ok {
-		t.Error("user 0 got an address")
-	}
-	if _, ok := ClientAddr(65534); ok {
-		t.Error("an id past the subnet got an address")
+	// No slot, the network, the server and the broadcast are nobody's address.
+	for _, slot := range []int{0, 1, LastSlot + 1, -3} {
+		if a, ok := ClientAddr(slot); ok {
+			t.Errorf("slot %d got address %v", slot, a)
+		}
 	}
 	// Every address is inside the subnet and distinct.
 	seen := map[string]bool{}
-	for id := int64(1); id < 3000; id++ {
-		a, ok := ClientAddr(id)
+	for slot := FirstSlot; slot <= LastSlot; slot++ {
+		a, ok := ClientAddr(slot)
 		if !ok || !Subnet.Contains(a) || a == ServerAddr || seen[a.String()] {
-			t.Fatalf("user %d: %v ok=%v", id, a, ok)
+			t.Fatalf("slot %d: %v ok=%v", slot, a, ok)
 		}
 		seen[a.String()] = true
 	}
@@ -168,7 +164,7 @@ func TestUAPIAndClientConfig(t *testing.T) {
 	// header values and none of the 3.1 fields.
 	params := Params{Jc: 4, Jmin: 50, Jmax: 1000, S1: 30, S2: 40,
 		H1: Range{11, 11}, H2: Range{12, 12}, H3: Range{13, 13}, H4: Range{14, 14}}
-	addr, _ := ClientAddr(7)
+	addr, _ := ClientAddr(8)
 	cfg := Config{PrivateKey: sPriv, ListenPort: 51820, Params: params,
 		Peers: []Peer{{PublicKey: cPub, Addr: addr, Email: "u7"}}}
 	uapi, err := cfg.UAPI()
@@ -240,7 +236,7 @@ func TestUAPIAndClientConfigCarryThe31Parameters(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatalf("generated params invalid: %v", err)
 	}
-	addr, _ := ClientAddr(7)
+	addr, _ := ClientAddr(8)
 	uapi, err := Config{PrivateKey: sPriv, ListenPort: 51820, Params: p,
 		Peers: []Peer{{PublicKey: cPub, Addr: addr, Email: "u7"}}}.UAPI()
 	if err != nil {

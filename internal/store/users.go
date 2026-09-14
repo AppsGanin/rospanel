@@ -14,7 +14,7 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
-	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds`
+	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot`
 
 // errTagsInvalid is returned by SetUserTags for a list model.NormalizeTags refuses.
 // Callers validate before writing, so reaching this means a bug, not user input.
@@ -309,32 +309,33 @@ func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 }
 
 // WorkingCredentials is WorkingUsers for building a proxy config: the same users in
-// the same order, each carrying only what a config is made of — ID, UUID, Password and
-// WGPrivateKey. Every other field is zero, and no status is derived.
+// the same order, each carrying only what a config is made of — ID, UUID, Password,
+// WGPrivateKey and AWGSlot. Every other field is zero, and no status is derived.
 //
 // A node asks for its config twice a poll and again on every wake, and the master
 // rebuilds its own on every user sync. With 5000 users the full read took ~20ms of
 // that, scanning thirty-odd columns and counting devices a config never looks at;
-// these four columns take ~4ms.
+// these few columns take ~4ms.
 func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT id, uuid, password, wg_private_key FROM users `+workingUsersWhere+`
+		SELECT id, uuid, password, wg_private_key, awg_slot FROM users `+workingUsersWhere+`
 		ORDER BY id ASC`, workingUsersArgs(now)...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	// Scanned into four fields and widened once at the end: appending whole users grew
+	// Scanned into a few fields and widened once at the end: appending whole users grew
 	// a slice of large structs over and over, and decrypting after the last row gives
 	// the one connection back sooner.
 	type cred struct {
 		id                 int64
 		uuid, password, wg string
+		slot               int
 	}
 	var creds []cred
 	for rows.Next() {
 		var c cred
-		if err := rows.Scan(&c.id, &c.uuid, &c.password, &c.wg); err != nil {
+		if err := rows.Scan(&c.id, &c.uuid, &c.password, &c.wg, &c.slot); err != nil {
 			return nil, err
 		}
 		creds = append(creds, c)
@@ -344,7 +345,7 @@ func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	}
 	out := make([]model.User, len(creds))
 	for i, c := range creds {
-		out[i] = model.User{ID: c.id, UUID: c.uuid, Password: decField(c.password), WGPrivateKey: decField(c.wg)}
+		out[i] = model.User{ID: c.id, UUID: c.uuid, Password: decField(c.password), WGPrivateKey: decField(c.wg), AWGSlot: c.slot}
 	}
 	return out, nil
 }
@@ -653,26 +654,87 @@ func (s *Store) SetUserName(id int64, name string) error {
 	return err
 }
 
-// ClaimUserWGKey stores priv as a user's AmneziaWG private key (encrypted at rest)
-// unless they already have one, and returns the key they end up with. Written once,
-// when the first tunnel config is built for them; never rotated on its own.
+// AWGClaim asks for a user's tunnel identity. Key is a freshly minted private key,
+// kept only if the user has none yet.
+type AWGClaim struct {
+	UserID int64
+	Key    string
+}
+
+// AWGIdentity is a user's tunnel identity as stored: their private key and their
+// place on the subnet. Slot 0 is none — the subnet had no place left.
+type AWGIdentity struct {
+	Key  string
+	Slot int
+}
+
+// ClaimUsersAWG gives each claimed user a tunnel identity — a key (priv, encrypted at
+// rest) unless they already have one, and the lowest free slot in [first, last] unless
+// they already hold one — and returns what each user ends up with. A user deleted
+// meanwhile is left out of the result. Written once, when a tunnel config is first
+// built for the user; never rotated on its own.
 //
-// Servers build their peer lists independently, so two of them can mint a key for
-// the same new user at the same moment. Only the first may stick: a second write
-// would leave one server's peer list holding a key the user's config no longer has.
-func (s *Store) ClaimUserWGKey(id int64, priv string) (string, error) {
-	var stored string
+// One transaction for the whole batch: the first tunnel a big panel brings up claims
+// for every user at once, and a statement-per-commit there held the one connection
+// for as long as it took to fsync them all. It is also what keeps claims consistent
+// when servers build their peer lists at the same moment: only the first key sticks
+// (a second would leave one server's peers holding a key the user's config no longer
+// has), and no slot is handed out twice.
+func (s *Store) ClaimUsersAWG(claims []AWGClaim, first, last int) (map[int64]AWGIdentity, error) {
+	out := make(map[int64]AWGIdentity, len(claims))
 	err := s.withTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`UPDATE users SET wg_private_key = ? WHERE id = ? AND wg_private_key = ''`,
-			encField(priv), id); err != nil {
+		used := map[int]bool{}
+		rows, err := tx.Query(`SELECT awg_slot FROM users WHERE awg_slot > 0`)
+		if err != nil {
 			return err
 		}
-		return tx.QueryRow(`SELECT wg_private_key FROM users WHERE id = ?`, id).Scan(&stored)
+		for rows.Next() {
+			var slot int
+			if err := rows.Scan(&slot); err != nil {
+				rows.Close()
+				return err
+			}
+			used[slot] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		next := first
+		for _, c := range claims {
+			if _, err := tx.Exec(`UPDATE users SET wg_private_key = ? WHERE id = ? AND wg_private_key = ''`,
+				encField(c.Key), c.UserID); err != nil {
+				return err
+			}
+			var key string
+			var slot int
+			err := tx.QueryRow(`SELECT wg_private_key, awg_slot FROM users WHERE id = ?`, c.UserID).Scan(&key, &slot)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if slot == 0 {
+				for next <= last && used[next] {
+					next++
+				}
+				if next <= last {
+					if _, err := tx.Exec(`UPDATE users SET awg_slot = ? WHERE id = ? AND awg_slot = 0`, next, c.UserID); err != nil {
+						return err
+					}
+					slot = next
+					used[next] = true
+				}
+			}
+			out[c.UserID] = AWGIdentity{Key: decField(key), Slot: slot}
+		}
+		return nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return decField(stored), nil
+	return out, nil
 }
 
 // SetUserNote replaces the operator's note on a user.
@@ -1064,7 +1126,7 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 			&u.ResetPeriod, &u.LastResetAt, &u.LastSeen, &u.DeviceLimit, &u.SpeedLimit, &u.TgChatID,
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
-			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds,
+			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds, &u.AWGSlot,
 		); err != nil {
 			return nil, err
 		}

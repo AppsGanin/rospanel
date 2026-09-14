@@ -50,7 +50,7 @@ func TestTheProfileNameStaysOutOfBothConfigs(t *testing.T) {
 		t.Fatal("a generated block does not say what it imitates")
 	}
 	priv, pub, _ := GenerateKey()
-	addr, _ := ClientAddr(7)
+	addr, _ := ClientAddr(8)
 	uapi, err := Config{PrivateKey: priv, ListenPort: 51820, Params: p,
 		Peers: []Peer{{PublicKey: pub, Addr: addr, Email: "u7"}}}.UAPI()
 	if err != nil {

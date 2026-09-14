@@ -71,35 +71,33 @@ func TestNodeInputsAreSharedUntilAWake(t *testing.T) {
 	}
 }
 
-// Two servers minting a tunnel key for the same new user at once end up with the same
-// key: the first stored wins and the second takes it.
-func TestUserWGKeyFirstMintWins(t *testing.T) {
+// Two servers claiming a tunnel identity for the same new user at once end up with the
+// same key and the same address: the first stored wins and the second takes it.
+func TestUserAWGFirstClaimWins(t *testing.T) {
 	m := nodeTestManager(t)
 	u, err := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, b := *u, *u // two builds holding the same snapshot, both without a key
-	ka, err := m.userWGKey(&a)
-	if err != nil {
+	a, b := *u, *u // two builds holding the same snapshot, both without a key or slot
+	if err := m.claimAWG([]*model.User{&a}); err != nil {
 		t.Fatal(err)
 	}
-	kb, err := m.userWGKey(&b)
-	if err != nil {
+	if err := m.claimAWG([]*model.User{&b}); err != nil {
 		t.Fatal(err)
 	}
-	if ka == "" || ka != kb {
-		t.Fatalf("two mints for one user gave different keys")
+	if a.WGPrivateKey == "" || a.WGPrivateKey != b.WGPrivateKey || a.AWGSlot == 0 || a.AWGSlot != b.AWGSlot {
+		t.Fatalf("two claims for one user gave different identities: slots %d, %d", a.AWGSlot, b.AWGSlot)
 	}
 	stored, _ := m.store.GetUser(u.ID)
-	if stored.WGPrivateKey != ka {
-		t.Fatal("the key handed out is not the one stored")
+	if stored.WGPrivateKey != a.WGPrivateKey || stored.AWGSlot != a.AWGSlot {
+		t.Fatal("the identity handed out is not the one stored")
 	}
 }
 
 // Nodes building their tunnels at the same time from the one shared snapshot mint keys
 // for users who have none. Each works on its own copy of the users (the race detector
-// holds that), and both hand out the same key per user.
+// holds that), and both hand out the same key and address per user.
 func TestConcurrentAWGNodesShareUserKeys(t *testing.T) {
 	m := nodeTestManager(t)
 	for i := 0; i < 20; i++ {
@@ -150,14 +148,14 @@ func TestConcurrentAWGNodesShareUserKeys(t *testing.T) {
 		out := map[string]string{}
 		if st.Meta.AWG != nil {
 			for _, p := range st.Meta.AWG.Peers {
-				out[p.Email] = p.PublicKey
+				out[p.Email] = p.PublicKey + " " + p.Addr
 			}
 		}
 		return out
 	}
 	a, b := peers(states[0]), peers(states[1])
 	if len(a) != 20 || !reflect.DeepEqual(a, b) {
-		t.Fatalf("the two nodes disagree on user keys: %d vs %d peers", len(a), len(b))
+		t.Fatalf("the two nodes disagree on user keys or addresses: %d vs %d peers", len(a), len(b))
 	}
 }
 

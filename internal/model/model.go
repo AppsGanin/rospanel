@@ -170,6 +170,10 @@ type User struct {
 	// minted the first time a tunnel config is built for them and kept so every
 	// config they ever download carries the same identity. Encrypted at rest.
 	WGPrivateKey string `json:"-"`
+	// AWGSlot is the user's place on the AmneziaWG tunnel subnet (awg.ClientAddr), the
+	// same on every server; 0 until their tunnel key is first needed. Handed out, not
+	// derived from the id, so a panel's user ids can grow past the subnet's size.
+	AWGSlot int `json:"-"`
 
 	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
 
