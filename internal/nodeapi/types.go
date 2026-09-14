@@ -122,6 +122,11 @@ type SyncRequest struct {
 	// double-counting (the panel dedupes against its stored watermark).
 	ReportID int64          `json:"report_id"`
 	Traffic  []TrafficDelta `json:"traffic,omitempty"`
+	// TrafficMore says this report is one chunk of a backlog and the rest is waiting on
+	// the node: answer it at once rather than holding, so the backlog drains in a few
+	// quick round trips instead of one chunk per hold. A panel too old to know the
+	// field holds as before, which only drains more slowly.
+	TrafficMore bool `json:"traffic_more,omitempty"`
 
 	// Conns are distinct (user-email, source-IP) samples seen in this node's Xray
 	// access log since the last sync. The panel feeds them through the same device-

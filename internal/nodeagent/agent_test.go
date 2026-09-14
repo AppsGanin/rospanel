@@ -231,3 +231,71 @@ func TestUserIDFromEmail(t *testing.T) {
 		}
 	}
 }
+
+// A traffic backlog goes out in chunks the panel's body cap can take: every user's
+// traffic exactly once, each chunk under its own report id and resent unchanged until
+// acked, flagged as more-to-come while anything is left behind and not on the last.
+func TestTrafficBacklogGoesOutInChunks(t *testing.T) {
+	dir := t.TempDir()
+	sup := xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
+	total := 2*trafficChunkMax + 500
+	pending := make(map[int64]*nodeapi.TrafficDelta, total)
+	for i := 1; i <= total; i++ {
+		pending[int64(i)] = &nodeapi.TrafficDelta{UserID: int64(i), Up: int64(i), Down: int64(2 * i)}
+	}
+	a := &Agent{
+		dataDir: dir, sup: sup, certPath: filepath.Join(dir, "cert.pem"),
+		state: &persistState{}, pending: pending,
+		inflight: map[int64]*nodeapi.TrafficDelta{}, lastCounters: map[string]xray.Traffic{},
+	}
+
+	seen := map[int64]bool{}
+	var lastID int64
+	for round := 0; ; round++ {
+		req := a.buildSyncRequest()
+		if len(req.Traffic) == 0 {
+			if req.TrafficMore {
+				t.Fatal("a request with no traffic said more was coming")
+			}
+			break
+		}
+		if round > 3 {
+			t.Fatalf("still sending after %d chunks", round)
+		}
+		if len(req.Traffic) > trafficChunkMax {
+			t.Fatalf("chunk of %d, cap %d", len(req.Traffic), trafficChunkMax)
+		}
+		if req.ReportID <= lastID {
+			t.Fatalf("chunk report id %d not above the previous %d", req.ReportID, lastID)
+		}
+		lastID = req.ReportID
+		if resend := a.buildSyncRequest(); resend.ReportID != req.ReportID || len(resend.Traffic) != len(req.Traffic) || resend.TrafficMore != req.TrafficMore {
+			t.Fatalf("unacked chunk not resent unchanged: id %d→%d, %d→%d rows", req.ReportID, resend.ReportID, len(req.Traffic), len(resend.Traffic))
+		}
+		for _, d := range req.Traffic {
+			if seen[d.UserID] {
+				t.Fatalf("user %d sent twice", d.UserID)
+			}
+			if d.Up != d.UserID || d.Down != 2*d.UserID {
+				t.Fatalf("user %d sent %d/%d", d.UserID, d.Up, d.Down)
+			}
+			seen[d.UserID] = true
+		}
+		if wantMore := len(seen) < total; req.TrafficMore != wantMore {
+			t.Fatalf("after %d of %d users, more = %v", len(seen), total, req.TrafficMore)
+		}
+		a.ackReport(req.ReportID)
+	}
+	if len(seen) != total {
+		t.Fatalf("%d of %d users' traffic went out", len(seen), total)
+	}
+
+	// A partial batch in flight while a new sample lands is not a backlog: the sample
+	// goes out on the next poll, which the panel may hold.
+	a.pending = map[int64]*nodeapi.TrafficDelta{1: {UserID: 1, Up: 5}}
+	first := a.buildSyncRequest()
+	a.pending[2] = &nodeapi.TrafficDelta{UserID: 2, Up: 6}
+	if again := a.buildSyncRequest(); again.ReportID != first.ReportID || again.TrafficMore {
+		t.Fatalf("a partial in-flight batch with a new sample: id %d→%d more=%v", first.ReportID, again.ReportID, again.TrafficMore)
+	}
+}
