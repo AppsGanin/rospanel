@@ -193,3 +193,46 @@ func TestDeviceCountRuleAgreesAcrossSQLAndGo(t *testing.T) {
 		}
 	}
 }
+
+// A read of one user counts that user's devices from their own rows, and has to come
+// to the number the list shows for them: addresses inside the window only, and none of
+// anyone else's.
+func TestOneUserReadCountsTheSameDevicesAsTheList(t *testing.T) {
+	st := dcStore(t)
+	now := time.Now().Unix()
+	a := dcUser(t, st, "a",
+		ConnectionHit{IP: "10.2.0.1", SeenAt: now},
+		ConnectionHit{IP: "10.2.0.2", SeenAt: now - 30},
+		ConnectionHit{IP: "10.2.0.3", SeenAt: now - model.DeviceOnlineWindow - 5},
+	)
+	b := dcUser(t, st, "b",
+		ConnectionHit{IP: "10.3.0.1", SeenAt: now},
+		ConnectionHit{IP: "10.3.0.2", SeenAt: now},
+		ConnectionHit{IP: "10.3.0.3", SeenAt: now},
+	)
+	listed, err := st.ListUsers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inList := map[int64]int{}
+	for _, u := range listed {
+		inList[u.ID] = u.ActiveDevices
+	}
+	for _, c := range []struct {
+		u    model.User
+		want int
+	}{{a, 2}, {b, 3}} {
+		one, err := st.GetUser(c.u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byToken, err := st.GetUserBySubToken(c.u.SubToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if one.ActiveDevices != c.want || byToken.ActiveDevices != c.want || inList[c.u.ID] != c.want {
+			t.Errorf("%s: one read %d, by token %d, list %d — want %d",
+				c.u.Name, one.ActiveDevices, byToken.ActiveDevices, inList[c.u.ID], c.want)
+		}
+	}
+}
