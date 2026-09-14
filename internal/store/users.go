@@ -278,14 +278,44 @@ const deviceCountCTE = `SELECT CASE
 // device limit. enabled is an independent manual flag — expiry/quota/devices
 // never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
-	since := now - model.DeviceOnlineWindow
-	// device_count decides, once, whether source addresses still enforce the limit — the
-	// same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
-	// this query and the status derivation agree without threading a flag through six of
-	// them. See migration 0055 and issue #66.
 	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT `+userCols+` FROM users
-		WHERE enabled = 1
+		SELECT `+userCols+` FROM users `+workingUsersWhere+`
+		ORDER BY id ASC`, workingUsersArgs(now)...)
+}
+
+// WorkingUserIDs is WorkingUsers for a caller that only needs to know WHO: the ids,
+// from the same condition, without reading every column, deriving statuses and
+// decrypting every password and key. The access flush asks this every few seconds to
+// learn whether the working set moved, and with a couple of thousand users the full
+// read was ~9x slower and allocated ~250x more for an answer it threw away.
+func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
+	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT id FROM users `+workingUsersWhere+`
+		ORDER BY id ASC`, workingUsersArgs(now)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// workingUsersWhere is the one statement of who belongs in the proxy config, shared by
+// WorkingUsers and WorkingUserIDs so the two cannot drift apart. It expects the
+// device_count CTE and workingUsersArgs.
+//
+// device_count decides, once, whether source addresses still enforce the limit — the
+// same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
+// this query and the status derivation agree without threading a flag through six of
+// them. See migration 0055 and issue #66.
+const workingUsersWhere = `WHERE enabled = 1
 		  AND (expire_at = 0 OR expire_at > ?)
 		  AND (data_limit = 0 OR used_up + used_down < data_limit)
 		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
@@ -299,8 +329,10 @@ func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 		       -- left behind by a network change or a carrier's address rotation leaves
 		       -- the window before this expires, so it never costs anyone a cut.
 		       OR device_over_since = 0
-		       OR device_over_since > ?)
-		ORDER BY id ASC`, now, since, now-model.DeviceLimitGrace)
+		       OR device_over_since > ?)`
+
+func workingUsersArgs(now int64) []any {
+	return []any{now, now - model.DeviceOnlineWindow, now - model.DeviceLimitGrace}
 }
 
 // GetUser returns one user by id.

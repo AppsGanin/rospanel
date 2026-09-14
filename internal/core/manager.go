@@ -37,12 +37,17 @@ type TLSPaths struct {
 // admin's request (which flows through Xray) from being killed by the restart.
 const reconcileDebounce = 800 * time.Millisecond
 
-// accLast is pruned of entries older than accLastTTL once it grows past
-// accLastMax, so the access throttle map stays bounded to recently-active
-// user+IP pairs instead of leaking one entry per pair ever seen.
+// accLast exists for one thing: collapsing a user+IP to one recorded sighting per
+// accThrottle seconds. An entry older than that throttles nothing, so once the map
+// grows past accLastMax it is swept of exactly those — and swept at most once per
+// throttle window. It used to keep entries for an hour and sweep on EVERY sighting
+// while over the cap: past ~4096 pairs active within the hour (a couple of thousand
+// users on phones) every sighting walked the whole map under the access-log reader's
+// lock, and at 20,000 pairs that was ~0.1ms per sighting, thousands of times a second.
 const (
-	accLastMax = 4096
-	accLastTTL = int64(time.Hour / time.Second)
+	accThrottle = int64(10)
+	accLastMax  = 4096
+	accLastTTL  = accThrottle
 	// accPendingMax bounds the unflushed sighting buffer. Sized above accLastMax so
 	// the throttle, not this cap, is what normally limits it — this only catches the
 	// pathological case where flushes keep failing and the buffer stops draining.
@@ -70,6 +75,9 @@ type Manager struct {
 
 	accMu   sync.Mutex
 	accLast map[string]int64 // throttle key "uN|ip" → last recorded unix
+	// accLastSwept is when accLast was last swept (unix), so a map that stays over its
+	// cap with genuinely active pairs is not re-walked on every sighting.
+	accLastSwept int64
 	// accPending buffers sightings between flushes, so the access-log reader never
 	// touches the database on the hot path. Bounded by the throttle above: one entry
 	// per user+IP per flush interval, not per log line.
@@ -460,11 +468,12 @@ func (m *Manager) RecordAccess(email, ip, dest string) {
 	key := email + "|" + ip
 	m.accMu.Lock()
 	defer m.accMu.Unlock()
-	if now-m.accLast[key] < 10 {
+	if now-m.accLast[key] < accThrottle {
 		return
 	}
 	m.accLast[key] = now
-	if len(m.accLast) > accLastMax {
+	if len(m.accLast) > accLastMax && now-m.accLastSwept >= accThrottle {
+		m.accLastSwept = now
 		for k, ts := range m.accLast { // drop pairs not seen within the TTL
 			if now-ts > accLastTTL {
 				delete(m.accLast, k)
@@ -543,7 +552,7 @@ func (m *Manager) FlushAccess() {
 	// A new device (source IP) may push the user over their device cap — re-check
 	// the working set and sync promptly so the over-limit user drops out, instead
 	// of waiting for the next periodic reconcile.
-	if working, err := m.store.WorkingUsers(now); err == nil && m.workingChanged(working) {
+	if working, err := m.store.WorkingUserIDs(now); err == nil && m.workingIDsChanged(working) {
 		m.TriggerUserSync()
 	}
 }
@@ -865,6 +874,21 @@ func (m *Manager) setApplied(users []model.User) {
 	m.appliedMu.Lock()
 	m.applied = ids
 	m.appliedMu.Unlock()
+}
+
+// workingIDsChanged is workingChanged for the ids alone, which is all it compares.
+func (m *Manager) workingIDsChanged(ids []int64) bool {
+	m.appliedMu.Lock()
+	defer m.appliedMu.Unlock()
+	if len(ids) != len(m.applied) {
+		return true
+	}
+	for _, id := range ids {
+		if _, ok := m.applied[id]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // workingChanged reports whether the given working set differs from what's
