@@ -288,35 +288,33 @@ export function GroupsPanel() {
       >
         {editing && (
           <div className="flex flex-col gap-3.5">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextInput
-                label={t("groups.name")}
-                value={editing.name}
-                onChange={(v) => setEditing({ ...editing, name: v })}
-                placeholder={t("groups.namePlaceholder")}
-              />
-              {/* "0" reads as "not set" here, not "unlimited": a group without a cap
-                  leaves each member the one their tariff or card gives them. */}
-              <CustomizableSelect
-                label={t("userDetail.speedLimit")}
-                data={[
-                  { value: "0", label: t("groups.speedNone") },
-                  ...speedLimitOptions().filter((o) => o.value !== "0"),
-                ]}
-                value={editing.speed}
-                format={fmtSpeed}
-                units={[
-                  { factor: 1, label: t("speed.unitKbit") },
-                  { factor: 1000, label: t("speed.unitMbit") },
-                ]}
-                onChange={(v) => setEditing({ ...editing, speed: v })}
-              />
-            </div>
+            <TextInput
+              label={t("groups.name")}
+              value={editing.name}
+              onChange={(v) => setEditing({ ...editing, name: v })}
+              placeholder={t("groups.namePlaceholder")}
+            />
+            {/* "0" reads as "not set" here, not "unlimited": a group without a cap
+                leaves each member the one their tariff or card gives them. */}
+            <CustomizableSelect
+              label={t("userDetail.speedLimit")}
+              data={[
+                { value: "0", label: t("groups.speedNone") },
+                ...speedLimitOptions().filter((o) => o.value !== "0"),
+              ]}
+              value={editing.speed}
+              format={fmtSpeed}
+              units={[
+                { factor: 1, label: t("speed.unitKbit") },
+                { factor: 1000, label: t("speed.unitMbit") },
+              ]}
+              onChange={(v) => setEditing({ ...editing, speed: v })}
+            />
             <p className="-mt-2 text-[11px] leading-relaxed text-ink-muted">
               {t("groups.speedHint")}
             </p>
-            {/* A group restricts its members to what it grants, so one set up for its
-                speed alone would cut them off every connection. */}
+            {/* Saved with nothing ticked, the group stops limiting access — say so
+                before the save, since it opens every connection to the members. */}
             {editing.grants.size === 0 && (
               <p className="-mt-2 text-[11px] leading-relaxed text-warning">
                 {t("groups.noGrantsWarn")}
