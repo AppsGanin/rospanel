@@ -40,7 +40,7 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 	// Keys on a working user and on one who is not, so the credentials read is held to
 	// the working user's key and cannot pass by leaving every key blank.
 	for _, id := range []int64{plain, off} {
-		if err := st.SetUserWGKey(id, fmt.Sprintf("wg-key-of-%d", id)); err != nil {
+		if _, err := st.ClaimUserWGKey(id, fmt.Sprintf("wg-key-of-%d", id)); err != nil {
 			t.Fatal(err)
 		}
 	}

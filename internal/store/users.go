@@ -653,11 +653,26 @@ func (s *Store) SetUserName(id int64, name string) error {
 	return err
 }
 
-// SetUserWGKey stores a user's AmneziaWG private key (encrypted at rest). Written
-// once, when the first tunnel config is built for them; never rotated on its own.
-func (s *Store) SetUserWGKey(id int64, priv string) error {
-	_, err := s.db.Exec(`UPDATE users SET wg_private_key = ? WHERE id = ?`, encField(priv), id)
-	return err
+// ClaimUserWGKey stores priv as a user's AmneziaWG private key (encrypted at rest)
+// unless they already have one, and returns the key they end up with. Written once,
+// when the first tunnel config is built for them; never rotated on its own.
+//
+// Servers build their peer lists independently, so two of them can mint a key for
+// the same new user at the same moment. Only the first may stick: a second write
+// would leave one server's peer list holding a key the user's config no longer has.
+func (s *Store) ClaimUserWGKey(id int64, priv string) (string, error) {
+	var stored string
+	err := s.withTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`UPDATE users SET wg_private_key = ? WHERE id = ? AND wg_private_key = ''`,
+			encField(priv), id); err != nil {
+			return err
+		}
+		return tx.QueryRow(`SELECT wg_private_key FROM users WHERE id = ?`, id).Scan(&stored)
+	})
+	if err != nil {
+		return "", err
+	}
+	return decField(stored), nil
 }
 
 // SetUserNote replaces the operator's note on a user.

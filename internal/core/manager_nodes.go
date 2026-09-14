@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
@@ -141,10 +142,11 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
-	users, err := m.store.WorkingCredentials(time.Now().Unix())
+	in, err := m.nodeInputs()
 	if err != nil {
 		return nil, err
 	}
+	users := in.users
 	ns := nodeSettings(set, n)
 	// Cert paths are sentinels the agent rewrites to its own absolute paths (the
 	// panel doesn't know the node's data dir); keeping them symbolic makes the hash
@@ -153,9 +155,14 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
 	// panel's own layout. Egress lanes resolve against the node's OWN proxy pool.
-	opts, err := m.genOptsFor(n.ID)
-	if err != nil {
-		return nil, err
+	opts := m.genOpts()
+	opts.ServerID = n.ID
+	opts.Access = in.access
+	if list, err := m.store.EnabledInbounds(n.ID); err != nil {
+		// Soft, as in genOptsFor: the built-in lanes still keep the server reachable.
+		logErr("inbounds: load failed", "server", n.ID, "err", err)
+	} else {
+		opts.Custom = list
 	}
 	cfg, err := xray.Generate(ns, users, opts, m.getNodeProxies(n.ID))
 	if err != nil {
@@ -204,16 +211,14 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		DecoyTemplate:     n.DecoyTemplate,
 		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence
 		XrayPinnedVersion: xray.PinnedVersion,
-		SpeedLimits:       m.SpeedLimits(),
+		SpeedLimits:       in.speed,
 	}
-	if access, err := m.store.AccessMap(); err == nil {
-		meta.AWG = m.nodeAWGState(n, ns, users, access)
-	}
+	meta.AWG = m.nodeAWGState(n, ns, users, in.access)
 	// What the source policy has refused, for this node's own firewall. Read here
 	// rather than pushed on each block so a node that was offline catches up on its
 	// next sync, and so the hash covers it (a lifted block reaches the node too).
-	if blocked, err := m.store.BlockedIPList(); err == nil && len(blocked) > 0 {
-		meta.BlockedIPs = blocked
+	if len(in.blocked) > 0 {
+		meta.BlockedIPs = in.blocked
 		meta.BlockTTLHours = int(policyTTL(set.ConnPolicy) / time.Hour)
 	}
 	if ns.OperaEnabled {
@@ -231,6 +236,73 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		XrayConfig: raw,
 		Meta:       meta,
 	}, nil
+}
+
+// nodeInputs are the parts of every node's desired state that no node owns: the working
+// users' credentials, the access map, the speed caps and the blocked addresses.
+//
+// Each node's sync used to read all four for itself, twice a poll and again on every
+// wake — and a wake reaches every node at once. With 20,000 users that was ~28ms of
+// the ~36ms a node's state took, repeated per node. Read once, they are shared by
+// every node until something changes.
+//
+// "Something changes" is a wake: every change nodes must see already wakes them (a
+// user sync, a node or policy edit), and the registry counts wakes, so a snapshot
+// taken before the latest one is never used. What changes with no wake at all — a
+// blocked address running out, say — is picked up when the snapshot ages out, which
+// nodeInputsTTL keeps well inside a poll.
+type nodeInputs struct {
+	gen     uint64
+	at      time.Time
+	users   []model.User // read-only: copy before changing a user (see nodeAWGState)
+	access  map[int64]model.Access
+	speed   map[string]int
+	blocked []string
+}
+
+const nodeInputsTTL = 10 * time.Second
+
+// nodeInputs returns the shared inputs, reading them afresh when the cached ones
+// predate the latest wake or have aged out. Callers must not modify what they get.
+func (m *Manager) nodeInputs() (*nodeInputs, error) {
+	m.nodeInputsMu.Lock()
+	defer m.nodeInputsMu.Unlock()
+	gen := m.nodes.generation()
+	if c := m.nodeInputsCache; c != nil && c.gen == gen && time.Since(c.at) < nodeInputsTTL {
+		return c, nil
+	}
+	// The generation is taken before reading: a wake that lands mid-read leaves this
+	// snapshot one generation behind, so the next caller reads again.
+	in := &nodeInputs{gen: gen, at: time.Now()}
+	var err error
+	if in.users, err = m.store.WorkingCredentials(in.at.Unix()); err != nil {
+		return nil, err
+	}
+	// A hard failure, as in genOptsFor: without the access map every restricted
+	// user's credential would be written into every lane.
+	if in.access, err = m.store.AccessMap(); err != nil {
+		return nil, fmt.Errorf("load access map: %w", err)
+	}
+	complete := true
+	if capped, err := m.store.CappedUsers(in.at.Unix()); err != nil {
+		logErr("node state: cannot read speed caps", "err", err)
+		complete = false
+	} else if len(capped) > 0 {
+		in.speed = make(map[string]int, len(capped))
+		for id, kbps := range capped {
+			in.speed[model.UserEmail(id)] = kbps
+		}
+	}
+	if in.blocked, err = m.store.BlockedIPList(); err != nil {
+		logErr("node state: cannot read blocked addresses", "err", err)
+		complete = false
+	}
+	// A read that failed softly serves this build but is not kept: sharing it would
+	// drop the caps or the blocks from every node's state for the whole TTL.
+	if complete {
+		m.nodeInputsCache = in
+	}
+	return in, nil
 }
 
 // NodeXrayConfig returns one server's Xray config for the read-only viewer: the
@@ -267,6 +339,9 @@ func (m *Manager) NodeXrayConfig(id int64) ([]byte, error) {
 type nodeRegistry struct {
 	mu    sync.Mutex
 	waits map[int64]chan struct{}
+	// gen counts wakes. A wake is how a change reaches the nodes, so it is also what
+	// invalidates the inputs their desired state was built from (see nodeInputs).
+	gen atomic.Uint64
 }
 
 func newNodeRegistry() *nodeRegistry { return &nodeRegistry{waits: map[int64]chan struct{}{}} }
@@ -292,6 +367,7 @@ func (r *nodeRegistry) wakeOne(nodeID int64) {
 	if r == nil {
 		return // no registry (tests) ⇒ no parked poll to wake
 	}
+	r.gen.Add(1)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if ch, ok := r.waits[nodeID]; ok {
@@ -303,6 +379,7 @@ func (r *nodeRegistry) wakeOne(nodeID int64) {
 // dropWaiter wakes and removes a node's entry (used on delete, so a tombstoned
 // node's channel isn't retained forever).
 func (r *nodeRegistry) dropWaiter(nodeID int64) {
+	r.gen.Add(1)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if ch, ok := r.waits[nodeID]; ok {
@@ -318,12 +395,21 @@ func (r *nodeRegistry) wakeAll() {
 	if r == nil {
 		return
 	}
+	r.gen.Add(1)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, ch := range r.waits {
 		close(ch)
 		r.waits[id] = make(chan struct{})
 	}
+}
+
+// generation is the registry's wake count; 0 without a registry.
+func (r *nodeRegistry) generation() uint64 {
+	if r == nil {
+		return 0
+	}
+	return r.gen.Load()
 }
 
 // NodeWakeChan exposes a node's wake channel to the sync handler.
@@ -1709,12 +1795,6 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 				SeenAt: now.Unix(),
 			})
 		}
-		// Read before the write: enforceAfterTraffic wants the pre-ingest snapshot to
-		// spot who just crossed a limit.
-		var snapshot []model.User
-		if len(deltas) > 0 {
-			snapshot, _ = m.store.ListUsers()
-		}
 		claimed, err := m.store.ApplyNodeReport(n.ID, req.ReportID, deltas)
 		switch {
 		case err != nil:
@@ -1724,7 +1804,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 				"node", n.ID, "users", len(deltas), "err", err)
 			ack = 0
 		case claimed && len(deltas) > 0:
-			_ = m.enforceAfterTraffic(snapshot)
+			m.enforceTrafficSoon()
 		}
 		// claimed==false with err==nil ⇒ already-counted duplicate ⇒ ack it (a no-op).
 	}

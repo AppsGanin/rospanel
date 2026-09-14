@@ -47,8 +47,12 @@ func (m *Manager) userWGKey(u *model.User) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := m.store.SetUserWGKey(u.ID, priv); err != nil {
+	// Another server may have minted one first; theirs is the one that counts.
+	if priv, err = m.store.ClaimUserWGKey(u.ID, priv); err != nil {
 		return "", err
+	}
+	if priv == "" {
+		return "", fmt.Errorf("awg: stored key for user %d is unreadable", u.ID)
 	}
 	u.WGPrivateKey = priv
 	return priv, nil
@@ -348,7 +352,9 @@ func (m *Manager) nodeAWGState(n *model.Node, ns *model.Settings, users []model.
 			"node", n.ID, "node_version", n.NodeVersion)
 		return nil
 	}
-	peers := m.awgPeers(n.ID, users, access)
+	// awgPeers records a key it mints on the user it was handed, and these users are
+	// the snapshot every node shares (nodeInputs): it works on its own copy.
+	peers := m.awgPeers(n.ID, append([]model.User(nil), users...), access)
 	out := &nodeapi.AWGState{Port: ns.AWGPort, PrivateKey: n.AWGPrivateKey, Params: params}
 	for _, p := range peers {
 		out.Peers = append(out.Peers, nodeapi.AWGPeer{PublicKey: p.PublicKey, Addr: p.Addr.String(), Email: p.Email})
