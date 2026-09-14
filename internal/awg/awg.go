@@ -12,6 +12,7 @@ package awg
 import (
 	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Iface is the tunnel interface name on every server.
@@ -334,7 +336,20 @@ func GenerateKey() (priv, pub string, err error) {
 }
 
 // PublicKey derives the public key of a base64 private key.
+//
+// The answer is remembered. A peer list is built from every user's key on each node
+// sync, reconcile and stats poll, and deriving a public half is a scalar
+// multiplication: with 5000 users it was most of the 155ms a node's desired state
+// took, and a node asks for that state twice a poll. A key's public half never
+// changes, so nothing can go stale.
 func PublicKey(privB64 string) (string, error) {
+	sum := sha256.Sum256([]byte(privB64))
+	pubCacheMu.Lock()
+	pub, ok := pubCache[sum]
+	pubCacheMu.Unlock()
+	if ok {
+		return pub, nil
+	}
 	raw, err := keyBytes(privB64)
 	if err != nil {
 		return "", err
@@ -343,8 +358,26 @@ func PublicKey(privB64 string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()), nil
+	pub = base64.StdEncoding.EncodeToString(k.PublicKey().Bytes())
+	pubCacheMu.Lock()
+	if len(pubCache) >= pubCacheMax {
+		clear(pubCache)
+	}
+	pubCache[sum] = pub
+	pubCacheMu.Unlock()
+	return pub, nil
 }
+
+// The derived public keys, by a hash of the private key they came from, so the cache
+// does not become one more place every user's private key sits in. Bounded above any
+// peer count a tunnel subnet allows; past it the whole map goes rather than growing
+// with every key ever rotated.
+var (
+	pubCacheMu sync.Mutex
+	pubCache   = map[[sha256.Size]byte]string{}
+)
+
+const pubCacheMax = 1 << 17
 
 func keyBytes(b64 string) ([]byte, error) {
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))

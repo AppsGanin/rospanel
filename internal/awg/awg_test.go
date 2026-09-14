@@ -1,6 +1,7 @@
 package awg
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,48 @@ func TestKeysRoundTrip(t *testing.T) {
 	}
 	if _, err := PublicKey(base64.StdEncoding.EncodeToString([]byte("short"))); err == nil {
 		t.Error("a short key was accepted")
+	}
+}
+
+// TestPublicKeyCache holds the remembered answer to what the derivation gives: each
+// key its own public half on every later call, a refused key refused again rather
+// than remembered as something, and a full cache emptied instead of growing.
+func TestPublicKeyCache(t *testing.T) {
+	keys := make([][2]string, 3)
+	for i := range keys {
+		priv, pub, err := GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys[i] = [2]string{priv, pub}
+	}
+	for range 2 {
+		for _, k := range keys {
+			if got, err := PublicKey(k[0]); err != nil || got != k[1] {
+				t.Fatalf("public key: %q (err %v), want %q", got, err, k[1])
+			}
+		}
+	}
+	for range 2 {
+		if pub, err := PublicKey("not a key"); err == nil || pub != "" {
+			t.Fatalf("garbage came back as %q (err %v)", pub, err)
+		}
+	}
+
+	pubCacheMu.Lock()
+	clear(pubCache)
+	for i := range pubCacheMax {
+		pubCache[sha256.Sum256(fmt.Appendf(nil, "filler-%d", i))] = "x"
+	}
+	pubCacheMu.Unlock()
+	if got, err := PublicKey(keys[0][0]); err != nil || got != keys[0][1] {
+		t.Fatalf("public key past a full cache: %q (err %v)", got, err)
+	}
+	pubCacheMu.Lock()
+	n := len(pubCache)
+	pubCacheMu.Unlock()
+	if n != 1 {
+		t.Fatalf("a full cache kept %d entries, want only the new one", n)
 	}
 }
 
