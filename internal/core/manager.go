@@ -108,6 +108,16 @@ type Manager struct {
 	appliedMu sync.Mutex
 	applied   map[int64]struct{} // user IDs currently in the applied config
 
+	// enforceMu runs one traffic enforcement pass at a time, and enforcePending marks a
+	// pass already scheduled for node reports to share (see enforceTrafficSoon).
+	enforceMu      sync.Mutex
+	enforcePending atomic.Bool
+
+	// nodeInputsMu guards nodeInputsCache, the fleet-wide inputs every node's desired
+	// state is built from (see nodeInputs).
+	nodeInputsMu    sync.Mutex
+	nodeInputsCache *nodeInputs
+
 	tzMu sync.RWMutex
 	tz   *time.Location // operator timezone for the local-day stats boundary
 

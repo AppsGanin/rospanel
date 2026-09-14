@@ -66,13 +66,58 @@ func (m *Manager) PollStats() error {
 		t := stats[fmt.Sprintf("u%d", id)]
 		return t.Up, t.Down
 	})
+	return m.enforceTraffic()
+}
+
+// trafficEnforceDelay is how long a node's traffic report waits for the enforcement
+// pass it triggers, so the reports of the whole fleet within that window share one.
+var trafficEnforceDelay = 10 * time.Second
+
+// enforceTraffic runs one enforcement pass over the users as they are now, after the
+// traffic that prompted it has landed. One pass at a time, and the users are read
+// inside the lock: two passes over the same stale snapshot would both see a user's
+// status change and both alert about it.
+func (m *Manager) enforceTraffic() error {
+	m.enforceMu.Lock()
+	defer m.enforceMu.Unlock()
+	users, err := m.store.ListUsers()
+	if err != nil {
+		return err
+	}
 	return m.enforceAfterTraffic(users)
 }
 
+// enforceTrafficSoon schedules an enforcement pass for node traffic, unless one is
+// already waiting to run.
+//
+// Every node report used to read the whole user list for its own pass — with 20,000
+// users on a 1-vCPU server that read alone was ~0.4s, per node, every ~20 seconds.
+// Reports landing within trafficEnforceDelay now share one pass. The cost is that a
+// user who ran out of traffic on a node is cut up to that much later; node traffic
+// already arrives up to a poll late.
+func (m *Manager) enforceTrafficSoon() {
+	if !m.enforcePending.CompareAndSwap(false, true) {
+		return
+	}
+	m.runAsync(func() {
+		if !m.wait(trafficEnforceDelay) {
+			m.enforcePending.Store(false)
+			return
+		}
+		// Cleared before the pass, so a report that lands during it schedules the
+		// next one rather than being folded into a read that may predate it.
+		m.enforcePending.Store(false)
+		if err := m.enforceTraffic(); err != nil {
+			logErr("node traffic: enforcement pass failed", "err", err)
+		}
+	})
+}
+
 // enforceAfterTraffic runs the post-accounting tail shared by the local poll
-// (PollStats) and remote-node traffic ingest (IngestNodeSync): alert on status
-// transitions, sync users if someone crossed a limit/expiry, and apply billing
-// downgrades. `users` is the pre-enforcement snapshot used for transition alerts.
+// (PollStats) and remote-node traffic ingest (IngestNodeSync), through
+// enforceTraffic: alert on status transitions, sync users if someone crossed a
+// limit/expiry, and apply billing downgrades. `users` is the snapshot the alerts are
+// judged on, read after the traffic landed.
 func (m *Manager) enforceAfterTraffic(users []model.User) error {
 	// Alert admins when a user crosses active → expired / out-of-quota / over-device.
 	m.notifyStatusTransitions(users)

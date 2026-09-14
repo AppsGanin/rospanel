@@ -216,10 +216,13 @@ func TestNodeDesiredStateHashStable(t *testing.T) {
 		t.Fatalf("hash not stable: %q vs %q", s1.Hash, s2.Hash)
 	}
 
-	// Adding a working user changes the config → changes the hash.
+	// Adding a working user changes the config → changes the hash. Written to the
+	// store directly, so the wake the manager's user sync would send is sent here: a
+	// change reaches nodes through a wake (see nodeInputs).
 	if _, err := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	m.notifyNodes()
 	s3, err := m.NodeDesiredState(n)
 	if err != nil {
 		t.Fatalf("desired state 3: %v", err)
