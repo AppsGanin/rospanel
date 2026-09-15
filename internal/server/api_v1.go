@@ -125,7 +125,7 @@ func (rt *Router) apiHandler() http.Handler {
 	mux.HandleFunc(mcpPathPrefix+"{key}", rt.handleMCP)
 	mux.HandleFunc(mcpPathPrefix+"{key}/write", rt.handleMCP)
 	mux.Handle("/", rt.apiAuth(rt.apiMux()))
-	return mux
+	return rt.notingWrites(mux)
 }
 
 // apiHealthz is the liveness probe for an external uptime monitor or load balancer:
