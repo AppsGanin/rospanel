@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -50,8 +51,9 @@ func TestActiveDeviceCountsOfMatchesTheWindow(t *testing.T) {
 	}
 }
 
-// ListUserStates carries each field it names exactly as ListUsers does, and leaves the
-// rest zero — credentials above all.
+// A user state carries each field it names exactly as ListUsers does, and leaves the
+// rest zero — credentials above all. Both ways of counting devices are held to it: by
+// the users' own rows, and by the grouped window used past userStatesByKeyMax.
 func TestUserStatesMatchWholeUsers(t *testing.T) {
 	st := newStore(t)
 	now := time.Now().Unix()
@@ -96,13 +98,35 @@ func TestUserStatesMatchWholeUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	states, err := st.ListUserStates()
+	ids := make([]int64, len(whole))
+	for i, u := range whole {
+		ids[i] = u.ID
+	}
+	byKey, err := st.UserStatesByID(ids)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(whole) != len(states) {
-		t.Fatalf("%d users, %d states", len(whole), len(states))
+	b, _ := json.Marshal(ids)
+	byWindow, err := st.userStates(`SELECT `+userStateCols+` FROM users
+		WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id DESC`, false, string(b))
+	if err != nil {
+		t.Fatal(err)
 	}
+	for _, states := range [][]model.User{byKey, byWindow} {
+		if len(whole) != len(states) {
+			t.Fatalf("%d users, %d states", len(whole), len(states))
+		}
+		compareStates(t, whole, states)
+	}
+	// The fixture sets what it compares.
+	if got := whole[1]; got.LastUp != 7000 || got.TgChatID != 4242 || got.PlanID != 9 || got.ActiveDevices != 2 ||
+		got.Status != model.StatusDeviceLimited || got.NotifiedQuotaAt == 0 || got.HoldSeconds != 3600 {
+		t.Fatalf("fixture not as intended: %+v", got)
+	}
+}
+
+func compareStates(t *testing.T, whole, states []model.User) {
+	t.Helper()
 	for i, u := range whole {
 		want := model.User{
 			ID: u.ID, Name: u.Name, Enabled: u.Enabled, PlanID: u.PlanID, DataLimit: u.DataLimit,
@@ -115,11 +139,6 @@ func TestUserStatesMatchWholeUsers(t *testing.T) {
 		if !reflect.DeepEqual(states[i], want) {
 			t.Fatalf("user %d:\n state %+v\n want  %+v", u.ID, states[i], want)
 		}
-	}
-	// The fixture sets what it compares.
-	if got := whole[1]; got.LastUp != 7000 || got.TgChatID != 4242 || got.PlanID != 9 || got.ActiveDevices != 2 ||
-		got.Status != model.StatusDeviceLimited || got.NotifiedQuotaAt == 0 || got.HoldSeconds != 3600 {
-		t.Fatalf("fixture not as intended: %+v", got)
 	}
 }
 
