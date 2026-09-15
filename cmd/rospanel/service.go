@@ -43,6 +43,7 @@ import (
 // masquerade/subscription surface until a termination signal arrives.
 func runServer(dataDir string) {
 	log.Printf("startup: RosPanel %s booting (data dir %s)", version.Version, dataDir)
+	logMemoryLimit(tuning.SetMemoryLimit(panelMemoryShare))
 	adminAddr := env("ROSPANEL_ADMIN_ADDR", "127.0.0.1:8080")
 	startupStage("resolving Xray binary")
 	xrayBin := resolveXrayBin(env("XRAY_BIN", "xray"), filepath.Join(dataDir, "bin"))
@@ -379,6 +380,24 @@ func runServer(dataDir string) {
 		_ = redirector.Shutdown(ctx)
 	}
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// panelMemoryShare is the part of the machine's memory the panel's heap is steered
+// under. Half: Xray runs beside it with its own 256 MiB soft limit, and the system
+// needs the rest.
+const panelMemoryShare = 0.5
+
+// logMemoryLimit says what SetMemoryLimit decided, so an operator reading the boot log
+// can tell a slow, collecting panel from one that has room.
+func logMemoryLimit(m tuning.Memory) {
+	switch {
+	case m.Basis == "GOMEMLIMIT":
+		log.Printf("memory: GOMEMLIMIT=%s from the environment is in force", os.Getenv("GOMEMLIMIT"))
+	case m.Limit > 0:
+		log.Printf("memory: Go heap soft limit %d MiB (%.0f%% of %d MiB %s)", m.Limit>>20, float64(m.Limit)*100/float64(m.Of), m.Of>>20, m.Basis)
+	default:
+		log.Print("memory: size unknown, no Go heap soft limit set")
+	}
 }
 
 // startRedirector brings up the port-80 listener. Reads the host straight from the

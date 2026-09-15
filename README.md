@@ -768,7 +768,9 @@ means one more dictionary on each side.
 
 Useful environment variables (all optional): `ROSPANEL_DATA` (data directory),
 `ROSPANEL_ADMIN_ADDR` (the panel's loopback address, `127.0.0.1:8080` by default), `XRAY_BIN`,
-`ROSPANEL_HOST`, `ROSPANEL_ACME_EMAIL`.
+`ROSPANEL_HOST`, `ROSPANEL_ACME_EMAIL`, `GOMEMLIMIT`. Without `GOMEMLIMIT` the panel keeps its Go
+heap under a soft limit of half the machine's memory (a quarter on a node), or of the cgroup limit
+when that is lower; the boot log shows the figure.
 
 Flood protection (nftables limits on public TCP ports, see "Operations") is configured through
 the environment too — handy when a whole office or a CGNAT carrier sits behind one IP and
