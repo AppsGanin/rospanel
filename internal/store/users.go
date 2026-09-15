@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -173,6 +174,112 @@ func (s *Store) SubTokens() (map[string]struct{}, error) {
 func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
+
+// UserSummary is a user as a list of them shows, filters and sorts by: no credentials,
+// keys or bot state. The device count is not in it — see ListUserSummaries.
+type UserSummary struct {
+	ID          int64
+	Name        string
+	Note        string
+	Tags        []string
+	Enabled     bool
+	DataLimit   int64
+	ExpireAt    int64
+	HoldSeconds int64
+	UsedUp      int64
+	UsedDown    int64
+	LastSeen    int64
+	DeviceLimit int
+	Status      string
+}
+
+// ListUserSummaries returns every user as a summary, newest first.
+//
+// The users page reads the whole table on every request — its filters and chip counts
+// are over everyone. Read as whole users that is three dozen columns and two decrypted
+// fields per user, copied around as a struct three times this size, plus a count of
+// everyone's devices: at 20,000 users on a 1-vCPU box, ~370 ms of CPU a request.
+//
+// Devices are counted only for the users whose count decides their status — those
+// over their limit past the grace — which is usually nobody. A list that shows the
+// count asks ActiveDeviceCountsOf for the rows it shows.
+func (s *Store) ListUserSummaries() ([]UserSummary, error) {
+	// Read before the rows are open: the store has one connection, and the rows hold it.
+	countIP := s.ipCountsAsDevice()
+	now := time.Now().Unix()
+	rows, err := s.db.Query(`SELECT id, name, note, tags, enabled, data_limit, expire_at, hold_seconds,
+		used_up, used_down, last_seen, device_limit, device_over_since
+		FROM users ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UserSummary
+	var over []int64 // device_over_since, per row
+	var decides []int64
+	for rows.Next() {
+		var u UserSummary
+		var enabled int
+		var tags string
+		var overSince int64
+		if err := rows.Scan(&u.ID, &u.Name, &u.Note, &tags, &enabled, &u.DataLimit, &u.ExpireAt, &u.HoldSeconds,
+			&u.UsedUp, &u.UsedDown, &u.LastSeen, &u.DeviceLimit, &overSince); err != nil {
+			return nil, err
+		}
+		u.Enabled = enabled != 0
+		u.Tags = model.DecodeTags(tags)
+		out = append(out, u)
+		over = append(over, overSince)
+		if deviceCountDecides(u.DeviceLimit, overSince, now, countIP) {
+			decides = append(decides, u.ID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var counts map[int64]int
+	if len(decides) > 0 {
+		counts, _ = s.ActiveDeviceCountsOf(decides, now-model.DeviceOnlineWindow)
+	}
+	for i := range out {
+		u := &out[i]
+		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
+			counts[u.ID], u.DeviceLimit, over[i], countIP)
+	}
+	return out, nil
+}
+
+// ActiveDeviceCountsOf is ActiveDeviceCounts for the given users only: each read from
+// the user's own rows, so a handful of users costs a handful of lookups whatever the
+// number online.
+func (s *Store) ActiveDeviceCountsOf(ids []int64, since int64) (map[int64]int, error) {
+	out := make(map[int64]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(activeDeviceCountsOfSQL, string(b), since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+const activeDeviceCountsOfSQL = `SELECT user_id, COUNT(DISTINCT ip) FROM connections
+	WHERE user_id IN (SELECT value FROM json_each(?)) AND last_seen > ?
+	GROUP BY user_id`
 
 // UserIDs returns the set of existing user ids.
 //
@@ -1168,33 +1275,39 @@ func (s *Store) applyUserStatus(users []model.User, now int64) {
 		return
 	}
 	counts, _ := s.activeDeviceCounts(users, now-model.DeviceOnlineWindow)
-	// The displayed count stays honest — it is how many addresses were seen — but it only
-	// DRIVES the status while addresses are what enforces the limit. In "hwid" mode they
-	// do not, and a phone changing network still read as "device limit exceeded" (issue
-	// #66), the bot said so, and the HWID roster it is actually capped by showed one
-	// device. Showing the number and enforcing it are separate decisions.
 	countIP := s.ipCountsAsDevice()
 	for i := range users {
 		u := &users[i]
-		active := counts[u.ID]
-		u.ActiveDevices = active
-		limit := u.DeviceLimit
-		switch {
-		case !countIP:
-			limit = 0 // this counter does not enforce in "hwid" mode
-		case u.DeviceOverSince == 0 || u.DeviceOverSince > now-model.DeviceLimitGrace:
-			// Over the limit, but the grace has not run out, so nothing has happened to
-			// them yet — and it usually never will, because this is what a network
-			// change looks like. Saying "device limit exceeded" here would put the
-			// panel, the API and the bot in the position of announcing a cut that the
-			// enforcement query is not making.
-			limit = 0
-		}
-		u.Status = deriveStatus(
-			u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
-			active, limit,
-		)
+		u.ActiveDevices = counts[u.ID]
+		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
+			u.ActiveDevices, u.DeviceLimit, u.DeviceOverSince, countIP)
 	}
+}
+
+// userStatus is a user's display status. The device count drives it only where
+// deviceCountDecides says so.
+func userStatus(enabled bool, expireAt, used, dataLimit, now int64, active, deviceLimit int, overSince int64, countIP bool) string {
+	if !deviceCountDecides(deviceLimit, overSince, now, countIP) {
+		deviceLimit = 0
+	}
+	return deriveStatus(enabled, expireAt, used, dataLimit, now, active, deviceLimit)
+}
+
+// deviceCountDecides reports whether a user's count of addresses can make them
+// "device limited".
+//
+// The displayed count stays honest — it is how many addresses were seen — but it only
+// DRIVES the status while addresses are what enforces the limit. In "hwid" mode they
+// do not, and a phone changing network still read as "device limit exceeded" (issue
+// #66), the bot said so, and the HWID roster it is actually capped by showed one
+// device. Showing the number and enforcing it are separate decisions.
+//
+// Nor while the grace runs: over the limit, but nothing has happened to them yet — and
+// it usually never will, because this is what a network change looks like. Saying
+// "device limit exceeded" here would put the panel, the API and the bot in the
+// position of announcing a cut that the enforcement query is not making.
+func deviceCountDecides(deviceLimit int, overSince, now int64, countIP bool) bool {
+	return countIP && deviceLimit > 0 && overSince != 0 && overSince <= now-model.DeviceLimitGrace
 }
 
 // activeDeviceCounts is ActiveDeviceCounts for the users being read. A read of one
