@@ -44,8 +44,17 @@ const reconcileDebounce = 800 * time.Millisecond
 // while over the cap: past ~4096 pairs active within the hour (a couple of thousand
 // users on phones) every sighting walked the whole map under the access-log reader's
 // lock, and at 20,000 pairs that was ~0.1ms per sighting, thousands of times a second.
+//
+// accThrottle only holds back a pair already recorded: a new address is recorded on
+// its first line, so a new device counts at once. For a pair that stays connected it
+// decides how fresh last_seen is, and that has to stay inside the two-minute online
+// window (model.DeviceOnlineWindow) or a connected device drops out of the count. At
+// 45s a pair seen on every node sync (13–27s apart) is written every 45–72s, and one
+// seen by the master's minute-long tunnel poll on every poll. It was 10s, which wrote
+// every sync's worth of sightings again: with 50,000 active users that was the
+// largest share of the panel's CPU spent on writes.
 const (
-	accThrottle = int64(10)
+	accThrottle = int64(45)
 	accLastMax  = 4096
 	accLastTTL  = accThrottle
 	// accFlushAt is how many buffered sightings bring the next flush forward instead of
@@ -86,6 +95,9 @@ type Manager struct {
 	// accLastSwept is when accLast was last swept (unix), so a map that stays over its
 	// cap with genuinely active pairs is not re-walked on every sighting.
 	accLastSwept int64
+	// deviceCheckedAt is when a flush last re-checked the device limits (unix; see
+	// deviceCheckEvery).
+	deviceCheckedAt atomic.Int64
 	// accPending buffers sightings between flushes, so the access-log reader never
 	// touches the database on the hot path. Bounded by the throttle above: one entry
 	// per user+IP per flush interval, not per log line.
@@ -478,8 +490,8 @@ type accPendingKey struct {
 
 // RecordAccess notes a connection from an Xray access-log line (email "uN" +
 // source IP, and the destination host when the line carried a usable one).
-// Throttled to one recorded sighting per user+IP per 10s to absorb bursts, then
-// buffered — FlushAccess writes them.
+// Throttled to one recorded sighting per user+IP per accThrottle, then buffered —
+// FlushAccess writes them.
 //
 // This is called from the access-log reader for every line Xray emits, so it does
 // no I/O at all: it takes a lock, updates two maps, and returns.
@@ -492,7 +504,7 @@ func (m *Manager) RecordAccess(email, ip, dest string) {
 		return
 	}
 	// Abuse matching runs BEFORE the throttle, deliberately: the throttle below
-	// collapses a user+IP to one sighting per 10s (right for counting devices), and a
+	// collapses a user+IP to one sighting per accThrottle (right for counting devices), and a
 	// low-volume malware callback is exactly the traffic that gate would hide. Matched
 	// on the FULL destination — feeds list specific hosts, and a listed subdomain of an
 	// unlisted parent must not be missed. Memory-only lookup, so it costs the hot path
@@ -589,6 +601,13 @@ func (m *Manager) FlushAccess() {
 	}
 	m.noteTermsStarted(started)
 	now := time.Now().Unix()
+	// The device check below is two passes over everyone online, and the flush runs
+	// every few seconds; with 50,000 active users that was a third of what the flush
+	// cost, repeating an answer that cannot change faster than the grace allows.
+	if last := m.deviceCheckedAt.Load(); now-last < deviceCheckEvery {
+		return
+	}
+	m.deviceCheckedAt.Store(now)
 	// Stamp who is over their device limit before asking who should be in the config:
 	// the cut waits out model.DeviceLimitGrace, and the grace measures from this stamp.
 	// Sightings have just landed, so this is the moment the answer can change.
@@ -602,6 +621,12 @@ func (m *Manager) FlushAccess() {
 		m.TriggerUserSync()
 	}
 }
+
+// deviceCheckEvery is how often a flush re-checks who is over their device limit.
+// A user is cut only once DeviceLimitGrace (150s) has passed since the stamp, so a
+// stamp up to this much later makes the grace up to this much longer — and the check
+// after it, which notices the grace running out, up to this much later still.
+const deviceCheckEvery = int64(30)
 
 // TriggerReconcile requests a FULL config reload (regenerate + restart Xray) for
 // structural changes (protocols, routing, DNS, WARP, TLS, ports). Non-blocking;
