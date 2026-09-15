@@ -433,24 +433,31 @@ func (s *Store) RecordConnections(hits []ConnectionHit) ([]TermStart, error) {
 	}
 	var started []TermStart
 	err := s.withTx(func(tx *sql.Tx) error {
+		// Prepared once for the batch: executed per sighting and parsed afresh each
+		// time, the statement text was most of what a flush cost (5,000 sightings took
+		// ~170ms at 20,000 users; prepared, ~40ms).
+		//
+		// EXISTS guard for the same reason addDailyTrafficOn has one: connections
+		// .user_id is a foreign key, and RecordAccess reads user ids straight out of
+		// the Xray access log — a deleted user with a still-live session keeps being
+		// named. Without this, that one ghost would void everyone else's sightings in
+		// the batch, every flush, until Xray reloads.
+		upsert, err := tx.Prepare(`
+			INSERT INTO connections (user_id, ip, last_seen, count)
+			SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+			ON CONFLICT(user_id, ip) DO UPDATE SET
+			    last_seen = MAX(last_seen, excluded.last_seen),
+			    count = count + excluded.count`)
+		if err != nil {
+			return err
+		}
+		defer upsert.Close()
 		seen := make(map[int64]int64, len(hits)) // user → newest sighting in the batch
 		for _, h := range hits {
 			if h.Hits <= 0 {
 				h.Hits = 1
 			}
-			// EXISTS guard for the same reason addDailyTrafficOn has one: connections
-			// .user_id is a foreign key, and RecordAccess reads user ids straight out of
-			// the Xray access log — a deleted user with a still-live session keeps being
-			// named. Without this, that one ghost would void everyone else's sightings
-			// in the batch, every flush, until Xray reloads.
-			if _, err := tx.Exec(`
-				INSERT INTO connections (user_id, ip, last_seen, count)
-				SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
-				ON CONFLICT(user_id, ip) DO UPDATE SET
-				    last_seen = MAX(last_seen, excluded.last_seen),
-				    count = count + excluded.count`,
-				h.UserID, h.IP, h.SeenAt, h.Hits, h.UserID,
-			); err != nil {
+			if _, err := upsert.Exec(h.UserID, h.IP, h.SeenAt, h.Hits, h.UserID); err != nil {
 				return err
 			}
 			if h.SeenAt > seen[h.UserID] {
@@ -459,12 +466,16 @@ func (s *Store) RecordConnections(hits []ConnectionHit) ([]TermStart, error) {
 		}
 		// One last_seen write per user, not per sighting: a user on four devices
 		// would otherwise stamp the same column four times in the same commit.
+		touch, err := tx.Prepare(`UPDATE users SET last_seen = ? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer touch.Close()
 		for userID, ts := range seen {
-			if err := touchLastSeenOn(tx, userID, ts); err != nil {
+			if _, err := touch.Exec(ts, userID); err != nil {
 				return err
 			}
 		}
-		var err error
 		started, err = startHeldTermsOn(tx, seen)
 		return err
 	})

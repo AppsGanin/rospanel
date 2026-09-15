@@ -104,3 +104,28 @@ func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
 			strings.Join(plan, "\n  "))
 	}
 }
+
+// A pair's sightings add up across batches and within one, and its last_seen only
+// moves forward.
+func TestRecordConnectionsAddsUpSightings(t *testing.T) {
+	st := newStore(t)
+	u, err := st.CreateUser("u", "uuid-u", "pw", "tok-u", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, batch := range [][]ConnectionHit{
+		{{UserID: u.ID, IP: "198.51.100.1", SeenAt: 100, Hits: 2}, {UserID: u.ID, IP: "198.51.100.2", SeenAt: 100, Hits: 1}},
+		{{UserID: u.ID, IP: "198.51.100.1", SeenAt: 90, Hits: 3}},
+	} {
+		if _, err := st.RecordConnections(batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count, seen int64
+	if err := st.db.QueryRow(`SELECT count, last_seen FROM connections WHERE user_id = ? AND ip = '198.51.100.1'`, u.ID).Scan(&count, &seen); err != nil {
+		t.Fatal(err)
+	}
+	if count != 5 || seen != 100 {
+		t.Fatalf("count %d last_seen %d, want 5 and 100", count, seen)
+	}
+}
