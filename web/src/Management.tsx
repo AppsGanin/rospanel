@@ -114,7 +114,7 @@ function Row({
 }
 
 const sqBtn =
-  "flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-onaccent transition hover:bg-brand-700";
+  "flex h-11 w-11 items-center justify-center rounded-lg bg-brand-600 text-onbrand transition hover:bg-brand-700";
 
 /* --------------------------------------------------------------- card */
 export function ManagementCard() {

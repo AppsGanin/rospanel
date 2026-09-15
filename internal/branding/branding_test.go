@@ -152,6 +152,25 @@ func TestColourMaths(t *testing.T) {
 	}
 }
 
+// A white accent used to paint white labels on white buttons. The label turns
+// dark only for a light fill; every stock swatch keeps white.
+func TestOnFillKeepsLabelsReadable(t *testing.T) {
+	for _, fill := range []string{
+		"#0d4cd3", "#4f46e5", "#7c3aed", "#0891b2", "#0d9488",
+		"#059669", "#dc2626", "#ea580c", "#e11d48", "#475569",
+		"nope",
+	} {
+		if got := OnFill(fill); got != "#ffffff" {
+			t.Errorf("OnFill(%s) = %s, want white", fill, got)
+		}
+	}
+	for _, fill := range []string{"#ffffff", "#FFFFFF", "#facc15", "#f5f5f5", "#a3e635"} {
+		if got := OnFill(fill); got != OnFillDark {
+			t.Errorf("OnFill(%s) = %s, want dark ink", fill, got)
+		}
+	}
+}
+
 func TestLogoContentTypeFromMagic(t *testing.T) {
 	if got := LogoContentType(pngBytes(t, 1, 1)); got != "image/png" {
 		t.Errorf("png = %s", got)

@@ -27,7 +27,7 @@ export function LangPills({ className }: { className?: string }) {
           className={cn(
             "rounded-full px-2.5 py-1 text-xs font-medium transition",
             active === l.code
-              ? "bg-brand-600 text-onaccent"
+              ? "bg-brand-600 text-onbrand"
               : "text-ink-muted hover:bg-gray-100",
           )}
         >

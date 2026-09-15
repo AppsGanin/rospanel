@@ -665,7 +665,7 @@ function AddNodeDialog({
             disabled={installing}
             className={cn(
               "rounded-md px-3 py-1 transition",
-              mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+              mode === m ? "bg-brand-600 text-onbrand" : "text-ink-muted",
             )}
           >
             {t(m === "command" ? "nodes.tabCommand" : "nodes.tabSsh")}
@@ -702,7 +702,7 @@ function AddNodeDialog({
                   onClick={() => setSshAuth(a)}
                   className={cn(
                     "rounded-md px-3 py-1 transition",
-                    sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+                    sshAuth === a ? "bg-brand-600 text-onbrand" : "text-ink-muted",
                   )}
                 >
                   {t(a === "password" ? "login.password" : "nodes.key")}
@@ -849,7 +849,7 @@ function ReconnectDialog({
             disabled={running}
             className={cn(
               "rounded-md px-3 py-1 transition",
-              mode === m ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+              mode === m ? "bg-brand-600 text-onbrand" : "text-ink-muted",
             )}
           >
             {t(m === "command" ? "nodes.tabCommand" : "nodes.tabReinstallSsh")}
@@ -881,7 +881,7 @@ function ReconnectDialog({
                 onClick={() => setSshAuth(a)}
                 className={cn(
                   "rounded-md px-3 py-1 transition",
-                  sshAuth === a ? "bg-brand-600 text-onaccent" : "text-ink-muted",
+                  sshAuth === a ? "bg-brand-600 text-onbrand" : "text-ink-muted",
                 )}
               >
                 {t(a === "password" ? "login.password" : "nodes.key")}

@@ -185,6 +185,22 @@ func Fg(base, surface string) string {
 	return Darken(base, 0.12)
 }
 
+// OnFillDark is the ink OnFill puts on a fill too light for white text.
+const OnFillDark = "#0a1b2e"
+
+// OnFill returns the colour for text on a fill of the given colour — the label of
+// a button painted in the accent. White stays until it drops below 3:1 against the
+// fill (WCAG's floor for bold UI text), which is luminance 0.3: every stock swatch
+// keeps its white label, and only a genuinely light accent — white, yellow, a pale
+// orange — gets dark ink. An unparseable fill keeps white, the stock label. The
+// panel makes the same choice in web/src/brand.tsx; the two must agree.
+func OnFill(fill string) string {
+	if _, _, _, ok := parseHex(fill); ok && luminance(fill) > 0.3 {
+		return OnFillDark
+	}
+	return "#ffffff"
+}
+
 func parseHex(hex string) (r, g, b int, ok bool) {
 	hex = strings.TrimSpace(hex)
 	if !accentRe.MatchString(hex) {

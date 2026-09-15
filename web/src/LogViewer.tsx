@@ -113,7 +113,7 @@ export function LogViewer({
           type="button"
           onClick={scrollToBottom}
           aria-label={t("logs.scrollDown")}
-          className="absolute bottom-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-onaccent shadow-lg transition hover:bg-brand-700"
+          className="absolute bottom-4 right-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-onbrand shadow-lg transition hover:bg-brand-700"
         >
           <svg
             width="20"

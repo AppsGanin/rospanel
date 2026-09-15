@@ -156,6 +156,10 @@ function applyTheme(theme: ThemeColors, def: ThemeColors) {
     toHex(darkSurface ? mix(accent, 255, 0.42) : mix(accent, 0, 0.18)),
   )
 
+  // --color-onbrand: text/icons on the accent fill — the primary button, a
+  // selected segment, a ticked checkbox. Must match internal/branding.OnFill.
+  root.style.setProperty('--color-onbrand', onFill(accent))
+
   // Status text colours: fixed hue (green/orange/red), lightened on dark surfaces
   // so the meaning is preserved while staying readable in any theme.
   const STATUS: Array<[string, [number, number, number]]> = [
@@ -175,6 +179,17 @@ function luminance([r, g, b]: [number, number, number]): number {
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
   }
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+
+// ON_FILL_DARK is the ink put on an accent too light for white text.
+const ON_FILL_DARK = '#0a1b2e'
+
+// onFill picks the text colour for a fill of the given colour. White stays until
+// it falls below 3:1 against the fill (WCAG's floor for bold UI text), which is
+// luminance 0.3: every stock swatch keeps its white label, and only a genuinely
+// light accent — white, yellow, a pale orange — gets dark ink instead.
+function onFill(fill: [number, number, number]): string {
+  return luminance(fill) > 0.3 ? ON_FILL_DARK : '#ffffff'
 }
 
 export function BrandProvider({ children }: { children: ReactNode }) {
