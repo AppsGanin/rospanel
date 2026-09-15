@@ -234,6 +234,9 @@ type Manager struct {
 	// re-reads an unresolved order every 25s, so an alert with no throttle is thousands
 	// of identical Telegram messages a day for one order.
 	payNotice *deviceNotice
+	// siteNotice keeps a node that sends more destination rows than the panel takes
+	// from logging it on every sync.
+	siteNotice *deviceNotice
 
 	// connGuardWanted records whether the operator asked for the per-IP connection
 	// guard (ROSPANEL_CONNLIMIT != off). Needed to tell "off on purpose" apart from
@@ -362,6 +365,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		shaper:         shaper.New(),
 		devNotice:      newDeviceNotice(),
 		payNotice:      newNotice(6 * time.Hour),
+		siteNotice:     newNotice(time.Hour),
 		operaDir:       operaDir,
 		operaSup:       opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:      make(chan webhookJob, webhookQueueSize),

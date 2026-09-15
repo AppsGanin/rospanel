@@ -280,3 +280,84 @@ func TestRecordConnConcurrent(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// A sync carries no more destination rows than the panel takes. The byte budget alone
+// allowed ~6,500 short addresses, and the panel dropped everything past 4,096.
+func TestTakeSitesStaysWithinThePanelsRows(t *testing.T) {
+	a := sitesAgent()
+	for u := range 6000 {
+		for h := range 3 {
+			a.recordConn(fmt.Sprintf("u%d", u+1), "1.1.1.1", fmt.Sprintf("1.1.%d.%d", h, u%10))
+		}
+	}
+	if got := a.takeSites(sitesBytesMax); len(got) != nodeapi.MaxSiteRows {
+		t.Fatalf("a sync carries %d rows, want the panel's %d", len(got), nodeapi.MaxSiteRows)
+	}
+}
+
+// When not every user fits a sync, users take turns: whoever was cut is first in the
+// next one, so every user's destinations reach the panel every few syncs. With the cut
+// in the same place every time, the same users were never checked at all.
+func TestTakeSitesUsersTakeTurns(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		users  int
+		budget int
+		syncs  int
+	}{
+		{"past the panel's rows", 10000, sitesBytesMax, 3},
+		{"past the byte budget", 3000, 50_000, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := sitesAgent()
+			seen := map[int64]int{}
+			for sync := range tc.syncs {
+				for u := range tc.users {
+					a.recordConn(fmt.Sprintf("u%d", u+1), "1.1.1.1", "203.0.113.9")
+				}
+				got := a.takeSites(tc.budget)
+				inSync := map[int64]bool{}
+				for _, r := range got {
+					if inSync[r.UserID] {
+						t.Fatalf("sync %d: user %d twice", sync, r.UserID)
+					}
+					inSync[r.UserID] = true
+					seen[r.UserID]++
+				}
+				if len(got) == tc.users {
+					t.Fatalf("sync %d: all %d users fitted, the case does not bind", sync, tc.users)
+				}
+			}
+			if len(seen) != tc.users {
+				t.Fatalf("after %d syncs %d of %d users were ever reported", tc.syncs, len(seen), tc.users)
+			}
+			// Turns are even: nobody reported twice while someone else not yet once.
+			for id, n := range seen {
+				if n > 2 {
+					t.Fatalf("user %d reported %d times in %d syncs", id, n, tc.syncs)
+				}
+			}
+		})
+	}
+}
+
+// The panel's rows are shared across users like the bytes are: with more rows than it
+// takes, every user keeps some hosts in the same sync rather than the first users
+// keeping all of theirs.
+func TestTakeSitesSharesRowsAcrossUsers(t *testing.T) {
+	a := sitesAgent()
+	const users = 500
+	for u := range users {
+		for h := range sitesPerUser {
+			a.recordConn(fmt.Sprintf("u%d", u+1), "1.1.1.1", fmt.Sprintf("1.1.%d.%d", h, u%250))
+		}
+	}
+	got := a.takeSites(sitesBytesMax)
+	perUser := map[int64]int{}
+	for _, r := range got {
+		perUser[r.UserID]++
+	}
+	if len(got) > nodeapi.MaxSiteRows || len(perUser) != users {
+		t.Fatalf("%d rows for %d of %d users", len(got), len(perUser), users)
+	}
+}

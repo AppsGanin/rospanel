@@ -145,7 +145,7 @@ type SyncRequest struct {
 	// of distinct hosts a minute), so a raw per-connection feed would put the same
 	// unbounded growth on the wire that keeps it out of the database. Lossy by
 	// construction — the tail below the truncation never leaves the node, which is
-	// the right trade for a view that only ever shows a top-N.
+	// the right trade for a view that only ever shows a top-N. At most MaxSiteRows.
 	Sites []SiteSample `json:"sites,omitempty"`
 
 	// Logs is the node's recent log tail (agent + Xray), sent only when the panel
@@ -273,6 +273,11 @@ type ConnSample struct {
 	Email string `json:"e"`
 	IP    string `json:"ip"`
 }
+
+// MaxSiteRows is the most destination rows one sync carries. The panel applies them
+// under the lock its own access-log tap needs and takes no more than this; the agent
+// chooses which rows fit, so the cut is made where it knows the busiest hosts.
+const MaxSiteRows = 4096
 
 // SiteSample is one (user, destination address) pair with how many connections the
 // node saw to it since the last sync. UserID is already resolved from the Xray
