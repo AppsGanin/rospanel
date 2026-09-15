@@ -181,6 +181,32 @@ func (m *Manager) Summary() (*Summary, error) {
 	return s, nil
 }
 
+// summaryTTL is how long SystemStatus reuses the user counts.
+//
+// The dashboard feed asks for the system status every two seconds while anyone has
+// it open, and the counts behind it are a pass over every user joined with every
+// address seen in the last two minutes: with 50,000 users that was a tenth of a
+// 1-vCPU panel, spent to repaint numbers that move by the minute — "online" is itself
+// a two-minute window. The host metrics and the Xray state on the same payload stay
+// fresh; only the counts wait.
+const summaryTTL = 15 * time.Second
+
+// recentSummary is Summary, reused for summaryTTL: shared, so callers must not change
+// it. Callers asking at once share one computation. Summary itself — the API's
+// summary endpoint — always counts afresh.
+func (m *Manager) recentSummary() (*Summary, error) {
+	m.summaryMu.Lock()
+	defer m.summaryMu.Unlock()
+	if m.summaryCache == nil || time.Since(m.summaryAt) >= summaryTTL {
+		s, err := m.Summary()
+		if err != nil {
+			return nil, err
+		}
+		m.summaryCache, m.summaryAt = s, time.Now()
+	}
+	return m.summaryCache, nil
+}
+
 // StartSysstat begins sampling host metrics (CPU/RAM/disk/network) and the live
 // VPN throughput for the dashboard. diskPath selects the filesystem reported
 // under "disk".
@@ -269,12 +295,12 @@ type SystemStatus struct {
 // SystemStatus assembles the dashboard payload from the host sampler, the Xray
 // supervisor and the user summary.
 func (m *Manager) SystemStatus() (*SystemStatus, error) {
-	sum, err := m.Summary()
+	sum, err := m.recentSummary()
 	if err != nil {
 		return nil, err
 	}
 	s := &SystemStatus{
-		XrayRunning:  sum.XrayRunning,
+		XrayRunning:  m.sup.Running(), // live: a crash shows on the next tick, not in 15s
 		XrayUptime:   m.sup.UptimeSeconds(),
 		XrayVersion:  m.sup.Version(),
 		Goroutines:   runtime.NumGoroutine(),
