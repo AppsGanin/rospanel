@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +60,15 @@ func TestNodeStateIsRebuiltOnlyWhenAnInputChanges(t *testing.T) {
 		}
 	}
 	n := stateNode(t, m)
+	// A node that has reported its certificate, as a live one has.
+	sha := strings.Repeat("ab", 32)
+	if err := m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
+		LastSeen: time.Now().Unix(), NodeVersion: "3.3.0", CertSHA256: sha, CertIssuer: "R11",
+		CertExpiresAt: time.Now().Add(60 * 24 * time.Hour).Unix(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n = freshNode(t, m, n.ID)
 
 	first, err := m.NodeStateChange(n, "")
 	if err != nil || first == nil {
@@ -92,10 +102,16 @@ func TestNodeStateIsRebuiltOnlyWhenAnInputChanges(t *testing.T) {
 	// Its own syncs rewrite the node's status; none of it is config.
 	if err := m.store.UpdateNodeStatus(n.ID, model.NodeStatusUpdate{
 		LastSeen: time.Now().Unix(), NodeVersion: n.NodeVersion, XrayVersion: "26.6.27", XrayRunning: true, ConfigHash: have,
+		// A certificate that reads a moment later, as an agent's sync does: its expiry
+		// and issuer are status, not config.
+		CertSHA256: sha, CertIssuer: "R12", CertExpiresAt: n.CertExpiresAt + 3600,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	synced := freshNode(t, m, n.ID)
+	if synced.CertIssuer != "R12" || synced.CertExpiresAt != n.CertExpiresAt+3600 {
+		t.Fatalf("the status report did not land: %q %d", synced.CertIssuer, synced.CertExpiresAt)
+	}
 	synced.LastReportID = 99
 	current("after a status report", synced)
 
@@ -216,7 +232,8 @@ func TestNodeStateKeyCoversEveryField(t *testing.T) {
 	if !ok {
 		t.Fatal("a plain node's inputs could not be fingerprinted")
 	}
-	volatile := map[string]bool{"LastSeen": true, "XrayVersion": true, "XrayRunning": true, "ConfigHash": true, "LastReportID": true}
+	volatile := map[string]bool{"LastSeen": true, "XrayVersion": true, "XrayRunning": true, "ConfigHash": true, "LastReportID": true,
+		"CertIssuer": true, "CertExpiresAt": true}
 
 	nodeType := reflect.TypeOf(model.Node{})
 	for i := range nodeType.NumField() {

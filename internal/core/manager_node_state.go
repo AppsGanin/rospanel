@@ -117,10 +117,12 @@ func nodeStateKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) (
 		return key, false
 	}
 	node := *n
-	// What a sync rewrites about the node, none of which the state is built from.
-	// Anything else about the node is in the fingerprint — a field added later
-	// included — so a mistake here costs rebuilds, never a stale config.
+	// What a sync rewrites about the node, none of which the state is built from (the
+	// version and the certificate's fingerprint are: they stay). Anything else about the
+	// node is in the fingerprint — a field added later included — so a mistake here
+	// costs rebuilds, never a stale config.
 	node.LastSeen, node.XrayVersion, node.XrayRunning, node.ConfigHash, node.LastReportID = 0, "", false, "", 0
+	node.CertIssuer, node.CertExpiresAt = "", 0
 	// And the master's own bookkeeping: every full reconcile of the master bumps the
 	// revision and the timestamp, and only the health report reads the three.
 	set := *x.set
