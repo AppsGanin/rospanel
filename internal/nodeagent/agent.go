@@ -178,6 +178,9 @@ type Agent struct {
 	// truncated to the busiest few per user when the sync request is built. Shares
 	// connMu with conns: both are written from the same access-log callback.
 	sites map[siteKey]int64
+	// sitesAfter is the last user whose destinations the previous sync got through
+	// when not all of them fitted; the next sync starts after it (see takeSites).
+	sitesAfter int64
 
 	// seen is the address view the speed shaper runs on, and wan/shaper are what
 	// installs it. Kept apart from `conns` above: that buffer is drained on every
@@ -618,27 +621,40 @@ func (a *Agent) takeSites(byteBudget int) []nodeapi.SiteSample {
 
 	// Share the budget across users instead of letting the first users seen spend it
 	// all: every user keeps at least their busiest host, and a node with many users
-	// reports fewer hosts each rather than reporting nothing for most of them.
+	// reports fewer hosts each rather than reporting nothing for most of them. The
+	// share is of the bytes and of the rows the panel takes, whichever is tighter.
 	perUser := sitesPerUser
 	if n := len(byUser); n > 0 {
 		if fair := byteBudget / (n * (sitesRowOverhead + 16)); fair < perUser {
+			perUser = max(fair, 1)
+		}
+		if fair := nodeapi.MaxSiteRows / n; fair < perUser {
 			perUser = max(fair, 1)
 		}
 	}
 
 	// Capacity from the true key count, not users×cap: sizing by the latter reserved
 	// 33 MB to hold 1 MB on a node that may be a small box.
-	out := make([]nodeapi.SiteSample, 0, min(total, len(byUser)*perUser))
+	out := make([]nodeapi.SiteSample, 0, min(total, len(byUser)*perUser, nodeapi.MaxSiteRows))
 	budget := byteBudget
 	users := make([]int64, 0, len(byUser))
 	for id := range byUser {
 		users = append(users, id)
 	}
-	// Stable user order so a node that runs out of budget drops the same users each
-	// sync rather than rotating which ones vanish.
 	sort.Slice(users, func(i, j int) bool { return users[i] < users[j] })
 
-	for _, id := range users {
+	// More users than fit take turns: each sync starts after the last user the one
+	// before it got through. The order used to start from the lowest id every time, so
+	// on a node with more users than rows the same users were cut on every sync and
+	// their destinations never reached the blocklists at all. Taking turns, each of
+	// them is checked every few syncs — and matches add up over the day.
+	start := sort.Search(len(users), func(i int) bool { return users[i] > a.sitesAfter })
+	if start == len(users) {
+		start = 0
+	}
+	var lastDone int64
+	for k := range len(users) {
+		id := users[(start+k)%len(users)]
 		rows := byUser[id]
 		// Ties broken by host so a node with more hosts than the cap sends a stable
 		// set rather than an arbitrary one that churns every sync.
@@ -653,12 +669,18 @@ func (a *Agent) takeSites(byteBudget int) []nodeapi.SiteSample {
 		}
 		for _, r := range rows {
 			cost := len(r.Host) + sitesRowOverhead
-			if budget < cost {
-				return out // hard stop: the body limit is not negotiable
+			if budget < cost || len(out) == nodeapi.MaxSiteRows {
+				// Hard stop: the body limit is not negotiable, and the panel takes no
+				// more rows. The next sync starts with this user.
+				if lastDone != 0 {
+					a.sitesAfter = lastDone
+				}
+				return out
 			}
 			budget -= cost
 			out = append(out, r)
 		}
+		lastDone = id
 	}
 	return out
 }

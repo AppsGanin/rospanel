@@ -1698,11 +1698,12 @@ func (m *Manager) randomDecoy() string {
 
 // --- sync ingest --------------------------------------------------------------
 
-// maxNodeSiteRows bounds how many destination rows one sync may contribute. The
-// agent budgets its own payload well below this; the cap is here because the panel
-// must not depend on a node behaving, and because applying an unbounded batch was
-// measured at ~23ms of CPU on the same lock the master's access-log tap needs.
-const maxNodeSiteRows = 4096
+// maxNodeSiteRows bounds how many destination rows one sync may contribute: the panel
+// must not depend on a node behaving, and applying an unbounded batch was measured at
+// ~23ms of CPU on the same lock the master's access-log tap needs. Current agents stay
+// within it themselves (nodeapi.MaxSiteRows); an older one sent up to ~6,500 rows from
+// a busy node and lost the rest here.
+const maxNodeSiteRows = nodeapi.MaxSiteRows
 
 // userIDCacheTTL bounds how stale the node-site user-id validation set may be. Short
 // enough that a new user's node sites start counting within seconds, long enough
@@ -1722,7 +1723,12 @@ func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample) {
 		return
 	}
 	if len(rows) > maxNodeSiteRows {
-		logErr("node sync: site rows truncated", "got", len(rows), "cap", maxNodeSiteRows)
+		// An agent from before the cap was shared, on a node with thousands of users:
+		// every one of its syncs is over. Said once an hour per node, not every 20s.
+		if m.siteNotice.should(fmt.Sprintf("node-sites:%d", nodeID), time.Now()) {
+			logWarn("node sync: site rows over the cap, the rest dropped (update the node)",
+				"node", nodeID, "got", len(rows), "cap", maxNodeSiteRows)
+		}
 		rows = rows[:maxNodeSiteRows]
 	}
 	known, err := m.knownUserIDs()
