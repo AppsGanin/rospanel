@@ -1,12 +1,16 @@
 package server
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
@@ -232,7 +236,61 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, 
 			resp.PanelURL = canonical
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeSyncResponse(w, r, resp)
+}
+
+// gzipWriters are reused across config pushes: a writer carries its compressor's
+// tables, and a push at every working-set change would otherwise allocate them anew.
+var gzipWriters = sync.Pool{New: func() any {
+	zw, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+	return zw
+}}
+
+// writeSyncResponse writes a sync answer, compressed when it carries a config and the
+// node accepts gzip — which every agent does: Go's HTTP client asks for it and
+// unpacks it without being told.
+//
+// A pushed config is the whole Xray config, every user's credentials in it: 4 MB at
+// 20,000 users, 10 MB at 50,000, sent to every node at every working-set change.
+// Credentials are random and compress poorly, but the JSON around them does not —
+// measured 3.0× at the fastest level, for ~50 ms of CPU per 10 MB on a fast core.
+// Every other answer is a few hundred bytes and goes out as it is.
+func writeSyncResponse(w http.ResponseWriter, r *http.Request, resp *nodeapi.SyncResponse) {
+	if resp.State == nil || !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Add("Vary", "Accept-Encoding")
+	w.WriteHeader(http.StatusOK)
+	zw := gzipWriters.Get().(*gzip.Writer)
+	zw.Reset(w)
+	// Errors go the way writeJSON's do: the status is out already, and a node that hung
+	// up or got a truncated stream fails its decode and asks again.
+	_ = json.NewEncoder(zw).Encode(resp)
+	_ = zw.Close()
+	zw.Reset(io.Discard) // drop the reference to this response
+	gzipWriters.Put(zw)
+}
+
+// acceptsGzip reports whether an Accept-Encoding header allows gzip.
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		name, params, _ := strings.Cut(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(name), "gzip") {
+			continue
+		}
+		for _, p := range strings.Split(params, ";") {
+			if q, ok := strings.CutPrefix(strings.TrimSpace(p), "q="); ok {
+				if v, err := strconv.ParseFloat(q, 64); err == nil && v == 0 {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // canonicalPanelURL returns the panel's configured public URL when the node
