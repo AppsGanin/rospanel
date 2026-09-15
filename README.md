@@ -381,7 +381,12 @@ for Xray JSON, the familiar `# LEAVE THIS LINE!` markers for mihomo). The server
 the panel's to build, so a template cannot produce an entry a client rejects. It is
 checked when you save, and if it ever fails at render time the panel serves the
 generated profile instead — a client that cannot parse a profile drops every server in
-it, so a broken one must never reach one.
+it, so a broken one must never reach one. The generated sing-box profile targets
+**sing-box 1.12 and later** (typed `type`/`server` DNS servers, server names resolved
+through `route.default_domain_resolver`). A sing-box template using a field 1.13/1.14
+no longer load (`dns.servers[].address`, a `dns`/`wireguard` outbound, inbound `sniff`,
+`geosite`/`geoip` and the like) is refused on save, and one saved earlier is replaced
+by the generated profile, with a line in the log.
 
 **Response rules** override the automatic format detection: an ordered list of operator rules
 matched against the request (User-Agent or an HWID header) — force a specific format for a given

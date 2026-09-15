@@ -142,7 +142,10 @@ func renderJSONTemplate(tpl string, scalars map[string]any, lists map[string][]a
 // saves, so a broken template is refused at the keyboard rather than discovered by a
 // user whose client silently has no servers.
 func ValidateSingBoxTemplate(tpl string) error {
-	return validateJSONTemplate(tpl, TplProxies)
+	if err := validateJSONTemplate(tpl, TplProxies); err != nil {
+		return err
+	}
+	return singboxLegacyErr(tpl)
 }
 
 // ValidateXrayTemplate is the same check for the Xray JSON template, whose per-lane

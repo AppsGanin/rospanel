@@ -528,6 +528,7 @@ const en: Dict = {
     subTemplateTooDeep: "{{format}} template: too many slots or too deeply nested",
     subTemplateNoSlot: "{{format}} template: no slot for the servers — paste {{slot}} where they go",
     subTemplateInvalid: "{{format}} template: {{err}}",
+    subTemplateLegacy: "{{format}} template: {{field}} was removed from sing-box, and clients will not load a profile that uses it (sing-box.sagernet.org/migration)",
     subRuleField: "unknown rule field {{value}}",
     subRuleOp: "unknown rule operator {{value}}",
     subRuleAction: "unknown rule action {{value}}",

@@ -220,23 +220,41 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 	outbounds = append(outbounds, map[string]any{"type": "direct", "tag": "direct"})
 
 	// Encrypted DNS (DoH) routed through the tunnel — defeats DNS poisoning/blocking
-	// the censor does on plaintext UDP/53. Every server host that is a domain is
-	// resolved directly (bootstrap) so the first tunnel connect doesn't deadlock on
-	// DNS — across all nodes, not just the local server.
+	// the censor does on plaintext UDP/53.
+	//
+	// DNS servers are written in the typed form ("type" + "server") that sing-box 1.12
+	// introduced. The old one-string form ("address": "https://1.1.1.1/dns-query") was
+	// removed in 1.14, and a 1.14 client refuses the WHOLE profile over it — every
+	// server gone, not just DNS. The typed form loads on 1.12 and later, which is the
+	// floor this profile already had: tls.fragment below is 1.12 too.
 	dnsServers := []any{
-		map[string]any{"tag": "remote", "address": "https://1.1.1.1/dns-query", "detour": group},
+		map[string]any{"type": "https", "tag": "remote", "server": "1.1.1.1", "detour": group},
 	}
 	dns := map[string]any{"servers": dnsServers, "final": "remote", "strategy": "prefer_ipv4"}
-	var bootstrapHosts []string
+	route := map[string]any{"final": group, "auto_detect_interface": true}
+	// A server whose host is a domain has to be resolved before the tunnel exists, so
+	// it cannot go through "remote" — that detours through the very outbound it is
+	// resolving, and the first connect deadlocks. It is resolved directly instead,
+	// across all nodes, not just the local server.
+	//
+	// Which DNS server resolves an outbound's own host used to be picked by a DNS rule
+	// matching the host names. Since 1.12 it is route.default_domain_resolver, and 1.14
+	// refuses a profile that dials a domain without one. An all-IP profile resolves
+	// nothing, so it gets neither the bootstrap server nor the resolver.
+	//
+	// The bootstrap is Yandex's DoH, because it has to answer from the user's network
+	// with no tunnel up. It used to be Alibaba's 223.5.5.5, whose TLS handshake hangs
+	// after the ClientHello from Russian networks (measured 2026-09-15): the lookup
+	// timed out, and a domain-hosted profile never connected at all. A domestic
+	// resolver is also the one that survives a mobile whitelist, and all it ever
+	// resolves is the panel's own server names.
 	for _, srv := range servers {
 		if net.ParseIP(srv.Set.Host) == nil {
-			bootstrapHosts = append(bootstrapHosts, srv.Set.Host)
+			dns["servers"] = append(dnsServers,
+				map[string]any{"type": "https", "tag": "bootstrap", "server": "77.88.8.8"})
+			route["default_domain_resolver"] = "bootstrap"
+			break
 		}
-	}
-	if len(bootstrapHosts) > 0 {
-		dns["servers"] = append(dnsServers,
-			map[string]any{"tag": "bootstrap", "address": "https://223.5.5.5/dns-query", "detour": "direct"})
-		dns["rules"] = []any{map[string]any{"domain": bootstrapHosts, "server": "bootstrap"}}
 	}
 
 	routeRules := []any{
@@ -250,6 +268,7 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 		routeRules = append(routeRules, map[string]any{"network": "udp", "port": 443, "action": "reject"})
 	}
 	routeRules = append(routeRules, map[string]any{"ip_is_private": true, "outbound": "direct"})
+	route["rules"] = routeRules
 
 	cfg := map[string]any{
 		"log": map[string]any{"level": "warn"},
@@ -264,11 +283,7 @@ func SingBoxJSONMulti(u model.User, servers []Server) string {
 			},
 		},
 		"outbounds": outbounds,
-		"route": map[string]any{
-			"rules":                 routeRules,
-			"final":                 group,
-			"auto_detect_interface": true,
-		},
+		"route":     route,
 	}
 
 	b, err := json.MarshalIndent(cfg, "", "  ")
@@ -293,6 +308,12 @@ func SingBoxWithTemplate(u model.User, servers []Server, template string) (strin
 	}
 	if len(servers) == 0 {
 		return SingBoxJSONMulti(u, servers), nil
+	}
+	// A template saved before sing-box removed a field it uses parses fine and renders
+	// fine, and every client refuses it. Refused at save now, but one already stored
+	// still has to be caught here — the generated profile works on every current client.
+	if err := singboxLegacyErr(template); err != nil {
+		return SingBoxJSONMulti(u, servers), err
 	}
 	proxies, tags := singboxProxiesAll(u, servers)
 	// Nothing allowed: the generated profile has a direct-only answer for this, which
