@@ -46,7 +46,6 @@ import {
   loadColor,
   MICRO,
   Mono,
-  Panel,
   Select,
   Skeleton,
   Skeletons,
@@ -133,20 +132,21 @@ const CHIPS: { value: Filter; key: string }[] = [
   { value: "expired", key: "usersPanel.chipExpired" },
 ];
 
-// The skeleton repeats the shape of the table, so the page does not rebuild itself
-// under the operator when the list lands.
+// The skeleton repeats the shape of the table — the same full-bleed toolbar and
+// rows, with the same insets — so the page does not rebuild itself under the
+// operator when the list lands.
 function UsersSkeleton() {
   return (
-    <div className="flex animate-fade-in flex-col gap-3.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Skeleton className="h-8 w-65 rounded-lg" />
-        <Skeleton className="h-7 w-24 rounded-full" />
-        <Skeleton className="h-7 w-20 rounded-full" />
-        <Skeleton className="h-7 w-24 rounded-full" />
+    <div className="flex min-h-0 flex-1 animate-fade-in flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-brand-600/10 px-5 py-2.5">
+        <Skeleton className="h-8 w-65 max-w-full rounded-lg" />
+        <Skeleton className="h-7.5 w-20 rounded-full" />
+        <Skeleton className="h-7.5 w-24 rounded-full" />
       </div>
-      <Panel>
-        <Skeletons n={8} row="border-b border-gray-100 px-3.5 py-2.5 last:border-0" className="h-3.5 w-full" />
-      </Panel>
+      <div className="border-b border-brand-600/10 px-5 py-2.5">
+        <Skeleton className="h-3 w-1/3" />
+      </div>
+      <Skeletons n={8} row="border-b border-gray-100 px-5 py-2.5 last:border-0" className="h-4 w-full" />
     </div>
   );
 }
