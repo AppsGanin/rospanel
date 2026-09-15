@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -137,15 +140,25 @@ func derefBool(b *bool) bool { return b != nil && *b }
 // NodeDesiredState builds the full desired state for a node: its Xray config
 // (generated panel-side from nodeSettings + the working user set), the host-level
 // meta the agent needs, and a hash over both so the sync handler can skip no-ops.
+//
+// It always builds. A sync that only needs to know whether the node is current asks
+// NodeStateChange, which can answer without building.
 func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
-	set, err := m.store.GetSettings()
+	x, err := m.readNodeStateInputs(n)
 	if err != nil {
 		return nil, err
 	}
-	in, err := m.nodeInputs()
-	if err != nil {
-		return nil, err
-	}
+	state, _, err := m.buildNodeState(n, x)
+	return state, err
+}
+
+// buildNodeState builds a node's state from inputs already read. complete is false
+// when a part was left out on a soft failure — the custom inbounds unreadable, the
+// speed caps or blocks unreadable, a user's tunnel identity not claimed — so the state
+// serves this sync but is not remembered.
+func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *nodeapi.NodeState, complete bool, err error) {
+	set, in := x.set, x.in
+	complete = in.version != 0
 	users := in.users
 	ns := nodeSettings(set, n)
 	// Cert paths are sentinels the agent rewrites to its own absolute paths (the
@@ -155,22 +168,23 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	ns.KeyPath = nodeapi.KeyPathSentinel
 	// The node's own fallback points at its local decoy/panel loopback, same as the
 	// panel's own layout. Egress lanes resolve against the node's OWN proxy pool.
-	opts := m.genOpts()
+	opts := x.opts
 	opts.ServerID = n.ID
 	opts.Access = in.access
-	if list, err := m.store.EnabledInbounds(n.ID); err != nil {
+	if x.inbErr != nil {
 		// Soft, as in genOptsFor: the built-in lanes still keep the server reachable.
-		logErr("inbounds: load failed", "server", n.ID, "err", err)
+		logErr("inbounds: load failed", "server", n.ID, "err", x.inbErr)
+		complete = false
 	} else {
-		opts.Custom = list
+		opts.Custom = x.inbounds
 	}
-	cfg, err := xray.Generate(ns, users, opts, m.getNodeProxies(n.ID))
+	cfg, err := xray.Generate(ns, users, opts, x.proxies)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	connGuardPorts := []int{ns.VLESSPort}
 	if ns.RealityEnabled {
@@ -213,7 +227,9 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 		XrayPinnedVersion: xray.PinnedVersion,
 		SpeedLimits:       in.speed,
 	}
-	meta.AWG = m.nodeAWGState(n, ns, users, in.access)
+	var claimed bool
+	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)
+	complete = complete && claimed
 	// What the source policy has refused, for this node's own firewall. Read here
 	// rather than pushed on each block so a node that was offline catches up on its
 	// next sync, and so the hash covers it (a lifted block reaches the node too).
@@ -228,14 +244,14 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	}
 	metaRaw, err := json.Marshal(meta)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	h := sha256.Sum256(append(raw, metaRaw...))
 	return &nodeapi.NodeState{
 		Hash:       hex.EncodeToString(h[:]),
 		XrayConfig: raw,
 		Meta:       meta,
-	}, nil
+	}, complete, nil
 }
 
 // nodeInputs are the parts of every node's desired state that no node owns: the working
@@ -251,8 +267,14 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 // taken before the latest one is never used. What changes with no wake at all — a
 // blocked address running out, say — is picked up when the snapshot ages out, which
 // nodeInputsTTL keeps well inside a poll.
+//
+// version numbers what the inputs say, not when they were read: a read that finds what
+// the last one found keeps its version, which is what lets a node's remembered state
+// outlive a wake that changed nothing (see NodeStateChange). 0 is a read that failed
+// softly and is not to be remembered.
 type nodeInputs struct {
 	gen     uint64
+	version uint64
 	at      time.Time
 	users   []model.User // read-only: copy before changing a user (see nodeAWGState)
 	access  map[int64]model.Access
@@ -300,9 +322,34 @@ func (m *Manager) nodeInputs() (*nodeInputs, error) {
 	// A read that failed softly serves this build but is not kept: sharing it would
 	// drop the caps or the blocks from every node's state for the whole TTL.
 	if complete {
+		if prev := m.nodeInputsCache; prev != nil && sameNodeInputs(prev, in) {
+			in.version = prev.version
+		} else {
+			m.nodeInputsVersion++
+			in.version = m.nodeInputsVersion
+		}
 		m.nodeInputsCache = in
 	}
 	return in, nil
+}
+
+// sameNodeInputs reports whether two reads found the same inputs. Users are compared on
+// what WorkingCredentials reads — the fields every config builder uses (see
+// TestGenerateReadsOnlyCredentials, and TestWorkingUserIDsMatchWorkingUsers for the
+// read itself).
+func sameNodeInputs(a, b *nodeInputs) bool {
+	if len(a.users) != len(b.users) || !maps.Equal(a.speed, b.speed) || !slices.Equal(a.blocked, b.blocked) ||
+		!reflect.DeepEqual(a.access, b.access) {
+		return false
+	}
+	for i := range a.users {
+		x, y := &a.users[i], &b.users[i]
+		if x.ID != y.ID || x.UUID != y.UUID || x.Password != y.Password ||
+			x.WGPrivateKey != y.WGPrivateKey || x.AWGSlot != y.AWGSlot {
+			return false
+		}
+	}
+	return true
 }
 
 // dropNodeInputs forgets the shared inputs, so the next node state reads them afresh —
@@ -1836,11 +1883,11 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	}
 
 	resp := &nodeapi.SyncResponse{AckReport: ack}
-	state, err := m.NodeDesiredState(n)
+	state, err := m.NodeStateChange(n, req.ConfigHash)
 	if err != nil {
 		return nil, err
 	}
-	if state.Hash != req.ConfigHash {
+	if state != nil {
 		resp.Changed = true
 		resp.State = state
 	}

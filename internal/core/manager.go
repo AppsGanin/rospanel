@@ -123,8 +123,14 @@ type Manager struct {
 
 	// nodeInputsMu guards nodeInputsCache, the fleet-wide inputs every node's desired
 	// state is built from (see nodeInputs).
-	nodeInputsMu    sync.Mutex
-	nodeInputsCache *nodeInputs
+	nodeInputsMu      sync.Mutex
+	nodeInputsCache   *nodeInputs
+	nodeInputsVersion uint64
+
+	// nodeStateMu guards nodeStates, each node's last built state fingerprint and hash
+	// (see NodeStateChange).
+	nodeStateMu sync.Mutex
+	nodeStates  map[int64]nodeStateMemo
 
 	tzMu sync.RWMutex
 	tz   *time.Location // operator timezone for the local-day stats boundary
@@ -185,6 +191,7 @@ type Manager struct {
 	geoSite   []string     // cached geosite category codes
 	geoIP     []string     // cached geoip category codes
 	geoGroups geo.GroupSet // cached iplist groups ("<source>/<group>" → rules)
+	geoGen    uint64       // counts changes of geoGroups, so a node state knows its groups are current
 
 	// countryLookup resolves connection IPs to countries for the geo breakdown, built
 	// lazily from geoip.dat and rebuilt when the file changes (a geo refresh).
