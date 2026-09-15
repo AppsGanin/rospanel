@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -86,7 +87,8 @@ func (d TrafficDelta) quotaBytes() (up, down int64) {
 // per active user, each its own implicit transaction, each paying its own fsync on
 // a single-connection pool. One commit for the batch turns a per-user cost into a
 // per-cycle one — on the reference box that is the difference between ~70 users/sec
-// and the whole cycle landing in a few milliseconds.
+// and the whole cycle landing in a few milliseconds. Inside that commit the batch is
+// two statements, not three per user (see applyTrafficDeltasOn).
 func (s *Store) ApplyTrafficDeltas(deltas []TrafficDelta) error {
 	if len(deltas) == 0 {
 		return nil
@@ -94,29 +96,120 @@ func (s *Store) ApplyTrafficDeltas(deltas []TrafficDelta) error {
 	return s.withTx(func(tx *sql.Tx) error { return applyTrafficDeltasOn(tx, deltas) })
 }
 
-func applyTrafficDeltasOn(ex execer, deltas []TrafficDelta) error {
+// applyTrafficDeltasOn books a batch in two statements, whatever its size: one UPDATE
+// of every user it touches and one upsert of every day's row, each reading its rows
+// from a JSON array.
+//
+// It used to run up to three statements per user, and SQLite prepared each afresh:
+// a 4,000-user node report took ~210ms at 20,000 users, over half of it parsing the
+// same three statements again. Two statements over the whole batch take ~50ms.
+//
+// The deltas are folded per user first, which is what keeps the result identical to
+// applying them one after another: quota adds up, the last baseline and the last
+// non-zero sighting win, and a day's bytes add up per node. An UPDATE ... FROM that
+// met one user twice would apply only one of the rows.
+func applyTrafficDeltasOn(tx *sql.Tx, deltas []TrafficDelta) error {
+	type userSum struct {
+		up, down int64
+		base     *TrafficBaseline
+		seen     int64
+	}
+	type dayKey struct {
+		user, node int64
+		day        string
+	}
+	users := make(map[int64]*userSum, len(deltas))
+	userOrder := make([]int64, 0, len(deltas))
+	days := make(map[dayKey]*[2]int64, len(deltas))
+	dayOrder := make([]dayKey, 0, len(deltas))
 	for _, d := range deltas {
 		// Quota is charged the scaled bytes; the per-node/day stats get the real ones.
 		qUp, qDown := d.quotaBytes()
-		var err error
-		if d.Baseline != nil {
-			err = updateTrafficOn(ex, d.UserID, qUp, qDown, d.Baseline.Up, d.Baseline.Down)
-		} else {
-			err = addUsedTrafficOn(ex, d.UserID, qUp, qDown)
+		u := users[d.UserID]
+		if u == nil {
+			u = &userSum{}
+			users[d.UserID] = u
+			userOrder = append(userOrder, d.UserID)
 		}
+		u.up += qUp
+		u.down += qDown
+		if d.Baseline != nil {
+			b := *d.Baseline
+			u.base = &b
+		}
+		if d.SeenAt > 0 {
+			u.seen = d.SeenAt
+		}
+		if d.AddUp != 0 || d.AddDown != 0 {
+			k := dayKey{d.UserID, d.NodeID, d.Day}
+			sum := days[k]
+			if sum == nil {
+				sum = &[2]int64{}
+				days[k] = sum
+				dayOrder = append(dayOrder, k)
+			}
+			sum[0] += d.AddUp
+			sum[1] += d.AddDown
+		}
+	}
+
+	userRows := make([][7]int64, 0, len(userOrder))
+	for _, id := range userOrder {
+		u := users[id]
+		// Nothing to charge, no baseline and no sighting: the row would be rewritten
+		// unchanged.
+		if u.up == 0 && u.down == 0 && u.base == nil && u.seen == 0 {
+			continue
+		}
+		row := [7]int64{id, u.up, u.down, 0, 0, 0, u.seen}
+		if u.base != nil {
+			row[3], row[4], row[5] = 1, u.base.Up, u.base.Down
+		}
+		userRows = append(userRows, row)
+	}
+	if len(userRows) > 0 {
+		raw, err := json.Marshal(userRows)
 		if err != nil {
 			return err
 		}
-		if err := addDailyTrafficOn(ex, d.UserID, d.NodeID, d.Day, d.AddUp, d.AddDown); err != nil {
+		if _, err := tx.Exec(`
+			UPDATE users SET
+			    used_up = used_up + v.up,
+			    used_down = used_down + v.down,
+			    last_up = CASE WHEN v.base = 1 THEN v.base_up ELSE last_up END,
+			    last_down = CASE WHEN v.base = 1 THEN v.base_down ELSE last_down END,
+			    last_seen = CASE WHEN v.seen > 0 THEN v.seen ELSE last_seen END
+			FROM (SELECT j.value->>0 AS id, j.value->>1 AS up, j.value->>2 AS down,
+			             j.value->>3 AS base, j.value->>4 AS base_up, j.value->>5 AS base_down,
+			             j.value->>6 AS seen
+			      FROM json_each(?) AS j) AS v
+			WHERE users.id = v.id`, string(raw)); err != nil {
 			return err
 		}
-		if d.SeenAt > 0 {
-			if err := touchLastSeenOn(ex, d.UserID, d.SeenAt); err != nil {
-				return err
-			}
-		}
 	}
-	return nil
+
+	if len(dayOrder) == 0 {
+		return nil
+	}
+	dayRows := make([][5]any, 0, len(dayOrder))
+	for _, k := range dayOrder {
+		sum := days[k]
+		dayRows = append(dayRows, [5]any{k.user, k.node, k.day, sum[0], sum[1]})
+	}
+	raw, err := json.Marshal(dayRows)
+	if err != nil {
+		return err
+	}
+	// The EXISTS guard, as in addDailyTrafficOn: a departed user costs their own row,
+	// never the batch.
+	_, err = tx.Exec(`
+		INSERT INTO traffic_daily (user_id, node_id, day, up, down)
+		SELECT j.value->>0, j.value->>1, j.value->>2, j.value->>3, j.value->>4
+		FROM json_each(?) AS j
+		WHERE EXISTS (SELECT 1 FROM users WHERE id = j.value->>0)
+		ON CONFLICT(user_id, node_id, day) DO UPDATE SET up = up + excluded.up, down = down + excluded.down`,
+		string(raw))
+	return err
 }
 
 // AddUsedTraffic bumps a user's lifetime totals WITHOUT touching last_up/last_down
