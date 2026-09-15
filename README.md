@@ -298,9 +298,10 @@ user connecting from more distinct addresses than the limit within the online wi
 dropped from the tunnels until they fall back under it — counted across **every server**
 (master and nodes), not per-server. `0` means no IP cap.
 
-**The cut is not immediate.** The limit has to stay exceeded for two and a half to three
-minutes, a little longer than the online window (the panel checks device limits every 30
-seconds). That is because the two commonest ways to exceed it
+**The cut is not immediate.** The limit has to stay exceeded for two and a half minutes, a
+little longer than the online window; the panel checks device limits every 30 seconds, so
+the cut comes two and a half to three and a half minutes after the extra device appears.
+That is because the two commonest ways to exceed it
 are not sharing at all: a phone changing network abandons its old address while that address
 keeps a fresh sighting until the window drops it, and a mobile carrier rotates the public
 address inside its own pool with no user action whatsoever (one live account shows seven

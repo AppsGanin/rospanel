@@ -623,9 +623,11 @@ func (m *Manager) FlushAccess() {
 }
 
 // deviceCheckEvery is how often a flush re-checks who is over their device limit.
-// A user is cut only once DeviceLimitGrace (150s) has passed since the stamp, so a
-// stamp up to this much later makes the grace up to this much longer — and the check
-// after it, which notices the grace running out, up to this much later still.
+// A user is cut only once DeviceLimitGrace (150s) has passed since the stamp. The stamp
+// can come up to this much after the extra device appears, and the check that notices
+// the grace running out up to this much after that, so the cut comes 150–210s after
+// the device rather than 150–160s. (The enforcement pass after node reports reads the
+// working set too, and usually notices sooner.)
 const deviceCheckEvery = int64(30)
 
 // TriggerReconcile requests a FULL config reload (regenerate + restart Xray) for
