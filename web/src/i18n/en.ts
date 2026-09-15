@@ -771,14 +771,14 @@ const en: Dict = {
       admin: "admin",
       apikey: "API key",
       telegram: "Telegram",
-      user: "the user themselves",
+      user: "user",
       system: "system",
     },
     actorOption: {
       admin: "Admin",
       apikey: "API key",
       telegram: "Telegram bot",
-      user: "The user themselves",
+      user: "User",
       system: "System",
     },
     period: {
