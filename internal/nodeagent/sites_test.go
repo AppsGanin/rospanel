@@ -47,7 +47,8 @@ func TestRecordConnCountsDestinations(t *testing.T) {
 
 	// Conns stay deduped per (email, ip) regardless of how many hosts were seen —
 	// that set must not inherit destination cardinality.
-	if n := len(a.takeConns()); n != 1 {
+	if conns, _ := a.takeConns(connsChunkMax); len(conns) != 1 {
+		n := len(conns)
 		t.Fatalf("conns = %d, want 1", n)
 	}
 }
@@ -56,7 +57,7 @@ func TestRecordConnCountsDestinations(t *testing.T) {
 func TestRecordConnWithoutDestination(t *testing.T) {
 	a := sitesAgent()
 	a.recordConn("u7", "1.1.1.1", "")
-	if len(a.takeConns()) != 1 {
+	if conns, _ := a.takeConns(connsChunkMax); len(conns) != 1 {
 		t.Fatal("device sighting lost")
 	}
 	if got := a.takeSites(sitesBytesMax); got != nil {
@@ -249,7 +250,8 @@ func TestRecordConnIgnoresHostnames(t *testing.T) {
 		t.Fatalf("hostnames were buffered: %v", got)
 	}
 	// The device sighting itself is unaffected.
-	if n := len(a.takeConns()); n != 1 {
+	if conns, _ := a.takeConns(connsChunkMax); len(conns) != 1 {
+		n := len(conns)
 		t.Fatalf("conns = %d, want 1", n)
 	}
 }
@@ -273,7 +275,7 @@ func TestRecordConnConcurrent(t *testing.T) {
 		defer wg.Done()
 		for range 50 {
 			a.takeSites(sitesBytesMax)
-			a.takeConns()
+			a.takeConns(connsChunkMax)
 		}
 	}()
 	wg.Wait()

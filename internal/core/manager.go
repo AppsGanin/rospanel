@@ -48,10 +48,16 @@ const (
 	accThrottle = int64(10)
 	accLastMax  = 4096
 	accLastTTL  = accThrottle
-	// accPendingMax bounds the unflushed sighting buffer. Sized above accLastMax so
-	// the throttle, not this cap, is what normally limits it — this only catches the
-	// pathological case where flushes keep failing and the buffer stops draining.
-	accPendingMax = 8192
+	// accFlushAt is how many buffered sightings bring the next flush forward instead of
+	// waiting out the interval. accPendingMax bounds the buffer for the case where
+	// flushes keep failing and it stops draining.
+	//
+	// The cap used to be 8,192 and nothing flushed early. A node's sync hands over up
+	// to that many samples at once, so two busy nodes landing in one flush interval
+	// overflowed it, and every sighting past the cap was dropped — device counts and
+	// online status for whoever came last.
+	accFlushAt    = 8192
+	accPendingMax = 1 << 17
 )
 
 // Manager is the application service layer.
@@ -75,6 +81,8 @@ type Manager struct {
 
 	accMu   sync.Mutex
 	accLast map[string]int64 // throttle key "uN|ip" → last recorded unix
+	// accFlushDue asks the access flush loop to flush now (see accFlushAt).
+	accFlushDue chan struct{}
 	// accLastSwept is when accLast was last swept (unix), so a map that stays over its
 	// cap with genuinely active pairs is not re-walked on every sighting.
 	accLastSwept int64
@@ -338,6 +346,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		done:           make(chan struct{}),
 		accLast:        make(map[string]int64),
 		accPending:     make(map[accPendingKey]store.ConnectionHit),
+		accFlushDue:    make(chan struct{}, 1),
 		abusePending:   make(map[abusePendingKey]store.AbuseHit),
 		abuseAlerted:   make(map[abuseAlertKey]struct{}),
 		applied:        make(map[int64]struct{}),
@@ -481,6 +490,18 @@ func (m *Manager) RecordAccess(email, ip, dest string) {
 	if now-m.accLast[key] < accThrottle {
 		return
 	}
+	pk := accPendingKey{userID: id, ip: ip}
+	h, buffered := m.accPending[pk]
+	// Bound the buffer. It normally drains every few seconds, but a persistent write
+	// failure (a full disk, say) makes FlushAccess requeue instead — and the throttle
+	// above stops protecting us as soon as accLast evicts a key, since that reopens
+	// the pair for buffering. Dropping the newest sighting for a pair we are not
+	// already tracking costs a last_seen update; growing without limit costs the
+	// process. Checked before the throttle is armed: a sighting turned away here is
+	// taken again on the pair's next line rather than throttled as if it were kept.
+	if !buffered && len(m.accPending) >= accPendingMax {
+		return
+	}
 	m.accLast[key] = now
 	if len(m.accLast) > accLastMax && now-m.accLastSwept >= accThrottle {
 		m.accLastSwept = now
@@ -490,23 +511,22 @@ func (m *Manager) RecordAccess(email, ip, dest string) {
 			}
 		}
 	}
-	pk := accPendingKey{userID: id, ip: ip}
-	h, buffered := m.accPending[pk]
-	// Bound the buffer. It normally drains every few seconds, but a persistent write
-	// failure (a full disk, say) makes FlushAccess requeue instead — and the throttle
-	// above stops protecting us as soon as accLast evicts a key, since that reopens
-	// the pair for buffering. Dropping the newest sighting for a pair we are not
-	// already tracking costs a last_seen update; growing without limit costs the
-	// process.
-	if !buffered && len(m.accPending) >= accPendingMax {
-		return
-	}
 	h.UserID, h.IP, h.Hits = id, ip, h.Hits+1
 	if now > h.SeenAt {
 		h.SeenAt = now
 	}
 	m.accPending[pk] = h
+	if len(m.accPending) >= accFlushAt {
+		select {
+		case m.accFlushDue <- struct{}{}:
+		default: // already asked, or no loop to ask (tests)
+		}
+	}
 }
+
+// AccessFlushDue fires when enough sightings are buffered that the access flush loop
+// should not wait for its next tick.
+func (m *Manager) AccessFlushDue() <-chan struct{} { return m.accFlushDue }
 
 // FlushAccess writes the buffered access sightings in one transaction and, if the
 // new devices changed who should be online, syncs Xray.

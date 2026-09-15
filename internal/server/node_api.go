@@ -143,9 +143,13 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	//
 	// A chunk of a traffic backlog is answered at once too, so the next chunk follows
 	// straight away — but only one that was counted: a report the panel failed to
-	// ingest is held, or a persistent database error would become a tight loop.
-	trafficBacklog := req.TrafficMore && len(req.Traffic) > 0 && resp.AckReport > 0
-	if resp.Changed || resp.Revoked != req.Revoked || rt.mgr.NodeHasFreshWork(node.ID) || trafficBacklog {
+	// ingest is held, or a persistent database error would become a tight loop. So is
+	// a chunk of connection samples; those are recorded in memory, so nothing to count.
+	// Either flag with nothing in the request is held: the flag alone must not buy a
+	// node a loop.
+	backlog := (req.TrafficMore && len(req.Traffic) > 0 && resp.AckReport > 0) ||
+		(req.ConnsMore && len(req.Conns) > 0)
+	if resp.Changed || resp.Revoked != req.Revoked || rt.mgr.NodeHasFreshWork(node.ID) || backlog {
 		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp)
 		return
 	}
