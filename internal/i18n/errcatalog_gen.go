@@ -280,6 +280,7 @@ var errEN = map[string]string{
 	"err.subRuleRegex":             "invalid regular expression: {{value}}",
 	"err.subRuleValue":             "the rule needs a value",
 	"err.subTemplateInvalid":       "{{format}} template: {{err}}",
+	"err.subTemplateLegacy":        "{{format}} template: {{field}} was removed from sing-box, and clients will not load a profile that uses it (sing-box.sagernet.org/migration)",
 	"err.subTemplateNoSlot":        "{{format}} template: no slot for the servers — paste {{slot}} where they go",
 	"err.subTemplateTooBig":        "{{format}} template: at most {{max}} KB",
 	"err.subTemplateTooDeep":       "{{format}} template: too many slots or too deeply nested",

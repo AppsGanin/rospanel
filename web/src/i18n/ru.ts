@@ -527,6 +527,7 @@ const ru = {
     subTemplateTooDeep: "шаблон {{format}}: слишком много вставок или слишком глубокая вложенность",
     subTemplateNoSlot: "шаблон {{format}}: нет места для серверов — вставьте {{slot}} туда, где они должны быть",
     subTemplateInvalid: "шаблон {{format}}: {{err}}",
+    subTemplateLegacy: "шаблон {{format}}: {{field}} — поле удалено из sing-box, клиенты не загрузят профиль с ним (sing-box.sagernet.org/migration)",
     subRuleField: "неизвестное поле правила {{value}}",
     subRuleOp: "неизвестный оператор правила {{value}}",
     subRuleAction: "неизвестное действие правила {{value}}",

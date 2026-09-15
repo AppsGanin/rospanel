@@ -929,9 +929,13 @@ const maxSubTemplateBytes = 256 * 1024
 // subTemplateErr turns a validator's error into one the panel can show, naming the
 // format so an operator editing three documents knows which one is refused.
 func subTemplateErr(format string, err error) error {
+	var legacy *sub.SingBoxLegacyError
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, &legacy):
+		return invalidCode("err.subTemplateLegacy", "шаблон {{format}}: {{field}} — поле удалено из sing-box, профиль с ним не загрузится",
+			map[string]any{"format": format, "field": legacy.Path})
 	case errors.Is(err, sub.ErrTemplateTooBig):
 		return invalidCode("err.subTemplateTooDeep", "шаблон {{format}}: слишком много вставок или слишком глубокая вложенность",
 			map[string]any{"format": format})
