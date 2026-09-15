@@ -175,7 +175,7 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
 
-// ListUserStates returns every user, newest first, carrying what the traffic
+// UserStatesByID returns the given users, newest first, carrying what the traffic
 // accounting and the enforcement pass read — and nothing else:
 //
 //	ID, Name, Enabled, PlanID, DataLimit, ExpireAt, HoldSeconds,
@@ -186,11 +186,6 @@ func (s *Store) ListUsers() ([]model.User, error) {
 //
 // Credentials, keys, notes, tags and bot codes are left zero.
 // TestUserStatesServeEnforcementAsWholeUsers holds the consumers to these fields.
-func (s *Store) ListUserStates() ([]model.User, error) {
-	return s.userStates(`SELECT `+userStateCols+` FROM users ORDER BY id DESC`, nil)
-}
-
-// UserStatesByID is ListUserStates for the given users only, newest first.
 func (s *Store) UserStatesByID(ids []int64) ([]model.User, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -200,17 +195,21 @@ func (s *Store) UserStatesByID(ids []int64) ([]model.User, error) {
 		return nil, err
 	}
 	return s.userStates(`SELECT `+userStateCols+` FROM users
-		WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id DESC`, ids, string(b))
+		WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id DESC`, len(ids) <= userStatesByKeyMax, string(b))
 }
+
+// userStatesByKeyMax is how many users' devices are counted from their own rows; for
+// more, one grouped pass over the window of everyone online is cheaper.
+const userStatesByKeyMax = 1000
 
 const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_seconds,
 	used_up, used_down, last_up, last_down, reset_period, last_reset_at,
 	device_limit, device_over_since, tg_chat_id,
 	notified_status, notified_expire_at, notified_quota_at`
 
-// userStates reads user states. ids, when set, are the users asked for: their devices
-// are counted from their own rows rather than from everyone online.
-func (s *Store) userStates(query string, ids []int64, args ...any) ([]model.User, error) {
+// userStates reads user states. byKey counts the devices of the users read from their
+// own rows rather than from the window of everyone online.
+func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User, error) {
 	countIP := s.ipCountsAsDevice() // before the rows hold the one connection
 	now := time.Now().Unix()
 	rows, err := s.db.Query(query, args...)
@@ -236,7 +235,11 @@ func (s *Store) userStates(query string, ids []int64, args ...any) ([]model.User
 	}
 	since := now - model.DeviceOnlineWindow
 	var counts map[int64]int
-	if ids != nil && len(ids) <= 1000 {
+	if byKey {
+		ids := make([]int64, len(out))
+		for i := range out {
+			ids[i] = out[i].ID
+		}
 		counts, _ = s.ActiveDeviceCountsOf(ids, since)
 	} else {
 		counts, _ = s.ActiveDeviceCounts(since)

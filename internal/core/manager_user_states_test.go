@@ -170,7 +170,7 @@ func runEnforcement(t *testing.T, now int64, seed func(*testing.T, *store.Store,
 	return run
 }
 
-// The stats poll and the enforcement pass read users through ListUserStates, which
+// The stats poll and the enforcement pass read users through UserStatesByID, which
 // leaves credentials, notes and bot fields out. Everything they do with those users
 // must come out exactly as it would from whole users — the alerts, the users'
 // messages, the webhooks, the audit trail and the rows. A later change that reads a
@@ -179,8 +179,8 @@ func TestUserStatesServeEnforcementAsWholeUsers(t *testing.T) {
 	now := time.Now().Unix()
 	whole := runEnforcement(t, now, seedEnforcement, wholeReads)
 	states := runEnforcement(t, now, seedEnforcement, enforcementReads{
-		resets: func(m *Manager) ([]model.User, error) { return m.store.ListUserStates() },
-		notify: func(m *Manager) ([]model.User, error) { return m.store.ListUserStates() },
+		resets: allUserStates,
+		notify: allUserStates,
 	})
 	if !reflect.DeepEqual(whole, states) {
 		t.Fatalf("the pass differs on narrow users:\nwhole:  %+v\nstates: %+v", whole, states)
@@ -191,6 +191,19 @@ func TestUserStatesServeEnforcementAsWholeUsers(t *testing.T) {
 		t.Fatalf("fixture did not reach every path: %d alerts, %d user messages, %d webhooks, %d events\n%+v",
 			len(whole.Admin), len(whole.User), len(whole.Webhooks), len(whole.Events), whole)
 	}
+}
+
+// allUserStates reads every user as a state.
+func allUserStates(m *Manager) ([]model.User, error) {
+	users, err := m.store.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	return m.store.UserStatesByID(ids)
 }
 
 // candidateReads reads what the stats poll and the enforcement pass read: the reset
