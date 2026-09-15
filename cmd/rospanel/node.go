@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/AppsGanin/rospanel/internal/nodeagent"
+	"github.com/AppsGanin/rospanel/internal/tuning"
 )
 
 const (
@@ -62,6 +63,11 @@ func nodeDataDir() string {
 	return "./data-node"
 }
 
+// nodeMemoryShare is the part of a node's memory the agent's heap is steered under.
+// A quarter: on a node the memory belongs first to the Xray the agent runs, which has
+// its own 256 MiB soft limit.
+const nodeMemoryShare = 0.25
+
 // runNodeAgent runs the agent until SIGINT/SIGTERM (the systemd ExecStart entry).
 //
 // It joins first when ROSPANEL_JOIN is set and this data directory has no identity
@@ -73,6 +79,7 @@ func nodeDataDir() string {
 // node.json, so a restart re-reads the identity it already has and a spent join
 // token in a stale compose file changes nothing.
 func runNodeAgent(dataDir string) {
+	logMemoryLimit(tuning.SetMemoryLimit(nodeMemoryShare))
 	if joinURL := strings.TrimSpace(os.Getenv("ROSPANEL_JOIN")); joinURL != "" {
 		if _, err := nodeagent.LoadIdentity(dataDir); err != nil {
 			insecure := isTrue(os.Getenv("ROSPANEL_JOIN_INSECURE"))
