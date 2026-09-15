@@ -769,14 +769,14 @@ const ru = {
       admin: "админ",
       apikey: "API-ключ",
       telegram: "Telegram",
-      user: "сам пользователь",
+      user: "пользователь",
       system: "система",
     },
     actorOption: {
       admin: "Админ",
       apikey: "API-ключ",
       telegram: "Telegram-бот",
-      user: "Сам пользователь",
+      user: "Пользователь",
       system: "Система",
     },
     period: {
