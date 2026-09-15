@@ -216,6 +216,9 @@ func (m *Manager) GeoGroups() (geo.GroupSet, error) {
 		return nil, err
 	}
 	m.geoGroups = g
+	// Counted like a drop: groups that failed to parse before (the lists not downloaded
+	// yet) and parse now change what a config is built from.
+	m.geoGen++
 	return g, nil
 }
 
@@ -278,7 +281,15 @@ func (m *Manager) IPListStatus() []geo.FileInfo { return geo.StatusLists(m.asset
 func (m *Manager) dropGeoCache() {
 	m.geoMu.Lock()
 	m.geoSite, m.geoIP, m.geoGroups = nil, nil, nil
+	m.geoGen++
 	m.geoMu.Unlock()
+}
+
+// geoGeneration counts every change of the cached groups: each drop and each parse.
+func (m *Manager) geoGeneration() uint64 {
+	m.geoMu.Lock()
+	defer m.geoMu.Unlock()
+	return m.geoGen
 }
 
 // RefreshGeo re-downloads the Xray geo databases to their latest version, drops

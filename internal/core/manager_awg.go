@@ -82,6 +82,13 @@ func (m *Manager) claimAWG(users []*model.User) error {
 // without an address (the subnet is full) or without a usable key is left out and
 // logged rather than failing the whole tunnel.
 func (m *Manager) awgPeers(serverID int64, users []model.User, access map[int64]model.Access) []awg.Peer {
+	peers, _ := m.awgPeersClaimed(serverID, users, access)
+	return peers
+}
+
+// awgPeersClaimed is awgPeers that also says whether every allowed user's identity was
+// claimed; false leaves the users whose claim failed out of the peers.
+func (m *Manager) awgPeersClaimed(serverID int64, users []model.User, access map[int64]model.Access) ([]awg.Peer, bool) {
 	allowed := make([]*model.User, 0, len(users))
 	for i := range users {
 		if model.AccessOf(access, users[i].ID).AllowsBuiltin(serverID, model.LaneAWG) {
@@ -118,7 +125,7 @@ func (m *Manager) awgPeers(serverID int64, users []model.User, access map[int64]
 		logWarn("awg: no address left on the tunnel subnet, users left out",
 			"server", serverID, "users", unplaced, "capacity", awg.LastSlot-awg.FirstSlot+1)
 	}
-	return peers
+	return peers, claimed
 }
 
 // syncAWGLocked brings the master's tunnel in line with the settings and the
@@ -373,8 +380,15 @@ func awgDNSOr(s *model.Settings) string {
 // nodeAWGState is what a node needs to run its tunnel: its own identity and the
 // peers allowed on it. nil when the lane is off on that node.
 func (m *Manager) nodeAWGState(n *model.Node, ns *model.Settings, users []model.User, access map[int64]model.Access) *nodeapi.AWGState {
+	st, _ := m.nodeAWGStateClaimed(n, ns, users, access)
+	return st
+}
+
+// nodeAWGStateClaimed is nodeAWGState that also says whether every peer's identity was
+// claimed (true when there is no tunnel to claim for).
+func (m *Manager) nodeAWGStateClaimed(n *model.Node, ns *model.Settings, users []model.User, access map[int64]model.Access) (*nodeapi.AWGState, bool) {
 	if !ns.AWGEnabled || n.AWGPrivateKey == "" || ns.AWGPort == 0 {
-		return nil
+		return nil, true
 	}
 	params := awgParams(n.AWGParams)
 	// An agent that predates AmneziaWG 3.1 reads h1–h4 as numbers, and a range
@@ -385,16 +399,16 @@ func (m *Manager) nodeAWGState(n *model.Node, ns *model.Settings, users []model.
 	if params.NeedsAgent31() && !nodeSpeaks31(n.NodeVersion) {
 		logWarn("awg: node too old for the 3.1 parameters, tunnel state withheld",
 			"node", n.ID, "node_version", n.NodeVersion)
-		return nil
+		return nil, true
 	}
 	// awgPeers records a key it mints on the user it was handed, and these users are
 	// the snapshot every node shares (nodeInputs): it works on its own copy.
-	peers := m.awgPeers(n.ID, append([]model.User(nil), users...), access)
+	peers, claimed := m.awgPeersClaimed(n.ID, append([]model.User(nil), users...), access)
 	out := &nodeapi.AWGState{Port: ns.AWGPort, PrivateKey: n.AWGPrivateKey, Params: params}
 	for _, p := range peers {
 		out.Peers = append(out.Peers, nodeapi.AWGPeer{PublicKey: p.PublicKey, Addr: p.Addr.String(), Email: p.Email})
 	}
-	return out
+	return out, claimed
 }
 
 // awgAgent31 is the first panel release whose node agent reads AmneziaWG 3.1

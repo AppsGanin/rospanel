@@ -164,13 +164,13 @@ func nodeXrayHealth(n *model.Node) HealthCheck {
 // one it is simply the pending change it will pick up when it returns.
 func (m *Manager) nodeConfigHealth(n *model.Node, online bool) HealthCheck {
 	const label = "health.config"
-	state, err := m.NodeDesiredState(n)
+	state, err := m.NodeStateChange(n, n.ConfigHash)
 	if err != nil {
 		return HealthCheck{Key: "config", LabelKey: label, Status: healthError,
 			DetailKey: "health.nodeConfigBuildFailed", HintKey: "health.nodeConfigHint",
 			Args: map[string]any{"err": err.Error()}}
 	}
-	if state.Hash == n.ConfigHash {
+	if state == nil {
 		return HealthCheck{Key: "config", LabelKey: label, Status: healthOK,
 			DetailKey: "health.nodeConfigCurrent"}
 	}

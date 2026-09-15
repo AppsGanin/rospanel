@@ -183,13 +183,13 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	state, err := rt.mgr.NodeDesiredState(fresh)
+	state, err := rt.mgr.NodeStateChange(fresh, req.ConfigHash)
 	if err != nil {
 		// Not silent: a desired state that cannot be built means this node stops
 		// receiving config for as long as the failure lasts, and nothing else in the
 		// panel would say so.
 		slog.Error("node: cannot build desired state", "node", fresh.ID, "err", err)
-	} else if state.Hash != req.ConfigHash {
+	} else if state != nil {
 		out.Changed = true
 		out.State = state
 		slog.Info("node: pushing new state", "node", fresh.ID,
