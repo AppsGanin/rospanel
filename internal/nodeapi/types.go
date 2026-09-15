@@ -133,6 +133,9 @@ type SyncRequest struct {
 	// counting pipeline as the master (RecordAccess → AddConnection), so a user's
 	// device cap counts unique IPs across the WHOLE fleet, not just the master.
 	Conns []ConnSample `json:"conns,omitempty"`
+	// ConnsMore says more samples are waiting on the node than this request carried:
+	// answer at once, as for TrafficMore. A panel too old to know it holds as before.
+	ConnsMore bool `json:"conns_more,omitempty"`
 
 	// Sites are this node's busiest destination addresses per user since the last
 	// sync, which the panel matches against its IP blocklists.

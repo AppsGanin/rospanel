@@ -2,6 +2,7 @@ package nodeagent
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -297,5 +298,56 @@ func TestTrafficBacklogGoesOutInChunks(t *testing.T) {
 	a.pending[2] = &nodeapi.TrafficDelta{UserID: 2, Up: 6}
 	if again := a.buildSyncRequest(); again.ReportID != first.ReportID || again.TrafficMore {
 		t.Fatalf("a partial in-flight batch with a new sample: id %d→%d more=%v", first.ReportID, again.ReportID, again.TrafficMore)
+	}
+}
+
+// More distinct user+address pairs than one sync carries go out over consecutive
+// syncs, each marked while more are waiting — none dropped, none twice. The buffer
+// still has a bound against a flood.
+func TestConnSamplesGoOutInChunks(t *testing.T) {
+	dir := t.TempDir()
+	sup := xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
+	a := &Agent{
+		dataDir: dir, sup: sup, certPath: filepath.Join(dir, "cert.pem"),
+		state: &persistState{}, pending: map[int64]*nodeapi.TrafficDelta{},
+		inflight: map[int64]*nodeapi.TrafficDelta{}, lastCounters: map[string]xray.Traffic{},
+		conns: map[string]nodeapi.ConnSample{}, sites: map[siteKey]int64{},
+	}
+	total := 2*connsChunkMax + 100
+	for i := 0; i < total; i++ {
+		a.recordConn(fmt.Sprintf("u%d", 1+i%5000), fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255), "")
+	}
+	seen := map[string]bool{}
+	for round := 0; ; round++ {
+		req := a.buildSyncRequest()
+		if len(req.Conns) == 0 {
+			if req.ConnsMore {
+				t.Fatal("a sync with no samples said more were waiting")
+			}
+			break
+		}
+		if round > 3 || len(req.Conns) > connsChunkMax {
+			t.Fatalf("round %d carried %d samples, cap %d", round, len(req.Conns), connsChunkMax)
+		}
+		for _, c := range req.Conns {
+			k := c.Email + " " + c.IP
+			if seen[k] {
+				t.Fatalf("%s sent twice", k)
+			}
+			seen[k] = true
+		}
+		if wantMore := len(seen) < total; req.ConnsMore != wantMore {
+			t.Fatalf("after %d of %d samples, more = %v", len(seen), total, req.ConnsMore)
+		}
+	}
+	if len(seen) != total {
+		t.Fatalf("%d of %d samples went out", len(seen), total)
+	}
+
+	for i := 0; i < connsMax+500; i++ {
+		a.recordConn("u1", fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255), "")
+	}
+	if n := len(a.conns); n != connsMax {
+		t.Fatalf("the buffer holds %d samples, bound %d", n, connsMax)
 	}
 }

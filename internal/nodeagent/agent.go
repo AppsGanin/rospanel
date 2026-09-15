@@ -513,6 +513,15 @@ const (
 	// more (SyncRequest.TrafficMore). ~80 bytes a row at worst keeps a chunk near
 	// 300 KB.
 	trafficChunkMax = 4000
+	// connsMax bounds the connection samples buffered between syncs, and
+	// connsChunkMax how many one sync carries. The buffer used to be the chunk: 8,192
+	// distinct user+address pairs per sync, and every pair past that in a busy window
+	// was dropped — on a node with a few thousand active users, device counts and
+	// online status went missing for whoever came last. What does not fit a sync now
+	// waits for the next, which a panel answers at once (SyncRequest.ConnsMore); the
+	// buffer bound is only against a flood.
+	connsMax      = 65536
+	connsChunkMax = 8192
 )
 
 // recordConn buffers one access-log connection (a "uN" email + source IP, plus the
@@ -525,7 +534,7 @@ func (a *Agent) recordConn(email, ip, dest string) {
 	}
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
-	if len(a.conns) < 8192 {
+	if len(a.conns) < connsMax {
 		a.conns[email+"\x00"+ip] = nodeapi.ConnSample{Email: email, IP: ip}
 	}
 	// The shaper's own view of the same sighting; it outlives the sync that drains
@@ -553,19 +562,31 @@ func (a *Agent) recordConn(email, ip, dest string) {
 	}
 }
 
-// takeConns snapshots and clears the buffered connection samples.
-func (a *Agent) takeConns() []nodeapi.ConnSample {
+// takeConns hands over at most max buffered connection samples, removing them from
+// the buffer, and reports whether any are left behind.
+func (a *Agent) takeConns(max int) ([]nodeapi.ConnSample, bool) {
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
 	if len(a.conns) == 0 {
-		return nil
+		return nil, false
 	}
-	out := make([]nodeapi.ConnSample, 0, len(a.conns))
-	for _, c := range a.conns {
+	if len(a.conns) <= max {
+		out := make([]nodeapi.ConnSample, 0, len(a.conns))
+		for _, c := range a.conns {
+			out = append(out, c)
+		}
+		a.conns = map[string]nodeapi.ConnSample{}
+		return out, false
+	}
+	out := make([]nodeapi.ConnSample, 0, max)
+	for k, c := range a.conns {
+		if len(out) == max {
+			break
+		}
 		out = append(out, c)
+		delete(a.conns, k)
 	}
-	a.conns = map[string]nodeapi.ConnSample{}
-	return out
+	return out, len(a.conns) > 0
 }
 
 // takeSites snapshots and clears the destination counters, keeping only each user's
@@ -959,6 +980,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	}
 
 	awgUp, awgErr := a.awgState()
+	conns, connsMore := a.takeConns(connsChunkMax)
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
 		NodeVersion: version.Version,
@@ -979,7 +1001,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		ReportID:       rid,
 		Traffic:        traffic,
 		TrafficMore:    trafficMore,
-		Conns:          a.takeConns(),
+		Conns:          conns,
+		ConnsMore:      connsMore,
 		Logs:           logs,
 		GeoFiles:       geoFiles,
 		Host:           a.hostStats(),

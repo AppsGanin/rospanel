@@ -42,6 +42,17 @@ func TestTrafficBacklogChunkIsAnsweredAtOnce(t *testing.T) {
 		t.Fatal("a chunk of a traffic backlog was held — the rest waits a whole hold per chunk")
 	}
 
+	// A chunk of connection samples with more waiting is answered at once as well.
+	samples := nodeapi.SyncRequest{ConfigHash: desired.Hash, ConnsMore: true,
+		Conns: []nodeapi.ConnSample{{Email: "u424242", IP: "198.51.100.7"}}}
+	quick := make(chan struct{}, 1)
+	go func() { syncRequest(rt, token, samples); quick <- struct{}{} }()
+	select {
+	case <-quick:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a chunk of connection samples was held — the rest waits a whole hold per chunk")
+	}
+
 	for _, c := range []struct {
 		name string
 		req  nodeapi.SyncRequest
@@ -49,6 +60,9 @@ func TestTrafficBacklogChunkIsAnsweredAtOnce(t *testing.T) {
 		{"the last chunk", nodeapi.SyncRequest{ConfigHash: desired.Hash, ReportID: 2,
 			Traffic: []nodeapi.TrafficDelta{{UserID: uid, Up: 1, Down: 1}}}},
 		{"the flag with no traffic", nodeapi.SyncRequest{ConfigHash: desired.Hash, TrafficMore: true}},
+		{"the samples flag with no samples", nodeapi.SyncRequest{ConfigHash: desired.Hash, ConnsMore: true}},
+		{"the last chunk of samples", nodeapi.SyncRequest{ConfigHash: desired.Hash,
+			Conns: []nodeapi.ConnSample{{Email: "u424242", IP: "198.51.100.9"}}}},
 	} {
 		held := make(chan struct{}, 1)
 		go func() { syncRequest(rt, token, c.req); held <- struct{}{} }()

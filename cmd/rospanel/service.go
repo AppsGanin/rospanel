@@ -522,10 +522,15 @@ func waitBG(wg *sync.WaitGroup, grace time.Duration) {
 // sightings into each commit.
 const accessFlushInterval = 5 * time.Second
 
+// accessFlushMinGap is the least time between two flushes asked for early. A flood
+// refilling the buffer faster than a flush can write it would otherwise keep the one
+// database connection busy with sightings and nothing else.
+const accessFlushMinGap = time.Second
+
 // accessFlushLoop persists buffered access-log sightings.
 func accessFlushLoop(mgr *core.Manager) func(context.Context) {
 	return func(ctx context.Context) {
-		tick(ctx, accessFlushInterval, func() {
+		flushLoop(ctx, accessFlushInterval, accessFlushMinGap, mgr.AccessFlushDue(), func() {
 			safeTick("access flush", mgr.FlushAccess)
 			// Same cadence and the same reason: recordAbuse only buffers. Separate call
 			// rather than folded into FlushAccess so a failure in one does not cost the
@@ -536,6 +541,32 @@ func accessFlushLoop(mgr *core.Manager) func(context.Context) {
 		// connected in the last few seconds, and a stop should not lose them.
 		safeTick("access flush", mgr.FlushAccess)
 		safeTick("abuse flush", mgr.FlushAbuse)
+	}
+}
+
+// flushLoop runs flush every interval, and sooner when due fires — a full buffer does
+// not wait for the tick (see core.accFlushAt) — but never two early flushes within
+// minGap of the last flush. It returns when ctx ends.
+func flushLoop(ctx context.Context, every, minGap time.Duration, due <-chan struct{}, flush func()) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	last := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		case <-due:
+			if wait := minGap - time.Since(last); wait > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(wait):
+				}
+			}
+		}
+		flush()
+		last = time.Now()
 	}
 }
 
