@@ -179,18 +179,14 @@ func (m *Manager) PollAWG() error {
 	if len(stats) == 0 {
 		return nil
 	}
-	users, err := m.store.ListUsers()
+	keys, err := m.store.UserTunnelKeys()
 	if err != nil {
 		return err
 	}
-	byPub := make(map[string]*model.User, len(users))
-	for i := range users {
-		u := &users[i]
-		if u.WGPrivateKey == "" {
-			continue
-		}
-		if pub, err := awg.PublicKey(u.WGPrivateKey); err == nil {
-			byPub[pub] = u
+	byPub := make(map[string]int64, len(keys))
+	for id, key := range keys {
+		if pub, err := awg.PublicKey(key); err == nil {
+			byPub[pub] = id
 		}
 	}
 	now := time.Now().Unix()
@@ -201,7 +197,7 @@ func (m *Manager) PollAWG() error {
 		m.awgLast = map[string]awg.PeerStat{}
 	}
 	for pub, st := range stats {
-		u, ok := byPub[pub]
+		userID, ok := byPub[pub]
 		if !ok {
 			continue
 		}
@@ -218,13 +214,13 @@ func (m *Manager) PollAWG() error {
 		m.awgLast[pub] = st
 		if addUp > 0 || addDown > 0 {
 			deltas = append(deltas, store.TrafficDelta{
-				UserID: u.ID, NodeID: model.LocalNodeID, Day: today,
+				UserID: userID, NodeID: model.LocalNodeID, Day: today,
 				AddUp: nonNeg(addUp), AddDown: nonNeg(addDown), SeenAt: now,
 			})
 		}
 		if st.LastHandshake > 0 && now-st.LastHandshake <= awgOnlineWindow {
 			if ip := awg.EndpointIP(st.Endpoint); ip != "" {
-				m.RecordAccessOn(model.LocalNodeID, model.UserEmail(u.ID), ip, "")
+				m.RecordAccessOn(model.LocalNodeID, model.UserEmail(userID), ip, "")
 			}
 		}
 	}
@@ -235,7 +231,7 @@ func (m *Manager) PollAWG() error {
 	if err := m.store.ApplyTrafficDeltas(deltas); err != nil {
 		return err
 	}
-	return m.enforceAfterTraffic(users)
+	return m.enforceTraffic()
 }
 
 // AWGStatus is what the Connections panel shows about the master's tunnel.
