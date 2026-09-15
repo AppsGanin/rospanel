@@ -127,6 +127,11 @@ type Manager struct {
 	nodeInputsCache   *nodeInputs
 	nodeInputsVersion uint64
 
+	// summaryMu guards the user counts SystemStatus reuses (see recentSummary).
+	summaryMu    sync.Mutex
+	summaryCache *Summary
+	summaryAt    time.Time
+
 	// nodeStateMu guards nodeStates, each node's last built state fingerprint and hash
 	// (see NodeStateChange).
 	nodeStateMu sync.Mutex
