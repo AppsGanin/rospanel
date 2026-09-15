@@ -20,7 +20,9 @@ func (m *Manager) PollStats() error {
 	if err != nil {
 		return err
 	}
-	users, err := m.store.ListUsers()
+	// Only the counters: what the poll subtracts from. Whole users were read here, every
+	// minute, to use three columns of them.
+	bases, err := m.store.TrafficBaselines()
 	if err != nil {
 		return err
 	}
@@ -29,23 +31,24 @@ func (m *Manager) PollStats() error {
 	// Collect the whole cycle first, then commit it in one transaction. Written
 	// per-user this was three fsyncs per active user on a single connection, which is
 	// what put a hard ceiling on how many users the panel could account for at all.
-	deltas := make([]store.TrafficDelta, 0, len(users))
-	for _, u := range users {
-		t, ok := stats[fmt.Sprintf("u%d", u.ID)]
+	deltas := make([]store.TrafficDelta, 0, len(stats))
+	for id, base := range bases {
+		t, ok := stats[fmt.Sprintf("u%d", id)]
 		if !ok {
 			continue
 		}
-		addUp, addDown := t.Up-u.LastUp, t.Down-u.LastDown
-		if t.Up < u.LastUp { // Xray restarted → counter reset to 0
+		lastUp, lastDown := base[0], base[1]
+		addUp, addDown := t.Up-lastUp, t.Down-lastDown
+		if t.Up < lastUp { // Xray restarted → counter reset to 0
 			addUp = t.Up
 		}
-		if t.Down < u.LastDown {
+		if t.Down < lastDown {
 			addDown = t.Down
 		}
-		if addUp != 0 || addDown != 0 || t.Up != u.LastUp || t.Down != u.LastDown {
+		if addUp != 0 || addDown != 0 || t.Up != lastUp || t.Down != lastDown {
 			au, ad := nonNeg(addUp), nonNeg(addDown)
 			d := store.TrafficDelta{
-				UserID: u.ID, NodeID: model.LocalNodeID, Day: today,
+				UserID: id, NodeID: model.LocalNodeID, Day: today,
 				AddUp: au, AddDown: ad,
 				// The local poller reads cumulative counters, so it records where it
 				// read them for the next cycle to subtract from.
@@ -61,11 +64,18 @@ func (m *Manager) PollStats() error {
 		logErr("stats: traffic batch failed", "users", len(deltas), "err", err)
 	}
 	// Re-baseline a reset user's counters to the live Xray value (reusing the stats
-	// already fetched above) so the next poll measures the delta from the reset.
-	m.applyResets(users, time.Now().Unix(), func(id int64) (int64, int64) {
-		t := stats[fmt.Sprintf("u%d", id)]
-		return t.Up, t.Down
-	})
+	// already fetched above) so the next poll measures the delta from the reset. Only
+	// users with a reset period can be due one.
+	if ids, err := m.store.ResetCandidates(); err != nil {
+		logErr("stats: reading reset candidates failed", "err", err)
+	} else if due, err := m.store.UserStatesByID(ids); err != nil {
+		logErr("stats: reading reset candidates failed", "err", err)
+	} else {
+		m.applyResets(due, time.Now().Unix(), func(id int64) (int64, int64) {
+			t := stats[fmt.Sprintf("u%d", id)]
+			return t.Up, t.Down
+		})
+	}
 	return m.enforceTraffic()
 }
 
@@ -80,11 +90,27 @@ var trafficEnforceDelay = 10 * time.Second
 func (m *Manager) enforceTraffic() error {
 	m.enforceMu.Lock()
 	defer m.enforceMu.Unlock()
-	users, err := m.store.ListUsers()
+	users, err := m.enforcementUsers()
 	if err != nil {
 		return err
 	}
 	return m.enforceAfterTraffic(users)
+}
+
+// enforcementUsers reads the users the enforcement pass may act on (see
+// store.EnforcementCandidates) — usually a handful of the whole list.
+func (m *Manager) enforcementUsers() ([]model.User, error) {
+	// The widest horizon a setting allows when the settings cannot be read: a superset
+	// is harmless, and the expiry warnings are skipped without settings anyway.
+	horizon := int64(30 * 86400)
+	if set, err := m.store.GetSettings(); err == nil {
+		horizon = int64(set.ExpiringDays()) * 86400
+	}
+	ids, err := m.store.EnforcementCandidates(time.Now().Unix(), horizon)
+	if err != nil {
+		return nil, err
+	}
+	return m.store.UserStatesByID(ids)
 }
 
 // enforceTrafficSoon schedules an enforcement pass for node traffic, unless one is

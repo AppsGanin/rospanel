@@ -175,6 +175,185 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	return s.queryUsers(`SELECT ` + userCols + ` FROM users ORDER BY id DESC`)
 }
 
+// ListUserStates returns every user, newest first, carrying what the traffic
+// accounting and the enforcement pass read — and nothing else:
+//
+//	ID, Name, Enabled, PlanID, DataLimit, ExpireAt, HoldSeconds,
+//	UsedUp, UsedDown, LastUp, LastDown, ResetPeriod, LastResetAt,
+//	DeviceLimit, DeviceOverSince, TgChatID,
+//	NotifiedStatus, NotifiedExpireAt, NotifiedQuotaAt,
+//	ActiveDevices and Status (derived as ListUsers derives them).
+//
+// Credentials, keys, notes, tags and bot codes are left zero.
+// TestUserStatesServeEnforcementAsWholeUsers holds the consumers to these fields.
+func (s *Store) ListUserStates() ([]model.User, error) {
+	return s.userStates(`SELECT `+userStateCols+` FROM users ORDER BY id DESC`, nil)
+}
+
+// UserStatesByID is ListUserStates for the given users only, newest first.
+func (s *Store) UserStatesByID(ids []int64) ([]model.User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	return s.userStates(`SELECT `+userStateCols+` FROM users
+		WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id DESC`, ids, string(b))
+}
+
+const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_seconds,
+	used_up, used_down, last_up, last_down, reset_period, last_reset_at,
+	device_limit, device_over_since, tg_chat_id,
+	notified_status, notified_expire_at, notified_quota_at`
+
+// userStates reads user states. ids, when set, are the users asked for: their devices
+// are counted from their own rows rather than from everyone online.
+func (s *Store) userStates(query string, ids []int64, args ...any) ([]model.User, error) {
+	countIP := s.ipCountsAsDevice() // before the rows hold the one connection
+	now := time.Now().Unix()
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.User
+	for rows.Next() {
+		var u model.User
+		var enabled int
+		if err := rows.Scan(&u.ID, &u.Name, &enabled, &u.PlanID, &u.DataLimit, &u.ExpireAt, &u.HoldSeconds,
+			&u.UsedUp, &u.UsedDown, &u.LastUp, &u.LastDown, &u.ResetPeriod, &u.LastResetAt,
+			&u.DeviceLimit, &u.DeviceOverSince, &u.TgChatID,
+			&u.NotifiedStatus, &u.NotifiedExpireAt, &u.NotifiedQuotaAt); err != nil {
+			return nil, err
+		}
+		u.Enabled = enabled != 0
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	since := now - model.DeviceOnlineWindow
+	var counts map[int64]int
+	if ids != nil && len(ids) <= 1000 {
+		counts, _ = s.ActiveDeviceCountsOf(ids, since)
+	} else {
+		counts, _ = s.ActiveDeviceCounts(since)
+	}
+	for i := range out {
+		u := &out[i]
+		u.ActiveDevices = counts[u.ID]
+		u.Status = userStatus(u.Enabled, u.ExpireAt, u.UsedUp+u.UsedDown, u.DataLimit, now,
+			u.ActiveDevices, u.DeviceLimit, u.DeviceOverSince, countIP)
+	}
+	return out, nil
+}
+
+// candidateMargin widens the time-based candidate conditions by a few seconds: they are
+// evaluated a moment before the pass derives the statuses again, and a user whose
+// expiry falls into that moment must still be a candidate.
+const candidateMargin = 5
+
+// EnforcementCandidates returns the ids of the users the enforcement pass may have
+// something to tell about — a superset, never fewer:
+//
+//   - a status other than the one last notified. Statuses are derived here as Go
+//     derives them, except "over the device limit", which needs a count of addresses:
+//     every user who can be in that state — stamped past (or nearly past) the grace —
+//     is a candidate instead;
+//   - an expiry moments away, whose status the pass may see change;
+//   - an expiry inside the warning horizon that has not been warned about;
+//   - a quota warning due, or one to re-arm.
+//
+// Everyone else the pass would read and skip: their status is the one already
+// notified, and neither warning applies. At 50,000 users reading them all was ~200 ms
+// on a fast core, every stats poll and every batch of node reports, to find usually
+// nobody. Anything that changes after this query and before the pass is seen by the
+// next pass, because an unnotified status stays unnotified.
+// TestEnforcementCandidatesMissNobody runs the pass both ways over random users.
+func (s *Store) EnforcementCandidates(now, expiringHorizon int64) ([]int64, error) {
+	return s.ids(`SELECT id FROM users
+		WHERE notified_status <> CASE
+		        WHEN enabled = 0 THEN 'disabled'
+		        WHEN expire_at > 0 AND expire_at <= ? THEN 'expired'
+		        WHEN data_limit > 0 AND used_up + used_down >= data_limit THEN 'limited'
+		        ELSE 'active' END
+		   OR (device_limit > 0 AND device_over_since <> 0 AND device_over_since <= ?)
+		   OR (expire_at > ? AND expire_at <= ?)
+		   OR (tg_chat_id <> 0 AND expire_at > ? AND expire_at <= ? AND notified_expire_at <> expire_at)
+		   OR ((data_limit > 0 AND (used_up + used_down) * 100 >= data_limit * ?) <> (notified_quota_at <> 0))`,
+		now,
+		now-model.DeviceLimitGrace+candidateMargin,
+		now-candidateMargin, now+candidateMargin,
+		now-candidateMargin, now+expiringHorizon+candidateMargin,
+		model.TrafficWarnPercent)
+}
+
+// ResetCandidates returns the ids of users whose quota may be due a reset: those with
+// a period and an anchor, the only ones resetDue can ever answer yes for.
+func (s *Store) ResetCandidates() ([]int64, error) {
+	return s.ids(`SELECT id FROM users WHERE reset_period NOT IN ('', 'none') AND last_reset_at <> 0`)
+}
+
+// TrafficBaselines returns every user's last raw Xray counters, by user id — what the
+// stats poll subtracts from.
+func (s *Store) TrafficBaselines() (map[int64][2]int64, error) {
+	rows, err := s.db.Query(`SELECT id, last_up, last_down FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][2]int64{}
+	for rows.Next() {
+		var id, up, down int64
+		if err := rows.Scan(&id, &up, &down); err != nil {
+			return nil, err
+		}
+		out[id] = [2]int64{up, down}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ids(query string, args ...any) ([]int64, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// UserTunnelKeys returns every user's AmneziaWG private key, by user id, for users
+// that have one — what the master's tunnel poll needs to tell its peers apart.
+func (s *Store) UserTunnelKeys() (map[int64]string, error) {
+	rows, err := s.db.Query(`SELECT id, wg_private_key FROM users WHERE wg_private_key <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var key string
+		if err := rows.Scan(&id, &key); err != nil {
+			return nil, err
+		}
+		if key = decField(key); key != "" {
+			out[id] = key
+		}
+	}
+	return out, rows.Err()
+}
+
 // UserSummary is a user as a list of them shows, filters and sorts by: no credentials,
 // keys or bot state. The device count is not in it — see ListUserSummaries.
 type UserSummary struct {
