@@ -108,3 +108,27 @@ func TestUserLookupsByChatAndToken(t *testing.T) {
 		t.Fatalf("the newest detached account should come first: %v %v", u, err)
 	}
 }
+
+// A count of a few users' devices reads those users' rows by the primary key, not the
+// window of everyone online.
+func TestDeviceCountOfFewUsesTheirRows(t *testing.T) {
+	st := newStore(t)
+	rows, err := st.db.Query(`EXPLAIN QUERY PLAN `+activeDeviceCountsOfSQL, "[1,2,3]", int64(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	got := strings.Join(plan, " | ")
+	if !strings.Contains(got, "sqlite_autoindex_connections_1 (user_id=?") {
+		t.Fatalf("plan does not look users up by key: %s", got)
+	}
+}

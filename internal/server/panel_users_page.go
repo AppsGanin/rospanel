@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/store"
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 )
@@ -77,13 +79,35 @@ type usersPage struct {
 //	?offset= ?limit=   the window (limit 0 returns counts only)
 //	?ids=1   also every matching id
 func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
-	users, err := rt.mgr.Store().ListUsers() // newest first, which is also the tie order
+	// Summaries, not whole users: the page reads everyone on every request, and nothing
+	// it shows needs a credential.
+	users, err := rt.mgr.Store().ListUserSummaries() // newest first, which is also the tie order
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	q := r.URL.Query()
 	now := time.Now().Unix()
+	page := buildUsersPage(users, r.URL.Query(), now, pageLookups{
+		groups: func() map[int64][]model.GroupRef {
+			groups, _ := rt.mgr.GroupsForAllUsers()
+			return groups
+		},
+		devices: func(ids []int64) map[int64]int {
+			counts, _ := rt.mgr.Store().ActiveDeviceCountsOf(ids, now-model.DeviceOnlineWindow)
+			return counts
+		},
+	})
+	writeJSON(w, http.StatusOK, page)
+}
+
+// pageLookups are what the page reads only for the rows it shows.
+type pageLookups struct {
+	groups  func() map[int64][]model.GroupRef
+	devices func(ids []int64) map[int64]int
+}
+
+// buildUsersPage is the page over a newest-first user list.
+func buildUsersPage(users []store.UserSummary, q url.Values, now int64, look pageLookups) usersPage {
 	filter := q.Get("filter")
 	if !slices.Contains(userChips, filter) {
 		filter = "all"
@@ -91,9 +115,9 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	tag := strings.TrimSpace(q.Get("tag"))
 
-	page := usersPage{All: len(users), Counts: make(map[string]int, len(userChips))}
+	page := usersPage{All: len(users), Counts: make(map[string]int, len(userChips)), Users: []userRow{}}
 	tags := map[string]int{}
-	matched := make([]model.User, 0, len(users))
+	matched := make([]store.UserSummary, 0, len(users))
 	for _, u := range users {
 		for _, c := range userChips {
 			if userInChip(u, c, now) {
@@ -109,29 +133,41 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	page.Tags = tagCounts(tags)
-	sortUserList(matched, q.Get("sort"), q.Get("lang"), now)
 	page.Total = len(matched)
 
 	offset := clampNonNeg(atoiOr(q.Get("offset"), 0))
 	limit := min(clampNonNeg(atoiOr(q.Get("limit"), usersPageDefault)), usersPageMax)
+	wantIDs := q.Get("ids") == "1"
+	// The dashboard asks for counts alone (limit 0); an order nobody reads is not worth
+	// a sort of the whole list — a name sort collates every name.
+	if limit == 0 && !wantIDs {
+		return page
+	}
+	sortUserList(matched, q.Get("sort"), q.Get("lang"), now)
 	offset = min(offset, len(matched))
 	window := matched[offset:min(offset+limit, len(matched))]
 
-	groups, _ := rt.mgr.GroupsForAllUsers()
-	page.Users = make([]userRow, 0, len(window))
-	for _, u := range window {
-		page.Users = append(page.Users, makeUserRow(u, groups[u.ID]))
+	if len(window) > 0 {
+		ids := make([]int64, len(window))
+		for i, u := range window {
+			ids[i] = u.ID
+		}
+		groups, devices := look.groups(), look.devices(ids)
+		page.Users = make([]userRow, 0, len(window))
+		for _, u := range window {
+			page.Users = append(page.Users, makeUserRow(u, groups[u.ID], devices[u.ID]))
+		}
 	}
-	if q.Get("ids") == "1" {
+	if wantIDs {
 		page.IDs = make([]int64, len(matched))
 		for i, u := range matched {
 			page.IDs[i] = u.ID
 		}
 	}
-	writeJSON(w, http.StatusOK, page)
+	return page
 }
 
-func makeUserRow(u model.User, groups []model.GroupRef) userRow {
+func makeUserRow(u store.UserSummary, groups []model.GroupRef, devices int) userRow {
 	if groups == nil {
 		groups = []model.GroupRef{}
 	}
@@ -143,13 +179,13 @@ func makeUserRow(u model.User, groups []model.GroupRef) userRow {
 		ID: u.ID, Name: u.Name, SystemEmail: model.UserEmail(u.ID), Status: u.Status,
 		Enabled: u.Enabled, DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
 		UsedUp: u.UsedUp, UsedDown: u.UsedDown, LastSeen: u.LastSeen,
-		DeviceLimit: u.DeviceLimit, ActiveDevices: u.ActiveDevices, Tags: tags, Groups: groups,
+		DeviceLimit: u.DeviceLimit, ActiveDevices: devices, Tags: tags, Groups: groups,
 	}
 }
 
 // userInChip reports whether a user belongs under a filter chip. "online" and
 // "expiring" are facts no status carries, which is why the chips are wider than it.
-func userInChip(u model.User, chip string, now int64) bool {
+func userInChip(u store.UserSummary, chip string, now int64) bool {
 	switch chip {
 	case "active":
 		return u.Status == model.StatusActive
@@ -170,7 +206,7 @@ func userInChip(u model.User, chip string, now int64) bool {
 // userSearchMatch is the users page's search: a name, note or tag containing q, or an
 // id or Xray email equal to it (so a log line's "u42" finds its account). q is already
 // lower-cased.
-func userSearchMatch(u model.User, q string) bool {
+func userSearchMatch(u store.UserSummary, q string) bool {
 	if strings.Contains(strings.ToLower(u.Name), q) || strings.Contains(strings.ToLower(u.Note), q) {
 		return true
 	}
@@ -187,7 +223,7 @@ func userSearchMatch(u model.User, q string) bool {
 
 // sortUserList orders the list in place. Stable, over a newest-first list, so users
 // that tie keep newest first.
-func sortUserList(users []model.User, by, lang string, now int64) {
+func sortUserList(users []store.UserSummary, by, lang string, now int64) {
 	switch by {
 	case "name":
 		keys := nameKeys(users, lang)
@@ -196,7 +232,7 @@ func sortUserList(users []model.User, by, lang string, now int64) {
 			idx[i] = i
 		}
 		sort.SliceStable(idx, func(a, b int) bool { return keys[idx[a]].less(keys[idx[b]]) })
-		sorted := make([]model.User, len(users))
+		sorted := make([]store.UserSummary, len(users))
 		for i, k := range idx {
 			sorted[i] = users[k]
 		}
@@ -216,7 +252,7 @@ func sortUserList(users []model.User, by, lang string, now int64) {
 
 // expiryKey orders by soonest end. A term still waiting for its first connection
 // cannot end sooner than its full length from now; no end at all sorts last.
-func expiryKey(u model.User, now int64) int64 {
+func expiryKey(u store.UserSummary, now int64) int64 {
 	switch {
 	case u.ExpireAt > 0:
 		return u.ExpireAt
@@ -245,7 +281,7 @@ func (a nameKey) less(b nameKey) bool {
 // (it put every Latin name before the Cyrillic ones). Which group a name falls in is
 // judged by its first character. Keys are made once per name, so a sort of tens of
 // thousands does not collate each pair it compares.
-func nameKeys(users []model.User, lang string) []nameKey {
+func nameKeys(users []store.UserSummary, lang string) []nameKey {
 	c := collate.New(language.Russian)
 	own := unicode.Cyrillic
 	if lang == "en" {
@@ -304,7 +340,7 @@ type userBrief struct {
 // listUsersBrief answers GET /api/users/brief: every user's id, name and status, for
 // choosing members — a few dozen bytes a user where a list row is a few hundred.
 func (rt *Router) listUsersBrief(w http.ResponseWriter, _ *http.Request) {
-	users, err := rt.mgr.Store().ListUsers()
+	users, err := rt.mgr.Store().ListUserSummaries()
 	if err != nil {
 		writeManagerErr(w, err)
 		return

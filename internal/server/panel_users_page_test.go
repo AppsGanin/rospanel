@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -219,5 +220,103 @@ func TestUserCardAndBriefList(t *testing.T) {
 	}
 	if call(h, "GET", "/api/users/page", nil) != http.StatusUnauthorized || call(h, "GET", "/api/users/brief", nil) != http.StatusUnauthorized {
 		t.Error("the list answered without a session")
+	}
+}
+
+// A summary says about a user exactly what the whole user says: the same status, the
+// same device count, the same usage and tags. The page is built from summaries, so a
+// summary that drifted from the user would be a page that lies.
+func TestUserSummariesMatchWholeUsers(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/page.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	f := newPageFixture(t, st)
+	check := func(when string) {
+		t.Helper()
+		whole, err := st.ListUsers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		summaries, err := st.ListUserSummaries()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := make([]store.UserSummary, len(whole))
+		ids := make([]int64, len(whole))
+		for i, u := range whole {
+			want[i] = store.UserSummary{
+				ID: u.ID, Name: u.Name, Note: u.Note, Tags: u.Tags, Enabled: u.Enabled,
+				DataLimit: u.DataLimit, ExpireAt: u.ExpireAt, HoldSeconds: u.HoldSeconds,
+				UsedUp: u.UsedUp, UsedDown: u.UsedDown, LastSeen: u.LastSeen,
+				DeviceLimit: u.DeviceLimit, Status: u.Status,
+			}
+			ids[i] = u.ID
+		}
+		if !reflect.DeepEqual(summaries, want) {
+			t.Fatalf("%s: summaries differ from whole users:\n got  %+v\n want %+v", when, summaries, want)
+		}
+		// The rows' device counts, asked for separately, are the whole users' counts.
+		counts, err := st.ActiveDeviceCountsOf(ids, time.Now().Unix()-model.DeviceOnlineWindow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range whole {
+			if counts[u.ID] != u.ActiveDevices {
+				t.Fatalf("%s: user %d has %d devices as a whole user, %d counted for the row", when, u.ID, u.ActiveDevices, counts[u.ID])
+			}
+		}
+		if counts[f.ids["crowd"]] != 2 {
+			t.Fatalf("%s: the fixture's crowded user counts %d devices, want 2", when, counts[f.ids["crowd"]])
+		}
+	}
+	check("addresses count as devices")
+	// In "hwid" mode the address count is shown but decides no status.
+	if err := st.SetDeviceCountMode(model.DeviceCountHWID); err != nil {
+		t.Fatal(err)
+	}
+	check("hwid mode")
+}
+
+// A page with no rows reads neither groups nor devices; a page with rows asks for the
+// devices of exactly those rows.
+func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/page.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	newPageFixture(t, st)
+	summaries, err := st.ListUserSummaries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groupReads int
+	var deviceIDs [][]int64
+	look := pageLookups{
+		groups: func() map[int64][]model.GroupRef { groupReads++; return nil },
+		devices: func(ids []int64) map[int64]int {
+			deviceIDs = append(deviceIDs, ids)
+			return map[int64]int{ids[0]: 7}
+		},
+	}
+	for _, window := range []string{"limit=0", "offset=100&limit=5"} {
+		groupReads, deviceIDs = 0, nil
+		q, _ := url.ParseQuery(window)
+		p := buildUsersPage(summaries, q, time.Now().Unix(), look)
+		if len(p.Users) != 0 || p.Total != len(summaries) || p.IDs != nil || groupReads != 0 || deviceIDs != nil {
+			t.Fatalf("%s: rows=%d total=%d ids=%v, groups read %d times, devices for %v", window, len(p.Users), p.Total, p.IDs, groupReads, deviceIDs)
+		}
+	}
+	groupReads, deviceIDs = 0, nil
+	q, _ := url.ParseQuery("offset=1&limit=2")
+	p := buildUsersPage(summaries, q, time.Now().Unix(), look)
+	want := []int64{summaries[1].ID, summaries[2].ID}
+	if groupReads != 1 || !reflect.DeepEqual(deviceIDs, [][]int64{want}) {
+		t.Fatalf("groups read %d times, devices asked for %v, want once and %v", groupReads, deviceIDs, want)
+	}
+	if p.Users[0].ActiveDevices != 7 || p.Users[1].ActiveDevices != 0 {
+		t.Fatalf("rows carry devices %d and %d, want 7 and 0", p.Users[0].ActiveDevices, p.Users[1].ActiveDevices)
 	}
 }
