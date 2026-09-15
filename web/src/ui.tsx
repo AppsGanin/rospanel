@@ -363,7 +363,7 @@ type Size = "xs" | "sm" | "md";
 
 const BTN: Record<Variant, Record<Color, string>> = {
   filled: {
-    brand: "bg-brand-600 text-onaccent hover:bg-brand-700",
+    brand: "bg-brand-600 text-onbrand hover:bg-brand-700",
     red: "bg-brandred-500 text-onaccent hover:bg-brandred-600",
     teal: "bg-emerald-600 text-onaccent hover:bg-emerald-700",
     orange: "bg-orange-500 text-onaccent hover:bg-orange-600",
@@ -1399,7 +1399,7 @@ export function DatePicker({
                       className={cn(
                         'flex h-8 items-center justify-center rounded-md text-sm transition',
                         value === ymd(d)
-                          ? 'bg-brand-600 font-semibold text-onaccent'
+                          ? 'bg-brand-600 font-semibold text-onbrand'
                           : 'text-ink accent-tint-hover',
                         'disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent',
                       )}
@@ -1554,8 +1554,8 @@ export function Switch({
     >
       <span
         className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-onaccent shadow transition",
-          checked ? "translate-x-[18px]" : "translate-x-0.5",
+          "inline-block h-4 w-4 transform rounded-full shadow transition",
+          checked ? "translate-x-[18px] bg-onbrand" : "translate-x-0.5 bg-onaccent",
         )}
       />
     </button>
@@ -1722,7 +1722,7 @@ export function Checkbox({
       <span
         className={cn(
           "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition",
-          checked ? "border-brand-600 bg-brand-600 text-onaccent" : "border-gray-300 bg-white",
+          checked ? "border-brand-600 bg-brand-600 text-onbrand" : "border-gray-300 bg-white",
         )}
       >
         {checked && <IconCheck size={14} />}
@@ -2096,7 +2096,7 @@ export function SegmentedControl({
               : "rounded-md px-3 py-1 text-[13px]",
             fullWidth && "flex-1",
             value === o.value
-              ? "bg-brand-600 text-onaccent shadow-sm"
+              ? "bg-brand-600 text-onbrand shadow-sm"
               : "text-gray-500 hover:text-gray-700",
           )}
         >

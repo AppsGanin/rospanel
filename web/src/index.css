@@ -30,6 +30,10 @@
      separate from --color-white because the theme repurposes white as the
      surface colour, which can be dark. */
   --color-onaccent: #ffffff;
+  /* Text/icons on the accent fill (bg-brand-600). White until the configured
+     accent is too light to carry it — a white or yellow accent — when brand.tsx
+     switches it to dark ink. Red/green/orange fills keep --color-onaccent. */
+  --color-onbrand: #ffffff;
 
   /* Page background base. The configurable theme overrides --ui-bg (and the
      brand ramp / ink / white / gray ramp) at runtime in brand.tsx. */

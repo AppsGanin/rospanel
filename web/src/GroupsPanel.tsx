@@ -395,7 +395,7 @@ function CheckCell({
         className={cn(
           "flex size-4 items-center justify-center rounded-sm border transition",
           on
-            ? "border-brand-600 bg-brand-600 text-onaccent"
+            ? "border-brand-600 bg-brand-600 text-onbrand"
             : "border-gray-300 bg-white",
         )}
       >

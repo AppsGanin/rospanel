@@ -284,7 +284,7 @@ export function DayBars({
             onMouseLeave={onHover ? () => onHover(null) : undefined}
           >
             {open && (
-              <span className="absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-brand-600 px-2 py-1 text-[11px] font-medium text-onaccent shadow-lg">
+              <span className="absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-brand-600 px-2 py-1 text-[11px] font-medium text-onbrand shadow-lg">
                 {d.title} · {fmt(d.value)}
               </span>
             )}

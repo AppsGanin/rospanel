@@ -56,7 +56,7 @@ function ChoiceRow({
       <span
         className={cn(
           'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition',
-          checked ? 'border-brand-600 bg-brand-600 text-onaccent' : 'border-gray-300 bg-white',
+          checked ? 'border-brand-600 bg-brand-600 text-onbrand' : 'border-gray-300 bg-white',
         )}
       >
         {checked && <IconCheck size={12} />}
