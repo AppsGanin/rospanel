@@ -511,7 +511,7 @@ func (rt *Router) panelMux() http.Handler {
 	// answers text/plain "Method Not Allowed". That is the same failure as issue #70
 	// wearing a different status code: a caller expecting JSON gets prose.
 	mux.HandleFunc("/", rt.fallback)
-	return mux
+	return rt.notingWrites(mux)
 }
 
 // cookiePath scopes the session cookie to the secret path so it never leaks on

@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -53,6 +54,11 @@ type Router struct {
 	// The two connection breakdowns, memoized for the same reason — see geoStatsTTL.
 	countryStats geoStatsCache[model.CountryStat]
 	asnStats     geoStatsCache[model.ASNStat]
+
+	// usersSnap is the users list shared between requests, and writes counts the
+	// requests that may have changed it since (see userSummaries, notingWrites).
+	usersSnap usersSnapshot
+	writes    atomic.Uint64
 
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
 	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
@@ -353,6 +359,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		leaf, _ := firstSegment(rest)
 		handlePaymentWebhook(rt, w, r, leaf)
+		rt.writes.Add(1) // a confirmed payment moves a user's plan and term
 		return
 	}
 

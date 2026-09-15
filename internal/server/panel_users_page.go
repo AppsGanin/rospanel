@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -81,7 +82,7 @@ type usersPage struct {
 func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 	// Summaries, not whole users: the page reads everyone on every request, and nothing
 	// it shows needs a credential.
-	users, err := rt.mgr.Store().ListUserSummaries() // newest first, which is also the tie order
+	users, err := rt.userSummaries() // newest first, which is also the tie order
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -100,13 +101,71 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, page)
 }
 
+// usersSnapshotTTL is how long requests share one read of every user's summary.
+//
+// The page reads everyone on every request — its filters and chip counts are over
+// everyone — and an operator typing a search or scrolling asks several times a second.
+// With 50,000 users each read was ~0.3 s of CPU on a 1-vCPU box, and an operator
+// browsing kept a third of the core busy. Shared for a few seconds, a burst costs one
+// read. Usage and online status on the page can lag by that much; nothing an operator
+// does through the panel or the API does, because a request that changes something
+// makes the next read fresh (see notingWrites).
+const usersSnapshotTTL = 3 * time.Second
+
+// usersSnapshot is the shared read.
+type usersSnapshot struct {
+	mu     sync.Mutex
+	users  []store.UserSummary
+	writes uint64 // the write count it was read under
+	at     time.Time
+}
+
+// userSummaries returns every user's summary, read afresh unless the last read is
+// younger than usersSnapshotTTL and no request has changed anything since. The slice is
+// shared: callers must not modify it. Callers asking at once share one read.
+func (rt *Router) userSummaries() ([]store.UserSummary, error) {
+	// Taken before the read, so a write landing during it leaves the snapshot looking
+	// older than it is — the next caller reads again, never the other way round.
+	writes := rt.writes.Load()
+	c := &rt.usersSnap
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.users != nil && c.writes == writes && time.Since(c.at) < usersSnapshotTTL {
+		return c.users, nil
+	}
+	users, err := rt.mgr.Store().ListUserSummaries()
+	if err != nil {
+		return nil, err
+	}
+	if users == nil {
+		users = []store.UserSummary{} // no users is an answer worth sharing too
+	}
+	c.users, c.writes, c.at = users, writes, time.Now()
+	return users, nil
+}
+
+// notingWrites counts every request that may change something once it has been
+// handled — before its response is flushed — so a users snapshot read before it is not
+// served after it: an operator who edits a user and reloads the list sees the edit.
+func (rt *Router) notingWrites(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r)
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			rt.writes.Add(1)
+		}
+	})
+}
+
 // pageLookups are what the page reads only for the rows it shows.
 type pageLookups struct {
 	groups  func() map[int64][]model.GroupRef
 	devices func(ids []int64) map[int64]int
 }
 
-// buildUsersPage is the page over a newest-first user list.
+// buildUsersPage is the page over a newest-first user list. It does not modify users:
+// the list is the shared snapshot.
 func buildUsersPage(users []store.UserSummary, q url.Values, now int64, look pageLookups) usersPage {
 	filter := q.Get("filter")
 	if !slices.Contains(userChips, filter) {
@@ -340,7 +399,7 @@ type userBrief struct {
 // listUsersBrief answers GET /api/users/brief: every user's id, name and status, for
 // choosing members — a few dozen bytes a user where a list row is a few hundred.
 func (rt *Router) listUsersBrief(w http.ResponseWriter, _ *http.Request) {
-	users, err := rt.mgr.Store().ListUserSummaries()
+	users, err := rt.userSummaries()
 	if err != nil {
 		writeManagerErr(w, err)
 		return

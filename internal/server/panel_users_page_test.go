@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -318,5 +319,151 @@ func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
 	}
 	if p.Users[0].ActiveDevices != 7 || p.Users[1].ActiveDevices != 0 {
 		t.Fatalf("rows carry devices %d and %d, want 7 and 0", p.Users[0].ActiveDevices, p.Users[1].ActiveDevices)
+	}
+}
+
+// Requests share one read of the users for a few seconds, until something is changed
+// through the panel or the API: then the next read is fresh, so an operator who edits
+// a user and reloads the list sees the edit. What changes by other means (traffic, a
+// bot) shows once the snapshot ages out.
+func TestUsersListIsSharedUntilAChange(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	op := signIn(t, st, "support", model.RoleOperator, false)
+	mk := func(name string) {
+		t.Helper()
+		if _, err := st.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, 0, 0, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all := func() int {
+		t.Helper()
+		p, _ := getPage(t, h, op, "limit=0")
+		return p.All
+	}
+	brief := func() int {
+		t.Helper()
+		req := httptest.NewRequest("GET", "/api/users/brief", nil)
+		req.AddCookie(op)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out []userBrief
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("brief: %v (%s)", err, rec.Body.String())
+		}
+		return len(out)
+	}
+
+	mk("a")
+	if got := all(); got != 1 {
+		t.Fatalf("first read: %d users", got)
+	}
+	mk("b") // straight into the store, as a bot or the traffic pass would
+	if got, gotBrief := all(), brief(); got != 1 || gotBrief != 1 {
+		t.Fatalf("within the TTL the list was read again: page %d, picker %d", got, gotBrief)
+	}
+
+	// A change through the panel — even one that fails — makes the next read fresh.
+	req := httptest.NewRequest("POST", "/api/users", strings.NewReader(`{"name":"c"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(op)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code >= 300 {
+		t.Fatalf("create through the panel: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := all(); got != 3 {
+		t.Fatalf("after a change through the panel the list shows %d users, want 3", got)
+	}
+
+	// A plain read changes nothing, and what changed elsewhere shows once the snapshot
+	// ages out.
+	mk("d")
+	if got := all(); got != 3 {
+		t.Fatalf("a read counted as a change: %d users", got)
+	}
+	rt.usersSnap.mu.Lock()
+	rt.usersSnap.at = time.Now().Add(-usersSnapshotTTL)
+	rt.usersSnap.mu.Unlock()
+	if got := all(); got != 4 {
+		t.Fatalf("past the TTL the list shows %d users, want 4", got)
+	}
+}
+
+// Every surface that changes users counts its requests: the panel, the external API
+// and the payment callbacks. Reads do not count.
+func TestWritingRequestsAreCounted(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	rt.apiKeys = newAPIKeyGuard()
+	rt.apiLimiter = newIPRateLimiter(600, time.Minute)
+	rt.subLimiter = newIPRateLimiter(120, time.Minute)
+	rt.decoy = http.NotFoundHandler()
+	op := signIn(t, st, "support", model.RoleOperator, false)
+	counted := func(name string, want bool, serve func()) {
+		t.Helper()
+		before := rt.writes.Load()
+		serve()
+		if got := rt.writes.Load() != before; got != want {
+			t.Errorf("%s: counted=%v, want %v", name, got, want)
+		}
+	}
+	panel := rt.panelMux()
+	api := rt.apiHandler()
+	send := func(h http.Handler, method, path string) func() {
+		return func() {
+			req := httptest.NewRequest(method, path, strings.NewReader(`{}`))
+			req.AddCookie(op)
+			h.ServeHTTP(httptest.NewRecorder(), req)
+		}
+	}
+	counted("panel read", false, send(panel, "GET", "/api/users/page"))
+	counted("panel write", true, send(panel, "POST", "/api/users"))
+	counted("API read", false, send(api, "GET", "/v1/users"))
+	counted("API write", true, send(api, "PATCH", "/v1/users/1"))
+
+	rt.mu.Lock()
+	rt.paySecret = "pay-segment"
+	rt.mu.Unlock()
+	counted("payment callback", true, send(rt, "POST", "/pay-segment/nope"))
+}
+
+// Concurrent readers and writers of the shared list: run under -race.
+func TestUsersListSnapshotUnderConcurrency(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	h := rt.panelMux()
+	op := signIn(t, st, "support", model.RoleOperator, false)
+	newPageFixture(t, st)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 20 {
+				if i%4 == 0 && j%5 == 0 {
+					req := httptest.NewRequest("POST", "/api/users", strings.NewReader(fmt.Sprintf(`{"name":"w%d-%d"}`, i, j)))
+					req.Header.Set("Content-Type", "application/json")
+					req.AddCookie(op)
+					rec := httptest.NewRecorder()
+					h.ServeHTTP(rec, req)
+					if rec.Code >= 300 {
+						t.Errorf("create: %d %s", rec.Code, rec.Body.String())
+					}
+					continue
+				}
+				req := httptest.NewRequest("GET", "/api/users/page?sort=name&lang=ru&limit=5", nil)
+				req.AddCookie(op)
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Errorf("page: %d", rec.Code)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	// Two writers (i = 0, 4) creating at j = 0, 5, 10, 15: eight users on top of the
+	// fixture's eight.
+	if p, _ := getPage(t, h, op, "limit=0"); p.All != 8+8 {
+		t.Fatalf("after the writes the list shows %d users, want %d", p.All, 8+8)
 	}
 }
