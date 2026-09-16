@@ -2,7 +2,9 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -142,19 +144,59 @@ func (m *Manager) ensureCert(set *model.Settings, force bool) error {
 // A self-signed fallback cert is deliberately treated as "not valid" so the renew
 // loop stays in its fast-retry cadence until a real ACME cert is obtained.
 func (m *Manager) HasValidCert() bool {
-	info, err := tlsutil.ReadCertInfo(m.tls.CertPath)
-	if err != nil || !time.Now().Before(info.NotAfter) {
+	f := m.certFacts.of(m.tls.CertPath)
+	if f.info == nil || !time.Now().Before(f.info.NotAfter) {
 		return false
 	}
-	return info.Issuer != "" && info.Issuer != info.Subject // CA-issued, not self-signed
+	return f.info.Issuer != "" && f.info.Issuer != f.info.Subject // CA-issued, not self-signed
 }
 
 // CertPinSHA256 returns the hex SHA-256 of the active leaf certificate, for
 // clients to pin via pinnedPeerCertSha256 when the cert isn't CA-trusted. "" if
 // unavailable.
 func (m *Manager) CertPinSHA256() string {
-	pin, _ := tlsutil.CertPinSHA256(m.tls.CertPath)
-	return pin
+	return m.certFacts.of(m.tls.CertPath).pin
+}
+
+// certFacts keeps what was read out of the certificate file, for as long as the file
+// is the same one.
+//
+// Every subscription fetch asks both questions above, and each read the file from disk
+// and parsed it. The file changes when a certificate is issued, renewed or uploaded,
+// and every one of those replaces or rewrites it, which a stat sees: another inode, or
+// another size or modification time. Validity is not kept — it depends on the clock,
+// so it is judged from the kept dates on every call.
+type certFacts struct {
+	mu   sync.Mutex
+	path string
+	file os.FileInfo // what the facts were read from; nil until they are
+	info *tlsutil.CertInfo
+	pin  string
+}
+
+type certFactsRead struct {
+	info *tlsutil.CertInfo // nil when the file cannot be read or parsed
+	pin  string
+}
+
+func (c *certFacts) of(path string) certFactsRead {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return certFactsRead{} // no file: nothing to trust, nothing to pin
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.file != nil && c.path == path && os.SameFile(c.file, fi) &&
+		c.file.Size() == fi.Size() && c.file.ModTime().Equal(fi.ModTime()) {
+		return certFactsRead{info: c.info, pin: c.pin}
+	}
+	info, err := tlsutil.ReadCertInfo(path)
+	if err != nil {
+		info = nil
+	}
+	pin, _ := tlsutil.CertPinSHA256(path)
+	c.path, c.file, c.info, c.pin = path, fi, info, pin
+	return certFactsRead{info: info, pin: pin}
 }
 
 // RenewTLSIfNeeded renews an ACME cert when near expiry. It reports whether the

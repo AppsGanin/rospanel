@@ -75,6 +75,7 @@ type Manager struct {
 	sup         *xray.Supervisor
 	opts        xray.Options
 	tls         TLSPaths
+	certFacts   certFacts // what the certificate file said, while it is the same file
 	reconcileCh chan struct{}
 	// done is closed by Close and is what every background loop watches. wg counts
 	// those loops so Close can WAIT for them rather than just asking them to stop:
