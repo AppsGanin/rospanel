@@ -43,7 +43,7 @@ import (
 // masquerade/subscription surface until a termination signal arrives.
 func runServer(dataDir string) {
 	log.Printf("startup: RosPanel %s booting (data dir %s)", version.Version, dataDir)
-	logMemoryLimit(tuning.SetMemoryLimit(panelMemoryShare))
+	logMemoryLimit(tuning.SetMemoryLimit(panelMemoryShare, xray.MemoryLimit))
 	adminAddr := env("ROSPANEL_ADMIN_ADDR", "127.0.0.1:8080")
 	startupStage("resolving Xray binary")
 	xrayBin := resolveXrayBin(env("XRAY_BIN", "xray"), filepath.Join(dataDir, "bin"))
@@ -383,8 +383,8 @@ func runServer(dataDir string) {
 }
 
 // panelMemoryShare is the part of the machine's memory the panel's heap is steered
-// under. Half: Xray runs beside it with its own 256 MiB soft limit, and the system
-// needs the rest.
+// under, of what is left once Xray's own ceiling is set aside. Half: the system needs
+// the rest, and a burst — five node configs built at once — comes out of it.
 const panelMemoryShare = 0.5
 
 // logMemoryLimit says what SetMemoryLimit decided, so an operator reading the boot log
@@ -394,7 +394,8 @@ func logMemoryLimit(m tuning.Memory) {
 	case m.Basis == "GOMEMLIMIT":
 		log.Printf("memory: GOMEMLIMIT=%s from the environment is in force", os.Getenv("GOMEMLIMIT"))
 	case m.Limit > 0:
-		log.Printf("memory: Go heap soft limit %d MiB (%.0f%% of %d MiB %s)", m.Limit>>20, float64(m.Limit)*100/float64(m.Of), m.Of>>20, m.Basis)
+		log.Printf("memory: Go heap soft limit %d MiB (%.0f%% of %d MiB %s, %d MiB set aside for Xray)",
+			m.Limit>>20, float64(m.Limit)*100/float64(m.Of), m.Of>>20, m.Basis, m.Reserved>>20)
 	default:
 		log.Print("memory: size unknown, no Go heap soft limit set")
 	}

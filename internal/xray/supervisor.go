@@ -363,6 +363,11 @@ func (s *Supervisor) BinPath() string { return s.bin }
 // add/remove). The wiring lives here so callers don't rebuild it ad hoc.
 func (s *Supervisor) APIAddr() string { return fmt.Sprintf("127.0.0.1:%d", APIPort) }
 
+// MemoryLimit is the soft heap ceiling Xray is started with. Whoever starts Xray is
+// spending this much of the box on it, so they set the same amount aside when sizing
+// their own limit (see tuning.SetMemoryLimit): with 50,000 users Xray holds all of it.
+const MemoryLimit = 256 << 20
+
 func (s *Supervisor) env() []string {
 	env := os.Environ()
 	if s.assetDir != "" {
@@ -372,7 +377,7 @@ func (s *Supervisor) env() []string {
 	// a traffic spike can't balloon RSS on a small box. It's a SOFT limit — the
 	// runtime exceeds it rather than OOM-killing if the live heap genuinely needs
 	// more, so it can't break xray.
-	env = append(env, "GOMEMLIMIT=256MiB")
+	env = append(env, "GOMEMLIMIT="+strconv.FormatInt(MemoryLimit, 10))
 	if tz := childTZ(); tz != "" {
 		env = append(env, "TZ="+tz)
 	}
