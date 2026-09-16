@@ -28,13 +28,42 @@ func TestOnlineGaugeCountsPerServer(t *testing.T) {
 	}
 
 	// Age out: a sighting older than the window is gone, and so is the server key.
+	// Asked as of a moment the last count no longer answers for, so it is counted.
 	m.online.record(9, a.ID, time.Now().Unix()-model.DeviceOnlineWindow-1)
-	got = m.OnlineByServer()
+	got = m.online.recent(time.Now().Add(onlineCountsAge))
 	if _, ok := got[9]; ok {
 		t.Errorf("stale sighting counted: %v", got)
 	}
 	if got[7] != 2 {
 		t.Errorf("live sightings lost: %v", got)
+	}
+}
+
+// Every subscription fetch asks for the count, so one count answers for a couple of
+// seconds — and no longer, and not for a clock that stepped back, and never as a map
+// a caller could change for the next one.
+func TestOnlineCountIsReusedBriefly(t *testing.T) {
+	var g onlineGauge
+	t0 := time.Now()
+	g.record(7, 1, t0.Unix())
+	if got := g.recent(t0); got[7] != 1 {
+		t.Fatalf("first count: %v", got)
+	}
+	g.record(7, 2, t0.Unix())
+	if got := g.recent(t0.Add(onlineCountsAge / 2)); got[7] != 1 {
+		t.Errorf("a count younger than its age was not reused: %v", got)
+	}
+	if got := g.recent(t0.Add(onlineCountsAge)); got[7] != 2 {
+		t.Errorf("a count as old as its age was reused: %v", got)
+	}
+	g.record(7, 3, t0.Unix())
+	if got := g.recent(t0.Add(-time.Second)); got[7] != 3 {
+		t.Errorf("a clock that stepped back kept the last count: %v", got)
+	}
+	mine := g.recent(t0)
+	mine[7] = 99
+	if got := g.recent(t0); got[7] != 3 {
+		t.Errorf("a caller's change reached the next caller: %v", got)
 	}
 }
 
