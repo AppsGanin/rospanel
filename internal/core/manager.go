@@ -358,6 +358,9 @@ type Manager struct {
 	// nodeSyncFails holds each node's last-reported count of sync failures in the past
 	// hour — the "limping transport" signal that a still-online node is degraded.
 	nodeSyncFails map[int64]int
+	// nodeHas is what each node last said it holds — the parts revision it speaks and the
+	// tag of its state — so the health report can ask the question a sync would.
+	nodeHas map[int64]NodeHas
 
 	// nodeAlerts is what admins were last told about each node's reachability, Xray
 	// and certificate — the fleet-wide half of the "Xray failure" / "TLS certificate"

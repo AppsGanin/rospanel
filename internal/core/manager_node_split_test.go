@@ -523,3 +523,54 @@ func TestNodeConfigHealthReadsStatesInParts(t *testing.T) {
 		t.Errorf("a node behind: %s", c.DetailKey)
 	}
 }
+
+// The health tab asks every fifteen seconds. A node holding its state in parts that has
+// reported its tag is read as a sync would be: current with no build at all, pending as
+// soon as a change is waiting for it.
+func TestNodeConfigHealthAsksLikeASync(t *testing.T) {
+	m := nodeTestManager(t)
+	node := splitTestNode(t, m)
+	if _, err := m.store.CreateUser("u", "uuid-1", "pw-1", "tok-1", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := node.sync(); got != "split" {
+		t.Fatalf("first sync: %q", got)
+	}
+	report := func() HealthCheck {
+		t.Helper()
+		n, _ := m.store.GetNode(node.id)
+		if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{
+			DeltaRev: nodeapi.DeltaRev, StateTag: node.parts.Held.Tag, ConfigHash: node.parts.Held.Hash,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		n, _ = m.store.GetNode(node.id)
+		return m.nodeConfigHealth(n, true)
+	}
+	m.nodeStateMu.Lock()
+	checked := m.nodeSplits[node.id].checked
+	m.nodeStateMu.Unlock()
+	if c := report(); c.DetailKey != "health.nodeConfigCurrent" {
+		t.Errorf("a current node: %s", c.DetailKey)
+	}
+	m.nodeStateMu.Lock()
+	rebuilt := m.nodeSplits[node.id].checked != checked
+	_, legacy := m.nodeStates[node.id]
+	m.nodeStateMu.Unlock()
+	if rebuilt || legacy {
+		t.Errorf("asking after a current node built its state (split rebuilt %v, whole built %v)", rebuilt, legacy)
+	}
+	if _, err := m.store.CreateUser("v", "uuid-2", "pw-2", "tok-2", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	m.notifyNodes()
+	if c := report(); c.DetailKey != "health.nodeConfigPending" {
+		t.Errorf("a node with a change waiting: %s", c.DetailKey)
+	}
+	if got := node.sync(); got != "delta" {
+		t.Fatalf("the waiting change: %q", got)
+	}
+	if c := report(); c.DetailKey != "health.nodeConfigCurrent" {
+		t.Errorf("after taking the change: %s", c.DetailKey)
+	}
+}

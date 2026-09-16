@@ -183,10 +183,29 @@ func (m *Manager) nodeConfigHealth(n *model.Node, online bool) HealthCheck {
 		DetailKey: "health.nodeConfigPending", HintKey: "health.nodeConfigPendingHint"}
 }
 
-// nodeConfigCurrent reports whether the hash a node last reported is the state the panel
-// would send it now: the whole config's, or — for a node that holds it in parts — the
-// hash of the parts (see manager_node_split.go).
+// nodeConfigCurrent reports whether the state a node last reported holding is the state
+// the panel would send it now: by the whole config's hash, or — for a node that holds it
+// in parts — the way its sync would be answered (see manager_node_split.go).
+//
+// The health tab asks every fifteen seconds while it is open. A node in parts is asked
+// what its sync asks, so a current one costs no build at all; asked by the whole config's
+// hash, which such a node never reports, it cost two whole builds every time.
 func (m *Manager) nodeConfigCurrent(n *model.Node) (bool, error) {
+	m.nodeGeoMu.Lock()
+	has, reported := m.nodeHas[n.ID]
+	m.nodeGeoMu.Unlock()
+	if reported && has.DeltaRev == nodeapi.DeltaRev {
+		has.ConfigHash = n.ConfigHash
+		push, done, err := m.NodeSyncPush(context.Background(), n, has)
+		done()
+		if err != nil {
+			return false, err
+		}
+		// A change that only renames the state says the node holds the right content.
+		renameOnly := push.Delta != nil && len(push.Delta.Upsert) == 0 && len(push.Delta.Remove) == 0 && push.Delta.Blocked == nil
+		return push.State == nil && push.Split == nil && (push.Delta == nil || renameOnly), nil
+	}
+	// A node that has not reported since the panel started: either way it may hold it.
 	state, err := m.NodeStateChange(n, n.ConfigHash)
 	if err != nil || state == nil {
 		return err == nil, err
