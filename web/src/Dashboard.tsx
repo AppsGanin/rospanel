@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminsSettings } from "./AdminsSettings";
 import { getMe, logout } from "./api";
@@ -11,6 +11,7 @@ import { useIsAdmin, useIsOwner } from "./role";
 import { NodesPanel } from "./NodesPanel";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
+import { panelTimezone, setPanelTimezone, subscribePanelTimezone } from "./tz";
 import {
   cn,
   Dropdown,
@@ -88,6 +89,8 @@ export function Dashboard({
       .then((m) => {
         setBilling(!!m.billing_enabled);
         setUserBot(!!m.user_bot_enabled);
+        // Another admin may have moved the panel's timezone since sign-in.
+        setPanelTimezone(m.timezone);
       })
       .catch(() => {});
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-reads the flags when the top-level section changes; refreshFlags is redefined every render, so listing it would refetch on every one
@@ -429,11 +432,13 @@ function MoreRow({
   );
 }
 
-// Clock is the topbar's right edge: the reader's own wall time, ticking. Schedules,
-// expiry dates and backup windows are all read in this timezone, so the panel says
-// out loud which one it is showing them in.
+// Clock is the topbar's right edge: the panel's wall time, ticking — in the timezone
+// set in General settings, not the browser's. Schedules, expiry dates, statistics days
+// and every stamp in the panel are read in that zone, so the panel says out loud which
+// one it is showing them in.
 function Clock() {
   const { t, i18n } = useTranslation();
+  const tz = useSyncExternalStore(subscribePanelTimezone, panelTimezone);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     // Line the tick up with the next whole minute instead of drifting a second
@@ -453,11 +458,12 @@ function Clock() {
     hour: "2-digit",
     minute: "2-digit",
     timeZoneName: "short",
+    timeZone: tz,
   }).format(now);
 
   return (
     <Mono
-      title={t("common.localTime")}
+      title={t("common.panelTime", { tz })}
       className="ml-auto shrink-0 text-xs text-ink-muted"
     >
       {text}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getMe, type Role, setUnauthorizedHandler } from './api'
 import { Spinner } from './ui'
@@ -11,6 +11,7 @@ import { Donate } from './Donate'
 import { BrandProvider } from './brand'
 import { RoleProvider } from './role'
 import { TotpProvider } from './stepup'
+import { panelTimezoneEpoch, setPanelTimezone, subscribePanelTimezone } from './tz'
 
 // 'password' is where a colleague lands at their first sign-in, still holding the
 // temporary password the owner gave them: the server refuses everything else until
@@ -43,6 +44,11 @@ function AppInner() {
   const [agreed, setAgreed] = useState(agreementAccepted)
   const [showAgreement, setShowAgreement] = useState(false)
   const [showDonate, setShowDonate] = useState(false)
+  // The dashboard is keyed on the panel's timezone for the reason the tree is keyed on
+  // the language: a date already on screen was formatted in the zone of its render,
+  // and a memoised one would keep it. Only the dashboard, and only when the zone
+  // really changes (see tz.ts) — the first word from the server comes before it mounts.
+  const tzEpoch = useSyncExternalStore(subscribePanelTimezone, panelTimezoneEpoch)
 
   const check = useCallback(() => {
     getMe()
@@ -53,6 +59,7 @@ function AppInner() {
         setBillingEnabled(!!m.billing_enabled)
         setTotpEnabled(m.totp_enabled !== false)
         setUserBotEnabled(!!m.user_bot_enabled)
+        setPanelTimezone(m.timezone)
         // The first-run wizard covers the owner's own password step, so it wins:
         // an install that hasn't been set up yet goes there, not to the bare
         // password screen. Everyone added later gets the password screen.
@@ -99,6 +106,7 @@ function AppInner() {
       <RoleProvider role={role}>
         <TotpProvider enabled={totpEnabled}>
         <Dashboard
+          key={tzEpoch}
           username={username}
           version={version}
           billingEnabled={billingEnabled}

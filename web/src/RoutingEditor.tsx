@@ -3,6 +3,7 @@ import { Trans, useTranslation } from "react-i18next";
 import i18n, { currentLang } from "./i18n";
 import { type EgressLane, type GeoFile, type RoutingConfig } from "./api";
 import { fmtBytes } from "./format";
+import { inPanelTz } from "./tz";
 import {
   Button,
   cn,
@@ -104,13 +105,14 @@ const BUILTIN_LANES = ["warp", "opera", "direct"];
 // MAX_LANES mirrors model.MaxEgressLanes.
 const MAX_LANES = 16;
 
-// fmtWhen renders a unix timestamp as a local date+time, or a dash when unset.
+// fmtWhen renders a unix timestamp as a date+time in the panel's timezone, or a dash
+// when unset.
 const fmtWhen = (unix: number) =>
   unix
-    ? new Date(unix * 1000).toLocaleString(currentLang(), {
-        dateStyle: "short",
-        timeStyle: "short",
-      })
+    ? new Date(unix * 1000).toLocaleString(
+        currentLang(),
+        inPanelTz({ dateStyle: "short", timeStyle: "short" }),
+      )
     : "—";
 
 // normalizeOrder returns a routing order containing every existing lane exactly

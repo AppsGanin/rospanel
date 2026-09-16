@@ -11,6 +11,7 @@ import {
 import { countryFlag, countryName } from './format'
 import { useAction, useShowMore } from './hooks'
 import i18n from './i18n'
+import { inPanelTz } from './tz'
 import { cn, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
 
 // The two lists the security features produce: who has been scanning for the hidden
@@ -35,12 +36,15 @@ const WIDE_MIN = 520
 const rowCls = 'grid items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]'
 
 function fmtWhen(unix: number): string {
-  return new Date(unix * 1000).toLocaleString(i18n.language, {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return new Date(unix * 1000).toLocaleString(
+    i18n.language,
+    inPanelTz({
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  )
 }
 
 // where reads as one line of prose ("🇩🇪 Германия · OMEGATECH-AS") so it can be a

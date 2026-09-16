@@ -12,6 +12,7 @@ import {
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useStepUpDialog } from "./stepup";
+import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
@@ -59,13 +60,16 @@ function fmtRub(n: number): string {
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(unix * 1000).toLocaleString(
+    currentLang(),
+    inPanelTz({
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
 }
 
 // The label is a dictionary key, resolved at call time so the badges follow the

@@ -4,6 +4,7 @@ import type { EventPage, UserEvent } from "./api";
 import { fmtBytes, fmtSpeed } from "./format";
 import i18n, { currentLang, slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
+import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
@@ -94,18 +95,21 @@ function actorLabel(e: UserEvent): string {
 
 function fmtDateTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(unix * 1000).toLocaleString(
+    currentLang(),
+    inPanelTz({
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
 }
 
 function fmtDate(unix: number): string {
   if (!unix) return i18n.t("common.never");
-  return new Date(unix * 1000).toLocaleDateString(currentLang());
+  return new Date(unix * 1000).toLocaleDateString(currentLang(), inPanelTz());
 }
 
 // num/str read one typed field out of the free-form details object. A missing key
