@@ -71,6 +71,11 @@ type Supervisor struct {
 	// waitFn waits between tries of an api call that could not reach Xray; nil is
 	// time.Sleep. Tests shorten it.
 	waitFn func(time.Duration)
+	// promoteAfter is how long a run must last before its config is trusted as the
+	// rollback target: healthyUptime. A field, set before anything is started, so a
+	// test can shorten it for its own supervisor. As a package variable a test that
+	// shortened it raced every other test's promotion still waiting in the background.
+	promoteAfter time.Duration
 
 	runMu sync.Mutex // serializes whole start/stop/apply operations
 
@@ -349,7 +354,7 @@ func NewSupervisor(binName, configPath, assetDir string) *Supervisor {
 	if bin == "" {
 		slog.Warn("xray: binary not found; config will be generated but Xray won't be started", "binary", binName)
 	}
-	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir, logs: logbuf.New()}
+	return &Supervisor{bin: bin, configPath: configPath, assetDir: assetDir, logs: logbuf.New(), promoteAfter: healthyUptime}
 }
 
 // ConfigBytes returns the on-disk config.json currently applied to Xray.
@@ -1450,10 +1455,6 @@ func (s *Supervisor) currentConfigUnloadable() bool {
 // Waits out healthyUptime because a config that crashes immediately must never become
 // the thing we roll back TO. Promotion is best-effort and silent: failing to refresh the
 // copy leaves the previous one, which is the conservative half of the trade.
-// promoteAfter is how long a run must last before its config is trusted as the
-// rollback target. A variable so tests need not wait it out; nothing else writes it.
-var promoteAfter = healthyUptime
-
 func (s *Supervisor) promoteWhenHealthy(p *proc) {
 	if len(p.cfg) == 0 {
 		return
@@ -1461,7 +1462,7 @@ func (s *Supervisor) promoteWhenHealthy(p *proc) {
 	select {
 	case <-p.done: // died before proving anything
 		return
-	case <-time.After(promoteAfter):
+	case <-time.After(s.promoteAfter):
 	}
 	s.mu.Lock()
 	current := s.cur == p && !s.closed

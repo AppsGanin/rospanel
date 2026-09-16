@@ -109,10 +109,10 @@ func TestCurrentConfigUnloadableFailsSafe(t *testing.T) {
 // afterwards was missing from it — and a rollback that reaches for an arbitrarily old
 // copy restores an arbitrarily old user set with it.
 func TestHealthyConfigBecomesTheRollbackCopy(t *testing.T) {
-	defer swapPromoteAfter(t)()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.json")
 	sup := NewSupervisor("", cfg, dir)
+	sup.promoteAfter = time.Millisecond // this supervisor's own proving period
 
 	proven := []byte(`{"inbounds":["ran fine"]}`)
 	p := &proc{done: make(chan struct{}), started: time.Now(), cfg: proven}
@@ -151,10 +151,10 @@ func TestACrashedRunIsNotPromoted(t *testing.T) {
 // Superseded runs must not promote either: by the time the wait is over, the config
 // they were running is not the one on disk.
 func TestASupersededRunIsNotPromoted(t *testing.T) {
-	defer swapPromoteAfter(t)()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.json")
 	sup := NewSupervisor("", cfg, dir)
+	sup.promoteAfter = time.Millisecond // this supervisor's own proving period
 
 	old := &proc{done: make(chan struct{}), started: time.Now(), cfg: []byte(`{"old":true}`)}
 	sup.mu.Lock()
@@ -165,12 +165,4 @@ func TestASupersededRunIsNotPromoted(t *testing.T) {
 	if _, err := os.Stat(cfg + ".bak"); err == nil {
 		t.Error("a run that had already been replaced still promoted its config")
 	}
-}
-
-// swapPromoteAfter shortens the proving period for a test and restores it after.
-func swapPromoteAfter(t *testing.T) func() {
-	t.Helper()
-	prev := promoteAfter
-	promoteAfter = time.Millisecond
-	return func() { promoteAfter = prev }
 }
