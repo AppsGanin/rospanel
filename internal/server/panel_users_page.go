@@ -81,14 +81,15 @@ type usersPage struct {
 //	?ids=1   also every matching id
 func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 	// Summaries, not whole users: the page reads everyone on every request, and nothing
-	// it shows needs a credential.
-	users, err := rt.userSummaries() // newest first, which is also the tie order
+	// it shows needs a credential. The index is what every request over them works out
+	// alike, worked out once for the lot.
+	users, idx, err := rt.indexedUsers() // newest first, which is also the tie order
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	now := time.Now().Unix()
-	page := buildUsersPage(users, r.URL.Query(), now, pageLookups{
+	page := buildUsersPage(users, idx, r.URL.Query(), now, pageLookups{
 		groups: func() map[int64][]model.GroupRef {
 			groups, _ := rt.mgr.GroupsForAllUsers()
 			return groups
@@ -112,11 +113,12 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 // makes the next read fresh (see notingWrites).
 const usersSnapshotTTL = 3 * time.Second
 
-// usersSnapshot is the shared read.
+// usersSnapshot is the shared read, with what was worked out over it.
 type usersSnapshot struct {
 	mu     sync.Mutex
 	users  []store.UserSummary
-	writes uint64 // the write count it was read under
+	idx    *usersIndex // nil until a page asks for one
+	writes uint64      // the write count it was read under
 	at     time.Time
 }
 
@@ -124,24 +126,129 @@ type usersSnapshot struct {
 // younger than usersSnapshotTTL and no request has changed anything since. The slice is
 // shared: callers must not modify it. Callers asking at once share one read.
 func (rt *Router) userSummaries() ([]store.UserSummary, error) {
+	users, _, err := rt.snapshot(false)
+	return users, err
+}
+
+// indexedUsers returns the shared read together with what a page works out over every
+// user: the chips they fall under, the counts and the tags. Built at most once per
+// read, by the first page to ask. Neither is to be modified.
+func (rt *Router) indexedUsers() ([]store.UserSummary, *usersIndex, error) {
+	return rt.snapshot(true)
+}
+
+// snapshot is the body of both, reading the users when the shared read has run out and
+// building the index for the caller that wants one.
+func (rt *Router) snapshot(index bool) ([]store.UserSummary, *usersIndex, error) {
 	// Taken before the read, so a write landing during it leaves the snapshot looking
 	// older than it is — the next caller reads again, never the other way round.
 	writes := rt.writes.Load()
 	c := &rt.usersSnap
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.users != nil && c.writes == writes && time.Since(c.at) < usersSnapshotTTL {
-		return c.users, nil
+	if c.users == nil || c.writes != writes || time.Since(c.at) >= usersSnapshotTTL {
+		users, err := rt.mgr.Store().ListUserSummaries()
+		if err != nil {
+			return nil, nil, err
+		}
+		if users == nil {
+			users = []store.UserSummary{} // no users is an answer worth sharing too
+		}
+		c.users, c.idx, c.writes, c.at = users, nil, writes, time.Now()
 	}
-	users, err := rt.mgr.Store().ListUserSummaries()
-	if err != nil {
-		return nil, err
+	if index && c.idx == nil {
+		c.idx = newUsersIndex(c.users, time.Now().Unix())
 	}
-	if users == nil {
-		users = []store.UserSummary{} // no users is an answer worth sharing too
+	return c.users, c.idx, nil
+}
+
+// usersIndex is what every request over a snapshot works out the same way: which chips
+// each user falls under, how many fall under each, and the tags they carry between
+// them — a pass over everyone, which was repeated for every keystroke of a search.
+//
+// It is worked out at the moment the users are read, so the chips that depend on the
+// time — online, expiring — are as fresh as the read they belong to and no fresher.
+// Both are measured in minutes or days, and the snapshot lives seconds.
+type usersIndex struct {
+	chips  []uint32 // per user, a bit per chip in userChips
+	counts map[string]int
+	tags   []tagCount
+
+	mu    sync.Mutex
+	names map[string][]nameKey // per alphabet, made when a name sort first asks
+	lower *loweredText         // made when a search first asks
+}
+
+// loweredText is every user's name and note folded to lower case, which is what a
+// search compares against. Folding them per keystroke allocated a copy of every name
+// in the panel for each character typed.
+type loweredText struct{ names, notes []string }
+
+func newUsersIndex(users []store.UserSummary, now int64) *usersIndex {
+	idx := &usersIndex{chips: make([]uint32, len(users)), counts: make(map[string]int, len(userChips))}
+	counts := make([]int, len(userChips))
+	tags := map[string]int{}
+	for i := range users {
+		for c, chip := range userChips {
+			if userInChip(&users[i], chip, now) {
+				idx.chips[i] |= 1 << c
+				counts[c]++
+			}
+		}
+		for _, t := range users[i].Tags {
+			tags[t]++
+		}
 	}
-	c.users, c.writes, c.at = users, writes, time.Now()
-	return users, nil
+	for c, chip := range userChips {
+		idx.counts[chip] = counts[c] // every chip is counted, including at zero
+	}
+	idx.tags = tagCounts(tags)
+	return idx
+}
+
+// chipBit is the bit a filter reads, 0 for one that excludes nobody.
+func chipBit(filter string) uint32 {
+	if c := slices.Index(userChips, filter); c >= 0 {
+		return 1 << c
+	}
+	return 0
+}
+
+// searchText folds every name and note to lower case, once per snapshot. Tags are
+// stored folded already (see model.NormalizeTags), so they are read as they are.
+func (idx *usersIndex) searchText(users []store.UserSummary) *loweredText {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.lower != nil {
+		return idx.lower
+	}
+	low := &loweredText{names: make([]string, len(users)), notes: make([]string, len(users))}
+	for i := range users {
+		low.names[i] = strings.ToLower(users[i].Name)
+		low.notes[i] = strings.ToLower(users[i].Note)
+	}
+	idx.lower = low
+	return low
+}
+
+// nameKeys are the collation keys for the alphabet asked for, made once per snapshot:
+// collating 50,000 names is most of what a name sort costs, and an operator paging
+// through them asks for the same order again and again.
+func (idx *usersIndex) nameKeys(users []store.UserSummary, lang string) []nameKey {
+	if lang != "en" {
+		lang = "ru"
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if keys, ok := idx.names[lang]; ok {
+		return keys
+	}
+	keys := collationKeys(users, lang)
+	if idx.names == nil {
+		idx.names = map[string][]nameKey{}
+	}
+	idx.names[lang] = keys
+	return keys
 }
 
 // notingWrites counts every request that may change something once it has been
@@ -164,35 +271,39 @@ type pageLookups struct {
 	devices func(ids []int64) map[int64]int
 }
 
-// buildUsersPage is the page over a newest-first user list. It does not modify users:
-// the list is the shared snapshot.
-func buildUsersPage(users []store.UserSummary, q url.Values, now int64, look pageLookups) usersPage {
-	filter := q.Get("filter")
-	if !slices.Contains(userChips, filter) {
-		filter = "all"
-	}
+// buildUsersPage is the page over a newest-first user list and the index worked out
+// over it. It modifies neither: both are the shared snapshot.
+//
+// What the list is filtered and sorted into is positions in that snapshot, never
+// copies of the users: a summary is a couple of hundred bytes, and a page of fifty
+// rows used to move all fifty thousand of them twice.
+func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, now int64, look pageLookups) usersPage {
+	chip := chipBit(q.Get("filter"))
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	tag := strings.TrimSpace(q.Get("tag"))
 
-	page := usersPage{All: len(users), Counts: make(map[string]int, len(userChips)), Users: []userRow{}}
-	tags := map[string]int{}
-	matched := make([]store.UserSummary, 0, len(users))
-	for _, u := range users {
-		for _, c := range userChips {
-			if userInChip(u, c, now) {
-				page.Counts[c]++
+	page := usersPage{All: len(users), Counts: idx.counts, Tags: idx.tags, Users: []userRow{}}
+	var low *loweredText
+	var searchID int64
+	if search != "" {
+		low = idx.searchText(users)
+		searchID = searchedID(search)
+	}
+	// nil is every user in the order they are already in, which is the order the page
+	// shows unless it is asked for another: whole-list work no request needs.
+	var matched []int32
+	if chip != 0 || tag != "" || search != "" {
+		matched = []int32{}
+		for i := range users {
+			if idx.chips[i]&chip == chip && (tag == "" || slices.Contains(users[i].Tags, tag)) &&
+				(search == "" || userSearchMatch(&users[i], low.names[i], low.notes[i], search, searchID)) {
+				matched = append(matched, int32(i))
 			}
 		}
-		for _, t := range u.Tags {
-			tags[t]++
-		}
-		if userInChip(u, filter, now) && (tag == "" || slices.Contains(u.Tags, tag)) &&
-			(search == "" || userSearchMatch(u, search)) {
-			matched = append(matched, u)
-		}
+		page.Total = len(matched)
+	} else {
+		page.Total = len(users)
 	}
-	page.Tags = tagCounts(tags)
-	page.Total = len(matched)
 
 	offset := clampNonNeg(atoiOr(q.Get("offset"), 0))
 	limit := min(clampNonNeg(atoiOr(q.Get("limit"), usersPageDefault)), usersPageMax)
@@ -202,31 +313,46 @@ func buildUsersPage(users []store.UserSummary, q url.Values, now int64, look pag
 	if limit == 0 && !wantIDs {
 		return page
 	}
-	sortUserList(matched, q.Get("sort"), q.Get("lang"), now)
-	offset = min(offset, len(matched))
-	window := matched[offset:min(offset+limit, len(matched))]
+	if by := q.Get("sort"); slices.Contains(userSorts, by) {
+		if matched == nil {
+			matched = make([]int32, len(users))
+			for i := range matched {
+				matched[i] = int32(i)
+			}
+		}
+		sortUserList(matched, users, idx, by, q.Get("lang"), now)
+	}
+	at := func(i int) *store.UserSummary {
+		if matched == nil {
+			return &users[i]
+		}
+		return &users[matched[i]]
+	}
 
-	if len(window) > 0 {
-		ids := make([]int64, len(window))
-		for i, u := range window {
-			ids[i] = u.ID
+	offset = min(offset, page.Total)
+	window := max(min(offset+limit, page.Total)-offset, 0)
+	if window > 0 {
+		ids := make([]int64, window)
+		for i := range ids {
+			ids[i] = at(offset + i).ID
 		}
 		groups, devices := look.groups(), look.devices(ids)
-		page.Users = make([]userRow, 0, len(window))
-		for _, u := range window {
-			page.Users = append(page.Users, makeUserRow(u, groups[u.ID], devices[u.ID]))
+		page.Users = make([]userRow, window)
+		for i := range page.Users {
+			u := at(offset + i)
+			page.Users[i] = makeUserRow(u, groups[u.ID], devices[u.ID])
 		}
 	}
 	if wantIDs {
-		page.IDs = make([]int64, len(matched))
-		for i, u := range matched {
-			page.IDs[i] = u.ID
+		page.IDs = make([]int64, page.Total)
+		for i := range page.IDs {
+			page.IDs[i] = at(i).ID
 		}
 	}
 	return page
 }
 
-func makeUserRow(u store.UserSummary, groups []model.GroupRef, devices int) userRow {
+func makeUserRow(u *store.UserSummary, groups []model.GroupRef, devices int) userRow {
 	if groups == nil {
 		groups = []model.GroupRef{}
 	}
@@ -244,7 +370,7 @@ func makeUserRow(u store.UserSummary, groups []model.GroupRef, devices int) user
 
 // userInChip reports whether a user belongs under a filter chip. "online" and
 // "expiring" are facts no status carries, which is why the chips are wider than it.
-func userInChip(u store.UserSummary, chip string, now int64) bool {
+func userInChip(u *store.UserSummary, chip string, now int64) bool {
 	switch chip {
 	case "active":
 		return u.Status == model.StatusActive
@@ -262,14 +388,27 @@ func userInChip(u store.UserSummary, chip string, now int64) bool {
 	return true
 }
 
-// userSearchMatch is the users page's search: a name, note or tag containing q, or an
-// id or Xray email equal to it (so a log line's "u42" finds its account). q is already
+// searchedID is the user a search names outright: an id, or an Xray email — so a log
+// line's "u42" finds its account. 0 when the search names no one, which is no user's
+// id. Read once per request: formatting every user's id to compare it as text
+// allocated a string per user per keystroke.
+func searchedID(q string) int64 {
+	digits := strings.TrimPrefix(q, "u")
+	id, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != digits {
+		return 0 // not a number, or not the plain way of writing one
+	}
+	return id
+}
+
+// userSearchMatch is the users page's search: a name, note or tag containing q, or the
+// user the search names outright (see searchedID). q, name and note are already
 // lower-cased.
-func userSearchMatch(u store.UserSummary, q string) bool {
-	if strings.Contains(strings.ToLower(u.Name), q) || strings.Contains(strings.ToLower(u.Note), q) {
+func userSearchMatch(u *store.UserSummary, name, note, q string, id int64) bool {
+	if strings.Contains(name, q) || strings.Contains(note, q) {
 		return true
 	}
-	if strconv.FormatInt(u.ID, 10) == q || model.UserEmail(u.ID) == q {
+	if id != 0 && u.ID == id {
 		return true
 	}
 	for _, t := range u.Tags {
@@ -280,38 +419,35 @@ func userSearchMatch(u store.UserSummary, q string) bool {
 	return false
 }
 
-// sortUserList orders the list in place. Stable, over a newest-first list, so users
-// that tie keep newest first.
-func sortUserList(users []store.UserSummary, by, lang string, now int64) {
+// userSorts are the orders that are not the one the list is already in. "new" — and
+// anything unknown — is newest first, which is how the users are read: a stable sort
+// of fifty thousand rows into the order they already hold is work for nothing.
+var userSorts = []string{"name", "traffic", "expiry", "online"}
+
+// sortUserList orders positions into users, in place. Stable, over a newest-first
+// list, so users that tie keep newest first.
+func sortUserList(order []int32, users []store.UserSummary, idx *usersIndex, by, lang string, now int64) {
 	switch by {
 	case "name":
-		keys := nameKeys(users, lang)
-		idx := make([]int, len(users))
-		for i := range idx {
-			idx[i] = i
-		}
-		sort.SliceStable(idx, func(a, b int) bool { return keys[idx[a]].less(keys[idx[b]]) })
-		sorted := make([]store.UserSummary, len(users))
-		for i, k := range idx {
-			sorted[i] = users[k]
-		}
-		copy(users, sorted)
+		keys := idx.nameKeys(users, lang)
+		sort.SliceStable(order, func(a, b int) bool { return keys[order[a]].less(keys[order[b]]) })
 	case "traffic":
-		sort.SliceStable(users, func(i, j int) bool {
-			return users[i].UsedUp+users[i].UsedDown > users[j].UsedUp+users[j].UsedDown
+		sort.SliceStable(order, func(a, b int) bool {
+			x, y := &users[order[a]], &users[order[b]]
+			return x.UsedUp+x.UsedDown > y.UsedUp+y.UsedDown
 		})
 	case "expiry":
-		sort.SliceStable(users, func(i, j int) bool { return expiryKey(users[i], now) < expiryKey(users[j], now) })
+		sort.SliceStable(order, func(a, b int) bool {
+			return expiryKey(&users[order[a]], now) < expiryKey(&users[order[b]], now)
+		})
 	case "online":
-		sort.SliceStable(users, func(i, j int) bool { return users[i].LastSeen > users[j].LastSeen })
-	default:
-		sort.SliceStable(users, func(i, j int) bool { return users[i].ID > users[j].ID })
+		sort.SliceStable(order, func(a, b int) bool { return users[order[a]].LastSeen > users[order[b]].LastSeen })
 	}
 }
 
 // expiryKey orders by soonest end. A term still waiting for its first connection
 // cannot end sooner than its full length from now; no end at all sorts last.
-func expiryKey(u store.UserSummary, now int64) int64 {
+func expiryKey(u *store.UserSummary, now int64) int64 {
 	switch {
 	case u.ExpireAt > 0:
 		return u.ExpireAt
@@ -334,13 +470,13 @@ func (a nameKey) less(b nameKey) bool {
 	return bytes.Compare(a.key, b.key) < 0
 }
 
-// nameKeys orders names the way the browser's list did: alphabetically with case and
+// collationKeys orders names the way the browser's list did: alphabetically with case and
 // «ё» folded in, punctuation and digits first — and the operator's own alphabet before
 // the other, which is where a plain collator differs from the browser's for Russian
 // (it put every Latin name before the Cyrillic ones). Which group a name falls in is
 // judged by its first character. Keys are made once per name, so a sort of tens of
 // thousands does not collate each pair it compares.
-func nameKeys(users []store.UserSummary, lang string) []nameKey {
+func collationKeys(users []store.UserSummary, lang string) []nameKey {
 	c := collate.New(language.Russian)
 	own := unicode.Cyrillic
 	if lang == "en" {
