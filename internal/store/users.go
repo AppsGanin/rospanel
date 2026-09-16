@@ -587,8 +587,8 @@ const deviceCountCTE = `SELECT CASE
 // never change it, they just exclude the user from the config here.
 func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 	return s.queryUsers(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT `+userCols+` FROM users `+workingUsersWhere+`
-		ORDER BY id ASC`, workingUsersArgs(now)...)
+		SELECT `+userCols+` FROM users u `+workingUsersWhere+`
+		ORDER BY u.id ASC`, workingUsersArgs(now)...)
 }
 
 // WorkingUserIDs is WorkingUsers for a caller that only needs to know WHO: the ids,
@@ -599,8 +599,8 @@ func (s *Store) WorkingUsers(now int64) ([]model.User, error) {
 // allocated ~250x more for an answer it threw away.
 func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT id FROM users `+workingUsersWhere+`
-		ORDER BY id ASC`, workingUsersArgs(now)...)
+		SELECT u.id FROM users u `+workingUsersWhere+`
+		ORDER BY u.id ASC`, workingUsersArgs(now)...)
 	if err != nil {
 		return nil, err
 	}
@@ -616,6 +616,53 @@ func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 	return out, rows.Err()
 }
 
+// WorkingSet answers, in one scan, the two questions asked of the user table whenever
+// anything about the fleet might have moved: who belongs in the proxy config
+// (WorkingUserIDs), and what speed cap each capped user has (CappedUsers).
+//
+// They were read separately — two scans of every user — on every node's shared read,
+// and the pair is what says whether what the fleet is served has changed at all, which
+// is asked far more often than the answer changes. Together they are one scan and no
+// decryption: with 50,000 users, ~20ms against the ~85ms reading everything the nodes
+// are given costs.
+//
+// caps is CappedUsers exactly, device limits included: a user over their devices is
+// left out of ids but keeps their cap, because the node shapes by address and they go
+// on connecting until the config that drops them lands.
+func (s *Store) WorkingSet(now int64) (ids []int64, caps map[int64]int, err error) {
+	// The device clause is a column here, so its arguments come before the condition's.
+	args := append(deviceLimitArgs(now), liveUsersArgs(now)...)
+	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
+		SELECT u.id, `+effectiveSpeedExpr+`, `+withinDeviceLimitExpr+`
+		FROM users u
+		`+groupSpeedJoin+`
+		`+liveUsersWhere+`
+		ORDER BY u.id ASC`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	ids, caps = []int64{}, map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var kbps int
+		var working bool
+		if err := rows.Scan(&id, &kbps, &working); err != nil {
+			return nil, nil, err
+		}
+		if working {
+			ids = append(ids, id)
+		}
+		if kbps > 0 {
+			caps[id] = kbps
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return ids, caps, nil
+}
+
 // WorkingCredentials is WorkingUsers for building a proxy config: the same users in
 // the same order, each carrying only what a config is made of — ID, UUID, Password,
 // WGPrivateKey and AWGSlot. Every other field is zero, and no status is derived.
@@ -626,8 +673,8 @@ func (s *Store) WorkingUserIDs(now int64) ([]int64, error) {
 // these few columns take ~4ms.
 func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	rows, err := s.db.Query(`WITH device_count AS (`+deviceCountCTE+`)
-		SELECT id, uuid, password, wg_private_key, awg_slot FROM users `+workingUsersWhere+`
-		ORDER BY id ASC`, workingUsersArgs(now)...)
+		SELECT u.id, u.uuid, u.password, u.wg_private_key, u.awg_slot FROM users u `+workingUsersWhere+`
+		ORDER BY u.id ASC`, workingUsersArgs(now)...)
 	if err != nil {
 		return nil, err
 	}
@@ -666,24 +713,41 @@ func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 // same rule model.Settings.CountsIPAsDevice states, kept in SQL so every caller of
 // this query and the status derivation agree without threading a flag through six of
 // them. See migration 0055 and issue #66.
-const workingUsersWhere = `WHERE enabled = 1
-		  AND (expire_at = 0 OR expire_at > ?)
-		  AND (data_limit = 0 OR used_up + used_down < data_limit)
-		  AND (device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
+const workingUsersWhere = liveUsersWhere + `
+		  AND ` + withinDeviceLimitExpr
+
+// liveUsersWhere is the part of it a device never touches: manually enabled, not
+// expired, inside the data limit. WorkingSet reads it with the device clause as a
+// column rather than a condition, which is how one scan answers both who is in the
+// config and who has a speed cap (a user over their devices still has one).
+//
+// Every query using these names the users table `u`.
+const liveUsersWhere = `WHERE u.enabled = 1
+		  AND (u.expire_at = 0 OR u.expire_at > ?)
+		  AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)`
+
+// withinDeviceLimitExpr is true for a user their device limit does not exclude.
+const withinDeviceLimitExpr = `(u.device_limit = 0 OR NOT (SELECT ip_counts FROM device_count)
 		       -- Not over the limit right now. Checked as well as the stamp, not instead
 		       -- of it, so a user who has fallen back under is admitted even if nothing
 		       -- has run to clear their stamp yet: an out-of-date stamp must never be
 		       -- able to hold someone out.
 		       OR (SELECT COUNT(DISTINCT c.ip) FROM connections c
-		           WHERE c.user_id = users.id AND c.last_seen > ?) <= device_limit
+		           WHERE c.user_id = u.id AND c.last_seen > ?) <= u.device_limit
 		       -- Over, but not for long enough yet. See DeviceLimitGrace: an address
 		       -- left behind by a network change or a carrier's address rotation leaves
 		       -- the window before this expires, so it never costs anyone a cut.
-		       OR device_over_since = 0
-		       OR device_over_since > ?)`
+		       OR u.device_over_since = 0
+		       OR u.device_over_since > ?)`
 
 func workingUsersArgs(now int64) []any {
-	return []any{now, now - model.DeviceOnlineWindow, now - model.DeviceLimitGrace}
+	return append(liveUsersArgs(now), deviceLimitArgs(now)...)
+}
+
+func liveUsersArgs(now int64) []any { return []any{now} }
+
+func deviceLimitArgs(now int64) []any {
+	return []any{now - model.DeviceOnlineWindow, now - model.DeviceLimitGrace}
 }
 
 // GetUser returns one user by id.

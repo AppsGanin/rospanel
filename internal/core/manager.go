@@ -747,50 +747,78 @@ func (m *Manager) reconcileLoop() {
 		// reload; otherwise a live user-sync suffices.
 		if m.structuralPending.Swap(false) {
 			m.reconcileOnce()
-		} else {
-			m.syncUsersOnce()
+			// The config just changed locally — wake every connected node so it
+			// re-pulls its desired state (all nodes serve the same user set).
+			m.notifyNodes()
+			continue
 		}
-		// The working set / config just changed locally — wake every connected node
-		// so it re-pulls its desired state (all nodes serve the same user set).
-		m.notifyNodes()
+		// Most requests to sync are for a change no node can see: a limit raised, a
+		// name or a note edited, a tariff renewed for a user who was never cut off.
+		// A wake reaches every node at once and costs the panel a re-read of
+		// everything the fleet is served, so the cheap half of that read is done here
+		// and the nodes are left alone when it says nothing moved. Being wrong in
+		// that direction only delays: a node re-reads on its next poll regardless,
+		// which is half a minute at the outside.
+		if m.syncUsersOnce() || (m.nodes.parked() > 0 && m.fleetChanged()) {
+			m.notifyNodes()
+		}
 	}
 }
 
 // syncUsersOnce runs one live user-sync, falling back to a full reconcile on any
-// error so Xray never drifts from the DB.
-func (m *Manager) syncUsersOnce() {
+// error so Xray never drifts from the DB. It reports whether anything was applied —
+// a panic or a fallback counts as yes, since what was applied is then unknown.
+func (m *Manager) syncUsersOnce() (changed bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			logErr("user sync: panic recovered", "panic", r)
+			changed = true
 		}
 	}()
-	if err := m.syncUsers(); err != nil {
+	changed, err := m.syncUsers()
+	if err != nil {
 		logWarn("user sync failed, falling back to full reconcile", "err", err)
 		m.reconcileOnce()
+		return true
 	}
+	return changed
 }
 
 // syncUsers brings the running Xray's inbound users in line with the current
 // working set using the live add/remove-user API (no restart), then rewrites
 // config.json so a crash-restart preserves the change.
-func (m *Manager) syncUsers() error {
+func (m *Manager) syncUsers() (bool, error) {
 	m.applyMu.Lock()
 	defer m.applyMu.Unlock()
 	if !m.sup.Running() {
-		return m.reconcileLocked() // can't live-update a stopped Xray
+		return true, m.reconcileLocked() // can't live-update a stopped Xray
+	}
+	// Who is in the config is a cheap read; what their credentials are is not, and
+	// most syncs are asked for a change that moves nobody in or out. The ids settle
+	// that before a single password is decrypted; the credentials below are read
+	// afresh and the change derived from them, so a set that moves in between is
+	// applied as it is then, not as it was here.
+	ids, err := m.store.WorkingUserIDs(time.Now().Unix())
+	if err != nil {
+		return false, err
+	}
+	if !m.workingIDsChanged(ids) {
+		return false, nil
 	}
 	set, err := m.store.GetSettings()
 	if err != nil {
-		return err
+		return false, err
 	}
 	users, err := m.store.WorkingCredentials(time.Now().Unix())
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	working := make(map[int64]model.User, len(users))
-	for _, u := range users {
-		working[u.ID] = u
+	// Ids, not the users themselves: a map of fifty thousand whole users is tens of
+	// megabytes of garbage for a question about who is in it.
+	working := make(map[int64]struct{}, len(users))
+	for i := range users {
+		working[users[i].ID] = struct{}{}
 	}
 
 	m.appliedMu.Lock()
@@ -801,15 +829,15 @@ func (m *Manager) syncUsers() error {
 			removedEmails = append(removedEmails, model.UserEmail(id))
 		}
 	}
-	for id, u := range working {
-		if _, ok := m.applied[id]; !ok {
-			added = append(added, u)
+	for i := range users {
+		if _, ok := m.applied[users[i].ID]; !ok {
+			added = append(added, users[i])
 		}
 	}
 	m.appliedMu.Unlock()
 
 	if len(added) == 0 && len(removedEmails) == 0 {
-		return nil
+		return false, nil
 	}
 	logInfo("user sync (live)", "added", len(added), "removed", len(removedEmails))
 
@@ -819,29 +847,29 @@ func (m *Manager) syncUsers() error {
 	// here would keep working through every custom inbound until then.
 	opts, err := m.genOptsFor(model.LocalNodeID)
 	if err != nil {
-		return err
+		return true, err
 	}
 	custom := opts.Custom
 
 	apiAddr := m.sup.APIAddr()
 	if len(removedEmails) > 0 {
 		if err := m.sup.RemoveUsers(apiAddr, xray.EnabledInboundTags(set, custom), removedEmails); err != nil {
-			return err
+			return true, err
 		}
 	}
 	if len(added) > 0 {
 		if err := m.sup.AddUsers(apiAddr, xray.UserInbounds(set, custom, added, model.LocalNodeID, opts.Access)); err != nil {
-			return err
+			return true, err
 		}
 	}
 	// Keep config.json current (no restart) so the monitor's crash-restart loads
 	// the right user set.
 	cfg, err := xray.Generate(set, users, opts, m.getProxies())
 	if err != nil {
-		return err
+		return true, err
 	}
 	if err := m.sup.WriteConfig(cfg); err != nil {
-		return err
+		return true, err
 	}
 	m.setApplied(users)
 	// Xray's HandlerService can't live-apply user changes to a Hysteria2 (QUIC)
@@ -866,7 +894,7 @@ func (m *Manager) syncUsers() error {
 		}
 	}
 	m.syncAWGLocked(set, users)
-	return m.store.MarkConfigApplied()
+	return true, m.store.MarkConfigApplied()
 }
 
 // reconcileOnce runs one reconcile, recovering from panics so a single bad
