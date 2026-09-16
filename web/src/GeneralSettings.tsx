@@ -36,7 +36,7 @@ import {
 import { useAction } from "./hooks";
 import { ConnPolicyCard, EMPTY_POLICY } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { browserTimezone, tzOptions } from "./tz";
+import { browserTimezone, setPanelTimezone, tzOptions } from "./tz";
 import {
   Button,
   CenterLoader,
@@ -255,6 +255,9 @@ export function GeneralSettings() {
           setTrustedSaved(nets);
         }
         notifySuccess(t("general.saved"));
+        // Last, once everything is stored: a new zone redraws the dashboard, this
+        // page with it, and the page reads back what was just saved.
+        setPanelTimezone(timezone);
       },
       { key: "save" },
     );

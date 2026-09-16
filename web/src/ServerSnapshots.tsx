@@ -10,6 +10,7 @@ import {
 import { currentLang } from "./i18n";
 import { useAction } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { inPanelTz } from "./tz";
 import {
   Button,
   IconButton,
@@ -44,7 +45,7 @@ export function ServerSnapshots({ onRolledBack }: { onRolledBack?: () => void })
     reload();
   }, []);
 
-  const stamp = (sec: number) => new Date(sec * 1000).toLocaleString(currentLang());
+  const stamp = (sec: number) => new Date(sec * 1000).toLocaleString(currentLang(), inPanelTz());
 
   const rollback = (sn: ConfigSnapshot) => async () => {
     const ok = await confirm({

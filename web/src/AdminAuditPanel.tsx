@@ -10,6 +10,7 @@ import {
 import { fmtStamp } from "./format";
 import { slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
+import { dayEndMs, dayStartMs } from "./tz";
 import {
   Button,
   cn,
@@ -33,18 +34,19 @@ const PAGE = 20;
 // Mirrors model.AdminAuditRetentionDays.
 const RETENTION_DAYS = 90;
 
-// A YYYY-MM-DD date input → unix seconds at the local day's start (from) or end (to,
-// inclusive), or 0 when blank. Local time is what the operator picked, so that is
-// what the range means.
+// A YYYY-MM-DD date input → unix seconds at the day's start (from) or end (to,
+// inclusive), or 0 when blank. The day is the panel's (see tz.ts), the one every stamp
+// in the list is shown in, so a row dated the 10th is inside a range ending on the 10th.
 function dayStart(d: string): number {
-  if (!d) return 0;
-  const t = new Date(`${d}T00:00:00`).getTime();
-  return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
+  return dayAt(d, dayStartMs);
 }
 function dayEnd(d: string): number {
-  if (!d) return 0;
-  const t = new Date(`${d}T23:59:59`).getTime();
-  return Number.isNaN(t) ? 0 : Math.floor(t / 1000);
+  return dayAt(d, dayEndMs);
+}
+function dayAt(d: string, at: (y: number, mo: number, day: number) => number): number {
+  const [y, mo, day] = d.split("-").map(Number);
+  if (!y || !mo || !day) return 0;
+  return Math.floor(at(y, mo, day) / 1000);
 }
 
 // Rows the owner should be able to spot at a glance: a failed sign-in, and the two

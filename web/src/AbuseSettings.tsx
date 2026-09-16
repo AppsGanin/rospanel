@@ -12,6 +12,7 @@ import {
 import { useAction } from "./hooks";
 import i18n, { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { inPanelTz } from "./tz";
 import {
   Button,
   CenterLoader,
@@ -52,7 +53,7 @@ function fmtBytes(n?: number) {
 
 function fmtWhen(ts?: number) {
   if (!ts) return i18n.t("abuse.notLoaded");
-  return new Date(ts * 1000).toLocaleString(currentLang());
+  return new Date(ts * 1000).toLocaleString(currentLang(), inPanelTz());
 }
 
 export function AbuseSettings() {

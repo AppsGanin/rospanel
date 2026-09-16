@@ -17,6 +17,7 @@ import {
 import { HtmlEditor } from "./HtmlEditor";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
@@ -92,12 +93,15 @@ const isLive = (b: Broadcast) => b.status === "running";
 
 function fmtTime(unix: number): string {
   if (!unix) return "—";
-  return new Date(unix * 1000).toLocaleString(currentLang(), {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(unix * 1000).toLocaleString(
+    currentLang(),
+    inPanelTz({
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  );
 }
 
 export function BroadcastPanel() {

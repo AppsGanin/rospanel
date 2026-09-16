@@ -13,6 +13,7 @@ import {
 import { STAMP_OPTS } from "./format";
 import { currentLang, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
+import { inPanelTz } from "./tz";
 import { Modal, Spinner } from "./ui";
 
 // File-picker accept list. macOS doesn't recognize the compound ".tar.gz"
@@ -39,7 +40,7 @@ export function ManifestCard({
 }) {
   const { t } = useTranslation();
   const date = m.created_at
-    ? new Date(m.created_at).toLocaleString(currentLang(), STAMP_OPTS)
+    ? new Date(m.created_at).toLocaleString(currentLang(), inPanelTz(STAMP_OPTS))
     : null;
   return (
     <div className="flex flex-col gap-1 rounded-xl bg-gray-50 px-4 py-3 text-sm">

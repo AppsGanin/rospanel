@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
 import { currentLang } from "./i18n";
+import { todayYmd } from "./tz";
 
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -1283,7 +1284,9 @@ export function DatePicker({
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLButtonElement>(null)
   const selected = parseYmd(value)
-  const [view, setView] = useState<Date>(selected ?? new Date())
+  // With nothing picked the calendar opens on the panel's today (see tz.ts), which
+  // late on the last of a month is not always the browser's.
+  const [view, setView] = useState<Date>(selected ?? parseYmd(todayYmd()) ?? new Date())
   const minDate = min ? parseYmd(min) : null
 
   const display = selected

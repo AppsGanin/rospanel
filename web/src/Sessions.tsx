@@ -5,6 +5,7 @@ import { fmtLastSeen } from './format'
 import { useAction } from './hooks'
 import { currentLang } from './i18n'
 import { notifySuccess } from './notify'
+import { inPanelTz } from './tz'
 import { Badge, IconButton, IconClose, IconLogout, useConfirm } from './ui'
 
 // clientLabel reduces a User-Agent to what tells sessions apart — "Chrome · macOS",
@@ -33,7 +34,7 @@ export function clientLabel(ua: string): string {
 }
 
 function fmtDate(unix: number): string {
-  return unix ? new Date(unix * 1000).toLocaleDateString(currentLang()) : '—'
+  return unix ? new Date(unix * 1000).toLocaleDateString(currentLang(), inPanelTz()) : '—'
 }
 
 // Sessions is the admin's own list of open sessions, inside the account dialog next

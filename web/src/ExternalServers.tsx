@@ -17,6 +17,7 @@ import {
 import { useAction, useShowMore } from "./hooks";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
@@ -36,7 +37,7 @@ import {
 // nothing on them and the same access groups decide who gets which.
 
 function fmtWhen(unix: number): string {
-  return unix ? new Date(unix * 1000).toLocaleString(i18n.language) : "—";
+  return unix ? new Date(unix * 1000).toLocaleString(i18n.language, inPanelTz()) : "—";
 }
 
 // sourceKind names what a source is, since the stored value can be a URL or a

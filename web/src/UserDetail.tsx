@@ -62,6 +62,7 @@ import { TrafficArea } from './charts'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { UserEventsModal } from './UserEventsModal'
+import { inPanelTz } from './tz'
 import {
   Button,
   cn,
@@ -631,7 +632,7 @@ export function UserDetail({
                 user.abuse_action === 'disable'
                   ? 'userDetail.abuseDisabled'
                   : 'userDetail.abuseThrottled',
-                { when: new Date(user.abuse_until * 1000).toLocaleString(i18n.language) },
+                { when: new Date(user.abuse_until * 1000).toLocaleString(i18n.language, inPanelTz()) },
               )}
             </p>
           )}

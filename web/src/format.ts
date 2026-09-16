@@ -1,4 +1,5 @@
 import i18n from './i18n'
+import { dayEndMs, inPanelTz, todayYmd, ymdOf } from './tz'
 
 // The option tables below are functions, not constants: a constant would freeze
 // the labels in whichever language happened to be active when the module was first
@@ -17,10 +18,11 @@ export const STAMP_OPTS: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 }
 
-// fmtStamp takes unix SECONDS; 0 means "never happened" and reads as a dash.
+// fmtStamp takes unix SECONDS; 0 means "never happened" and reads as a dash. Read in
+// the panel's timezone, like every date the panel shows (see tz.ts).
 export function fmtStamp(unix: number): string {
   if (!unix) return '—'
-  return new Date(unix * 1000).toLocaleString(i18n.language, STAMP_OPTS)
+  return new Date(unix * 1000).toLocaleString(i18n.language, inPanelTz(STAMP_OPTS))
 }
 
 const BYTE_UNITS = ['b', 'kb', 'mb', 'gb', 'tb'] as const
@@ -143,21 +145,17 @@ export function fmtDuration(sec: number): string {
   return u('s', Math.floor(sec))
 }
 
-// localDay returns the calendar day (YYYY-MM-DD) in the browser's local time,
-// `offset` days back from today. Uses local time (not UTC) so day boundaries
-// match the operator's day, consistent with the server's local-day buckets.
+// localDay returns the calendar day (YYYY-MM-DD) in the panel's timezone, `offset`
+// days back from today: the day the server buckets statistics by, so "today" asks for
+// the same day the totals were counted in, wherever the browser is.
 export function localDay(offset: number): string {
-  const d = new Date(Date.now() - offset * 86400000)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return todayYmd(offset)
 }
 
 export function fmtExpire(unix: number): string {
   if (!unix) return '∞'
   const d = new Date(unix * 1000)
-  return d.toLocaleDateString()
+  return d.toLocaleDateString(undefined, inPanelTz())
 }
 
 // termModes are the two ways a manual term is given: an end date, or a length that
@@ -210,7 +208,7 @@ export function fmtLastSeen(unix: number): string {
   if (sec < 3600) return i18n.t('lastSeen.minutes', { n: Math.floor(sec / 60) })
   if (sec < 86400) return i18n.t('lastSeen.hours', { n: Math.floor(sec / 3600) })
   if (sec < 7 * 86400) return i18n.t('lastSeen.days', { n: Math.floor(sec / 86400) })
-  return new Date(unix * 1000).toLocaleString()
+  return new Date(unix * 1000).toLocaleString(undefined, inPanelTz())
 }
 
 // countryFlag turns a 2-letter country code into its emoji flag via regional-indicator
@@ -247,21 +245,21 @@ export function countryName(code: string, lang: string, unknown: string): string
 // as its UTC calendar day, so anyone west of UTC reads their own saved date back as the
 // day before.
 //
-// Both helpers work in the browser's local calendar, which is the one the picker shows.
+// Both helpers work in the panel's calendar (see tz.ts): the day an operator picks ends
+// when it ends where the panel is — the day the expiry notices and the Telegram bots
+// print for it.
 
 // dateToUnixEndOfDay turns a "YYYY-MM-DD" from a date input into the last second of
-// that day, locally. An empty string means no expiry, which is 0.
+// that day in the panel's timezone. An empty string means no expiry, which is 0.
 export function dateToUnixEndOfDay(date: string): number {
   const [y, m, d] = date.split('-').map(Number)
   if (!y || !m || !d) return 0
-  return Math.floor(new Date(y, m - 1, d, 23, 59, 59).getTime() / 1000)
+  return Math.floor(dayEndMs(y, m, d) / 1000)
 }
 
 // unixToLocalDate renders a stored expiry as the "YYYY-MM-DD" a date input wants, in
-// the reader's own calendar.
+// the panel's calendar.
 export function unixToLocalDate(unix: number): string {
   if (!unix) return ''
-  const d = new Date(unix * 1000)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return ymdOf(unix * 1000)
 }
