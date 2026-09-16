@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"maps"
 	"net"
 	"net/netip"
 	"strings"
@@ -21,7 +22,16 @@ import (
 type onlineGauge struct {
 	mu   sync.Mutex
 	seen map[int64]map[int64]int64 // server id → user id → last seen (unix)
+	// last is the most recent count and lastAt when it was taken (see recent).
+	last   map[int64]int
+	lastAt time.Time
 }
+
+// onlineCountsAge is how long one count answers for. The subscription asks on every
+// fetch, and counting walks every live user on every server: with 50,000 users and
+// fourteen fetches a second that walk was 5% of the panel's CPU, to order servers by a
+// load that moves over minutes.
+const onlineCountsAge = 2 * time.Second
 
 // record notes that user was seen on server at ts.
 func (g *onlineGauge) record(server, user, ts int64) {
@@ -40,12 +50,22 @@ func (g *onlineGauge) record(server, user, ts int64) {
 	}
 }
 
-// counts returns, per server, how many distinct users were seen since `since`,
-// dropping entries older than that on the way so the map never grows past the
-// fleet's live users.
-func (g *onlineGauge) counts(since int64) map[int64]int {
+// recent is the count over the online window as of now, reused while it is younger
+// than onlineCountsAge. The map returned is the caller's own.
+func (g *onlineGauge) recent(now time.Time) map[int64]int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	// A clock that stepped back makes the last count look young forever: count again.
+	if g.last == nil || now.Before(g.lastAt) || now.Sub(g.lastAt) >= onlineCountsAge {
+		g.last, g.lastAt = g.countsLocked(now.Unix()-model.DeviceOnlineWindow), now
+	}
+	return maps.Clone(g.last)
+}
+
+// countsLocked returns, per server, how many distinct users were seen since `since`,
+// dropping entries older than that on the way so the map never grows past the
+// fleet's live users. The caller holds mu.
+func (g *onlineGauge) countsLocked(since int64) map[int64]int {
 	out := make(map[int64]int, len(g.seen))
 	for server, users := range g.seen {
 		for user, ts := range users {
@@ -103,7 +123,7 @@ func userIDFromEmail(email string) (int64, bool) {
 // OnlineByServer is how many distinct users each server has seen inside the
 // online window, keyed by server id (0 = the master).
 func (m *Manager) OnlineByServer() map[int64]int {
-	return m.online.counts(time.Now().Unix() - model.DeviceOnlineWindow)
+	return m.online.recent(time.Now())
 }
 
 // CountryOfIP resolves a client address to its country code through the same
