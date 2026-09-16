@@ -196,6 +196,15 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 	}
 }
 
+// Each chip is a bit of the index's per-user word, so there cannot be more of them
+// than the word has bits: a 33rd would be counted and then never match.
+func TestEveryChipFitsTheIndexWord(t *testing.T) {
+	const bits = 32 // usersIndex.chips is a []uint32
+	if len(userChips) > bits {
+		t.Fatalf("%d chips in a %d-bit word", len(userChips), bits)
+	}
+}
+
 // The card fetches its one user whole, links included; the member picker gets names.
 func TestUserCardAndBriefList(t *testing.T) {
 	rt, st := rolesTestRouter(t)
