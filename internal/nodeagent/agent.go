@@ -1038,9 +1038,14 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	// budget). At fleet scale this drops sites rather than letting them tip an
 	// otherwise-fine body over the cap, which would 400 the whole sync and stall the
 	// node. takeSites still clears its buffer even when the budget is zero.
+	// A body already at the ceiling leaves sites nothing. Checked on len(base) first
+	// so the headroom is only ever computed from a length known to be below it — the
+	// shape CodeQL accepts as bounding the size takeSites later allocates by.
 	sitesBudget := sitesBytesMax
 	if base, err := json.Marshal(req); err == nil {
-		if head := syncBodyCeiling - len(base); head < sitesBudget {
+		if len(base) >= syncBodyCeiling {
+			sitesBudget = 0
+		} else if head := syncBodyCeiling - len(base); head < sitesBudget {
 			sitesBudget = head
 		}
 	}
