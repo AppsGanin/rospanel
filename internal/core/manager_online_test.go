@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -96,5 +97,35 @@ func TestMasterPlacementValidatesAndNormalises(t *testing.T) {
 	set.SubOrderMode = "fastest"
 	if err := m.SaveSubSettings(set); err == nil {
 		t.Error("an unknown order mode was accepted")
+	}
+}
+
+// Sightings recorded from every node's report while subscriptions ask for the counts.
+func TestOnlineCountUnderConcurrency(t *testing.T) {
+	var g onlineGauge
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 2000 {
+				if i%2 == 0 {
+					g.record(int64(i), int64(j), time.Now().Unix())
+					continue
+				}
+				counts := g.recent(time.Now().Add(time.Duration(j) * time.Millisecond))
+				counts[99] = j // a caller's own map
+			}
+		}()
+	}
+	wg.Wait()
+	got := g.recent(time.Now().Add(onlineCountsAge * 2))
+	for _, server := range []int64{0, 2, 4} {
+		if got[server] != 2000 {
+			t.Errorf("server %d: %d users, want 2000", server, got[server])
+		}
+	}
+	if _, ok := got[99]; ok {
+		t.Error("a caller's change reached the gauge")
 	}
 }

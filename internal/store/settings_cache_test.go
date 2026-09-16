@@ -1,7 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -124,5 +126,53 @@ func TestSettingsAreServedFromTheCopyUntilTheRevisionMoves(t *testing.T) {
 	}
 	if s, _ := st.GetSettings(); s.MasterLabel != "behind its back" {
 		t.Errorf("a moved revision did not bring the row back: %q", s.MasterLabel)
+	}
+}
+
+// Many callers reading the settings and changing their copies, while others save: no
+// caller's change reaches another, and once the saves stop the settings read are the
+// ones last saved.
+func TestSettingsCacheUnderConcurrentReadsAndSaves(t *testing.T) {
+	st := newStore(t)
+	if err := st.SetRoutingConfig(model.RoutingConfig{BlockDomains: []string{"base.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 200 {
+				if i < 2 && j%10 == 0 {
+					if err := st.SetMasterLabel(fmt.Sprintf("label %d-%d", i, j)); err != nil {
+						t.Error(err)
+					}
+					continue
+				}
+				s, err := st.GetSettings()
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if len(s.Routing.BlockDomains) != 1 || s.Routing.BlockDomains[0] != "base.example" {
+					t.Errorf("a reader was handed another caller's change: %v", s.Routing.BlockDomains)
+					return
+				}
+				s.Routing.BlockDomains[0] = "changed.example"
+				s.Routing.BlockDomains = append(s.Routing.BlockDomains, "appended.example")
+				s.MasterLabel = "changed by a reader"
+			}
+		}()
+	}
+	wg.Wait()
+	if err := st.SetMasterLabel("the last save"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := st.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.MasterLabel != "the last save" || !slices.Equal(s.Routing.BlockDomains, []string{"base.example"}) {
+		t.Errorf("after the saves: label %q, block %v", s.MasterLabel, s.Routing.BlockDomains)
 	}
 }
