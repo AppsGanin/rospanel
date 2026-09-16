@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -34,6 +35,8 @@ type nodeServed struct {
 	// Nothing is checked then — refusing everything would silently stop counting the
 	// node's traffic over a reader that fell behind the generator — and it is logged.
 	unread bool
+	// seq orders the reads states are built from (see servedRegistry.stamp).
+	seq uint64
 }
 
 // allows reports whether a report from the node may speak for this user.
@@ -52,7 +55,15 @@ func (s *nodeServed) allows(id int64, now int64) bool {
 type servedRegistry struct {
 	mu    sync.Mutex
 	nodes map[int64]*nodeServed
+	reads atomic.Uint64
 }
+
+// stamp numbers a read of a node's state inputs, taken before the read. States for one
+// node are built side by side — a sync's, the config viewer's, the health report's — and
+// the one that finishes last is not always the one read last: without the number, a
+// state built from older inputs could replace a newer one's users, and the node's reports
+// about someone it was just given would be dropped until the next build.
+func (r *servedRegistry) stamp() uint64 { return r.reads.Add(1) }
 
 func (r *servedRegistry) get(nodeID int64) *nodeServed {
 	r.mu.Lock()
@@ -60,17 +71,21 @@ func (r *servedRegistry) get(nodeID int64) *nodeServed {
 	return r.nodes[nodeID]
 }
 
-// note records the users a state just built for a node lets in. Users of the previous
-// state who are not in this one are remembered as having left now; those who left
-// earlier are kept until the grace runs out, and forgotten as soon as they are back.
-func (r *servedRegistry) note(nodeID int64, ids []int64, unread bool, now int64) {
+// note records the users a state just built for a node lets in, from inputs read under
+// stamp seq; a state read before the one already recorded is ignored. Users of the
+// previous state who are not in this one are remembered as having left now; those who
+// left earlier are kept until the grace runs out, and forgotten as soon as they are back.
+func (r *servedRegistry) note(nodeID int64, ids []int64, unread bool, now int64, seq uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.nodes == nil {
 		r.nodes = map[int64]*nodeServed{}
 	}
 	prev := r.nodes[nodeID]
-	next := &nodeServed{ids: ids, unread: unread}
+	if prev != nil && seq < prev.seq {
+		return
+	}
+	next := &nodeServed{ids: ids, unread: unread, seq: seq}
 	if prev != nil {
 		grace := int64(nodeServedGrace / time.Second)
 		left := make(map[int64]int64)
@@ -125,14 +140,15 @@ func servedUserIDs(cfg *xray.Config, tunnel *nodeapi.AWGState) (ids []int64, rea
 	return slices.Compact(ids), readable
 }
 
-// noteNodeServed records who a state just built for a node lets in.
-func (m *Manager) noteNodeServed(nodeID int64, cfg *xray.Config, tunnel *nodeapi.AWGState) {
+// noteNodeServed records who a state just built for a node lets in, from inputs read
+// under stamp seq.
+func (m *Manager) noteNodeServed(nodeID int64, cfg *xray.Config, tunnel *nodeapi.AWGState, seq uint64) {
 	ids, readable := servedUserIDs(cfg, tunnel)
 	if !readable && m.siteNotice.should(fmt.Sprintf("node-served-unread:%d", nodeID), time.Now()) {
 		logErr("node state: the config's users cannot be read, so the node's reports are not checked against them",
 			"node", nodeID)
 	}
-	m.served.note(nodeID, ids, !readable, time.Now().Unix())
+	m.served.note(nodeID, ids, !readable, time.Now().Unix(), seq)
 }
 
 // nodeServedFor returns who a node's state lets in. A node no state has been built for

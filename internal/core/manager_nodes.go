@@ -237,7 +237,7 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)
 	complete = complete && claimed
 	// Who this state lets in is who the node's reports may speak for from now on.
-	m.noteNodeServed(n.ID, cfg, meta.AWG)
+	m.noteNodeServed(n.ID, cfg, meta.AWG, x.servedSeq)
 	// What the source policy has refused, for this node's own firewall. Read here
 	// rather than pushed on each block so a node that was offline catches up on its
 	// next sync, and so the hash covers it (a lifted block reaches the node too).
