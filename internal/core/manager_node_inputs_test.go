@@ -176,10 +176,7 @@ func TestNodeTrafficSharesOneEnforcementPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n, err := m.store.CreateNode("n1", "nl1.example.com", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	n := servingNode(t, m, "n1", "nl1.example.com")
 	working, _ := m.store.WorkingCredentials(time.Now().Unix())
 	m.setApplied(working)
 
