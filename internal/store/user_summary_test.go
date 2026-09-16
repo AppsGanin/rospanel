@@ -158,3 +158,72 @@ func TestUserTunnelKeys(t *testing.T) {
 		t.Fatalf("keys %v, want %v (b=%d has none)", keys, want, b.ID)
 	}
 }
+
+// A few rows read by id are exactly those rows of the whole list — statuses included,
+// the one a device count decides among them — newest first, with an id that has no
+// user left out. The users page brings its shared list up to date with them.
+func TestUserSummariesOfAreThoseRowsOfTheList(t *testing.T) {
+	st := newStore(t)
+	now := time.Now().Unix()
+	mk := func(name string, limit, expire int64, devices int) int64 {
+		t.Helper()
+		u, err := st.CreateUser(name, "uuid-"+name, "pw", "tok-"+name, limit, expire, devices)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.ID
+	}
+	active := mk("active", 0, 0, 0)
+	if err := st.SetUserTags(active, []string{"vip"}); err != nil {
+		t.Fatal(err)
+	}
+	off := mk("off", 0, 0, 0)
+	if err := st.SetUserEnabled(off, false); err != nil {
+		t.Fatal(err)
+	}
+	expired := mk("expired", 0, now-3600, 0)
+	quota := mk("quota", 1000, 0, 0)
+	if err := st.UpdateTraffic(quota, 600, 600, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	crowd := mk("crowd", 0, 0, 1)
+	for _, ip := range []string{"198.51.100.1", "198.51.100.2"} {
+		if err := st.AddConnection(crowd, ip, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.StampDeviceOverLimit(now - model.DeviceLimitGrace - 10); err != nil {
+		t.Fatal(err)
+	}
+	mk("not asked for", 0, 0, 0)
+
+	all, err := st.ListUserSummaries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[int64]UserSummary{}
+	for _, u := range all {
+		byID[u.ID] = u
+	}
+	asked := []int64{active, crowd, 99999, expired, off, quota}
+	got, err := st.ListUserSummariesOf(asked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []UserSummary{byID[crowd], byID[quota], byID[expired], byID[off], byID[active]} // newest first
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rows by id:\n got  %+v\n want %+v", got, want)
+	}
+	statuses := map[string]bool{}
+	for _, u := range got {
+		statuses[u.Status] = true
+	}
+	for _, s := range []string{model.StatusActive, model.StatusDisabled, model.StatusExpired, model.StatusLimited, model.StatusDeviceLimited} {
+		if !statuses[s] {
+			t.Errorf("the fixture has no %q row, so that status was not compared: %v", s, statuses)
+		}
+	}
+	if none, err := st.ListUserSummariesOf(nil); err != nil || len(none) != 0 {
+		t.Errorf("no ids: %v %v", none, err)
+	}
+}

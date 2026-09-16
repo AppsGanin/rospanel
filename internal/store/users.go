@@ -386,12 +386,32 @@ type UserSummary struct {
 // over their limit past the grace — which is usually nobody. A list that shows the
 // count asks ActiveDeviceCountsOf for the rows it shows.
 func (s *Store) ListUserSummaries() ([]UserSummary, error) {
+	return s.userSummaries(`SELECT ` + userSummaryCols + ` FROM users ORDER BY id DESC`)
+}
+
+// ListUserSummariesOf is ListUserSummaries for the users given, newest first: what the
+// users page reads to bring a few rows of its shared list up to date after an edit,
+// rather than all of them. An id with no user is absent from the result.
+func (s *Store) ListUserSummariesOf(ids []int64) ([]UserSummary, error) {
+	if len(ids) == 0 {
+		return []UserSummary{}, nil
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	return s.userSummaries(`SELECT `+userSummaryCols+` FROM users
+		WHERE id IN (SELECT value FROM json_each(?)) ORDER BY id DESC`, string(b))
+}
+
+const userSummaryCols = `id, name, note, tags, enabled, data_limit, expire_at, hold_seconds,
+		used_up, used_down, last_seen, device_limit, device_over_since`
+
+func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) {
 	// Read before the rows are open: the store has one connection, and the rows hold it.
 	countIP := s.ipCountsAsDevice()
 	now := time.Now().Unix()
-	rows, err := s.db.Query(`SELECT id, name, note, tags, enabled, data_limit, expire_at, hold_seconds,
-		used_up, used_down, last_seen, device_limit, device_over_since
-		FROM users ORDER BY id DESC`)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

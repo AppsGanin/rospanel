@@ -89,7 +89,7 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().Unix()
-	page := buildUsersPage(users, idx, r.URL.Query(), now, pageLookups{
+	page := buildUsersPage(users, idx, r.URL.Query(), pageLookups{
 		groups: func() map[int64][]model.GroupRef {
 			groups, _ := rt.mgr.GroupsForAllUsers()
 			return groups
@@ -107,19 +107,48 @@ func (rt *Router) listUsersPage(w http.ResponseWriter, r *http.Request) {
 // The page reads everyone on every request — its filters and chip counts are over
 // everyone — and an operator typing a search or scrolling asks several times a second.
 // With 50,000 users each read was ~0.3 s of CPU on a 1-vCPU box, and an operator
-// browsing kept a third of the core busy. Shared for a few seconds, a burst costs one
-// read. Usage and online status on the page can lag by that much; nothing an operator
-// does through the panel or the API does, because a request that changes something
-// makes the next read fresh (see notingWrites).
-const usersSnapshotTTL = 3 * time.Second
+// browsing kept a third of the core busy. Shared, a burst costs one read. Usage and
+// online status on the page can lag by this much; nothing an operator does through
+// the panel or the API does (see usersSnapshot).
+const usersSnapshotTTL = 15 * time.Second
+
+// usersPatchMax is how many edited users a read brings up to date row by row; past it,
+// reading everyone again is the cheaper way.
+const usersPatchMax = 1000
 
 // usersSnapshot is the shared read, with what was worked out over it.
+//
+// Every request that may change something takes a number from the router's write
+// count (see notingWrites). One that edits a single user through that user's own route
+// also records its number here with the user's id; any other — a create, a bulk
+// action, a settings save, a payment — records nothing. A read is still good while
+// every number since it was taken is one of the recorded edits: those rows are read
+// again and put in place, and the rest of the list stands. A number with nothing
+// recorded against it, whatever took it, means everyone is read again.
+//
+// An edit used to send the next request back to all 50,000 users, so an operator
+// changing limits one user at a time kept the whole list being reread every few
+// seconds; the time the list could lag had to stay short for the same reason.
 type usersSnapshot struct {
-	mu     sync.Mutex
-	users  []store.UserSummary
-	idx    *usersIndex // nil until a page asks for one
-	writes uint64      // the write count it was read under
-	at     time.Time
+	mu      sync.Mutex
+	users   []store.UserSummary
+	idx     *usersIndex // nil until a page asks for one
+	seq     uint64      // the write count everything in users reflects
+	at      time.Time   // when everyone was last read
+	pending map[uint64]int64
+}
+
+// noteUserEdit records that write number n edited the user id alone.
+func (c *usersSnapshot) noteUserEdit(n uint64, id int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if n <= c.seq {
+		return // a read taken since already saw the edit
+	}
+	if c.pending == nil {
+		c.pending = map[uint64]int64{}
+	}
+	c.pending[n] = id
 }
 
 // userSummaries returns every user's summary, read afresh unless the last read is
@@ -140,13 +169,26 @@ func (rt *Router) indexedUsers() ([]store.UserSummary, *usersIndex, error) {
 // snapshot is the body of both, reading the users when the shared read has run out and
 // building the index for the caller that wants one.
 func (rt *Router) snapshot(index bool) ([]store.UserSummary, *usersIndex, error) {
-	// Taken before the read, so a write landing during it leaves the snapshot looking
-	// older than it is — the next caller reads again, never the other way round.
-	writes := rt.writes.Load()
 	c := &rt.usersSnap
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.users == nil || c.writes != writes || time.Since(c.at) >= usersSnapshotTTL {
+	// Taken under the lock and before any read. A write's number is taken once the
+	// write is committed, so every write up to it is in what is read below; an edit that
+	// took its number but has not recorded it yet shows as a number with nothing against
+	// it, and everyone is read again — never the other way round.
+	seq := rt.writes.Load()
+	full := c.users == nil || time.Since(c.at) >= usersSnapshotTTL || seq-c.seq > usersPatchMax
+	var edited []int64
+	for n := c.seq + 1; !full && n <= seq; n++ {
+		id, ok := c.pending[n]
+		if !ok {
+			full = true
+			break
+		}
+		edited = append(edited, id)
+	}
+	switch {
+	case full:
 		users, err := rt.mgr.Store().ListUserSummaries()
 		if err != nil {
 			return nil, nil, err
@@ -154,12 +196,48 @@ func (rt *Router) snapshot(index bool) ([]store.UserSummary, *usersIndex, error)
 		if users == nil {
 			users = []store.UserSummary{} // no users is an answer worth sharing too
 		}
-		c.users, c.idx, c.writes, c.at = users, nil, writes, time.Now()
+		c.users, c.idx, c.at = users, nil, time.Now()
+	case len(edited) > 0:
+		fresh, err := rt.mgr.Store().ListUserSummariesOf(edited)
+		if err != nil {
+			return nil, nil, err
+		}
+		c.users, c.idx = patchSummaries(c.users, edited, fresh), nil
+	}
+	c.seq = seq
+	for n := range c.pending {
+		if n <= seq {
+			delete(c.pending, n)
+		}
 	}
 	if index && c.idx == nil {
 		c.idx = newUsersIndex(c.users, time.Now().Unix())
 	}
 	return c.users, c.idx, nil
+}
+
+// patchSummaries is a newest-first list with the edited users' rows replaced by their
+// fresh ones: taken out where they were, and the fresh rows — a deleted user has none —
+// merged back in by id. It builds a new list: the old one may still be in a request's
+// hands.
+func patchSummaries(users []store.UserSummary, edited []int64, fresh []store.UserSummary) []store.UserSummary {
+	drop := make(map[int64]bool, len(edited))
+	for _, id := range edited {
+		drop[id] = true
+	}
+	out := make([]store.UserSummary, 0, len(users)+len(fresh))
+	f := 0
+	for i := range users {
+		// fresh is newest first as well: every fresh row newer than this one goes before it.
+		for f < len(fresh) && fresh[f].ID > users[i].ID {
+			out = append(out, fresh[f])
+			f++
+		}
+		if !drop[users[i].ID] {
+			out = append(out, users[i])
+		}
+	}
+	return append(out, fresh[f:]...)
 }
 
 // usersIndex is what every request over a snapshot works out the same way: which chips
@@ -173,10 +251,12 @@ type usersIndex struct {
 	chips  []uint32 // per user, a bit per chip in userChips
 	counts map[string]int
 	tags   []tagCount
+	now    int64 // when it was worked out: what the chips and the expiry order are as of
 
-	mu    sync.Mutex
-	names map[string][]nameKey // per alphabet, made when a name sort first asks
-	lower *loweredText         // made when a search first asks
+	mu     sync.Mutex
+	names  map[string][]nameKey // per alphabet, made when a name sort first asks
+	lower  *loweredText         // made when a search first asks
+	orders map[string][]int32   // every user's position per order, made when one is asked
 }
 
 // loweredText is every user's name and note folded to lower case, which is what a
@@ -185,7 +265,7 @@ type usersIndex struct {
 type loweredText struct{ names, notes []string }
 
 func newUsersIndex(users []store.UserSummary, now int64) *usersIndex {
-	idx := &usersIndex{chips: make([]uint32, len(users)), counts: make(map[string]int, len(userChips))}
+	idx := &usersIndex{chips: make([]uint32, len(users)), counts: make(map[string]int, len(userChips)), now: now}
 	counts := make([]int, len(userChips))
 	tags := map[string]int{}
 	for i := range users {
@@ -231,13 +311,54 @@ func (idx *usersIndex) searchText(users []store.UserSummary) *loweredText {
 	return low
 }
 
+// order is every user's position in the order asked for, sorted once per snapshot: a
+// stable sort of fifty thousand positions was repeated for every page of a sorted list,
+// and an operator paging through one asks for the same order again and again. The
+// expiry order is as of when the index was worked out, which the snapshot's age bounds.
+// The slice is shared: callers must not modify it.
+func (idx *usersIndex) order(users []store.UserSummary, by, lang string) []int32 {
+	key := by
+	if by == "name" {
+		key = "name:" + collationLang(lang)
+	}
+	idx.mu.Lock()
+	o, ok := idx.orders[key]
+	idx.mu.Unlock()
+	if ok {
+		return o
+	}
+	// Sorted outside the lock: a name sort takes it for the keys. Two requests asking at
+	// once may both sort; the first kept is what both are given.
+	o = make([]int32, len(users))
+	for i := range o {
+		o[i] = int32(i)
+	}
+	sortUserList(o, users, idx, by, lang, idx.now)
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if kept, ok := idx.orders[key]; ok {
+		return kept
+	}
+	if idx.orders == nil {
+		idx.orders = map[string][]int32{}
+	}
+	idx.orders[key] = o
+	return o
+}
+
+// collationLang is the alphabet a name sort follows for lang.
+func collationLang(lang string) string {
+	if lang == "en" {
+		return "en"
+	}
+	return "ru"
+}
+
 // nameKeys are the collation keys for the alphabet asked for, made once per snapshot:
 // collating 50,000 names is most of what a name sort costs, and an operator paging
 // through them asks for the same order again and again.
 func (idx *usersIndex) nameKeys(users []store.UserSummary, lang string) []nameKey {
-	if lang != "en" {
-		lang = "ru"
-	}
+	lang = collationLang(lang)
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	if keys, ok := idx.names[lang]; ok {
@@ -260,9 +381,33 @@ func (rt *Router) notingWrites(h http.Handler) http.Handler {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
-			rt.writes.Add(1)
+			n := rt.writes.Add(1)
+			if id, ok := singleUserWrite(r.URL.Path); ok {
+				rt.usersSnap.noteUserEdit(n, id)
+			}
 		}
 	})
+}
+
+// singleUserWrite reports whether a write to path edits one user and nobody else — a
+// route under that user's own id, on the panel or the API — and which one. Anything
+// else is not claimed, and the users list is read again after it.
+func singleUserWrite(path string) (int64, bool) {
+	var rest string
+	switch {
+	case strings.HasPrefix(path, "/api/users/"):
+		rest = strings.TrimPrefix(path, "/api/users/")
+	case strings.HasPrefix(path, "/v1/users/"):
+		rest = strings.TrimPrefix(path, "/v1/users/")
+	default:
+		return 0, false
+	}
+	idPart, _, _ := strings.Cut(rest, "/")
+	id, err := strconv.ParseInt(idPart, 10, 64)
+	if err != nil || id <= 0 || strconv.FormatInt(id, 10) != idPart {
+		return 0, false // "bulk", "import", and anything that is not plainly an id
+	}
+	return id, true
 }
 
 // pageLookups are what the page reads only for the rows it shows.
@@ -277,7 +422,7 @@ type pageLookups struct {
 // What the list is filtered and sorted into is positions in that snapshot, never
 // copies of the users: a summary is a couple of hundred bytes, and a page of fifty
 // rows used to move all fifty thousand of them twice.
-func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, now int64, look pageLookups) usersPage {
+func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, look pageLookups) usersPage {
 	chip := chipBit(q.Get("filter"))
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	tag := strings.TrimSpace(q.Get("tag"))
@@ -314,13 +459,24 @@ func buildUsersPage(users []store.UserSummary, idx *usersIndex, q url.Values, no
 		return page
 	}
 	if by := q.Get("sort"); slices.Contains(userSorts, by) {
+		sorted := idx.order(users, by, q.Get("lang"))
 		if matched == nil {
-			matched = make([]int32, len(users))
-			for i := range matched {
-				matched[i] = int32(i)
+			matched = sorted // shared: only read from here on
+		} else {
+			// Everyone's order cut down to who matched: what a stable sort of the matched
+			// alone gives, since both order by the key and break ties by position.
+			keep := make([]bool, len(users))
+			for _, p := range matched {
+				keep[p] = true
 			}
+			cut := matched[:0]
+			for _, p := range sorted {
+				if keep[p] {
+					cut = append(cut, p)
+				}
+			}
+			matched = cut
 		}
-		sortUserList(matched, users, idx, by, q.Get("lang"), now)
 	}
 	at := func(i int) *store.UserSummary {
 		if matched == nil {
