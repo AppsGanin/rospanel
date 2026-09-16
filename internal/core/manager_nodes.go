@@ -236,6 +236,8 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 	var claimed bool
 	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)
 	complete = complete && claimed
+	// Who this state lets in is who the node's reports may speak for from now on.
+	m.noteNodeServed(n.ID, cfg, meta.AWG)
 	// What the source policy has refused, for this node's own firewall. Read here
 	// rather than pushed on each block so a node that was offline catches up on its
 	// next sync, and so the hash covers it (a lifted block reaches the node too).
@@ -1251,6 +1253,7 @@ func (m *Manager) DeleteNode(id int64) error {
 		}
 	}
 	m.nodes.dropWaiter(id)
+	m.served.forget(id)
 	return nil
 }
 
@@ -1804,14 +1807,14 @@ const maxNodeSiteRows = nodeapi.MaxSiteRows
 const userIDCacheTTL = 15 * time.Second
 
 // ingestNodeAbuse matches a node's reported destinations against the blocklists,
-// dropping rows for user ids that do not exist.
+// dropping rows for user ids that do not exist or that the node is not believed about.
 //
 // The id check keeps a node from buffering matches against fabricated users (the
 // EXISTS guard at write time would drop them anyway, but not before they cost buffer
 // space). A node that predates the IP-only switch may still report hostnames; those
 // simply never match and cost nothing beyond the row itself, since the per-sync abuse
 // budget is only spent on rows that actually matched.
-func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample) {
+func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample, believed func(userID int64) bool) {
 	if m.abuse == nil {
 		return
 	}
@@ -1831,6 +1834,9 @@ func (m *Manager) ingestNodeAbuse(nodeID int64, rows []nodeapi.SiteSample) {
 	}
 	abuseBudget := abuseNodeMax // cap this sync's contribution to the shared buffer
 	for _, s := range rows {
+		if !believed(s.UserID) {
+			continue
+		}
 		if _, ok := known[s.UserID]; !ok {
 			continue
 		}
@@ -1922,12 +1928,34 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		ConfigHash:     req.ConfigHash,
 	})
 
+	// Everything below names users, and a node is believed only about its own (see
+	// manager_node_served.go). When that cannot be told, nothing is taken: the traffic
+	// is not acknowledged, so the node sends it again, and the samples are dropped.
+	served, err := m.nodeServedFor(n)
+	if err != nil {
+		logErr("node sync: cannot tell which users this node serves, its report is not taken",
+			"node", n.ID, "err", err)
+	}
+	foreign := 0
+	believed := func(userID int64) bool {
+		if served == nil {
+			return false
+		}
+		if served.allows(userID, now.Unix()) {
+			return true
+		}
+		foreign++
+		return false
+	}
+
 	// Idempotent traffic ingest: atomically claim the report id. A report at-or-below
 	// the stored watermark is a retry of an already-counted batch (lost response); the
 	// conditional claim also stops two concurrent syncs from both counting the same
 	// batch. The agent persists its report id, so a restart no longer regresses it.
 	ack := req.ReportID
-	if req.ReportID > 0 {
+	if req.ReportID > 0 && served == nil {
+		ack = 0
+	} else if req.ReportID > 0 {
 		// One commit for the node's whole batch, watermark included. Written per user
 		// this was three fsyncs each on the panel's single connection, every 20s, per
 		// node — the last write path whose cost still scaled with the user count.
@@ -1938,7 +1966,7 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		deltas := make([]store.TrafficDelta, 0, len(req.Traffic))
 		for _, d := range req.Traffic {
 			up, down := nonNeg(d.Up), nonNeg(d.Down)
-			if up == 0 && down == 0 {
+			if (up == 0 && down == 0) || !believed(d.UserID) {
 				continue
 			}
 			// No Baseline: the node already subtracted on its side, and last_up/
@@ -1971,15 +1999,27 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// the master. Not gated on ReportID: connection samples are idempotent (upsert by
 	// user+ip) and independent of the traffic batch.
 	for _, c := range req.Conns {
-		m.RecordAccessOn(n.ID, c.Email, c.IP, "")
+		id, ok := userIDFromEmail(c.Email)
+		if !ok || !believed(id) {
+			continue
+		}
+		// Recorded under the tag as the panel writes it: "u007" is user 7 too, and a
+		// spelling of its own would be a throttle key of its own.
+		m.RecordAccessOn(n.ID, model.UserEmail(id), c.IP, "")
 	}
 
 	// Destinations arrive pre-aggregated with a count, so they bypass RecordAccess
 	// (which counts one connection per call) and are folded straight into the rolling
 	// view. Not gated on ReportID either: a duplicated sync would double-count a
 	// sampled top-N that ages out in hours, which is not worth an ack protocol.
-	if len(req.Sites) > 0 {
-		m.ingestNodeAbuse(n.ID, req.Sites)
+	if len(req.Sites) > 0 && served != nil {
+		m.ingestNodeAbuse(n.ID, req.Sites, believed)
+	}
+	if foreign > 0 && m.siteNotice.should(fmt.Sprintf("node-foreign:%d", n.ID), now) {
+		// Not a lag: a user who left the node's config is believed for an hour after.
+		// A node naming users it was never given is broken or no longer the operator's.
+		logWarn("node sync: report names users this node does not serve, those rows dropped",
+			"node", n.ID, "rows", foreign)
 	}
 
 	// The state the node should have is the caller's to add (NodeStatePush): it is held

@@ -151,6 +151,9 @@ type Manager struct {
 	// (see NodeStateChange).
 	nodeStateMu sync.Mutex
 	nodeStates  map[int64]nodeStateMemo
+	// served is who each node's last built state lets in: what its reports are
+	// believed about (see manager_node_served.go).
+	served servedRegistry
 
 	tzMu sync.RWMutex
 	tz   *time.Location // operator timezone for the local-day stats boundary

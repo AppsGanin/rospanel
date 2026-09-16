@@ -232,10 +232,28 @@ func TestNodeDesiredStateHashStable(t *testing.T) {
 	}
 }
 
+// servingNode creates a node with its VLESS lane on, so its config lets the working
+// users in and its reports about them are believed (see manager_node_served.go). A
+// node with no lane on serves nobody, and everything it says about a user is dropped.
+func servingNode(t *testing.T, m *Manager, name, host string) *model.Node {
+	t.Helper()
+	n, err := m.store.CreateNode(name, host, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetNodeProtocols(n.ID, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if n, err = m.store.GetNode(n.ID); err != nil || n == nil {
+		t.Fatalf("node %s: %v", name, err)
+	}
+	return n
+}
+
 func TestIngestNodeSyncIdempotent(t *testing.T) {
 	m := nodeTestManager(t)
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
-	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+	n := servingNode(t, m, "n1", "nl1.example.com")
 
 	req := nodeapi.SyncRequest{
 		ReportID: 5,
@@ -288,7 +306,7 @@ func abuseNodeManager(t *testing.T, badIPs []string) *Manager {
 func TestIngestNodeAbuseMatches(t *testing.T) {
 	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
-	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+	n := servingNode(t, m, "n1", "nl1.example.com")
 
 	if _, err := m.IngestNodeSync(n, nodeapi.SyncRequest{
 		ReportID: 1,
@@ -312,7 +330,7 @@ func TestIngestNodeAbuseMatches(t *testing.T) {
 func TestIngestNodeAbuseRejectsUnknownUsers(t *testing.T) {
 	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
-	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+	n := servingNode(t, m, "n1", "nl1.example.com")
 
 	rows := []nodeapi.SiteSample{{UserID: u.ID, Host: "203.0.113.5", Count: 1}}
 	for i := range 5000 { // ids that do not exist
@@ -334,7 +352,7 @@ func TestIngestNodeAbuseRejectsUnknownUsers(t *testing.T) {
 func TestIngestNodeAbuseTruncates(t *testing.T) {
 	m := abuseNodeManager(t, blMany(maxNodeSiteRows*3))
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
-	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+	n := servingNode(t, m, "n1", "nl1.example.com")
 
 	rows := make([]nodeapi.SiteSample, 0, maxNodeSiteRows*3)
 	for i := range maxNodeSiteRows * 3 {
@@ -365,7 +383,7 @@ func TestIngestNodeSitesBoundsAbuseContribution(t *testing.T) {
 	m.abuse = st
 
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
-	n, _ := m.store.CreateNode("n1", "nl1.example.com", "")
+	n := servingNode(t, m, "n1", "nl1.example.com")
 
 	rows := make([]nodeapi.SiteSample, 0, maxNodeSiteRows)
 	for i := range maxNodeSiteRows {
