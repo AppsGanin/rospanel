@@ -29,6 +29,19 @@ func TestSettingsCloneSharesNothing(t *testing.T) {
 	}
 }
 
+// The same for an inbound: its options carry raw JSON and lists.
+func TestInboundCloneSharesNothing(t *testing.T) {
+	var in Inbound
+	fill(reflect.ValueOf(&in).Elem(), 0)
+	c := in.Clone()
+	if !reflect.DeepEqual(in, c) {
+		t.Fatal("the clone differs from the original")
+	}
+	if n := shared(reflect.ValueOf(in), reflect.ValueOf(c), "Inbound", t); n == 0 {
+		t.Fatal("no slice was compared — the fixture filled nothing")
+	}
+}
+
 // fill sets every settable field under v to a non-zero value.
 func fill(v reflect.Value, depth int) {
 	if depth > 8 {

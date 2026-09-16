@@ -58,6 +58,7 @@ type Router struct {
 	// usersSnap is the users list shared between requests, and writes counts the
 	// requests that may have changed it since (see userSummaries, notingWrites).
 	usersSnap usersSnapshot
+	subShared subShared // what every subscription shares (see sub_shared.go)
 	writes    atomic.Uint64
 
 	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
