@@ -68,6 +68,9 @@ type Supervisor struct {
 	bin        string // resolved binary path, or "" if unavailable
 	configPath string
 	assetDir   string // XRAY_LOCATION_ASSET (geoip.dat / geosite.dat)
+	// waitFn waits between tries of an api call that could not reach Xray; nil is
+	// time.Sleep. Tests shorten it.
+	waitFn func(time.Duration)
 
 	runMu sync.Mutex // serializes whole start/stop/apply operations
 
@@ -735,6 +738,45 @@ func (s *Supervisor) runXray(timeout time.Duration, args ...string) ([]byte, err
 	return out, err
 }
 
+// runXrayAPI is runXray for an `xray api` call that changes the running Xray, asked
+// again while the call never reached it.
+//
+// A failed live change is answered by a full reload, and at 50,000 users a full reload
+// starts a second Xray beside the running one. The live change fails most often exactly
+// when there is no memory for that: in the load test the box sat at its memory limit,
+// the CLI could not get its connection up in time ("failed to dial"), the fallback
+// started the second process, and the panel was OOM-killed four seconds later — twice.
+//
+// Only a call that failed to dial is asked again. The CLI dials before it sends
+// anything and exits on that failure (Xray 26.7.28), so nothing was applied and asking
+// again is safe. Any other failure may have changed something — some users added,
+// some removed — and asking again would not be the same question, so it is returned
+// for the caller's fallback as before.
+func (s *Supervisor) runXrayAPI(timeout time.Duration, args ...string) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		out, err := s.runXray(timeout, args...)
+		if err == nil || !neverReachedXray(err) || attempt >= len(apiDialRetries) {
+			return out, err
+		}
+		slog.Warn("xray: api call could not reach xray, asking again", "call", args[1], "attempt", attempt+1, "err", err)
+		if s.waitFn != nil {
+			s.waitFn(apiDialRetries[attempt])
+		} else {
+			time.Sleep(apiDialRetries[attempt])
+		}
+	}
+}
+
+// apiDialRetries are the waits before each further try of a call that could not reach
+// Xray: three more, seven and a half seconds in all.
+var apiDialRetries = []time.Duration{time.Second, 2500 * time.Millisecond, 4 * time.Second}
+
+// neverReachedXray reports whether an `xray api` failure happened before anything was
+// sent: the CLI's own message when its connection to the API cannot be made.
+func neverReachedXray(err error) bool {
+	return strings.Contains(err.Error(), "failed to dial")
+}
+
 func (s *Supervisor) AddUsers(apiAddr string, inbounds []Inbound) error {
 	if s.bin == "" {
 		return fmt.Errorf("xray binary unavailable")
@@ -757,7 +799,7 @@ func (s *Supervisor) AddUsers(apiAddr string, inbounds []Inbound) error {
 	}
 	f.Close()
 
-	out, err := s.runXray(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name())
+	out, err := s.runXrayAPI(statsTimeout, "api", "adu", "--server="+apiAddr, f.Name())
 	if err != nil {
 		return fmt.Errorf("api adu: %w", err)
 	}
@@ -846,7 +888,7 @@ func (s *Supervisor) replaceInbound(apiAddr, tag string, inbound any) error {
 	}
 	// A failed removal is not fatal on its own — an inbound that isn't there is
 	// exactly the state the add below wants. Only the add has to succeed.
-	if _, err := s.runXray(statsTimeout, "api", "rmi", "--server="+apiAddr, tag); err != nil {
+	if _, err := s.runXrayAPI(statsTimeout, "api", "rmi", "--server="+apiAddr, tag); err != nil {
 		slog.Warn("xray: could not remove inbound before re-adding it", "tag", tag, "err", err)
 	}
 	out, err := s.runXrayFile(statsTimeout, "xray-adi-*.json", map[string]any{"inbounds": []any{inbound}}, "api", "adi", "--server="+apiAddr)
@@ -869,7 +911,7 @@ func (s *Supervisor) RemoveUsers(apiAddr string, tags, emails []string) error {
 	}
 	for _, tag := range tags {
 		args := append([]string{"api", "rmu", "--server=" + apiAddr, "-tag=" + tag}, emails...)
-		if _, err := s.runXray(statsTimeout, args...); err != nil {
+		if _, err := s.runXrayAPI(statsTimeout, args...); err != nil {
 			return fmt.Errorf("api rmu tag=%s: %w", tag, err)
 		}
 	}
