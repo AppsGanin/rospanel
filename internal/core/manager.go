@@ -761,7 +761,17 @@ func (m *Manager) reconcileLoop() {
 		// and the nodes are left alone when it says nothing moved. Being wrong in
 		// that direction only delays: a node re-reads on its next poll regardless,
 		// which is half a minute at the outside.
-		if m.syncUsersOnce() || (m.nodes.parked() > 0 && m.fleetChanged()) {
+		//
+		// With nodes waiting, one read of the working set answers both questions —
+		// whether the master's own config must change and whether the fleet's has —
+		// where it was two scans of every user back to back. Without them only the
+		// first is asked, and the ids alone are the cheaper read for it.
+		var ws *workingSet
+		var wsErr error
+		if m.nodes.parked() > 0 {
+			ws, wsErr = m.readWorkingSet()
+		}
+		if m.syncUsersOnce(ws, wsErr) || (ws != nil && m.fleetChanged(ws)) {
 			m.notifyNodes()
 		}
 	}
@@ -770,14 +780,14 @@ func (m *Manager) reconcileLoop() {
 // syncUsersOnce runs one live user-sync, falling back to a full reconcile on any
 // error so Xray never drifts from the DB. It reports whether anything was applied —
 // a panic or a fallback counts as yes, since what was applied is then unknown.
-func (m *Manager) syncUsersOnce() (changed bool) {
+func (m *Manager) syncUsersOnce(ws *workingSet, wsErr error) (changed bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			logErr("user sync: panic recovered", "panic", r)
 			changed = true
 		}
 	}()
-	changed, err := m.syncUsers()
+	changed, err := m.syncUsers(ws, wsErr)
 	if err != nil {
 		logWarn("user sync failed, falling back to full reconcile", "err", err)
 		m.reconcileOnce()
@@ -789,7 +799,10 @@ func (m *Manager) syncUsersOnce() (changed bool) {
 // syncUsers brings the running Xray's inbound users in line with the current
 // working set using the live add/remove-user API (no restart), then rewrites
 // config.json so a crash-restart preserves the change.
-func (m *Manager) syncUsers() (bool, error) {
+//
+// ws is the working set the caller already read, with wsErr the error reading it;
+// nil and nil when it read none, and the sync reads the ids itself.
+func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	m.applyMu.Lock()
 	defer m.applyMu.Unlock()
 	if !m.sup.Running() {
@@ -800,9 +813,17 @@ func (m *Manager) syncUsers() (bool, error) {
 	// that before a single password is decrypted; the credentials below are read
 	// afresh and the change derived from them, so a set that moves in between is
 	// applied as it is then, not as it was here.
-	ids, err := m.store.WorkingUserIDs(time.Now().Unix())
-	if err != nil {
-		return false, err
+	if wsErr != nil {
+		return false, wsErr
+	}
+	var ids []int64
+	if ws != nil {
+		ids = ws.ids
+	} else {
+		var err error
+		if ids, err = m.store.WorkingUserIDs(time.Now().Unix()); err != nil {
+			return false, err
+		}
 	}
 	if !m.workingIDsChanged(ids) {
 		return false, nil
