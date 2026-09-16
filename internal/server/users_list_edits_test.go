@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -313,4 +314,52 @@ func TestUsersListUnderConcurrentAdminsAndOutsideWrites(t *testing.T) {
 			return fmt.Sprintf("%s/%v/%d", u.Name, u.Enabled, u.UsedUp+u.UsedDown)
 		},
 		func(r userRow) string { return fmt.Sprintf("%s/%v/%d", r.Name, r.Enabled, r.UsedUp+r.UsedDown) })
+}
+
+// The edit is recognised on the path a real request has once the panel's secret segment
+// is taken off — through the whole router, CSRF guard included — and a write the router
+// does not hand to a user's route records nothing.
+func TestAUserEditIsRecordedThroughTheWholeRouter(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	rt.decoy = http.NotFoundHandler()
+	rt.panel = securityHeaders(csrfGuard(rt.panelMux()))
+	rt.mu.Lock()
+	rt.secret = "panel-secret"
+	rt.mu.Unlock()
+	op := signIn(t, st, "support", model.RoleOperator, false)
+	u, err := st.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(path, body string) {
+		t.Helper()
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-RosPanel-CSRF", "1")
+		req.AddCookie(op)
+		rec := httptest.NewRecorder()
+		rt.ServeHTTP(rec, req)
+		if rec.Code >= 300 {
+			t.Fatalf("POST %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	pending := func() map[uint64]int64 {
+		rt.usersSnap.mu.Lock()
+		defer rt.usersSnap.mu.Unlock()
+		return maps.Clone(rt.usersSnap.pending)
+	}
+	post(fmt.Sprintf("/panel-secret/api/users/%d/note", u.ID), `{"note":"seen"}`)
+	got := pending()
+	if len(got) != 1 {
+		t.Fatalf("recorded %v after one user's edit through the router, want that edit", got)
+	}
+	for n, id := range got {
+		if id != u.ID || n != rt.writes.Load() {
+			t.Errorf("recorded write %d for user %d, want write %d for user %d", n, id, rt.writes.Load(), u.ID)
+		}
+	}
+	post("/panel-secret/api/users", `{"name":"b"}`)
+	if got := pending(); len(got) != 1 {
+		t.Errorf("a create recorded an edit: %v", got)
+	}
 }
