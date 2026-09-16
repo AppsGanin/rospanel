@@ -146,6 +146,7 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 		{"filter=online", []string{"crowd", "Анна"}},
 		{"filter=bogus", []string{"Zed", "crowd", "1a", "_x", "Ёж", "alice", "bob", "Анна"}},
 		{"q=vip", []string{"Анна"}},
+		{"q=АННА", []string{"Анна"}},
 		{"q=sal", []string{"Zed", "Анна"}},
 		{fmt.Sprintf("q=u%d", f.ids["bob"]), []string{"bob"}},
 		{fmt.Sprintf("q=%d", f.ids["alice"]), []string{"alice"}},
@@ -158,6 +159,11 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 		{"sort=online", []string{"crowd", "Анна", "Zed", "1a", "_x", "Ёж", "alice", "bob"}},
 		{"offset=2&limit=3", []string{"1a", "_x", "Ёж"}},
 		{"offset=50", []string{}},
+		{"sort=new", []string{"Zed", "crowd", "1a", "_x", "Ёж", "alice", "bob", "Анна"}},
+		// A filter and an order together: the page orders what matched, not everyone.
+		{"filter=active&sort=name&lang=en", []string{"1a", "alice", "Zed", "Анна"}},
+		{"filter=active&sort=name&lang=en&offset=2", []string{"Zed", "Анна"}},
+		{"filter=active&sort=name&lang=en&offset=9", []string{}},
 	} {
 		p, _ := getPage(t, h, op, c.query)
 		if got := pageNames(p); !reflect.DeepEqual(got, c.want) {
@@ -181,6 +187,12 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 	}
 	if p, _ := getPage(t, h, op, "limit=2"); p.IDs != nil {
 		t.Error("ids were sent without being asked for")
+	}
+	// "Select all" over a filtered, ordered list selects them in the order shown.
+	p, _ = getPage(t, h, op, "limit=0&filter=active&ids=1&sort=name&lang=en")
+	wantIDs = []int64{f.ids["1a"], f.ids["alice"], f.ids["Zed"], f.ids["Анна"]}
+	if !reflect.DeepEqual(p.IDs, wantIDs) {
+		t.Fatalf("ordered ids %v, want %v", p.IDs, wantIDs)
 	}
 }
 
@@ -305,14 +317,14 @@ func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
 	for _, window := range []string{"limit=0", "offset=100&limit=5"} {
 		groupReads, deviceIDs = 0, nil
 		q, _ := url.ParseQuery(window)
-		p := buildUsersPage(summaries, q, time.Now().Unix(), look)
+		p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, time.Now().Unix(), look)
 		if len(p.Users) != 0 || p.Total != len(summaries) || p.IDs != nil || groupReads != 0 || deviceIDs != nil {
 			t.Fatalf("%s: rows=%d total=%d ids=%v, groups read %d times, devices for %v", window, len(p.Users), p.Total, p.IDs, groupReads, deviceIDs)
 		}
 	}
 	groupReads, deviceIDs = 0, nil
 	q, _ := url.ParseQuery("offset=1&limit=2")
-	p := buildUsersPage(summaries, q, time.Now().Unix(), look)
+	p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, time.Now().Unix(), look)
 	want := []int64{summaries[1].ID, summaries[2].ID}
 	if groupReads != 1 || !reflect.DeepEqual(deviceIDs, [][]int64{want}) {
 		t.Fatalf("groups read %d times, devices asked for %v, want once and %v", groupReads, deviceIDs, want)
