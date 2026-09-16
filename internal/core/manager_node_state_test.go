@@ -462,3 +462,34 @@ func TestNodeStateFollowsIPListsArriving(t *testing.T) {
 		t.Fatal("the list that arrived did not reach the node")
 	}
 }
+
+// A node's config is built alone. What one build holds is the panel's memory peak, and
+// a change that reaches the fleet wakes every node at once — five builds side by side
+// is what ran the panel out of memory at 50,000 users.
+func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
+	m := nodeTestManager(t)
+	if _, err := m.store.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	n := stateNode(t, m)
+	m.buildMu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.NodeDesiredState(n)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("a state was built while another build held the gate: %v", err)
+	case <-time.After(250 * time.Millisecond):
+	}
+	m.buildMu.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the build never ran after the gate was released")
+	}
+}

@@ -157,6 +157,15 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 // speed caps or blocks unreadable, a user's tunnel identity not claimed — so the state
 // serves this sync but is not remembered.
 func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *nodeapi.NodeState, complete bool, err error) {
+	// One at a time. A build holds the whole generated config and the JSON it marshals
+	// to — at 50,000 users tens of megabytes — and a change that reaches the fleet wakes
+	// every node at once, so five nodes would hold five of them side by side. That burst
+	// is what ran a 1 GB panel out of memory in the load test: with five nodes and
+	// 50,000 users the panel was killed every time a user was created. Built one after
+	// another they cost one node's worth, and the wait is a fraction of a second against
+	// a poll that already jitters by seconds.
+	m.buildMu.Lock()
+	defer m.buildMu.Unlock()
 	set, in := x.set, x.in
 	complete = in.version != 0
 	users := in.users
@@ -246,9 +255,14 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 	if err != nil {
 		return nil, false, err
 	}
-	h := sha256.Sum256(append(raw, metaRaw...))
+	// Hashed as a stream, not over a joined copy: appending metaRaw to raw copied the
+	// whole config — another ten megabytes at 50,000 users — to hash bytes it already
+	// had. The digest is the same one.
+	h := sha256.New()
+	_, _ = h.Write(raw)
+	_, _ = h.Write(metaRaw)
 	return &nodeapi.NodeState{
-		Hash:       hex.EncodeToString(h[:]),
+		Hash:       hex.EncodeToString(h.Sum(nil)),
 		XrayConfig: raw,
 		Meta:       meta,
 	}, complete, nil

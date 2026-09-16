@@ -133,6 +133,8 @@ type Manager struct {
 	enforceMu      sync.Mutex
 	enforcePending atomic.Bool
 
+	// buildMu keeps node configs from being built side by side: see buildNodeState.
+	buildMu sync.Mutex
 	// nodeInputsMu guards nodeInputsCache, the fleet-wide inputs every node's desired
 	// state is built from (see nodeInputs).
 	nodeInputsMu      sync.Mutex
