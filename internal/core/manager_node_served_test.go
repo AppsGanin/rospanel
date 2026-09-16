@@ -194,8 +194,8 @@ func TestNodeConnectionTagIsTheUsersOwn(t *testing.T) {
 func TestServedRegistryRemembersWhoLeft(t *testing.T) {
 	var r servedRegistry
 	grace := int64(nodeServedGrace / time.Second)
-	r.note(1, []int64{1, 2, 3}, false, 1000)
-	r.note(1, []int64{2, 3, 4}, false, 2000)
+	r.note(1, []int64{1, 2, 3}, false, 1000, 1)
+	r.note(1, []int64{2, 3, 4}, false, 2000, 2)
 	s := r.get(1)
 	for _, c := range []struct {
 		id   int64
@@ -211,35 +211,59 @@ func TestServedRegistryRemembersWhoLeft(t *testing.T) {
 		}
 	}
 	// Back again: no longer "left", so a later departure starts its own grace.
-	r.note(1, []int64{1, 2, 3, 4}, false, 3000)
+	r.note(1, []int64{1, 2, 3, 4}, false, 3000, 3)
 	if _, ok := r.get(1).left[1]; ok {
 		t.Error("a user back on the node is still remembered as having left")
 	}
-	r.note(1, []int64{2, 3, 4}, false, 9000)
+	r.note(1, []int64{2, 3, 4}, false, 9000, 4)
 	if !r.get(1).allows(1, 9000+grace) {
 		t.Error("the second departure did not start a grace of its own")
 	}
 	// Departures older than the grace are dropped when the next state is noted.
-	r.note(1, []int64{2, 3, 4}, false, 9001+grace)
+	r.note(1, []int64{2, 3, 4}, false, 9001+grace, 5)
 	if _, ok := r.get(1).left[1]; ok {
 		t.Error("a departure past the grace was kept")
 	}
 	// An unreadable state believes everyone and records no departures.
-	r.note(2, []int64{1}, false, 100)
-	r.note(2, nil, true, 200)
+	r.note(2, []int64{1}, false, 100, 6)
+	r.note(2, nil, true, 200, 7)
 	if !r.get(2).allows(77, 200) {
 		t.Error("an unreadable state refused a user")
 	}
-	r.note(2, []int64{5}, false, 300)
+	r.note(2, []int64{5}, false, 300, 8)
 	if _, ok := r.get(2).left[1]; ok {
 		t.Error("a departure was taken from an unreadable state")
 	}
 	// What a reader holds does not change under it.
 	held := r.get(1)
 	ids := slices.Clone(held.ids)
-	r.note(1, []int64{9}, false, 10000+grace)
+	r.note(1, []int64{9}, false, 10000+grace, 9)
 	if !slices.Equal(held.ids, ids) || len(held.left) != 0 {
 		t.Errorf("a held state changed: %v, left %v", held.ids, held.left)
+	}
+}
+
+// States for one node are built side by side, and the one read first can finish last:
+// it must not put back the users of an older read.
+func TestServedRegistryKeepsTheNewestRead(t *testing.T) {
+	var r servedRegistry
+	older, newer := r.stamp(), r.stamp()
+	r.note(1, []int64{1, 2}, false, 100, newer) // the newer read finishes first
+	r.note(1, []int64{1}, false, 101, older)
+	if s := r.get(1); !slices.Equal(s.ids, []int64{1, 2}) || len(s.left) != 0 {
+		t.Errorf("an older read replaced a newer one: %v, left %v", s.ids, s.left)
+	}
+	r.note(1, []int64{2}, false, 102, newer) // the same read again is taken
+	if s := r.get(1); !slices.Equal(s.ids, []int64{2}) || s.left[1] != 102 {
+		t.Errorf("a state from the newest read was not taken: %v, left %v", s.ids, s.left)
+	}
+	// And reads of a node's state inputs are stamped in the order they start.
+	m := nodeTestManager(t)
+	n := servingNode(t, m, "n", "n.example.com")
+	a, _ := m.readNodeStateInputs(n)
+	b, _ := m.readNodeStateInputs(n)
+	if !(a.servedSeq < b.servedSeq) {
+		t.Errorf("reads stamped %d then %d", a.servedSeq, b.servedSeq)
 	}
 }
 

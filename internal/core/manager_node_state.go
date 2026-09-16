@@ -44,17 +44,20 @@ type nodeStateMemo struct {
 // nodeStateInputs is everything a node's desired state is built from, read once so the
 // fingerprint and the build see the same values.
 type nodeStateInputs struct {
-	set      *model.Settings
-	in       *nodeInputs
-	geoGen   uint64
-	geoMoved bool
-	opts     xray.Options
-	inbounds []model.Inbound
-	inbErr   error
-	proxies  map[string][]model.ProxyEndpoint
+	// servedSeq is taken before anything is read (see servedRegistry.stamp).
+	servedSeq uint64
+	set       *model.Settings
+	in        *nodeInputs
+	geoGen    uint64
+	geoMoved  bool
+	opts      xray.Options
+	inbounds  []model.Inbound
+	inbErr    error
+	proxies   map[string][]model.ProxyEndpoint
 }
 
 func (m *Manager) readNodeStateInputs(n *model.Node) (*nodeStateInputs, error) {
+	seq := m.served.stamp()
 	set, err := m.store.GetSettings()
 	if err != nil {
 		return nil, err
@@ -63,7 +66,7 @@ func (m *Manager) readNodeStateInputs(n *model.Node) (*nodeStateInputs, error) {
 	if err != nil {
 		return nil, err
 	}
-	x := &nodeStateInputs{set: set, in: in}
+	x := &nodeStateInputs{servedSeq: seq, set: set, in: in}
 	// The groups can change while they are read — parsed for the first time inside
 	// genOpts, or dropped by a refresh — and then the generation read on either side of
 	// them says nothing about the groups in hand: such a read is not fingerprinted.
