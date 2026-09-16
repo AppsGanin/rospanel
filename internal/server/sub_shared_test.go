@@ -2,9 +2,11 @@ package server
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -115,5 +117,48 @@ func TestAFailedSubscriptionReadIsNotKept(t *testing.T) {
 	rt.subShared.mu.Unlock()
 	if kept != nil {
 		t.Error("a read that failed in part was kept for the next requests")
+	}
+}
+
+// Subscriptions fetched at once while the panel changes the inbounds: each fetch gets a
+// copy it may change, and once the changes stop the next fetch has all of them.
+func TestSubscriptionInputsUnderConcurrency(t *testing.T) {
+	rt, st := rolesTestRouter(t)
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range 100 {
+				if i == 0 && j%10 == 0 {
+					if _, err := st.CreateInbound(model.Inbound{ServerID: model.LocalNodeID, Enabled: true,
+						Name: fmt.Sprintf("in-%d", j), Protocol: "vless", Port: 20000 + j,
+						Opts: model.InboundOpts{HeaderHosts: []string{"h.example"}}}); err != nil {
+						t.Error(err)
+					}
+					rt.writes.Add(1) // as notingWrites does once the request is handled
+					continue
+				}
+				got := rt.sharedSubInputs()
+				for _, in := range got.inbounds[model.LocalNodeID] {
+					if len(in.Opts.HeaderHosts) != 1 || in.Opts.HeaderHosts[0] != "h.example" {
+						t.Errorf("a fetch was handed another fetch's change: %v", in.Opts.HeaderHosts)
+						return
+					}
+				}
+				if list := got.inbounds[model.LocalNodeID]; len(list) > 0 {
+					list[0].Opts.HeaderHosts[0] = "changed.example"
+					got.inbounds[model.LocalNodeID] = append(list, model.Inbound{Name: "appended"})
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	want, err := st.AllInbounds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rt.sharedSubInputs().inbounds[model.LocalNodeID]; len(got) != len(want[model.LocalNodeID]) || len(got) != 10 {
+		t.Errorf("after the changes a fetch sees %d inbounds, the store has %d (want 10)", len(got), len(want[model.LocalNodeID]))
 	}
 }
