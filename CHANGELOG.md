@@ -1,5 +1,45 @@
 # Changelog
 
+## [3.3.1](https://github.com/AppsGanin/rospanel/compare/v3.3.0...v3.3.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **branding:** labels on the accent turn dark when the accent is too light for white ([d42af09](https://github.com/AppsGanin/rospanel/commit/d42af09b7abb0c1c82f72f10173d925e533051fc))
+* **journal:** the actor for a user's own action reads "user" ([6cde852](https://github.com/AppsGanin/rospanel/commit/6cde852b34988228299224d689f17525bc56a5d7))
+* **memory:** the panel and the node agent keep their Go heap under a soft limit ([3a00604](https://github.com/AppsGanin/rospanel/commit/3a00604699f24478ead1da876f13f66ae708fb0e))
+* **memory:** the panel's heap limit leaves room for the Xray it runs ([9b08124](https://github.com/AppsGanin/rospanel/commit/9b0812444e4b85d45b30fe67ad0c38e511caf22b))
+* **nodes:** connection samples are no longer dropped past 8,192 pairs ([b7da819](https://github.com/AppsGanin/rospanel/commit/b7da819853c3769d11fad772c2a2a0ce759e17a1))
+* **nodes:** destination rows fit what the panel takes, and users take turns ([facaea9](https://github.com/AppsGanin/rospanel/commit/facaea90cc57c436dec91fcf88cfa9d665949468))
+* **sub:** sing-box 1.13 and 1.14 load the generated profile again ([c13aea8](https://github.com/AppsGanin/rospanel/commit/c13aea80a34fe4291b588cde71c61f1612abbc69)), closes [#89](https://github.com/AppsGanin/rospanel/issues/89)
+* **users:** the list's loading placeholder has the page's shape ([8955df1](https://github.com/AppsGanin/rospanel/commit/8955df1f956fd548d623ec68888f8d326ff229de))
+* **xray:** a live change whose api call cannot reach xray is asked again before the full reload ([3c1b486](https://github.com/AppsGanin/rospanel/commit/3c1b486c725a0d3d19d54078cb5bb54f72a2b1f9))
+
+
+### Performance Improvements
+
+* **connections:** a connected device is written every 45 seconds, and device limits are checked every 30 ([cf7310a](https://github.com/AppsGanin/rospanel/commit/cf7310a78558384c1edb55d7c138669c994d2a74))
+* **connections:** connection sightings are written with prepared statements ([d70666c](https://github.com/AppsGanin/rospanel/commit/d70666c586dbeed2c87c4d8b5d61cfc88e994aeb))
+* **dashboard:** the status feed recounts users every 15 seconds, not every 2 ([c1ce800](https://github.com/AppsGanin/rospanel/commit/c1ce800996436759e2785b84cb061468dbac08e5))
+* **nodes:** a node that is current is told so without its state being rebuilt ([5e0c5b3](https://github.com/AppsGanin/rospanel/commit/5e0c5b3304577ce26c277e2cb30964d647633cf7))
+* **nodes:** a node's certificate status does not count against its remembered state ([9cb5bf6](https://github.com/AppsGanin/rospanel/commit/9cb5bf6be813e0983fb6aa9d8ceaad38f5be99de))
+* **nodes:** a node's config is built alone, and hashed without a copy of itself ([43f0025](https://github.com/AppsGanin/rospanel/commit/43f00256b14d873b13fe8767ad9cdaeadca69221))
+* **nodes:** a node's state is held under the gate until it is encoded, and written out after ([2f7bb87](https://github.com/AppsGanin/rospanel/commit/2f7bb87d06755d8f72a9c295396db717172c8bd0))
+* **nodes:** config pushes go out gzip-compressed ([19c3aaf](https://github.com/AppsGanin/rospanel/commit/19c3aaf1059659f57fffb9cc6a32907e60ac1154))
+* **nodes:** one read of the working set answers both reconcile questions ([1c3a498](https://github.com/AppsGanin/rospanel/commit/1c3a498768a2ba7dd33e2137ac911c0239875464))
+* **nodes:** the nodes are woken only for a change they can see, and the shared read keeps the credentials it has ([eec904c](https://github.com/AppsGanin/rospanel/commit/eec904cf53253452a2ab9c22b90ce614a1c0afac))
+* **settings:** the settings are decoded once and read again only when they change ([c22a16c](https://github.com/AppsGanin/rospanel/commit/c22a16c3c821ef8a9e152b58baa266f2de8478d0))
+* **stats:** the stats poll and the enforcement pass stop reading every user whole ([0422c11](https://github.com/AppsGanin/rospanel/commit/0422c11f26d6581c2fb8894bbef30331f7583636))
+* **sub:** the certificate file is read when it changes, not on every fetch ([3633860](https://github.com/AppsGanin/rospanel/commit/3633860b33befe34887fc60e5b24787dff97a09c))
+* **sub:** the per-server online count answers for two seconds ([ece3e0d](https://github.com/AppsGanin/rospanel/commit/ece3e0d7a49357b547ef4316a893ecf5fc4280a8))
+* **sub:** what every subscription shares is read once for a few seconds ([2d391f8](https://github.com/AppsGanin/rospanel/commit/2d391f821d26ed093b35c9cc465c4c94a7fee459))
+* **traffic:** a traffic batch is written in two statements, not three per user ([35982af](https://github.com/AppsGanin/rospanel/commit/35982af8f51fe0df28146a1d84d9c5ec5153c6a7))
+* **users:** an edit to one user rereads that row of the list, and each order is sorted once ([14040f9](https://github.com/AppsGanin/rospanel/commit/14040f977fc07f4d072d5bb81590258c354446a1))
+* **users:** subscription and Telegram lookups use their indexes ([6ca60c6](https://github.com/AppsGanin/rospanel/commit/6ca60c6d5eca50b1840bf18825cab149ce9b0844))
+* **users:** the users list is read once for a burst of requests, and afresh after any change ([06f2ff0](https://github.com/AppsGanin/rospanel/commit/06f2ff074fac6c9f2a0d04ecc7f2dd5ebf0b0214))
+* **users:** the users page reads summaries, not whole users ([fa20987](https://github.com/AppsGanin/rospanel/commit/fa2098746ac044ca03be69b58b30747ea176100f))
+* **users:** the users page works out its counts, tags and search text once per read ([b2f6b3b](https://github.com/AppsGanin/rospanel/commit/b2f6b3b2b0e663b8cdac0305aca571fb1db9e724))
+
 ## [3.3.0](https://github.com/AppsGanin/rospanel/compare/v3.2.0...v3.3.0) (2026-09-14)
 
 
