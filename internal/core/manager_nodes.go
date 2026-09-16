@@ -1938,6 +1938,10 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 	// Always refreshed (a healthy node reports 0), so the "limping" badge clears the
 	// moment the transport recovers rather than sticking on a stale count.
 	m.nodeSyncFails[n.ID] = req.SyncFails
+	if m.nodeHas == nil {
+		m.nodeHas = map[int64]NodeHas{}
+	}
+	m.nodeHas[n.ID] = NodeHas{DeltaRev: req.DeltaRev, StateTag: req.StateTag}
 	m.nodeGeoMu.Unlock()
 	// The node's own TLS state, for the fleet-wide "TLS certificate" alert. Recorded
 	// here, raised by the node sweep — see manager_nodes_notify.go.
