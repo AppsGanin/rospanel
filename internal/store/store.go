@@ -57,7 +57,8 @@ var ErrCorrupt = errors.New("database is corrupt")
 
 // Store wraps the SQLite connection pool.
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	settings settingsCache
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies pragmas,

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -11,6 +12,50 @@ import (
 
 // GetSettings returns the singleton settings row.
 func (s *Store) GetSettings() (*model.Settings, error) {
+	// The revision is read before the settings, never after: a write landing between
+	// the two leaves the copy kept looking older than it is, so the next call reads
+	// again — the other order could keep a stale copy under a current revision.
+	var rev int64
+	if err := s.db.QueryRow(`SELECT v FROM settings_rev WHERE id = 1`).Scan(&rev); err != nil {
+		return nil, err
+	}
+	c := &s.settings
+	c.mu.Lock()
+	if c.val != nil && c.rev == rev {
+		v := c.val.Clone()
+		c.mu.Unlock()
+		return v, nil
+	}
+	c.mu.Unlock()
+	st, err := s.readSettings()
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.rev, c.val = rev, st
+	c.mu.Unlock()
+	return st.Clone(), nil
+}
+
+// settingsCache is the one decoded copy of the settings row and the revision it was
+// read under (see migration 0080).
+//
+// The settings are read on every subscription fetch, every node sync and most panel
+// requests — 124 places — and a read decodes some 130 columns: 260 µs on a fast core,
+// against 7 µs for the one-row revision. With 50,000 users and fourteen subscription
+// fetches a second that was 5% of the panel's CPU for a row that changes when an
+// operator presses Save.
+//
+// Callers get clones (model.Settings.Clone): several of them change the settings they
+// are handed before using them, and must not change what the next caller is given.
+type settingsCache struct {
+	mu  sync.Mutex
+	rev int64
+	val *model.Settings // nil until the first read
+}
+
+// readSettings reads and decodes the settings row.
+func (s *Store) readSettings() (*model.Settings, error) {
 	var st model.Settings
 	var updated int64
 	var vlessEn, hysteriaEn, setupDone int
