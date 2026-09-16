@@ -277,9 +277,9 @@ export function WebhooksSettings() {
     }
   };
 
-  // No standalone loader here: this section renders under <ApiSettings/> in the
-  // same tab, and that component already shows one CenterLoader while loading —
-  // a second one here would show two spinners at once.
+  // No loader of its own: this section renders inside <ApiSettings/>, once that has
+  // loaded, and a spinner below a finished page for the moment this one short read
+  // takes would only flicker.
   if (loading) return null;
 
   const picker = (

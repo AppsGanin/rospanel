@@ -8,7 +8,6 @@ import { navigate, useRoute } from "./router";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
 import { TelegramSettings } from "./TelegramSettings";
 import { cn } from "./ui";
-import { WebhooksSettings } from "./WebhooksSettings";
 
 // Everything server-specific (connections/protocols, domain, routing, DNS, decoy)
 // moved to the per-server cards on the "Servers" page: each server (the master
@@ -74,12 +73,7 @@ export function SettingsPanel() {
         {tab === "telegram" && <TelegramSettings />}
         {tab === "billing" && <BillingPanel />}
         {tab === "abuse" && <AbuseSettings />}
-        {tab === "api" && (
-          <>
-            <ApiSettings />
-            <WebhooksSettings />
-          </>
-        )}
+        {tab === "api" && <ApiSettings />}
       </div>
     </div>
   );
