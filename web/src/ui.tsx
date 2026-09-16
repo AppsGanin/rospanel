@@ -1622,11 +1622,15 @@ export function SettingRow({
                 ),
           )}
         >
-          {/* A hint is prose: capped at a readable measure so a wide screen does not
-              stretch one sentence across the whole panel. */}
+          {/* A hint beside a control or a field is capped at a readable measure, so the
+              sentence does not run all the way up to the switch or input it explains.
+              A hint with nothing beside it spans the row like everything else in the
+              panel: capped, it stopped two thirds of the way across and left the rest
+              of a wide panel empty. */}
           <div
             className={cn(
-              "min-w-0 max-w-[76ch]",
+              "min-w-0",
+              !!(control || field) && "max-w-[76ch]",
               !field && "flex-1",
               // The floor belongs to prose only: a hint keeps 10rem before the control
               // beside it is allowed to wrap, so a button with a real label drops below
