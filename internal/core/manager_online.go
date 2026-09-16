@@ -103,22 +103,7 @@ func (m *Manager) RecordLocalAccess(email, ip, dest string) {
 }
 
 // userIDFromEmail parses the "u<id>" Xray client tag.
-func userIDFromEmail(email string) (int64, bool) {
-	if !strings.HasPrefix(email, "u") {
-		return 0, false
-	}
-	var id int64
-	for _, c := range email[1:] {
-		if c < '0' || c > '9' {
-			return 0, false
-		}
-		id = id*10 + int64(c-'0')
-		if id > 1<<40 {
-			return 0, false
-		}
-	}
-	return id, len(email) > 1
-}
+func userIDFromEmail(email string) (int64, bool) { return model.UserIDOfEmail(email) }
 
 // OnlineByServer is how many distinct users each server has seen inside the
 // online window, keyed by server id (0 = the master).

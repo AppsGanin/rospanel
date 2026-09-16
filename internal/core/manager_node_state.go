@@ -170,6 +170,20 @@ func (g *stateGate) release() { <-g.ch }
 // degraded one, not to be remembered), groups that changed while being read, or a
 // value it cannot encode.
 func nodeStateKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) ([sha256.Size]byte, bool) {
+	structure, ok := nodeStructureKey(n, x, managerOpts)
+	if !ok {
+		return structure, false
+	}
+	var version [8]byte
+	binary.LittleEndian.PutUint64(version[:], x.in.version)
+	return sha256.Sum256(append(structure[:], version[:]...)), true
+}
+
+// nodeStructureKey is nodeStateKey without the fleet-wide inputs' version: everything a
+// node's state is built from but its users, their caps and the blocked addresses. Two
+// states with the same structure key differ only in those, which is what lets one be
+// sent as a change to the other (see manager_node_split.go).
+func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) ([sha256.Size]byte, bool) {
 	var key [sha256.Size]byte
 	if x.inbErr != nil || x.in.version == 0 || x.geoMoved {
 		return key, false
@@ -191,7 +205,6 @@ func nodeStateKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) (
 	opts.Groups = nil
 	d := digester{h: sha256.New(), ok: true}
 	d.value(reflect.ValueOf(struct {
-		Inputs   uint64
 		Geo      uint64
 		Settings model.Settings
 		Node     model.Node
@@ -199,7 +212,7 @@ func nodeStateKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) (
 		Proxies  map[string][]model.ProxyEndpoint
 		Opts     xray.Options
 		Pinned   string
-	}{x.in.version, x.geoGen, set, node, x.inbounds, x.proxies, opts, xray.PinnedVersion}))
+	}{x.geoGen, set, node, x.inbounds, x.proxies, opts, xray.PinnedVersion}))
 	if !d.ok {
 		return key, false
 	}

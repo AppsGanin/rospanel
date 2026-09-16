@@ -163,9 +163,49 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 //
 // The caller holds the state gate (see stateGate).
 func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *nodeapi.NodeState, complete bool, err error) {
+	b, err := m.generateNodeState(n, x, x.in.users)
+	if err != nil {
+		return nil, false, err
+	}
+	// Who this state lets in is who the node's reports may speak for from now on.
+	m.noteNodeServed(n.ID, b.cfg, b.meta.AWG, x.servedSeq)
+	raw, err := json.Marshal(b.cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	metaRaw, err := json.Marshal(b.meta)
+	if err != nil {
+		return nil, false, err
+	}
+	// Hashed as a stream, not over a joined copy: appending metaRaw to raw copied the
+	// whole config — another ten megabytes at 50,000 users — to hash bytes it already
+	// had. The digest is the same one.
+	h := sha256.New()
+	_, _ = h.Write(raw)
+	_, _ = h.Write(metaRaw)
+	return &nodeapi.NodeState{
+		Hash:       hex.EncodeToString(h.Sum(nil)),
+		XrayConfig: raw,
+		Meta:       b.meta,
+	}, b.complete, nil
+}
+
+// nodeBuild is a node's generated Xray config and host meta, not yet encoded.
+type nodeBuild struct {
+	cfg  *xray.Config
+	meta nodeapi.NodeMeta
+	// custom are the custom inbounds the config was generated with: none when they
+	// could not be read, which also makes the build incomplete.
+	custom   []model.Inbound
+	complete bool
+}
+
+// generateNodeState generates a node's config and meta for the given users — all the
+// working users for a whole state, or some of them for their part of one (see
+// manager_node_split.go). complete is as buildNodeState describes.
+func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []model.User) (*nodeBuild, error) {
 	set, in := x.set, x.in
-	complete = in.version != 0
-	users := in.users
+	complete := in.version != 0
 	ns := nodeSettings(set, n)
 	// Cert paths are sentinels the agent rewrites to its own absolute paths (the
 	// panel doesn't know the node's data dir); keeping them symbolic makes the hash
@@ -186,11 +226,7 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 	}
 	cfg, err := xray.Generate(ns, users, opts, x.proxies)
 	if err != nil {
-		return nil, false, err
-	}
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	connGuardPorts := []int{ns.VLESSPort}
 	if ns.RealityEnabled {
@@ -236,8 +272,6 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 	var claimed bool
 	meta.AWG, claimed = m.nodeAWGStateClaimed(n, ns, users, in.access)
 	complete = complete && claimed
-	// Who this state lets in is who the node's reports may speak for from now on.
-	m.noteNodeServed(n.ID, cfg, meta.AWG, x.servedSeq)
 	// What the source policy has refused, for this node's own firewall. Read here
 	// rather than pushed on each block so a node that was offline catches up on its
 	// next sync, and so the hash covers it (a lifted block reaches the node too).
@@ -250,21 +284,7 @@ func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *node
 		meta.OperaCountry = ns.OperaCountryOr()
 		meta.OperaPort = ns.OperaPortOr()
 	}
-	metaRaw, err := json.Marshal(meta)
-	if err != nil {
-		return nil, false, err
-	}
-	// Hashed as a stream, not over a joined copy: appending metaRaw to raw copied the
-	// whole config — another ten megabytes at 50,000 users — to hash bytes it already
-	// had. The digest is the same one.
-	h := sha256.New()
-	_, _ = h.Write(raw)
-	_, _ = h.Write(metaRaw)
-	return &nodeapi.NodeState{
-		Hash:       hex.EncodeToString(h.Sum(nil)),
-		XrayConfig: raw,
-		Meta:       meta,
-	}, complete, nil
+	return &nodeBuild{cfg: cfg, meta: meta, custom: opts.Custom, complete: complete}, nil
 }
 
 // nodeInputs are the parts of every node's desired state that no node owns: the working
@@ -381,13 +401,19 @@ func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
 	// A read that failed softly serves this build but is not kept: sharing it would
 	// drop the blocks from every node's state for the whole TTL.
 	if complete {
-		if prev != nil && sameNodeInputs(prev, in) {
-			in.version = prev.version
+		// Compared with the last complete read rather than the cache, which a change no
+		// wake announces drops: the same inputs keep their version either way, and a
+		// new version is told apart from the one before it (see inputsJournal).
+		last := m.nodeInputsLast
+		if last != nil && sameNodeInputs(last, in) {
+			in.version = last.version
 		} else {
 			m.nodeInputsVersion++
 			in.version = m.nodeInputsVersion
+			m.nodeJournal.record(last, in)
 		}
 		m.nodeInputsCache = in
+		m.nodeInputsLast = in
 	}
 	return in, nil
 }

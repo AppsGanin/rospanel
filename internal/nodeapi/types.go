@@ -75,7 +75,14 @@ type JoinResponse struct {
 // SyncRequest is the body of every long-poll. The node states what it currently
 // has applied (config_hash) and reports its health + accumulated traffic deltas.
 type SyncRequest struct {
-	ConfigHash  string `json:"config_hash"`
+	// ConfigHash is the hash of the state the node has applied: NodeState.Hash, or for
+	// a split state its SplitState.Hash as the node computes it over what it holds.
+	ConfigHash string `json:"config_hash"`
+	// DeltaRev is the split-state revision this agent speaks (see split.go), and
+	// StateTag the tag of the split state it holds. An older agent sends neither and is
+	// sent whole configs.
+	DeltaRev    int    `json:"delta_rev,omitempty"`
+	StateTag    string `json:"state_tag,omitempty"`
 	NodeVersion string `json:"node_version"`
 	XrayVersion string `json:"xray_version"`
 	XrayRunning bool   `json:"xray_running"`
@@ -299,6 +306,11 @@ type SyncResponse struct {
 	Changed   bool       `json:"changed"`
 	AckReport int64      `json:"ack_report"` // highest ReportID the panel has ingested
 	State     *NodeState `json:"state,omitempty"`
+	// Split and Delta are the state for an agent that speaks DeltaRev: all of it, or
+	// what changed since the state it holds. At most one of State, Split and Delta is
+	// set, and Changed is true with any of them.
+	Split *SplitState `json:"split,omitempty"`
+	Delta *StateDelta `json:"delta,omitempty"`
 
 	// Revoked ⇒ the node was deleted or disabled: stop serving, keep polling slowly
 	// so it recovers if re-enabled. Distinct from an unreachable panel (which the
