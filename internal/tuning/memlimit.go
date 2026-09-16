@@ -9,15 +9,25 @@ import (
 )
 
 // Memory is what SetMemoryLimit decided: the soft limit it gave the Go runtime, the
-// memory that limit is a share of, and where that figure came from.
+// memory that limit is a share of, what was set aside for what runs beside it, and
+// where the figure came from.
 type Memory struct {
-	Limit int64  // bytes; 0 ⇒ the runtime was left alone
-	Of    int64  // bytes the process can use
-	Basis string // "RAM", "cgroup", or "GOMEMLIMIT" when the environment already set one
+	Limit    int64  // bytes; 0 ⇒ the runtime was left alone
+	Of       int64  // bytes the process can use
+	Reserved int64  // bytes of Of left to what runs beside this process
+	Basis    string // "RAM", "cgroup", or "GOMEMLIMIT" when the environment already set one
 }
 
 // SetMemoryLimit gives the Go runtime a soft memory limit of share × the memory this
-// process can use: the machine's RAM, or its cgroup's limit when that is lower.
+// process can use once reserve is set aside for what runs beside it: the machine's
+// RAM, or its cgroup's limit when that is lower.
+//
+// reserve is there because the panel and the node both run Xray, which is Go too and
+// is given a soft limit of its own (xray.MemoryLimit). The two were set in different
+// files and nobody added them up: on a 1 GB box half the RAM for the panel, a quarter
+// of it for Xray and what each runtime holds above its own limit came to the whole
+// machine. With 50,000 users and five nodes the panel was OOM-killed every time a user
+// was created — the moment five node configs are built at once.
 //
 // Without one the collector lets the heap grow to twice what is live before it runs.
 // On a 1 GB box that is the difference between working and being OOM-killed: in a
@@ -29,18 +39,18 @@ type Memory struct {
 // refused.
 //
 // A GOMEMLIMIT in the environment is the operator's own choice and is left in force.
-func SetMemoryLimit(share float64) Memory {
+func SetMemoryLimit(share float64, reserve int64) Memory {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return Memory{Basis: "GOMEMLIMIT"}
 	}
-	m := memoryLimit(os.ReadFile, share)
+	m := memoryLimit(os.ReadFile, share, reserve)
 	if m.Limit > 0 {
 		debug.SetMemoryLimit(m.Limit)
 	}
 	return m
 }
 
-func memoryLimit(read func(string) ([]byte, error), share float64) Memory {
+func memoryLimit(read func(string) ([]byte, error), share float64, reserve int64) Memory {
 	ram := memTotal(read)
 	of, basis := ram, "RAM"
 	if lim := cgroupLimit(read); lim > 0 && (ram <= 0 || lim < ram) {
@@ -49,7 +59,14 @@ func memoryLimit(read func(string) ([]byte, error), share float64) Memory {
 	if of <= 0 || share <= 0 {
 		return Memory{}
 	}
-	return Memory{Limit: int64(float64(of) * share), Of: of, Basis: basis}
+	usable := of - reserve
+	// A box so small that what runs beside this process would claim most of it. A
+	// quarter of the machine is then the most that can honestly be steered under;
+	// below that the limit stops describing anything and only makes the collector run.
+	if floor := of / 4; usable < floor {
+		usable, reserve = floor, of-floor
+	}
+	return Memory{Limit: int64(float64(usable) * share), Of: of, Reserved: reserve, Basis: basis}
 }
 
 // memTotal is MemTotal from /proc/meminfo in bytes, 0 when unreadable.
