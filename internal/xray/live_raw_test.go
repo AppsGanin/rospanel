@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // liveCfg builds a node config the way the panel shapes one: an API inbound, the three
@@ -190,10 +191,12 @@ func fakeLiveXray(t *testing.T, dir string) string {
 	starts := filepath.Join(dir, "starts.log")
 	fail := filepath.Join(dir, "fail-adu")
 	refuse := filepath.Join(dir, "fail-test")
+	dial := filepath.Join(dir, "dial-fails")
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = run ] && [ \"$2\" = -test ]; then [ -f " + refuse + " ] && exit 23; exit 0; fi\n" +
 		"if [ \"$1\" = run ]; then echo start >> " + starts + "; /bin/sleep 60 & wait; exit 0; fi\n" +
 		"if [ \"$1\" = api ]; then\n" +
+		"  if [ -f " + dial + " ]; then n=$(cat " + dial + "); if [ \"$n\" -gt 0 ]; then echo $((n-1)) > " + dial + "; echo 'failed to dial' >&2; exit 1; fi; fi\n" +
 		"  echo \"$*\" >> " + log + "\n" +
 		"  if [ \"$2\" = adu ]; then\n" +
 		"    n=$(grep -o '\"email\":\"[^\"]*\"' \"$4\" | tee -a " + log + " | wc -l | tr -d ' ')\n" +
@@ -219,6 +222,45 @@ func countLines(t *testing.T, path, prefix string) int {
 		}
 	}
 	return n
+}
+
+// A node's users-only change whose API calls cannot reach Xray for a moment is asked
+// again and still applied live — not handed to a restart, which at 50,000 users starts a
+// second Xray exactly when the box has no memory for one.
+func TestApplyRawLiveAsksAgainWhenTheAPICannotBeReached(t *testing.T) {
+	dir := t.TempDir()
+	bin := fakeLiveXray(t, dir)
+	cfgPath := filepath.Join(dir, "config.json")
+	starts := filepath.Join(dir, "starts.log")
+	sup := NewSupervisor(bin, cfgPath, dir)
+	var waits []time.Duration
+	sup.waitFn = func(d time.Duration) { waits = append(waits, d) }
+	t.Cleanup(sup.Stop)
+	const addr = "127.0.0.1:20085"
+
+	a := liveCfg{vless: []string{"u1", "u2"}, reality: []string{"u1", "u2"}, hysteria: []string{"u1", "u2"}, ss: []string{"u1", "u2"}}
+	if how, err := sup.ApplyRawLive(addr, a.json(t)); err != nil || how != RawRestarted {
+		t.Fatalf("first apply: %v %v", how, err)
+	}
+	waitFor(t, "xray to start", func() bool { return countLines(t, starts, "start") == 1 && sup.Running() })
+
+	if err := os.WriteFile(filepath.Join(dir, "dial-fails"), []byte("2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := liveCfg{vless: []string{"u2", "u3"}, reality: []string{"u2", "u3"}, hysteria: []string{"u2", "u3"}, ss: []string{"u2", "u3"}}
+	how, err := sup.ApplyRawLive(addr, b.json(t))
+	if err != nil || how != RawLive {
+		t.Fatalf("users-only change after two failed dials: %v %v, want live", how, err)
+	}
+	if n := countLines(t, starts, "start"); n != 1 {
+		t.Errorf("xray was restarted (%d starts) for a call that only could not connect", n)
+	}
+	if len(waits) != 2 {
+		t.Errorf("waited %v, want two waits before the call got through", waits)
+	}
+	if added := countLines(t, filepath.Join(dir, "api.log"), `"email":"u3"`); added != 3 {
+		t.Errorf("u3 went into %d adu inbounds after the retries, want 3", added)
+	}
 }
 
 // End to end against a running (fake) Xray: a users-only change goes through the API

@@ -286,7 +286,7 @@ func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) erro
 			continue
 		}
 		// A user already gone is the state asked for, so the count is not checked.
-		if _, err := s.runXray(statsTimeout, append([]string{"api", "rmu", "--server=" + apiAddr, "-tag=" + c.tag}, c.remove...)...); err != nil {
+		if _, err := s.runXrayAPI(statsTimeout, append([]string{"api", "rmu", "--server=" + apiAddr, "-tag=" + c.tag}, c.remove...)...); err != nil {
 			return fmt.Errorf("api rmu tag=%s: %w", c.tag, err)
 		}
 	}
@@ -335,7 +335,9 @@ func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) erro
 	return nil
 }
 
-// runXrayFile writes body as JSON to a temp file and runs `xray <args...> <file>`.
+// runXrayFile writes body as JSON to a temp file and runs `xray <args...> <file>`: an
+// api call that changes the running Xray, asked again while it cannot reach it (see
+// runXrayAPI).
 func (s *Supervisor) runXrayFile(timeout time.Duration, pattern string, body any, args ...string) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
@@ -353,7 +355,7 @@ func (s *Supervisor) runXrayFile(timeout time.Duration, pattern string, body any
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	return s.runXray(timeout, append(args, f.Name())...)
+	return s.runXrayAPI(timeout, append(args, f.Name())...)
 }
 
 // writeFileAtomic replaces path with data through a temp file and a rename.
