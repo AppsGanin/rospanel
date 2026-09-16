@@ -17,10 +17,10 @@ func TestFleetChangedSeesEveryInputTheNodesAreServed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !m.fleetChanged() {
+	if !fleetChangedNow(t, m) {
 		t.Fatal("the first read has nothing to compare against and must count as a change")
 	}
-	if m.fleetChanged() {
+	if fleetChangedNow(t, m) {
 		t.Fatal("a second read of the same inputs reported a change")
 	}
 	for _, tc := range []struct {
@@ -64,10 +64,10 @@ func TestFleetChangedSeesEveryInputTheNodesAreServed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.do()
-			if !m.fleetChanged() {
+			if !fleetChangedNow(t, m) {
 				t.Error("the nodes were not woken for a change they are served")
 			}
-			if m.fleetChanged() {
+			if fleetChangedNow(t, m) {
 				t.Error("the same inputs read again reported a change")
 			}
 		})
@@ -96,10 +96,78 @@ func TestFleetChangedSeesEveryInputTheNodesAreServed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.do()
-			if m.fleetChanged() {
+			if fleetChangedNow(t, m) {
 				t.Error("the nodes were woken for an edit they cannot see")
 			}
 		})
+	}
+}
+
+// fleetChangedNow asks the way the reconcile loop does: read the working set, then ask.
+func fleetChangedNow(t *testing.T, m *Manager) bool {
+	t.Helper()
+	ws, err := m.readWorkingSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m.fleetChanged(ws)
+}
+
+// The loop reads the working set once and both of its questions are answered from that
+// read: the snapshot the nodes are given is built on the working set handed in, not on
+// a second scan of every user. A cap that is only in the read handed in is the proof.
+func TestTheFleetSnapshotIsBuiltOnTheReadItIsGiven(t *testing.T) {
+	m := nodeTestManager(t)
+	u, err := m.store.CreateUser("a", "uuid-a", "pw-a", "tok-a", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := m.readWorkingSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.ids) != 1 || ws.ids[0] != u.ID {
+		t.Fatalf("working set %v, want the one user", ws.ids)
+	}
+	ws.caps = map[int64]int{u.ID: 777} // in no table: only a second scan would lose it
+	if !m.fleetChanged(ws) {
+		t.Fatal("the first read has nothing to compare against and must count as a change")
+	}
+	in, err := m.nodeInputs() // the snapshot just left behind, same generation and fresh
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := in.speed[model.UserEmail(u.ID)]; got != 777 {
+		t.Errorf("the nodes were given cap %d, want the 777 of the read handed in", got)
+	}
+	if in.gen != ws.gen || !in.at.Equal(ws.at) {
+		t.Errorf("snapshot stamped gen %d at %v, want the read's gen %d at %v", in.gen, in.at, ws.gen, ws.at)
+	}
+}
+
+// A working set is stamped with the wake generation from before it was read, so a wake
+// that lands while it is being read leaves what is built on it one generation behind —
+// and the nodes' next ask reads again instead of trusting it.
+func TestAWakeDuringTheReadIsNotHiddenByIt(t *testing.T) {
+	m := nodeTestManager(t)
+	if _, err := m.store.CreateUser("a", "uuid-a", "pw-a", "tok-a", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := m.readWorkingSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.notifyNodes() // a wake after the generation was taken
+	m.fleetChanged(ws)
+	if _, err := m.store.CreateUser("b", "uuid-b", "pw-b", "tok-b", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	in, err := m.nodeInputs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(in.users) != 2 {
+		t.Errorf("a snapshot older than the latest wake was served: %d users, want 2", len(in.users))
 	}
 }
 
@@ -193,7 +261,7 @@ func TestWorkingIDsChangedIsTheSyncsOwnDiff(t *testing.T) {
 // the nodes are woken rather than left with whatever they had.
 func TestSyncUsersOnceReportsAPanicAsAChange(t *testing.T) {
 	m := nodeTestManager(t) // no supervisor: the sync panics on the first call into it
-	if !m.syncUsersOnce() {
+	if !m.syncUsersOnce(nil, nil) {
 		t.Error("a sync that panicked reported that nothing changed")
 	}
 }

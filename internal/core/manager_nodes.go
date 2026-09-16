@@ -308,21 +308,42 @@ func (m *Manager) nodeInputs() (*nodeInputs, error) {
 	if c := m.nodeInputsCache; c != nil && c.gen == gen && time.Since(c.at) < nodeInputsTTL {
 		return c, nil
 	}
-	return m.readNodeInputsLocked(gen)
-}
-
-// readNodeInputsLocked reads the shared inputs and, unless the read came back
-// incomplete, makes them the snapshot every node shares. The caller holds
-// nodeInputsMu and has taken gen before deciding to read.
-func (m *Manager) readNodeInputsLocked(gen uint64) (*nodeInputs, error) {
-	// The generation is taken before reading: a wake that lands mid-read leaves this
-	// snapshot one generation behind, so the next caller reads again.
-	prev := m.nodeInputsCache
-	in := &nodeInputs{gen: gen, at: time.Now()}
-	ids, capped, err := m.store.WorkingSet(in.at.Unix())
+	ws, err := m.readWorkingSet()
 	if err != nil {
 		return nil, err
 	}
+	return m.readNodeInputsLocked(ws)
+}
+
+// workingSet is one read of who belongs in the config and what their speed caps are
+// (store.WorkingSet), stamped with the wake generation and the time taken before it.
+type workingSet struct {
+	gen  uint64
+	at   time.Time
+	ids  []int64
+	caps map[int64]int
+}
+
+// readWorkingSet reads the working set. The generation is taken before reading: a
+// wake that lands mid-read leaves what is built from it one generation behind, so the
+// next caller reads again rather than trusting it.
+func (m *Manager) readWorkingSet() (*workingSet, error) {
+	ws := &workingSet{gen: m.nodes.generation(), at: time.Now()}
+	var err error
+	if ws.ids, ws.caps, err = m.store.WorkingSet(ws.at.Unix()); err != nil {
+		return nil, err
+	}
+	return ws, nil
+}
+
+// readNodeInputsLocked builds the shared inputs on the working set given and, unless
+// the rest of the read came back incomplete, makes them the snapshot every node
+// shares. The caller holds nodeInputsMu.
+func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
+	prev := m.nodeInputsCache
+	in := &nodeInputs{gen: ws.gen, at: ws.at}
+	ids, capped := ws.ids, ws.caps
+	var err error
 	// The credentials cost several times the rest of this read put together, in time
 	// and in garbage both, and nothing can change one for a user already in the set:
 	// a uuid and a password are written when the account is made and never again, and
@@ -372,19 +393,20 @@ func (m *Manager) readNodeInputsLocked(gen uint64) (*nodeInputs, error) {
 	return in, nil
 }
 
-// fleetChanged reads the shared inputs afresh and reports whether what the nodes are
-// served has moved since the last read — which is the whole question behind waking
-// them. The read that answers it is the read they would each have made, so the
-// snapshot it leaves behind is the one they get: asking costs the fleet nothing.
+// fleetChanged builds the shared inputs afresh on the working set given and reports
+// whether what the nodes are served has moved since the last read — which is the whole
+// question behind waking them. The read that answers it is the read they would each
+// have made, so the snapshot it leaves behind is the one they get: asking costs the
+// fleet nothing.
 //
 // Anything it cannot answer counts as changed. A wake that was not needed is a little
 // work; one that was needed and skipped would hold a config back until the node's own
 // poll.
-func (m *Manager) fleetChanged() bool {
+func (m *Manager) fleetChanged(ws *workingSet) bool {
 	m.nodeInputsMu.Lock()
 	defer m.nodeInputsMu.Unlock()
 	prev := m.nodeInputsCache
-	in, err := m.readNodeInputsLocked(m.nodes.generation())
+	in, err := m.readNodeInputsLocked(ws)
 	if err != nil {
 		logErr("node state: cannot tell whether the nodes' inputs changed", "err", err)
 		return true
