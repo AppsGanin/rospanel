@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"hash"
@@ -9,6 +10,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -74,11 +76,26 @@ func (m *Manager) readNodeStateInputs(n *model.Node) (*nodeStateInputs, error) {
 }
 
 // NodeStateChange returns the state a node should be given, or nil when the state it
-// has — the hash it reported — is already the one it should have.
+// has — the hash it reported — is already the one it should have. For a state that is
+// about to be written to a node, NodeStatePush.
 func (m *Manager) NodeStateChange(n *model.Node, have string) (*nodeapi.NodeState, error) {
+	state, done, err := m.NodeStatePush(context.Background(), n, have)
+	done()
+	return state, err
+}
+
+// NodeStatePush is NodeStateChange for a state on its way to a node. A state it returns
+// holds the state gate (see stateGate), and done lets it go: the caller calls done once
+// the state is encoded — before the slow part, writing it out — and in any case before
+// it returns. done may be called more than once. With no state to push, done is a no-op
+// and nothing was held.
+//
+// A node whose state is unchanged is answered by the remembered fingerprint without
+// the gate, so a push in progress never holds up the polls that need nothing.
+func (m *Manager) NodeStatePush(ctx context.Context, n *model.Node, have string) (*nodeapi.NodeState, func(), error) {
 	x, err := m.readNodeStateInputs(n)
 	if err != nil {
-		return nil, err
+		return nil, noRelease, err
 	}
 	key, keyed := nodeStateKey(n, x, m.opts)
 	if keyed && have != "" {
@@ -86,12 +103,18 @@ func (m *Manager) NodeStateChange(n *model.Node, have string) (*nodeapi.NodeStat
 		memo, ok := m.nodeStates[n.ID]
 		m.nodeStateMu.Unlock()
 		if ok && memo.key == key && memo.hash == have && time.Since(memo.at) < nodeStateMemoAge {
-			return nil, nil
+			return nil, noRelease, nil
 		}
 	}
+	if err := m.stateGate.acquire(ctx); err != nil {
+		return nil, noRelease, err
+	}
+	var once sync.Once
+	done := func() { once.Do(m.stateGate.release) }
 	state, complete, err := m.buildNodeState(n, x)
 	if err != nil {
-		return nil, err
+		done()
+		return nil, noRelease, err
 	}
 	if keyed && complete {
 		m.nodeStateMu.Lock()
@@ -102,10 +125,42 @@ func (m *Manager) NodeStateChange(n *model.Node, have string) (*nodeapi.NodeStat
 		m.nodeStateMu.Unlock()
 	}
 	if state.Hash == have {
-		return nil, nil
+		done()
+		return nil, noRelease, nil
 	}
-	return state, nil
+	return state, done, nil
 }
+
+func noRelease() {}
+
+// stateGate lets one node state exist at a time between being built and being encoded
+// for the wire.
+//
+// A change that reaches the fleet wakes every node at once. At 50,000 users a state is
+// a 10 MB config, generated and marshalled, and encoding a response copies it again;
+// ten nodes woken together held all of that side by side, and in the stress test that
+// alone took the panel past 400 MB until it was OOM-killed. Under the gate one state is
+// built and encoded at a time, and what waits to be written out is the compressed
+// response — a fraction of the size — which no slow or stalled node can hold the gate
+// with. Its zero value is ready to use.
+type stateGate struct {
+	once sync.Once
+	ch   chan struct{}
+}
+
+// acquire takes the gate, or gives up when ctx is done — a node that hangs up while
+// waiting does not keep its place.
+func (g *stateGate) acquire(ctx context.Context) error {
+	g.once.Do(func() { g.ch = make(chan struct{}, 1) })
+	select {
+	case g.ch <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (g *stateGate) release() { <-g.ch }
 
 // nodeStateKey fingerprints a node's state inputs. It reports false when there is
 // nothing trustworthy to fingerprint: a soft read failure (the build that follows is a

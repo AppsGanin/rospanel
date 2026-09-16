@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"os"
@@ -472,7 +473,9 @@ func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := stateNode(t, m)
-	m.buildMu.Lock()
+	if err := m.stateGate.acquire(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	done := make(chan error, 1)
 	go func() {
 		_, err := m.NodeDesiredState(n)
@@ -483,7 +486,7 @@ func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
 		t.Fatalf("a state was built while another build held the gate: %v", err)
 	case <-time.After(250 * time.Millisecond):
 	}
-	m.buildMu.Unlock()
+	m.stateGate.release()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -491,5 +494,79 @@ func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the build never ran after the gate was released")
+	}
+}
+
+// A state to push holds the gate until its caller says it is encoded — once, however
+// many times it says so — and nothing is held when there is nothing to push, or when
+// the node gave up waiting.
+func TestAPushHoldsTheStateGateUntilItIsEncoded(t *testing.T) {
+	m := nodeTestManager(t)
+	if _, err := m.store.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	n := stateNode(t, m)
+	gateFree := func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		if m.stateGate.acquire(ctx) != nil {
+			return false
+		}
+		m.stateGate.release()
+		return true
+	}
+
+	state, done, err := m.NodeStatePush(context.Background(), n, "")
+	if err != nil || state == nil {
+		t.Fatalf("a node with no state was given none: %v", err)
+	}
+	if gateFree() {
+		t.Fatal("the gate was free while a pushed state was not yet encoded")
+	}
+	done()
+	done() // a second call must not take a token some later holder owns
+	if !gateFree() {
+		t.Fatal("the gate stayed taken after the push was encoded")
+	}
+
+	// Nothing to push: answered by the remembered fingerprint, the gate never taken.
+	again, done2, err := m.NodeStatePush(context.Background(), n, state.Hash)
+	if err != nil || again != nil {
+		t.Fatalf("an unchanged node was pushed a state: %v %v", again, err)
+	}
+	if !gateFree() {
+		t.Fatal("a node needing nothing left the gate taken")
+	}
+	done2()
+
+	// The remembered fingerprint aged out: the state is built again, found the same as
+	// the node's, and the gate let go.
+	m.nodeStateMu.Lock()
+	memo := m.nodeStates[n.ID]
+	memo.at = time.Now().Add(-nodeStateMemoAge)
+	m.nodeStates[n.ID] = memo
+	m.nodeStateMu.Unlock()
+	same, done3, err := m.NodeStatePush(context.Background(), n, state.Hash)
+	if err != nil || same != nil {
+		t.Fatalf("a node whose state was built again the same was pushed one: %v %v", same, err)
+	}
+	if !gateFree() {
+		t.Fatal("a state built again and found unchanged left the gate taken")
+	}
+	done3()
+
+	// Waiting for the gate ends when the node gives up.
+	if err := m.stateGate.acquire(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	// A hash the memo does not hold, so the push has to build and waits on the gate.
+	if _, _, err := m.NodeStatePush(ctx, n, state.Hash+"-other"); err == nil {
+		t.Error("a push waiting on a held gate outlived its request")
+	}
+	m.stateGate.release()
+	if !gateFree() {
+		t.Error("a push that gave up waiting left the gate taken")
 	}
 }

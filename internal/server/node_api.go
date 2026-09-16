@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
@@ -125,6 +126,23 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 		return
 	}
+	// The state the node should have. One to push is held from its build until the
+	// response is encoded (see writeSyncResponse); released here too, whatever path
+	// this request takes. A node being told it is revoked is given no state.
+	encoded := func() {}
+	if !resp.Revoked {
+		state, done, err := rt.mgr.NodeStatePush(r.Context(), node, req.ConfigHash)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+			return
+		}
+		encoded = done
+		defer done()
+		if state != nil {
+			resp.Changed = true
+			resp.State = state
+		}
+	}
 	// A config change — or any disagreement about whether this node is switched on —
 	// is answered on the spot. Only a node whose belief already matches ours has its
 	// request held.
@@ -154,7 +172,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	backlog := (req.TrafficMore && len(req.Traffic) > 0 && resp.AckReport > 0) ||
 		(req.ConnsMore && len(req.Conns) > 0)
 	if resp.Changed || resp.Revoked != req.Revoked || rt.mgr.NodeHasFreshWork(node.ID) || backlog {
-		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp)
+		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp, encoded)
 		return
 	}
 	// Otherwise hold the request until the node is woken or the hold elapses, then
@@ -172,7 +190,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// Recompute after waking: the desired state may now differ.
 	fresh, err := rt.mgr.GetNode(node.ID)
 	if err != nil {
-		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp) // transient store error; let it re-sync
+		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp, encoded) // transient store error; let it re-sync
 		return
 	}
 	if fresh == nil {
@@ -187,7 +205,8 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	state, err := rt.mgr.NodeStateChange(fresh, req.ConfigHash)
+	state, pushed, err := rt.mgr.NodeStatePush(r.Context(), fresh, req.ConfigHash)
+	defer pushed()
 	if err != nil {
 		// Not silent: a desired state that cannot be built means this node stops
 		// receiving config for as long as the failure lasts, and nothing else in the
@@ -199,7 +218,7 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		slog.Info("node: pushing new state", "node", fresh.ID,
 			"hash", state.Hash[:12], "speed_limits", len(state.Meta.SpeedLimits))
 	}
-	rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, out)
+	rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, out, pushed)
 }
 
 // writeNodeSync stamps the per-request extras (a pending self-update flag, and a
@@ -209,7 +228,9 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 // reportedXrayStart is the Xray start time from the request being answered: handing
 // over a restart command records it, so the next sync can tell "it bounced" from
 // "nothing happened" by that value changing.
-func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, reportedXrayStart int64, resp *nodeapi.SyncResponse) {
+//
+// encoded is called once the response is encoded (see writeSyncResponse).
+func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, reportedXrayStart int64, resp *nodeapi.SyncResponse, encoded func()) {
 	if !resp.Revoked {
 		if rt.mgr.TakeNodeUpdate(nodeID) {
 			resp.Update = true
@@ -236,7 +257,7 @@ func (rt *Router) writeNodeSync(w http.ResponseWriter, r *http.Request, nodeID, 
 			resp.PanelURL = canonical
 		}
 	}
-	writeSyncResponse(w, r, resp)
+	writeSyncResponse(w, r, resp, encoded)
 }
 
 // gzipWriters are reused across config pushes: a writer carries its compressor's
@@ -246,32 +267,53 @@ var gzipWriters = sync.Pool{New: func() any {
 	return zw
 }}
 
-// writeSyncResponse writes a sync answer, compressed when it carries a config and the
-// node accepts gzip — which every agent does: Go's HTTP client asks for it and
-// unpacks it without being told.
+// writeSyncResponse writes a sync response, gzip'd when the node's client asks for it
+// — every agent's Go client does, and a config push is text that shrinks several times.
+// A response with no state goes out as it always has.
 //
-// A pushed config is the whole Xray config, every user's credentials in it: 4 MB at
-// 20,000 users, 10 MB at 50,000, sent to every node at every working-set change.
-// Credentials are random and compress poorly, but the JSON around them does not —
-// measured 3.0× at the fastest level, for ~50 ms of CPU per 10 MB on a fast core.
-// Every other answer is a few hundred bytes and goes out as it is.
-func writeSyncResponse(w http.ResponseWriter, r *http.Request, resp *nodeapi.SyncResponse) {
-	if resp.State == nil || !acceptsGzip(r.Header.Get("Accept-Encoding")) {
+// One with a state is encoded — and compressed — in full before anything is written,
+// and encoded is called then, with the response no longer holding the state: from here
+// on only the compressed bytes are alive, and writing them out to a node on a slow or
+// stalled link holds up nobody else's push (see core.stateGate). Encoding into a
+// buffer also means a response that cannot be encoded is answered with an error
+// rather than a status already sent and a body cut short.
+func writeSyncResponse(w http.ResponseWriter, r *http.Request, resp *nodeapi.SyncResponse, encoded func()) {
+	if resp.State == nil {
+		encoded()
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
+	gz := acceptsGzip(r.Header.Get("Accept-Encoding"))
+	var body bytes.Buffer
+	var err error
+	if gz {
+		zw := gzipWriters.Get().(*gzip.Writer)
+		zw.Reset(&body)
+		if err = json.NewEncoder(zw).Encode(resp); err == nil {
+			err = zw.Close()
+		}
+		zw.Reset(io.Discard) // drop the reference to this response
+		gzipWriters.Put(zw)
+	} else {
+		err = json.NewEncoder(&body).Encode(resp)
+	}
+	resp.State = nil
+	encoded()
+	if err != nil {
+		slog.Error("node: cannot encode the sync response", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Add("Vary", "Accept-Encoding")
+	if gz {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
 	w.WriteHeader(http.StatusOK)
-	zw := gzipWriters.Get().(*gzip.Writer)
-	zw.Reset(w)
-	// Errors go the way writeJSON's do: the status is out already, and a node that hung
-	// up or got a truncated stream fails its decode and asks again.
-	_ = json.NewEncoder(zw).Encode(resp)
-	_ = zw.Close()
-	zw.Reset(io.Discard) // drop the reference to this response
-	gzipWriters.Put(zw)
+	// Errors go the way writeJSON's do: the status is out, and a node that hung up or
+	// got a truncated stream fails its decode and asks again.
+	_, _ = w.Write(body.Bytes())
 }
 
 // acceptsGzip reports whether an Accept-Encoding header allows gzip.

@@ -148,6 +148,10 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := m.stateGate.acquire(context.Background()); err != nil {
+		return nil, err
+	}
+	defer m.stateGate.release()
 	state, _, err := m.buildNodeState(n, x)
 	return state, err
 }
@@ -156,16 +160,9 @@ func (m *Manager) NodeDesiredState(n *model.Node) (*nodeapi.NodeState, error) {
 // when a part was left out on a soft failure — the custom inbounds unreadable, the
 // speed caps or blocks unreadable, a user's tunnel identity not claimed — so the state
 // serves this sync but is not remembered.
+//
+// The caller holds the state gate (see stateGate).
 func (m *Manager) buildNodeState(n *model.Node, x *nodeStateInputs) (state *nodeapi.NodeState, complete bool, err error) {
-	// One at a time. A build holds the whole generated config and the JSON it marshals
-	// to — at 50,000 users tens of megabytes — and a change that reaches the fleet wakes
-	// every node at once, so five nodes would hold five of them side by side. That burst
-	// is what ran a 1 GB panel out of memory in the load test: with five nodes and
-	// 50,000 users the panel was killed every time a user was created. Built one after
-	// another they cost one node's worth, and the wait is a fraction of a second against
-	// a poll that already jitters by seconds.
-	m.buildMu.Lock()
-	defer m.buildMu.Unlock()
 	set, in := x.set, x.in
 	complete = in.version != 0
 	users := in.users
@@ -1871,8 +1868,9 @@ func (m *Manager) knownUserIDs() (map[int64]struct{}, error) {
 }
 
 // IngestNodeSync records a node's reported status, ingests its traffic deltas
-// idempotently, and computes the response (whether the node's applied hash still
-// matches desired state). It does NOT block for the long-poll — the handler owns
+// idempotently, and answers with the report's acknowledgement — or, for a node that is
+// switched off, that it is revoked. Whether the node's state must change is asked
+// separately (NodeStatePush). It does NOT block for the long-poll — the handler owns
 // the hold; this is the pure state transition.
 func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodeapi.SyncResponse, error) {
 	// A disabled (or soft-deleted-but-unpurged) node's token still authenticates so we
@@ -1984,16 +1982,9 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 		m.ingestNodeAbuse(n.ID, req.Sites)
 	}
 
-	resp := &nodeapi.SyncResponse{AckReport: ack}
-	state, err := m.NodeStateChange(n, req.ConfigHash)
-	if err != nil {
-		return nil, err
-	}
-	if state != nil {
-		resp.Changed = true
-		resp.State = state
-	}
-	return resp, nil
+	// The state the node should have is the caller's to add (NodeStatePush): it is held
+	// until the response is encoded, which only the caller can know.
+	return &nodeapi.SyncResponse{AckReport: ack}, nil
 }
 
 // EnsureNodeAPIPath generates the node-API URL segment the first time a node is
