@@ -33,6 +33,7 @@ import {
   useConfirm,
   useWideBox,
 } from "./ui";
+import { WebhooksSettings } from "./WebhooksSettings";
 
 // The key roster's columns, the same shape every other list in the panel has.
 const TPL =
@@ -225,7 +226,7 @@ export function ApiSettings() {
   const enabledDirty = enabledDraft !== info.enabled;
 
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-1 flex-col gap-3.5">
       {/* The API's own switch belongs to the whole section, so it sits in the header
           band beside its name. */}
       <Panel
@@ -391,6 +392,11 @@ export function ApiSettings() {
           <Button onClick={() => setCreated(null)}>{t("common.done")}</Button>
         </div>
       </Modal>
+
+      {/* Webhooks share the tab, and sit inside this section rather than beside it:
+          the save bar sticks to the bottom only within the block it is the last child
+          of, so beside it the bar hung between the keys and the webhooks. */}
+      <WebhooksSettings />
 
       <SaveBar
         dirty={enabledDirty}
