@@ -277,6 +277,7 @@ type nodeInputs struct {
 	version uint64
 	at      time.Time
 	users   []model.User // read-only: copy before changing a user (see nodeAWGState)
+	ids     []int64      // the users' ids, in their order: what the next read compares
 	access  map[int64]model.Access
 	speed   map[string]int
 	blocked []string
@@ -293,36 +294,60 @@ func (m *Manager) nodeInputs() (*nodeInputs, error) {
 	if c := m.nodeInputsCache; c != nil && c.gen == gen && time.Since(c.at) < nodeInputsTTL {
 		return c, nil
 	}
+	return m.readNodeInputsLocked(gen)
+}
+
+// readNodeInputsLocked reads the shared inputs and, unless the read came back
+// incomplete, makes them the snapshot every node shares. The caller holds
+// nodeInputsMu and has taken gen before deciding to read.
+func (m *Manager) readNodeInputsLocked(gen uint64) (*nodeInputs, error) {
 	// The generation is taken before reading: a wake that lands mid-read leaves this
 	// snapshot one generation behind, so the next caller reads again.
+	prev := m.nodeInputsCache
 	in := &nodeInputs{gen: gen, at: time.Now()}
-	var err error
-	if in.users, err = m.store.WorkingCredentials(in.at.Unix()); err != nil {
+	ids, capped, err := m.store.WorkingSet(in.at.Unix())
+	if err != nil {
 		return nil, err
+	}
+	// The credentials cost several times the rest of this read put together, in time
+	// and in garbage both, and nothing can change one for a user already in the set:
+	// a uuid and a password are written when the account is made and never again, and
+	// a tunnel identity is claimed once — by a path that forgets this snapshot (see
+	// claimAWG). So while the set is the same, last read's credentials are the same.
+	if prev != nil && slices.Equal(prev.ids, ids) {
+		in.users, in.ids = prev.users, prev.ids
+	} else {
+		if in.users, err = m.store.WorkingCredentials(in.at.Unix()); err != nil {
+			return nil, err
+		}
+		// Taken from the users in hand rather than from the ids read a moment before:
+		// a set that moved in between must not pass for the one these are the
+		// credentials of, or the next read would reuse them for it.
+		in.ids = make([]int64, len(in.users))
+		for i := range in.users {
+			in.ids[i] = in.users[i].ID
+		}
 	}
 	// A hard failure, as in genOptsFor: without the access map every restricted
 	// user's credential would be written into every lane.
 	if in.access, err = m.store.AccessMap(); err != nil {
 		return nil, fmt.Errorf("load access map: %w", err)
 	}
-	complete := true
-	if capped, err := m.store.CappedUsers(in.at.Unix()); err != nil {
-		logErr("node state: cannot read speed caps", "err", err)
-		complete = false
-	} else if len(capped) > 0 {
+	if len(capped) > 0 {
 		in.speed = make(map[string]int, len(capped))
 		for id, kbps := range capped {
 			in.speed[model.UserEmail(id)] = kbps
 		}
 	}
+	complete := true
 	if in.blocked, err = m.store.BlockedIPList(); err != nil {
 		logErr("node state: cannot read blocked addresses", "err", err)
 		complete = false
 	}
 	// A read that failed softly serves this build but is not kept: sharing it would
-	// drop the caps or the blocks from every node's state for the whole TTL.
+	// drop the blocks from every node's state for the whole TTL.
 	if complete {
-		if prev := m.nodeInputsCache; prev != nil && sameNodeInputs(prev, in) {
+		if prev != nil && sameNodeInputs(prev, in) {
 			in.version = prev.version
 		} else {
 			m.nodeInputsVersion++
@@ -333,6 +358,26 @@ func (m *Manager) nodeInputs() (*nodeInputs, error) {
 	return in, nil
 }
 
+// fleetChanged reads the shared inputs afresh and reports whether what the nodes are
+// served has moved since the last read — which is the whole question behind waking
+// them. The read that answers it is the read they would each have made, so the
+// snapshot it leaves behind is the one they get: asking costs the fleet nothing.
+//
+// Anything it cannot answer counts as changed. A wake that was not needed is a little
+// work; one that was needed and skipped would hold a config back until the node's own
+// poll.
+func (m *Manager) fleetChanged() bool {
+	m.nodeInputsMu.Lock()
+	defer m.nodeInputsMu.Unlock()
+	prev := m.nodeInputsCache
+	in, err := m.readNodeInputsLocked(m.nodes.generation())
+	if err != nil {
+		logErr("node state: cannot tell whether the nodes' inputs changed", "err", err)
+		return true
+	}
+	return prev == nil || in.version == 0 || in.version != prev.version
+}
+
 // sameNodeInputs reports whether two reads found the same inputs. Users are compared on
 // what WorkingCredentials reads — the fields every config builder uses (see
 // TestGenerateReadsOnlyCredentials, and TestWorkingUserIDsMatchWorkingUsers for the
@@ -341,6 +386,10 @@ func sameNodeInputs(a, b *nodeInputs) bool {
 	if len(a.users) != len(b.users) || !maps.Equal(a.speed, b.speed) || !slices.Equal(a.blocked, b.blocked) ||
 		!reflect.DeepEqual(a.access, b.access) {
 		return false
+	}
+	// The same users, reused rather than read again: there is nothing to walk.
+	if len(a.users) == 0 || &a.users[0] == &b.users[0] {
+		return true
 	}
 	for i := range a.users {
 		x, y := &a.users[i], &b.users[i]
@@ -457,6 +506,17 @@ func (r *nodeRegistry) wakeAll() {
 		close(ch)
 		r.waits[id] = make(chan struct{})
 	}
+}
+
+// parked is how many nodes have a poll waiting. None means nothing to wake, and so
+// nothing to work out about what they would be woken for.
+func (r *nodeRegistry) parked() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.waits)
 }
 
 // generation is the registry's wake count; 0 without a registry.
