@@ -133,17 +133,13 @@ func (rt *Router) applyTLSHints(set *model.Settings) {
 // (with its TLS hints already applied by the caller) first, then each enabled,
 // connected node. With no nodes it returns just the local set, so single-server
 // output is unchanged. `local` must already have applyTLSHints called on it.
-func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
+func (rt *Router) subSettings(local *model.Settings, nodes []*model.Settings) []*model.Settings {
 	// The master server's config labels get its display name too (multi-node), so a
 	// client can tell the master's entries from the nodes'.
 	local.NodeLabel = local.MasterLabel
 	local.ServerID = model.LocalNodeID
 	local.ServerPlacement = local.MasterPlacement
-	sets := []*model.Settings{local}
-	if nodes, err := rt.mgr.NodeLinkSettings(); err == nil {
-		sets = append(sets, nodes...)
-	}
-	return sets
+	return append([]*model.Settings{local}, nodes...)
 }
 
 // subServers is subSettings paired with each server's custom inbounds and the
@@ -160,11 +156,9 @@ func (rt *Router) subSettings(local *model.Settings) []*model.Settings {
 // work anyway. Failing the fetch locks nobody out: a client that cannot refresh keeps the
 // config it already has and tries again later.
 func (rt *Router) subServers(local *model.Settings, userID int64, clientIP string) ([]sub.Server, error) {
-	sets := rt.subSettings(local)
-	custom, err := rt.mgr.Store().AllInbounds()
-	if err != nil {
-		custom = nil
-	}
+	shared := rt.sharedSubInputs()
+	sets := rt.subSettings(local, shared.nodes)
+	custom := shared.inbounds
 	access, err := rt.mgr.Store().UserAccess(userID)
 	if err != nil {
 		return nil, err
@@ -181,7 +175,7 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 	// drops out like anything else once it is full with hide-when-full set, and
 	// attaching to nothing at all silently took every external server down with it —
 	// for a plan whose grants are all external, the whole subscription.
-	if ext := rt.mgr.EnabledExtServers(); len(ext) > 0 && len(ordered) > 0 {
+	if ext := shared.ext; len(ext) > 0 && len(ordered) > 0 {
 		carrier := 0
 		for i := range ordered {
 			if ordered[i].Set.ServerID == model.LocalNodeID {

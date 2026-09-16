@@ -32,17 +32,6 @@ func (m *Manager) ExtServers() ([]model.ExtServer, error) {
 	return m.store.ExtServers()
 }
 
-// EnabledExtServers is what a subscription may hand a user (before their access
-// is applied).
-func (m *Manager) EnabledExtServers() []model.ExtServer {
-	list, err := m.store.EnabledExtServers()
-	if err != nil {
-		logErr("extsub: reading the enabled servers failed", "err", err)
-		return nil
-	}
-	return list
-}
-
 // CreateExtSubscription validates a source, stores it and reads it once, so the
 // operator sees the servers — or the reason there are none — in the same click.
 // A first read that fails does not undo the creation: the source is kept with its

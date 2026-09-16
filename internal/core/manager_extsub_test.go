@@ -33,7 +33,7 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 	if sub.Name != "import" || report.Total != 2 || report.Added != 2 || sub.ServerCount != 2 || sub.LastError != "" {
 		t.Fatalf("create: sub %+v report %+v", sub, report)
 	}
-	servers := m.EnabledExtServers()
+	servers, _ := m.store.EnabledExtServers()
 	if len(servers) != 2 || servers[0].Link != extLinkA || servers[1].Protocol != "trojan" {
 		t.Fatalf("servers: %+v", servers)
 	}
@@ -58,7 +58,7 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 	if err := m.SetExtServerEnabled(servers[1].ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.EnabledExtServers(); len(got) != 1 || got[0].ID != servers[0].ID {
+	if got, _ := m.store.EnabledExtServers(); len(got) != 1 || got[0].ID != servers[0].ID {
 		t.Fatalf("after switching B off: %+v", got)
 	}
 	if err := m.SetExtServerEnabled(999, true); err == nil {
@@ -69,7 +69,7 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 	if err := m.SetExtSubscriptionEnabled(sub.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.EnabledExtServers(); len(got) != 0 {
+	if got, _ := m.store.EnabledExtServers(); len(got) != 0 {
 		t.Fatalf("source off still hands out: %+v", got)
 	}
 	all, _ := m.ExtServers()
@@ -112,7 +112,7 @@ func TestExternalSubscriptionKeepsServersWhenTheReadFails(t *testing.T) {
 	if after.LastError == "" || after.ServerCount != 1 {
 		t.Fatalf("failed read must keep the count and record the error: %+v", after)
 	}
-	if got := m.EnabledExtServers(); len(got) != 1 {
+	if got, _ := m.store.EnabledExtServers(); len(got) != 1 {
 		t.Fatalf("servers dropped on a failed read: %+v", got)
 	}
 }
