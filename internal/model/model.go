@@ -593,6 +593,24 @@ type ProbeHit struct {
 // entry. This is the single source of that format.
 func UserEmail(id int64) string { return fmt.Sprintf("u%d", id) }
 
+// UserIDOfEmail reads a user id back out of an Xray client tag: "u" and digits only.
+func UserIDOfEmail(email string) (int64, bool) {
+	if !strings.HasPrefix(email, "u") {
+		return 0, false
+	}
+	var id int64
+	for _, c := range email[1:] {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		id = id*10 + int64(c-'0')
+		if id > 1<<40 {
+			return 0, false
+		}
+	}
+	return id, len(email) > 1
+}
+
 // Connection is a per-source-IP record of a user's connections.
 type Connection struct {
 	IP       string `json:"ip"`

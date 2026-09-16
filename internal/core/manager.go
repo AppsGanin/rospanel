@@ -141,6 +141,11 @@ type Manager struct {
 	nodeInputsMu      sync.Mutex
 	nodeInputsCache   *nodeInputs
 	nodeInputsVersion uint64
+	// nodeInputsLast is the last complete read, kept when the cache is dropped: each new
+	// version is compared with it and what differs goes in nodeJournal (see
+	// manager_node_split.go).
+	nodeInputsLast *nodeInputs
+	nodeJournal    inputsJournal
 
 	// summaryMu guards the user counts SystemStatus reuses (see recentSummary).
 	summaryMu    sync.Mutex
@@ -151,6 +156,10 @@ type Manager struct {
 	// (see NodeStateChange).
 	nodeStateMu sync.Mutex
 	nodeStates  map[int64]nodeStateMemo
+	nodeSplits  map[int64]nodeSplitMemo
+	// boot tells this process's split-state tags from an earlier one's (see bootID).
+	boot     string
+	bootOnce sync.Once
 	// served is who each node's last built state lets in: what its reports are
 	// believed about (see manager_node_served.go).
 	served servedRegistry

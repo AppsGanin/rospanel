@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 )
 
@@ -130,18 +131,16 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// response is encoded (see writeSyncResponse); released here too, whatever path
 	// this request takes. A node being told it is revoked is given no state.
 	encoded := func() {}
+	has := core.NodeHas{ConfigHash: req.ConfigHash, DeltaRev: req.DeltaRev, StateTag: req.StateTag}
 	if !resp.Revoked {
-		state, done, err := rt.mgr.NodeStatePush(r.Context(), node, req.ConfigHash)
+		push, done, err := rt.mgr.NodeSyncPush(r.Context(), node, has)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 			return
 		}
 		encoded = done
 		defer done()
-		if state != nil {
-			resp.Changed = true
-			resp.State = state
-		}
+		setPush(resp, push)
 	}
 	// A config change — or any disagreement about whether this node is switched on —
 	// is answered on the spot. Only a node whose belief already matches ours has its
@@ -205,20 +204,34 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	state, pushed, err := rt.mgr.NodeStatePush(r.Context(), fresh, req.ConfigHash)
+	push, pushed, err := rt.mgr.NodeSyncPush(r.Context(), fresh, has)
 	defer pushed()
 	if err != nil {
 		// Not silent: a desired state that cannot be built means this node stops
 		// receiving config for as long as the failure lasts, and nothing else in the
 		// panel would say so.
 		slog.Error("node: cannot build desired state", "node", fresh.ID, "err", err)
-	} else if state != nil {
-		out.Changed = true
-		out.State = state
-		slog.Info("node: pushing new state", "node", fresh.ID,
-			"hash", state.Hash[:12], "speed_limits", len(state.Meta.SpeedLimits))
+	} else {
+		setPush(out, push)
+		switch {
+		case push.State != nil:
+			slog.Info("node: pushing new state", "node", fresh.ID,
+				"hash", push.State.Hash[:12], "speed_limits", len(push.State.Meta.SpeedLimits))
+		case push.Split != nil:
+			slog.Info("node: pushing new state in parts", "node", fresh.ID,
+				"hash", push.Split.Hash[:12], "users", len(push.Split.Rows))
+		case push.Delta != nil && (len(push.Delta.Upsert) > 0 || len(push.Delta.Remove) > 0):
+			slog.Debug("node: pushing a change of users", "node", fresh.ID,
+				"changed", len(push.Delta.Upsert), "removed", len(push.Delta.Remove))
+		}
 	}
 	rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, out, pushed)
+}
+
+// setPush puts a node's push on its sync response.
+func setPush(resp *nodeapi.SyncResponse, push core.NodePush) {
+	resp.State, resp.Split, resp.Delta = push.State, push.Split, push.Delta
+	resp.Changed = push.State != nil || push.Split != nil || push.Delta != nil
 }
 
 // writeNodeSync stamps the per-request extras (a pending self-update flag, and a
@@ -278,7 +291,7 @@ var gzipWriters = sync.Pool{New: func() any {
 // buffer also means a response that cannot be encoded is answered with an error
 // rather than a status already sent and a body cut short.
 func writeSyncResponse(w http.ResponseWriter, r *http.Request, resp *nodeapi.SyncResponse, encoded func()) {
-	if resp.State == nil {
+	if resp.State == nil && resp.Split == nil && resp.Delta == nil {
 		encoded()
 		writeJSON(w, http.StatusOK, resp)
 		return
@@ -297,7 +310,7 @@ func writeSyncResponse(w http.ResponseWriter, r *http.Request, resp *nodeapi.Syn
 	} else {
 		err = json.NewEncoder(&body).Encode(resp)
 	}
-	resp.State = nil
+	resp.State, resp.Split, resp.Delta = nil, nil, nil
 	encoded()
 	if err != nil {
 		slog.Error("node: cannot encode the sync response", "err", err)

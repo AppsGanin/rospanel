@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -164,13 +165,13 @@ func nodeXrayHealth(n *model.Node) HealthCheck {
 // one it is simply the pending change it will pick up when it returns.
 func (m *Manager) nodeConfigHealth(n *model.Node, online bool) HealthCheck {
 	const label = "health.config"
-	state, err := m.NodeStateChange(n, n.ConfigHash)
+	current, err := m.nodeConfigCurrent(n)
 	if err != nil {
 		return HealthCheck{Key: "config", LabelKey: label, Status: healthError,
 			DetailKey: "health.nodeConfigBuildFailed", HintKey: "health.nodeConfigHint",
 			Args: map[string]any{"err": err.Error()}}
 	}
-	if state == nil {
+	if current {
 		return HealthCheck{Key: "config", LabelKey: label, Status: healthOK,
 			DetailKey: "health.nodeConfigCurrent"}
 	}
@@ -180,6 +181,29 @@ func (m *Manager) nodeConfigHealth(n *model.Node, online bool) HealthCheck {
 	}
 	return HealthCheck{Key: "config", LabelKey: label, Status: healthWarn,
 		DetailKey: "health.nodeConfigPending", HintKey: "health.nodeConfigPendingHint"}
+}
+
+// nodeConfigCurrent reports whether the hash a node last reported is the state the panel
+// would send it now: the whole config's, or — for a node that holds it in parts — the
+// hash of the parts (see manager_node_split.go).
+func (m *Manager) nodeConfigCurrent(n *model.Node) (bool, error) {
+	state, err := m.NodeStateChange(n, n.ConfigHash)
+	if err != nil || state == nil {
+		return err == nil, err
+	}
+	x, err := m.readNodeStateInputs(n)
+	if err != nil {
+		return false, err
+	}
+	if err := m.stateGate.acquire(context.Background()); err != nil {
+		return false, err
+	}
+	defer m.stateGate.release()
+	split, _, _, splittable, err := m.buildNodeSplit(n, x)
+	if err != nil {
+		return false, err
+	}
+	return splittable && split.Hash == n.ConfigHash, nil
 }
 
 // nodeCertWarnDays is how close to expiry a node's cert must be before it reads as

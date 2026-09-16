@@ -34,6 +34,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/logbuf"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/nodestate"
 	"github.com/AppsGanin/rospanel/internal/opera"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/shaper"
@@ -129,6 +130,9 @@ type Agent struct {
 
 	state   *persistState
 	stateMu sync.Mutex
+	// parts is state.Split decoded (see split.go). Used by the sync loop alone, and set
+	// before it starts.
+	parts *nodestate.Parts
 
 	// sys samples this node's own CPU/RAM/disk, reported to the panel so the node's
 	// diagnostics page can show the same host facts the panel shows for itself.
@@ -462,6 +466,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	// Resume report ids where the last run left off so the panel's forward-only
 	// watermark keeps accepting this node's traffic after a restart.
 	a.reportSeq = a.state.LastReportID
+	a.restoreSplit()
 	// Tap Xray's access log so the panel can count this node's devices (mirrors the
 	// master's sup.SetOnAccess(RecordAccess)).
 	a.sup.SetOnAccess(a.recordConn)
@@ -470,6 +475,27 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	// from the changed start time and its own node-health alerts.
 	a.sup.StartWatchdog()
 	return a, nil
+}
+
+// restoreSplit puts a state held in parts back together on load, for the boot re-apply
+// and everything that reads the applied meta. One that no longer decodes is dropped, and
+// the panel sends the state again.
+func (a *Agent) restoreSplit() {
+	held := a.state.Split
+	if held == nil {
+		return
+	}
+	p, err := nodestate.Decode(held)
+	var st *nodeapi.NodeState
+	if err == nil {
+		st, err = nodestate.Assemble(p)
+	}
+	if err != nil {
+		slog.Warn("node: the saved state does not decode, waiting for the panel", "err", err)
+		a.state.Split, a.state.LastConfig = nil, nil
+		return
+	}
+	a.parts, a.state.LastConfig = p, st
 }
 
 // siteKey counts one user's connections to one destination host.
@@ -836,6 +862,24 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				return // binary swapped; exit so systemd restarts the new one
 			}
 		}
+		if resp.Changed && (resp.Split != nil || resp.Delta != nil) {
+			var err error
+			if resp.Split != nil {
+				err = a.applySplit(resp.Split)
+			} else {
+				err = a.applyDelta(resp.Delta)
+			}
+			if err != nil {
+				// As below: the panel keeps sending what this node could not apply.
+				slog.Error("node: applying pushed config failed — backing off", "err", err, "backoff", applyBackoff)
+				if !sleepCtx(ctx, applyBackoff) {
+					return
+				}
+				applyBackoff = min(applyBackoff*2, backoffMax)
+				continue
+			}
+			applyBackoff = backoffMin
+		}
 		if resp.Changed && resp.State != nil {
 			if err := a.applyState(resp.State); err != nil {
 				// Don't persist a config we couldn't apply. The panel keeps returning
@@ -1005,6 +1049,8 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 	conns, connsMore := a.takeConns(connsChunkMax)
 	req := nodeapi.SyncRequest{
 		ConfigHash:  hash,
+		DeltaRev:    nodeapi.DeltaRev,
+		StateTag:    a.splitTag(),
 		NodeVersion: version.Version,
 		XrayVersion: a.sup.Version(),
 		// Serving, not Running: a sync that happens to land during a deliberate
@@ -1149,6 +1195,14 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	// Opera VPN egress helper: bring it up/down to match the desired state. The
 	// generated config's "opera" outbound already points at 127.0.0.1:OperaPort.
 	a.syncOpera(m.OperaEnabled, m.OperaCountry, m.OperaPort)
+	return a.applyUsers(st)
+}
+
+// applyUsers is the part of applyState that a change of users reaches: the tunnel's
+// peers, the blocked addresses, the Xray config and the speed caps. A state whose
+// skeleton is the one already applied needs nothing else (see applyDelta).
+func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
+	m := st.Meta
 	a.syncAWG(m.AWG)
 	// The addresses the panel's source policy refused. Sync, not add: a lifted block
 	// has to come out of the kernel here too.

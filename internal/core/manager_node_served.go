@@ -112,6 +112,38 @@ func (r *servedRegistry) note(nodeID int64, ids []int64, unread bool, now int64,
 	r.nodes[nodeID] = next
 }
 
+// change records a change sent to a node, built from inputs read under stamp seq: the
+// users placed are let in, the users removed have left.
+func (r *servedRegistry) change(nodeID int64, placed, removed []int64, now int64, seq uint64) {
+	r.mu.Lock()
+	prev := r.nodes[nodeID]
+	r.mu.Unlock()
+	if prev == nil || prev.unread {
+		return // nothing to change: the next whole state records the node's users
+	}
+	ids := make([]int64, 0, len(prev.ids)+len(placed))
+	for _, id := range prev.ids {
+		if _, gone := slices.BinarySearch(removed, id); !gone {
+			ids = append(ids, id)
+		}
+	}
+	ids = append(ids, placed...)
+	slices.Sort(ids)
+	r.noteIf(nodeID, slices.Compact(ids), now, seq, prev)
+}
+
+// noteIf is note for a list worked out from prev: taken only while prev is still the
+// node's record, so a record made in between is not overwritten with a list built on
+// the one before it.
+func (r *servedRegistry) noteIf(nodeID int64, ids []int64, now int64, seq uint64, prev *nodeServed) {
+	r.mu.Lock()
+	still := r.nodes[nodeID] == prev
+	r.mu.Unlock()
+	if still {
+		r.note(nodeID, ids, false, now, seq)
+	}
+}
+
 func (r *servedRegistry) forget(nodeID int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -1,6 +1,7 @@
 package nodeagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
+	"github.com/AppsGanin/rospanel/internal/nodestate"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
@@ -21,6 +23,10 @@ import (
 // identity (node.json) so credentials and volatile state don't share a file.
 type persistState struct {
 	LastConfig *nodeapi.NodeState `json:"last_config,omitempty"`
+	// Split is the state as last sent in parts (see split.go). When it is set,
+	// LastConfig is put together from it on load and not written: the parts are the
+	// state, and a second copy of the users would double every write.
+	Split *nodestate.Held `json:"split,omitempty"`
 	// LastReportID is the highest traffic-report id this node has sent. The panel's
 	// per-node watermark is forward-only, so a report id that regressed after a
 	// restart (self-update, reboot, crash) would be dropped as a stale duplicate and
@@ -61,10 +67,29 @@ func loadState(dataDir string) *persistState {
 	// upgrade — but the hash is dropped, so the very first sync disagrees with the
 	// panel and pulls the complete, current state down again. One extra push per
 	// upgrade, in exchange for never running a config with fields quietly missing.
-	if s.LastConfig != nil && s.AgentVersion != version.Version {
+	if (s.LastConfig != nil || s.Split != nil) && s.AgentVersion != version.Version {
 		slog.Info("node: agent version changed — re-fetching the full config",
 			"was", s.AgentVersion, "now", version.Version)
-		s.LastConfig.Hash = ""
+		if s.LastConfig != nil {
+			s.LastConfig.Hash = ""
+		}
+		if s.Split != nil {
+			s.Split.Hash, s.Split.Tag = "", ""
+		}
+	}
+	if s.Split != nil {
+		// The parts are hashed as the panel sent them: undo any formatting of the file.
+		compact := func(raw json.RawMessage) json.RawMessage {
+			var b bytes.Buffer
+			if err := json.Compact(&b, raw); err != nil {
+				return raw
+			}
+			return b.Bytes()
+		}
+		s.Split.Skeleton, s.Split.Blocked = compact(s.Split.Skeleton), compact(s.Split.Blocked)
+		for i := range s.Split.Rows {
+			s.Split.Rows[i] = compact(s.Split.Rows[i])
+		}
 	}
 	s.AgentVersion = version.Version
 	return &s
@@ -76,7 +101,14 @@ func (a *Agent) writeState() {
 	snapshot := *a.state
 	a.stateMu.Unlock()
 
-	b, err := json.MarshalIndent(&snapshot, "", "  ")
+	var b []byte
+	var err error
+	if snapshot.Split != nil {
+		snapshot.LastConfig = nil // put together from the parts on load
+		b, err = json.Marshal(&snapshot)
+	} else {
+		b, err = json.MarshalIndent(&snapshot, "", "  ")
+	}
 	if err != nil {
 		return
 	}
@@ -92,9 +124,58 @@ func (a *Agent) writeState() {
 func (a *Agent) setLastConfig(st *nodeapi.NodeState) {
 	a.stateMu.Lock()
 	a.state.LastConfig = st
+	a.state.Split = nil
+	a.state.AgentVersion = version.Version
+	a.stateMu.Unlock()
+	a.parts = nil
+	a.writeState()
+}
+
+// setSplit records a state applied from parts: the parts, and what was put together
+// from them.
+func (a *Agent) setSplit(held *nodestate.Held, st *nodeapi.NodeState) {
+	a.stateMu.Lock()
+	a.state.LastConfig = st
+	a.state.Split = held
 	a.state.AgentVersion = version.Version
 	a.stateMu.Unlock()
 	a.writeState()
+}
+
+// renameSplit records the name the panel now gives the state the node holds.
+func (a *Agent) renameSplit(held *nodestate.Held) {
+	a.stateMu.Lock()
+	a.state.Split = held
+	a.stateMu.Unlock()
+	a.writeState()
+}
+
+// forgetSplitTag drops the name of the state the node holds, keeping the state: the
+// next sync then says only what the node has, by its hash.
+func (a *Agent) forgetSplitTag() {
+	a.stateMu.Lock()
+	if a.state.Split != nil {
+		held := *a.state.Split
+		held.Tag = ""
+		a.state.Split = &held
+		if a.parts != nil {
+			parts := *a.parts
+			parts.Held = &held
+			a.parts = &parts
+		}
+	}
+	a.stateMu.Unlock()
+	a.writeState()
+}
+
+// splitTag is the name of the split state the node holds, "" for none.
+func (a *Agent) splitTag() string {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	if a.state.Split == nil {
+		return ""
+	}
+	return a.state.Split.Tag
 }
 
 // setRevoked records whether the panel currently has this node switched off, so the
@@ -244,6 +325,8 @@ func Status(dataDir string) (string, error) {
 	applied := "none"
 	if st.LastConfig != nil {
 		applied = short(st.LastConfig.Hash)
+	} else if st.Split != nil {
+		applied = short(st.Split.Hash) + fmt.Sprintf(" (%d users)", len(st.Split.Rows))
 	}
 	fmt.Fprintf(&b, "Config    : %s\n", applied)
 	// Cert freshness, if any.
