@@ -326,14 +326,14 @@ func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
 	for _, window := range []string{"limit=0", "offset=100&limit=5"} {
 		groupReads, deviceIDs = 0, nil
 		q, _ := url.ParseQuery(window)
-		p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, time.Now().Unix(), look)
+		p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, look)
 		if len(p.Users) != 0 || p.Total != len(summaries) || p.IDs != nil || groupReads != 0 || deviceIDs != nil {
 			t.Fatalf("%s: rows=%d total=%d ids=%v, groups read %d times, devices for %v", window, len(p.Users), p.Total, p.IDs, groupReads, deviceIDs)
 		}
 	}
 	groupReads, deviceIDs = 0, nil
 	q, _ := url.ParseQuery("offset=1&limit=2")
-	p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, time.Now().Unix(), look)
+	p := buildUsersPage(summaries, newUsersIndex(summaries, time.Now().Unix()), q, look)
 	want := []int64{summaries[1].ID, summaries[2].ID}
 	if groupReads != 1 || !reflect.DeepEqual(deviceIDs, [][]int64{want}) {
 		t.Fatalf("groups read %d times, devices asked for %v, want once and %v", groupReads, deviceIDs, want)
