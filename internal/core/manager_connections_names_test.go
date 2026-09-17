@@ -47,7 +47,7 @@ func TestValidateConnNames(t *testing.T) {
 
 	// A name carrying variables is a normal name here: the braces are syntax, and the
 	// value they stand for is decided per user when the subscription is rendered.
-	if _, err := validateConnNames(map[string]string{"vless": "{flag} VLESS ({left})"}, nil); err != nil {
+	if _, err := validateConnNames(map[string]string{"vless": "{server} VLESS ({left})"}, nil); err != nil {
 		t.Fatalf("a templated name was rejected: %v", err)
 	}
 

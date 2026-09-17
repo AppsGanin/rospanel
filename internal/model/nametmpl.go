@@ -21,15 +21,13 @@ import (
 // An unknown placeholder is left exactly as typed. It is the operator's own text and
 // every surface escapes it, so it renders as a curiosity rather than as a break.
 const (
-	NameVarFlag    = "{flag}"    // 🇳🇱 — the server's country as an emoji flag
-	NameVarCountry = "{country}" // NL
-	NameVarServer  = "{server}"  // the server's display name (see NameVars.Server)
-	NameVarUser    = "{user}"    // the account name
-	NameVarUsed    = "{used}"    // traffic spent, e.g. "12.4 GB"
-	NameVarLeft    = "{left}"    // traffic remaining, or ∞ on an unlimited plan
-	NameVarTotal   = "{total}"   // the quota itself, or ∞
-	NameVarExpire  = "{expire}"  // the expiry date, YYYY-MM-DD, or ∞
-	NameVarDays    = "{days}"    // whole days until expiry, or ∞
+	NameVarServer = "{server}" // the server's display name (see NameVars.Server)
+	NameVarUser   = "{user}"   // the account name
+	NameVarUsed   = "{used}"   // traffic spent, e.g. "12.4 GB"
+	NameVarLeft   = "{left}"   // traffic remaining, or ∞ on an unlimited plan
+	NameVarTotal  = "{total}"  // the quota itself, or ∞
+	NameVarExpire = "{expire}" // the expiry date, YYYY-MM-DD, or ∞
+	NameVarDays   = "{days}"   // whole days until expiry, or ∞
 )
 
 // NameVars are the values a connection-name template is rendered against.
@@ -40,20 +38,18 @@ const (
 // rather than dropping them, so the operator can still see the shape of the name they
 // wrote instead of a mysteriously shorter one.
 type NameVars struct {
-	Server  string
-	Country string
-	User    *User
-	Loc     *time.Location
+	Server string
+	User   *User
+	Loc    *time.Location
 }
 
 // NameUnknown is what a variable renders as when the value is not available in this
-// context — a user-dependent one rendered without a user, or an unset country.
+// context — a user-dependent one rendered without a user.
 const NameUnknown = "—"
 
 // NameVarList is every variable, in the order the UI offers them.
 var NameVarList = []string{
-	NameVarFlag, NameVarCountry, NameVarServer, NameVarUser,
-	NameVarUsed, NameVarLeft, NameVarTotal, NameVarExpire, NameVarDays,
+	NameVarServer, NameVarUser, NameVarUsed, NameVarLeft, NameVarTotal, NameVarExpire, NameVarDays,
 }
 
 // HasNameVar reports whether a name uses a particular variable. The panel asks this
@@ -82,8 +78,6 @@ func RenderName(name string, v NameVars) string {
 		return name
 	}
 	r := strings.NewReplacer(
-		NameVarFlag, orUnknown(CountryFlag(v.Country)),
-		NameVarCountry, orUnknown(strings.ToUpper(strings.TrimSpace(v.Country))),
 		NameVarServer, orUnknown(v.Server),
 		NameVarUser, orUnknown(userField(v.User, func(u *User) string { return u.Name })),
 		NameVarUsed, orUnknown(userField(v.User, func(u *User) string { return NameBytes(u.UsedUp + u.UsedDown) })),
@@ -92,8 +86,8 @@ func RenderName(name string, v NameVars) string {
 		NameVarExpire, orUnknown(userField(v.User, func(u *User) string { return expireOn(u, v.Loc) })),
 		NameVarDays, orUnknown(userField(v.User, daysLeft)),
 	)
-	// Collapsing runs of spaces is what keeps "{flag} {country}" from leaving a gap
-	// when one of the two is empty rather than unknown.
+	// Runs of spaces collapse to one, so the spacing the operator typed around the
+	// variables never shows up doubled in a client's server list.
 	return strings.TrimSpace(strings.Join(strings.Fields(r.Replace(name)), " "))
 }
 
@@ -178,30 +172,4 @@ func NameBytes(n int64) string {
 		return fmt.Sprintf("%.1f %s", v, units[i])
 	}
 	return fmt.Sprintf("%.0f %s", v, units[i])
-}
-
-// CountryFlag renders a two-letter country code as its emoji flag, or "" for anything
-// that is not one. The glyph is two regional-indicator runes: 'A' maps to U+1F1E6, and
-// a pair of them is what every platform draws as a flag.
-//
-// A copy of geo.Flag rather than a call to it: model is the bottom of the import graph
-// and nothing above it may be pulled in here. The algorithm is four lines of the
-// Unicode spec and has no version to drift with.
-func CountryFlag(code string) string {
-	code = strings.TrimSpace(code)
-	if len(code) != 2 {
-		return ""
-	}
-	out := make([]rune, 0, 2)
-	for i := 0; i < 2; i++ {
-		c := code[i]
-		if c >= 'a' && c <= 'z' {
-			c -= 'a' - 'A'
-		}
-		if c < 'A' || c > 'Z' {
-			return ""
-		}
-		out = append(out, rune(c-'A')+0x1F1E6)
-	}
-	return string(out)
 }
