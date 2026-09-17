@@ -753,8 +753,9 @@ export function UserDetail({
             </StateRow>
           </Panel>
 
-          {/* 4. Devices: bound installs when HWID is on, otherwise the addresses the
-                 subscription has been fetched from. */}
+          {/* 4. Devices: the addresses the account connects from, always. A router or
+                 any client that sends no HWID shows up only here, so this list must not
+                 give way to the bound installs below. */}
           <Panel
             title={t('userDetail.devices')}
             aside={
@@ -772,37 +773,7 @@ export function UserDetail({
               </span>
             }
           >
-            {bound?.enabled ? (
-              bound.devices.length === 0 ? (
-                <p className="px-3.5 py-3 text-xs text-ink-muted">
-                  {t('userDetail.noBoundDevices')}
-                </p>
-              ) : (
-                bound.devices.map((d) => (
-                  <div
-                    key={d.hwid}
-                    className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0"
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <Mono className="truncate text-xs text-ink">{d.ip || d.hwid}</Mono>
-                      <span className="truncate text-xs text-ink-muted">
-                        {[d.model, d.os, d.os_version].filter(Boolean).join(' · ') || d.hwid}
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-3">
-                      <Mono className="text-[11px] text-ink-muted">{fmtLastSeen(d.last_seen)}</Mono>
-                      <IconButton
-                        color="red"
-                        title={t('userDetail.unbind')}
-                        onClick={() => unbindDevice(d.hwid)}
-                      >
-                        <IconClose size={16} />
-                      </IconButton>
-                    </span>
-                  </div>
-                ))
-              )
-            ) : conns.length === 0 ? (
+            {conns.length === 0 ? (
               <p className="px-3.5 py-3 text-xs text-ink-muted">
                 {t('userDetail.noConnections')}
               </p>
@@ -834,14 +805,62 @@ export function UserDetail({
                 )}
               </>
             )}
-            {bound?.enabled && bound.devices.length > 0 && (
-              <div className="border-t border-gray-100 px-3.5 py-2">
-                <Button variant="subtle" color="red" size="xs" onClick={() => unbindDevice()}>
-                  {t('userDetail.unbindAll')}
-                </Button>
-              </div>
-            )}
           </Panel>
+
+          {/* 4b. Bound installs, when HWID binding is on: the apps that fetched the
+                 subscription with an HWID, each of which can be unbound. */}
+          {bound?.enabled && (
+            <Panel
+              title={t('userDetail.boundDevices')}
+              aside={
+                <span className="text-xs text-ink-muted">
+                  {bound.limit > 0
+                    ? t('userDetail.boundOfLimit', {
+                        count: bound.devices.length,
+                        limit: bound.limit,
+                      })
+                    : t('userDetail.boundTotal', { count: bound.devices.length })}
+                </span>
+              }
+            >
+              {bound.devices.length === 0 ? (
+                <p className="px-3.5 py-3 text-xs text-ink-muted">
+                  {t('userDetail.noBoundDevices')}
+                </p>
+              ) : (
+                bound.devices.map((d) => (
+                  <div
+                    key={d.hwid}
+                    className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0"
+                  >
+                    <span className="flex min-w-0 flex-col" title={d.hwid}>
+                      <Mono className="truncate text-xs text-ink">{d.ip || d.hwid}</Mono>
+                      <span className="truncate text-xs text-ink-muted">
+                        {[d.model, d.os, d.os_version].filter(Boolean).join(' · ') || d.hwid}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <Mono className="text-[11px] text-ink-muted">{fmtLastSeen(d.last_seen)}</Mono>
+                      <IconButton
+                        color="red"
+                        title={t('userDetail.unbind')}
+                        onClick={() => unbindDevice(d.hwid)}
+                      >
+                        <IconClose size={16} />
+                      </IconButton>
+                    </span>
+                  </div>
+                ))
+              )}
+              {bound.devices.length > 0 && (
+                <div className="border-t border-gray-100 px-3.5 py-2">
+                  <Button variant="subtle" color="red" size="xs" onClick={() => unbindDevice()}>
+                    {t('userDetail.unbindAll')}
+                  </Button>
+                </div>
+              )}
+            </Panel>
+          )}
 
           {/* 5. Tariff and limits. A tariff owns the quota, the device cap and the
                  reset cycle, so under one the fields are shown disabled rather than
