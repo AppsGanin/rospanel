@@ -202,6 +202,14 @@ type ConfigCheckResult struct {
 	Err string `json:"err,omitempty"`
 }
 
+// TurnRelay is one DTLS relay a node runs in front of a WireGuard inbound: Port is the
+// public UDP port, Target the inbound's loopback listener (see internal/turnrelay).
+type TurnRelay struct {
+	Port    int    `json:"port"`
+	Target  string `json:"target"`
+	MaskKey string `json:"mask_key,omitempty"` // Free Turn Proxy masking key, hex
+}
+
 // HopRange is one UDP port-hopping funnel: Start..End redirected onto Target.
 type HopRange struct {
 	Start  int `json:"start"`
@@ -384,6 +392,11 @@ type NodeMeta struct {
 	// ConnGuardPorts are the public TCP ports the per-IP connection guard should
 	// protect (VLESS, and REALITY when enabled).
 	ConnGuardPorts []int `json:"connguard_ports,omitempty"`
+
+	// TurnRelays are the relays the node's WireGuard inbounds need, the complete set:
+	// the agent stops any it runs that is not listed. An older agent ignores it, and
+	// its WireGuard inbounds are unreachable until it updates.
+	TurnRelays []TurnRelay `json:"turn_relays,omitempty"`
 
 	// LoopbackDest is where the node's Xray fallback forwards non-VPN traffic — the
 	// agent runs its decoy server there (matches the panel's own layout).

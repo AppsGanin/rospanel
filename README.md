@@ -264,6 +264,27 @@ status treat it exactly like the Xray lanes. Needs `/dev/net/tun` and `CAP_NET_A
 the installed service has; in Docker pass them yourself (`--device /dev/net/tun --cap-add
 NET_ADMIN`), as a container is given no TUN device by default. `nftables` for the tunnel's NAT.
 
+**WireGuard over calls (TURN)** *(experimental: it may change or be removed in a future
+release)* is a custom-inbound protocol for mobile networks that let
+through nothing but a whitelist. To the network it is a call. The relay speaks
+[Free Turn Proxy](https://github.com/samosvalishe/free-turn-proxy)'s masked wire — every datagram
+sealed as the RTP/Opus audio of a WebRTC call (`rtpopus3`, a key the panel generates) — because
+VK shapes TURN traffic that does not look like a call's media; plain vk-turn-proxy DTLS is still
+served on the same port. The panel runs the relay itself (in-process, on the master and on nodes)
+and hands the packets to Xray's own WireGuard inbound on loopback, so the lane is an Xray inbound
+like any other: users added and removed live without touching anyone else's session, access
+groups, routing (WARP, proxy lanes, blocks), per-user traffic and online status. Users are peers
+by the same key and tunnel address they have on AmneziaWG — nothing new to issue. Create it under
+*Connections → custom inbounds* (protocol *WireGuard (TURN)*, UDP port 56000 by default, an
+optional VK call link to hand out); on the subscription page users get one-tap import links that
+add the whole server to an app with WireGuard built in — `vkturnproxy://` for
+[VK Turn Proxy](https://github.com/anton48/vk-turn-proxy-ios) on iOS (TestFlight), `freeturn://` for
+[Free Turn Proxy](https://github.com/samosvalishe/turn-proxy-android) on Android (and its command-line
+client on computers), and `wingsv://` for [WINGS V](https://github.com/WINGS-N/WINGSV) on Android and
+[WINGS V DeX](https://github.com/WINGS-N/WINGSV_DeX) on Windows and Linux, which does not speak the
+mask and connects unmasked — and, under *Manual setup*, the relay address, the call link and a
+plain WireGuard config pointed at a TURN client.
+
 #### 👤 Users
 
 Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year) — and,

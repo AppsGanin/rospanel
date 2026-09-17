@@ -50,6 +50,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   trojan: "Trojan",
   hysteria2: "Hysteria2",
   shadowsocks: "Shadowsocks",
+  wireguard: "WireGuard (TURN)",
 };
 
 const TRANSPORT_LABELS: Record<string, string> = {
@@ -108,6 +109,7 @@ const blank = (): InboundInput => ({
   authority: "",
   multi_mode: false,
   method: "2022-blake3-aes-128-gcm",
+  turn_link: "",
   xhttp_extra: {},
   sockopt: {},
   tls_extra: {},
@@ -145,6 +147,7 @@ function toInput(v: Inbound): InboundInput {
     authority: o.authority ?? "",
     multi_mode: o.multi_mode ?? false,
     method: o.method || "2022-blake3-aes-128-gcm",
+    turn_link: o.turn_link ?? "",
     // The advanced sections come pre-disassembled from the server.
     xhttp_extra: v.xhttp_extra_form ?? {},
     sockopt: v.sockopt_form ?? {},
@@ -333,6 +336,7 @@ function InboundRow({
   const [open, setOpen] = useState(false);
   const o = v.opts;
   const isSS = v.protocol === "shadowsocks";
+  const isWG = v.protocol === "wireguard";
   // Shadowsocks-2022 is encrypted by its own AEAD, so "no TLS" would misread as
   // insecure, and its transport slug just repeats the protocol. Show the method
   // instead — dropping the "2022-blake3-" prefix every method shares.
@@ -354,10 +358,11 @@ function InboundRow({
           <span className="truncate">{v.name}</span>
           <span className="flex flex-wrap items-center gap-2 text-[11px] font-normal text-ink-muted">
             <Mono>{PROTOCOL_LABELS[v.protocol] ?? v.protocol}</Mono>
-            {!isSS && <Mono>{TRANSPORT_LABELS[o.transport] ?? o.transport}</Mono>}
+            {/* WireGuard's one transport is what its label already says. */}
+            {!isSS && !isWG && <Mono>{TRANSPORT_LABELS[o.transport] ?? o.transport}</Mono>}
             {isSS && ssMethod && <Mono className="text-success">{ssMethod}</Mono>}
             {o.security === "reality" && <Mono className="text-success">REALITY</Mono>}
-            {o.security === "none" && !isSS && (
+            {o.security === "none" && !isSS && !isWG && (
               <span className="text-warning">{t("inb.noTls")}</span>
             )}
             <Mono>{v.port}</Mono>
@@ -409,7 +414,13 @@ function InboundRow({
             />
           )}
           <Row label={t("conn.port")} value={String(v.port)} />
-          {isSS ? (
+          {isWG ? (
+            <>
+              <Row label={t("inb.wgLocalPort")} value={`127.0.0.1:${o.wg_local_port ?? ""}`} />
+              <LongRow label={t("inb.wgPublicKey")} value={o.wg_public_key ?? ""} />
+              {o.turn_link && <LongRow label={t("inb.turnLink")} value={o.turn_link} />}
+            </>
+          ) : isSS ? (
             <Row label={t("inb.ssMethod")} value={o.method ?? ""} />
           ) : (
             <>
@@ -867,6 +878,9 @@ function InboundForm({
       protocol: p,
       transport: first?.transport ?? "",
       security: first?.securities[0] ?? "tls",
+      // vk-turn-proxy's own default port, so the command users copy from its README
+      // matches a fresh inbound.
+      port: p === "wireguard" && !v.port ? 56000 : v.port,
     });
   };
   const pickTransport = (t: string) => {
@@ -880,9 +894,10 @@ function InboundForm({
 
   const isHysteria = v.protocol === "hysteria2";
   const isShadowsocks = v.protocol === "shadowsocks";
-  // Both protocols own their transport and security, so the editor shows neither
+  const isWireGuard = v.protocol === "wireguard";
+  // These protocols own their transport and security, so the editor shows neither
   // control for them — the difference from every other protocol is just this flag.
-  const fixedTransport = isHysteria || isShadowsocks;
+  const fixedTransport = isHysteria || isShadowsocks || isWireGuard;
   const usesPath = ["ws", "xhttp", "httpupgrade"].includes(v.transport);
   const dests = v.reality_dest
     ? v.reality_dest.split(",").map((d) => d.trim()).filter(Boolean)
@@ -951,6 +966,19 @@ function InboundForm({
             data={(catalog.enums.ss_methods ?? []).map((m) => ({ value: m, label: m }))}
           />
           <p className="text-xs text-ink-muted">{t("inb.ssHint")}</p>
+        </div>
+      )}
+
+      {isWireGuard && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-ink-muted">{t("inb.wgHint")}</p>
+          <TextInput
+            label={t("inb.turnLink")}
+            value={v.turn_link}
+            onChange={(x) => set("turn_link", x.trim())}
+            placeholder="https://vk.com/call/join/…"
+          />
+          <p className="text-xs text-ink-muted">{t("inb.turnLinkHint")}</p>
         </div>
       )}
 
@@ -1112,9 +1140,11 @@ function InboundForm({
         </div>
       )}
 
-      {/* Shadowsocks has no streamSettings, so none of the transport/TLS/masquerade
-          knobs in here apply to it. */}
-      {!isShadowsocks && <AdvancedSection v={v} set={set} enums={catalog.enums} />}
+      {/* Shadowsocks and WireGuard have no streamSettings, so none of the
+          transport/TLS/masquerade knobs in here apply to them. */}
+      {!isShadowsocks && !isWireGuard && (
+        <AdvancedSection v={v} set={set} enums={catalog.enums} />
+      )}
 
       <label className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
         <span className="text-sm">{t("common.enabled")}</span>

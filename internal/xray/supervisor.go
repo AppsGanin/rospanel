@@ -62,6 +62,15 @@ type proc struct {
 	// under the Supervisor's runMu.
 	hysteria     *hysteriaLive
 	hysteriaLost bool
+	// wireGuard is the peers this process's WireGuard inbounds hold as the panel has
+	// changed them (inbound tag → email → peer), and wireGuardLost the same mark as
+	// hysteriaLost (see wireguard_live.go). Under runMu.
+	wireGuard     map[string]map[string]wireGuardPeerState
+	wireGuardLost bool
+	// tunnelUsers is who each WireGuard inbound's tunnel addresses belong to, for the
+	// access-log tap: that inbound logs no email (see attributeTunnel). Replaced whole
+	// whenever the peers change.
+	tunnelUsers atomic.Pointer[tunnelUsers]
 	// cutOff is who this process's routing cuts off, for the access-log tap: a removed
 	// Hysteria2 user's open connection goes on opening streams into the block outbound,
 	// and Xray logs each one as accepted. Replaced whole; nil while nobody is cut off.
@@ -976,6 +985,9 @@ func (s *Supervisor) startProc() error {
 		return fmt.Errorf("start xray: %w", err)
 	}
 	p := &proc{cmd: cmd, done: make(chan struct{}), started: time.Now(), cfg: startedWith}
+	if peers, err := readWireGuardLive(startedWith); err == nil {
+		p.tunnelUsers.Store(tunnelUsersOf(peers))
+	}
 	s.mu.Lock()
 	s.cur = p
 	s.mu.Unlock()
@@ -1173,7 +1185,11 @@ func (s *Supervisor) tap(p *proc, r io.Reader, w io.Writer, access bool) {
 		fmt.Fprintln(w, line)
 		fmt.Fprintln(s.logs, line)
 		if access && s.onAccess != nil {
-			if email, ip, dest := parseAccess(line); email != "" && ip != "" {
+			email, ip, dest := parseAccess(line)
+			if email == "" {
+				email, ip, dest = p.tunnelUsers.Load().attribute(line)
+			}
+			if email != "" && ip != "" {
 				// A stream the process cuts off is not the user being online: counted,
 				// it would hold a user cut off for their device limit over it for as
 				// long as their client keeps knocking.
@@ -1218,37 +1234,49 @@ func parseAccess(line string) (email, ip, dest string) {
 	}
 	email = strings.TrimSpace(line[e+len("email: "):])
 
+	host := accessSource(line)
+	if host == "" || host == "127.0.0.1" || host == "::1" {
+		return "", "", ""
+	}
+	return email, host, accessDest(line)
+}
+
+// accessSource is the host an access line's connection came from, "" when it has none.
+func accessSource(line string) string {
 	f := strings.Index(line, "from ")
 	if f < 0 {
-		return "", "", ""
+		return ""
 	}
 	rest := line[f+len("from "):]
 	if sp := strings.IndexByte(rest, ' '); sp > 0 {
 		rest = rest[:sp]
 	}
-	host := hostOf(rest)
-	if host == "" || host == "127.0.0.1" || host == "::1" {
-		return "", "", ""
-	}
+	return hostOf(rest)
+}
 
-	// Leading space so the marker cannot match inside some other token. Anything that
-	// does not parse as a host is dropped: the segment after "accepted" is only a
-	// destination on real connection lines, and on anything else (a truncated line, a
-	// future Xray format) it is arbitrary text we must not report as a domain.
-	if a := strings.Index(line, " accepted "); a >= 0 {
-		d := line[a+len(" accepted "):]
-		if sp := strings.IndexByte(d, ' '); sp > 0 {
-			d = d[:sp]
-		}
-		// Normalise before validating so the two agree on what the host is: a trailing
-		// root dot and upper-case SNI would otherwise each split one domain into two
-		// buckets downstream.
-		h := strings.ToLower(strings.TrimSuffix(hostOf(d), "."))
-		if validHost(h) {
-			dest = h
-		}
+// accessDest is an access line's destination host, "" when it has none.
+//
+// Leading space so the marker cannot match inside some other token. Anything that does
+// not parse as a host is dropped: the segment after "accepted" is only a destination on
+// real connection lines, and on anything else (a truncated line, a future Xray format)
+// it is arbitrary text we must not report as a domain.
+func accessDest(line string) string {
+	a := strings.Index(line, " accepted ")
+	if a < 0 {
+		return ""
 	}
-	return email, host, dest
+	d := line[a+len(" accepted "):]
+	if sp := strings.IndexByte(d, ' '); sp > 0 {
+		d = d[:sp]
+	}
+	// Normalise before validating so the two agree on what the host is: a trailing
+	// root dot and upper-case SNI would otherwise each split one domain into two
+	// buckets downstream.
+	h := strings.ToLower(strings.TrimSuffix(hostOf(d), "."))
+	if validHost(h) {
+		return h
+	}
+	return ""
 }
 
 // hostOf strips the optional network prefix and the port off an Xray address token

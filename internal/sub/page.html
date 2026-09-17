@@ -277,6 +277,52 @@
         opacity: 0.6;
         cursor: default;
       }
+      /* A value with its copy button beside it, for the short technical strings a
+         full-width button under each would bury. */
+      .copy-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .copy-row code {
+        flex: 1;
+        min-width: 0;
+      }
+      .icon-btn {
+        flex: none;
+        width: 38px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--brand) 12%, transparent);
+        color: var(--accent-fg);
+        cursor: pointer;
+      }
+      .icon-btn:hover {
+        background: color-mix(in srgb, var(--brand) 20%, transparent);
+      }
+      .icon-btn:active {
+        transform: scale(0.95);
+      }
+      .icon-btn svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .icon-btn .ic-done,
+      .icon-btn.done .ic-copy {
+        display: none;
+      }
+      .icon-btn.done .ic-done {
+        display: block;
+      }
       .bill-cur {
         display: flex;
         flex-direction: column;
@@ -634,6 +680,48 @@
       </div>
       {{end}}
 
+      {{if .Turn}}
+      <div class="card">
+        <div class="lbl" style="margin-bottom: 8px">{{.L.TurnTitle}}</div>
+        <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
+        {{range .Turn}}
+        <details>
+          <summary>{{.Label}}</summary>
+          {{range .Apps}}
+          <p class="muted" style="margin: 8px 0 4px">{{.Name}}</p>
+          <a class="btn" href="{{.Href}}">{{$.L.OpenInApp}}</a>
+          <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
+          {{end}}
+          <!-- What the apps take from the link, for setting a client up by hand. -->
+          <details>
+            <summary>{{$.L.TurnManual}}</summary>
+            <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
+            <div class="copy-row">
+              <code>{{.Peer}}</code>
+              <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
+                <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              </button>
+            </div>
+            {{if .Link}}
+            <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
+            <div class="copy-row">
+              <code>{{.Link}}</code>
+              <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
+                <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              </button>
+            </div>
+            {{else}}
+            <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
+            {{end}}
+            <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+          </details>
+        </details>
+        {{end}}
+      </div>
+      {{end}}
+
       {{if .ShowConfigs}}
       <div class="card">
         <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
@@ -808,6 +896,16 @@
         var bounce = SUB_URL + "/app/" + e.currentTarget.getAttribute("data-i");
         if (!tgOpen(bounce)) window.location = bounce;
         return false;
+      }
+      // copyIcon is copy for an icon button: it has no text to swap, so the icon turns
+      // into a tick for the same moment instead.
+      function copyIcon(t, el) {
+        navigator.clipboard.writeText(t).then(function () {
+          el.classList.add("done");
+          setTimeout(function () {
+            el.classList.remove("done");
+          }, 1200);
+        });
       }
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {

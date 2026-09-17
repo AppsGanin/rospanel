@@ -69,6 +69,12 @@ var ru = map[string]string{
 	"sub.awgTitle":      "AmneziaWG",
 	"sub.awgHint":       "Для приложений AmneziaVPN и AmneziaWG: отсканируйте QR или скачайте файл и импортируйте его в приложение.",
 	"sub.awgDownload":   "Скачать конфиг",
+	"sub.turnTitle":     "WireGuard через звонки (TURN)",
+	"sub.turnHint":      "Для приложений VK Turn Proxy (iOS), Free Turn Proxy (Android) и WINGS V (Android, Windows, Linux): откройте ссылку или скопируйте её в приложение.",
+	"sub.turnPeer":      "Адрес сервера (peer)",
+	"sub.turnLink":      "Ссылка на звонок",
+	"sub.turnNoLink":    "Ссылки на звонок нет — создайте звонок ВКонтакте и используйте его ссылку.",
+	"sub.turnManual":    "Ручная настройка",
 	"sub.singleConfigs": "Отдельные конфиги",
 	"sub.pickApp":       "Выберите приложение",
 

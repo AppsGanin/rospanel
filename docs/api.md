@@ -460,7 +460,7 @@ target machine** (`xray -test` + a port-bind probe) before it's saved.
 | `DELETE` | `/v1/inbounds/{id}` | Delete a custom inbound. |
 
 **Create / update** — the body mirrors the panel's inbound editor: `name`, `protocol`
-(`vless` / `trojan` / `hysteria2` / `shadowsocks`), `transport` (`tcp` / `ws` / `xhttp` /
+(`vless` / `trojan` / `hysteria2` / `shadowsocks` / `wireguard`), `transport` (`tcp` / `ws` / `xhttp` /
 `grpc` / `httpupgrade`), `port`, `security` (`none` / `tls` / `reality`) with the matching
 keys (REALITY dest & keys, fingerprint, path/host, Hysteria2 hop range), plus optional
 advanced blocks (XHTTP `extra`, TCP HTTP masquerade, `sockopt`, extra TLS keys). The
@@ -468,6 +468,13 @@ full field list — and which combinations are valid — is in `openapi.json` / 
 `shadowsocks` is Shadowsocks-2022 (`method` picks the AEAD; the server key is generated,
 the per-user key derived from the UUID) — multi-user, so per-user stats and quotas work,
 but only modern clients (sing-box, mihomo, v2rayN, Shadowrocket, Streisand) speak it.
+`wireguard` is WireGuard behind a TURN relay: `port` is the public UDP port the relay listens
+on, `turn_link` an optional VK call link (`https://vk.com/call/join/…`) handed to users' apps; the
+server key, the loopback port Xray listens on (`wg_public_key`, `wg_local_port` in the response)
+and the Free Turn Proxy masking key (never returned) are generated. It is in no
+subscription format — users import it into an app from the subscription page
+(`vkturnproxy://`, `freeturn://`, `wingsv://`) or download `<sub>/wg/<inbound id>.conf` from the
+subscription page.
 Two formats the schema can only call `string`: `reality_dest` is a bare hostname
 (`www.microsoft.com` — a `host:port` form is rejected), and `hop_interval` is a range in
 seconds (`"5-10"`, not `"30"`).

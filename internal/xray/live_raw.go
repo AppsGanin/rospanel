@@ -33,6 +33,7 @@ var liveUserKey = map[string]string{
 	"trojan":      "clients",
 	"shadowsocks": "users",
 	"hysteria":    "users",
+	"wireguard":   "peers",
 }
 
 // liveUserChangesMax bounds how many user entries one live update adds and removes.
@@ -44,12 +45,13 @@ const liveUserChangesMax = 5000
 // userChange is what one inbound needs to go from the running config to the pushed
 // one. Removals are emails; additions are the pushed client objects, verbatim.
 type userChange struct {
-	tag      string
-	remove   []string
-	add      []any
-	hysteria bool           // a QUIC inbound: its users go through syncHysteriaLocked
-	inbound  map[string]any // the pushed inbound, whole
-	key      string         // its users field
+	tag       string
+	remove    []string
+	add       []any
+	hysteria  bool           // a QUIC inbound: its users go through syncHysteriaLocked
+	wireGuard bool           // a WireGuard inbound: its users go through syncWireGuardLocked
+	inbound   map[string]any // the pushed inbound, whole
+	key       string         // its users field
 }
 
 // planUserChanges compares the running config with a pushed one. ok is false when they
@@ -120,6 +122,7 @@ func planUserChanges(cur, next []byte) (changes []userChange, ok bool) {
 		settings[key] = nextUsers[i]
 		c.tag, c.key, c.inbound = tag, key, inbound
 		c.hysteria = protocol == "hysteria"
+		c.wireGuard = protocol == "wireguard"
 		total += len(c.remove) + len(c.add)
 		changes = append(changes, c)
 	}
@@ -282,7 +285,7 @@ func (s *Supervisor) tryLiveUsers(apiAddr string, data []byte) (RawApply, bool, 
 // applyUserChanges runs a plan against the running Xray. Caller holds runMu.
 func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) error {
 	for _, c := range changes {
-		if c.hysteria || len(c.remove) == 0 {
+		if c.hysteria || c.wireGuard || len(c.remove) == 0 {
 			continue
 		}
 		// A user already gone is the state asked for, so the count is not checked.
@@ -294,7 +297,7 @@ func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) erro
 	var stubs []any
 	want := 0
 	for _, c := range changes {
-		if c.hysteria || len(c.add) == 0 {
+		if c.hysteria || c.wireGuard || len(c.add) == 0 {
 			continue
 		}
 		stub := make(map[string]any, len(c.inbound))
@@ -322,6 +325,27 @@ func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) erro
 		if got := reportedAdded(out); got != want {
 			return fmt.Errorf("api adu added %d of %d user entries: %s", got, want, bytes.TrimSpace(out))
 		}
+	}
+
+	var wireGuard []wireGuardInbound
+	for _, c := range changes {
+		if !c.wireGuard {
+			continue
+		}
+		// The pushed peers, whole, re-read as the typed entries the sync compares.
+		settings, _ := c.inbound["settings"].(map[string]any)
+		raw, err := json.Marshal(settings[c.key])
+		if err != nil {
+			return err
+		}
+		var peers []WireGuardInboundPeer
+		if err := json.Unmarshal(raw, &peers); err != nil {
+			return fmt.Errorf("read the peers of %s: %w", c.tag, err)
+		}
+		wireGuard = append(wireGuard, wireGuardInbound{tag: c.tag, peers: peers})
+	}
+	if err := s.syncWireGuardLocked(apiAddr, wireGuard); err != nil {
+		return err
 	}
 
 	var hysteria []hysteriaInbound

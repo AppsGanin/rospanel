@@ -540,7 +540,9 @@ type ClientConfig struct {
 
 // Render writes the config file every AmneziaWG client imports (the app, the
 // official CLI, a QR code): WireGuard's INI with the obfuscation keys added to
-// [Interface].
+// [Interface]. Without parameters it is plain WireGuard's file, which is what a
+// WireGuard inbound behind a TURN relay hands out: WireGuard's own apps refuse a file
+// with keys they do not know, and a zero block would only be those keys set to nothing.
 func (c ClientConfig) Render() string {
 	mtu := c.MTU
 	if mtu <= 0 {
@@ -554,32 +556,42 @@ func (c ClientConfig) Render() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\nPrivateKey = %s\nAddress = %s/32\nDNS = %s\nMTU = %d\n",
 		c.PrivateKey, c.Address, dns, mtu)
+	if !p.IsZero() {
+		writeParams(&b, p)
+	}
+	fmt.Fprintf(&b, "\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s\nPersistentKeepalive = %d\n",
+		c.ServerPublicKey, c.Endpoint, Keepalive)
+	return b.String()
+}
+
+// writeParams writes the obfuscation keys of an [Interface] section.
+func writeParams(b *strings.Builder, p Params) {
 	// The order is Amnezia's own: the junk counts, then the four paddings, then the
 	// four headers, then the rest. An INI parser should not care, but this is a file
 	// people compare against the examples in the docs by eye, and S3/S4 sitting
 	// apart from S1/S2 reads as a mistake even when it is not one.
-	fmt.Fprintf(&b, "Jc = %d\nJmin = %d\nJmax = %d\nS1 = %d\nS2 = %d\n", p.Jc, p.Jmin, p.Jmax, p.S1, p.S2)
+	fmt.Fprintf(b, "Jc = %d\nJmin = %d\nJmax = %d\nS1 = %d\nS2 = %d\n", p.Jc, p.Jmin, p.Jmax, p.S1, p.S2)
 	// The 3.1 half, written only when it is set. An older client reading a 1.5
 	// block sees exactly the file it has always seen; the keys below are the ones
 	// amneziawg-tools names, so a 3.1 client reads them as the engine does.
 	if p.S3 > 0 {
-		fmt.Fprintf(&b, "S3 = %d\n", p.S3)
+		fmt.Fprintf(b, "S3 = %d\n", p.S3)
 	}
 	if p.S4 > 0 {
-		fmt.Fprintf(&b, "S4 = %d\n", p.S4)
+		fmt.Fprintf(b, "S4 = %d\n", p.S4)
 	}
-	fmt.Fprintf(&b, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", p.H1, p.H2, p.H3, p.H4)
+	fmt.Fprintf(b, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", p.H1, p.H2, p.H3, p.H4)
 	if p.I1 != "" {
-		fmt.Fprintf(&b, "I1 = %s\n", p.I1)
+		fmt.Fprintf(b, "I1 = %s\n", p.I1)
 	}
 	if p.I2 != "" {
-		fmt.Fprintf(&b, "I2 = %s\n", p.I2)
+		fmt.Fprintf(b, "I2 = %s\n", p.I2)
 	}
 	if p.HeaderKey != "" {
-		fmt.Fprintf(&b, "HeaderProtectionKey = %s\n", p.HeaderKey)
+		fmt.Fprintf(b, "HeaderProtectionKey = %s\n", p.HeaderKey)
 	}
 	if !p.Padding.IsZero() {
-		fmt.Fprintf(&b, "ContentPaddingAddition = %s\n", p.Padding)
+		fmt.Fprintf(b, "ContentPaddingAddition = %s\n", p.Padding)
 	}
 	if p.Trailers {
 		// The INI parser spells its booleans on/off, not true/false.
@@ -596,12 +608,9 @@ func (c ClientConfig) Render() string {
 		{"MaxHandshakeAttempts", p.Handshakes},
 	} {
 		if !t.val.IsZero() {
-			fmt.Fprintf(&b, "%s = %s\n", t.key, t.val)
+			fmt.Fprintf(b, "%s = %s\n", t.key, t.val)
 		}
 	}
-	fmt.Fprintf(&b, "\n[Peer]\nPublicKey = %s\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = %s\nPersistentKeepalive = %d\n",
-		c.ServerPublicKey, c.Endpoint, Keepalive)
-	return b.String()
 }
 
 // PeerStat is what the device knows about one peer: counters since the device

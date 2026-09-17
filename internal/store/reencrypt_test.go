@@ -61,6 +61,17 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 		`{"transport":"tcp","security":"reality","reality_private_key":"plain-inb"}`, in.ID); err != nil {
 		t.Fatal(err)
 	}
+	wgIn, err := st.CreateInbound(model.Inbound{
+		ServerID: model.LocalNodeID, Name: "calls", Protocol: model.InbWireGuard, Port: 56000, Enabled: true,
+		Opts: model.InboundOpts{Transport: model.TrTURN, Security: model.SecNone, WGPrivateKey: "plain-wg-inb", WGLocalPort: 20000},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE inbounds SET opts = ? WHERE id = ?`,
+		`{"transport":"turn","security":"none","wg_private_key":"plain-wg-inb","wg_local_port":20000}`, wgIn.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.db.Exec(`UPDATE settings SET awg_private_key = 'plain-awg-master',
 		proxy_accounts = ? WHERE id = 1`, `[{"user":"proxy","pass":"plain-proxy"}]`); err != nil {
 		t.Fatal(err)
@@ -97,6 +108,9 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 	if opts := raw(`SELECT opts FROM inbounds WHERE id = ?`, in.ID); strings.Contains(opts, "plain-inb") {
 		t.Errorf("inbound REALITY key left in plaintext: %s", opts)
 	}
+	if opts := raw(`SELECT opts FROM inbounds WHERE id = ?`, wgIn.ID); strings.Contains(opts, "plain-wg-inb") || !strings.Contains(opts, `"wg_local_port":20000`) {
+		t.Errorf("inbound WireGuard key left in plaintext, or the rest of the blob lost: %s", opts)
+	}
 	var accs []model.SystemProxyAccount
 	if err := json.Unmarshal([]byte(raw(`SELECT proxy_accounts FROM settings WHERE id = 1`)), &accs); err != nil {
 		t.Fatal(err)
@@ -126,6 +140,17 @@ func TestReencryptCoversEverySecretColumn(t *testing.T) {
 	gotIn, err := st.GetInbound(in.ID)
 	if err != nil || gotIn.Opts.RealityPrivateKey != "plain-inb" {
 		t.Fatalf("inbound key not readable: %+v (%v)", gotIn, err)
+	}
+	if gotWG, err := st.GetInbound(wgIn.ID); err != nil || gotWG.Opts.WGPrivateKey != "plain-wg-inb" {
+		t.Fatalf("inbound WireGuard key not readable: %+v (%v)", gotWG, err)
+	}
+	// A second pass finds nothing left in the clear and leaves the ciphertext alone.
+	wgBefore := raw(`SELECT opts FROM inbounds WHERE id = ?`, wgIn.ID)
+	if err := st.ReencryptSensitiveFields(); err != nil {
+		t.Fatal(err)
+	}
+	if after := raw(`SELECT opts FROM inbounds WHERE id = ?`, wgIn.ID); after != wgBefore {
+		t.Errorf("a second pass rewrote an encrypted inbound key:\n%s\n%s", wgBefore, after)
 	}
 	set, err := st.GetSettings()
 	if err != nil || set.AWGPrivateKey != "plain-awg-master" {

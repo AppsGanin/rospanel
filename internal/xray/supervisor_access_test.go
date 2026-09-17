@@ -75,3 +75,39 @@ func TestValidHostRejectsOverlongName(t *testing.T) {
 		t.Fatal("overlong name accepted")
 	}
 }
+
+// A WireGuard inbound's lines carry no email; the tap names the user by the tunnel
+// address they come from, whichever way the route was matched, and leaves every other
+// inbound's lines and every unknown address alone.
+func TestTunnelUsersAttribute(t *testing.T) {
+	users := tunnelUsersOf(map[string]map[string]wireGuardPeerState{
+		"custom-18": {
+			"u7": {allowedIPs: "10.66.0.2/32"},
+			"u9": {allowedIPs: "10.66.0.3/32,10.66.0.0/16"}, // a wide prefix names nobody
+		},
+	})
+	cases := []struct {
+		line, email, ip, dest string
+	}{
+		{"2026/09/17 13:31:59.176153 from tcp:10.66.0.2:31239 accepted tcp:Example.com.:443 [custom-18 >> direct]", "u7", "10.66.0.2", "example.com"},
+		{"from udp:10.66.0.3:5353 accepted udp:1.1.1.1:53 [custom-18 -> warp]", "u9", "10.66.0.3", "1.1.1.1"},
+		{"from tcp:10.66.0.2:1 accepted tcp:[2001:db8::1]:443 [custom-18 ==> block]", "u7", "10.66.0.2", "2001:db8::1"},
+		{"from tcp:10.66.0.4:1 accepted tcp:example.com:443 [custom-18 >> direct]", "", "", ""}, // no such peer
+		{"from tcp:10.66.0.2:1 accepted tcp:example.com:443 [vless-in >> direct]", "", "", ""},  // another inbound
+		{"from tcp:10.66.0.2:1 rejected tcp:example.com:443 [custom-18 >> direct]", "", "", ""}, // not a connection
+		{"from tcp:10.66.0.2:1 accepted", "", "", ""},
+	}
+	for _, c := range cases {
+		email, ip, dest := users.attribute(c.line)
+		if email != c.email || ip != c.ip || dest != c.dest {
+			t.Errorf("%q\n got %q %q %q, want %q %q %q", c.line, email, ip, dest, c.email, c.ip, c.dest)
+		}
+	}
+	if (*users)["custom-18"]["10.66.0.0"] != "" {
+		t.Error("a /16 was taken as one user's address")
+	}
+	var none *tunnelUsers
+	if email, _, _ := none.attribute(cases[0].line); email != "" {
+		t.Error("a process with no WireGuard inbound attributed a line")
+	}
+}

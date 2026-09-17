@@ -2,6 +2,7 @@ package xray
 
 import (
 	"fmt"
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/extsub"
 	"hash/fnv"
 	"net"
@@ -568,6 +569,17 @@ func customInbound(in model.Inbound, set *model.Settings, users []model.User,
 			Network:  "tcp,udp",
 			Users:    customShadowsocksClients(in, allowed),
 		}
+	case model.InbWireGuard:
+		// Reached only through the relay, which holds the public port: Xray listens on
+		// loopback at the inbound's local port.
+		out.Listen = "127.0.0.1"
+		out.Port = in.Opts.WGLocalPort
+		out.Settings = WireGuardInboundSettings{
+			SecretKey: in.Opts.WGPrivateKey,
+			Address:   []string{awg.ServerAddr.String()},
+			MTU:       WireGuardTURNMTU,
+			Peers:     customWireGuardPeers(allowed),
+		}
 	}
 	out.StreamSettings = customStream(in, set, cert, minTLS)
 	return out
@@ -590,8 +602,8 @@ func customStream(in model.Inbound, set *model.Settings, cert []Certificate, min
 	// carries no streamSettings at all — the tcp+udp choice lives in its settings
 	// (see ShadowsocksInboundSettings.Network). A streamSettings with network
 	// "shadowsocks" would be a transport Xray doesn't know.
-	if in.Protocol == model.InbShadowsocks {
-		return nil
+	if in.Protocol == model.InbShadowsocks || in.Protocol == model.InbWireGuard {
+		return nil // WireGuard is plain UDP to Xray; the relay in front does the DTLS
 	}
 	o := in.Opts
 	st := &StreamSettings{Network: o.Transport}
@@ -769,6 +781,38 @@ func customShadowsocksClients(in model.Inbound, users []model.User) []Shadowsock
 	return out
 }
 
+// WireGuardTURNMTU is the tunnel MTU on both ends of a TURN lane. vk-turn-proxy asks for
+// 1280: its DTLS and the TURN channel framing ride inside the path MTU as well.
+const WireGuardTURNMTU = 1280
+
+// customWireGuardPeers builds a WireGuard inbound's peers from the users' tunnel
+// identities — the same key and address they have on AmneziaWG. A user without one is
+// left out: core claims identities for everyone allowed on the inbound before it
+// generates (see Manager.claimWireGuard), so that is only a user whose claim failed or
+// whose stored key cannot be read, and neither can complete a handshake anyway.
+func customWireGuardPeers(users []model.User) []WireGuardInboundPeer {
+	out := make([]WireGuardInboundPeer, 0, len(users))
+	for _, u := range users {
+		if peer, ok := wireGuardPeer(u.ID, u.WGPrivateKey, u.AWGSlot); ok {
+			out = append(out, peer)
+		}
+	}
+	return out
+}
+
+// wireGuardPeer is one user's peer entry, from their private key and slot.
+func wireGuardPeer(id int64, privateKey string, slot int) (WireGuardInboundPeer, bool) {
+	addr, ok := awg.ClientAddr(slot)
+	if !ok || privateKey == "" {
+		return WireGuardInboundPeer{}, false
+	}
+	pub, err := awg.PublicKey(privateKey)
+	if err != nil {
+		return WireGuardInboundPeer{}, false
+	}
+	return WireGuardInboundPeer{PublicKey: pub, AllowedIPs: []string{addr.String() + "/32"}, Email: model.UserEmail(id)}, true
+}
+
 // protocolClients builds the client lists for the three BUILT-IN lanes (a disabled
 // one gets none, so nobody can authenticate against it). REALITY reuses the VLESS
 // UUID but with no flow — Vision is raw-TCP only, not XHTTP.
@@ -859,6 +903,10 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		case model.InbHysteria:
 			// Same as the built-in lane above: rebuilt, not live-updated.
 			continue
+		case model.InbWireGuard:
+			// The CLI refuses this inbound type as it does Hysteria2; its users go
+			// through Supervisor.SyncWireGuard (see WireGuardInbounds).
+			continue
 		default:
 			continue
 		}
@@ -884,6 +932,17 @@ func HysteriaInbounds(cfg *Config) []Inbound {
 	return out
 }
 
+// WireGuardInbounds picks the generated WireGuard inbounds, for Supervisor.SyncWireGuard.
+func WireGuardInbounds(cfg *Config) []Inbound {
+	var out []Inbound
+	for _, in := range cfg.Inbounds {
+		if in.Protocol == model.InbWireGuard {
+			out = append(out, in)
+		}
+	}
+	return out
+}
+
 // EnabledInboundTags lists the inbound tags that currently carry users (the targets
 // for live user removal via `xray api rmu`) — built-in lanes plus custom inbounds.
 func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
@@ -898,8 +957,8 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 		tags = append(tags, TagReality)
 	}
 	for _, c := range custom {
-		if c.Protocol == model.InbHysteria {
-			continue // SyncHysteria's (see above)
+		if c.Protocol == model.InbHysteria || c.Protocol == model.InbWireGuard {
+			continue // SyncHysteria's and SyncWireGuard's (see above)
 		}
 		tags = append(tags, c.Tag())
 	}

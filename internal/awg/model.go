@@ -2,6 +2,8 @@ package awg
 
 import (
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -80,4 +82,33 @@ func ToModel(p Params) model.AWGParams {
 		Keepalive:    p.Keepalive.String(),
 		Handshakes:   p.Handshakes.String(),
 	}
+}
+
+// TunnelDNS is what the client resolves through inside the tunnel: the operator's
+// own AmneziaWG DNS when they set one, otherwise the plain resolvers from this
+// server's DNS settings — the same ones Xray uses, so both lanes answer alike.
+// A DoH/DoT URL from those settings is skipped: a WireGuard DNS line takes plain
+// addresses, and a client handed a URL would silently fail to resolve anything.
+// Nothing usable there leaves it to DefaultDNS. Shared by every tunnel config the
+// panel hands out — AmneziaWG's and a WireGuard inbound's behind a TURN relay.
+func TunnelDNS(s *model.Settings) string {
+	if v := strings.TrimSpace(s.AWGDNS); v != "" {
+		return v
+	}
+	var plain []string
+	for _, f := range strings.FieldsFunc(s.XrayDNS, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' '
+	}) {
+		if ip := net.ParseIP(strings.TrimSpace(f)); ip != nil {
+			plain = append(plain, ip.String())
+		}
+	}
+	if len(plain) == 0 {
+		return DefaultDNS
+	}
+	// Two is what a client needs; more only lengthens the config.
+	if len(plain) > 2 {
+		plain = plain[:2]
+	}
+	return strings.Join(plain, ", ")
 }

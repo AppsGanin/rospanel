@@ -224,7 +224,12 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	} else {
 		opts.Custom = x.inbounds
 	}
-	cfg, err := xray.Generate(ns, users, opts, x.proxies)
+	// Users this node's WireGuard inbounds hold need a tunnel identity. A claim made here
+	// reaches the shared inputs on their next read (claimAWG drops them), so a state
+	// built on a fresh or failed claim is not remembered.
+	genUsers, wgClaimed, wgOK := m.claimWireGuard(users, opts.Custom, opts.Access)
+	complete = complete && wgOK && !wgClaimed
+	cfg, err := xray.Generate(ns, genUsers, opts, x.proxies)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +242,7 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	// inbound" quietly the way to bypass the guard. Only the TCP ones: the guard's
 	// rules count connections, which UDP/QUIC has none of.
 	for _, in := range opts.Custom {
-		if in.Protocol != model.InbHysteria {
+		if model.ProtoOf(in.Protocol) == "tcp" {
 			connGuardPorts = append(connGuardPorts, in.Port)
 		}
 	}
@@ -263,6 +268,7 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 		HopEnd:            ns.HopEnd,
 		HopRanges:         nodeHopMeta(ns, opts.Custom),
 		ConnGuardPorts:    connGuardPorts,
+		TurnRelays:        nodeTurnRelays(opts.Custom),
 		LoopbackDest:      m.opts.PanelDest,
 		DecoyTemplate:     n.DecoyTemplate,
 		GeoRefreshHours:   n.GeoRefreshHours, // the node's OWN geo cadence

@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/hop"
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -58,6 +61,10 @@ func inboundView(in model.Inbound) InboundView {
 	// its share link, and the editor has no field for it, so keep it off the view the
 	// same way the REALITY private key is kept off.
 	v.Opts.ShadowKey = ""
+	// The WireGuard server key likewise: clients need only the public half. The masking
+	// key reaches clients inside their import links, as the Shadowsocks key does.
+	v.Opts.WGPrivateKey = ""
+	v.Opts.TurnMaskKey = ""
 	// One representation of the advanced settings, not two: the forms above are the
 	// view's; the raw blobs would only be a second copy the client would have to
 	// reconcile.
@@ -194,6 +201,9 @@ func (m *Manager) CreateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	if err := m.prepareInbound(&in); err != nil {
 		return nil, err
 	}
+	if err := m.assignWGLocalPort(&in, 0); err != nil {
+		return nil, err
+	}
 	if err := m.validateAgainstSet(ctx, in, 0); err != nil {
 		return nil, err
 	}
@@ -237,7 +247,18 @@ func (m *Manager) UpdateInbound(ctx context.Context, in model.Inbound) (*Inbound
 	if in.Protocol == model.InbShadowsocks {
 		in.Opts.ShadowKey = cur.Opts.ShadowKey
 	}
+	// And the WireGuard identity and loopback port: a new key would strand every
+	// imported config, and a new port would move the relay's target for nothing.
+	if in.Protocol == model.InbWireGuard && cur.Protocol == model.InbWireGuard {
+		in.Opts.WGPrivateKey = cur.Opts.WGPrivateKey
+		in.Opts.WGPublicKey = cur.Opts.WGPublicKey
+		in.Opts.WGLocalPort = cur.Opts.WGLocalPort
+		in.Opts.TurnMaskKey = cur.Opts.TurnMaskKey
+	}
 	if err := m.prepareInbound(&in); err != nil {
+		return nil, err
+	}
+	if err := m.assignWGLocalPort(&in, in.ID); err != nil {
 		return nil, err
 	}
 	if err := m.validateAgainstSet(ctx, in, in.ID); err != nil {
@@ -315,6 +336,20 @@ func (m *Manager) prepareInbound(in *model.Inbound) error {
 		}
 		in.Opts.ShadowKey = key
 	}
+	if in.NeedsWireGuardKey() {
+		priv, pub, err := awg.GenerateKey()
+		if err != nil {
+			return err
+		}
+		in.Opts.WGPrivateKey, in.Opts.WGPublicKey = priv, pub
+	}
+	if in.NeedsTurnMaskKey() {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+		in.Opts.TurnMaskKey = hex.EncodeToString(key)
+	}
 	if !in.NeedsRealityKeys() {
 		return nil
 	}
@@ -384,6 +419,13 @@ func (m *Manager) validateAgainstSet(ctx context.Context, in model.Inbound, excl
 	// already holds its port would otherwise fail against itself.
 	if in.Enabled && (prev == nil || !prev.Enabled || prev.Port != in.Port) {
 		if err := m.probePort(ctx, in.ServerID, portNetwork(in), in.Port); err != nil {
+			return err
+		}
+	}
+	// A WireGuard inbound's loopback listener is a second port on the same box.
+	if in.Enabled && in.Protocol == model.InbWireGuard &&
+		(prev == nil || !prev.Enabled || prev.Opts.WGLocalPort != in.Opts.WGLocalPort) {
+		if err := m.probePort(ctx, in.ServerID, "udp", in.Opts.WGLocalPort); err != nil {
 			return err
 		}
 	}
@@ -486,15 +528,10 @@ func inboundConflict(err error) error {
 	return err
 }
 
-// portNetwork is the transport-layer network an inbound listens on. Hysteria2 is
-// QUIC, so it binds UDP; everything else binds TCP. Testing the wrong one would pass
-// while the real bind fails.
-func portNetwork(in model.Inbound) string {
-	if in.Protocol == model.InbHysteria {
-		return "udp"
-	}
-	return "tcp"
-}
+// portNetwork is the transport-layer network an inbound listens on (model.ProtoOf):
+// Hysteria2 and the WireGuard relay bind UDP, everything else TCP. Testing the wrong
+// one would pass while the real bind fails.
+func portNetwork(in model.Inbound) string { return model.ProtoOf(in.Protocol) }
 
 // probePort asks the machine that will run this inbound whether the port is free.
 //
@@ -572,7 +609,8 @@ func EnsureHostHops(st *store.Store) error {
 // Custom inbounds belong here for the same reason they belong in the node's list —
 // they are public listeners on the same box, and leaving them out would quietly make
 // "add a custom inbound" the way to bypass the guard. Hysteria2 is excluded: the
-// guard counts connections, which QUIC has none of.
+// guard counts connections, which QUIC has none of — and nor does the WireGuard relay's
+// DTLS, both being UDP.
 func HostConnGuardPorts(st *store.Store) ([]int, error) {
 	set, err := st.GetSettings()
 	if err != nil {
@@ -587,7 +625,7 @@ func HostConnGuardPorts(st *store.Store) ([]int, error) {
 		return nil, err
 	}
 	for _, in := range list {
-		if in.Protocol != model.InbHysteria {
+		if model.ProtoOf(in.Protocol) == "tcp" {
 			ports = append(ports, in.Port)
 		}
 	}
