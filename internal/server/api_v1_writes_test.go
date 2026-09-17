@@ -59,6 +59,11 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create node: %v", err)
 	}
+	// The node's own WARP account, already there: the patch below turns WARP on, which
+	// otherwise registers a real one with Cloudflare over the network.
+	if err := st.SaveNodeWarp(node.ID, "k", "pub", "engage.cloudflareclient.com:2408", "172.16.0.2/32", "", ""); err != nil {
+		t.Fatalf("seed warp: %v", err)
+	}
 	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	defer hook.Close()
 
