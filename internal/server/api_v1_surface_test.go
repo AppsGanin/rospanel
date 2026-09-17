@@ -573,10 +573,15 @@ func TestAPIServerRoutingRoundTrip(t *testing.T) {
 // store.NodeEdit, and a field forgotten there is silently zeroed. Server 0 exercises none
 // of it, which is why this case exists.
 func TestAPINodeRoutingKeepsTheRestOfTheNode(t *testing.T) {
-	rt, _ := apiTestRouter(t)
+	rt, st := apiTestRouter(t)
 	node, err := rt.mgr.CreateNode("routing-node", "node.example.com")
 	if err != nil {
 		t.Fatalf("create node: %v", err)
+	}
+	// The node's own WARP account, already there: turning WARP on otherwise registers a
+	// real one with Cloudflare, and the test fails whenever Cloudflare does.
+	if err := st.SaveNodeWarp(node.ID, "k", "pub", "engage.cloudflareclient.com:2408", "172.16.0.2/32", "", ""); err != nil {
+		t.Fatalf("seed warp: %v", err)
 	}
 	// A distinctive coefficient, stored the way the panel stores it (UpdateNode
 	// normalises, so reading it back is what "unchanged" has to be measured against).
