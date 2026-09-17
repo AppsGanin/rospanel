@@ -9,7 +9,8 @@ import (
 )
 
 // Applier holds the last state put in force, so an unchanged one costs nothing and
-// a state that becomes empty tears the tree down exactly once.
+// a state that becomes empty tears the tree down exactly once. A nil Applier shapes
+// nothing, the way a nil ipblock.Blocker blocks nothing.
 type Applier struct {
 	mu        sync.Mutex
 	lastHash  string
@@ -31,7 +32,7 @@ func New() *Applier { return &Applier{} }
 // tears the tree down when nothing is shaped any more, and degrades to a logged
 // warning wherever tc is unavailable.
 func (a *Applier) Apply(st State) {
-	if runtime.GOOS != "linux" {
+	if a == nil || runtime.GOOS != "linux" {
 		return
 	}
 	hash := Hash(st)
@@ -89,6 +90,9 @@ func (a *Applier) Apply(st State) {
 // the host left as they found it; the kernel would otherwise keep the tree until
 // reboot.
 func (a *Applier) Reset() {
+	if a == nil {
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.teardownLocked()
