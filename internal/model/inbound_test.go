@@ -337,7 +337,7 @@ func TestLaneNamesCarryEmoji(t *testing.T) {
 		"👋🏽 hi",         // skin-tone modifier (category Sk)
 		"👨‍👩‍👧 family",  // a ZWJ sequence
 		"⚠️ backup",     // variation selector
-		"{flag} Node",   // a name variable (nametmpl.go) — braces are part of the syntax
+		"{user} Node",   // a name variable (nametmpl.go) — braces are part of the syntax
 		"{server} · {left}",
 	} {
 		in := Inbound{Name: name, Protocol: InbVLESS, Port: 8443,

@@ -1515,8 +1515,8 @@ func (s *Settings) DecorateName(name string, u *User) string { return s.decorate
 // decorate expands a name's variables and adds the multi-node prefix.
 //
 // The prefix is skipped when the name places the server itself: an operator who wrote
-// "{flag} {server} VLESS" has said where the server goes, and prefixing on top of that
-// produces "Netherlands · 🇳🇱 Netherlands VLESS".
+// "{server} VLESS" has said where the server goes, and prefixing on top of that
+// produces "Netherlands · Netherlands VLESS".
 func (s *Settings) decorate(name string, u *User) string {
 	rendered := name
 	// Resolving the timezone means reading the zone database, and this runs once per
@@ -1529,10 +1529,9 @@ func (s *Settings) decorate(name string, u *User) string {
 			server = s.MasterLabel
 		}
 		rendered = RenderName(name, NameVars{
-			Server:  server,
-			Country: s.ServerPlacement.Country,
-			User:    u,
-			Loc:     s.Location(),
+			Server: server,
+			User:   u,
+			Loc:    s.Location(),
 		})
 	}
 	// Multi-node: prefix with the server name so a client shows "Netherlands · VLESS"

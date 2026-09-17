@@ -5,8 +5,6 @@ import { useTranslation } from "react-i18next";
 // name the server does not expand is left verbatim in the client's server list —
 // visible, harmless, and obviously wrong, which is the failure mode to prefer.
 export const NAME_VARS = [
-  "{flag}",
-  "{country}",
   "{server}",
   "{user}",
   "{used}",
@@ -29,7 +27,7 @@ export function NameVarsHint({ onInsert }: { onInsert: (v: string) => void }) {
             key={v}
             type="button"
             onClick={() => onInsert(v)}
-            title={t(`nameVars.${v.slice(1, -1)}` as "nameVars.flag")}
+            title={t(`nameVars.${v.slice(1, -1)}` as "nameVars.server")}
             className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-ink-muted transition hover:border-brand-400 hover:text-ink"
           >
             {v}

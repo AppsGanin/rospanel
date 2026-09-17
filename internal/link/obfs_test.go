@@ -118,9 +118,8 @@ func TestCustomHysteriaLinkCarriesItsOwnObfs(t *testing.T) {
 func TestBuiltinLinkLabelsResolveTheUser(t *testing.T) {
 	set := obfsSettings()
 	set.NodeLabel = "NL"
-	set.ServerPlacement = model.Placement{Country: "NL"}
-	set.VLESSName = "{flag} VLESS {left}"
-	set.HysteriaName = "{flag} Hy2 {left}"
+	set.VLESSName = "{server} VLESS {left}"
+	set.HysteriaName = "{server} Hy2 {left}"
 	u := model.User{Password: "pw", UUID: "u-1", DataLimit: 100 << 30, UsedUp: 25 << 30}
 
 	for name, raw := range map[string]string{
@@ -135,8 +134,8 @@ func TestBuiltinLinkLabelsResolveTheUser(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: unescape: %v", name, err)
 		}
-		if !strings.Contains(frag, "75 GB") || !strings.Contains(frag, "🇳🇱") {
-			t.Errorf("%s link label = %q, want the user's remaining traffic and the flag", name, frag)
+		if !strings.Contains(frag, "75 GB") || !strings.HasPrefix(frag, "NL ") {
+			t.Errorf("%s link label = %q, want the server and the user's remaining traffic", name, frag)
 		}
 	}
 }

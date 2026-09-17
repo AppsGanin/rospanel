@@ -305,7 +305,7 @@ func validateJSONObject(blob json.RawMessage, allowed map[string]bool, label str
 //
 // It is an allowlist, and what it keeps out is the punctuation that would break the
 // documents the name is embedded in: quotes and colons. Braces are IN, because a name
-// may carry the variables in nametmpl.go ("{flag} {left}") — they are expanded before
+// may carry the variables in nametmpl.go ("{server} {left}") — they are expanded before
 // the name reaches any document, and a brace that survives (an unknown variable, kept
 // verbatim on purpose) is escaped by every surface that renders it. The middle dot is
 // in for the same reason: it is the separator the panel's own "<server> · <lane>"

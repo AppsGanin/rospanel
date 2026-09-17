@@ -1,11 +1,8 @@
 package store
 
 import (
-	"database/sql"
 	"fmt"
 	"path/filepath"
-	"sort"
-	"strings"
 	"testing"
 )
 
@@ -97,37 +94,7 @@ func TestClaimUsersAWGHandsOutTheLowestFreeSlot(t *testing.T) {
 // subnet never had a working address to keep.
 func TestAWGSlotMigrationKeepsHandedOutAddresses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pre-slot.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(ON)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))`); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := migrationsFS.ReadDir("migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") && e.Name() < "0079" {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-	for _, name := range files {
-		body, err := migrationsFS.ReadFile("migrations/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("apply %s: %v", name, err)
-		}
-		if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, name); err != nil {
-			t.Fatal(err)
-		}
-	}
+	db := dbBeforeMigration(t, path, "0079")
 	users := []struct {
 		id   int64
 		key  string

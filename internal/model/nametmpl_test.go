@@ -17,23 +17,21 @@ func tmplUser() *User {
 // feature is in this case, and its output has to be byte-identical.
 func TestRenderNameLeavesPlainNamesAlone(t *testing.T) {
 	for _, name := range []string{"VLESS-TCP-TLS", "🇳🇱 Amsterdam", "Node (backup)", ""} {
-		if got := RenderName(name, NameVars{Server: "NL", Country: "nl", User: tmplUser()}); got != name {
+		if got := RenderName(name, NameVars{Server: "NL", User: tmplUser()}); got != name {
 			t.Errorf("RenderName(%q) = %q, want it untouched", name, got)
 		}
 	}
 }
 
 func TestRenderNameExpandsEveryVariable(t *testing.T) {
-	v := NameVars{Server: "Amsterdam", Country: "nl", User: tmplUser(), Loc: time.UTC}
+	v := NameVars{Server: "Amsterdam", User: tmplUser(), Loc: time.UTC}
 	cases := map[string]string{
-		NameVarFlag:    "🇳🇱",
-		NameVarCountry: "NL",
-		NameVarServer:  "Amsterdam",
-		NameVarUser:    "petya",
-		NameVarUsed:    "25 GB",
-		NameVarLeft:    "75 GB",
-		NameVarTotal:   "100 GB",
-		NameVarExpire:  "2030-03-04",
+		NameVarServer: "Amsterdam",
+		NameVarUser:   "petya",
+		NameVarUsed:   "25 GB",
+		NameVarLeft:   "75 GB",
+		NameVarTotal:  "100 GB",
+		NameVarExpire: "2030-03-04",
 	}
 	for tmpl, want := range cases {
 		if got := RenderName(tmpl, v); got != want {
@@ -74,26 +72,19 @@ func TestRenderNameClampsPastTheLimit(t *testing.T) {
 // have to say so rather than render as empty, or the operator sees a name they did
 // not write and cannot match to the one they did.
 func TestRenderNameWithoutAUser(t *testing.T) {
-	got := RenderName("{flag} VLESS ({left})", NameVars{Country: "de"})
-	if got != "🇩🇪 VLESS (—)" {
+	got := RenderName("{server} VLESS ({left})", NameVars{Server: "Frankfurt"})
+	if got != "Frankfurt VLESS (—)" {
 		t.Errorf("no-user render = %q", got)
 	}
 }
 
 // An unknown variable is the operator's own text and stays exactly as typed: every
-// surface escapes it, so it renders as a curiosity rather than as a break.
+// surface escapes it, so it renders as a curiosity rather than as a break. That
+// includes {flag} and {country}, which the panel once expanded and no longer does.
 func TestRenderNameKeepsUnknownVariables(t *testing.T) {
-	got := RenderName("{flag} {nope}", NameVars{Country: "fr"})
-	if got != "🇫🇷 {nope}" {
+	got := RenderName("{server}  {nope} {flag}", NameVars{Server: "Paris"})
+	if got != "Paris {nope} {flag}" {
 		t.Errorf("unknown variable render = %q", got)
-	}
-}
-
-// An unset country leaves both its variables unknown, and the collapse keeps the
-// result from carrying the gap where the flag would have been.
-func TestRenderNameUnknownCountry(t *testing.T) {
-	if got := RenderName("{flag} Node", NameVars{}); got != "— Node" {
-		t.Errorf("unknown country render = %q", got)
 	}
 }
 
@@ -101,16 +92,16 @@ func TestRenderNameUnknownCountry(t *testing.T) {
 // must not be prefixed on top of its own answer.
 func TestProtoLabelServerPrefix(t *testing.T) {
 	base := func(name string) *Settings {
-		return &Settings{VLESSName: name, NodeLabel: "Amsterdam", ServerPlacement: Placement{Country: "NL"}}
+		return &Settings{VLESSName: name, NodeLabel: "Amsterdam"}
 	}
 	if got := base("VLESS").ProtoLabelFor(ProtoVLESS, nil); got != "Amsterdam · VLESS" {
 		t.Errorf("plain name = %q, want the automatic prefix", got)
 	}
-	if got := base("{flag} {server}").ProtoLabelFor(ProtoVLESS, nil); got != "🇳🇱 Amsterdam" {
+	if got := base("VLESS {server}").ProtoLabelFor(ProtoVLESS, nil); got != "VLESS Amsterdam" {
 		t.Errorf("{server} name = %q, want no second prefix", got)
 	}
 	// A name with other variables but no {server} still gets the prefix.
-	if got := base("VLESS {country}").ProtoLabelFor(ProtoVLESS, nil); got != "Amsterdam · VLESS NL" {
+	if got := base("VLESS {user}").ProtoLabelFor(ProtoVLESS, nil); got != "Amsterdam · VLESS —" {
 		t.Errorf("prefixed templated name = %q", got)
 	}
 }
