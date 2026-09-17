@@ -1,21 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  getConnPolicy,
-  getProbes,
-  getSettings,
-  unblockIP,
-  type BlockedIP,
-  type ProbeHit,
-} from './api'
+import { getBans, getProbes, getSettings, unbanIP, type Ban, type ProbeHit } from './api'
 import { countryFlag, countryName } from './format'
 import { useAction, useShowMore } from './hooks'
 import i18n from './i18n'
 import { inPanelTz } from './tz'
-import { cn, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
+import { cn, IconButton, IconUnlock, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
 
 // The two lists the security features produce: who has been scanning for the hidden
-// panel path, and whose address the source policy refused. They live on the
+// panel path, and every address dropped at the firewall. They live on the
 // statistics page rather than in the settings that switch them on — a settings card
 // is where a rule is written, and neither of these is a setting: they are what the
 // rules have caught, read the way the other reports here are read.
@@ -28,8 +21,7 @@ import { cn, MICRO, Mono, Panel, ShowMore, useWideBox } from './ui'
 // it comes from, when — not boxed cards: they are read down a column like every
 // other list in the console. Below WIDE_MIN the row folds onto two lines.
 const PROBE_TPL = 'minmax(0,1.1fr) minmax(0,.5fr) minmax(0,1.7fr) minmax(0,1fr)'
-const BLOCK_TPL =
-  'minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1fr) 108px'
+const BLOCK_TPL = 'minmax(0,1.1fr) minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1fr) 24px'
 const NARROW_TPL = 'minmax(0,1fr) auto'
 const WIDE_MIN = 520
 
@@ -141,19 +133,24 @@ export function ProbeList() {
   )
 }
 
-// BlockedList is what the source policy refused, with the button that overrules it.
-// Shown whenever there is something in it — including after the rule was switched
-// off, so nothing stays cut without a way to see it.
+// BlockedList is every address dropped at the firewall, whatever placed it: banned by
+// hand from a user's addresses, refused by the source policy, or caught by the proxy's
+// brute-force guard or the scanner block — with the button that lets it back in.
+// Shown whenever there is something in it.
 export function BlockedList() {
   const { t } = useTranslation()
-  const [blocked, setBlocked] = useState<BlockedIP[]>([])
+  const [bans, setBans] = useState<Ban[]>([])
+  const [canEnforce, setCanEnforce] = useState(true)
   const { busy, run } = useAction()
-  const rows = useShowMore(blocked, { first: 10, step: 20, resetKey: blocked })
+  const rows = useShowMore(bans, { first: 10, step: 20, resetKey: bans })
   const [boxRef, wide] = useWideBox(WIDE_MIN)
 
   const load = () =>
-    getConnPolicy()
-      .then((info) => setBlocked(info.blocked ?? []))
+    getBans()
+      .then((r) => {
+        setBans(r.bans ?? [])
+        setCanEnforce(r.can_enforce)
+      })
       .catch(() => {})
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; the loader is redefined every render, so listing it would refetch in a loop
@@ -161,34 +158,40 @@ export function BlockedList() {
     load()
   }, [])
 
-  if (blocked.length === 0) return null
+  if (bans.length === 0) return null
 
-  const unblock = (ip: string) => (
-    <button
-      type="button"
-      className="text-xs font-medium text-accent hover:underline disabled:opacity-50"
+  // An icon, like the ban button it undoes on a user's addresses; compact, with a
+  // negative margin, so it neither makes its row taller nor fills it on hover.
+  const unban = (ip: string) => (
+    <IconButton
+      compact
+      className="-my-1 shrink-0"
+      title={t('policy.unblock')}
       disabled={busy}
       onClick={() =>
         run(async () => {
-          await unblockIP(ip)
+          await unbanIP(ip)
           await load()
         })
       }
     >
-      {t('policy.unblock')}
-    </button>
+      <IconUnlock size={16} />
+    </IconButton>
   )
 
   return (
     <Panel
       title={t('policy.blocked')}
-      aside={
-        <span className="min-w-0 text-xs text-ink-muted">
-          {t('security.blockedHint')}
-        </span>
-      }
+      aside={<span className="min-w-0 text-xs text-ink-muted">{t('security.bansHint')}</span>}
     >
       <div ref={boxRef}>
+        {!canEnforce && (
+          // Without nftables on the master the bans are recorded and handed to the
+          // nodes, but this server drops nothing — said here, not left to be discovered.
+          <p className="border-t border-gray-100 px-3.5 py-2 text-xs text-warning">
+            {t('policy.noFirewall')}
+          </p>
+        )}
         {wide && (
           <div
             className={cn(MICRO, 'grid items-center gap-3 px-3.5 py-2')}
@@ -202,13 +205,12 @@ export function BlockedList() {
           </div>
         )}
         {rows.shown.map((b) => {
-          const from = where(b.country, b.asn, b.org)
-          const reason = t(
-            b.reason === 'asn' ? 'policy.reasonASN' : 'policy.reasonCountry',
-          )
+          const from = [where(b.country, b.asn, b.org), b.user_name].filter(Boolean).join(' · ')
+          const reason = banReason(b.source)
+          const until = b.until > 0 ? fmtWhen(b.until) : t('security.untilLifted')
           return (
             <div
-              key={b.ip}
+              key={`${b.ip} ${b.source}`}
               className={rowCls}
               style={{ gridTemplateColumns: wide ? BLOCK_TPL : NARROW_TPL }}
             >
@@ -223,18 +225,16 @@ export function BlockedList() {
                   <span className="truncate text-xs text-warning">{reason}</span>
                 </>
               ) : null}
-              <Mono className="text-right text-[11px] text-ink-muted">
-                {fmtWhen(b.until)}
-              </Mono>
+              <Mono className="text-right text-[11px] text-ink-muted">{until}</Mono>
               {wide ? (
-                unblock(b.ip)
+                unban(b.ip)
               ) : (
                 <span className="col-span-2 flex min-w-0 items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
                     <span className="text-warning">{reason}</span>
                     {from ? ` · ${from}` : ''}
                   </span>
-                  {unblock(b.ip)}
+                  {unban(b.ip)}
                 </span>
               )}
             </div>
@@ -244,4 +244,21 @@ export function BlockedList() {
       </div>
     </Panel>
   )
+}
+
+// banReason names what placed a ban.
+function banReason(source: string): string {
+  switch (source) {
+    case 'manual':
+      return i18n.t('security.banManual')
+    case 'asn':
+      return i18n.t('policy.reasonASN')
+    case 'country':
+      return i18n.t('policy.reasonCountry')
+    case 'brute':
+      return i18n.t('security.banBrute')
+    case 'probe':
+      return i18n.t('security.banProbe')
+  }
+  return source
 }

@@ -13,6 +13,9 @@
 package ipblock
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/netip"
@@ -32,6 +35,9 @@ const (
 	TablePolicy = "rospanel_policyblock"
 	// TableBrute holds the addresses the proxy brute-force guard banned.
 	TableBrute = "rospanel_bruteguard"
+	// TableBanned holds the addresses an operator banned by hand. Its sets have no
+	// timeout: a ban lasts until it is lifted (see NewPermanent).
+	TableBanned = "rospanel_ipban"
 )
 
 // DefaultTTL is how long a blocked address stays in the kernel set. The sets carry
@@ -49,6 +55,9 @@ const ensureRetryCooldown = 5 * time.Minute
 type Blocker struct {
 	table string
 	ttl   time.Duration
+	// permanent marks a table whose sets carry no timeout: its elements stay until
+	// they are removed, and the ttl is not used.
+	permanent bool
 
 	// mu serializes every nft mutation and guards armed/ensureFailedAt. Blocks are
 	// fired from a goroutine per address, so without this two first-time blocks could
@@ -66,6 +75,13 @@ type Blocker struct {
 // New returns a Blocker for one table, with the default block lifetime.
 func New(table string) *Blocker { return &Blocker{table: table, ttl: DefaultTTL, armed: true} }
 
+// NewPermanent returns a Blocker whose blocks never expire in the kernel: an
+// operator's ban lasts until the operator lifts it. The kernel still forgets
+// everything on a reboot, so the owner re-applies its own record with Sync.
+func NewPermanent(table string) *Blocker {
+	return &Blocker{table: table, armed: true, permanent: true}
+}
+
 // WithTTL returns a Blocker whose blocks expire after d (0 keeps the default).
 func (b *Blocker) WithTTL(d time.Duration) *Blocker {
 	if b == nil || d <= 0 {
@@ -82,15 +98,19 @@ func (b *Blocker) WithTTL(d time.Duration) *Blocker {
 // The `add table`/`add set`/`add chain` statements are idempotent, but `add rule` appends
 // — so it must be applied exactly once (guarded by mu + the table-exists check in ensure),
 // never re-run against an existing table.
-func ruleset(table string) string {
+func ruleset(table string, permanent bool) string {
+	flags := " flags timeout;"
+	if permanent {
+		flags = ""
+	}
 	return fmt.Sprintf(`add table inet %[1]s
-add set inet %[1]s blocked4 { type ipv4_addr; flags timeout; }
-add set inet %[1]s blocked6 { type ipv6_addr; flags timeout; }
+add set inet %[1]s blocked4 { type ipv4_addr;%[2]s }
+add set inet %[1]s blocked6 { type ipv6_addr;%[2]s }
 add chain inet %[1]s input { type filter hook input priority -5; policy accept; }
 add rule inet %[1]s input iif "lo" accept
 add rule inet %[1]s input ip saddr @blocked4 drop
 add rule inet %[1]s input ip6 saddr @blocked6 drop
-`, table)
+`, table, flags)
 }
 
 // Available reports whether this host can block at all (Linux with nft installed).
@@ -108,19 +128,30 @@ func Available() bool {
 // once so blocks self-expire instead of accumulating forever.
 func (b *Blocker) ensure() error {
 	if out, err := exec.Command("nft", "list", "table", "inet", b.table).CombinedOutput(); err == nil {
-		if strings.Contains(string(out), "flags timeout") {
-			return nil // already installed with self-expiring sets
+		if installedShape(string(out), b.permanent) {
+			return nil // already installed as this blocker installs it
 		}
-		// Pre-timeout table from an older build — drop it so it comes back with timeouts.
+		// A table of another shape — a pre-timeout one from an older build, or a
+		// permanent table someone left half-built — is dropped and comes back whole.
 		_ = exec.Command("nft", "delete", "table", "inet", b.table).Run()
 	}
 	cmd := exec.Command("nft", "-f", "-")
-	cmd.Stdin = strings.NewReader(ruleset(b.table))
+	cmd.Stdin = strings.NewReader(ruleset(b.table, b.permanent))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("nft install %s table: %w\n%s", b.table, err, out)
 	}
 	log.Printf("ipblock: nftables drop table installed (%s)", b.table)
 	return nil
+}
+
+// installedShape reports whether `nft list table` output is a table this blocker would
+// have installed: both drop rules, and timeouts on the sets exactly when the blocks
+// expire.
+func installedShape(listing string, permanent bool) bool {
+	if !strings.Contains(listing, "@blocked4 drop") || !strings.Contains(listing, "@blocked6 drop") {
+		return false
+	}
+	return strings.Contains(listing, "flags timeout") != permanent
 }
 
 // setFor returns the set name for an address family, or "" if the address is invalid.
@@ -153,13 +184,22 @@ func (b *Blocker) BlockIP(ip string) error {
 		return nil // blocking was switched off; don't resurrect the table
 	}
 	if !b.ensureFailedAt.IsZero() && time.Since(b.ensureFailedAt) < ensureRetryCooldown {
-		return nil // nft is failing on this box; back off instead of a per-address storm
+		// nft is failing on this box; back off instead of a per-address storm. A
+		// permanent block has no timeout to fall back on and whoever placed it needs to
+		// know it did not land, so it says so; a self-expiring one stays best-effort.
+		if b.permanent {
+			return fmt.Errorf("nft is failing on this host; %s retried later", addr)
+		}
+		return nil
 	}
 	if err := b.ensure(); err != nil {
 		b.ensureFailedAt = time.Now()
 		return err
 	}
 	elem := fmt.Sprintf("{ %s timeout %s }", addr.String(), b.ttl)
+	if b.permanent {
+		elem = fmt.Sprintf("{ %s }", addr.String())
+	}
 	out, err := exec.Command("nft", "add", "element", "inet", b.table, set, elem).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "File exists") {
 		b.ensureFailedAt = time.Now()
@@ -244,10 +284,13 @@ func (b *Blocker) Sync(ips []string) error {
 	if err != nil {
 		return err
 	}
+	// One address that fails does not stop the rest: every other one still lands, and
+	// the failure is reported for the next pass to retry.
+	var errs []error
 	for ip := range have {
 		if _, keep := want[ip]; !keep {
 			if err := b.UnblockIP(ip); err != nil {
-				return err
+				errs = append(errs, err)
 			}
 		}
 	}
@@ -256,10 +299,29 @@ func (b *Blocker) Sync(ips []string) error {
 			continue
 		}
 		if err := b.BlockIP(ip); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+// errNoTable is listJSON finding no table: the normal state before the first block.
+var errNoTable = errors.New("no such table")
+
+// listJSON is `nft -j list table` for this blocker's table: stdout alone, since a
+// warning on stderr would break the JSON.
+func (b *Blocker) listJSON() ([]byte, error) {
+	cmd := exec.Command("nft", "-j", "list", "table", "inet", b.table)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if strings.Contains(stderr.String(), "No such file") {
+			return nil, errNoTable
+		}
+		return nil, fmt.Errorf("nft list table %s: %w: %s", b.table, err, strings.TrimSpace(stderr.String()))
+	}
+	return out, nil
 }
 
 // Addresses lists what the kernel sets hold right now — what an operator trusting a
@@ -279,12 +341,85 @@ func (b *Blocker) Addresses() ([]string, error) {
 	return out, nil
 }
 
+// Entry is one address in a kernel set and how long it has left there; Expires is 0
+// for an element that does not expire.
+type Entry struct {
+	IP      string
+	Expires time.Duration
+}
+
+// Entries lists what the kernel sets hold, with the time each address has left: what
+// the panel shows for the bans it keeps only in the kernel. No table, or no nftables
+// at all, is an empty list.
+func (b *Blocker) Entries() ([]Entry, error) {
+	if b == nil || !Available() {
+		return nil, nil
+	}
+	raw, err := b.listJSON()
+	if errors.Is(err, errNoTable) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseEntries(raw)
+}
+
+// parseEntries reads the elements out of `nft -j list table`. A set with timeouts
+// lists each as {"elem": {"val": "1.2.3.4", "timeout": 86400, "expires": 76411}}, one
+// without as the bare address.
+func parseEntries(raw []byte) ([]Entry, error) {
+	var doc struct {
+		Nftables []struct {
+			Set *struct {
+				Elem []json.RawMessage `json:"elem"`
+			} `json:"set"`
+		} `json:"nftables"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("read nft set elements: %w", err)
+	}
+	var out []Entry
+	for _, item := range doc.Nftables {
+		if item.Set == nil {
+			continue
+		}
+		for _, el := range item.Set.Elem {
+			var bare string
+			if json.Unmarshal(el, &bare) == nil {
+				if addr, err := netip.ParseAddr(bare); err == nil {
+					out = append(out, Entry{IP: addr.Unmap().String()})
+				}
+				continue
+			}
+			var timed struct {
+				Elem struct {
+					Val     string `json:"val"`
+					Expires int64  `json:"expires"`
+				} `json:"elem"`
+			}
+			if json.Unmarshal(el, &timed) != nil {
+				continue
+			}
+			if addr, err := netip.ParseAddr(timed.Elem.Val); err == nil {
+				out = append(out, Entry{IP: addr.Unmap().String(), Expires: time.Duration(timed.Elem.Expires) * time.Second})
+			}
+		}
+	}
+	return out, nil
+}
+
 // blocked reads the addresses currently in the kernel sets.
 func (b *Blocker) blocked() (map[string]struct{}, error) {
 	out := map[string]struct{}{}
-	raw, err := exec.Command("nft", "-j", "list", "table", "inet", b.table).CombinedOutput()
+	raw, err := b.listJSON()
 	if err != nil {
-		// No table yet is the normal first-run case, not a failure.
+		// No table yet is the normal first-run case, not a failure. Any other failure
+		// is one too for a permanent table: read as empty, a Sync would never lift a
+		// ban, and nothing expires it. A self-expiring table keeps the old tolerance.
+		if b.permanent && !errors.Is(err, errNoTable) {
+			return nil, err
+		}
 		return out, nil
 	}
 	// The JSON carries the elements as bare strings inside each set; picking them out

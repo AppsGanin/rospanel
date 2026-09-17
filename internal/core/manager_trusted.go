@@ -90,6 +90,8 @@ func (m *Manager) SaveTrustedNets(entries []string) error {
 			}
 		}
 	}
+	// Bans placed by hand are recorded and handed to the nodes as well.
+	m.liftTrustedBans(nets)
 	// The other two live only in this machine's kernel.
 	liftTrusted(m.probeBlock, nets, "scanner")
 	if m.guard != nil {

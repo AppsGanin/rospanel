@@ -285,6 +285,10 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 		meta.BlockedIPs = in.blocked
 		meta.BlockTTLHours = int(policyTTL(set.ConnPolicy) / time.Hour)
 	}
+	// The addresses banned by hand, the same way.
+	if len(in.banned) > 0 {
+		meta.BannedIPs = in.banned
+	}
 	if ns.OperaEnabled {
 		meta.OperaEnabled = true
 		meta.OperaCountry = ns.OperaCountryOr()
@@ -320,6 +324,7 @@ type nodeInputs struct {
 	access  map[int64]model.Access
 	speed   map[string]int
 	blocked []string
+	banned  []string
 }
 
 const nodeInputsTTL = 10 * time.Second
@@ -404,6 +409,10 @@ func (m *Manager) readNodeInputsLocked(ws *workingSet) (*nodeInputs, error) {
 		logErr("node state: cannot read blocked addresses", "err", err)
 		complete = false
 	}
+	if in.banned, err = m.store.BannedIPList(); err != nil {
+		logErr("node state: cannot read banned addresses", "err", err)
+		complete = false
+	}
 	// A read that failed softly serves this build but is not kept: sharing it would
 	// drop the blocks from every node's state for the whole TTL.
 	if complete {
@@ -451,6 +460,7 @@ func (m *Manager) fleetChanged(ws *workingSet) bool {
 // read itself).
 func sameNodeInputs(a, b *nodeInputs) bool {
 	if len(a.users) != len(b.users) || !maps.Equal(a.speed, b.speed) || !slices.Equal(a.blocked, b.blocked) ||
+		!slices.Equal(a.banned, b.banned) ||
 		!reflect.DeepEqual(a.access, b.access) {
 		return false
 	}

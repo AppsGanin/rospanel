@@ -387,7 +387,7 @@ func encodeSkeleton(sc *xray.SplitConfig, meta nodeapi.NodeMeta) (json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	meta.SpeedLimits, meta.BlockedIPs, meta.BlockTTLHours = nil, nil, 0
+	meta.SpeedLimits, meta.BlockedIPs, meta.BlockTTLHours, meta.BannedIPs = nil, nil, 0, nil
 	if meta.AWG != nil {
 		tunnel := *meta.AWG
 		tunnel.Peers = nil
@@ -397,7 +397,7 @@ func encodeSkeleton(sc *xray.SplitConfig, meta nodeapi.NodeMeta) (json.RawMessag
 }
 
 func encodeBlocked(meta nodeapi.NodeMeta) (json.RawMessage, error) {
-	return json.Marshal(nodeapi.Blocked{IPs: meta.BlockedIPs, TTLHours: meta.BlockTTLHours})
+	return json.Marshal(nodeapi.Blocked{IPs: meta.BlockedIPs, TTLHours: meta.BlockTTLHours, Banned: meta.BannedIPs})
 }
 
 // splitRows encodes the row of every user a split config lets in — on an inbound, or as

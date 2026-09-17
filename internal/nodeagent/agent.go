@@ -223,8 +223,21 @@ type Agent struct {
 	// awg is this node's AmneziaWG tunnel (see awg.go); awgEmails maps a peer's
 	// public key to the user tag it reports under, awgLast the counters last read.
 	// policyBlock drops the addresses the panel's source policy refused, in this
-	// node's own firewall table.
+	// node's own firewall table; ipBan the addresses an operator banned, in a table
+	// whose entries do not expire.
 	policyBlock *ipblock.Blocker
+	ipBan       *ipblock.Blocker
+	// banWant is the banned addresses as last applied, less the ones this node must
+	// never drop (see bannable); banLoop re-applies it, since a ban has no timeout to
+	// heal one that did not land. banApplied is false until a state has been applied.
+	banMu      sync.Mutex
+	banWant    []string
+	banApplied bool
+	// panelAddrs is what the panel's host resolved to, when (see panelAddresses).
+	// Touched only from the sync goroutine.
+	panelAddrs   []netip.Addr
+	panelAddrsOf string
+	panelAddrsAt time.Time
 
 	awg awg.Device
 	// awgErr is the last tunnel-apply failure, reported to the panel so it can raise
@@ -291,6 +304,7 @@ func Run(ctx context.Context, dataDir string) error {
 	go a.certLoop(ctx)  // retry ACME + reload Xray when the real cert lands
 	go a.geoLoop(ctx)   // auto-refresh geo databases on the panel-pushed cadence
 	go a.watchXray(ctx) // report an Xray that died (or came back) without waiting
+	go a.banLoop(ctx)   // re-apply the banned addresses, which never expire on their own
 	go a.shapeLoop(ctx) // per-user speed caps, from this node's own address view
 	a.syncLoop(ctx)
 	a.shutdown()
@@ -467,6 +481,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		awg:          awg.New(),
 		turn:         turnrelay.New(),
 		policyBlock:  ipblock.New(ipblock.TablePolicy),
+		ipBan:        ipblock.NewPermanent(ipblock.TableBanned),
 	}
 	// Resume report ids where the last run left off so the panel's forward-only
 	// watermark keeps accepting this node's traffic after a restart.
@@ -1227,6 +1242,13 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	if err := a.policyBlock.Sync(m.BlockedIPs); err != nil {
 		slog.Warn("node: could not apply the blocked addresses", "err", err)
 	}
+	want := a.bannable(m.BannedIPs)
+	a.banMu.Lock()
+	a.banWant, a.banApplied = want, true
+	a.banMu.Unlock()
+	if err := a.ipBan.Sync(want); err != nil {
+		slog.Warn("node: could not apply the banned addresses", "err", err)
+	}
 
 	// Substitute the cert-path sentinels with the node's absolute paths and apply.
 	//
@@ -1543,4 +1565,94 @@ func short(h string) string {
 		return h[:12]
 	}
 	return h
+}
+
+// banResyncEvery is how often the banned addresses are re-applied to the firewall.
+const banResyncEvery = 5 * time.Minute
+
+// banLoop re-applies the banned addresses on a timer: an address that failed to land
+// (nft failing for a moment, a table flushed by hand) has no timeout to heal it, and
+// the panel sends the list again only when it changes.
+func (a *Agent) banLoop(ctx context.Context) {
+	for sleepCtx(ctx, banResyncEvery) {
+		a.banMu.Lock()
+		want, applied := a.banWant, a.banApplied
+		a.banMu.Unlock()
+		if !applied {
+			continue // nothing applied yet: an empty list here would lift the bans a restart restores
+		}
+		if err := a.ipBan.Sync(want); err != nil {
+			slog.Warn("node: could not re-apply the banned addresses", "err", err)
+		}
+	}
+}
+
+// bannable is the banned addresses less the ones this node must never drop: the
+// panel's own — dropped, the node could not hear from the panel again, not even the
+// unban — and the node's own. The panel refuses to ban its servers' addresses, but a
+// master behind NAT has an address it cannot see, and only the node knows which
+// address it reaches the panel on.
+func (a *Agent) bannable(ips []string) []string {
+	if len(ips) == 0 {
+		return nil
+	}
+	keep := map[netip.Addr]bool{}
+	for _, p := range a.panelAddresses() {
+		keep[p] = true
+	}
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, ia := range addrs {
+			if p, err := netip.ParsePrefix(ia.String()); err == nil {
+				keep[p.Addr().Unmap().WithZone("")] = true
+			}
+		}
+	}
+	return withoutAddresses(ips, keep)
+}
+
+// withoutAddresses drops the addresses in keep (and anything unparseable) from ips.
+func withoutAddresses(ips []string, keep map[netip.Addr]bool) []string {
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		addr, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		if keep[addr.Unmap().WithZone("")] {
+			slog.Warn("node: not banning an address this node needs", "ip", ip)
+			continue
+		}
+		out = append(out, ip)
+	}
+	return out
+}
+
+// panelAddresses is what the panel's host is at: the address itself, or what its name
+// resolves to, looked up at most every ten minutes. A failed lookup keeps the last
+// answer rather than forgetting the panel's address.
+func (a *Agent) panelAddresses() []netip.Addr {
+	u, err := url.Parse(a.ident.PanelURL)
+	if err != nil {
+		return a.panelAddrs
+	}
+	host := u.Hostname()
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return []netip.Addr{addr.Unmap().WithZone("")}
+	}
+	if host == a.panelAddrsOf && time.Since(a.panelAddrsAt) < 10*time.Minute {
+		return a.panelAddrs
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	found, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		slog.Warn("node: could not resolve the panel's host", "host", host, "err", err)
+		return a.panelAddrs
+	}
+	addrs := make([]netip.Addr, 0, len(found))
+	for _, f := range found {
+		addrs = append(addrs, f.Unmap().WithZone(""))
+	}
+	a.panelAddrs, a.panelAddrsOf, a.panelAddrsAt = addrs, host, time.Now()
+	return a.panelAddrs
 }

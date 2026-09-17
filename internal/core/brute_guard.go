@@ -85,6 +85,19 @@ func (g *bruteGuard) forget(nets model.TrustedNets) {
 	}
 }
 
+// lift lets an address back in before its ban runs out — an operator's unban — and
+// reports whether it was banned: remembered here, or still in the kernel from before a
+// restart.
+func (g *bruteGuard) lift(ip string) bool {
+	g.mu.Lock()
+	_, remembered := g.banned[ip]
+	delete(g.banned, ip)
+	delete(g.attempts, ip)
+	g.mu.Unlock()
+	inKernel := liftFrom(g.blocker, ip, "brute-force")
+	return remembered || inKernel
+}
+
 // ban drops the address at the firewall for bruteBanTime. The kernel lifts it;
 // the guard only has to remember not to ban it again meanwhile.
 func (g *bruteGuard) ban(ip string) {

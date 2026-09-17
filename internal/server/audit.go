@@ -83,6 +83,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/settings/probe-detect":          set("probeDetect"),
 	"POST /api/security/conn-policy":           set("connPolicy"),
 	"POST /api/security/unblock":               set("connPolicyUnblock"),
+	"POST /api/security/bans":                  act(model.AuditIPBanned),
+	"POST /api/security/unban":                 act(model.AuditIPUnbanned),
 	"POST /api/security/trusted":               set("trustedNets"),
 	"POST /api/settings/probe-block":           set("probeBlock"),
 	"POST /api/settings/watchdog":              set("watchdog"),

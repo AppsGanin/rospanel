@@ -252,16 +252,29 @@ func (rt *Router) genUserTelegramLink(w http.ResponseWriter, r *http.Request, id
 	})
 }
 
-func (rt *Router) userConnections(w http.ResponseWriter, _ *http.Request, id int64) {
+func (rt *Router) userConnections(w http.ResponseWriter, r *http.Request, id int64) {
 	conns, err := rt.mgr.Connections(id)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
-	if conns == nil {
-		conns = []model.Connection{}
+	// can_ban says whether the ban button belongs on the row: only for an admin (the
+	// ban routes are theirs), and only for an address a ban may touch — not a tunnel
+	// address, a trusted one, a server's, or the caller's own.
+	type connView struct {
+		model.Connection
+		CanBan bool `json:"can_ban"`
 	}
-	writeJSON(w, http.StatusOK, conns)
+	out := make([]connView, len(conns))
+	a, _ := sessionAdminFrom(r.Context())
+	var check func(string) error
+	if model.RoleAtLeast(a.Role, model.RoleAdmin) && len(conns) > 0 {
+		check = rt.mgr.BanChecker(clientIP(r))
+	}
+	for i, c := range conns {
+		out[i] = connView{Connection: c, CanBan: check != nil && !c.Banned && check(c.IP) == nil}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // renameUser updates a user's display name.

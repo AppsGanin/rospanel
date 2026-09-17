@@ -72,7 +72,14 @@ export interface UserTotal {
 export interface Connection {
   ip: string
   last_seen: number
+  // how many times the address was seen opening connections, at most once per 45 s
   count: number
+  // count × that interval: a lower bound on how long the address was active
+  approx_seconds: number
+  // dropped at the firewall right now, by any ban
+  banned: boolean
+  // whether the caller may ban it: an admin, and an address a ban may touch
+  can_ban?: boolean
 }
 
 export const getUserConnections = (id: number) =>
@@ -1541,8 +1548,31 @@ export const saveConnPolicy = (p: ConnPolicy) =>
 export const getTrustedNets = () => api<{ nets: string[] }>('api/security/trusted')
 export const saveTrustedNets = (nets: string[]) =>
   api<{ ok: boolean }>('api/security/trusted', { method: 'POST', body: JSON.stringify({ nets }) })
-export const unblockIP = (ip: string) =>
-  api<{ ok: boolean }>('api/security/unblock', { method: 'POST', body: JSON.stringify({ ip }) })
+
+// ---- Every address dropped at the firewall ---------------------------------
+export interface Ban {
+  ip: string
+  // manual | country | asn | brute | probe
+  source: string
+  user_id?: number
+  user_name?: string
+  country?: string
+  asn?: number
+  org?: string
+  at?: number // 0 when not known
+  until: number // 0 = until lifted
+}
+export const getBans = () => api<{ bans: Ban[]; can_enforce: boolean }>('api/security/bans')
+// banIP bans an address on every server until it is lifted; userId is whose address
+// list it was banned from.
+export const banIP = (ip: string, userId: number) =>
+  api<{ ok: boolean }>('api/security/bans', {
+    method: 'POST',
+    body: JSON.stringify({ ip, user_id: userId }),
+  })
+// unbanIP lifts every ban on the address, whatever placed it.
+export const unbanIP = (ip: string) =>
+  api<{ ok: boolean }>('api/security/unban', { method: 'POST', body: JSON.stringify({ ip }) })
 
 // ---- The admin's own open sessions -----------------------------------------
 export interface AdminSession {

@@ -57,6 +57,11 @@ const (
 	// with twenty near-identical entries is a filter nobody uses, and the answer the
 	// owner wants ("who has been changing settings?") is one row type, not twenty.
 	AuditSettings = "settings.changed"
+	// Addresses banned and let back in by hand. Their own actions, with the address as
+	// the target: a ban cuts everyone behind an address off every server, and a settings
+	// row whose target is that address says neither which way it went nor why.
+	AuditIPBanned   = "security.ip_banned"
+	AuditIPUnbanned = "security.ip_unbanned"
 
 	// Tariff plans.
 	AuditPlanSaved    = "plan.saved"
@@ -148,6 +153,8 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditTOTPDisabled, AuditCatAdmins},
 
 	{AuditSettings, AuditCatSettings},
+	{AuditIPBanned, AuditCatSettings},
+	{AuditIPUnbanned, AuditCatSettings},
 
 	{AuditPlanSaved, AuditCatPlans},
 	{AuditPlanDeleted, AuditCatPlans},

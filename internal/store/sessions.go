@@ -251,3 +251,23 @@ func (s *Store) DeleteSessionsForAdminExcept(adminID int64, keepToken string) er
 	)
 	return err
 }
+
+// LiveSessionIPs returns the addresses every live admin session was last used from:
+// what a ban must not cut off.
+func (s *Store) LiveSessionIPs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT ip FROM admin_sessions WHERE expires_at >= ? AND ip <> ''`,
+		time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			return nil, err
+		}
+		out = append(out, ip)
+	}
+	return out, rows.Err()
+}
