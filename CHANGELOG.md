@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.4.0](https://github.com/AppsGanin/rospanel/compare/v3.3.1...v3.4.0) (2026-09-17)
+
+
+### Features
+
+* **ui:** the whole panel reads dates and times in the panel's timezone ([9d60c7d](https://github.com/AppsGanin/rospanel/commit/9d60c7dcb791775761785e4908072db2f4878afb))
+
+
+### Bug Fixes
+
+* **nodeagent:** bound the sites budget by the body's length before subtracting ([1faa745](https://github.com/AppsGanin/rospanel/commit/1faa745aa824e4ddc0f9f202c7da25c90632beda))
+* **nodes:** a node's health reads a state held in parts as its sync would ([db498f0](https://github.com/AppsGanin/rospanel/commit/db498f0acd63f210a9ebf582960f9f4ba155e92b))
+* **nodes:** a node's report is believed only about the users its config lets in ([4805e6b](https://github.com/AppsGanin/rospanel/commit/4805e6b5d644534d9601948fd01f3abb6a9d5146))
+* **nodes:** the users a node is believed about come from the newest read ([d547bbc](https://github.com/AppsGanin/rospanel/commit/d547bbcf25ae3b4777b909eb097157558d0403f3))
+* **shaper:** a nil applier shapes nothing instead of panicking ([7feb4bb](https://github.com/AppsGanin/rospanel/commit/7feb4bb94a3ba51854b008fa32308779aa9326e6))
+* **ui:** a settings hint with nothing beside it spans its row ([52a2baf](https://github.com/AppsGanin/rospanel/commit/52a2baf4466764c72a1d270f95fd769c19d372a8))
+* **ui:** the API tab's save bar sits at the bottom, below the webhooks ([5c8fcef](https://github.com/AppsGanin/rospanel/commit/5c8fcef9158c8b48fce820a3992d18faaf58b2ce))
+* **xray:** adding or removing a Hysteria2 user no longer drops everyone on the lane ([5a8a704](https://github.com/AppsGanin/rospanel/commit/5a8a704043abb062f5a05a3ca03ec31c521dc087))
+
+
+### Performance Improvements
+
+* **nodes:** a node is sent the users that changed, not its whole config again ([718644e](https://github.com/AppsGanin/rospanel/commit/718644ef0c6b2482d2ca8fdec3f9d5796f315aa8))
+
 ## [3.3.1](https://github.com/AppsGanin/rospanel/compare/v3.3.0...v3.3.1) (2026-09-16)
 
 
