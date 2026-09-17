@@ -136,3 +136,11 @@ func TestParseDefaultDev(t *testing.T) {
 		}
 	}
 }
+
+// A nil Applier shapes nothing and tears nothing down: something built without one — a
+// node agent in a test — must not reach the host's traffic control, nor panic trying.
+func TestANilApplierDoesNothing(t *testing.T) {
+	var a *Applier
+	a.Apply(State{WAN: "eth0", Rules: []Rule{{UserID: 1, Kbps: 1000, IPs: []string{"198.51.100.1"}}}})
+	a.Reset()
+}
