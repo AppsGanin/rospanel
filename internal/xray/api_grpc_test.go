@@ -111,6 +111,16 @@ func TestXrayAPIRefusesAnEmptyUser(t *testing.T) {
 	}
 }
 
+// A message over the limit is refused before anything is dialled, and not asked again:
+// its length would not fit the frame's, and Xray would refuse it anyway.
+func TestXrayAPIRefusesAnOversizedMessage(t *testing.T) {
+	api := newXrayAPI("127.0.0.1:1", func(time.Duration) { t.Error("asked again") })
+	defer api.close()
+	if err := api.call(handlerAlterInbound, make([]byte, apiMaxMessage+1)); err == nil {
+		t.Fatal("an oversized message was sent")
+	}
+}
+
 // serveH2C serves handler over cleartext HTTP/2 on addr and returns the address.
 func serveH2C(t *testing.T, addr string, handler http.HandlerFunc) string {
 	t.Helper()

@@ -38,6 +38,11 @@ const apiCallTimeout = 10 * time.Second
 
 const handlerAlterInbound = "/xray.app.proxyman.command.HandlerService/AlterInbound"
 
+// apiMaxMessage bounds the message one call sends. A gRPC frame carries the length in
+// four bytes, and Xray, like any grpc-go server, refuses a message over 4 MiB by
+// default; the messages here — one user at a time — are a few hundred bytes.
+const apiMaxMessage = 4 << 20
+
 func newXrayAPI(addr string, wait func(time.Duration)) *xrayAPI {
 	// gRPC is HTTP/2; Xray's API listens without TLS, so the client speaks HTTP/2 from
 	// the first byte.
@@ -134,8 +139,13 @@ func (a *xrayAPI) call(method string, msg []byte) error {
 	}
 }
 
-// callOnce makes the call once. sent is false only when the connection could not be made.
+// callOnce makes the call once. sent is false only when the connection could not be made,
+// the one failure worth asking again.
 func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, err error) {
+	if len(msg) > apiMaxMessage {
+		// Nothing was sent, but asking again would send the same message.
+		return true, fmt.Errorf("xray api: a %d-byte message is over the %d-byte limit", len(msg), apiMaxMessage)
+	}
 	frame := make([]byte, 5, 5+len(msg)) // uncompressed, then the length
 	binary.BigEndian.PutUint32(frame[1:], uint32(len(msg)))
 	frame = append(frame, msg...)
