@@ -68,7 +68,8 @@
 
 ### Вариант 1 — установочный скрипт (рекомендуется)
 
-Одной командой: скачает релиз, поставит systemd-сервис, запустит и покажет логин.
+Одной командой: скачает релиз, поставит systemd-сервис и `nftables` (если его нет), запустит и
+покажет логин.
 
 ```bash
 curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash

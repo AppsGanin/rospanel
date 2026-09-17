@@ -122,6 +122,28 @@ func Available() bool {
 	return err == nil
 }
 
+// CanEnforce reports whether this host can actually drop addresses: nftables is
+// installed and this process is allowed to change the firewall. Available only finds
+// the tool; reading the ruleset is refused to a process without the rights to change
+// it, so that is what is tried. The answer is kept for a minute — a node reports it
+// with every sync.
+func CanEnforce() bool {
+	enforce.mu.Lock()
+	defer enforce.mu.Unlock()
+	if !enforce.at.IsZero() && time.Since(enforce.at) < time.Minute {
+		return enforce.ok
+	}
+	enforce.ok = Available() && exec.Command("nft", "list", "tables").Run() == nil
+	enforce.at = time.Now()
+	return enforce.ok
+}
+
+var enforce struct {
+	mu sync.Mutex
+	ok bool
+	at time.Time
+}
+
 // ensure creates the table/sets/chain if the table isn't there yet. A no-op once it
 // exists, so it never re-adds the drop rules or disturbs the blocked set — unless the
 // table predates the `flags timeout` sets (an older deploy), in which case it is rebuilt

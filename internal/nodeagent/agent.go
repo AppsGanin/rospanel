@@ -403,6 +403,7 @@ func (a *Agent) hostStats() *nodeapi.HostStats {
 		return nil // no sampler (tests) → report nothing rather than a row of zeros
 	}
 	st := a.sys.Read()
+	firewall := ipblock.CanEnforce()
 	return &nodeapi.HostStats{
 		CPUPercent: st.CPUPercent,
 		NetUp:      st.NetUp,
@@ -416,6 +417,7 @@ func (a *Agent) hostStats() *nodeapi.HostStats {
 		// root and only logs, so "we asked for it" is not evidence it is in force.
 		ConnGuard: connguard.Active(),
 		BBR:       tuning.Active(),
+		Firewall:  &firewall,
 	}
 }
 

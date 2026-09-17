@@ -71,6 +71,36 @@ else
 	die "neither curl nor wget found — install one and retry"
 fi
 
+# --- nftables -----------------------------------------------------------------
+# Address bans, the source policy's blocks, the flood and brute-force guards and
+# Hysteria2 port hopping all work through nftables. Current Debian, Ubuntu and RHEL
+# ship it, but a minimal image may not, and without it those features do nothing on
+# this server, without an error. Only the package is installed: the panel writes its
+# own tables, and the distribution's nftables service (whose stock config flushes the
+# whole ruleset) is left as it is.
+install_nftables() {
+	command -v nft >/dev/null 2>&1 && return 0
+	info "installing ${BLD}nftables${RST} (address bans and connection guards need it)"
+	if command -v apt-get >/dev/null 2>&1; then
+		export DEBIAN_FRONTEND=noninteractive
+		apt-get install -y -qq nftables >/dev/null 2>&1 ||
+			{ apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq nftables >/dev/null 2>&1; } || true
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y -q nftables >/dev/null 2>&1 || true
+	elif command -v yum >/dev/null 2>&1; then
+		yum install -y -q nftables >/dev/null 2>&1 || true
+	elif command -v zypper >/dev/null 2>&1; then
+		zypper --non-interactive install nftables >/dev/null 2>&1 || true
+	elif command -v apk >/dev/null 2>&1; then
+		apk add --no-cache nftables >/dev/null 2>&1 || true
+	elif command -v pacman >/dev/null 2>&1; then
+		pacman -S --noconfirm --needed nftables >/dev/null 2>&1 || true
+	fi
+	command -v nft >/dev/null 2>&1 ||
+		warn "could not install nftables — install it by hand: until then address bans, the source policy's blocks and the connection guards do nothing on this server"
+}
+install_nftables
+
 # --- ask for a domain (skipped if ROSPANEL_HOST is preset or no terminal) ---
 # The recommended install is piped (curl … | sudo bash), so the script body
 # already occupies stdin — read the prompts from the controlling terminal

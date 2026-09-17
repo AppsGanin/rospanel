@@ -1717,6 +1717,11 @@ const en: Dict = {
       "enabled, but the rules are not installed — the server is not protected against connection floods",
     connguardHint:
       "nftables is missing or permissions are insufficient. Install the nftables package and make sure the panel runs as root.",
+    firewall: "Firewall (address bans and blocks)",
+    firewallOK: "nftables works — address blocks are working",
+    firewallMissing: "unavailable — address bans and blocks do nothing on this server",
+    firewallHint:
+      "nftables is missing, or the panel may not change the firewall. Install the nftables package and run the panel as root.",
     bbr: "TCP BBR (throughput under loss)",
     bbrOn: "enabled",
     bbrOff: "not active — the kernel has no BBR, or permissions are insufficient",
@@ -1774,6 +1779,10 @@ const en: Dict = {
       "the rules are not installed — the node is not protected against connection floods",
     nodeConnguardHint:
       "nftables is missing on the node's server, or permissions are insufficient. Install the nftables package and make sure the agent runs as root.",
+    nodeFirewallMissing:
+      "unavailable — address bans and blocks do nothing on this node",
+    nodeFirewallHint:
+      "The node's server has no nftables, or the agent may not change the firewall. Install the nftables package and run the agent as root.",
     nodeBbrOff:
       "not active — the node's kernel has no BBR, or permissions are insufficient",
     agent: "Node agent",
