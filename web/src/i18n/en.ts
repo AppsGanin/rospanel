@@ -1458,6 +1458,8 @@ const en: Dict = {
     hint: "Variables are replaced per user when a subscription is built. Click one to insert it.",
     churn:
       "A name that changes as the user spends traffic ({left}, {used}, {days}) is a new server name to the client on every subscription update, which resets the server they had picked. {server} is stable.",
+    static:
+      "The name goes into a config file and is filled in once, when the file is downloaded.",
     server: "The server's name (replaces the automatic “server · lane” prefix)",
     user: "The account name",
     used: "Traffic spent",
