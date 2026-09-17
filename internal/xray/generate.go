@@ -203,7 +203,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	// Optional DNS block: upstream resolvers configured by the operator.
 	var dns *DNS
 	if servers := parseDNS(set.XrayDNS); len(servers) > 0 {
-		dns = &DNS{Servers: servers}
+		dns = &DNS{Servers: orderDNS(servers)}
 	}
 
 	rc := set.Routing

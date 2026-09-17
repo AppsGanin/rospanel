@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -522,4 +523,29 @@ func nodeCmdStore(t *testing.T) *store.Store {
 	}
 	t.Cleanup(func() { st.Close() })
 	return st
+}
+
+// A DNS setting Xray could not use is refused with the reason, for the master's DNS and a
+// node's alike: an unsupported scheme, and an address with a port, which would stop Xray
+// from starting.
+func TestValidateDNSListReasons(t *testing.T) {
+	for dns, code := range map[string]string{
+		"1.1.1.1\nhttps://dns.google/dns-query\ntcp://8.8.8.8:53": "",
+		"1.1.1.1\ntls://1.1.1.1":                                  "err.dnsScheme",
+		"8.8.8.8:53":                                              "err.dnsPort",
+		"dns.google":                                              "err.badDNS",
+	} {
+		err := validateDNSList(&dns)
+		var ve *ValidationError
+		switch {
+		case code == "" && err != nil:
+			t.Errorf("%q refused: %v", dns, err)
+		case code != "" && (!errors.As(err, &ve) || ve.Code != code):
+			t.Errorf("%q: %v, want %s", dns, err, code)
+		}
+	}
+	m := bulkTestManager(t)
+	if err := m.SetXrayDNS("8.8.8.8:53"); err == nil {
+		t.Error("the master's DNS took an address with a port")
+	}
 }

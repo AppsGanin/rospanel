@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -139,37 +137,14 @@ func (m *Manager) SetDecoyTemplate(name string) error {
 // by the API and then reconciled against — Xray would take a config the operator could
 // not have produced through the UI.
 func (m *Manager) SetXrayDNS(dns string) error {
-	for _, e := range strings.FieldsFunc(dns, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == ',' || r == ' '
-	}) {
-		if !validDNSServer(e) {
-			return invalidCode("err.badDNS", "неверный DNS-адрес: {{detail}}", map[string]any{"detail": e})
-		}
+	if err := validateDNSList(&dns); err != nil {
+		return err
 	}
 	if err := m.store.SetXrayDNS(strings.TrimSpace(dns)); err != nil {
 		return err
 	}
 	m.TriggerReconcile()
 	return nil
-}
-
-// validDNSServer accepts a plain IP, an ip:port, a DoH/DoT URL, or "localhost".
-func validDNSServer(s string) bool {
-	s = strings.TrimSpace(s)
-	switch {
-	case s == "":
-		return false
-	case s == "localhost":
-		return true
-	case strings.Contains(s, "://"):
-		u, err := url.Parse(s)
-		return err == nil && u.Host != ""
-	case net.ParseIP(s) != nil:
-		return true
-	default:
-		host, _, err := net.SplitHostPort(s)
-		return err == nil && net.ParseIP(host) != nil
-	}
 }
 
 // Settings returns the current settings row (read-only handlers).

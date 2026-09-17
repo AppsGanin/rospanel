@@ -298,6 +298,8 @@ const en: Dict = {
     badCredentials: "wrong username or password",
     badDeviceCountMode: "device counting mode must be one of: {{allowed}}",
     badDNS: "invalid DNS address: {{detail}}",
+    dnsScheme: "DNS {{detail}}: Xray has no client for this scheme — use https://, h2c://, tcp://, their +local forms or quic+local://",
+    dnsPort: "DNS {{detail}}: a port goes only in a URL, e.g. tcp://{{detail}}",
     badFrom: "invalid `from` parameter (expected YYYY-MM-DD)",
     badID: "invalid id",
     badRequestBody: "malformed request body",
@@ -1787,7 +1789,7 @@ const en: Dict = {
   dns: {
     presets: "Presets",
     customServers: "Custom servers",
-    customHint: "One per line: an IP, a DoH URL, or localhost.",
+    customHint: "One per line: an IP, localhost or a URL (https://, h2c://, tcp://, their +local forms, quic+local://). https://, h2c:// and tcp:// servers named by a host are asked after the rest.",
   },
 
   cron: {
