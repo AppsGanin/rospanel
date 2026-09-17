@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.6.0](https://github.com/AppsGanin/rospanel/compare/v3.5.0...v3.6.0) (2026-09-17)
+
+
+### Features
+
+* **panel:** a name that lands in a config file offers only {server} and {user} ([9465617](https://github.com/AppsGanin/rospanel/commit/9465617731ce15528e41bbf8ca52959261213c15))
+* **sub:** every app on the subscription page links to its own page ([8b92ede](https://github.com/AppsGanin/rospanel/commit/8b92ede96ae5436500aec9c322efc11b355a2c8e))
+
+
+### Bug Fixes
+
+* **turn:** stopping a relay closes its legs instead of deadlining them ([3c9dd4c](https://github.com/AppsGanin/rospanel/commit/3c9dd4cf022215a5240111ec5aa23b4a9e226678))
+
 ## [3.5.0](https://github.com/AppsGanin/rospanel/compare/v3.4.0...v3.5.0) (2026-09-17)
 
 
