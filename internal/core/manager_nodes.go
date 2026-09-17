@@ -2121,7 +2121,17 @@ func validateDNSList(dns *string) error {
 	for _, e := range strings.FieldsFunc(*dns, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ',' || r == ' '
 	}) {
-		if !validDNSServer(e) {
+		switch xray.CheckDNSServer(e) {
+		case xray.DNSOK:
+		case xray.DNSScheme:
+			return invalidCode("err.dnsScheme",
+				"DNS {{detail}}: у Xray нет клиента для этой схемы — подойдут https://, h2c://, tcp://, их варианты +local и quic+local://",
+				map[string]any{"detail": e})
+		case xray.DNSPort:
+			return invalidCode("err.dnsPort",
+				"DNS {{detail}}: порт указывается только в URL, например tcp://{{detail}}",
+				map[string]any{"detail": e})
+		default:
 			return invalidCode("err.badDNS", "неверный DNS-адрес: {{detail}}", map[string]any{"detail": e})
 		}
 	}

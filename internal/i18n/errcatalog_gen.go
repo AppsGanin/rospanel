@@ -93,6 +93,8 @@ var errEN = map[string]string{
 	"err.deviceLimitNegative2":     "the device limit cannot be negative",
 	"err.deviceLimitTooHigh":       "The device limit cannot be above {{max}}",
 	"err.deviceNotFound":           "device not found",
+	"err.dnsPort":                  "DNS {{detail}}: a port goes only in a URL, e.g. tcp://{{detail}}",
+	"err.dnsScheme":                "DNS {{detail}}: Xray has no client for this scheme — use https://, h2c://, tcp://, their +local forms or quic+local://",
 	"err.donorCertTooBig":          "the donor certificate for {{host}} is too large ({{size}} B) — the REALITY handshake does not complete on this Xray version when the certificate record exceeds {{limit}} B (issue #6402). Pick a site with a smaller certificate, for example www.cloudflare.com, www.apple.com or dl.google.com",
 	"err.donorNoHTTP2":             "the donor {{host}} does not support HTTP/2 — pick another site",
 	"err.donorNoTLS13":             "the donor {{host}} is not reachable over TLS 1.3 on :443 ({{err}})",

@@ -297,6 +297,8 @@ const ru = {
     badCredentials: "неверный логин или пароль",
     badDeviceCountMode: "режим подсчёта устройств: {{allowed}}",
     badDNS: "неверный DNS-адрес: {{detail}}",
+    dnsScheme: "DNS {{detail}}: у Xray нет клиента для этой схемы — подойдут https://, h2c://, tcp://, их варианты +local и quic+local://",
+    dnsPort: "DNS {{detail}}: порт указывается только в URL, например tcp://{{detail}}",
     badFrom: "неверный параметр from (ожидается YYYY-MM-DD)",
     badID: "неверный id",
     badRequestBody: "неверное тело запроса",
@@ -1786,7 +1788,7 @@ const ru = {
   dns: {
     presets: "Готовые наборы",
     customServers: "Свои серверы",
-    customHint: "По одному в строке: IP, DoH-URL или localhost.",
+    customHint: "По одному в строке: IP, localhost или URL (https://, h2c://, tcp://, их варианты +local, quic+local://). Серверы https://, h2c:// и tcp://, заданные именем хоста, Xray опрашивает после остальных.",
   },
 
   cron: {
