@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ type liveCfg struct {
 	uuidOf                       func(email string) string
 	realityPort                  int
 	socksPass                    string
+	routable                     bool // the api serves routing and every rule has a tag
 }
 
 func (c liveCfg) json(t *testing.T) []byte {
@@ -72,6 +74,14 @@ func (c liveCfg) json(t *testing.T) []byte {
 		},
 		"outbounds": []any{map[string]any{"protocol": "freedom", "tag": "direct"}},
 	}
+	if c.routable {
+		cfg["api"] = map[string]any{"tag": "api", "services": []string{"StatsService", "HandlerService", "RoutingService"}}
+		cfg["outbounds"] = append(cfg["outbounds"].([]any), map[string]any{"protocol": "blackhole", "tag": "block"})
+		cfg["routing"] = map[string]any{"rules": []any{
+			map[string]any{"type": "field", "ruleTag": "rule-0", "inboundTag": []string{"api"}, "outboundTag": "api"},
+			map[string]any{"type": "field", "ruleTag": "rule-1", "ip": []string{"10.0.0.0/8"}, "outboundTag": "block"},
+		}}
+	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -88,8 +98,8 @@ func planSummary(changes []userChange) []string {
 			add = append(add, a.(map[string]any)["email"].(string))
 		}
 		line := fmt.Sprintf("%s: -%s +%s", c.tag, strings.Join(c.remove, ","), strings.Join(add, ","))
-		if c.rebuild {
-			line += " rebuild"
+		if c.hysteria {
+			line += " hysteria"
 		}
 		out = append(out, line)
 	}
@@ -115,7 +125,7 @@ func TestPlanUserChanges(t *testing.T) {
 		{"a user joins and one leaves", liveCfg{
 			vless: []string{"u2", "u3"}, reality: []string{"u2", "u3"}, hysteria: []string{"u2", "u3"}, ss: []string{"u2", "u3"},
 		}, true, []string{
-			"vless-in: -u1 +u3", "vless-reality-in: -u1 +u3", "hysteria-in: -u1 +u3 rebuild", "inb-9: -u1 +u3",
+			"vless-in: -u1 +u3", "vless-reality-in: -u1 +u3", "hysteria-in: -u1 +u3 hysteria", "inb-9: -u1 +u3",
 		}},
 		{"a rotated credential is removed and added", liveCfg{
 			vless: base.vless, reality: base.reality, hysteria: base.hysteria, ss: base.ss,
@@ -144,10 +154,10 @@ func TestPlanUserChanges(t *testing.T) {
 		})
 	}
 
-	// A hysteria rebuild re-adds the whole pushed inbound, users included.
+	// A hysteria change carries the whole pushed inbound, users included, for a rebuild.
 	next := liveCfg{vless: base.vless, reality: base.reality, hysteria: []string{"u1", "u2", "u3"}, ss: base.ss}.json(t)
 	changes, ok := planUserChanges(cur, next)
-	if !ok || len(changes) != 1 || !changes[0].rebuild {
+	if !ok || len(changes) != 1 || !changes[0].hysteria {
 		t.Fatalf("hysteria change: ok=%v %v", ok, planSummary(changes))
 	}
 	if users, _ := changes[0].inbound["settings"].(map[string]any)["users"].([]any); len(users) != 3 {
@@ -183,7 +193,9 @@ func TestPlanUserChanges(t *testing.T) {
 
 // fakeLiveXray is a stand-in Xray: `run -c` records a start and waits, `api …` records
 // its arguments (and an adu file's emails) and answers the way the real CLI does. A
-// file named fail-adu makes adu add nobody; one named fail-test makes validation refuse.
+// file named fail-adu makes adu add nobody; one named fail-test makes validation refuse;
+// one named refuse-<call> makes that api call fail. The files adrules and adi are handed
+// are kept as adrules-<n>.json and adi-<n>.json, numbered from 0.
 func fakeLiveXray(t *testing.T, dir string) string {
 	t.Helper()
 	bin := filepath.Join(dir, "xray")
@@ -198,6 +210,8 @@ func fakeLiveXray(t *testing.T, dir string) string {
 		"if [ \"$1\" = api ]; then\n" +
 		"  if [ -f " + dial + " ]; then n=$(cat " + dial + "); if [ \"$n\" -gt 0 ]; then echo $((n-1)) > " + dial + "; echo 'failed to dial' >&2; exit 1; fi; fi\n" +
 		"  echo \"$*\" >> " + log + "\n" +
+		"  if [ -f " + dir + "/refuse-$2 ]; then echo \"failed to perform $2\" >&2; exit 1; fi\n" +
+		"  if [ \"$2\" = adrules ] || [ \"$2\" = adi ]; then eval f=\\${$#}; n=$(ls " + dir + " | grep -c \"^$2-\"); cp \"$f\" " + dir + "/$2-$n.json; fi\n" +
 		"  if [ \"$2\" = adu ]; then\n" +
 		"    n=$(grep -o '\"email\":\"[^\"]*\"' \"$4\" | tee -a " + log + " | wc -l | tr -d ' ')\n" +
 		"    if [ -f " + fail + " ]; then n=0; fi\n" +
@@ -355,5 +369,65 @@ func TestApplyRawLiveChangesUsersWithoutRestart(t *testing.T) {
 	waitFor(t, "the restore restart", func() bool { return countLines(t, starts, "start") == 4 && sup.Running() })
 	if got, _ := os.ReadFile(cfgPath); string(got) != string(d.json(t)) {
 		t.Fatal("a refused config replaced the one on disk")
+	}
+}
+
+// A node's pushed change of Hysteria2 users goes in user by user and cuts the removed
+// users' open connections off by routing — no inbound rebuilt, so nobody else on the
+// lane loses theirs — while the TCP lanes change through the CLI as before.
+func TestApplyRawLiveChangesHysteriaUsersWithoutARebuild(t *testing.T) {
+	dir := t.TempDir()
+	sup := NewSupervisor(fakeLiveXray(t, dir), filepath.Join(dir, "config.json"), dir)
+	t.Cleanup(sup.Stop)
+	api := startFakeHandlerAPI(t)
+
+	a := liveCfg{vless: []string{"u1", "u2"}, reality: []string{"u1", "u2"}, hysteria: []string{"u1", "u2"}, ss: []string{"u1", "u2"}, routable: true}
+	if how, err := sup.ApplyRawLive(api.addr, a.json(t)); err != nil || how != RawRestarted {
+		t.Fatalf("first apply: %v %v", how, err)
+	}
+	waitFor(t, "xray to start", sup.Running)
+	cliCalls(t, dir)
+
+	b := a
+	b.hysteria = []string{"u2", "u3"}
+	b.vless = []string{"u2", "u3"}
+	if how, err := sup.ApplyRawLive(api.addr, b.json(t)); err != nil || how != RawLive {
+		t.Fatalf("users-only change: %v %v, want live", how, err)
+	}
+	if got, want := api.calls(), []string{"remove u1 from hysteria-in", "add u3:pw-u3 to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("api calls %q, want %q", got, want)
+	}
+	want := []string{"api rmu -tag=vless-in u1", "api adu", "api adrules -append", "api rmrules rule-1 rule-0"}
+	if got := cliCalls(t, dir); !slices.Equal(got, want) {
+		t.Errorf("cli calls %q, want %q", got, want)
+	}
+	if got := ruleTagsOf(rulesSent(t, dir, 0)); !slices.Equal(got, []string{"live1-cut-0", "live1-0", "live1-1"}) {
+		t.Errorf("rules sent %q", got)
+	}
+	if n := countLines(t, filepath.Join(dir, "starts.log"), "start"); n != 1 {
+		t.Errorf("xray was started %d times, want once", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "config.json")); string(got) != string(b.json(t)) {
+		t.Error("the live-applied config was not recorded for the next start")
+	}
+
+	// The API refuses a user: the pushed config is applied by a restart instead, and the
+	// restarted process's users are read from that config.
+	api.setFail(func(c alterCall) (string, string) { return "2", "no" })
+	c := b
+	c.hysteria = []string{"u3"}
+	if how, err := sup.ApplyRawLive(api.addr, c.json(t)); err != nil || how != RawRestarted {
+		t.Fatalf("refused change: %v %v, want the restart fallback", how, err)
+	}
+	waitFor(t, "the fallback restart", func() bool { return countLines(t, filepath.Join(dir, "starts.log"), "start") == 2 && sup.Running() })
+	api.setFail(nil)
+	api.reset()
+	d := c
+	d.hysteria = []string{"u3", "u4"}
+	if how, err := sup.ApplyRawLive(api.addr, d.json(t)); err != nil || how != RawLive {
+		t.Fatalf("change after the restart: %v %v, want live", how, err)
+	}
+	if got, want := api.calls(), []string{"add u4:pw-u4 to hysteria-in"}; !slices.Equal(got, want) {
+		t.Errorf("after the restart: api calls %q, want %q", got, want)
 	}
 }

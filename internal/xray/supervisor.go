@@ -56,6 +56,16 @@ type proc struct {
 	// process is actually running. nil when the file could not be read: then there is
 	// simply nothing to promote.
 	cfg []byte
+	// hysteria is what this process's QUIC inbounds and routing hold as the panel has
+	// changed them, read from cfg on first use; hysteriaLost marks a change to them that
+	// failed part way, after which that is no longer known (see hysteria_live.go). Both
+	// under the Supervisor's runMu.
+	hysteria     *hysteriaLive
+	hysteriaLost bool
+	// cutOff is who this process's routing cuts off, for the access-log tap: a removed
+	// Hysteria2 user's open connection goes on opening streams into the block outbound,
+	// and Xray logs each one as accepted. Replaced whole; nil while nobody is cut off.
+	cutOff atomic.Pointer[cutOffView]
 }
 
 // Supervisor owns the Xray child process and the on-disk config.json. It
@@ -858,35 +868,16 @@ func countInboundUsers(inbounds []Inbound) int {
 	return n
 }
 
-// ReplaceInbounds rebuilds whole inbounds in the running Xray: each one is removed
-// and re-added through the API, which reconstructs it from scratch — users included.
+// replaceInbound rebuilds one inbound in the running Xray: removed and added back
+// through the API, which reconstructs it from scratch — users included — with the
+// process untouched (verified against Xray 26.7.28: same pid, same listening socket).
+// The inbound may be given in any form that marshals to one: a typed Inbound from the
+// generator or a node's decoded config entry.
 //
-// This exists for Hysteria2. Xray's HandlerService cannot manage users on a QUIC
-// inbound: `adu` refuses outright ("unsupported inbound type") and, worse, `rmu`
-// reports success while doing nothing, so a revoked user keeps their access. The
-// only way to change that user set was a full Xray restart, which drops every OTHER
-// lane's connections and the panel's own (:443 is Xray's; the panel sits on its
-// fallback) for a change that concerns one inbound.
-//
-// Verified against Xray 26.7.28: rmi + adi swap the user set with the process
-// untouched — same pid, same listening socket.
-//
-// Failure is the caller's to handle: rmi may have already landed, leaving that lane
-// down, so a caller that cannot fix it must fall back to a full reconcile.
-func (s *Supervisor) ReplaceInbounds(apiAddr string, inbounds []Inbound) error {
-	if s.bin == "" {
-		return fmt.Errorf("xray binary unavailable")
-	}
-	for _, in := range inbounds {
-		if err := s.replaceInbound(apiAddr, in.Tag, in); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// replaceInbound is ReplaceInbounds for one inbound, given in any form that marshals
-// to an inbound — a typed Inbound from the generator or a node's decoded config entry.
+// Every connection on the inbound ends, so it is the fallback for a Hysteria2 change
+// that cannot be made user by user (see syncHysteriaLocked). Failure is the caller's to
+// handle: the removal may have landed with the addition refused, leaving the inbound
+// down until the process restarts.
 func (s *Supervisor) replaceInbound(apiAddr, tag string, inbound any) error {
 	if tag == "" {
 		return fmt.Errorf("inbound with no tag")
@@ -988,8 +979,8 @@ func (s *Supervisor) startProc() error {
 	s.mu.Lock()
 	s.cur = p
 	s.mu.Unlock()
-	go s.tap(stdout, os.Stdout, true)
-	go s.tap(stderr, os.Stderr, false)
+	go s.tap(p, stdout, os.Stdout, true)
+	go s.tap(p, stderr, os.Stderr, false)
 	go s.monitor(p)
 	go s.promoteWhenHealthy(p)
 	slog.Info("xray: started", "pid", cmd.Process.Pid, "config", s.configPath)
@@ -1169,7 +1160,7 @@ func backoffFor(n int) time.Duration {
 // tap reads one Xray output stream line-by-line: it forwards each line to w (so
 // journald keeps the full log), records it in the log hub for the dashboard
 // viewer, and — when access is set — extracts connection info from access lines.
-func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
+func (s *Supervisor) tap(p *proc, r io.Reader, w io.Writer, access bool) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -1183,6 +1174,12 @@ func (s *Supervisor) tap(r io.Reader, w io.Writer, access bool) {
 		fmt.Fprintln(s.logs, line)
 		if access && s.onAccess != nil {
 			if email, ip, dest := parseAccess(line); email != "" && ip != "" {
+				// A stream the process cuts off is not the user being online: counted,
+				// it would hold a user cut off for their device limit over it for as
+				// long as their client keeps knocking.
+				if v := p.cutOff.Load(); v != nil && v.cuts(line) {
+					continue
+				}
 				s.dispatchAccess(email, ip, dest)
 			}
 		}

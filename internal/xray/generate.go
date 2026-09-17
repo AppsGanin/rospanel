@@ -317,7 +317,9 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 	return &Config{
 		Log:   &Log{Loglevel: "warning"},
 		Stats: &Stats{},
-		API:   &API{Tag: "api", Services: []string{"StatsService", "HandlerService"}},
+		// RoutingService: a removed Hysteria2 user's open connection is cut off by a
+		// routing rule put in place live (see hysteria_live.go).
+		API: &API{Tag: "api", Services: []string{"StatsService", "HandlerService", "RoutingService"}},
 		Policy: &Policy{
 			// statsUser* must stay on (per-user traffic accounting). connIdle reaps
 			// idle connections; bufferSize=512KB bounds per-connection memory under
@@ -819,8 +821,8 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 		in = append(in, Inbound{Tag: TagVLESS, Port: set.VLESSPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: vc, Decryption: "none"}})
 	}
 	// Hysteria2 is deliberately absent: `xray api adu` rejects a QUIC inbound with
-	// "unsupported inbound type". Its user set is swapped by rebuilding the whole
-	// inbound instead — see HysteriaInbounds / Supervisor.ReplaceInbounds.
+	// "unsupported inbound type". Its users go through Supervisor.SyncHysteria instead
+	// — see HysteriaInbounds.
 	if len(rc) > 0 {
 		in = append(in, Inbound{Tag: TagReality, Port: set.RealityPort, Protocol: "vless", Settings: VLESSInboundSettings{Clients: rc, Decryption: "none"}})
 	}
@@ -865,8 +867,9 @@ func UserInbounds(set *model.Settings, custom []model.Inbound, users []model.Use
 	return in
 }
 
-// HysteriaInbounds picks the generated inbounds whose users Xray cannot live-update,
-// so the caller can rebuild them through the API instead of restarting everything.
+// HysteriaInbounds picks the generated inbounds whose users the CLI cannot change, for
+// Supervisor.SyncHysteria — whole, since it rebuilds an inbound when it cannot cut a
+// removed user off any other way.
 //
 // Selected by protocol rather than by tag: the built-in lane and every operator
 // -defined Hysteria2 inbound have the same limitation, and testing only the built-in
@@ -888,15 +891,15 @@ func EnabledInboundTags(set *model.Settings, custom []model.Inbound) []string {
 	if set.VLESSEnabled {
 		tags = append(tags, TagVLESS)
 	}
-	// Hysteria2 is NOT here. `xray api rmu` reports success on a QUIC inbound while
-	// removing nothing, so listing it would have the panel believe it revoked access
-	// it still grants. Its user set is swapped by rebuilding the inbound instead.
+	// Hysteria2 is NOT here: removing a user from a QUIC inbound does not end the
+	// connection they already have, so its users go through Supervisor.SyncHysteria,
+	// which cuts that connection off as well.
 	if set.RealityEnabled {
 		tags = append(tags, TagReality)
 	}
 	for _, c := range custom {
 		if c.Protocol == model.InbHysteria {
-			continue // rebuilt, not live-updated (see above)
+			continue // SyncHysteria's (see above)
 		}
 		tags = append(tags, c.Tag())
 	}
@@ -1240,6 +1243,11 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 		}
 		// Otherwise an inactive catch-all lane (disabled / no live proxies) falls
 		// through to direct, so its traffic keeps flowing instead of black-holing.
+	}
+	// Every rule gets a tag of its own: the running rules are replaced through the API
+	// by tag, and a config with an untagged rule is one the replacement cannot touch.
+	for i := range out.Rules {
+		out.Rules[i].RuleTag = fmt.Sprintf("rule-%d", i)
 	}
 	return out
 }

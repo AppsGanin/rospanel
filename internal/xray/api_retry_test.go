@@ -129,11 +129,11 @@ func TestCallsWithAFileAreAskedAgainWithTheFile(t *testing.T) {
 		t.Fatalf("adding after a failed dial: %v", err)
 	}
 	setDialFailures(t, dir, 2) // rmi takes both, adi is then asked once
-	if err := s.ReplaceInbounds("127.0.0.1:10085", []Inbound{in}); err != nil {
+	if err := s.replaceInbound("127.0.0.1:10085", in.Tag, in); err != nil {
 		t.Fatalf("rebuilding after failed dials: %v", err)
 	}
 	setCallDialFailures(t, dir, "adi", 1) // the removal goes through, the add fails to dial
-	if err := s.ReplaceInbounds("127.0.0.1:10085", []Inbound{in}); err != nil {
+	if err := s.replaceInbound("127.0.0.1:10085", in.Tag, in); err != nil {
 		t.Fatalf("rebuilding after a failed dial on the add: %v", err)
 	}
 	want := []string{"adu", "adu", "rmi", "rmi", "rmi", "adi", "rmi", "adi", "adi"}
