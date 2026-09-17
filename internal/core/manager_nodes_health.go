@@ -66,8 +66,11 @@ func (m *Manager) NodeHealth(id int64) (*HealthReport, error) {
 				diskHealth(h.DiskUsed, h.DiskTotal),
 				memHealth(h.MemUsed, h.MemTotal),
 				nodeConnGuardHealth(h),
-				nodeBBRHealth(h),
 			)
+			if fw, ok := nodeFirewallHealth(h); ok {
+				checks = append(checks, fw)
+			}
+			checks = append(checks, nodeBBRHealth(h))
 		}
 		checks = append(checks,
 			m.nodeGeoHealth(n),
@@ -305,6 +308,24 @@ func nodeConnGuardHealth(h nodeapi.HostStats) HealthCheck {
 	}
 	return HealthCheck{Key: "connguard", LabelKey: label, Status: healthWarn,
 		DetailKey: "health.nodeConnguardMissing", HintKey: "health.nodeConnguardHint"}
+}
+
+// nodeFirewallHealth says whether the node can drop addresses at its firewall. Without
+// it the bans and the source policy's blocks the panel hands the node do nothing there,
+// silently — the operator sees the ban in the list and the address still gets through
+// this server. ok is false for an agent too old to report it: no row rather than a
+// false alarm.
+func nodeFirewallHealth(h nodeapi.HostStats) (HealthCheck, bool) {
+	const label = "health.firewall"
+	if h.Firewall == nil {
+		return HealthCheck{}, false
+	}
+	if *h.Firewall {
+		return HealthCheck{Key: "firewall", LabelKey: label, Status: healthOK,
+			DetailKey: "health.firewallOK"}, true
+	}
+	return HealthCheck{Key: "firewall", LabelKey: label, Status: healthWarn,
+		DetailKey: "health.nodeFirewallMissing", HintKey: "health.nodeFirewallHint"}, true
 }
 
 // nodeBBRHealth mirrors bbrHealth: informational, since BBR is a throughput

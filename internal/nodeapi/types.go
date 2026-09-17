@@ -260,6 +260,11 @@ type HostStats struct {
 	// force on the node (it degrades to a no-op without nft/root, silently).
 	ConnGuard bool `json:"connguard"`
 	BBR       bool `json:"bbr"`
+	// Firewall is whether the node can drop addresses at its own firewall: nftables is
+	// installed and the agent is allowed to change it. Bans, the source policy's blocks
+	// and the flood guard all go through it, and without it they do nothing on this
+	// node. nil from an agent too old to report it.
+	Firewall *bool `json:"firewall,omitempty"`
 }
 
 // GeoFile mirrors geo.FileInfo for reporting a node's geo database status.

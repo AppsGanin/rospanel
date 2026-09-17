@@ -69,7 +69,8 @@ Thanks to everyone who signs up through them 🙏
 
 ### Option 1 — install script (recommended)
 
-One command: downloads the release, installs a systemd service, starts it and prints the login.
+One command: downloads the release, installs a systemd service and `nftables` (if missing), starts
+it and prints the login.
 
 ```bash
 curl -Ls https://raw.githubusercontent.com/AppsGanin/rospanel/main/install.sh | sudo bash

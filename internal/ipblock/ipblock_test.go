@@ -156,3 +156,13 @@ func TestParseEntries(t *testing.T) {
 		t.Errorf("entries = %+v, want %+v", got, want)
 	}
 }
+
+// Off Linux, or without nft, nothing can be enforced, and CanEnforce says so.
+func TestCanEnforceWithoutNft(t *testing.T) {
+	if Available() {
+		t.Skip("nft is present here")
+	}
+	if CanEnforce() {
+		t.Error("CanEnforce with no nft")
+	}
+}

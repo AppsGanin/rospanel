@@ -7,6 +7,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/geo"
+	"github.com/AppsGanin/rospanel/internal/ipblock"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
@@ -73,7 +74,7 @@ func (m *Manager) Health() *HealthReport {
 	}
 	checks = append(checks, m.geoHealth())
 
-	checks = append(checks, m.connGuardHealth(), bbrHealth())
+	checks = append(checks, m.connGuardHealth(), firewallHealth(), bbrHealth())
 
 	if nc := m.nodesHealth(); nc != nil {
 		checks = append(checks, *nc)
@@ -251,6 +252,19 @@ func (m *Manager) connGuardHealth() HealthCheck {
 	}
 	return HealthCheck{Key: "connguard", LabelKey: label, Status: healthWarn,
 		DetailKey: "health.connguardMissing", HintKey: "health.connguardHint"}
+}
+
+// firewallHealth reports whether this server can drop addresses at its firewall. The
+// bans, the source policy's blocks and the brute-force and scanner guards all go
+// through it, and without nftables or the rights to change it they do nothing here,
+// silently — a ban shows in the list while the address still gets through.
+func firewallHealth() HealthCheck {
+	const label = "health.firewall"
+	if ipblock.CanEnforce() {
+		return HealthCheck{Key: "firewall", LabelKey: label, Status: healthOK, DetailKey: "health.firewallOK"}
+	}
+	return HealthCheck{Key: "firewall", LabelKey: label, Status: healthWarn,
+		DetailKey: "health.firewallMissing", HintKey: "health.firewallHint"}
 }
 
 // bbrHealth reports the congestion-control algorithm. Informational, not a warning:

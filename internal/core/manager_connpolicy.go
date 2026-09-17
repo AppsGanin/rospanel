@@ -258,4 +258,4 @@ func (m *Manager) ApplyPolicyBlocksAtBoot() {
 // CanBlockIPs reports whether this machine can drop an address at all (Linux with
 // nftables). Without it the policy still records every refusal — and the panel says
 // so, rather than letting an operator believe a rule is being enforced.
-func (m *Manager) CanBlockIPs() bool { return ipblock.Available() }
+func (m *Manager) CanBlockIPs() bool { return ipblock.CanEnforce() }
