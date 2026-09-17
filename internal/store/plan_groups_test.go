@@ -58,6 +58,7 @@ func planWrite(userID int64, p *model.TariffPlan) UserPlanWrite {
 // another plan — otherwise a user who has been through several tariffs accumulates
 // every group, and access being the UNION of them, the gate stops gating.
 func TestPlanGroupsFollowThePlan(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, err := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	if err != nil {
@@ -109,6 +110,7 @@ func TestPlanGroupsFollowThePlan(t *testing.T) {
 // A group an operator assigned by hand is theirs, not the tariff's: a plan switch —
 // or a payment landing at 3am — must not undo it. That is what via_plan is for.
 func TestManualGroupsSurvivePlanChanges(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	testers, _ := st.CreateGroup("Testers", []string{model.BuiltinToken(0, model.LaneReality)}, 0)
@@ -145,6 +147,7 @@ func TestManualGroupsSurvivePlanChanges(t *testing.T) {
 // Editing a user's groups in the card must not launder the plan's own grants into
 // manual ones — the next plan switch could then never take them back.
 func TestUserGroupEditKeepsPlanOwnership(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	premium, _ := st.CreateGroup("Premium", []string{model.BuiltinToken(0, model.LaneHysteria)}, 0)
@@ -180,6 +183,7 @@ func TestUserGroupEditKeepsPlanOwnership(t *testing.T) {
 // just the same — otherwise moving one user in the group screen would launder every
 // plan grant in it into a manual one.
 func TestGroupMemberEditKeepsPlanOwnership(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	other, _ := st.CreateUser("second", "uuid2", "pw", "tok2", 0, 0, 0)
@@ -208,6 +212,7 @@ func TestGroupMemberEditKeepsPlanOwnership(t *testing.T) {
 // INSERT handed out: the row does not exist, so a retry with that id would UPDATE
 // nothing and look like a success.
 func TestSaveTariffPlanRollbackClearsTheID(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	g, _ := st.CreateGroup("G", nil, 0)
 	if _, err := st.db.Exec(
@@ -237,6 +242,7 @@ func TestSaveTariffPlanRollbackClearsTheID(t *testing.T) {
 // already on it move too — a change that only applied to future buyers would silently
 // split one tariff into two.
 func TestEditingAPlanMovesItsUsers(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, _ := st.CreateUser("buyer", "uuid", "pw", "tok", 0, 0, 0)
 	basic, _ := st.CreateGroup("Basic", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
@@ -295,6 +301,7 @@ func TestEditingAPlanMovesItsUsers(t *testing.T) {
 // The purchase path grants the groups inside the order's paid claim: if the plan can't
 // land, neither may the claim — the same money-safety rule the rest of the write obeys.
 func TestConfirmPaymentAppliesPlanGroups(t *testing.T) {
+	t.Parallel()
 	st, u, plan, order, w := planWriteFixture(t)
 	defer st.Close()
 

@@ -9,6 +9,7 @@ import (
 // date, once there is one, is never written over by a connection — however the row
 // came to carry a stale hold beside it.
 func TestAConnectionNeverOverwritesADate(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, err := st.CreateUserOnHold("held", "uuid-held", "pw", "tok-held", 0, 30*86400)
 	if err != nil {
@@ -34,6 +35,7 @@ func TestAConnectionNeverOverwritesADate(t *testing.T) {
 // The term runs from the sighting, not from whenever the batch happens to be written:
 // a flush that lands late must not hand the user extra days.
 func TestATermRunsFromTheSighting(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, err := st.CreateUserOnHold("late", "uuid-late", "pw", "tok-late", 0, 10*86400)
 	if err != nil {
@@ -55,6 +57,7 @@ func TestATermRunsFromTheSighting(t *testing.T) {
 // The check reads the held users through their own index: it runs on every flush of
 // the access log, and a full scan of users there would grow with the whole roster.
 func TestHeldUsersAreFoundThroughTheirIndex(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	rows, err := st.db.Query(`EXPLAIN QUERY PLAN SELECT id FROM users INDEXED BY idx_users_held WHERE hold_seconds > 0`)
 	if err != nil {

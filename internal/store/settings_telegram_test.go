@@ -8,6 +8,7 @@ import (
 // TestTelegramRoundTrip exercises the 0002 migration, the GetSettings scan of the
 // new columns, and the telegram setters end to end on a fresh database.
 func TestTelegramRoundTrip(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "tg.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

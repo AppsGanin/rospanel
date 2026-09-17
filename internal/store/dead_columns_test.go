@@ -33,6 +33,7 @@ func columnExists(t *testing.T, st *Store, table, column string) bool {
 // the previous binary, and credentials an operator might not have re-entered); both
 // reasons expired, and dead schema is how a stale column later gets read by accident.
 func TestDeadColumnsAreGone(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	for table, cols := range deadColumns {
 		for _, c := range cols {
@@ -48,6 +49,7 @@ func TestDeadColumnsAreGone(t *testing.T) {
 // 0039 moves them into payment_providers first. Simulated by building the database in
 // its pre-0039 shape and letting the migration run over it.
 func TestDeadColumnsRescueLegacyPaymentKeys(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "legacy.db")
 
@@ -133,6 +135,7 @@ func TestDeadColumnsRescueLegacyPaymentKeys(t *testing.T) {
 // overwritten by whatever is left in the old columns — that configuration is the
 // current one.
 func TestDeadColumnsKeepExistingProviderRow(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "both.db")
 	st, err := Open(path)

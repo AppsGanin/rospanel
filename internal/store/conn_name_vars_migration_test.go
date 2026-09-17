@@ -52,6 +52,7 @@ func dbBeforeMigration(t *testing.T, path, before string) *sql.DB {
 // the upgrade — unless what is left is a name validation would refuse, which keeps its
 // braces rather than putting two connections under one name in every client's profile.
 func TestCountryNameVarsMigrationStripsNames(t *testing.T) {
+	t.Parallel()
 	type inbound struct {
 		server     int64
 		name, want string

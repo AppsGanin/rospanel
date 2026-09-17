@@ -9,6 +9,7 @@ import (
 // is the test: a "SCAN users" here is a full read of the table on every subscription
 // fetch or bot message, which no functional test can see.
 func TestUserLookupsUseTheirIndexes(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	for _, tc := range []struct {
 		name, sql, index string
@@ -52,6 +53,7 @@ func TestUserLookupsUseTheirIndexes(t *testing.T) {
 // nothing (as it did — callers refuse it before the query), and the detach statements
 // leave rows without a chat alone.
 func TestUserLookupsByChatAndToken(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	a, err := st.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0)
 	if err != nil {
@@ -112,6 +114,7 @@ func TestUserLookupsByChatAndToken(t *testing.T) {
 // A count of a few users' devices reads those users' rows by the primary key, not the
 // window of everyone online.
 func TestDeviceCountOfFewUsesTheirRows(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	rows, err := st.db.Query(`EXPLAIN QUERY PLAN `+activeDeviceCountsOfSQL, "[1,2,3]", int64(0))
 	if err != nil {

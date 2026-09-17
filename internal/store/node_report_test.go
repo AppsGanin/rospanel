@@ -48,6 +48,7 @@ func nodeDeltas(nodeID int64, ids []int64, day string, up, down int64) []Traffic
 // rejected as a duplicate and that batch is lost for good. Claim and traffic must
 // roll back together.
 func TestApplyNodeReportAtomic(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	day := time.Now().Format("2006-01-02")
 
@@ -97,6 +98,7 @@ func TestApplyNodeReportAtomic(t *testing.T) {
 // TestApplyNodeReportCountsOnce: a replayed report (the node never saw our ack)
 // must not double-count.
 func TestApplyNodeReportCountsOnce(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	day := time.Now().Format("2006-01-02")
 
@@ -125,6 +127,7 @@ func TestApplyNodeReportCountsOnce(t *testing.T) {
 // batch AND the watermark, so the node would resend the same poison batch every 45s
 // forever and none of its traffic would ever be accounted again.
 func TestApplyNodeReportSurvivesDeletedUser(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	day := time.Now().Format("2006-01-02")
 
@@ -161,6 +164,7 @@ func TestApplyNodeReportSurvivesDeletedUser(t *testing.T) {
 // ghost must not void the batch — the sightings in it drive last_seen and the
 // device cap.
 func TestAddConnectionsSurvivesDeletedUser(t *testing.T) {
+	t.Parallel()
 	st, _, ids := nodeReportFixture(t)
 	now := time.Now().Unix()
 
@@ -189,6 +193,7 @@ func TestAddConnectionsSurvivesDeletedUser(t *testing.T) {
 // track the MASTER's own Xray counters. If they were, the next local poll would
 // subtract against a foreign number and mis-account the master's traffic.
 func TestNodeTrafficLeavesLocalBaseline(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	day := time.Now().Format("2006-01-02")
 
@@ -219,6 +224,7 @@ func TestNodeTrafficLeavesLocalBaseline(t *testing.T) {
 // stay real (and 0.5 the reverse). If the two were ever charged the same value, either
 // billing would be wrong or the infrastructure stats would lie.
 func TestNodeCoefficientScalesQuotaNotStats(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	u := ids[0]
 	const up, down = 1000, 4000
@@ -258,6 +264,7 @@ func TestNodeCoefficientScalesQuotaNotStats(t *testing.T) {
 // charges the real bytes — the coefficient feature must not silently zero quota for
 // everyone who didn't set it.
 func TestTrafficDeltaWithoutQuotaChargesRealBytes(t *testing.T) {
+	t.Parallel()
 	st, n, ids := nodeReportFixture(t)
 	u := ids[0]
 	deltas := []TrafficDelta{{

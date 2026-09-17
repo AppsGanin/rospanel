@@ -9,6 +9,7 @@ import (
 // remembers it in tg_prev_chat_id so the same chat can restore that exact account
 // (keeping its consumed trial) instead of registering a fresh trial user.
 func TestUnlinkReattach(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "reattach.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -71,6 +72,7 @@ func TestUnlinkReattach(t *testing.T) {
 // TestProtocolNamesRoundTrip covers the 0016 migration + name persistence and the
 // ProtoLabel fallback used to render node labels.
 func TestProtocolNamesRoundTrip(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "names.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

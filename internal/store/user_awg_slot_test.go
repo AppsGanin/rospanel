@@ -19,6 +19,7 @@ func slotOf(t *testing.T, st *Store, id int64) int {
 // once held, freed with the user, and none at all once the subnet is full — whatever
 // the user's id.
 func TestClaimUsersAWGHandsOutTheLowestFreeSlot(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	mk := func(name string) int64 {
 		t.Helper()
@@ -93,6 +94,7 @@ func TestClaimUsersAWGHandsOutTheLowestFreeSlot(t *testing.T) {
 // the migration: no key means no config was ever handed out, and an id past the
 // subnet never had a working address to keep.
 func TestAWGSlotMigrationKeepsHandedOutAddresses(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "pre-slot.db")
 	db := dbBeforeMigration(t, path, "0079")
 	users := []struct {

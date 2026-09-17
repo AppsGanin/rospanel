@@ -30,6 +30,7 @@ func dev(hwid string) model.Device {
 }
 
 func TestRegisterDeviceEnforcesCap(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 
 	for i, hwid := range []string{"a", "b"} {
@@ -69,6 +70,7 @@ func TestRegisterDeviceEnforcesCap(t *testing.T) {
 // arrive with nothing else, and a row that forgets it was an iPhone is a row the
 // operator cannot act on.
 func TestRegisterDeviceKeepsDescriptionOnBareRefresh(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 
 	full := dev("a")
@@ -96,6 +98,7 @@ func TestRegisterDeviceKeepsDescriptionOnBareRefresh(t *testing.T) {
 }
 
 func TestRegisterDeviceUnlimited(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 	for _, hwid := range []string{"a", "b", "c", "d"} {
 		adm, err := st.RegisterDevice(uid, dev(hwid), 0)
@@ -113,6 +116,7 @@ func TestRegisterDeviceUnlimited(t *testing.T) {
 // last slot. The cap lives inside the INSERT here, so exactly cap devices survive
 // however many clients arrive at once.
 func TestRegisterDeviceConcurrentRespectsCap(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 
 	const cap, clients = 3, 12
@@ -154,6 +158,7 @@ func TestRegisterDeviceConcurrentRespectsCap(t *testing.T) {
 }
 
 func TestDeleteDeviceFreesSlot(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 	if _, err := st.RegisterDevice(uid, dev("a"), 1); err != nil {
 		t.Fatalf("register a: %v", err)
@@ -178,6 +183,7 @@ func TestDeleteDeviceFreesSlot(t *testing.T) {
 }
 
 func TestListAndPurgeDevices(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 	now := time.Now().Unix()
 	fresh := dev("fresh")
@@ -213,6 +219,7 @@ func TestListAndPurgeDevices(t *testing.T) {
 }
 
 func TestDeleteUserDropsDevices(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 	if _, err := st.RegisterDevice(uid, dev("a"), 0); err != nil {
 		t.Fatalf("register: %v", err)
@@ -233,6 +240,7 @@ func TestDeleteUserDropsDevices(t *testing.T) {
 // client-supplied x-hwid, and "no limit" is the shipped default (hwid_fallback_limit
 // starts at 0). Without a ceiling one token could insert a row per request forever.
 func TestUnlimitedDeviceRosterStillHasACeiling(t *testing.T) {
+	t.Parallel()
 	st, uid := deviceStore(t)
 	for i := 0; i < maxDevicesPerUser+25; i++ {
 		d := model.Device{HWID: fmt.Sprintf("hw-%d", i), LastSeen: 1700000000}

@@ -37,6 +37,7 @@ func runDevices(t *testing.T, st *Store, id int64, start, span int64, live func(
 // that keeps a fresh sighting until it ages out, and neither may cost the user their
 // connection.
 func TestAbandonedAddressNeverCutsTheUser(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	u := dcUser(t, st, "phone") // device_limit 1
@@ -57,6 +58,7 @@ func TestAbandonedAddressNeverCutsTheUser(t *testing.T) {
 // The paired case that makes the grace a trade and not a giveaway: two addresses that
 // BOTH keep being used are still cut, just later.
 func TestSustainedSharingIsStillCut(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	u := dcUser(t, st, "shared")
@@ -77,6 +79,7 @@ func TestSustainedSharingIsStillCut(t *testing.T) {
 // checks the live count as well, so a user back under their limit is admitted even if
 // nothing has run to clear the stamp.
 func TestStaleStampCannotHoldSomeoneOut(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	u := dcUser(t, st, "phone",
@@ -97,6 +100,7 @@ func TestStaleStampCannotHoldSomeoneOut(t *testing.T) {
 // Switching the address counter off must not leave stamps behind that fire the moment
 // an operator switches it back on.
 func TestHWIDModeClearsStamps(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	u := dcUser(t, st, "shared",
@@ -124,6 +128,7 @@ func TestHWIDModeClearsStamps(t *testing.T) {
 
 // The status the panel, the API and the bot quote must follow the cut, not precede it.
 func TestOverLimitWithinGraceIsNotShownAsLimited(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	u := dcUser(t, st, "shared",

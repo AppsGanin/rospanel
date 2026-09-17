@@ -8,6 +8,7 @@ import (
 )
 
 func TestAdminAuditFilterAndPaging(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	for i := range 5 {
@@ -86,6 +87,7 @@ func TestAdminAuditFilterAndPaging(t *testing.T) {
 // path as the export, so both are exercised here (and the export streams the same
 // filtered set).
 func TestAdminAuditSearchAndRange(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	base := time.Now().Unix()
@@ -154,6 +156,7 @@ func TestAdminAuditSearchAndRange(t *testing.T) {
 // Retention has a habit of quietly not working: the sweep must actually delete the
 // old rows and leave the recent ones alone.
 func TestPurgeAdminAudit(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	now := time.Now()

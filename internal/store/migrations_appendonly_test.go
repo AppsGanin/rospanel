@@ -25,6 +25,7 @@ import (
 // migration. A failure here is either a real mistake, or a deliberate NEW migration that
 // should be added to the golden file (never an edit to an existing line).
 func TestMigrationsAreAppendOnly(t *testing.T) {
+	t.Parallel()
 	const golden = "testdata/migrations.sha256"
 
 	entries, err := migrationsFS.ReadDir("migrations")

@@ -9,6 +9,7 @@ import (
 
 // A ban is recorded once, keeps its first time when placed again, and comes out.
 func TestIPBans(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	for _, b := range []model.IPBan{
 		{IP: "203.0.113.7", UserID: 3, At: 100},

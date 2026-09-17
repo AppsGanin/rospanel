@@ -12,6 +12,7 @@ import (
 // their card's — a member of several capped groups gets the highest, and a
 // blocklist throttle is never loosened by a group.
 func TestTheSpeedCapInForce(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	mk := func(name string, kbps int) int64 {
 		t.Helper()
@@ -120,6 +121,7 @@ func hasGroupSpeed(list []model.Group, id int64, kbps int) bool {
 // cap that has become stricter than the throttle — by that edit, or by the user
 // leaving the group that outranked it — is the one in force meanwhile.
 func TestAThrottleHoldsAgainstTariffAndGroupChanges(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	plan := &model.TariffPlan{Slug: "speedy", Name: "Speedy", PriceRub: 100, PeriodDays: 30, SpeedLimit: 10000, Enabled: true}
 	if err := st.SaveTariffPlan(plan); err != nil {

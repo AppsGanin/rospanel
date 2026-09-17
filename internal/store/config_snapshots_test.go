@@ -19,6 +19,7 @@ func snapStore(t *testing.T) *Store {
 }
 
 func TestConfigSnapshots(t *testing.T) {
+	t.Parallel()
 	st := snapStore(t)
 
 	// Create a manual and an auto snapshot; the list is newest-first with metadata.
@@ -67,6 +68,7 @@ func TestConfigSnapshots(t *testing.T) {
 // don't silently lose the lane. Inbounds that existed before but aren't in the snapshot
 // get their now-dangling grants swept.
 func TestRestoreServerConfigKeepsInboundIDsAndGrants(t *testing.T) {
+	t.Parallel()
 	st := snapStore(t)
 
 	inA, err := st.CreateInbound(model.Inbound{
@@ -130,6 +132,7 @@ func TestRestoreServerConfigKeepsInboundIDsAndGrants(t *testing.T) {
 // The history is capped so an auto-snapshot on every routing change can't grow the DB
 // without bound.
 func TestConfigSnapshotsCapped(t *testing.T) {
+	t.Parallel()
 	st := snapStore(t)
 	for i := 0; i < maxConfigSnapshots+15; i++ {
 		if _, err := st.CreateConfigSnapshot("", true, `{}`); err != nil {

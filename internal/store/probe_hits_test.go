@@ -3,6 +3,7 @@ package store
 import "testing"
 
 func TestProbeHitsUpsertAndCap(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	// A repeat scan from one IP folds into a single row: hits climb, paths keeps the
@@ -75,6 +76,7 @@ func itoa(n int) string {
 }
 
 func TestProbesSince(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	// first_seen: old=100, mid=5000, new=9000
 	_ = st.RecordProbe("1.1.1.1", 10, 100)

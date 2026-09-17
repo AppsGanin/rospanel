@@ -78,6 +78,7 @@ func openLegacy(t *testing.T, mustChange bool) string {
 // The admin who installed the panel must come out of the migration as its owner —
 // otherwise nobody can manage the roster and the panel has no way back.
 func TestMigrationPromotesLegacyAdminToOwner(t *testing.T) {
+	t.Parallel()
 	st, err := Open(openLegacy(t, false))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -103,6 +104,7 @@ func TestMigrationPromotesLegacyAdminToOwner(t *testing.T) {
 // gate moves from the settings singleton onto the account, and a panel that was
 // locked to the password screen before the upgrade is still locked after it.
 func TestMigrationCarriesPasswordGateToOwner(t *testing.T) {
+	t.Parallel()
 	st, err := Open(openLegacy(t, true))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -129,6 +131,7 @@ func newStore(t *testing.T) *Store {
 }
 
 func TestAdminRosterCRUD(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	owner, err := st.CreateAdmin("owner", "h1", model.RoleOwner, true)
@@ -189,6 +192,7 @@ func TestAdminRosterCRUD(t *testing.T) {
 // Deleting an admin has to take their live cookies with it — otherwise a colleague
 // who was just removed keeps a working panel until their session happens to expire.
 func TestDeleteAdminRevokesSessions(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	id, err := st.CreateAdmin("support", "h", model.RoleOperator, false)
@@ -214,6 +218,7 @@ func TestDeleteAdminRevokesSessions(t *testing.T) {
 // so a role change or a password reset must land on the very next request rather
 // than at the next login.
 func TestLookupSessionCarriesRoleAndGate(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	id, err := st.CreateAdmin("support", "h", model.RoleOperator, true)

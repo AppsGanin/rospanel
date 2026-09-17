@@ -9,6 +9,7 @@ import (
 // round trip through the row exactly (the note) or in canonical form (the tags),
 // start empty on a fresh user, and clear when set to nothing.
 func TestUserNoteAndTagsRoundTrip(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, err := st.CreateUser("annotated", "uuid-1", "pw", "tok-1", 0, 0, 0)
 	if err != nil {

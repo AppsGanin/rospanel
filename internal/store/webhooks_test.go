@@ -8,6 +8,7 @@ import (
 )
 
 func TestWebhookCRUD(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "wh.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

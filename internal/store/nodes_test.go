@@ -19,6 +19,7 @@ func openNodeStore(t *testing.T) *Store {
 }
 
 func TestNodeCreateAndJoin(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 
 	n, err := st.CreateNode("NL #1", "nl1.example.com", "nginx")
@@ -63,6 +64,7 @@ func TestNodeCreateAndJoin(t *testing.T) {
 // a case-insensitive duplicate is rejected even if the app-level check is bypassed, and
 // a name is free to reuse once its node is deleted.
 func TestNodeNameUniqueIndex(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	n1, err := st.CreateNode("Dup", "a.example.com", "")
 	if err != nil {
@@ -93,6 +95,7 @@ func TestNodeNameUniqueIndex(t *testing.T) {
 // join token WITHOUT revoke leaves the live node's permanent token working (so a failed
 // install can't down it), while RegenJoinToken revokes it.
 func TestIssueJoinTokenKeepsPermanent(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	n, err := st.CreateNode("NL", "nl.example.com", "")
 	if err != nil {
@@ -121,6 +124,7 @@ func TestIssueJoinTokenKeepsPermanent(t *testing.T) {
 }
 
 func TestNodeJoinTokenExpiry(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	n, err := st.CreateNode("expiring", "e.example.com", "")
 	if err != nil {
@@ -144,6 +148,7 @@ func TestNodeJoinTokenExpiry(t *testing.T) {
 }
 
 func TestNodeEditAndOverrides(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	n, _ := st.CreateNode("edit", "e.example.com", "nginx")
 
@@ -178,6 +183,7 @@ func TestNodeEditAndOverrides(t *testing.T) {
 }
 
 func TestNodeStatusAndDelete(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	n, _ := st.CreateNode("status", "s.example.com", "")
 
@@ -204,6 +210,7 @@ func TestNodeStatusAndDelete(t *testing.T) {
 }
 
 func TestNodeTrafficDimension(t *testing.T) {
+	t.Parallel()
 	st := openNodeStore(t)
 	uid := seedUser(t, st)
 

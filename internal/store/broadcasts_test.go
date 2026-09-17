@@ -37,6 +37,7 @@ func newBroadcast(t *testing.T, st *Store, chats ...int64) int64 {
 // attachment is written to disk under the id this call returns, and a worker seeing
 // the row as running in between would find no file.
 func TestCreateBroadcastStartsPaused(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	id := newBroadcast(t, st, 1, 2, 3)
 
@@ -79,6 +80,7 @@ func TestCreateBroadcastStartsPaused(t *testing.T) {
 // The primary key on (broadcast_id, chat_id) is what makes a resumed run unable to
 // send twice, whatever the worker does.
 func TestBroadcastTargetsAreUnique(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	id := newBroadcast(t, st, 1, 2, 2, 3, 1)
 
@@ -102,6 +104,7 @@ func TestBroadcastTargetsAreUnique(t *testing.T) {
 }
 
 func TestBroadcastProgress(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	id := newBroadcast(t, st, 1, 2, 3, 4)
 
@@ -135,6 +138,7 @@ func TestBroadcastProgress(t *testing.T) {
 // Retry re-queues transient failures only. A blocked chat will be refused again for
 // exactly the same reason, so retrying it just spends a send slot.
 func TestRetryFailedOnly(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	id := newBroadcast(t, st, 1, 2, 3)
 	for _, c := range []struct {
@@ -180,6 +184,7 @@ func TestRetryFailedOnly(t *testing.T) {
 }
 
 func TestListBroadcastsNewestFirst(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	first := newBroadcast(t, st, 1)
 	second := newBroadcast(t, st, 2, 3)
@@ -199,6 +204,7 @@ func TestListBroadcastsNewestFirst(t *testing.T) {
 // Deleting a broadcast must take its recipient rows with it, or the table grows
 // without bound and orphan rows skew nothing but still sit there.
 func TestBroadcastTargetsCascade(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 	id := newBroadcast(t, st, 1, 2, 3)
 	if _, err := st.db.Exec(`DELETE FROM broadcasts WHERE id = ?`, id); err != nil {
@@ -220,6 +226,7 @@ func TestBroadcastTargetsCascade(t *testing.T) {
 // now trimmed — and an unfinished one must survive, because its snapshot is what a
 // resume replays.
 func TestFinishedBroadcastsAreTrimmed(t *testing.T) {
+	t.Parallel()
 	st := bcStore(t)
 
 	// One paused (unfinished) broadcast with recipients, created first so it is oldest.
