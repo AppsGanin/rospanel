@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.5.0](https://github.com/AppsGanin/rospanel/compare/v3.4.0...v3.5.0) (2026-09-17)
+
+
+### Features
+
+* **inbounds:** WireGuard over calls (TURN), experimental ([43dadda](https://github.com/AppsGanin/rospanel/commit/43dadda12bb28dd9a45f8fbe74cf6b6259f954cb))
+* **security:** ban an address from a user's addresses, and one list of every ban ([6997aa7](https://github.com/AppsGanin/rospanel/commit/6997aa77054e8ed561280431c7533307f2b27fc5))
+* **security:** the panel says when a server cannot drop addresses, and the installer brings nftables ([9b019e4](https://github.com/AppsGanin/rospanel/commit/9b019e4054068e1771795a051685b57dfb5d8819))
+
+
+### Bug Fixes
+
+* **deps:** pion/dtls v3.1.9, past the panic on a crafted ServerKeyExchange ([7ed4b82](https://github.com/AppsGanin/rospanel/commit/7ed4b829d40626cd78bfdf5afbf4f168b1a2a711))
+* **dns:** refuse servers Xray cannot use, and ask host-named resolvers last ([390cbc9](https://github.com/AppsGanin/rospanel/commit/390cbc9ad2ee6ba10491d079c2f650b7deec5dc2))
+* **subscriptions:** connection names drop {flag} and {country} ([a7e1659](https://github.com/AppsGanin/rospanel/commit/a7e16590a11f850a4e2a201f7773337bfaa056f2))
+* **ui:** a user's addresses show even when device binding is on ([1a3521b](https://github.com/AppsGanin/rospanel/commit/1a3521b45dcca8949806fbea2634e6db4d629ae8))
+* **xray:** the API client refuses a message too big for a gRPC frame ([8535b5e](https://github.com/AppsGanin/rospanel/commit/8535b5ee0725075706bf09784883ec079550337f))
+
 ## [3.4.0](https://github.com/AppsGanin/rospanel/compare/v3.3.1...v3.4.0) (2026-09-17)
 
 
