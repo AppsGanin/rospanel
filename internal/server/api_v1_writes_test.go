@@ -408,6 +408,21 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 				}
 			},
 		},
+		{ // WireGuard behind a TURN relay: the call link, and what the panel generates
+			body: map[string]any{
+				"enabled": true, "name": "land-wg", "protocol": model.InbWireGuard, "port": 21107,
+				"turn_link": "https://vk.com/call/join/abcdef",
+			},
+			assert: func(t *testing.T, in model.Inbound) {
+				eq(t, "turn_link", "https://vk.com/call/join/abcdef", in.Opts.TurnLink)
+				if in.Opts.WGPrivateKey == "" || in.Opts.WGPublicKey == "" || in.Opts.TurnMaskKey == "" {
+					t.Error("the inbound's WireGuard or masking key was not generated")
+				}
+				if in.Opts.WGLocalPort == 0 || in.Opts.WGLocalPort == in.Port {
+					t.Errorf("the loopback port %d was not assigned apart from the relay's", in.Opts.WGLocalPort)
+				}
+			},
+		},
 	}
 
 	covered := map[string]bool{}

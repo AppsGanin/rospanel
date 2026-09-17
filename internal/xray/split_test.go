@@ -2,6 +2,7 @@ package xray
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -31,6 +32,8 @@ func splitFixture() (*model.Settings, []model.Inbound) {
 			in.Opts = model.InboundOpts{Transport: model.TrWS, Security: model.SecTLS, Path: "/p"}
 		case model.InbShadowsocks:
 			in.Opts = model.InboundOpts{Method: model.SS2022AES128, ShadowKey: "AAAAAAAAAAAAAAAAAAAAAA=="}
+		case model.InbWireGuard:
+			in.Opts = model.InboundOpts{WGPrivateKey: testWGKey(0), WGPublicKey: testWGKey(1), WGLocalPort: 20000 + i}
 		}
 		in.Normalize()
 		custom = append(custom, in)
@@ -50,12 +53,18 @@ func splitUsers(n int, seed uint64) ([]model.User, map[int64]model.Access) {
 		model.BuiltinToken(model.LocalNodeID, model.LaneReality),
 		model.BuiltinToken(model.LocalNodeID, model.LaneHysteria),
 		model.InboundToken(10), model.InboundToken(11), model.InboundToken(12), model.InboundToken(13),
+		model.InboundToken(14),
 	}
 	users := make([]model.User, 0, n)
 	access := map[int64]model.Access{}
 	for i := range n {
 		id := int64(i*3 + 1) // gaps, as real ids have
-		users = append(users, model.User{ID: id, UUID: fmt.Sprintf("00000000-0000-4000-8000-%012d", id), Password: fmt.Sprintf("pw-%d", id)})
+		users = append(users, model.User{
+			ID: id, UUID: fmt.Sprintf("00000000-0000-4000-8000-%012d", id), Password: fmt.Sprintf("pw-%d", id),
+			// A tunnel identity for the WireGuard inbound, except on every fifth user: one
+			// with none yet is left out of the inbound, and the split must agree.
+			WGPrivateKey: testWGKeyUnless(i%5 == 4, id), AWGSlot: int(id) + 1,
+		})
 		if r.IntN(2) == 0 {
 			a := model.Access{Tokens: map[string]bool{}}
 			for _, t := range tokens {
@@ -90,18 +99,34 @@ func rowsOf(sc *SplitConfig, users []model.User) []nodeapi.UserRow {
 		}
 		row := nodeapi.UserRow{ID: u.ID, Slots: slots}
 		for _, si := range slots {
-			uuid, pw := SlotNeeds(sc.Slots[si])
-			if uuid {
+			need := SlotNeeds(sc.Slots[si])
+			if need.UUID {
 				row.UUID = u.UUID
 			}
-			if pw {
+			if need.Password {
 				row.Password = u.Password
+			}
+			if need.Tunnel {
+				row.WGKey, row.WGAddr, _ = TunnelIdentity(&u)
 			}
 		}
 		rows = append(rows, row)
 	}
 	slices.SortFunc(rows, func(a, b nodeapi.UserRow) int { return int(a.ID - b.ID) })
 	return rows
+}
+
+// testWGKey is a fixed, valid WireGuard private key: 32 bytes of n.
+func testWGKey(n byte) string {
+	return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{n + 1}, 32))
+}
+
+// testWGKeyUnless is a user's key, or none when skip.
+func testWGKeyUnless(skip bool, id int64) string {
+	if skip {
+		return ""
+	}
+	return testWGKey(byte(id))
 }
 
 // decoded reads JSON the way both sides compare it: numbers kept exact, key order ignored.
@@ -147,12 +172,14 @@ func TestRenderedUsersAreTheGeneratedConfig(t *testing.T) {
 		if !reflect.DeepEqual(decoded(t, got), decoded(t, want)) {
 			t.Errorf("%d users: the rendered config differs from the generated one\n got %.2000s\nwant %.2000s", n, got, want)
 		}
-		if len(sc.Slots) != 7+1 {
-			t.Errorf("%d users: %d slots, want 3 lanes + 5 custom", n, len(sc.Slots))
+		if want := 3 + len(model.InboundProtocols) + 1; len(sc.Slots) != want {
+			t.Errorf("%d users: %d slots, want %d (3 lanes, one per custom protocol, the locked one)", n, len(sc.Slots), want)
 		}
 		// The split is not vacuous: the skeleton carries no user's credential.
 		for _, u := range users {
-			if bytes.Contains(skel, []byte(u.Password)) || bytes.Contains(skel, []byte(u.UUID)) {
+			key, _, _ := TunnelIdentity(&u)
+			if bytes.Contains(skel, []byte(u.Password)) || bytes.Contains(skel, []byte(u.UUID)) ||
+				(key != "" && bytes.Contains(skel, []byte(key))) {
 				t.Fatalf("%d users: the skeleton still holds user %d", n, u.ID)
 			}
 		}

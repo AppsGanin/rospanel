@@ -241,6 +241,10 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 			rt.serveAWG(w, r, u, set, rest)
 			return
 		}
+		if rest, ok := strings.CutPrefix(leaf, "wg/"); ok {
+			rt.serveTurnWG(w, r, u, set, rest)
+			return
+		}
 		if idx, ok := strings.CutPrefix(leaf, "app/"); ok {
 			rt.handleSubApp(w, r, *u, set, idx)
 			return
@@ -488,6 +492,19 @@ func isBrowser(r *http.Request) bool {
 	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
 }
 
+// hasTurnInbound reports whether the user may use a WireGuard inbound on any of these
+// servers.
+func hasTurnInbound(servers []sub.Server) bool {
+	for _, s := range servers {
+		for _, in := range s.Custom {
+			if in.Protocol == model.InbWireGuard && s.Access.AllowsInbound(in.ID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // servePage renders the human-facing subscription page. It returns an error
 // (writing nothing) instead of a 500 so the caller can fall through to the decoy
 // and keep the masquerade intact.
@@ -503,6 +520,13 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 	servers, err := rt.subServers(set, u.ID, clientIP)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errSubUnavailable, err)
+	}
+	// The VK Turn Proxy link carries the user's tunnel key, which a user who has never
+	// downloaded a tunnel config does not have yet.
+	if hasTurnInbound(servers) {
+		if err := rt.mgr.ClaimTunnelIdentity(&u); err != nil {
+			slog.Warn("sub: tunnel identity", "user", u.ID, "err", err)
+		}
 	}
 	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang),
 		rt.buildDevices(u, set, lang), showDownload, lang)
@@ -795,6 +819,67 @@ func (rt *Router) subUnavailable(w http.ResponseWriter, userID int64, err error)
 	w.WriteHeader(http.StatusServiceUnavailable)
 }
 
+// serveTurnWG hands out one user's WireGuard config for one WireGuard inbound behind a
+// TURN relay — "<id>.conf", id being the inbound. No QR: a phone takes this lane from an
+// app's import link, and the file is for setting a client up by hand. The inbound must be
+// on a server of this user's subscription and the user allowed on it; anything else is
+// the decoy.
+func (rt *Router) serveTurnWG(w http.ResponseWriter, r *http.Request, u *model.User, set *model.Settings, rest string) {
+	name, ext, ok := strings.Cut(rest, ".")
+	if !ok || ext != "conf" {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	id, err := strconv.ParseInt(name, 10, 64)
+	if err != nil || id <= 0 {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	servers, err := rt.subServers(set, u.ID, clientIP(r))
+	if err != nil {
+		rt.subUnavailable(w, u.ID, err)
+		return
+	}
+	var srv *sub.Server
+	var in *model.Inbound
+	for i := range servers {
+		for j := range servers[i].Custom {
+			if c := &servers[i].Custom[j]; c.ID == id && c.Protocol == model.InbWireGuard {
+				srv, in = &servers[i], c
+			}
+		}
+	}
+	if in == nil || !srv.Access.AllowsInbound(in.ID) {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	conf, err := rt.mgr.WireGuardClientConfig(u, srv.Set, in)
+	if err != nil {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	rt.serveTunnelConf(w, r, conf, ext, sub.TurnFileName(*in, srv.Set))
+}
+
+// serveTunnelConf writes a tunnel config as the file to import or as its QR.
+func (rt *Router) serveTunnelConf(w http.ResponseWriter, r *http.Request, conf, ext, fileName string) {
+	w.Header().Set("Cache-Control", "no-store")
+	if ext == "png" {
+		png, err := qrcode.Encode(conf, qrcode.Low, 512)
+		if err != nil {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+		return
+	}
+	// The file name is what the app shows as the tunnel's name.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fileName+`"`)
+	_, _ = w.Write([]byte(conf))
+}
+
 // serveAWG hands out one user's AmneziaWG config for one server — "<id>.conf" as
 // the file the Amnezia apps import, "<id>.png" as the same text in a QR — where
 // id is the server (0 = the master, otherwise the node). The server must have the
@@ -832,19 +917,5 @@ func (rt *Router) serveAWG(w http.ResponseWriter, r *http.Request, u *model.User
 		rt.currentDecoy().ServeHTTP(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	if ext == "png" {
-		png, err := qrcode.Encode(conf, qrcode.Low, 512)
-		if err != nil {
-			rt.currentDecoy().ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write(png)
-		return
-	}
-	// The file name is what the app shows as the tunnel's name.
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+sub.AWGFileName(srv.Set)+`"`)
-	_, _ = w.Write([]byte(conf))
+	rt.serveTunnelConf(w, r, conf, ext, sub.AWGFileName(srv.Set))
 }

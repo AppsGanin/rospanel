@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/nodeapi"
 )
@@ -67,7 +68,7 @@ func SplitUsers(cfg *Config, custom []model.Inbound, users []model.User) (*Split
 				return nil, false
 			}
 			u := byID[id]
-			if u == nil || !reflect.DeepEqual(e, slotEntry(slot, u.ID, u.UUID, u.Password)) {
+			if u == nil || !reflect.DeepEqual(e, slotEntry(slot, u.ID, userSlotCreds(slot, u))) {
 				return nil, false
 			}
 			placed := out.Placed[id]
@@ -107,6 +108,8 @@ func slotOf(in Inbound, custom map[string]*model.Inbound) (nodeapi.UserSlot, boo
 			s = nodeapi.UserSlot{Kind: "trojan"}
 		case model.InbHysteria:
 			s = nodeapi.UserSlot{Kind: "hysteria"}
+		case model.InbWireGuard:
+			s = nodeapi.UserSlot{Kind: "wireguard"}
 		case model.InbShadowsocks:
 			locked, err := json.Marshal(ShadowsocksClient{
 				Password: model.LockedShadowKey(c.Opts.ShadowKey, c.Opts.Method),
@@ -150,6 +153,12 @@ func usersOf(settings any) (entries []any, empty any, ok bool) {
 		}
 		s.Users = []ShadowsocksClient{}
 		return entries, s, true
+	case WireGuardInboundSettings:
+		for _, c := range s.Peers {
+			entries = append(entries, c)
+		}
+		s.Peers = []WireGuardInboundPeer{}
+		return entries, s, true
 	}
 	return nil, nil, false
 }
@@ -164,35 +173,76 @@ func emailOf(entry any) string {
 		return e.Email
 	case ShadowsocksClient:
 		return e.Email
+	case WireGuardInboundPeer:
+		return e.Email
 	}
 	return ""
 }
 
+// slotCreds are the credentials a user's entry in a slot is written from.
+type slotCreds struct {
+	uuid, password string
+	// wgKey and wgAddr are the user's tunnel public key and address, for a wireguard
+	// slot.
+	wgKey, wgAddr string
+}
+
+// userSlotCreds takes a slot's credentials from a user. The tunnel pair is derived only
+// for a slot that uses it: the public key costs a curve multiplication.
+func userSlotCreds(s nodeapi.UserSlot, u *model.User) slotCreds {
+	c := slotCreds{uuid: u.UUID, password: u.Password}
+	if s.Kind == "wireguard" {
+		c.wgKey, c.wgAddr, _ = TunnelIdentity(u)
+	}
+	return c
+}
+
+// TunnelIdentity is a user's WireGuard public key and tunnel address, as a WireGuard
+// inbound's peer holds them. ok is false for a user with none yet or an unreadable key.
+func TunnelIdentity(u *model.User) (key, addr string, ok bool) {
+	peer, ok := wireGuardPeer(u.ID, u.WGPrivateKey, u.AWGSlot)
+	if !ok {
+		return "", "", false
+	}
+	a, _ := awg.ClientAddr(u.AWGSlot)
+	return peer.PublicKey, a.String(), true
+}
+
 // slotEntry is one user's entry in a slot's list, as the generator writes it.
-func slotEntry(s nodeapi.UserSlot, id int64, uuid, password string) any {
+func slotEntry(s nodeapi.UserSlot, id int64, c slotCreds) any {
 	email := model.UserEmail(id)
 	switch s.Kind {
 	case "vless":
-		return VLESSClient{ID: uuid, Flow: s.Flow, Email: email}
+		return VLESSClient{ID: c.uuid, Flow: s.Flow, Email: email}
 	case "trojan":
-		return TrojanClient{Password: password, Email: email}
+		return TrojanClient{Password: c.password, Email: email}
 	case "hysteria":
-		return HysteriaClient{Auth: password, Email: email}
+		return HysteriaClient{Auth: c.password, Email: email}
 	case "shadowsocks":
-		return ShadowsocksClient{Password: model.UserShadowKey(uuid, s.Method), Email: email}
+		return ShadowsocksClient{Password: model.UserShadowKey(c.uuid, s.Method), Email: email}
+	case "wireguard":
+		return WireGuardInboundPeer{PublicKey: c.wgKey, AllowedIPs: []string{c.wgAddr + "/32"}, Email: email}
 	}
 	return nil
 }
 
+// SlotNeed says which of a user's credentials a slot's entry is written from.
+type SlotNeed struct {
+	UUID, Password bool
+	Tunnel         bool // the WireGuard public key and address
+}
+
 // SlotNeeds reports which of a user's credentials a slot's entry is written from.
-func SlotNeeds(s nodeapi.UserSlot) (uuid, password bool) {
+func SlotNeeds(s nodeapi.UserSlot) SlotNeed {
 	switch s.Kind {
 	case "vless", "shadowsocks":
-		return true, false
+		return SlotNeed{UUID: true}
 	case "trojan", "hysteria":
-		return false, true
+		return SlotNeed{Password: true}
+	case "wireguard":
+		return SlotNeed{Tunnel: true}
 	}
-	return false, false
+	return SlotNeed{}
 }
 
 // RenderUsers writes rows back into a skeleton config: every user into each list their
@@ -216,7 +266,9 @@ func RenderUsers(skeleton []byte, slots []nodeapi.UserSlot, rows []nodeapi.UserR
 			if si < 0 || si >= len(slots) {
 				return nil, fmt.Errorf("user %d: no slot %d", r.ID, si)
 			}
-			lists[si] = append(lists[si], slotEntry(slots[si], r.ID, r.UUID, r.Password))
+			lists[si] = append(lists[si], slotEntry(slots[si], r.ID, slotCreds{
+				uuid: r.UUID, password: r.Password, wgKey: r.WGKey, wgAddr: r.WGAddr,
+			}))
 		}
 	}
 	for si, s := range slots {

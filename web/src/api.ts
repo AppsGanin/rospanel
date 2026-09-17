@@ -2378,6 +2378,12 @@ export interface InboundOpts {
   // Shadowsocks-2022: the AEAD method. The server key is generated and never sent to
   // the client, so there is no field for it here.
   method?: string
+  // WireGuard behind a TURN relay: the inbound's public key, the loopback port Xray
+  // listens on behind the relay (both generated), and the call link users get. The
+  // masking key is generated too and never shown.
+  wg_public_key?: string
+  wg_local_port?: number
+  turn_link?: string
   // Advanced. header_* / authority / multi_mode are simple mirrored-into-links knobs.
   // The three JSON sections travel as typed forms, not on opts — see the *_form fields
   // on Inbound below (the server nils the raw blobs out of opts).
@@ -2510,6 +2516,8 @@ export interface InboundInput {
   multi_mode: boolean
   // Shadowsocks-2022 method; ignored by the server for the other protocols.
   method: string
+  // WireGuard's VK call invite link; ignored for the others.
+  turn_link: string
   // The three advanced sections as typed forms; the server assembles them into the
   // JSON blob Xray reads and validates that.
   xhttp_extra: XHTTPExtraForm

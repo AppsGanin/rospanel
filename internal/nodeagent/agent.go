@@ -42,6 +42,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
+	"github.com/AppsGanin/rospanel/internal/turnrelay"
 	"github.com/AppsGanin/rospanel/internal/updater"
 	"github.com/AppsGanin/rospanel/internal/version"
 	"github.com/AppsGanin/rospanel/internal/xray"
@@ -232,6 +233,9 @@ type Agent struct {
 	awgMu     sync.Mutex
 	awgEmails map[string]string
 	awgLast   map[string]awg.PeerStat
+
+	// turn runs the TURN relays in front of this node's WireGuard inbounds.
+	turn *turnrelay.Relay
 }
 
 // Run loads the node identity and runs the agent until the context is cancelled
@@ -461,6 +465,7 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		seen:         newSeenAddrs(),
 		shaper:       shaper.New(),
 		awg:          awg.New(),
+		turn:         turnrelay.New(),
 		policyBlock:  ipblock.New(ipblock.TablePolicy),
 	}
 	// Resume report ids where the last run left off so the panel's forward-only
@@ -1195,6 +1200,16 @@ func (a *Agent) applyState(st *nodeapi.NodeState) error {
 	// Opera VPN egress helper: bring it up/down to match the desired state. The
 	// generated config's "opera" outbound already points at 127.0.0.1:OperaPort.
 	a.syncOpera(m.OperaEnabled, m.OperaCountry, m.OperaPort)
+
+	// The relays in front of the WireGuard inbounds, the whole set: an empty list stops
+	// them all.
+	relays := make([]turnrelay.Spec, 0, len(m.TurnRelays))
+	for _, r := range m.TurnRelays {
+		relays = append(relays, turnrelay.Spec{Port: r.Port, Target: r.Target, MaskKey: r.MaskKey})
+	}
+	if err := a.turn.Sync(relays); err != nil {
+		slog.Warn("node: turn relay", "err", err)
+	}
 	return a.applyUsers(st)
 }
 
@@ -1401,6 +1416,7 @@ func (a *Agent) shutdown() {
 	if a.awg != nil {
 		a.awg.Close()
 	}
+	a.turn.Close()
 	a.operaSup.Stop()
 	if a.redirectSrv != nil {
 		_ = a.redirectSrv.Close()
@@ -1476,6 +1492,7 @@ func (a *Agent) selfUpdate(parent context.Context) bool {
 	if a.awg != nil {
 		a.awg.Close()
 	}
+	a.turn.Close()
 	return true
 }
 

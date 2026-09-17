@@ -425,12 +425,17 @@ func splitRows(sc *xray.SplitConfig, users []model.User, meta nodeapi.NodeMeta, 
 		}
 		row := nodeapi.UserRow{ID: u.ID, Slots: slots, Speed: speed[email]}
 		for _, si := range slots {
-			uuid, password := xray.SlotNeeds(sc.Slots[si])
-			if uuid {
+			need := xray.SlotNeeds(sc.Slots[si])
+			if need.UUID {
 				row.UUID = u.UUID
 			}
-			if password {
+			if need.Password {
 				row.Password = u.Password
+			}
+			if need.Tunnel {
+				// SplitUsers matched this user's entry against the same identity, so
+				// it is there to take.
+				row.WGKey, row.WGAddr, _ = xray.TunnelIdentity(u)
 			}
 		}
 		if tunnelled {

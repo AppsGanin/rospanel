@@ -28,7 +28,9 @@ import (
 // SyncRequest.DeltaRev, and a panel sends split states and deltas only to an agent of
 // its own revision — anything else gets the whole config, as before. Raise it whenever
 // UserSlot, UserRow, Blocked or how they are rendered or hashed change meaning.
-const DeltaRev = 1
+//
+// 2: WireGuard inbounds (a "wireguard" slot, and WGKey/WGAddr on the row).
+const DeltaRev = 2
 
 // SplitState is a node's whole desired state in parts. Skeleton, every row and Blocked
 // are sent as the panel encoded them, and the agent keeps them as received: they are
@@ -73,7 +75,7 @@ type Skeleton struct {
 // user's entry in it is written.
 type UserSlot struct {
 	Inbound int    `json:"inbound"` // index into the config's inbounds
-	Kind    string `json:"kind"`    // the inbound's Xray protocol: vless, trojan, hysteria, shadowsocks
+	Kind    string `json:"kind"`    // the inbound's Xray protocol: vless, trojan, hysteria, shadowsocks, wireguard
 	Flow    string `json:"flow,omitempty"`
 	Method  string `json:"method,omitempty"` // shadowsocks
 	// Locked is the entry a Shadowsocks list holds when nobody may use the inbound —
@@ -94,6 +96,10 @@ type UserRow struct {
 	// AWGKey and AWGAddr make the user a peer of the node's AmneziaWG tunnel.
 	AWGKey  string `json:"awg_key,omitempty"`
 	AWGAddr string `json:"awg_addr,omitempty"`
+	// WGKey and WGAddr are the same identity for the WireGuard inbounds in Slots. Kept
+	// apart from the AWG pair: a user may be allowed on one lane and not the other.
+	WGKey  string `json:"wg_key,omitempty"`
+	WGAddr string `json:"wg_addr,omitempty"`
 }
 
 // Blocked is the source policy's refusals for a node's own firewall.

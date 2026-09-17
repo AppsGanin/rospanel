@@ -338,39 +338,11 @@ func (m *Manager) AWGClientConfig(u *model.User, s *model.Settings) (string, err
 	return awg.ClientConfig{
 		PrivateKey:      u.WGPrivateKey,
 		Address:         addr,
-		DNS:             awgDNSOr(s),
+		DNS:             awg.TunnelDNS(s),
 		Params:          awgParams(s.AWGParams),
 		ServerPublicKey: s.AWGPublicKey,
 		Endpoint:        net.JoinHostPort(s.Host, strconv.Itoa(s.AWGPort)),
 	}.Render(), nil
-}
-
-// awgDNSOr is what the client resolves through inside the tunnel: the operator's
-// own AmneziaWG DNS when they set one, otherwise the plain resolvers from this
-// server's DNS settings — the same ones Xray uses, so both lanes answer alike.
-// A DoH/DoT URL from those settings is skipped: a WireGuard DNS line takes plain
-// addresses, and a client handed a URL would silently fail to resolve anything.
-// Nothing usable there leaves it to awg.DefaultDNS.
-func awgDNSOr(s *model.Settings) string {
-	if v := strings.TrimSpace(s.AWGDNS); v != "" {
-		return v
-	}
-	var plain []string
-	for _, f := range strings.FieldsFunc(s.XrayDNS, func(r rune) bool {
-		return r == '\n' || r == '\r' || r == ',' || r == ' '
-	}) {
-		if ip := net.ParseIP(strings.TrimSpace(f)); ip != nil {
-			plain = append(plain, ip.String())
-		}
-	}
-	if len(plain) == 0 {
-		return awg.DefaultDNS
-	}
-	// Two is what a client needs; more only lengthens the config.
-	if len(plain) > 2 {
-		plain = plain[:2]
-	}
-	return strings.Join(plain, ", ")
 }
 
 // nodeAWGState is what a node needs to run its tunnel: its own identity and the

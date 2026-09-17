@@ -28,3 +28,7 @@ linters:
   exclusions:
     presets:
       - std-error-handling
+    paths:
+      # Free Turn Proxy's own codecs, kept verbatim as the reference the relay's wire
+      # is tested against; restyling them would defeat the point.
+      - internal/turnrelay/freeturnref

@@ -57,6 +57,10 @@ type inboundReq struct {
 	// deliberately not a request field.
 	Method string `json:"method"`
 
+	// TurnLink is a WireGuard inbound's call invite link. Its key and loopback port are
+	// generated, so they are not request fields either.
+	TurnLink string `json:"turn_link"`
+
 	// Advanced. Each transport knob is its own typed field; the three JSON-blob
 	// sections (XHTTP extra, sockopt, extra TLS) arrive as structured forms that the
 	// server assembles into the blob Xray reads. Every form carries a Raw escape hatch
@@ -103,6 +107,7 @@ func (r inboundReq) toModel(serverID, id int64) (model.Inbound, error) {
 			Authority:   r.Authority,
 			MultiMode:   r.MultiMode,
 			Method:      r.Method,
+			TurnLink:    r.TurnLink,
 		},
 	}
 	if r.RealityAntiReplay {
@@ -241,13 +246,10 @@ func makeInboundCatalog() inboundCatalogView {
 	combos := []inboundCombo{}
 	for _, p := range model.InboundProtocols {
 		for _, tr := range model.InboundTransports(p) {
-			var unsupported []string
-			if !model.SupportsClash(p, tr) {
-				unsupported = append(unsupported, "Clash / Mihomo")
-			}
-			if !model.SupportsSingBox(p, tr) {
-				unsupported = append(unsupported, "sing-box / Hiddify")
-			}
+			// The formats that skip this combination, as Inbound.UnsupportedFormats names
+			// them — none for WireGuard, which is in no format at all.
+			probe := model.Inbound{Protocol: p, Opts: model.InboundOpts{Transport: tr}}
+			unsupported := probe.UnsupportedFormats()
 			combos = append(combos, inboundCombo{
 				Protocol:    p,
 				Transport:   tr,

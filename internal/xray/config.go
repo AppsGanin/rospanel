@@ -202,6 +202,29 @@ type WireGuardSettings struct {
 	NoKernelTun bool `json:"noKernelTun,omitempty"`
 }
 
+// WireGuardInboundSettings is the "settings" object for a wireguard inbound, the lane
+// behind the TURN relay. Xray makes every peer of an inbound a user, with the email
+// given here, so its users are attributed, routed and counted like any other lane's.
+type WireGuardInboundSettings struct {
+	SecretKey string `json:"secretKey"`
+	// Address is the inbound's own address inside its userspace network stack. Left
+	// out, Xray takes 10.0.0.1, which is somebody's home router: a client could not
+	// reach an address behind the tunnel that happens to be it.
+	Address []string               `json:"address,omitempty"`
+	MTU     int                    `json:"mtu,omitempty"`
+	Peers   []WireGuardInboundPeer `json:"peers"`
+}
+
+// WireGuardInboundPeer is one user of a wireguard inbound. AllowedIPs is what tells
+// users apart: Xray finds the user of a connection by its source address inside the
+// tunnel, so each peer holds its own /32 and nothing else. Left out, Xray allows every
+// address — and then the first peer it looks at owns every connection.
+type WireGuardInboundPeer struct {
+	PublicKey  string   `json:"publicKey"`
+	AllowedIPs []string `json:"allowedIPs"`
+	Email      string   `json:"email"`
+}
+
 // WireGuardPeer is one WireGuard peer (Cloudflare's WARP endpoint).
 type WireGuardPeer struct {
 	PublicKey  string   `json:"publicKey"`

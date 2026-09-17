@@ -60,6 +60,12 @@ var en = map[string]string{
 	"sub.awgTitle":      "AmneziaWG",
 	"sub.awgHint":       "For the AmneziaVPN and AmneziaWG apps: scan the QR or download the file and import it into the app.",
 	"sub.awgDownload":   "Download the config",
+	"sub.turnTitle":     "WireGuard over calls (TURN)",
+	"sub.turnHint":      "For the VK Turn Proxy (iOS), Free Turn Proxy (Android) and WINGS V (Android, Windows, Linux) apps: open the link or copy it into the app.",
+	"sub.turnPeer":      "Server address (peer)",
+	"sub.turnLink":      "Call link",
+	"sub.turnNoLink":    "No call link is set — start a VK call and use its link.",
+	"sub.turnManual":    "Manual setup",
 	"sub.singleConfigs": "Individual configs",
 	"sub.pickApp":       "Pick an app",
 

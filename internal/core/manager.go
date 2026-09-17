@@ -22,6 +22,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/shaper"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
+	"github.com/AppsGanin/rospanel/internal/turnrelay"
 	"github.com/AppsGanin/rospanel/internal/xray"
 )
 
@@ -346,6 +347,9 @@ type Manager struct {
 	awgMu   sync.Mutex
 	awgLast map[string]awg.PeerStat
 
+	// turn runs the master's TURN relays, one per WireGuard inbound (manager_wireguard.go).
+	turn *turnrelay.Relay
+
 	// nodeLogs holds the most recent log tail reported by each node, plus which
 	// nodes an operator is currently viewing (so the panel asks them for logs).
 	nodeLogsMu     sync.Mutex
@@ -413,6 +417,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		nodeHostStats:  map[int64]nodeapi.HostStats{},
 		nodeAWG:        map[int64]nodeAWGState{},
 		awg:            awg.New(),
+		turn:           turnrelay.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),
 		nodeSyncFails:  map[int64]int{},
@@ -889,6 +894,9 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		return true, err
 	}
 	custom := opts.Custom
+	// A user added here may have no tunnel identity yet, and a WireGuard inbound they are
+	// allowed on needs one to hold them.
+	wgUsers, _, _ := m.claimWireGuard(users, custom, opts.Access)
 
 	apiAddr := m.sup.APIAddr()
 	if len(removedEmails) > 0 {
@@ -903,7 +911,7 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	}
 	// Keep config.json current (no restart) so the monitor's crash-restart loads
 	// the right user set.
-	cfg, err := xray.Generate(set, users, opts, m.getProxies())
+	cfg, err := xray.Generate(set, wgUsers, opts, m.getProxies())
 	if err != nil {
 		return true, err
 	}
@@ -920,6 +928,10 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 	// A failure there is returned: the process then holds users no config describes, and
 	// the full reload that follows restarts it.
 	if err := m.sup.SyncHysteria(apiAddr, xray.HysteriaInbounds(cfg)); err != nil {
+		return true, err
+	}
+	// WireGuard peers likewise, through the API (see xray/wireguard_live.go).
+	if err := m.sup.SyncWireGuard(apiAddr, xray.WireGuardInbounds(cfg)); err != nil {
 		return true, err
 	}
 	m.syncAWGLocked(set, users)
@@ -978,7 +990,8 @@ func (m *Manager) reconcileLocked() error {
 		_ = m.store.SetConfigError(err.Error())
 		return err
 	}
-	cfg, err := xray.Generate(set, users, opts, m.getProxies())
+	wgUsers, _, _ := m.claimWireGuard(users, opts.Custom, opts.Access)
+	cfg, err := xray.Generate(set, wgUsers, opts, m.getProxies())
 	if err != nil {
 		logErr("reconcile: config generation failed", "err", err)
 		_ = m.store.SetConfigError(err.Error())
@@ -991,6 +1004,7 @@ func (m *Manager) reconcileLocked() error {
 	}
 	m.setApplied(users)
 	logInfo("reconcile: config applied", "users", len(users))
+	m.syncTurnLocked(opts.Custom)
 	m.syncAWGLocked(set, users)
 	return m.store.MarkConfigApplied()
 }

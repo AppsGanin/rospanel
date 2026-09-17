@@ -207,6 +207,18 @@ func TestUAPIAndClientConfig(t *testing.T) {
 		t.Error("a bad peer key was accepted")
 	}
 
+	// Without parameters the file is plain WireGuard's: no AmneziaWG key at all, which
+	// WireGuard's own apps would refuse.
+	plain := ClientConfig{PrivateKey: cPriv, Address: addr, MTU: 1280, ServerPublicKey: sPub, Endpoint: "127.0.0.1:9000"}.Render()
+	for _, not := range []string{"Jc", "Jmin", "S1", "H1", "I1", "HeaderProtectionKey", "RandomTrailers"} {
+		if strings.Contains(plain, not+" = ") {
+			t.Errorf("plain config carries %s:\n%s", not, plain)
+		}
+	}
+	if !strings.Contains(plain, "MTU = 1280") || !strings.Contains(plain, "Endpoint = 127.0.0.1:9000") {
+		t.Errorf("plain config:\n%s", plain)
+	}
+
 	conf := ClientConfig{PrivateKey: cPriv, Address: addr, Params: params, ServerPublicKey: sPub, Endpoint: "vpn.example.com:51820"}.Render()
 	for _, want := range []string{
 		"[Interface]", "PrivateKey = " + cPriv, "Address = 10.66.0.8/32", "DNS = " + DefaultDNS, "MTU = 1420",

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,12 @@ type pageText struct {
 	AWGTitle       string
 	AWGHint        string
 	AWGDownload    string
+	TurnTitle      string
+	TurnHint       string
+	TurnPeer       string
+	TurnLink       string
+	TurnNoLink     string
+	TurnManual     string
 	Copy           string
 	Copied         string
 	PickApp        string
@@ -159,6 +166,12 @@ func text(lang i18n.Lang) pageText {
 		AWGTitle:       t("sub.awgTitle"),
 		AWGHint:        t("sub.awgHint"),
 		AWGDownload:    t("sub.awgDownload"),
+		TurnTitle:      t("sub.turnTitle"),
+		TurnHint:       t("sub.turnHint"),
+		TurnPeer:       t("sub.turnPeer"),
+		TurnLink:       t("sub.turnLink"),
+		TurnNoLink:     t("sub.turnNoLink"),
+		TurnManual:     t("sub.turnManual"),
 		Copy:           t("sub.copy"),
 		Copied:         t("sub.copied"),
 		PickApp:        t("sub.pickApp"),
@@ -180,6 +193,25 @@ func text(lang i18n.Lang) pageText {
 		DeviceFailed:   t("sub.deviceRemoveFailed"),
 		DeviceNeverUse: t("sub.deviceNeverSeen"),
 	}
+}
+
+// turnCard is one WireGuard inbound behind a TURN relay: what the user's TURN client
+// needs (the relay's address and the call link), and the WireGuard config it carries.
+type turnCard struct {
+	Label   string
+	Peer    string // host:port of the relay
+	Link    string // call invite link, "" when the operator set none
+	ConfURL string
+	// Apps are the client apps that import this lane from one link.
+	Apps []turnApp
+}
+
+// turnApp is one app's import link. Href is the same link as a template.URL, so its
+// scheme survives html/template's URL filter.
+type turnApp struct {
+	Name string // the app's own name and platform; a brand, not translated
+	Link string
+	Href template.URL
 }
 
 // awgCard is one server's AmneziaWG config on the page.
@@ -211,6 +243,8 @@ type pageData struct {
 	// AWG lists one card per server whose AmneziaWG lane the user may use: the
 	// config file to import and its QR.
 	AWG []awgCard
+	// Turn lists one card per WireGuard inbound behind a TURN relay the user may use.
+	Turn []turnCard
 
 	StatusLabel string
 	StatusClass string
@@ -336,6 +370,7 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 	// user can tell the entries apart.
 	var protoLinks, extLinks []protoLink
 	var awgCards []awgCard
+	var turnCards []turnCard
 	for _, srv := range servers {
 		s := srv.Set
 		if s.AWGEnabled && s.AWGPort != 0 && srv.allowsBuiltin(model.LaneAWG) {
@@ -358,6 +393,30 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 		}
 		for _, in := range srv.Custom {
 			if !srv.allowsInbound(in.ID) {
+				continue
+			}
+			if in.Protocol == model.InbWireGuard {
+				peer := net.JoinHostPort(s.Host, strconv.Itoa(in.Port))
+				turnCards = append(turnCards, turnCard{
+					Label:   link.CustomLabelFor(in, u, s),
+					Peer:    peer,
+					Link:    in.Opts.TurnLink,
+					ConfURL: TurnConfURL(local, u.SubToken, in.ID),
+				})
+				c := &turnCards[len(turnCards)-1]
+				// Free Turn Proxy's masked wire first: the apps that speak it are the ones
+				// the call service does not shape. WINGS V reaches the relay unmasked.
+				for _, app := range []struct {
+					name, link string
+				}{
+					{"VK Turn Proxy (iOS)", TurnImportLink(u, s, in)},
+					{"Free Turn Proxy (Android)", FreeTurnImportLink(u, s, in, TurnClientConf(u, s, in))},
+					{"WINGS V (Android, Windows, Linux)", WingsVImportLink(u, s, in)},
+				} {
+					if app.link != "" {
+						c.Apps = append(c.Apps, turnApp{Name: app.name, Link: app.link, Href: template.URL(app.link)})
+					}
+				}
 				continue
 			}
 			if l := link.Custom(u, in, s); l != "" {
@@ -403,6 +462,7 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 		SubURL:      subURL,
 		Links:       protoLinks,
 		AWG:         awgCards,
+		Turn:        turnCards,
 		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,

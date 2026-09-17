@@ -356,6 +356,7 @@ func runServer(dataDir string) {
 	// anything is what keeps an ordinary restart from paging the operator.
 	sup.Stop()
 	mgr.StopAWG()
+	mgr.StopTurn()
 
 	// Let the background loops finish what they are in the middle of — a flush, a
 	// send — and stop. Bounded: a loop that will not return must not hold the panel

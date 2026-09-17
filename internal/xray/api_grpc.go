@@ -68,6 +68,27 @@ func (a *xrayAPI) addHysteriaUser(tag, email, auth string) error {
 	return nil
 }
 
+// addWireGuardUser adds one peer to a WireGuard inbound. The CLI refuses this inbound
+// type too. The key goes in as hex: Xray's config parser turns a base64 key into hex
+// before the inbound sees it, and the account the API hands the inbound is read the same
+// way, so base64 here is refused as a malformed key.
+func (a *xrayAPI) addWireGuardUser(tag, email, publicKeyHex string, allowedIPs []string) error {
+	if email == "" || publicKeyHex == "" {
+		return fmt.Errorf("wireguard user %q with an empty email or key", email)
+	}
+	account := pbField(nil, 1, []byte(publicKeyHex)) // xray.proxy.wireguard.PeerConfig.public_key
+	for _, ip := range allowedIPs {
+		account = pbField(account, 5, []byte(ip)) // xray.proxy.wireguard.PeerConfig.allowed_ips
+	}
+	user := pbField(nil, 2, []byte(email))
+	user = pbField(user, 3, typedMessage("xray.proxy.wireguard.PeerConfig", account))
+	op := typedMessage("xray.app.proxyman.command.AddUserOperation", pbField(nil, 1, user))
+	if err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
+		return fmt.Errorf("add %s to %s: %w", email, tag, err)
+	}
+	return nil
+}
+
 // removeUser removes a user from an inbound by email. A Hysteria2 inbound answers
 // success whether it held the user or not.
 func (a *xrayAPI) removeUser(tag, email string) error {

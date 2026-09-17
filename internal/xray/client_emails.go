@@ -30,6 +30,10 @@ func (c *Config) ClientEmails() (emails []string, ok bool) {
 			for _, u := range s.Users {
 				emails = append(emails, u.Email)
 			}
+		case WireGuardInboundSettings:
+			for _, u := range s.Peers {
+				emails = append(emails, u.Email)
+			}
 		default:
 			return nil, false
 		}

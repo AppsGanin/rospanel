@@ -186,9 +186,9 @@ func (s *Store) reencryptAdminTOTPPending() error {
 		[]string{"totp_pending"}, `UPDATE admins SET totp_pending = ? WHERE id = ?`)
 }
 
-// reencryptInbounds covers the REALITY private key inside a custom inbound's opts
-// blob. The blob is JSON with one encrypted field, so it is decoded, re-encoded
-// through the same marshaller the write path uses, and only written when it changed.
+// reencryptInbounds covers the private keys inside a custom inbound's opts blob — the
+// REALITY one and the WireGuard one. The blob is JSON, so it is decoded, the keys still
+// in the clear are encrypted, and it is written back only when one was.
 func (s *Store) reencryptInbounds() error {
 	type row struct {
 		id   int64
@@ -219,10 +219,20 @@ func (s *Store) reencryptInbounds() error {
 			log.Printf("[ERROR] reencrypt: inbound %d opts unreadable — leaving as is", r.id)
 			continue
 		}
-		if opts.RealityPrivateKey == "" || strings.HasPrefix(opts.RealityPrivateKey, "enc:v1:") {
+		// Only the keys still in the clear: one already encrypted is kept as stored, since
+		// running it through the marshaller again would encrypt the ciphertext.
+		clear := func(k string) bool { return k != "" && !strings.HasPrefix(k, "enc:v1:") }
+		if !clear(opts.RealityPrivateKey) && !clear(opts.WGPrivateKey) {
 			continue
 		}
-		blob, err := marshalInboundOpts(opts)
+		if clear(opts.RealityPrivateKey) {
+			opts.RealityPrivateKey = encField(opts.RealityPrivateKey)
+		}
+		if clear(opts.WGPrivateKey) {
+			opts.WGPrivateKey = encField(opts.WGPrivateKey)
+		}
+		raw, err := json.Marshal(opts)
+		blob := string(raw)
 		if err != nil {
 			log.Printf("[ERROR] reencrypt: inbound %d opts re-encode failed — leaving as is", r.id)
 			continue
