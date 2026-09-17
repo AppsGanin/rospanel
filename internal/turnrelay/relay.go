@@ -35,7 +35,7 @@ import (
 	dtlsnet "github.com/pion/dtls/v3/pkg/net"
 	"github.com/pion/dtls/v3/pkg/protocol"
 	"github.com/pion/dtls/v3/pkg/protocol/recordlayer"
-	"github.com/pion/transport/v4/udp"
+	"github.com/pion/transport/v5/udp"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
