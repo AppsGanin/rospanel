@@ -278,10 +278,13 @@ func (l *listener) leg(conn net.Conn) {
 
 	ctx, cancel := context.WithCancel(l.ctx)
 	defer cancel()
+	// Closed, not deadlined: a pump arms its own read deadline before every read, so a
+	// deadline set here is overwritten by whichever pump is between two reads, and that
+	// leg then sits until the idle timeout — half an hour of a relay that was asked to
+	// stop. A closed socket cannot be reopened by the next loop.
 	stop := context.AfterFunc(ctx, func() {
-		now := time.Now()
-		_ = conn.SetDeadline(now)
-		_ = upstream.SetDeadline(now)
+		_ = conn.Close()
+		_ = upstream.Close()
 	})
 	defer stop()
 
