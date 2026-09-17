@@ -66,6 +66,7 @@ var en = map[string]string{
 	"sub.turnLink":      "Call link",
 	"sub.turnNoLink":    "No call link is set — start a VK call and use its link.",
 	"sub.turnManual":    "Manual setup",
+	"sub.appLink":       "The app's own page",
 	"sub.singleConfigs": "Individual configs",
 	"sub.pickApp":       "Pick an app",
 

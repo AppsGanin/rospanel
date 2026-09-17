@@ -113,12 +113,14 @@ type pageText struct {
 	AWGTitle       string
 	AWGHint        string
 	AWGDownload    string
+	AWGSite        string // where the Amnezia apps are downloaded, in the page's language
 	TurnTitle      string
 	TurnHint       string
 	TurnPeer       string
 	TurnLink       string
 	TurnNoLink     string
 	TurnManual     string
+	AppLink        string
 	Copy           string
 	Copied         string
 	PickApp        string
@@ -166,12 +168,14 @@ func text(lang i18n.Lang) pageText {
 		AWGTitle:       t("sub.awgTitle"),
 		AWGHint:        t("sub.awgHint"),
 		AWGDownload:    t("sub.awgDownload"),
+		AWGSite:        amneziaSite(lang),
 		TurnTitle:      t("sub.turnTitle"),
 		TurnHint:       t("sub.turnHint"),
 		TurnPeer:       t("sub.turnPeer"),
 		TurnLink:       t("sub.turnLink"),
 		TurnNoLink:     t("sub.turnNoLink"),
 		TurnManual:     t("sub.turnManual"),
+		AppLink:        t("sub.appLink"),
 		Copy:           t("sub.copy"),
 		Copied:         t("sub.copied"),
 		PickApp:        t("sub.pickApp"),
@@ -195,6 +199,15 @@ func text(lang i18n.Lang) pageText {
 	}
 }
 
+// amneziaSite is where the Amnezia apps themselves are downloaded. The site keeps a
+// Russian page of its own; every other language lands on the default one.
+func amneziaSite(lang i18n.Lang) string {
+	if lang == i18n.RU {
+		return "https://amnezia.org/ru/downloads"
+	}
+	return "https://amnezia.org/downloads"
+}
+
 // turnCard is one WireGuard inbound behind a TURN relay: what the user's TURN client
 // needs (the relay's address and the call link), and the WireGuard config it carries.
 type turnCard struct {
@@ -207,11 +220,14 @@ type turnCard struct {
 }
 
 // turnApp is one app's import link. Href is the same link as a template.URL, so its
-// scheme survives html/template's URL filter.
+// scheme survives html/template's URL filter; AppLink is where the app itself comes
+// from, so a user handed a link can see what they are installing.
 type turnApp struct {
 	Name string // the app's own name and platform; a brand, not translated
 	Link string
 	Href template.URL
+	// AppLink is the app's own page — its repository, where every one of these lives.
+	AppLink string
 }
 
 // awgCard is one server's AmneziaWG config on the page.
@@ -407,14 +423,19 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 				// Free Turn Proxy's masked wire first: the apps that speak it are the ones
 				// the call service does not shape. WINGS V reaches the relay unmasked.
 				for _, app := range []struct {
-					name, link string
+					name, link, appLink string
 				}{
-					{"VK Turn Proxy (iOS)", TurnImportLink(u, s, in)},
-					{"Free Turn Proxy (Android)", FreeTurnImportLink(u, s, in, TurnClientConf(u, s, in))},
-					{"WINGS V (Android, Windows, Linux)", WingsVImportLink(u, s, in)},
+					{"VK Turn Proxy (iOS)", TurnImportLink(u, s, in),
+						"https://github.com/anton48/vk-turn-proxy-ios"},
+					{"Free Turn Proxy (Android)", FreeTurnImportLink(u, s, in, TurnClientConf(u, s, in)),
+						"https://github.com/samosvalishe/turn-proxy-android"},
+					{"WINGS V (Android, Windows, Linux)", WingsVImportLink(u, s, in),
+						"https://github.com/WINGS-N/WINGSV"},
 				} {
 					if app.link != "" {
-						c.Apps = append(c.Apps, turnApp{Name: app.name, Link: app.link, Href: template.URL(app.link)})
+						c.Apps = append(c.Apps, turnApp{
+							Name: app.name, Link: app.link, Href: template.URL(app.link), AppLink: app.appLink,
+						})
 					}
 				}
 				continue
