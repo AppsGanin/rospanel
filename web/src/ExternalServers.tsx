@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  createExternal,
+  deleteExternal,
   EMPTY_EXT_IDENTITY,
   type ExtIdentity,
   type ExtServer,
   type ExtSubscription,
-  createExternal,
-  deleteExternal,
   getExternal,
   setExternalEnabled,
   setExternalServerEnabled,
@@ -21,8 +21,8 @@ import { inPanelTz } from "./tz";
 import {
   Badge,
   Button,
-  Card,
   Modal,
+  Section,
   ShowMore,
   Switch,
   Textarea,
@@ -31,7 +31,7 @@ import {
 } from "./ui";
 
 // External subscriptions: servers that are not ours, read from another
-// provider's subscription and handed on to users beside our own lanes. A card on
+// provider's subscription and handed on to users beside our own lanes. A section on
 // the Servers page rather than a tab under Settings: to the operator these are
 // servers — they sit in the same list a user sees — even though the panel owns
 // nothing on them and the same access groups decide who gets which.
@@ -82,7 +82,7 @@ export function ExternalServers() {
     return m;
   }, [servers]);
 
-  // Nothing imported and nothing being added: the card is one line with a button,
+  // Nothing imported and nothing being added: the section is its header and a button,
   // so a panel that never uses this pays no screen space for it.
   if (subs === null) return null;
 
@@ -120,114 +120,116 @@ export function ExternalServers() {
   };
 
   return (
-    <Card className="p-4">
+    <>
       {confirmNode}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-bold text-ink">{t("external.title")}</h3>
-          <p className="mt-0.5 text-sm text-ink-muted">{t("external.hint")}</p>
-        </div>
-        <Button variant="light" color="gray" onClick={() => setAdding(true)}>
-          {t("external.add")}
-        </Button>
-      </div>
-
-      {subs.length > 0 && (
-        <div className="mt-4 flex flex-col gap-3">
-          {subs.map((s) => {
-            const list = byServer.get(s.id) ?? [];
-            const on = list.filter((x) => x.enabled).length;
-            const kind = sourceKind(s.source);
-            return (
-              <div key={s.id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="truncate font-medium text-ink">{s.name}</span>
-                    <Badge color="gray" size="xs">
-                      {t(kind === "url" ? "external.kindUrl" : kind === "happ" ? "external.kindHapp" : "external.kindText")}
-                    </Badge>
-                    {!s.enabled && (
+      <Section
+        title={t("external.title")}
+        desc={t("external.hint")}
+        action={
+          <Button size="xs" variant="light" onClick={() => setAdding(true)}>
+            {t("external.add")}
+          </Button>
+        }
+      >
+        {/* undefined, not false: the section draws no body at all for it, so a panel
+            with no external subscriptions is a header and a button. */}
+        {subs.length === 0 ? undefined : (
+          <div className="flex flex-col gap-3">
+            {subs.map((s) => {
+              const list = byServer.get(s.id) ?? [];
+              const on = list.filter((x) => x.enabled).length;
+              const kind = sourceKind(s.source);
+              return (
+                <div key={s.id} className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-ink">{s.name}</span>
                       <Badge color="gray" size="xs">
-                        {t("conn.off")}
+                        {t(kind === "url" ? "external.kindUrl" : kind === "happ" ? "external.kindHapp" : "external.kindText")}
                       </Badge>
-                    )}
-                    {s.last_error ? (
-                      <Badge color="orange" size="xs" title={s.last_error}>
-                        {t("external.readFailed")}
-                      </Badge>
-                    ) : (
-                      <Badge color="gray" size="xs">
-                        {t("external.serversOf", { on, total: list.length })}
-                      </Badge>
-                    )}
+                      {!s.enabled && (
+                        <Badge color="gray" size="xs">
+                          {t("conn.off")}
+                        </Badge>
+                      )}
+                      {s.last_error ? (
+                        <Badge color="orange" size="xs" title={s.last_error}>
+                          {t("external.readFailed")}
+                        </Badge>
+                      ) : (
+                        <Badge color="gray" size="xs">
+                          {t("external.serversOf", { on, total: list.length })}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        color="gray"
+                        loading={isBusy(`sync-${s.id}`)}
+                        disabled={busy}
+                        onClick={() => sync(s)}
+                      >
+                        {t("external.sync")}
+                      </Button>
+                      <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => setEditing(s)}>
+                        {t("common.edit")}
+                      </Button>
+                      <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => toggleOpen(s.id)}>
+                        {t(open.has(s.id) ? "external.collapse" : "external.servers")}
+                      </Button>
+                      <Button size="sm" variant="light" color="red" disabled={busy} onClick={() => remove(s)}>
+                        {t("common.delete")}
+                      </Button>
+                      <Switch
+                        checked={s.enabled}
+                        onChange={(v) =>
+                          run(async () => {
+                            await setExternalEnabled(s.id, v);
+                            await load();
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="light"
-                      color="gray"
-                      loading={isBusy(`sync-${s.id}`)}
-                      disabled={busy}
-                      onClick={() => sync(s)}
-                    >
-                      {t("external.sync")}
-                    </Button>
-                    <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => setEditing(s)}>
-                      {t("common.edit")}
-                    </Button>
-                    <Button size="sm" variant="light" color="gray" disabled={busy} onClick={() => toggleOpen(s.id)}>
-                      {t(open.has(s.id) ? "external.collapse" : "external.servers")}
-                    </Button>
-                    <Button size="sm" variant="light" color="red" disabled={busy} onClick={() => remove(s)}>
-                      {t("common.delete")}
-                    </Button>
-                    <Switch
-                      checked={s.enabled}
-                      onChange={(v) =>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {kind === "url" ? (
+                      <span className="break-all">{s.source}</span>
+                    ) : (
+                      t("external.pastedSource")
+                    )}
+                    {" · "}
+                    {t("external.lastRead", { when: fmtWhen(s.last_fetch_at) })}
+                    {s.last_error && (
+                      <span className="block text-orange-600">{s.last_error}</span>
+                    )}
+                  </p>
+                  {open.has(s.id) && (
+                    <ServerList
+                      sub={s}
+                      servers={list}
+                      busy={busy}
+                      onToggle={(id, v) =>
                         run(async () => {
-                          await setExternalEnabled(s.id, v);
+                          await setExternalServerEnabled(id, v);
+                          await load();
+                        })
+                      }
+                      onToggleAll={(v) =>
+                        run(async () => {
+                          await setExternalServersEnabled(s.id, v);
                           await load();
                         })
                       }
                     />
-                  </div>
+                  )}
                 </div>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {kind === "url" ? (
-                    <span className="break-all">{s.source}</span>
-                  ) : (
-                    t("external.pastedSource")
-                  )}
-                  {" · "}
-                  {t("external.lastRead", { when: fmtWhen(s.last_fetch_at) })}
-                  {s.last_error && (
-                    <span className="block text-orange-600">{s.last_error}</span>
-                  )}
-                </p>
-                {open.has(s.id) && (
-                  <ServerList
-                    sub={s}
-                    servers={list}
-                    busy={busy}
-                    onToggle={(id, v) =>
-                      run(async () => {
-                        await setExternalServerEnabled(id, v);
-                        await load();
-                      })
-                    }
-                    onToggleAll={(v) =>
-                      run(async () => {
-                        await setExternalServersEnabled(s.id, v);
-                        await load();
-                      })
-                    }
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </Section>
 
       {editing && (
         <EditExternalDialog
@@ -249,7 +251,7 @@ export function ExternalServers() {
           }}
         />
       )}
-    </Card>
+    </>
   );
 }
 
