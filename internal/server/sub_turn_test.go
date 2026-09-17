@@ -93,6 +93,16 @@ func TestTurnWireGuardEndpointsAndPageCard(t *testing.T) {
 	if strings.Contains(page, "ZgotmplZ") {
 		t.Error("html/template filtered an app link's scheme")
 	}
+	// Each app says where it comes from: a link handed to a user is an app to install.
+	for _, repo := range []string{
+		"https://github.com/anton48/vk-turn-proxy-ios",
+		"https://github.com/samosvalishe/turn-proxy-android",
+		"https://github.com/WINGS-N/WINGSV",
+	} {
+		if !strings.Contains(page, `href="`+repo+`"`) {
+			t.Errorf("page lacks the source link %s", repo)
+		}
+	}
 	if strings.Contains(page, "/wg/"+id+".png") {
 		t.Error("page still offers a QR for the lane")
 	}

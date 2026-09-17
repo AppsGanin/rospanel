@@ -75,6 +75,7 @@ var ru = map[string]string{
 	"sub.turnLink":      "Ссылка на звонок",
 	"sub.turnNoLink":    "Ссылки на звонок нет — создайте звонок ВКонтакте и используйте его ссылку.",
 	"sub.turnManual":    "Ручная настройка",
+	"sub.appLink":       "Страница приложения",
 	"sub.singleConfigs": "Отдельные конфиги",
 	"sub.pickApp":       "Выберите приложение",
 
