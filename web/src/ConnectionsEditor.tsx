@@ -7,7 +7,7 @@ import {
 } from "./api";
 import { ApplyingModal, useXrayApply } from "./apply";
 import { useAction } from "./hooks";
-import { NameVarsHint } from "./namevars";
+import { NameVarsHint, STATIC_NAME_VARS } from "./namevars";
 import i18n from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
@@ -354,6 +354,7 @@ export function ConnectionsEditor({
                       placeholder={p.name}
                     />
                     <NameVarsHint
+                      vars={p.key === "awg" ? STATIC_NAME_VARS : undefined}
                       onInsert={(v) =>
                         setNames((n) => ({
                           ...n,
