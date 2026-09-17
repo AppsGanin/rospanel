@@ -335,6 +335,13 @@ type Manager struct {
 	// not lift the other's blocks. Nil in a test manager, where both are no-ops.
 	probeBlock  *ipblock.Blocker
 	policyBlock *ipblock.Blocker
+	// ipBan drops the addresses an operator banned by hand (manager_ipban.go): its own
+	// permanent table, since a ban lasts until it is lifted. banMu serializes placing,
+	// lifting and re-applying bans, so the table and the kernel cannot cross over; hosts
+	// resolves the servers' host names a ban must not cover (nil: none are resolved).
+	ipBan *ipblock.Blocker
+	banMu sync.Mutex
+	hosts *hostAddrs
 	// policy caches the source policy and the addresses it has recently ruled on
 	// (manager_connpolicy.go); the check runs on the connection path.
 	policy policyState
@@ -420,6 +427,8 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		turn:           turnrelay.New(),
 		probeBlock:     ipblock.New(ipblock.TableProbes),
 		policyBlock:    ipblock.New(ipblock.TablePolicy),
+		ipBan:          ipblock.NewPermanent(ipblock.TableBanned),
+		hosts:          newHostAddrs(nil),
 		nodeSyncFails:  map[int64]int{},
 		nodeLogsWanted: map[int64]int64{},
 		nodeAlerts:     map[int64]*nodeAlertState{},

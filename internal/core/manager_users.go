@@ -695,7 +695,16 @@ func (m *Manager) GenerateUserTgLinkCode(userID int64) (string, error) {
 
 // Connections returns a user's recent source IPs.
 func (m *Manager) Connections(id int64) ([]model.Connection, error) {
-	return m.store.RecentConnections(id, 20)
+	conns, err := m.store.RecentConnections(id, 20)
+	if err != nil || len(conns) == 0 {
+		return conns, err
+	}
+	banned := m.bannedAddresses()
+	for i := range conns {
+		conns[i].ApproxSeconds = conns[i].Count * accThrottle
+		conns[i].Banned = banned[conns[i].IP]
+	}
+	return conns, nil
 }
 
 // SetResetPeriod sets a user's automatic quota-reset period (none|daily|weekly|

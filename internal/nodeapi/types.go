@@ -437,6 +437,10 @@ type NodeMeta struct {
 	// BlockTTLHours is how long those blocks last, so a node cut off from the panel
 	// expires them on the operator's schedule rather than the blocker's default.
 	BlockTTLHours int `json:"block_ttl_hours,omitempty"`
+	// BannedIPs are the addresses an operator banned by hand, fleet-wide. They do not
+	// expire: the node holds them in a table without timeouts until the panel's list
+	// no longer has them. An older agent ignores the field.
+	BannedIPs []string `json:"banned_ips,omitempty"`
 
 	// AWG is the node's AmneziaWG tunnel as the panel wants it — its identity, the
 	// obfuscation parameters and every peer allowed on it. nil ⇒ the lane is off

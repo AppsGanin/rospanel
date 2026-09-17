@@ -665,6 +665,9 @@ blocks on its own: not for guessing the SOCKS/HTTP password, not for scanning th
 under the source policy (a policy refusal is only recorded for them). For an office or your own
 server behind a shared address; blocks already in place on them are lifted on save.
 
+**Address ban** (*user card → Devices (IP)*) — the IP is dropped at the firewall of the master and
+every node until unbanned. Every block, manual or automatic, with unban — in *Users → Statistics*.
+
 #### 🧰 Operations and security
 
 **Diagnostics** in one click: the Xray process, the AmneziaWG tunnel, config application, TLS expiry, disk space, geo

@@ -310,6 +310,10 @@ func (rt *Router) panelMux() http.Handler {
 	authed("GET /api/security/trusted", rt.getTrustedNets)
 	authed("POST /api/security/trusted", rt.saveTrustedNets)
 	authed("POST /api/security/unblock", rt.unblockIP)
+	// Bans by hand and every ban the panel holds (panel_bans.go).
+	authed("GET /api/security/bans", rt.listBans)
+	authed("POST /api/security/bans", rt.banIP)
+	authed("POST /api/security/unban", rt.unbanIP)
 	authed("GET /api/settings/status-page", rt.getStatusPage)
 	authed("POST /api/settings/status-page", rt.saveStatusPage)
 	authed("POST /api/settings/dns", rt.setXrayDNS)

@@ -14,7 +14,7 @@ import (
 //   - the skeleton: the Xray config with every user list empty, what each list is made
 //     of, and the host-level meta without its per-user parts;
 //   - one row per user the node lets in, with what the lists need of them;
-//   - the addresses the source policy has blocked —
+//   - the addresses the source policy has blocked and an operator has banned —
 //
 // and once it has them, a change sends only the rows that changed (StateDelta). The
 // agent writes the users back into the skeleton itself (xray.RenderUsers).
@@ -29,7 +29,8 @@ import (
 // its own revision — anything else gets the whole config, as before. Raise it whenever
 // UserSlot, UserRow, Blocked or how they are rendered or hashed change meaning.
 //
-// 2: WireGuard inbounds (a "wireguard" slot, and WGKey/WGAddr on the row).
+// 2: WireGuard inbounds (a "wireguard" slot, and WGKey/WGAddr on the row), and the
+// addresses banned by hand in Blocked.Banned.
 const DeltaRev = 2
 
 // SplitState is a node's whole desired state in parts. Skeleton, every row and Blocked
@@ -102,10 +103,12 @@ type UserRow struct {
 	WGAddr string `json:"wg_addr,omitempty"`
 }
 
-// Blocked is the source policy's refusals for a node's own firewall.
+// Blocked is what a node drops at its own firewall: the source policy's refusals, which
+// expire, and the addresses an operator banned, which last until lifted.
 type Blocked struct {
 	IPs      []string `json:"ips,omitempty"`
 	TTLHours int      `json:"ttl_hours,omitempty"`
+	Banned   []string `json:"banned,omitempty"`
 }
 
 // ContentHash fingerprints a split state: the skeleton, every row in ascending user

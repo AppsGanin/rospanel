@@ -32,6 +32,24 @@ export const IconChevron = ({ size = 16, className }: IconProps) =>
   svg(size, className, <path d="M6 9l6 6 6-6" />);
 export const IconClose = ({ size = 20, className }: IconProps) =>
   svg(size, className, <path d="M18 6 6 18M6 6l12 12" />);
+export const IconUnlock = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 7.75-1.4" />
+    </>,
+  );
+export const IconBan = ({ size = 16, className }: IconProps) =>
+  svg(
+    size,
+    className,
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m5.7 5.7 12.6 12.6" />
+    </>,
+  );
 export const IconExternal = ({ size = 16, className }: IconProps) =>
   svg(
     size,
@@ -496,6 +514,7 @@ export function IconButton({
   disabled,
   className,
   title,
+  compact,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -510,9 +529,13 @@ export function IconButton({
   disabled?: boolean;
   className?: string;
   title?: string;
+  // compact is the size for a button inside a dense row of text: its hover fill stays
+  // inside the row instead of covering it top to bottom.
+  compact?: boolean;
 }) {
   const cls = cn(
-    "inline-flex size-8 items-center justify-center rounded-lg transition active:scale-90",
+    "inline-flex items-center justify-center transition active:scale-90",
+    compact ? "size-6 rounded-md" : "size-8 rounded-lg",
     BTN[variant][color],
     "disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
     className,

@@ -173,3 +173,31 @@ type BlockedIP struct {
 	At      int64  `json:"at"`
 	Until   int64  `json:"until"`
 }
+
+// IPBan is an address an operator banned by hand. It lasts until it is lifted.
+type IPBan struct {
+	IP     string `json:"ip"`
+	UserID int64  `json:"user_id"` // whose addresses it was banned from, 0 when none
+	At     int64  `json:"at"`
+}
+
+// What put an address on the firewall, beside the source policy's PolicyReason*.
+const (
+	BanManual = "manual" // an operator, by hand
+	BanBrute  = "brute"  // the system proxy's brute-force guard
+	BanProbe  = "probe"  // the scanner block: it probed for the panel's hidden path
+)
+
+// Ban is one address the panel drops at the firewall, whatever put it there: the list
+// an operator reads and lifts bans from.
+type Ban struct {
+	IP       string `json:"ip"`
+	Source   string `json:"source"` // Ban* or PolicyReason*
+	UserID   int64  `json:"user_id,omitempty"`
+	UserName string `json:"user_name,omitempty"`
+	Country  string `json:"country,omitempty"`
+	ASN      uint32 `json:"asn,omitempty"`
+	Org      string `json:"org,omitempty"`
+	At       int64  `json:"at,omitempty"` // unix; 0 when not known
+	Until    int64  `json:"until"`        // unix; 0 = until lifted
+}

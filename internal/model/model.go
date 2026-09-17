@@ -615,7 +615,14 @@ func UserIDOfEmail(email string) (int64, bool) {
 type Connection struct {
 	IP       string `json:"ip"`
 	LastSeen int64  `json:"last_seen"`
-	Count    int64  `json:"count"`
+	// Count is how many times the address was seen opening connections, at most once
+	// per sighting interval — cumulative for as long as the row lives.
+	Count int64 `json:"count"`
+	// ApproxSeconds is Count times that interval: a lower bound on how long the
+	// address was active, not a stopwatch.
+	ApproxSeconds int64 `json:"approx_seconds"`
+	// Banned is whether the address is dropped at the firewall right now, by any ban.
+	Banned bool `json:"banned"`
 }
 
 // UptimeDay is one server's liveness on one day: how many samples were taken and

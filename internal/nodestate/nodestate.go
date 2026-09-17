@@ -162,6 +162,7 @@ func Assemble(p *Parts) (*nodeapi.NodeState, error) {
 	}
 	meta.AWG = tunnel
 	meta.BlockedIPs, meta.BlockTTLHours = p.Blocked.IPs, p.Blocked.TTLHours
+	meta.BannedIPs = p.Blocked.Banned
 	return &nodeapi.NodeState{Hash: p.Held.Hash, XrayConfig: cfg, Meta: meta}, nil
 }
 

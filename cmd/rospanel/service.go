@@ -207,6 +207,7 @@ func runServer(dataDir string) {
 	// Put back the addresses the source policy had refused: the kernel forgets its
 	// sets on restart, and the panel's own record is what says who should still be out.
 	mgr.ApplyPolicyBlocksAtBoot()
+	mgr.ApplyIPBansAtBoot()
 
 	startupStage("generating Xray config and starting Xray")
 	if err := mgr.Reconcile(); err != nil {
@@ -270,6 +271,11 @@ func runServer(dataDir string) {
 	runBG("external subscriptions", mgr.RunExtSubLoop) // re-read hourly
 	// Audit-log + connection-row retention: drops rows past their windows.
 	runBG("retention", retentionLoop(mgr))
+	// Re-applies the addresses banned by hand: they never expire, so a ban that did
+	// not land in the firewall (nft failing for a moment) is put right on the timer.
+	runBG("ip bans", func(ctx context.Context) {
+		tick(ctx, 5*time.Minute, func() { safeTick("ip bans", mgr.ResyncIPBans) })
+	})
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot
 	// still gets automatic backups; idles until a cron is set in Settings.
 	runBG("auto backup", autobackup.New(mgr, st, dataDir).Run)

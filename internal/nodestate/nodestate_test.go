@@ -143,3 +143,24 @@ func TestFromSplitAndDecodeRefuse(t *testing.T) {
 		t.Error("rows out of order were decoded")
 	}
 }
+
+// Addresses banned by hand travel in Blocked beside the policy's, and are replaced with it.
+func TestBannedAddresses(t *testing.T) {
+	p := held(t)
+	next, err := Apply(p, &nodeapi.StateDelta{From: "t1", Tag: "t2",
+		Blocked: json.RawMessage(`{"ips":["198.51.100.1"],"ttl_hours":24,"banned":["203.0.113.7"]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Assemble(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(st.Meta.BannedIPs, []string{"203.0.113.7"}) || !slices.Equal(st.Meta.BlockedIPs, []string{"198.51.100.1"}) {
+		t.Errorf("assembled: banned %v, blocked %v", st.Meta.BannedIPs, st.Meta.BlockedIPs)
+	}
+	lifted, _ := Apply(next, &nodeapi.StateDelta{From: "t2", Tag: "t3", Blocked: json.RawMessage(`{}`)})
+	if st, _ := Assemble(lifted); len(st.Meta.BannedIPs) != 0 {
+		t.Errorf("bans after lifting: %v", st.Meta.BannedIPs)
+	}
+}

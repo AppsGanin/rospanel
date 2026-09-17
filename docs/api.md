@@ -179,7 +179,7 @@ monitor pointed here keeps working.
 | `POST` | `/v1/users/{id}/rotate-sub` | Issue a new subscription URL (old link dies). |
 | `POST` | `/v1/users/{id}/plan` | Apply a tariff plan to the user. |
 | `POST` | `/v1/users/{id}/plan/cancel` | Cancel a paid subscription now. |
-| `GET` | `/v1/users/{id}/connections` | List the user's recent source IPs / devices. |
+| `GET` | `/v1/users/{id}/connections` | List the user's recent source IPs / devices: `last_seen`, `count` (sightings, at most one per 45 s), `approx_seconds` (a lower bound on active time) and `banned` (dropped at the firewall now). |
 | `GET` | `/v1/users/{id}/devices` | List the installs bound by HWID, with the cap they count against. |
 | `POST` | `/v1/users/{id}/devices/unbind` | Release one bound device (or all), freeing the slot. |
 | `GET` | `/v1/users/{id}/events` | The user's own journal (paged). |
