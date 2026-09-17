@@ -10,6 +10,7 @@ import (
 // forever. It has to be encrypted at rest like every other secret in this database —
 // and it has to come back out intact, or every admin who enabled 2FA is locked out.
 func TestAdminTOTPSecretEncryptedAtRest(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	id, err := st.CreateAdmin("owner", "hash", "owner", false)
 	if err != nil {
@@ -53,6 +54,7 @@ func TestAdminTOTPSecretEncryptedAtRest(t *testing.T) {
 // refuses on a lost claim, so a claim that lied would hand out a second session for a
 // code that was already spent.
 func TestMarkAdminTOTPStepClaimsOnce(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	id, _ := st.CreateAdmin("owner", "hash", "owner", false)
 	if err := st.EnableAdminTOTP(id, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 100); err != nil {
@@ -89,6 +91,7 @@ func TestMarkAdminTOTPStepClaimsOnce(t *testing.T) {
 // as "this admin has no second factor", which would sign them in on the password alone
 // — the login silently weakening itself is worse than the login failing.
 func TestAdminTOTPUnreadableSecretIsAnError(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	id, _ := st.CreateAdmin("owner", "hash", "owner", false)
 	if err := st.EnableAdminTOTP(id, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 7); err != nil {

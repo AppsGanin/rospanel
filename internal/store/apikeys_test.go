@@ -6,6 +6,7 @@ import (
 )
 
 func TestAPIKeyLifecycle(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -63,6 +64,7 @@ func TestAPIKeyLifecycle(t *testing.T) {
 }
 
 func TestAPIPathSetting(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "path.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

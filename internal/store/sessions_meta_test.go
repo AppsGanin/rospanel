@@ -26,6 +26,7 @@ func newAdminForSessions(t *testing.T, st *Store, name string) int64 {
 // trace, and can be ended by id — but only by its owner, and never by someone
 // holding a different admin's cookie and a guessed integer.
 func TestSessionMetaListAndRevoke(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	alice := newAdminForSessions(t, st, "alice")
 	bob := newAdminForSessions(t, st, "bob")
@@ -116,6 +117,7 @@ func TestSessionMetaListAndRevoke(t *testing.T) {
 // Sessions that predate the rebuild (migration 0058) arrive with no address or
 // client; they must still list, and still be revocable.
 func TestSessionWithoutMetaStillListsAndRevokes(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	id := newAdminForSessions(t, st, "old")
 	tok, err := st.CreateSession(id, time.Hour)

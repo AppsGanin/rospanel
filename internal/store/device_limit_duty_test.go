@@ -44,6 +44,7 @@ func simulateDuty(t *testing.T, st *Store, id, start, span int64, live func(at i
 // reason the grace exists, the second is the price, and a change that moves either one
 // silently is exactly what this is here to catch.
 func TestDeviceLimitDutyCycle(t *testing.T) {
+	t.Parallel()
 	const span = 1800
 
 	t.Run("a roaming device never loses a second", func(t *testing.T) {

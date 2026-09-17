@@ -11,6 +11,7 @@ import (
 // has self-registration closed (mode 'off'), so enabling the user bot never opens
 // signups by accident.
 func TestFreshInstallRegistrationClosed(t *testing.T) {
+	t.Parallel()
 	s, err := Open(filepath.Join(t.TempDir(), "fresh.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -28,6 +29,7 @@ func TestFreshInstallRegistrationClosed(t *testing.T) {
 // TestClaimRegistrationRequest is the atomic gate behind moderation approval: only
 // one of several concurrent claims (double-click, two admins) may win.
 func TestClaimRegistrationRequest(t *testing.T) {
+	t.Parallel()
 	s, err := Open(filepath.Join(t.TempDir(), "claim.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

@@ -12,6 +12,7 @@ import (
 // A count for chosen users is the window count restricted to them: an address seen
 // before the window does not count, and a user with nothing in it is simply absent.
 func TestActiveDeviceCountsOfMatchesTheWindow(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	now := time.Now().Unix()
 	var ids []int64
@@ -55,6 +56,7 @@ func TestActiveDeviceCountsOfMatchesTheWindow(t *testing.T) {
 // rest zero — credentials above all. Both ways of counting devices are held to it: by
 // the users' own rows, and by the grouped window used past userStatesByKeyMax.
 func TestUserStatesMatchWholeUsers(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	now := time.Now().Unix()
 	a, err := st.CreateUser("a", "uuid-a", "pw-a", "tok-a", 1000, now+86400, 1)
@@ -144,6 +146,7 @@ func compareStates(t *testing.T, whole, states []model.User) {
 
 // The tunnel poll gets every user's key that exists, decrypted.
 func TestUserTunnelKeys(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	a, _ := st.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0)
 	b, _ := st.CreateUser("b", "uuid-b", "pw", "tok-b", 0, 0, 0)
@@ -163,6 +166,7 @@ func TestUserTunnelKeys(t *testing.T) {
 // the one a device count decides among them — newest first, with an id that has no
 // user left out. The users page brings its shared list up to date with them.
 func TestUserSummariesOfAreThoseRowsOfTheList(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	now := time.Now().Unix()
 	mk := func(name string, limit, expire int64, devices int) int64 {

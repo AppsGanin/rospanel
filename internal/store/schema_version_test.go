@@ -3,6 +3,7 @@ package store
 import "testing"
 
 func TestSchemaVersionIsSane(t *testing.T) {
+	t.Parallel()
 	if v := SchemaVersion(); v < 50 {
 		t.Errorf("SchemaVersion() = %d, want the newest embedded migration (>=50)", v)
 	}

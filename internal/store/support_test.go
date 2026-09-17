@@ -10,6 +10,7 @@ import (
 const grp int64 = -100777
 
 func TestSupportTopicMapping(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "support.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -62,6 +63,7 @@ func TestSupportTopicMapping(t *testing.T) {
 // an admin replying in the new group's topic 7 reaches whoever owned topic 7 in the
 // old one, and that user's next message lands in a stranger's thread.
 func TestSupportTopicsAreScopedToTheirGroup(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "support-scope.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -112,6 +114,7 @@ func TestSupportTopicsAreScopedToTheirGroup(t *testing.T) {
 // TestSupportSettingsRoundTrip covers the five settings columns 0031 adds, including
 // the token's at-rest encryption and the cached bot username.
 func TestSupportSettingsRoundTrip(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "support-settings.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

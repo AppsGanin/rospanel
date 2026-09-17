@@ -27,6 +27,7 @@ func add(t *testing.T, s *Store, ev model.UserEvent) {
 }
 
 func TestUserEventRoundTrip(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	add(t, s, model.UserEvent{
 		UserID: 7, UserName: "Вася", Action: model.EventUserCreated,
@@ -62,6 +63,7 @@ func TestUserEventRoundTrip(t *testing.T) {
 // A row with no details must come back with nil Details, not an empty object — the
 // UI keys "is there anything to show" off exactly that.
 func TestUserEventNilDetails(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	add(t, s, model.UserEvent{UserID: 1, Action: model.EventUserEnabled, ActorKind: model.ActorSystem})
 	events, _ := s.ListUserEvents(1, 10, 0)
@@ -75,6 +77,7 @@ func TestUserEventNilDetails(t *testing.T) {
 
 // Events are scoped to their user and returned newest-first.
 func TestUserEventScopeAndOrder(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	add(t, s, model.UserEvent{UserID: 1, Action: model.EventUserCreated})
 	add(t, s, model.UserEvent{UserID: 2, Action: model.EventUserCreated})
@@ -91,6 +94,7 @@ func TestUserEventScopeAndOrder(t *testing.T) {
 
 // Paging backwards with the id cursor must neither skip nor repeat a row.
 func TestUserEventPaging(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	for i := 0; i < 5; i++ {
 		add(t, s, model.UserEvent{UserID: 1, Action: model.EventUserEnabled})
@@ -120,6 +124,7 @@ func TestUserEventPaging(t *testing.T) {
 }
 
 func TestListEventsFilters(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	add(t, s, model.UserEvent{UserID: 1, Action: model.EventUserCreated, ActorKind: model.ActorAdmin})
 	add(t, s, model.UserEvent{UserID: 2, Action: model.EventUserExpired, ActorKind: model.ActorSystem})
@@ -151,6 +156,7 @@ func TestListEventsFilters(t *testing.T) {
 
 // The retention sweep drops old rows and keeps recent ones.
 func TestPurgeUserEvents(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	now := time.Now().Unix()
 	old := now - int64(model.UserEventRetentionDays+1)*86400
@@ -174,6 +180,7 @@ func TestPurgeUserEvents(t *testing.T) {
 // A deleted user's trail must survive them — that's the point of an audit log, and
 // why user_events has no foreign key to users.
 func TestUserEventsOutliveTheUser(t *testing.T) {
+	t.Parallel()
 	s := openTestStore(t)
 	u, err := s.CreateUser("Вася", "uuid-1", "pw", "tok", 0, 0, 0)
 	if err != nil {

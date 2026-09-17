@@ -21,6 +21,7 @@ func openGroupStore(t *testing.T) *Store {
 // restricted to the union of grants. A wrong answer here is a user reaching a lane
 // they shouldn't (or losing one they should).
 func TestAccessResolution(t *testing.T) {
+	t.Parallel()
 	st := openGroupStore(t)
 	u1, _ := st.CreateUser("free", "uuid1", "pw", "tok1", 0, 0, 0)
 	u2, _ := st.CreateUser("vip", "uuid2", "pw", "tok2", 0, 0, 0)
@@ -72,6 +73,7 @@ func TestAccessResolution(t *testing.T) {
 // suddenly handing them everything. And an empty group from before the flag existed
 // (every existing row got 1) keeps meaning what it always meant.
 func TestGroupsSavedWithoutGrantsDoNotLimitAccess(t *testing.T) {
+	t.Parallel()
 	st := openGroupStore(t)
 	mk := func(name string) int64 {
 		t.Helper()
@@ -144,6 +146,7 @@ func TestGroupsSavedWithoutGrantsDoNotLimitAccess(t *testing.T) {
 // FK cascades are load-bearing for cleanup: deleting a group must not strand its
 // membership or grants, and deleting a user must not strand their membership.
 func TestGroupCascades(t *testing.T) {
+	t.Parallel()
 	st := openGroupStore(t)
 	u, _ := st.CreateUser("x", "uuid", "pw", "tok", 0, 0, 0)
 	g, _ := st.CreateGroup("g", []string{model.BuiltinToken(0, model.LaneVLESS)}, 0)
@@ -184,6 +187,7 @@ func TestGroupCascades(t *testing.T) {
 
 // Group names are unique case-insensitively, so a chip can't be ambiguous.
 func TestGroupNameUniqueCI(t *testing.T) {
+	t.Parallel()
 	st := openGroupStore(t)
 	if _, err := st.CreateGroup("VIP", nil, 0); err != nil {
 		t.Fatalf("create: %v", err)

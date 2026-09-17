@@ -10,6 +10,7 @@ import (
 )
 
 func TestPurgeConnections(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "conn.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -59,6 +60,7 @@ func TestPurgeConnections(t *testing.T) {
 // The device limit reads connections by last_seen on the hot path; migration 0021
 // added the index it needs. Guard against a future migration dropping it.
 func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "idx.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -108,6 +110,7 @@ func TestActiveDeviceCountsUsesLastSeenIndex(t *testing.T) {
 // A pair's sightings add up across batches and within one, and its last_seen only
 // moves forward.
 func TestRecordConnectionsAddsUpSightings(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	u, err := st.CreateUser("u", "uuid-u", "pw", "tok-u", 0, 0, 0)
 	if err != nil {

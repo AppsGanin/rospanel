@@ -70,6 +70,7 @@ func trafficSnapshot(t *testing.T, st *Store) (users []string, daily []string) {
 // zero deltas, sightings, a user that does not exist, two nodes and two days — land
 // the same through the bulk write as they did one statement at a time.
 func TestBulkTrafficWriteMatchesOneByOne(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(7))
 	for round := 0; round < 40; round++ {
 		var batch []TrafficDelta

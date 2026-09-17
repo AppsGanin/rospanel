@@ -68,6 +68,7 @@ func dcWorking(t *testing.T, st *Store, id int64, now int64) bool {
 // measured against the user's newest sighting was one, and shipped briefly — lets any
 // number of devices through a one-device limit simply by taking turns.
 func TestQuietAddressesStillCountInsideTheWindow(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 
@@ -112,6 +113,7 @@ func TestQuietAddressesStillCountInsideTheWindow(t *testing.T) {
 // runs the same handover forward in time and the user is never dropped. This test forces
 // the grace to have expired, which is why it can see the count at all.
 func TestAbandonedAddressStillCountsUntilItAgesOut(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	phone := dcUser(t, st, "phone",
@@ -133,6 +135,7 @@ func TestAbandonedAddressStillCountsUntilItAgesOut(t *testing.T) {
 // and the answer to issue #66. "both" predates the removal of the handover grace and now
 // behaves as "auto"; rows and API clients still carry it.
 func TestDeviceCountModesBehaveAsDocumented(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	phone := dcUser(t, st, "phone",
@@ -176,6 +179,7 @@ func TestDeviceCountModesBehaveAsDocumented(t *testing.T) {
 // The rule is written twice — SQL for the query, Go for everything else. They are pinned
 // to agree, including on values neither constant covers.
 func TestDeviceCountRuleAgreesAcrossSQLAndGo(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	for _, mode := range []string{
 		model.DeviceCountAuto, model.DeviceCountHWID, model.DeviceCountBoth,
@@ -198,6 +202,7 @@ func TestDeviceCountRuleAgreesAcrossSQLAndGo(t *testing.T) {
 // to the number the list shows for them: addresses inside the window only, and none of
 // anyone else's.
 func TestOneUserReadCountsTheSameDevicesAsTheList(t *testing.T) {
+	t.Parallel()
 	st := dcStore(t)
 	now := time.Now().Unix()
 	a := dcUser(t, st, "a",

@@ -11,6 +11,7 @@ import (
 )
 
 func TestShapedUsersPairsCapsWithAddresses(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "speed.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -76,6 +77,7 @@ func TestShapedUsersPairsCapsWithAddresses(t *testing.T) {
 // every address it has been seen on inside the window would otherwise become a
 // filter the kernel walks per packet.
 func TestShapedUsersBoundsAddressesPerUser(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "speed3.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -118,6 +120,7 @@ func TestShapedUsersBoundsAddressesPerUser(t *testing.T) {
 }
 
 func TestShapedUsersSkipsDisabled(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "speed2.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

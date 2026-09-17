@@ -21,6 +21,7 @@ func cmdStore(t *testing.T) *Store {
 // delivery, because a lost sync response looks exactly like a node that received one.
 // Swallowing that retry leaves no way to ask twice.
 func TestReAskingOneNodeReArmsIt(t *testing.T) {
+	t.Parallel()
 	st := cmdStore(t)
 	now := time.Now().Unix()
 	if err := st.SetNodeCommand(2, "update", now); err != nil {
@@ -48,6 +49,7 @@ func TestReAskingOneNodeReArmsIt(t *testing.T) {
 // every eligible node must not resend to the ones already handed the command, or "panel
 // self-updated, now update the fleet" tells nodes that just updated to update again.
 func TestReAskingTheFleetDoesNotReArmADeliveredCommand(t *testing.T) {
+	t.Parallel()
 	st := cmdStore(t)
 	now := time.Now().Unix()
 
@@ -78,6 +80,7 @@ func TestReAskingTheFleetDoesNotReArmADeliveredCommand(t *testing.T) {
 // had no coverage at all: inverting its predicate (deleting every LIVE command and
 // keeping every stale one) left the whole suite green.
 func TestPurgeNodeCommandsDropsOnlyTheStaleOnes(t *testing.T) {
+	t.Parallel()
 	st := cmdStore(t)
 	now := time.Now().Unix()
 
@@ -107,6 +110,7 @@ func TestPurgeNodeCommandsDropsOnlyTheStaleOnes(t *testing.T) {
 // stalled every node's sync for the duration. All-or-nothing is also what makes the
 // returned count a receipt rather than an estimate.
 func TestSetNodeCommandsWritesTheWholeFleetAtOnce(t *testing.T) {
+	t.Parallel()
 	st := cmdStore(t)
 	now := time.Now().Unix()
 

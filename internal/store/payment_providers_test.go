@@ -9,6 +9,7 @@ import (
 )
 
 func TestPaymentProviderRoundtrip(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 
 	// An unsaved provider reads back as a disabled, empty row (not an error).

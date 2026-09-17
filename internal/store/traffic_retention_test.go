@@ -9,6 +9,7 @@ import (
 )
 
 func TestPurgeTrafficDaily(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "traffic.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -79,6 +80,7 @@ func TestPurgeTrafficDaily(t *testing.T) {
 // TestPurgeTrafficDailyBatches covers the chunking loop: a backlog larger than
 // purgeBatch must come out in full, not one batch's worth.
 func TestPurgeTrafficDailyBatches(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "traffic-batch.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

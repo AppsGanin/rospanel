@@ -64,6 +64,7 @@ func failUserWrites(t *testing.T, st *Store) func() {
 // all select status = 'pending'), so it would mean money taken and nothing
 // delivered, forever.
 func TestConfirmPaymentOrderAtomic(t *testing.T) {
+	t.Parallel()
 	st, u, plan, order, w := planWriteFixture(t)
 	defer st.Close()
 
@@ -123,6 +124,7 @@ func TestConfirmPaymentOrderAtomic(t *testing.T) {
 // there for: a re-delivered webhook overlapping the status poll must apply the plan
 // once, not stack a second period onto the expiry.
 func TestConfirmPaymentOrderClaimsOnce(t *testing.T) {
+	t.Parallel()
 	st, u, _, order, w := planWriteFixture(t)
 	defer st.Close()
 
@@ -152,6 +154,7 @@ func TestConfirmPaymentOrderClaimsOnce(t *testing.T) {
 // assignment path (manual plan change, trial grant, free-plan downgrade): a user
 // left with new limits but the old plan_id is a state nothing reconciles.
 func TestApplyUserPlanAtomic(t *testing.T) {
+	t.Parallel()
 	st, u, _, _, w := planWriteFixture(t)
 	defer st.Close()
 

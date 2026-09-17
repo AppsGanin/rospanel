@@ -16,6 +16,7 @@ func subStore(t *testing.T) *Store {
 }
 
 func TestUpsertSubscriber(t *testing.T) {
+	t.Parallel()
 	st := subStore(t)
 
 	if sub, err := st.SubscriberByChat(555); err != nil || sub != nil {
@@ -57,6 +58,7 @@ func TestUpsertSubscriber(t *testing.T) {
 // of unsubscribing: writing to the bot re-activates a blocked chat, but it must
 // never quietly re-subscribe someone who opted out.
 func TestUpsertKeepsOptOut(t *testing.T) {
+	t.Parallel()
 	st := subStore(t)
 	if err := st.UpsertSubscriber(555, 42, "vanya", "Ваня", "ru", 1700000000); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -90,6 +92,7 @@ func TestUpsertKeepsOptOut(t *testing.T) {
 // TestOptOutWithoutRow: an opt-out must stick even for a chat nothing has recorded yet,
 // or the unsubscribe is lost and the next broadcast contradicts it.
 func TestOptOutWithoutRow(t *testing.T) {
+	t.Parallel()
 	st := subStore(t)
 	if err := st.SetSubscriberOptOut(777, true, 1700000000); err != nil {
 		t.Fatalf("opt out: %v", err)
@@ -104,6 +107,7 @@ func TestOptOutWithoutRow(t *testing.T) {
 }
 
 func TestSetSubscriberBlocked(t *testing.T) {
+	t.Parallel()
 	st := subStore(t)
 	if err := st.UpsertSubscriber(555, 0, "", "", "", 1700000000); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -130,6 +134,7 @@ func TestSetSubscriberBlocked(t *testing.T) {
 // people who happened to write to the bot since — which reads as a broken feature,
 // not an empty table.
 func TestSubscriberBackfill(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "backfill.db")
 

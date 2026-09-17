@@ -13,6 +13,7 @@ import (
 // config — without the full read. It is only safe if it names exactly the users
 // WorkingUsers does, so the two are compared across every way a user can drop out.
 func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	now := time.Now().Unix()
 	mk := func(name string, dataLimit, expireAt int64, deviceLimit int) int64 {
@@ -99,6 +100,7 @@ func TestWorkingUserIDsMatchWorkingUsers(t *testing.T) {
 // answer — including where they disagree: a user over their device limit leaves the
 // config but keeps their speed cap.
 func TestWorkingSetMatchesTheReadsItReplaces(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	now := time.Now().Unix()
 	mk := func(name string, kbps int, dataLimit, expireAt int64, deviceLimit int) int64 {

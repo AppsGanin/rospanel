@@ -13,6 +13,7 @@ import (
 // has moved — so every way the row can change has to move it: a typed setter, a whole
 // settings save, raw SQL no store method knows about, and a row replaced outright.
 func TestSettingsCacheFollowsEveryWrite(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	get := func() *model.Settings {
 		t.Helper()
@@ -61,6 +62,7 @@ func TestSettingsCacheFollowsEveryWrite(t *testing.T) {
 // Callers change the settings they are handed (applyTLSHints does), so each gets a copy:
 // nothing one of them does reaches the next.
 func TestSettingsReadsAreIndependent(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	rc := model.RoutingConfig{BlockDomains: []string{"a.example"}, Lanes: []model.EgressLane{{ID: "l1", Domains: []string{"x.example"}}}}
 	if err := st.SetRoutingConfig(rc); err != nil {
@@ -105,6 +107,7 @@ func TestSettingsReadsAreIndependent(t *testing.T) {
 // and a moved revision is really what replaces it. Shown by changing the row behind the
 // trigger's back, which nothing but this test can do.
 func TestSettingsAreServedFromTheCopyUntilTheRevisionMoves(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	if err := st.SetMasterLabel("kept"); err != nil {
 		t.Fatal(err)
@@ -133,6 +136,7 @@ func TestSettingsAreServedFromTheCopyUntilTheRevisionMoves(t *testing.T) {
 // caller's change reaches another, and once the saves stop the settings read are the
 // ones last saved.
 func TestSettingsCacheUnderConcurrentReadsAndSaves(t *testing.T) {
+	t.Parallel()
 	st := newStore(t)
 	if err := st.SetRoutingConfig(model.RoutingConfig{BlockDomains: []string{"base.example"}}); err != nil {
 		t.Fatal(err)

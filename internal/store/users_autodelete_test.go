@@ -11,6 +11,7 @@ import (
 // never touches users with no expiry, and honours the cutoff so the grace period
 // means what it says.
 func TestExpiredUsersBefore(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "autodelete.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

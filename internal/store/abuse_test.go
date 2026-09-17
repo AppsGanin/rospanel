@@ -16,6 +16,7 @@ func abuseTestStore(t *testing.T) *Store {
 }
 
 func TestAbuseRollupAndReads(t *testing.T) {
+	t.Parallel()
 	st := abuseTestStore(t)
 	u, err := st.CreateUser("u1", "uuid1", "pw", "tok1", 0, 0, 0)
 	if err != nil {
@@ -63,6 +64,7 @@ func TestAbuseRollupAndReads(t *testing.T) {
 // TestAbuseRecentCarriesUserName: the fleet view must join the name so the operator
 // acts without a lookup per row.
 func TestAbuseRecentCarriesUserName(t *testing.T) {
+	t.Parallel()
 	st := abuseTestStore(t)
 	u, _ := st.CreateUser("alice", "uuid1", "pw", "tok1", 0, 0, 0)
 	if err := st.AddAbuseMatches([]AbuseHit{
@@ -82,6 +84,7 @@ func TestAbuseRecentCarriesUserName(t *testing.T) {
 // TestAbuseSurvivesDeletedUser: a match for a user deleted mid-batch must not void
 // the rest — the EXISTS guard, same as connections.
 func TestAbuseSurvivesDeletedUser(t *testing.T) {
+	t.Parallel()
 	st := abuseTestStore(t)
 	u, _ := st.CreateUser("u1", "uuid1", "pw", "tok1", 0, 0, 0)
 
@@ -101,6 +104,7 @@ func TestAbuseSurvivesDeletedUser(t *testing.T) {
 }
 
 func TestPurgeAbuseMatches(t *testing.T) {
+	t.Parallel()
 	st := abuseTestStore(t)
 	u, _ := st.CreateUser("u1", "uuid1", "pw", "tok1", 0, 0, 0)
 	if err := st.AddAbuseMatches([]AbuseHit{

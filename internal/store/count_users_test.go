@@ -15,6 +15,7 @@ import (
 // quietly misreport the dashboard's headline number. This walks a matrix covering
 // every branch of deriveStatus and asserts both agree on the count.
 func TestCountUsersMatchesDeriveStatus(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "count.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -134,6 +135,7 @@ func TestCountUsersMatchesDeriveStatus(t *testing.T) {
 // TestCountUsersEmpty guards the COALESCEs: no users at all must read as zeroes,
 // not a scan error on NULL sums.
 func TestCountUsersEmpty(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "empty.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -154,6 +156,7 @@ func TestCountUsersEmpty(t *testing.T) {
 // counted once however many devices they are on, and they drop off the moment the
 // last sighting ages past the window.
 func TestCountUsersOnlineWindow(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "online.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -205,6 +208,7 @@ func TestCountUsersOnlineWindow(t *testing.T) {
 // count mode nor the grace, which made the dashboard's "active" total disagree with the
 // list rendered next to it by one user per affected account.
 func TestCountUsersAgreesInEveryDeviceMode(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{model.DeviceCountAuto, model.DeviceCountHWID, model.DeviceCountBoth} {
 		t.Run(mode, func(t *testing.T) {
 			st := dcStore(t)

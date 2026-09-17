@@ -13,6 +13,7 @@ import (
 // single path moved the anchor, so resetting a whole selection the day before their
 // cycle rolled gave each of them a quota that expired the next morning.
 func TestBulkResetRestartsTheQuotaCycle(t *testing.T) {
+	t.Parallel()
 	st := openTestStore(t)
 	rolling, err := st.CreateUser("rolling", "11111111-1111-1111-1111-111111111111", "p", "tok-rolling", 0, 0, 0)
 	if err != nil {
@@ -46,6 +47,7 @@ func TestBulkResetRestartsTheQuotaCycle(t *testing.T) {
 // An imported user with a reset period has to be able to roll over. With no anchor,
 // resetDue answers "not due" forever and the quota never refills.
 func TestAnImportedUserWithAPeriodHasACycleToRollFrom(t *testing.T) {
+	t.Parallel()
 	st := openTestStore(t)
 	before := time.Now().Unix()
 	monthly, err := st.ImportUser(ImportedUser{

@@ -14,6 +14,7 @@ import (
 // wraps every one of them, and a secret it cannot read back is left alone rather
 // than replaced by a blob nobody can decrypt.
 func TestReencryptCoversEverySecretColumn(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "enc.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

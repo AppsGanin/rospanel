@@ -11,6 +11,7 @@ import (
 // "all categories on" (-1), and SetAdminEvents persists an explicit mask that
 // GetSettings reads back, gating each AdminEvent* flag correctly.
 func TestAdminEventsRoundTrip(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "ev.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -63,6 +64,7 @@ func TestAdminEventsRoundTrip(t *testing.T) {
 // upgrade (migration 0065); a mask of -1 stays -1 rather than turning into a
 // frozen list.
 func TestLoginAlertIsOnForSavedMasks(t *testing.T) {
+	t.Parallel()
 	st, err := Open(filepath.Join(t.TempDir(), "ev.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

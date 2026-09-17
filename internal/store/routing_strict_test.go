@@ -13,6 +13,7 @@ import (
 // that it survives the store, and that a config saved before it existed reads as
 // off rather than as garbage.
 func TestStrictEgressSurvivesTheStore(t *testing.T) {
+	t.Parallel()
 	st := openTestStore(t)
 	if err := st.SetRoutingConfig(model.RoutingConfig{StrictEgress: true, RoutingOrder: []string{"warp", "opera", "direct"}}); err != nil {
 		t.Fatal(err)

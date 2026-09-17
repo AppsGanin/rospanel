@@ -119,6 +119,7 @@ func TestSchemaTemplateMatchesAReplay(t *testing.T) {
 // The copy carries the template's timestamps, so Open restamps them: a row should say
 // when THIS database was made, which is what a replay would have written.
 func TestSeededTimestampsAreRestamped(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	warm, err := Open(filepath.Join(dir, "warm.db"))
 	if err != nil {
