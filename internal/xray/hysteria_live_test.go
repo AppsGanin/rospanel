@@ -1,6 +1,10 @@
 package xray
 
 import (
+	"encoding/json"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -25,20 +29,21 @@ func customHysteria() model.Inbound {
 	}
 }
 
-// Live user ops must never target a Hysteria2 inbound.
+// The CLI's live user ops must never target a Hysteria2 inbound: its users go through
+// Supervisor.SyncHysteria.
 //
 // Verified against Xray 26.7.28: `adu` answers "unsupported inbound type" and adds
-// nobody, while `rmu` prints "Removed 1 user(s)" for a user that never existed — it
-// removes nothing and says otherwise. Sending removals there would have the panel
-// believe it revoked access it still grants, which is the worst of the three possible
-// outcomes.
+// nobody. `rmu` does remove the user — but only from the next connection: the one they
+// already have carries on, since a Hysteria2 client proves who it is once per QUIC
+// connection. SyncHysteria cuts that connection off as well, which rmu alone would leave
+// open for as long as the client keeps it busy.
 func TestLiveUserOpsSkipHysteria(t *testing.T) {
 	set := hysteriaSettings()
 	custom := []model.Inbound{customHysteria()}
 
 	for _, tag := range EnabledInboundTags(set, custom) {
 		if tag == TagHysteria || tag == custom[0].Tag() {
-			t.Errorf("rmu would target %q — that call reports success without removing anything", tag)
+			t.Errorf("rmu would target %q — that leaves the removed user's open connection working", tag)
 		}
 	}
 
@@ -78,7 +83,7 @@ func TestLiveUserOpsStillCoverTheTCPLanes(t *testing.T) {
 	}
 }
 
-// HysteriaInbounds picks what has to be rebuilt, and it must find the operator's own
+// HysteriaInbounds picks what SyncHysteria is handed, and it must find the operator's own
 // QUIC inbounds too — testing only the built-in lane would leave a revoked user
 // tunnelling through a custom one.
 func TestHysteriaInboundsFindsEveryQUICInbound(t *testing.T) {
@@ -96,9 +101,10 @@ func TestHysteriaInboundsFindsEveryQUICInbound(t *testing.T) {
 		if in.Protocol != "hysteria" {
 			t.Errorf("%q is not a hysteria inbound", in.Tag)
 		}
-		// These are handed to `api adi`, which rebuilds the inbound from scratch — so
-		// they have to be the WHOLE thing, not the tag-plus-users stub adu takes. An
-		// inbound re-added without its port or TLS would come back broken.
+		// When a removed user cannot be cut off any other way, the inbound is rebuilt
+		// from this through `api adi` — so it has to be the WHOLE thing, not the
+		// tag-plus-users stub adu takes. An inbound re-added without its port or TLS
+		// would come back broken.
 		if in.Port == 0 {
 			t.Errorf("%q carries no port; re-adding it would fail", in.Tag)
 		}
@@ -108,11 +114,11 @@ func TestHysteriaInboundsFindsEveryQUICInbound(t *testing.T) {
 	}
 }
 
-// A DISABLED built-in lane still has to be rebuilt, which is easy to mistake for a
-// bug. Generate always emits the built-in Hysteria inbound and merely empties its
-// client list when the protocol is off, so the listener stays up with nobody able to
-// authenticate. That empty list is itself a change worth applying — it is how the
-// last user loses access — so it must not be filtered out here.
+// A DISABLED built-in lane is still handed over, which is easy to mistake for a bug.
+// Generate always emits the built-in Hysteria inbound and merely empties its client list
+// when the protocol is off, so the listener stays up with nobody able to authenticate.
+// That empty list is itself a change worth applying — it is how the last user loses
+// access — so it must not be filtered out here.
 func TestHysteriaInboundsIncludesTheDisabledBuiltinLane(t *testing.T) {
 	set := hysteriaSettings()
 	set.HysteriaEnabled = false
@@ -126,5 +132,46 @@ func TestHysteriaInboundsIncludesTheDisabledBuiltinLane(t *testing.T) {
 	}
 	if s, ok := hy[0].Settings.(HysteriaInboundSettings); ok && len(s.Users) != 0 {
 		t.Errorf("the disabled lane still carries %d user(s)", len(s.Users))
+	}
+}
+
+// The generated routing is one the running rules can be replaced from: the API serves
+// routing, there is a block outbound, and every rule carries a tag of its own that the
+// live rules' tags cannot collide with.
+func TestGeneratedRoutingCanBeReplacedLive(t *testing.T) {
+	set := hysteriaSettings()
+	set.Routing.BlockAds = true
+	set.Routing.BlockBittorrent = true
+	set.Routing.BlockDomains = []string{"example.org"}
+	set.Routing.DirectDomains = []string{"example.com"}
+	set.Routing.DirectIPs = []string{"1.1.1.1/32"}
+	cfg, err := Generate(set, nil, Options{PanelDest: "127.0.0.1:8080", Custom: []model.Inbound{customHysteria()}}, nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(cfg.Routing.Rules) < 5 {
+		t.Fatalf("only %d rules generated; the test needs the operator's too", len(cfg.Routing.Rules))
+	}
+	seen := map[string]bool{}
+	for i, r := range cfg.Routing.Rules {
+		if r.RuleTag == "" || seen[r.RuleTag] || strings.HasPrefix(r.RuleTag, liveRulePrefix) {
+			t.Errorf("rule %d has tag %q: every rule needs its own, outside %q", i, r.RuleTag, liveRulePrefix)
+		}
+		seen[r.RuleTag] = true
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := readHysteriaLive(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.routable {
+		t.Error("the running rules of a generated config cannot be replaced live")
+	}
+	custom := customHysteria()
+	if got := slices.Sorted(maps.Keys(st.users)); !slices.Equal(got, slices.Sorted(slices.Values([]string{TagHysteria, custom.Tag()}))) {
+		t.Errorf("hysteria inbounds read %q", got)
 	}
 }

@@ -113,6 +113,9 @@ type RouteRule struct {
 	Protocol    []string `json:"protocol,omitempty"`
 	OutboundTag string   `json:"outboundTag,omitempty"`
 	BalancerTag string   `json:"balancerTag,omitempty"`
+	// RuleTag names the rule to Xray's routing API, so the running rules can be
+	// replaced one by one (see hysteria_live.go). Unique within a config.
+	RuleTag string `json:"ruleTag,omitempty"`
 }
 
 // Log configures Xray logging.
