@@ -1596,6 +1596,8 @@ const en: Dict = {
     activeOfLimit: "{{active}} of {{limit}} active · {{total}} IPs total",
     activeTotal: "{{active}} active · {{total}} IPs total",
     noConnections: "No connections yet",
+    lastConnect: "Last connection",
+    lastSubFetch: "Last subscription refresh",
     approxHint_one: "Active for about {{time}}: seen {{count}} time, at most once per 45 seconds while the address was opening connections. A lower bound.",
     approxHint_few: "Active for about {{time}}: seen {{count}} times, at most once per 45 seconds while the address was opening connections. A lower bound.",
     approxHint_many: "Active for about {{time}}: seen {{count}} times, at most once per 45 seconds while the address was opening connections. A lower bound.",

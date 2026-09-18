@@ -851,10 +851,10 @@ export function UserDetail({
                     <span className="flex shrink-0 items-center gap-2">
                       <Mono
                         className="text-[11px] text-ink-muted"
-                        title={t('userDetail.approxHint', {
+                        title={`${t('userDetail.lastConnect')}\n${t('userDetail.approxHint', {
                           time: fmtDuration(c.approx_seconds),
                           count: c.count,
-                        })}
+                        })}`}
                       >
                         {fmtLastSeen(c.last_seen)}
                       </Mono>
@@ -920,29 +920,42 @@ export function UserDetail({
                   {t('userDetail.noBoundDevices')}
                 </p>
               ) : (
-                bound.devices.map((d) => (
-                  <div
-                    key={d.hwid}
-                    className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0"
-                  >
-                    <span className="flex min-w-0 flex-col" title={d.hwid}>
-                      <Mono className="truncate text-xs text-ink">{d.ip || d.hwid}</Mono>
-                      <span className="truncate text-xs text-ink-muted">
-                        {[d.model, d.os, d.os_version].filter(Boolean).join(' · ') || d.hwid}
+                bound.devices.map((d) => {
+                  // No address here: it is where the subscription was last fetched
+                  // from, which the list of addresses above tells better.
+                  const os = [d.os, d.os_version].filter(Boolean).join(' ')
+                  return (
+                    <div
+                      key={d.hwid}
+                      className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0"
+                    >
+                      <span className="flex min-w-0 flex-col" title={d.hwid}>
+                        {d.model || os ? (
+                          <>
+                            <span className="truncate text-xs text-ink">{d.model || os}</span>
+                            {d.model && os && (
+                              <span className="truncate text-xs text-ink-muted">{os}</span>
+                            )}
+                          </>
+                        ) : (
+                          <Mono className="truncate text-xs text-ink">{d.hwid}</Mono>
+                        )}
                       </span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-3">
-                      <Mono className="text-[11px] text-ink-muted">{fmtLastSeen(d.last_seen)}</Mono>
-                      <IconButton
-                        color="red"
-                        title={t('userDetail.unbind')}
-                        onClick={() => unbindDevice(d.hwid)}
-                      >
-                        <IconClose size={16} />
-                      </IconButton>
-                    </span>
-                  </div>
-                ))
+                      <span className="flex shrink-0 items-center gap-3">
+                        <Mono className="text-[11px] text-ink-muted" title={t('userDetail.lastSubFetch')}>
+                          {fmtLastSeen(d.last_seen)}
+                        </Mono>
+                        <IconButton
+                          color="red"
+                          title={t('userDetail.unbind')}
+                          onClick={() => unbindDevice(d.hwid)}
+                        >
+                          <IconClose size={16} />
+                        </IconButton>
+                      </span>
+                    </div>
+                  )
+                })
               )}
               {bound.devices.length > 0 && (
                 <div className="border-t border-gray-100 px-3.5 py-2">
