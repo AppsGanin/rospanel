@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.0](https://github.com/AppsGanin/rospanel/compare/v3.6.0...v3.7.0) (2026-09-19)
+
+
+### Features
+
+* **user-detail:** clarify device list labels and tooltips ([38cb9a2](https://github.com/AppsGanin/rospanel/commit/38cb9a21ec0fa52d32ab009690120fec27eca7ec))
+
 ## [3.6.0](https://github.com/AppsGanin/rospanel/compare/v3.5.0...v3.6.0) (2026-09-17)
 
 
