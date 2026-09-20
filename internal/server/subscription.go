@@ -374,9 +374,11 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 			return
 		}
 	}
-	// No automatic provider passed/configured ⇒ create a manual order and return the
-	// payment instructions for the page to show (admin confirms it later).
-	if req.Provider == "" && len(rt.mgr.PaymentMethods()) == 0 {
+	// Manual payment — asked for by name, or the only method the operator offers ⇒
+	// create a pending order and return the instructions for the page to show (an
+	// admin confirms the transfer later).
+	if req.Provider == sub.ManualPayKey ||
+		(req.Provider == "" && rt.mgr.ManualPayment() && len(rt.mgr.PaymentMethods()) == 0) {
 		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), lang, u.ID, req.PlanID)
 		if err != nil {
 			writeManagerErr(w, err)
@@ -464,12 +466,23 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			})
 		}
 	}
+	// Manual first: it is the method that needs no setup, so where both are offered it
+	// is the one a user falls back to.
+	b.Manual = rt.mgr.ManualPayment()
+	if b.Manual {
+		b.Providers = append(b.Providers, sub.BillingPay{
+			Key: sub.ManualPayKey, Label: rt.mgr.ManualPaymentLabel(lang),
+		})
+	}
 	for _, m := range rt.mgr.PaymentMethods() {
 		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: rt.mgr.ProviderLabel(m)})
 	}
-	// No automatic provider ⇒ manual payment: the pay button still works, creating a
-	// pending order and showing instructions (admin confirms it).
-	b.Manual = len(b.Providers) == 0
+	b.ManualOnly = b.Manual && len(b.Providers) == 1
+	// Nothing to pay with: offer no plans rather than a button that can only fail. An
+	// active plan can still be cancelled.
+	if len(b.Providers) == 0 {
+		b.Plans = nil
+	}
 	// Hide only when there's truly nothing to do: no plans to buy/renew and no active
 	// plan to cancel.
 	if len(b.Plans) == 0 && !b.Cancelable {

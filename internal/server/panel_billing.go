@@ -49,6 +49,8 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"free_plan_id":  set.BillingFreePlanID,
 		"trial_plan_id": set.BillingTrialPlanID,
 		"payment_note":  set.BillingPaymentNote,
+		"manual":        set.BillingManualEnabled,
+		"manual_label":  set.BillingManualLabel,
 		"plans":         plans,
 		"plan_users":    planUsers,
 	})
@@ -60,6 +62,8 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		FreePlanID  int64  `json:"free_plan_id"`
 		TrialPlanID int64  `json:"trial_plan_id"`
 		PaymentNote string `json:"payment_note"`
+		Manual      bool   `json:"manual"`
+		ManualLabel string `json:"manual_label"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -73,6 +77,8 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	set.BillingFreePlanID = req.FreePlanID
 	set.BillingTrialPlanID = req.TrialPlanID
 	set.BillingPaymentNote = strings.TrimSpace(req.PaymentNote)
+	set.BillingManualEnabled = req.Manual
+	set.BillingManualLabel = strings.TrimSpace(req.ManualLabel)
 	if err := rt.mgr.SaveBillingSettings(set); err != nil {
 		writeManagerErr(w, err)
 		return

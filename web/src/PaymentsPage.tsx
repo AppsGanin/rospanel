@@ -103,7 +103,10 @@ function orderWho(o: PaymentOrder): string {
 }
 
 
-export function PaymentsPage() {
+// onPending reports the number of orders still waiting for an admin after every
+// read: the tab above this page carries that count, and a confirmed or cancelled
+// order must change it at once rather than at the next poll.
+export function PaymentsPage({ onPending }: { onPending?: (n: number) => void }) {
   const { t } = useTranslation();
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
@@ -118,6 +121,7 @@ export function PaymentsPage() {
       .then(([s, o]) => {
         setStats(s);
         setOrders(o);
+        onPending?.(s.pending_count ?? 0);
       })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));

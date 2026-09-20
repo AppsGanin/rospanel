@@ -930,15 +930,13 @@ export function UserDetail({
                       className="flex items-center justify-between gap-3 border-b border-gray-100 px-3.5 py-2.5 last:border-0"
                     >
                       <span className="flex min-w-0 flex-col" title={d.hwid}>
-                        {d.model || os ? (
-                          <>
-                            <span className="truncate text-xs text-ink">{d.model || os}</span>
-                            {d.model && os && (
-                              <span className="truncate text-xs text-ink-muted">{os}</span>
-                            )}
-                          </>
-                        ) : (
-                          <Mono className="truncate text-xs text-ink">{d.hwid}</Mono>
+                        {/* The identifier itself first: it is what the binding is on,
+                            and what an operator matches against a user's report. */}
+                        <Mono className="truncate text-xs text-ink">{d.hwid}</Mono>
+                        {[d.model, os].filter(Boolean).length > 0 && (
+                          <span className="truncate text-xs text-ink-muted">
+                            {[d.model, os].filter(Boolean).join(' · ')}
+                          </span>
                         )}
                       </span>
                       <span className="flex shrink-0 items-center gap-3">

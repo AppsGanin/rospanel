@@ -1843,6 +1843,10 @@ export interface BillingInfo {
   free_plan_id: number
   trial_plan_id: number
   payment_note: string
+  // Manual payment is a method of its own: offered beside the providers, switched
+  // on and off like one, with a pay-button label of its own ("" = the default).
+  manual: boolean
+  manual_label: string
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
@@ -1894,6 +1898,8 @@ export const saveBilling = (b: {
   free_plan_id: number
   trial_plan_id: number
   payment_note: string
+  manual: boolean
+  manual_label: string
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',

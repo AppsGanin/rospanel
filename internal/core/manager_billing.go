@@ -907,6 +907,9 @@ func (m *Manager) EnforceBilling(now int64) error {
 // orders (and admin pings), it reuses the user's latest still-pending manual order
 // for the same plan instead of creating another.
 func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64) (*model.PaymentOrder, string, error) {
+	if !m.ManualPayment() {
+		return nil, "", invalidCode("err.payMethodUnavailable", "способ оплаты недоступен")
+	}
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
 		return nil, "", invalidCode("err.planNotFound", "тариф не найден")

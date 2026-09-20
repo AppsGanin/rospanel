@@ -64,7 +64,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var subBase64, subNameInTitle, subRouting, warpEn int
 	var operaEn int
 	var tlsFragment, tlsMin13, blockQUIC int
-	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn int
+	var tgBotEn, tgUserBotEn, tgUserRegEn, billingEn, billingManualEn int
 	var tgSupportEn int
 	var abuseEn int
 	var hwidEn, hwidRequire int
@@ -98,7 +98,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       tg_user_bot_enabled, tg_user_bot_token, tg_user_reg_enabled,
 		       tg_user_reg_mode, tg_user_reg_code,
 		       billing_enabled, billing_free_plan_id,
-		       billing_trial_plan_id, billing_payment_note,
+		       billing_trial_plan_id, billing_payment_note, billing_manual_enabled,
+		       billing_manual_label,
 		       payment_webhook_secret,
 		       tg_admin_events, api_path,
 		       vless_name, reality_name, hysteria_name,
@@ -145,7 +146,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&tgUserBotEn, &st.TGUserBotToken, &tgUserRegEn,
 		&st.TGUserRegMode, &st.TGUserRegCode,
 		&billingEn, &st.BillingFreePlanID,
-		&st.BillingTrialPlanID, &st.BillingPaymentNote,
+		&st.BillingTrialPlanID, &st.BillingPaymentNote, &billingManualEn,
+		&st.BillingManualLabel,
 		&st.PaymentWebhookSecret,
 		&st.TGAdminEvents, &st.APIPath,
 		&st.VLESSName, &st.RealityName, &st.HysteriaName,
@@ -233,6 +235,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.TGUserRegEnabled = tgUserRegEn != 0
 	st.TGSupportEnabled = tgSupportEn != 0
 	st.BillingEnabled = billingEn != 0
+	st.BillingManualEnabled = billingManualEn != 0
 	st.AbuseEnabled = abuseEn != 0
 	st.HWIDEnabled = hwidEn != 0
 	st.HWIDRequire = hwidRequire != 0

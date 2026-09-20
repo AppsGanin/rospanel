@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { exportUsersURL, getRegistrations, type RegistrationRequest } from "./api";
+import {
+  exportUsersURL,
+  getPaymentStats,
+  getRegistrations,
+  type RegistrationRequest,
+} from "./api";
 import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
 import { GroupsPanel } from "./GroupsPanel";
@@ -45,6 +50,11 @@ export function UsersPage({
     requests: RegistrationRequest[];
   }>({ moderation: false, requests: [] });
 
+  // Orders waiting for an admin to confirm them. A payment a user made by hand sits
+  // there until someone looks, so the count rides on the tab rather than waiting to
+  // be discovered inside it.
+  const [pendingPay, setPendingPay] = useState(0);
+
   const loadReg = useCallback(
     () =>
       getRegistrations()
@@ -64,6 +74,22 @@ export function UsersPage({
   }, [loadReg]);
 
   const isAdmin = useIsAdmin();
+
+  useEffect(() => {
+    // Only an admin is shown the tab, and only they may read the figures.
+    if (!billingEnabled || !isAdmin) {
+      setPendingPay(0);
+      return;
+    }
+    const load = () =>
+      getPaymentStats()
+        .then((s) => setPendingPay(s.pending_count ?? 0))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [billingEnabled, isAdmin]);
+
   const showRequests = reg.moderation || reg.requests.length > 0;
   const tabs: { value: SubTab; label: string; count?: number }[] = [
     { value: "list", label: t("users.tabList") },
@@ -86,7 +112,13 @@ export function UsersPage({
     // Payments are about what users pay for, so they belong beside the users rather
     // than as a separate destination in the top menu.
     ...(isAdmin && billingEnabled
-      ? [{ value: "payments" as SubTab, label: t("users.tabPayments") }]
+      ? [
+          {
+            value: "payments" as SubTab,
+            label: t("users.tabPayments"),
+            count: pendingPay,
+          },
+        ]
       : []),
     // Access groups gate which connections a user may use; managing them lives beside
     // the users whose membership they govern. Admin-and-up, like the other management
@@ -180,7 +212,7 @@ export function UsersPage({
           <RegistrationsPanel requests={reg.requests} onReload={loadReg} />
         )}
         {tab === "broadcast" && <BroadcastPanel />}
-        {tab === "payments" && <PaymentsPage />}
+        {tab === "payments" && <PaymentsPage onPending={setPendingPay} />}
         {tab === "groups" && <GroupsPanel />}
         {tab === "stats" && <StatsPanel />}
         {tab === "events" && <EventsPanel />}

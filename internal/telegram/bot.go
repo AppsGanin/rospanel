@@ -57,8 +57,11 @@ type Panel interface {
 	ActivePaidPlan(u model.User) *model.TariffPlan
 	CancelUserPlan(ctx context.Context, userID int64) error
 
-	// Automatic payment providers (no-op surface unless configured).
+	// Automatic payment providers (no-op surface unless configured), and whether the
+	// operator also takes payment by hand.
 	PaymentMethods() []string
+	ManualPayment() bool
+	ManualPaymentLabel(lang i18n.Lang) string
 	ProviderLabel(key string) string
 	StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string) (*model.PaymentOrder, error)
 	SetUserNotifier(fn func(chatID int64, html string))

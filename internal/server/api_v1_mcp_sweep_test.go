@@ -234,7 +234,9 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_billing_settings", map[string]any{
 		"body": map[string]any{
 			"enabled": true, "free_plan_id": 0, "trial_plan_id": 0,
-			"payment_note": "sweep",
+			// Manual payment on: the orders below are manual ones, and the panel opens
+			// those only for an operator who takes transfers by hand.
+			"payment_note": "sweep", "manual": true,
 		},
 	})
 	call("post_payments", map[string]any{

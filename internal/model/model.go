@@ -977,6 +977,11 @@ type Settings struct {
 	BillingFreePlanID  int64  `json:"-"`
 	BillingTrialPlanID int64  `json:"-"`
 	BillingPaymentNote string `json:"-"`
+	// BillingManualEnabled offers manual payment beside the automatic providers: the
+	// user's order is created pending and an admin confirms the transfer by hand.
+	// BillingManualLabel is its pay-button label; empty falls back to the dictionary.
+	BillingManualEnabled bool   `json:"-"`
+	BillingManualLabel   string `json:"-"`
 
 	// PaymentWebhookSecret is the random URL segment the provider webhooks are
 	// mounted under (/<secret>/<provider>), so the callback path is fixed yet

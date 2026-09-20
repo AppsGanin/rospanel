@@ -672,9 +672,11 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 	_, err := s.db.Exec(
 		`UPDATE settings SET billing_enabled = ?,
 		 billing_free_plan_id = ?, billing_trial_plan_id = ?, billing_payment_note = ?,
+		 billing_manual_enabled = ?, billing_manual_label = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
+		boolToInt(st.BillingManualEnabled), st.BillingManualLabel,
 	)
 	return err
 }

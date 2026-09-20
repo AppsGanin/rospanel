@@ -779,9 +779,12 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		if planStr, ok := strings.CutPrefix(cb.Data, "vu:buy:"); ok {
 			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planStr)
 		} else if rest, ok := strings.CutPrefix(cb.Data, "vu:pay:"); ok {
-			// rest = "<provider>:<planID>"
-			if prov, planStr, found := strings.Cut(rest, ":"); found {
-				s.startProviderPayment(ctx, client, chatID, msgID, u, planStr, prov)
+			// rest = "<method>:<planID>", the method being a provider key or manual
+			if method, planStr, found := strings.Cut(rest, ":"); found {
+				var planID int64
+				if _, err := fmt.Sscan(planStr, &planID); err == nil && planID > 0 {
+					s.startPayment(ctx, client, chatID, msgID, u, planStr, planID, method)
+				}
 			}
 		}
 	}
@@ -869,10 +872,13 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	}
 	rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}})
 	msg := i18n.T(lang, "user.plansTitle") + "\n\n"
-	if len(s.panel.PaymentMethods()) > 0 {
+	switch {
+	case len(s.panel.PaymentMethods()) > 0:
 		msg += i18n.T(lang, "user.plansAuto")
-	} else {
+	case s.panel.ManualPayment():
 		msg += i18n.T(lang, "user.plansManual")
+	default:
+		msg += i18n.T(lang, "user.noPayMethod")
 	}
 	s.edit(ctx, client, chatID, msgID, msg, rows)
 }
@@ -887,8 +893,31 @@ func planActiveUntil(u model.User, panel Panel, lang i18n.Lang) string {
 
 // providerButton is the pay-method button text: a wallet icon plus the provider's
 // registry label (so a new provider needs no change here).
-func (s *UserService) providerButton(key string) string {
+func (s *UserService) providerButton(lang i18n.Lang, key string) string {
+	if key == sub.ManualPayKey {
+		return "💳 " + s.panel.ManualPaymentLabel(lang)
+	}
 	return "💳 " + s.panel.ProviderLabel(key)
+}
+
+// payMethods are the methods the operator offers, manual first — the one that needs
+// no setup, and the one a user falls back to when a provider refuses them.
+func (s *UserService) payMethods() []string {
+	methods := s.panel.PaymentMethods()
+	if !s.panel.ManualPayment() {
+		return methods
+	}
+	return append([]string{sub.ManualPayKey}, methods...)
+}
+
+// startPayment runs whichever method was chosen: the manual instructions, or the
+// provider's own checkout.
+func (s *UserService) startPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planIDStr string, planID int64, method string) {
+	if method == sub.ManualPayKey {
+		s.manualPayment(ctx, client, chatID, msgID, u, planID)
+		return
+	}
+	s.startProviderPayment(ctx, client, chatID, msgID, u, planIDStr, method)
 }
 
 func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
@@ -898,16 +927,17 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 		return
 	}
-	methods := s.panel.PaymentMethods()
+	methods := s.payMethods()
 	switch len(methods) {
 	case 0:
-		s.manualPayment(ctx, client, chatID, msgID, u, planID) // no provider → manual instructions
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(i18n.T(lang, "user.noPayMethod")),
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}})
 	case 1:
-		s.startProviderPayment(ctx, client, chatID, msgID, u, planIDStr, methods[0])
+		s.startPayment(ctx, client, chatID, msgID, u, planIDStr, planID, methods[0])
 	default:
 		var rows [][]InlineButton
 		for _, p := range methods {
-			rows = append(rows, []InlineButton{{Text: s.providerButton(p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
+			rows = append(rows, []InlineButton{{Text: s.providerButton(lang, p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
 		}
 		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}})
 		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.pickPayMethod"), rows)

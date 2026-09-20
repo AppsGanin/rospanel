@@ -520,8 +520,9 @@ users, renewals and user migration between plans. **Payment acceptance** — pic
 **AuraPay** (cards, SBP, ₽), **CryptoBot** and **Heleket** (crypto). The client pays in the
 bot or on the subscription page, and the plan **activates itself**. A webhook confirms it
 (signature verified), polling covers the case where the webhook never arrives; processing is
-idempotent and the amount is checked against the order. With no provider configured, an admin
-confirms payments manually.
+idempotent and the amount is checked against the order. **Manual payment** is a method of its
+own beside them: switched on in *Payments → Payment acceptance*, it shows your own details and
+an admin confirms the transfer.
 
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected

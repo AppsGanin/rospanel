@@ -26,6 +26,8 @@ type (
 		FreePlanID  int64  `json:"free_plan_id"`  // 0 = none
 		TrialPlanID int64  `json:"trial_plan_id"` // 0 = none
 		PaymentNote string `json:"payment_note"`  // shown with manual payment instructions
+		Manual      bool   `json:"manual"`        // offer manual payment beside the providers
+		ManualLabel string `json:"manual_label"`  // its pay-button label ("" = the default wording)
 	}
 	apiMigratePlanReq struct {
 		ToPlanID int64 `json:"to_plan_id"`
@@ -51,6 +53,8 @@ func (rt *Router) apiGetBillingSettings(w http.ResponseWriter, _ *http.Request) 
 		FreePlanID:  set.BillingFreePlanID,
 		TrialPlanID: set.BillingTrialPlanID,
 		PaymentNote: set.BillingPaymentNote,
+		Manual:      set.BillingManualEnabled,
+		ManualLabel: set.BillingManualLabel,
 	})
 }
 
@@ -68,6 +72,8 @@ func (rt *Router) apiSaveBillingSettings(w http.ResponseWriter, r *http.Request)
 	set.BillingFreePlanID = req.FreePlanID
 	set.BillingTrialPlanID = req.TrialPlanID
 	set.BillingPaymentNote = strings.TrimSpace(req.PaymentNote)
+	set.BillingManualEnabled = req.Manual
+	set.BillingManualLabel = strings.TrimSpace(req.ManualLabel)
 	// Designating a plan free/trial also makes it free and re-applies it to everyone
 	// already on it — see core.SaveBillingSettings.
 	if err := rt.mgr.SaveBillingSettings(set); err != nil {
