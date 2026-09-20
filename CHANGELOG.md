@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.7.0](https://github.com/AppsGanin/rospanel/compare/v3.6.0...v3.7.0) (2026-09-20)
+
+
+### Features
+
+* **billing:** add manual payment as a first-class method ([095be9a](https://github.com/AppsGanin/rospanel/commit/095be9a40db0531aef8d75990e598fa2e2bb7ea0))
+* **user-detail:** clarify device list labels and tooltips ([38cb9a2](https://github.com/AppsGanin/rospanel/commit/38cb9a21ec0fa52d32ab009690120fec27eca7ec))
+
+
+### Bug Fixes
+
+* **i18n:** remove country note from placement hint ([8c5a575](https://github.com/AppsGanin/rospanel/commit/8c5a575055116ca9cc3ba0604a3c86c1e82ed873))
+
 ## [3.6.0](https://github.com/AppsGanin/rospanel/compare/v3.5.0...v3.6.0) (2026-09-17)
 
 
