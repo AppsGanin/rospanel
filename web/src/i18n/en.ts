@@ -2768,7 +2768,7 @@ const en: Dict = {
     },
     placement: {
       title: "Place in subscriptions",
-      hint: "Weight and capacity decide the server order in subscriptions; the country comes from the address.",
+      hint: "Weight and capacity decide the server order in subscriptions.",
       online: "online {{count}}",
       weight: "Weight",
       capacity: "Capacity, users",
