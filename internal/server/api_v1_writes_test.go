@@ -156,7 +156,8 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 		"post_billing_settings": {
 			body: map[string]any{
 				"enabled": true, "free_plan_id": float64(0),
-				"trial_plan_id": float64(0), "payment_note": "landed",
+				"trial_plan_id": float64(0), "payment_note": "landed", "manual": true,
+				"manual_label": "By transfer",
 			},
 			check: func(t *testing.T) map[string]any {
 				set, err := st.GetSettings()
@@ -166,6 +167,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				return map[string]any{
 					"enabled": set.BillingEnabled, "free_plan_id": float64(set.BillingFreePlanID),
 					"trial_plan_id": float64(set.BillingTrialPlanID), "payment_note": set.BillingPaymentNote,
+					"manual": set.BillingManualEnabled, "manual_label": set.BillingManualLabel,
 				}
 			},
 		},

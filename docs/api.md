@@ -338,7 +338,8 @@ user to:
 { "data": { "order": { ... }, "pay_url": "https://..." } }
 ```
 
-A manual order returns an empty `pay_url` and waits for `/confirm`. Creating an order
+A manual order — no `provider`, or `"manual"` — returns an empty `pay_url` and waits for
+`/confirm`; it is refused while manual payment is switched off. Creating an order
 is **not** idempotent by key, but it does not stack duplicates either: a still-pending
 order for the same user, plan and provider is reused instead of a second one being
 opened, so a retried call returns the order that already exists.
@@ -347,11 +348,14 @@ opened, so a retried call returns the order that already exists.
 update: "no free plan" is a real state and must be distinguishable from "unspecified"):
 
 ```json
-{ "enabled": true, "free_plan_id": 1, "trial_plan_id": 2, "payment_note": "card 1234" }
+{ "enabled": true, "free_plan_id": 1, "trial_plan_id": 2, "payment_note": "card 1234",
+  "manual": true, "manual_label": "" }
 ```
 
 Designating a plan as the free or trial one also makes it free and re-applies it to
-everyone already on it — the same rule the panel enforces.
+everyone already on it — the same rule the panel enforces. `manual` offers manual payment
+beside the providers, `manual_label` is its pay-button label (empty = the default
+wording), and `payment_note` is the text a user paying by hand is shown.
 
 **Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.
 Applies the target plan's limits, period and access groups to every user on the source
@@ -365,8 +369,8 @@ free-form. `POST /v1/payments` takes `{ "key": "yookassa", "enabled": true, "con
 {...} }`; a secret left empty keeps its stored value.
 
 `GET /v1/billing/providers` is dynamic — it returns whatever payment methods you've
-enabled in the panel (cards, SBP, crypto, …), each with a `key`. That `key` is what you
-pass as `provider` when opening an order; omit it for a manual order.
+enabled in the panel (cards, SBP, crypto, …), each with a `key`, and `manual` first when
+manual payment is on. That `key` is what you pass as `provider` when opening an order.
 
 ### Nodes
 

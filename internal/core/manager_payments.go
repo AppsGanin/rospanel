@@ -106,6 +106,26 @@ func (m *Manager) PaymentMethods() []string {
 	return out
 }
 
+// ManualPayment reports whether manual payment is offered: an order the user pays by
+// transfer, from the operator's own instructions, and an admin confirms. It is a
+// method beside the automatic providers, not a fallback for having none.
+func (m *Manager) ManualPayment() bool {
+	set, err := m.Settings()
+	return err == nil && set.BillingManualEnabled
+}
+
+// ManualPaymentLabel is the manual method's pay-button label: the operator's own
+// wording where they set one, the dictionary's otherwise — the same rule a provider's
+// display name follows.
+func (m *Manager) ManualPaymentLabel(lang i18n.Lang) string {
+	if set, err := m.Settings(); err == nil {
+		if l := strings.TrimSpace(set.BillingManualLabel); l != "" {
+			return l
+		}
+	}
+	return i18n.T(lang, "pay.manualMethod")
+}
+
 // PaymentProviders returns every provider in the registry paired with its saved
 // setup (a provider the operator never configured comes back with an empty config).
 func (m *Manager) PaymentProviders() ([]payments.Descriptor, map[string]model.PaymentProvider, error) {

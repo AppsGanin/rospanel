@@ -82,17 +82,20 @@ func TestPageBillingLocked(t *testing.T) {
 	}
 }
 
-// TestPageBillingManual renders the block with no automatic provider: the pay
-// button still shows (creates a manual order) and the manual note appears.
+// TestPageBillingManual renders the block with manual payment as the only method:
+// the pay button creates a manual order, and the page carries both the operator's
+// details and the line about an admin confirming the transfer.
 func TestPageBillingManual(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
 	billing := Billing{
-		Show:    true,
-		Manual:  true,
-		PayPath: "https://vpn.example.com/sub/tok123/pay",
-		Plans:   []BillingPlan{{ID: 5, Name: "Месяц", Label: "199 ₽ / 30 дн."}},
-		Note:    "Переведите на карту 0000",
+		Show:       true,
+		Manual:     true,
+		ManualOnly: true,
+		Providers:  []BillingPay{{Key: ManualPayKey, Label: "Вручную"}},
+		PayPath:    "https://vpn.example.com/sub/tok123/pay",
+		Plans:      []BillingPlan{{ID: 5, Name: "Месяц", Label: "199 ₽ / 30 дн."}},
+		Note:       "Переведите на карту 0000",
 	}
 	html, err := Page(u, set, One(set), billing, Devices{}, true, i18n.RU)
 	if err != nil {

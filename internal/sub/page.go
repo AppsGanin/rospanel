@@ -313,11 +313,17 @@ type Billing struct {
 	CurrentPlan string        // active plan name ("" = none / manual)
 	ExpireText  string        // "until DD.MM.YYYY" for a paid expiry, else ""
 	Plans       []BillingPlan // paid plans offered for purchase/renewal
-	Providers   []BillingPay  // enabled payment methods (empty ⇒ manual only)
-	Manual      bool          // no automatic provider ⇒ pay button creates a manual order
-	Note        string        // manual-payment instructions when no provider is set
-	PayPath     string        // POST target that starts a payment (<SubURL>/pay)
-	OrderPath   string        // GET target that reports a pending provider payment (<SubURL>/order)
+	// Providers are the payment methods offered, in the order they are shown. Manual
+	// payment, when the operator has it on, is one of them under ManualPayKey.
+	Providers []BillingPay
+	Manual    bool // manual payment is offered
+	// ManualOnly is manual payment with nothing else beside it: only then does the
+	// page carry the operator's details and say that an admin confirms the transfer.
+	// With a provider on the list too, both arrive with the order the user opens.
+	ManualOnly bool
+	Note       string // the operator's own manual-payment instructions
+	PayPath    string // POST target that starts a payment (<SubURL>/pay)
+	OrderPath  string // GET target that reports a pending provider payment (<SubURL>/order)
 	// Locked is true while a paid plan is active: only that plan (renewal) is shown,
 	// switching to another is blocked, and Cancelable offers cancellation instead.
 	Locked     bool
@@ -338,6 +344,11 @@ type BillingPay struct {
 	Key   string
 	Label string
 }
+
+// ManualPayKey is the method key that stands for manual payment, so the page offers
+// it beside the providers and the pay route knows which tap meant "I will transfer
+// it myself". Provider keys come from the payments registry, which has no such key.
+const ManualPayKey = "manual"
 
 type protoLink struct {
 	Proto string

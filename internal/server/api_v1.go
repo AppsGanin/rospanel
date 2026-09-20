@@ -1050,15 +1050,16 @@ func (rt *Router) apiDeletePlan(w http.ResponseWriter, _ *http.Request, id int64
 	writeAPIData(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
-// apiCreateOrder opens a payment order for a user+plan. With no provider it's a
-// manual order (message carries the payment instructions, admin confirms it);
+// apiCreateOrder opens a payment order for a user+plan. With no provider (or the
+// "manual" one) it's a manual order — the message carries the payment instructions
+// and an admin confirms it, and it is refused while manual payment is switched off;
 // with a provider it's a hosted payment whose pay_url the user should be sent to.
 func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	var req apiCreateOrderReq
 	if !apiDecode(w, r, &req) {
 		return
 	}
-	if req.Provider == "" {
+	if req.Provider == "" || req.Provider == sub.ManualPayKey {
 		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID)
 		if err != nil {
 			writeAPIManagerErr(w, err)
@@ -1075,11 +1076,15 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "pay_url": order.PayURL})
 }
 
-// apiListProviders lists the enabled automatic payment methods (empty ⇒ only
-// manual orders are possible). Keys are usable as the `provider` on create-order.
+// apiListProviders lists the payment methods on offer — manual first when the
+// operator takes transfers by hand, then the enabled automatic providers. Keys are
+// usable as the `provider` on create-order.
 func (rt *Router) apiListProviders(w http.ResponseWriter, _ *http.Request) {
 	methods := rt.mgr.PaymentMethods()
-	out := make([]map[string]string, 0, len(methods))
+	out := make([]map[string]string, 0, len(methods)+1)
+	if rt.mgr.ManualPayment() {
+		out = append(out, map[string]string{"key": sub.ManualPayKey, "label": rt.mgr.ManualPaymentLabel(i18n.EN)})
+	}
 	for _, m := range methods {
 		out = append(out, map[string]string{"key": m, "label": rt.mgr.ProviderLabel(m)})
 	}

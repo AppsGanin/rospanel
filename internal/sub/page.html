@@ -625,12 +625,12 @@
         <p class="muted" style="margin: 10px 0 0">
           {{.L.ChangePlanNote}}
         </p>
-        {{else if .Billing.Manual}}
+        {{else if .Billing.ManualOnly}}
         <p class="muted" style="margin: 12px 0 0">
           {{.L.ManualNote}}
         </p>
         {{end}}
-        {{if and .Billing.Manual .Billing.Note}}
+        {{if and .Billing.ManualOnly .Billing.Note}}
         <p class="muted" style="margin: 8px 0 0; white-space: pre-line">{{.Billing.Note}}</p>
         {{end}}
       </div>

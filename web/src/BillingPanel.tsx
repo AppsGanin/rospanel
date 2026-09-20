@@ -202,25 +202,104 @@ function ProviderCard({
   );
 }
 
-// PaymentIntegrations lists every payment provider the panel knows about and its
-// settings form. It's controlled by BillingPanel so edits ride the page's single
-// bottom SaveBar. Providers, fields and validation all come from the server, so a
-// newly added provider shows up here with no frontend change.
+// ManualCard is manual payment in the shape of a provider: a switch, and the
+// operator's own details revealed when it is on. First in the list because it is the
+// method that needs no account anywhere.
+function ManualCard({
+  enabled,
+  label,
+  note,
+  onEnabled,
+  onLabel,
+  onNote,
+}: {
+  enabled: boolean;
+  label: string;
+  note: string;
+  onEnabled: (v: boolean) => void;
+  onLabel: (v: string) => void;
+  onNote: (v: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <SettingRow
+      label={
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          {t("bill.manualMethod")}
+          <span
+            className={cn(
+              "text-[11px] font-normal",
+              enabled ? "text-success" : "text-ink-muted",
+            )}
+          >
+            {enabled ? t("bill.provOn") : t("bill.provOff")}
+          </span>
+        </span>
+      }
+      hint={t("bill.manualHint")}
+      control={<Switch checked={enabled} onChange={onEnabled} />}
+    >
+      {enabled && (
+        <div className="flex flex-col gap-2.5">
+          <TextInput
+            label={t("payField.displayName")}
+            value={label}
+            onChange={onLabel}
+            placeholder={t("bill.manualMethod")}
+          />
+          <Textarea
+            label={t("bill.manualDetails")}
+            value={note}
+            onChange={onNote}
+            placeholder={t("bill.manualPlaceholder")}
+            rows={4}
+          />
+        </div>
+      )}
+    </SettingRow>
+  );
+}
+
+// PaymentIntegrations lists every payment method: manual payment, then every
+// provider the panel knows about with its settings form. It's controlled by
+// BillingPanel so edits ride the page's single bottom SaveBar. Providers, fields and
+// validation all come from the server, so a newly added provider shows up here with
+// no frontend change.
 function PaymentIntegrations({
   providers,
   drafts,
   err,
   onChange,
+  manual,
+  label,
+  note,
+  onManual,
+  onLabel,
+  onNote,
 }: {
   providers: PaymentProvider[] | null;
   drafts: Record<string, ProviderDraft>;
   err: string;
   onChange: (key: string, d: ProviderDraft) => void;
+  manual: boolean;
+  label: string;
+  note: string;
+  onManual: (v: boolean) => void;
+  onLabel: (v: string) => void;
+  onNote: (v: string) => void;
 }) {
   const { t } = useTranslation();
   return (
     <Panel title={t("bill.acceptTitle")}>
       <SettingRow hint={t("bill.acceptDescription")} />
+      <ManualCard
+        enabled={manual}
+        label={label}
+        note={note}
+        onEnabled={onManual}
+        onLabel={onLabel}
+        onNote={onNote}
+      />
       {err ? (
         <SettingRow hint={<span className="text-danger">{err}</span>} />
       ) : !providers ? (
@@ -548,6 +627,8 @@ export function BillingPanel() {
           free_plan_id: d.free_plan_id ?? 0,
           trial_plan_id: d.trial_plan_id ?? 0,
           payment_note: d.payment_note ?? "",
+          manual: !!d.manual,
+          manual_label: d.manual_label ?? "",
           plans: nextPlans,
         };
         setCfg(nextCfg);
@@ -568,6 +649,8 @@ export function BillingPanel() {
           free_plan_id: d.free_plan_id ?? 0,
           trial_plan_id: d.trial_plan_id ?? 0,
           payment_note: d.payment_note ?? "",
+          manual: !!d.manual,
+          manual_label: d.manual_label ?? "",
           plans: nextPlans,
         };
         setCfg(nextCfg);
@@ -611,7 +694,9 @@ export function BillingPanel() {
     cfg.enabled !== saved.enabled ||
     cfg.free_plan_id !== saved.free_plan_id ||
     cfg.trial_plan_id !== saved.trial_plan_id ||
-    cfg.payment_note !== saved.payment_note;
+    cfg.payment_note !== saved.payment_note ||
+    cfg.manual !== saved.manual ||
+    cfg.manual_label !== saved.manual_label;
 
   // Which providers have unsaved edits (skip any whose server view we don't have).
   const dirtyProviders = (providers ?? []).filter(
@@ -636,6 +721,8 @@ export function BillingPanel() {
           free_plan_id: cfg.free_plan_id,
           trial_plan_id: cfg.trial_plan_id,
           payment_note: cfg.payment_note,
+          manual: cfg.manual,
+          manual_label: cfg.manual_label,
         });
         setSaved({ ...cfg, plans: safePlans });
         // Tell the top nav to re-read billing_enabled so the payments menu item
@@ -728,6 +815,12 @@ export function BillingPanel() {
           drafts={payDrafts}
           err={payErr}
           onChange={patchProvider}
+          manual={cfg.manual}
+          label={cfg.manual_label}
+          note={cfg.payment_note}
+          onManual={(v) => setCfg({ ...cfg, manual: v })}
+          onLabel={(v) => setCfg({ ...cfg, manual_label: v })}
+          onNote={(v) => setCfg({ ...cfg, payment_note: v })}
         />
         <Panel
           title={t("bill.plansTitle")}
@@ -881,14 +974,6 @@ export function BillingPanel() {
               />
             }
           />
-          <SettingRow label={t("bill.manualDetails")} hint={t("bill.manualHint")}>
-            <Textarea
-              value={cfg.payment_note}
-              onChange={(v) => setCfg({ ...cfg, payment_note: v })}
-              placeholder={t("bill.manualPlaceholder")}
-              rows={4}
-            />
-          </SettingRow>
         </Panel>
 
         <SaveBar

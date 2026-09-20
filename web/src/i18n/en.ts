@@ -2304,7 +2304,7 @@ const en: Dict = {
     fieldSet: "{{label}} (set — leave empty to keep it)",
     webhookUrl: "Webhook URL for the provider's dashboard:",
     acceptTitle: "Payment acceptance",
-    acceptDescription: "Automatic plan payment in the user bot; the plan activates itself. With no provider, payment is confirmed by an admin.",
+    acceptDescription: "What a user pays for a plan with. Through a provider the plan activates itself.",
     unlimitedTerm: "No expiry",
     nDays_one: "{{count}} d",
     nDays_few: "{{count}} d",
@@ -2361,7 +2361,8 @@ const en: Dict = {
     manualDetails: "Details for manual payment",
     manualPlaceholder:
       "For example:\nTransfer to card 0000 0000 0000 0000\nor by phone +7 900 000-00-00\nAfter paying, message @admin",
-    manualHint: "Shown when no automatic provider is on — in the bot and on the subscription page. Give the details and how to confirm a transfer.",
+    manualHint: "The user transfers the money on your details and an admin confirms the order.",
+    manualMethod: "Manual transfer",
     planOf: "Plan: {{name}}",
     newPlan: "New plan",
     onPlanN: "{{count}} users on this plan",
