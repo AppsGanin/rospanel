@@ -16,6 +16,7 @@ import (
 // makes the gap invisible: the operator silently gets Russian in an English panel.
 // This test is what makes it visible.
 func TestValidationCodesHaveDictionaryEntries(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)

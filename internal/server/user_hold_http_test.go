@@ -16,6 +16,7 @@ import (
 // states a date and a pending term at once — refused before anything is written, so
 // the quota posted beside it does not land half of the save.
 func TestPanelUserRoutesCarryAHeldTerm(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	c := signIn(t, st, "op", model.RoleOperator, false)
 
@@ -63,6 +64,7 @@ func TestPanelUserRoutesCarryAHeldTerm(t *testing.T) {
 // The panel's own form: a save that leaves the term out keeps whatever term the user
 // has now — started or not — and a term change against a stale picture is refused.
 func TestPanelLimitsFormProtectsAStartedTerm(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	c := signIn(t, st, "op", model.RoleOperator, false)
 	if code, errCode := send(t, rt, http.MethodPost, "/api/users", `{"name":"held","hold_seconds":2592000}`, c, nil); code != http.StatusCreated {
@@ -97,6 +99,7 @@ func TestPanelLimitsFormProtectsAStartedTerm(t *testing.T) {
 // PATCH /v1/users: expire_at 0 is "never" and takes a pending term away; a PATCH of
 // the quota alone leaves a started term as it is.
 func TestAPIPatchUserTerm(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	patch := func(id int64, body string) int {

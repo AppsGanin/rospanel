@@ -63,6 +63,7 @@ func pushNode(t *testing.T, st *store.Store, name string) *model.Node {
 // the next node's state is built while the first write is still stuck. What is
 // finally written is the whole response, compressed or not.
 func TestAStuckNodeHoldsUpNoOtherPush(t *testing.T) {
+	t.Parallel()
 	for _, gz := range []bool{true, false} {
 		t.Run(map[bool]string{true: "gzip", false: "plain"}[gz], func(t *testing.T) {
 			rt, st := rolesTestRouter(t)
@@ -138,6 +139,7 @@ func TestAStuckNodeHoldsUpNoOtherPush(t *testing.T) {
 // push after a held poll is woken, a node told it is revoked, and a node that hangs up
 // while held. Were any to keep it, the next push anywhere would wait for good.
 func TestEverySyncPathLetsTheStateGateGo(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	gateFree := func(when string) {

@@ -15,6 +15,7 @@ import (
 // asked for a node. Getting that wrong shows the operator a config from the wrong
 // server, which is worse than showing nothing.
 func TestNodeXrayConfigServesTheGeneratedConfig(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)

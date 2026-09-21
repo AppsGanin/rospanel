@@ -10,6 +10,7 @@ import (
 // charset, reserved tags, length, and the distinctness needed so sing-box/Clash
 // selector tags don't collide.
 func TestValidateConnNames(t *testing.T) {
+	t.Parallel()
 	// Valid: custom names plus empties (which fall back to distinct defaults).
 	got, err := validateConnNames(map[string]string{
 		"vless": "  Основной  ",
@@ -73,6 +74,7 @@ func TestValidateConnNames(t *testing.T) {
 // decided, so it is where it has to hold — including the part that makes the read-only
 // field honest, that a regenerate ignores whatever value came with it.
 func TestResolveObfs(t *testing.T) {
+	t.Parallel()
 	// Regenerating wins over anything submitted, valid or not.
 	for _, submitted := range []string{"", "abcdefgh12345678", "!! not valid !!"} {
 		got, err := resolveObfs(submitted, true)

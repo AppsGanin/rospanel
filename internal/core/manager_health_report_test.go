@@ -6,6 +6,7 @@ import (
 )
 
 func TestWorstStatus(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		in     []string
@@ -31,6 +32,7 @@ func TestWorstStatus(t *testing.T) {
 }
 
 func TestDiskHealthThresholds(t *testing.T) {
+	t.Parallel()
 	gb := int64(1) << 30
 	cases := []struct {
 		used, total int64
@@ -49,6 +51,7 @@ func TestDiskHealthThresholds(t *testing.T) {
 }
 
 func TestCertWarnThreshold(t *testing.T) {
+	t.Parallel()
 	cases := map[int]int{
 		90: 14, // domain cert → warn under 14 days
 		30: 10, // mid lifetime → lifetime/3
@@ -65,6 +68,7 @@ func TestCertWarnThreshold(t *testing.T) {
 }
 
 func TestMemHealthThresholds(t *testing.T) {
+	t.Parallel()
 	if got := memHealth(500, 1000).Status; got != healthOK {
 		t.Fatalf("mem 50%% = %q, want ok", got)
 	}
@@ -74,6 +78,7 @@ func TestMemHealthThresholds(t *testing.T) {
 }
 
 func TestHumanBytes(t *testing.T) {
+	t.Parallel()
 	cases := map[int64]string{
 		// Units are language-neutral: the byte count is interpolated into a
 		// translated sentence on the panel, so it must not carry Russian of its own.
@@ -90,6 +95,7 @@ func TestHumanBytes(t *testing.T) {
 }
 
 func TestHumanDuration(t *testing.T) {
+	t.Parallel()
 	if got := humanDuration(0); got != "—" {
 		t.Fatalf("humanDuration(0) = %q", got)
 	}

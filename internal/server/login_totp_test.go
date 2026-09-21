@@ -57,6 +57,7 @@ func codeNow(t *testing.T, secret string) string {
 // The whole point: with 2FA on, the password alone must not produce a session — and
 // the panel has to SAY it wants a code, or the login screen cannot ask for one.
 func TestLoginRequiresTOTPCode(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	hash, err := auth.HashPassword("a-password")
 	if err != nil {
@@ -101,6 +102,7 @@ func TestLoginRequiresTOTPCode(t *testing.T) {
 // by the code would otherwise get an unbounded loop of them. The legitimate two-step
 // sign-in must not suffer for it: the attempt that carries the code clears the count.
 func TestLoginTOTPRequiredCountsTowardTheLockout(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	hash, _ := auth.HashPassword("a-password")
 	id, err := st.CreateAdmin("owner", hash, model.RoleOwner, false)
@@ -138,6 +140,7 @@ func TestLoginTOTPRequiredCountsTowardTheLockout(t *testing.T) {
 // An admin without a second factor keeps signing in with the password alone: turning
 // the feature on for one account must not lock everyone else out.
 func TestLoginWithoutTOTPUnchanged(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	hash, _ := auth.HashPassword("a-password")
 	if _, err := st.CreateAdmin("plain", hash, model.RoleAdmin, false); err != nil {
@@ -156,6 +159,7 @@ func TestLoginWithoutTOTPUnchanged(t *testing.T) {
 // secret itself never leaves the server after setup. (That it is also encrypted at
 // rest is checked in the store package, which can read the raw column.)
 func TestTOTPSecretNeverLeavesInTheRoster(t *testing.T) {
+	t.Parallel()
 	_, st := rolesTestRouter(t)
 	hash, _ := auth.HashPassword("a-password")
 	id, _ := st.CreateAdmin("owner", hash, model.RoleOwner, false)
@@ -177,6 +181,7 @@ func TestTOTPSecretNeverLeavesInTheRoster(t *testing.T) {
 // The escape hatch: the CLI clears a second factor for an admin who lost their phone,
 // and reports honestly when the login does not exist.
 func TestDisableTOTPByName(t *testing.T) {
+	t.Parallel()
 	_, st := rolesTestRouter(t)
 	hash, _ := auth.HashPassword("a-password")
 	id, _ := st.CreateAdmin("owner", hash, model.RoleOwner, false)

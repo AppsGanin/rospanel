@@ -11,6 +11,7 @@ import (
 )
 
 func TestAdminLoginIsNewReadsTheAuditTrail(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if !m.AdminLoginIsNew("owner", "203.0.113.7") {
 		t.Fatal("an address never seen must be new")
@@ -39,6 +40,7 @@ func TestAdminLoginIsNewReadsTheAuditTrail(t *testing.T) {
 }
 
 func TestNotifyAdminLoginIsGatedByTheCategory(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	var got []LoginAlert
 	m.SetAdminLoginNotifier(func(a LoginAlert) { got = append(got, a) })
@@ -62,6 +64,7 @@ func TestNotifyAdminLoginIsGatedByTheCategory(t *testing.T) {
 }
 
 func TestRevokeAdminSessionsEndsThemAllAndSaysWho(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	id, err := m.store.CreateAdmin("owner", "x", model.RoleOwner, false)
 	if err != nil {
@@ -100,6 +103,7 @@ func TestRevokeAdminSessionsEndsThemAllAndSaysWho(t *testing.T) {
 }
 
 func TestClientLabel(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36":                       "Chrome · macOS",
 		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1": "Safari · iPhone",

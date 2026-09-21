@@ -56,6 +56,7 @@ func poll(t *testing.T, m *Manager, id int64, status string, devices ...int) {
 // poll is a silent baseline, an active→terminal change fires exactly once, and the
 // condition persisting does not re-alert.
 func TestNotifyStatusTransitions(t *testing.T) {
+	t.Parallel()
 	m, msgs := newNotifyManager(t)
 	id := notifyUser(t, m, "alice")
 
@@ -87,6 +88,7 @@ func TestNotifyStatusTransitions(t *testing.T) {
 // lost: the detector kept the previous statuses in memory and the first poll after a
 // restart could only re-baseline.
 func TestNotifyStatusTransitionsSurviveRestart(t *testing.T) {
+	t.Parallel()
 	m, msgs := newNotifyManager(t)
 	id := notifyUser(t, m, "alice")
 	poll(t, m, id, model.StatusActive) // seen as active, recorded
@@ -110,6 +112,7 @@ func TestNotifyStatusTransitionsSurviveRestart(t *testing.T) {
 // migration) is baselined silently — upgrading must not fire alerts for users who
 // have been expired for weeks.
 func TestNotifyStatusBaselinesUnknownSilently(t *testing.T) {
+	t.Parallel()
 	m, msgs := newNotifyManager(t)
 	id := notifyUser(t, m, "old")
 
@@ -126,6 +129,7 @@ func TestNotifyStatusBaselinesUnknownSilently(t *testing.T) {
 // TestNotifyStatusTransitionsGated verifies a disabled category is suppressed
 // while other categories still fire.
 func TestNotifyStatusTransitionsGated(t *testing.T) {
+	t.Parallel()
 	m, msgs := newNotifyManager(t)
 	// Enable only device-limit alerts; expiry must be suppressed.
 	if err := m.store.SetAdminEvents(model.AdminEventDeviceLimited); err != nil {

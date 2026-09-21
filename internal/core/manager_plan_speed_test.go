@@ -28,6 +28,7 @@ func planSpeedManager(t *testing.T) (*Manager, *store.Store) {
 // existing subscribers is the version an operator reports as "the limit doesn't
 // work": they set 512 Kbps on the plan, watch nothing happen, and are right.
 func TestPlanSpeedLimitReachesExistingSubscribers(t *testing.T) {
+	t.Parallel()
 	m, st := planSpeedManager(t)
 
 	plan := &model.TariffPlan{Name: "Standard", Slug: "standard", PriceRub: 100, PeriodDays: 30, Enabled: true}
@@ -70,6 +71,7 @@ func TestPlanSpeedLimitReachesExistingSubscribers(t *testing.T) {
 
 // A user on a DIFFERENT plan must not be touched by an edit to this one.
 func TestPlanSpeedLimitLeavesOtherPlansAlone(t *testing.T) {
+	t.Parallel()
 	m, st := planSpeedManager(t)
 
 	capped := &model.TariffPlan{Name: "Slow", Slug: "slow", PriceRub: 100, PeriodDays: 30, Enabled: true}

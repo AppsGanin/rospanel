@@ -11,6 +11,7 @@ import (
 // once it passed maxKeys, which handed the banned attacker a fresh attempt budget
 // — spraying unique IPs was a way to un-ban yourself.
 func TestLoginLimiterFloodDoesNotClearLockout(t *testing.T) {
+	t.Parallel()
 	l := newLoginLimiter()
 
 	const victim = "203.0.113.7"
@@ -37,6 +38,7 @@ func TestLoginLimiterFloodDoesNotClearLockout(t *testing.T) {
 // Even if every tracked IP is locked out, memory must stay bounded: the sweep
 // evicts the lockouts closest to expiring rather than growing without limit.
 func TestLoginLimiterBoundedWhenAllBlocked(t *testing.T) {
+	t.Parallel()
 	l := newLoginLimiter()
 	for i := 0; i < l.maxKeys+500; i++ {
 		ip := fmt.Sprintf("198.51.100.%d.%d", i/256, i%256)
@@ -54,6 +56,7 @@ func TestLoginLimiterBoundedWhenAllBlocked(t *testing.T) {
 // limit could spray from throwaway addresses until the wipe, and come back with a
 // fresh window. A throttled address must stay throttled through a flood.
 func TestIPRateLimiterFloodDoesNotUnthrottle(t *testing.T) {
+	t.Parallel()
 	l := newIPRateLimiter(3, time.Minute)
 	l.maxKeys = 64
 
@@ -82,6 +85,7 @@ func TestIPRateLimiterFloodDoesNotUnthrottle(t *testing.T) {
 
 // Bounded even in the worst case: every entry throttled, so nothing is cheap to shed.
 func TestIPRateLimiterBoundedWhenAllThrottled(t *testing.T) {
+	t.Parallel()
 	l := newIPRateLimiter(1, time.Minute)
 	l.maxKeys = 32
 	for i := range 20 * l.maxKeys {

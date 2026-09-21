@@ -6,6 +6,7 @@ import (
 )
 
 func TestResetDueRollingDays(t *testing.T) {
+	t.Parallel()
 	loc := time.UTC
 	const day = int64(86400)
 	base := int64(1_700_000_000)

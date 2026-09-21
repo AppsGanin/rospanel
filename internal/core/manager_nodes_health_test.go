@@ -38,6 +38,7 @@ func syncedNode(t *testing.T, st *store.Store, name, xrayVersion string) {
 // went through VersionMatchesPinned and considered the same node fine, which is why
 // the two screens disagreed.
 func TestNodeOnPinnedXrayIsNotStale(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "health.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -64,6 +65,7 @@ func TestNodeOnPinnedXrayIsNotStale(t *testing.T) {
 // TestNodeOnOldXrayIsStale guards the other side: the check must still notice a
 // node that genuinely lags.
 func TestNodeOnOldXrayIsStale(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "health-old.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -88,6 +90,7 @@ func TestNodeOnOldXrayIsStale(t *testing.T) {
 // TestNodeVersionPrefixIsToleratedBothWays: whichever side grows or loses the "v",
 // the same release must never count as stale.
 func TestNodeVersionPrefixIsToleratedBothWays(t *testing.T) {
+	t.Parallel()
 	for _, reported := range []string{
 		xray.PinnedVersion,                          // with "v"
 		strings.TrimPrefix(xray.PinnedVersion, "v"), // without

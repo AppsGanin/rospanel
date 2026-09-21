@@ -13,6 +13,7 @@ import (
 // which is the worse of the two. The whole feature is unreachable without this, and
 // no model-level test sees it because they build the Inbound directly.
 func TestInboundReqCarriesShadowsocksMethod(t *testing.T) {
+	t.Parallel()
 	req := inboundReq{
 		Name: "ss", Protocol: model.InbShadowsocks, Port: 24900,
 		Method: model.SS2022AES256,

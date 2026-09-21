@@ -23,6 +23,7 @@ func fetchSubUA(h http.Handler, token, ua string) *httptest.ResponseRecorder {
 // for a specific client, or block one entirely (served the decoy). This drives the
 // whole path — store, evaluate, serve — not just the pure evaluator.
 func TestSubscriptionResponseRules(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "sub-rules", 0, 0)
 	if err != nil {

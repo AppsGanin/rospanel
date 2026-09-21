@@ -64,6 +64,7 @@ func TestCloseStopsEveryBackgroundLoop(t *testing.T) {
 // Close is called from a shutdown path that may already have been triggered another
 // way, so it must not panic on a second call — closing a closed channel does.
 func TestCloseIsIdempotent(t *testing.T) {
+	t.Parallel()
 	m, st := closeTestManager(t)
 	defer st.Close()
 	m.Close()
@@ -75,6 +76,7 @@ func TestCloseIsIdempotent(t *testing.T) {
 // one of those must be a no-op rather than a nil-channel panic — half the tests in
 // this package construct managers that way.
 func TestCloseOnAManagerThatNeverStarted(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "bare.db"))
 	if err != nil {

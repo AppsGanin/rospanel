@@ -54,6 +54,7 @@ func memoOf(m *Manager, id int64) (nodeStateMemo, bool) {
 // itself, its inbounds, its proxies, the geo groups, blocked addresses, and the memo's
 // own age.
 func TestNodeStateIsRebuiltOnlyWhenAnInputChanges(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	for _, name := range []string{"a", "b"} {
 		if _, err := m.store.CreateUser(name, "uuid-"+name, "pw-"+name, "tok-"+name, 0, 0, 0); err != nil {
@@ -223,6 +224,7 @@ func TestNodeStateIsRebuiltOnlyWhenAnInputChanges(t *testing.T) {
 // JSON or not, except what a sync rewrites; a field added later is covered without
 // anyone listing it.
 func TestNodeStateKeyCoversEveryField(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	n := stateNode(t, m)
 	x, err := m.readNodeStateInputs(n)
@@ -354,6 +356,7 @@ func mutateField(v reflect.Value) bool {
 // The digest is canonical: maps in any insertion order read the same, nil and empty
 // are told apart, and what cannot be encoded is refused rather than skipped.
 func TestDigesterIsCanonical(t *testing.T) {
+	t.Parallel()
 	sum := func(v any) ([sha256.Size]byte, bool) {
 		d := digester{h: sha256.New(), ok: true}
 		d.value(reflect.ValueOf(v))
@@ -393,6 +396,7 @@ func TestDigesterIsCanonical(t *testing.T) {
 
 // Two reads are the same only when every credential, cap, block and access entry is.
 func TestSameNodeInputs(t *testing.T) {
+	t.Parallel()
 	base := func() *nodeInputs {
 		return &nodeInputs{
 			users:   []model.User{{ID: 1, UUID: "u1", Password: "p1", WGPrivateKey: "k1", AWGSlot: 2}, {ID: 2, UUID: "u2", Password: "p2"}},
@@ -428,6 +432,7 @@ func TestSameNodeInputs(t *testing.T) {
 // downloaded yet, as on a fresh install — and parse now are a change: the node's
 // routing gains them without anyone dropping a cache.
 func TestNodeStateFollowsIPListsArriving(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	dir := t.TempDir()
 	m.sup = xray.NewSupervisor("", filepath.Join(dir, "config.json"), dir)
@@ -468,6 +473,7 @@ func TestNodeStateFollowsIPListsArriving(t *testing.T) {
 // a change that reaches the fleet wakes every node at once — five builds side by side
 // is what ran the panel out of memory at 50,000 users.
 func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.store.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {
 		t.Fatal(err)
@@ -501,6 +507,7 @@ func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
 // many times it says so — and nothing is held when there is nothing to push, or when
 // the node gave up waiting.
 func TestAPushHoldsTheStateGateUntilItIsEncoded(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.store.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {
 		t.Fatal(err)

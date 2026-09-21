@@ -6,6 +6,7 @@ import (
 )
 
 func TestProbeGuardFlagsScanner(t *testing.T) {
+	t.Parallel()
 	g := newProbeGuard()
 
 	// Below the threshold: nothing fires, and the running distinct count climbs.
@@ -32,6 +33,7 @@ func TestProbeGuardFlagsScanner(t *testing.T) {
 }
 
 func TestProbeGuardDistinctOnly(t *testing.T) {
+	t.Parallel()
 	g := newProbeGuard()
 	// The same missing path a thousand times is a dead bookmark, not a scan.
 	for range probeThreshold * 100 {
@@ -42,6 +44,7 @@ func TestProbeGuardDistinctOnly(t *testing.T) {
 }
 
 func TestProbeGuardIgnoresBenignAndRoot(t *testing.T) {
+	t.Parallel()
 	g := newProbeGuard()
 	// Browser/crawler auto-requests and the site root must never accrue toward a scan,
 	// even far past the threshold.
@@ -57,6 +60,7 @@ func TestProbeGuardIgnoresBenignAndRoot(t *testing.T) {
 }
 
 func TestProbeGuardPerIP(t *testing.T) {
+	t.Parallel()
 	g := newProbeGuard()
 	// One distinct path from many IPs must not aggregate into a false scan.
 	for i := range probeThreshold + 5 {

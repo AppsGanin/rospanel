@@ -16,6 +16,7 @@ import (
 // What every subscription shares is read once for a few seconds — and read afresh the
 // moment the panel or the API changes something, or once the few seconds are up.
 func TestSubscriptionInputsAreSharedUntilAChange(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	inbounds := func() int {
 		t.Helper()
@@ -51,6 +52,7 @@ func TestSubscriptionInputsAreSharedUntilAChange(t *testing.T) {
 // A subscription changes what it is handed on the way to the client, so each gets its
 // own copy of the shared read.
 func TestSubscriptionInputsAreCopiesPerRequest(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	if _, err := st.CreateInbound(model.Inbound{ServerID: model.LocalNodeID, Enabled: true, Name: "A", Protocol: "vless", Port: 10001,
 		Opts: model.InboundOpts{HeaderHosts: []string{"h.example"}}}); err != nil {
@@ -91,6 +93,7 @@ func TestSubscriptionInputsAreCopiesPerRequest(t *testing.T) {
 // A read that fails in part serves its own request degraded, as each read always did,
 // and is not kept: the next request tries again rather than living with the gap.
 func TestAFailedSubscriptionReadIsNotKept(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	if _, err := st.CreateInbound(model.Inbound{ServerID: model.LocalNodeID, Enabled: true, Name: "A", Protocol: "vless", Port: 10001}); err != nil {
 		t.Fatal(err)
@@ -123,6 +126,7 @@ func TestAFailedSubscriptionReadIsNotKept(t *testing.T) {
 // Subscriptions fetched at once while the panel changes the inbounds: each fetch gets a
 // copy it may change, and once the changes stop the next fetch has all of them.
 func TestSubscriptionInputsUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	var wg sync.WaitGroup
 	for i := range 6 {

@@ -46,6 +46,7 @@ func awgNodeFixture(t *testing.T) (*Manager, *store.Store, *model.Node, *[]strin
 // silence as a failure would alert on every node in the fleet the moment this ships,
 // which is the fastest way to teach an operator to ignore the alert.
 func TestNodeAWGSilenceIsNotAFailure(t *testing.T) {
+	t.Parallel()
 	m, _, n, msgs := awgNodeFixture(t)
 	if _, ok := m.NodeAWG(n.ID); ok {
 		t.Fatal("a node that reported nothing has a state")
@@ -69,6 +70,7 @@ func TestNodeAWGSilenceIsNotAFailure(t *testing.T) {
 // own log, and the panel keeps the server green while issuing keys for a lane nobody
 // can connect through.
 func TestNodeAWGDownIsReportedOnceAndClears(t *testing.T) {
+	t.Parallel()
 	m, _, n, msgs := awgNodeFixture(t)
 
 	report := func(running bool, errMsg string) {
@@ -114,6 +116,7 @@ func TestNodeAWGDownIsReportedOnceAndClears(t *testing.T) {
 // A reported failure is a string from a remote machine on its way into an HTML
 // message. An unescaped angle bracket makes Telegram reject the whole alert.
 func TestNodeAWGErrorIsEscaped(t *testing.T) {
+	t.Parallel()
 	m, _, n, msgs := awgNodeFixture(t)
 	m.nodeGeoMu.Lock()
 	m.nodeAWG[n.ID] = nodeAWGState{Running: true, Reported: true}
@@ -149,6 +152,7 @@ func findCheck(t *testing.T, rep *HealthReport, key string) HealthCheck {
 // it — the one server whose logs the operator can actually read was the one the panel
 // said nothing about. The lane being switched on is what makes it a question at all.
 func TestMasterAWGAppearsInDiagnosticsOnlyWhenTheLaneIsOn(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "mawg.db"))
 	if err != nil {
@@ -204,6 +208,7 @@ func checkKeys(rep *HealthReport) []string {
 // so it reads next to the Xray config rather than at the end of the list, and the
 // master and node views must not order the same facts differently.
 func TestAWGSitsUnderTheXrayConfigRow(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "order.db"))
 	if err != nil {
@@ -265,6 +270,7 @@ func assertAfterConfig(t *testing.T, view string, keys []string) {
 // record a baseline and say nothing — otherwise every restart sent "the tunnel is
 // down" and then "the tunnel is back", which is what admins actually saw.
 func TestLocalAWGFirstSweepIsSilent(t *testing.T) {
+	t.Parallel()
 	m, st, _, msgs := awgNodeFixture(t)
 	if err := st.SetProtocolEnabled("awg", true); err != nil {
 		t.Fatalf("enable the master's AWG lane: %v", err)

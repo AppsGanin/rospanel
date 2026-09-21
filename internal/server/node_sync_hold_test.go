@@ -10,6 +10,7 @@ import (
 // does looks like that. The hold must stay inside the agent's 90s syncTimeout at
 // the top and stay useful at the bottom.
 func TestNodeSyncHoldIsJitteredWithinBounds(t *testing.T) {
+	t.Parallel()
 	const (
 		lo = (nodeSyncHoldSec - nodeSyncHoldJitter) * time.Second
 		hi = (nodeSyncHoldSec + nodeSyncHoldJitter) * time.Second

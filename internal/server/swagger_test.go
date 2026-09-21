@@ -11,6 +11,7 @@ import (
 // renders a half-drawn page where that CDN is blocked and leaks who opened it, the
 // same rule the decoys and the subscription page already follow.
 func TestSwaggerUISelfHosted(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, _ := apiFixture(t, h, st)
 

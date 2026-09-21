@@ -15,6 +15,7 @@ import (
 // bare key, which is exactly what makes the gap easy to miss: the operator quietly
 // gets Russian in an English panel. This test makes it fail instead.
 func TestErrorCodesHaveDictionaryEntries(t *testing.T) {
+	t.Parallel()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +63,7 @@ func TestErrorCodesHaveDictionaryEntries(t *testing.T) {
 // dropped when the code is translated — leaving the operator with "could not send:"
 // and nothing after the colon.
 func TestDetailErrorsInterpolateTheirDetail(t *testing.T) {
+	t.Parallel()
 	files, _ := filepath.Glob("*.go")
 	var src strings.Builder
 	for _, f := range files {

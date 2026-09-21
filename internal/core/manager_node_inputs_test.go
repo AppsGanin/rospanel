@@ -15,6 +15,7 @@ import (
 // wake says something changed or the read ages out — and a state built after either
 // carries the change.
 func TestNodeInputsAreSharedUntilAWake(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	yes := true
 	mkNode := func(name, host string) {
@@ -74,6 +75,7 @@ func TestNodeInputsAreSharedUntilAWake(t *testing.T) {
 // Two servers claiming a tunnel identity for the same new user at once end up with the
 // same key and the same address: the first stored wins and the second takes it.
 func TestUserAWGFirstClaimWins(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	u, err := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	if err != nil {
@@ -99,6 +101,7 @@ func TestUserAWGFirstClaimWins(t *testing.T) {
 // for users who have none. Each works on its own copy of the users (the race detector
 // holds that), and both hand out the same key and address per user.
 func TestConcurrentAWGNodesShareUserKeys(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	for i := 0; i < 20; i++ {
 		name := fmt.Sprintf("u%d", i)

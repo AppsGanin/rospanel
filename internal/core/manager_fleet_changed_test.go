@@ -12,6 +12,7 @@ import (
 // them may reach, how fast they may go, and which addresses are refused. And it has to
 // stay quiet for an edit nodes cannot see — which is most of them.
 func TestFleetChangedSeesEveryInputTheNodesAreServed(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	u, err := m.store.CreateUser("a", "uuid-a", "pw-a", "tok-a", 0, 0, 0)
 	if err != nil {
@@ -117,6 +118,7 @@ func fleetChangedNow(t *testing.T, m *Manager) bool {
 // read: the snapshot the nodes are given is built on the working set handed in, not on
 // a second scan of every user. A cap that is only in the read handed in is the proof.
 func TestTheFleetSnapshotIsBuiltOnTheReadItIsGiven(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	u, err := m.store.CreateUser("a", "uuid-a", "pw-a", "tok-a", 0, 0, 0)
 	if err != nil {
@@ -149,6 +151,7 @@ func TestTheFleetSnapshotIsBuiltOnTheReadItIsGiven(t *testing.T) {
 // that lands while it is being read leaves what is built on it one generation behind —
 // and the nodes' next ask reads again instead of trusting it.
 func TestAWakeDuringTheReadIsNotHiddenByIt(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.store.CreateUser("a", "uuid-a", "pw-a", "tok-a", 0, 0, 0); err != nil {
 		t.Fatal(err)
@@ -176,6 +179,7 @@ func TestAWakeDuringTheReadIsNotHiddenByIt(t *testing.T) {
 // nothing can change a credential under an id that stays — so the one thing that can,
 // claiming a tunnel identity, must reach the nodes all the same.
 func TestTheSharedSnapshotReadsCredentialsOnlyWhenTheSetMoves(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	for _, name := range []string{"a", "b"} {
 		if _, err := m.store.CreateUser(name, "uuid-"+name, "pw-"+name, "tok-"+name, 0, 0, 0); err != nil {
@@ -238,6 +242,7 @@ func TestTheSharedSnapshotReadsCredentialsOnlyWhenTheSetMoves(t *testing.T) {
 // credential, and that question has to be the one the sync itself would answer: a set
 // of the same size with a different member in it is a change.
 func TestWorkingIDsChangedIsTheSyncsOwnDiff(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	m.applied = map[int64]struct{}{1: {}, 2: {}, 3: {}}
 	for _, tc := range []struct {
@@ -260,6 +265,7 @@ func TestWorkingIDsChangedIsTheSyncsOwnDiff(t *testing.T) {
 // A sync that dies part-way leaves the applied set unknown, so it counts as a change:
 // the nodes are woken rather than left with whatever they had.
 func TestSyncUsersOnceReportsAPanicAsAChange(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t) // no supervisor: the sync panics on the first call into it
 	if !m.syncUsersOnce(nil, nil) {
 		t.Error("a sync that panicked reported that nothing changed")

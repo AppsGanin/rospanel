@@ -10,6 +10,7 @@ import (
 // conflict (Go 1.22 ServeMux panics on ambiguous registrations) and that an
 // unmatched path returns the in-envelope JSON 404.
 func TestAPIMuxRegisters(t *testing.T) {
+	t.Parallel()
 	rt := &Router{}
 	var h http.Handler
 	func() {
@@ -26,6 +27,7 @@ func TestAPIMuxRegisters(t *testing.T) {
 }
 
 func TestAPIKeyFromRequest(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		auth, xkey, want string
 	}{
@@ -52,6 +54,7 @@ func TestAPIKeyFromRequest(t *testing.T) {
 // An IP that keeps presenting invalid keys is locked out, and the lockout answers
 // 429 before the request ever reaches the store (so a nil manager is fine here).
 func TestAPIAuthLocksOutAfterRepeatedBadKeys(t *testing.T) {
+	t.Parallel()
 	rt := &Router{apiKeys: newAPIKeyGuard()}
 	h := rt.apiHandler()
 
@@ -78,6 +81,7 @@ func TestAPIAuthLocksOutAfterRepeatedBadKeys(t *testing.T) {
 // spend the IP's failure budget, or an unauthenticated prober could lock out the
 // address a legitimate integration shares with it.
 func TestAPIAuthMissingKeyDoesNotCountAsFailure(t *testing.T) {
+	t.Parallel()
 	rt := &Router{apiKeys: newAPIKeyGuard()}
 	h := rt.apiHandler()
 
@@ -91,6 +95,7 @@ func TestAPIAuthMissingKeyDoesNotCountAsFailure(t *testing.T) {
 }
 
 func TestAtoiOr(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		in  string
 		def int

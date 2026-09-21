@@ -29,6 +29,7 @@ func (m *Manager) dayBack(n int) string {
 }
 
 func TestStatusPageDataBuildsTheWindow(t *testing.T) {
+	t.Parallel()
 	m, st := uptimeManager(t)
 
 	// Yesterday: 3 of 4 samples up. Today: all up. Everything older: no data.
@@ -83,6 +84,7 @@ func TestStatusPageDataBuildsTheWindow(t *testing.T) {
 // A window wider than the retention (or a nonsense one) is clamped rather than
 // producing a page of empty columns nobody kept data for.
 func TestStatusPageDataClampsTheWindow(t *testing.T) {
+	t.Parallel()
 	m, _ := uptimeManager(t)
 	for _, days := range []int{0, -5, model.UptimeRetentionDays + 100} {
 		rep, err := m.StatusPageData(days)
@@ -98,6 +100,7 @@ func TestStatusPageDataClampsTheWindow(t *testing.T) {
 // A server the operator switched off is not an incident: listing it as down would
 // invite tickets about a machine that is gone on purpose.
 func TestStatusPageDataSkipsDisabledNodes(t *testing.T) {
+	t.Parallel()
 	m, st := uptimeManager(t)
 	n, err := m.CreateNode("retired", "nl.example.com")
 	if err != nil {
@@ -133,6 +136,7 @@ func TestStatusPageDataSkipsDisabledNodes(t *testing.T) {
 // The sampler must not record an outage for servers the operator switched off, or a
 // node that was never installed — the page's uptime figure would be their doing.
 func TestSampleUptimeSkipsDisabledAndUnjoined(t *testing.T) {
+	t.Parallel()
 	m, st := uptimeManager(t)
 	off, err := m.CreateNode("off", "a.example.com")
 	if err != nil {

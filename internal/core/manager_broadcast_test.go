@@ -36,6 +36,7 @@ func subscribeChat(t *testing.T, m *Manager, chatID, userID int64) {
 }
 
 func TestValidateBroadcast(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	subscribeChat(t, m, 1, 0)
 	ctx := context.Background()
@@ -94,6 +95,7 @@ func TestValidateBroadcast(t *testing.T) {
 }
 
 func TestCreateBroadcastRequiresRecipients(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	_, err := m.CreateBroadcast(context.Background(),
 		&model.Broadcast{Text: "привет", Audience: model.AudienceAll})
@@ -105,6 +107,7 @@ func TestCreateBroadcastRequiresRecipients(t *testing.T) {
 // Delivery goes through the user bot. Creating a broadcast while it is off would
 // leave a run stuck at 0 % with nothing explaining why.
 func TestCreateBroadcastRequiresUserBot(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	subscribeChat(t, m, 1, 0)
 	if err := m.store.SetTelegramUserBot(false, "", model.RegOff, ""); err != nil {
@@ -118,6 +121,7 @@ func TestCreateBroadcastRequiresUserBot(t *testing.T) {
 }
 
 func TestAudienceFilters(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	active := mkUser(t, m, "active", 0)
 	expired := mkUser(t, m, "expired", time.Now().Add(-24*time.Hour).Unix())
@@ -165,6 +169,7 @@ func TestAudienceFilters(t *testing.T) {
 // The audience is a snapshot: a run that re-evaluated itself would pick up people who
 // arrived halfway and move the total the progress bar is measured against.
 func TestAudienceIsSnapshotted(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	subscribeChat(t, m, 100, 0)
 	created, err := m.CreateBroadcast(context.Background(),
@@ -189,6 +194,7 @@ func TestAudienceIsSnapshotted(t *testing.T) {
 // A cancelled run must not be revivable: the operator has already decided the
 // message should stop going out.
 func TestTerminalBroadcastRefusesControl(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	subscribeChat(t, m, 100, 0)
 	created, err := m.CreateBroadcast(context.Background(),

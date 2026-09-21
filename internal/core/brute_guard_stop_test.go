@@ -9,6 +9,7 @@ import (
 // started from the constructor — so it outlived the manager that built it, and
 // Close had nothing to wait for. Closing done must end it.
 func TestBruteGuardCleanupStopsWhenTheManagerDoes(t *testing.T) {
+	t.Parallel()
 	g := newBruteGuard()
 	done := make(chan struct{})
 	exited := make(chan struct{})

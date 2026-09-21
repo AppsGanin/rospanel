@@ -72,6 +72,7 @@ func call(h http.Handler, method, path string, c *http.Cookie) int {
 }
 
 func TestRouteTiersByRole(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
@@ -138,6 +139,7 @@ func TestRouteTiersByRole(t *testing.T) {
 // must clear nothing. The failure mode to avoid is the opposite one, where an
 // unknown role sails past a check that only knows how to say "not operator".
 func TestUnknownRoleClearsNothing(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
@@ -165,6 +167,7 @@ func TestUnknownRoleClearsNothing(t *testing.T) {
 // A colleague who has not yet replaced the password the owner handed them is pinned
 // to the password screen — everything else is closed, whatever their role says.
 func TestGatedAdminIsPinnedToThePasswordScreen(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
@@ -188,6 +191,7 @@ func TestGatedAdminIsPinnedToThePasswordScreen(t *testing.T) {
 // alone must not be enough to mint a second admin, which would turn a stolen cookie
 // into permanent access.
 func TestRosterMutationsRequireStepUp(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
@@ -229,6 +233,7 @@ func TestRosterMutationsRequireStepUp(t *testing.T) {
 // password — a stolen session cookie must not be enough to trigger either. (Changing
 // a payment key already re-prompts; these are strictly more destructive.)
 func TestDestructiveOpsRequireStepUp(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)

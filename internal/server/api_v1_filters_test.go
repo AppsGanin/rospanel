@@ -25,6 +25,7 @@ import (
 // fixtures built to make it bite. The list is checked against the generated spec at
 // the end, so a new parameter cannot be added without one.
 func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	now := time.Now()
@@ -226,6 +227,7 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 // silently truncates, and a route promising meta without accepting a window
 // describes paging nobody can drive.
 func TestAPIPagedListsDeclareAndReturnTheirWindow(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	user, err := mgr.CreateUser(t.Context(), "paged", 0, 0)

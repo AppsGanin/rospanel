@@ -31,6 +31,7 @@ func systemProxyManager(t *testing.T) (*Manager, *store.Store) {
 // The whole point of the feature: a server's proxy is ITS OWN. Enabling it on the
 // master must not put a listener — or the master's password — on any node.
 func TestSystemProxyIsPerServer(t *testing.T) {
+	t.Parallel()
 	m, st := systemProxyManager(t)
 
 	if err := m.SetSystemProxy(model.LocalNodeID, model.SystemProxy{
@@ -79,6 +80,7 @@ func TestSystemProxyIsPerServer(t *testing.T) {
 // are not optional — and a port already spoken for is refused before Xray is asked to
 // bind it twice and fails to start at all.
 func TestSystemProxyRefusesUnsafeConfigs(t *testing.T) {
+	t.Parallel()
 	m, st := systemProxyManager(t)
 	set, _ := st.GetSettings()
 
@@ -130,6 +132,7 @@ func TestSystemProxyRefusesUnsafeConfigs(t *testing.T) {
 // Enabling a protocol without a port is the common case from the API ("turn it on"),
 // so it gets the documented default rather than a validation error.
 func TestSystemProxyFillsDefaultPorts(t *testing.T) {
+	t.Parallel()
 	m, st := systemProxyManager(t)
 	if err := m.SetSystemProxy(model.LocalNodeID, model.SystemProxy{
 		SocksEnabled: true, HTTPEnabled: true, Accounts: acc("u", "p"),
@@ -153,6 +156,7 @@ func TestSystemProxyFillsDefaultPorts(t *testing.T) {
 // A custom inbound must not be allowed onto a proxy's port either — the collision is
 // symmetric, and only one of the two listeners would come up.
 func TestSystemProxyPortsAreReserved(t *testing.T) {
+	t.Parallel()
 	_, st := systemProxyManager(t)
 	set, _ := st.GetSettings()
 	set.ProxySocksPort, set.ProxyHTTPPort = 1080, 3128

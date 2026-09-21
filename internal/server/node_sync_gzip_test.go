@@ -15,6 +15,7 @@ import (
 // A config push goes out compressed to a node that accepts gzip, and as it is to one
 // that does not; an answer without a config is never compressed.
 func TestConfigPushIsCompressedWhenTheNodeAcceptsIt(t *testing.T) {
+	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	_, token := joinedNode(t, rt, "berlin")
 
@@ -79,6 +80,7 @@ func TestConfigPushIsCompressedWhenTheNodeAcceptsIt(t *testing.T) {
 }
 
 func TestAcceptsGzip(t *testing.T) {
+	t.Parallel()
 	for header, want := range map[string]bool{
 		"":                      false,
 		"gzip":                  true,

@@ -10,6 +10,7 @@ import (
 // the nodes are handed, and the blocklist ladder reading the cap actually in force.
 
 func TestGroupSpeedLimitEdits(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	if _, err := m.CreateGroup("neg", nil, -1); err == nil {
 		t.Error("a negative group cap was accepted")
@@ -50,6 +51,7 @@ func TestGroupSpeedLimitEdits(t *testing.T) {
 }
 
 func TestSameTokens(t *testing.T) {
+	t.Parallel()
 	if !sameTokens([]string{"a", "b"}, []string{"b", "a"}) {
 		t.Error("the same tokens in another order read as a change")
 	}
@@ -64,6 +66,7 @@ func TestSameTokens(t *testing.T) {
 // capped below the throttle is not throttled — which would only journal and notify a
 // slowdown that changes nothing.
 func TestThrottleReadsTheGroupCap(t *testing.T) {
+	t.Parallel()
 	m, uid := measuresManager(t) // throttle to 512 kbit/s at 4 matches
 	g, err := m.CreateGroup("crawl", nil, 256)
 	if err != nil {
@@ -96,6 +99,7 @@ func TestThrottleReadsTheGroupCap(t *testing.T) {
 // saves the name, the speed cap and the member list together, so each of those must
 // leave the reconcile alone when it did not actually change access.
 func TestGroupEditsReconcileOnlyForAccess(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.reconcileCh = make(chan struct{}, 1)
 	g, err := m.CreateGroup("g", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
@@ -141,6 +145,7 @@ func TestGroupEditsReconcileOnlyForAccess(t *testing.T) {
 // with nothing ticked opens it — an access change, though the grant list itself did
 // not change, so it has to reconcile all the same.
 func TestOpeningASweptGroupReconciles(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.reconcileCh = make(chan struct{}, 1)
 	g, err := m.CreateGroup("premium", []string{model.InboundToken(42)}, 0)

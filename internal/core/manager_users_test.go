@@ -15,6 +15,7 @@ import (
 // that drops when full — so an unbounded list silently loses the notifications it
 // generates while holding the single DB connection.
 func TestBulkUserActionIsBounded(t *testing.T) {
+	t.Parallel()
 	// A real store, because the point is that the BOUND refuses the call — with a bare
 	// Manager the nil store errors on its own and the test would pass either way. (It
 	// did, the first time I wrote it.)

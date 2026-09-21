@@ -17,6 +17,7 @@ const (
 // once, the group editor offers them under the master, and a re-read with one
 // server gone drops it — together with any grant that named it.
 func TestExternalSubscriptionFromAPastedList(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	ctx := context.Background()
 
@@ -95,6 +96,7 @@ func TestExternalSubscriptionFromAPastedList(t *testing.T) {
 
 // A source that cannot be read keeps its servers and records why.
 func TestExternalSubscriptionKeepsServersWhenTheReadFails(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	ctx := context.Background()
 	sub, _, err := m.CreateExtSubscription(ctx, "p", extLinkA, model.ExtIdentity{})

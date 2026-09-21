@@ -16,6 +16,7 @@ import (
 // must be a no-op — it must NOT apply the plan a second time and stack another
 // paid period onto the user's expiry.
 func TestConfirmProviderOrderIdempotent(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "pay.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -72,6 +73,7 @@ func TestConfirmProviderOrderIdempotent(t *testing.T) {
 // TestConfirmProviderOrderUnknown ensures a webhook for an unknown external id
 // fails cleanly (looked-up order not found) rather than mutating anything.
 func TestConfirmProviderOrderUnknown(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "pay2.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -88,6 +90,7 @@ func TestConfirmProviderOrderUnknown(t *testing.T) {
 // amount (or currency) than the order was created for must NOT grant the plan.
 // Amounts are fixed server-side, so this can only be a tampered/misrouted call.
 func TestConfirmProviderOrderAmountMismatch(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "pay3.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)

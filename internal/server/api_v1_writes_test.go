@@ -36,6 +36,7 @@ type writeProbe struct {
 }
 
 func TestMCPFleetWritesReachTheStore(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key + "/write"
@@ -261,6 +262,7 @@ func contains(list []string, s string) bool {
 // by one inbound per field group, and the union has to account for every field the
 // schema advertises.
 func TestMCPInboundWritesReachTheStore(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key + "/write"

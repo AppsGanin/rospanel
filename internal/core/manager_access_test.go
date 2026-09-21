@@ -29,6 +29,7 @@ func accessTestManager(t *testing.T) (*Manager, *store.Store) {
 // flusher. Before this, each admitted sighting did two statements plus a full
 // WorkingUsers query — the panel's single busiest write source.
 func TestRecordAccessDoesNoIO(t *testing.T) {
+	t.Parallel()
 	m, st := accessTestManager(t)
 	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
 	if err != nil {
@@ -57,6 +58,7 @@ func TestRecordAccessDoesNoIO(t *testing.T) {
 // TestFlushAccessWritesBatch: the buffered sightings land, and flushing an empty
 // buffer is free.
 func TestFlushAccessWritesBatch(t *testing.T) {
+	t.Parallel()
 	m, st := accessTestManager(t)
 	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
 	if err != nil {
@@ -97,6 +99,7 @@ func TestFlushAccessWritesBatch(t *testing.T) {
 // TestRecordAccessIgnoresJunk: the access log is parsed text, so non-user emails
 // must not create buffer entries.
 func TestRecordAccessIgnoresJunk(t *testing.T) {
+	t.Parallel()
 	m, _ := accessTestManager(t)
 	for _, email := range []string{"", "admin", "unotanumber", "12", "u"} {
 		m.RecordAccess(email, "1.1.1.1", "example.com")
@@ -113,6 +116,7 @@ func TestRecordAccessIgnoresJunk(t *testing.T) {
 // via its precondition: the destination path runs without disturbing the throttled
 // connections buffer.
 func TestRecordAccessDestinationBypassesThrottle(t *testing.T) {
+	t.Parallel()
 	m, st := accessTestManager(t)
 	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
 	if err != nil {
@@ -131,6 +135,7 @@ func TestRecordAccessDestinationBypassesThrottle(t *testing.T) {
 // TestRecordAccessWithoutDestination: rejected and unparsable lines carry no host,
 // and must still produce a device sighting.
 func TestRecordAccessWithoutDestination(t *testing.T) {
+	t.Parallel()
 	m, st := accessTestManager(t)
 	u, err := st.CreateUser("u1", "uuid-1", "pw", "tok", 0, 0, 0)
 	if err != nil {
@@ -149,6 +154,7 @@ func TestRecordAccessWithoutDestination(t *testing.T) {
 // between two writes. And the master's tunnel poll, once a minute, must find its pair
 // unthrottled on every poll.
 func TestAccessThrottleKeepsConnectedDevicesOnline(t *testing.T) {
+	t.Parallel()
 	const flush, tunnelPoll = 5, 60
 	worstSyncGap := int64(nodeapi.HoldSec + nodeapi.HoldJitter)
 	if age := accThrottle + worstSyncGap + flush; age >= model.DeviceOnlineWindow {
@@ -163,6 +169,7 @@ func TestAccessThrottleKeepsConnectedDevicesOnline(t *testing.T) {
 // checks, one straight after it does not, and one after the interval does again. The
 // sightings themselves are written by every flush.
 func TestFlushChecksDeviceLimitsAtMostEveryInterval(t *testing.T) {
+	t.Parallel()
 	m, st := accessTestManager(t)
 	mk := func(name string) *model.User {
 		t.Helper()

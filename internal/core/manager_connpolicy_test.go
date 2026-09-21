@@ -9,6 +9,7 @@ import (
 )
 
 func TestConnPolicyDecide(t *testing.T) {
+	t.Parallel()
 	allow := model.ConnPolicy{Mode: model.ConnPolicyAllow, Countries: []string{"RU", "BY"}}
 	block := model.ConnPolicy{Mode: model.ConnPolicyBlock, Countries: []string{"NL"}}
 
@@ -38,6 +39,7 @@ func TestConnPolicyDecide(t *testing.T) {
 }
 
 func TestConnPolicyValidateAndNormalize(t *testing.T) {
+	t.Parallel()
 	p := model.ConnPolicy{Mode: "allow", Countries: []string{" ru ", "RU", "by"}}
 	n := p.Normalized()
 	if strings.Join(n.Countries, ",") != "BY,RU" {
@@ -68,6 +70,7 @@ func TestConnPolicyValidateAndNormalize(t *testing.T) {
 // The policy is checked on every sighting, records a refusal against the user, and
 // only writes a block when the operator asked it to enforce.
 func TestConnPolicyRecordsAndBlocks(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "abroad", 0, 0)
@@ -166,6 +169,7 @@ func TestConnPolicyRecordsAndBlocks(t *testing.T) {
 // A lapsed block leaves the table, so what the nodes are handed matches what the
 // kernel expires on its own.
 func TestPolicyBlocksExpire(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	now := time.Now().Unix()
 	for ip, until := range map[string]int64{"203.0.113.1": now + 3600, "203.0.113.2": now - 1} {

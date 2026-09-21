@@ -18,6 +18,7 @@ import (
 // ru.ts is read as text rather than parsed: the keys are plain identifiers on their
 // own lines, so a substring check is both sufficient and immune to formatting.
 func TestHealthKeysHaveDictionaryEntries(t *testing.T) {
+	t.Parallel()
 	var src strings.Builder
 	for _, f := range []string{"manager_health_report.go", "manager_nodes_health.go"} {
 		b, err := os.ReadFile(f)

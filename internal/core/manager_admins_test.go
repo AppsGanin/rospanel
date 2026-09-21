@@ -33,6 +33,7 @@ func rosterManager(t *testing.T) (*Manager, int64) {
 }
 
 func TestCreateAdminGatesTheAssignedPassword(t *testing.T) {
+	t.Parallel()
 	m, _ := rosterManager(t)
 
 	a, err := m.CreateAdmin("support", "temp-password", model.RoleOperator)
@@ -62,6 +63,7 @@ func TestCreateAdminGatesTheAssignedPassword(t *testing.T) {
 }
 
 func TestCreateAdminRejectsBadInput(t *testing.T) {
+	t.Parallel()
 	m, _ := rosterManager(t)
 
 	if _, err := m.CreateAdmin("support", "temp-password", model.RoleOperator); err != nil {
@@ -98,6 +100,7 @@ func TestCreateAdminRejectsBadInput(t *testing.T) {
 // The two moves that would strand the panel: removing the only account that can
 // manage the roster, or the owner removing themselves.
 func TestRosterCannotStrandThePanel(t *testing.T) {
+	t.Parallel()
 	m, ownerID := rosterManager(t)
 
 	admin, err := m.CreateAdmin("colleague", "temp-password", model.RoleAdmin)
@@ -129,6 +132,7 @@ func TestRosterCannotStrandThePanel(t *testing.T) {
 }
 
 func TestDeleteAdminRejectsUnknownID(t *testing.T) {
+	t.Parallel()
 	m, ownerID := rosterManager(t)
 	err := m.DeleteAdmin(ownerID, 4242)
 	if err == nil {
@@ -143,6 +147,7 @@ func TestDeleteAdminRejectsUnknownID(t *testing.T) {
 // when you no longer trust them. Either way every session they had must die with
 // the old password, or the reset achieves nothing against a stolen cookie.
 func TestResetAdminPasswordRevokesSessionsAndRegates(t *testing.T) {
+	t.Parallel()
 	m, ownerID := rosterManager(t)
 
 	admin, err := m.CreateAdmin("colleague", "temp-password", model.RoleAdmin)

@@ -14,6 +14,7 @@ import (
 // plan EXPIRES when assigned manually (period-limited, reset "none"), while the
 // free plan never expires and refills its quota on a rolling "days:N" cycle.
 func TestApplyPlanTrialVsFree(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "trial.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

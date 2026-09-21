@@ -11,6 +11,7 @@ import (
 // holds on to what arrives meanwhile: the old cap was the flush trigger's size, and
 // past it sightings were dropped.
 func TestAccessBufferFlushesEarlyWithoutDropping(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.accFlushDue = make(chan struct{}, 1)
 	ip := func(i int) string { return fmt.Sprintf("10.%d.%d.%d", i>>16&255, i>>8&255, i&255) }
@@ -40,6 +41,7 @@ func TestAccessBufferFlushesEarlyWithoutDropping(t *testing.T) {
 // At the hard bound a new pair is turned away, but not throttled as though it had been
 // kept: its next line, once there is room, is recorded.
 func TestAccessSightingTurnedAwayIsNotThrottled(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	for i := 0; len(m.accPending) < accPendingMax; i++ {
 		m.accPending[accPendingKey{userID: 2, ip: fmt.Sprint("filler-", i)}] = store.ConnectionHit{}

@@ -11,6 +11,7 @@ import (
 // The digest line has to survive every combination of "we know where this is from",
 // because the geo tables are optional and either one can be missing on its own.
 func TestProbeOriginDegradesToNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		hit  model.ProbeHit
@@ -37,6 +38,7 @@ func TestProbeOriginDegradesToNothing(t *testing.T) {
 // from carrying whatever a third party put in it, and an unescaped "<" there breaks
 // the message for every admin at best.
 func TestProbeOriginEscapesHTML(t *testing.T) {
+	t.Parallel()
 	got := probeOrigin(model.ProbeHit{Country: "NL", Org: `Evil <b>x</b> & "co"`})
 	if strings.Contains(got, "<b>") {
 		t.Errorf("operator name reaches the message unescaped: %q", got)
@@ -49,6 +51,7 @@ func TestProbeOriginEscapesHTML(t *testing.T) {
 // Registry names run long enough to swamp a ten-line digest, and cutting them by
 // bytes would hand Telegram a half-character.
 func TestProbeOriginShortensLongOperatorNames(t *testing.T) {
+	t.Parallel()
 	long := "MAYTINHVPSTTT-VN VPSTTT COMPUTER COMPANY LIMITED AND SUBSIDIARIES"
 	got := probeOrigin(model.ProbeHit{Country: "VN", Org: long})
 	if strings.Contains(got, "SUBSIDIARIES") {

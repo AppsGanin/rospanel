@@ -36,6 +36,7 @@ func marzbanFixture(t *testing.T) string {
 // The whole point of an import: the same credentials on this side, the limits and
 // usage carried over, a second run of the same file doubling nobody.
 func TestImportKeepsCredentialsAndSkipsWhatIsHere(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	// "alice" already exists by name (not by UUID): allowed, flagged.
@@ -111,6 +112,7 @@ func TestImportKeepsCredentialsAndSkipsWhatIsHere(t *testing.T) {
 }
 
 func TestImportReportsBadRowsAndKeepsTheRest(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	res, err := m.ImportUsers(adminCtx(), ImportRequest{Source: "3x-ui", Users: []importer.Candidate{
 		{Name: "ok", UUID: "4372c397-2284-4cdd-9092-cfd0edc32092", Password: "p", Enabled: true},
@@ -147,6 +149,7 @@ func fmtDetails(d any) string { return strings.ToLower(fmt.Sprint(d)) }
 // subscription link, limits, usage and annotations, and comes back the same. A
 // token another user already holds is the one thing that cannot be reused.
 func TestExportImportRoundTrip(t *testing.T) {
+	t.Parallel()
 	src := bulkTestManager(t)
 	ctx := adminCtx()
 	u, err := src.CreateUser(ctx, "traveller", 1<<30, 1900000000)

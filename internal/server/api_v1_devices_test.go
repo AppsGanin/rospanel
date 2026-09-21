@@ -41,6 +41,7 @@ func apiGet(t *testing.T, h http.Handler, target, key string) *httptest.Response
 }
 
 func TestAPIListsAndUnbindsDevices(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 2, false)
 	base, key := apiFixture(t, h, st)
@@ -94,6 +95,7 @@ func TestAPIListsAndUnbindsDevices(t *testing.T) {
 }
 
 func TestAPIDeviceErrors(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 1, false)
 	base, key := apiFixture(t, h, st)

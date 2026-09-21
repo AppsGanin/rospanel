@@ -10,6 +10,7 @@ import (
 // and a pass in which nobody crossed anything asks for none, or every stats poll and
 // node report would reload the config for nothing.
 func TestEnforceAfterTrafficSyncsWhenTheWorkingSetMoves(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.reconcileCh = make(chan struct{}, 1)
 	mkUser(t, m, "steady", 0)

@@ -11,6 +11,7 @@ import (
 // while the PANEL stays reachable — otherwise the operator who turned it on could
 // never turn it off.
 func TestMaintenanceModeGatesPublicButNotPanel(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "maint", 0, 0)
 	if err != nil {

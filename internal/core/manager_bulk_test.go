@@ -41,6 +41,7 @@ func mkUser(t *testing.T, m *Manager, name string, expireAt int64) int64 {
 }
 
 func TestBulkEnableDisableDelete(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	a := mkUser(t, m, "a", 0)
 	b := mkUser(t, m, "b", 0)
@@ -81,6 +82,7 @@ func TestBulkEnableDisableDelete(t *testing.T) {
 }
 
 func TestBulkExtendSkipsUnlimited(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	now := time.Now().Unix()
 	limited := mkUser(t, m, "limited", now+10*86400) // has an expiry → extended
@@ -103,6 +105,7 @@ func TestBulkExtendSkipsUnlimited(t *testing.T) {
 }
 
 func TestBulkUserActionValidation(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	if _, err := m.BulkUserAction(context.Background(), nil, "enable", 0); err == nil {
 		t.Fatal("expected error for empty selection")

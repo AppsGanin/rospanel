@@ -11,6 +11,7 @@ import (
 // only when the operator asks for it — and a node that is merely disabled or has
 // never installed is out either way.
 func TestHideOfflineNodesFromSubscriptions(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	now := time.Now().Unix()
 	live, err := m.CreateNode("live", "live.example.com")

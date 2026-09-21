@@ -39,6 +39,7 @@ func rowsByID(p usersPage) map[int64]userRow {
 // up to date and leaves everyone else as read — a user deleted leaves the list, and the
 // chips count the edit — while any other write, a create, still reads everyone again.
 func TestAnEditToOneUserRereadsOnlyThatUser(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	op := signIn(t, st, "support", model.RoleOperator, false)
@@ -103,6 +104,7 @@ func TestAnEditToOneUserRereadsOnlyThatUser(t *testing.T) {
 // What counts as an edit to one user: a route under a plainly written id, on the panel
 // or the API. Nothing else is claimed.
 func TestSingleUserWritePaths(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]int64{
 		"/api/users/42":             42,
 		"/api/users/42/limits":      42,
@@ -132,6 +134,7 @@ func TestSingleUserWritePaths(t *testing.T) {
 // changes nothing on the list for anyone else, so each one is listed here by hand: a new
 // one fails until someone has looked at what it does to other users' rows.
 func TestEveryWriteUnderAUsersIDEditsOnlyThatUser(t *testing.T) {
+	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	rt.apiKeys = newAPIKeyGuard()
 	rt.apiLimiter = newIPRateLimiter(600, time.Minute)
@@ -189,6 +192,7 @@ func TestEveryWriteUnderAUsersIDEditsOnlyThatUser(t *testing.T) {
 // Every page is whole while it happens, and once the admins are done the next page shows
 // exactly what they did; what was written outside the panel shows once the list ages.
 func TestUsersListUnderConcurrentAdminsAndOutsideWrites(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admins := make([]*http.Cookie, 4)
@@ -320,6 +324,7 @@ func TestUsersListUnderConcurrentAdminsAndOutsideWrites(t *testing.T) {
 // is taken off — through the whole router, CSRF guard included — and a write the router
 // does not hand to a user's route records nothing.
 func TestAUserEditIsRecordedThroughTheWholeRouter(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	rt.decoy = http.NotFoundHandler()
 	rt.panel = securityHeaders(csrfGuard(rt.panelMux()))

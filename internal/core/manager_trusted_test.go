@@ -12,6 +12,7 @@ import (
 // no-op off Linux, so what is checked is whether the ban would have been placed.
 
 func TestTrustedAddressIsNeverBannedForProxyPasswords(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.guard = newBruteGuard()
 	if err := m.SaveTrustedNets([]string{"198.51.100.0/24"}); err != nil {
@@ -32,6 +33,7 @@ func TestTrustedAddressIsNeverBannedForProxyPasswords(t *testing.T) {
 }
 
 func TestTrustedScannerIsRecordedButNotBlocked(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	if err := m.SetProbeBlock(true); err != nil {
 		t.Fatal(err)
@@ -48,6 +50,7 @@ func TestTrustedScannerIsRecordedButNotBlocked(t *testing.T) {
 }
 
 func TestTrustedAddressIsRefusedOnRecordButNotBlocked(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	u, _ := m.CreateUser(adminCtx(), "office", 0, 0)
 	p := model.ConnPolicy{Mode: model.ConnPolicyBlock, Countries: []string{"NL"}, Enforce: true}
@@ -78,6 +81,7 @@ func TestTrustedAddressIsRefusedOnRecordButNotBlocked(t *testing.T) {
 // Trusting a network lifts what is already banned inside it — an office adds itself
 // because it was just cut off — and nothing outside it.
 func TestTrustingANetworkLiftsItsBans(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	m.guard = newBruteGuard()
 	p := model.ConnPolicy{Mode: model.ConnPolicyBlock, Countries: []string{"NL"}, Enforce: true}
@@ -107,6 +111,7 @@ func TestTrustingANetworkLiftsItsBans(t *testing.T) {
 }
 
 func TestTrustedNetsAreSavedNormalizedAndBadListsAreRefused(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	if err := m.SaveTrustedNets([]string{"198.51.100.7/24", " 203.0.113.1 "}); err != nil {
 		t.Fatal(err)

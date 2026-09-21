@@ -23,6 +23,7 @@ func proxyTestManager(t *testing.T) (*Manager, *store.Store) {
 // this whole setting exists to remove. The retired warp/opera modes are covered too —
 // a stale browser tab can still post them.
 func TestSaveTelegramProxyRejectsUnknownMode(t *testing.T) {
+	t.Parallel()
 	m, _ := proxyTestManager(t)
 	for _, mode := range []string{"wireguard", "warp", "opera"} {
 		if err := m.SaveTelegramProxy(mode, ""); err == nil {
@@ -33,6 +34,7 @@ func TestSaveTelegramProxyRejectsUnknownMode(t *testing.T) {
 
 // The custom mode needs an address, and a usable one.
 func TestSaveTelegramProxyValidatesTheCustomURL(t *testing.T) {
+	t.Parallel()
 	m, _ := proxyTestManager(t)
 	for _, raw := range []string{"", "127.0.0.1:1080", "ftp://host:21"} {
 		if err := m.SaveTelegramProxy(model.TGProxyCustom, raw); err == nil {
@@ -45,6 +47,7 @@ func TestSaveTelegramProxyValidatesTheCustomURL(t *testing.T) {
 // generated config — WARP's entrance exists whenever WARP does — and a reconcile here
 // would drop every live VPN connection for a panel-side setting.
 func TestSaveTelegramProxyNeverReconciles(t *testing.T) {
+	t.Parallel()
 	m, st := proxyTestManager(t)
 	set, err := st.GetSettings()
 	if err != nil {
@@ -74,6 +77,7 @@ func TestSaveTelegramProxyNeverReconciles(t *testing.T) {
 // The typed URL is stored whatever the mode, so switching to direct and back leaves
 // the operator's address in the box rather than erasing it.
 func TestSaveTelegramProxyKeepsTheURLAcrossDirect(t *testing.T) {
+	t.Parallel()
 	m, st := proxyTestManager(t)
 	if err := m.SaveTelegramProxy(model.TGProxyCustom, "socks5://10.0.0.1:1080"); err != nil {
 		t.Fatalf("custom: %v", err)

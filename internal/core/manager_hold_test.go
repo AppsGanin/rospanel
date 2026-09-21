@@ -30,6 +30,7 @@ func connect(m *Manager, u *model.User, ip string) {
 }
 
 func TestHeldTermStartsOnTheFirstConnection(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	u := heldUser(t, m, "reseller-key", 30)
 	if u.ExpireAt != 0 || u.HoldSeconds != 30*day {
@@ -87,6 +88,7 @@ func TestHeldTermStartsOnTheFirstConnection(t *testing.T) {
 
 // Only the users who connected start; everyone else on hold keeps waiting.
 func TestOnlyTheUsersWhoConnectStart(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	a := heldUser(t, m, "a", 30)
 	b := heldUser(t, m, "b", 7)
@@ -99,6 +101,7 @@ func TestOnlyTheUsersWhoConnectStart(t *testing.T) {
 // A date set by hand replaces the pending term; a limits save without a date — the
 // form posting quota and devices for a user on hold — leaves it alone.
 func TestLimitsKeepAHoldUntilADateIsSet(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u := heldUser(t, m, "limits", 30)
@@ -126,6 +129,7 @@ func TestLimitsKeepAHoldUntilADateIsSet(t *testing.T) {
 // A plan owns the term. Assigning one takes a hold away, and the next connection
 // must not start it on top of the plan's own date.
 func TestAPlanReplacesAHold(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	plan := &model.TariffPlan{Slug: "hold-std", Name: "Std", PriceRub: 300, PeriodDays: 30, Enabled: true}
 	if err := m.store.SaveTariffPlan(plan); err != nil {
@@ -160,6 +164,7 @@ func TestAPlanReplacesAHold(t *testing.T) {
 }
 
 func TestSetUserHold(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	past := time.Now().Add(-24 * time.Hour).Unix()
@@ -195,6 +200,7 @@ func TestSetUserHold(t *testing.T) {
 // Extending a user whose term has not started lengthens the term they will get,
 // instead of silently skipping them.
 func TestBulkExtendLengthensAHeldTerm(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	held := heldUser(t, m, "held", 30)
@@ -218,6 +224,7 @@ func TestBulkExtendLengthensAHeldTerm(t *testing.T) {
 
 // A held term comes in from another panel and goes out in this panel's export.
 func TestImportAndExportCarryAHeldTerm(t *testing.T) {
+	t.Parallel()
 	src := bulkTestManager(t)
 	u := heldUser(t, src, "exported", 30)
 	exp, err := src.ExportUsers()
@@ -259,6 +266,7 @@ func TestImportAndExportCarryAHeldTerm(t *testing.T) {
 }
 
 func TestNameVariablesForAHeldTerm(t *testing.T) {
+	t.Parallel()
 	u := &model.User{HoldSeconds: 30 * day}
 	got := model.RenderName("{days}d {expire}", model.NameVars{User: u})
 	if got != "30d "+model.NameUnknown {
@@ -289,6 +297,7 @@ func containsUser(list []model.User, id int64) bool {
 // the started term alone, and a save that changes the term must be refused rather
 // than hand the user a fresh hold on top of the days they have already begun.
 func TestAStaleCardCannotRestartATerm(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u := heldUser(t, m, "picked-up", 30)
@@ -331,6 +340,7 @@ func TestAStaleCardCannotRestartATerm(t *testing.T) {
 // The check and the write are one statement: a term that moves after the manager
 // read it still refuses the write.
 func TestTermGuardedWriteRefusesAMovedTerm(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	u := heldUser(t, m, "raced", 30)
 	connect(m, u, "198.51.100.41")

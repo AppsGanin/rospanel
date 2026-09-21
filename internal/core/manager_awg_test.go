@@ -14,6 +14,7 @@ import (
 // once and reused; peers follow the working set and the access map; the client
 // config carries both sides' keys, the parameters and the endpoint.
 func TestAWGIdentityPeersAndClientConfig(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	a, _ := m.CreateUser(ctx, "a", 0, 0)
@@ -115,6 +116,7 @@ func TestAWGIdentityPeersAndClientConfig(t *testing.T) {
 // A node's tunnel state names its own identity, never the master's, and only the
 // users allowed on that node's lane.
 func TestNodeAWGStateUsesTheNodesIdentity(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "u", 0, 0)
@@ -167,6 +169,7 @@ func TestNodeAWGStateUsesTheNodesIdentity(t *testing.T) {
 // stops syncing at all rather than merely losing its tunnel. The panel withholds
 // the state instead, and the node keeps running what it already has.
 func TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	if _, err := m.CreateUser(ctx, "u", 0, 0); err != nil {
@@ -216,6 +219,7 @@ func TestA31TunnelIsWithheldFromAnAgentThatCannotReadIt(t *testing.T) {
 // A user's tunnel address is the slot they were handed, the same in the peer list and
 // in their config, and a deleted user's slot goes to the next user who needs one.
 func TestAWGAddressesFollowSlotsNotIDs(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	mk := func(name string) int64 {
 		t.Helper()
@@ -287,6 +291,7 @@ func TestAWGAddressesFollowSlotsNotIDs(t *testing.T) {
 // has no slot yet. Their first peer build gives them one and keeps their key, so the
 // config they bring with them keeps its identity.
 func TestImportedAWGKeyGetsASlot(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	priv, pub, err := awg.GenerateKey()
 	if err != nil {

@@ -39,6 +39,7 @@ func mustHash(t *testing.T, password string) string {
 // build, not ship silently unlogged. Adding the route to auditActions (with an action,
 // or with "" and a reason) is the fix.
 func TestEveryMutatingRouteIsAudited(t *testing.T) {
+	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	rt.panelMux() // registration is what fills rt.routes
 
@@ -60,6 +61,7 @@ func TestEveryMutatingRouteIsAudited(t *testing.T) {
 // Every action the middleware can write must be renderable by the journal, or the UI
 // shows a bare key like "settings.changed" to the owner.
 func TestEveryAuditActionHasALabel(t *testing.T) {
+	t.Parallel()
 	for pattern, route := range auditActions {
 		if route.action == "" {
 			continue
@@ -89,6 +91,7 @@ func TestEveryAuditActionHasALabel(t *testing.T) {
 // The settings all share one action, and the section rides in the target — that is
 // what keeps the filter short without losing what was actually touched.
 func TestAuditSettingsRowsCarryTheirSection(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	owner := signIn(t, st, "owner", model.RoleOwner, false)
@@ -132,6 +135,7 @@ func auditRows(t *testing.T, st *store.Store) []model.AdminAudit {
 // would make the trail lie in the most damaging direction: it would show an admin
 // doing things they never managed to do.
 func TestAuditRecordsSuccessNotAttempts(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	owner := signIn(t, st, "owner", model.RoleOwner, false)
@@ -157,6 +161,7 @@ func TestAuditRecordsSuccessNotAttempts(t *testing.T) {
 // The roster rows have to name their target: "admin.deleted" with no login is an
 // audit row that tells you nothing.
 func TestAuditRosterRowsNameTheirTarget(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	owner := signIn(t, st, "owner", model.RoleOwner, false)
@@ -222,6 +227,7 @@ func TestAuditRosterRowsNameTheirTarget(t *testing.T) {
 // A failed sign-in is the row an audit log exists for. It has no session, so the
 // middleware can't see it — the login handler records it itself.
 func TestAuditRecordsSignInsIncludingFailures(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	rt.limiter = newLoginLimiter()
 	h := rt.panelMux()

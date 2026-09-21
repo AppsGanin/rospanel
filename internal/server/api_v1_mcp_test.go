@@ -43,6 +43,7 @@ func rpcResult(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 // The whole point of the remote transport: an assistant is given a URL and nothing
 // else, and gets a working handshake, a tool list and a real answer out of it.
 func TestMCPOverHTTP(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	if _, err := mgr.CreateUser(t.Context(), "mcp-user", 0, 0); err != nil {
 		t.Fatalf("create user: %v", err)
@@ -102,6 +103,7 @@ func TestMCPOverHTTP(t *testing.T) {
 // The short URL must not be able to change anything, even though the key inside it
 // could: that is the difference between the two addresses.
 func TestMCPReadOnlyURLHidesMutations(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "victim", 0, 0)
 	if err != nil {
@@ -143,6 +145,7 @@ func TestMCPReadOnlyURLHidesMutations(t *testing.T) {
 // The URL is the credential, so a wrong one must behave like every other bad
 // credential on this surface — and must not hint that the path itself was right.
 func TestMCPRejectsBadKeys(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 
@@ -169,6 +172,7 @@ func TestMCPRejectsBadKeys(t *testing.T) {
 // A browser-based client preflights before it can authenticate, and a GET is a
 // request for a stream this endpoint doesn't offer.
 func TestMCPTransportNiceties(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key
@@ -194,6 +198,7 @@ func TestMCPTransportNiceties(t *testing.T) {
 }
 
 func TestMCPURLs(t *testing.T) {
+	t.Parallel()
 	ro, rw := MCPURLs("https://vpn.example.com/apiseg", "rp_abc")
 	if ro != "https://vpn.example.com/apiseg/v1/mcp/rp_abc" {
 		t.Errorf("read-only URL = %q", ro)

@@ -41,6 +41,7 @@ func only(t *testing.T, out []nodeAlertMsg) nodeAlertMsg {
 // TestNodeOfflineTransition: going silent alerts once, staying silent stays quiet,
 // and coming back sends the all-clear.
 func TestNodeOfflineTransition(t *testing.T) {
+	t.Parallel()
 	m, _, n, now := nodeAlertFixture(t)
 
 	// last_seen is now older than the online window ⇒ unreachable.
@@ -67,6 +68,7 @@ func TestNodeOfflineTransition(t *testing.T) {
 // TestNodeOfflineRecoveryOnlyAfterAlert: a node that was never reported down must
 // not produce an all-clear, mirroring the master's crashAlerted rule.
 func TestNodeOfflineRecoveryOnlyAfterAlert(t *testing.T) {
+	t.Parallel()
 	m, _, n, now := nodeAlertFixture(t)
 	// Never observed offline (no sweep landed in the gap): last_seen jumps forward.
 	n.LastSeen = now.Add(10 * time.Minute).Unix()
@@ -78,6 +80,7 @@ func TestNodeOfflineRecoveryOnlyAfterAlert(t *testing.T) {
 // TestNodeXrayTransition: a node reporting its Xray down alerts once and reports
 // the recovery, and the alert is throttled while it flaps.
 func TestNodeXrayTransition(t *testing.T) {
+	t.Parallel()
 	m, _, n, now := nodeAlertFixture(t)
 
 	n.XrayRunning = false
@@ -105,6 +108,7 @@ func TestNodeXrayTransition(t *testing.T) {
 // TestNodeXrayIgnoredWhileOffline: a silent node's last report is stale, so it must
 // not raise a second alarm on top of the unreachable one.
 func TestNodeXrayIgnoredWhileOffline(t *testing.T) {
+	t.Parallel()
 	m, _, n, now := nodeAlertFixture(t)
 	later := now.Add(10 * time.Minute)
 	n.XrayRunning = false // whatever the frozen row says
@@ -117,6 +121,7 @@ func TestNodeXrayIgnoredWhileOffline(t *testing.T) {
 // TestNodeCertAlerts: a CA-signed fingerprint change is an event, the self-signed
 // fallback is not, and a reported ACME failure alerts once per throttle window.
 func TestNodeCertAlerts(t *testing.T) {
+	t.Parallel()
 	m, _, n, now := nodeAlertFixture(t)
 
 	// Self-signed fallback changing: silent.
@@ -167,6 +172,7 @@ func TestNodeCertAlerts(t *testing.T) {
 // TestNodeAlertsRespectAdminMask: both node categories go through the same settings
 // gate as the master's, so switching the category off silences them.
 func TestNodeAlertsRespectAdminMask(t *testing.T) {
+	t.Parallel()
 	m, msgs, n, now := nodeAlertFixture(t)
 	if err := m.store.SetAdminEvents(0); err != nil {
 		t.Fatalf("clear admin events: %v", err)
@@ -183,6 +189,7 @@ func TestNodeAlertsRespectAdminMask(t *testing.T) {
 // outage, and re-enabling it must start from a fresh baseline rather than announce
 // the operator's own decision.
 func TestSweepNodeAlertsSkipsDisabled(t *testing.T) {
+	t.Parallel()
 	m, msgs := newNotifyManager(t)
 	n, err := m.store.CreateNode("NL", "203.0.113.7", "")
 	if err != nil {

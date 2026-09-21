@@ -30,6 +30,7 @@ func apiDo(t *testing.T, h http.Handler, method, target, key, body string) *http
 // server order, the encrypted Happ link and the trusted networks — read back in the
 // form they were stored, applied only when sent, and refused before anything lands.
 func TestAPISettingsCarryTheNewFields(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 
@@ -78,6 +79,7 @@ func TestAPISettingsCarryTheNewFields(t *testing.T) {
 // The user's encrypted Happ link, and a server's placement — the master's included,
 // which PATCH /v1/nodes cannot reach.
 func TestAPIHappLinkAndMasterPlacement(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	u, err := mgr.CreateUser(t.Context(), "api-happ", 0, 0)

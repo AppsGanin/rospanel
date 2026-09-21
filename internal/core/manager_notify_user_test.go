@@ -26,6 +26,7 @@ func userNotifyManager(t *testing.T) (*Manager, *[]string) {
 // The warning must fire once per expiry, not once per poll — the sweep runs every
 // minute, and a reminder that repeats every minute is what makes people mute the bot.
 func TestExpiryWarningFiresOncePerExpiry(t *testing.T) {
+	t.Parallel()
 	m, sent := userNotifyManager(t)
 	id := mkUser(t, m, "vasya", time.Now().Add(48*time.Hour).Unix())
 	if err := m.store.SetUserTelegramChat(id, 555); err != nil {
@@ -59,6 +60,7 @@ func TestExpiryWarningFiresOncePerExpiry(t *testing.T) {
 
 // Outside the horizon, already expired, or with no expiry at all — nothing is sent.
 func TestExpiryWarningScope(t *testing.T) {
+	t.Parallel()
 	m, sent := userNotifyManager(t)
 	far := mkUser(t, m, "far", time.Now().Add(30*24*time.Hour).Unix())
 	gone := mkUser(t, m, "gone", time.Now().Add(-time.Hour).Unix())
@@ -79,6 +81,7 @@ func TestExpiryWarningScope(t *testing.T) {
 // The traffic warning re-arms itself when usage falls back under the line, which is
 // what a quota reset or a bigger plan does.
 func TestTrafficWarningReArmsOnReset(t *testing.T) {
+	t.Parallel()
 	m, sent := userNotifyManager(t)
 	id := mkUser(t, m, "vasya", 0)
 	if err := m.store.SetUserTelegramChat(id, 555); err != nil {
@@ -118,6 +121,7 @@ func TestTrafficWarningReArmsOnReset(t *testing.T) {
 
 // A switched-off category must silence that notice while leaving the others alone.
 func TestUserNoticesRespectTheirToggles(t *testing.T) {
+	t.Parallel()
 	m, sent := userNotifyManager(t)
 	id := mkUser(t, m, "vasya", time.Now().Add(24*time.Hour).Unix())
 	if err := m.store.SetUserTelegramChat(id, 555); err != nil {

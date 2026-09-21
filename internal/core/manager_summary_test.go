@@ -9,6 +9,7 @@ import (
 // The dashboard's system status reuses the user counts for summaryTTL, callers at the
 // same moment share one count, and the API's summary still counts afresh.
 func TestSystemStatusReusesTheUserCounts(t *testing.T) {
+	t.Parallel()
 	m, st := closeTestManager(t)
 	defer st.Close()
 	defer m.Close()

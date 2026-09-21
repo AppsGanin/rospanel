@@ -11,6 +11,7 @@ import (
 // a pending request (no user created), approval creates the user and links the chat,
 // and rejection drops the request.
 func TestModerationRegistrationFlow(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := context.Background()
 
@@ -86,6 +87,7 @@ func TestModerationRegistrationFlow(t *testing.T) {
 
 // TestRegModeHelpers checks the mode fallback and derived predicates.
 func TestRegModeHelpers(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		mode          string
 		legacyEnabled bool

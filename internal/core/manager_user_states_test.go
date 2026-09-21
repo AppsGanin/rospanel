@@ -176,6 +176,7 @@ func runEnforcement(t *testing.T, now int64, seed func(*testing.T, *store.Store,
 // messages, the webhooks, the audit trail and the rows. A later change that reads a
 // field the narrow read does not carry shows up here as a difference.
 func TestUserStatesServeEnforcementAsWholeUsers(t *testing.T) {
+	t.Parallel()
 	now := time.Now().Unix()
 	whole := runEnforcement(t, now, seedEnforcement, wholeReads)
 	states := runEnforcement(t, now, seedEnforcement, enforcementReads{
@@ -351,10 +352,26 @@ func seedRandomUsers(n int) func(*testing.T, *store.Store, int64) {
 // every alert, message, webhook, audit row and row written — must be exactly what it
 // does reading everyone.
 func TestEnforcementCandidatesMissNobody(t *testing.T) {
+	t.Parallel()
 	const n = 400
 	now := time.Now().Unix()
-	whole := runEnforcement(t, now, seedRandomUsers(n), wholeReads)
-	candidates := runEnforcement(t, now, seedRandomUsers(n), candidateReads)
+	// The two passes share nothing but the seed, so they run side by side: this is the
+	// longest test in the package, and it was two of them back to back. The group's
+	// t.Run returns only once both have finished.
+	var whole, candidates enforcementRun
+	t.Run("passes", func(t *testing.T) {
+		t.Run("everyone", func(t *testing.T) {
+			t.Parallel()
+			whole = runEnforcement(t, now, seedRandomUsers(n), wholeReads)
+		})
+		t.Run("candidates", func(t *testing.T) {
+			t.Parallel()
+			candidates = runEnforcement(t, now, seedRandomUsers(n), candidateReads)
+		})
+	})
+	if t.Failed() {
+		return
+	}
 	if !reflect.DeepEqual(whole, candidates) {
 		diff := func(name string, a, b []string) {
 			if !reflect.DeepEqual(a, b) {

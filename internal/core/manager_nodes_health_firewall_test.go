@@ -9,6 +9,7 @@ import (
 // A node that can drop addresses passes; one that cannot warns, since the bans the
 // panel hands it do nothing there; an agent too old to say gets no row at all.
 func TestNodeFirewallHealth(t *testing.T) {
+	t.Parallel()
 	yes, no := true, false
 	if _, ok := nodeFirewallHealth(nodeapi.HostStats{}); ok {
 		t.Error("an agent that did not report was given a row")

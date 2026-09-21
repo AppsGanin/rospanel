@@ -20,6 +20,7 @@ const gb = int64(1) << 30
 // symptoms an operator has no reason to connect to a full disk, on a node they have no
 // reason to be logged into.
 func TestDiskAlertFiresAndClears(t *testing.T) {
+	t.Parallel()
 	lang := i18n.Lang("ru")
 
 	// Comfortable: nothing to say, and no alarm to remember.
@@ -49,6 +50,7 @@ func TestDiskAlertFiresAndClears(t *testing.T) {
 // every sweep — which is what a single threshold would do, and what teaches an operator
 // to ignore the alert.
 func TestDiskAlertDoesNotFlapOnTheBoundary(t *testing.T) {
+	t.Parallel()
 	lang := i18n.Lang("ru")
 	// 16% free: above the 15% alarm, below the 20% all-clear.
 	if on, msg := diskAlert(true, 84*gb, 100*gb, "srv", lang); !on || msg != "" {
@@ -62,6 +64,7 @@ func TestDiskAlertDoesNotFlapOnTheBoundary(t *testing.T) {
 // An older node, or one whose first report has not arrived, sends no figures at all.
 // Zero must read as "no data", never as "the disk is full".
 func TestDiskAlertSaysNothingWithoutFigures(t *testing.T) {
+	t.Parallel()
 	if on, msg := diskAlert(false, 0, 0, "srv", i18n.Lang("ru")); on || msg != "" {
 		t.Errorf("a node with no disk figures was reported as full: %v %q", on, msg)
 	}
@@ -75,6 +78,7 @@ func TestDiskAlertSaysNothingWithoutFigures(t *testing.T) {
 // else would catch it: reconcileLoop is driven by events, not a timer, and the
 // rollback fires no event of its own.
 func TestRecoveryReSyncsUsers(t *testing.T) {
+	t.Parallel()
 	m := &Manager{reconcileCh: make(chan struct{}, 1)}
 	m.onXrayRecover()
 	select {
@@ -90,6 +94,7 @@ func TestRecoveryReSyncsUsers(t *testing.T) {
 // fix. It is also the only part of the message that comes from outside, so it is
 // escaped like everything else that reaches an HTML-parsed chat.
 func TestRollbackMessageCarriesTheReason(t *testing.T) {
+	t.Parallel()
 	lang := i18n.Lang("ru")
 	msg := fmt.Sprintf(i18n.T(lang, "notify.configRolledBack"), model.LocalNodeName,
 		escHTML("common/geodata: CIDR prefix length 96 exceeds max 32"))
@@ -109,6 +114,7 @@ func TestRollbackMessageCarriesTheReason(t *testing.T) {
 // the rule right and never calling it is the failure mode that only shows up in
 // production.
 func TestMasterDiskAlertGoesThroughTheSweep(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "disk.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -141,6 +147,7 @@ func TestMasterDiskAlertGoesThroughTheSweep(t *testing.T) {
 // from SweepNodeAlerts used to break nothing: every test drove the rule directly, so a
 // correct rule that nobody called would have shipped.
 func TestSweepConsultsTheMastersDisk(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "sweep.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

@@ -30,6 +30,7 @@ func sessionsOf(t *testing.T, h http.Handler, c *http.Cookie) []store.AdminSessi
 // The account screen lists the caller's sessions and ends them one at a time or
 // all at once — and the id it sends can never reach another admin's session.
 func TestAccountSessionsListAndRevoke(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
@@ -126,6 +127,7 @@ func TestAccountSessionsListAndRevoke(t *testing.T) {
 // address the request came from; a fresh stamp is left alone (one write a minute,
 // not one per request).
 func TestSessionLastSeenIsStampedOncePerInterval(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	c := signIn(t, st, "alice", model.RoleOperator, false)

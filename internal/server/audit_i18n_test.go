@@ -13,6 +13,7 @@ import (
 // a raw "audit.sec.nodeGeoCadence". This test closes that gap: every section the
 // route table declares must exist in both dictionaries.
 func TestAuditSectionsHaveDictionaryEntries(t *testing.T) {
+	t.Parallel()
 	src, err := os.ReadFile("audit.go")
 	if err != nil {
 		t.Fatalf("read audit.go: %v", err)

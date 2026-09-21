@@ -15,6 +15,7 @@ import (
 // The export is an admin-level download of every credential, it comes back as a
 // file the import reads, and it leaves a row in the panel log.
 func TestExportUsersEndpoint(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	u, err := rt.mgr.CreateUser(t.Context(), "exported", 1024, 0)

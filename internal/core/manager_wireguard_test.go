@@ -11,6 +11,7 @@ import (
 // is built from them — in a copy, since the slice handed in may be the snapshot every
 // node shares — and the identity is the one AmneziaWG uses, stored once.
 func TestClaimWireGuardGivesAllowedUsersAnIdentity(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	a := mkUser(t, m, "a", 0)
 	b := mkUser(t, m, "b", 0)
@@ -59,6 +60,7 @@ func TestClaimWireGuardGivesAllowedUsersAnIdentity(t *testing.T) {
 // A relay runs for each enabled WireGuard inbound, on its public port, to its loopback
 // listener — and a node is sent exactly that set.
 func TestTurnRelaySpecs(t *testing.T) {
+	t.Parallel()
 	custom := []model.Inbound{
 		{ID: 1, Protocol: model.InbWireGuard, Enabled: true, Port: 56000, Opts: model.InboundOpts{WGLocalPort: 20001, TurnMaskKey: "k1"}},
 		{ID: 2, Protocol: model.InbWireGuard, Enabled: false, Port: 56001, Opts: model.InboundOpts{WGLocalPort: 20002}},
@@ -80,6 +82,7 @@ func TestTurnRelaySpecs(t *testing.T) {
 
 // The loopback port is kept clear of everything the server's other inbounds hold.
 func TestAssignWGLocalPortAvoidsTakenPorts(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	for port := wgLocalPortMin; port < wgLocalPortMax-5; port++ {
 		// Leave only a handful free, so a pick that ignored the stored inbounds would

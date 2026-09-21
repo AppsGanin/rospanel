@@ -10,6 +10,7 @@ import (
 // nothing — and swept at most once per window, so a map that stays over its cap with
 // genuinely active pairs is not walked again on every sighting.
 func TestAccessThrottleMapSweep(t *testing.T) {
+	t.Parallel()
 	m, _ := accessTestManager(t)
 	now := time.Now().Unix()
 	fill := func(age int64) {

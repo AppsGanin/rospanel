@@ -30,6 +30,7 @@ func abuseTestManager(t *testing.T) (*Manager, int64) {
 }
 
 func TestRecordAbuseMatchesAndFlushes(t *testing.T) {
+	t.Parallel()
 	m, uid := abuseTestManager(t)
 
 	// A clean address records nothing, and neither does a hostname — there are no
@@ -71,6 +72,7 @@ func TestRecordAbuseMatchesAndFlushes(t *testing.T) {
 // TestRecordAbuseCountsPerAddress: repeat hits on one address roll up into a single
 // row with a running count rather than a row each.
 func TestRecordAbuseCountsPerAddress(t *testing.T) {
+	t.Parallel()
 	m, uid := abuseTestManager(t)
 
 	for range 3 {
@@ -96,6 +98,7 @@ func TestRecordAbuseCountsPerAddress(t *testing.T) {
 // re-alerted on the first hit of every subsequent day and paged the operator about
 // every historical account after a restart.
 func TestAbuseAlertThresholdAndDedup(t *testing.T) {
+	t.Parallel()
 	m, uid := abuseTestManager(t)
 	var alerts int
 	m.SetAdminNotifier(func(string) { alerts++ })
@@ -137,6 +140,7 @@ func TestAbuseAlertThresholdAndDedup(t *testing.T) {
 // day exactly once, regardless of map iteration order, and must not re-alert the
 // later day on the following flush.
 func TestAbuseAlertMidnightStraddleNoDuplicate(t *testing.T) {
+	t.Parallel()
 	m, uid := abuseTestManager(t)
 	perDay := map[string]int{}
 	m.SetAdminNotifier(func(string) {})
@@ -181,6 +185,7 @@ func TestAbuseAlertMidnightStraddleNoDuplicate(t *testing.T) {
 
 // TestRecordAbuseNilMatcherInert: no feeds loaded ⇒ the hot path does nothing.
 func TestRecordAbuseNilMatcherInert(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	m.abusePending = make(map[abusePendingKey]store.AbuseHit)
 	m.abuse = nil

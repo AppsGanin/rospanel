@@ -35,6 +35,7 @@ func requireExhausted(t *testing.T, l *ipRateLimiter) {
 // fire enough requests at /sub/anything, and a reply no static site ever emits
 // says a panel is here — no token, no domain, no guessing.
 func TestSubscriptionThrottleStaysBehindTheDecoy(t *testing.T) {
+	t.Parallel()
 	h, _, _ := nodeAPITestServer(t)
 	rt := h.(*Router)
 
@@ -68,6 +69,7 @@ func TestSubscriptionThrottleStaysBehindTheDecoy(t *testing.T) {
 // it from unknown hosting. A throttle reply would break that for anyone who
 // floods it, so it too falls through to the decoy.
 func TestNodeAPIThrottleStaysBehindTheDecoy(t *testing.T) {
+	t.Parallel()
 	h, mgr, _ := nodeAPITestServer(t)
 	rt := h.(*Router)
 	if _, err := mgr.CreateNode("n1", "nl1.example.com"); err != nil {

@@ -48,6 +48,7 @@ func postJSON(t *testing.T, h http.Handler, path, bearer string, body any) *http
 }
 
 func TestNodeJoinAndSync(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 
 	node, err := mgr.CreateNode("n1", "nl1.example.com")
@@ -98,6 +99,7 @@ func TestNodeJoinAndSync(t *testing.T) {
 }
 
 func TestNodeSyncRevokedAfterDisable(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	node, _ := mgr.CreateNode("n1", "nl1.example.com")
 	set, _ := st.GetSettings()
@@ -127,6 +129,7 @@ func TestNodeSyncRevokedAfterDisable(t *testing.T) {
 }
 
 func TestNodeSyncRevokedAfterDelete(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	node, _ := mgr.CreateNode("n1", "nl1.example.com")
 	set, _ := st.GetSettings()
@@ -164,6 +167,7 @@ func TestNodeSyncRevokedAfterDelete(t *testing.T) {
 }
 
 func TestInstallCommandInsecureForSelfSignedPanel(t *testing.T) {
+	t.Parallel()
 	h, _, _ := nodeAPITestServer(t)
 	// The test panel has no CA cert (TLSPaths{} → HasValidCert false), so the install
 	// command must carry --insecure — otherwise a node can't verify the panel's TLS
@@ -178,6 +182,7 @@ func TestInstallCommandInsecureForSelfSignedPanel(t *testing.T) {
 }
 
 func TestIsBroadcastableHost(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		host string
 		ok   bool
@@ -199,6 +204,7 @@ func TestIsBroadcastableHost(t *testing.T) {
 }
 
 func TestNodeJoinBadTokenIsDecoy(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	if _, err := mgr.CreateNode("n1", "nl1.example.com"); err != nil {
 		t.Fatalf("create: %v", err)

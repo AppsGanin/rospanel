@@ -14,6 +14,7 @@ import (
 // the kept facts answer, and a certificate issued over it, renewed in place or taken
 // away is seen on the very next ask.
 func TestCertFactsAreKeptWhileTheFileIsTheSame(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cert.pem")
 	writeCert := func(host string) []byte {

@@ -18,6 +18,7 @@ import (
 // treats the fetch as successful, and one that replaces its profile on success would wipe
 // the user's servers over an answer that only means "ask again later".
 func TestSubUnavailableIsAFailedFetchNotAnEmptyConfig(t *testing.T) {
+	t.Parallel()
 	rt := &Router{}
 	rec := httptest.NewRecorder()
 	rt.subUnavailable(rec, 7, errors.New("database is closed"))
@@ -43,6 +44,7 @@ func TestSubUnavailableIsAFailedFetchNotAnEmptyConfig(t *testing.T) {
 // so on those installs a decoy fallback would answer a subscription refresh with a
 // successful HTML page.
 func TestDecoyAnswersAnExtensionlessMissWith200(t *testing.T) {
+	t.Parallel()
 	names, err := decoy.Available()
 	if err != nil || len(names) == 0 {
 		t.Fatalf("decoy templates: %v", err)

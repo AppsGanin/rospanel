@@ -24,6 +24,7 @@ var specDocRoutes = map[string]bool{
 // had happened to GET /v1/health — reachable, described in docs/api.md, invisible
 // to every client generated from the spec.
 func TestAPISpecCoversEveryRoute(t *testing.T) {
+	t.Parallel()
 	rt := &Router{}
 	rt.apiHandler() // registration is what fills rt.apiRoutes
 
@@ -50,6 +51,7 @@ func TestAPISpecCoversEveryRoute(t *testing.T) {
 // TestSpecDeclaresNothingImaginary is the other direction: a spec entry for a route
 // that does not exist sends callers at a 404.
 func TestSpecDeclaresNothingImaginary(t *testing.T) {
+	t.Parallel()
 	rt := &Router{}
 	rt.apiHandler()
 
@@ -69,6 +71,7 @@ func TestSpecDeclaresNothingImaginary(t *testing.T) {
 // TestSpecPathsAreVersioned guards a smaller foot-gun: a path written without the
 // /v1 prefix would generate a spec clients cannot call.
 func TestSpecPathsAreVersioned(t *testing.T) {
+	t.Parallel()
 	for _, r := range apiSpecRoutes() {
 		if !strings.HasPrefix(r.path, "/v1/") {
 			t.Errorf("spec path %q is not under /v1/", r.path)
