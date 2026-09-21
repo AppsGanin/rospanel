@@ -1,11 +1,18 @@
 name: release-please
 
-# On every push to main, release-please maintains a "release PR" that bumps the
-# version + CHANGELOG from the Conventional Commits since the last release.
-# Merging that PR tags the release (vX.Y.Z) and publishes a GitHub Release; the
-# build-release job then attaches the compiled Linux binary to it.
+# After every push to main that passes ci, release-please maintains a "release PR"
+# that bumps the version + CHANGELOG from the Conventional Commits since the last
+# release. Merging that PR tags the release (vX.Y.Z) and publishes a GitHub Release;
+# the build jobs then attach the Linux binaries and push the image.
+#
+# It waits for ci rather than running beside it: a release cut from a commit whose
+# checks later went red would ship exactly the change the gate exists to stop. Its own
+# workflow, not jobs inside ci, because ci cancels a run when a newer push lands — and
+# a release half-uploaded when that happens is a release without its binaries.
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -14,6 +21,14 @@ permissions:
 
 jobs:
   release-please:
+    # Only a ci run for a push to this repository's main that passed. A pull request
+    # from a fork's own "main" branch also completes ci with head_branch main, and
+    # this workflow holds write tokens — so the event and the repository are checked
+    # too, not the branch alone.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
@@ -32,7 +47,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The tag, not the default checkout: under workflow_run that is main's head at
+      # the time this runs, which may already be a newer commit than the one released.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - uses: actions/setup-node@v7
         with:
@@ -85,6 +104,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
