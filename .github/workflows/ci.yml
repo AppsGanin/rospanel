@@ -29,12 +29,20 @@ concurrency:
 
 jobs:
   # Merging the release PR pushes a commit that touches only the version, the
-  # manifest and the changelog. Nothing in it can break a check that passed on the
-  # push before it, so the checks are skipped for it — but the run itself still has
+  # manifest and the changelog. Its checks are skipped — but the run itself still has
   # to happen and succeed: release-please.yml waits for exactly this run to tag the
-  # release. Every other push, and every pull request, gets the full gate.
+  # release. The skip trusts the run before it, so it is taken only when all three
+  # hold, and anything else gets the full gate:
+  #   - only those three files changed;
+  #   - every commit in the push is release-please's own (its release commit, or the
+  #     merge of its branch) — a hand edit of version.go is code nothing has checked;
+  #   - the commit underneath passed ci. A red, cancelled or missing run there means
+  #     the code this merge would release was never proven, and skipping would tag it.
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -46,6 +54,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           full() { echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; }
           [ "$EVENT" = "push" ] || full
@@ -55,7 +65,17 @@ jobs:
           other=$(git diff --name-only "$BEFORE" "$AFTER" |
             grep -vxE '\.release-please-manifest\.json|CHANGELOG\.md|internal/version/version\.go' || true)
           [ -n "$other" ] && full
-          echo "Only release files changed: skipping the checks."
+          while read -r subject; do
+            case "$subject" in
+              "chore(main): release "*) ;;
+              "Merge pull request #"*" from "*"/release-please--"*) ;;
+              *) full ;;
+            esac
+          done < <(git log --format=%s "$BEFORE..$AFTER")
+          passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$BEFORE&event=push&status=success" \
+            --jq '.total_count' 2>/dev/null || echo 0)
+          [ "${passed:-0}" -gt 0 ] || full
+          echo "A release merge on a commit that passed ci: skipping the checks."
           echo "code=false" >> "$GITHUB_OUTPUT"
 
   # Build the SPA once and share web/dist with the Go jobs — the Go binary embeds
