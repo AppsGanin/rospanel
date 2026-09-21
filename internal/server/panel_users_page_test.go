@@ -109,6 +109,7 @@ func pageNames(p usersPage) []string {
 // The list is one window of rows with everything the page's controls need beside it:
 // how many match, how many there are, what each chip would find and every tag in use.
 func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	op := signIn(t, st, "support", model.RoleOperator, false)
@@ -199,6 +200,7 @@ func TestUsersPageFiltersCountsAndWindows(t *testing.T) {
 // Each chip is a bit of the index's per-user word, so there cannot be more of them
 // than the word has bits: a 33rd would be counted and then never match.
 func TestEveryChipFitsTheIndexWord(t *testing.T) {
+	t.Parallel()
 	const bits = 32 // usersIndex.chips is a []uint32
 	if len(userChips) > bits {
 		t.Fatalf("%d chips in a %d-bit word", len(userChips), bits)
@@ -207,6 +209,7 @@ func TestEveryChipFitsTheIndexWord(t *testing.T) {
 
 // The card fetches its one user whole, links included; the member picker gets names.
 func TestUserCardAndBriefList(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	op := signIn(t, st, "support", model.RoleOperator, false)
@@ -249,6 +252,7 @@ func TestUserCardAndBriefList(t *testing.T) {
 // same device count, the same usage and tags. The page is built from summaries, so a
 // summary that drifted from the user would be a page that lies.
 func TestUserSummariesMatchWholeUsers(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(t.TempDir() + "/page.db")
 	if err != nil {
 		t.Fatal(err)
@@ -304,6 +308,7 @@ func TestUserSummariesMatchWholeUsers(t *testing.T) {
 // A page with no rows reads neither groups nor devices; a page with rows asks for the
 // devices of exactly those rows.
 func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(t.TempDir() + "/page.db")
 	if err != nil {
 		t.Fatal(err)
@@ -348,6 +353,7 @@ func TestUsersPageReadsLookupsOnlyForItsRows(t *testing.T) {
 // a user and reloads the list sees the edit. What changes by other means (traffic, a
 // bot) shows once the snapshot ages out.
 func TestUsersListIsSharedUntilAChange(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	op := signIn(t, st, "support", model.RoleOperator, false)
@@ -414,6 +420,7 @@ func TestUsersListIsSharedUntilAChange(t *testing.T) {
 // Every surface that changes users counts its requests: the panel, the external API
 // and the payment callbacks. Reads do not count.
 func TestWritingRequestsAreCounted(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	rt.apiKeys = newAPIKeyGuard()
 	rt.apiLimiter = newIPRateLimiter(600, time.Minute)
@@ -450,6 +457,7 @@ func TestWritingRequestsAreCounted(t *testing.T) {
 
 // Concurrent readers and writers of the shared list: run under -race.
 func TestUsersListSnapshotUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	op := signIn(t, st, "support", model.RoleOperator, false)

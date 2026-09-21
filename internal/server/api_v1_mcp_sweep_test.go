@@ -26,6 +26,7 @@ import (
 // write half is a script, and at the end every tool the endpoint offers must have
 // been called — so an endpoint added to /v1 cannot reach an assistant untested.
 func TestMCPEveryToolAnswers(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key + "/write"
@@ -362,6 +363,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 // retrying a call that will never work, and it used to arrive with the storage
 // layer's own words attached ("sql: no rows in result set").
 func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key + "/write"
@@ -423,6 +425,7 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 // landed. Reported against POST /v1/users/{id}/groups, fixed for every route at
 // once in apiDecode.
 func TestAPIRejectsUnknownBodyFields(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	user, err := mgr.CreateUser(t.Context(), "strict", 0, 0)
 	if err != nil {
@@ -482,6 +485,7 @@ func firstEventKey(t *testing.T, text string) string {
 // Both remain a 400. Accepting the read-only keys quietly would mean accepting a
 // `member_ids` that changes no membership — the very failure the strictness is for.
 func TestAPINamesTheKindOfBadField(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	group, err := st.CreateGroup("round-trip", nil, 0)
 	if err != nil {
@@ -534,6 +538,7 @@ func TestAPINamesTheKindOfBadField(t *testing.T) {
 // the store. The list is checked against the generated schema, so a field added to
 // the request struct without being wired into the handler fails here.
 func TestMCPUserWritesReachTheStore(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key + "/write"

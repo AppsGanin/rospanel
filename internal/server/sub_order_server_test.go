@@ -15,6 +15,7 @@ import (
 // the last server would strand every client — and the nodes view carries the live
 // online count and placement the operator set.
 func TestSubscriptionNeverEmptiesOnLoadAndViewsShowOnline(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "loaded", 0, 0)
 	if err != nil {
@@ -73,6 +74,7 @@ func TestSubscriptionNeverEmptiesOnLoadAndViewsShowOnline(t *testing.T) {
 // subscription. A surviving node is what makes this visible: with the master alone,
 // Order's "never empty the list" rescue keeps it and the loss cannot happen.
 func TestExternalServersOutliveAHiddenFullMaster(t *testing.T) {
+	t.Parallel()
 	const extLink = "vless://11111111-2222-3333-4444-555555555555@9.9.9.9:443" +
 		"?type=tcp&security=tls&sni=partner.example#Partner"
 
@@ -130,6 +132,7 @@ func TestExternalServersOutliveAHiddenFullMaster(t *testing.T) {
 // The random order is a mode the settings accept and the store keeps: a value the
 // store did not know would read back as manual, silently.
 func TestRandomOrderModeIsSaved(t *testing.T) {
+	t.Parallel()
 	_, mgr, st := nodeAPITestServer(t)
 	set, _ := st.GetSettings()
 	set.SubOrderMode = model.OrderRandom

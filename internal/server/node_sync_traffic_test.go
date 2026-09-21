@@ -12,6 +12,7 @@ import (
 // with nothing in the report, the poll is held as usual — otherwise the flag alone
 // would turn a node into a tight loop against the panel.
 func TestTrafficBacklogChunkIsAnsweredAtOnce(t *testing.T) {
+	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	node, err := rt.mgr.GetNode(id)
@@ -86,6 +87,7 @@ func TestTrafficBacklogChunkIsAnsweredAtOnce(t *testing.T) {
 // resends that same batch forever. The panel has to take it, or the node never syncs
 // again — not even to receive the update that would chunk it.
 func TestOversizedTrafficBatchFromAnOlderAgentIsAccepted(t *testing.T) {
+	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	_, token := joinedNode(t, rt, "berlin")
 	req := nodeapi.SyncRequest{ReportID: 1}

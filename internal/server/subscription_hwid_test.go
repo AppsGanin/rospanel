@@ -54,6 +54,7 @@ func fetchSub(h http.Handler, token, hwid string) *httptest.ResponseRecorder {
 }
 
 func TestSubscriptionBindsDevicesUpToTheCap(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 2, false)
 
@@ -90,6 +91,7 @@ func TestSubscriptionBindsDevicesUpToTheCap(t *testing.T) {
 // a user can dodge by switching to a quieter client is not a cap. Turning the switch
 // off serves them again, counted by address as before.
 func TestSubscriptionRefusesClientsWithoutHWID(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 1, true)
 
@@ -110,6 +112,7 @@ func TestSubscriptionRefusesClientsWithoutHWID(t *testing.T) {
 // The cap only applies once the operator turns the feature on; until then nothing
 // is bound at all, so upgrading the panel changes nothing for anyone.
 func TestSubscriptionIgnoresDevicesWhenDisabled(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 1, false)
 	set, _ := st.GetSettings()
@@ -131,6 +134,7 @@ func TestSubscriptionIgnoresDevicesWhenDisabled(t *testing.T) {
 // The page lists the devices and the button releases one — the self-service that
 // keeps a full roster from becoming a support ticket.
 func TestSubscriptionPageListsAndUnbindsDevices(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 2, false)
 	if rec := fetchSub(h, u.SubToken, "dev-a"); rec.Code != http.StatusOK {
@@ -176,6 +180,7 @@ func TestSubscriptionPageListsAndUnbindsDevices(t *testing.T) {
 // that leaked is enough for another site to fire these actions from the user's
 // browser. They are refused unless the request proves it came from the page.
 func TestSubscriptionActionsRefuseACrossSiteRequest(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 2, false)
 	if rec := fetchSub(h, u.SubToken, "dev-a"); rec.Code != http.StatusOK {

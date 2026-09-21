@@ -23,6 +23,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // cost one payload computation per tick, not N. Before the feed, every open panel
 // tab ran its own SystemStatus (a user count and a traffic sum) on its own timer.
 func TestStatusFeedSharesOneComputation(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int64
 	f := newStatusFeedFunc(5*time.Millisecond, func() (any, error) {
 		return calls.Add(1), nil
@@ -66,6 +67,7 @@ func TestStatusFeedSharesOneComputation(t *testing.T) {
 // TestStatusFeedStopsWithLastViewer covers the idle case: an unattended panel must
 // not keep querying the database on a timer.
 func TestStatusFeedStopsWithLastViewer(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int64
 	f := newStatusFeedFunc(time.Millisecond, func() (any, error) {
 		return calls.Add(1), nil
@@ -92,6 +94,7 @@ func TestStatusFeedStopsWithLastViewer(t *testing.T) {
 // TestStatusFeedNewViewerPaintsImmediately: a tab opening mid-cycle should not
 // stare at an empty dashboard until the next tick.
 func TestStatusFeedNewViewerPaintsImmediately(t *testing.T) {
+	t.Parallel()
 	f := newStatusFeedFunc(time.Hour, func() (any, error) { return "payload", nil })
 
 	first, release1 := f.subscribe()
@@ -119,6 +122,7 @@ func TestStatusFeedNewViewerPaintsImmediately(t *testing.T) {
 // TestStatusFeedReleaseIsSafe: releasing closes the channel exactly once, and a
 // double release (defer plus an early return path) must not panic.
 func TestStatusFeedReleaseIsSafe(t *testing.T) {
+	t.Parallel()
 	f := newStatusFeedFunc(time.Hour, func() (any, error) { return 1, nil })
 	ch, release := f.subscribe()
 	release()
@@ -135,6 +139,7 @@ func TestStatusFeedReleaseIsSafe(t *testing.T) {
 // TestStatusFeedSurvivesSlowViewer: one stalled reader must not hold up the others
 // or block the publisher.
 func TestStatusFeedSurvivesSlowViewer(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int64
 	f := newStatusFeedFunc(time.Millisecond, func() (any, error) {
 		return calls.Add(1), nil

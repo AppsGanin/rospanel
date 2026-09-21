@@ -28,6 +28,7 @@ func loginFrom(t *testing.T, rt *Router, body, addr, ua string) int {
 // does not; a different one does. A failed attempt is not a sign-in and alerts
 // nobody — the lockout is that story's ending.
 func TestLoginAlertsOnceFromANewAddress(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	hash, err := auth.HashPassword("a-password")
 	if err != nil {

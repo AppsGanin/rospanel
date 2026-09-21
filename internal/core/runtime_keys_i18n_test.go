@@ -13,6 +13,7 @@ import (
 // gap here reaches the operator as "abuse.badip" in a Telegram message. These are
 // the two places that build a key, so they are checked by hand.
 func TestRuntimeAssembledKeysResolve(t *testing.T) {
+	t.Parallel()
 	cats := []abuse.Category{
 		abuse.CatCustom, abuse.CatBadIP, abuse.CatMalware, abuse.CatPiracy, abuse.CatGambling,
 	}

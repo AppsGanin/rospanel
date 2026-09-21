@@ -62,6 +62,7 @@ func apiCall(t *testing.T, rt *Router, method, path, body string) (int, json.Raw
 // Webhooks are the push half of an integration: an endpoint added over the API must
 // be listed, updated, tested and deleted over the same API.
 func TestAPIWebhooksRoundTrip(t *testing.T) {
+	t.Parallel()
 	rt, _ := apiTestRouter(t)
 
 	code, data := apiCall(t, rt, http.MethodPost, "/v1/webhooks",
@@ -122,6 +123,7 @@ func TestAPIWebhooksRoundTrip(t *testing.T) {
 // The journals: a change made over the API must be readable back over the API, both
 // in the user's own trail and in the admin trail.
 func TestAPIJournalsAreReadable(t *testing.T) {
+	t.Parallel()
 	rt, _ := apiTestRouter(t)
 
 	code, data := apiCall(t, rt, http.MethodPost, "/v1/users", `{"name":"journal-user"}`)
@@ -170,6 +172,7 @@ func TestAPIJournalsAreReadable(t *testing.T) {
 // Creating a user in one call: the device limit, the groups and the plan all land,
 // and the response is the user as it actually ended up.
 func TestAPICreateUserAppliesEverything(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	g, err := st.CreateGroup("VIP", []string{model.BuiltinToken(model.LocalNodeID, model.LaneVLESS)}, 0)
@@ -213,6 +216,7 @@ func TestAPICreateUserAppliesEverything(t *testing.T) {
 // Cancelling a subscription over the API is its own operation, not "apply the free
 // plan": it must move the user AND record the cancellation.
 func TestAPICancelSubscription(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	free := &model.TariffPlan{Slug: "cancel-free", Name: "Free tier", PriceRub: 0, PeriodDays: 30, Enabled: true}
@@ -263,6 +267,7 @@ func TestAPICancelSubscription(t *testing.T) {
 // Billing configuration round-trips, and a plan's users can be moved off it — the
 // only way to empty a plan before deleting it.
 func TestAPIBillingSettingsAndMigration(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	a := &model.TariffPlan{Slug: "plan-a", Name: "A", PriceRub: 100, PeriodDays: 30, Enabled: true}
@@ -310,6 +315,7 @@ func TestAPIBillingSettingsAndMigration(t *testing.T) {
 // integration in any language gets Russian prose, and the code (the one part worth
 // branching on) is flattened to a generic "bad_request" on the way out.
 func TestAPIErrorsAreTranslated(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	code, body := apiErr(t, rt, http.MethodPost, "/v1/billing/plans", `{"name":"   ","price_rub":100}`)
@@ -383,6 +389,7 @@ func hasCyrillic(s string) bool {
 // key must not learn it: that path is what keeps the panel invisible to scanners, and
 // an integration has no use for it.
 func TestAPIBackupInfoHidesTheSecretPath(t *testing.T) {
+	t.Parallel()
 	rt, _ := apiTestRouter(t)
 
 	code, data := apiCall(t, rt, http.MethodGet, "/v1/backup/info", "")
@@ -404,6 +411,7 @@ func TestAPIBackupInfoHidesTheSecretPath(t *testing.T) {
 
 // The two vocabularies that make grants and inbounds constructible from outside.
 func TestAPICatalogsArePublished(t *testing.T) {
+	t.Parallel()
 	rt, _ := apiTestRouter(t)
 
 	code, data := apiCall(t, rt, http.MethodGet, "/v1/groups/targets", "")
@@ -438,6 +446,7 @@ func id64(v int64) string { return strconv.FormatInt(v, 10) }
 // every time a caller flipped `hwid_enabled` alone — silently, and only visibly later
 // when devices stopped being refused.
 func TestAPISettingsPartialUpdateKeepsTheRest(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	// Establish a known starting point through the store, the way an operator would
@@ -493,6 +502,7 @@ func TestAPISettingsPartialUpdateKeepsTheRest(t *testing.T) {
 // changes a rule and writes it back must get exactly what it sent, or it cannot be used
 // to manage a server at all.
 func TestAPIServerRoutingRoundTrip(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 
 	// Pre-register WARP in the store. Turning it on otherwise makes the manager register
@@ -573,6 +583,7 @@ func TestAPIServerRoutingRoundTrip(t *testing.T) {
 // store.NodeEdit, and a field forgotten there is silently zeroed. Server 0 exercises none
 // of it, which is why this case exists.
 func TestAPINodeRoutingKeepsTheRestOfTheNode(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 	node, err := rt.mgr.CreateNode("routing-node", "node.example.com")
 	if err != nil {
@@ -634,6 +645,7 @@ func TestAPINodeRoutingKeepsTheRestOfTheNode(t *testing.T) {
 // serving the old behaviour until the next restart — the panel swaps them immediately,
 // and so must /v1, or the two surfaces disagree about what "applied" means.
 func TestAPISettingsTakeEffectLive(t *testing.T) {
+	t.Parallel()
 	rt, _ := apiTestRouter(t)
 	rt.decoy = http.NotFoundHandler() // a sentinel the swap must replace
 
@@ -678,6 +690,7 @@ func TestAPISettingsTakeEffectLive(t *testing.T) {
 // reason the public status page is; without it a key holder can stall the panel by
 // looping a GET.
 func TestAPIGeoStatsAreMemoized(t *testing.T) {
+	t.Parallel()
 	rt, st := apiTestRouter(t)
 	u, err := rt.mgr.CreateUser(t.Context(), "geo", 0, 0)
 	if err != nil {
@@ -733,6 +746,7 @@ func totalIPs(rows []model.CountryStat) int64 {
 // even if the handler still special-cased it, and comparing only key presence would pass
 // even if the handler returned the wrong node entirely.
 func TestAPINodeGetMatchesTheListShape(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	if _, err := st.CreateNode("berlin", "10.9.9.9", "tok-berlin"); err != nil {

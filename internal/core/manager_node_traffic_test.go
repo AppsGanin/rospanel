@@ -15,6 +15,7 @@ import (
 // compared against today's traffic would never trip, and a daily one compared against
 // the month would trip on the 2nd.
 func TestTrafficPeriodStart(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 17, 13, 45, 0, 0, time.UTC)
 	if got := trafficPeriodStart(model.Placement{TrafficPeriod: model.TrafficDay, TrafficResetDay: 14}, now); got != "2026-09-17" {
 		t.Errorf("day window starts %q, want today — a reset day means nothing to a daily cap", got)
@@ -29,6 +30,7 @@ func TestTrafficPeriodStart(t *testing.T) {
 // The billing month: the window opens on the reset day, reaches back into the previous
 // month until that day comes round, and a day the month does not have is its last.
 func TestTrafficPeriodStartOnAResetDay(t *testing.T) {
+	t.Parallel()
 	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 13, 45, 0, 0, time.UTC) }
 	for _, c := range []struct {
 		name  string
@@ -63,6 +65,7 @@ func TestTrafficPeriodStartOnAResetDay(t *testing.T) {
 }
 
 func TestTrafficResetDayValidateAndNormalize(t *testing.T) {
+	t.Parallel()
 	for _, d := range []int{-1, 32} {
 		if err := (model.Placement{TrafficLimit: 1, TrafficResetDay: d}).Validate(); err == nil {
 			t.Errorf("reset day %d was accepted", d)
@@ -92,6 +95,7 @@ func TestTrafficResetDayValidateAndNormalize(t *testing.T) {
 // Clearing the limit has to clear what hangs off it. A stored "hide when over" with
 // no limit to be over would be a switch that does nothing and reads as if it does.
 func TestPlacementNormalizeClearsTheCap(t *testing.T) {
+	t.Parallel()
 	p := model.Placement{TrafficLimit: 0, TrafficPeriod: model.TrafficDay, HideWhenOver: true}.Normalized()
 	if p.TrafficPeriod != "" || p.HideWhenOver {
 		t.Errorf("cleared limit left period=%q hide=%v", p.TrafficPeriod, p.HideWhenOver)
@@ -103,6 +107,7 @@ func TestPlacementNormalizeClearsTheCap(t *testing.T) {
 }
 
 func TestOverTrafficLimit(t *testing.T) {
+	t.Parallel()
 	uncapped := model.Placement{}
 	if uncapped.OverTrafficLimit(1 << 60) {
 		t.Error("a server with no cap read as over it")
@@ -122,6 +127,7 @@ func TestOverTrafficLimit(t *testing.T) {
 // panel reports the server as over — for the master (node 0, whose placement lives in
 // settings) as well as for a node.
 func TestRefreshNodeTrafficMarksServersOver(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "cap.db"))
 	if err != nil {
@@ -198,6 +204,7 @@ func TestRefreshNodeTrafficMarksServersOver(t *testing.T) {
 // that is re-set to true by the very alert being repeated looks identical to one that
 // was never lost.
 func TestNodeTrafficAlertsOncePerCrossing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "alert.db"))
 	if err != nil {
@@ -247,6 +254,7 @@ func TestNodeTrafficAlertsOncePerCrossing(t *testing.T) {
 // alert state each pass — so an alarm here would be re-announced every tick for a
 // condition the operator created on purpose.
 func TestNodeTrafficNoAlertsForServersThatAreNotServing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "off.db"))
 	if err != nil {
@@ -297,6 +305,7 @@ func TestNodeTrafficNoAlertsForServersThatAreNotServing(t *testing.T) {
 // bracket makes Telegram reject the whole message — the alert is dropped, and the one
 // an operator must not silently lose is the one about their bill.
 func TestNodeTrafficAlertEscapesTheServerName(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "esc.db"))
 	if err != nil {
@@ -337,6 +346,7 @@ func TestNodeTrafficAlertEscapesTheServerName(t *testing.T) {
 // un-hides every capped server at once and sends an all-clear for an allowance that
 // has not come back.
 func TestNodeTrafficKeepsFiguresWhenTheQueryFails(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "fail.db"))
 	if err != nil {
@@ -382,6 +392,7 @@ func TestNodeTrafficKeepsFiguresWhenTheQueryFails(t *testing.T) {
 // summed from. The clock is real here, so the dates are picked around today: traffic
 // yesterday and today, and a reset day of today puts only today's in the window.
 func TestRefreshNodeTrafficCountsFromTheResetDay(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "reset.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

@@ -25,6 +25,7 @@ func bigPage(n, size int) string {
 // The point of the whole file: an oversized page comes back as JSON that parses.
 // Cutting the string left the assistant holding a syntax error and a promise.
 func TestMCPResultTruncatesWholeRows(t *testing.T) {
+	t.Parallel()
 	const rows = 400
 	out := shrinkMCPResult(bigPage(rows, 2000)) // ~830 KB in
 	if len(out) > maxMCPResult {
@@ -61,6 +62,7 @@ func TestMCPResultTruncatesWholeRows(t *testing.T) {
 
 // A response that fits must come back untouched — no meta invented, no bytes moved.
 func TestMCPResultLeavesFittingAnswersAlone(t *testing.T) {
+	t.Parallel()
 	in := bigPage(10, 100)
 	if out := shrinkMCPResult(in); out != in {
 		t.Errorf("a %d-byte answer was rewritten", len(in))
@@ -70,6 +72,7 @@ func TestMCPResultLeavesFittingAnswersAlone(t *testing.T) {
 // What cannot be shortened by dropping rows still has to be bounded, and cutting
 // mid-rune would turn the tail of a Cyrillic name into a replacement character.
 func TestMCPResultFallsBackOnRuneBoundary(t *testing.T) {
+	t.Parallel()
 	blob := `{"data":{"log":"` + strings.Repeat("щ", maxMCPResult) + `"}}`
 	out := shrinkMCPResult(blob)
 	if !utf8.ValidString(out) {
@@ -88,6 +91,7 @@ func TestMCPResultFallsBackOnRuneBoundary(t *testing.T) {
 // The ceiling is the backstop; the window is what keeps answers small in the first
 // place. And a route whose body is a tarball is not offered as a tool at all.
 func TestMCPWindowAndToolOptOut(t *testing.T) {
+	t.Parallel()
 	byName := map[string]mcp.Tool{}
 	for _, tl := range mcp.BuildTools(OpenAPISpec("https://panel.example/apiseg"), true) {
 		byName[tl.Name] = tl

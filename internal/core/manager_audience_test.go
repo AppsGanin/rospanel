@@ -12,6 +12,7 @@ import (
 // silently matches everyone (or nobody) shows up as a wrong list rather than a
 // plausible-looking count.
 func TestAudienceTargeting(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	now := time.Now()
 
@@ -91,6 +92,7 @@ func TestAudienceTargeting(t *testing.T) {
 // filter that matches nobody — an empty audience reads as "nobody qualifies" when the
 // truth is "the panel didn't understand you".
 func TestAudienceValidation(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"seen:", "seen:0", "seen:abc", "seen:9999", "nonsense", "unseen:-1"} {
 		if model.ValidAudience(bad) {
 			t.Errorf("%q accepted as an audience", bad)
@@ -110,6 +112,7 @@ func TestAudienceValidation(t *testing.T) {
 // values as facts: "never connected" collected ex-customers who connected
 // yesterday, while the audience meant to hold them excluded them.
 func TestDeletedAccountBecomesUnlinked(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	id := mkUser(t, m, "ушёл", 0)
 	subscribeChat(t, m, 900, id)
@@ -148,6 +151,7 @@ func TestDeletedAccountBecomesUnlinked(t *testing.T) {
 // empty list and previewed as "0 recipients", while the launch would either refuse
 // it or — for an empty string — fall back to everyone.
 func TestAudiencePreviewMatchesTheSend(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	subscribeChat(t, m, 100, 0)
 

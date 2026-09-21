@@ -10,6 +10,7 @@ import (
 // just-oversized donor (www.microsoft.com, ~8.3 KB) is rejected while a normal one
 // passes. Uses synthetic DER lengths — the framing math is what's under test.
 func TestCertRecordSize(t *testing.T) {
+	t.Parallel()
 	cert := func(derLen int) *x509.Certificate {
 		return &x509.Certificate{Raw: make([]byte, derLen)}
 	}

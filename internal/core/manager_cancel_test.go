@@ -16,6 +16,7 @@ import (
 // while a paid plan is active, buying a different plan is blocked; cancelling moves
 // the user to the free plan, after which any paid plan can be bought.
 func TestCancelAndSwitchGuard(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "cancel.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -88,6 +89,7 @@ func TestCancelAndSwitchGuard(t *testing.T) {
 // second manual-order request for the same user+plan reuses the pending order
 // instead of creating a duplicate.
 func TestRequestPlanPaymentReusesPendingOrder(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "reuse.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -128,6 +130,7 @@ func TestRequestPlanPaymentReusesPendingOrder(t *testing.T) {
 // (future expiry, price 0) is active must start from NOW, not inherit the trial's
 // remaining time; renewing the same active paid plan must extend from its expiry.
 func TestExtendOnlyOnRenewal(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "renew.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -184,6 +187,7 @@ func TestExtendOnlyOnRenewal(t *testing.T) {
 // TestRequestPlanPaymentSwitchGuard covers finding #1: the manual-order path also
 // blocks switching to a different plan while a paid one is active.
 func TestRequestPlanPaymentSwitchGuard(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "manguard.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -217,6 +221,7 @@ func contains(s, sub string) bool { return strings.Contains(s, sub) }
 // TestDisabledPlanNotPurchasable covers the security fix: a disabled plan can't be
 // bought by passing its id to the pay paths, even though GetTariffPlan returns it.
 func TestDisabledPlanNotPurchasable(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "disabled.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -254,6 +259,7 @@ func TestDisabledPlanNotPurchasable(t *testing.T) {
 // TestLatestPendingProviderOrderForPlan checks the anti-spam reuse query returns
 // the pending provider order for a user+plan+provider.
 func TestLatestPendingProviderOrderForPlan(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "reuseq.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -289,6 +295,7 @@ func TestLatestPendingProviderOrderForPlan(t *testing.T) {
 
 // TestMigratePlanUsers moves users off a plan onto another one.
 func TestMigratePlanUsers(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "migrate.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

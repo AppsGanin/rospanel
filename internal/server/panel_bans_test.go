@@ -17,6 +17,7 @@ import (
 // ban list and marked on the user, and lifts it; an operator can do none of it, and no
 // one can ban the address they are calling from.
 func TestBanRoutes(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)

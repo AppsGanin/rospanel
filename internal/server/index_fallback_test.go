@@ -14,6 +14,7 @@ import (
 // that names neither the request nor the cause, and which the operator who hit it took
 // to be their own mistake.
 func TestUnknownAPIPathAnswersJSONNotThePage(t *testing.T) {
+	t.Parallel()
 	rt := &Router{spaIndex: []byte("<!doctype html><html><head></head></html>")}
 
 	t.Run("an API path that no route answered", func(t *testing.T) {
@@ -59,6 +60,7 @@ func TestUnknownAPIPathAnswersJSONNotThePage(t *testing.T) {
 // fell through to net/http's own 405, which answers text/plain — the same failure as
 // issue #70 with a different status code.
 func TestUnknownPathAnswersJSONForEveryMethod(t *testing.T) {
+	t.Parallel()
 	rt := &Router{spaIndex: []byte("<!doctype html><html><head></head></html>")}
 	for _, m := range []string{http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodPut} {
 		t.Run(m, func(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 // rather than a time series. Anything that averages over a window reads the gaps as
 // missing rather than as zero and overstates the quiet periods.
 func TestFillDaysTurnsBusyDaysIntoATimeSeries(t *testing.T) {
+	t.Parallel()
 	got := fillDays([]model.DailyPoint{
 		{Day: "2026-07-30", Up: 10, Down: 20},
 		{Day: "2026-08-02", Up: 30, Down: 40},
@@ -35,6 +36,7 @@ func TestFillDaysTurnsBusyDaysIntoATimeSeries(t *testing.T) {
 
 // A single day is a range too, and an empty one still has to answer with that day.
 func TestFillDaysCoversTheEdges(t *testing.T) {
+	t.Parallel()
 	if got := fillDays(nil, "2026-08-13", "2026-08-13"); len(got) != 1 || got[0].Day != "2026-08-13" {
 		t.Errorf("one empty day = %+v", got)
 	}

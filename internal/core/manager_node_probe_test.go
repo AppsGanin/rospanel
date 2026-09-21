@@ -11,6 +11,7 @@ import (
 // first's channel and the first's cancel then removed the second's — so neither heard
 // back and both saves silently skipped the check.
 func TestProbeRegistryServesConcurrentWaitersForOnePort(t *testing.T) {
+	t.Parallel()
 	r := newProbeRegistry()
 	p := nodeapi.PortProbe{Network: "tcp", Port: 9443}
 
@@ -47,6 +48,7 @@ func TestProbeRegistryServesConcurrentWaitersForOnePort(t *testing.T) {
 // answer never clears the entry, and without the distinction every one of its polls
 // would return instantly — a hot request loop against the panel for the whole timeout.
 func TestFreshWorkIsOnlyUnsentWork(t *testing.T) {
+	t.Parallel()
 	m := &Manager{probes: newProbeRegistry(), checks: newCheckRegistry()}
 
 	_, cancel := m.probes.add(7, nodeapi.PortProbe{Network: "tcp", Port: 9443})
@@ -74,6 +76,7 @@ func TestFreshWorkIsOnlyUnsentWork(t *testing.T) {
 
 // A verdict for a superseded question must not satisfy the one still being waited on.
 func TestConfigCheckMatchesOnID(t *testing.T) {
+	t.Parallel()
 	r := newCheckRegistry()
 	ch, cancel := r.add(7, nodeapi.ConfigCheckRequest{ID: "current"})
 	defer cancel()

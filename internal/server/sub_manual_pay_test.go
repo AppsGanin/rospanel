@@ -39,6 +39,7 @@ func postPay(h http.Handler, token string, planID int64, provider string) *httpt
 // provider: with it off the page offers nothing to pay with and the route refuses,
 // with it on the page names it and a tap opens a pending order.
 func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "payer", 0, 0)
 	if err != nil {
@@ -107,6 +108,7 @@ func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
 // Manual payment stands beside the providers rather than instead of them: with a
 // provider enabled as well, the page offers both and manual comes first.
 func TestManualPaymentStandsBesideAProvider(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "payer", 0, 0)
 	if err != nil {

@@ -46,6 +46,7 @@ func happHref(t *testing.T, body string) string {
 // through, give Happ an encrypted link once the operator asks for one — a link that
 // opens to this user's subscription address and to nothing else.
 func TestSubPageHandsHappAnEncryptedLink(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "happ", 0, 0)
 	if err != nil {
@@ -89,6 +90,7 @@ func TestSubPageHandsHappAnEncryptedLink(t *testing.T) {
 // The user's card asks for the link on its own; the endpoint answers "" while the
 // setting is off, so the card shows nothing rather than a link that is not in use.
 func TestUserHappLinkEndpoint(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	cookie := signIn(t, st, "op", model.RoleOperator, false)
 	u, err := rt.mgr.CreateUser(t.Context(), "carded", 0, 0)

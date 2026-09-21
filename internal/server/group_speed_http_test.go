@@ -15,6 +15,7 @@ import (
 // does not mention it (an older panel posts name and grants only), changed by one
 // that does — and shown on the member's group refs, which the user card reads.
 func TestPanelGroupSpeedLimit(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	c := signIn(t, st, "owner", model.RoleOwner, false)
 

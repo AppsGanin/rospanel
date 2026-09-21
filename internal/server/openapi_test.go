@@ -11,6 +11,7 @@ import (
 // struct fields, and honours json:"-" (secret fields must never leak into the
 // public spec).
 func TestBuildOpenAPI(t *testing.T) {
+	t.Parallel()
 	doc := buildOpenAPI("https://host/apX/v1")
 
 	// Round-trips through JSON (no unserializable values).
@@ -54,6 +55,7 @@ func TestBuildOpenAPI(t *testing.T) {
 // TestDocsUnauthenticated verifies the spec + Swagger UI are served without a key,
 // while an unknown /v1 path without a key is rejected by apiAuth.
 func TestDocsUnauthenticated(t *testing.T) {
+	t.Parallel()
 	rt := &Router{apiKeys: newAPIKeyGuard()}
 	h := rt.apiHandler()
 

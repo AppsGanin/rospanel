@@ -14,6 +14,7 @@ import (
 // all-clear for an alarm that was throttled away would announce the end of an outage
 // nobody was told about.
 func TestXrayCrashAndRecoveryArePaired(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	var sent []string
 	m.SetAdminNotifier(func(html string) { sent = append(sent, html) })
@@ -54,6 +55,7 @@ func TestXrayCrashAndRecoveryArePaired(t *testing.T) {
 }
 
 func TestFmtDowntime(t *testing.T) {
+	t.Parallel()
 	cases := map[time.Duration]string{
 		5 * time.Second:             "5 сек",
 		90 * time.Second:            "1 мин",

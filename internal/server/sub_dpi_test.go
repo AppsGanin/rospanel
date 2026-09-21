@@ -13,6 +13,7 @@ import (
 // JSON format; once opted in, the config they get carries the fragment/noise
 // outbound, and an explicit ?format= or a response rule still overrides.
 func TestXrayJSONFormatForXrayCoreClients(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "dpi", 0, 0)
 	if err != nil {
@@ -89,6 +90,7 @@ func TestXrayJSONFormatForXrayCoreClients(t *testing.T) {
 }
 
 func TestSubDPIValidation(t *testing.T) {
+	t.Parallel()
 	ok := model.DefaultSubDPI()
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("defaults refused: %v", err)

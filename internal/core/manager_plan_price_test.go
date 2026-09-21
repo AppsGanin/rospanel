@@ -15,6 +15,7 @@ import (
 // forever (registration and the expiry downgrade never charge) while IsFree still
 // reported it paid — so it would also stay on sale in the user bot.
 func TestPlanPriceFollowsDesignation(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "price.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

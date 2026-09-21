@@ -50,6 +50,7 @@ func statsFixture(t *testing.T) (h http.Handler, base, key string, days [3]strin
 // straight into `day BETWEEN ” AND ”`. The panel's own dashboard defaulted to the
 // last 30 days all along — the external surface just never called that code.
 func TestAPIStatsDefaultsToTheLastThirtyDays(t *testing.T) {
+	t.Parallel()
 	h, base, key, days := statsFixture(t)
 
 	for _, path := range []string{"/v1/stats/series", "/v1/stats/nodes", "/v1/stats/nodes/series"} {
@@ -95,6 +96,7 @@ func TestAPIStatsDefaultsToTheLastThirtyDays(t *testing.T) {
 
 // The per-server daily split: what used to take one call per day.
 func TestAPIStatsNodeSeriesSplitsByDayAndServer(t *testing.T) {
+	t.Parallel()
 	h, base, key, days := statsFixture(t)
 
 	rec := apiGet(t, h, base+"/v1/stats/nodes/series?from="+days[0]+"&to="+days[2], key)
@@ -150,6 +152,7 @@ func TestAPIStatsNodeSeriesSplitsByDayAndServer(t *testing.T) {
 
 // A malformed window is answered rather than quietly treated as "everything".
 func TestAPIStatsRejectsABadWindow(t *testing.T) {
+	t.Parallel()
 	h, base, key, days := statsFixture(t)
 	for _, q := range []string{"?from=yesterday", "?to=2026-13-40", "?from=" + days[2] + "&to=" + days[0]} {
 		if rec := apiGet(t, h, base+"/v1/stats/series"+q, key); rec.Code != http.StatusBadRequest {

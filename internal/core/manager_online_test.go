@@ -12,6 +12,7 @@ import (
 // forgets them once they age out, and attributes a sighting to the server it was
 // reported from — the master's own log to 0, a node's report to the node.
 func TestOnlineGaugeCountsPerServer(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	a, _ := m.CreateUser(ctx, "a", 0, 0)
@@ -44,6 +45,7 @@ func TestOnlineGaugeCountsPerServer(t *testing.T) {
 // seconds — and no longer, and not for a clock that stepped back, and never as a map
 // a caller could change for the next one.
 func TestOnlineCountIsReusedBriefly(t *testing.T) {
+	t.Parallel()
 	var g onlineGauge
 	t0 := time.Now()
 	g.record(7, 1, t0.Unix())
@@ -69,6 +71,7 @@ func TestOnlineCountIsReusedBriefly(t *testing.T) {
 }
 
 func TestMasterPlacementValidatesAndNormalises(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	if err := m.SetMasterPlacement(model.Placement{Country: "xyz"}); err == nil {
 		t.Error("a three-letter country was accepted")
@@ -102,6 +105,7 @@ func TestMasterPlacementValidatesAndNormalises(t *testing.T) {
 
 // Sightings recorded from every node's report while subscriptions ask for the counts.
 func TestOnlineCountUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	var g onlineGauge
 	var wg sync.WaitGroup
 	for i := range 6 {

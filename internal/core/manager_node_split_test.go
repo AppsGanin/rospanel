@@ -377,6 +377,7 @@ func TestNodeSplitStateFollowsThePanel(t *testing.T) {
 // A node whose agent does not speak this revision of parts gets the whole config, as it
 // always did.
 func TestOlderAgentsGetTheWholeConfig(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	node := splitTestNode(t, m)
 	n, _ := m.store.GetNode(node.id)
@@ -394,6 +395,7 @@ func TestOlderAgentsGetTheWholeConfig(t *testing.T) {
 
 // Which users each kind of change to the fleet-wide inputs touches.
 func TestDiffNodeInputs(t *testing.T) {
+	t.Parallel()
 	base := func() *nodeInputs {
 		return &nodeInputs{
 			users: []model.User{{ID: 1, UUID: "a", Password: "p"}, {ID: 3, UUID: "c"}, {ID: 5, UUID: "e"}},
@@ -444,6 +446,7 @@ func TestDiffNodeInputs(t *testing.T) {
 
 // The journal answers for exactly the versions it holds.
 func TestInputsJournal(t *testing.T) {
+	t.Parallel()
 	var j inputsJournal
 	read := func(v uint64, ids ...int64) *nodeInputs {
 		in := &nodeInputs{version: v}
@@ -495,6 +498,7 @@ func TestInputsJournal(t *testing.T) {
 // The health report reads a node that holds its state in parts as current by the hash of
 // the parts, as it reads any other node by the whole config's.
 func TestNodeConfigHealthReadsStatesInParts(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	node := splitTestNode(t, m)
 	if _, err := m.store.CreateUser("u", "uuid-1", "pw-1", "tok-1", 0, 0, 0); err != nil {
@@ -528,6 +532,7 @@ func TestNodeConfigHealthReadsStatesInParts(t *testing.T) {
 // reported its tag is read as a sync would be: current with no build at all, pending as
 // soon as a change is waiting for it.
 func TestNodeConfigHealthAsksLikeASync(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	node := splitTestNode(t, m)
 	if _, err := m.store.CreateUser("u", "uuid-1", "pw-1", "tok-1", 0, 0, 0); err != nil {

@@ -68,6 +68,7 @@ func managerWithGeo(t *testing.T, dir string) *Manager {
 
 // The whole point of the feature: a bare address becomes an address with a place.
 func TestAnnotateProbesFillsCountryAndOperator(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	geoipFixture(t, dir)
 	asnFixture(t, dir)
@@ -104,6 +105,7 @@ func TestAnnotateProbesFillsCountryAndOperator(t *testing.T) {
 
 // A panel that has not finished its first geo download still has scanners to show.
 func TestAnnotateProbesWithoutTables(t *testing.T) {
+	t.Parallel()
 	m := managerWithGeo(t, t.TempDir()) // empty dir: no geoip.dat, no ip2asn.tsv.gz
 	probes := []model.ProbeHit{{IP: "204.76.203.14", Paths: 10}}
 	m.annotateProbes(probes)
@@ -121,6 +123,7 @@ func TestAnnotateProbesWithoutTables(t *testing.T) {
 // annotateProbes but forgetting to call it from the reader would leave the feature
 // working in tests and absent in the panel.
 func TestProbesReturnedToThePanelAreAnnotated(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	geoipFixture(t, dir)
 	asnFixture(t, dir)

@@ -56,6 +56,7 @@ func getTelegramJSON(t *testing.T, h http.Handler, c *http.Cookie) map[string]an
 // TestSupportSettingsRoundTripHTTP saves the support fields and reads them back out
 // through the API, which is the path a misaligned settings column would break.
 func TestSupportSettingsRoundTripHTTP(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)
@@ -106,6 +107,7 @@ func TestSupportSettingsRoundTripHTTP(t *testing.T) {
 // storing a blank would leave support switched on and no way in — with nothing on
 // screen to explain why.
 func TestSupportEnableRequiresConfig(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)
@@ -154,6 +156,7 @@ func TestSupportEnableRequiresConfig(t *testing.T) {
 // TestSupportCheckRefusesUnconfigured: the check button reaches out to Telegram, so
 // it must fail fast and legibly before that when there's nothing to check yet.
 func TestSupportCheckRefusesUnconfigured(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)
@@ -171,6 +174,7 @@ func TestSupportCheckRefusesUnconfigured(t *testing.T) {
 // a failure on the last one left the first two written while the request reported an
 // error — and the audit middleware skips failed requests, so nothing recorded it.
 func TestFailedSaveLeavesEverythingUnchanged(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)
@@ -210,6 +214,7 @@ func TestFailedSaveLeavesEverythingUnchanged(t *testing.T) {
 // Absent fields mean "unchanged", not "empty". A browser tab loaded before a field
 // existed would otherwise wipe a bot token and get a 200 for it.
 func TestPartialSaveKeepsUntouchedSections(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 	admin := signIn(t, st, "admin", model.RoleAdmin, false)

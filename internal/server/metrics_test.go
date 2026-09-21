@@ -25,6 +25,7 @@ func metricsBody(t *testing.T, h http.Handler, base, key string) string {
 }
 
 func TestMetricsExposition(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	if _, err := mgr.CreateUser(t.Context(), "metrics-user", 0, 0); err != nil {
 		t.Fatalf("create user: %v", err)
@@ -66,6 +67,7 @@ func TestMetricsExposition(t *testing.T) {
 // The scrape target must not be open: it reports user counts, host stats and the
 // node roster, which is exactly the fingerprint the secret path exists to hide.
 func TestMetricsRequiresKey(t *testing.T) {
+	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	if err := st.SetAPIPath("metrics-api"); err != nil {
 		t.Fatalf("api path: %v", err)
@@ -85,6 +87,7 @@ func TestMetricsRequiresKey(t *testing.T) {
 }
 
 func TestEscapeLabel(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		`plain`:      `plain`,
 		`say "hi"`:   `say \"hi\"`,

@@ -69,6 +69,7 @@ func count(list []string, want string) int {
 }
 
 func TestAbuseMeasuresClimbTheLadderOnce(t *testing.T) {
+	t.Parallel()
 	m, uid := measuresManager(t)
 	if err := m.store.SetUserSpeedLimit(uid, 4096); err != nil {
 		t.Fatal(err)
@@ -132,6 +133,7 @@ func TestAbuseMeasuresClimbTheLadderOnce(t *testing.T) {
 }
 
 func TestAbuseThrottleLiftRestoresTheOldCap(t *testing.T) {
+	t.Parallel()
 	m, uid := measuresManager(t)
 	hit(m, uid, 4)
 	u := userOf(t, m, uid)
@@ -149,6 +151,7 @@ func TestAbuseThrottleLiftRestoresTheOldCap(t *testing.T) {
 // the panel forgets the measure instead of lifting it later into a state nobody
 // chose.
 func TestOperatorOverrulesTheMeasure(t *testing.T) {
+	t.Parallel()
 	m, uid := measuresManager(t)
 	ctx := context.Background()
 
@@ -189,6 +192,7 @@ func TestOperatorOverrulesTheMeasure(t *testing.T) {
 // A user the operator switched off is not the panel's to switch back on: the
 // disable rung records nothing for them.
 func TestAbuseDisableSkipsAnOperatorDisabledUser(t *testing.T) {
+	t.Parallel()
 	m, uid := measuresManager(t)
 	if err := m.store.SetUserEnabled(uid, false); err != nil {
 		t.Fatal(err)
@@ -201,6 +205,7 @@ func TestAbuseDisableSkipsAnOperatorDisabledUser(t *testing.T) {
 }
 
 func TestAbuseMeasuresOffDoNothing(t *testing.T) {
+	t.Parallel()
 	m, uid := abuseTestManager(t) // ladder all zeros
 	hit(m, uid, 50)
 	u := userOf(t, m, uid)
@@ -210,6 +215,7 @@ func TestAbuseMeasuresOffDoNothing(t *testing.T) {
 }
 
 func TestAbuseMeasuresValidate(t *testing.T) {
+	t.Parallel()
 	bad := []model.AbuseMeasures{
 		{ThrottleMin: 3, ThrottleKbps: 0, Hours: 1}, // a throttle to nothing
 		{DisableMin: 3, Hours: 0},                   // a switch-off with no end

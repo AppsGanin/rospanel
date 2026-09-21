@@ -19,6 +19,7 @@ import (
 // it accepts that, with the state gate let go once encoded — and a change after a hold
 // as only the change.
 func TestSplitStateOverTheWire(t *testing.T) {
+	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	if _, err := st.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {

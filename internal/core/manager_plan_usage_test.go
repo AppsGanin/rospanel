@@ -74,6 +74,7 @@ func usedBy(t *testing.T, st *store.Store, id int64) int64 {
 // A 1 GB allowance is then over budget the instant it is granted, and the user is cut
 // off until the cycle rolls a month later.
 func TestPlanDowngradeResetsUsage(t *testing.T) {
+	t.Parallel()
 	m, st, u, free, paid := planUsageFixture(t)
 	ctx := context.Background()
 
@@ -108,6 +109,7 @@ func TestPlanDowngradeResetsUsage(t *testing.T) {
 // Buying a plan is a change of plan, so it starts a fresh quota — otherwise someone
 // who exhausted the free allowance would pay and stay blocked.
 func TestBuyingAPlanResetsUsage(t *testing.T) {
+	t.Parallel()
 	m, st, u, free, paid := planUsageFixture(t)
 	ctx := context.Background()
 
@@ -127,6 +129,7 @@ func TestBuyingAPlanResetsUsage(t *testing.T) {
 // time they had left, so the counter it was running stays. An operator re-assigning
 // the same plan must not silently hand out a free refill either.
 func TestSamePlanKeepsUsage(t *testing.T) {
+	t.Parallel()
 	m, st, u, _, paid := planUsageFixture(t)
 	ctx := context.Background()
 
@@ -150,6 +153,7 @@ func TestSamePlanKeepsUsage(t *testing.T) {
 // spent counter, so WorkingUsers kept filtering the user out with the money taken.
 // A PURCHASED period refills; an operator re-assign still does not (TestSamePlanKeepsUsage).
 func TestPaidRenewalRefillsTheQuota(t *testing.T) {
+	t.Parallel()
 	m, st, u, _, _ := planUsageFixture(t)
 	ctx := context.Background()
 

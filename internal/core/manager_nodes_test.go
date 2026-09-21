@@ -40,6 +40,7 @@ func nodeTestManager(t *testing.T) *Manager {
 // JSON the panel pushes to that node (NodeDesiredState), and neither inherits the
 // other's rule. This is the "a route reaches the master and the nodes alike" guarantee.
 func TestRoutingPropagatesMasterAndNode(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	const masterMark = "master-route-marker.example"
 	const nodeMark = "node-route-marker.example"
@@ -100,6 +101,7 @@ func TestRoutingPropagatesMasterAndNode(t *testing.T) {
 }
 
 func TestNodeSettingsOverrides(t *testing.T) {
+	t.Parallel()
 	set := &model.Settings{
 		Host: "panel.example.com", SNI: "panel.example.com",
 		VLESSEnabled: true, HysteriaEnabled: true, RealityEnabled: true,
@@ -195,6 +197,7 @@ func TestNodeSettingsOverrides(t *testing.T) {
 }
 
 func TestNodeDesiredStateHashStable(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	n, err := m.store.CreateNode("n1", "nl1.example.com", "nginx")
 	if err != nil {
@@ -252,6 +255,7 @@ func servingNode(t *testing.T, m *Manager, name, host string) *model.Node {
 }
 
 func TestIngestNodeSyncIdempotent(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	n := servingNode(t, m, "n1", "nl1.example.com")
@@ -305,6 +309,7 @@ func abuseNodeManager(t *testing.T, badIPs []string) *Manager {
 // TestIngestNodeAbuseMatches: a node's reported destinations are matched against the
 // blocklists, attributed to the reporting node.
 func TestIngestNodeAbuseMatches(t *testing.T) {
+	t.Parallel()
 	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	n := servingNode(t, m, "n1", "nl1.example.com")
@@ -329,6 +334,7 @@ func TestIngestNodeAbuseMatches(t *testing.T) {
 // against fabricated user ids — the EXISTS guard drops them at write time, but not
 // before they cost buffer space.
 func TestIngestNodeAbuseRejectsUnknownUsers(t *testing.T) {
+	t.Parallel()
 	m := abuseNodeManager(t, []string{"203.0.113.0/24"})
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	n := servingNode(t, m, "n1", "nl1.example.com")
@@ -351,6 +357,7 @@ func TestIngestNodeAbuseRejectsUnknownUsers(t *testing.T) {
 // TestIngestNodeAbuseTruncates: an oversized batch is truncated so nothing scales
 // with what the node chose to send.
 func TestIngestNodeAbuseTruncates(t *testing.T) {
+	t.Parallel()
 	m := abuseNodeManager(t, blMany(maxNodeSiteRows*3))
 	u, _ := m.store.CreateUser("u1", "uuid-u1", "pw", "tok-u1", 0, 0, 0)
 	n := servingNode(t, m, "n1", "nl1.example.com")
@@ -375,6 +382,7 @@ func TestIngestNodeAbuseTruncates(t *testing.T) {
 // fill the shared match buffer with blocklisted domains and starve the master's own
 // locally-observed matches (the feeds are public, so a node can pick known hits).
 func TestIngestNodeSitesBoundsAbuseContribution(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	m.abusePending = make(map[abusePendingKey]store.AbuseHit)
 	m.abuseAlerted = make(map[abuseAlertKey]struct{})
@@ -415,6 +423,7 @@ func blMany(n int) []string {
 }
 
 func TestNodeNameUniqueness(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.CreateNode("US-1", "a.example.com"); err != nil {
 		t.Fatalf("first create: %v", err)
@@ -436,6 +445,7 @@ func TestNodeNameUniqueness(t *testing.T) {
 }
 
 func TestNodeWakeRegistry(t *testing.T) {
+	t.Parallel()
 	r := newNodeRegistry()
 	ch := r.wakeChan(1)
 	select {
@@ -465,6 +475,7 @@ func TestNodeWakeRegistry(t *testing.T) {
 // and is cleared only when that node comes back, which is the available proof that the
 // response landed.
 func TestNodeCommandSurvivesHandoverAndRestart(t *testing.T) {
+	t.Parallel()
 	st := nodeCmdStore(t)
 	const id, kind = int64(7), "update"
 	now := time.Now().Unix()
@@ -500,6 +511,7 @@ func TestNodeCommandSurvivesHandoverAndRestart(t *testing.T) {
 
 // A node that never comes back must not act on an order the operator gave up on.
 func TestNodeCommandExpires(t *testing.T) {
+	t.Parallel()
 	st := nodeCmdStore(t)
 	const id, kind = int64(7), "geo"
 	stale := time.Now().Add(-nodeCmdTTL - time.Minute).Unix()
@@ -529,6 +541,7 @@ func nodeCmdStore(t *testing.T) *store.Store {
 // node's alike: an unsupported scheme, and an address with a port, which would stop Xray
 // from starting.
 func TestValidateDNSListReasons(t *testing.T) {
+	t.Parallel()
 	for dns, code := range map[string]string{
 		"1.1.1.1\nhttps://dns.google/dns-query\ntcp://8.8.8.8:53": "",
 		"1.1.1.1\ntls://1.1.1.1":                                  "err.dnsScheme",

@@ -14,6 +14,7 @@ import (
 // the secret path and gated by a session, so these go through the manager directly
 // where a session would be the only thing under test.
 func TestUnbindKeepsUsersApart(t *testing.T) {
+	t.Parallel()
 	_, mgr, st := nodeAPITestServer(t)
 
 	a, err := mgr.CreateUser(t.Context(), "alice", 0, 0)
@@ -51,6 +52,7 @@ func TestUnbindKeepsUsersApart(t *testing.T) {
 // reading "absent" as "zero" would quietly lift every cap the first time somebody
 // edited a quota.
 func TestSetUserLimitsLeavesSpeedAloneWhenAbsent(t *testing.T) {
+	t.Parallel()
 	_, mgr, st := nodeAPITestServer(t)
 
 	u, err := mgr.CreateUser(t.Context(), "capped", 0, 0)
@@ -92,6 +94,7 @@ func TestSetUserLimitsLeavesSpeedAloneWhenAbsent(t *testing.T) {
 // A cap can be lifted, and lifting it must reach the store — "0 means unlimited"
 // only works if zero is actually written.
 func TestSetUserSpeedLimitRejectsNegativeAndClearsAtZero(t *testing.T) {
+	t.Parallel()
 	_, mgr, st := nodeAPITestServer(t)
 
 	u, err := mgr.CreateUser(t.Context(), "u", 0, 0)
@@ -115,6 +118,7 @@ func TestSetUserSpeedLimitRejectsNegativeAndClearsAtZero(t *testing.T) {
 // Whatever a client puts in the headers ends up in the panel UI, the subscription
 // page and a Telegram message. It must arrive as one line of bounded text.
 func TestDeviceHeadersAreSanitised(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u := hwidUser(t, mgr, st, 5, false)
 

@@ -42,6 +42,7 @@ func designatedFixture(t *testing.T) (*Manager, *store.Store, *model.TariffPlan,
 // of the admin's own plan pickers (they filter on enabled) with nothing on screen
 // explaining why, and no control left to undo it.
 func TestDesignatedPlanStaysActive(t *testing.T) {
+	t.Parallel()
 	m, st, free, trial := designatedFixture(t)
 
 	for _, p := range []*model.TariffPlan{free, trial} {
@@ -68,6 +69,7 @@ func TestDesignatedPlanStaysActive(t *testing.T) {
 // already disabled (or priced) when it gets designated must be normalized too, not
 // just one saved through the plan editor afterwards.
 func TestDesignatingNormalizesExistingPlan(t *testing.T) {
+	t.Parallel()
 	m, st, _, _ := designatedFixture(t)
 
 	stale := &model.TariffPlan{Slug: "stale", Name: "Stale", PriceRub: 300, PeriodDays: 7, Enabled: false}
@@ -94,6 +96,7 @@ func TestDesignatingNormalizesExistingPlan(t *testing.T) {
 // legacy enabled=0 on the trial plan would otherwise silently hand out no trials,
 // with no control in the UI to explain or fix it.
 func TestTrialGrantedRegardlessOfEnabledFlag(t *testing.T) {
+	t.Parallel()
 	m, st, _, trial := designatedFixture(t)
 
 	// Write the legacy state through the store directly: only the manager's

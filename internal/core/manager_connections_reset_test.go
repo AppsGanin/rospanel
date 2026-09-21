@@ -11,6 +11,7 @@ import (
 // drops its custom inbounds with the grants that named them — through the same
 // path a save takes, so it is validated like one.
 func TestResetNodeConnectionsRestoresTheFactoryState(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	syncedNode(t, m.store, "edge", "26.7.28")
 	nodes, err := m.store.ListNodes()

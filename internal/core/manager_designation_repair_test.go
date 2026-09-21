@@ -16,6 +16,7 @@ import (
 // that way they go expired and are then stuck forever, because EnforceBilling skips
 // users already on the free plan and a free plan cannot be renewed.
 func TestDesignatingPaidPlanRewritesItsUsers(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "designate.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -82,6 +83,7 @@ func TestDesignatingPaidPlanRewritesItsUsers(t *testing.T) {
 // downgrade someone already on the free plan. Refuse the configuration instead of
 // letting the operator discover it a trial period later.
 func TestFreeAndTrialMustDiffer(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "same.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)

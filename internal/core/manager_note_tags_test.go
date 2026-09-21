@@ -12,6 +12,7 @@ import (
 // A note or tag change lands in the user's journal — once per real change, never
 // for a re-save of what was already there — and the note's text stays out of it.
 func TestNoteAndTagsAreJournalledWithoutLeakingTheNote(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "annotated", 0, 0)
@@ -63,6 +64,7 @@ func TestNoteAndTagsAreJournalledWithoutLeakingTheNote(t *testing.T) {
 }
 
 func TestNoteAndTagsRejectWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "annotated", 0, 0)

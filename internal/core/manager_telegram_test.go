@@ -6,6 +6,7 @@ import "testing"
 // bare internal id, the API wants it prefixed with -100, and without the prefix
 // every call reports the group as unreachable.
 func TestNormalizeGroupID(t *testing.T) {
+	t.Parallel()
 	if got, want := normalizeGroupID(1234567890), int64(-1001234567890); got != want {
 		t.Errorf("bare id = %d, want %d", got, want)
 	}
@@ -29,6 +30,7 @@ func TestNormalizeGroupID(t *testing.T) {
 // approach leaking messages across customers through the 0 state; this is the
 // invariant that replaced it.
 func TestTopicMappingsSurviveSavesAndStayScoped(t *testing.T) {
+	t.Parallel()
 	m := bcManager(t)
 	const groupA, groupB int64 = -1001111111111, -1002222222222
 

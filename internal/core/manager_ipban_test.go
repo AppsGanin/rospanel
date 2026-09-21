@@ -17,6 +17,7 @@ import (
 // them out, a trusted one is the operator's own exception, and a server's would cut a
 // node off the panel.
 func TestBanRefusals(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	servingNode(t, m, "n", "198.51.100.200")
 	// A node known by name is refused by what the name resolves to.
@@ -77,6 +78,7 @@ func TestBanRefusals(t *testing.T) {
 // banned, reaches every node, and lists with whose address it was; unbanning lifts it
 // and the source policy's block on an address alike.
 func TestBanAndUnban(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	n := servingNode(t, m, "n", "n.example.com")
 	uid := mkUser(t, m, "owner-of-the-address", 0)
@@ -144,6 +146,7 @@ func TestBanAndUnban(t *testing.T) {
 
 // Trusting a network lifts a ban placed by hand inside it.
 func TestTrustingLiftsABan(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.BanIP("203.0.113.7", 0, ""); err != nil {
 		t.Fatal(err)

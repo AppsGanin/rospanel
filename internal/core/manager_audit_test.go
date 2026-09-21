@@ -45,6 +45,7 @@ func hasAction(events []model.UserEvent, action string) bool {
 // The actor stamped on the context must reach the audit row — that attribution is
 // the whole point of threading it through the Manager.
 func TestAuditRecordsActor(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	u, err := m.CreateUser(adminCtx(), "Вася", 0, 0)
 	if err != nil {
@@ -69,6 +70,7 @@ func TestAuditRecordsActor(t *testing.T) {
 // A context with no actor is the panel acting on its own — the background poller,
 // a provider webhook — and must record as system, not as an empty actor.
 func TestAuditDefaultsToSystem(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	u, _ := m.CreateUser(context.Background(), "bot", 0, 0)
 	events := trail(t, m, u.ID)
@@ -79,6 +81,7 @@ func TestAuditDefaultsToSystem(t *testing.T) {
 
 // Each single-user mutation writes its own row, so the trail reads as a history.
 func TestAuditUserLifecycle(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Вася", 0, 0)
@@ -121,6 +124,7 @@ func TestAuditUserLifecycle(t *testing.T) {
 // Deleting a user keeps their trail, and the deletion row keeps the name — the row
 // can't look it up after the fact.
 func TestAuditSurvivesDelete(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Вася", 0, 0)
@@ -141,6 +145,7 @@ func TestAuditSurvivesDelete(t *testing.T) {
 // A bulk action writes one row per affected user, flagged as bulk, so a mass change
 // still shows up in each individual user's trail.
 func TestAuditBulkPerUser(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	a := mkUser(t, m, "a", 0)
@@ -172,6 +177,7 @@ func TestAuditBulkPerUser(t *testing.T) {
 
 // A bulk delete must still name each user in its row, since the rows outlive them.
 func TestAuditBulkDeleteKeepsNames(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	a := mkUser(t, m, "a", 0)
 	if _, err := m.BulkUserAction(adminCtx(), []int64{a}, "delete", 0); err != nil {
@@ -186,6 +192,7 @@ func TestAuditBulkDeleteKeepsNames(t *testing.T) {
 // Toggling a user to the state they're already in changed nothing, so it must not
 // file a row claiming it did (a double-clicked button, a stale UI).
 func TestAuditNoRowForNoOpToggle(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Вася", 0, 0) // created enabled
@@ -220,6 +227,7 @@ func TestAuditNoRowForNoOpToggle(t *testing.T) {
 // The panel's limits form posts the speed cap with every save, so a quota edit that
 // leaves the speed alone must not file a "speed limit" row next to the limits row.
 func TestAuditNoRowForUnchangedSpeed(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Ваня", 0, 0)
@@ -254,6 +262,7 @@ func TestAuditNoRowForUnchangedSpeed(t *testing.T) {
 // The panel, the API and the bots all post whole records back, so a save that
 // changed nothing must leave the journal — and the user — untouched.
 func TestAuditNoRowForUnchangedRecord(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Ваня", 0, 0)
@@ -314,6 +323,7 @@ func TestAuditNoRowForUnchangedRecord(t *testing.T) {
 // fresh quota to a user whose cycle rolled the next morning, and — since re-saving
 // the same period is a no-op — nothing else could move the anchor.
 func TestResetTrafficRestartsTheCycle(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Цикл", 0, 0)
@@ -360,6 +370,7 @@ func TestResetTrafficRestartsTheCycle(t *testing.T) {
 // A bulk extend must carry the limits it did NOT touch: the row renders as a full
 // "limits changed" statement, and omitting the quota made it read "unlimited".
 func TestAuditBulkExtendKeepsLimits(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := adminCtx()
 	u, _ := m.CreateUser(ctx, "Вася", 0, time.Now().Add(24*time.Hour).Unix())
@@ -385,6 +396,7 @@ func TestAuditBulkExtendKeepsLimits(t *testing.T) {
 // Self-registration is ONE action: it must not also file the generic "user created"
 // row (it did when billing was off, and didn't when a trial plan was configured).
 func TestAuditSelfRegistrationIsOneRow(t *testing.T) {
+	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := actor.With(context.Background(), actor.UserSelf("@vasya"))
 	u, err := m.CreateRegisteredUser(ctx, "Вася") // billing off ⇒ the plain fallback
@@ -403,6 +415,7 @@ func TestAuditSelfRegistrationIsOneRow(t *testing.T) {
 // The page limit is clamped, and the clamp is what the HTTP layer's "was the page
 // full?" cursor check relies on.
 func TestEventPageLimit(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ in, want int }{
 		{0, 50}, {-5, 50}, {10, 10}, {eventPageMax, eventPageMax}, {eventPageMax + 1, eventPageMax},
 	}

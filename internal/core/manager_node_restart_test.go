@@ -34,6 +34,7 @@ func restartTestManager(t *testing.T) (*Manager, int64) {
 // fine. A request must therefore survive being SENT and only clear when the node
 // reports an Xray that actually came back.
 func TestNodeRestartConfirmsOnlyOnAFreshXray(t *testing.T) {
+	t.Parallel()
 	m, id := restartTestManager(t)
 
 	if got := m.NodeRestartState(id); got != "" {
@@ -88,6 +89,7 @@ func TestNodeRestartConfirmsOnlyOnAFreshXray(t *testing.T) {
 // An agent too old to report its Xray start time can never prove anything, so its
 // request must not hang the button forever — nor be mistaken for a success.
 func TestNodeRestartGivesUpWaiting(t *testing.T) {
+	t.Parallel()
 	m, id := restartTestManager(t)
 
 	if err := m.RequestNodeXrayRestart(id); err != nil {

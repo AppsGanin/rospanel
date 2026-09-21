@@ -10,6 +10,7 @@ import (
 // still be recognized as streamable — the SSH-provision POST is audited, so its
 // writer is wrapped, and a direct type assertion would miss the Flusher.
 func TestUnwrapFlusherThroughAuditWrapper(t *testing.T) {
+	t.Parallel()
 	rec := httptest.NewRecorder() // implements http.Flusher
 	wrapped := &auditStatus{ResponseWriter: rec, code: http.StatusOK}
 	if _, ok := unwrapFlusher(wrapped); !ok {

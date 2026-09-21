@@ -49,6 +49,7 @@ func resetPeriodOf(t *testing.T, st *store.Store, id int64) string {
 // the plan gives the user its calendar cycle; without the field a paid plan runs
 // its quota over the whole period (the derived default, kept for every existing plan).
 func TestPlanResetPeriodLandsOnAssignment(t *testing.T) {
+	t.Parallel()
 	m, st, u, _ := planResetFixture(t)
 	ctx := context.Background()
 
@@ -83,6 +84,7 @@ func TestPlanResetPeriodLandsOnAssignment(t *testing.T) {
 // A purchase of a plan that refills on its own still hands over a fresh counter:
 // money taken must mean access now, not on the 1st. The cycle survives the write.
 func TestPlanResetPeriodPurchaseRefillsAndKeepsCycle(t *testing.T) {
+	t.Parallel()
 	m, st, u, _ := planResetFixture(t)
 	ctx := context.Background()
 
@@ -124,6 +126,7 @@ func TestPlanResetPeriodPurchaseRefillsAndKeepsCycle(t *testing.T) {
 // it brings days:N back. Both reach the people already on the plan, the way the
 // speed cap does — a tariff edit that does nothing is the one reported as broken.
 func TestPlanResetPeriodExplicitBeatsFreeDefaultAndIsRetroactive(t *testing.T) {
+	t.Parallel()
 	m, st, u, free := planResetFixture(t)
 	ctx := context.Background()
 
@@ -162,6 +165,7 @@ func TestPlanResetPeriodExplicitBeatsFreeDefaultAndIsRetroactive(t *testing.T) {
 // A user on a DIFFERENT plan is not touched by an edit to this one, and a plan
 // with no quota carries no cycle at all — there is nothing to refill.
 func TestPlanResetPeriodScope(t *testing.T) {
+	t.Parallel()
 	m, st, u, _ := planResetFixture(t)
 	ctx := context.Background()
 
@@ -195,6 +199,7 @@ func TestPlanResetPeriodScope(t *testing.T) {
 // The field reaches SaveTariffPlan straight off the API's JSON decode, so a value
 // the quota sweep would never act on has to be refused, not stored.
 func TestPlanResetPeriodRejectsUnknown(t *testing.T) {
+	t.Parallel()
 	m, _ := planSpeedManager(t)
 	for _, bad := range []string{"hourly", "days:30", "Monthly"} {
 		p := &model.TariffPlan{Name: "Bad", Slug: "bad", PriceRub: 100, PeriodDays: 30, DataLimit: 1 << 30, ResetPeriod: bad, Enabled: true}

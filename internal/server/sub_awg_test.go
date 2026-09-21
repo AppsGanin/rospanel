@@ -15,6 +15,7 @@ import (
 // config/QR endpoints hand out this user's config for the master; with the lane
 // off — or for a server that does not exist — the endpoints are the decoy.
 func TestAWGConfigEndpointsAndPageCard(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "awg", 0, 0)
 	if err != nil {

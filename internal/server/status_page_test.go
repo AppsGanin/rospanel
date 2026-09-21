@@ -12,6 +12,7 @@ import (
 // While the page is off, its path is indistinguishable from any other unknown one
 // — that is the whole reason it ships disabled.
 func TestStatusPageHiddenUntilEnabled(t *testing.T) {
+	t.Parallel()
 	h, _, _ := nodeAPITestServer(t)
 
 	off := getFrom(h, "/status")
@@ -23,6 +24,7 @@ func TestStatusPageHiddenUntilEnabled(t *testing.T) {
 }
 
 func TestStatusPageRendersWhenEnabled(t *testing.T) {
+	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	if err := st.SetStatusPage(true, "status"); err != nil {
 		t.Fatalf("enable: %v", err)
@@ -94,6 +96,7 @@ func TestStatusPageRendersWhenEnabled(t *testing.T) {
 }
 
 func TestStatusPathProblem(t *testing.T) {
+	t.Parallel()
 	set := &model.Settings{PanelSecretPath: "secret123", SubPath: "sub", APIPath: "apiseg"}
 	for _, c := range []struct{ path, wantCode string }{
 		{"status", ""},

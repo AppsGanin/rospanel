@@ -62,6 +62,7 @@ func named(t *testing.T, m *Manager, nodeID, userID int64) (used int64, conn, si
 // A node is believed about the users its config lets in, and about no one else: not a
 // user the access groups keep off it, not a user who does not exist.
 func TestNodeReportNamesOnlyItsOwnUsers(t *testing.T) {
+	t.Parallel()
 	m := servedTestManager(t)
 	a := servingNode(t, m, "a", "a.example.com")
 	b := servingNode(t, m, "b", "b.example.com")
@@ -104,6 +105,7 @@ func TestNodeReportNamesOnlyItsOwnUsers(t *testing.T) {
 // Someone taken off a node is believed for an hour after the state without them was
 // built — what they used before the node applied it arrives later — and not after.
 func TestNodeReportGraceForAUserWhoLeft(t *testing.T) {
+	t.Parallel()
 	m := servedTestManager(t)
 	n := servingNode(t, m, "n", "n.example.com")
 	u, _ := m.store.CreateUser("leaving", "uuid-1", "pw1", "tok-1", 0, 0, 0)
@@ -143,6 +145,7 @@ func TestNodeReportGraceForAUserWhoLeft(t *testing.T) {
 // A report the panel cannot check is not taken — and its traffic is not acknowledged,
 // so the node keeps it and sends it again.
 func TestUncheckableNodeReportIsNotAcknowledged(t *testing.T) {
+	t.Parallel()
 	m := servedTestManager(t)
 	n := servingNode(t, m, "n", "n.example.com")
 	u, _ := m.store.CreateUser("u", "uuid-1", "pw1", "tok-1", 0, 0, 0)
@@ -168,6 +171,7 @@ func TestUncheckableNodeReportIsNotAcknowledged(t *testing.T) {
 // The tag a connection is recorded under is the panel's own spelling of the user, not
 // whatever spelling the node sent.
 func TestNodeConnectionTagIsTheUsersOwn(t *testing.T) {
+	t.Parallel()
 	m := servedTestManager(t)
 	n := servingNode(t, m, "n", "n.example.com")
 	u, _ := m.store.CreateUser("u", "uuid-1", "pw1", "tok-1", 0, 0, 0)
@@ -192,6 +196,7 @@ func TestNodeConnectionTagIsTheUsersOwn(t *testing.T) {
 // grace, and forgotten the moment they are back. A state whose users could not be read
 // believes everyone and says nothing about who left.
 func TestServedRegistryRemembersWhoLeft(t *testing.T) {
+	t.Parallel()
 	var r servedRegistry
 	grace := int64(nodeServedGrace / time.Second)
 	r.note(1, []int64{1, 2, 3}, false, 1000, 1)
@@ -246,6 +251,7 @@ func TestServedRegistryRemembersWhoLeft(t *testing.T) {
 // States for one node are built side by side, and the one read first can finish last:
 // it must not put back the users of an older read.
 func TestServedRegistryKeepsTheNewestRead(t *testing.T) {
+	t.Parallel()
 	var r servedRegistry
 	older, newer := r.stamp(), r.stamp()
 	r.note(1, []int64{1, 2}, false, 100, newer) // the newer read finishes first
@@ -270,6 +276,7 @@ func TestServedRegistryKeepsTheNewestRead(t *testing.T) {
 // Reports from two nodes, states being built for them and the users changing, all at
 // once: under -race, and with every report about the node's own user counted.
 func TestNodeReportsUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	m := servedTestManager(t)
 	a := servingNode(t, m, "a", "a.example.com")
 	b := servingNode(t, m, "b", "b.example.com")
@@ -312,6 +319,7 @@ func TestNodeReportsUnderConcurrency(t *testing.T) {
 // A peer of the node's AmneziaWG tunnel is one of its users, with no Xray lane at all:
 // its traffic and connections come in the same reports.
 func TestNodeReportBelievesTunnelPeers(t *testing.T) {
+	t.Parallel()
 	m := nodeTestManager(t)
 	m.nodeAWG = map[int64]nodeAWGState{}
 	u, _ := m.store.CreateUser("u", "uuid-1", "pw1", "tok-1", 0, 0, 0)

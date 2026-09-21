@@ -13,6 +13,7 @@ import (
 // the user's ACCESS, not just their quota — the same resolved Access that config
 // generation reads to decide which inbounds carry the user's credential.
 func TestPlanGroupsGateAccess(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "plangroups.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -88,6 +89,7 @@ func TestPlanGroupsGateAccess(t *testing.T) {
 // naive "plan-owned set vs granted set" comparison would report a change on every
 // single renewal and restart Xray for nothing.
 func TestPlanGroupsChangedOnlyOnRealMovement(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "changed.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -131,6 +133,7 @@ func TestPlanGroupsChangedOnlyOnRealMovement(t *testing.T) {
 // A group deleted while the plan editor was open must not make the plan unsavable —
 // the id is dropped instead (the FK would refuse the write otherwise).
 func TestSaveTariffPlanDropsUnknownGroups(t *testing.T) {
+	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "plangroups2.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
