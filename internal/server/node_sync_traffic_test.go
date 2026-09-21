@@ -12,7 +12,6 @@ import (
 // with nothing in the report, the poll is held as usual — otherwise the flag alone
 // would turn a node into a tight loop against the panel.
 func TestTrafficBacklogChunkIsAnsweredAtOnce(t *testing.T) {
-	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	node, err := rt.mgr.GetNode(id)

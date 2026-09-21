@@ -139,7 +139,6 @@ func TestAStuckNodeHoldsUpNoOtherPush(t *testing.T) {
 // push after a held poll is woken, a node told it is revoked, and a node that hangs up
 // while held. Were any to keep it, the next push anywhere would wait for good.
 func TestEverySyncPathLetsTheStateGateGo(t *testing.T) {
-	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	gateFree := func(when string) {
