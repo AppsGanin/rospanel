@@ -271,9 +271,12 @@ func (s *Supervisor) tryLiveUsers(apiAddr string, data []byte) (RawApply, bool, 
 	}
 	changes, ok := planUserChanges(cur, data)
 	if !ok {
-		return RawRestarted, false, nil
-	}
-	if err := s.applyUserChanges(apiAddr, changes); err != nil {
+		// Not users alone: the custom inbounds may be what changed (see live_inbounds.go).
+		live, err := s.tryLiveInbounds(apiAddr, data)
+		if !live {
+			return RawRestarted, false, err
+		}
+	} else if err := s.applyUserChanges(apiAddr, changes); err != nil {
 		return RawRestarted, false, err
 	}
 	if err := writeFileAtomic(s.configPath, data); err != nil {
@@ -292,6 +295,10 @@ func (s *Supervisor) applyUserChanges(apiAddr string, changes []userChange) erro
 		if _, err := s.runXrayAPI(statsTimeout, append([]string{"api", "rmu", "--server=" + apiAddr, "-tag=" + c.tag}, c.remove...)...); err != nil {
 			return fmt.Errorf("api rmu tag=%s: %w", c.tag, err)
 		}
+		// Only this inbound's: a user taken off one inbound may still be on another.
+		// A rekeyed user is removed and added back, and their old key's connections
+		// are closed with the key.
+		s.cutConns(c.remove, []string{c.tag})
 	}
 
 	var stubs []any

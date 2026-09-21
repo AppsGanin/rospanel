@@ -217,11 +217,16 @@ func (a *Agent) noteReportID(rid int64) {
 // (ackReport >= the batch's report id). Traffic accumulated since (in `pending`)
 // is untouched and goes out as the next batch.
 func (a *Agent) ackReport(ackReport int64) {
+	a.statsMu.Lock()
+	defer a.statsMu.Unlock()
+	a.ackReportLocked(ackReport)
+}
+
+// ackReportLocked is ackReport for a caller holding statsMu.
+func (a *Agent) ackReportLocked(ackReport int64) {
 	if ackReport <= 0 {
 		return
 	}
-	a.statsMu.Lock()
-	defer a.statsMu.Unlock()
 	if a.inflightID != 0 && ackReport >= a.inflightID {
 		a.inflight = nil
 		a.inflightID = 0
@@ -256,9 +261,11 @@ func (a *Agent) sampleStats() {
 	if !a.sup.Running() {
 		return
 	}
-	stats, err := a.sup.QueryStats(a.sup.APIAddr())
+	stats, err := a.sup.QueryStatsLive(a.sup.APIAddr())
 	if err != nil {
-		return
+		if stats, err = a.sup.QueryStats(a.sup.APIAddr()); err != nil {
+			return
+		}
 	}
 	a.statsMu.Lock()
 	defer a.statsMu.Unlock()
@@ -268,17 +275,15 @@ func (a *Agent) sampleStats() {
 			continue
 		}
 		prev := a.lastCounters[email]
-		addUp, addDown := cur.Up-prev.Up, cur.Down-prev.Down
-		if cur.Up < prev.Up { // Xray restarted → counter reset
-			addUp = cur.Up
-		}
-		if cur.Down < prev.Down {
-			addDown = cur.Down
-		}
+		addUp, addDown := counterDelta(cur, prev)
 		a.lastCounters[email] = cur
 		if addUp <= 0 && addDown <= 0 {
 			continue
 		}
+		if a.quotaActive == nil {
+			a.quotaActive = map[int64]time.Time{}
+		}
+		a.quotaActive[uid] = time.Now()
 		d := a.pending[uid]
 		if d == nil {
 			d = &nodeapi.TrafficDelta{UserID: uid}

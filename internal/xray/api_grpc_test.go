@@ -1,8 +1,11 @@
 package xray
 
 import (
+	"encoding/binary"
+	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -116,7 +119,7 @@ func TestXrayAPIRefusesAnEmptyUser(t *testing.T) {
 func TestXrayAPIRefusesAnOversizedMessage(t *testing.T) {
 	api := newXrayAPI("127.0.0.1:1", func(time.Duration) { t.Error("asked again") })
 	defer api.close()
-	if err := api.call(handlerAlterInbound, make([]byte, apiMaxMessage+1)); err == nil {
+	if _, err := api.call(handlerAlterInbound, make([]byte, apiMaxMessage+1)); err == nil {
 		t.Fatal("an oversized message was sent")
 	}
 }
@@ -134,4 +137,52 @@ func serveH2C(t *testing.T, addr string, handler http.HandlerFunc) string {
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 	return ln.Addr().String()
+}
+
+// The quota watch reads the counters through the gRPC API, not the CLI: the answer's
+// per-user counters come back folded as QueryStats folds the CLI's, and nothing else.
+func TestQueryStatsLiveReadsTheCounters(t *testing.T) {
+	stat := func(name string, value uint64) []byte {
+		b := pbField(nil, 1, []byte(name))
+		b = binary.AppendUvarint(b, 2<<3) // value = 2, varint
+		return binary.AppendUvarint(b, value)
+	}
+	var answer []byte
+	for _, s := range [][]byte{
+		stat("user>>>u1>>>traffic>>>uplink", 100),
+		stat("user>>>u1>>>traffic>>>downlink", 1<<40),
+		stat("user>>>u2>>>traffic>>>downlink", 5),
+		stat("inbound>>>vless-in>>>traffic>>>uplink", 9),
+	} {
+		answer = pbField(answer, 1, s)
+	}
+	var gotPattern string
+	addr := serveH2C(t, "127.0.0.1:0", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if r.URL.Path != statsQueryStats || len(body) < 5 {
+			http.Error(w, "not QueryStats", http.StatusBadRequest)
+			return
+		}
+		if _, v, _, err := pbNext(body[5:]); err == nil {
+			gotPattern = string(v)
+		}
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		frame := make([]byte, 5, 5+len(answer))
+		binary.BigEndian.PutUint32(frame[1:], uint32(len(answer)))
+		_, _ = w.Write(append(frame, answer...))
+		w.Header().Set("Grpc-Status", "0")
+	})
+	sup := NewSupervisor("", filepath.Join(t.TempDir(), "config.json"), t.TempDir())
+	got, err := sup.QueryStatsLive(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPattern != "user>>>" {
+		t.Errorf("asked for %q, want every user counter", gotPattern)
+	}
+	want := map[string]Traffic{"u1": {Up: 100, Down: 1 << 40}, "u2": {Down: 5}}
+	if len(got) != len(want) || got["u1"] != want["u1"] || got["u2"] != want["u2"] {
+		t.Fatalf("got %v, want %v", got, want)
+	}
 }

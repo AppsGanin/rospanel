@@ -11,17 +11,141 @@ import (
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
+	"github.com/AppsGanin/rospanel/internal/xray"
 )
+
+// StatsTickEvery is how often TickStats runs: how late, at most, the master notices a
+// user of its own Xray running past their quota. The traffic itself is still written
+// once per StatsFlushEvery.
+const (
+	StatsTickEvery  = 10 * time.Second
+	StatsFlushEvery = 60 * time.Second
+)
+
+// quotaWatch is what TickStats measures between two flushes: for every user with
+// quota left, the Xray counters at the last flush (keyed by stats name, "u<id>") and
+// how many bytes they had left then.
+type quotaWatch struct {
+	at    time.Time // the last flush attempt, written or not
+	users map[string]quotaLeft
+}
+
+type quotaLeft struct {
+	up, down int64 // Xray counters at the last flush
+	left     int64 // bytes of quota left at the last flush
+}
+
+// crossed reports whether a user has used up, since the last flush, the quota they
+// had left then. Only the local Xray's bytes count here — a user's other servers
+// report through their own path — so it can only be late, never early.
+func (w quotaWatch) crossed(stats map[string]xray.Traffic) bool {
+	for name, q := range w.users {
+		t, ok := stats[name]
+		if !ok {
+			continue
+		}
+		up, down := t.Up-q.up, t.Down-q.down
+		if t.Up < q.up { // Xray restarted: the counter began again from 0
+			up = t.Up
+		}
+		if t.Down < q.down {
+			down = t.Down
+		}
+		if up+down >= q.left {
+			return true
+		}
+	}
+	return false
+}
+
+// queryLocalStats reads the local Xray's per-user counters through its gRPC API; a
+// flush that cannot get them that way tries the CLI as well.
+func (m *Manager) queryLocalStats(flush bool) (map[string]xray.Traffic, error) {
+	if m.statsSource != nil {
+		return m.statsSource()
+	}
+	stats, err := m.sup.QueryStatsLive(m.sup.APIAddr())
+	if err != nil && flush {
+		logWarn("stats: reading the counters over the API failed, using the CLI", "err", err)
+		return m.sup.QueryStats(m.sup.APIAddr())
+	}
+	return stats, err
+}
+
+// TickStats runs every StatsTickEvery. It writes the traffic once per StatsFlushEvery,
+// and in between reads the counters only while someone has a quota to watch — and
+// flushes at once when one of them has used it up, so the user leaves the config
+// within a tick instead of up to a minute later. The writes stay one batch a minute
+// unless someone crosses.
+//
+// Only the flush's own failure is returned: a watch read failing between flushes is
+// the next flush's to report, not something to log six times a minute.
+func (m *Manager) TickStats() error {
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	due := time.Since(m.quota.at) >= StatsFlushEvery
+	if !due && m.quotaStale.Swap(false) {
+		if err := m.rewatchQuota(); err != nil {
+			logErr("stats: re-reading quotas failed", "err", err)
+		}
+	}
+	if !due && len(m.quota.users) == 0 {
+		return nil
+	}
+	if due {
+		// Counted as tried whatever happens: with Xray down, the next try is a minute
+		// away rather than every tick.
+		m.quota.at = time.Now()
+	}
+	stats, err := m.queryLocalStats(due)
+	if err != nil {
+		if due {
+			return err
+		}
+		return nil
+	}
+	if !due && !m.quota.crossed(stats) {
+		return nil
+	}
+	return m.pollStatsWith(stats)
+}
+
+// rewatchQuota re-reads the watch from the users as they are now, without writing
+// anything: a quota set, raised or reset since the last flush is measured against its
+// new value from the next tick on, rather than from the next flush. The counters each
+// user was last flushed at are the database's baselines, so the watch stays measured
+// from the flush it was built on. statsMu is held.
+func (m *Manager) rewatchQuota() error {
+	bases, err := m.store.QuotaBaselines()
+	if err != nil {
+		return err
+	}
+	users := make(map[string]quotaLeft, len(bases))
+	for id, b := range bases {
+		users[fmt.Sprintf("u%d", id)] = quotaLeft{up: b.Up, down: b.Down, left: b.DataLimit - b.Used}
+	}
+	m.quota.users = users
+	return nil
+}
 
 // PollStats reads per-user traffic from Xray, accumulates lifetime totals
 // (handling counter resets on Xray restart), and enforces quotas/expiry.
 func (m *Manager) PollStats() error {
-	stats, err := m.sup.QueryStats(m.sup.APIAddr())
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	m.quota.at = time.Now()
+	stats, err := m.queryLocalStats(true)
 	if err != nil {
 		return err
 	}
-	// Only the counters: what the poll subtracts from. Whole users were read here, every
-	// minute, to use three columns of them.
+	return m.pollStatsWith(stats)
+}
+
+// pollStatsWith is PollStats over counters already read. statsMu is held.
+func (m *Manager) pollStatsWith(stats map[string]xray.Traffic) error {
+	// Only the counters and the quota: what the poll subtracts from and what the watch
+	// between polls measures against. Whole users were read here, every minute, to use
+	// three columns of them.
 	bases, err := m.store.TrafficBaselines()
 	if err != nil {
 		return err
@@ -32,12 +156,19 @@ func (m *Manager) PollStats() error {
 	// per-user this was three fsyncs per active user on a single connection, which is
 	// what put a hard ceiling on how many users the panel could account for at all.
 	deltas := make([]store.TrafficDelta, 0, len(stats))
+	watch := quotaWatch{at: m.quota.at, users: map[string]quotaLeft{}}
 	for id, base := range bases {
-		t, ok := stats[fmt.Sprintf("u%d", id)]
+		name := fmt.Sprintf("u%d", id)
+		t, ok := stats[name]
 		if !ok {
+			// No counter: nothing used through this Xray since it started, so the watch
+			// measures from zero.
+			if left := base.DataLimit - base.Used; base.DataLimit > 0 && left > 0 {
+				watch.users[name] = quotaLeft{left: left}
+			}
 			continue
 		}
-		lastUp, lastDown := base[0], base[1]
+		lastUp, lastDown := base.Up, base.Down
 		addUp, addDown := t.Up-lastUp, t.Down-lastDown
 		if t.Up < lastUp { // Xray restarted → counter reset to 0
 			addUp = t.Up
@@ -45,8 +176,11 @@ func (m *Manager) PollStats() error {
 		if t.Down < lastDown {
 			addDown = t.Down
 		}
+		au, ad := nonNeg(addUp), nonNeg(addDown)
+		if left := base.DataLimit - base.Used - au - ad; base.DataLimit > 0 && left > 0 {
+			watch.users[name] = quotaLeft{up: t.Up, down: t.Down, left: left}
+		}
 		if addUp != 0 || addDown != 0 || t.Up != lastUp || t.Down != lastDown {
-			au, ad := nonNeg(addUp), nonNeg(addDown)
 			d := store.TrafficDelta{
 				UserID: id, NodeID: model.LocalNodeID, Day: today,
 				AddUp: au, AddDown: ad,
@@ -61,7 +195,13 @@ func (m *Manager) PollStats() error {
 		}
 	}
 	if err := m.store.ApplyTrafficDeltas(deltas); err != nil {
+		// The watch keeps what it had; the next flush tries again.
 		logErr("stats: traffic batch failed", "users", len(deltas), "err", err)
+	} else {
+		// A user whose quota a reset below restores is watched against what they had
+		// left before it; the worst that does is flush once early.
+		m.quota = watch
+		m.quotaStale.Store(false)
 	}
 	// Re-baseline a reset user's counters to the live Xray value (reusing the stats
 	// already fetched above) so the next poll measures the delta from the reset. Only
@@ -133,6 +273,16 @@ func (m *Manager) enforceTrafficSoon() {
 		// Cleared before the pass, so a report that lands during it schedules the
 		// next one rather than being folded into a read that may predate it.
 		m.enforcePending.Store(false)
+		if err := m.enforceTraffic(); err != nil {
+			logErr("node traffic: enforcement pass failed", "err", err)
+		}
+	})
+}
+
+// enforceTrafficNow runs an enforcement pass right away, outside the batch node reports
+// share: for a report that carries someone past their quota.
+func (m *Manager) enforceTrafficNow() {
+	m.runAsync(func() {
 		if err := m.enforceTraffic(); err != nil {
 			logErr("node traffic: enforcement pass failed", "err", err)
 		}

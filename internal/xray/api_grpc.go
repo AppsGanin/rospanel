@@ -36,7 +36,14 @@ type xrayAPI struct {
 // millisecond at fifty thousand on a laptop; the rest is headroom for a loaded box.
 const apiCallTimeout = 10 * time.Second
 
-const handlerAlterInbound = "/xray.app.proxyman.command.HandlerService/AlterInbound"
+const (
+	handlerAlterInbound = "/xray.app.proxyman.command.HandlerService/AlterInbound"
+	statsQueryStats     = "/xray.app.stats.command.StatsService/QueryStats"
+)
+
+// apiMaxAnswer bounds the answer read back: every per-user counter of a large panel is
+// a few megabytes.
+const apiMaxAnswer = 64 << 20
 
 // apiMaxMessage bounds the message one call sends. A gRPC frame carries the length in
 // four bytes, and Xray, like any grpc-go server, refuses a message over 4 MiB by
@@ -67,7 +74,7 @@ func (a *xrayAPI) addHysteriaUser(tag, email, auth string) error {
 	user := pbField(nil, 2, []byte(email))   // xray.common.protocol.User.email (level 0 is the default)
 	user = pbField(user, 3, typedMessage("xray.proxy.hysteria.account.Account", account))
 	op := typedMessage("xray.app.proxyman.command.AddUserOperation", pbField(nil, 1, user))
-	if err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
+	if _, err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
 		return fmt.Errorf("add %s to %s: %w", email, tag, err)
 	}
 	return nil
@@ -88,7 +95,7 @@ func (a *xrayAPI) addWireGuardUser(tag, email, publicKeyHex string, allowedIPs [
 	user := pbField(nil, 2, []byte(email))
 	user = pbField(user, 3, typedMessage("xray.proxy.wireguard.PeerConfig", account))
 	op := typedMessage("xray.app.proxyman.command.AddUserOperation", pbField(nil, 1, user))
-	if err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
+	if _, err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
 		return fmt.Errorf("add %s to %s: %w", email, tag, err)
 	}
 	return nil
@@ -98,7 +105,7 @@ func (a *xrayAPI) addWireGuardUser(tag, email, publicKeyHex string, allowedIPs [
 // success whether it held the user or not.
 func (a *xrayAPI) removeUser(tag, email string) error {
 	op := typedMessage("xray.app.proxyman.command.RemoveUserOperation", pbField(nil, 1, []byte(email)))
-	if err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
+	if _, err := a.call(handlerAlterInbound, alterInbound(tag, op)); err != nil {
 		return fmt.Errorf("remove %s from %s: %w", email, tag, err)
 	}
 	return nil
@@ -122,13 +129,84 @@ func pbField(b []byte, field int, v []byte) []byte {
 	return append(b, v...)
 }
 
+// queryStats reads the counters whose names contain pattern, in one call and without
+// asking again: the stats poll that uses it would rather be late than wait.
+func (a *xrayAPI) queryStats(pattern string) (map[string]Traffic, error) {
+	_, answer, err := a.callOnce(statsQueryStats, pbField(nil, 1, []byte(pattern))) // QueryStatsRequest.pattern
+	if err != nil {
+		return nil, err
+	}
+	return decodeQueryStats(answer)
+}
+
+// decodeQueryStats reads xray.app.stats.command.QueryStatsResponse: repeated Stat stat
+// = 1, each a string name = 1 and an int64 value = 2.
+func decodeQueryStats(msg []byte) (map[string]Traffic, error) {
+	out := map[string]Traffic{}
+	for len(msg) > 0 {
+		field, stat, rest, err := pbNext(msg)
+		if err != nil {
+			return nil, err
+		}
+		msg = rest
+		if field != 1 {
+			continue
+		}
+		var name string
+		var value int64
+		for len(stat) > 0 {
+			f, v, r, err := pbNext(stat)
+			if err != nil {
+				return nil, err
+			}
+			stat = r
+			switch f {
+			case 1:
+				name = string(v)
+			case 2:
+				n, _ := binary.Uvarint(v)
+				value = int64(n)
+			}
+		}
+		foldStat(out, name, value)
+	}
+	return out, nil
+}
+
+// pbNext reads one protobuf field: its number and, for a length-delimited field, its
+// bytes; for a varint, the varint's own bytes (for binary.Uvarint).
+func pbNext(b []byte) (field int, value, rest []byte, err error) {
+	key, n := binary.Uvarint(b)
+	if n <= 0 {
+		return 0, nil, nil, errors.New("protobuf: bad field key")
+	}
+	b = b[n:]
+	switch key & 7 {
+	case 0: // varint
+		_, m := binary.Uvarint(b)
+		if m <= 0 {
+			return 0, nil, nil, errors.New("protobuf: bad varint")
+		}
+		return int(key >> 3), b[:m], b[m:], nil
+	case 2: // length-delimited
+		l, m := binary.Uvarint(b)
+		if m <= 0 || uint64(len(b)-m) < l {
+			return 0, nil, nil, errors.New("protobuf: bad length")
+		}
+		return int(key >> 3), b[m : m+int(l)], b[m+int(l):], nil
+	default:
+		return 0, nil, nil, fmt.Errorf("protobuf: unexpected wire type %d", key&7)
+	}
+}
+
 // call makes one unary call, asked again while it cannot reach Xray the way runXrayAPI
-// asks a CLI call again: a call that failed to connect sent nothing.
-func (a *xrayAPI) call(method string, msg []byte) error {
+// asks a CLI call again: a call that failed to connect sent nothing. It returns the
+// answer's message.
+func (a *xrayAPI) call(method string, msg []byte) ([]byte, error) {
 	for attempt := 0; ; attempt++ {
-		sent, err := a.callOnce(method, msg)
+		sent, answer, err := a.callOnce(method, msg)
 		if err == nil || sent || attempt >= len(apiDialRetries) {
-			return err
+			return answer, err
 		}
 		slog.Warn("xray: api call could not reach xray, asking again", "call", method, "attempt", attempt+1, "err", err)
 		if a.wait != nil {
@@ -139,12 +217,12 @@ func (a *xrayAPI) call(method string, msg []byte) error {
 	}
 }
 
-// callOnce makes the call once. sent is false only when the connection could not be made,
-// the one failure worth asking again.
-func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, err error) {
+// callOnce makes the call once and returns the answer's message. sent is false only
+// when the connection could not be made, the one failure worth asking again.
+func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, answer []byte, err error) {
 	if len(msg) > apiMaxMessage {
 		// Nothing was sent, but asking again would send the same message.
-		return true, fmt.Errorf("xray api: a %d-byte message is over the %d-byte limit", len(msg), apiMaxMessage)
+		return true, nil, fmt.Errorf("xray api: a %d-byte message is over the %d-byte limit", len(msg), apiMaxMessage)
 	}
 	frame := make([]byte, 5, 5+len(msg)) // uncompressed, then the length
 	binary.BigEndian.PutUint32(frame[1:], uint32(len(msg)))
@@ -154,7 +232,7 @@ func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, err error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+a.addr+method, bytes.NewReader(frame))
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	req.Header.Set("Content-Type", "application/grpc")
 	req.Header.Set("TE", "trailers")
@@ -162,17 +240,18 @@ func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, err error) {
 	if err != nil {
 		var op *net.OpError
 		if errors.As(err, &op) && op.Op == "dial" {
-			return false, err
+			return false, nil, err
 		}
-		return true, err
+		return true, nil, err
 	}
 	defer resp.Body.Close()
 	// The status comes in the trailers, which are there once the body has been read.
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return true, err
+	body, err := io.ReadAll(io.LimitReader(resp.Body, apiMaxAnswer))
+	if err != nil {
+		return true, nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return true, fmt.Errorf("http status %d", resp.StatusCode)
+		return true, nil, fmt.Errorf("http status %d", resp.StatusCode)
 	}
 	status, message := resp.Trailer.Get("Grpc-Status"), resp.Trailer.Get("Grpc-Message")
 	if status == "" { // an error with no body comes back in the headers alone
@@ -180,12 +259,19 @@ func (a *xrayAPI) callOnce(method string, msg []byte) (sent bool, err error) {
 	}
 	switch status {
 	case "0":
-		return true, nil
+		// One uncompressed frame: a flag byte, the length, the message.
+		if len(body) >= 5 && body[0] == 0 && int(binary.BigEndian.Uint32(body[1:5])) == len(body)-5 {
+			return true, body[5:], nil
+		}
+		if len(body) == 0 {
+			return true, nil, nil
+		}
+		return true, nil, errors.New("the answer is not one uncompressed grpc frame")
 	case "":
-		return true, errors.New("the answer carries no grpc-status")
+		return true, nil, errors.New("the answer carries no grpc-status")
 	}
 	if m, err := url.PathUnescape(message); err == nil {
 		message = m
 	}
-	return true, fmt.Errorf("grpc status %s: %s", status, message)
+	return true, nil, fmt.Errorf("grpc status %s: %s", status, message)
 }

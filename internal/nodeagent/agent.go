@@ -39,6 +39,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/shaper"
 	"github.com/AppsGanin/rospanel/internal/sysstat"
+	"github.com/AppsGanin/rospanel/internal/tlsfront"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tlsutil"
 	"github.com/AppsGanin/rospanel/internal/tuning"
@@ -105,15 +106,20 @@ func jitter(d time.Duration) time.Duration {
 // Agent is the running node: it owns the local Xray supervisor and the decoy
 // server, holds the long-poll to the panel, and reports traffic back.
 type Agent struct {
-	dataDir  string
-	ident    *Identity
-	client   *http.Client
-	sup      *xray.Supervisor
-	certPath string
-	keyPath  string
-	acmeDir  string
-	geoDir   string
-	certMu   sync.Mutex // serializes cert-file writes (applyState vs certLoop)
+	dataDir string
+	ident   *Identity
+	client  *http.Client
+	sup     *xray.Supervisor
+	// front holds the TCP-TLS lane's public port in front of Xray (see tlsfront); nil
+	// when switched off with ROSPANEL_TLS_FRONT=off. frontPort is the port the last
+	// applied config wants it on (0: none), kept for when a suspension lifts.
+	front     *tlsfront.Front
+	frontPort atomic.Int64
+	certPath  string
+	keyPath   string
+	acmeDir   string
+	geoDir    string
+	certMu    sync.Mutex // serializes cert-file writes (applyState vs certLoop)
 
 	// certErr is the last TLS/ACME failure, reported to the panel so it can raise the
 	// operator's "TLS certificate" alert for this node. Under its own mutex, not
@@ -171,6 +177,15 @@ type Agent struct {
 	inflight     map[int64]*nodeapi.TrafficDelta // sent, awaiting ack
 	inflightID   int64                           // report id of inflight (0 = none)
 	reportSeq    int64                           // monotonic report-id source
+	// The quota watch between samples (see quota.go), under statsMu too: what the
+	// panel last said each watched user has left, when each user's traffic was last
+	// seen moving, and whether a report is owed for a user who ran out.
+	quotaLeft    map[int64]int64
+	quotaActive  map[int64]time.Time
+	quotaCrossed bool
+	// quotaAsked is who the last request asked about, so one that names someone new is
+	// marked for an answer at once (QuotaNew).
+	quotaAsked map[int64]struct{}
 
 	// Connection samples for fleet-wide device counting: distinct (email, ip) pairs
 	// tapped from Xray's access log since the last sync. Snapshotted-and-cleared on
@@ -216,8 +231,10 @@ type Agent struct {
 	// go out at once instead of waiting for the panel to let the request go.
 	// syncInterrupted marks that ending as ours, so the loop doesn't mistake it for
 	// the panel being unreachable and back off from it.
+	// syncWaiting is whether that poll is still waiting for the answer to begin.
 	syncMu          sync.Mutex
 	syncCancel      context.CancelFunc
+	syncWaiting     bool
 	syncInterrupted atomic.Bool
 
 	// awg is this node's AmneziaWG tunnel (see awg.go); awgEmails maps a peer's
@@ -306,6 +323,7 @@ func Run(ctx context.Context, dataDir string) error {
 	go a.watchXray(ctx) // report an Xray that died (or came back) without waiting
 	go a.banLoop(ctx)   // re-apply the banned addresses, which never expire on their own
 	go a.shapeLoop(ctx) // per-user speed caps, from this node's own address view
+	go a.quotaLoop(ctx) // quotas between the minute-long traffic samples
 	a.syncLoop(ctx)
 	a.shutdown()
 	return nil
@@ -395,6 +413,17 @@ func (a *Agent) interruptSync() {
 	}
 }
 
+// interruptWait ends the long-poll only while it still waits for the panel's answer:
+// news that can wait a few seconds must not cost a config already on its way in.
+func (a *Agent) interruptWait() {
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	if a.syncCancel != nil && a.syncWaiting {
+		a.syncInterrupted.Store(true)
+		a.syncCancel()
+	}
+}
+
 // hostStats snapshots the node's own machine state for the panel's per-node
 // diagnostics. Cheap: the sampler keeps CPU/net rates warm in the background, and
 // memory/disk/uptime are read on demand — no extra process spawned per sync.
@@ -460,11 +489,16 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	sup := xray.NewSupervisor(bin, filepath.Join(dataDir, "xray", "config.json"), filepath.Join(dataDir, "geo"))
 	client := &http.Client{Timeout: syncTimeout, Transport: syncTransport(ident.Insecure)}
 	operaDir := filepath.Join(dataDir, "opera")
+	var front *tlsfront.Front
+	if os.Getenv("ROSPANEL_TLS_FRONT") != "off" {
+		front = tlsfront.New(xray.VLESSInnerAddr)
+	}
 	a := &Agent{
 		dataDir:      dataDir,
 		ident:        ident,
 		client:       client,
 		sup:          sup,
+		front:        front,
 		certPath:     filepath.Join(dataDir, "certs", "cert.pem"),
 		keyPath:      filepath.Join(dataDir, "certs", "key.pem"),
 		acmeDir:      filepath.Join(dataDir, "acme"),
@@ -474,6 +508,8 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 		state:        loadState(dataDir),
 		sys:          sysstat.New(dataDir),
 		lastCounters: map[string]xray.Traffic{},
+		quotaActive:  map[int64]time.Time{},
+		quotaAsked:   map[int64]struct{}{},
 		pending:      map[int64]*nodeapi.TrafficDelta{},
 		inflight:     map[int64]*nodeapi.TrafficDelta{},
 		conns:        map[string]nodeapi.ConnSample{},
@@ -757,6 +793,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			a.forgetQuotaAsked()
 			// Our own doing (watchXray had news): go straight back round with a fresh
 			// report. Backing off here would delay the very thing we cut the poll for.
 			if a.syncInterrupted.Load() {
@@ -804,6 +841,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				// fully expects to be switched back on. Recorded on disk so a reboot
 				// before the next sync doesn't quietly put it back to serving.
 				a.sup.Suspend()
+				a.syncFront()
 				a.setRevoked(true)
 				a.revoked.Store(true)
 			}
@@ -824,11 +862,13 @@ func (a *Agent) syncLoop(ctx context.Context) {
 				if err := a.sup.Resume(); err != nil {
 					slog.Warn("node: resume without a config failed", "err", err)
 				}
+				a.syncFront()
 				a.setRevoked(false)
 				a.revoked.Store(false)
 			} else if err := a.sup.Resume(); err != nil {
 				slog.Error("node: start after re-enable failed", "err", err)
 			} else {
+				a.syncFront()
 				a.setRevoked(false)
 				a.revoked.Store(false)
 				slog.Info("node: re-enabled by panel — Xray started again")
@@ -846,7 +886,7 @@ func (a *Agent) syncLoop(ctx context.Context) {
 		// Ack BEFORE a possible self-update exit: the panel already ingested this
 		// batch (that's what AckReport means), so clearing it here avoids re-sending
 		// it and losing nothing if the process restarts for an update.
-		a.ackReport(resp.AckReport)
+		a.settleReport(resp.AckReport, resp.QuotaLeft)
 		if resp.WantLogs {
 			a.logsWanted.Store(true) // include the log tail in the next sync request
 		}
@@ -930,11 +970,11 @@ func (a *Agent) syncOnce(ctx context.Context) (*nodeapi.SyncResponse, error) {
 	// Own cancel per request so watchXray can end this one specifically.
 	reqCtx, cancel := context.WithCancel(ctx)
 	a.syncMu.Lock()
-	a.syncCancel = cancel
+	a.syncCancel, a.syncWaiting = cancel, true
 	a.syncMu.Unlock()
 	defer func() {
 		a.syncMu.Lock()
-		a.syncCancel = nil
+		a.syncCancel, a.syncWaiting = nil, false
 		a.syncMu.Unlock()
 		cancel()
 	}()
@@ -946,6 +986,9 @@ func (a *Agent) syncOnce(ctx context.Context) (*nodeapi.SyncResponse, error) {
 	httpReq.Header.Set("Authorization", "Bearer "+a.ident.Token)
 
 	resp, err := a.client.Do(httpReq)
+	a.syncMu.Lock()
+	a.syncWaiting = false
+	a.syncMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -1045,6 +1088,7 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		traffic = append(traffic, *d)
 	}
 	rid := a.inflightID
+	quotaUsers, quotaCrossed, quotaNew := a.takeQuotaUsers(promoted || len(a.inflight) == 0)
 	// A full chunk with traffic still waiting is a backlog; a partial one is not, even
 	// if a sample has landed in pending since — that goes out on the next poll.
 	trafficMore := len(a.inflight) >= trafficChunkMax && len(a.pending) > 0
@@ -1091,6 +1135,9 @@ func (a *Agent) buildSyncRequest() nodeapi.SyncRequest {
 		ReportID:       rid,
 		Traffic:        traffic,
 		TrafficMore:    trafficMore,
+		QuotaUsers:     quotaUsers,
+		QuotaCrossed:   quotaCrossed,
+		QuotaNew:       quotaNew,
 		Conns:          conns,
 		ConnsMore:      connsMore,
 		Logs:           logs,
@@ -1258,7 +1305,23 @@ func (a *Agent) applyUsers(st *nodeapi.NodeState) error {
 	// hop ranges, the connection guard, per-user speed caps) that change without the
 	// Xray config changing at all, and most config changes are users coming and going.
 	// Restarting for either drops every live connection on this node.
-	how, err := a.sup.ApplyRawLive(a.sup.APIAddr(), substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath))
+	data := substituteCertPaths(st.XrayConfig, a.certPath, a.keyPath)
+	// The panel sends the TCP-TLS lane on its public port; this agent puts it behind its
+	// own front there (see tlsfront). The front leaves a port it is moving off before
+	// Xray is restarted onto it, and takes its port after Xray has let it go.
+	public := 0
+	if a.front != nil {
+		data, public = xray.FrontVLESSRaw(data)
+		if public != a.front.Port() {
+			a.front.Stop()
+		}
+	}
+	how, err := a.sup.ApplyRawLive(a.sup.APIAddr(), data)
+	if a.front != nil {
+		a.sup.SetPublicPort(xray.TagVLESS, public)
+		a.frontPort.Store(int64(public))
+		a.syncFront()
+	}
 	if err != nil {
 		return fmt.Errorf("apply xray config: %w", err)
 	}
@@ -1368,6 +1431,20 @@ func (a *Agent) currentMeta() (nodeapi.NodeMeta, bool) {
 
 // substituteCertPaths replaces the panel's cert-path sentinels in a generated Xray
 // config with the node's own absolute cert/key paths.
+// syncFront keeps the front on the lane's port while Xray serves, and off while the
+// node is switched off: a suspended node's :443 is closed, as it was before there was
+// a front, rather than answering on behalf of an Xray that is not running.
+func (a *Agent) syncFront() {
+	if a.front == nil {
+		return
+	}
+	if a.sup.Suspended() {
+		a.front.Stop()
+		return
+	}
+	a.front.Ensure(int(a.frontPort.Load()))
+}
+
 func substituteCertPaths(raw []byte, certPath, keyPath string) []byte {
 	out := bytes.ReplaceAll(raw, []byte(nodeapi.CertPathSentinel), []byte(certPath))
 	return bytes.ReplaceAll(out, []byte(nodeapi.KeyPathSentinel), []byte(keyPath))

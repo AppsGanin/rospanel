@@ -135,6 +135,18 @@ type SyncRequest struct {
 	// field holds as before, which only drains more slowly.
 	TrafficMore bool `json:"traffic_more,omitempty"`
 
+	// QuotaUsers are the users whose traffic moved on this node since its last request.
+	// The panel answers with what each of them has left of their quota (QuotaLeft), and
+	// the agent watches that between its traffic samples, a minute apart. QuotaCrossed
+	// says this report carries a user past what they had left: the panel enforces it at
+	// once rather than with the next batch. A panel too old to know either ignores them.
+	QuotaUsers   []int64 `json:"quota_users,omitempty"`
+	QuotaCrossed bool    `json:"quota_crossed,omitempty"`
+	// QuotaNew says QuotaUsers names someone the node has not asked about lately: if
+	// any of them has a quota, answer at once rather than hold — a held answer reaches
+	// the node half a minute late, when a fast download is long past a small quota.
+	QuotaNew bool `json:"quota_new,omitempty"`
+
 	// Conns are distinct (user-email, source-IP) samples seen in this node's Xray
 	// access log since the last sync. The panel feeds them through the same device-
 	// counting pipeline as the master (RecordAccess → AddConnection), so a user's
@@ -324,6 +336,11 @@ type SyncResponse struct {
 	// set, and Changed is true with any of them.
 	Split *SplitState `json:"split,omitempty"`
 	Delta *StateDelta `json:"delta,omitempty"`
+
+	// QuotaLeft is, for those of the request's QuotaUsers who have a quota, the bytes
+	// of this node's own traffic each may still use — the node's traffic coefficient
+	// already applied — counted from what the panel had received when it answered.
+	QuotaLeft map[int64]int64 `json:"quota_left,omitempty"`
 
 	// Revoked ⇒ the node was deleted or disabled: stop serving, keep polling slowly
 	// so it recovers if re-enabled. Distinct from an unreachable panel (which the
