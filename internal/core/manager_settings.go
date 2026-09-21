@@ -226,6 +226,9 @@ func (m *Manager) genOpts() xray.Options {
 func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 	opts := m.genOpts()
 	opts.ServerID = serverID
+	// The front is the master's own: a node's agent puts its lane behind a front itself,
+	// when it has one to put it behind (xray.FrontVLESSRaw).
+	opts.FrontVLESS = serverID == model.LocalNodeID && m.frontVLESS
 	access, err := m.store.AccessMap()
 	if err != nil {
 		return opts, fmt.Errorf("load access map: %w", err)

@@ -32,6 +32,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/server"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/telegram"
+	"github.com/AppsGanin/rospanel/internal/tlsfront"
 	"github.com/AppsGanin/rospanel/internal/tlsmgr"
 	"github.com/AppsGanin/rospanel/internal/tuning"
 	"github.com/AppsGanin/rospanel/internal/version"
@@ -186,7 +187,16 @@ func runServer(dataDir string) {
 	// not hold up its start.
 
 	sup := xray.NewSupervisor(xrayBin, xrayConfig, geoDir)
-	mgr := core.New(st, sup, xray.Options{PanelDest: panelDest(adminAddr)},
+	// The TCP-TLS lane's public port belongs to the front, which answers plain HTTP the
+	// way the decoy's claimed Caddy would and hands everything else to Xray on loopback
+	// (see tlsfront). Taken before the first reconcile starts Xray, which then no longer
+	// listens there.
+	frontVLESS := wantFront(st, set)
+	if frontVLESS {
+		tlsfront.New(xray.VLESSInnerAddr).Ensure(set.VLESSPort)
+		sup.SetPublicPort(xray.TagVLESS, set.VLESSPort)
+	}
+	mgr := core.New(st, sup, xray.Options{PanelDest: panelDest(adminAddr), FrontVLESS: frontVLESS},
 		core.TLSPaths{CertPath: certPath, KeyPath: keyPath, ACMEDir: acmeDir},
 		filepath.Join(dataDir, "opera"))
 	sup.SetOnAccess(mgr.RecordLocalAccess) // track online status + connection IPs
@@ -496,16 +506,23 @@ func safeTick(name string, fn func()) {
 	fn()
 }
 
-// statsPollLoop accounts per-user traffic and enforces quotas every minute.
+// statsPollLoop accounts per-user traffic once a minute and, in between, watches
+// the quotas of the local Xray's users (see Manager.TickStats). AmneziaWG is polled
+// once a minute.
 func statsPollLoop(mgr *core.Manager) func(context.Context) {
 	return func(ctx context.Context) {
-		tick(ctx, 60*time.Second, func() {
+		var awgAt time.Time
+		tick(ctx, core.StatsTickEvery, func() {
 			safeTick("stats poll", func() {
-				if err := mgr.PollStats(); err != nil {
+				if err := mgr.TickStats(); err != nil {
 					// Expected when Xray isn't running (e.g. local dev) — keep quiet-ish.
 					log.Printf("stats poll: %v", err)
 				}
 			})
+			if time.Since(awgAt) < core.StatsFlushEvery {
+				return
+			}
+			awgAt = time.Now()
 			safeTick("awg poll", func() {
 				if err := mgr.PollAWG(); err != nil {
 					log.Printf("awg poll: %v", err)
@@ -754,6 +771,33 @@ func printFirstRunBanner(host, secret, username, password string) {
 
 // panelDest converts the admin listen address into the loopback dest Xray uses
 // for the VLESS default fallback (":8080" → "127.0.0.1:8080").
+// wantFront reports whether the TCP-TLS lane goes behind the front. Not when the
+// operator switched it off (ROSPANEL_TLS_FRONT=off), and not while a custom inbound from
+// before the inner port was reserved still holds it: Xray keeps the public port then.
+func wantFront(st *store.Store, set *model.Settings) bool {
+	if env("ROSPANEL_TLS_FRONT", "on") == "off" || set.VLESSPort <= 0 {
+		return false
+	}
+	list, err := st.EnabledInbounds(model.LocalNodeID)
+	if err != nil {
+		log.Printf("tlsfront: cannot read the custom inbounds, leaving :%d to Xray: %v", set.VLESSPort, err)
+		return false
+	}
+	for _, in := range list {
+		if in.Port == xray.VLESSInnerPort {
+			log.Printf("tlsfront: custom inbound %q holds port %d, leaving :%d to Xray", in.Name, xray.VLESSInnerPort, set.VLESSPort)
+			return false
+		}
+	}
+	for _, p := range []int{set.RealityPort, set.ProxySocksPort, set.ProxyHTTPPort, set.OperaPortOr()} {
+		if p == xray.VLESSInnerPort {
+			log.Printf("tlsfront: port %d is taken by the settings, leaving :%d to Xray", xray.VLESSInnerPort, set.VLESSPort)
+			return false
+		}
+	}
+	return true
+}
+
 func panelDest(adminAddr string) string {
 	host, port, err := net.SplitHostPort(adminAddr)
 	if err != nil {

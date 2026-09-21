@@ -299,21 +299,70 @@ func (s *Store) ResetCandidates() ([]int64, error) {
 	return s.ids(`SELECT id FROM users WHERE reset_period NOT IN ('', 'none') AND last_reset_at <> 0`)
 }
 
-// TrafficBaselines returns every user's last raw Xray counters, by user id — what the
-// stats poll subtracts from.
-func (s *Store) TrafficBaselines() (map[int64][2]int64, error) {
-	rows, err := s.db.Query(`SELECT id, last_up, last_down FROM users`)
+// TrafficBase is one user's row as the stats poll reads it: the raw Xray counters it
+// last recorded, and the quota those counters count against.
+type TrafficBase struct {
+	Up, Down  int64 // last raw Xray counters
+	DataLimit int64 // 0 = unlimited
+	Used      int64 // used_up + used_down
+}
+
+// TrafficBaselines returns every user's last raw Xray counters and quota, by user id —
+// what the stats poll subtracts from, and what the quota watch between polls measures
+// against. One pass over the table serves both.
+func (s *Store) TrafficBaselines() (map[int64]TrafficBase, error) {
+	return s.trafficBases(`SELECT id, last_up, last_down, data_limit, used_up + used_down FROM users`)
+}
+
+// QuotaBaselines is TrafficBaselines for the users with quota left alone — what the
+// quota watch re-reads after a user edit, without building a row for everyone else.
+func (s *Store) QuotaBaselines() (map[int64]TrafficBase, error) {
+	return s.trafficBases(`SELECT id, last_up, last_down, data_limit, used_up + used_down FROM users
+		WHERE data_limit > 0 AND used_up + used_down < data_limit`)
+}
+
+// QuotaLeftOf returns, for those of ids who have a quota with some of it left, how
+// many bytes are left. One node sync's worth of users: a bounded lookup, read from the
+// pool.
+func (s *Store) QuotaLeftOf(ids []int64) (map[int64]int64, error) {
+	out := map[int64]int64{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.rdb.Query(`SELECT id, data_limit - used_up - used_down FROM users
+		WHERE id IN (SELECT value FROM json_each(?)) AND data_limit > 0 AND used_up + used_down < data_limit`, string(b))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[int64][2]int64{}
 	for rows.Next() {
-		var id, up, down int64
-		if err := rows.Scan(&id, &up, &down); err != nil {
+		var id, left int64
+		if err := rows.Scan(&id, &left); err != nil {
 			return nil, err
 		}
-		out[id] = [2]int64{up, down}
+		out[id] = left
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) trafficBases(query string) (map[int64]TrafficBase, error) {
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]TrafficBase{}
+	for rows.Next() {
+		var id int64
+		var b TrafficBase
+		if err := rows.Scan(&id, &b.Up, &b.Down, &b.DataLimit, &b.Used); err != nil {
+			return nil, err
+		}
+		out[id] = b
 	}
 	return out, rows.Err()
 }

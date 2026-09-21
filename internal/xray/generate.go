@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/AppsGanin/rospanel/internal/awg"
 	"github.com/AppsGanin/rospanel/internal/extsub"
@@ -57,7 +58,23 @@ type Options struct {
 	// historical behaviour.
 	ServerID int64
 	Access   map[int64]model.Access
+
+	// FrontVLESS puts the TCP-TLS lane behind the panel's front (see tlsfront): Xray
+	// listens on VLESSInnerAddr and takes a PROXY header, and the front holds the
+	// public port. Only the process that runs the front sets it — a node's agent moves
+	// the lane itself (FrontVLESSRaw), so an agent too old to run a front never
+	// receives a config that needs one.
+	FrontVLESS bool
 }
+
+// VLESSInnerPort is where the TCP-TLS lane listens, on loopback, behind the front.
+const VLESSInnerPort = 18443
+
+// VLESSInnerAddr is VLESSInnerPort on loopback, the front's target.
+var VLESSInnerAddr = fmt.Sprintf("127.0.0.1:%d", VLESSInnerPort)
+
+// acceptProxy is the socket option that has Xray read the front's PROXY header.
+var acceptProxy = json.RawMessage(`{"acceptProxyProtocol":true}`)
 
 // allowsBuiltin reports whether a user may use a built-in lane on this server.
 func (o Options) allowsBuiltin(userID int64, lane string) bool {
@@ -149,6 +166,10 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 			},
 		},
 		Sniffing: sniff,
+	}
+	if opts.FrontVLESS {
+		vless.Listen, vless.Port = "127.0.0.1", VLESSInnerPort
+		vless.StreamSettings.Sockopt = acceptProxy
 	}
 
 	hysteria := Inbound{

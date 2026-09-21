@@ -140,6 +140,7 @@ func reservedPorts(set *model.Settings) model.ReservedPorts {
 	r.HoldTCP(set.RealityPort, "VLESS-XHTTP-REALITY")
 	r.HoldUDP(set.HysteriaPort, "HYSTERIA-UDP")
 	r.Hold(xray.APIPort, "Xray internal API")
+	r.HoldTCP(xray.VLESSInnerPort, "VLESS-Vision behind the front")
 	if set.HopEnd > set.HysteriaPort {
 		// The built-in hop range is a UDP funnel onto the Hysteria port: anything
 		// inside it would have its traffic silently stolen by the nftables redirect.
@@ -501,6 +502,7 @@ func (m *Manager) candidateConfig(serverID int64, custom []model.Inbound) (*xray
 		if err != nil {
 			return nil, err
 		}
+		opts.FrontVLESS = m.frontVLESS
 		return xray.Generate(set, users, opts, m.getProxies())
 	}
 	set, err := m.effectiveSettings(serverID)

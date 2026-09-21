@@ -127,29 +127,9 @@ func (t *tunnelUsers) attribute(line string) (email, ip, dest string) {
 	if t == nil || len(*t) == 0 {
 		return "", "", ""
 	}
-	a := strings.Index(line, " accepted ")
-	if a < 0 {
+	inTag := accessInbound(line)
+	if inTag == "" {
 		return "", "", ""
-	}
-	// The route is the bracket after the destination: "[in >> out]", "[in -> out]" or
-	// "[in ==> out]" depending on how the rule matched. Searched for past the
-	// destination, whose IPv6 form has brackets of its own.
-	rest := line[a+len(" accepted "):]
-	sp := strings.IndexByte(rest, ' ')
-	if sp < 0 {
-		return "", "", ""
-	}
-	rest = rest[sp:]
-	open, closing := strings.Index(rest, " ["), strings.IndexByte(rest, ']')
-	if open < 0 || closing < open {
-		return "", "", ""
-	}
-	inTag := rest[open+2 : closing]
-	for _, sep := range []string{" >> ", " -> ", " ==> "} {
-		if in, _, ok := strings.Cut(inTag, sep); ok {
-			inTag = in
-			break
-		}
 	}
 	addrs := (*t)[inTag]
 	if addrs == nil {

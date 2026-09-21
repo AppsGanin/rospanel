@@ -170,6 +170,14 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 	// node a loop.
 	backlog := (req.TrafficMore && len(req.Traffic) > 0 && resp.AckReport > 0) ||
 		(req.ConnsMore && len(req.Conns) > 0)
+	// Users the node just started watching are told their quota at once. Only those
+	// with one: an answer about nobody's quota is not worth losing the hold for.
+	quotaNew := req.QuotaNew && len(resp.QuotaLeft) > 0
+	// A report marked as carrying someone past their quota is answered at once too, so
+	// the traffic waiting behind it follows straight away — only one that was counted,
+	// as above.
+	crossed := req.QuotaCrossed && resp.AckReport > 0
+	backlog = backlog || quotaNew || crossed
 	if resp.Changed || resp.Revoked != req.Revoked || rt.mgr.NodeHasFreshWork(node.ID) || backlog {
 		rt.writeNodeSync(w, r, node.ID, req.XrayStartedAt, resp, encoded)
 		return
@@ -203,6 +211,12 @@ func (rt *Router) handleNodeSync(w http.ResponseWriter, r *http.Request) {
 		out.Revoked = true
 		writeJSON(w, http.StatusOK, out)
 		return
+	}
+	// The agent watches exactly what the answer says, so the quota goes on the held
+	// answer too — read again, for a limit changed or traffic counted during the hold.
+	out.QuotaLeft = resp.QuotaLeft
+	if left, ok := rt.mgr.NodeQuotaLeft(fresh, req.QuotaUsers); ok {
+		out.QuotaLeft = left
 	}
 	push, pushed, err := rt.mgr.NodeSyncPush(r.Context(), fresh, has)
 	defer pushed()

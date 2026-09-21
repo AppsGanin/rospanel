@@ -288,7 +288,9 @@ plain WireGuard config pointed at a TURN client.
 
 #### 👤 Users
 
-Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year) — and,
+Traffic and time limits with auto-disable and quota auto-reset (day/week/month/year). A disabled
+user, or one out of traffic, also loses the connections they already hold open; quotas are
+checked every 10 seconds, on the master and on nodes. And,
 instead of an end date, a **term that starts on the first connection**: N days that do not run
 while a key sits unused and begin with its first connection (extending adds days to such a term,
 a tariff replaces it with its own), a

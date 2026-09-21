@@ -193,10 +193,20 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 			logErr("node sync: traffic ingest failed",
 				"node", n.ID, "users", len(deltas), "err", err)
 			ack = 0
+		case claimed && len(deltas) > 0 && req.QuotaCrossed:
+			// The node saw a user run out between its samples: enforce now, not with
+			// the batch the fleet's reports share.
+			m.enforceTrafficNow()
 		case claimed && len(deltas) > 0:
 			m.enforceTrafficSoon()
 		}
 		// claimed==false with err==nil ⇒ already-counted duplicate ⇒ ack it (a no-op).
+	}
+	var quotaLeft map[int64]int64
+	if len(req.QuotaUsers) > 0 && served != nil {
+		// Asked about, not reported: a user the node no longer serves is left out, not
+		// counted against it the way a report naming them is.
+		quotaLeft, _ = m.nodeQuotaLeft(n, req.QuotaUsers, func(id int64) bool { return served.allows(id, now.Unix()) })
 	}
 
 	// Device counting across the fleet: feed each reported (email, ip) through the
@@ -231,5 +241,50 @@ func (m *Manager) IngestNodeSync(n *model.Node, req nodeapi.SyncRequest) (*nodea
 
 	// The state the node should have is the caller's to add (NodeStatePush): it is held
 	// until the response is encoded, which only the caller can know.
-	return &nodeapi.SyncResponse{AckReport: ack}, nil
+	return &nodeapi.SyncResponse{AckReport: ack, QuotaLeft: quotaLeft}, nil
+}
+
+// nodeQuotaUsersMax bounds how many users one node sync may ask the quota of.
+const nodeQuotaUsersMax = 20000
+
+// NodeQuotaLeft is what the users a node asked about have left, read when a held poll
+// is answered rather than when it arrived: a limit changed or traffic counted during
+// the hold is what the node must watch against. False when it cannot be told.
+func (m *Manager) NodeQuotaLeft(n *model.Node, ids []int64) (map[int64]int64, bool) {
+	if len(ids) == 0 {
+		return nil, true
+	}
+	served, err := m.nodeServedFor(n)
+	if err != nil {
+		return nil, false
+	}
+	now := time.Now().Unix()
+	return m.nodeQuotaLeft(n, ids, func(id int64) bool { return served.allows(id, now) })
+}
+
+// nodeQuotaLeft is, for the users a node asks about that it serves and that have a
+// quota, what each may still use through it: the bytes left, divided by the node's
+// traffic coefficient, since every byte there counts that many times against the quota.
+func (m *Manager) nodeQuotaLeft(n *model.Node, ids []int64, serves func(int64) bool) (map[int64]int64, bool) {
+	if len(ids) > nodeQuotaUsersMax {
+		ids = ids[:nodeQuotaUsersMax]
+	}
+	asked := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if serves(id) {
+			asked = append(asked, id)
+		}
+	}
+	left, err := m.store.QuotaLeftOf(asked)
+	if err != nil {
+		logErr("node sync: reading quotas failed", "node", n.ID, "err", err)
+		return nil, false
+	}
+	coef := model.NodeCoefficientOr(n.TrafficCoefficient)
+	if coef != 1 {
+		for id, b := range left {
+			left[id] = int64(float64(b) / coef)
+		}
+	}
+	return left, true
 }

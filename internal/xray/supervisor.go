@@ -75,6 +75,9 @@ type proc struct {
 	// Hysteria2 user's open connection goes on opening streams into the block outbound,
 	// and Xray logs each one as accepted. Replaced whole; nil while nobody is cut off.
 	cutOff atomic.Pointer[cutOffView]
+	// conns is the TCP connections this process accepted for each user, from its
+	// access log, so removing a user can close the ones still open (see conncut.go).
+	conns *connTracker
 }
 
 // Supervisor owns the Xray child process and the on-disk config.json. It
@@ -137,8 +140,13 @@ type Supervisor struct {
 	probe func() bool
 
 	onAccess func(email, ip, dest string) // called per access-log connection line
-	onCrash  func(err error)              // called when Xray exits unexpectedly (crash)
-	onWedged func(restarted bool)         // called when the watchdog sees a wedged process; restarted=false when auto-recovery is off (alert only)
+	// publicPorts is where an inbound's clients connect when that is not the port it
+	// listens on: the TCP-TLS lane behind the front. Under mu.
+	publicPorts map[string]uint16
+	// statsAPI is the gRPC client QueryStatsLive keeps its connection in. Under mu.
+	statsAPI *xrayAPI
+	onCrash  func(err error)      // called when Xray exits unexpectedly (crash)
+	onWedged func(restarted bool) // called when the watchdog sees a wedged process; restarted=false when auto-recovery is off (alert only)
 	// onRecover is called when a SUPERVISED restart succeeds — i.e. Xray is back up
 	// after a crash. Deliberately not fired by Apply-driven restarts (a reconcile, a
 	// renewed certificate): those are routine, and reporting them as recovery would
@@ -206,6 +214,36 @@ func (s *Supervisor) Version() string {
 // carries a user email + source IP (used to track online status / connections).
 // dest is the destination host when the line has a usable one, else empty.
 func (s *Supervisor) SetOnAccess(fn func(email, ip, dest string)) { s.onAccess = fn }
+
+// SetPublicPort says clients reach inbound tag on port — the front's — rather than on
+// the port the inbound listens on; 0 clears it. The sockets a removed user's
+// connections are closed through are the ones on that port (see conncut.go).
+func (s *Supervisor) SetPublicPort(tag string, port int) {
+	s.mu.Lock()
+	if s.publicPorts == nil {
+		s.publicPorts = map[string]uint16{}
+	}
+	if port == 0 {
+		delete(s.publicPorts, tag)
+	} else {
+		s.publicPorts[tag] = uint16(port)
+	}
+	public := s.publicPortsLocked()
+	p := s.cur
+	s.mu.Unlock()
+	if p != nil {
+		p.conns.setPublic(public)
+	}
+}
+
+// publicPortsLocked is a copy of publicPorts. Caller holds mu.
+func (s *Supervisor) publicPortsLocked() map[string]uint16 {
+	out := make(map[string]uint16, len(s.publicPorts))
+	for tag, port := range s.publicPorts {
+		out[tag] = port
+	}
+	return out
+}
 
 // SetOnCrash registers a callback invoked when the Xray child exits unexpectedly
 // (a genuine crash, not an intentional Stop/Apply). Used to alert the operator.
@@ -609,6 +647,19 @@ func (s *Supervisor) Apply(cfg *Config) error {
 		}
 	}
 
+	// A change to custom inbounds alone goes to the running Xray through the API, with
+	// nobody else's connection dropped (see live_inbounds.go). Only then: a config that
+	// differs in users alone is left to the restart below, as it always was — the live
+	// user sync is what changes users, and an Apply that finds nothing else changed may
+	// be here to reload what the file does not show (a renewed certificate).
+	live := false
+	if s.bin != "" && s.Running() && s.runningMatchesDisk() {
+		var err error
+		if live, err = s.tryLiveInbounds(s.APIAddr(), data); err != nil {
+			slog.Warn("xray: live inbound change failed, restarting with the new config", "err", err)
+		}
+	}
+
 	// Preserve the current config as a rollback point before overwriting.
 	if cur, err := os.ReadFile(s.configPath); err == nil {
 		_ = os.WriteFile(s.configPath+".bak", cur, 0o600)
@@ -616,8 +667,10 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	if err := os.Rename(tmp, s.configPath); err != nil {
 		return err
 	}
-	if err := s.restart(); err != nil {
-		return err
+	if !live {
+		if err := s.restart(); err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	s.lastApply = time.Now()
@@ -627,6 +680,30 @@ func (s *Supervisor) Apply(cfg *Config) error {
 	s.appliedCfg = data
 	s.mu.Unlock()
 	return nil
+}
+
+// runningMatchesDisk reports whether the running process is known to hold what the
+// config on disk says, users aside — the live user sync moves the file ahead in users
+// alone. Not when a live change failed part way and cleared appliedCfg to force the
+// next Apply to restart, and not when the file holds anything else the process never
+// started with: a change made live on top of that would leave it unapplied. Caller
+// holds runMu.
+func (s *Supervisor) runningMatchesDisk() bool {
+	s.mu.Lock()
+	applied := s.appliedCfg
+	s.mu.Unlock()
+	if applied == nil {
+		return false
+	}
+	disk, err := os.ReadFile(s.configPath)
+	if err != nil {
+		return false
+	}
+	if bytes.Equal(disk, applied) {
+		return true
+	}
+	_, ok := planUserChanges(applied, disk)
+	return ok
 }
 
 // ApplyRaw is Apply for a config that is already marshaled JSON — used by the node
@@ -909,7 +986,8 @@ func (s *Supervisor) replaceInbound(apiAddr, tag string, inbound any) error {
 }
 
 // RemoveUsers removes users (by email) from each given inbound tag via
-// `xray api rmu` (no restart).
+// `xray api rmu` (no restart), then closes the connections they still hold open on
+// those inbounds.
 func (s *Supervisor) RemoveUsers(apiAddr string, tags, emails []string) error {
 	if len(emails) == 0 || len(tags) == 0 {
 		return nil
@@ -920,6 +998,7 @@ func (s *Supervisor) RemoveUsers(apiAddr string, tags, emails []string) error {
 			return fmt.Errorf("api rmu tag=%s: %w", tag, err)
 		}
 	}
+	s.cutConns(emails, tags)
 	return nil
 }
 
@@ -984,7 +1063,11 @@ func (s *Supervisor) startProc() error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start xray: %w", err)
 	}
-	p := &proc{cmd: cmd, done: make(chan struct{}), started: time.Now(), cfg: startedWith}
+	s.mu.Lock()
+	public := s.publicPortsLocked()
+	s.mu.Unlock()
+	p := &proc{cmd: cmd, done: make(chan struct{}), started: time.Now(), cfg: startedWith,
+		conns: newConnTracker(tcpUserPorts(startedWith), public)}
 	if peers, err := readWireGuardLive(startedWith); err == nil {
 		p.tunnelUsers.Store(tunnelUsersOf(peers))
 	}
@@ -1196,6 +1279,7 @@ func (s *Supervisor) tap(p *proc, r io.Reader, w io.Writer, access bool) {
 				if v := p.cutOff.Load(); v != nil && v.cuts(line) {
 					continue
 				}
+				p.conns.observe(email, line)
 				s.dispatchAccess(email, ip, dest)
 			}
 		}
@@ -1352,6 +1436,13 @@ func (s *Supervisor) Suspend() {
 	s.stopProc()
 }
 
+// Suspended reports whether the process is held down by Suspend.
+func (s *Supervisor) Suspended() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.suspended
+}
+
 // Resume lifts a Suspend and starts Xray from the config on disk.
 //
 // Lifting the suspension is deliberately NOT a side effect of Apply or Restart.
@@ -1402,22 +1493,44 @@ func parseStats(data []byte) map[string]Traffic {
 	}
 	out := map[string]Traffic{}
 	for _, st := range resp.Stat {
-		parts := strings.Split(st.Name, ">>>")
-		if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" {
-			continue
-		}
-		email, dir := parts[1], parts[3]
 		val, _ := strconv.ParseInt(strings.Trim(string(st.Value), `"`), 10, 64)
-		t := out[email]
-		switch dir {
-		case "uplink":
-			t.Up = val
-		case "downlink":
-			t.Down = val
-		}
-		out[email] = t
+		foldStat(out, st.Name, val)
 	}
 	return out
+}
+
+// foldStat puts one "user>>>u1>>>traffic>>>uplink" counter into out.
+func foldStat(out map[string]Traffic, name string, val int64) {
+	parts := strings.Split(name, ">>>")
+	if len(parts) != 4 || parts[0] != "user" || parts[2] != "traffic" {
+		return
+	}
+	email, dir := parts[1], parts[3]
+	t := out[email]
+	switch dir {
+	case "uplink":
+		t.Up = val
+	case "downlink":
+		t.Down = val
+	}
+	out[email] = t
+}
+
+// QueryStatsLive is QueryStats through Xray's gRPC API from this process: no CLI to
+// fork, no JSON of every counter to print and parse — what lets the quota watch read
+// the counters every few seconds on a panel with tens of thousands of users. One try,
+// no asking again: the caller falls back to QueryStats or waits for its next tick.
+func (s *Supervisor) QueryStatsLive(apiAddr string) (map[string]Traffic, error) {
+	s.mu.Lock()
+	if s.statsAPI == nil || s.statsAPI.addr != apiAddr {
+		if s.statsAPI != nil {
+			s.statsAPI.close()
+		}
+		s.statsAPI = newXrayAPI(apiAddr, s.waitFn)
+	}
+	api := s.statsAPI
+	s.mu.Unlock()
+	return api.queryStats("user>>>")
 }
 
 // shouldRollback decides whether to revert config.json to its backup after Xray went
