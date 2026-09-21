@@ -473,7 +473,6 @@ func TestNodeStateFollowsIPListsArriving(t *testing.T) {
 // a change that reaches the fleet wakes every node at once — five builds side by side
 // is what ran the panel out of memory at 50,000 users.
 func TestNodeConfigsAreBuiltOneAtATime(t *testing.T) {
-	t.Parallel()
 	m := nodeTestManager(t)
 	if _, err := m.store.CreateUser("a", "uuid-a", "pw", "tok-a", 0, 0, 0); err != nil {
 		t.Fatal(err)

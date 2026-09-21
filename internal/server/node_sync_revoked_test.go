@@ -59,7 +59,6 @@ func decodeSync(t *testing.T, rec *httptest.ResponseRecorder) nodeapi.SyncRespon
 // The first revocation still has to be immediate: a node that has NOT heard yet
 // must be told now, not in 45 seconds' time.
 func TestRevokedNodePollIsHeldOnlyOnceItKnows(t *testing.T) {
-	t.Parallel()
 	rt, _ := rolesTestRouter(t)
 	id, token := joinedNode(t, rt, "berlin")
 	if err := rt.mgr.SetNodeEnabled(id, false); err != nil {

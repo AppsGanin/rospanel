@@ -22,7 +22,6 @@ import (
 // 127.0.0.1, which is only reachable because webhook delivery deliberately does
 // not apply the SSRF private-host guard.
 func TestWebhookDeliverySigned(t *testing.T) {
-	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "wh.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -97,7 +96,6 @@ func TestWebhookDeliverySigned(t *testing.T) {
 // TestWebhookNonSubscribed verifies an endpoint only wired for payment events is
 // not called for a user event.
 func TestWebhookNonSubscribed(t *testing.T) {
-	t.Parallel()
 	st, err := store.Open(filepath.Join(t.TempDir(), "wh2.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
