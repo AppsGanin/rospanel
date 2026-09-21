@@ -73,13 +73,17 @@ jobs:
 
       # Build both arches in one job so web/dist is compiled once and a single
       # SHA256SUMS holds every asset (parallel matrix jobs would race on --clobber).
+      # Stripped (-s -w), as the Docker image already is: the symbol table and DWARF
+      # are a quarter of the file and nothing reads them — a panic still prints its
+      # stack, which comes from the runtime's own tables. Every panel downloads this
+      # file on every update, so ~10 MB less is felt on each one.
       - name: Build binaries (linux/amd64 + linux/arm64)
         env:
           CGO_ENABLED: "0"
           GOOS: linux
         run: |
           for arch in amd64 arm64; do
-            GOARCH="$arch" go build -trimpath -o "rospanel-linux-$arch" ./cmd/rospanel/
+            GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "rospanel-linux-$arch" ./cmd/rospanel/
           done
 
       # The self-updater verifies the downloaded binary against this file before
