@@ -16,7 +16,7 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	// the two leaves the copy kept looking older than it is, so the next call reads
 	// again — the other order could keep a stale copy under a current revision.
 	var rev int64
-	if err := s.db.QueryRow(`SELECT v FROM settings_rev WHERE id = 1`).Scan(&rev); err != nil {
+	if err := s.rdb.QueryRow(`SELECT v FROM settings_rev WHERE id = 1`).Scan(&rev); err != nil {
 		return nil, err
 	}
 	c := &s.settings
@@ -73,7 +73,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt int
 	var awgParamsJSON, connPolicyJSON string
-	err := s.db.QueryRow(`
+	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
 		       vless_port, config_revision, last_config_error, updated_at,
 		       panel_secret_path, panel_name, panel_theme, decoy_template,

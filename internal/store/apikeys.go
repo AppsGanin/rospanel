@@ -75,7 +75,7 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 		return nil, err
 	}
 	var k model.APIKey
-	err = s.db.QueryRow(
+	err = s.rdb.QueryRow(
 		`SELECT id, name, prefix, created_at, last_used_at, revoked_at
 		 FROM api_keys WHERE key_hash = ?`, hash,
 	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt)

@@ -162,8 +162,8 @@ func (s *Store) StreamAdminAudit(f AdminAuditFilter, fn func(model.AdminAudit) e
 
 // PurgeAdminAudit drops trail rows older than the cutoff (unix seconds), returning
 // how many were removed. Batched for the same reason as the user journal's sweep:
-// the pool is a single connection, so an unbounded delete would stall every request
-// behind it.
+// the writer is a single connection, so an unbounded delete would stall every query
+// queued behind it.
 func (s *Store) PurgeAdminAudit(before int64) (int64, error) {
 	var total int64
 	for {

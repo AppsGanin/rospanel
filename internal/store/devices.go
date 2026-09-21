@@ -98,7 +98,7 @@ func (s *Store) RegisterDevice(userID int64, d model.Device, limit int) (DeviceA
 }
 
 // CountDevices returns how many devices are bound to a user.
-func (s *Store) CountDevices(userID int64) (int, error) { return countDevicesOn(s.db, userID) }
+func (s *Store) CountDevices(userID int64) (int, error) { return countDevicesOn(s.rdb, userID) }
 
 func countDevicesOn(q queryer, userID int64) (int, error) {
 	var n int
@@ -116,7 +116,7 @@ func (s *Store) CountAllDevices() (int, error) {
 
 // ListDevices returns a user's bound devices, most recently seen first.
 func (s *Store) ListDevices(userID int64) ([]model.Device, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rdb.Query(`
 		SELECT hwid, os, os_version, model, app, ip, first_seen, last_seen
 		FROM devices WHERE user_id = ? ORDER BY last_seen DESC`, userID)
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Store) DeviceCounts(userIDs []int64) (map[int64]int, error) {
 	for i, id := range userIDs {
 		args[i] = id
 	}
-	rows, err := s.db.Query(
+	rows, err := s.rdb.Query(
 		`SELECT user_id, COUNT(*) FROM devices WHERE user_id IN (`+placeholders(len(args))+`)
 		 GROUP BY user_id`, args...)
 	if err != nil {
@@ -191,8 +191,8 @@ func (s *Store) DeleteDevices(userID int64) (int64, error) {
 }
 
 // PurgeDevices forgets devices not seen since the cutoff (unix seconds), returning
-// how many were removed. Batched for the same reason the other sweeps are: the pool
-// is a single connection, so one unbounded DELETE stalls every query behind it.
+// how many were removed. Batched for the same reason the other sweeps are: the writer
+// is a single connection, so one unbounded DELETE stalls every query queued behind it.
 func (s *Store) PurgeDevices(before int64) (int64, error) {
 	var total int64
 	for {

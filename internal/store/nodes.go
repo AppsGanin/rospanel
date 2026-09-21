@@ -221,7 +221,7 @@ func (s *Store) NodeNameTaken(name string, excludeID int64) (bool, error) {
 // ListNodes returns all live (non-tombstoned) nodes, oldest first. RawJoinToken is
 // never populated here.
 func (s *Store) ListNodes() ([]model.Node, error) {
-	rows, err := s.db.Query(`SELECT ` + nodeColumns + ` FROM nodes WHERE deleted_at = 0 ORDER BY id`)
+	rows, err := s.rdb.Query(`SELECT ` + nodeColumns + ` FROM nodes WHERE deleted_at = 0 ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 // breakdown covering past days still has to be able to name a server that has since
 // been deleted.
 func (s *Store) NodeNames() (map[int64]string, error) {
-	rows, err := s.db.Query(`SELECT id, name FROM nodes`)
+	rows, err := s.rdb.Query(`SELECT id, name FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func (s *Store) NodeNames() (map[int64]string, error) {
 // deleted. (A tombstoned node is invisible to the operator; only the token lookup
 // still finds it, so its next sync can be answered Revoked.)
 func (s *Store) GetNode(id int64) (*model.Node, error) {
-	n, err := scanNode(s.db.QueryRow(
+	n, err := scanNode(s.rdb.QueryRow(
 		`SELECT `+nodeColumns+` FROM nodes WHERE id = ? AND deleted_at = 0`, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -283,7 +283,7 @@ func (s *Store) LookupNodeByToken(raw string) (*model.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n, err := scanNode(s.db.QueryRow(
+	n, err := scanNode(s.rdb.QueryRow(
 		`SELECT `+nodeColumns+` FROM nodes WHERE token_hash = ? AND token_hash != ''`, hash))
 	if err == sql.ErrNoRows {
 		return nil, nil

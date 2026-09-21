@@ -14,7 +14,7 @@ import (
 // hashes, generating and persisting one on first use.
 func (s *Store) sessionPepper() (string, error) {
 	var pepper string
-	err := s.db.QueryRow(`SELECT session_pepper FROM settings WHERE id = 1`).Scan(&pepper)
+	err := s.rdb.QueryRow(`SELECT session_pepper FROM settings WHERE id = 1`).Scan(&pepper)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +113,7 @@ func (s *Store) LookupSession(token string) (SessionAdmin, bool) {
 	var a SessionAdmin
 	var mustChange int
 	var expires int64
-	err = s.db.QueryRow(`
+	err = s.rdb.QueryRow(`
 		SELECT a.id, a.username, a.role, a.must_change_password, s.expires_at, s.id, s.last_seen_at
 		FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
 		WHERE s.token_hash = ?`, hash,

@@ -82,8 +82,8 @@ func (s *Store) ProbesSince(cutoff int64) ([]model.ProbeHit, error) {
 }
 
 // PurgeProbes drops scanner rows last seen before the cutoff (unix seconds).
-// Batched like every other sweep: the pool is a single connection, so one unbounded
-// DELETE would stall every query behind it. This table is one row per scanning source
+// Batched like every other sweep: the writer is a single connection, so one unbounded
+// DELETE would stall every query queued behind it. This table is one row per scanning source
 // IP, so an internet-wide scan is exactly what inflates it — the sweep must not seize
 // the connection precisely when the box is under load.
 func (s *Store) PurgeProbes(before int64) (int64, error) {

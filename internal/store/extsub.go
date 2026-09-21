@@ -226,7 +226,7 @@ func (s *Store) SetExtSubscriptionServersEnabled(subID int64, enabled bool) erro
 }
 
 func (s *Store) queryExtServers(query string, args ...any) ([]model.ExtServer, error) {
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.rdb.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

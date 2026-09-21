@@ -125,9 +125,9 @@ func (s *Store) queryAbuse(q string, args ...any) ([]AbuseMatch, error) {
 // PurgeAbuseMatches drops rows older than the cutoff day ('YYYY-MM-DD'), returning
 // how many went.
 //
-// Batched by rowid for the same reason every other sweep here is: the pool is a
+// Batched by rowid for the same reason every other sweep here is: the writer is a
 // single connection, so one unbounded DELETE would hold it for the whole statement
-// and stall every request behind it.
+// and stall every query queued behind it.
 func (s *Store) PurgeAbuseMatches(beforeDay string) (int64, error) {
 	var total int64
 	for {

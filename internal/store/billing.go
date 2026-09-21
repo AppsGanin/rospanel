@@ -161,7 +161,7 @@ func (s *Store) CountUsersOnPlan(planID int64) (int, error) {
 // Deliberately NOT paid ones: those are the financial record and are kept. What grows
 // without bound is the unpaid tail — every "pay" press in the public bot mints an order,
 // and the 24h sweep cancels the ones that were never completed. Batched like every other
-// sweep, because the pool is a single connection.
+// sweep, because the writer is a single connection.
 func (s *Store) PurgeCancelledOrders(before int64) (int64, error) {
 	var total int64
 	for {
@@ -255,7 +255,7 @@ func (s *Store) PendingTotals() (count, sum int, err error) {
 }
 
 func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error) {
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.rdb.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 	for i := range out {
 		byID[out[i].ID] = i
 	}
-	grows, err := s.db.Query(`SELECT plan_id, group_id FROM plan_groups ORDER BY group_id`)
+	grows, err := s.rdb.Query(`SELECT plan_id, group_id FROM plan_groups ORDER BY group_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +418,7 @@ func setPlanGroupsOn(ex execer, userID int64, groupIDs []int64) error {
 // can tell whether a plan write actually changes access (and only then pay for the
 // full reconcile that a membership change needs).
 func (s *Store) UserPlanGroups(userID int64) ([]int64, error) {
-	rows, err := s.db.Query(
+	rows, err := s.rdb.Query(
 		`SELECT group_id FROM group_members WHERE user_id = ? AND via_plan = 1 ORDER BY group_id`,
 		userID)
 	if err != nil {

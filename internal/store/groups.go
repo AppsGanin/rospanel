@@ -20,7 +20,7 @@ func isGroupNameConflict(err error) bool {
 // Groups returns every group with its member count and grant tokens, for the
 // management list.
 func (s *Store) Groups() ([]model.Group, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rdb.Query(`
 		SELECT g.id, g.name, g.created_at, g.speed_limit, g.limits_access,
 		       (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
 		FROM groups g ORDER BY lower(g.name)`)
@@ -42,7 +42,7 @@ func (s *Store) Groups() ([]model.Group, error) {
 		return nil, err
 	}
 	// Grants in one pass, attached to their group.
-	grows, err := s.db.Query(`SELECT group_id, token FROM group_grants`)
+	grows, err := s.rdb.Query(`SELECT group_id, token FROM group_grants`)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (s *Store) Groups() ([]model.Group, error) {
 		return nil, err
 	}
 	// Member ids in one pass, so the editor can preselect them without a query per group.
-	mrows, err := s.db.Query(`SELECT group_id, user_id FROM group_members`)
+	mrows, err := s.rdb.Query(`SELECT group_id, user_id FROM group_members`)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (s *Store) Groups() ([]model.Group, error) {
 // GetGroup returns one group with its grants, or nil.
 func (s *Store) GetGroup(id int64) (*model.Group, error) {
 	var g model.Group
-	err := s.db.QueryRow(`SELECT id, name, created_at, speed_limit, limits_access FROM groups WHERE id = ?`, id).
+	err := s.rdb.QueryRow(`SELECT id, name, created_at, speed_limit, limits_access FROM groups WHERE id = ?`, id).
 		Scan(&g.ID, &g.Name, &g.CreatedAt, &g.SpeedLimit, &g.LimitsAccess)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -94,7 +94,7 @@ func (s *Store) GetGroup(id int64) (*model.Group, error) {
 		return nil, err
 	}
 	g.Grants = grants
-	mrows, err := s.db.Query(`SELECT user_id FROM group_members WHERE group_id = ?`, id)
+	mrows, err := s.rdb.Query(`SELECT user_id FROM group_members WHERE group_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *Store) GetGroup(id int64) (*model.Group, error) {
 
 // groupGrants returns a group's grant tokens.
 func (s *Store) groupGrants(id int64) ([]string, error) {
-	rows, err := s.db.Query(`SELECT token FROM group_grants WHERE group_id = ?`, id)
+	rows, err := s.rdb.Query(`SELECT token FROM group_grants WHERE group_id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (s *Store) ExistingGroupIDs(ids []int64) ([]int64, error) {
 		return nil, nil
 	}
 	q := `SELECT id FROM groups WHERE id IN (?` + strings.Repeat(",?", len(args)-1) + `)`
-	rows, err := s.db.Query(q, args...)
+	rows, err := s.rdb.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (s *Store) ExistingGroupIDs(ids []int64) ([]int64, error) {
 
 // GroupsForUser returns the groups a user belongs to (id + name), for the user views.
 func (s *Store) GroupsForUser(userID int64) ([]model.GroupRef, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rdb.Query(`
 		SELECT g.id, g.name, g.speed_limit, g.limits_access FROM group_members m
 		JOIN groups g ON g.id = m.group_id
 		WHERE m.user_id = ? ORDER BY lower(g.name)`, userID)
@@ -425,7 +425,7 @@ func (s *Store) AccessMap() (map[int64]model.Access, error) {
 // UserAccess resolves one user's access — the subscription path, which only needs the
 // requesting user. A user in no group that limits access is unrestricted.
 func (s *Store) UserAccess(userID int64) (model.Access, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rdb.Query(`
 		SELECT gr.token FROM group_members m
 		JOIN groups g ON g.id = m.group_id AND g.limits_access = 1
 		LEFT JOIN group_grants gr ON gr.group_id = m.group_id
