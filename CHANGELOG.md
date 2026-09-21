@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.8.0](https://github.com/AppsGanin/rospanel/compare/v3.7.0...v3.8.0) (2026-09-21)
+
+
+### Features
+
+* a cut-off user loses the connections already open, and quotas are checked every 10 s ([dd61757](https://github.com/AppsGanin/rospanel/commit/dd6175731d5d8750b6089f5893f31f9d71252e61))
+
+
+### Performance Improvements
+
+* **store:** bounded lookups read from a pool beside the writer ([0c6c1fd](https://github.com/AppsGanin/rospanel/commit/0c6c1fd94bffb0aec47c94eb3be21a4d26ae3dcb))
+
 ## [3.7.0](https://github.com/AppsGanin/rospanel/compare/v3.6.0...v3.7.0) (2026-09-20)
 
 
