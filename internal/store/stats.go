@@ -604,8 +604,8 @@ func (s *Store) ConnectionIPStats(since int64) ([]ConnectionIPStat, error) {
 
 // PurgeConnections drops connection rows not seen since the cutoff (unix seconds),
 // returning how many were removed. Batched for the same reason PurgeUserEvents is:
-// the pool is a single connection, so one unbounded DELETE would stall every query
-// behind it. connections has no surrogate key, so this sweeps by rowid.
+// the writer is a single connection, so one unbounded DELETE would stall every query
+// queued behind it. connections has no surrogate key, so this sweeps by rowid.
 func (s *Store) PurgeConnections(before int64) (int64, error) {
 	var total int64
 	for {
@@ -628,8 +628,8 @@ func (s *Store) PurgeConnections(before int64) (int64, error) {
 // 'YYYY-MM-DD'), returning how many were removed. The cutoff is a calendar day and
 // not a timestamp because that is what the rows are keyed on — see AddDailyTraffic,
 // which writes the operator's local day. Batched for the same reason the other
-// sweeps are: one unbounded DELETE would hold the single connection for the whole
-// statement and stall every request behind it.
+// sweeps are: one unbounded DELETE would hold the single writer for the whole
+// statement and stall every query queued behind it.
 func (s *Store) PurgeTrafficDaily(beforeDay string) (int64, error) {
 	var total int64
 	for {
@@ -650,7 +650,7 @@ func (s *Store) PurgeTrafficDaily(beforeDay string) (int64, error) {
 
 // RecentConnections returns a user's source IPs, most recent first.
 func (s *Store) RecentConnections(userID int64, limit int) ([]model.Connection, error) {
-	rows, err := s.db.Query(`
+	rows, err := s.rdb.Query(`
 		SELECT ip, last_seen, count FROM connections
 		WHERE user_id = ? ORDER BY last_seen DESC LIMIT ?`, userID, limit)
 	if err != nil {

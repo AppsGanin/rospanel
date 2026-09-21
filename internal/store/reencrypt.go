@@ -96,7 +96,7 @@ func (s *Store) ReencryptSensitiveFields() error {
 
 // reencryptColumns is the shape every remaining sweep has: read (id, secret…) from
 // one table, wrap whatever is still plaintext, write it back. Reading everything
-// first is not an optimisation but a requirement — the store holds a single
+// first is not an optimisation but a requirement — the writer is a single
 // connection, so an Exec inside rows.Next deadlocks.
 //
 // A value that does not survive a decrypt round-trip is LEFT ALONE and logged: a

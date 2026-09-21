@@ -64,7 +64,7 @@ func (s *Store) SubscriberByChat(chatID int64) (*model.Subscriber, error) {
 	var sub model.Subscriber
 	var userID sql.NullInt64
 	var active, optOut int
-	err := s.db.QueryRow(
+	err := s.rdb.QueryRow(
 		`SELECT chat_id, user_id, username, first_name, lang, active, opt_out, blocked_at, started_at
 		 FROM tg_subscribers WHERE chat_id = ?`, chatID).
 		Scan(&sub.ChatID, &userID, &sub.Username, &sub.FirstName, &sub.Lang,

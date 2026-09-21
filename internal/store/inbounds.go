@@ -74,7 +74,7 @@ func marshalInboundOpts(o model.InboundOpts) (string, error) {
 // Inbounds returns one server's custom inbounds in display order (LocalNodeID for
 // the master).
 func (s *Store) Inbounds(serverID int64) ([]model.Inbound, error) {
-	rows, err := s.db.Query(
+	rows, err := s.rdb.Query(
 		`SELECT `+inboundColumns+` FROM inbounds WHERE server_id = ? ORDER BY sort, id`, serverID)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (s *Store) EnabledInbounds(serverID int64) ([]model.Inbound, error) {
 // subscription builders, which walk the whole fleet in one pass and would otherwise
 // issue a query per node.
 func (s *Store) AllInbounds() (map[int64][]model.Inbound, error) {
-	rows, err := s.db.Query(`SELECT ` + inboundColumns + ` FROM inbounds ORDER BY server_id, sort, id`)
+	rows, err := s.rdb.Query(`SELECT ` + inboundColumns + ` FROM inbounds ORDER BY server_id, sort, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (s *Store) AllInbounds() (map[int64][]model.Inbound, error) {
 
 // GetInbound reads one inbound by id, or nil when it doesn't exist.
 func (s *Store) GetInbound(id int64) (*model.Inbound, error) {
-	in, err := scanInbound(s.db.QueryRow(
+	in, err := scanInbound(s.rdb.QueryRow(
 		`SELECT `+inboundColumns+` FROM inbounds WHERE id = ?`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

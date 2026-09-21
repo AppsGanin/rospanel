@@ -210,7 +210,7 @@ const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_s
 // userStates reads user states. byKey counts the devices of the users read from their
 // own rows rather than from the window of everyone online.
 func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User, error) {
-	countIP := s.ipCountsAsDevice() // before the rows hold the one connection
+	countIP := s.ipCountsAsDevice() // one row of settings, from the read pool
 	now := time.Now().Unix()
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -408,7 +408,7 @@ const userSummaryCols = `id, name, note, tags, enabled, data_limit, expire_at, h
 		used_up, used_down, last_seen, device_limit, device_over_since`
 
 func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) {
-	// Read before the rows are open: the store has one connection, and the rows hold it.
+	// One row of settings, from the read pool.
 	countIP := s.ipCountsAsDevice()
 	now := time.Now().Unix()
 	rows, err := s.db.Query(query, args...)
@@ -463,7 +463,7 @@ func (s *Store) ActiveDeviceCountsOf(ids []int64, since int64) (map[int64]int, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(activeDeviceCountsOfSQL, string(b), since)
+	rows, err := s.rdb.Query(activeDeviceCountsOfSQL, string(b), since)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +584,7 @@ func (s *Store) ExpiredUsersBefore(cutoff int64) ([]model.User, error) {
 // operator set is the safer side of an unreadable settings row.
 func (s *Store) ipCountsAsDevice() bool {
 	var n int
-	if err := s.db.QueryRow(`WITH device_count AS (` + deviceCountCTE + `)
+	if err := s.rdb.QueryRow(`WITH device_count AS (` + deviceCountCTE + `)
 		SELECT ip_counts FROM device_count`).Scan(&n); err != nil {
 		return true
 	}
@@ -701,7 +701,7 @@ func (s *Store) WorkingCredentials(now int64) ([]model.User, error) {
 	defer rows.Close()
 	// Scanned into a few fields and widened once at the end: appending whole users grew
 	// a slice of large structs over and over, and decrypting after the last row gives
-	// the one connection back sooner.
+	// the writer's connection back sooner.
 	type cred struct {
 		id                 int64
 		uuid, password, wg string
@@ -772,7 +772,7 @@ func deviceLimitArgs(now int64) []any {
 
 // GetUser returns one user by id.
 func (s *Store) GetUser(id int64) (*model.User, error) {
-	users, err := s.queryUsers(`SELECT `+userCols+` FROM users WHERE id = ?`, id)
+	users, err := s.queryUsersOn(s.rdb, `SELECT `+userCols+` FROM users WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -789,7 +789,7 @@ func (s *Store) GetUserByTgLinkCode(code string) (*model.User, error) {
 	if code == "" {
 		return nil, sql.ErrNoRows
 	}
-	users, err := s.queryUsers(`SELECT `+userCols+` FROM users WHERE tg_link_code = ? LIMIT 1`, code)
+	users, err := s.queryUsersOn(s.rdb, `SELECT `+userCols+` FROM users WHERE tg_link_code = ? LIMIT 1`, code)
 	if err != nil {
 		return nil, err
 	}
@@ -828,7 +828,7 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 	if token == "" {
 		return nil, sql.ErrNoRows
 	}
-	users, err := s.queryUsers(userBySubTokenSQL, token)
+	users, err := s.queryUsersOn(s.rdb, userBySubTokenSQL, token)
 	if err != nil {
 		return nil, err
 	}
@@ -1181,7 +1181,7 @@ func (s *Store) GetUserByTelegramChatID(chatID int64) (*model.User, error) {
 	if chatID == 0 {
 		return nil, sql.ErrNoRows
 	}
-	users, err := s.queryUsers(userByTelegramChatSQL, chatID)
+	users, err := s.queryUsersOn(s.rdb, userByTelegramChatSQL, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -1238,7 +1238,7 @@ func (s *Store) GetDetachedUserByPrevChat(chatID int64) (*model.User, error) {
 	if chatID == 0 {
 		return nil, sql.ErrNoRows
 	}
-	users, err := s.queryUsers(detachedUserByPrevChatSQL, chatID)
+	users, err := s.queryUsersOn(s.rdb, detachedUserByPrevChatSQL, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,7 +1278,7 @@ func (s *Store) UsersByIDs(ids []int64) ([]model.User, error) {
 	for i, id := range ids {
 		args[i] = id
 	}
-	return s.queryUsers(`SELECT `+userCols+` FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	return s.queryUsersOn(s.rdb, `SELECT `+userCols+` FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)
 }
 
 // ResetTrafficMany zeroes usage for several users in one transaction, each
@@ -1496,7 +1496,15 @@ func deriveStatus(enabled bool, expireAt, used, limit, now int64, activeDevices,
 }
 
 func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
-	rows, err := s.db.Query(query, args...)
+	return s.queryUsersOn(s.db, query, args...)
+}
+
+// queryUsersOn is queryUsers against a chosen connection: the read pool for a
+// lookup of one user or a known handful, which answers beside the writer; the
+// writer for a pass over everyone, which would otherwise hold a snapshot open
+// across commits and keep the WAL from being checkpointed.
+func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.User, error) {
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1530,17 +1538,29 @@ func (s *Store) queryUsers(query string, args ...any) ([]model.User, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	s.applyUserStatus(out, now)
+	s.applyUserStatusOn(db, out, now)
 	return out, nil
 }
 
-// applyUserStatus fills each user's ActiveDevices (distinct source IPs seen
-// within DeviceOnlineWindow) and derives their display status.
-func (s *Store) applyUserStatus(users []model.User, now int64) {
+// applyUserStatusOn fills each user's ActiveDevices (distinct source IPs seen
+// within DeviceOnlineWindow) and derives their display status, for users read on db.
+// A lookup read from the pool counts its users' devices from their own rows, on the
+// pool too; a pass over everyone makes the one grouped pass on the writer.
+func (s *Store) applyUserStatusOn(db *sql.DB, users []model.User, now int64) {
 	if len(users) == 0 {
 		return
 	}
-	counts, _ := s.activeDeviceCounts(users, now-model.DeviceOnlineWindow)
+	since := now - model.DeviceOnlineWindow
+	var counts map[int64]int
+	if db == s.rdb {
+		ids := make([]int64, len(users))
+		for i := range users {
+			ids[i] = users[i].ID
+		}
+		counts, _ = s.ActiveDeviceCountsOf(ids, since)
+	} else {
+		counts, _ = s.activeDeviceCounts(users, since)
+	}
 	countIP := s.ipCountsAsDevice()
 	for i := range users {
 		u := &users[i]
