@@ -17,7 +17,7 @@ import { type Bar, DayBars } from "./charts";
 import { actionMeta, eventDetails } from "./events";
 import { fmtBytes, fmtDuration, fmtStamp, localDay } from "./format";
 import { useAction } from "./hooks";
-import { nodeState, serverName, servingCount } from "./NodesPanel";
+import { nodeState, serverName, servingCount } from "./NodeStatus";
 import { openStream } from "./livestream";
 import { useIsAdmin } from "./role";
 import { navigate } from "./router";

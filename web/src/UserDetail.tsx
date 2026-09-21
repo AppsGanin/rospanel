@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   banIP,
-  bulkUsers,
   MAX_DEVICE_LIMIT,
   deleteUser,
   genUserTelegramLink,
@@ -15,7 +13,6 @@ import {
   getUserHappLink,
   unbanIP,
   unbindUserDevice,
-  renameUser,
   resetUserTraffic,
   rotateSubToken,
   messageUser,
@@ -25,15 +22,11 @@ import {
   setUserLimits,
   setUserPlan,
   setUserGroups,
-  setUserNote,
-  setUserTags,
   listGroups,
-  listUserTags,
   type Connection,
   type DailyPoint,
   type DeviceList,
   type Group,
-  type TagCount,
   type TariffPlan,
   type User,
 } from './api'
@@ -58,7 +51,7 @@ import {
   termModes,
   unixToLocalDate,
 } from './format'
-import { useAction, useShowMore } from './hooks'
+import { useShowMore } from './hooks'
 import { HtmlEditor } from './HtmlEditor'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
@@ -95,14 +88,14 @@ import {
   SettingRow,
   ShowMore,
   Switch,
-  TagsInput,
-  Textarea,
   TextInput,
   useConfirm,
   useCopy,
 } from './ui'
 import i18n from './i18n'
 import { useIsAdmin } from './role'
+import { ExtendUserModal, RenameModal } from './UserModals'
+import { GroupChip, NoteAndTags } from './UserNotes'
 
 // planSelectData builds the tariff dropdown: "manual" plus enabled plans, and a
 // fallback entry if the user is on a plan that's hidden/disabled (so the current
@@ -140,121 +133,6 @@ function StateRow({ label, children }: { label: string; children: ReactNode }) {
     />
   )
 }
-
-// RenameModal is the account's name, changed on purpose. It was an inline pencil in
-// the drawer header; at 520px that header holds the name, the id and the close
-// button, and an input had nowhere to grow.
-function RenameModal({
-  user,
-  open,
-  onClose,
-  onChanged,
-}: {
-  user: User
-  open: boolean
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const { t } = useTranslation()
-  const [draft, setDraft] = useState(user.name)
-  const { busy, run } = useAction()
-
-  useEffect(() => {
-    if (open) setDraft(user.name)
-  }, [open, user.name])
-
-  const save = () => {
-    const name = draft.trim()
-    if (!name || name === user.name) return onClose()
-    run(async () => {
-      await renameUser(user.id, name)
-      onChanged()
-      onClose()
-    })
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title={t('userDetail.rename')}>
-      <div className="flex flex-col gap-4">
-        <TextInput label={t('usersPanel.name')} value={draft} onChange={setDraft} autoFocus />
-        <div className="flex justify-end gap-2">
-          <Button variant="light" color="gray" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button loading={busy} disabled={!draft.trim()} onClick={save}>
-            {t('common.save')}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// ExtendUserModal adds days to one account's expiry through the same server path the
-// list's bulk action uses — one user and fifty must not behave differently.
-function ExtendUserModal({
-  user,
-  open,
-  onClose,
-  onChanged,
-}: {
-  user: User
-  open: boolean
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const { t } = useTranslation()
-  const [days, setDays] = useState('30')
-  const { busy, run } = useAction()
-  const n = Math.floor(Number(days) || 0)
-
-  return (
-    <Modal open={open} onClose={onClose} title={t('usersPanel.extendTitle')}>
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-ink-muted">
-          {t('userDetail.extendUserBody', { name: user.name, date: fmtTerm(user.expire_at, user.hold_seconds) })}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {EXTEND_PRESETS.map((p) => (
-            <Button
-              key={p}
-              size="sm"
-              variant={n === p ? 'filled' : 'light'}
-              color="gray"
-              onClick={() => setDays(String(p))}
-            >
-              {t('usersPanel.plusDays', { count: p })}
-            </Button>
-          ))}
-        </div>
-        <TextInput label={t('usersPanel.days')} type="number" value={days} onChange={setDays} />
-        <div className="flex justify-end gap-2">
-          <Button variant="light" color="gray" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            loading={busy}
-            disabled={n <= 0}
-            onClick={() =>
-              run(async () => {
-                await bulkUsers([user.id], 'extend', n)
-                onChanged()
-                notifySuccess(t('userDetail.extended', { count: n }))
-                onClose()
-              })
-            }
-          >
-            {t('usersPanel.extendByDays', { count: n })}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// EXTEND_PRESETS mirrors the list's bulk dialog, so the same four choices are offered
-// wherever a subscription is extended.
-const EXTEND_PRESETS = [7, 30, 90, 180]
 
 export function UserDetail({
   user,
@@ -1434,145 +1312,5 @@ export function UserDetail({
     )}
     {confirmNode}
     </>
-  )
-}
-
-// GroupChip is one access group in the user drawer. A solid chip ("on") is a group the
-// user belongs to — clicking it (the ×) leaves; a dashed chip ("add") is one they can
-// join — clicking (the ＋) adds. `count` is how many connections the group grants, shown
-// so an operator can tell a rich group from an empty (access-revoking) one at a glance.
-// TAG_MAX_LEN mirrors model.MaxUserTagLen for the hint text; the server is the one
-// that enforces it.
-const TAG_MAX_LEN = 32
-
-// NoteAndTags is the operator's own annotation of the account: a free-text note and
-// the tag list the user list filters on. Tags save on every change — a cheap write
-// with no Xray reload — while the note, being typed rather than picked, saves on a
-// button so half a sentence never lands in the journal.
-function NoteAndTags({ user, onChanged }: { user: User; onChanged: () => void }) {
-  const { t } = useTranslation()
-  const [note, setNote] = useState(user.note ?? '')
-  const [known, setKnown] = useState<TagCount[]>([])
-  const { busy, run } = useAction()
-  const tags = user.tags ?? []
-  const tagKey = tags.join(',')
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-seeds the draft when the card switches user or the server returns a new note; user.id keeps a same-note switch from keeping the previous card's edits
-  useEffect(() => {
-    setNote(user.note ?? '')
-  }, [user.id, user.note])
-
-  // Every tag in use, as suggestions — so the second user tagged "vip" gets the
-  // same spelling as the first without retyping it. Refetched when this user's
-  // tags change, since that is when the set of known tags can grow.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refetched when this user's tags change — tagKey is the compared form of an array that is a new object every render
-  useEffect(() => {
-    let alive = true
-    listUserTags()
-      .then((l) => alive && setKnown(l))
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [user.id, tagKey])
-
-  const saved = user.note ?? ''
-  const noteDirty = note.trim() !== saved.trim()
-  const saveNote = () =>
-    run(async () => {
-      await setUserNote(user.id, note)
-      onChanged()
-      notifySuccess(t('userDetail.noteSaved'))
-    })
-  const saveTags = (next: string[]) =>
-    run(async () => {
-      await setUserTags(user.id, next)
-      onChanged()
-    })
-
-  return (
-    <>
-      <SettingRow
-        label={t('userDetail.tags')}
-        hint={t('userDetail.tagsHint', { maxLen: TAG_MAX_LEN })}
-      >
-        <TagsInput
-          value={tags}
-          onChange={saveTags}
-          options={known.map((k) => ({ value: k.tag, label: k.tag }))}
-        />
-      </SettingRow>
-      <SettingRow
-        label={t('userDetail.note')}
-        control={
-          noteDirty ? (
-            <span className="flex gap-2">
-              <Button
-                size="xs"
-                variant="light"
-                color="gray"
-                disabled={busy}
-                onClick={() => setNote(saved)}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button size="xs" loading={busy} onClick={saveNote}>
-                {t('common.save')}
-              </Button>
-            </span>
-          ) : undefined
-        }
-      >
-        <Textarea
-          value={note}
-          onChange={setNote}
-          rows={2}
-          placeholder={t('userDetail.notePlaceholder')}
-        />
-      </SettingRow>
-    </>
-  )
-}
-
-function GroupChip({
-  name,
-  count,
-  state,
-  onClick,
-}: {
-  name: string
-  count: number
-  state: 'on' | 'add'
-  onClick: () => void
-}) {
-  const on = state === 'on'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`${i18n.t('userDetail.nConnections', { count })} · ${i18n.t(on ? 'userDetail.removeFromGroup' : 'userDetail.addToGroup')}`}
-      className={
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ' +
-        // Selected uses the theme-composited accent tint (translucent → readable on a
-        // dark surface too), NOT a fixed bg-brand-NN shade, which would bake a light
-        // fill that stays light in the dark theme. Mirrors the Checkbox checked state.
-        (on
-          ? 'border-accent accent-tint text-accent hover:border-brand-500'
-          : 'border-dashed border-gray-300 bg-white text-ink-muted hover:border-brand-400 hover:text-accent')
-      }
-    >
-      {!on && (
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M6 2v8M2 6h8" />
-        </svg>
-      )}
-      <span className="max-w-40 truncate">{name}</span>
-      <span className="opacity-70">· {count}</span>
-      {on && (
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M3 3l6 6M9 3l-6 6" />
-        </svg>
-      )}
-    </button>
   )
 }
