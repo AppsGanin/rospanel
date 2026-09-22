@@ -126,7 +126,7 @@ func (m *Manager) notifyExpiring(set *model.Settings, users []model.User) {
 	if !set.TGUserBotEnabled || !set.UserNotifyEnabled(model.UserNotifyExpiring) {
 		return
 	}
-	now := time.Now().Unix()
+	now := m.now().Unix()
 	horizon := int64(set.ExpiringDays()) * 86400
 	for _, u := range users {
 		switch {
@@ -186,7 +186,7 @@ func (m *Manager) notifyTrafficLow(set *model.Settings, users []model.User) {
 		}
 		// Recorded first: a failed send costs one warning, a failed record repeats it
 		// every poll.
-		if err := m.store.SetNotifiedQuotaAt(u.ID, time.Now().Unix()); err != nil {
+		if err := m.store.SetNotifiedQuotaAt(u.ID, m.now().Unix()); err != nil {
 			logErr("notify: recording quota warning failed", "user", u.ID, "err", err)
 			continue
 		}
