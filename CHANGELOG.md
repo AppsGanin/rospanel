@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.9.0](https://github.com/AppsGanin/rospanel/compare/v3.8.1...v3.9.0) (2026-09-22)
+
+
+### Features
+
+* **extsub:** relay an external subscription through one of our servers ([4e3f2c1](https://github.com/AppsGanin/rospanel/commit/4e3f2c1dfdbc0e66a2f995b9a96c4c1197784080))
+
 ## [3.8.1](https://github.com/AppsGanin/rospanel/compare/v3.8.0...v3.8.1) (2026-09-22)
 
 
