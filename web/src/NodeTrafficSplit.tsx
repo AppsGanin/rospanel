@@ -17,10 +17,13 @@ export function NodeTrafficSplit({
   from,
   to,
   title,
+  refresh,
 }: {
   userId?: number
   from: string
   to: string
+  // Changing it reads the split again (the statistics screen's minute tick).
+  refresh?: number
   // With a title it stands as its own section (the statistics screen); without one
   // it is a block inside the card that already introduced it (the user card).
   title?: string
@@ -28,6 +31,7 @@ export function NodeTrafficSplit({
   const { t } = useTranslation()
   const [rows, setRows] = useState<NodeTraffic[]>([])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh only asks for a re-read; the request does not use it
   useEffect(() => {
     let alive = true // guard against an out-of-order response after a range switch
     getNodeTraffic({ user_id: userId, from, to })
@@ -36,7 +40,7 @@ export function NodeTrafficSplit({
     return () => {
       alive = false
     }
-  }, [userId, from, to])
+  }, [userId, from, to, refresh])
 
   if (rows.length < 2) return null
 

@@ -25,14 +25,7 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 	nH := link.LabelFor(model.ProtoHysteria, u, set)
 	insecure := set.TLSInsecure // true only for a self-signed/IP cert
 
-	vless := map[string]any{
-		"type": "vless", "tag": nV, "server": set.Host, "server_port": set.VLESSPort,
-		"uuid": u.UUID, "flow": "xtls-rprx-vision",
-		"tls": map[string]any{
-			"enabled": true, "server_name": set.SNI, "insecure": insecure,
-			"utls": map[string]any{"enabled": true, "fingerprint": set.VLESSFP()},
-		},
-	}
+	vless := singboxVLESS(nV, u.UUID, set)
 	hy2 := map[string]any{
 		"type": "hysteria2", "tag": nH, "server": set.Host, "server_port": set.HysteriaPort,
 		"password": u.Password,
@@ -47,23 +40,6 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 		delete(hy2, "server_port")
 	}
 	singboxObfs(hy2, set.HysteriaObfs)
-
-	// Anti-DPI shaping of the generated config (client-side only; no server change).
-	// ClientHello fragmentation (sing-box ≥1.12) defeats stateless SNI inspection on
-	// the one lane whose handshake carries our real SNI — VLESS-Vision. REALITY hides
-	// its SNI behind the donor and Hysteria2 is QUIC, so neither is fragmented here.
-	// Fragmenting sits below the TLS record layer, so it doesn't disturb Vision's flow.
-	if set.TLSFragment {
-		vless["tls"].(map[string]any)["fragment"] = true
-		// Record-level split on top (sing-box ≥1.12): survives a middlebox that
-		// reassembles TCP segments before it looks at the ClientHello.
-		if set.SubDPI.RecordFragment {
-			vless["tls"].(map[string]any)["record_fragment"] = true
-		}
-	}
-	// ALPN consistency on the Vision lane: the :443 inbound offers [h2,http/1.1];
-	// offering the same aligns the ClientHello with a real browser to that cert.
-	vless["tls"].(map[string]any)["alpn"] = []string{"h2", "http/1.1"}
 
 	// Only the lanes enabled in the Connections panel become outbounds; tags collects
 	// them in the same order for the selector/urltest groups.
@@ -87,6 +63,14 @@ func singboxProxies(u model.User, srv Server) (proxies []any, tags []string) {
 		if o, tag, ok := singboxCustom(u, in, set); ok {
 			proxies = append(proxies, o)
 			tags = append(tags, tag)
+		}
+	}
+	// Relayed external servers ride the TCP-TLS lane only: sing-box has no XHTTP for
+	// the REALITY one.
+	for _, r := range srv.relayEntries(u) {
+		if r.lane == model.LaneVLESS {
+			proxies = append(proxies, singboxVLESS(r.name, r.user.UUID, set))
+			tags = append(tags, r.name)
 		}
 	}
 	for _, e := range srv.externalEndpoints() {
@@ -369,4 +353,33 @@ func singboxObfs(out map[string]any, obfs string) {
 		return
 	}
 	out["obfs"] = map[string]any{"type": "salamander", "password": obfs}
+}
+
+// singboxVLESS is the TCP-TLS lane (VLESS-Vision) as a sing-box outbound, for uuid.
+func singboxVLESS(tag, uuid string, set *model.Settings) map[string]any {
+	vless := map[string]any{
+		"type": "vless", "tag": tag, "server": set.Host, "server_port": set.VLESSPort,
+		"uuid": uuid, "flow": "xtls-rprx-vision",
+		"tls": map[string]any{
+			"enabled": true, "server_name": set.SNI, "insecure": set.TLSInsecure,
+			"utls": map[string]any{"enabled": true, "fingerprint": set.VLESSFP()},
+		},
+	}
+	// Anti-DPI shaping of the generated config (client-side only; no server change).
+	// ClientHello fragmentation (sing-box ≥1.12) defeats stateless SNI inspection on
+	// the one lane whose handshake carries our real SNI — VLESS-Vision. REALITY hides
+	// its SNI behind the donor and Hysteria2 is QUIC, so neither is fragmented here.
+	// Fragmenting sits below the TLS record layer, so it doesn't disturb Vision's flow.
+	if set.TLSFragment {
+		vless["tls"].(map[string]any)["fragment"] = true
+		// Record-level split on top (sing-box ≥1.12): survives a middlebox that
+		// reassembles TCP segments before it looks at the ClientHello.
+		if set.SubDPI.RecordFragment {
+			vless["tls"].(map[string]any)["record_fragment"] = true
+		}
+	}
+	// ALPN consistency on the Vision lane: the :443 inbound offers [h2,http/1.1];
+	// offering the same aligns the ClientHello with a real browser to that cert.
+	vless["tls"].(map[string]any)["alpn"] = []string{"h2", "http/1.1"}
+	return vless
 }

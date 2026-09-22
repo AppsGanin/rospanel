@@ -60,13 +60,14 @@ func (rt *Router) createExternal(w http.ResponseWriter, r *http.Request) {
 // where the old device id means nothing.
 func (rt *Router) updateExternalSource(w http.ResponseWriter, r *http.Request, id int64) {
 	var req struct {
+		Name     string            `json:"name"`
 		Source   string            `json:"source"`
 		Identity model.ExtIdentity `json:"identity"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	report, err := rt.mgr.UpdateExtSubscriptionSource(r.Context(), id, req.Source, req.Identity)
+	report, err := rt.mgr.UpdateExtSubscriptionSource(r.Context(), id, req.Name, req.Source, req.Identity)
 	if err != nil {
 		writeManagerErr(w, err)
 		return
@@ -115,6 +116,24 @@ func (rt *Router) setExternalEnabled(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 	auditDetails(r, map[string]any{"id": id, "enabled": enabled})
+	writeOK(w)
+}
+
+// setExternalRelay relays a subscription through a lane of one of our servers, or —
+// with an empty lane — hands its servers out as they are.
+func (rt *Router) setExternalRelay(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Lane     string `json:"lane"`
+		ServerID int64  `json:"server_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetExtSubscriptionRelay(id, req.Lane, req.ServerID); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	auditDetails(r, map[string]any{"id": id, "relay_lane": req.Lane, "relay_server_id": req.ServerID})
 	writeOK(w)
 }
 

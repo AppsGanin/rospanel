@@ -117,6 +117,10 @@ func planInboundChanges(cur, next []byte) (ops inboundOps, changes []userChange,
 	if !ok {
 		return inboundOps{}, nil, false
 	}
+	// Relay users changed as well: this path does not carry them, a restart does.
+	if _, changed, ok := relayRulesChanged(cur, next); !ok || changed {
+		return inboundOps{}, nil, false
+	}
 	return ops, changes, true
 }
 

@@ -104,7 +104,7 @@ func TestExternalSubscriptionKeepsServersWhenTheReadFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Replace the stored source with a URL the SSRF gate refuses, then sync.
-	if err := m.store.SetExtSubscriptionSource(sub.ID, "http://127.0.0.1/sub", model.ExtIdentity{}); err != nil {
+	if err := m.store.SetExtSubscriptionSource(sub.ID, sub.Name, "http://127.0.0.1/sub", model.ExtIdentity{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SyncExtSubscription(ctx, sub.ID); err == nil {
@@ -116,5 +116,28 @@ func TestExternalSubscriptionKeepsServersWhenTheReadFails(t *testing.T) {
 	}
 	if got, _ := m.store.EnabledExtServers(); len(got) != 1 {
 		t.Fatalf("servers dropped on a failed read: %+v", got)
+	}
+}
+
+// The editor renames a subscription; left empty, the name stays what it was.
+func TestUpdateExtSubscriptionRenames(t *testing.T) {
+	t.Parallel()
+	m := nodeTestManager(t)
+	ctx := context.Background()
+	sub, _, err := m.CreateExtSubscription(ctx, "old", extLinkA, model.ExtIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.UpdateExtSubscriptionSource(ctx, sub.ID, "  Partner NL ", extLinkA, model.ExtIdentity{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.store.ExtSubscription(sub.ID); got.Name != "Partner NL" {
+		t.Fatalf("name %q after a rename", got.Name)
+	}
+	if _, err := m.UpdateExtSubscriptionSource(ctx, sub.ID, "", extLinkA, model.ExtIdentity{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.store.ExtSubscription(sub.ID); got.Name != "Partner NL" {
+		t.Fatalf("an empty name replaced %q", got.Name)
 	}
 }

@@ -12,7 +12,10 @@ import (
 // model.ExtServer). A server's link carries a foreign credential and is encrypted
 // at rest like the panel's own secrets.
 
-const extServerCols = `id, sub_id, key, name, protocol, host, port, link, enabled, seen_at`
+// extServerSelect reads a server with the relay its subscription sets (model.ExtServer).
+const extServerSelect = `SELECT es.id, es.sub_id, es.key, es.name, es.protocol, es.host, es.port, es.link,
+	es.enabled, es.seen_at, sub.relay_lane, sub.relay_server_id
+	FROM ext_servers es JOIN ext_subscriptions sub ON sub.id = es.sub_id`
 
 // CreateExtSubscription stores a source and returns its id. Empty identity fields mean
 // the panel's own defaults (see extsub.Headers), which is the normal case.
@@ -30,7 +33,8 @@ func (s *Store) CreateExtSubscription(name, source string, id model.ExtIdentity)
 // operator added them, which is the order they read the list in.
 func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
 	rows, err := s.db.Query(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
-		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
+		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at,
+		       relay_lane, relay_server_id
 		FROM ext_subscriptions ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -50,7 +54,8 @@ func (s *Store) ExtSubscriptions() ([]model.ExtSubscription, error) {
 // ExtSubscription reads one subscription; nil when there is none with that id.
 func (s *Store) ExtSubscription(id int64) (*model.ExtSubscription, error) {
 	row := s.db.QueryRow(`SELECT id, name, source, hwid, device_os, os_version, device_model, user_agent,
-		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at
+		       enabled, last_fetch_at, last_ok_at, last_error, server_count, created_at,
+		       relay_lane, relay_server_id
 		FROM ext_subscriptions WHERE id = ?`, id)
 	x, err := scanExtSubscription(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -68,7 +73,8 @@ func scanExtSubscription(r rowScanner) (model.ExtSubscription, error) {
 	if err := r.Scan(&x.ID, &x.Name, &x.Source,
 		&x.Identity.HWID, &x.Identity.DeviceOS, &x.Identity.OSVersion,
 		&x.Identity.DeviceModel, &x.Identity.UserAgent,
-		&enabled, &x.LastFetchAt, &x.LastOKAt, &x.LastError, &x.ServerCount, &x.CreatedAt); err != nil {
+		&enabled, &x.LastFetchAt, &x.LastOKAt, &x.LastError, &x.ServerCount, &x.CreatedAt,
+		&x.RelayLane, &x.RelayServerID); err != nil {
 		return x, err
 	}
 	x.Enabled = enabled != 0
@@ -76,16 +82,23 @@ func scanExtSubscription(r rowScanner) (model.ExtSubscription, error) {
 	return x, nil
 }
 
-// SetExtSubscriptionSource replaces where a subscription is read from and the device
-// identity it presents; the next sync uses both. They are written together because the
-// editor shows them together: an operator changing the source usually means a different
-// upstream, where the old device id means nothing.
-func (s *Store) SetExtSubscriptionSource(id int64, source string, ident model.ExtIdentity) error {
+// SetExtSubscriptionSource replaces a subscription's name, where it is read from and the
+// device identity it presents; the next sync uses the last two. They are written together
+// because the editor shows them together: an operator changing the source usually means
+// a different upstream, where the old device id means nothing.
+func (s *Store) SetExtSubscriptionSource(id int64, name, source string, ident model.ExtIdentity) error {
 	_, err := s.db.Exec(
-		`UPDATE ext_subscriptions SET source = ?, hwid = ?, device_os = ?, os_version = ?,
+		`UPDATE ext_subscriptions SET name = ?, source = ?, hwid = ?, device_os = ?, os_version = ?,
 		        device_model = ?, user_agent = ? WHERE id = ?`,
-		encField(source), ident.HWID, ident.DeviceOS, ident.OSVersion,
+		name, encField(source), ident.HWID, ident.DeviceOS, ident.OSVersion,
 		ident.DeviceModel, ident.UserAgent, id)
+	return err
+}
+
+// SetExtSubscriptionRelay sets the lane and server a subscription is relayed through;
+// an empty lane hands its servers out as they are.
+func (s *Store) SetExtSubscriptionRelay(id int64, lane string, serverID int64) error {
+	_, err := s.db.Exec(`UPDATE ext_subscriptions SET relay_lane = ?, relay_server_id = ? WHERE id = ?`, lane, serverID, id)
 	return err
 }
 
@@ -198,15 +211,13 @@ func (s *Store) ReplaceExtServers(subID int64, found []model.ExtServer, now int6
 // ExtServers lists every server of every subscription, for the management UI
 // and the group editor.
 func (s *Store) ExtServers() ([]model.ExtServer, error) {
-	return s.queryExtServers(`SELECT ` + extServerCols + ` FROM ext_servers ORDER BY sub_id, id`)
+	return s.queryExtServers(extServerSelect + ` ORDER BY es.sub_id, es.id`)
 }
 
 // EnabledExtServers is what a subscription may hand a user: servers switched on,
 // from sources switched on.
 func (s *Store) EnabledExtServers() ([]model.ExtServer, error) {
-	return s.queryExtServers(`SELECT ` + extServerCols + ` FROM ext_servers
-		WHERE enabled = 1 AND sub_id IN (SELECT id FROM ext_subscriptions WHERE enabled = 1)
-		ORDER BY sub_id, id`)
+	return s.queryExtServers(extServerSelect + ` WHERE es.enabled = 1 AND sub.enabled = 1 ORDER BY es.sub_id, es.id`)
 }
 
 // SetExtServerEnabled switches one server on or off.
@@ -235,7 +246,8 @@ func (s *Store) queryExtServers(query string, args ...any) ([]model.ExtServer, e
 	for rows.Next() {
 		var e model.ExtServer
 		var enabled int
-		if err := rows.Scan(&e.ID, &e.SubID, &e.Key, &e.Name, &e.Protocol, &e.Host, &e.Port, &e.Link, &enabled, &e.SeenAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.SubID, &e.Key, &e.Name, &e.Protocol, &e.Host, &e.Port, &e.Link, &enabled, &e.SeenAt,
+			&e.RelayLane, &e.RelayServerID); err != nil {
 			return nil, fmt.Errorf("ext_servers: %w", err)
 		}
 		e.Enabled = enabled != 0

@@ -470,6 +470,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.sup.SetOnRecover(m.onXrayRecover)         // ...and tell them when it is back
 	m.sup.SetOnRolledBack(m.onConfigRolledBack) // ...and when a change was undone to get it back
 	m.sup.SetOnWedged(m.onXrayWedged)           // ...and when the watchdog revives a hung one
+	m.sup.SetOnBeforeRestart(m.flushBeforeRestart)
 	if wd, err := st.GetSettings(); err == nil {
 		m.sup.SetWatchdogEnabled(wd.WatchdogEnabled) // honour the operator's toggle
 	}
@@ -948,6 +949,11 @@ func (m *Manager) syncUsers(ws *workingSet, wsErr error) (bool, error) {
 		return true, err
 	}
 	m.setApplied(users)
+	// Who a relayed external server lets through follows the users (xray/relay.go);
+	// first, so a Hysteria2 cut-off below rebuilds the rules with the new lists.
+	if err := m.sup.SyncRelayRules(apiAddr, cfg); err != nil {
+		return true, err
+	}
 	// Hysteria2 users, on the built-in lane and on every custom QUIC inbound, go through
 	// the supervisor: it adds and removes them without closing anyone else's connection
 	// and cuts off the open connections of those removed (see xray/hysteria_live.go).

@@ -942,10 +942,12 @@ function popoverDrop(rect: DOMRect, want: number, gutter = 8, gap = 4) {
   return { up, maxHeight, style }
 }
 
-const triggerCls =
-  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-left text-[13px] text-ink ' +
-  '' +
+const triggerBase =
+  'flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white text-left text-ink ' +
   'outline-none transition hover:border-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100'
+const triggerCls = triggerBase + ' px-3 py-1.5 text-[13px]'
+// The compact trigger is as tall as an IconButton, for a select that sits in a row of them.
+const triggerSmCls = triggerBase + ' h-8 px-2.5 text-xs'
 
 export function Select({
   label,
@@ -956,6 +958,7 @@ export function Select({
   placeholder,
   className,
   disabled,
+  size,
 }: {
   label?: string
   value: string
@@ -964,6 +967,8 @@ export function Select({
   searchable?: boolean
   placeholder?: string
   className?: string
+  // sm is as tall as an IconButton, for a select in a row of them.
+  size?: 'sm'
   // A disabled select still shows its current value — the point is to say "this
   // does not apply right now", not to hide what it would be.
   disabled?: boolean
@@ -989,7 +994,7 @@ export function Select({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={cn(triggerCls, disabled && 'cursor-not-allowed opacity-60 hover:border-gray-300', className)}
+        className={cn(size === 'sm' ? triggerSmCls : triggerCls, disabled && 'cursor-not-allowed opacity-60 hover:border-gray-300', className)}
       >
         <span className={cn('truncate', !current && 'text-gray-400')}>
           {current ? current.label : placeholder}

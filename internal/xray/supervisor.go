@@ -156,6 +156,9 @@ type Supervisor struct {
 	// reason. Separate from onRecover: coming back up and having a change undone are
 	// different facts, and only one of them needs the operator to go look at something.
 	onRolledBack func(reason string)
+	// onBeforeRestart is called before a deliberate restart stops a running process,
+	// whose traffic counters go with it: the last chance to read them.
+	onBeforeRestart func()
 
 	verOnce sync.Once
 	version string
@@ -251,6 +254,11 @@ func (s *Supervisor) SetOnCrash(fn func(err error)) { s.onCrash = fn }
 
 // SetOnRecover registers a callback invoked when Xray comes back after a crash.
 func (s *Supervisor) SetOnRecover(fn func()) { s.onRecover = fn }
+
+// SetOnBeforeRestart registers a callback invoked before a deliberate restart stops the
+// running process — a reload, a renewed certificate, an operator's restart. Up to a
+// minute of the traffic its counters held was lost on every one of them otherwise.
+func (s *Supervisor) SetOnBeforeRestart(fn func()) { s.onBeforeRestart = fn }
 
 // SetOnRolledBack registers a callback invoked when the config was reverted to its
 // backup, with the reason the live one was refused.
@@ -1020,6 +1028,9 @@ func (s *Supervisor) restart() error {
 		s.restarting = false
 		s.mu.Unlock()
 	}()
+	if fn := s.onBeforeRestart; fn != nil && s.Running() {
+		fn()
+	}
 	s.stopProc()
 	return s.startProc()
 }

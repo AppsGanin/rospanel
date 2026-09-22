@@ -130,10 +130,10 @@ func isLatin1(s string) bool {
 	return true
 }
 
-// UpdateExtSubscriptionSource changes where a subscription is read from and the device
-// identity it presents, then re-reads it so the operator sees the result of the change
-// rather than the previous read's servers.
-func (m *Manager) UpdateExtSubscriptionSource(ctx context.Context, id int64, source string, ident model.ExtIdentity) (ExtSyncReport, error) {
+// UpdateExtSubscriptionSource changes a subscription's name, where it is read from and
+// the device identity it presents, then re-reads it so the operator sees the result of
+// the change rather than the previous read's servers. An empty name keeps the one it has.
+func (m *Manager) UpdateExtSubscriptionSource(ctx context.Context, id int64, name, source string, ident model.ExtIdentity) (ExtSyncReport, error) {
 	sub, err := m.store.ExtSubscription(id)
 	if err != nil {
 		return ExtSyncReport{}, err
@@ -150,7 +150,13 @@ func (m *Manager) UpdateExtSubscriptionSource(ctx context.Context, id int64, sou
 	if err != nil {
 		return ExtSyncReport{}, err
 	}
-	if err := m.store.SetExtSubscriptionSource(id, source, ident); err != nil {
+	if name, err = model.CleanExtSubscriptionName(name); err != nil {
+		return ExtSyncReport{}, fromFieldErr(err)
+	}
+	if name == "" {
+		name = sub.Name
+	}
+	if err := m.store.SetExtSubscriptionSource(id, name, source, ident); err != nil {
 		return ExtSyncReport{}, err
 	}
 	logInfo("extsub: source updated", "id", id, "url", extsub.IsURL(source))
@@ -193,6 +199,7 @@ func (m *Manager) SyncExtSubscription(ctx context.Context, id int64) (ExtSyncRep
 	if added > 0 || removed > 0 {
 		logInfo("extsub: servers reconciled", "id", id, "name", sub.Name, "added", added, "updated", updated, "removed", removed)
 	}
+	m.extRelayChanged(sub.RelayLane != "")
 	return ExtSyncReport{Added: added, Updated: updated, Removed: removed, Total: len(found)}, nil
 }
 
@@ -241,6 +248,7 @@ func (m *Manager) DeleteExtSubscription(id int64) error {
 		return err
 	}
 	logInfo("extsub: subscription removed", "id", id, "name", sub.Name)
+	m.extRelayChanged(sub.RelayLane != "")
 	return nil
 }
 
@@ -253,7 +261,11 @@ func (m *Manager) SetExtSubscriptionEnabled(id int64, enabled bool) error {
 	if sub == nil {
 		return invalidCode("err.extNotFound", "подписка не найдена")
 	}
-	return m.store.SetExtSubscriptionEnabled(id, enabled)
+	if err := m.store.SetExtSubscriptionEnabled(id, enabled); err != nil {
+		return err
+	}
+	m.extRelayChanged(sub.RelayLane != "")
+	return nil
 }
 
 // SetExtServerEnabled switches one server on or off.
@@ -265,6 +277,7 @@ func (m *Manager) SetExtServerEnabled(id int64, enabled bool) error {
 	if !ok {
 		return invalidCode("err.extServerNotFound", "сервер не найден")
 	}
+	m.extRelayChanged(m.anyExtRelay())
 	return nil
 }
 
@@ -277,5 +290,9 @@ func (m *Manager) SetExtSubscriptionServersEnabled(id int64, enabled bool) error
 	if sub == nil {
 		return invalidCode("err.extNotFound", "подписка не найдена")
 	}
-	return m.store.SetExtSubscriptionServersEnabled(id, enabled)
+	if err := m.store.SetExtSubscriptionServersEnabled(id, enabled); err != nil {
+		return err
+	}
+	m.extRelayChanged(sub.RelayLane != "")
+	return nil
 }

@@ -122,6 +122,8 @@ var errEN = map[string]string{
 	"err.extNameCharset":           "The name cannot contain line breaks",
 	"err.extNameLong":              "The name is too long",
 	"err.extNotFound":              "Subscription not found",
+	"err.extRelayLane":             "A subscription can be relayed only through VLESS TCP-TLS or VLESS REALITY",
+	"err.extRelayLaneOff":          "This lane is off on the chosen server",
 	"err.extServerNotFound":        "Server not found",
 	"err.extSourceInvalid":         "The source is not usable: {{err}}",
 	"err.extSyncFailed":            "Could not read the subscription: {{err}}",

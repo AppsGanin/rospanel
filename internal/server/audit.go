@@ -99,6 +99,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/external/{id}/source":           set("external"),
 	"POST /api/external/{id}/sync":             set("external"),
 	"POST /api/external/{id}/enabled":          set("external"),
+	"POST /api/external/{id}/relay":            set("external"),
 	"POST /api/external/{id}/servers":          set("external"),
 	"POST /api/external/servers/{id}/enabled":  set("external"),
 	"POST /api/settings/abuse/refresh":         set("blocklistsRefresh"),
