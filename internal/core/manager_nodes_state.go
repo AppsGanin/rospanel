@@ -212,6 +212,12 @@ func (m *Manager) generateNodeState(n *model.Node, x *nodeStateInputs, users []m
 	} else {
 		opts.Custom = x.inbounds
 	}
+	if x.relErr != nil {
+		logErr("extsub: relays: load failed", "server", n.ID, "err", x.relErr)
+		complete = false
+	} else {
+		opts.Relays = x.relays
+	}
 	// Users this node's WireGuard inbounds hold need a tunnel identity. A claim made here
 	// reaches the shared inputs on their next read (claimAWG drops them), so a state
 	// built on a fresh or failed claim is not remembered.

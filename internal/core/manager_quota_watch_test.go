@@ -198,3 +198,29 @@ func TestQuotaWatchAcrossAnXrayRestart(t *testing.T) {
 		t.Fatal("1100 bytes since a restart did not cross a quota with 1000 left")
 	}
 }
+
+// TestFlushBeforeRestart: a deliberate restart resets Xray's counters, so the traffic
+// they hold is written first. One already being flushed is left to that flush, not
+// waited on.
+func TestFlushBeforeRestart(t *testing.T) {
+	t.Parallel()
+	m, f := quotaWatchManager(t)
+	u, err := m.store.CreateUser("u", "uuid-u", "pw", "tok-u", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.set(u.ID, 100, 900)
+	m.flushBeforeRestart()
+	if used, _ := usedOf(t, m, u.ID); used != 1000 {
+		t.Fatalf("used %d after the flush before a restart, want 1000", used)
+	}
+	m.statsMu.Lock()
+	done := make(chan struct{})
+	go func() { m.flushBeforeRestart(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the flush before a restart waited on the one under way")
+	}
+	m.statsMu.Unlock()
+}

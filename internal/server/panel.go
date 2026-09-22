@@ -183,6 +183,14 @@ func (rt *Router) subServers(local *model.Settings, userID int64, clientIP strin
 			}
 		}
 		ordered[carrier].External = ext
+		// A relayed one rides the server it is relayed through, if that one is here.
+		for i := range ordered {
+			for _, e := range ext {
+				if e.RelayLane != "" && e.RelayServerID == ordered[i].Set.ServerID {
+					ordered[i].Relays = append(ordered[i].Relays, e)
+				}
+			}
+		}
 	}
 	return ordered, nil
 }
@@ -326,6 +334,7 @@ func (rt *Router) panelMux() http.Handler {
 	authedID("POST /api/external/{id}/source", rt.updateExternalSource)
 	authedID("POST /api/external/{id}/sync", rt.syncExternal)
 	authedID("POST /api/external/{id}/enabled", rt.setExternalEnabled)
+	authedID("POST /api/external/{id}/relay", rt.setExternalRelay)
 	authedID("POST /api/external/{id}/servers", rt.setExternalServersEnabled)
 	authedID("POST /api/external/servers/{id}/enabled", rt.setExternalServerEnabled)
 	authed("GET /api/settings/abuse", rt.getAbuseSettings)

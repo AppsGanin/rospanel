@@ -14,6 +14,13 @@ import (
 // is counted here. What it owns is the list — which of them a user gets, decided by
 // the same access groups that gate its own lanes.
 //
+// A subscription can also be relayed: its servers are then handed out as entries of one
+// of our own VLESS lanes on a server the operator picks, and that server carries the
+// traffic on to them. The user's connection is ours again — counted, capped and cut
+// off like any other — and the foreign credential never leaves the panel. Which
+// external server a connection is for rides in two bytes of the user's UUID (see
+// ExtRoute).
+//
 // The same sources (a URL, a happ:// link, a pasted list) are also accepted as the
 // upstreams of an egress lane, where the servers carry traffic OUT of this server
 // rather than being handed to users; that path is internal/proxypool and needs no
@@ -39,7 +46,15 @@ type ExtSubscription struct {
 	LastError   string      `json:"last_error,omitempty"`
 	ServerCount int         `json:"server_count"`
 	CreatedAt   int64       `json:"created_at"`
+	// RelayLane is the lane the servers are relayed through (LaneVLESS or
+	// LaneReality) on server RelayServerID; empty hands them out as they are.
+	RelayLane     string `json:"relay_lane"`
+	RelayServerID int64  `json:"relay_server_id"`
 }
+
+// RelayLanes are the lanes a subscription can be relayed through: the built-in VLESS
+// ones, where the route bytes of the UUID reach routing (see ExtRoute).
+var RelayLanes = []string{LaneVLESS, LaneReality}
 
 // ExtIdentity is the device this panel claims to be when it reads somebody else's
 // subscription. Panels increasingly refuse a caller that does not identify a device —
@@ -75,6 +90,64 @@ type ExtServer struct {
 	Link     string `json:"-"`
 	Enabled  bool   `json:"enabled"`
 	SeenAt   int64  `json:"seen_at"`
+	// Relayed through, copied from the server's subscription (ExtSubscription.RelayLane).
+	RelayLane     string `json:"-"`
+	RelayServerID int64  `json:"-"`
+}
+
+// ExtRoute is the VLESS route an external server is reached by through a relay: the
+// 7th and 8th bytes of the user's UUID, which Xray leaves out when it checks the UUID
+// and hands to routing as vlessRoute. A random UUID (version 4) always carries
+// 0x4000–0x4FFF there, so that range is skipped and no user's own UUID names a
+// relayed server. False past the last route.
+func ExtRoute(id int64) (uint16, bool) {
+	switch {
+	case id <= 0:
+		return 0, false
+	case id < 0x4000:
+		return uint16(id), true
+	case id+0x1000 <= 0xFFFF:
+		return uint16(id + 0x1000), true
+	}
+	return 0, false
+}
+
+// UUIDRoute is the route a UUID carries as it is: its 7th and 8th bytes. False when
+// uuid is not in the canonical 8-4-4-4-12 hex form.
+func UUIDRoute(uuid string) (uint16, bool) {
+	if !canonicalUUID(uuid) {
+		return 0, false
+	}
+	v, err := strconv.ParseUint(uuid[14:18], 16, 16)
+	return uint16(v), err == nil
+}
+
+// RouteUUID is uuid with route in its 7th and 8th bytes: the UUID a user's client
+// sends to reach a relayed server. False when uuid is not canonical.
+func RouteUUID(uuid string, route uint16) (string, bool) {
+	if !canonicalUUID(uuid) {
+		return "", false
+	}
+	return strings.ToLower(uuid[:14]) + fmt.Sprintf("%04x", route) + strings.ToLower(uuid[18:]), true
+}
+
+func canonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // ExtToken is a group-grant token for an external server.

@@ -279,6 +279,30 @@ func (m *Manager) enforceTrafficSoon() {
 	})
 }
 
+// flushBeforeRestart writes the traffic the running Xray has counted before a deliberate
+// restart resets its counters. Skipped while a flush is under way, which reads the same
+// counters: waiting for it could hold the restart behind a sync that waits on the
+// restart. Only the in-process API is asked — the process is about to go, and the CLI
+// fallback is a fork per call.
+func (m *Manager) flushBeforeRestart() {
+	if !m.statsMu.TryLock() {
+		return
+	}
+	defer m.statsMu.Unlock()
+	if m.statsSource == nil && m.sup == nil {
+		return
+	}
+	stats, err := m.queryLocalStats(false)
+	if err != nil {
+		logWarn("stats: cannot read the counters before a restart", "err", err)
+		return
+	}
+	m.quota.at = time.Now()
+	if err := m.pollStatsWith(stats); err != nil {
+		logWarn("stats: flushing before a restart failed", "err", err)
+	}
+}
+
 // enforceTrafficNow runs an enforcement pass right away, outside the batch node reports
 // share: for a report that carries someone past their quota.
 func (m *Manager) enforceTrafficNow() {

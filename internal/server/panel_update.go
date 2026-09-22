@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,6 +44,11 @@ func (rt *Router) checkUpdate(w http.ResponseWriter, r *http.Request) {
 // applyUpdate downloads the latest release, snapshots the DB, atomically swaps the
 // running binary, then schedules a service restart so systemd re-execs it. The
 // restart briefly drops Xray (all connections) — the client polls back to life.
+//
+// With ?nodes=1 every node is told to update as well, once the panel's own binary is
+// in place: a panel whose download failed never leaves its nodes a release ahead of
+// it. The command is kept on disk, so a node takes it on its next sync whether that
+// lands before the restart or after, and updates itself to the same latest release.
 func (rt *Router) applyUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -64,7 +70,16 @@ func (rt *Router) applyUpdate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": rel.Version})
+	resp := map[string]any{"ok": true, "version": rel.Version}
+	if r.URL.Query().Get("nodes") == "1" {
+		n, err := rt.mgr.RequestAllNodesUpdate()
+		if err != nil {
+			slog.Error("update: the nodes were not told to update", "err", err)
+			resp["nodes_error"] = err.Error()
+		}
+		resp["nodes"] = n
+	}
+	writeJSON(w, http.StatusOK, resp)
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}

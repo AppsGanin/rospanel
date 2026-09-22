@@ -455,6 +455,9 @@ func Page(u model.User, local *model.Settings, servers []Server, billing Billing
 				protoLinks = append(protoLinks, protoLink{link.CustomLabelFor(in, u, s), l})
 			}
 		}
+		for _, r := range srv.relayEntries(u) {
+			protoLinks = append(protoLinks, protoLink{r.name, r.link(s)})
+		}
 		// External servers are not ours: the link is theirs and so is the label. They
 		// hang off whichever entry carries them for the whole subscription, so they are
 		// gathered here and appended once the servers are done — last, and in the order

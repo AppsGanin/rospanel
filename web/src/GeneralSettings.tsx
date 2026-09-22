@@ -9,6 +9,7 @@ import {
   getConnPolicy,
   saveConnPolicy,
   getTrustedNets,
+  listNodes,
   saveTrustedNets,
   type ConnPolicy,
   saveMaintenance,
@@ -119,6 +120,9 @@ export function GeneralSettings() {
   const [version, setVersion] = useState("");
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
   const [updating, setUpdating] = useState(false);
+  // How many nodes an update could take along, and whether the one running does.
+  const [nodeCount, setNodeCount] = useState(0);
+  const [updNodes, setUpdNodes] = useState(false);
   const { isBusy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
   const [newSecret, setNewSecret] = useState("");
@@ -296,24 +300,34 @@ export function GeneralSettings() {
         const info = await checkUpdate();
         setUpd(info);
         setVersion(info.current);
+        if (info.available) {
+          listNodes()
+            .then((r) => setNodeCount(r.nodes.length))
+            .catch(() => setNodeCount(0));
+        }
         if (info.error) notifyError(info.error);
         else if (!info.available) notifySuccess(t("general.upToDate"));
       },
       { key: "upd-check" },
     );
 
-  const doUpdate = async () => {
+  const doUpdate = async (withNodes: boolean) => {
     if (!upd?.latest) return;
     const ok = await confirm({
       title: t("general.updateTitle", { version: upd.latest }),
-      body: t("general.updateBody"),
+      body: t(withNodes ? "general.updateBodyNodes" : "general.updateBody"),
       confirmLabel: t("general.update"),
     });
     if (!ok) return;
     const target = upd.latest.replace(/^v/, "");
+    setUpdNodes(withNodes);
     setUpdating(true);
     try {
-      await applyUpdate();
+      const r = await applyUpdate(withNodes);
+      if (withNodes) {
+        if (r.nodes_error) notifyError(t("general.updateNodesFailed"));
+        else notifySuccess(t("nodes.updateStarted", { count: r.nodes ?? 0 }));
+      }
     } catch (e) {
       setUpdating(false);
       notifyError(errMessage(e));
@@ -382,11 +396,27 @@ export function GeneralSettings() {
           <SettingRow
             label={t("general.availableVersion")}
             control={
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Mono className="text-xs text-accent">v{upd.latest}</Mono>
-                <Button size="xs" loading={updating} onClick={doUpdate}>
-                  {t("general.update")}
+                <Button
+                  size="xs"
+                  loading={updating && !updNodes}
+                  disabled={updating}
+                  onClick={() => doUpdate(false)}
+                >
+                  {t("general.updatePanel")}
                 </Button>
+                {nodeCount > 0 && (
+                  <Button
+                    size="xs"
+                    variant="light"
+                    loading={updating && updNodes}
+                    disabled={updating}
+                    onClick={() => doUpdate(true)}
+                  >
+                    {t("general.updatePanelAndNodes")}
+                  </Button>
+                )}
               </div>
             }
           />

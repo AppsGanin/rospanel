@@ -3,6 +3,7 @@ package xray
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -66,6 +67,9 @@ func planUserChanges(cur, next []byte) (changes []userChange, ok bool) {
 	if err != nil {
 		return nil, false
 	}
+	// Who a relay rule lets through is changed live too, by the caller (relay.go).
+	stripRelayUsers(curCfg)
+	stripRelayUsers(nextCfg)
 	curIn, _ := curCfg["inbounds"].([]any)
 	nextIn, _ := nextCfg["inbounds"].([]any)
 	if len(curIn) != len(nextIn) {
@@ -276,8 +280,19 @@ func (s *Supervisor) tryLiveUsers(apiAddr string, data []byte) (RawApply, bool, 
 		if !live {
 			return RawRestarted, false, err
 		}
-	} else if err := s.applyUserChanges(apiAddr, changes); err != nil {
-		return RawRestarted, false, err
+	} else {
+		if err := s.applyUserChanges(apiAddr, changes); err != nil {
+			return RawRestarted, false, err
+		}
+		rules, changed, ok := relayRulesChanged(cur, data)
+		switch {
+		case !ok:
+			return RawRestarted, false, errors.New("the routing changed beyond the relay users")
+		case changed:
+			if err := s.replaceOwnRulesLocked(apiAddr, rules); err != nil {
+				return RawRestarted, false, err
+			}
+		}
 	}
 	if err := writeFileAtomic(s.configPath, data); err != nil {
 		return RawRestarted, false, err

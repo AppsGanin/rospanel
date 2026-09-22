@@ -487,8 +487,10 @@ never risks live access.
 coin: another provider's servers, read from their subscription, **handed to your users** beside
 your own. The source is a link, a `happ://crypt…` link or a pasted list; a link is re-read every
 hour, every server switches on and off on its own, and who gets them is decided by the same
-**access groups** as your own lanes. The panel holds nothing on those servers — it only decides
-who is told about them. A provider that requires **device binding** would refuse a caller that
+**access groups** as your own lanes. A subscription can be **relayed through one of your
+servers**: users connect to your VLESS TCP-TLS or REALITY lane, the server carries the traffic on
+to the partner, and speed caps, quotas, device limits and cut-off work as on your own lanes. A
+provider that requires **device binding** would refuse a caller that
 does not identify one, so the panel presents a device: an id derived from the source — the same
 on every read, so their side binds one slot rather than a new one per refresh — plus this build's
 version and a plain user agent. Every one of those is an editable default, for the case the

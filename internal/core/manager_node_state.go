@@ -53,6 +53,8 @@ type nodeStateInputs struct {
 	opts      xray.Options
 	inbounds  []model.Inbound
 	inbErr    error
+	relays    []xray.Relay
+	relErr    error
 	proxies   map[string][]model.ProxyEndpoint
 }
 
@@ -74,6 +76,7 @@ func (m *Manager) readNodeStateInputs(n *model.Node) (*nodeStateInputs, error) {
 	x.opts = m.genOpts()
 	x.geoMoved = m.geoGeneration() != x.geoGen
 	x.inbounds, x.inbErr = m.store.EnabledInbounds(n.ID)
+	x.relays, x.relErr = m.relaysFor(n.ID)
 	x.proxies = m.getNodeProxies(n.ID)
 	return x, nil
 }
@@ -185,7 +188,7 @@ func nodeStateKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) (
 // sent as a change to the other (see manager_node_split.go).
 func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Options) ([sha256.Size]byte, bool) {
 	var key [sha256.Size]byte
-	if x.inbErr != nil || x.in.version == 0 || x.geoMoved {
+	if x.inbErr != nil || x.relErr != nil || x.in.version == 0 || x.geoMoved {
 		return key, false
 	}
 	node := *n
@@ -209,10 +212,11 @@ func nodeStructureKey(n *model.Node, x *nodeStateInputs, managerOpts xray.Option
 		Settings model.Settings
 		Node     model.Node
 		Inbounds []model.Inbound
+		Relays   []xray.Relay
 		Proxies  map[string][]model.ProxyEndpoint
 		Opts     xray.Options
 		Pinned   string
-	}{x.geoGen, set, node, x.inbounds, x.proxies, opts, xray.PinnedVersion}))
+	}{x.geoGen, set, node, x.inbounds, x.relays, x.proxies, opts, xray.PinnedVersion}))
 	if !d.ok {
 		return key, false
 	}

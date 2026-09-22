@@ -8,7 +8,7 @@ import {
   type UserTotal,
 } from './api'
 import { fmtBytes, localDay, ranges } from './format'
-import { useAction, useShowMore } from './hooks'
+import { useAction, useRefreshTick, useShowMore } from './hooks'
 import { useIsAdmin } from './role'
 import { ShareBar, TrafficArea } from './charts'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
@@ -26,6 +26,9 @@ import {
   Skeletons,
   useConfirm,
 } from './ui'
+
+// The panel writes traffic once a minute, so the page asks again as often.
+const REFRESH_MS = 60_000
 
 // How many users the share list opens with. The rest are one click away: the tail of
 // a long install is a hundred accounts that used a megabyte each, and it answers
@@ -56,9 +59,11 @@ export function StatsPanel() {
       .finally(() => setLoaded(true))
   }, [range])
 
+  const tick = useRefreshTick(REFRESH_MS)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick is the minute refresh; it carries no value the load reads
   useEffect(() => {
     load()
-  }, [load])
+  }, [load, tick])
 
   const doReset = async () => {
     const ok = await confirm({
@@ -169,7 +174,7 @@ export function StatsPanel() {
 
       {/* Only ever rendered on a fleet: with one server the split repeats the total
           above it, and the component says so by rendering nothing. */}
-      <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} />
+      <NodeTrafficSplit from={from} to={to} title={t('stats.byServer')} refresh={tick} />
 
       {/* Two short reports, side by side where there is room: neither fills a row. */}
       <div className="grid gap-3.5 lg:grid-cols-2">

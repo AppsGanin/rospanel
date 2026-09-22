@@ -104,13 +104,17 @@ type BalancerStrategy struct {
 // RouteRule is one Xray field rule. Same-field values are OR'd; different fields
 // are AND'd. Traffic goes to OutboundTag, or BalancerTag (a proxy pool).
 type RouteRule struct {
-	Type        string   `json:"type"` // always "field"
-	InboundTag  []string `json:"inboundTag,omitempty"`
-	Domain      []string `json:"domain,omitempty"`
-	IP          []string `json:"ip,omitempty"`
-	Port        string   `json:"port,omitempty"`
-	Network     string   `json:"network,omitempty"` // "tcp,udp" — catch-all matcher
-	Protocol    []string `json:"protocol,omitempty"`
+	Type       string   `json:"type"` // always "field"
+	InboundTag []string `json:"inboundTag,omitempty"`
+	Domain     []string `json:"domain,omitempty"`
+	IP         []string `json:"ip,omitempty"`
+	Port       string   `json:"port,omitempty"`
+	Network    string   `json:"network,omitempty"` // "tcp,udp" — catch-all matcher
+	Protocol   []string `json:"protocol,omitempty"`
+	// User and VlessRoute: who sent it (their email) and the route bytes of the VLESS
+	// UUID they sent (see relay.go).
+	User        []string `json:"user,omitempty"`
+	VlessRoute  string   `json:"vlessRoute,omitempty"`
 	OutboundTag string   `json:"outboundTag,omitempty"`
 	BalancerTag string   `json:"balancerTag,omitempty"`
 	// RuleTag names the rule to Xray's routing API, so the running rules can be

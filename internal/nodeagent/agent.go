@@ -528,6 +528,9 @@ func newAgent(dataDir string, ident *Identity) (*Agent, error) {
 	// Tap Xray's access log so the panel can count this node's devices (mirrors the
 	// master's sup.SetOnAccess(RecordAccess)).
 	a.sup.SetOnAccess(a.recordConn)
+	// A restart resets the counters: sample what they hold first, or up to a minute
+	// of this node's traffic is never reported.
+	a.sup.SetOnBeforeRestart(a.sampleStats)
 	// Same wedged-process watchdog as the master: a node's Xray that goes unresponsive
 	// (alive but not serving) is restarted locally. The master learns of the bounce
 	// from the changed start time and its own node-health alerts.

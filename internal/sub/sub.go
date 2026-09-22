@@ -49,6 +49,9 @@ func ShareLinks(u model.User, srv Server) []string {
 			links = append(links, l)
 		}
 	}
+	for _, r := range srv.relayEntries(u) {
+		links = append(links, r.link(set))
+	}
 	// External servers go last and as received: the link is theirs, the label is
 	// theirs, only the choice of who gets it is ours.
 	for _, e := range srv.externalEndpoints() {

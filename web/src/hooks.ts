@@ -140,3 +140,29 @@ export function useViewMode(key: string): [ViewMode, (v: string) => void] {
   };
   return [view, change];
 }
+
+// useRefreshTick counts up every `ms` while the tab is visible, and at once when it
+// becomes visible again: a key for data that goes stale on its own, such as the
+// traffic the panel writes once a minute. A hidden tab asks for nothing.
+export function useRefreshTick(ms: number): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let last = Date.now();
+    const bump = () => {
+      last = Date.now();
+      setTick((n) => n + 1);
+    };
+    const timer = window.setInterval(() => {
+      if (!document.hidden) bump();
+    }, ms);
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - last >= ms) bump();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ms]);
+  return tick;
+}

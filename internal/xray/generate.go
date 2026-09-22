@@ -65,6 +65,9 @@ type Options struct {
 	// the lane itself (FrontVLESSRaw), so an agent too old to run a front never
 	// receives a config that needs one.
 	FrontVLESS bool
+
+	// Relays are the external servers this server carries traffic on to (relay.go).
+	Relays []Relay
 }
 
 // VLESSInnerPort is where the TCP-TLS lane listens, on loopback, behind the front.
@@ -325,6 +328,9 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		// outbound it replaced, because now two thirds of the picks can be dead.
 		subjects = append(subjects, warpTagPrefix)
 	}
+	relayOuts, relayRules := relayRouting(opts, vlessClients, realityClients)
+	outbounds = append(outbounds, relayOuts...)
+
 	var observatory *Observatory
 	if len(subjects) > 0 {
 		probeURL, probeInterval := probeProfile(set.Host)
@@ -360,7 +366,7 @@ func Generate(set *model.Settings, users []model.User, opts Options, proxies map
 		DNS:         dns,
 		Inbounds:    inbounds,
 		Outbounds:   outbounds,
-		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable),
+		Routing:     compileRouting(expandGroups(rc, opts.Groups), order, warpActive, operaActive, active, unusable, relayRules),
 		Observatory: observatory,
 	}, nil
 }
@@ -1183,7 +1189,7 @@ var privateEgressDomains = []string{
 	"full:instance-data.ec2.internal",
 }
 
-func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool) *Routing {
+func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaActive bool, active, unusable map[string]bool, relay []RouteRule) *Routing {
 	out := &Routing{DomainStrategy: "IPIfNonMatch"}
 	strict := rc.StrictEgress
 	// Each lane's proxies / Opera sit behind health-probed balancers; leastPing (via
@@ -1247,6 +1253,10 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	}
 	addDomainRule(out, "block", rc.BlockDomains)
 	addIPRule(out, "block", rc.BlockIPs)
+
+	// A relayed external server takes its connections whole, ahead of every egress
+	// lane: the user picked that server (see relay.go).
+	out.Rules = append(out.Rules, relay...)
 
 	// Egress lanes in the configured precedence (first-match-wins).
 	byID := make(map[string]model.EgressLane, len(rc.Lanes))
@@ -1327,7 +1337,9 @@ func compileRouting(rc model.RoutingConfig, order []string, warpActive, operaAct
 	// Every rule gets a tag of its own: the running rules are replaced through the API
 	// by tag, and a config with an untagged rule is one the replacement cannot touch.
 	for i := range out.Rules {
-		out.Rules[i].RuleTag = fmt.Sprintf("rule-%d", i)
+		if out.Rules[i].RuleTag == "" {
+			out.Rules[i].RuleTag = fmt.Sprintf("rule-%d", i)
+		}
 	}
 	return out
 }

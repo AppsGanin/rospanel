@@ -234,6 +234,11 @@ func (m *Manager) genOptsFor(serverID int64) (xray.Options, error) {
 		return opts, fmt.Errorf("load access map: %w", err)
 	}
 	opts.Access = access
+	// Soft, like the custom inbounds below: the lanes themselves still work, the
+	// relayed servers wait for the next reload.
+	if opts.Relays, err = m.relaysFor(serverID); err != nil {
+		logErr("extsub: relays: load failed", "server", serverID, "err", err)
+	}
 	list, err := m.store.EnabledInbounds(serverID)
 	if err != nil {
 		logErr("inbounds: load failed", "server", serverID, "err", err)

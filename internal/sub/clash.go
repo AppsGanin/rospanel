@@ -53,16 +53,12 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 	var out []clashProxy
 	if set.VLESSEnabled && srv.allowsBuiltin(model.LaneVLESS) {
 		n := link.LabelFor(model.ProtoVLESS, u, set)
-		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, udp: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
-			n, set.Host, set.VLESSPort, u.UUID, set.SNI, set.VLESSFP(), sv)})
+		out = append(out, clashProxy{n, clashVLESSLine(n, u.UUID, set, sv)})
 	}
 	// No public key, no dialable lane — see ShareLinks.
 	if set.RealityEnabled && set.RealityPublicKey != "" && srv.allowsBuiltin(model.LaneReality) {
 		n := link.LabelFor(model.ProtoReality, u, set)
-		out = append(out, clashProxy{n, fmt.Sprintf(
-			"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, udp: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
-			n, set.Host, set.RealityPort, u.UUID, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityPathOr())})
+		out = append(out, clashProxy{n, clashRealityLine(n, u.UUID, set)})
 	}
 	if set.HysteriaEnabled && srv.allowsBuiltin(model.LaneHysteria) {
 		hop := ""
@@ -82,12 +78,33 @@ func clashProxies(u model.User, srv Server) []clashProxy {
 			out = append(out, p)
 		}
 	}
+	for _, r := range srv.relayEntries(u) {
+		if r.lane == model.LaneReality {
+			out = append(out, clashProxy{r.name, clashRealityLine(r.name, r.user.UUID, set)})
+		} else {
+			out = append(out, clashProxy{r.name, clashVLESSLine(r.name, r.user.UUID, set, sv)})
+		}
+	}
 	for _, e := range srv.externalEndpoints() {
 		if name, line, ok := extsub.ClashProxy(e); ok {
 			out = append(out, clashProxy{name, line})
 		}
 	}
 	return out
+}
+
+// clashVLESSLine is the TCP-TLS lane (VLESS-Vision) as a Clash proxy named n, for uuid.
+func clashVLESSLine(n, uuid string, set *model.Settings, sv string) string {
+	return fmt.Sprintf(
+		"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: tcp, tls: true, udp: true, servername: %q, flow: xtls-rprx-vision, client-fingerprint: %s, skip-cert-verify: %s}",
+		n, set.Host, set.VLESSPort, uuid, set.SNI, set.VLESSFP(), sv)
+}
+
+// clashRealityLine is the REALITY lane (VLESS-XHTTP) as a Clash proxy named n, for uuid.
+func clashRealityLine(n, uuid string, set *model.Settings) string {
+	return fmt.Sprintf(
+		"  - {name: %q, type: vless, server: %q, port: %d, uuid: %q, network: xhttp, tls: true, udp: true, servername: %q, client-fingerprint: %s, reality-opts: {public-key: %q, short-id: %q}, xhttp-opts: {path: %q}}",
+		n, set.Host, set.RealityPort, uuid, set.RealitySNI(), set.RealityFP(), set.RealityPublicKey, set.RealitySID(), set.RealityPathOr())
 }
 
 // clashObfs renders mihomo's Salamander fields for a Hysteria2 proxy, or "" when

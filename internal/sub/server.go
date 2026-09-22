@@ -26,6 +26,9 @@ type Server struct {
 	// ordering, otherwise the first server that did. Nothing about the carrier
 	// reaches the output: an external server renders from its own fields alone.
 	External []model.ExtServer
+	// Relays are the external servers relayed through this server (RelayServerID is
+	// its ServerID): handed out as entries of one of its lanes (see relayEntries).
+	Relays []model.ExtServer
 }
 
 // allowsBuiltin / allowsInbound apply the user's access for THIS server.
@@ -40,7 +43,8 @@ func (s Server) allowsExt(id int64) bool     { return s.Access.AllowsExt(id) }
 func (s Server) externalEndpoints() []extsub.Endpoint {
 	var out []extsub.Endpoint
 	for _, e := range s.External {
-		if e.Enabled && s.allowsExt(e.ID) {
+		// A relayed one never goes out as it is, whatever happens to its relay.
+		if e.Enabled && e.RelayLane == "" && s.allowsExt(e.ID) {
 			out = append(out, extsub.Endpoint{Protocol: e.Protocol, Host: e.Host, Port: e.Port, Name: e.Name, Link: e.Link})
 		}
 	}
