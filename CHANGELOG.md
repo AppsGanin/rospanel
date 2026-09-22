@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.1](https://github.com/AppsGanin/rospanel/compare/v3.8.0...v3.8.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **sub:** external XHTTP servers reach mihomo, and an HTTPUpgrade one no longer breaks the profile ([e122057](https://github.com/AppsGanin/rospanel/commit/e1220575bc0847f528100ffefdde6b058a99659e))
+
 ## [3.8.0](https://github.com/AppsGanin/rospanel/compare/v3.7.0...v3.8.0) (2026-09-21)
 
 
