@@ -3,6 +3,7 @@ package extsub
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -158,11 +159,22 @@ func TestClashAndSingBoxDropWhatTheyCannotSay(t *testing.T) {
 		t.Fatalf("sing-box reality: %v %v", ok, o)
 	}
 	xhttp, _ := Parse("vless://id@1.2.3.4:443?type=xhttp&security=tls&sni=a.b#x")
-	if _, _, ok := ClashProxy(xhttp); ok {
-		t.Fatal("mihomo has no XHTTP; the entry must be dropped, not approximated")
+	if _, line, ok := ClashProxy(xhttp); !ok || !strings.Contains(line, `network: xhttp`) || !strings.Contains(line, `xhttp-opts: {path: "/"}`) {
+		t.Fatalf("clash xhttp: %v %s", ok, line)
 	}
 	if _, ok := SingBoxOutbound(xhttp, "x"); ok {
-		t.Fatal("sing-box has no XHTTP either")
+		t.Fatal("sing-box has no XHTTP; the entry must be dropped, not approximated")
+	}
+	// mihomo's XHTTP is VLESS's alone, and a mode it does not know makes it refuse the
+	// whole profile ("xhttp mode … is not implemented yet").
+	for _, link := range []string{
+		"trojan://pw@1.2.3.4:443?type=xhttp&security=tls&sni=a.b#t",
+		"vless://id@1.2.3.4:443?type=xhttp&security=tls&sni=a.b&mode=bogus#x",
+	} {
+		ep, _ := Parse(link)
+		if _, line, ok := ClashProxy(ep); ok {
+			t.Errorf("%s reached mihomo as %s", link, line)
+		}
 	}
 	plainTrojan, _ := Parse("trojan://pw@1.2.3.4:443?security=none#t")
 	if _, _, ok := ClashProxy(plainTrojan); ok {
@@ -219,5 +231,43 @@ func TestHappByteSwapsAreInvolutions(t *testing.T) {
 	}
 	if _, err := DecryptHapp("happ://crypt/not-a-valid-block"); err == nil {
 		t.Error("garbage decrypted")
+	}
+}
+
+// An XHTTP link's extra settings reach mihomo under the names mihomo gives them when
+// it reads the link itself: the padding, XMUX as reuse-settings, and a separate
+// download path.
+func TestClashXHTTPExtra(t *testing.T) {
+	extra := `{"xPaddingBytes":"200-900","noGRPCHeader":true,"scMaxEachPostBytes":500000,` +
+		`"xmux":{"maxConcurrency":"16-32","hKeepAlivePeriod":30},` +
+		`"downloadSettings":{"address":"5.6.7.8","port":443,"security":"tls",` +
+		`"tlsSettings":{"serverName":"d.example","alpn":["h2"]},` +
+		`"xhttpSettings":{"path":"/d","host":"d.example","headers":{"X-A":"b"}}}}`
+	ep, ok := Parse("vless://id@1.2.3.4:8443?type=xhttp&security=reality&sni=max.ru&pbk=k&sid=s&path=%2Fy&mode=packet-up&extra=" + url.QueryEscape(extra) + "#x")
+	if !ok {
+		t.Fatal("link not read")
+	}
+	_, line, ok := ClashProxy(ep)
+	want := `xhttp-opts: {path: "/y", mode: "packet-up", no-grpc-header: true, x-padding-bytes: "200-900", ` +
+		`sc-max-each-post-bytes: 500000, reuse-settings: {max-concurrency: "16-32", h-keep-alive-period: 30}, ` +
+		`download-settings: {server: "5.6.7.8", port: 443, tls: true, servername: "d.example", alpn: ["h2"], ` +
+		`path: "/d", host: "d.example", headers: {"X-A": "b"}}}}`
+	if !ok || !strings.HasSuffix(line, want) {
+		t.Fatalf("clash xhttp extra:\n got %s\nwant …%s", line, want)
+	}
+}
+
+// mihomo's HTTPUpgrade is WebSocket with a flag, and the entry names its network
+// once: a second "network" key makes mihomo refuse the whole profile.
+func TestClashHTTPUpgradeNamesTheNetworkOnce(t *testing.T) {
+	for _, link := range []string{
+		"vless://id@1.2.3.4:443?type=httpupgrade&security=tls&sni=a.b&path=%2Fh&host=a.b#v",
+		vmessLinkFor(t, map[string]any{"add": "1.2.3.4", "port": "443", "id": "uuid-1", "ps": "vm", "net": "httpupgrade", "path": "/h", "host": "a.b", "tls": "tls"}),
+	} {
+		ep, _ := Parse(link)
+		_, line, ok := ClashProxy(ep)
+		if !ok || strings.Count(line, "network:") != 1 || !strings.Contains(line, "network: ws") || !strings.Contains(line, "v2ray-http-upgrade: true") {
+			t.Errorf("clash httpupgrade: %v %s", ok, line)
+		}
 	}
 }

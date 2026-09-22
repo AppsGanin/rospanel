@@ -1,8 +1,12 @@
 package extsub
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -52,8 +56,7 @@ func ClashProxy(ep Endpoint) (name, line string, ok bool) {
 		return name, fmt.Sprintf("  - {name: %q, type: hysteria2, server: %q, port: %d, password: %q, sni: %q, alpn: [h3], skip-cert-verify: false%s}",
 			name, ep.Host, ep.Port, password, q.Get("sni"), ports), true
 	case "vless", "trojan":
-		network := firstNonEmpty(q.Get("type"), "tcp")
-		transport, ok := clashTransport(network, q)
+		network, transport, ok := clashTransport(ep.Protocol, firstNonEmpty(q.Get("type"), "tcp"), q)
 		if !ok {
 			return "", "", false
 		}
@@ -95,24 +98,254 @@ func ClashProxy(ep Endpoint) (name, line string, ok bool) {
 	return "", "", false
 }
 
-// clashTransport is the per-transport options fragment; false for a transport
-// mihomo has no words for (XHTTP above all).
-func clashTransport(network string, q url.Values) (string, bool) {
+// clashTransport is the network as mihomo names it and the per-transport options
+// fragment; false for a transport mihomo has no words for — the HTTP-header
+// masquerade, and XHTTP on anything but VLESS.
+func clashTransport(protocol, network string, q url.Values) (string, string, bool) {
 	switch network {
 	case "tcp":
 		if q.Get("headerType") == "http" {
-			return "", false // the HTTP-header masquerade has no mihomo form
+			return "", "", false // the HTTP-header masquerade has no mihomo form
 		}
-		return "", true
+		return "tcp", "", true
 	case "ws":
-		return fmt.Sprintf(", ws-opts: {path: %q, headers: {Host: %q}}", firstNonEmpty(q.Get("path"), "/"), q.Get("host")), true
+		return "ws", fmt.Sprintf(", ws-opts: {path: %q, headers: {Host: %q}}", firstNonEmpty(q.Get("path"), "/"), q.Get("host")), true
 	case "httpupgrade":
-		return fmt.Sprintf(", network: ws, ws-opts: {path: %q, headers: {Host: %q}, v2ray-http-upgrade: true}",
+		// mihomo's HTTPUpgrade is WebSocket with a flag. Named once: a second
+		// "network" key in the entry makes mihomo refuse the whole profile.
+		return "ws", fmt.Sprintf(", ws-opts: {path: %q, headers: {Host: %q}, v2ray-http-upgrade: true}",
 			firstNonEmpty(q.Get("path"), "/"), q.Get("host")), true
 	case "grpc":
-		return fmt.Sprintf(", grpc-opts: {grpc-service-name: %q}", q.Get("serviceName")), true
+		return "grpc", fmt.Sprintf(", grpc-opts: {grpc-service-name: %q}", q.Get("serviceName")), true
+	case "xhttp":
+		if protocol != "vless" {
+			return "", "", false // mihomo's XHTTP is VLESS's alone
+		}
+		opts, ok := clashXHTTP(q)
+		return "xhttp", opts, ok
 	}
-	return "", false
+	return "", "", false
+}
+
+// clashXHTTP is the xhttp-opts fragment of a VLESS XHTTP link. The link's extra
+// settings are mapped the way mihomo maps them when it reads the same link itself
+// (parseXHTTPExtra in its common/convert/v.go), so a server handed out through the
+// profile works as it would added by hand. False for a mode mihomo does not know.
+func clashXHTTP(q url.Values) (string, bool) {
+	opts := yamlPairs{{"path", firstNonEmpty(q.Get("path"), "/")}}
+	if host := q.Get("host"); host != "" {
+		opts.set("host", host)
+	}
+	switch mode := q.Get("mode"); mode {
+	case "":
+	case "auto", "stream-one", "stream-up", "packet-up":
+		opts.set("mode", mode)
+	default:
+		return "", false
+	}
+	var extra map[string]any
+	if raw := q.Get("extra"); raw != "" && json.Unmarshal([]byte(raw), &extra) == nil {
+		xhttpExtra(extra, &opts)
+	}
+	return ", xhttp-opts: " + flowYAML(opts), true
+}
+
+// xhttpExtra adds to opts what mihomo takes from an Xray XHTTP "extra" object.
+func xhttpExtra(extra map[string]any, opts *yamlPairs) {
+	str := func(src, dst string) {
+		if v, ok := extra[src].(string); ok && v != "" {
+			opts.set(dst, v)
+		}
+	}
+	num := func(src, dst string) {
+		if v, ok := extra[src].(float64); ok {
+			opts.set(dst, int(v))
+		}
+	}
+	if v, ok := extra["noGRPCHeader"].(bool); ok && v {
+		opts.set("no-grpc-header", true)
+	}
+	str("xPaddingBytes", "x-padding-bytes")
+	if v, ok := extra["xPaddingObfsMode"].(bool); ok {
+		opts.set("x-padding-obfs-mode", v)
+	}
+	str("xPaddingKey", "x-padding-key")
+	str("xPaddingHeader", "x-padding-header")
+	str("xPaddingPlacement", "x-padding-placement")
+	str("xPaddingMethod", "x-padding-method")
+	str("uplinkHTTPMethod", "uplink-http-method")
+	if _, ok := extra["sessionIDPlacement"].(string); ok {
+		str("sessionIDPlacement", "session-placement")
+	} else {
+		str("sessionPlacement", "session-placement")
+	}
+	if _, ok := extra["sessionIDKey"].(string); ok {
+		str("sessionIDKey", "session-key")
+	} else {
+		str("sessionKey", "session-key")
+	}
+	str("sessionIDTable", "session-table")
+	if v, ok := extra["sessionIDLength"].(float64); ok {
+		opts.set("session-length", strconv.FormatInt(int64(v), 10))
+	} else {
+		str("sessionIDLength", "session-length")
+	}
+	str("seqPlacement", "seq-placement")
+	str("seqKey", "seq-key")
+	str("uplinkDataPlacement", "uplink-data-placement")
+	str("uplinkDataKey", "uplink-data-key")
+	num("uplinkChunkSize", "uplink-chunk-size")
+	num("scMaxEachPostBytes", "sc-max-each-post-bytes")
+	num("scMinPostsIntervalMs", "sc-min-posts-interval-ms")
+	if xmux, ok := extra["xmux"].(map[string]any); ok {
+		if reuse := xmuxReuse(xmux); len(reuse) > 0 {
+			opts.set("reuse-settings", reuse)
+		}
+	}
+	if ds, ok := extra["downloadSettings"].(map[string]any); ok {
+		if d := xhttpDownload(ds); len(d) > 0 {
+			opts.set("download-settings", d)
+		}
+	}
+}
+
+// xmuxReuse is Xray's xmux as mihomo's reuse-settings.
+func xmuxReuse(xmux map[string]any) yamlPairs {
+	var reuse yamlPairs
+	for _, k := range [][2]string{
+		{"maxConnections", "max-connections"},
+		{"maxConcurrency", "max-concurrency"},
+		{"cMaxReuseTimes", "c-max-reuse-times"},
+		{"hMaxRequestTimes", "h-max-request-times"},
+		{"hMaxReusableSecs", "h-max-reusable-secs"},
+	} {
+		switch v := xmux[k[0]].(type) {
+		case string:
+			if v != "" {
+				reuse.set(k[1], v)
+			}
+		case float64:
+			reuse.set(k[1], strconv.FormatInt(int64(v), 10))
+		}
+	}
+	if v, ok := xmux["hKeepAlivePeriod"].(float64); ok {
+		reuse.set("h-keep-alive-period", int(v))
+	}
+	return reuse
+}
+
+// xhttpDownload is Xray's downloadSettings as mihomo's download-settings.
+func xhttpDownload(ds map[string]any) yamlPairs {
+	var d yamlPairs
+	if v, ok := ds["address"].(string); ok && v != "" {
+		d.set("server", v)
+	}
+	if v, ok := ds["port"].(float64); ok {
+		d.set("port", int(v))
+	}
+	security, _ := ds["security"].(string)
+	security = strings.ToLower(security)
+	if security == "tls" || security == "reality" {
+		d.set("tls", true)
+		if tls, ok := ds["tlsSettings"].(map[string]any); ok {
+			if v, ok := tls["serverName"].(string); ok && v != "" {
+				d.set("servername", v)
+			}
+			if v, ok := tls["fingerprint"].(string); ok && v != "" {
+				d.set("client-fingerprint", v)
+			}
+			var alpn []string
+			if list, ok := tls["alpn"].([]any); ok {
+				for _, a := range list {
+					if s, ok := a.(string); ok {
+						alpn = append(alpn, s)
+					}
+				}
+			}
+			if len(alpn) > 0 {
+				d.set("alpn", alpn)
+			}
+			if v, ok := tls["allowInsecure"].(bool); ok && v {
+				d.set("skip-cert-verify", true)
+			}
+		}
+		if reality, ok := ds["realitySettings"].(map[string]any); security == "reality" && ok {
+			var r yamlPairs
+			if v, ok := reality["publicKey"].(string); ok && v != "" {
+				r.set("public-key", v)
+			}
+			if v, ok := reality["shortId"].(string); ok && v != "" {
+				r.set("short-id", v)
+			}
+			if len(r) > 0 {
+				d.set("reality-opts", r)
+			}
+		}
+	}
+	if x, ok := ds["xhttpSettings"].(map[string]any); ok {
+		if v, ok := x["path"].(string); ok && v != "" {
+			d.set("path", v)
+		}
+		if v, ok := x["host"].(string); ok && v != "" {
+			d.set("host", v)
+		}
+		if v, ok := x["headers"].(map[string]any); ok && len(v) > 0 {
+			d.set("headers", v)
+		}
+		if extra, ok := x["extra"].(map[string]any); ok {
+			if xmux, ok := extra["xmux"].(map[string]any); ok {
+				if reuse := xmuxReuse(xmux); len(reuse) > 0 {
+					d.set("reuse-settings", reuse)
+				}
+			}
+		}
+	}
+	return d
+}
+
+// yamlPairs is a flow-style YAML mapping that keeps the order it was built in.
+type yamlPairs []yamlPair
+
+type yamlPair struct {
+	key string
+	val any
+}
+
+func (p *yamlPairs) set(key string, val any) { *p = append(*p, yamlPair{key, val}) }
+
+// flowYAML renders v as flow-style YAML. Every string is quoted, keys taken from a
+// link too: the link is someone else's, and an unquoted value could end the entry
+// early and cost the user the whole profile.
+func flowYAML(v any) string {
+	switch x := v.(type) {
+	case yamlPairs:
+		parts := make([]string, len(x))
+		for i, kv := range x {
+			parts[i] = kv.key + ": " + flowYAML(kv.val)
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case map[string]any:
+		parts := make([]string, 0, len(x))
+		for _, k := range slices.Sorted(maps.Keys(x)) {
+			parts = append(parts, strconv.Quote(k)+": "+flowYAML(x[k]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case []string:
+		parts := make([]string, len(x))
+		for i, s := range x {
+			parts[i] = strconv.Quote(s)
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case string:
+		return strconv.Quote(x)
+	case bool:
+		return strconv.FormatBool(x)
+	case int:
+		return strconv.Itoa(x)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	}
+	return `""`
 }
 
 func clashVMess(ep Endpoint, name string) string {
@@ -120,13 +353,12 @@ func clashVMess(ep Endpoint, name string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "  - {name: %q, type: vmess, server: %q, port: %d, uuid: %q, alterId: %d, cipher: %s, udp: true",
 		name, ep.Host, ep.Port, cfg.ID, anyInt(cfg.AID), firstNonEmpty(cfg.SCY, "auto"))
-	network := firstNonEmpty(cfg.Net, "tcp")
 	q := url.Values{}
 	q.Set("path", cfg.Path)
 	q.Set("host", cfg.Host)
 	q.Set("serviceName", cfg.Path)
 	q.Set("headerType", cfg.Type)
-	if transport, ok := clashTransport(network, q); ok {
+	if network, transport, ok := clashTransport("vmess", firstNonEmpty(cfg.Net, "tcp"), q); ok {
 		fmt.Fprintf(&b, ", network: %s%s", network, transport)
 	}
 	if strings.EqualFold(cfg.TLS, "tls") {
