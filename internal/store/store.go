@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -73,6 +74,20 @@ type Store struct {
 	db       *sql.DB
 	rdb      *sql.DB
 	settings settingsCache
+	// clock, when set, is the time user statuses are derived at (SetClock).
+	clock func() int64
+}
+
+// SetClock fixes the time user statuses are derived at, for a test whose reads must
+// all see one moment however long the machine takes. Set before the store is shared.
+func (s *Store) SetClock(fn func() int64) { s.clock = fn }
+
+// nowUnix is the time user statuses are derived at: the real one unless SetClock said.
+func (s *Store) nowUnix() int64 {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now().Unix()
 }
 
 // readPoolSize bounds the read connections. Each holds its own page cache; four is

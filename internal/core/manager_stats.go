@@ -237,6 +237,15 @@ func (m *Manager) enforceTraffic() error {
 	return m.enforceAfterTraffic(users)
 }
 
+// now is the time the enforcement pass judges users at: the real one, unless a test
+// fixed it (Manager.clock) so every read in it sees one moment.
+func (m *Manager) now() time.Time {
+	if m.clock != nil {
+		return m.clock()
+	}
+	return time.Now()
+}
+
 // enforcementUsers reads the users the enforcement pass may act on (see
 // store.EnforcementCandidates) — usually a handful of the whole list.
 func (m *Manager) enforcementUsers() ([]model.User, error) {
@@ -246,7 +255,7 @@ func (m *Manager) enforcementUsers() ([]model.User, error) {
 	if set, err := m.store.GetSettings(); err == nil {
 		horizon = int64(set.ExpiringDays()) * 86400
 	}
-	ids, err := m.store.EnforcementCandidates(time.Now().Unix(), horizon)
+	ids, err := m.store.EnforcementCandidates(m.now().Unix(), horizon)
 	if err != nil {
 		return nil, err
 	}

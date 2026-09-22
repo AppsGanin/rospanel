@@ -146,6 +146,8 @@ type Manager struct {
 	quota       quotaWatch
 	quotaStale  atomic.Bool // a user changed since the watch was read
 	statsSource func() (map[string]xray.Traffic, error)
+	// clock, when set, is the time the enforcement pass judges users at (now).
+	clock func() time.Time
 
 	// stateGate keeps node states from being built and encoded side by side.
 	stateGate stateGate

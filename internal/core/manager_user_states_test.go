@@ -119,9 +119,12 @@ func runEnforcement(t *testing.T, now int64, seed func(*testing.T, *store.Store,
 	}
 	t.Cleanup(func() { st.Close() })
 	seed(t, st, now)
+	// Every read judges users at now, however long the seeding took: the seed puts
+	// users a minute either side of the edges, and a slow machine took longer than that.
+	st.SetClock(func() int64 { return now })
 
 	var run enforcementRun
-	m := &Manager{store: st, tz: time.UTC, webhookCh: make(chan webhookJob, 4096)}
+	m := &Manager{store: st, tz: time.UTC, webhookCh: make(chan webhookJob, 4096), clock: func() time.Time { return time.Unix(now, 0) }}
 	m.SetAdminNotifier(func(html string) { run.Admin = append(run.Admin, html) })
 	m.SetUserNotifier(func(chat int64, html string) { run.User = append(run.User, fmt.Sprintf("%d:%s", chat, html)) })
 

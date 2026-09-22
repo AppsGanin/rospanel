@@ -211,7 +211,7 @@ const userStateCols = `id, name, enabled, plan_id, data_limit, expire_at, hold_s
 // own rows rather than from the window of everyone online.
 func (s *Store) userStates(query string, byKey bool, args ...any) ([]model.User, error) {
 	countIP := s.ipCountsAsDevice() // one row of settings, from the read pool
-	now := time.Now().Unix()
+	now := s.nowUnix()
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -459,7 +459,7 @@ const userSummaryCols = `id, name, note, tags, enabled, data_limit, expire_at, h
 func (s *Store) userSummaries(query string, args ...any) ([]UserSummary, error) {
 	// One row of settings, from the read pool.
 	countIP := s.ipCountsAsDevice()
-	now := time.Now().Unix()
+	now := s.nowUnix()
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -1559,7 +1559,7 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 	}
 	defer rows.Close()
 
-	now := time.Now().Unix()
+	now := s.nowUnix()
 	var out []model.User
 	for rows.Next() {
 		var u model.User
