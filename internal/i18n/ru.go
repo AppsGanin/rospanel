@@ -37,7 +37,7 @@ var ru = map[string]string{
 	"sub.deviceRemove":        "Удалить",
 	"sub.deviceRemoveConfirm": "Удалить это устройство? Оно перестанет обновлять подписку.",
 	"sub.deviceRemoveFailed":  "Не удалось удалить устройство",
-	"sub.deviceNeverSeen":     "ещё не подключалось",
+	"sub.deviceNeverSeen":     "—",
 	"sub.greeting":            "Привет",
 	"sub.online":              "● онлайн",
 	"sub.offline":             "○ офлайн",
@@ -257,7 +257,7 @@ var ru = map[string]string{
 	"admin.cardNoExpiry":         "Истекает: бессрочно",
 	"admin.cardHold":             "Срок: %s с первого подключения",
 	"admin.cardLastSeen":         "Был онлайн: %s",
-	"admin.cardNeverSeen":        "Был онлайн: никогда",
+	"admin.cardNeverSeen":        "Был онлайн: —",
 	"admin.planPrice":            "%s · %d ₽ / %d дн.",
 	"admin.subCard":              "<b>Подписка — #%d %s</b>\n\n<code>%s</code>",
 
