@@ -998,7 +998,10 @@ func (m *Manager) fetchRoutingTemplate(url string) (string, error) {
 		e, ok := m.tmplCache[url]
 		return e.body, ok
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), routingFetchBudget)
+	// Bounded by its budget AND by shutdown: from a network where GitHub answers in
+	// seconds a fetch started at boot is still in flight when the panel stops, and
+	// Close would otherwise wait it out.
+	ctx, cancel := m.untilClose(routingFetchBudget)
 	defer cancel()
 	b, err := netguard.Get(ctx, url, 1<<20)
 	if err != nil {
@@ -1027,6 +1030,9 @@ func (m *Manager) prewarmRoutingTemplates() {
 		return
 	}
 	for _, url := range []string{set.SubRoutingHapp, set.SubRoutingIncy, set.SubRoutingMihomo} {
+		if m.stopped() {
+			return
+		}
 		if strings.TrimSpace(url) != "" {
 			_, _ = m.fetchRoutingTemplate(url)
 		}
