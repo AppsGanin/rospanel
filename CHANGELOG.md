@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.0.0](https://github.com/AppsGanin/rospanel/compare/v3.9.0...v4.0.0) (2026-09-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **roles:** the MCP address …/v1/mcp/<key>/write is gone — one address per key, its tools decided by the key's role; the plain address of a key issued before now offers that key's write tools too, so give an assistant that should only look a key with a read-only role. The administrator role no longer reaches the Telegram bots, backups, restore or the factory reset, which are the owner's. Creating and revoking a full-access API key is the owner's.
+
+### Features
+
+* **roles:** roles are permission sets the owner builds ([2a803b3](https://github.com/AppsGanin/rospanel/commit/2a803b38a7a8d76eabcd72490e50392978e0263d))
+
+
+### Bug Fixes
+
+* **core:** shutdown no longer waits out a template download ([d3c8102](https://github.com/AppsGanin/rospanel/commit/d3c810236a82ec405d02d3568dd17536dc47a1ec))
+* **ui:** an empty date reads as a dash ([a690219](https://github.com/AppsGanin/rospanel/commit/a6902193bbcd5c62546f7a3abfdd0cccea333383))
+
 ## [3.9.0](https://github.com/AppsGanin/rospanel/compare/v3.8.1...v3.9.0) (2026-09-22)
 
 
