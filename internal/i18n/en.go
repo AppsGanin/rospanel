@@ -28,7 +28,7 @@ var en = map[string]string{
 	"sub.deviceRemove":        "Remove",
 	"sub.deviceRemoveConfirm": "Remove this device? It will stop updating the subscription.",
 	"sub.deviceRemoveFailed":  "Could not remove the device",
-	"sub.deviceNeverSeen":     "never connected",
+	"sub.deviceNeverSeen":     "—",
 	"sub.greeting":            "Hi",
 	"sub.online":              "● online",
 	"sub.offline":             "○ offline",
@@ -248,7 +248,7 @@ var en = map[string]string{
 	"admin.cardNoExpiry":         "Expires: never",
 	"admin.cardHold":             "Term: %s from the first connection",
 	"admin.cardLastSeen":         "Last online: %s",
-	"admin.cardNeverSeen":        "Last online: never",
+	"admin.cardNeverSeen":        "Last online: —",
 	"admin.planPrice":            "%s · %d ₽ / %d d",
 	"admin.subCard":              "<b>Subscription — #%d %s</b>\n\n<code>%s</code>",
 

@@ -202,7 +202,7 @@ export function isOnline(lastSeen: number): boolean {
 }
 
 export function fmtLastSeen(unix: number): string {
-  if (!unix) return i18n.t('lastSeen.never')
+  if (!unix) return '—'
   const sec = Math.floor(Date.now() / 1000 - unix)
   if (sec < 120) return i18n.t('lastSeen.justNow')
   if (sec < 3600) return i18n.t('lastSeen.minutes', { n: Math.floor(sec / 60) })
