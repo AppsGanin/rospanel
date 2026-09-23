@@ -116,3 +116,28 @@ func TestWaitReturnsOnClose(t *testing.T) {
 		t.Errorf("wait after Close took %s, want it to return at once", d)
 	}
 }
+
+// A network request a background task is blocked in cannot poll the stop signal, so
+// its context has to end on Close — otherwise a slow download (GitHub from a Russian
+// network takes seconds) holds shutdown for the whole grace period. This does not
+// depend on any network: it asserts the context itself.
+func TestUntilCloseEndsOnClose(t *testing.T) {
+	m, st := closeTestManager(t)
+	defer st.Close()
+	ctx, cancel := m.untilClose(time.Hour)
+	defer cancel()
+	go m.Close()
+	select {
+	case <-ctx.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("a context from untilClose outlived Close")
+	}
+	// And a bare manager (no stop channel) still gets a working deadline.
+	bare, bcancel := (&Manager{}).untilClose(10 * time.Millisecond)
+	defer bcancel()
+	select {
+	case <-bare.Done():
+	case <-time.After(time.Second):
+		t.Fatal("untilClose on a bare manager never expired")
+	}
+}

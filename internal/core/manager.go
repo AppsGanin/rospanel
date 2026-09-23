@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -699,6 +700,25 @@ func (m *Manager) runAsync(fn func()) {
 		defer m.wg.Done()
 		fn()
 	}()
+}
+
+// untilClose is a context that ends after d or when the manager closes, whichever
+// comes first — for network work a background task does, which cannot poll the stop
+// signal while it is blocked in a request. Without it a download started at boot
+// keeps Close waiting its whole grace period.
+func (m *Manager) untilClose(d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	if m.done == nil {
+		return ctx, cancel
+	}
+	go func() {
+		select {
+		case <-m.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 // wait blocks for d and reports whether the caller should carry on. It answers false
