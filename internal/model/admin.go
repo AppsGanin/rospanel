@@ -2,43 +2,50 @@ package model
 
 // Admin is a panel account.
 
-// Roles form a ladder, not a permission matrix: each role can do everything the one
-// below it can, plus more. That keeps the check on a route a rank comparison instead
-// of a set lookup, and leaves no combination of checkboxes that locks the owner out
-// of their own panel.
+// A role is a named set of permissions (see perms.go). Two roles ship with every
+// panel — "admin" and "operator", the rungs of the ladder this replaced — and the
+// owner adds their own. The owner is not a role in that table: they hold every
+// permission implicitly, and a check against an unknown role key resolves to no
+// permissions at all — a row with a corrupt role is powerless, not omnipotent.
 const (
-	RoleOperator = "operator" // end users, stats, journal — no settings, backups or API
-	RoleAdmin    = "admin"    // everything except the admin roster
-	RoleOwner    = "owner"    // everything, plus the roster; exactly one, undeletable
+	RoleOperator = "operator" // preset: end users, stats, journal
+	RoleAdmin    = "admin"    // preset: everything except the admin roster and its trail
+	RoleOwner    = "owner"    // everything, plus the roster and the roles; exactly one
 )
 
-// roleRank orders the ladder. An unknown role ranks 0 and therefore fails every
-// tier check — a row with a corrupt role is powerless, not omnipotent.
-var roleRank = map[string]int{
-	RoleOperator: 1,
-	RoleAdmin:    2,
-	RoleOwner:    3,
+// IsPresetRole reports whether key is one of the two roles every panel ships with.
+// They can be renamed and re-scoped but not deleted: the rescue CLI demotes a
+// previous owner to "admin", and the migration moved every existing account onto
+// one of them.
+func IsPresetRole(key string) bool { return key == RoleAdmin || key == RoleOperator }
+
+// AdminRole is one role in the roster's role list.
+type AdminRole struct {
+	Key string `json:"key"`
+	// Name is what the operator called it. Empty on a preset nobody renamed: the
+	// panel then shows the preset's name in the viewer's own language, which a name
+	// stored in the database could not do.
+	Name      string   `json:"name"`
+	Preset    bool     `json:"preset"`
+	Perms     []string `json:"perms"`
+	CreatedAt int64    `json:"created_at"`
+	// Admins and APIKeys count who holds the role — a role still held cannot be
+	// deleted, so the editor says why before anyone tries.
+	Admins  int `json:"admins"`
+	APIKeys int `json:"api_keys"`
 }
 
-// RoleAtLeast reports whether role clears the given tier.
-func RoleAtLeast(role, tier string) bool {
-	return roleRank[role] != 0 && roleRank[role] >= roleRank[tier]
+// PresetRoleNames are the names the panel shows for the owner and for a preset nobody
+// renamed, in every language it speaks (web/src/i18n, "roles.*"). A custom role may not
+// take one: the roster's picker would show two roles by the same name.
+var PresetRoleNames = map[string][]string{
+	RoleOwner:    {"Владелец", "Owner"},
+	RoleAdmin:    {"Администратор", "Administrator"},
+	RoleOperator: {"Оператор", "Operator"},
 }
 
-// GrantableRoles are the roles an owner may hand out. RoleOwner is deliberately
-// absent: ownership is singular and moves by transfer, never by grant, so there is
-// no path that quietly produces a second owner.
-var GrantableRoles = []string{RoleAdmin, RoleOperator}
-
-// GrantableRole reports whether role is one an owner may assign to someone else.
-func GrantableRole(role string) bool {
-	for _, r := range GrantableRoles {
-		if r == role {
-			return true
-		}
-	}
-	return false
-}
+// MaxRoleName bounds a role's display name.
+const MaxRoleName = 48
 
 // Admin is one row of the admin roster. The password hash never leaves the store.
 type Admin struct {

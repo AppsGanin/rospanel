@@ -9,7 +9,7 @@ import {
 } from './api'
 import { fmtBytes, localDay, ranges } from './format'
 import { useAction, useRefreshTick, useShowMore } from './hooks'
-import { useIsAdmin } from './role'
+import { useCan } from './role'
 import { ShareBar, TrafficArea } from './charts'
 import { ABUSE_WINDOW_DAYS, AbuseList } from './AbuseList'
 import { ConnectionCountries } from './CountryMap'
@@ -37,7 +37,8 @@ const SHARE_FIRST = 8
 
 export function StatsPanel() {
   const { t } = useTranslation()
-  const isAdmin = useIsAdmin()
+  const canReset = useCan('stats.manage')
+  const canSecurity = useCan('security.view')
   const [range, setRange] = useState('30')
   const [series, setSeries] = useState<DailyPoint[]>([])
   const [totals, setTotals] = useState<UserTotal[]>([])
@@ -115,8 +116,8 @@ export function StatsPanel() {
     <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl value={range} onChange={setRange} data={ranges()} />
-        {/* Reading the numbers is the operator's job; wiping them is not. */}
-        {isAdmin && (
+        {/* Reading the numbers is one permission; wiping them is another. */}
+        {canReset && (
           <Button
             size="sm"
             color="red"
@@ -192,9 +193,9 @@ export function StatsPanel() {
         </Panel>
       </div>
 
-      {/* What the security rules have caught. Both read admin-level endpoints, and
+      {/* What the security rules have caught. Both read security endpoints, and
           each renders nothing when there is nothing to show. */}
-      {isAdmin && (
+      {canSecurity && (
         <>
           <BlockedList />
           <ProbeList />

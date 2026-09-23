@@ -30,6 +30,7 @@ import {
   MICRO,
   Mono,
   Panel,
+  ReadOnly,
   SaveBar,
   Select,
   SettingRow,
@@ -37,6 +38,7 @@ import {
   useConfirm,
   useWideBox,
 } from "./ui";
+import { useCan } from "./role";
 import {
   PaymentIntegrations,
   type ProviderDraft,
@@ -53,6 +55,10 @@ const PLANS_WIDE_MIN = 620;
 
 export function BillingPanel() {
   const { t } = useTranslation();
+  // Plans and the tariff settings are billing.*; the payment providers and their
+  // keys are a permission of their own.
+  const canManage = useCan("billing.manage");
+  const canPayments = useCan("payments.manage");
   const [loaded, setLoaded] = useState(false);
   const [cfg, setCfg] = useState<BillingInfo | null>(null);
   const [saved, setSaved] = useState<BillingInfo | null>(null);
@@ -83,13 +89,15 @@ export function BillingPanel() {
   }, []);
 
   useEffect(() => {
-    getPayments()
-      .then((d) => seedProviders(d.providers ?? []))
-      .catch((e) => setPayErr(errMessage(e)));
+    if (canPayments) {
+      getPayments()
+        .then((d) => seedProviders(d.providers ?? []))
+        .catch((e) => setPayErr(errMessage(e)));
+    }
     listGroups()
       .then(setGroups)
       .catch(() => {});
-  }, [seedProviders]);
+  }, [seedProviders, canPayments]);
 
   const patchProvider = (key: string, d: ProviderDraft) =>
     setPayDrafts((s) => ({ ...s, [key]: d }));
@@ -268,6 +276,7 @@ export function BillingPanel() {
     <>
       {confirmNode}
       <div className="flex flex-1 flex-col gap-3.5">
+        <ReadOnly when={!canManage}>
         <Panel
           title={t("settings.tabBilling")}
           aside={
@@ -286,7 +295,10 @@ export function BillingPanel() {
             }
           />
         </Panel>
+        </ReadOnly>
         <PaymentIntegrations
+          manualReadOnly={!canManage}
+          showProviders={canPayments}
           providers={providers}
           drafts={payDrafts}
           err={payErr}
@@ -298,6 +310,7 @@ export function BillingPanel() {
           onLabel={(v) => setCfg({ ...cfg, manual_label: v })}
           onNote={(v) => setCfg({ ...cfg, payment_note: v })}
         />
+        <ReadOnly when={!canManage}>
         <Panel
           title={t("bill.plansTitle")}
           aside={
@@ -342,6 +355,7 @@ export function BillingPanel() {
                   <span className="flex justify-end gap-0.5">
                     <IconButton
                       title={t("common.edit")}
+                      nav
                       onClick={() => {
                         setEditor({ ...p });
                         setMigrateTo(0);
@@ -451,6 +465,7 @@ export function BillingPanel() {
             }
           />
         </Panel>
+        </ReadOnly>
 
         <SaveBar
           dirty={dirty}

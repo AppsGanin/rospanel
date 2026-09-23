@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getMe, type Role, setUnauthorizedHandler } from './api'
+import { getMe, type Perm, type Role, setUnauthorizedHandler } from './api'
 import { Spinner } from './ui'
 import { Login } from './Login'
 import { Dashboard } from './Dashboard'
@@ -36,7 +36,8 @@ export function App() {
 function AppInner() {
   const [state, setState] = useState<AuthState>('loading')
   const [username, setUsername] = useState('')
-  const [role, setRole] = useState<Role>('operator')
+  const [role, setRole] = useState<Role>('')
+  const [perms, setPerms] = useState<Perm[]>([])
   const [version, setVersion] = useState('')
   const [billingEnabled, setBillingEnabled] = useState(false)
   const [totpEnabled, setTotpEnabled] = useState(true)
@@ -55,6 +56,7 @@ function AppInner() {
       .then((m) => {
         setUsername(m.username)
         setRole(m.role)
+        setPerms(m.perms ?? [])
         setVersion(m.version)
         setBillingEnabled(!!m.billing_enabled)
         setTotpEnabled(m.totp_enabled !== false)
@@ -103,7 +105,7 @@ function AppInner() {
     content = <ForcePassword username={username} onDone={check} />
   } else {
     content = (
-      <RoleProvider role={role}>
+      <RoleProvider role={role} perms={perms}>
         <TotpProvider enabled={totpEnabled}>
         <Dashboard
           key={tzEpoch}
@@ -115,6 +117,10 @@ function AppInner() {
           onShowAgreement={openAgreement}
           onShowDonate={openDonate}
           onAccountChanged={check}
+          onPerms={(r, p) => {
+            setRole(r)
+            setPerms(p)
+          }}
         />
         </TotpProvider>
       </RoleProvider>

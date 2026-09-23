@@ -51,7 +51,7 @@ func toolNames(tools []Tool) []string {
 }
 
 func TestBuildToolsNamesAndSchemas(t *testing.T) {
-	tools := BuildTools(spec(), true)
+	tools := BuildTools(spec())
 	got := strings.Join(toolNames(tools), " ")
 	for _, want := range []string{"get_users", "post_users", "post_users_by_id_reset"} {
 		if !strings.Contains(got, want) {
@@ -81,7 +81,7 @@ func TestBuildToolsNamesAndSchemas(t *testing.T) {
 // look like a list.
 func TestToolAnnotations(t *testing.T) {
 	byName := map[string]Tool{}
-	for _, tool := range BuildTools(spec(), true) {
+	for _, tool := range BuildTools(spec()) {
 		byName[tool.Name] = tool
 	}
 	read := byName["get_users"].Annotations
@@ -108,7 +108,7 @@ func TestToolAnnotations(t *testing.T) {
 // The result carries the panel's JSON as data as well as text, so a client that
 // understands structured results doesn't have to re-parse a blob.
 func TestToolResultCarriesStructuredContent(t *testing.T) {
-	srv := NewServer("rospanel", "test", BuildTools(spec(), false),
+	srv := NewServer("rospanel", "test", BuildTools(spec()),
 		func(context.Context, Tool, map[string]any) (string, error) {
 			return `{"data":[{"id":1,"name":"alice"}],"meta":{"total":1}}`, nil
 		})
@@ -135,7 +135,7 @@ func TestToolResultCarriesStructuredContent(t *testing.T) {
 	}
 
 	// A non-JSON answer stays text-only rather than being forced into a shape.
-	plain := NewServer("rospanel", "test", BuildTools(spec(), false),
+	plain := NewServer("rospanel", "test", BuildTools(spec()),
 		func(context.Context, Tool, map[string]any) (string, error) { return "(no content)", nil })
 	body, _ = plain.HandleHTTP(context.Background(),
 		[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_users","arguments":{}}}`))
@@ -144,25 +144,12 @@ func TestToolResultCarriesStructuredContent(t *testing.T) {
 	}
 }
 
-// The read-only default is the safety property of this whole feature, so it gets a
-// test of its own: nothing that changes state may be in the list.
-func TestBuildToolsReadOnlyHidesMutations(t *testing.T) {
-	for _, tool := range BuildTools(spec(), false) {
-		if tool.Mutating() {
-			t.Errorf("read-only mode offered %q", tool.Name)
-		}
-	}
-	if len(BuildTools(spec(), false)) == 0 {
-		t.Error("read-only mode offered nothing at all")
-	}
-}
-
 // Turning a tool call into an HTTP request is where the arguments an assistant
 // invented meet the panel's routes: a path parameter has to land in the path, a
 // query parameter in the query, and neither in the body.
 func TestToolRequest(t *testing.T) {
 	byName := map[string]Tool{}
-	for _, tool := range BuildTools(spec(), true) {
+	for _, tool := range BuildTools(spec()) {
 		byName[tool.Name] = tool
 	}
 
@@ -253,7 +240,14 @@ func TestToolRequest(t *testing.T) {
 // The handshake and one call, end to end over the transport the panel serves.
 func TestHandleHTTPHandshakeAndCall(t *testing.T) {
 	called := ""
-	srv := NewServer("rospanel", "test", BuildTools(spec(), false),
+	// Offered the reads only, the way the panel offers a read-only role's key.
+	var reads []Tool
+	for _, tl := range BuildTools(spec()) {
+		if !tl.Mutating() {
+			reads = append(reads, tl)
+		}
+	}
+	srv := NewServer("rospanel", "test", reads,
 		func(_ context.Context, tool Tool, _ map[string]any) (string, error) {
 			called = tool.Name
 			return `{"data":[]}`, nil
@@ -292,8 +286,8 @@ func TestHandleHTTPHandshakeAndCall(t *testing.T) {
 		t.Errorf("tool called = %q", called)
 	}
 
-	// A tool the server never offered — here a write, with the server read-only — is
-	// a protocol error rather than a call that quietly fails.
+	// A tool the server never offered — here a write, to a reads-only list — is a
+	// protocol error rather than a call that quietly fails.
 	body, _ = srv.HandleHTTP(ctx,
 		[]byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"post_users","arguments":{}}}`))
 	if !strings.Contains(string(body), "unknown tool") {

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { type PaymentProvider } from "./api";
 import i18n, { td } from "./i18n";
 import {
+  ReadOnly,
   CenterLoader,
   cn,
   Code,
@@ -244,6 +245,8 @@ export function PaymentIntegrations({
   onManual,
   onLabel,
   onNote,
+  manualReadOnly,
+  showProviders,
 }: {
   providers: PaymentProvider[] | null;
   drafts: Record<string, ProviderDraft>;
@@ -255,20 +258,26 @@ export function PaymentIntegrations({
   onManual: (v: boolean) => void;
   onLabel: (v: string) => void;
   onNote: (v: string) => void;
+  // The manual method is a tariff setting (billing.manage); the providers and their
+  // keys are payments.manage — a role may hold either without the other.
+  manualReadOnly: boolean;
+  showProviders: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <Panel title={t("bill.acceptTitle")}>
       <SettingRow hint={t("bill.acceptDescription")} />
-      <ManualCard
-        enabled={manual}
-        label={label}
-        note={note}
-        onEnabled={onManual}
-        onLabel={onLabel}
-        onNote={onNote}
-      />
-      {err ? (
+      <ReadOnly when={manualReadOnly}>
+        <ManualCard
+          enabled={manual}
+          label={label}
+          note={note}
+          onEnabled={onManual}
+          onLabel={onLabel}
+          onNote={onNote}
+        />
+      </ReadOnly>
+      {!showProviders ? null : err ? (
         <SettingRow hint={<span className="text-danger">{err}</span>} />
       ) : !providers ? (
         <CenterLoader />

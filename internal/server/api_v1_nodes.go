@@ -248,6 +248,9 @@ func (rt *Router) apiPatchNode(w http.ResponseWriter, r *http.Request, id int64)
 	if !apiDecode(w, r, &req) {
 		return
 	}
+	if !apiFieldsAllowed(w, r, nodeFieldPerms(req)) {
+		return
+	}
 	node, err := rt.mgr.GetNode(id)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -390,4 +393,32 @@ func (rt *Router) apiRegenNodeJoin(w http.ResponseWriter, r *http.Request, id in
 		"join_token":      token,
 		"install_command": rt.nodeInstallCommand(r, nodePath, token),
 	})
+}
+
+// nodeFieldPerms is each field of a node patch with the permission the panel keeps
+// it under: egress and DNS are routing, everything else is the server itself.
+func nodeFieldPerms(req apiPatchNodeReq) []fieldPerm {
+	sm, rm := model.PermServersManage, model.PermRoutingManage
+	return []fieldPerm{
+		{req.Routing != nil, "routing", rm},
+		{req.XrayDNS != nil, "xray_dns", rm},
+		{req.WarpEnabled != nil, "warp_enabled", rm},
+		{req.OperaEnabled != nil, "opera_enabled", rm},
+		{req.OperaCountry != nil, "opera_country", rm},
+		{req.Name != nil, "name", sm},
+		{req.Host != nil, "host", sm},
+		{req.DecoyTemplate != nil, "decoy_template", sm},
+		{req.VLESS != nil, "vless_enabled", sm},
+		{req.Hysteria != nil, "hysteria_enabled", sm},
+		{req.Reality != nil, "reality_enabled", sm},
+		{req.TrafficCoefficient != nil, "traffic_coefficient", sm},
+		{req.Country != nil, "country", sm},
+		{req.SortWeight != nil, "sort_weight", sm},
+		{req.Capacity != nil, "capacity", sm},
+		{req.HideWhenFull != nil, "hide_when_full", sm},
+		{req.TrafficLimit != nil, "traffic_limit", sm},
+		{req.TrafficPeriod != nil, "traffic_period", sm},
+		{req.HideWhenOver != nil, "hide_when_over", sm},
+		{req.TrafficResetDay != nil, "traffic_reset_day", sm},
+	}
 }

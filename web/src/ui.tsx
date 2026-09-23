@@ -431,6 +431,7 @@ export function Button({
   target,
   onClick,
   type = "button",
+  nav,
 }: {
   children: ReactNode;
   variant?: Variant;
@@ -447,7 +448,10 @@ export function Button({
   target?: string;
   onClick?: () => void;
   type?: "button" | "submit";
+  // nav: the button only moves the view, so it keeps working in a ReadOnly region.
+  nav?: boolean;
 }) {
+  const ro = useReadOnly() && !nav;
   const cls = cn(
     "inline-flex items-center justify-center gap-2 rounded-lg font-semibold select-none",
     "transition duration-150 active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100",
@@ -466,7 +470,7 @@ export function Button({
   return (
     <button
       className={cls}
-      disabled={disabled || loading}
+      disabled={disabled || loading || ro}
       onClick={onClick}
       title={title}
       type={type}
@@ -497,7 +501,7 @@ export function ShowMore({
   // past the edge of the list it belongs to (which is exactly what it did).
   return (
     <div className={className}>
-      <Button variant="light" color="gray" size="sm" fullWidth onClick={onClick}>
+      <Button variant="light" color="gray" size="sm" fullWidth nav onClick={onClick}>
         {t("common.showMoreCount", { n: rest })}
       </Button>
     </div>
@@ -515,6 +519,7 @@ export function IconButton({
   className,
   title,
   compact,
+  nav,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -532,7 +537,10 @@ export function IconButton({
   // compact is the size for a button inside a dense row of text: its hover fill stays
   // inside the row instead of covering it top to bottom.
   compact?: boolean;
+  // nav: opens or shows something rather than changing it — stays live in ReadOnly.
+  nav?: boolean;
 }) {
+  const ro = useReadOnly() && !nav;
   const cls = cn(
     "inline-flex items-center justify-center transition active:scale-90",
     compact ? "size-6 rounded-md" : "size-8 rounded-lg",
@@ -562,7 +570,7 @@ export function IconButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || ro}
       className={cls}
     >
       {children}
@@ -683,6 +691,41 @@ export function Card({
   );
 }
 
+// ReadOnly shows its content to a role that may look but not change. It does not
+// wrap anything in a disabled fieldset — that turned off navigation too (paging,
+// search, expanders) and never reached the dialogs a region opens, which render in a
+// portal. Instead every control of this kit reads the flag and stops changing
+// anything: inputs, switches, selects, pickers, tag boxes, and buttons that act. A
+// control that only moves the view (ShowMore, a search box, a view switch) says so
+// with `nav` and keeps working. React context crosses portals, so a modal opened from
+// a read-only region is read-only too.
+//
+// Cosmetic like every permission check in the SPA: the server refuses the save
+// regardless.
+const ReadOnlyCtx = createContext(false);
+
+export const useReadOnly = () => useContext(ReadOnlyCtx);
+
+export function ReadOnly({
+  when,
+  own,
+  children,
+}: {
+  when: boolean;
+  // own: this part answers to a permission of its own, not the region's around it —
+  // the system proxy inside a server's General tab is routing's, not the servers'.
+  // Without it a nested ReadOnly never lifts an outer one.
+  own?: boolean;
+  children: ReactNode;
+}) {
+  const outer = useContext(ReadOnlyCtx);
+  return (
+    <ReadOnlyCtx.Provider value={own ? when : outer || when}>{children}</ReadOnlyCtx.Provider>
+  );
+}
+
+const noop = () => {};
+
 // SaveBar is the sticky bottom action bar shown while a page has unsaved edits.
 // Leaving the page (it unmounts) discards the in-memory changes, which the hint
 // makes explicit. Render it once per page; it returns null when not dirty.
@@ -766,6 +809,7 @@ export function TextInput({
   inputMode,
   autoComplete,
   name,
+  nav,
 }: {
   label?: string;
   value: string;
@@ -775,6 +819,8 @@ export function TextInput({
   autoFocus?: boolean;
   mono?: boolean;
   disabled?: boolean;
+  // nav: a search or filter box — it narrows the view, so it stays live in ReadOnly.
+  nav?: boolean;
   className?: string;
   // Passed through for the fields where the on-screen keyboard and the browser's
   // autofill actually matter — a one-time code wants a numeric pad and the OS's
@@ -785,6 +831,8 @@ export function TextInput({
   autoComplete?: string;
   name?: string;
 }) {
+  const ro = useReadOnly() && !nav;
+  disabled = disabled || ro;
   return (
     <Field label={label}>
       <input
@@ -830,12 +878,14 @@ export function Textarea({
   // the highlighted text in a tag, for instance.
   inputRef?: React.Ref<HTMLTextAreaElement>;
 }) {
+  const ro = useReadOnly();
   return (
     <Field label={label}>
       <textarea
         ref={inputRef}
-        className={cn(inputCls, "resize-y", mono && "font-mono")}
+        className={cn(inputCls, "resize-y", mono && "font-mono", ro && "bg-gray-50 text-ink-muted")}
         value={value}
+        readOnly={ro}
         rows={rows}
         placeholder={placeholder}
         onChange={(e) => onChange(e.currentTarget.value)}
@@ -849,12 +899,14 @@ export function PasswordInput(
   props: Omit<Parameters<typeof TextInput>[0], "type" | "mono">,
 ) {
   const [show, setShow] = useState(false);
+  const ro = useReadOnly();
   return (
     <Field label={props.label}>
       <div className="relative">
         <input
-          className={cn(inputCls, "pr-10", props.className)}
+          className={cn(inputCls, "pr-10", ro && "bg-gray-50 text-ink-muted", props.className)}
           value={props.value}
+          readOnly={ro}
           type={show ? "text" : "password"}
           placeholder={props.placeholder}
           autoFocus={props.autoFocus}
@@ -973,6 +1025,8 @@ export function Select({
   // does not apply right now", not to hide what it would be.
   disabled?: boolean
 }) {
+  const readOnly = useReadOnly();
+  disabled = disabled || readOnly;
   const { t } = useTranslation()
   placeholder = placeholder ?? t('common.select')
   const [open, setOpen] = useState(false)
@@ -1078,6 +1132,8 @@ export function TagsInput({
   placeholder?: string
 }) {
   const { t } = useTranslation()
+  // Read-only: the tags stay readable, nothing adds or removes one.
+  if (useReadOnly()) onChange = noop
   placeholder = placeholder ?? t('common.addAndEnter')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
@@ -1305,6 +1361,8 @@ export function DatePicker({
   // button once a date is chosen.
   clearable?: boolean
 }) {
+  const readOnly = useReadOnly();
+  disabled = disabled || readOnly;
   const { t } = useTranslation()
   placeholder = placeholder ?? t('common.never')
   const months = monthNames()
@@ -1491,6 +1549,8 @@ export function CustomizableSelect({
   onChange: (v: string) => void;
   disabled?: boolean;
 }) {
+  const readOnly = useReadOnly();
+  disabled = disabled || readOnly;
   const { t } = useTranslation()
   const [custom, setCustom] = useState(false)
   const [raw, setRaw] = useState("")
@@ -1570,6 +1630,8 @@ export function Switch({
   onChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
+  const readOnly = useReadOnly();
+  disabled = disabled || readOnly;
   return (
     <button
       type="button"
@@ -1736,9 +1798,11 @@ export function Checkbox({
   label: ReactNode;
   hint?: ReactNode;
 }) {
+  const ro = useReadOnly();
   return (
     <label
       className={cn(
+        ro && "pointer-events-none opacity-60",
         // relative: the sr-only input inside is absolutely positioned, and without an
         // anchor here the browser scrolls the page to wherever it lands when it takes
         // focus on a click.
@@ -1752,6 +1816,7 @@ export function Checkbox({
         type="checkbox"
         className="sr-only"
         checked={checked}
+        disabled={ro}
         onChange={(e) => onChange(e.currentTarget.checked)}
       />
       <span
@@ -2096,6 +2161,7 @@ export function SegmentedControl({
   onChange,
   fullWidth,
   size = "md",
+  nav,
 }: {
   // label may be an icon. When it is, pass title too: an icon-only button has no
   // accessible name of its own, and a screen reader would announce nothing at all.
@@ -2106,7 +2172,11 @@ export function SegmentedControl({
   // "xs" is the one that rides in a section's header band, where it must not make
   // the band taller than the 14px title beside it.
   size?: "md" | "xs";
+  // nav: the control switches what is shown (a range, a view) rather than a value
+  // being saved, so it stays live in ReadOnly.
+  nav?: boolean;
 }) {
+  const ro = useReadOnly() && !nav;
   const xs = size === "xs";
   return (
     <div
@@ -2119,6 +2189,7 @@ export function SegmentedControl({
         <button
           key={o.value}
           type="button"
+          disabled={ro}
           onClick={() => onChange(o.value)}
           title={o.title}
           aria-label={o.title}

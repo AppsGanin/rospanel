@@ -27,6 +27,7 @@ import {
   Skeletons,
   useWideBox,
 } from "./ui";
+import { useCan } from "./role";
 
 const PROVIDER_META: Record<
   string,
@@ -108,6 +109,8 @@ function orderWho(o: PaymentOrder): string {
 // order must change it at once rather than at the next poll.
 export function PaymentsPage({ onPending }: { onPending?: (n: number) => void }) {
   const { t } = useTranslation();
+  // Crediting or cancelling an order needs billing.manage; the list is billing.view.
+  const canManage = useCan("billing.manage");
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,6 +259,7 @@ export function PaymentsPage({ onPending }: { onPending?: (n: number) => void })
                   </span>
                   <span className="truncate text-xs text-ink-muted">{o.plan_name}</span>
                   <Mono className="shrink-0 text-xs text-ink">{fmtRub(o.amount_rub)}</Mono>
+                  {canManage && (
                   <span className="flex shrink-0 gap-2">
                     <Button size="xs" disabled={busy} onClick={() => creditOrder(o)}>
                       {t("pay.credit")}
@@ -270,6 +274,7 @@ export function PaymentsPage({ onPending }: { onPending?: (n: number) => void })
                       {t("common.cancel")}
                     </Button>
                   </span>
+                  )}
                 </div>
               ))}
               <ShowMore rest={pendingPage.rest} onClick={pendingPage.showMore} className="p-3.5" />

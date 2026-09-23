@@ -4,10 +4,12 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/auth"
+	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // sessionPepper returns the per-install HMAC pepper mixed into session token
@@ -94,6 +96,9 @@ type SessionAdmin struct {
 	Username           string
 	Role               string
 	MustChangePassword bool
+	// Perms is what the role grants, resolved in the same lookup — so editing a role
+	// changes what its admins can do on their next request, like a role change does.
+	Perms model.PermSet
 
 	// SessionID identifies the session itself (the row, never the token), so a
 	// handler can mark it as "this one" in the admin's own list and keep it out of a
@@ -113,11 +118,13 @@ func (s *Store) LookupSession(token string) (SessionAdmin, bool) {
 	var a SessionAdmin
 	var mustChange int
 	var expires int64
+	var perms sql.NullString
 	err = s.rdb.QueryRow(`
-		SELECT a.id, a.username, a.role, a.must_change_password, s.expires_at, s.id, s.last_seen_at
+		SELECT a.id, a.username, a.role, a.must_change_password, s.expires_at, s.id, s.last_seen_at, r.perms
 		FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
+		LEFT JOIN admin_roles r ON r.key = a.role
 		WHERE s.token_hash = ?`, hash,
-	).Scan(&a.ID, &a.Username, &a.Role, &mustChange, &expires, &a.SessionID, &a.LastSeenAt)
+	).Scan(&a.ID, &a.Username, &a.Role, &mustChange, &expires, &a.SessionID, &a.LastSeenAt, &perms)
 	if err != nil {
 		return SessionAdmin{}, false
 	}
@@ -126,6 +133,7 @@ func (s *Store) LookupSession(token string) (SessionAdmin, bool) {
 		return SessionAdmin{}, false
 	}
 	a.MustChangePassword = mustChange != 0
+	a.Perms = permsFor(a.Role, perms)
 	return a, true
 }
 

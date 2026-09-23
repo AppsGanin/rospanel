@@ -48,6 +48,15 @@ Authorization: Bearer rp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 A missing or invalid key returns `401`. The surface is per-IP rate-limited.
 
+A key has **full access** or carries an **admin role** picked at creation. With a role it
+reaches exactly what an admin with that role reaches in the panel; anything else answers
+`403` with `"code": "forbidden"`, and the MCP endpoint lists only the tools the role can call.
+`PATCH /v1/settings` and `PATCH /v1/nodes/{id}` check each field against its section (DNS and
+egress need `routing.manage`, trusted networks and probe settings `security.manage`).
+
+Full access reaches what the owner alone reaches in the panel — backups (`/v1/backup`) and the
+local backup schedule included — so only the owner can create or revoke such a key.
+
 ## Response envelope
 
 Success:
@@ -907,8 +916,7 @@ The panel serves this API to an assistant over the Model Context Protocol itself
 nothing to install anywhere: an assistant that takes a URL:
 
 ```
-$BASE/v1/mcp/<api-key>          read-only
-$BASE/v1/mcp/<api-key>/write    plus everything that changes state
+$BASE/v1/mcp/<api-key>
 ```
 
 The key rides in the path because those dialogs accept a URL and nothing else: **the address
@@ -916,9 +924,10 @@ is the credential**, exactly as secret as the key inside it, and it stops workin
 that key is revoked. Build it by hand from the two values *Settings → API* gives you — the
 base address shown there, and a key at the moment you create it (it is never shown again).
 
-The two addresses are the same server with a different toolbox. The short one cannot delete a
-user even though the key behind it could — which is the point: an assistant acting on a
-misread sentence should not be able to, and the operator chooses that by which URL they paste.
+The toolbox is the key's role: the assistant is offered exactly the tools behind routes the role
+can call, and a call to any other answers "unknown tool". For an assistant that should only look,
+create a key with a role that has no write — an assistant acting on a misread sentence then
+cannot delete a customer, whatever it is asked.
 
 Transport is MCP's Streamable HTTP: one JSON-RPC message per `POST`, answered with
 `application/json`; notifications get `202` and no body; `GET` is `405` (this endpoint has no
@@ -946,8 +955,8 @@ one, can put a backup back.
 
 The tool list is generated from the OpenAPI document above, so it never drifts from the API:
 an endpoint added to `/v1` becomes a tool with no one remembering to register it, and a
-removed one disappears. That includes the configuration half — an assistant on the `/write`
-address can read and change settings, rewrite a server's routing, take and roll back config
+removed one disappears. That includes the configuration half — an assistant whose key's role
+allows it can read and change settings, rewrite a server's routing, take and roll back config
 save-points and restart Xray.
 
 Each tool carries the annotations a client uses to decide whether to ask its human first

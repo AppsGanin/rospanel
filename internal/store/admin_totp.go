@@ -129,6 +129,11 @@ func BackupAdminTOTPSecrets(dir string) ([]string, error) {
 		return nil, err
 	}
 	defer db.Close()
+	// The owner's and the administrators' — the accounts that could restore that panel
+	// under the ladder roles replaced. Restore is the owner's alone now, but narrowing
+	// this to the owner would read a backup where only an administrator had 2FA as
+	// having none, which is the one answer this must never give wrongly. An
+	// operator's authenticator neither demands a code nor answers for one.
 	rows, err := db.Query(
 		`SELECT totp_secret FROM admins WHERE totp_secret != '' AND role IN (?, ?)`,
 		model.RoleOwner, model.RoleAdmin)

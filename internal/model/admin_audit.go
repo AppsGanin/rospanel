@@ -42,6 +42,11 @@ const (
 	AuditAdminDeleted       = "admin.deleted"
 	AuditAdminRoleChanged   = "admin.role_changed"
 	AuditAdminPasswordReset = "admin.password_reset"
+	// Roles: what an admin may see and do. A role edit changes the reach of everyone
+	// holding it, so it is its own row, with the role in the target.
+	AuditRoleCreated = "admin.role_created"
+	AuditRoleUpdated = "admin.role_updated"
+	AuditRoleDeleted = "admin.role_deleted"
 
 	// Your own account.
 	AuditPasswordChanged    = "admin.password_changed"
@@ -147,6 +152,9 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditAdminDeleted, AuditCatAdmins},
 	{AuditAdminRoleChanged, AuditCatAdmins},
 	{AuditAdminPasswordReset, AuditCatAdmins},
+	{AuditRoleCreated, AuditCatAdmins},
+	{AuditRoleUpdated, AuditCatAdmins},
+	{AuditRoleDeleted, AuditCatAdmins},
 	{AuditPasswordChanged, AuditCatAdmins},
 	{AuditCredentialsChanged, AuditCatAdmins},
 	{AuditTOTPEnabled, AuditCatAdmins},

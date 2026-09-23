@@ -16,6 +16,8 @@ import { fmtSpeed, speedLimitOptions, statusInfo } from "./format";
 import { useAction, useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import {
+  useReadOnly,
+  ReadOnly,
   Badge,
   Button,
   CenterLoader,
@@ -36,6 +38,7 @@ import {
   TextInput,
   useWideBox,
 } from "./ui";
+import { useCan } from "./role";
 
 // One template for the header and every row; narrow, the row folds to name + actions
 // with the figures on a second line.
@@ -76,6 +79,9 @@ export function GroupsPanel() {
   const { busy, run } = useAction();
   const [boxRef, wide] = useWideBox(WIDE_MIN);
   const [tab, setTab] = useState<"grants" | "members">("grants");
+  // Without groups.manage the editor opens read-only: the grants and members are
+  // still worth seeing, there is just no Save.
+  const canManage = useCan("groups.manage");
 
   const reload = () => listGroups().then(setGroups);
 
@@ -127,7 +133,7 @@ export function GroupsPanel() {
     setEditing(e);
   };
 
-  const createBtn = (
+  const createBtn = canManage && (
     <IconButton
       variant="filled"
       color="brand"
@@ -212,13 +218,15 @@ export function GroupsPanel() {
                     >
                       <IconPencil size={16} />
                     </IconButton>
-                    <IconButton
-                      color="red"
-                      title={t("common.delete")}
-                      onClick={() => setConfirmDel(g)}
-                    >
-                      <IconTrash size={16} />
-                    </IconButton>
+                    {canManage && (
+                      <IconButton
+                        color="red"
+                        title={t("common.delete")}
+                        onClick={() => setConfirmDel(g)}
+                      >
+                        <IconTrash size={16} />
+                      </IconButton>
+                    )}
                   </span>
                 </div>
               );
@@ -274,19 +282,22 @@ export function GroupsPanel() {
               >
                 {t("common.cancel")}
               </Button>
-              <Button
-                size="sm"
-                onClick={save}
-                loading={busy}
-                disabled={!editing.name.trim()}
-              >
-                {t("common.save")}
-              </Button>
+              {canManage && (
+                <Button
+                  size="sm"
+                  onClick={save}
+                  loading={busy}
+                  disabled={!editing.name.trim()}
+                >
+                  {t("common.save")}
+                </Button>
+              )}
             </div>
           ) : undefined
         }
       >
         {editing && (
+          <ReadOnly when={!canManage}>
           <div className="flex flex-col gap-3.5">
             <TextInput
               label={t("groups.name")}
@@ -334,6 +345,7 @@ export function GroupsPanel() {
               />
             )}
           </div>
+          </ReadOnly>
         )}
       </Drawer>
 
@@ -382,11 +394,18 @@ function CheckCell({
   label: string;
 }) {
   const on = checked || mixed;
+  const ro = useReadOnly();
   return (
-    <label className="relative flex shrink-0 cursor-pointer items-center">
+    <label
+      className={cn(
+        "relative flex shrink-0 items-center",
+        ro ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+      )}
+    >
       <input
         type="checkbox"
         className="sr-only"
+        disabled={ro}
         checked={checked}
         aria-label={label}
         onChange={(e) => onChange(e.currentTarget.checked)}
@@ -581,6 +600,7 @@ function MembersTable({
   return (
     <div className="flex flex-col gap-2.5">
       <TextInput
+        nav
         value={query}
         onChange={setQuery}
         placeholder={t("groups.searchUsers")}

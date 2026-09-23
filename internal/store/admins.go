@@ -21,17 +21,28 @@ func (s *Store) CountAdmins() (int, error) {
 // CreateAdmin inserts an admin with the given username, password hash and role.
 // mustChange gates the account on a password change at first login — set for every
 // account created with a password someone else picked.
+//
+// The role must exist when the row is written (or be the owner): the check is part of
+// the statement, so a role deleted a moment earlier cannot be written onto an account
+// (DeleteAdminRole counts holders in the same serialised writer) — ErrRoleNotFound.
 func (s *Store) CreateAdmin(username, passwordHash, role string, mustChange bool) (int64, error) {
 	res, err := s.db.Exec(
 		`INSERT INTO admins (username, password_hash, role, must_change_password)
-		 VALUES (?, ?, ?, ?)`,
-		username, passwordHash, role, boolToInt(mustChange),
+		 SELECT ?, ?, ?, ? WHERE `+roleExists,
+		username, passwordHash, role, boolToInt(mustChange), role, role,
 	)
 	if err != nil {
 		return 0, err
 	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return 0, ErrRoleNotFound
+	}
 	return res.LastInsertId()
 }
+
+// roleExists is the SQL condition "the role key bound twice after it is the owner or a
+// row of admin_roles" — the guard every write of a role key carries.
+const roleExists = `(? = 'owner' OR EXISTS (SELECT 1 FROM admin_roles WHERE key = ?))`
 
 // ListAdmins returns the roster, owner first, then by creation order.
 func (s *Store) ListAdmins() ([]model.Admin, error) {
@@ -91,10 +102,24 @@ func (s *Store) DeleteAdmin(id int64) error {
 	return nil
 }
 
-// SetAdminRole changes an admin's role.
+// SetAdminRole changes an admin's role. Like CreateAdmin it writes only a role that
+// exists at that moment, and answers ErrRoleNotFound otherwise.
 func (s *Store) SetAdminRole(id int64, role string) error {
-	_, err := s.db.Exec(`UPDATE admins SET role = ? WHERE id = ?`, role, id)
-	return err
+	res, err := s.db.Exec(`UPDATE admins SET role = ? WHERE id = ? AND `+roleExists, role, id, role, role)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		var exists int
+		if err := s.db.QueryRow(`SELECT COUNT(1) FROM admins WHERE id = ?`, id).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return ErrAdminNotFound
+		}
+		return ErrRoleNotFound
+	}
+	return nil
 }
 
 // UpdateAdminUsername changes an admin's login name.

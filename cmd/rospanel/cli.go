@@ -601,8 +601,13 @@ func runRescue(dataDir string, args []string) {
 		if err != nil {
 			log.Fatalf("rescue: %v", err)
 		}
-		fmt.Printf("  %-20s %-9s %-4s %s\n", "LOGIN", "ROLE", "2FA", "LAST LOGIN")
+		fmt.Printf("  %-20s %-16s %-4s %s\n", "LOGIN", "ROLE", "2FA", "LAST LOGIN")
 		for _, a := range admins {
+			// A custom role reads by the name the owner gave it, not its generated key.
+			role := a.Role
+			if r, err := st.GetAdminRole(a.Role); err == nil && r.Name != "" {
+				role = r.Name
+			}
 			twoFA := "off"
 			if a.TOTPEnabled {
 				twoFA = "ON"
@@ -611,7 +616,7 @@ func runRescue(dataDir string, args []string) {
 			if a.LastLoginAt > 0 {
 				last = time.Unix(a.LastLoginAt, 0).Format("2006-01-02 15:04")
 			}
-			fmt.Printf("  %-20s %-9s %-4s %s\n", a.Username, a.Role, twoFA, last)
+			fmt.Printf("  %-20s %-16s %-4s %s\n", a.Username, role, twoFA, last)
 		}
 		fmt.Println("\n  rescue password <login>   set a new password (printed once)")
 		fmt.Println("  rescue unlock <login>     new password AND remove the second factor")

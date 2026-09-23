@@ -13,7 +13,7 @@ func TestAPIKeyLifecycle(t *testing.T) {
 	}
 	defer st.Close()
 
-	k, err := st.CreateAPIKey("integration")
+	k, err := st.CreateAPIKey("integration", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

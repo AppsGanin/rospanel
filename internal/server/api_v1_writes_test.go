@@ -39,7 +39,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
-	url := base + "/v1/mcp/" + key + "/write"
+	url := base + "/v1/mcp/" + key
 
 	call := func(tool string, args map[string]any) string {
 		t.Helper()
@@ -227,7 +227,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 
 	// Completeness: every field these tools declare is either sent above or named as
 	// one the panel owns.
-	for _, tool := range mcp.BuildTools(OpenAPISpec(base), true) {
+	for _, tool := range mcp.BuildTools(OpenAPISpec(base)) {
 		probe, ok := probes[tool.Name]
 		if !ok {
 			continue
@@ -265,7 +265,7 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
-	url := base + "/v1/mcp/" + key + "/write"
+	url := base + "/v1/mcp/" + key
 
 	call := func(body map[string]any) {
 		t.Helper()
@@ -438,7 +438,7 @@ func TestMCPInboundWritesReachTheStore(t *testing.T) {
 		g.assert(t, find(t, g.body["name"].(string)))
 	}
 
-	for _, tool := range mcp.BuildTools(OpenAPISpec(base), true) {
+	for _, tool := range mcp.BuildTools(OpenAPISpec(base)) {
 		if tool.Name != "post_servers_by_id_inbounds" {
 			continue
 		}

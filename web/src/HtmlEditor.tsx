@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import i18n from "./i18n";
-import { Textarea } from "./ui";
+import {
+  useReadOnly, Textarea } from "./ui";
 
 // Icons in the stroke-and-currentColor style the rest of the panel uses. The
 // letter-shaped controls deliberately render in the style they apply — B bold, I
@@ -104,6 +105,7 @@ export function HtmlEditor({
     });
   };
 
+  const ro = useReadOnly();
   return (
     <div>
       {label && <p className="mb-1 text-sm font-medium text-ink">{label}</p>}
@@ -112,6 +114,7 @@ export function HtmlEditor({
           <button
             key={f.key}
             type="button"
+            disabled={ro}
             title={f.title}
             aria-label={f.title}
             onClick={() => wrap(f.open, f.close, f.placeholder)}

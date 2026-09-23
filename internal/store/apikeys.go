@@ -33,8 +33,9 @@ func generateAPIKey() (raw, prefix string, err error) {
 }
 
 // CreateAPIKey mints a new named key, stores only its HMAC hash, and returns the
-// model record with RawKey populated (shown to the operator exactly once).
-func (s *Store) CreateAPIKey(name string) (*model.APIKey, error) {
+// model record with RawKey populated (shown to the operator exactly once). role is
+// the admin role the key acts with; "" is full access.
+func (s *Store) CreateAPIKey(name, role string) (*model.APIKey, error) {
 	raw, prefix, err := generateAPIKey()
 	if err != nil {
 		return nil, err
@@ -44,17 +45,24 @@ func (s *Store) CreateAPIKey(name string) (*model.APIKey, error) {
 		return nil, err
 	}
 	now := time.Now().Unix()
+	// "" (full access) or a role row that exists as the key is written. Not
+	// roleExists: that one lets "owner" through, which is an admin's role, never a key's.
 	res, err := s.db.Exec(
-		`INSERT INTO api_keys (name, key_hash, prefix, created_at) VALUES (?, ?, ?, ?)`,
-		name, hash, prefix, now,
+		`INSERT INTO api_keys (name, key_hash, prefix, created_at, role)
+		 SELECT ?, ?, ?, ?, ? WHERE ? = '' OR EXISTS (SELECT 1 FROM admin_roles WHERE key = ?)`,
+		name, hash, prefix, now, role, role, role,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return nil, ErrRoleNotFound
 	}
 	id, _ := res.LastInsertId()
 	return &model.APIKey{
 		ID:        id,
 		Name:      name,
+		Role:      role,
 		Prefix:    prefix,
 		CreatedAt: now,
 		RawKey:    raw,
@@ -75,10 +83,12 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 		return nil, err
 	}
 	var k model.APIKey
+	var perms sql.NullString
 	err = s.rdb.QueryRow(
-		`SELECT id, name, prefix, created_at, last_used_at, revoked_at
-		 FROM api_keys WHERE key_hash = ?`, hash,
-	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt)
+		`SELECT k.id, k.name, k.prefix, k.created_at, k.last_used_at, k.revoked_at, k.role, r.perms
+		 FROM api_keys k LEFT JOIN admin_roles r ON r.key = k.role
+		 WHERE k.key_hash = ?`, hash,
+	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &k.Role, &perms)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -87,6 +97,13 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 	}
 	if !k.Active() {
 		return nil, nil
+	}
+	// No role is full access — every key issued before roles existed. A role that no
+	// longer resolves grants nothing (permsFor), never everything.
+	if k.Role == "" {
+		k.Perms = model.OwnerPermSet()
+	} else {
+		k.Perms = permsFor(k.Role, perms)
 	}
 	now := time.Now().Unix()
 	_, _ = s.db.Exec(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`, now, k.ID)
@@ -98,7 +115,7 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 // never populated here — it exists only in the CreateAPIKey response.
 func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, prefix, created_at, last_used_at, revoked_at
+		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, role
 		 FROM api_keys ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -108,7 +125,7 @@ func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	for rows.Next() {
 		var k model.APIKey
 		if err := rows.Scan(&k.ID, &k.Name, &k.Prefix,
-			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt); err != nil {
+			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &k.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, k)
@@ -125,4 +142,26 @@ func (s *Store) RevokeAPIKey(id int64) error {
 		time.Now().Unix(), id,
 	)
 	return err
+}
+
+// APIKeyPerms is what the key with this id may do — its role's set, every
+// permission for a key without one — whether or not it is still active. ok is false
+// when no key has the id.
+func (s *Store) APIKeyPerms(id int64) (model.PermSet, bool, error) {
+	var role string
+	var perms sql.NullString
+	err := s.db.QueryRow(
+		`SELECT k.role, r.perms FROM api_keys k LEFT JOIN admin_roles r ON r.key = k.role
+		 WHERE k.id = ?`, id,
+	).Scan(&role, &perms)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if role == "" {
+		return model.OwnerPermSet(), true, nil
+	}
+	return permsFor(role, perms), true, nil
 }

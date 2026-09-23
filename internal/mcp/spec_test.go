@@ -12,32 +12,19 @@ import (
 )
 
 // The panel's real spec must produce the tools an operator expects to be able to
-// use, and must keep the destructive half behind the flag. Generated from the same
-// document the API serves, so this also fails if a route ships without an OpenAPI
-// entry.
+// use. Generated from the same document the API serves, so this also fails if a
+// route ships without an OpenAPI entry. (Which of them a key is offered is its role's
+// business — see TestMCPReadOnlyRoleHidesMutations in internal/server.)
 func TestRealSpecProducesUsableTools(t *testing.T) {
 	spec := server.OpenAPISpec("https://panel.example/api")
-
-	names := func(allowWrite bool) map[string]bool {
-		out := map[string]bool{}
-		for _, tool := range mcp.BuildTools(spec, allowWrite) {
-			out[tool.Name] = true
-		}
-		return out
+	names := map[string]bool{}
+	for _, tool := range mcp.BuildTools(spec) {
+		names[tool.Name] = true
 	}
-	ro, rw := names(false), names(true)
-
-	for _, want := range []string{"get_users", "get_users_by_id_devices", "get_metrics", "get_summary"} {
-		if !ro[want] {
-			t.Errorf("read-only mode does not offer %q", want)
-		}
-	}
-	for _, mutating := range []string{"post_users", "delete_users_by_id", "post_users_by_id_devices_unbind"} {
-		if ro[mutating] {
-			t.Errorf("read-only mode offers %q", mutating)
-		}
-		if !rw[mutating] {
-			t.Errorf("%q is missing even with writes enabled", mutating)
+	for _, want := range []string{"get_users", "get_users_by_id_devices", "get_metrics", "get_summary",
+		"post_users", "delete_users_by_id", "post_users_by_id_devices_unbind"} {
+		if !names[want] {
+			t.Errorf("the tool list does not offer %q", want)
 		}
 	}
 }
@@ -48,7 +35,7 @@ func TestRealSpecProducesUsableTools(t *testing.T) {
 func TestBodySchemasCarryTheirFields(t *testing.T) {
 	spec := server.OpenAPISpec("https://panel.example/api")
 	var create mcp.Tool
-	for _, tool := range mcp.BuildTools(spec, true) {
+	for _, tool := range mcp.BuildTools(spec) {
 		if tool.Name == "post_users" {
 			create = tool
 		}
@@ -70,7 +57,7 @@ func TestBodySchemasCarryTheirFields(t *testing.T) {
 
 	// Nothing anywhere in the tool list may still be a reference: a client resolves
 	// none of them.
-	for _, tool := range mcp.BuildTools(spec, true) {
+	for _, tool := range mcp.BuildTools(spec) {
 		if containsRef(tool.InputSchema) {
 			t.Errorf("tool %q carries an unresolved $ref", tool.Name)
 		}
@@ -115,7 +102,7 @@ func containsRef(v any) bool {
 // only because its summary happened to say "restarts". Rewording either sentence used to
 // turn the warning off with nothing to notice.
 func TestDestructiveToolsAreFlagged(t *testing.T) {
-	tools := mcp.BuildTools(server.OpenAPISpec("https://panel.example/api"), true)
+	tools := mcp.BuildTools(server.OpenAPISpec("https://panel.example/api"))
 	byName := map[string]mcp.Tool{}
 	for _, tl := range tools {
 		byName[tl.Name] = tl

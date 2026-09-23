@@ -29,7 +29,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
-	url := base + "/v1/mcp/" + key + "/write"
+	url := base + "/v1/mcp/" + key
 
 	// A webhook needs somewhere to deliver to for the test-delivery tool to mean
 	// anything.
@@ -155,7 +155,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"get_servers_by_id_routing":   model.LocalNodeID,
 		"get_billing_orders_by_id":    order.ID,
 	}
-	tools := mcp.BuildTools(OpenAPISpec(base), true)
+	tools := mcp.BuildTools(OpenAPISpec(base))
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 	for _, tool := range tools {
 		if tool.Mutating() {
@@ -366,7 +366,7 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
-	url := base + "/v1/mcp/" + key + "/write"
+	url := base + "/v1/mcp/" + key
 
 	// Bodies for the tools that need one; without it the call fails on the body and
 	// never reaches the id at all.
@@ -398,7 +398,7 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 			"url": "https://example.com/hook", "events": []string{"user.created"},
 		},
 	}
-	for _, tool := range mcp.BuildTools(OpenAPISpec(base), true) {
+	for _, tool := range mcp.BuildTools(OpenAPISpec(base)) {
 		if !tool.HasParam("id") {
 			continue
 		}
@@ -541,7 +541,7 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
-	url := base + "/v1/mcp/" + key + "/write"
+	url := base + "/v1/mcp/" + key
 
 	call := func(tool string, args map[string]any) {
 		t.Helper()
@@ -664,7 +664,7 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 	}
 
 	// The guarantee: every field the schemas advertise is exercised above.
-	for _, tool := range mcp.BuildTools(OpenAPISpec(base), true) {
+	for _, tool := range mcp.BuildTools(OpenAPISpec(base)) {
 		if tool.Name != "post_users" && tool.Name != "patch_users_by_id" {
 			continue
 		}

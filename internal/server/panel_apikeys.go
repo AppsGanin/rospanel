@@ -33,11 +33,38 @@ func (rt *Router) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	if keys == nil {
 		keys = []model.APIKey{}
 	}
+	// The roles a new key may be given: the ones the caller's own permissions cover
+	// (core.CreateAPIKey refuses the rest), and full access only for a caller who
+	// holds everything. Listed here rather than read from /api/roles, which is the
+	// owner's: whoever manages keys has to be able to pick a role for one.
+	all, err := rt.mgr.ListAdminRoles()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	mine := callerPerms(r)
+	// Every role is listed, so a key's role reads by name in the list; grantable says
+	// which of them the caller may pick for a new one.
+	type keyRole struct {
+		Key       string `json:"key"`
+		Name      string `json:"name"`
+		Preset    bool   `json:"preset"`
+		Grantable bool   `json:"grantable"`
+	}
+	roles := make([]keyRole, 0, len(all))
+	for _, role := range all {
+		roles = append(roles, keyRole{
+			Key: role.Key, Name: role.Name, Preset: role.Preset,
+			Grantable: mine.Covers(model.NewPermSet(role.Perms)),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":  set.APIPath != "",
-		"api_path": set.APIPath,
-		"base_url": apiBaseURL(r, set.APIPath),
-		"keys":     keys,
+		"enabled":     set.APIPath != "",
+		"api_path":    set.APIPath,
+		"base_url":    apiBaseURL(r, set.APIPath),
+		"keys":        keys,
+		"roles":       roles,
+		"full_access": mine.Covers(model.OwnerPermSet()),
 	})
 }
 
@@ -48,6 +75,9 @@ func (rt *Router) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 func (rt *Router) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name string `json:"name"`
+		// Role the key acts with; empty = full access. Never broader than the caller's
+		// own (see core.CreateAPIKey).
+		Role string `json:"role"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -57,11 +87,15 @@ func (rt *Router) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, http.StatusBadRequest, "err.keyNameRequired", "укажите название ключа")
 		return
 	}
-	key, err := rt.mgr.Store().CreateAPIKey(req.Name)
+	key, err := rt.mgr.CreateAPIKey(req.Name, strings.TrimSpace(req.Role), callerPerms(r))
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
+	// Which key, and with what reach: a full-access key and a read-only one are
+	// different events in the trail. The key itself is never recorded.
+	auditTarget(r, key.Name)
+	auditDetails(r, map[string]any{"role": rt.keyRoleForAudit(key.Role)})
 	set, _ := rt.mgr.Store().GetSettings()
 	base := ""
 	if set != nil {
@@ -73,12 +107,21 @@ func (rt *Router) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// revokeAPIKey permanently disables one key by id.
-func (rt *Router) revokeAPIKey(w http.ResponseWriter, _ *http.Request, id int64) {
-	if err := rt.mgr.Store().RevokeAPIKey(id); err != nil {
+// revokeAPIKey permanently disables one key by id — one the caller could have issued.
+func (rt *Router) revokeAPIKey(w http.ResponseWriter, r *http.Request, id int64) {
+	name := ""
+	if keys, err := rt.mgr.Store().ListAPIKeys(); err == nil {
+		for _, k := range keys {
+			if k.ID == id {
+				name = k.Name
+			}
+		}
+	}
+	if err := rt.mgr.RevokeAPIKey(id, callerPerms(r)); err != nil {
 		writeManagerErr(w, err)
 		return
 	}
+	auditTarget(r, name)
 	writeOK(w)
 }
 
@@ -123,4 +166,12 @@ func (rt *Router) setAPIPathSettings(w http.ResponseWriter, r *http.Request) {
 		"api_path": newPath,
 		"base_url": apiBaseURL(r, newPath),
 	})
+}
+
+// keyRoleForAudit names a key's role in the trail: "full" for none.
+func (rt *Router) keyRoleForAudit(role string) string {
+	if role == "" {
+		return "full"
+	}
+	return rt.roleForAudit(role)
 }

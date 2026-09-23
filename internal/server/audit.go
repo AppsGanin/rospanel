@@ -67,6 +67,9 @@ var auditActions = map[string]auditRoute{
 	"POST /api/admins/{id}/role":     act(model.AuditAdminRoleChanged),
 	"POST /api/admins/{id}/password": act(model.AuditAdminPasswordReset),
 	"DELETE /api/admins/{id}":        act(model.AuditAdminDeleted),
+	"POST /api/roles":                act(model.AuditRoleCreated),
+	"POST /api/roles/{key}":          act(model.AuditRoleUpdated),
+	"DELETE /api/roles/{key}":        act(model.AuditRoleDeleted),
 
 	// Settings — one action, the section in the target.
 	"POST /api/settings/branding":              set("branding"),

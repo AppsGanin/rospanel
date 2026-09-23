@@ -13,8 +13,7 @@ import (
 //
 // It also decides what an AI assistant can do with devices: the MCP tool list is
 // generated from the OpenAPI document, so a route added here becomes a tool without
-// anyone maintaining a second list (and stays read-only unless the operator passes
-// --allow-write).
+// anyone maintaining a second list, offered to a key whose role can call it.
 
 // apiDeviceList is the response shape: the roster plus the cap it is counted
 // against, so a caller doesn't have to fetch the user and the settings to know

@@ -93,7 +93,7 @@ func TestMCPResultFallsBackOnRuneBoundary(t *testing.T) {
 func TestMCPWindowAndToolOptOut(t *testing.T) {
 	t.Parallel()
 	byName := map[string]mcp.Tool{}
-	for _, tl := range mcp.BuildTools(OpenAPISpec("https://panel.example/apiseg"), true) {
+	for _, tl := range mcp.BuildTools(OpenAPISpec("https://panel.example/apiseg")) {
 		byName[tl.Name] = tl
 	}
 
