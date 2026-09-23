@@ -123,7 +123,6 @@ func (rt *Router) apiHandler() http.Handler {
 	// document is also what stops the generated tool list from handing an assistant a
 	// tool that calls the tool server.
 	mux.HandleFunc(mcpPathPrefix+"{key}", rt.handleMCP)
-	mux.HandleFunc(mcpPathPrefix+"{key}/write", rt.handleMCP)
 	mux.Handle("/", rt.apiAuth(rt.apiMux()))
 	return rt.notingWrites(mux)
 }
@@ -159,9 +158,20 @@ func (rt *Router) apiMux() http.Handler {
 	// built: TestAPISpecCoversEveryRoute reads it back and fails when an endpoint
 	// ships without an OpenAPI entry. GET /v1/health had drifted that way — reachable,
 	// documented in docs/api.md, absent from the generated spec.
+	//
+	// hf also puts the route behind the permission apiRoutePerms names for it, and
+	// refuses to register one it names nothing for (see api_v1_perms.go).
 	hf := func(pattern string, h http.HandlerFunc) {
 		rt.apiRoutes = append(rt.apiRoutes, pattern)
-		mux.HandleFunc(pattern, h)
+		if pattern == "/" {
+			mux.HandleFunc(pattern, h)
+			return
+		}
+		perms, ok := apiRoutePerms[pattern]
+		if !ok {
+			panic("api: route " + pattern + " has no entry in apiRoutePerms")
+		}
+		mux.HandleFunc(pattern, apiGate(perms, h))
 	}
 	id := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
 		hf(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -355,8 +365,10 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 		}
 		rt.apiKeys.success(ip, "")
 		// The key's name is the actor in the audit log, so a mutation made over the
-		// external API is attributable to the integration that made it.
-		next.ServeHTTP(w, r.WithContext(actor.With(r.Context(), actor.APIKey(ak.Name))))
+		// external API is attributable to the integration that made it; its role's
+		// permissions are what apiGate checks each route against.
+		ctx := withAPIPerms(actor.With(r.Context(), actor.APIKey(ak.Name)), ak.Perms)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -663,6 +675,10 @@ func clampNonNeg(n int) int {
 func (rt *Router) apiBulkUsers(w http.ResponseWriter, r *http.Request) {
 	var req apiBulkReq
 	if !apiDecode(w, r, &req) {
+		return
+	}
+	if !apiPerms(r).Has(bulkActionPerm(req.Action)) {
+		writeAPIErr(w, http.StatusForbidden, "forbidden", "this API key's role does not allow this bulk action")
 		return
 	}
 	affected, err := rt.mgr.BulkUserAction(r.Context(), req.IDs, req.Action, req.Days)

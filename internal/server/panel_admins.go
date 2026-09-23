@@ -52,7 +52,7 @@ func (rt *Router) createAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	// Name the new account in the audit row. The password is never recorded.
 	auditTarget(r, admin.Username)
-	auditDetails(r, map[string]any{"role": admin.Role})
+	auditDetails(r, map[string]any{"role": rt.roleForAudit(admin.Role)})
 	writeJSON(w, http.StatusCreated, admin)
 }
 
@@ -75,7 +75,7 @@ func (rt *Router) setAdminRole(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	auditTarget(r, target.Username)
-	auditDetails(r, map[string]any{"from": target.Role, "to": req.Role})
+	auditDetails(r, map[string]any{"from": rt.roleForAudit(target.Role), "to": rt.roleForAudit(req.Role)})
 	writeOK(w)
 }
 
@@ -131,6 +131,6 @@ func (rt *Router) deleteAdmin(w http.ResponseWriter, r *http.Request, id int64) 
 		return
 	}
 	auditTarget(r, target.Username)
-	auditDetails(r, map[string]any{"role": target.Role})
+	auditDetails(r, map[string]any{"role": rt.roleForAudit(target.Role)})
 	writeOK(w)
 }

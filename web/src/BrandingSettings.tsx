@@ -10,6 +10,7 @@ import { useBrand } from "./brand";
 import { useAction } from "./hooks";
 import { notifySuccess } from "./notify";
 import {
+  useReadOnly,
   Button,
   IconButton,
   IconRestart,
@@ -54,6 +55,7 @@ function ColorField({
 }) {
   const { t } = useTranslation();
   const isDefault = value.toLowerCase() === def.toLowerCase();
+  const ro = useReadOnly();
   return (
     <SettingRow
       label={label}
@@ -62,6 +64,7 @@ function ColorField({
         <div className="flex items-center gap-2">
           <input
             type="color"
+            disabled={ro}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             aria-label={label}
@@ -92,6 +95,7 @@ function ColorField({
 
 export function BrandingSettings() {
   const { t } = useTranslation();
+  const ro = useReadOnly();
   const brand = useBrand();
   const [name, setName] = useState("");
   const [savedName, setSavedName] = useState("");
@@ -236,6 +240,7 @@ export function BrandingSettings() {
         aside={
           <button
             type="button"
+            disabled={ro}
             onClick={resetAll}
             className="text-[11px] text-ink-muted underline-offset-2 transition hover:text-accent hover:underline"
           >
@@ -249,6 +254,7 @@ export function BrandingSettings() {
               <button
                 key={c}
                 type="button"
+                disabled={ro}
                 onClick={() => setColor("accent", c)}
                 title={c}
                 aria-label={t("brand.accentSwatch", { color: c })}

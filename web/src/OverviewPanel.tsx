@@ -19,7 +19,7 @@ import { fmtBytes, fmtDuration, fmtStamp, localDay } from "./format";
 import { useAction } from "./hooks";
 import { nodeState, serverName, servingCount } from "./NodeStatus";
 import { openStream } from "./livestream";
-import { useIsAdmin } from "./role";
+import { useCan, useIsOwner } from "./role";
 import { navigate } from "./router";
 import {
   Button,
@@ -188,7 +188,15 @@ function OverviewSkeleton() {
 
 export function OverviewPanel() {
   const { t } = useTranslation();
-  const isAdmin = useIsAdmin();
+  const canServers = useCan("servers.view", "routing.view");
+  const canUsers = useCan("users.view");
+  const canStats = useCan("stats.view");
+  const canStatsOrUsers = useCan("stats.view", "users.view");
+  const isOwner = useIsOwner(); // backups and restore, on the management card
+  const canManagement = useCan("logs.view", "system.update") || isOwner;
+  // The live figures need one of these; a role with only the management card's
+  // permissions gets that card and nothing to stream.
+  const canStream = useCan("stats.view", "users.view", "servers.view");
   const { isBusy, run } = useAction();
   const [s, setS] = useState<SystemStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -204,6 +212,7 @@ export function OverviewPanel() {
   const [abuse, setAbuse] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!canStream) return;
     // Live push via Server-Sent Events, through openStream rather than a bare
     // EventSource: the panel refuses a stream with 429 once the per-IP gate is full,
     // and a bare EventSource treats that as fatal and never comes back — the dashboard
@@ -221,22 +230,23 @@ export function OverviewPanel() {
       setLive,
     );
     return () => stream.close();
-  }, []);
+  }, [canStream]);
 
   // Nodes and the event tail move on the minute, not on the second, so they poll on
   // their own slow timer instead of riding the 2s status stream. The node list is an
   // admin-only route: an operator never asks for it, and so never sees a panel whose
   // every refresh would answer 403.
   const loadNodes = useCallback(() => {
-    if (!isAdmin) return;
+    if (!canServers) return;
     listNodes()
       .then((r) => setNodes(r.nodes))
       .catch(() => {});
-  }, [isAdmin]);
+  }, [canServers]);
 
   useEffect(() => {
     const load = () => {
       loadNodes();
+      if (!canUsers) return setEvents([]);
       listEvents({ limit: 6 })
         .then((p) => setEvents(p.events ?? []))
         .catch(() => setEvents([]));
@@ -244,30 +254,38 @@ export function OverviewPanel() {
     load();
     const id = setInterval(load, NODE_POLL);
     return () => clearInterval(id);
-  }, [loadNodes]);
+  }, [loadNodes, canUsers]);
 
   // The day-scale figures. Each lands on its own: a tile whose fetch is still in
   // flight shows a dash rather than holding the whole dashboard back.
   useEffect(() => {
     const load = () => {
-      listUsersPage({ limit: 0 })
-        .then((p) => setExpiring(p.counts.expiring ?? 0))
-        .catch(() => setExpiring(0));
-      getStatsSeries({ from: localDay(SPARK_DAYS - 1), to: localDay(0) })
-        .then(setSeries)
-        .catch(() => setSeries([]));
-      getRecentAbuse(200)
-        .then((rows) => {
-          const cutoff = Date.now() / 1000 - ABUSE_WINDOW_DAYS * 86400;
-          setAbuse(rows.filter((r) => r.last_seen >= cutoff).length);
-        })
-        .catch(() => setAbuse(0));
+      // A figure the role may not read stays at zero instead of asking for a 403.
+      if (canUsers) {
+        listUsersPage({ limit: 0 })
+          .then((p) => setExpiring(p.counts.expiring ?? 0))
+          .catch(() => setExpiring(0));
+      } else setExpiring(0);
+      if (canStatsOrUsers) {
+        getStatsSeries({ from: localDay(SPARK_DAYS - 1), to: localDay(0) })
+          .then(setSeries)
+          .catch(() => setSeries([]));
+      } else setSeries([]);
+      if (canStats) {
+        getRecentAbuse(200)
+          .then((rows) => {
+            const cutoff = Date.now() / 1000 - ABUSE_WINDOW_DAYS * 86400;
+            setAbuse(rows.filter((r) => r.last_seen >= cutoff).length);
+          })
+          .catch(() => setAbuse(0));
+      } else setAbuse(0);
     };
     load();
     const id = setInterval(load, SLOW_POLL);
     return () => clearInterval(id);
-  }, []);
+  }, [canUsers, canStats, canStatsOrUsers]);
 
+  if (!canStream) return canManagement ? <ManagementCard /> : null;
   if (!loaded) return <OverviewSkeleton />;
   if (!s) return null;
 
@@ -282,8 +300,8 @@ export function OverviewPanel() {
   // A fleet is what makes the nodes tile and the "N of M" note worth printing; the
   // servers table itself is drawn for every admin, because with the host panel gone
   // it is the only place the machines' load is reported.
-  const hasFleet = isAdmin && remote.length > 0;
-  const showServers = isAdmin;
+  const hasFleet = canServers && remote.length > 0;
+  const showServers = canServers;
   const serving = servingCount(nodes);
   const fleetNote = [
     remote.filter((n) => n.enabled && n.joined && n.online && !n.xray_running).length &&
@@ -572,10 +590,10 @@ export function OverviewPanel() {
             )}
           </Panel>
 
-          {/* Backup, restore, restart and the factory reset. Admin-only on the
-              server, so an operator is not shown controls whose every call would
+          {/* Logs, backup, restore, restart and the factory reset — each behind its
+              own permission, so a role is not shown controls whose every call would
               403. */}
-          {isAdmin && <ManagementCard />}
+          {canManagement && <ManagementCard />}
         </div>
       </div>
     </div>

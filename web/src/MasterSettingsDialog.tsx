@@ -39,9 +39,11 @@ import {
   RoutingEditor,
   type StatusBadge,
 } from "./RoutingEditor";
-import { CenterLoader, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
+import {
+  ReadOnly, CenterLoader, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
-import { DialogTabs, TabSaveBar, useServerRouting } from "./ServerDialogParts";
+import { DialogTabs, TabSaveBar, useServerRouting, useServerTabs } from "./ServerDialogParts";
+import { useCan } from "./role";
 import { SystemProxyEditor, systemProxyIssue } from "./SystemProxyEditor";
 
 // MasterNameEditor lets the operator name the master server for config labels
@@ -85,7 +87,10 @@ export function MasterSettingsDialog({
   const proxyIssue = systemProxyIssue(proxy);
   const [dns, setDns] = useState(canonicalDns(node.xray_dns ?? ""));
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
-  const genDirty = name !== genBase.name || decoy !== genBase.decoy || proxyDirty || plDirty;
+  // The server's own fields (servers.manage) and the system proxy (routing.manage)
+  // save through different routes, so a role holding one saves only its part.
+  const ownDirty = name !== genBase.name || decoy !== genBase.decoy || plDirty;
+  const genDirty = ownDirty || proxyDirty;
   const dnsDirty = dns !== dnsBase;
   // Live egress status for the badges (master's egress runs locally, so the panel
   // knows the real state — unlike a node).
@@ -103,6 +108,24 @@ export function MasterSettingsDialog({
   const [geoCadence, setGeoCadence] = useState(0);
   const [ipListCadence, setIPListCadence] = useState(0);
   const [tab, setTab] = useState("general");
+  // The tabs this role may see, and whether the one shown is read-only.
+  const routingView = useCan("routing.view");
+  const routingManage = useCan("routing.manage");
+  const serversManage = useCan("servers.manage");
+  const { visible, shown, readOnly } = useServerTabs(
+    [
+      { value: "general", label: t("settings.tabGeneral") },
+      { value: "connections", label: t("nodes.tabConnections") },
+      { value: "inbounds", label: t("nodes.tabInbounds") },
+      { value: "routing", label: t("nodes.tabRouting") },
+      { value: "dns", label: "DNS" },
+      { value: "geo", label: "Geo" },
+      { value: "iplist", label: t("nodes.tabLists") },
+      { value: "domain", label: t("restore.domain") },
+      { value: "snapshots", label: t("nodes.tabSnapshots") },
+    ],
+    tab,
+  );
   const r = useServerRouting({
     cfg: EMPTY,
     warp: node.warp_enabled,
@@ -121,6 +144,18 @@ export function MasterSettingsDialog({
         setIPListCadence(g.iplist_refresh_hours ?? 0);
       })
       .catch(() => {});
+    // A role without routing.view is not shown the routing tabs; the form is seeded
+    // from the node list instead of asking for a 403.
+    if (!routingView) {
+      reset(
+        hydrateRouting(node.routing),
+        node.warp_enabled,
+        node.opera_enabled,
+        node.opera_country || "EU",
+      );
+      setLoaded(true);
+      return;
+    }
     getRouting()
       .then((info) => {
         reset(
@@ -208,12 +243,14 @@ export function MasterSettingsDialog({
   const saveGeneral = async () => {
     setSavingGeneral(true);
     try {
-      await setMasterName(name.trim());
-      if (plDirty) {
-        await setMasterPlacement(pl);
-        setPlBase(pl);
+      if (ownDirty) {
+        await setMasterName(name.trim());
+        if (plDirty) {
+          await setMasterPlacement(pl);
+          setPlBase(pl);
+        }
+        await saveDecoy(decoy);
       }
-      await saveDecoy(decoy);
       // Only when it actually changed: the proxy write reconciles Xray, which a
       // rename has no business doing.
       if (proxyDirty) {
@@ -257,19 +294,9 @@ export function MasterSettingsDialog({
       toolbar={
         loaded ? (
           <DialogTabs
-            value={tab}
+            value={shown}
             onChange={setTab}
-            tabs={[
-              { value: "general", label: t("settings.tabGeneral") },
-              { value: "connections", label: t("nodes.tabConnections") },
-              { value: "inbounds", label: t("nodes.tabInbounds") },
-              { value: "routing", label: t("nodes.tabRouting") },
-              { value: "dns", label: "DNS" },
-              { value: "geo", label: "Geo" },
-              { value: "iplist", label: t("nodes.tabLists") },
-              { value: "domain", label: t("restore.domain") },
-              { value: "snapshots", label: t("nodes.tabSnapshots") },
-            ]}
+            tabs={visible}
           />
         ) : undefined
       }
@@ -277,9 +304,9 @@ export function MasterSettingsDialog({
       {!loaded ? (
         <CenterLoader />
       ) : (
-        <>
+        <ReadOnly when={readOnly}>
 
-          {tab === "general" && (
+          {shown === "general" && (
             <div className="flex flex-col gap-3.5">
               <Section title={t("nodes.server")} flush>
                 <SettingRow
@@ -309,12 +336,20 @@ export function MasterSettingsDialog({
                 online={node.online_users ?? 0}
                 trafficUsed={node.traffic_period_used}
               />
+              {/* The system proxy is routing's (POST /api/nodes/{id}/proxy): shown with
+                  routing.view, editable with routing.manage. */}
+              {routingView && (
+              <ReadOnly when={!routingManage} own>
               <SystemProxyEditor
                 host={node.host}
                 value={proxy}
                 saved={proxyBase}
                 onChange={setProxy}
               />
+              </ReadOnly>
+              )}
+              {/* Save answers to either permission: each part saves through its own route. */}
+              <ReadOnly when={!serversManage && !routingManage} own>
               <TabSaveBar
                 onSave={saveGeneral}
                 onReset={() => {
@@ -327,16 +362,17 @@ export function MasterSettingsDialog({
                 busy={savingGeneral}
                 invalid={proxyIssue !== ""}
               />
+              </ReadOnly>
             </div>
           )}
 
-          {tab === "connections" && (
+          {shown === "connections" && (
             <ConnectionsEditor load={getConnections} save={applyConnections} reset={resetConnections} restartsPanel />
           )}
 
-          {tab === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
+          {shown === "inbounds" && <InboundsEditor serverId={0} restartsPanel />}
 
-          {tab === "routing" && (
+          {shown === "routing" && (
             <div className="flex flex-col gap-3.5">
               <RoutingEditor
                 cfg={r.cfg}
@@ -368,7 +404,7 @@ export function MasterSettingsDialog({
             </div>
           )}
 
-          {tab === "dns" && (
+          {shown === "dns" && (
             <div className="flex flex-col gap-3.5">
               <Section title="DNS" desc={t("nodes.dnsMasterHint")} flush>
                 <DnsEditor value={dns} onChange={setDns} />
@@ -382,7 +418,7 @@ export function MasterSettingsDialog({
             </div>
           )}
 
-          {tab === "geo" && (
+          {shown === "geo" && (
             <GeoSection
               status={geoStatus}
               onRefresh={refreshGeo}
@@ -392,7 +428,7 @@ export function MasterSettingsDialog({
             />
           )}
 
-          {tab === "iplist" && (
+          {shown === "iplist" && (
             <IPListSection
               status={ipListStatus}
               onRefresh={refreshIPLists}
@@ -404,9 +440,9 @@ export function MasterSettingsDialog({
 
           {/* Domain / TLS — its own load + change-domain button (page redirects
               on success), independent of this dialog's Save. */}
-          {tab === "domain" && <TLSPanel />}
+          {shown === "domain" && <TLSPanel />}
 
-          {tab === "snapshots" && (
+          {shown === "snapshots" && (
             <ServerSnapshots
               onRolledBack={() => {
                 onRefresh();
@@ -414,7 +450,7 @@ export function MasterSettingsDialog({
               }}
             />
           )}
-        </>
+        </ReadOnly>
       )}
       <ApplyingModal open={applying} />
     </Drawer>

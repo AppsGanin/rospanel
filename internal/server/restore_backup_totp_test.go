@@ -212,7 +212,7 @@ func TestTheWizardRestoreAsksForTheBackupsSecondFactor(t *testing.T) {
 	staged := stubRestart(t, rt)
 
 	secret := newSecret(t)
-	archive := makeBackup(t, []backupAdmin{{model.RoleAdmin, secret}}, true)
+	archive := makeBackup(t, []backupAdmin{{model.RoleOwner, secret}}, true)
 
 	if code, errCode := restoreWith(t, rt, cookie, archive, nil); errCode != "err.backupTotpRequired" {
 		t.Fatalf("wizard, no code: %d %s — want err.backupTotpRequired", code, errCode)

@@ -1,18 +1,19 @@
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminsSettings } from "./AdminsSettings";
-import { getMe, logout } from "./api";
+import { getMe, logout, type Perm, type Role } from "./api";
 import { Credentials } from "./Credentials";
 import { ChangelogModal } from "./ChangelogModal";
 import { LangChoice, LangPills } from "./LangSwitch";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
-import { useIsAdmin, useIsOwner } from "./role";
+import { useIsOwner, usePerms } from "./role";
 import { NodesPanel } from "./NodesPanel";
 import { navigate, useRoute } from "./router";
 import { SettingsPanel } from "./SettingsPanel";
 import { panelTimezone, setPanelTimezone, subscribePanelTimezone } from "./tz";
 import {
+  EmptyState,
   cn,
   Dropdown,
   DropdownDivider,
@@ -57,6 +58,7 @@ export function Dashboard({
   onShowAgreement,
   onShowDonate,
   onAccountChanged,
+  onPerms,
 }: {
   username: string;
   version: string;
@@ -66,10 +68,12 @@ export function Dashboard({
   onShowAgreement: () => void;
   onShowDonate: () => void;
   onAccountChanged: () => void;
+  // A role edited by the owner reaches an open tab on its next section change, not
+  // only on a reload: the same /api/me that refreshes the flags carries it.
+  onPerms: (role: Role, perms: Perm[]) => void;
 }) {
   const { t } = useTranslation();
   const seg = useRoute();
-  const isAdmin = useIsAdmin();
   const isOwner = useIsOwner();
   // The phone's "More" tab: the rest of the nav and the account, over the content.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -89,6 +93,7 @@ export function Dashboard({
       .then((m) => {
         setBilling(!!m.billing_enabled);
         setUserBot(!!m.user_bot_enabled);
+        onPerms(m.role, m.perms ?? []);
         // Another admin may have moved the panel's timezone since sign-in.
         setPanelTimezone(m.timezone);
       })
@@ -108,27 +113,64 @@ export function Dashboard({
     };
   }, []);
 
-  // An operator gets the sections whose routes they can actually call: the dashboard
-  // and the users section (list, stats, journal). Settings and the servers page are
-  // admin-and-up, the roster is the owner's alone — and a section someone cannot use
-  // is not rendered at all rather than rendered disabled. If they navigate to
-  // /settings by hand, `tab` falls back to the dashboard rather than showing a page
-  // whose every request would 403.
+  // Each section appears when the role can use something in it — see the
+  // sub-tabs of UsersPage and SettingsPanel for what each permission opens there.
+  // Payments and broadcasts count only while they are switched on: their tabs exist
+  // only then, and a section with no tab would be a page of 403s.
+  const perms = usePerms();
+  const has = (...ps: Perm[]) => ps.some((p) => perms.has(p));
+  const canUsers =
+    has("users.view", "groups.view", "stats.view") ||
+    (billing && has("billing.view")) ||
+    (userBot && has("broadcasts.manage"));
+  const canServers = has("servers.view", "routing.view");
+  const canSettings =
+    isOwner ||
+    has(
+      "settings.view",
+      "security.view",
+      "system.update",
+      "billing.view",
+      "api.manage",
+      "webhooks.manage",
+    );
+  // The dashboard: its figures are the stats', the users' and the servers'; its
+  // management card holds the logs, backups, restore and update.
+  const canOverview = has(
+    "stats.view",
+    "users.view",
+    "servers.view",
+    "logs.view",
+    "system.update",
+  ) || isOwner; // backups and restore, on the management card, are the owner's
+
+  // A role gets the sections whose routes it can actually call, and a section it
+  // cannot use is not rendered at all rather than rendered disabled. If someone
+  // navigates to /settings by hand without the permissions for it, `tab` falls back
+  // to the dashboard rather than showing a page whose every request would 403.
   const NAV: { value: Tab; label: string; icon: ReactNode }[] = [
-    { value: "overview", label: t("nav.overview"), icon: <IconPulse size={18} /> },
-    { value: "users", label: t("nav.users"), icon: <IconUsers size={18} /> },
-    ...(isAdmin
+    ...(canOverview
+      ? [{ value: "overview" as Tab, label: t("nav.overview"), icon: <IconPulse size={18} /> }]
+      : []),
+    ...(canUsers
+      ? [{ value: "users" as Tab, label: t("nav.users"), icon: <IconUsers size={18} /> }]
+      : []),
+    ...(canServers
       ? [{ value: "nodes" as Tab, label: t("nav.servers"), icon: <IconServer size={18} /> }]
       : []),
-    ...(isOwner
+    // The roster and the roles are the owner's; the panel journal beside them is
+    // audit.view's too.
+    ...(isOwner || has("audit.view")
       ? [{ value: "admins" as Tab, label: t("nav.admins"), icon: <IconShield size={18} /> }]
       : []),
-    ...(isAdmin
+    ...(canSettings
       ? [{ value: "settings" as Tab, label: t("nav.settings"), icon: <IconGear size={18} /> }]
       : []),
   ];
-  const tab: Tab = (NAV.find((n) => n.value === seg[0])?.value ??
-    "overview") as Tab;
+  // The dashboard is the "" route; without it, the first section the role has.
+  const home: Tab = NAV[0]?.value ?? "overview";
+  const tab: Tab = (NAV.find((n) => n.value === (seg[0] || "overview"))?.value ??
+    home) as Tab;
   const title = NAV.find((n) => n.value === tab)?.label ?? "";
 
   const doLogout = async () => {
@@ -259,7 +301,11 @@ export function Dashboard({
               in place while the middle scrolls. Screens taller than that overflow
               visibly and main scrolls them as before. */}
           <div key={tab} className="flex h-full flex-col animate-fade-in">
-            {tab === "overview" && <OverviewPanel />}
+            {/* A role with nothing ticked has no section to land on. */}
+            {NAV.length === 0 && (
+              <EmptyState title={t("nav.noAccess")} body={t("nav.noAccessHint")} />
+            )}
+            {NAV.length > 0 && tab === "overview" && <OverviewPanel />}
             {tab === "users" && (
               <UsersPage userBotEnabled={userBot} billingEnabled={billing} />
             )}

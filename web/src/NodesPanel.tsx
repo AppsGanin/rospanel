@@ -11,13 +11,18 @@ import {
   type NodeView,
 } from "./api";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { Button, CenterLoader } from "./ui";
+import { Button, CenterLoader, ReadOnly } from "./ui";
+import { useCan } from "./role";
 import { AddNodeDialog, InstallCommandModal } from "./AddNodeDialog";
 import { NodeCard } from "./NodeCard";
 import { agentSkew } from "./NodeStatus";
 
 export function NodesPanel() {
   const { t } = useTranslation();
+  const canServers = useCan("servers.view");
+  const canRouting = useCan("routing.view");
+  const canManage = useCan("servers.manage");
+  const canUpdate = useCan("system.update");
   const [nodes, setNodes] = useState<NodeView[] | null>(null);
   const [decoys, setDecoys] = useState<string[]>([]);
   // Geo categories feed the routing editor's domain/IP suggestions (same list for
@@ -41,7 +46,8 @@ export function NodesPanel() {
     getMe()
       .then((m) => setPanelVersion(m.version || ""))
       .catch(() => {});
-    getGeoCategories()
+    // The routing editor's suggestions — routing's to read.
+    if (canRouting) getGeoCategories()
       .then((g) =>
         setGeo({
           geosite: g.geosite ?? [],
@@ -91,10 +97,12 @@ export function NodesPanel() {
   return (
     <div className="flex flex-col gap-3.5">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => setAdding(true)}>
-          {t("nodes.addNode")}
-        </Button>
-        {remoteCount > 0 && (
+        {canManage && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            {t("nodes.addNode")}
+          </Button>
+        )}
+        {canUpdate && remoteCount > 0 && (
           <Button size="sm" variant="outline" color="gray" onClick={updateAll}>
             {t("nodes.updateAll")}{anyBehind ? " ⚠" : ""}
           </Button>
@@ -134,13 +142,21 @@ export function NodesPanel() {
         <div className="flex flex-col items-center gap-2 rounded-xl border border-brand-600/10 bg-white px-4 py-10 text-center">
           <p className="text-sm font-semibold text-ink">{t("nodes.onlyThisServer")}</p>
           <p className="max-w-md text-xs text-ink-muted">{t("nodes.onlyThisServerHint")}</p>
-          <Button size="sm" className="mt-2" onClick={() => setAdding(true)}>
-            {t("nodes.addNode")}
-          </Button>
+          {canManage && (
+            <Button size="sm" className="mt-2" onClick={() => setAdding(true)}>
+              {t("nodes.addNode")}
+            </Button>
+          )}
         </div>
       )}
 
-      <ExternalServers />
+      {/* Other providers' servers are part of the servers section: servers.view to
+          see them, servers.manage to change them. */}
+      {canServers && (
+        <ReadOnly when={!canManage}>
+          <ExternalServers />
+        </ReadOnly>
+      )}
 
       {adding && (
         <AddNodeDialog

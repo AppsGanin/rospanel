@@ -442,11 +442,14 @@ type PaymentProvider struct {
 type APIKey struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
+	Role       string `json:"role"`              // admin role key; "" = full access
 	Prefix     string `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
 	CreatedAt  int64  `json:"created_at"`        // unix seconds
 	LastUsedAt int64  `json:"last_used_at"`      // unix seconds, 0 = never used
 	RevokedAt  int64  `json:"revoked_at"`        // unix seconds, 0 = active
 	RawKey     string `json:"raw_key,omitempty"` // populated only on creation
+	// Perms is what the key may do, resolved from Role on lookup. Never serialised.
+	Perms PermSet `json:"-"`
 }
 
 // Active reports whether the key has not been revoked.

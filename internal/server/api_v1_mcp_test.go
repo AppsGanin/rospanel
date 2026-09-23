@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/AppsGanin/rospanel/internal/model"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -100,16 +101,24 @@ func TestMCPOverHTTP(t *testing.T) {
 	}
 }
 
-// The short URL must not be able to change anything, even though the key inside it
-// could: that is the difference between the two addresses.
-func TestMCPReadOnlyURLHidesMutations(t *testing.T) {
+// A key whose role only reads is offered no tool that changes anything — and
+// cannot call one by name either: the gate is the tool list AND the call.
+func TestMCPReadOnlyRoleHidesMutations(t *testing.T) {
 	t.Parallel()
 	h, mgr, st := nodeAPITestServer(t)
 	u, err := mgr.CreateUser(t.Context(), "victim", 0, 0)
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	base, key := apiFixture(t, h, st)
+	base, fullKey := apiFixture(t, h, st)
+	role, err := st.CreateAdminRole("Только чтение", []string{model.PermUsersView})
+	if err != nil {
+		t.Fatalf("role: %v", err)
+	}
+	k, err := st.CreateAPIKey("reader", role.Key)
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
 
 	names := func(url string) map[string]bool {
 		list := rpcResult(t, rpc(t, h, url, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
@@ -122,23 +131,28 @@ func TestMCPReadOnlyURLHidesMutations(t *testing.T) {
 		}
 		return out
 	}
-	ro := names(base + "/v1/mcp/" + key)
-	rw := names(base + "/v1/mcp/" + key + "/write")
+	ro := names(base + "/v1/mcp/" + k.RawKey)
+	full := names(base + "/v1/mcp/" + fullKey)
 	if ro["delete_users_by_id"] {
-		t.Error("the read-only URL offers a delete tool")
+		t.Error("a read-only role is offered a delete tool")
 	}
-	if !rw["delete_users_by_id"] {
-		t.Error("the write URL is missing the delete tool")
+	if !full["delete_users_by_id"] {
+		t.Error("a full-access key is missing the delete tool")
 	}
 
-	// Asking for it anyway must not work — the gate is the tool list AND the call.
-	rec := rpc(t, h, base+"/v1/mcp/"+key,
+	rec := rpc(t, h, base+"/v1/mcp/"+k.RawKey,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"delete_users_by_id","arguments":{"id":`+uid(u.ID)+`}}}`)
 	if !strings.Contains(rec.Body.String(), "unknown tool") {
-		t.Errorf("read-only URL answered a delete call with: %s", rec.Body.String())
+		t.Errorf("a read-only role answered a delete call with: %s", rec.Body.String())
 	}
 	if _, err := st.GetUser(u.ID); err != nil {
-		t.Errorf("the user was deleted through the read-only URL: %v", err)
+		t.Fatalf("the user is gone after a refused delete: %v", err)
+	}
+
+	// The old write address is gone: one address per key, the role decides.
+	if rec := rpc(t, h, base+"/v1/mcp/"+fullKey+"/write",
+		`{"jsonrpc":"2.0","id":3,"method":"tools/list"}`); rec.Code == http.StatusOK {
+		t.Errorf("…/write still answers 200: %s", rec.Body.String())
 	}
 }
 
@@ -197,16 +211,12 @@ func TestMCPTransportNiceties(t *testing.T) {
 	}
 }
 
-func TestMCPURLs(t *testing.T) {
+func TestMCPURL(t *testing.T) {
 	t.Parallel()
-	ro, rw := MCPURLs("https://vpn.example.com/apiseg", "rp_abc")
-	if ro != "https://vpn.example.com/apiseg/v1/mcp/rp_abc" {
-		t.Errorf("read-only URL = %q", ro)
+	if u := MCPURL("https://vpn.example.com/apiseg", "rp_abc"); u != "https://vpn.example.com/apiseg/v1/mcp/rp_abc" {
+		t.Errorf("URL = %q", u)
 	}
-	if rw != ro+"/write" {
-		t.Errorf("write URL = %q", rw)
-	}
-	if ro, rw := MCPURLs("", "rp_abc"); ro != "" || rw != "" {
-		t.Errorf("with the API off = %q / %q, want empty", ro, rw)
+	if u := MCPURL("", "rp_abc"); u != "" {
+		t.Errorf("with the API off = %q, want empty", u)
 	}
 }

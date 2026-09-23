@@ -83,6 +83,7 @@ import {
   Modal,
   Mono,
   Panel,
+  ReadOnly,
   SegmentedControl,
   Select,
   SettingRow,
@@ -93,7 +94,7 @@ import {
   useCopy,
 } from './ui'
 import i18n from './i18n'
-import { useIsAdmin } from './role'
+import { useCan } from './role'
 import { ExtendUserModal, RenameModal } from './UserModals'
 import { GroupChip, NoteAndTags } from './UserNotes'
 
@@ -192,7 +193,10 @@ export function UserDetail({
   const email = useCopy()
   const happCopy = useCopy()
   const { confirm, confirmNode } = useConfirm()
-  const isAdmin = useIsAdmin()
+  const canManage = useCan('users.manage')
+  const canDelete = useCan('users.delete')
+  // The ban routes need security.manage; can_ban already says whether the address may be banned.
+  const canBan = useCan('security.manage')
   // The encrypted Happ link is asked for on its own — each one is an RSA encryption,
   // too dear to carry in the user list — and exists only while the operator has it
   // switched on: "" hides the row. A rotated token is a new address, so a new link.
@@ -572,6 +576,8 @@ export function UserDetail({
             >
               <IconExternal />
             </IconButton>
+            {canManage && (
+            <>
             <IconButton title={t('usersPanel.extend')} onClick={() => setExtendOpen(true)}>
               <IconCalendar size={16} />
             </IconButton>
@@ -612,9 +618,12 @@ export function UserDetail({
             >
               <IconKey />
             </IconButton>
+            </>
+            )}
             <IconButton title={t('events.title')} onClick={() => setEventsOpen(true)}>
               <IconTable />
             </IconButton>
+            {canDelete && (
             <IconButton
               color="red"
               title={t('userDetail.deleteUser')}
@@ -637,10 +646,12 @@ export function UserDetail({
             >
               <IconTrash />
             </IconButton>
+            )}
           </div>
 
           {/* 3. State: what the account is right now. The switch applies at once —
                  it is a switch; everything else here is read-only. */}
+          <ReadOnly when={!canManage}>
           <Panel title={t('userDetail.state')}>
             <StateRow label={t('usersPanel.subscription')}>
               <Switch
@@ -674,6 +685,7 @@ export function UserDetail({
               )}
             </StateRow>
           </Panel>
+          </ReadOnly>
 
           {/* 4. Devices: the addresses the account connects from, always. A router or
                  any client that sends no HWID shows up only here, so this list must not
@@ -739,7 +751,7 @@ export function UserDetail({
                       {/* One slot on every row, button or not, so the rows keep one
                           height and the times one column; the negative margin keeps the
                           button from making its row taller than a row of text. */}
-                      {isAdmin && (
+                      {canBan && (
                         <span className="-my-1 flex size-6 shrink-0 items-center justify-center">
                           {c.banned ? (
                             <IconButton
@@ -780,6 +792,7 @@ export function UserDetail({
           {/* 4b. Bound installs, when HWID binding is on: the apps that fetched the
                  subscription with an HWID, each of which can be unbound. */}
           {bound?.enabled && (
+            <ReadOnly when={!canManage}>
             <Panel
               title={t('userDetail.boundDevices')}
               aside={
@@ -841,12 +854,14 @@ export function UserDetail({
                 </div>
               )}
             </Panel>
+            </ReadOnly>
           )}
 
           {/* 5. Tariff and limits. A tariff owns the quota, the device cap and the
                  reset cycle, so under one the fields are shown disabled rather than
                  hidden: the operator sees what the plan set, and why they cannot
                  edit it. Fields are a draft until Save. */}
+          <ReadOnly when={!canManage}>
           <Panel title={t('userDetail.planAndLimits')}>
             {billingOn && (
               <SettingRow
@@ -985,16 +1000,20 @@ export function UserDetail({
               />
             )}
           </Panel>
+          </ReadOnly>
 
           {/* 6. The operator's own annotation of the account. */}
+          <ReadOnly when={!canManage}>
           <Panel title={t('userDetail.noteAndTags')}>
             <NoteAndTags user={user} onChanged={onChanged} />
           </Panel>
+          </ReadOnly>
 
           {/* Access groups: which connections this account may use. Applied on a
               button because each save reconciles Xray — several toggles should be
               one restart, not several. */}
           {allGroups.length > 0 && (
+            <ReadOnly when={!canManage}>
             <Panel
               title={t('groups.title')}
               aside={
@@ -1081,6 +1100,7 @@ export function UserDetail({
                 />
               )}
             </Panel>
+            </ReadOnly>
           )}
 
           {/* The subscription itself: the QR an operator hands over, and the link. */}
@@ -1101,6 +1121,7 @@ export function UserDetail({
             )}
           </Panel>
 
+          <ReadOnly when={!canManage}>
           <Panel title="Telegram">
             {user.telegram_linked ? (
               <>
@@ -1170,6 +1191,7 @@ export function UserDetail({
               <SettingRow hint={t('userDetail.enableUserBot')} />
             )}
           </Panel>
+          </ReadOnly>
 
           <Panel
             title={t('stats.blocklistMatches')}

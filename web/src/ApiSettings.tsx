@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  adminRoleName,
   type ApiKey,
   type ApiKeysInfo,
   createApiKey,
@@ -11,6 +12,7 @@ import {
 import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useCan } from "./role";
 import {
   Button,
   CenterLoader,
@@ -26,6 +28,7 @@ import {
   Mono,
   Panel,
   SaveBar,
+  Select,
   SettingRow,
   ShowMore,
   Switch,
@@ -45,10 +48,15 @@ const WIDE_MIN = 560;
 // and last used, and whether it still works.
 function KeyRow({
   k,
+  roleName,
+  canRevoke,
   wide,
   onRevoke,
 }: {
   k: ApiKey;
+  roleName: string;
+  // Only a key the caller could have issued — the server refuses the rest.
+  canRevoke: boolean;
   wide: boolean;
   onRevoke: (k: ApiKey) => void;
 }) {
@@ -63,7 +71,7 @@ function KeyRow({
     </span>
   );
   // An icon, like the other row actions in the panel; the word lives in its title.
-  const action = revoked ? null : (
+  const action = revoked || !canRevoke ? null : (
     <IconButton color="red" title={t("api.revoke")} onClick={() => onRevoke(k)}>
       <IconClose size={16} />
     </IconButton>
@@ -79,6 +87,7 @@ function KeyRow({
       <span className="flex min-w-0 items-center gap-2">
         <span className="truncate text-xs font-medium text-ink">{k.name}</span>
         <Mono className="shrink-0 text-[11px] text-ink-muted">{k.prefix}…</Mono>
+        <span className="truncate text-[11px] text-ink-muted">{roleName}</span>
       </span>
       {wide ? (
         <>
@@ -105,8 +114,19 @@ function KeyRow({
   );
 }
 
+// The tab holds two permissions: the keys and the API's address (api.manage) and the
+// webhooks (webhooks.manage). A role with only the second sees only the webhooks.
 export function ApiSettings() {
+  const canApi = useCan("api.manage");
+  const canWebhooks = useCan("webhooks.manage");
+  if (!canApi) return canWebhooks ? <WebhooksSettings /> : null;
+  return <ApiKeysSettings withWebhooks={canWebhooks} />;
+}
+
+function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   const { t } = useTranslation();
+  // The role a new key is minted with; "" is full access.
+  const [keyRole, setKeyRole] = useState("");
   const [info, setInfo] = useState<ApiKeysInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -157,7 +177,7 @@ export function ApiSettings() {
     if (!n) return;
     setCreating(true);
     try {
-      const res = await createApiKey(n);
+      const res = await createApiKey(n, keyRole);
       setAdding(false);
       setCreated(res.key);
       setName("");
@@ -222,6 +242,14 @@ export function ApiSettings() {
 
   if (loading) return <CenterLoader />;
   if (!info) return null;
+
+  // A key's role by name.
+  const keyRoleName = (role: string) => {
+    if (!role) return t("api.fullAccess");
+    const r = info.roles?.find((x) => x.key === role);
+    // A revoked key keeps the role it was issued with, which may since be gone.
+    return r ? adminRoleName(r) : t("api.roleDeleted");
+  };
 
   const enabledDirty = enabledDraft !== info.enabled;
 
@@ -297,6 +325,13 @@ export function ApiSettings() {
             title={t("common.create")}
             onClick={() => {
               setName("");
+              // Full access when the caller may hand it out, as every key had before
+              // roles; otherwise the broadest role they may give.
+              setKeyRole(
+                info.full_access
+                  ? ""
+                  : (info.roles?.find((r) => r.grantable)?.key ?? ""),
+              );
               setAdding(true);
             }}
           >
@@ -323,7 +358,18 @@ export function ApiSettings() {
               </div>
             )}
             {shownKeys.shown.map((k) => (
-              <KeyRow key={k.id} k={k} wide={wideKeys} onRevoke={revoke} />
+              <KeyRow
+                key={k.id}
+                k={k}
+                roleName={keyRoleName(k.role)}
+                canRevoke={
+                  k.role === ""
+                    ? !!info.full_access
+                    : !!info.roles?.find((r) => r.key === k.role)?.grantable
+                }
+                wide={wideKeys}
+                onRevoke={revoke}
+              />
             ))}
             {/* Keys accumulate — a revoked one is kept as a record — so an install
                 that has been running for a while lists more of them than anybody
@@ -352,6 +398,17 @@ export function ApiSettings() {
             onChange={setName}
             placeholder={t("api.newKeyPlaceholder")}
             autoFocus
+          />
+          <Select
+            label={t("api.keyRole")}
+            value={keyRole}
+            onChange={setKeyRole}
+            data={[
+              ...(info.full_access ? [{ value: "", label: t("api.fullAccess") }] : []),
+              ...(info.roles ?? [])
+                .filter((r) => r.grantable)
+                .map((r) => ({ value: r.key, label: adminRoleName(r) })),
+            ]}
           />
           <div className="flex justify-end gap-2">
             <Button
@@ -396,7 +453,7 @@ export function ApiSettings() {
       {/* Webhooks share the tab, and sit inside this section rather than beside it:
           the save bar sticks to the bottom only within the block it is the last child
           of, so beside it the bar hung between the keys and the webhooks. */}
-      <WebhooksSettings />
+      {withWebhooks && <WebhooksSettings />}
 
       <SaveBar
         dirty={enabledDirty}

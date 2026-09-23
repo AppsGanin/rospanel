@@ -39,6 +39,12 @@ func apiTestRouter(t *testing.T) (*Router, *store.Store) {
 // apiCall runs one request through the authenticated mux (auth itself is covered
 // elsewhere, so this drives apiMux directly) and returns the status and the decoded
 // `data` payload.
+// fullAccessKey stands in for apiAuth, which apiMux runs behind: the request carries
+// what a key with no role holds — the owner's reach.
+func fullAccessKey(r *http.Request) *http.Request {
+	return r.WithContext(withAPIPerms(r.Context(), model.OwnerPermSet()))
+}
+
 func apiCall(t *testing.T, rt *Router, method, path, body string) (int, json.RawMessage) {
 	t.Helper()
 	var rdr *strings.Reader
@@ -50,7 +56,7 @@ func apiCall(t *testing.T, rt *Router, method, path, body string) (int, json.Raw
 	req := httptest.NewRequest(method, path, rdr)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	rt.apiMux().ServeHTTP(w, req)
+	rt.apiMux().ServeHTTP(w, fullAccessKey(req))
 
 	var env struct {
 		Data json.RawMessage `json:"data"`
@@ -368,7 +374,7 @@ func apiErr(t *testing.T, rt *Router, method, path, body string) (int, apiErrBod
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	rt.apiMux().ServeHTTP(w, req)
+	rt.apiMux().ServeHTTP(w, fullAccessKey(req))
 	var env struct {
 		Error apiErrBody `json:"error"`
 	}

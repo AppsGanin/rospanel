@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/AppsGanin/rospanel/internal/mcp"
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -26,14 +27,11 @@ import (
 //     entered at all. The panel already builds every public surface this way — the
 //     subscription token, the node segment, the payment-webhook secret — and the URL
 //     is therefore exactly as secret as the key inside it. Treat it like a password.
-//   - Read-only unless the URL says otherwise. `…/mcp/<key>` cannot change anything,
-//     even though the key behind it could; `…/mcp/<key>/write` opens the mutating
-//     half. An assistant acting on a misread sentence should not be able to delete a
-//     customer because the operator pasted the shorter URL.
-const (
-	mcpPathPrefix  = "/v1/mcp/"
-	mcpWriteSuffix = "/write"
-)
+//   - One address per key, and the key's role decides the toolbox: the assistant is
+//     offered exactly the tools behind routes the role can call. A read-only
+//     assistant is a key with a read-only role — the decision lives where every other
+//     permission does, not in which of two URLs was pasted.
+const mcpPathPrefix = "/v1/mcp/"
 
 // maxMCPResult bounds what one tool call hands back.
 //
@@ -63,10 +61,6 @@ const maxMCPBody = 1 << 20
 // lookup and the same per-IP lockout apiAuth uses.
 func (rt *Router) handleMCP(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, mcpPathPrefix)
-	allowWrite := false
-	if s, ok := strings.CutSuffix(rest, mcpWriteSuffix); ok {
-		rest, allowWrite = s, true
-	}
 	key, err := url.PathUnescape(strings.Trim(rest, "/"))
 	if err != nil || key == "" || strings.Contains(key, "/") {
 		rt.currentDecoy().ServeHTTP(w, r) // a malformed URL is not a caller we owe an answer
@@ -100,15 +94,21 @@ func (rt *Router) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeAPIErr(w, http.StatusBadRequest, "bad_request", "unreadable body")
 		return
 	}
-	srv := mcp.NewServer("rospanel", version.Version,
-		mcp.BuildTools(OpenAPISpec(apiBaseURL(r, rt.currentAPIPath())), allowWrite),
-		rt.mcpDispatch(key))
+	// Only the tools this key's role can call. The dispatch would refuse the rest with
+	// a 403 anyway; listing them would just hand the assistant tools that always fail.
+	var tools []mcp.Tool
+	for _, t := range mcp.BuildTools(OpenAPISpec(apiBaseURL(r, rt.currentAPIPath()))) {
+		if apiRouteAllowed(ak.Perms, t.Route()) {
+			tools = append(tools, t)
+		}
+	}
+	srv := mcp.NewServer("rospanel", version.Version, tools, rt.mcpDispatch(key))
 	resp, status := srv.HandleHTTP(r.Context(), body)
 	if resp == nil {
 		w.WriteHeader(status) // a notification: acknowledged, nothing to answer
 		return
 	}
-	slog.Debug("mcp: request served", "key", ak.Name, "write", allowWrite, "bytes", len(resp))
+	slog.Debug("mcp: request served", "key", ak.Name, "tools", len(tools), "bytes", len(resp))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(resp)
@@ -135,11 +135,14 @@ func (rt *Router) mcpAuth(w http.ResponseWriter, r *http.Request, key string) (*
 		return nil, false
 	}
 	rt.apiKeys.success(ip, "")
-	return &apiKeyIdentity{Name: ak.Name}, true
+	return &apiKeyIdentity{Name: ak.Name, Perms: ak.Perms}, true
 }
 
 // apiKeyIdentity is the little the MCP path needs to know about the caller.
-type apiKeyIdentity struct{ Name string }
+type apiKeyIdentity struct {
+	Name  string
+	Perms model.PermSet
+}
 
 // mcpDispatch runs a tool call against the panel's own REST surface, in process.
 //
@@ -224,12 +227,11 @@ func (rt *Router) currentAPIPath() string {
 	return rt.apiPath
 }
 
-// MCPURLs are the two addresses an operator pastes into an assistant, for the API
-// settings page. Empty when the external API is switched off.
-func MCPURLs(base, key string) (readOnly, readWrite string) {
+// MCPURL is the address an operator pastes into an assistant. Empty when the
+// external API is switched off.
+func MCPURL(base, key string) string {
 	if base == "" || key == "" {
-		return "", ""
+		return ""
 	}
-	ro := strings.TrimRight(base, "/") + mcpPathPrefix + url.PathEscape(key)
-	return ro, ro + mcpWriteSuffix
+	return strings.TrimRight(base, "/") + mcpPathPrefix + url.PathEscape(key)
 }

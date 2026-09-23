@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getBans, getProbes, getSettings, unbanIP, type Ban, type ProbeHit } from './api'
+import { useCan } from './role'
 import { countryFlag, countryName } from './format'
 import { useAction, useShowMore } from './hooks'
 import i18n from './i18n'
@@ -139,6 +140,7 @@ export function ProbeList() {
 // Shown whenever there is something in it.
 export function BlockedList() {
   const { t } = useTranslation()
+  const canManage = useCan('security.manage')
   const [bans, setBans] = useState<Ban[]>([])
   const [canEnforce, setCanEnforce] = useState(true)
   const { busy, run } = useAction()
@@ -162,7 +164,8 @@ export function BlockedList() {
 
   // An icon, like the ban button it undoes on a user's addresses; compact, with a
   // negative margin, so it neither makes its row taller nor fills it on hover.
-  const unban = (ip: string) => (
+  // Lifting a ban needs security.manage; without it the slot stays empty.
+  const unban = (ip: string) => canManage && (
     <IconButton
       compact
       className="-my-1 shrink-0"

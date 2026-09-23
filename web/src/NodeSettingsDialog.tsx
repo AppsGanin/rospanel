@@ -22,7 +22,8 @@ import { decoyLabel } from "./GeneralSettings";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { TLSPanel } from "./TLSPanel";
 import { hydrateRouting, RoutingEditor, type StatusBadge } from "./RoutingEditor";
-import { Drawer, Section, Select, SettingRow, TextInput } from "./ui";
+import {
+  ReadOnly, Drawer, Section, Select, SettingRow, TextInput } from "./ui";
 import { PlacementFields, placementOf } from "./PlacementFields";
 import {
   DialogTabs,
@@ -31,7 +32,9 @@ import {
   clampCoefficient,
   nodeDefaultRouting,
   useServerRouting,
+  useServerTabs,
 } from "./ServerDialogParts";
+import { useCan } from "./role";
 import { SystemProxyEditor, systemProxyIssue } from "./SystemProxyEditor";
 
 // NodeSettingsDialog edits a remote node's full per-server config: name, decoy,
@@ -84,8 +87,27 @@ export function NodeSettingsDialog({
   const [dnsBase, setDnsBase] = useState(canonicalDns(node.xray_dns ?? ""));
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("general");
-  const genDirty =
-    name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || proxyDirty || plDirty;
+  // The tabs this role may see, and whether the one shown is read-only.
+  const routingView = useCan("routing.view");
+  const routingManage = useCan("routing.manage");
+  const serversManage = useCan("servers.manage");
+  const { visible, shown, readOnly } = useServerTabs(
+    [
+      { value: "general", label: t("settings.tabGeneral") },
+      { value: "connections", label: t("nodes.tabConnections") },
+      { value: "inbounds", label: t("nodes.tabInbounds") },
+      { value: "routing", label: t("nodes.tabRouting") },
+      { value: "dns", label: "DNS" },
+      { value: "geo", label: "Geo" },
+      { value: "domain", label: t("restore.domain") },
+    ],
+    tab,
+  );
+  // The server's own fields (servers.manage) and the system proxy (routing.manage)
+  // save through different routes, so a role holding one saves only its part.
+  const ownDirty =
+    name !== genBase.name || decoy !== genBase.decoy || coef !== genBase.coef || plDirty;
+  const genDirty = ownDirty || proxyDirty;
   const dnsDirty = dns !== dnsBase;
 
   // Status words describe the SAVED egress: WARP registration is known from the
@@ -113,7 +135,7 @@ export function NodeSettingsDialog({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await updateNode(node.id, {
+      if (ownDirty) await updateNode(node.id, {
         name: name.trim(),
         host: node.host, // domain is changed from the Domain tab
         decoy_template: decoy,
@@ -185,22 +207,14 @@ export function NodeSettingsDialog({
       subtitle={node.host}
       toolbar={
         <DialogTabs
-          value={tab}
+          value={shown}
           onChange={setTab}
-          tabs={[
-            { value: "general", label: t("settings.tabGeneral") },
-            { value: "connections", label: t("nodes.tabConnections") },
-            { value: "inbounds", label: t("nodes.tabInbounds") },
-            { value: "routing", label: t("nodes.tabRouting") },
-            { value: "dns", label: "DNS" },
-            { value: "geo", label: "Geo" },
-            { value: "domain", label: t("restore.domain") },
-          ]}
+          tabs={visible}
         />
       }
     >
-
-      {tab === "general" && (
+      <ReadOnly when={readOnly}>
+      {shown === "general" && (
         <div className="flex flex-col gap-3.5">
           <Section title={t("nodes.server")} flush>
             <SettingRow
@@ -242,12 +256,20 @@ export function NodeSettingsDialog({
             online={node.online_users ?? 0}
             trafficUsed={node.traffic_period_used}
           />
+          {/* The system proxy is routing's (POST /api/nodes/{id}/proxy): shown with
+              routing.view, editable with routing.manage. */}
+          {routingView && (
+          <ReadOnly when={!routingManage} own>
           <SystemProxyEditor
             host={node.host}
             value={proxy}
             saved={proxyBase}
             onChange={setProxy}
           />
+          </ReadOnly>
+          )}
+          {/* Save answers to either permission: each part saves through its own route. */}
+          <ReadOnly when={!serversManage && !routingManage} own>
           <TabSaveBar
             onSave={saveGeneral}
             onReset={() => {
@@ -261,10 +283,11 @@ export function NodeSettingsDialog({
             busy={saving}
             invalid={proxyIssue !== ""}
           />
+          </ReadOnly>
         </div>
       )}
 
-      {tab === "connections" && (
+      {shown === "connections" && (
         <ConnectionsEditor
           load={() => getNodeConnections(node.id)}
           save={(u) => applyNodeConnections(node.id, u)}
@@ -273,9 +296,9 @@ export function NodeSettingsDialog({
         />
       )}
 
-      {tab === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
+      {shown === "inbounds" && <InboundsEditor serverId={node.id} restartsPanel={false} />}
 
-      {tab === "routing" && (
+      {shown === "routing" && (
         <div className="flex flex-col gap-3.5">
           {/* Routing + egress — always the node's own (independent of the master). */}
           <RoutingEditor
@@ -302,7 +325,7 @@ export function NodeSettingsDialog({
         </div>
       )}
 
-      {tab === "dns" && (
+      {shown === "dns" && (
         <div className="flex flex-col gap-3.5">
           <Section title="DNS" desc={t("nodes.dnsNodeHint")} flush>
             <DnsEditor value={dns} onChange={setDns} />
@@ -316,9 +339,9 @@ export function NodeSettingsDialog({
         </div>
       )}
 
-      {tab === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
+      {shown === "geo" && <NodeGeoCard node={node} onChanged={onRefresh} />}
 
-      {tab === "domain" && (
+      {shown === "domain" && (
         <TLSPanel
           load={() => getNodeTLS(node.id)}
           save={(t, e, p) => setNodeACME(node.id, t, e, p)}
@@ -326,6 +349,7 @@ export function NodeSettingsDialog({
           onChanged={onRefresh}
         />
       )}
+      </ReadOnly>
     </Drawer>
   );
 }

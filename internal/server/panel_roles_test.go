@@ -135,32 +135,28 @@ func TestRouteTiersByRole(t *testing.T) {
 	}
 }
 
-// A role the ladder doesn't recognize — a corrupt row, a hand-edited database —
-// must clear nothing. The failure mode to avoid is the opposite one, where an
-// unknown role sails past a check that only knows how to say "not operator".
+// A role with nothing ticked must clear nothing. (A role key no row answers to
+// resolves the same way — see TestSessionPermsResolveFromTheRole in the store.)
 func TestUnknownRoleClearsNothing(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
-	c := signIn(t, st, "weird", model.RoleOperator, false)
-	admins, err := st.ListAdmins()
+	empty, err := st.CreateAdminRole("Пусто", nil)
 	if err != nil {
-		t.Fatalf("list: %v", err)
+		t.Fatalf("create role: %v", err)
 	}
-	if err := st.SetAdminRole(admins[0].ID, "superuser"); err != nil {
-		t.Fatalf("corrupt role: %v", err)
-	}
+	c := signIn(t, st, "weird", empty.Key, false)
 
 	for _, path := range []string{"/api/users", "/api/settings", "/api/admins"} {
 		if got := call(h, "GET", path, c); got != http.StatusForbidden {
-			t.Errorf("GET %s with an unknown role = %d, want 403", path, got)
+			t.Errorf("GET %s with an empty role = %d, want 403", path, got)
 		}
 	}
 	// Their own account still resolves — they can still change their password and
 	// sign out; they just cannot *do* anything.
 	if got := call(h, "GET", "/api/me", c); got != http.StatusOK {
-		t.Errorf("GET /api/me with an unknown role = %d, want 200", got)
+		t.Errorf("GET /api/me with an empty role = %d, want 200", got)
 	}
 }
 
@@ -171,7 +167,7 @@ func TestGatedAdminIsPinnedToThePasswordScreen(t *testing.T) {
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
 
-	c := signIn(t, st, "colleague", model.RoleAdmin, true)
+	c := signIn(t, st, "colleague", model.RoleOwner, true) // backups are the owner's
 
 	for _, path := range []string{"/api/users", "/api/settings", "/api/events"} {
 		if got := call(h, "GET", path, c); got != http.StatusForbidden {

@@ -8,6 +8,7 @@ import {
   listAdminAudit,
 } from "./api";
 import { fmtStamp } from "./format";
+import { permLabel } from "./permLabel";
 import { slugKey, td } from "./i18n";
 import { errMessage, notifyError } from "./notify";
 import { dayEndMs, dayStartMs } from "./tz";
@@ -64,11 +65,45 @@ function toneOf(action: string): "danger" | "warn" | "plain" {
 }
 
 // details is a small JSON object ({"role":"operator"}, {"from":…,"to":…}) — render it
-// as plain "key: value" pairs rather than dumping JSON at the reader.
+// as plain "key: value" pairs rather than dumping JSON at the reader. Two shapes get
+// words instead of identifiers: a role (the owner, a preset, or full access for a key)
+// and a permission list, which a role edit records as its before and after — shown
+// as what was added and what was taken away.
+const PERM_LIST = /^[a-z]+\.[a-z]+(,[a-z]+\.[a-z]+)*$/;
+
+function fmtRole(v: string): string {
+  if (v === "owner" || v === "admin" || v === "operator") return td(`roles.${v}`);
+  if (v === "full") return td("api.fullAccess");
+  return v;
+}
+
+function fmtPerms(v: string): string {
+  return v ? v.split(",").map(permLabel).join(", ") : "—";
+}
+
 function fmtDetails(d: AdminAudit["details"]): string {
   if (!d || typeof d !== "object") return "";
+  const from = typeof d.from === "string" ? d.from : undefined;
+  const to = typeof d.to === "string" ? d.to : undefined;
+  if (from !== undefined && to !== undefined && (PERM_LIST.test(from) || PERM_LIST.test(to))) {
+    const was = new Set(from ? from.split(",") : []);
+    const now = new Set(to ? to.split(",") : []);
+    const added = [...now].filter((p) => !was.has(p));
+    const removed = [...was].filter((p) => !now.has(p));
+    return [
+      added.length ? `+ ${added.map(permLabel).join(", ")}` : "",
+      removed.length ? `− ${removed.map(permLabel).join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
   return Object.entries(d)
-    .map(([k, v]) => `${k}: ${String(v)}`)
+    .map(([k, v]) => {
+      const s = String(v);
+      if (k === "perms") return fmtPerms(s);
+      if (k === "role" || k === "from" || k === "to") return `${k}: ${fmtRole(s)}`;
+      return `${k}: ${s}`;
+    })
     .join(" · ");
 }
 

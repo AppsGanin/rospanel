@@ -37,8 +37,10 @@ import {
 import { useAction } from "./hooks";
 import { ConnPolicyCard, EMPTY_POLICY } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useCan, useIsOwner } from "./role";
 import { browserTimezone, setPanelTimezone, tzOptions } from "./tz";
 import {
+  ReadOnly,
   Button,
   CenterLoader,
   cn,
@@ -109,6 +111,16 @@ export const decoyLabel = (slug: string): string => {
 
 export function GeneralSettings() {
   const { t } = useTranslation();
+  // This tab gathers five permissions' worth of settings; each block below shows,
+  // and is editable, by its own.
+  const canUpdate = useCan("system.update");
+  const canSetView = useCan("settings.view");
+  const canSetManage = useCan("settings.manage");
+  const canSecView = useCan("security.view");
+  const canSecManage = useCan("security.manage");
+  // The local backup schedule is the owner's, like backups themselves.
+  const canBackup = useIsOwner();
+  const canServers = useCan("servers.view");
   const [loaded, setLoaded] = useState(false);
   const [timezone, setTimezone] = useState("");
   const [savedTz, setSavedTz] = useState("");
@@ -150,6 +162,7 @@ export function GeneralSettings() {
     [timezone],
   );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loads once; the permissions do not change while the page is open
   useEffect(() => {
     Promise.all([
       getMe()
@@ -163,25 +176,31 @@ export function GeneralSettings() {
           setTimezone(browserTimezone());
           setSavedTz(browserTimezone());
         }),
-      getStatusPage()
-        .then((s) => {
-          setStatus(s);
-          setSavedStatus(s);
-        })
-        .catch(() => {}),
-      getConnPolicy()
-        .then((info) => {
-          setPolicy(info.policy);
-          setPolicySaved(info.policy);
-        })
-        .catch(() => {}),
-      getTrustedNets()
-        .then(({ nets }) => {
-          setTrusted(nets);
-          setTrustedSaved(nets);
-        })
-        .catch(() => {}),
-      getSettings()
+      canSetView &&
+        getStatusPage()
+          .then((s) => {
+            setStatus(s);
+            setSavedStatus(s);
+          })
+          .catch(() => {}),
+      canSecView &&
+        getConnPolicy()
+          .then((info) => {
+            setPolicy(info.policy);
+            setPolicySaved(info.policy);
+          })
+          .catch(() => {}),
+      canSecView &&
+        getTrustedNets()
+          .then(({ nets }) => {
+            setTrusted(nets);
+            setTrustedSaved(nets);
+          })
+          .catch(() => {}),
+      // GET /api/settings answers the settings, security and servers views; an
+      // update-only role has none of them, and nothing of it to show.
+      (canSetView || canSecView || canBackup) &&
+        getSettings()
         .then((s) => {
           setSettings(s);
           const bkv: LocalBackup = {
@@ -300,7 +319,9 @@ export function GeneralSettings() {
         const info = await checkUpdate();
         setUpd(info);
         setVersion(info.current);
-        if (info.available) {
+        // The node list is the servers' to read; without it the nodes are not offered
+        // an update from here (they still update from the servers page).
+        if (info.available && canServers) {
           listNodes()
             .then((r) => setNodeCount(r.nodes.length))
             .catch(() => setNodeCount(0));
@@ -373,6 +394,7 @@ export function GeneralSettings() {
     <div className="flex flex-1 flex-col gap-3.5">
       {/* What is running, and what could be. The check is a section action: it
           answers the whole section, not one of its rows. */}
+      {canUpdate && (
       <Panel
         title={t("general.updateSection")}
         aside={
@@ -433,9 +455,12 @@ export function GeneralSettings() {
           </div>
         </Modal>
       </Panel>
+      )}
 
       {/* The panel itself: where it can be reached from, what it shows the world,
           and what clock its numbers are counted on. */}
+      {canSetView && (
+      <ReadOnly when={!canSetManage}>
       <Panel title={t("general.secPanel")}>
         <SettingRow
           label={t("wizard.timezone")}
@@ -514,9 +539,13 @@ export function GeneralSettings() {
           }
         />
       </Panel>
+      </ReadOnly>
+      )}
 
       {/* What the panel keeps and for how long. */}
+      {(canBackup || canSetView) && (
       <Panel title={t("general.secData")}>
+        {canBackup && (
         <SettingRow
           label={t("general.autoBackups")}
           hint={t("general.autoBackupsHint")}
@@ -552,6 +581,9 @@ export function GeneralSettings() {
             {t("general.backupWarn")}
           </p>
         </SettingRow>
+        )}
+        {canSetView && (
+        <ReadOnly when={!canSetManage}>
         <SettingRow
           label={t("general.autodelete")}
           hint={t("general.autodeleteHint")}
@@ -567,11 +599,17 @@ export function GeneralSettings() {
             {autoDel === 0 ? t("general.autodeleteOff") : t("general.autodeleteOn")}
           </p>
         </SettingRow>
+        </ReadOnly>
+        )}
       </Panel>
+      )}
 
       {/* What the panel does about being poked at, and about its own Xray hanging.
           The switches are live; the trusted list is a draft on the Save bar. */}
+      {(canSecView || canSetView) && (
       <Panel title={t("general.secProtect")}>
+        {canSecView && (
+        <ReadOnly when={!canSecManage}>
         <ToggleRow
           label={t("general.probeDetect")}
           hint={t("general.probeDetectHint")}
@@ -599,7 +637,10 @@ export function GeneralSettings() {
         <SettingRow label={t("general.trusted")} hint={t("general.trustedHint")}>
           <TagsInput value={trusted} onChange={setTrusted} placeholder="203.0.113.10" />
         </SettingRow>
-        {watchdog && (
+        </ReadOnly>
+        )}
+        {canSetView && watchdog && (
+        <ReadOnly when={!canSetManage}>
           <ToggleRow
             label={t("general.watchdog")}
             hint={t("general.watchdogHint")}
@@ -611,10 +652,16 @@ export function GeneralSettings() {
               })
             }
           />
+        </ReadOnly>
         )}
       </Panel>
+      )}
 
-      <ConnPolicyCard value={policy} onChange={setPolicy} />
+      {canSecView && (
+        <ReadOnly when={!canSecManage}>
+          <ConnPolicyCard value={policy} onChange={setPolicy} />
+        </ReadOnly>
+      )}
 
       <SaveBar
         dirty={dirty}

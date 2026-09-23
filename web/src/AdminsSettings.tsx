@@ -4,17 +4,23 @@ import { AdminAuditPanel } from "./AdminAuditPanel";
 import {
   type Admin,
   type AdminList,
+  type AdminRole,
+  adminRoleName,
   createAdmin,
   deleteAdmin,
   listAdmins,
+  listRoles,
+  type Perm,
+  type PermSection,
   resetAdminPassword,
   type Role,
-  roleHint,
   roleLabel,
   setAdminRole,
 } from "./api";
 import { fmtStamp } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useIsOwner } from "./role";
+import { RolesPanel } from "./RolesPanel";
 import { useStepUpDialog } from "./stepup";
 import {
   Badge,
@@ -40,15 +46,10 @@ import {
   useWideBox,
 } from "./ui";
 
-// The roles an owner can hand out. The owner role is absent on purpose: ownership
-// is singular, and the server refuses to grant it (see model.GrantableRoles).
-const roleOptions = (): { value: Role; label: string }[] => [
-  { value: "admin", label: roleLabel("admin") },
-  { value: "operator", label: roleLabel("operator") },
-];
-
-// ALL_ROLES drives the legend below the roster, owner included.
-const ALL_ROLES: Role[] = ["owner", "admin", "operator"];
+// The roles an owner can hand out: every role in the list. The owner is not among
+// them on purpose — ownership is singular, and the server refuses to grant it.
+const roleOptions = (roles: AdminRole[]): { value: Role; label: string }[] =>
+  roles.map((r) => ({ value: r.key, label: adminRoleName(r) }));
 
 // A password the owner will read out or paste into a chat — memorable enough to
 // survive the trip, and replaced by the colleague at first sign-in anyway.
@@ -67,22 +68,21 @@ function suggestPassword(): string {
 const TPL =
   "minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,.8fr) minmax(0,1.2fr) 108px";
 const TPL_NARROW = "minmax(0,1fr) auto";
-// The roles footnote: badge, then what the role can reach.
-const LEGEND_TPL = "112px minmax(0,1fr)";
 const WIDE_MIN = 720;
 
 // The owner is the only role with a brand badge — it is the one that cannot be
 // handed out from here.
-function RoleBadge({ role }: { role: Role }) {
+function RoleBadge({ role, roles }: { role: Role; roles: AdminRole[] }) {
   return (
     <Badge color={role === "owner" ? "brand" : "gray"} size="xs">
-      {roleLabel(role)}
+      {roleLabel(role, roles)}
     </Badge>
   );
 }
 
 function AdminRow({
   a,
+  roles,
   isMe,
   wide,
   onChangeRole,
@@ -90,6 +90,7 @@ function AdminRow({
   onDelete,
 }: {
   a: Admin;
+  roles: AdminRole[];
   isMe: boolean;
   wide: boolean;
   onChangeRole: (a: Admin) => void;
@@ -114,7 +115,7 @@ function AdminRow({
       </span>
     </span>
   );
-  const lastLogin = a.last_login_at ? fmtStamp(a.last_login_at) : t("admins.never");
+  const lastLogin = fmtStamp(a.last_login_at);
   // Icons, not words: three labelled buttons per row is a paragraph of controls in a
   // list read for its names. Each carries its title, which is also its aria-label.
   const actions = locked ? null : (
@@ -144,7 +145,7 @@ function AdminRow({
         <span className="truncate text-xs font-medium text-ink">{a.username}</span>
         {/* Narrow, the role belongs to the name — it is the second thing read about
             an account, not a column of its own. */}
-        {!wide && <RoleBadge role={a.role} />}
+        {!wide && <RoleBadge role={a.role} roles={roles} />}
         {a.must_change_password && (
           <span className="shrink-0 truncate text-[11px] text-warning">
             {t("admins.awaitingPassword")}
@@ -155,7 +156,7 @@ function AdminRow({
       {wide ? (
         <>
           <span className="min-w-0">
-            <RoleBadge role={a.role} />
+            <RoleBadge role={a.role} roles={roles} />
           </span>
           {twofa}
           <Mono className="truncate text-[11px] text-ink-muted">{lastLogin}</Mono>
@@ -176,9 +177,20 @@ function AdminRow({
   );
 }
 
+// The owner gets the roster, the roles and the journal; a role holding audit.view
+// gets the journal alone — the roster and the roles are no permission's.
 export function AdminsSettings() {
+  const isOwner = useIsOwner();
+  if (!isOwner) return <AdminAuditPanel />;
+  return <AdminsRoster />;
+}
+
+function AdminsRoster() {
   const { t } = useTranslation();
   const [list, setList] = useState<AdminList | null>(null);
+  const [roles, setRoles] = useState<AdminRole[]>([]);
+  const [catalog, setCatalog] = useState<PermSection[]>([]);
+  const [implies, setImplies] = useState<Partial<Record<Perm, Perm[]>>>({});
   const [loading, setLoading] = useState(true);
 
   // The create form, opened from the section header.
@@ -201,9 +213,16 @@ export function AdminsSettings() {
   const { ask, stepUpNode } = useStepUpDialog();
   const { copied, copy } = useCopy();
 
+  // The roster and the roles together: a role's holder count and an admin's role
+  // name are each read from the other.
   const refresh = () =>
-    listAdmins()
-      .then(setList)
+    Promise.all([listAdmins(), listRoles()])
+      .then(([admins, r]) => {
+        setList(admins);
+        setRoles(r.roles);
+        setCatalog(r.catalog);
+        setImplies(r.implies ?? {});
+      })
       .catch((e) => notifyError(errMessage(e)))
       .finally(() => setLoading(false));
 
@@ -255,14 +274,14 @@ export function AdminsSettings() {
     if (!editing) return;
     const creds = await ask({
       title: t("admins.roleOf", { name: editing.username }),
-      body: roleLabel(editRole),
+      body: roleLabel(editRole, roles),
       confirmLabel: t("common.save"),
     });
     if (!creds) return;
     setBusy(true);
     try {
       await setAdminRole(editing.id, editRole, creds.password);
-      notifySuccess(`${editing.username}: ${roleLabel(editRole).toLowerCase()}`);
+      notifySuccess(`${editing.username}: ${roleLabel(editRole, roles)}`);
       setEditing(null);
       await refresh();
     } catch (e) {
@@ -392,6 +411,7 @@ export function AdminsSettings() {
             <AdminRow
               key={a.id}
               a={a}
+              roles={roles}
               isMe={a.id === list.me}
               wide={wide}
               onChangeRole={openRole}
@@ -401,24 +421,9 @@ export function AdminsSettings() {
           ))}
         </div>
 
-        {/* What each role can reach, so handing one out is an informed choice. Rows
-            rather than three columns: the badges then line up under one another and
-            the sentences get the width they need at any size. */}
-        <div className="border-t border-brand-600/10">
-          {ALL_ROLES.map((r) => (
-            <div
-              key={r}
-              className="grid items-baseline gap-3 border-t border-gray-100 px-3.5 py-[7px] first:border-t-0"
-              style={{ gridTemplateColumns: LEGEND_TPL }}
-            >
-              <span>
-                <RoleBadge role={r} />
-              </span>
-              <p className="text-[11px] leading-relaxed text-ink-muted">{roleHint(r)}</p>
-            </div>
-          ))}
-        </div>
       </Panel>
+
+      <RolesPanel roles={roles} catalog={catalog} implies={implies} onChanged={refresh} />
 
       <AdminAuditPanel />
 
@@ -443,7 +448,7 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={role}
             onChange={(v) => setRole(v as Role)}
-            data={roleOptions()}
+            data={roleOptions(roles)}
           />
           <PasswordInput
             label={t("admins.tempPassword")}
@@ -473,7 +478,7 @@ export function AdminsSettings() {
             label={t("admins.role")}
             value={editRole}
             onChange={(v) => setEditRole(v as Role)}
-            data={roleOptions()}
+            data={roleOptions(roles)}
           />
           <Button loading={busy} onClick={saveRole}>
             {t("common.save")}

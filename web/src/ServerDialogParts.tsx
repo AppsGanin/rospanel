@@ -16,7 +16,34 @@ import {
   laneSources,
   type LaneSource,
 } from "./RoutingEditor";
+import { useCan } from "./role";
 import { Button, cn } from "./ui";
+
+// The tabs of a server's settings that belong to routing (routing.*); every other
+// tab is the server itself (servers.*).
+const ROUTING_TABS = new Set(["routing", "dns", "geo", "iplist"]);
+
+// useServerTabs narrows a server dialog's tabs to the ones the role may see, picks
+// the tab actually shown (the asked-for one, or the first visible), and says whether
+// that tab is read-only — seen without the matching manage permission.
+export function useServerTabs<T extends { value: string }>(tabs: T[], tab: string) {
+  const serversView = useCan("servers.view");
+  const serversManage = useCan("servers.manage");
+  const routingView = useCan("routing.view");
+  const routingManage = useCan("routing.manage");
+  // General carries the system proxy, which is routing's — so routing.view opens it
+  // too (the server's own fields there read-only without servers.manage).
+  const visible = tabs.filter((x) =>
+    ROUTING_TABS.has(x.value)
+      ? routingView
+      : x.value === "general"
+        ? serversView || routingView
+        : serversView,
+  );
+  const shown = visible.some((x) => x.value === tab) ? tab : (visible[0]?.value ?? tab);
+  const readOnly = ROUTING_TABS.has(shown) ? !routingManage : !serversManage;
+  return { visible, shown, readOnly };
+}
 
 export function DialogTabs({
   tabs,

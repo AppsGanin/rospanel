@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { setUserNote, setUserTags, listUserTags, type TagCount, type User } from './api'
 import { useAction } from './hooks'
 import { notifySuccess } from './notify'
-import { Button, SettingRow, TagsInput, Textarea } from './ui'
+import {
+  useReadOnly, Button, SettingRow, TagsInput, Textarea } from './ui'
 import i18n from './i18n'
 
 // GroupChip is one access group in the user drawer. A solid chip ("on") is a group the
@@ -115,9 +116,11 @@ export function GroupChip({
   onClick: () => void
 }) {
   const on = state === 'on'
+  const ro = useReadOnly()
   return (
     <button
       type="button"
+      disabled={ro}
       onClick={onClick}
       title={`${i18n.t('userDetail.nConnections', { count })} · ${i18n.t(on ? 'userDetail.removeFromGroup' : 'userDetail.addToGroup')}`}
       className={

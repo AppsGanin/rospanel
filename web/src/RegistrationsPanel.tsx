@@ -5,6 +5,7 @@ import {
   type RegistrationRequest,
 } from "./api";
 import { useAction, useShowMore } from "./hooks";
+import { useCan } from "./role";
 import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { inPanelTz } from "./tz";
@@ -35,6 +36,7 @@ export function RegistrationsPanel({
 }) {
   const { t } = useTranslation();
   const { busy, run } = useAction();
+  const canManage = useCan("users.manage");
   // The queue is unbounded — nothing trims it but an operator working through it —
   // so a backlog left alone for a week would otherwise render in full.
   const page = useShowMore(requests);
@@ -74,6 +76,7 @@ export function RegistrationsPanel({
               <Mono className="shrink-0 text-[11px] text-ink-muted">
                 {fmtDateTime(r.created_at)}
               </Mono>
+              {canManage && (
               <span className="flex shrink-0 gap-2">
                 <Button
                   size="xs"
@@ -92,6 +95,7 @@ export function RegistrationsPanel({
                   {t("reg.reject")}
                 </Button>
               </span>
+              )}
             </div>
           ))}
           <ShowMore

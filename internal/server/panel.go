@@ -207,35 +207,44 @@ func (rt *Router) localInbounds() []model.Inbound {
 
 func (rt *Router) panelMux() http.Handler {
 	mux := http.NewServeMux()
-	// Route tiers. Every helper below puts the route behind the session check — so a
-	// new sensitive route can't silently be added without auth — and additionally
-	// pins the minimum role that may call it.
-	//
-	// authed (admin and up) is the default on purpose: a route added later without a
-	// second thought lands closed to operators rather than open to them. Opening one
-	// up to operators is then a deliberate act — authedOp — visible in this list.
+	// Every helper below puts the route behind the session check — so a new sensitive
+	// route can't silently be added without auth — and additionally pins what the
+	// caller must hold to reach it.
 	//
 	// Every one of them also routes the handler through rt.audited, which writes the
 	// admin trail (see audit.go). It sits INSIDE the auth check, so the row already
 	// knows who is acting; and it is applied here, once, rather than in each handler
 	// — that is what makes "no mutating route ships unaudited" a property of the
 	// router instead of a habit.
-	register := func(tier, pattern string, h http.HandlerFunc) {
+	//
+	// on gates a route on the permissions it needs — holding any one of them opens it
+	// (see model/perms.go). The owner holds every permission, so owner-only surfaces
+	// (the roster and the roles) use authedOwner instead: no permission reaches them,
+	// because a role that could edit roles could edit its own into everything.
+	//
+	// Every route is registered through one of these, so a new sensitive route cannot
+	// ship without a permission: there is no helper that registers "signed in, and
+	// nothing else" apart from authedAny, kept for the caller's own account.
+	register := func(pattern string, gate func(http.HandlerFunc) http.HandlerFunc, h http.HandlerFunc) {
 		rt.routes = append(rt.routes, pattern) // for the exhaustiveness test
-		mux.HandleFunc(pattern, rt.requireRole(tier, rt.audited(pattern, h)))
+		mux.HandleFunc(pattern, gate(rt.audited(pattern, h)))
+	}
+	on := func(perms ...string) func(string, http.HandlerFunc) {
+		return func(pattern string, h http.HandlerFunc) {
+			if rt.routePerms == nil {
+				rt.routePerms = map[string][]string{}
+			}
+			rt.routePerms[pattern] = perms
+			register(pattern, func(next http.HandlerFunc) http.HandlerFunc {
+				return rt.requirePerm(perms, next)
+			}, h)
+		}
 	}
 	authedAny := func(pattern string, h http.HandlerFunc) { // any signed-in admin
-		rt.routes = append(rt.routes, pattern)
-		mux.HandleFunc(pattern, rt.requireAuth(rt.audited(pattern, h)))
-	}
-	authedOp := func(pattern string, h http.HandlerFunc) { // operator and up
-		register(model.RoleOperator, pattern, h)
-	}
-	authed := func(pattern string, h http.HandlerFunc) { // admin and up
-		register(model.RoleAdmin, pattern, h)
+		register(pattern, rt.requireAuth, h)
 	}
 	authedOwner := func(pattern string, h http.HandlerFunc) { // owner only
-		register(model.RoleOwner, pattern, h)
+		register(pattern, rt.requireOwner, h)
 	}
 	// withID adapts a handler for routes carrying an {id} segment: it parses (and
 	// validates) the id once, so the handler receives it directly instead of
@@ -247,25 +256,55 @@ func (rt *Router) panelMux() http.Handler {
 			}
 		}
 	}
-	authedID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
-		authed(pattern, withID(h))
-	}
-	authedOpID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
-		authedOp(pattern, withID(h))
-	}
 	authedOwnerID := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
 		authedOwner(pattern, withID(h))
 	}
+	canAPI := on(model.PermAPI)
+	canAudit := on(model.PermAudit)
+	canBillingManage := on(model.PermBillingManage)
+	canBillingView := on(model.PermBillingView)
+	canBroadcasts := on(model.PermBroadcasts)
+	// The settings blob backs several screens — general settings, the servers page,
+	// the security cards and the local backup schedule — so each of their view
+	// permissions reads it.
+	canDashboard := on(model.PermStatsView, model.PermUsersView, model.PermServersView)
+	canConfigView := on(model.PermSettingsView, model.PermServersView, model.PermRoutingView, model.PermSecurityView)
+	canGroupsManage := on(model.PermGroupsManage)
+	canGroupsView := on(model.PermGroupsView)
+	canLogs := on(model.PermLogs)
+	canPayments := on(model.PermPayments)
+	canPlansView := on(model.PermBillingView, model.PermUsersView)
+	canStatsManage := on(model.PermStatsManage)
+	canRoutingManage := on(model.PermRoutingManage)
+	canRoutingView := on(model.PermRoutingView)
+	canSecurityManage := on(model.PermSecurityManage)
+	canSecurityView := on(model.PermSecurityView)
+	canServersManage := on(model.PermServersManage)
+	canServersOrRoutingView := on(model.PermRoutingView, model.PermServersView)
+	canServersView := on(model.PermServersView)
+	canSettingsManage := on(model.PermSettingsManage)
+	canSettingsView := on(model.PermSettingsView)
+	canStatsOrUsersView := on(model.PermStatsView, model.PermUsersView)
+	canStatsView := on(model.PermStatsView)
+	canUpdate := on(model.PermUpdate)
+	canUsersDelete := on(model.PermUsersDelete)
+	canUsersExport := on(model.PermUsersExport)
+	canUsersManage := on(model.PermUsersManage)
+	canUsersManageOrDelete := on(model.PermUsersManage, model.PermUsersDelete)
+	canUsersOrGroupsView := on(model.PermUsersView, model.PermGroupsView)
+	canGroupsList := on(model.PermGroupsView, model.PermUsersView, model.PermBillingView)
+	canUsersView := on(model.PermUsersView)
+	canWebhooks := on(model.PermWebhooks)
 	mux.HandleFunc("POST /api/login", rt.login)
 	mux.HandleFunc("POST /api/logout", rt.logout)
 	// Branding reads are unauthenticated: the login screen (under the secret path)
 	// renders the panel name/accent/logo before any session exists.
 	mux.HandleFunc("GET /api/branding", rt.getBranding)
 	mux.HandleFunc("GET /api/branding/logo", rt.brandingLogo)
-	authed("POST /api/settings/branding", rt.saveBranding)
-	authed("POST /api/settings/branding/logo", rt.uploadBrandingLogo)
-	authed("DELETE /api/settings/branding/logo", rt.deleteBrandingLogo)
-	// Your own account: every role reaches these, whatever their tier — including
+	canSettingsManage("POST /api/settings/branding", rt.saveBranding)
+	canSettingsManage("POST /api/settings/branding/logo", rt.uploadBrandingLogo)
+	canSettingsManage("DELETE /api/settings/branding/logo", rt.deleteBrandingLogo)
+	// Your own account: every role reaches these, whatever it holds — including
 	// while gated on a forced password change (see mustChangeAllowed), which is the
 	// only way out of that state.
 	authedAny("GET /api/me", rt.me)
@@ -282,228 +321,243 @@ func (rt *Router) panelMux() http.Handler {
 	authedAny("GET /api/account/sessions", rt.listSessions)
 	authedAny("DELETE /api/account/sessions/{id}", withID(rt.revokeSession))
 	authedAny("POST /api/account/sessions/revoke-others", rt.revokeOtherSessions)
-	// The admin roster and its trail — owner only. Who signed in from where, who
-	// created or removed whom, who changed what setting: same tier as the roster
-	// itself.
-	authedOwner("GET /api/admin-audit", rt.adminAudit)
-	authedOwner("GET /api/admin-audit/catalog", rt.adminAuditCatalog)
-	authedOwner("GET /api/admin-audit/export", rt.exportAdminAudit)
+	// The admin trail: who signed in from where, who created or removed whom, who
+	// changed what setting. The owner's, and any role granted it.
+	canAudit("GET /api/admin-audit", rt.adminAudit)
+	canAudit("GET /api/admin-audit/catalog", rt.adminAuditCatalog)
+	canAudit("GET /api/admin-audit/export", rt.exportAdminAudit)
 	authedOwner("GET /api/admins", rt.listAdmins)
 	authedOwner("POST /api/admins", rt.createAdmin)
 	authedOwnerID("POST /api/admins/{id}/role", rt.setAdminRole)
 	authedOwnerID("POST /api/admins/{id}/password", rt.resetAdminPassword)
 	authedOwnerID("DELETE /api/admins/{id}", rt.deleteAdmin)
-	authed("GET /api/update", rt.checkUpdate)
-	authed("POST /api/update", rt.applyUpdate)
-	authed("POST /api/setup/timezone", rt.setupTimezone)
-	authed("POST /api/setup/finish", rt.setupFinish)
-	authed("GET /api/settings", rt.getSettings)
-	authed("POST /api/settings/secret", rt.regenSecret)
-	authed("POST /api/settings/decoy", rt.setDecoyTemplate)
-	authed("POST /api/settings/subscription", rt.saveSubSettings)
-	authed("GET /api/settings/sub-rules", rt.getSubRules)
-	authed("POST /api/settings/sub-rules", rt.saveSubRules)
-	authed("GET /api/settings/sub-templates", rt.getSubTemplates)
-	authed("POST /api/settings/sub-templates", rt.saveSubTemplates)
-	authed("POST /api/settings/sub-dpi", rt.saveSubDPI)
-	authed("POST /api/settings/hwid", rt.saveHWIDSettings)
-	authed("POST /api/settings/maintenance", rt.saveMaintenance)
-	authed("POST /api/settings/probe-detect", rt.saveProbeDetect)
-	authed("POST /api/settings/probe-block", rt.saveProbeBlock)
-	authed("POST /api/settings/watchdog", rt.saveWatchdog)
-	authed("GET /api/security/probes", rt.listProbes)
+	// Roles — what each admin may see and do. The owner's alone, like the roster.
+	authedOwner("GET /api/roles", rt.listRoles)
+	authedOwner("POST /api/roles", rt.createRole)
+	authedOwner("POST /api/roles/{key}", rt.updateRole)
+	authedOwner("DELETE /api/roles/{key}", rt.deleteRole)
+	canUpdate("GET /api/update", rt.checkUpdate)
+	canUpdate("POST /api/update", rt.applyUpdate)
+	canSettingsManage("POST /api/setup/timezone", rt.setupTimezone)
+	canSettingsManage("POST /api/setup/finish", rt.setupFinish)
+	canConfigView("GET /api/settings", rt.getSettings)
+	canSettingsManage("POST /api/settings/secret", rt.regenSecret)
+	// The decoy is per server (the master's here; a node's rides PATCH /api/nodes/{id}),
+	// so it is the servers' like the rest of a server card.
+	canServersManage("POST /api/settings/decoy", rt.setDecoyTemplate)
+	canSettingsManage("POST /api/settings/subscription", rt.saveSubSettings)
+	canSettingsView("GET /api/settings/sub-rules", rt.getSubRules)
+	canSettingsManage("POST /api/settings/sub-rules", rt.saveSubRules)
+	canSettingsView("GET /api/settings/sub-templates", rt.getSubTemplates)
+	canSettingsManage("POST /api/settings/sub-templates", rt.saveSubTemplates)
+	canSettingsManage("POST /api/settings/sub-dpi", rt.saveSubDPI)
+	canSettingsManage("POST /api/settings/hwid", rt.saveHWIDSettings)
+	canSettingsManage("POST /api/settings/maintenance", rt.saveMaintenance)
+	canSecurityManage("POST /api/settings/probe-detect", rt.saveProbeDetect)
+	canSecurityManage("POST /api/settings/probe-block", rt.saveProbeBlock)
+	canSettingsManage("POST /api/settings/watchdog", rt.saveWatchdog)
+	canSecurityView("GET /api/security/probes", rt.listProbes)
 	// Where clients may connect from (panel_connpolicy.go).
-	authed("GET /api/security/conn-policy", rt.getConnPolicy)
-	authed("POST /api/security/conn-policy", rt.saveConnPolicy)
-	authed("GET /api/security/trusted", rt.getTrustedNets)
-	authed("POST /api/security/trusted", rt.saveTrustedNets)
-	authed("POST /api/security/unblock", rt.unblockIP)
+	canSecurityView("GET /api/security/conn-policy", rt.getConnPolicy)
+	canSecurityManage("POST /api/security/conn-policy", rt.saveConnPolicy)
+	canSecurityView("GET /api/security/trusted", rt.getTrustedNets)
+	canSecurityManage("POST /api/security/trusted", rt.saveTrustedNets)
+	canSecurityManage("POST /api/security/unblock", rt.unblockIP)
 	// Bans by hand and every ban the panel holds (panel_bans.go).
-	authed("GET /api/security/bans", rt.listBans)
-	authed("POST /api/security/bans", rt.banIP)
-	authed("POST /api/security/unban", rt.unbanIP)
-	authed("GET /api/settings/status-page", rt.getStatusPage)
-	authed("POST /api/settings/status-page", rt.saveStatusPage)
-	authed("POST /api/settings/dns", rt.setXrayDNS)
-	authed("POST /api/settings/local-backup", rt.setLocalBackup)
-	authed("POST /api/settings/autodelete", rt.setUserAutoDelete)
+	canSecurityView("GET /api/security/bans", rt.listBans)
+	canSecurityManage("POST /api/security/bans", rt.banIP)
+	canSecurityManage("POST /api/security/unban", rt.unbanIP)
+	canSettingsView("GET /api/settings/status-page", rt.getStatusPage)
+	canSettingsManage("POST /api/settings/status-page", rt.saveStatusPage)
+	canRoutingManage("POST /api/settings/dns", rt.setXrayDNS)
+	authedOwner("POST /api/settings/local-backup", rt.setLocalBackup)
+	canSettingsManage("POST /api/settings/autodelete", rt.setUserAutoDelete)
 	// External subscriptions: other people's servers handed on to users.
-	authed("GET /api/external", rt.listExternal)
-	authed("POST /api/external", rt.createExternal)
-	authedID("DELETE /api/external/{id}", rt.deleteExternal)
-	authedID("POST /api/external/{id}/source", rt.updateExternalSource)
-	authedID("POST /api/external/{id}/sync", rt.syncExternal)
-	authedID("POST /api/external/{id}/enabled", rt.setExternalEnabled)
-	authedID("POST /api/external/{id}/relay", rt.setExternalRelay)
-	authedID("POST /api/external/{id}/servers", rt.setExternalServersEnabled)
-	authedID("POST /api/external/servers/{id}/enabled", rt.setExternalServerEnabled)
-	authed("GET /api/settings/abuse", rt.getAbuseSettings)
-	authed("POST /api/settings/abuse", rt.saveAbuseSettings)
-	authed("POST /api/settings/abuse/refresh", rt.refreshAbuse)
-	authed("GET /api/geo/categories", rt.geoCategories)
-	authed("GET /api/geo", rt.geoStatus)
-	authed("POST /api/geo/update", rt.updateGeo)
-	authed("POST /api/geo/lists/update", rt.updateIPLists)
-	authed("POST /api/geo/lists/cadence", rt.setIPListCadence)
-	authed("POST /api/geo/cadence", rt.setGeoCadence)
-	authed("GET /api/routing", rt.getRouting)
-	authed("POST /api/routing", rt.saveRouting)
-	authed("GET /api/config/snapshots", rt.listConfigSnapshots)
-	authed("POST /api/config/snapshots", rt.createConfigSnapshot)
-	authedID("POST /api/config/snapshots/{id}/rollback", rt.rollbackConfigSnapshot)
-	authedID("DELETE /api/config/snapshots/{id}", rt.deleteConfigSnapshot)
-	authedOp("GET /api/system/stream", rt.systemStream)
-	authedOp("GET /api/health", rt.health)
-	authed("GET /api/xray/config", rt.xrayConfig)
-	authed("GET /api/xray/status", rt.xrayStatus)
-	authed("POST /api/xray/restart", rt.xrayRestart)
-	authed("GET /api/xray/logs/stream", rt.xrayLogs)
-	authed("GET /api/logs/stream", rt.appLogs)
-	authed("GET /api/backup", rt.downloadBackup)
-	authed("GET /api/backup/info", rt.backupInfo)
-	authed("POST /api/backup/inspect", rt.inspectBackup)
-	authed("POST /api/restore", rt.uploadRestore)
-	authed("POST /api/reset", rt.factoryReset)
-	authed("POST /api/panel/restart", rt.restartPanel)
-	authed("GET /api/connections", rt.connections)
-	authed("POST /api/connections", rt.applyConnections)
-	authed("POST /api/connections/reset", rt.resetConnections)
-	// User groups: which connections a member may use. Managed by operators, same tier
-	// as users (assigning a user to a group is a user-management action).
-	authedOp("GET /api/groups", rt.listGroups)
-	authedOp("GET /api/groups/targets", rt.groupTargets)
-	authedOp("POST /api/groups", rt.createGroup)
-	authedOpID("POST /api/groups/{id}", rt.updateGroup)
-	authedOpID("DELETE /api/groups/{id}", rt.deleteGroup)
-	authedOpID("POST /api/groups/{id}/members", rt.setGroupMembers)
-	authedOpID("POST /api/users/{id}/groups", rt.setUserGroups)
-	// End users, the journal and stats are the operator's job — everything below is
-	// open from RoleOperator up.
-	authedOp("GET /api/users", rt.listUsers)
-	authedOp("GET /api/users/page", rt.listUsersPage)
-	authedOp("GET /api/users/brief", rt.listUsersBrief)
-	authedOpID("GET /api/users/{id}", rt.getUser)
-	authedOp("POST /api/users", rt.createUser)
-	authedOp("POST /api/users/bulk", rt.bulkUsers)
-	authedOpID("DELETE /api/users/{id}", rt.deleteUser)
-	authedOpID("POST /api/users/{id}/reset", rt.resetUserTraffic)
-	authedOpID("POST /api/users/{id}/limits", rt.setUserLimits)
-	authedOpID("POST /api/users/{id}/enabled", rt.setUserEnabled)
-	authedOpID("POST /api/users/{id}/name", rt.renameUser)
-	authedOpID("POST /api/users/{id}/note", rt.setUserNote)
-	authedOpID("POST /api/users/{id}/tags", rt.setUserTags)
-	authedOp("GET /api/users/tags", rt.userTags)
+	canServersView("GET /api/external", rt.listExternal)
+	canServersManage("POST /api/external", rt.createExternal)
+	canServersManage("DELETE /api/external/{id}", withID(rt.deleteExternal))
+	canServersManage("POST /api/external/{id}/source", withID(rt.updateExternalSource))
+	canServersManage("POST /api/external/{id}/sync", withID(rt.syncExternal))
+	canServersManage("POST /api/external/{id}/enabled", withID(rt.setExternalEnabled))
+	canServersManage("POST /api/external/{id}/relay", withID(rt.setExternalRelay))
+	canServersManage("POST /api/external/{id}/servers", withID(rt.setExternalServersEnabled))
+	canServersManage("POST /api/external/servers/{id}/enabled", withID(rt.setExternalServerEnabled))
+	canSecurityView("GET /api/settings/abuse", rt.getAbuseSettings)
+	canSecurityManage("POST /api/settings/abuse", rt.saveAbuseSettings)
+	canSecurityManage("POST /api/settings/abuse/refresh", rt.refreshAbuse)
+	canRoutingView("GET /api/geo/categories", rt.geoCategories)
+	canServersOrRoutingView("GET /api/geo", rt.geoStatus)
+	canRoutingManage("POST /api/geo/update", rt.updateGeo)
+	canRoutingManage("POST /api/geo/lists/update", rt.updateIPLists)
+	canRoutingManage("POST /api/geo/lists/cadence", rt.setIPListCadence)
+	canRoutingManage("POST /api/geo/cadence", rt.setGeoCadence)
+	canRoutingView("GET /api/routing", rt.getRouting)
+	canRoutingManage("POST /api/routing", rt.saveRouting)
+	canServersView("GET /api/config/snapshots", rt.listConfigSnapshots)
+	canServersManage("POST /api/config/snapshots", rt.createConfigSnapshot)
+	canServersManage("POST /api/config/snapshots/{id}/rollback", withID(rt.rollbackConfigSnapshot))
+	canServersManage("DELETE /api/config/snapshots/{id}", withID(rt.deleteConfigSnapshot))
+	// The dashboard: user counts, online, throughput — the figures stats, users and
+	// servers each show part of. Health is the servers' diagnostics.
+	canDashboard("GET /api/system/stream", rt.systemStream)
+	canServersView("GET /api/health", rt.health)
+	canServersManage("GET /api/xray/config", rt.xrayConfig)
+	canServersView("GET /api/xray/status", rt.xrayStatus)
+	canServersManage("POST /api/xray/restart", rt.xrayRestart)
+	canLogs("GET /api/xray/logs/stream", rt.xrayLogs)
+	canLogs("GET /api/logs/stream", rt.appLogs)
+	// Backups and restore are the owner's: a backup is the whole database (the owner's
+	// password hash and second factor included) and a restore replaces the admin
+	// roster, so either reaches past any permission. The factory reset with them.
+	authedOwner("GET /api/backup", rt.downloadBackup)
+	authedOwner("GET /api/backup/info", rt.backupInfo)
+	authedOwner("POST /api/backup/inspect", rt.inspectBackup)
+	authedOwner("POST /api/restore", rt.uploadRestore)
+	authedOwner("POST /api/reset", rt.factoryReset)
+	canUpdate("POST /api/panel/restart", rt.restartPanel)
+	canServersView("GET /api/connections", rt.connections)
+	canServersManage("POST /api/connections", rt.applyConnections)
+	canServersManage("POST /api/connections/reset", rt.resetConnections)
+	// User groups: which connections a member may use. The user card reads the list
+	// too, and putting a user into groups from the card is a user-management action.
+	// Read by the users section and by the plan editor too: a plan grants groups.
+	canGroupsList("GET /api/groups", rt.listGroups)
+	canGroupsView("GET /api/groups/targets", rt.groupTargets)
+	canGroupsManage("POST /api/groups", rt.createGroup)
+	canGroupsManage("POST /api/groups/{id}", withID(rt.updateGroup))
+	canGroupsManage("DELETE /api/groups/{id}", withID(rt.deleteGroup))
+	canGroupsManage("POST /api/groups/{id}/members", withID(rt.setGroupMembers))
+	canUsersManage("POST /api/users/{id}/groups", withID(rt.setUserGroups))
+	// End users and their journal.
+	canUsersView("GET /api/users", rt.listUsers)
+	canUsersView("GET /api/users/page", rt.listUsersPage)
+	canUsersOrGroupsView("GET /api/users/brief", rt.listUsersBrief)
+	canUsersView("GET /api/users/{id}", withID(rt.getUser))
+	canUsersManage("POST /api/users", rt.createUser)
+	canUsersManageOrDelete("POST /api/users/bulk", rt.bulkUsers) // per action, see bulkUsers
+	canUsersDelete("DELETE /api/users/{id}", withID(rt.deleteUser))
+	canUsersManage("POST /api/users/{id}/reset", withID(rt.resetUserTraffic))
+	canUsersManage("POST /api/users/{id}/limits", withID(rt.setUserLimits))
+	canUsersManage("POST /api/users/{id}/enabled", withID(rt.setUserEnabled))
+	canUsersManage("POST /api/users/{id}/name", withID(rt.renameUser))
+	canUsersManage("POST /api/users/{id}/note", withID(rt.setUserNote))
+	canUsersManage("POST /api/users/{id}/tags", withID(rt.setUserTags))
+	canUsersView("GET /api/users/tags", rt.userTags)
 	// Import from another panel (see panel_import.go): inspect reads, import writes.
-	authedOp("POST /api/users/import/inspect", rt.importInspect)
-	authedOp("POST /api/users/import", rt.importUsers)
-	// The export is admin-level: one file with every credential (see exportUsers).
-	authed("GET /api/users/export", rt.exportUsers)
-	authedOpID("GET /api/users/{id}/connections", rt.userConnections)
-	authedOpID("GET /api/users/{id}/devices", rt.userDevices)
-	authedOpID("POST /api/users/{id}/devices/unbind", rt.unbindUserDevice)
-	authedOpID("GET /api/users/{id}/abuse", rt.userAbuse)
-	authedOpID("POST /api/users/{id}/rotate-sub", rt.rotateSubToken)
-	authedOpID("GET /api/users/{id}/happ-link", rt.userHappLink)
-	authedOpID("POST /api/users/{id}/telegram/unlink", rt.unlinkUserTelegram)
-	authedOpID("POST /api/users/{id}/telegram/link", rt.genUserTelegramLink)
-	authedOpID("POST /api/users/{id}/telegram/message", rt.messageUser)
-	authedOpID("POST /api/users/{id}/reset-period", rt.setResetPeriod)
-	authedOpID("POST /api/users/{id}/plan", rt.setUserPlan)
-	authedOpID("GET /api/users/{id}/events", rt.userEvents)
+	canUsersManage("POST /api/users/import/inspect", rt.importInspect)
+	canUsersManage("POST /api/users/import", rt.importUsers)
+	// The export is its own permission: one file with every credential (see exportUsers).
+	canUsersExport("GET /api/users/export", rt.exportUsers)
+	canUsersView("GET /api/users/{id}/connections", withID(rt.userConnections))
+	canUsersView("GET /api/users/{id}/devices", withID(rt.userDevices))
+	canUsersManage("POST /api/users/{id}/devices/unbind", withID(rt.unbindUserDevice))
+	canUsersView("GET /api/users/{id}/abuse", withID(rt.userAbuse))
+	canUsersManage("POST /api/users/{id}/rotate-sub", withID(rt.rotateSubToken))
+	canUsersView("GET /api/users/{id}/happ-link", withID(rt.userHappLink))
+	canUsersManage("POST /api/users/{id}/telegram/unlink", withID(rt.unlinkUserTelegram))
+	canUsersManage("POST /api/users/{id}/telegram/link", withID(rt.genUserTelegramLink))
+	canUsersManage("POST /api/users/{id}/telegram/message", withID(rt.messageUser))
+	canUsersManage("POST /api/users/{id}/reset-period", withID(rt.setResetPeriod))
+	canUsersManage("POST /api/users/{id}/plan", withID(rt.setUserPlan))
+	canUsersView("GET /api/users/{id}/events", withID(rt.userEvents))
 	// Moderated self-registration queue (empty unless the user bot's mode is moderation).
-	authedOp("GET /api/registrations", rt.listRegistrations)
-	authedOpID("POST /api/registrations/{id}/approve", rt.approveRegistration)
-	authedOpID("POST /api/registrations/{id}/reject", rt.rejectRegistration)
-	authedOp("GET /api/events", rt.events)
-	authedOp("GET /api/events/catalog", rt.eventCatalog)
+	canUsersView("GET /api/registrations", rt.listRegistrations)
+	canUsersManage("POST /api/registrations/{id}/approve", withID(rt.approveRegistration))
+	canUsersManage("POST /api/registrations/{id}/reject", withID(rt.rejectRegistration))
+	canUsersView("GET /api/events", rt.events)
+	canUsersView("GET /api/events/catalog", rt.eventCatalog)
 	// Read-only: the user card lists the plans it can assign. The billing *settings*
-	// (POST below) and the payment provider keys stay admin-only.
-	authedOp("GET /api/billing", rt.getBilling)
-	authed("POST /api/billing", rt.saveBilling)
-	authed("POST /api/billing/plans", rt.saveTariffPlan)
-	authedID("DELETE /api/billing/plans/{id}", rt.deleteTariffPlan)
-	authedID("POST /api/billing/plans/{id}/migrate", rt.migratePlanUsers)
-	authed("GET /api/billing/orders", rt.listPaymentOrders)
-	authedID("POST /api/billing/orders/{id}/confirm", rt.confirmPaymentOrder)
-	authedID("POST /api/billing/orders/{id}/cancel", rt.cancelPaymentOrder)
-	authed("GET /api/payments", rt.getPayments)
-	authed("POST /api/payments", rt.savePayments)
-	authed("GET /api/payments/stats", rt.paymentStats)
-	authedOp("GET /api/stats/series", rt.statsSeries)
-	authedOp("GET /api/stats/nodes", rt.statsNodes)
-	authedOp("GET /api/stats/users", rt.statsByUser)
-	authedOp("GET /api/stats/abuse", rt.statsAbuse)
-	authedOp("GET /api/stats/countries", rt.statsCountries)
-	authedOp("GET /api/stats/asns", rt.statsASNs)
-	authed("POST /api/stats/reset", rt.statsReset)
-	authed("GET /api/tls", rt.tlsStatus)
-	authed("POST /api/tls", rt.setACME)
-	authed("GET /api/apikeys", rt.listAPIKeys)
-	authed("POST /api/apikeys", rt.createAPIKey)
-	authedID("DELETE /api/apikeys/{id}", rt.revokeAPIKey)
-	authed("POST /api/settings/api-path", rt.setAPIPathSettings)
-	authed("GET /api/nodes", rt.listNodes)
-	authed("POST /api/nodes/master-name", rt.setMasterName)
-	authed("POST /api/nodes/master-placement", rt.setMasterPlacement)
-	authed("POST /api/nodes/master-protocols", rt.setMasterProtocols)
-	authed("POST /api/nodes/master-reality", rt.setMasterReality)
-	authed("POST /api/nodes", rt.createNode)
-	authedID("PATCH /api/nodes/{id}", rt.updateNode)
-	authedID("POST /api/nodes/{id}/routing", rt.setNodeRouting)
-	authedID("POST /api/nodes/{id}/dns", rt.setNodeDNS)
+	// (POST below) and the payment provider keys need permissions of their own.
+	canPlansView("GET /api/billing", rt.getBilling)
+	canBillingManage("POST /api/billing", rt.saveBilling)
+	canBillingManage("POST /api/billing/plans", rt.saveTariffPlan)
+	canBillingManage("DELETE /api/billing/plans/{id}", withID(rt.deleteTariffPlan))
+	canBillingManage("POST /api/billing/plans/{id}/migrate", withID(rt.migratePlanUsers))
+	canBillingView("GET /api/billing/orders", rt.listPaymentOrders)
+	canBillingManage("POST /api/billing/orders/{id}/confirm", withID(rt.confirmPaymentOrder))
+	canBillingManage("POST /api/billing/orders/{id}/cancel", withID(rt.cancelPaymentOrder))
+	canPayments("GET /api/payments", rt.getPayments)
+	canPayments("POST /api/payments", rt.savePayments)
+	canBillingView("GET /api/payments/stats", rt.paymentStats)
+	canStatsOrUsersView("GET /api/stats/series", rt.statsSeries)
+	canStatsOrUsersView("GET /api/stats/nodes", rt.statsNodes)
+	canStatsView("GET /api/stats/users", rt.statsByUser)
+	canStatsView("GET /api/stats/abuse", rt.statsAbuse)
+	canStatsView("GET /api/stats/countries", rt.statsCountries)
+	canStatsView("GET /api/stats/asns", rt.statsASNs)
+	canStatsManage("POST /api/stats/reset", rt.statsReset)
+	canServersView("GET /api/tls", rt.tlsStatus)
+	canServersManage("POST /api/tls", rt.setACME)
+	canAPI("GET /api/apikeys", rt.listAPIKeys)
+	canAPI("POST /api/apikeys", rt.createAPIKey)
+	canAPI("DELETE /api/apikeys/{id}", withID(rt.revokeAPIKey))
+	canAPI("POST /api/settings/api-path", rt.setAPIPathSettings)
+	canServersOrRoutingView("GET /api/nodes", rt.listNodes)
+	canServersManage("POST /api/nodes/master-name", rt.setMasterName)
+	canServersManage("POST /api/nodes/master-placement", rt.setMasterPlacement)
+	canServersManage("POST /api/nodes/master-protocols", rt.setMasterProtocols)
+	canServersManage("POST /api/nodes/master-reality", rt.setMasterReality)
+	canServersManage("POST /api/nodes", rt.createNode)
+	canServersManage("PATCH /api/nodes/{id}", withID(rt.updateNode))
+	canRoutingManage("POST /api/nodes/{id}/routing", withID(rt.setNodeRouting))
+	canRoutingManage("POST /api/nodes/{id}/dns", withID(rt.setNodeDNS))
 	// System proxy, per server: {id} 0 is the master, anything else a node.
-	authedID("POST /api/nodes/{id}/proxy", rt.setServerProxy)
-	authedID("POST /api/nodes/{id}/reality", rt.setNodeReality)
-	authedID("GET /api/nodes/{id}/connections", rt.nodeConnections)
-	authedID("POST /api/nodes/{id}/connections", rt.applyNodeConnections)
-	authedID("POST /api/nodes/{id}/connections/reset", rt.resetNodeConnections)
+	canRoutingManage("POST /api/nodes/{id}/proxy", withID(rt.setServerProxy))
+	canServersManage("POST /api/nodes/{id}/reality", withID(rt.setNodeReality))
+	canServersView("GET /api/nodes/{id}/connections", withID(rt.nodeConnections))
+	canServersManage("POST /api/nodes/{id}/connections", withID(rt.applyNodeConnections))
+	canServersManage("POST /api/nodes/{id}/connections/reset", withID(rt.resetNodeConnections))
 	// Custom inbounds. The list/create routes are keyed by SERVER id (0 = master);
 	// edit/delete are keyed by the inbound's own id, which already implies its server.
-	authed("GET /api/inbounds/catalog", rt.inboundCatalog)
-	authedID("GET /api/servers/{id}/inbounds", rt.serverInbounds)
-	authedID("POST /api/servers/{id}/inbounds", rt.createServerInbound)
-	authedID("POST /api/inbounds/{id}", rt.updateInbound)
-	authedID("DELETE /api/inbounds/{id}", rt.deleteInbound)
-	authedID("POST /api/inbounds/{id}/regen-reality", rt.regenInboundReality)
-	authedID("GET /api/nodes/{id}/tls", rt.nodeTLS)
-	authedID("POST /api/nodes/{id}/tls", rt.setNodeACME)
-	authedID("GET /api/nodes/{id}/geo", rt.nodeGeoInfo)
-	authedID("POST /api/nodes/{id}/geo-refresh", rt.nodeGeoRefresh)
-	authedID("POST /api/nodes/{id}/geo-cadence", rt.nodeGeoCadence)
-	authedID("GET /api/nodes/{id}/logs", rt.nodeLogs)
-	authedID("GET /api/nodes/{id}/xray-config", rt.nodeXrayConfig)
-	authedID("GET /api/nodes/{id}/health", rt.nodeHealth)
-	authedID("DELETE /api/nodes/{id}", rt.deleteNode)
-	authedID("POST /api/nodes/{id}/enabled", rt.setNodeEnabled)
-	authedID("POST /api/nodes/{id}/regen-join", rt.regenNodeJoin)
-	authedID("POST /api/nodes/{id}/update", rt.updateNodeVersion)
-	authedID("POST /api/nodes/{id}/xray-restart", rt.nodeXrayRestart)
-	authed("POST /api/nodes/update-all", rt.updateAllNodes)
-	authedID("POST /api/nodes/{id}/provision", rt.provisionNode)
-	authed("GET /api/webhooks", rt.listWebhooks)
-	authed("POST /api/webhooks", rt.createWebhook)
-	authedID("POST /api/webhooks/{id}", rt.updateWebhook)
-	authedID("DELETE /api/webhooks/{id}", rt.deleteWebhook)
-	authedID("POST /api/webhooks/{id}/test", rt.testWebhook)
-	authed("GET /api/telegram", rt.getTelegram)
-	authed("POST /api/telegram", rt.saveTelegram)
-	authed("POST /api/telegram/link", rt.genTelegramLink)
-	authed("GET /api/telegram/link/status", rt.telegramLinkStatus)
-	authed("POST /api/telegram/link/cancel", rt.cancelTelegramLink)
-	authed("POST /api/telegram/unlink", rt.unlinkTelegram)
-	authed("POST /api/telegram/test-backup", rt.testTelegramBackup)
-	authed("GET /api/telegram/support/groups", rt.listSupportGroups)
-	authed("POST /api/telegram/support/check", rt.checkTelegramSupport)
-	// Mass broadcasts through the user bot (admin tier: it reaches every subscriber).
-	authed("GET /api/broadcasts", rt.listBroadcasts)
-	authed("POST /api/broadcasts", rt.createBroadcast)
-	authed("GET /api/broadcasts/audience", rt.broadcastAudience)
-	authed("POST /api/broadcasts/test", rt.testBroadcast)
-	authedID("GET /api/broadcasts/{id}", rt.getBroadcast)
-	authedID("POST /api/broadcasts/{id}/pause", rt.pauseBroadcast)
-	authedID("POST /api/broadcasts/{id}/resume", rt.resumeBroadcast)
-	authedID("POST /api/broadcasts/{id}/cancel", rt.cancelBroadcast)
-	authedID("POST /api/broadcasts/{id}/retry", rt.retryBroadcast)
+	canServersView("GET /api/inbounds/catalog", rt.inboundCatalog)
+	canServersView("GET /api/servers/{id}/inbounds", withID(rt.serverInbounds))
+	canServersManage("POST /api/servers/{id}/inbounds", withID(rt.createServerInbound))
+	canServersManage("POST /api/inbounds/{id}", withID(rt.updateInbound))
+	canServersManage("DELETE /api/inbounds/{id}", withID(rt.deleteInbound))
+	canServersManage("POST /api/inbounds/{id}/regen-reality", withID(rt.regenInboundReality))
+	canServersView("GET /api/nodes/{id}/tls", withID(rt.nodeTLS))
+	canServersManage("POST /api/nodes/{id}/tls", withID(rt.setNodeACME))
+	canServersOrRoutingView("GET /api/nodes/{id}/geo", withID(rt.nodeGeoInfo))
+	canRoutingManage("POST /api/nodes/{id}/geo-refresh", withID(rt.nodeGeoRefresh))
+	canRoutingManage("POST /api/nodes/{id}/geo-cadence", withID(rt.nodeGeoCadence))
+	canLogs("GET /api/nodes/{id}/logs", withID(rt.nodeLogs))
+	canServersManage("GET /api/nodes/{id}/xray-config", withID(rt.nodeXrayConfig))
+	canServersView("GET /api/nodes/{id}/health", withID(rt.nodeHealth))
+	canServersManage("DELETE /api/nodes/{id}", withID(rt.deleteNode))
+	canServersManage("POST /api/nodes/{id}/enabled", withID(rt.setNodeEnabled))
+	canServersManage("POST /api/nodes/{id}/regen-join", withID(rt.regenNodeJoin))
+	canUpdate("POST /api/nodes/{id}/update", withID(rt.updateNodeVersion))
+	canServersManage("POST /api/nodes/{id}/xray-restart", withID(rt.nodeXrayRestart))
+	canUpdate("POST /api/nodes/update-all", rt.updateAllNodes)
+	canServersManage("POST /api/nodes/{id}/provision", withID(rt.provisionNode))
+	canWebhooks("GET /api/webhooks", rt.listWebhooks)
+	canWebhooks("POST /api/webhooks", rt.createWebhook)
+	canWebhooks("POST /api/webhooks/{id}", withID(rt.updateWebhook))
+	canWebhooks("DELETE /api/webhooks/{id}", withID(rt.deleteWebhook))
+	canWebhooks("POST /api/webhooks/{id}/test", withID(rt.testWebhook))
+	// The bots are the owner's: the admin bot's linked chat receives every admin's
+	// sign-in alerts and can end any admin's sessions, and its token and proxy decide
+	// where full backups go — no permission reaches that far (see model.PermImplies).
+	authedOwner("GET /api/telegram", rt.getTelegram)
+	authedOwner("POST /api/telegram", rt.saveTelegram)
+	authedOwner("POST /api/telegram/link", rt.genTelegramLink)
+	authedOwner("GET /api/telegram/link/status", rt.telegramLinkStatus)
+	authedOwner("POST /api/telegram/link/cancel", rt.cancelTelegramLink)
+	authedOwner("POST /api/telegram/unlink", rt.unlinkTelegram)
+	authedOwner("POST /api/telegram/test-backup", rt.testTelegramBackup)
+	authedOwner("GET /api/telegram/support/groups", rt.listSupportGroups)
+	authedOwner("POST /api/telegram/support/check", rt.checkTelegramSupport)
+	// Mass broadcasts through the user bot — their own permission: one reaches every
+	// subscriber.
+	canBroadcasts("GET /api/broadcasts", rt.listBroadcasts)
+	canBroadcasts("POST /api/broadcasts", rt.createBroadcast)
+	canBroadcasts("GET /api/broadcasts/audience", rt.broadcastAudience)
+	canBroadcasts("POST /api/broadcasts/test", rt.testBroadcast)
+	canBroadcasts("GET /api/broadcasts/{id}", withID(rt.getBroadcast))
+	canBroadcasts("POST /api/broadcasts/{id}/pause", withID(rt.pauseBroadcast))
+	canBroadcasts("POST /api/broadcasts/{id}/resume", withID(rt.resumeBroadcast))
+	canBroadcasts("POST /api/broadcasts/{id}/cancel", withID(rt.cancelBroadcast))
+	canBroadcasts("POST /api/broadcasts/{id}/retry", withID(rt.retryBroadcast))
 	// Content-hashed build assets (JS/CSS/fonts) never change for a given URL → cache forever.
 	mux.Handle("GET /assets/", cacheControl(rt.assets, "public, max-age=31536000, immutable"))
 	// No /favicon.* routes: the build has no such files. Vite emits only what is
@@ -703,6 +757,7 @@ func (rt *Router) me(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"username":             a.Username,
 		"role":                 a.Role,
+		"perms":                callerPerms(r).List(),
 		"setup_done":           true,
 		"timezone":             "",
 		"version":              version.Version,
@@ -944,20 +999,47 @@ func (rt *Router) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requireRole is requireAuth plus a floor on the caller's role. Roles are a ladder
-// (operator < admin < owner), so the check is a rank comparison — see model.RoleAtLeast.
+// requirePerm is requireAuth plus the permissions a route needs: the caller must hold
+// at least one of perms (see model.PermSet.Any). The set was resolved from the
+// admin's role in the same session lookup, so a role edited a moment ago already
+// counts; a role key nothing answers to resolves to no permissions at all.
 //
-// A caller below the tier gets 403, never 401: their session is perfectly valid, so
-// the SPA must show "not enough permissions" rather than bounce them to the login screen.
-func (rt *Router) requireRole(tier string, next http.HandlerFunc) http.HandlerFunc {
+// A caller without the permission gets 403, never 401: their session is perfectly
+// valid, so the SPA must show "not enough permissions" rather than bounce them to
+// the login screen.
+func (rt *Router) requirePerm(perms []string, next http.HandlerFunc) http.HandlerFunc {
 	return rt.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		a, ok := sessionAdminFrom(r.Context())
-		if !ok || !model.RoleAtLeast(a.Role, tier) {
-			slog.Warn("panel: role check failed",
-				"admin", a.Username, "role", a.Role, "need", tier, "path", r.URL.Path)
+		if !ok || !a.Perms.Any(perms...) {
+			slog.Warn("panel: permission check failed",
+				"admin", a.Username, "role", a.Role, "need", strings.Join(perms, "|"), "path", r.URL.Path)
 			writeErrCode(w, http.StatusForbidden, "err.forbidden", "недостаточно прав")
 			return
 		}
 		next(w, r)
 	})
+}
+
+// requireOwner is requireAuth for the owner alone — the roster and the roles, which
+// no permission reaches.
+func (rt *Router) requireOwner(next http.HandlerFunc) http.HandlerFunc {
+	return rt.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		a, ok := sessionAdminFrom(r.Context())
+		if !ok || a.Role != model.RoleOwner {
+			slog.Warn("panel: owner check failed", "admin", a.Username, "role", a.Role, "path", r.URL.Path)
+			writeErrCode(w, http.StatusForbidden, "err.forbidden", "недостаточно прав")
+			return
+		}
+		next(w, r)
+	})
+}
+
+// callerPerms is what the signed-in admin holds — for a handler that shapes its
+// answer by permission rather than being gated by one.
+func callerPerms(r *http.Request) model.PermSet {
+	a, ok := sessionAdminFrom(r.Context())
+	if !ok || a.Perms == nil {
+		return model.PermSet{}
+	}
+	return a.Perms
 }

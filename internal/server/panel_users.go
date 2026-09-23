@@ -75,6 +75,12 @@ func (rt *Router) bulkUsers(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// The route opens to either permission; each action needs its own — deleting in
+	// bulk needs what DELETE /api/users/{id} needs, the rest what the edits need.
+	if !callerPerms(r).Has(bulkActionPerm(req.Action)) {
+		writeErrCode(w, http.StatusForbidden, "err.forbidden", "недостаточно прав")
+		return
+	}
 	affected, err := rt.mgr.BulkUserAction(r.Context(), req.IDs, req.Action, req.Days)
 	if err != nil {
 		writeManagerErr(w, err)
@@ -258,17 +264,16 @@ func (rt *Router) userConnections(w http.ResponseWriter, r *http.Request, id int
 		writeManagerErr(w, err)
 		return
 	}
-	// can_ban says whether the ban button belongs on the row: only for an admin (the
-	// ban routes are theirs), and only for an address a ban may touch — not a tunnel
+	// can_ban says whether the ban button belongs on the row: only for a caller who may
+	// ban (the ban routes need security.manage), and only for an address a ban may touch — not a tunnel
 	// address, a trusted one, a server's, or the caller's own.
 	type connView struct {
 		model.Connection
 		CanBan bool `json:"can_ban"`
 	}
 	out := make([]connView, len(conns))
-	a, _ := sessionAdminFrom(r.Context())
 	var check func(string) error
-	if model.RoleAtLeast(a.Role, model.RoleAdmin) && len(conns) > 0 {
+	if callerPerms(r).Has(model.PermSecurityManage) && len(conns) > 0 {
 		check = rt.mgr.BanChecker(clientIP(r))
 	}
 	for i, c := range conns {

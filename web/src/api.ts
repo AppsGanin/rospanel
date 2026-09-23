@@ -704,18 +704,109 @@ async function apiText(path: string): Promise<string> {
   return text
 }
 
-// Role is the panel's permission ladder: an operator can do everything the panel
-// exposes for end users, an admin everything but the roster, the owner everything.
-export type Role = 'owner' | 'admin' | 'operator'
+// Role is a role KEY: 'owner', one of the two presets ('admin', 'operator'), or a
+// role the owner made (a generated key). What a role may do is its permission set —
+// see Perm and AdminRole; the owner holds every permission.
+export type Role = string
 
-export const roleLabel = (r: Role): string => i18n.t(`roles.${r}`)
+// Perm is one permission from the server's catalog (model/perms.go). Typed so a
+// misspelt permission in a useCan() is a compile error rather than a hidden button.
+export type Perm =
+  | 'users.view'
+  | 'users.manage'
+  | 'users.delete'
+  | 'users.export'
+  | 'groups.view'
+  | 'groups.manage'
+  | 'stats.view'
+  | 'stats.manage'
+  | 'billing.view'
+  | 'billing.manage'
+  | 'payments.manage'
+  | 'broadcasts.manage'
+  | 'servers.view'
+  | 'servers.manage'
+  | 'routing.view'
+  | 'routing.manage'
+  | 'settings.view'
+  | 'settings.manage'
+  | 'security.view'
+  | 'security.manage'
+  | 'webhooks.manage'
+  | 'api.manage'
+  | 'logs.view'
+  | 'audit.view'
+  | 'system.update'
 
-export const roleHint = (r: Role): string =>
-  i18n.t(`roles.${r}Desc` as 'roles.ownerDesc')
+// PermSection is one row of the role editor, as the server's catalog lists it: a
+// section with a view and/or manage permission, or a permission of its own.
+export interface PermSection {
+  key: string
+  view?: Perm
+  manage?: Perm
+}
+
+export interface AdminRole {
+  key: string
+  // Empty on a preset nobody renamed — shown under its built-in name, in the
+  // viewer's language (see adminRoleName).
+  name: string
+  preset: boolean
+  perms: Perm[]
+  created_at: number
+  admins: number
+  api_keys: number
+}
+
+// The name a role is shown under: what the owner called it, or the preset's own.
+export const adminRoleName = (r: Pick<AdminRole, 'key' | 'name'>): string =>
+  r.name || (r.key === 'owner' || r.key === 'admin' || r.key === 'operator'
+    ? i18n.t(`roles.${r.key}`)
+    : r.key)
+
+// roleLabel names a role key, looking it up among the roles when it is not the owner.
+export const roleLabel = (key: Role, roles: AdminRole[] = []): string => {
+  const r = roles.find((x) => x.key === key)
+  return adminRoleName(r ?? { key, name: '' })
+}
+
+export const listRoles = () =>
+  api<{
+    roles: AdminRole[]
+    catalog: PermSection[]
+    // What each permission brings with it (manage → view, and a few that reach
+    // further); the server stores every role with these added.
+    implies: Partial<Record<Perm, Perm[]>>
+  }>('api/roles')
+
+export const createRole = (name: string, perms: Perm[], currentPassword: string) =>
+  api<AdminRole>('api/roles', {
+    method: 'POST',
+    body: JSON.stringify({ name, perms, current_password: currentPassword }),
+  })
+
+export const updateRole = (
+  key: string,
+  name: string,
+  perms: Perm[],
+  currentPassword: string,
+) =>
+  api<AdminRole>(`api/roles/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    body: JSON.stringify({ name, perms, current_password: currentPassword }),
+  })
+
+export const deleteRole = (key: string, currentPassword: string) =>
+  api<{ ok: boolean }>(`api/roles/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ current_password: currentPassword }),
+  })
 
 export interface Me {
   username: string
   role: Role
+  // What this admin's role grants, resolved by the server (the owner: everything).
+  perms?: Perm[]
   setup_done: boolean
   timezone: string
   version: string
@@ -1969,6 +2060,7 @@ export const setUserPlan = (id: number, plan_id: number) =>
 export interface ApiKey {
   id: number
   name: string
+  role: Role // '' = full access
   prefix: string
   created_at: number
   last_used_at: number
@@ -1981,14 +2073,21 @@ export interface ApiKeysInfo {
   api_path: string
   base_url: string
   keys: ApiKey[]
+  // Every role, so a key's role reads by name; grantable marks the ones the caller's
+  // own permissions cover — what a new key may be given. full_access says whether
+  // full access is among the choices.
+  roles?: { key: string; name: string; preset: boolean; grantable: boolean }[]
+  full_access?: boolean
 }
 
 export const getApiKeys = () => api<ApiKeysInfo>('api/apikeys')
 
-export const createApiKey = (name: string) =>
+// role is the admin role the key acts with; '' = full access. The server refuses a
+// role broader than the caller's own.
+export const createApiKey = (name: string, role: Role = '') =>
   api<{ key: ApiKey; base_url: string }>('api/apikeys', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, role }),
   })
 
 export const revokeApiKey = (id: number) =>

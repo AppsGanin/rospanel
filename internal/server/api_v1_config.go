@@ -135,6 +135,9 @@ func (rt *Router) apiPatchSettings(w http.ResponseWriter, r *http.Request) {
 	if !apiDecode(w, r, &req) {
 		return
 	}
+	if !apiFieldsAllowed(w, r, settingsFieldPerms(req)) {
+		return
+	}
 	if req.HWIDFallbackLimit != nil && *req.HWIDFallbackLimit < 0 ||
 		req.HWIDTTLDays != nil && *req.HWIDTTLDays < 0 ||
 		req.UserAutoDeleteDays != nil && *req.UserAutoDeleteDays < 0 ||
@@ -648,4 +651,28 @@ func (rt *Router) apiApplySub(req apiSettingsReq) error {
 		set.SubHappCrypt = *req.SubHappCrypt
 	}
 	return rt.mgr.SaveSubSettings(set)
+}
+
+// settingsFieldPerms is each field of a settings patch with the permission the panel
+// keeps it under.
+func settingsFieldPerms(req apiSettingsReq) []fieldPerm {
+	return []fieldPerm{
+		{req.XrayDNS != nil, "xray_dns", model.PermRoutingManage},
+		{req.ProbeDetect != nil, "probe_detect", model.PermSecurityManage},
+		{req.ProbeBlock != nil, "probe_block", model.PermSecurityManage},
+		{req.TrustedNets != nil, "trusted_nets", model.PermSecurityManage},
+		{req.LocalBackupCron != nil, "local_backup_cron", model.PermOwner},
+		{req.LocalBackupKeep != nil, "local_backup_keep", model.PermOwner},
+		{req.DecoyTemplate != nil, "decoy_template", model.PermServersManage},
+		{req.MaintenanceMode != nil, "maintenance_mode", model.PermSettingsManage},
+		{req.WatchdogEnabled != nil, "watchdog_enabled", model.PermSettingsManage},
+		{req.UserAutoDeleteDays != nil, "user_autodelete_days", model.PermSettingsManage},
+		{req.HWIDEnabled != nil, "hwid_enabled", model.PermSettingsManage},
+		{req.HWIDRequire != nil, "hwid_require", model.PermSettingsManage},
+		{req.HWIDFallbackLimit != nil, "hwid_fallback_limit", model.PermSettingsManage},
+		{req.HWIDTTLDays != nil, "hwid_ttl_days", model.PermSettingsManage},
+		{req.DeviceCountMode != nil, "device_count_mode", model.PermSettingsManage},
+		{req.SubOrderMode != nil, "sub_order_mode", model.PermSettingsManage},
+		{req.SubHappCrypt != nil, "sub_happ_crypt", model.PermSettingsManage},
+	}
 }

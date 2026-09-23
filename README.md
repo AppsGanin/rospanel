@@ -536,10 +536,19 @@ an admin confirms the transfer.
 
 #### 👥 Access, roles and audit
 
-Roles: **owner** (can do everything, exactly one, cannot be deleted), **administrator**
-(everything except the admin list), **operator** (users, statistics, activity log). Permissions
-are checked server-side on every request; a new admin gets a temporary password that must be
-changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
+**Roles** are permission sets the owner builds (*Admins → Roles*): per section — users,
+groups, plans, servers, routing, settings, security — a "read" and a "write" box, plus separate
+permissions for what is riskier than the rest: deleting and exporting users, payment provider
+keys, broadcasts, webhooks, API keys, updates, logs and the panel journal. Without "write" a
+section opens read-only; without "read" it is not in the menu. The webhooks permission includes
+reading users and payments. Two roles ship built in: **administrator** (everything except the
+panel journal) and **operator** (users, groups, statistics). The single **owner** holds every
+permission and alone reaches what is stronger than any role: admins and roles, the Telegram bots
+(the admin bot's chat receives sign-in alerts and can end any admin's sessions), backups, restore
+and the factory reset, and full-access API keys. Permissions are checked server-side on every request, and a role edit applies to its
+holders on their next request. An **API key** can carry a role too — REST and MCP then do exactly
+what an admin with that role can, and no one can mint a key broader than themselves. A new admin
+gets a temporary password that must be changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
 themselves — a code from an authenticator app (Google Authenticator, Aegis, 1Password) on top
 of the password, the secret encrypted in the database and never handed back out after setup;
 for a lost phone, `rospanel totp reset <login>` on the server; a fuller **`rospanel rescue`**
@@ -589,21 +598,19 @@ at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, 
 one series per node; a ready **Grafana dashboard** for them is
 [docs/grafana/rospanel.json](docs/grafana/rospanel.json) (Dashboards → New → Import). An **MCP server** hands the same API to an AI assistant, with the tool
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
-a URL and there is nothing to install anywhere. Write operations are off unless you ask for
-them (the `/write` address). More in [docs/api.md](docs/api.md).
+a URL and there is nothing to install anywhere. The key's role decides which tools the
+assistant gets: for a look-only assistant, create a key with a role that has no write. More in
+[docs/api.md](docs/api.md).
 
 **Connecting an assistant** takes one URL and no local install. Create a key in
-*Settings → API*, take the base address from the same page, and paste one of:
+*Settings → API* (with the role you want), take the base address from the same page, and paste:
 
 ```text
-https://vpn.example.com/<api-path>/v1/mcp/<key>          read-only
-https://vpn.example.com/<api-path>/v1/mcp/<key>/write    plus everything that changes state
+https://vpn.example.com/<api-path>/v1/mcp/<key>
 ```
 
 The address is the credential — as secret as the key inside it, and dead the moment that key
-is revoked. The two differ only in the toolbox they offer: the short one cannot delete a user
-even though the key behind it could, which is what makes handing an assistant the read-only
-URL a real decision rather than a hope.
+is revoked. The assistant is offered only the tools the key's role allows.
 
 **Status page** — an optional public page (*Settings → General*) showing which
 servers are up and 90 days of uptime history. Names and availability only: no addresses, no

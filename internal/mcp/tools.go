@@ -37,8 +37,8 @@ type Tool struct {
 	// Annotations are the hints a client uses to decide how much ceremony a call
 	// deserves — chiefly whether to ask the human first. Without them every tool
 	// looks alike, and "delete this user" is presented exactly as gently as "list
-	// users". They are hints, not enforcement: the read-only URL and --allow-write
-	// are what actually stop a mutation.
+	// users". They are hints, not enforcement: the key's role is what
+	// actually stops a mutation.
 	Annotations map[string]any `json:"annotations,omitempty"`
 
 	// method and path are how the call is turned back into an HTTP request;
@@ -48,6 +48,10 @@ type Tool struct {
 	path      string
 	takesBody bool
 }
+
+// Route is the REST route the tool calls, in the "METHOD /path" form the panel
+// registers it under — what lets a caller hide tools a key may not use.
+func (t Tool) Route() string { return t.method + " " + t.path }
 
 // Mutating reports whether calling this tool changes state.
 func (t Tool) Mutating() bool { return t.method != "GET" }
@@ -60,9 +64,10 @@ func (t Tool) HasParam(name string) bool {
 	return ok
 }
 
-// BuildTools turns an OpenAPI document into the tool list. allowWrite=false keeps
-// only the read operations.
-func BuildTools(spec map[string]any, allowWrite bool) []Tool {
+// BuildTools turns an OpenAPI document into the tool list — every operation. Which of
+// them a caller is offered is the panel's to decide, by the key's role (see
+// internal/server's MCP endpoint), not this package's.
+func BuildTools(spec map[string]any) []Tool {
 	paths, _ := spec["paths"].(map[string]any)
 	// The document keeps request/response shapes in components and points at them
 	// with $ref. That is correct OpenAPI and useless to an MCP client: it is handed
@@ -79,9 +84,6 @@ func BuildTools(spec map[string]any, allowWrite bool) []Tool {
 				continue
 			}
 			m := strings.ToUpper(method)
-			if m != "GET" && !allowWrite {
-				continue
-			}
 			// An operation can opt out. Deriving the list from the spec is what keeps
 			// it from drifting, but a route whose body is a binary download has no
 			// useful reading as a tool result — see api_v1_mcp_result.go.

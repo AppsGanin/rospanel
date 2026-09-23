@@ -10,7 +10,7 @@ import { BroadcastPanel } from "./BroadcastPanel";
 import { EventsPanel } from "./EventsPanel";
 import { GroupsPanel } from "./GroupsPanel";
 import { RegistrationsPanel } from "./RegistrationsPanel";
-import { useIsAdmin } from "./role";
+import { useCan } from "./role";
 import { PaymentsPage } from "./PaymentsPage";
 import { navigate, useRoute } from "./router";
 import { StatsPanel } from "./StatsPanel";
@@ -55,6 +55,14 @@ export function UsersPage({
   // be discovered inside it.
   const [pendingPay, setPendingPay] = useState(0);
 
+  const canView = useCan("users.view");
+  const canManage = useCan("users.manage");
+  const canExport = useCan("users.export");
+  const canPayments = useCan("billing.view");
+  const canBroadcast = useCan("broadcasts.manage");
+  const canGroups = useCan("groups.view");
+  const canStats = useCan("stats.view");
+
   const loadReg = useCallback(
     () =>
       getRegistrations()
@@ -66,18 +74,17 @@ export function UsersPage({
   );
 
   useEffect(() => {
+    if (!canView) return;
     loadReg();
     // Poll so requests arriving via the bot surface (and the tab appears) without a
     // reload.
     const id = setInterval(loadReg, 20000);
     return () => clearInterval(id);
-  }, [loadReg]);
-
-  const isAdmin = useIsAdmin();
+  }, [loadReg, canView]);
 
   useEffect(() => {
-    // Only an admin is shown the tab, and only they may read the figures.
-    if (!billingEnabled || !isAdmin) {
+    // Only a role that may read payments is shown the tab and its count.
+    if (!billingEnabled || !canPayments) {
       setPendingPay(0);
       return;
     }
@@ -88,12 +95,12 @@ export function UsersPage({
     load();
     const id = setInterval(load, 20000);
     return () => clearInterval(id);
-  }, [billingEnabled, isAdmin]);
+  }, [billingEnabled, canPayments]);
 
   const showRequests = reg.moderation || reg.requests.length > 0;
   const tabs: { value: SubTab; label: string; count?: number }[] = [
-    { value: "list", label: t("users.tabList") },
-    ...(showRequests
+    ...(canView ? [{ value: "list" as SubTab, label: t("users.tabList") }] : []),
+    ...(canView && showRequests
       ? [
           {
             value: "requests" as SubTab,
@@ -106,12 +113,12 @@ export function UsersPage({
     // users, and composing one is something you do while looking at them. Hidden
     // without the user bot, which is what actually delivers them — the server would
     // refuse anyway, and a tab that always errors is worse than no tab.
-    ...(isAdmin && userBotEnabled
+    ...(canBroadcast && userBotEnabled
       ? [{ value: "broadcast" as SubTab, label: t("users.tabBroadcast") }]
       : []),
     // Payments are about what users pay for, so they belong beside the users rather
     // than as a separate destination in the top menu.
-    ...(isAdmin && billingEnabled
+    ...(canPayments && billingEnabled
       ? [
           {
             value: "payments" as SubTab,
@@ -121,17 +128,20 @@ export function UsersPage({
         ]
       : []),
     // Access groups gate which connections a user may use; managing them lives beside
-    // the users whose membership they govern. Admin-and-up, like the other management
-    // sub-tabs.
-    ...(isAdmin
+    // the users whose membership they govern.
+    ...(canGroups
       ? [{ value: "groups" as SubTab, label: t("users.tabGroups") }]
       : []),
-    { value: "stats", label: t("users.tabStats") },
-    { value: "events", label: t("users.tabEvents") },
+    ...(canStats ? [{ value: "stats" as SubTab, label: t("users.tabStats") }] : []),
+    ...(canView ? [{ value: "events" as SubTab, label: t("users.tabEvents") }] : []),
   ];
 
+  // A role without the list lands on the first tab it has (the section is only in
+  // the nav when it has at least one).
   const wanted = seg[1] as SubTab;
-  const tab: SubTab = tabs.some((t) => t.value === wanted) ? wanted : "list";
+  const tab: SubTab = tabs.some((t) => t.value === wanted)
+    ? wanted
+    : (tabs[0]?.value ?? "list");
 
   return (
     // One section for the whole screen: the tab strip, the toolbar, the rows and the
@@ -146,27 +156,33 @@ export function UsersPage({
             accessible name and the hover title. */}
         {tab === "list" && (
           <div className="ml-auto flex items-center gap-1">
-            <IconButton
-              title={t("importUsers.buttonHint")}
-              onClick={() => setImportOpen(true)}
-            >
-              <IconImport />
-            </IconButton>
+            {canManage && (
+              <IconButton
+                title={t("importUsers.buttonHint")}
+                onClick={() => setImportOpen(true)}
+              >
+                <IconImport />
+              </IconButton>
+            )}
             {/* A plain link, not a fetch: the file is an attachment the browser saves,
                 and it carries every credential — no reason for it to pass through the
                 SPA. */}
-            <IconButton href={exportUsersURL()} title={t("importUsers.exportHint")}>
-              <IconExport />
-            </IconButton>
+            {canExport && (
+              <IconButton href={exportUsersURL()} title={t("importUsers.exportHint")}>
+                <IconExport />
+              </IconButton>
+            )}
             {/* Last, and the only filled one: the primary action ends the row. */}
-            <IconButton
-              variant="filled"
-              color="brand"
-              title={t("usersPanel.addUser")}
-              onClick={() => setAddOpen(true)}
-            >
-              <IconPlus />
-            </IconButton>
+            {canManage && (
+              <IconButton
+                variant="filled"
+                color="brand"
+                title={t("usersPanel.addUser")}
+                onClick={() => setAddOpen(true)}
+              >
+                <IconPlus />
+              </IconButton>
+            )}
           </div>
         )}
       </div>

@@ -59,7 +59,7 @@ func TestSupportSettingsRoundTripHTTP(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
-	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+	admin := signIn(t, st, "owner", model.RoleOwner, false) // the bots are the owner's
 
 	got := getTelegramJSON(t, h, admin)
 	if got["support_enabled"] != false || got["support_group_id"] != float64(0) {
@@ -110,7 +110,7 @@ func TestSupportEnableRequiresConfig(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
-	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+	admin := signIn(t, st, "owner", model.RoleOwner, false) // the bots are the owner's
 
 	cases := []struct {
 		name, body, wantMsg string
@@ -159,7 +159,7 @@ func TestSupportCheckRefusesUnconfigured(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
-	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+	admin := signIn(t, st, "owner", model.RoleOwner, false) // the bots are the owner's
 
 	code, body := postPanelJSON(t, h, "/api/telegram/support/check", `{}`, admin)
 	if code != http.StatusBadRequest {
@@ -177,7 +177,7 @@ func TestFailedSaveLeavesEverythingUnchanged(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
-	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+	admin := signIn(t, st, "owner", model.RoleOwner, false) // the bots are the owner's
 
 	code, body := postPanelJSON(t, h, "/api/telegram", saveBody(
 		`"support_enabled": false, "support_token": "555:CCC", "support_group_id": -100123`), admin)
@@ -217,7 +217,7 @@ func TestPartialSaveKeepsUntouchedSections(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
 	h := rt.panelMux()
-	admin := signIn(t, st, "admin", model.RoleAdmin, false)
+	admin := signIn(t, st, "owner", model.RoleOwner, false) // the bots are the owner's
 
 	code, body := postPanelJSON(t, h, "/api/telegram", saveBody(
 		`"support_enabled": false, "support_token": "555:CCC",

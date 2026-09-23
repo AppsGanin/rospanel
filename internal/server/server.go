@@ -61,14 +61,15 @@ type Router struct {
 	subShared subShared // what every subscription shares (see sub_shared.go)
 	writes    atomic.Uint64
 
-	subLimiter *ipRateLimiter // per-IP throttle for the public subscription endpoint
-	apiLimiter *ipRateLimiter // per-IP throttle for the external API surface
-	apiKeys    *loginLimiter  // per-IP lockout after repeated invalid API keys
-	probes     *probeGuard    // flags IPs scanning for the hidden panel path
-	streams    *streamGate    // caps concurrent SSE streams
-	status     *statusFeed    // one dashboard-payload timer shared by every viewer
-	routes     []string       // panel route patterns, in registration order (audit exhaustiveness test)
-	apiRoutes  []string       // /v1 route patterns (OpenAPI coverage test)
+	subLimiter *ipRateLimiter      // per-IP throttle for the public subscription endpoint
+	apiLimiter *ipRateLimiter      // per-IP throttle for the external API surface
+	apiKeys    *loginLimiter       // per-IP lockout after repeated invalid API keys
+	probes     *probeGuard         // flags IPs scanning for the hidden panel path
+	streams    *streamGate         // caps concurrent SSE streams
+	status     *statusFeed         // one dashboard-payload timer shared by every viewer
+	routes     []string            // panel route patterns, in registration order (audit exhaustiveness test)
+	routePerms map[string][]string // panel route pattern → the permissions that open it (owner/any routes absent)
+	apiRoutes  []string            // /v1 route patterns (OpenAPI coverage test)
 
 	mu        sync.RWMutex
 	secret    string

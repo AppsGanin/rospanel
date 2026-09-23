@@ -36,8 +36,8 @@ func (m *Manager) CreateAdmin(username, password, role string) (model.Admin, err
 	if !adminNameRe.MatchString(username) {
 		return model.Admin{}, invalidCode("err.loginCharset", "логин: 3–32 символа, латиница, цифры, точка, дефис или подчёркивание")
 	}
-	if !model.GrantableRole(role) {
-		return model.Admin{}, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+	if err := m.grantableRole(role); err != nil {
+		return model.Admin{}, err
 	}
 	if len(password) < minAdminPassword {
 		return model.Admin{}, invalidCode("err.passwordTooShort", "пароль должен быть не короче {{min}} символов", map[string]any{"min": minAdminPassword})
@@ -47,6 +47,9 @@ func (m *Manager) CreateAdmin(username, password, role string) (model.Admin, err
 		return model.Admin{}, err
 	}
 	id, err := m.store.CreateAdmin(username, hash, role, true)
+	if errors.Is(err, store.ErrRoleNotFound) {
+		return model.Admin{}, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+	}
 	if err != nil {
 		return model.Admin{}, invalidCode("err.adminCreateFailed", "не удалось создать администратора (логин уже занят?)")
 	}
@@ -75,10 +78,13 @@ func (m *Manager) SetAdminRole(actorID, targetID int64, role string) error {
 	if err != nil {
 		return err
 	}
-	if !model.GrantableRole(role) {
-		return invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+	if err := m.grantableRole(role); err != nil {
+		return err
 	}
 	if err := m.store.SetAdminRole(targetID, role); err != nil {
+		if errors.Is(err, store.ErrRoleNotFound) {
+			return invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+		}
 		return err
 	}
 	slog.Info("admin roster: role changed", "admin", target.Username, "role", role)
@@ -108,6 +114,17 @@ func (m *Manager) ResetAdminPassword(actorID, targetID int64, password string) e
 		return err
 	}
 	slog.Info("admin roster: password reset", "admin", target.Username)
+	return nil
+}
+
+// grantableRole refuses the one role an owner may never hand out: ownership is
+// singular and moves by the rescue CLI, never by grant, so there is no path that
+// quietly produces a second owner. Whether any other role exists is the store's to
+// say, in the same statement that writes it (ErrRoleNotFound).
+func (m *Manager) grantableRole(role string) error {
+	if role == model.RoleOwner {
+		return invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+	}
 	return nil
 }
 

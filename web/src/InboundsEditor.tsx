@@ -385,7 +385,8 @@ function InboundRow({
               <IconRestart />
             </IconButton>
           )}
-          <IconButton title={t("common.edit")} onClick={onEdit} disabled={busy}>
+          {/* nav: in a read-only view the editor opens read-only, to be looked at. */}
+          <IconButton title={t("common.edit")} onClick={onEdit} disabled={busy} nav>
             <IconPencil />
           </IconButton>
           <IconButton

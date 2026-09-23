@@ -41,6 +41,7 @@ import {
 import { ReconnectDialog } from "./AddNodeDialog";
 import { MasterSettingsDialog } from "./MasterSettingsDialog";
 import { NodeSettingsDialog } from "./NodeSettingsDialog";
+import { useCan } from "./role";
 import { agentSkew, nodeState, serverName } from "./NodeStatus";
 
 function fmtSeen(unix: number): string {
@@ -88,6 +89,10 @@ export function NodeCard({
   onRegen: (command: string) => void;
 }) {
   const { t } = useTranslation();
+  const canServers = useCan("servers.view");
+  const canManage = useCan("servers.manage");
+  const canUpdate = useCan("system.update");
+  const canLogs = useCan("logs.view");
   const { confirm, confirmNode } = useConfirm();
   const [reconnecting, setReconnecting] = useState(false);
   const [editingRouting, setEditingRouting] = useState(false);
@@ -252,15 +257,23 @@ export function NodeCard({
           <IconButton title={t("nav.settings")} onClick={() => setEditingRouting(true)}>
             <IconGear size={16} />
           </IconButton>
-          <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
-            <IconPulse size={16} />
-          </IconButton>
-          <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
-            <IconBraces size={16} />
-          </IconButton>
-          <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
-            <IconTerminal size={16} />
-          </IconButton>
+          {canServers && (
+            <IconButton title={t("nodes.diagnostics")} onClick={() => setShowingHealth(true)}>
+              <IconPulse size={16} />
+            </IconButton>
+          )}
+          {/* The generated config carries the server's private keys: servers.manage. */}
+          {canManage && (
+            <IconButton title={t("xray.configTitle")} onClick={() => setShowingConfig(true)}>
+              <IconBraces size={16} />
+            </IconButton>
+          )}
+          {canLogs && (
+            <IconButton title={t("manage.logs")} onClick={() => setShowingLogs(true)}>
+              <IconTerminal size={16} />
+            </IconButton>
+          )}
+          {canManage && (
           <IconButton
             title={
               node.xray_restart === "pending"
@@ -279,7 +292,8 @@ export function NodeCard({
               className={node.xray_restart === "pending" ? "animate-spin" : undefined}
             />
           </IconButton>
-          {!node.is_local && (
+          )}
+          {!node.is_local && (canManage || canUpdate) && (
             <Dropdown
               align="end"
               width={210}
@@ -295,22 +309,30 @@ export function NodeCard({
               {/* The access switch lives here rather than in the header: a toggle
                   among five icon buttons is a mis-click waiting to happen, and this
                   one takes a server out of every subscription. */}
-              <DropdownItem onClick={() => toggleEnabled(!node.enabled)}>
-                {t(node.enabled ? "usersPanel.disable" : "usersPanel.enable")}
-              </DropdownItem>
-              <DropdownItem onClick={doUpdate}>
-                {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
-              </DropdownItem>
+              {canManage && (
+                <DropdownItem onClick={() => toggleEnabled(!node.enabled)}>
+                  {t(node.enabled ? "usersPanel.disable" : "usersPanel.enable")}
+                </DropdownItem>
+              )}
+              {canUpdate && (
+                <DropdownItem onClick={doUpdate}>
+                  {t("nodes.update")}{node.version_skew ? ` ${t("nodes.newVersionSuffix")}` : ""}
+                </DropdownItem>
+              )}
               {/* One reinstall action: the dialog offers the command and the SSH way.
                   They were two menu items (one just issued the command for
                   the same reinstall), which read as two different operations. */}
-              <DropdownItem onClick={() => setReconnecting(true)}>
-                {t("nodes.reinstall")}
-              </DropdownItem>
-              <DropdownDivider />
-              <DropdownItem color="red" onClick={() => setRemoveOpen(true)}>
-                {t("common.delete")}
-              </DropdownItem>
+              {canManage && (
+                <>
+                  <DropdownItem onClick={() => setReconnecting(true)}>
+                    {t("nodes.reinstall")}
+                  </DropdownItem>
+                  <DropdownDivider />
+                  <DropdownItem color="red" onClick={() => setRemoveOpen(true)}>
+                    {t("common.delete")}
+                  </DropdownItem>
+                </>
+              )}
             </Dropdown>
           )}
         </span>

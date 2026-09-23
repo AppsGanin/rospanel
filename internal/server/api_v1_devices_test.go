@@ -21,7 +21,7 @@ func apiFixture(t *testing.T, h http.Handler, st *store.Store) (base, key string
 		t.Fatalf("api path: %v", err)
 	}
 	h.(*Router).setAPIPath("dev-api")
-	k, err := st.CreateAPIKey("devices-test")
+	k, err := st.CreateAPIKey("devices-test", "")
 	if err != nil {
 		t.Fatalf("api key: %v", err)
 	}

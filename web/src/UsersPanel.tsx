@@ -31,6 +31,7 @@ import {
   unixToLocalDate,
 } from "./format";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { useCan } from "./role";
 import {
   Badge,
   Button,
@@ -218,6 +219,8 @@ export function UsersPanel({
   const [sort, setSort] = useState("new");
   const filterKey = `${search}|${filter}|${tagFilter}|${sort}`;
 
+  const canManage = useCan("users.manage");
+  const canDelete = useCan("users.delete");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   // Every id the current filter matches, fetched when "select all" is pressed: the
   // rows on screen are only the chunks loaded so far.
@@ -664,21 +667,27 @@ export function UsersPanel({
               <span className="text-[13px] font-semibold text-ink">
                 {t("usersPanel.selectedN", { count: selected.size })}
               </span>
-              <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "enable"} onClick={() => confirmBulk("enable")}>
-                {t("usersPanel.enable")}
-              </Button>
-              <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "disable"} onClick={() => confirmBulk("disable")}>
-                {t("usersPanel.disable")}
-              </Button>
-              <Button size="xs" variant="outline" color="gray" disabled={pending !== null} onClick={() => setExtendOpen(true)}>
-                {t("usersPanel.extend")}
-              </Button>
-              <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "reset"} onClick={() => confirmBulk("reset")}>
-                {t("usersPanel.resetTraffic")}
-              </Button>
-              <Button size="xs" variant="outline" color="red" disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
-                {t("common.delete")}
-              </Button>
+              {canManage && (
+                <>
+                  <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "enable"} onClick={() => confirmBulk("enable")}>
+                    {t("usersPanel.enable")}
+                  </Button>
+                  <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "disable"} onClick={() => confirmBulk("disable")}>
+                    {t("usersPanel.disable")}
+                  </Button>
+                  <Button size="xs" variant="outline" color="gray" disabled={pending !== null} onClick={() => setExtendOpen(true)}>
+                    {t("usersPanel.extend")}
+                  </Button>
+                  <Button size="xs" variant="outline" color="gray" disabled={pending !== null} loading={pending === "reset"} onClick={() => confirmBulk("reset")}>
+                    {t("usersPanel.resetTraffic")}
+                  </Button>
+                </>
+              )}
+              {canDelete && (
+                <Button size="xs" variant="outline" color="red" disabled={pending !== null} onClick={() => setConfirmDelete(true)}>
+                  {t("common.delete")}
+                </Button>
+              )}
               <button
                 type="button"
                 onClick={clearSelection}
