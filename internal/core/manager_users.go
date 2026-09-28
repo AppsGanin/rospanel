@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -662,6 +664,40 @@ func (m *Manager) UnlinkUserTelegram(ctx context.Context, id int64) error {
 		return err
 	}
 	m.audit(ctx, id, model.EventTelegramUnlink, nil)
+	return nil
+}
+
+// LinkUserTelegram binds a Telegram chat to a user — for an outside bot that knows
+// who is writing to it (0 unlinks). A chat already bound to another user is refused:
+// unlink it there first, so no account loses its chat by accident.
+func (m *Manager) LinkUserTelegram(ctx context.Context, id, chatID int64) error {
+	u, err := m.store.GetUser(id)
+	if err != nil {
+		return err
+	}
+	if chatID == 0 {
+		if u.TgChatID == 0 {
+			return nil // nothing linked: nothing to unlink, nothing to journal
+		}
+		return m.UnlinkUserTelegram(ctx, id)
+	}
+	if chatID < 0 {
+		return invalidCode("err.tgChatInvalid", "Telegram ID пользователя — положительное число")
+	}
+	if u.TgChatID == chatID {
+		return nil
+	}
+	other, err := m.store.GetUserByTelegramChatID(chatID)
+	switch {
+	case err == nil && other.ID != id:
+		return invalidCode("err.tgChatTaken", "этот Telegram уже привязан к пользователю {{name}}", map[string]any{"name": other.Name})
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		return err
+	}
+	if err := m.store.SetUserTelegramChat(id, chatID); err != nil {
+		return err
+	}
+	m.audit(ctx, id, model.EventTelegramLinked, map[string]any{"chat_id": chatID})
 	return nil
 }
 

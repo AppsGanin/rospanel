@@ -1062,22 +1062,31 @@ func (rt *Router) buildWallet(b *sub.Billing, u model.User, set *model.Settings,
 		}
 	}
 	b.Promo = rt.mgr.PromosOffered()
-	if set.RefEnabled() && set.TGUserBotEnabled {
-		if code, err := rt.mgr.RefCode(u.ID); err == nil && code != "" {
-			bot := botUsername(context.Background(), set.TGUserBotToken, set.TelegramProxyURL())
-			if link := telegram.UserRefLink(bot, code); link != "" {
-				b.RefLink = link
-				b.RefShare = "https://t.me/share/url?url=" + url.QueryEscape(link) +
-					"&text=" + url.QueryEscape(i18n.T(lang, "user.refShareText"))
-				b.RefHint = capitalizeFirst(subRefReward(set, lang))
-				b.RefStats = i18n.T(lang, "sub.refStats", w.Invited, w.Paying)
-				if w.EarnedKop > 0 {
-					b.RefStats += " · " + i18n.T(lang, "sub.refEarned", model.KopText(w.EarnedKop))
-				}
-				rt.buildInvitees(b, u, w.Invited, lang)
-			}
+	if link := rt.userRefLink(set, u.ID); link != "" {
+		b.RefLink = link
+		b.RefShare = "https://t.me/share/url?url=" + url.QueryEscape(link) +
+			"&text=" + url.QueryEscape(i18n.T(lang, "user.refShareText"))
+		b.RefHint = capitalizeFirst(subRefReward(set, lang))
+		b.RefStats = i18n.T(lang, "sub.refStats", w.Invited, w.Paying)
+		if w.EarnedKop > 0 {
+			b.RefStats += " · " + i18n.T(lang, "sub.refEarned", model.KopText(w.EarnedKop))
 		}
+		rt.buildInvitees(b, u, w.Invited, lang)
 	}
+}
+
+// userRefLink is the user's invite link to the bot, "" while the referral programme
+// or the user bot is off.
+func (rt *Router) userRefLink(set *model.Settings, userID int64) string {
+	if !set.RefEnabled() || !set.TGUserBotEnabled {
+		return ""
+	}
+	code, err := rt.mgr.RefCode(userID)
+	if err != nil || code == "" {
+		return ""
+	}
+	bot := botUsername(context.Background(), set.TGUserBotToken, set.TelegramProxyURL())
+	return telegram.UserRefLink(bot, code)
 }
 
 // inviteesMax is how many invitees the referral tab lists.

@@ -177,7 +177,7 @@ monitor pointed here keeps working.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/users` | List users (filter + paginate). |
+| `GET` | `/v1/users` | List users (filter + paginate); `?telegram_id=` or `?sub_token=` finds one. |
 | `POST` | `/v1/users` | Create a user. |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
@@ -322,8 +322,8 @@ client will display.
 | `POST` | `/v1/billing/plans` | Create (no `id`) or update (`id` set) a plan. |
 | `DELETE` | `/v1/billing/plans/{id}` | Delete a plan (refused while users are on it). |
 | `POST` | `/v1/billing/plans/{id}/migrate` | Move every user on this plan to another one. |
-| `GET` | `/v1/billing/orders?status=pending` | List payment orders (`status` optional). |
-| `POST` | `/v1/billing/orders` | Open an order for a user+plan. |
+| `GET` | `/v1/billing/orders?status=pending&user_id=5` | List payment orders (`status` and `user_id` optional). |
+| `POST` | `/v1/billing/orders` | Open an order for a user+plan, or a balance top-up (`"kind": "topup"`). |
 | `GET` | `/v1/billing/orders/{id}` | Get one order (poll a payment's status). |
 | `POST` | `/v1/billing/orders/{id}/confirm` | Mark an order paid (activates the plan). |
 | `POST` | `/v1/billing/orders/{id}/cancel` | Cancel an order. |
@@ -340,6 +340,12 @@ client will display.
 | `GET` | `/v1/billing/funnel?days=30` | Of the users who joined in the last N days (0 = all time): how many took a trial, paid, paid again; plus what win-back codes did. |
 | `POST` | `/v1/billing/orders/{id}/refund` | Return a paid plan order's price to the balance (once). |
 | `POST` | `/v1/users/{id}/balance` | Correct a user's balance. |
+| `POST` | `/v1/users/{id}/autorenew` | Turn renewal from the balance on or off (`{"on": true}`). |
+| `POST` | `/v1/users/{id}/promo` | Enter a promo code for the user (`{"code": "SPRING"}`). |
+| `GET` | `/v1/users/{id}/quotes` | What the user can buy now, priced with their discount code and balance, per term. |
+| `GET` | `/v1/users/{id}/subscription?lang=ru` | The subscription page as data, to draw it yourself. |
+| `POST` | `/v1/users/{id}/telegram` | Link the user's Telegram ID (`{"chat_id": 123}`; 0 unlinks). |
+| `POST` | `/v1/users/{id}/referrer` | Record who invited the user (`{"ref_code": "..."}` or `{"referrer_id": 5}`). |
 | `GET` | `/v1/payments` | Every payment provider with its settings form. |
 | `POST` | `/v1/payments` | Configure one provider. |
 
@@ -423,7 +429,33 @@ that discount, attached to their next payment and sent in the bot.
 
 **Balance** — `POST /v1/users/{id}/balance` takes `{ "amount_kop": 10000, "note": "..." }`
 (either sign; the balance cannot go below zero) and answers `{ "balance_kop": ... }`.
-`GET /v1/users/{id}/wallet` answers `{ "wallet": {...}, "history": [...] }`.
+`GET /v1/users/{id}/wallet` answers `{ "wallet": {...}, "history": [...], "ref_link": "..." }` —
+`ref_link` is the user's invite link, while the referral programme and the user bot are on.
+
+**Selling from your own bot** — `GET /v1/users/{id}/quotes` lists what the user can buy now
+(only their current plan while a paid one runs) with, per term: `total_rub` after their discount
+code, `balance_kop` the balance covers and `money_rub` left to pay. Then `POST /v1/billing/orders`
+with `from_balance` when `money_rub` is 0 (add `expect_expire_at` — the `expire_at` you showed
+— so a retried request does not buy a second period), or with a `provider` for the rest. A
+top-up is `{"user_id": 5, "kind": "topup", "amount_rub": 300}` (plus `provider`, or none for a
+manual one). Both take `lang` (`ru`/`en`, for the manual-payment instructions) and
+`return_url` (where a hosted payment sends the payer back; Telegram when left out).
+
+**Your own bot or user cabinet** — the key stays on your server, never in a browser. Give it a
+role with `users.manage` (create users, link Telegram) and `billing.sell` (orders, promo codes,
+referrers, renewal) — not `billing.manage`, which also confirms orders without payment, credits
+balances and refunds. On each message find the user: `GET /v1/users?telegram_id=<id>` (an
+indexed lookup; an empty list means a newcomer). A newcomer is `POST /v1/users` with a
+`plan_id` (the trial or free plan — a user with no plan gets no payment block), then
+`POST /v1/users/{id}/telegram` with `{"chat_id": <id>}` and, when their `/start` carried an
+invite code, `POST /v1/users/{id}/referrer` with `{"ref_code": "r_…"}` (with or without the
+`r_`) — once, before their first payment. A user's own invite code is `ref_code` in
+`GET /v1/users/{id}/wallet` (`ref_link` too, while the panel's user bot is on). A cabinet
+that signs people in by their subscription link finds them with `?sub_token=`.
+`GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
+traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`; list them
+only when `show_configs`), devices, the payment block (`billing`) and the operator's colours
+(`brand`) — worded in `?lang`; the actions go through the endpoints above.
 
 **Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.
 Applies the target plan's limits, period and access groups to every user on the source

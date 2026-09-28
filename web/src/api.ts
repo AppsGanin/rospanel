@@ -722,6 +722,7 @@ export type Perm =
   | 'stats.manage'
   | 'billing.view'
   | 'billing.manage'
+  | 'billing.sell'
   | 'payments.manage'
   | 'broadcasts.manage'
   | 'servers.view'

@@ -800,7 +800,7 @@ func TestTopupCapHoldsUnderConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	orders, _ := st.ListPaymentOrders("pending", 100)
+	orders, _ := st.ListPaymentOrders("pending", 0, 100)
 	if len(orders) > maxPendingTopups {
 		t.Fatalf("%d pending top-ups, cap %d", len(orders), maxPendingTopups)
 	}

@@ -1184,7 +1184,12 @@ func (m *Manager) CancelPayment(ctx context.Context, orderID int64) error {
 }
 
 func (m *Manager) ListPaymentOrders(status string) ([]model.PaymentOrder, error) {
-	return m.store.ListPaymentOrders(status, 100)
+	return m.store.ListPaymentOrders(status, 0, 100)
+}
+
+// UserPaymentOrders lists one user's newest orders (status "" = any).
+func (m *Manager) UserPaymentOrders(status string, userID int64) ([]model.PaymentOrder, error) {
+	return m.store.ListPaymentOrders(status, userID, 100)
 }
 
 // PaymentStats assembles the revenue dashboard: all-time and per-provider paid

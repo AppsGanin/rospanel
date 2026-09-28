@@ -12,6 +12,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
@@ -104,6 +105,8 @@ func apiSpecRoutes() []oaRoute {
 				{name: "status", typ: "string", desc: "active | disabled | expired | limited | device_limited"},
 				{name: "search", typ: "string", desc: "substring match on the user name, note or tags"},
 				{name: "tag", typ: "string", desc: "only users carrying this tag (exact, case-insensitive)"},
+				{name: "telegram_id", typ: "integer", desc: "the user linked to this Telegram ID (an indexed lookup)"},
+				{name: "sub_token", typ: "string", desc: "the user whose subscription token this is (an indexed lookup)"},
 				{name: "limit", typ: "integer", desc: "page size (<=0 = all from offset)"},
 				{name: "offset", typ: "integer", desc: "number of users to skip"},
 			},
@@ -160,6 +163,28 @@ func apiSpecRoutes() []oaRoute {
 			summary: "Correct the user's balance by amount_kop (kopecks, either sign)",
 			req:     t(apiBalanceReq{}), reqRequired: []string{"amount_kop"}, resp: t(apiBalanceResp{}),
 			destructive: true},
+		{method: "POST", path: "/v1/users/{id}/autorenew", tag: "Users",
+			summary: "Turn renewal from the balance on or off; answers the wallet",
+			req:     t(apiAutoRenewReq{}), reqRequired: []string{"on"}, resp: t(apiWalletResp{})},
+		{method: "POST", path: "/v1/users/{id}/promo", tag: "Users",
+			summary: "Enter a promo code for the user: a discount attaches to the next payment, days go onto the plan, a balance code credits the balance",
+			req:     t(apiRedeemReq{}), reqRequired: []string{"code"}, resp: t(apiRedeemResp{}),
+			destructive: true},
+		{method: "GET", path: "/v1/users/{id}/subscription", tag: "Users",
+			summary: "The user's subscription page as data, to draw it yourself: status, traffic, term, app imports, configs, devices, payment block",
+			query:   []oaParam{{name: "lang", typ: "string", desc: "ru | en — the language of the texts (default en)"}},
+			resp:    t(sub.View{})},
+		{method: "POST", path: "/v1/users/{id}/telegram", tag: "Users",
+			summary: "Link the user's Telegram ID (0 unlinks); a Telegram already linked to another user is refused",
+			req:     t(apiTelegramReq{}), reqRequired: []string{"chat_id"}, resp: t(userView{}),
+			destructive: true},
+		{method: "POST", path: "/v1/users/{id}/referrer", tag: "Users",
+			summary: "Record who invited the user — by referrer_id or ref_code; once, before the first payment",
+			req:     t(apiReferrerReq{}), resp: t(apiWalletResp{}),
+			destructive: true},
+		{method: "GET", path: "/v1/users/{id}/quotes", tag: "Users",
+			summary: "What the user can buy now and at what price — with their discount code and balance, per term on sale",
+			resp:    t(apiPlanQuotes{}), list: true},
 
 		{method: "GET", path: "/v1/billing/providers", tag: "Billing", summary: "List enabled payment providers",
 			resp: t(oaProviderResp{}), list: true},
@@ -175,12 +200,15 @@ func apiSpecRoutes() []oaRoute {
 			req:         t(apiMigratePlanReq{}),
 			reqRequired: []string{"to_plan_id"}, resp: t(apiMigratedResp{})},
 		{method: "GET", path: "/v1/billing/orders", tag: "Billing", summary: "List payment orders",
-			query: append([]oaParam{{name: "status", typ: "string", desc: "pending | paid | cancelled"}},
-				pageParams()...),
+			query: append([]oaParam{
+				{name: "status", typ: "string", desc: "pending | paid | cancelled"},
+				{name: "user_id", typ: "integer", desc: "only this user's orders"},
+			}, pageParams()...),
 			resp: t(model.PaymentOrder{}), list: true, meta: true},
-		{method: "POST", path: "/v1/billing/orders", tag: "Billing", summary: "Open a payment order",
+		{method: "POST", path: "/v1/billing/orders", tag: "Billing",
+			summary:     "Open a payment order for a plan — or, with kind \"topup\" and amount_rub, a balance top-up",
 			destructive: true,
-			req:         t(apiCreateOrderReq{}), reqRequired: []string{"user_id", "plan_id"},
+			req:         t(apiCreateOrderReq{}), reqRequired: []string{"user_id"},
 			resp: t(oaOrderResp{}), status: 201},
 		{method: "GET", path: "/v1/billing/orders/{id}", tag: "Billing", summary: "Get one order",
 			resp: t(model.PaymentOrder{})},

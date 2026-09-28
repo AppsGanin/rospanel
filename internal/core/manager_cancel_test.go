@@ -117,7 +117,7 @@ func TestRequestPlanPaymentReusesPendingOrder(t *testing.T) {
 	if o1.ID != o2.ID {
 		t.Fatalf("expected the pending order to be reused: o1=%d o2=%d", o1.ID, o2.ID)
 	}
-	pending, err := st.ListPaymentOrders("pending", 100)
+	pending, err := st.ListPaymentOrders("pending", 0, 100)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
