@@ -22,11 +22,13 @@ var apiRoutePerms = map[string][]string{
 	"GET /v1/openapi.json": {},
 	"GET /v1/docs":         {},
 
-	"GET /v1/health":        {},
-	"GET /v1/health/report": {model.PermServersView},
-	"GET /v1/system":        {model.PermStatsView, model.PermUsersView, model.PermServersView},
-	"GET /v1/summary":       {model.PermStatsView, model.PermUsersView},
-	"GET /v1/metrics":       {model.PermStatsView},
+	"GET /v1/health":              {},
+	"GET /v1/health/report":       {model.PermServersView},
+	"GET /v1/system":              {model.PermStatsView, model.PermUsersView, model.PermServersView},
+	"GET /v1/system/auto-update":  {model.PermUpdate},
+	"POST /v1/system/auto-update": {model.PermUpdate},
+	"GET /v1/summary":             {model.PermStatsView, model.PermUsersView},
+	"GET /v1/metrics":             {model.PermStatsView},
 
 	"GET /v1/users":                       {model.PermUsersView},
 	"POST /v1/users":                      {model.PermUsersManage},

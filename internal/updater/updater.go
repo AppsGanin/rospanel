@@ -12,8 +12,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,12 +23,32 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Repo is the GitHub "owner/repo" this panel self-updates from, baked into the
 // build. Change it here if the project moves.
 const Repo = "AppsGanin/rospanel"
+
+// ErrInProgress is an install refused because another is running.
+var ErrInProgress = errors.New("an update is already in progress")
+
+var applyMu sync.Mutex
+
+// UnderSystemd reports whether the panel runs as a systemd service — what the
+// restart after an install relies on. systemd sets INVOCATION_ID for the processes of
+// every unit it starts; a container or a shell has none.
+func UnderSystemd() bool { return os.Getenv("INVOCATION_ID") != "" }
+
+// ConfiguredRepo is the "owner/repo" the panel self-updates from: Repo, or the
+// ROSPANEL_REPO env when set (handy for testing).
+func ConfiguredRepo() string {
+	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
+		return r
+	}
+	return Repo
+}
 
 // maxAssetBytes bounds a downloaded release binary. The real asset is ~25 MB, so this
 // leaves ample room while keeping a hostile or broken host from filling the disk before
@@ -131,6 +153,12 @@ func splitVer(v string) []int {
 // restart the service — the caller does that. Refuses to update a release that
 // ships no SHA256SUMS (integrity cannot be proven).
 func Apply(ctx context.Context, rel *Release, backupFn func() error) error {
+	// One install at a time in this process: the button and the schedule landing
+	// together would otherwise each move the other's verified binary around.
+	if !applyMu.TryLock() {
+		return ErrInProgress
+	}
+	defer applyMu.Unlock()
 	if rel == nil || rel.AssetURL == "" {
 		return fmt.Errorf("the release carries no %s", AssetName)
 	}
@@ -144,9 +172,19 @@ func Apply(ctx context.Context, rel *Release, backupFn func() error) error {
 	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
 		exe = resolved
 	}
-	tmp := exe + ".new"
+	// Already on disk, waiting for the restart (a scheduled install whose restart did
+	// not come, the button pressed again): swapping it in again would move it onto
+	// <exe>.bak, over the only copy of the version that runs now.
+	if v := binaryVersion(exe); v != "" && v == strings.TrimPrefix(rel.Version, "v") {
+		return nil
+	}
+	tmp, err := downloadFile(exe)
+	if err != nil {
+		return err
+	}
 
 	if err := download(ctx, rel.AssetURL, tmp); err != nil {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("download failed: %w", err)
 	}
 	// Integrity gate FIRST — a tampered/corrupted asset is rejected here and is
@@ -245,6 +283,38 @@ func fetchText(ctx context.Context, url string) (string, error) {
 	return string(b), err
 }
 
+// binaryVersion is the version the binary at path reports ("" when it cannot say):
+// the last word of `<path> version`, without a leading v.
+func binaryVersion(path string) string {
+	out, err := exec.Command(path, "version").Output()
+	if err != nil {
+		return ""
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(f[len(f)-1], "v")
+}
+
+// downloadFile makes the file a release is downloaded into: its own, beside the
+// binary (the swap is a rename), so another process updating at the same moment —
+// `rospanel update` — cannot truncate the file this one verified; and runnable, since
+// the new binary is run once before the swap.
+func downloadFile(exe string) (string, error) {
+	f, err := os.CreateTemp(filepath.Dir(exe), filepath.Base(exe)+".new-*")
+	if err != nil {
+		return "", fmt.Errorf("could not create the download file: %w", err)
+	}
+	name := f.Name()
+	_ = f.Close()
+	if err := os.Chmod(name, 0o755); err != nil { // CreateTemp makes it 0600
+		_ = os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
 func download(ctx context.Context, url, dst string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -312,6 +382,8 @@ func Restart() {
 	}
 	go func() {
 		time.Sleep(time.Second)
-		_ = exec.Command("systemctl", "restart", "rospanel").Start()
+		if err := exec.Command("systemctl", "restart", "rospanel").Run(); err != nil {
+			slog.Error("update: the service could not be restarted — the new version starts with the next restart", "err", err)
+		}
 	}()
 }

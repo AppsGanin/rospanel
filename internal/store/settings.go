@@ -73,7 +73,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt int
 	var awgParamsJSON, connPolicyJSON string
-	var walletEn, refFirstOnly, winbackEn int
+	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes int
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -123,7 +123,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       sub_tpl_clash, sub_tpl_singbox, sub_tpl_xray,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns,
 		       wallet_enabled, wallet_topup_min, ref_mode, ref_percent, ref_days, ref_first_only,
-		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days
+		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days,
+		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -177,6 +178,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 		&walletEn, &st.WalletTopupMin, &st.RefMode, &st.RefPercent, &st.RefDays, &refFirstOnly,
 		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays,
+		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 	)
 	if err != nil {
 		return nil, err
@@ -205,6 +207,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	}
 	st.RefFirstOnly = refFirstOnly != 0
 	st.Winback.Enabled = winbackEn != 0
+	st.AutoUpdateNodes = autoUpdateNodes != 0
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &st.AWGParams)
@@ -779,5 +782,19 @@ func (s *Store) SaveAWGKeys(priv, pub string, params model.AWGParams) error {
 	}
 	_, err = s.db.Exec(`UPDATE settings SET awg_private_key = ?, awg_public_key = ?, awg_params = ?,
 		updated_at = unixepoch() WHERE id = 1`, encField(priv), pub, string(b))
+	return err
+}
+
+// SetAutoUpdate stores the auto-update schedule ("" = off) and whether the servers
+// follow the panel.
+func (s *Store) SetAutoUpdate(cron string, nodes bool) error {
+	_, err := s.db.Exec(`UPDATE settings SET auto_update_cron = ?, auto_update_nodes = ?, updated_at = unixepoch()
+		WHERE id = 1`, cron, boolToInt(nodes))
+	return err
+}
+
+// SetAutoUpdateResult records the last auto-update attempt: when, and what it did.
+func (s *Store) SetAutoUpdateResult(at int64, result string) error {
+	_, err := s.db.Exec(`UPDATE settings SET auto_update_last_at = ?, auto_update_last = ? WHERE id = 1`, at, result)
 	return err
 }
