@@ -134,6 +134,24 @@ type pageText struct {
 	PayFailed      string
 	Error          string
 
+	Balance          string
+	Topup            string
+	TopupAmount      string
+	AutoRenew        string
+	PayBalance       string
+	PromoTitle       string
+	PromoPlaceholder string
+	PromoApply       string
+	RefTitle         string
+	RefInvitees      string
+	PaidTitle        string
+	GetFree          string
+	History          string
+	Share            string
+	TabSub           string
+	TabPay           string
+	TabRef           string
+
 	Devices        string
 	DevicesHint    string
 	DevicesEmpty   string
@@ -188,6 +206,24 @@ func text(lang i18n.Lang) pageText {
 		OrderTitle:     t("sub.orderTitle"),
 		PayFailed:      t("sub.payFailed"),
 		Error:          t("sub.error"),
+
+		Balance:          t("sub.balance"),
+		Topup:            t("sub.topup"),
+		TopupAmount:      t("sub.topupAmount"),
+		AutoRenew:        t("sub.autoRenew"),
+		PayBalance:       t("sub.payBalance"),
+		PromoTitle:       t("sub.promoTitle"),
+		PromoPlaceholder: t("sub.promoPlaceholder"),
+		PromoApply:       t("sub.promoApply"),
+		RefTitle:         t("sub.refTitle"),
+		RefInvitees:      t("sub.refInvitees"),
+		PaidTitle:        t("sub.paidTitle"),
+		GetFree:          t("sub.getFree"),
+		History:          t("sub.history"),
+		Share:            t("sub.share"),
+		TabSub:           t("sub.tabSub"),
+		TabPay:           t("sub.tabPay"),
+		TabRef:           t("sub.tabRef"),
 
 		Devices:        t("sub.devices"),
 		DevicesHint:    t("sub.devicesHint"),
@@ -329,6 +365,48 @@ type Billing struct {
 	Locked     bool
 	Cancelable bool
 	CancelPath string // POST target that cancels the active plan (<SubURL>/cancel)
+
+	// ExpireAt is the user's expiry as rendered; a purchase from the balance sends it
+	// back so a repeated click cannot buy a second period.
+	ExpireAt int64
+
+	// The wallet. WalletPath is the base the page posts its actions to
+	// (<WalletPath>/topup, /promo, /autorenew).
+	WalletPath string
+	Wallet     bool   // the balance block is shown
+	Topup      bool   // the balance can be topped up (some payment method exists)
+	Balance    string // "150" or "19.90", in roubles
+	AutoRenew  bool
+	// RenewSwitch: the user's plan is one renewal can extend (paid, with a term).
+	RenewSwitch bool
+	// RenewNote says what the renewal will do (hidden while renewal is off, and the
+	// switch shows it); RenewShort marks a balance that falls short of it.
+	RenewNote  string
+	RenewShort bool
+	TopupMin   int
+	TopupHint  string // "from 100 ₽"
+	BonusDays  string // banked referral days, "" when none
+	Promo      bool   // a promo field is offered
+	RefLink    string // the user's invite link, "" when the programme is off
+	RefHint    string // what one paying invitee earns
+	RefStats   string // "invited 3 · paid 1 · earned 40 ₽"
+	// Invitees are the users who came by the link, newest first: when they joined,
+	// and what they earned the inviter (or whether they paid).
+	Invitees     []HistoryLine
+	InviteesMore string // "and 12 more", "" when the list is whole
+	RefShare     string // a t.me/share link that hands RefLink to a chat
+
+	// History is what came into and went out of the user's money, newest first.
+	History []HistoryLine
+}
+
+// HistoryLine is one line of the payment tab's history.
+type HistoryLine struct {
+	Title  string // "Balance top-up", "“Standard” plan"
+	When   string
+	Amount string // signed: "+50 ₽", "−199 ₽"
+	In     bool   // money in
+	Muted  bool   // not an amount but a quiet status ("no payment yet")
 }
 
 // BillingPlan is one purchasable paid tariff shown on the page.
@@ -337,6 +415,28 @@ type BillingPlan struct {
 	Name    string
 	Label   string // price + period, e.g. "199 ₽ / 30 d"
 	Current bool   // the user's currently active plan
+	// OldPrice is the price before a discount code, shown struck through ("" = none).
+	OldPrice string
+	// FromBalance: the balance covers the price, so the button pays from it.
+	FromBalance bool
+	// Promo names the discount code in the price ("Promo code X: −40 ₽"), "" = none.
+	Promo string
+	// Free: the discount takes the whole price — nothing is paid, from the balance or
+	// otherwise.
+	Free bool
+	// Button is the pay button's label for the first option.
+	Button string
+	// Options are the terms on offer — one period, and each multi-period discount —
+	// empty when there is only one.
+	Options []PlanOption
+}
+
+// PlanOption is one term a plan can be bought for.
+type PlanOption struct {
+	Periods     int
+	Label       string // "3 × 30 d — 537 ₽ (−10%)"
+	FromBalance bool
+	Button      string // the pay button's label for this term
 }
 
 // BillingPay is one payment method the user can choose.

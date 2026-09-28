@@ -1931,6 +1931,14 @@ export interface PaymentOrder {
   pay_url?: string
   created_at: number
   paid_at: number
+  // plan | topup. amount_rub is the money that came in; balance_kop the part of the
+  // price the balance paid; discount_rub what promo_code took off.
+  kind?: 'plan' | 'topup'
+  balance_kop?: number
+  discount_rub?: number
+  promo_code?: string
+  periods?: number // of the plan's periods bought
+  refunded_at?: number // when its money went back to the balance (0/absent = never)
 }
 
 export interface BillingInfo {
@@ -1942,9 +1950,25 @@ export interface BillingInfo {
   // on and off like one, with a pay-button label of its own ("" = the default).
   manual: boolean
   manual_label: string
+  // The wallet and the referral programme.
+  wallet: boolean
+  topup_min: number
+  ref_mode: RefMode
+  ref_percent: number
+  ref_days: number
+  ref_first: boolean
+  periods: PeriodOffer[] // discounts for buying several periods at once
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
+
+export type RefMode = 'off' | 'percent' | 'days'
+
+export interface PeriodOffer {
+  periods: number
+  percent: number
+}
+
 
 export const getBilling = () => api<BillingInfo>('api/billing')
 
@@ -1995,6 +2019,13 @@ export const saveBilling = (b: {
   payment_note: string
   manual: boolean
   manual_label: string
+  wallet: boolean
+  topup_min: number
+  ref_mode: RefMode
+  ref_percent: number
+  ref_days: number
+  ref_first: boolean
+  periods: PeriodOffer[]
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',
@@ -2033,6 +2064,7 @@ export interface PaymentStats {
   pending_count: number
   pending_sum: number
   by_provider: ProviderStat[]
+  wallet?: boolean // refunds to the balance are on offer
 }
 
 export const getPaymentStats = () => api<PaymentStats>('api/payments/stats')
@@ -2047,6 +2079,129 @@ export const cancelPaymentOrder = (id: number, current_password: string) =>
   api<{ ok: boolean }>(`api/billing/orders/${id}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ current_password }),
+  })
+
+// ---- Wallet and promo codes ----
+
+export type PromoKind = 'percent' | 'amount' | 'days' | 'balance'
+
+export interface PromoCode {
+  id: number
+  code: string
+  kind: PromoKind
+  value: number
+  plan_ids: number[] // discount: the plans it applies to ([] = any)
+  plan_id: number // days: the plan it grants (0 = the user's active one)
+  first_only: boolean
+  max_uses: number // 0 = unlimited
+  uses: number
+  expires_at: number // 0 = never
+  enabled: boolean
+  note: string
+  created_at: number
+}
+
+export interface PromoUse {
+  user_id: number
+  name: string
+  order_id?: number
+  used_at: number
+  amount_rub: number
+  discount_rub: number
+}
+
+export interface PromoUsage {
+  uses: PromoUse[]
+  orders: number
+  revenue_rub: number
+}
+
+export const getPromoUses = (id: number) => api<PromoUsage>(`api/billing/promos/${id}/uses`)
+
+export interface Referral {
+  user_id: number
+  name: string
+  created_at: number
+  paid_rub: number
+  earned_kop: number
+}
+
+export const getUserReferrals = (id: number) => api<Referral[]>(`api/users/${id}/referrals`)
+
+export interface ReferralStats {
+  invited: number
+  paying: number
+  revenue_rub: number
+  paid_out_kop: number
+  top: { user_id: number; name: string; invited: number; paying: number; earned_kop: number }[]
+}
+
+export const getReferralStats = () => api<ReferralStats>('api/billing/referrals')
+
+export const refundOrder = (id: number, cancel_plan: boolean, current_password: string) =>
+  api<{ refund_kop: number }>(`api/billing/orders/${id}/refund`, {
+    method: 'POST',
+    body: JSON.stringify({ cancel_plan, current_password }),
+  })
+
+export const listPromos = () => api<PromoCode[]>('api/billing/promos')
+
+export const savePromo = (p: PromoCode, current_password = '') =>
+  api<PromoCode>('api/billing/promos', {
+    method: 'POST',
+    body: JSON.stringify({ ...p, current_password }),
+  })
+
+export const deletePromo = (id: number) =>
+  api<{ ok: boolean }>(`api/billing/promos/${id}`, { method: 'DELETE' })
+
+export interface Wallet {
+  balance_kop: number
+  auto_renew: boolean
+  referrer_id: number
+  referrer_name?: string
+  ref_code?: string
+  invited: number
+  paying: number
+  earned_kop: number
+  ref_bonus_days: number
+  promo_id: number
+  promo_code?: string
+}
+
+export type BalanceTxKind = 'topup' | 'purchase' | 'renew' | 'referral' | 'promo' | 'admin' | 'refund'
+
+export interface BalanceTx {
+  id: number
+  amount_kop: number
+  balance_kop: number
+  kind: BalanceTxKind
+  order_id?: number
+  ref_user_id?: number
+  ref_name?: string
+  promo_code?: string
+  note?: string
+  created_at: number
+}
+
+export const getUserWallet = (id: number) =>
+  api<{ wallet: Wallet; history: BalanceTx[] }>(`api/users/${id}/wallet`)
+
+export const adjustUserBalance = (
+  id: number,
+  amount_kop: number,
+  note: string,
+  current_password: string,
+) =>
+  api<{ balance_kop: number }>(`api/users/${id}/balance`, {
+    method: 'POST',
+    body: JSON.stringify({ amount_kop, note, current_password }),
+  })
+
+export const setUserAutoRenew = (id: number, on: boolean) =>
+  api<{ ok: boolean }>(`api/users/${id}/autorenew`, {
+    method: 'POST',
+    body: JSON.stringify({ on }),
   })
 
 export const setUserPlan = (id: number, plan_id: number) =>

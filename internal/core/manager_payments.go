@@ -16,6 +16,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/payments"
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // escHTML escapes a dynamic value for the bots' HTML parse mode.
@@ -69,7 +70,7 @@ func (m *Manager) notifyModeration(reqID int64, name, plan string) {
 // travel as-is; the one that needs wording is the manual path, which is a word and
 // not a brand — so it comes from the dictionary.
 func (m *Manager) methodLabel(lang i18n.Lang, key string) string {
-	if key == "" {
+	if key == "" || key == "manual" {
 		return i18n.T(lang, "pay.manual")
 	}
 	return m.ProviderLabel(key)
@@ -246,48 +247,74 @@ func (m *Manager) PaymentWebhookURL(key string) string {
 // StartPlanPayment creates an order plus a provider payment and returns the order
 // with its hosted pay URL. provider may be "" when exactly one method is enabled.
 // The payer is returned to Telegram after paying (the bot flow).
-func (m *Manager) StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(ctx, lang, userID, planID, provider, "https://t.me/")
+func (m *Manager) StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string, periods int) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, lang, userID, planID, provider, "https://t.me/", periods)
 }
 
 // StartPlanPaymentReturn is StartPlanPayment for the web subscription page: it
 // sends the payer back to returnURL (the sub page) after a card payment instead of
 // to Telegram. returnURL is used by hosted-form providers (YooKassa); CryptoBot
 // ignores it.
-func (m *Manager) StartPlanPaymentReturn(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
-	return m.startPlanPayment(ctx, lang, userID, planID, provider, returnURL)
+func (m *Manager) StartPlanPaymentReturn(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string, periods int) (*model.PaymentOrder, error) {
+	return m.startPlanPayment(ctx, lang, userID, planID, provider, returnURL, periods)
 }
 
 // lang is the language the PAYER is being served in, and it comes from the caller
 // rather than from the user record: someone paying from an English subscription page
 // may have no Telegram chat at all, and the invoice description they are about to
 // read is on the provider's page, not in the bot.
-func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string) (*model.PaymentOrder, error) {
+func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string, periods int) (*model.PaymentOrder, error) {
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
 		return nil, invalidCode("err.planNotFound", "тариф не найден")
 	}
-	if plan.IsFree() {
-		return nil, invalidCode("err.planIsFree", "этот тариф бесплатный")
-	}
 	// No switching between plans while a paid one is active: the user must cancel
 	// the current subscription first. Paying for the SAME plan (renewal/extension)
-	// is always allowed. A trial or free plan never blocks buying a paid one. Fail
-	// closed on a user-read error so the guard can't be bypassed.
+	// is always allowed. Fail closed on a user-read error so the guard can't be
+	// bypassed.
 	u, err := m.store.GetUser(userID)
 	if err != nil {
 		return nil, err
 	}
-	if u.PlanID != planID {
-		// A disabled plan can't be bought as a new purchase/switch, but an existing
-		// subscriber may still renew the plan they're already on (grandfathering).
-		if !plan.Enabled {
-			return nil, invalidCode("err.planUnavailable", "тариф недоступен")
-		}
-		if cur := m.ActivePaidPlan(*u); cur != nil {
-			return nil, invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": cur.Name})
-		}
+	if err := m.checkPlanPurchase(*u, plan); err != nil {
+		return nil, err
 	}
+	if err := m.checkPeriods(plan, periods); err != nil {
+		return nil, err
+	}
+	q := m.QuotePlanFor(*u, plan, periods)
+	if q.MoneyRub == 0 {
+		return nil, invalidCode("err.payFromBalance", "баланса хватает — оплатите тариф с баланса")
+	}
+	return m.startProviderOrder(ctx, lang, store.OrderDraft{
+		UserID: userID, PlanID: planID, Kind: model.OrderPlan, AmountRub: q.MoneyRub,
+		BalanceKop: q.BalanceKop, DiscountRub: q.DiscountRub, PromoID: q.PromoID, Periods: q.Periods,
+	}, provider, returnURL, func(id int64) string {
+		return i18n.T(lang, "order.description", planSubject(lang, plan.Name, q.Periods), id)
+	})
+}
+
+// orderSubject names what an order buys, for the operator's alerts and the payment
+// instructions: the plan, or a balance top-up.
+func orderSubject(lang i18n.Lang, o *model.PaymentOrder) string {
+	if o.Kind == model.OrderTopup {
+		return i18n.T(lang, "order.topupSubject")
+	}
+	return planSubject(lang, o.PlanName, o.Periods)
+}
+
+// planSubject names a plan purchase: "“Standard” plan", or "“Standard” plan × 3" for
+// several periods.
+func planSubject(lang i18n.Lang, plan string, periods int) string {
+	if periods > 1 {
+		return i18n.T(lang, "order.planSubjectN", plan, periods)
+	}
+	return i18n.T(lang, "order.planSubject", plan)
+}
+
+// startProviderOrder creates an order and the provider payment that collects it.
+// describe renders the invoice description once the order has its number.
+func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d store.OrderDraft, provider, returnURL string, describe func(orderID int64) string) (*model.PaymentOrder, error) {
 	methods := m.PaymentMethods()
 	if len(methods) == 0 {
 		return nil, invalidCode("err.autoPayNotConfigured", "автоматическая оплата не настроена")
@@ -299,11 +326,16 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 		return nil, invalidCode("err.payMethodUnavailable", "способ оплаты недоступен")
 	}
 
-	// Reuse a fresh pending order for the same plan+provider instead of minting a new
-	// one on every tap — stops a spammed "Pay" button from flooding provider API calls
-	// and admin pings. Only within the reuse window, so the hosted pay URL is still live.
-	if existing, err := m.store.LatestPendingProviderOrderForPlan(userID, planID, provider); err == nil &&
+	// Reuse a fresh pending order for the same purchase instead of minting a new one
+	// on every tap — stops a spammed "Pay" button from flooding provider API calls
+	// and admin pings. Only within the reuse window, so the hosted pay URL is still
+	// live, and only while it asks for the same money: a balance or discount that
+	// changed since makes it a different order.
+	if existing, err := m.store.LatestPendingProviderOrderForPlan(d.UserID, d.PlanID, provider); err == nil &&
 		existing != nil && existing.PayURL != "" &&
+		existing.Kind == d.Kind && existing.AmountRub == d.AmountRub &&
+		existing.BalanceKop == d.BalanceKop && existing.PromoID == d.PromoID &&
+		max(existing.Periods, 1) == max(d.Periods, 1) &&
 		time.Now().Unix()-existing.CreatedAt < int64(providerOrderReuseWindow.Seconds()) {
 		return existing, nil
 	}
@@ -312,9 +344,9 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 	if err != nil {
 		return nil, err
 	}
-	order, err := m.store.CreatePaymentOrder(userID, planID, plan.PriceRub)
+	order, err := m.store.CreateOrder(d, time.Now().Unix())
 	if err != nil {
-		return nil, err
+		return nil, orderCreateErr(err)
 	}
 	// The alerts below are read by the operator, the invoice description by the
 	// payer — two audiences, two languages.
@@ -327,9 +359,9 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 		returnURL = "https://t.me/"
 	}
 	providerID, payURL, err := client.Create(callCtx, payments.CreateReq{
-		AmountRub:   plan.PriceRub,
+		AmountRub:   order.AmountRub,
 		OrderID:     order.ID,
-		Description: i18n.T(lang, "order.description", plan.Name, order.ID),
+		Description: describe(order.ID),
 		ReturnURL:   returnURL,
 		WebhookURL:  m.PaymentWebhookURL(provider),
 	})
@@ -347,13 +379,33 @@ func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, 
 		return nil, err
 	}
 	order.Provider, order.ProviderID, order.PayURL = provider, providerID, payURL
+	m.supersedePromoOrders(ctx, d.UserID, d.PromoID, order.ID)
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payStarted",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub, escHTML(m.methodLabel(adminLang, provider))))
-	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
-		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": provider,
-	})
+		order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
+		escHTML(m.methodLabel(adminLang, provider))))
+	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, provider))
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
 	return order, nil
+}
+
+// orderAudit is the journal payload for an order event.
+func orderAudit(o *model.PaymentOrder, provider string) map[string]any {
+	d := map[string]any{
+		"order_id": o.ID, "amount_rub": o.AmountRub, "provider": provider,
+	}
+	if o.Kind == model.OrderTopup {
+		d["kind"] = model.OrderTopup
+	} else {
+		d["plan"] = o.PlanName
+	}
+	if o.BalanceKop > 0 {
+		d["balance_kop"] = o.BalanceKop
+	}
+	if o.PromoCode != "" {
+		d["promo"] = o.PromoCode
+		d["discount_rub"] = o.DiscountRub
+	}
+	return d
 }
 
 // amountMatches reports whether the charge the provider recorded is the one this
@@ -378,16 +430,14 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	if err != nil {
 		return err
 	}
-	if order.Status != "pending" {
-		// A payment that lands after the order was auto-cancelled (e.g. YooKassa has no
-		// invoice TTL and the 24h sweep already fired): money was captured but no plan
-		// applied — flag it so the operator can apply the tariff by hand.
-		if order.Status == "cancelled" {
-			m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.payOnCancelled",
-				order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub))
-		}
-		return nil
+	if order.Status == "paid" {
+		return nil // a re-delivered webhook or an overlapping poll
 	}
+	// A cancelled order goes on like a pending one: the money was captured (YooKassa
+	// has no invoice TTL and the 24h sweep fired; a newer checkout with the same promo
+	// code superseded it; it was cancelled by hand), and it still buys what the order
+	// was for — or lands on the balance when that can no longer be given.
+	//
 	// The charge must be the one this order was created for. Refuse to grant a plan
 	// on a mismatch — the money situation then needs a human, so alert the operator
 	// rather than silently applying (or silently dropping) it.
@@ -414,34 +464,62 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	// applies the plan, so one payment can't extend the user twice. And because the
 	// claim commits with the plan rather than before it, a crash mid-way cannot leave
 	// the order paid with nothing delivered — see confirmOrderPaid.
-	claimed, err := m.confirmOrderPaid(order, time.Now().Unix())
+	res, err := m.confirmOrderPaid(order, time.Now().Unix())
 	if err != nil {
 		return err
 	}
-	if !claimed {
+	if !res.Claimed {
 		return nil // another confirmer already handled this order
 	}
 	// The provider (or the polling fallback) confirmed this, not a person — so the
 	// payment lands in the audit log as a system action.
-	ctx := context.Background()
 	logInfo("payment: order paid", "order", order.ID, "provider", provider, "user", order.UserID, "plan", order.PlanID)
-	if u, e := m.store.GetUser(order.UserID); e == nil {
+	m.afterOrderPaid(context.Background(), order, provider, res)
+	return nil
+}
+
+// afterOrderPaid tells everyone what a confirmed order did: the payer, the operator,
+// the referrer, the journal and the webhooks.
+func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder, provider string, res store.ConfirmResult) {
+	// An operator's own confirmation needs no alert back to the operators — only
+	// when something did not go as the order said.
+	byHand := provider == "manual"
+	// A plan order whose plan could not be delivered: the store turned it into a
+	// top-up, the money is on the balance.
+	undelivered := order.Kind == model.OrderPlan && !res.PlanApplied
+	set, _ := m.store.GetSettings()
+	if u, e := m.store.GetUser(order.UserID); e == nil && set != nil {
 		// Gated like the other user-facing notices, so an operator who turns them all
 		// off does not still have the bot writing to people.
-		if set, err := m.store.GetSettings(); err == nil {
-			m.notifyUserEvent(set, *u, model.UserNotifyPayment,
-				i18n.T(m.userLang(u.TgChatID), "notify.userPaid", escHTML(m.PlanName(order.PlanID))))
+		lang := m.userLang(u.TgChatID)
+		var msg string
+		switch {
+		case undelivered:
+			msg = i18n.T(lang, "notify.userPaidToBalance", order.AmountRub, escHTML(order.PlanName))
+		case order.Kind == model.OrderTopup:
+			wal, _ := m.store.GetWalletLite(u.ID)
+			msg = i18n.T(lang, "notify.userToppedUp", order.AmountRub, kopText(wal.BalanceKop))
+		default:
+			msg = i18n.T(lang, "notify.userPaid", escHTML(m.PlanName(order.PlanID)))
 		}
+		m.notifyUserEvent(set, *u, model.UserNotifyPayment, msg)
 	}
 	adminLang := m.botLang()
-	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paid",
-		order.ID, escHTML(order.UserName), escHTML(order.PlanName), order.AmountRub, escHTML(m.methodLabel(adminLang, provider))))
+	if !byHand {
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paid",
+			order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
+			escHTML(m.methodLabel(adminLang, provider))))
+	}
+	if undelivered {
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.payToBalance",
+			order.ID, escHTML(order.UserName), escHTML(order.PlanName)))
+		// The journal and the webhook report what the order is now, not a plan bought.
+		order.Kind = model.OrderTopup
+	}
+	m.notifyReferral(set, res)
 	order.Status = "paid"
-	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
-		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": provider,
-	})
+	m.audit(ctx, order.UserID, model.EventPaymentPaid, orderAudit(order, provider))
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
-	return nil
 }
 
 // paymentOrderMaxAge bounds how long a pending provider order is polled before
@@ -548,7 +626,7 @@ func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
 			})
 			m.notifyAdminEvent(model.AdminEventPayment, fmt.Sprintf(
 				i18n.T(m.botLang(), "notify.payRefundedAfterDelivery"),
-				o.ID, escHTML(o.PlanName), o.AmountRub, escHTML(reason)))
+				o.ID, escHTML(orderSubject(m.botLang(), &o)), o.AmountRub, escHTML(reason)))
 		}
 		return
 	}

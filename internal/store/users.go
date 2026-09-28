@@ -1461,6 +1461,9 @@ func (s *Store) DeleteUser(id int64) error {
 	if _, err := tx.Exec(`UPDATE tg_subscribers SET user_id = NULL WHERE user_id = ?`, id); err != nil {
 		return err
 	}
+	if err := forgetWalletOn(tx, "?", []any{id}); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
 		return err
 	}
@@ -1506,6 +1509,9 @@ func (s *Store) DeleteUsers(ids []int64) (int64, error) {
 			`UPDATE tg_subscribers SET user_id = NULL WHERE user_id IN (`+placeholders(len(ids))+`)`,
 			args...,
 		); err != nil {
+			return err
+		}
+		if err := forgetWalletOn(tx, placeholders(len(ids)), args); err != nil {
 			return err
 		}
 		res, err := tx.Exec(`DELETE FROM users WHERE id IN (`+placeholders(len(ids))+`)`, args...)

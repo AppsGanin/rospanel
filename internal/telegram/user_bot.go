@@ -5,11 +5,13 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/actor"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -28,7 +30,13 @@ type UserService struct {
 	clientProxy string // proxy the cached client was built with; a change rebuilds it
 	commandsFor string // token whose command menu was already published
 	offset      int64
-	pending     map[int64]string // chatID → "reg" (awaiting display name)
+	pending     map[int64]string // chatID → "reg" (awaiting display name), "promo", "topup"
+
+	// The bot's own @username (for invite links), and when and for which token it
+	// was looked up.
+	meName  string
+	meAt    time.Time
+	meToken string
 
 	regMu     sync.Mutex
 	regWindow time.Time // start of the current registration rate-limit window
@@ -282,11 +290,16 @@ func (s *UserService) handleMessage(ctx context.Context, client *Client, m *Mess
 	}
 	pending := s.takePending(chatID)
 	if u, ok := s.findLinkedUser(chatID); ok {
-		if pending == "reg" {
+		switch pending {
+		case "reg":
 			s.doRegister(ctx, client, chatID, set, text)
-			return
+		case "promo":
+			s.doPromo(ctx, client, chatID, set, u, text)
+		case "topup":
+			s.doTopupAmount(ctx, client, chatID, set, u, text)
+		default:
+			s.sendUserMenu(ctx, client, chatID, set, u)
 		}
-		s.sendUserMenu(ctx, client, chatID, set, u)
 		return
 	}
 	switch pending {
@@ -326,10 +339,20 @@ func (s *UserService) handleRegCode(ctx context.Context, client *Client, chatID 
 }
 
 func (s *UserService) handleStart(ctx context.Context, client *Client, set *model.Settings, chatID int64, args []string) {
+	// /start is the way out of any prompt (an amount, a promo code): the next text is
+	// not an answer to it any more.
+	s.clearPending(chatID)
 	if len(args) >= 1 {
 		if code := userStartLinkCode(args[0]); code != "" {
 			s.linkUserFromCode(ctx, client, set, chatID, code)
 			return
+		}
+		// An invite link: remembered for when this chat registers. A chat that already
+		// has an account keeps the referrer it had (or none).
+		if code, ok := strings.CutPrefix(strings.TrimSpace(args[0]), refStartPrefix); ok && code != "" {
+			if _, linked := s.findLinkedUser(chatID); !linked {
+				s.panel.TrackReferral(chatID, code)
+			}
 		}
 	}
 	if u, ok := s.findLinkedUser(chatID); ok {
@@ -480,7 +503,7 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	if set.RegMode() == model.RegModeration {
 		ok, err := s.panel.RequestRegistration(ctx, chatID, name)
 		if err != nil {
-			s.send(ctx, client, chatID, i18n.T(lang, "user.requestFailed", esc(err.Error())))
+			s.send(ctx, client, chatID, i18n.T(lang, "user.requestFailed", esc(core.UserError(err, lang))))
 			return
 		}
 		if !ok {
@@ -495,19 +518,20 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	// User applies the trial/free plan when billing is on, else a plain account.
 	u, err := s.panel.CreateRegisteredUser(ctx, name)
 	if err != nil {
-		s.send(ctx, client, chatID, i18n.T(lang, "user.createFailed", esc(err.Error())))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.createFailed", esc(core.UserError(err, lang))))
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, i18n.T(lang, "user.linkFailed", esc(err.Error())))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.linkFailed", esc(core.UserError(err, lang))))
 		return
 	}
 	log.Printf("telegram user: registered user %d from chat %d", u.ID, chatID)
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
+	s.panel.AttachReferrer(ctx, u.ID, chatID)
 	u.TgChatID = chatID
 	s.sendMenu(ctx, client, chatID,
 		i18n.T(lang, "user.accountCreated")+"\n\n"+userSelfCard(*u, set, s.panel, lang),
-		userMenuRows(set, *u, lang))
+		s.menuRows(set, *u, lang))
 }
 
 // restoreDetachedUser reattaches an account this chat previously unlinked (if any)
@@ -520,7 +544,7 @@ func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, c
 		return nil
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, i18n.T(lang, "user.restoreFailed", esc(err.Error())))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.restoreFailed", esc(core.UserError(err, lang))))
 		return u
 	}
 	if fresh, ok := s.findLinkedUser(chatID); ok {
@@ -532,7 +556,7 @@ func (s *UserService) restoreDetachedUser(ctx context.Context, client *Client, c
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	s.sendMenu(ctx, client, chatID,
 		i18n.T(lang, "user.welcomeBack")+"\n\n"+userSelfCard(*u, set, s.panel, lang),
-		userMenuRows(set, *u, lang))
+		s.menuRows(set, *u, lang))
 	return u
 }
 
@@ -556,7 +580,7 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
-		s.send(ctx, client, chatID, i18n.T(lang, "user.linkChatFailed", esc(err.Error())))
+		s.send(ctx, client, chatID, i18n.T(lang, "user.linkChatFailed", esc(core.UserError(err, lang))))
 		return
 	}
 	_ = s.store.ClearUserTgLinkCode(u.ID) // one-time: burn the code
@@ -746,7 +770,7 @@ func (s *UserService) sendUserMenu(ctx context.Context, client *Client, chatID i
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel, lang), userMenuRows(set, u, lang))
+	s.sendMenu(ctx, client, chatID, userSelfCard(u, set, s.panel, lang), s.menuRows(set, u, lang))
 }
 
 func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
@@ -754,7 +778,7 @@ func (s *UserService) editUserMenu(ctx context.Context, client *Client, chatID, 
 	if fresh, ok := s.findLinkedUser(chatID); ok {
 		u = fresh
 	}
-	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel, lang), userMenuRows(set, u, lang))
+	s.edit(ctx, client, chatID, msgID, userSelfCard(u, set, s.panel, lang), s.menuRows(set, u, lang))
 }
 
 func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb *CallbackQuery, set *model.Settings, u model.User) {
@@ -763,6 +787,9 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	}
 	chatID := cb.Message.Chat.ID
 	msgID := cb.Message.MessageID
+	// A button pressed leaves whatever prompt was open (a promo code, an amount);
+	// the buttons that open one set it again below.
+	s.clearPending(chatID)
 	switch cb.Data {
 	case "vu:menu":
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
@@ -776,14 +803,28 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	case "vu:cancelyes":
 		s.doCancelPlan(ctx, client, chatID, msgID, set, u)
 	default:
+		if s.handleWalletCallback(ctx, client, chatID, msgID, set, u, cb.Data) {
+			return
+		}
 		if planStr, ok := strings.CutPrefix(cb.Data, "vu:buy:"); ok {
-			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planStr)
+			// "vu:buy:<plan>" asks for the term when several are sold;
+			// "vu:buy:<plan>:<periods>" is the term chosen.
+			planStr, nStr, picked := strings.Cut(planStr, ":")
+			planID, _ := strconv.ParseInt(planStr, 10, 64)
+			periods, _ := strconv.Atoi(nStr)
+			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, max(periods, 1), !picked)
 		} else if rest, ok := strings.CutPrefix(cb.Data, "vu:pay:"); ok {
-			// rest = "<method>:<planID>", the method being a provider key or manual
-			if method, planStr, found := strings.Cut(rest, ":"); found {
-				var planID int64
-				if _, err := fmt.Sscan(planStr, &planID); err == nil && planID > 0 {
-					s.startPayment(ctx, client, chatID, msgID, u, planStr, planID, method)
+			// rest = "<method>:<planID>[:<periods>]", the method being a provider key
+			// or manual
+			parts := strings.Split(rest, ":")
+			if len(parts) >= 2 {
+				planID, err := strconv.ParseInt(parts[1], 10, 64)
+				periods := 1
+				if len(parts) >= 3 {
+					periods, _ = strconv.Atoi(parts[2])
+				}
+				if err == nil && planID > 0 {
+					s.startPayment(ctx, client, chatID, msgID, u, planID, max(periods, 1), parts[0])
 				}
 			}
 		}
@@ -814,7 +855,7 @@ func (s *UserService) confirmCancelPlan(ctx context.Context, client *Client, cha
 func (s *UserService) doCancelPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User) {
 	lang := s.lang(chatID)
 	if err := s.panel.CancelUserPlan(ctx, u.ID); err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)),
 			[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}})
 		return
 	}
@@ -823,7 +864,7 @@ func (s *UserService) doCancelPlan(ctx context.Context, client *Client, chatID, 
 	}
 	s.edit(ctx, client, chatID, msgID,
 		i18n.T(lang, "user.subCancelled")+"\n\n"+userSelfCard(u, set, s.panel, lang),
-		userMenuRows(set, u, lang))
+		s.menuRows(set, u, lang))
 }
 
 // showPlans presents the billing options. While a paid plan is active only renewal
@@ -840,47 +881,71 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 	}
 	// Active paid plan: renew the same plan or cancel it — switching is blocked.
 	if active := s.panel.ActivePaidPlan(u); active != nil {
+		var rows [][]InlineButton
+		// A lifetime plan has nothing to renew.
+		if active.PeriodDays > 0 {
+			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnRenewPlan", active.Name), CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}})
+		}
+		rows = append(rows,
+			[]InlineButton{{Text: i18n.T(lang, "user.btnCancelSub"), CallbackData: "vu:cancelplan"}},
+			[]InlineButton{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}},
+		)
 		s.edit(ctx, client, chatID, msgID,
-			i18n.T(lang, "user.planActive", esc(active.Name), planActiveUntil(u, s.panel, lang)),
-			[][]InlineButton{
-				{{Text: i18n.T(lang, "user.btnRenewPlan", active.Name), CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}},
-				{{Text: i18n.T(lang, "user.btnCancelSub"), CallbackData: "vu:cancelplan"}},
-				{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}},
-			})
+			i18n.T(lang, "user.planActive", esc(active.Name), planActiveUntil(u, s.panel, lang)), rows)
 		return
 	}
 	plans, err := s.panel.ListTariffPlans(false)
 	if err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)),
 			[][]InlineButton{{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}}})
 		return
 	}
+	// With no way to pay, only what the balance covers can be bought.
+	canPay := len(s.payMethods()) > 0
 	var rows [][]InlineButton
 	for _, p := range plans {
 		if p.IsFree() {
 			continue // paid plans only
 		}
+		q := s.panel.QuotePlan(u, &p)
+		if !canPay && q.MoneyRub > 0 {
+			continue
+		}
+		// A discount code the user entered shows in the price it buys.
+		label := planButtonLabel(p, lang)
+		if q.DiscountRub > 0 {
+			shown := p
+			shown.PriceRub = q.TotalRub
+			label = "🏷 " + planButtonLabel(shown, lang)
+		}
 		rows = append(rows, []InlineButton{{
-			Text:         planButtonLabel(p, lang),
+			Text:         label,
 			CallbackData: fmt.Sprintf("vu:buy:%d", p.ID),
 		}})
 	}
 	if len(rows) == 0 {
-		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.noPlans"),
+		empty := i18n.T(lang, "user.noPlans")
+		if !canPay {
+			empty = i18n.T(lang, "user.noPayMethod")
+		}
+		s.edit(ctx, client, chatID, msgID, empty,
 			[][]InlineButton{{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}}})
 		return
 	}
 	rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnBack"), CallbackData: "vu:menu"}})
 	msg := i18n.T(lang, "user.plansTitle") + "\n\n"
+	if set.WalletEnabled {
+		if w, err := s.panel.Wallet(u.ID); err == nil && w.BalanceKop > 0 {
+			msg += i18n.T(lang, "user.plansBalance", kop(w.BalanceKop)) + "\n\n"
+		}
+	}
 	switch {
 	case len(s.panel.PaymentMethods()) > 0:
 		msg += i18n.T(lang, "user.plansAuto")
 	case s.panel.ManualPayment():
 		msg += i18n.T(lang, "user.plansManual")
-	default:
-		msg += i18n.T(lang, "user.noPayMethod")
 	}
-	s.edit(ctx, client, chatID, msgID, msg, rows)
+	s.edit(ctx, client, chatID, msgID, strings.TrimSpace(msg), rows)
 }
 
 // planActiveUntil renders " until DD.MM.YYYY" for a user's paid expiry (empty if none).
@@ -912,20 +977,66 @@ func (s *UserService) payMethods() []string {
 
 // startPayment runs whichever method was chosen: the manual instructions, or the
 // provider's own checkout.
-func (s *UserService) startPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planIDStr string, planID int64, method string) {
+func (s *UserService) startPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64, periods int, method string) {
 	if method == sub.ManualPayKey {
-		s.manualPayment(ctx, client, chatID, msgID, u, planID)
+		s.manualPayment(ctx, client, chatID, msgID, u, planID, periods)
 		return
 	}
-	s.startProviderPayment(ctx, client, chatID, msgID, u, planIDStr, method)
+	s.startProviderPayment(ctx, client, chatID, msgID, u, planID, periods, method)
 }
 
-func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planIDStr string) {
+func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planID int64, periods int, pickTerm bool) {
 	lang := s.lang(chatID)
-	var planID int64
-	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
+	if planID <= 0 {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
 		return
+	}
+	// The balance (and a discount code) may cover the whole price — then there is
+	// nothing to pay with money, only a confirmation.
+	extra := ""
+	if fresh, ok := s.findLinkedUser(chatID); ok {
+		u = fresh
+	}
+	if plan, err := s.store.GetTariffPlan(planID); err == nil && !plan.IsFree() {
+		// Several terms on sale: ask which first. With nothing to pay money with, only
+		// the terms the balance covers.
+		offers := s.panel.PeriodOffers(u, plan)
+		if len(s.payMethods()) == 0 {
+			covered := offers[:0]
+			for _, o := range offers {
+				if o.MoneyRub == 0 {
+					covered = append(covered, o)
+				}
+			}
+			offers = covered
+		}
+		if pickTerm && len(offers) == 1 {
+			periods = offers[0].Periods
+		}
+		if pickTerm && len(offers) > 1 {
+			var rows [][]InlineButton
+			for _, o := range offers {
+				rows = append(rows, []InlineButton{{
+					Text:         core.PeriodLabel(lang, plan, o),
+					CallbackData: fmt.Sprintf("vu:buy:%d:%d", plan.ID, o.Periods),
+				}})
+			}
+			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}})
+			s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.pickTerm", esc(plan.Name)), rows)
+			return
+		}
+		q := s.panel.QuotePlanFor(u, plan, periods)
+		if q.Periods != max(periods, 1) {
+			// A term button from before the operator changed the offers: ask again
+			// rather than sell one period for the price of the term tapped.
+			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, 1, true)
+			return
+		}
+		if q.MoneyRub == 0 {
+			s.confirmBalancePay(ctx, client, chatID, msgID, u, plan, q)
+			return
+		}
+		extra = quoteLines(q, lang)
 	}
 	methods := s.payMethods()
 	switch len(methods) {
@@ -933,28 +1044,27 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(i18n.T(lang, "user.noPayMethod")),
 			[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}})
 	case 1:
-		s.startPayment(ctx, client, chatID, msgID, u, planIDStr, planID, methods[0])
+		s.startPayment(ctx, client, chatID, msgID, u, planID, periods, methods[0])
 	default:
 		var rows [][]InlineButton
 		for _, p := range methods {
-			rows = append(rows, []InlineButton{{Text: s.providerButton(lang, p), CallbackData: fmt.Sprintf("vu:pay:%s:%d", p, planID)}})
+			rows = append(rows, []InlineButton{{Text: s.providerButton(lang, p), CallbackData: fmt.Sprintf("vu:pay:%s:%d:%d", p, planID, periods)}})
 		}
 		rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}})
-		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.pickPayMethod"), rows)
+		s.edit(ctx, client, chatID, msgID, i18n.T(lang, "user.pickPayMethod")+extra, rows)
 	}
 }
 
 // startProviderPayment creates a provider payment and shows the pay button. The
 // tariff is applied automatically once the provider confirms (webhook/poll).
-func (s *UserService) startProviderPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planIDStr, provider string) {
+func (s *UserService) startProviderPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64, periods int, provider string) {
 	lang := s.lang(chatID)
-	var planID int64
-	if _, err := fmt.Sscan(planIDStr, &planID); err != nil || planID <= 0 {
+	if planID <= 0 {
 		return
 	}
-	order, err := s.panel.StartPlanPayment(ctx, lang, u.ID, planID, provider)
+	order, err := s.panel.StartPlanPayment(ctx, lang, u.ID, planID, provider, periods)
 	if err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)),
 			[][]InlineButton{
 				{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
 				{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},
@@ -962,6 +1072,12 @@ func (s *UserService) startProviderPayment(ctx context.Context, client *Client, 
 		return
 	}
 	msg := i18n.T(lang, "user.orderPay", order.ID, order.AmountRub)
+	if order.DiscountRub > 0 {
+		msg += "\n" + i18n.T(lang, "user.quoteDiscount", esc(order.PromoCode), order.DiscountRub)
+	}
+	if order.BalanceKop > 0 {
+		msg += "\n" + i18n.T(lang, "user.quoteBalance", kop(order.BalanceKop))
+	}
 	s.edit(ctx, client, chatID, msgID, msg,
 		[][]InlineButton{
 			{{Text: i18n.T(lang, "user.btnPay"), URL: order.PayURL},
@@ -969,11 +1085,11 @@ func (s *UserService) startProviderPayment(ctx context.Context, client *Client, 
 		})
 }
 
-func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64) {
+func (s *UserService) manualPayment(ctx context.Context, client *Client, chatID, msgID int64, u model.User, planID int64, periods int) {
 	lang := s.lang(chatID)
-	_, msg, err := s.panel.RequestPlanPayment(ctx, lang, u.ID, planID)
+	_, msg, err := s.panel.RequestPlanPayment(ctx, lang, u.ID, planID, periods)
 	if err != nil {
-		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(err.Error()),
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(core.UserError(err, lang)),
 			[][]InlineButton{
 				{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}},
 				{{Text: i18n.T(lang, "user.btnMenu"), CallbackData: "vu:menu"}},

@@ -66,7 +66,7 @@ func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
 	}
 	// The plan is still named as the user's current one; what must be gone is the
 	// button, since nothing would answer it.
-	if strings.Contains(page, `onclick="pay(`) {
+	if strings.Contains(page, `onclick="buyPlan(`) {
 		t.Error("the page offers a pay button with no payment method behind it")
 	}
 	if rec := postPay(h, u.SubToken, plan.ID, sub.ManualPayKey); rec.Code == http.StatusOK {
@@ -80,7 +80,7 @@ func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	page = fetchSubHTML(h, u.SubToken)
-	for _, want := range []string{`onclick="pay(`, sub.ManualPayKey, set.BillingPaymentNote} {
+	for _, want := range []string{`onclick="buyPlan(`, sub.ManualPayKey, set.BillingPaymentNote} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q once manual payment is on", want)
 		}
@@ -157,5 +157,45 @@ func TestManualPaymentStandsBesideAProvider(t *testing.T) {
 	if rec := postPay(h, u.SubToken, plan.ID, sub.ManualPayKey); rec.Code != http.StatusOK ||
 		!strings.Contains(rec.Body.String(), `"manual":true`) {
 		t.Errorf("manual payment beside a provider: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A payment the page was watching clears with a message the page can show — the
+// user paying on the web may have no bot to be told in.
+func TestSubOrderSaysWhatThePaymentDid(t *testing.T) {
+	t.Parallel()
+	h, mgr, st := nodeAPITestServer(t)
+	u, err := mgr.CreateUser(t.Context(), "watcher", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _ := st.GetSettings()
+	set.BillingEnabled, set.BillingManualEnabled, set.WalletEnabled, set.WalletTopupMin = true, true, true, 10
+	if err := mgr.SaveBillingSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	get := func() map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/sub/"+u.SubToken+"/order", nil)
+		req.Header.Set("Accept-Language", "en")
+		req.RemoteAddr = testClientIP + ":40000"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out
+	}
+	if got := get(); got["done"] != nil {
+		t.Fatalf("a message with nothing paid: %v", got)
+	}
+	o, _, err := mgr.RequestTopupManual(t.Context(), "en", u.ID, 75)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.ConfirmPayment(t.Context(), o.ID); err != nil {
+		t.Fatal(err)
+	}
+	done, _ := get()["done"].(map[string]any)
+	if done == nil || int64(done["order_id"].(float64)) != o.ID || !strings.Contains(done["message"].(string), "75") {
+		t.Fatalf("done = %v", done)
 	}
 }

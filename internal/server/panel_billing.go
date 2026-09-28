@@ -19,7 +19,15 @@ func (rt *Router) paymentStats(w http.ResponseWriter, _ *http.Request) {
 	if stats.ByProvider == nil {
 		stats.ByProvider = []model.ProviderStat{}
 	}
-	writeJSON(w, http.StatusOK, stats)
+	// Refunds go to the balance: the page offers them only while there is one.
+	wallet := false
+	if set, err := rt.mgr.Settings(); err == nil {
+		wallet = set.WalletEnabled
+	}
+	writeJSON(w, http.StatusOK, struct {
+		*model.PaymentStats
+		Wallet bool `json:"wallet"`
+	}{stats, wallet})
 }
 
 func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +59,13 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"payment_note":  set.BillingPaymentNote,
 		"manual":        set.BillingManualEnabled,
 		"manual_label":  set.BillingManualLabel,
+		"wallet":        set.WalletEnabled,
+		"topup_min":     set.WalletTopupMin,
+		"ref_mode":      set.RefMode,
+		"ref_percent":   set.RefPercent,
+		"ref_days":      set.RefDays,
+		"ref_first":     set.RefFirstOnly,
+		"periods":       periodOffersOrEmpty(set.BillingPeriods),
 		"plans":         plans,
 		"plan_users":    planUsers,
 	})
@@ -64,6 +79,14 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		PaymentNote string `json:"payment_note"`
 		Manual      bool   `json:"manual"`
 		ManualLabel string `json:"manual_label"`
+		Wallet      *bool  `json:"wallet"`
+		TopupMin    int    `json:"topup_min"`
+		RefMode     string `json:"ref_mode"`
+		RefPercent  int    `json:"ref_percent"`
+		RefDays     int    `json:"ref_days"`
+		RefFirst    *bool  `json:"ref_first"`
+		// Periods replaces the multi-period discounts; left out (null) keeps them.
+		Periods *[]model.PeriodOffer `json:"periods"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -79,6 +102,29 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	set.BillingPaymentNote = strings.TrimSpace(req.PaymentNote)
 	set.BillingManualEnabled = req.Manual
 	set.BillingManualLabel = strings.TrimSpace(req.ManualLabel)
+	if req.Wallet != nil {
+		set.WalletEnabled = *req.Wallet
+	}
+	// A value left out (zero) keeps what is stored: a caller written before these
+	// fields existed must not have its save refused over them.
+	if req.TopupMin != 0 {
+		set.WalletTopupMin = req.TopupMin
+	}
+	if req.RefMode != "" {
+		set.RefMode = req.RefMode
+	}
+	if req.RefPercent != 0 {
+		set.RefPercent = req.RefPercent
+	}
+	if req.RefDays != 0 {
+		set.RefDays = req.RefDays
+	}
+	if req.RefFirst != nil {
+		set.RefFirstOnly = *req.RefFirst
+	}
+	if req.Periods != nil {
+		set.BillingPeriods = *req.Periods
+	}
 	if err := rt.mgr.SaveBillingSettings(set); err != nil {
 		writeManagerErr(w, err)
 		return
@@ -275,4 +321,12 @@ func (rt *Router) setUserPlan(w http.ResponseWriter, r *http.Request, userID int
 		return
 	}
 	writeOK(w)
+}
+
+// periodOffersOrEmpty keeps "no offers" a list in JSON, not null.
+func periodOffersOrEmpty(o []model.PeriodOffer) []model.PeriodOffer {
+	if o == nil {
+		return []model.PeriodOffer{}
+	}
+	return o
 }

@@ -12,8 +12,10 @@ import {
   type BillingInfo,
   type Group,
   type PaymentProvider,
+  type RefMode,
   type TariffPlan,
 } from "./api";
+import { PromosPanel } from "./PromosPanel";
 import { useAction } from "./hooks";
 import { currentLang } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
@@ -35,6 +37,8 @@ import {
   Select,
   SettingRow,
   Switch,
+  TextInput,
+  ToggleRow,
   useConfirm,
   useWideBox,
 } from "./ui";
@@ -52,6 +56,27 @@ const PLAN_TPL =
   "minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1.8fr) minmax(0,.5fr) 76px";
 const PLAN_TPL_NARROW = "minmax(0,1fr) auto";
 const PLANS_WIDE_MIN = 620;
+
+// toCfg reads the billing settings the form edits, with defaults for a server that
+// predates a field.
+function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
+  return {
+    enabled: !!d.enabled,
+    free_plan_id: d.free_plan_id ?? 0,
+    trial_plan_id: d.trial_plan_id ?? 0,
+    payment_note: d.payment_note ?? "",
+    manual: !!d.manual,
+    manual_label: d.manual_label ?? "",
+    wallet: !!d.wallet,
+    topup_min: d.topup_min || 100,
+    ref_mode: d.ref_mode || "off",
+    ref_percent: d.ref_percent || 10,
+    ref_days: d.ref_days || 7,
+    ref_first: !!d.ref_first,
+    periods: d.periods ?? [],
+    plans,
+  };
+}
 
 export function BillingPanel() {
   const { t } = useTranslation();
@@ -106,15 +131,7 @@ export function BillingPanel() {
     getBilling()
       .then((d) => {
         const nextPlans = d.plans ?? [];
-        const nextCfg: BillingInfo = {
-          enabled: !!d.enabled,
-          free_plan_id: d.free_plan_id ?? 0,
-          trial_plan_id: d.trial_plan_id ?? 0,
-          payment_note: d.payment_note ?? "",
-          manual: !!d.manual,
-          manual_label: d.manual_label ?? "",
-          plans: nextPlans,
-        };
+        const nextCfg = toCfg(d, nextPlans);
         setCfg(nextCfg);
         setSaved(nextCfg);
         setPlans(nextPlans);
@@ -128,15 +145,7 @@ export function BillingPanel() {
     getBilling()
       .then((d) => {
         const nextPlans = d.plans ?? [];
-        const nextCfg: BillingInfo = {
-          enabled: !!d.enabled,
-          free_plan_id: d.free_plan_id ?? 0,
-          trial_plan_id: d.trial_plan_id ?? 0,
-          payment_note: d.payment_note ?? "",
-          manual: !!d.manual,
-          manual_label: d.manual_label ?? "",
-          plans: nextPlans,
-        };
+        const nextCfg = toCfg(d, nextPlans);
         setCfg(nextCfg);
         setSaved(nextCfg);
         setPlans(nextPlans);
@@ -180,7 +189,14 @@ export function BillingPanel() {
     cfg.trial_plan_id !== saved.trial_plan_id ||
     cfg.payment_note !== saved.payment_note ||
     cfg.manual !== saved.manual ||
-    cfg.manual_label !== saved.manual_label;
+    cfg.manual_label !== saved.manual_label ||
+    cfg.wallet !== saved.wallet ||
+    cfg.topup_min !== saved.topup_min ||
+    cfg.ref_mode !== saved.ref_mode ||
+    cfg.ref_percent !== saved.ref_percent ||
+    cfg.ref_days !== saved.ref_days ||
+    cfg.ref_first !== saved.ref_first ||
+    JSON.stringify(cfg.periods) !== JSON.stringify(saved.periods);
 
   // Which providers have unsaved edits (skip any whose server view we don't have).
   const dirtyProviders = (providers ?? []).filter(
@@ -197,8 +213,31 @@ export function BillingPanel() {
   // saveSettings persists whatever is dirty behind the single bottom SaveBar: the
   // tariff settings and every changed provider (each provider is its own API call;
   // the last response carries the refreshed provider list).
-  const saveSettings = () =>
-    run(async () => {
+  // The numbers the server would refuse (or, left at 0, keep as they were) are
+  // caught here, so the form never shows a value that was not saved.
+  const numbersError = (): string => {
+    if (cfg.topup_min < 1 || cfg.topup_min > 1_000_000)
+      return t("err.topupMinRange", { max: 1_000_000 });
+    if (cfg.ref_mode === "percent" && (cfg.ref_percent < 1 || cfg.ref_percent > 100))
+      return t("err.refPercentRange");
+    if (cfg.ref_mode === "days" && (cfg.ref_days < 1 || cfg.ref_days > 365))
+      return t("err.refDaysRange", { max: 365 });
+    const seen = new Set<number>();
+    for (const o of cfg.periods) {
+      if (o.periods < 2 || o.periods > 36 || o.percent < 0 || o.percent > 90 || seen.has(o.periods))
+        return t("err.periodOffer");
+      seen.add(o.periods);
+    }
+    return "";
+  };
+
+  const saveSettings = () => {
+    const bad = billingDirty ? numbersError() : "";
+    if (bad) {
+      notifyError(bad);
+      return;
+    }
+    return run(async () => {
       if (billingDirty) {
         await saveBilling({
           enabled: cfg.enabled,
@@ -207,6 +246,13 @@ export function BillingPanel() {
           payment_note: cfg.payment_note,
           manual: cfg.manual,
           manual_label: cfg.manual_label,
+          wallet: cfg.wallet,
+          topup_min: cfg.topup_min,
+          ref_mode: cfg.ref_mode,
+          ref_percent: cfg.ref_percent,
+          ref_days: cfg.ref_days,
+          ref_first: cfg.ref_first,
+          periods: cfg.periods,
         });
         setSaved({ ...cfg, plans: safePlans });
         // Tell the top nav to re-read billing_enabled so the payments menu item
@@ -226,6 +272,7 @@ export function BillingPanel() {
       if (latest) seedProviders(latest);
       notifySuccess(t("general.saved"));
     }).catch((e) => notifyError(errMessage(e)));
+  };
 
   const openCreate = () => {
     const maxOrder = safePlans.reduce((m, p) => Math.max(m, p.sort_order), 0);
@@ -431,6 +478,136 @@ export function BillingPanel() {
           )}
         </Panel>
 
+        <Panel
+          title={t("wallet.title")}
+          aside={<Switch checked={cfg.wallet} onChange={(v) => setCfg({ ...cfg, wallet: v })} />}
+        >
+          <SettingRow hint={t("wallet.hint")} />
+          <SettingRow
+            label={t("wallet.topupMin")}
+            field={
+              <TextInput
+                type="number"
+                value={String(cfg.topup_min)}
+                disabled={!cfg.wallet}
+                onChange={(v) => setCfg({ ...cfg, topup_min: Math.max(0, Math.floor(Number(v) || 0)) })}
+              />
+            }
+          />
+        </Panel>
+
+        <Panel title={t("ref.title")}>
+          <SettingRow hint={t("ref.hint")} />
+          <SettingRow
+            label={t("ref.mode")}
+            field={
+              <Select
+                data={[
+                  { value: "off", label: t("ref.modeOff") },
+                  { value: "percent", label: t("ref.modePercent") },
+                  { value: "days", label: t("ref.modeDays") },
+                ]}
+                value={cfg.ref_mode}
+                onChange={(v) => setCfg({ ...cfg, ref_mode: v as RefMode })}
+              />
+            }
+          />
+          {/* The percentage lands on the balance, so it needs one. */}
+          {cfg.ref_mode === "percent" && !cfg.wallet && (
+            <SettingRow hint={<span className="text-warning">{t("ref.needsWallet")}</span>} />
+          )}
+          {cfg.ref_mode === "percent" && (
+            <SettingRow
+              label={t("ref.percent")}
+              field={
+                <TextInput
+                  type="number"
+                  value={String(cfg.ref_percent)}
+                  onChange={(v) => setCfg({ ...cfg, ref_percent: Math.max(0, Math.floor(Number(v) || 0)) })}
+                />
+              }
+            />
+          )}
+          {cfg.ref_mode === "days" && (
+            <SettingRow
+              label={t("ref.days")}
+              hint={t("ref.daysHint")}
+              field={
+                <TextInput
+                  type="number"
+                  value={String(cfg.ref_days)}
+                  onChange={(v) => setCfg({ ...cfg, ref_days: Math.max(0, Math.floor(Number(v) || 0)) })}
+                />
+              }
+            />
+          )}
+          {cfg.ref_mode !== "off" && (
+            <ToggleRow
+              label={t("ref.firstOnly")}
+              checked={cfg.ref_first}
+              onChange={(v) => setCfg({ ...cfg, ref_first: v })}
+            />
+          )}
+        </Panel>
+
+        <Panel
+          title={t("periods.title")}
+          aside={
+            <IconButton
+              variant="filled"
+              color="brand"
+              title={t("periods.add")}
+              onClick={() => {
+                const used = new Set(cfg.periods.map((o) => o.periods));
+                const next = [3, 6, 12, 2, 24].find((n) => !used.has(n)) ?? 2;
+                setCfg({ ...cfg, periods: [...cfg.periods, { periods: next, percent: 10 }] });
+              }}
+            >
+              <IconPlus />
+            </IconButton>
+          }
+        >
+          <SettingRow hint={t("periods.hint")} />
+          {cfg.periods.map((o, i) => (
+            <SettingRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: the row's own numbers are being edited, so keying on them would remount the input mid-typing
+              key={i}
+              label={t("periods.row", { count: o.periods })}
+              field={
+                <span className="flex items-center gap-2">
+                  <TextInput
+                    type="number"
+                    value={String(o.periods)}
+                    onChange={(v) => {
+                      const periods = [...cfg.periods];
+                      periods[i] = { ...o, periods: Math.max(0, Math.floor(Number(v) || 0)) };
+                      setCfg({ ...cfg, periods });
+                    }}
+                  />
+                  <span className="text-xs text-ink-muted">{t("periods.discount")}</span>
+                  <TextInput
+                    type="number"
+                    value={String(o.percent)}
+                    onChange={(v) => {
+                      const periods = [...cfg.periods];
+                      periods[i] = { ...o, percent: Math.max(0, Math.floor(Number(v) || 0)) };
+                      setCfg({ ...cfg, periods });
+                    }}
+                  />
+                  <span className="text-xs text-ink-muted">%</span>
+                  <IconButton
+                    color="red"
+                    title={t("common.delete")}
+                    onClick={() => setCfg({ ...cfg, periods: cfg.periods.filter((_, j) => j !== i) })}
+                  >
+                    <IconTrash size={16} />
+                  </IconButton>
+                </span>
+              }
+            />
+          ))}
+        </Panel>
+
         <Panel title={t("bill.pricing")}>
           <SettingRow hint={t("bill.pricingHint")} />
           <SettingRow
@@ -466,6 +643,8 @@ export function BillingPanel() {
           />
         </Panel>
         </ReadOnly>
+
+        <PromosPanel plans={safePlans} />
 
         <SaveBar
           dirty={dirty}

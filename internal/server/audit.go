@@ -141,9 +141,13 @@ var auditActions = map[string]auditRoute{
 	"POST /api/billing/plans":              act(model.AuditPlanSaved),
 	"DELETE /api/billing/plans/{id}":       act(model.AuditPlanDeleted),
 	"POST /api/billing/plans/{id}/migrate": act(model.AuditPlanMigrated),
+	"POST /api/billing/promos":             act(model.AuditPromoSaved),
+	"DELETE /api/billing/promos/{id}":      act(model.AuditPromoDeleted),
 	// Orders are user-scoped and already land in that user's journal, same actor.
 	"POST /api/billing/orders/{id}/confirm": skip,
 	"POST /api/billing/orders/{id}/cancel":  skip,
+	// A refund lands in the user's journal with the order and the amount.
+	"POST /api/billing/orders/{id}/refund": skip,
 
 	// Moderated registration: approval audits the created user inside the manager
 	// (EventUserRegistered); rejection deletes only a pending request (no user yet).
@@ -237,6 +241,9 @@ var auditActions = map[string]auditRoute{
 	"POST /api/users/{id}/reset-period":     skip,
 	"POST /api/users/{id}/devices/unbind":   skip,
 	"POST /api/users/{id}/plan":             skip,
+	// A balance correction lands in the user's journal with the amount and the note.
+	"POST /api/users/{id}/balance":   skip,
+	"POST /api/users/{id}/autorenew": skip,
 
 	// Sessions are audited inside their handlers: login has no session to read an
 	// actor from, and a FAILED login — the row worth having — never reaches a

@@ -42,7 +42,7 @@ type Panel interface {
 	ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error)
 	ApplyPlanToUser(ctx context.Context, userID, planID int64, extendFromCurrent bool) error
 	PlanName(planID int64) string
-	RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64) (*model.PaymentOrder, string, error)
+	RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, periods int) (*model.PaymentOrder, string, error)
 	// CreateRegisteredUser signs a new user up (active, for the open/invite modes).
 	CreateRegisteredUser(ctx context.Context, name string) (*model.User, error)
 	// RequestRegistration records a moderated signup (no user yet); ApproveRegistration
@@ -63,7 +63,22 @@ type Panel interface {
 	ManualPayment() bool
 	ManualPaymentLabel(lang i18n.Lang) string
 	ProviderLabel(key string) string
-	StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string) (*model.PaymentOrder, error)
+	StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string, periods int) (*model.PaymentOrder, error)
+
+	// Wallet, promo codes and referrals (no-op surface unless the operator turns them on).
+	QuotePlan(u model.User, plan *model.TariffPlan) core.PlanQuote
+	BuyPlanFromBalance(ctx context.Context, userID, planID, expectExpire int64, periods int) (*model.PaymentOrder, error)
+	QuotePlanFor(u model.User, plan *model.TariffPlan, periods int) core.PlanQuote
+	PeriodOffers(u model.User, plan *model.TariffPlan) []core.PlanQuote
+	StartTopup(ctx context.Context, lang i18n.Lang, userID int64, amountRub int, provider, returnURL string) (*model.PaymentOrder, error)
+	RequestTopupManual(ctx context.Context, lang i18n.Lang, userID int64, amountRub int) (*model.PaymentOrder, string, error)
+	Wallet(userID int64) (model.Wallet, error)
+	SetAutoRenew(ctx context.Context, userID int64, on bool) error
+	RedeemPromo(ctx context.Context, userID int64, code string) (*core.PromoResult, error)
+	PromosOffered() bool
+	RefCode(userID int64) (string, error)
+	TrackReferral(chatID int64, code string)
+	AttachReferrer(ctx context.Context, userID, chatID int64)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))
 	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))

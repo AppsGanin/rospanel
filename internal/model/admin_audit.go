@@ -72,6 +72,8 @@ const (
 	AuditPlanSaved    = "plan.saved"
 	AuditPlanDeleted  = "plan.deleted"
 	AuditPlanMigrated = "plan.migrated"
+	AuditPromoSaved   = "promo.saved"
+	AuditPromoDeleted = "promo.deleted"
 
 	// The API surface.
 	AuditAPIKeyCreated  = "apikey.created"
@@ -167,6 +169,8 @@ var AdminAuditCatalog = []AdminAuditEntry{
 	{AuditPlanSaved, AuditCatPlans},
 	{AuditPlanDeleted, AuditCatPlans},
 	{AuditPlanMigrated, AuditCatPlans},
+	{AuditPromoSaved, AuditCatPlans},
+	{AuditPromoDeleted, AuditCatPlans},
 
 	{AuditAPIKeyCreated, AuditCatAPI},
 	{AuditAPIKeyRevoked, AuditCatAPI},
