@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.1.0](https://github.com/AppsGanin/rospanel/compare/v4.0.0...v4.1.0) (2026-09-28)
+
+
+### Features
+
+* **api:** what your own bot or user cabinet needs, and a selling permission ([3a390eb](https://github.com/AppsGanin/rospanel/commit/3a390eb94b66927d4fe10be54e282a200567fe2a))
+* **billing:** balance, promo codes and a referral programme ([20b81dc](https://github.com/AppsGanin/rospanel/commit/20b81dce5f493ed1af28ab32f70e69c6bc808413))
+* **billing:** chargebacks, win-back codes and a sales funnel ([48cd7db](https://github.com/AppsGanin/rospanel/commit/48cd7db3b972decb9006d9b3f4f4974290bbcb11))
+* **journal:** logs and cancelled orders are kept for a year ([1b06cf2](https://github.com/AppsGanin/rospanel/commit/1b06cf2baad5b0a27df15f548679e269d9d551a2))
+* **update:** the panel updates itself and its servers on a schedule ([dc32d21](https://github.com/AppsGanin/rospanel/commit/dc32d21cda380d6df948f72915d54091510b6bc1))
+
 ## [4.0.0](https://github.com/AppsGanin/rospanel/compare/v3.9.0...v4.0.0) (2026-09-23)
 
 
