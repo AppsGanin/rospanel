@@ -23,7 +23,7 @@ type AdminAudit struct {
 }
 
 // AdminAuditRetentionDays matches the user journal's window.
-const AdminAuditRetentionDays = 90
+const AdminAuditRetentionDays = 365
 
 // Audit action keys. Stable strings persisted in admin_audit.action — never renamed
 // once shipped, or old rows lose their label.

@@ -569,7 +569,7 @@ their deletion. The **panel log** (visible to the owner) covers logins and **fai
 with IPs**, second factors switched on and off, settings changes and backups; only successful
 actions are written, request bodies never are. The panel log is **searchable** (free text over
 action, target, administrator and IP) and filterable by category and date range, and the
-current view **exports to CSV** in one click. Both logs are kept for 90 days.
+current view **exports to CSV** in one click. Both logs are kept for a year.
 
 #### 🤖 Integrations
 
