@@ -1025,6 +1025,15 @@ type Settings struct {
 	// Winback sends a user whose paid term lapsed a personal discount code.
 	Winback WinbackSettings `json:"-"`
 
+	// AutoUpdateCron is when the panel checks for a newer release and installs it (in
+	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.
+	// AutoUpdateLastAt / AutoUpdateLast are the last attempt and its outcome — see
+	// the autoupdate package for the outcome's form.
+	AutoUpdateCron   string `json:"-"`
+	AutoUpdateNodes  bool   `json:"-"`
+	AutoUpdateLastAt int64  `json:"-"`
+	AutoUpdateLast   string `json:"-"`
+
 	// PaymentWebhookSecret is the random URL segment the provider webhooks are
 	// mounted under (/<secret>/<provider>), so the callback path is fixed yet
 	// unguessable and doesn't reveal the hidden panel. Provider credentials
@@ -1136,6 +1145,9 @@ const (
 	// rather than riding XrayDown: nothing is down, the bill is what is at risk, and
 	// an operator who muted outage noise still wants to hear about overage.
 	AdminEventNodeTraffic int64 = 1 << 10
+	// AdminEventUpdate reports what the scheduled auto-update did: installed a
+	// release, sent the servers to one, or failed.
+	AdminEventUpdate int64 = 1 << 11
 )
 
 // AdminEventCatalog is the stable key→flag mapping the settings API/UI iterate
@@ -1155,6 +1167,7 @@ var AdminEventCatalog = []struct {
 	{"probe", AdminEventProbe},
 	{"login", AdminEventLogin},
 	{"node_traffic", AdminEventNodeTraffic},
+	{"update", AdminEventUpdate},
 }
 
 // AdminEventEnabled reports whether the given AdminEvent* flag is enabled.

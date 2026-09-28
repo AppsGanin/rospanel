@@ -257,6 +257,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_users_by_id_balance", map[string]any{
 		"id": created, "body": map[string]any{"amount_kop": 5000, "note": "sweep"},
 	})
+	call("post_system_auto_update", map[string]any{"body": map[string]any{"cron": "0 4 * * *", "nodes": true}})
 	call("post_users_by_id_autorenew", map[string]any{"id": created, "body": map[string]any{"on": false}})
 	call("post_users_by_id_promo", map[string]any{"id": created, "body": map[string]any{"code": "SWEEP10"}})
 	call("post_users_by_id_telegram", map[string]any{"id": created, "body": map[string]any{"chat_id": 910001}})

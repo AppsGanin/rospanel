@@ -2,11 +2,10 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/backup"
@@ -14,14 +13,8 @@ import (
 	"github.com/AppsGanin/rospanel/internal/version"
 )
 
-// updateRepo is the "owner/repo" the panel self-updates from: the baked-in
-// updater.Repo, optionally overridden by the ROSPANEL_REPO env (handy for testing).
-func updateRepo() string {
-	if r := strings.TrimSpace(os.Getenv("ROSPANEL_REPO")); r != "" {
-		return r
-	}
-	return updater.Repo
-}
+// updateRepo is the "owner/repo" the panel self-updates from.
+func updateRepo() string { return updater.ConfiguredRepo() }
 
 // checkUpdate reports the running version and, if the update repo is configured,
 // whether a newer GitHub release exists.
@@ -67,6 +60,10 @@ func (rt *Router) applyUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	// context.Background(): the download must outlive the HTTP request.
 	if err := updater.Apply(context.Background(), rel, backupFn); err != nil {
+		if errors.Is(err, updater.ErrInProgress) {
+			writeErrCode(w, http.StatusConflict, "err.updateInProgress", "обновление уже идёт")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -84,4 +81,94 @@ func (rt *Router) applyUpdate(w http.ResponseWriter, r *http.Request) {
 		f.Flush()
 	}
 	updater.Restart()
+}
+
+// autoUpdateView is the auto-update schedule and the last attempt's outcome.
+type autoUpdateView struct {
+	Cron   string `json:"cron"`    // 5-field cron in the panel's timezone; "" = off
+	Nodes  bool   `json:"nodes"`   // the servers follow the panel
+	LastAt int64  `json:"last_at"` // unix, 0 = never tried
+	// Last is the outcome: updated:<version> | latest | nodes:<n> | unsupported |
+	// error:<message>.
+	Last string `json:"last"`
+	// Supported: the panel runs as a systemd service, which the restart after an
+	// install needs. A container updates with its image instead.
+	Supported bool `json:"supported"`
+}
+
+// autoUpdateReq changes the schedule; a field left out keeps its value.
+type autoUpdateReq struct {
+	Cron  *string `json:"cron"`
+	Nodes *bool   `json:"nodes"`
+}
+
+func (rt *Router) autoUpdateState() (autoUpdateView, error) {
+	set, err := rt.mgr.Settings()
+	if err != nil {
+		return autoUpdateView{}, err
+	}
+	return autoUpdateView{Cron: set.AutoUpdateCron, Nodes: set.AutoUpdateNodes,
+		LastAt: set.AutoUpdateLastAt, Last: set.AutoUpdateLast, Supported: updater.UnderSystemd()}, nil
+}
+
+// saveAutoUpdate applies req over the stored schedule.
+func (rt *Router) saveAutoUpdate(req autoUpdateReq) (autoUpdateView, error) {
+	cur, err := rt.autoUpdateState()
+	if err != nil {
+		return cur, err
+	}
+	if req.Cron != nil {
+		cur.Cron = *req.Cron
+	}
+	if req.Nodes != nil {
+		cur.Nodes = *req.Nodes
+	}
+	if err := rt.mgr.SaveAutoUpdate(cur.Cron, cur.Nodes); err != nil {
+		return cur, err
+	}
+	return rt.autoUpdateState()
+}
+
+func (rt *Router) getAutoUpdate(w http.ResponseWriter, _ *http.Request) {
+	v, err := rt.autoUpdateState()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (rt *Router) postAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	var req autoUpdateReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	v, err := rt.saveAutoUpdate(req)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (rt *Router) apiGetAutoUpdate(w http.ResponseWriter, _ *http.Request) {
+	v, err := rt.autoUpdateState()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, v)
+}
+
+func (rt *Router) apiPostAutoUpdate(w http.ResponseWriter, r *http.Request) {
+	var req autoUpdateReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	v, err := rt.saveAutoUpdate(req)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, v)
 }

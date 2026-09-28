@@ -967,6 +967,21 @@ export const applyUpdate = (withNodes = false) =>
     { method: 'POST' },
   )
 
+// Auto-update: at cron (the panel's timezone; "" = off) the panel installs a newer
+// release by itself; with nodes the servers follow. last is the last attempt's
+// outcome: updated:<version> | latest | nodes:<n> | error:<message>.
+export interface AutoUpdate {
+  cron: string
+  nodes: boolean
+  last_at: number
+  last: string
+  supported: boolean // runs as a systemd service; a container updates with its image
+}
+
+export const getAutoUpdate = () => api<AutoUpdate>('api/update/auto')
+export const saveAutoUpdate = (a: { cron: string; nodes: boolean }) =>
+  api<AutoUpdate>('api/update/auto', { method: 'POST', body: JSON.stringify(a) })
+
 export const setupPassword = (password: string) =>
   api<{ ok: boolean }>('api/setup/password', {
     method: 'POST',

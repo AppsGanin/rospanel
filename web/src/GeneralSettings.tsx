@@ -4,6 +4,9 @@ import { useTranslation } from "react-i18next";
 import {
   applyUpdate,
   checkUpdate,
+  getAutoUpdate,
+  saveAutoUpdate,
+  type AutoUpdate,
   getMe,
   getSettings,
   getConnPolicy,
@@ -39,6 +42,7 @@ import { ConnPolicyCard, EMPTY_POLICY } from "./ConnPolicyCard";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { useCan, useIsOwner } from "./role";
 import { browserTimezone, setPanelTimezone, tzOptions } from "./tz";
+import { fmtStamp } from "./format";
 import {
   ReadOnly,
   Button,
@@ -109,6 +113,25 @@ export const decoyLabel = (slug: string): string => {
   }
 };
 
+// autoUpdateOutcome words the last auto-update attempt (see api.AutoUpdate.last).
+function autoUpdateOutcome(last: string): string {
+  const [kind, ...rest] = last.split(":");
+  const arg = rest.join(":");
+  switch (kind) {
+    case "updated":
+      return i18n.t("general.autoUpdateUpdated", { version: arg });
+    case "latest":
+      return i18n.t("general.autoUpdateLatest");
+    case "nodes":
+      return i18n.t("general.autoUpdateNodesSent", { n: Number(arg) || 0 });
+    case "error":
+      return i18n.t("general.autoUpdateError", { error: arg });
+    case "unsupported":
+      return i18n.t("general.autoUpdateUnsupported");
+  }
+  return last;
+}
+
 export function GeneralSettings() {
   const { t } = useTranslation();
   // This tab gathers five permissions' worth of settings; each block below shows,
@@ -135,6 +158,10 @@ export function GeneralSettings() {
   // How many nodes an update could take along, and whether the one running does.
   const [nodeCount, setNodeCount] = useState(0);
   const [updNodes, setUpdNodes] = useState(false);
+  // The auto-update schedule, a draft behind the page's SaveBar like the backups.
+  const [au, setAu] = useState<{ schedule: Schedule; nodes: boolean }>({ schedule: detectPreset(""), nodes: true });
+  const [savedAu, setSavedAu] = useState(au);
+  const [auLast, setAuLast] = useState<AutoUpdate | null>(null);
   const { isBusy, run } = useAction();
   const { confirm, confirmNode } = useConfirm();
   const [newSecret, setNewSecret] = useState("");
@@ -176,6 +203,15 @@ export function GeneralSettings() {
           setTimezone(browserTimezone());
           setSavedTz(browserTimezone());
         }),
+      canUpdate &&
+        getAutoUpdate()
+          .then((a) => {
+            const v = { schedule: detectPreset(a.cron), nodes: a.nodes };
+            setAu(v);
+            setSavedAu(v);
+            setAuLast(a);
+          })
+          .catch(() => {}),
       canSetView &&
         getStatusPage()
           .then((s) => {
@@ -228,6 +264,8 @@ export function GeneralSettings() {
   const bkDirty =
     bkCron !== buildCron(savedBk.schedule) || bk.keep !== savedBk.keep;
   const adDirty = autoDel !== savedAutoDel;
+  const auCron = buildCron(au.schedule);
+  const auDirty = auCron !== buildCron(savedAu.schedule) || au.nodes !== savedAu.nodes;
   const statusDirty =
     status.enabled !== savedStatus.enabled || status.path !== savedStatus.path;
   // The source policy is a draft like everything else on this page: one Save at the
@@ -235,7 +273,7 @@ export function GeneralSettings() {
   const policyDirty = JSON.stringify(policy) !== JSON.stringify(policySaved);
   const trustedDirty = trusted.join() !== trustedSaved.join();
   const dirty =
-    timezone !== savedTz || bkDirty || adDirty || statusDirty || policyDirty || trustedDirty;
+    timezone !== savedTz || bkDirty || adDirty || auDirty || statusDirty || policyDirty || trustedDirty;
   // The path is a bare URL segment; the server refuses anything else (and any
   // collision with the panel's other surfaces), but there is no reason to let the
   // operator get that far with an obviously wrong value.
@@ -261,6 +299,10 @@ export function GeneralSettings() {
         if (adDirty) {
           await setUserAutoDelete(autoDel);
           setSavedAutoDel(autoDel);
+        }
+        if (auDirty) {
+          setAuLast(await saveAutoUpdate({ cron: auCron, nodes: au.nodes }));
+          setSavedAu(au);
         }
         if (statusDirty) {
           await saveStatusPage(status);
@@ -289,6 +331,7 @@ export function GeneralSettings() {
     setTimezone(savedTz);
     setBk(savedBk);
     setAutoDel(savedAutoDel);
+    setAu(savedAu);
     setStatus(savedStatus);
     setPolicy(policySaved);
     setTrusted(trustedSaved);
@@ -441,6 +484,28 @@ export function GeneralSettings() {
                 )}
               </div>
             }
+          />
+        )}
+        <SettingRow label={t("general.autoUpdate")} hint={t("general.autoUpdateHint")}>
+          <CronPicker
+            value={au.schedule}
+            onChange={(schedule) => setAu((a) => ({ ...a, schedule }))}
+            offLabel={t("general.autoUpdateOff")}
+          />
+          {auLast && !auLast.supported && (
+            <p className="mt-1.5 text-[11px] text-warning">{t("general.autoUpdateNeedsSystemd")}</p>
+          )}
+          {auLast?.last_at ? (
+            <p className="mt-1.5 text-[11px] text-ink-muted">
+              {t("general.autoUpdateLast", { when: fmtStamp(auLast.last_at), what: autoUpdateOutcome(auLast.last) })}
+            </p>
+          ) : null}
+        </SettingRow>
+        {auCron && (
+          <ToggleRow
+            label={t("general.autoUpdateNodes")}
+            checked={au.nodes}
+            onChange={(nodes) => setAu((a) => ({ ...a, nodes }))}
           />
         )}
         <Modal

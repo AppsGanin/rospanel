@@ -18,6 +18,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/abuse"
 	"github.com/AppsGanin/rospanel/internal/auth"
 	"github.com/AppsGanin/rospanel/internal/autobackup"
+	"github.com/AppsGanin/rospanel/internal/autoupdate"
 	"github.com/AppsGanin/rospanel/internal/backup"
 	"github.com/AppsGanin/rospanel/internal/connguard"
 	"github.com/AppsGanin/rospanel/internal/core"
@@ -289,6 +290,7 @@ func runServer(dataDir string) {
 	// Scheduled local backups. Independent of Telegram, so an operator with no bot
 	// still gets automatic backups; idles until a cron is set in Settings.
 	runBG("auto backup", autobackup.New(mgr, st, dataDir).Run)
+	runBG("auto update", autoupdate.New(mgr, st, dataDir).Run)
 	// All three bots reach Telegram through the same egress, and in the WARP / Opera
 	// modes that egress is something this very startup brought up moments ago — Xray
 	// needs a couple of seconds past "process started" before its inbound accepts.

@@ -338,6 +338,8 @@ func (rt *Router) panelMux() http.Handler {
 	authedOwner("DELETE /api/roles/{key}", rt.deleteRole)
 	canUpdate("GET /api/update", rt.checkUpdate)
 	canUpdate("POST /api/update", rt.applyUpdate)
+	canUpdate("GET /api/update/auto", rt.getAutoUpdate)
+	canUpdate("POST /api/update/auto", rt.postAutoUpdate)
 	canSettingsManage("POST /api/setup/timezone", rt.setupTimezone)
 	canSettingsManage("POST /api/setup/finish", rt.setupFinish)
 	canConfigView("GET /api/settings", rt.getSettings)

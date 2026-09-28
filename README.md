@@ -707,7 +707,9 @@ authenticator too, including in the first-run wizard, so a backup of a 2FA-prote
 be restored by someone who has the file but not the authenticator.
 
 **Updates** in one command: the panel verifies SHA256, runs the binary dry, takes a backup and
-only then replaces itself, keeping the previous version next to it. **"What's new"** in the
+only then replaces itself, keeping the previous version next to it. **Auto-update** on a
+schedule (*Settings → General*): the panel installs a new release by itself and sends the
+servers after it (systemd install; Docker updates with its image); the admin bot says what it did. **"What's new"** in the
 profile menu shows the release history built into the binary itself, with the running version
 marked. The Xray core is pinned to
 an exact release, and a panel update carries it: on the next start the panel and every node

@@ -209,6 +209,7 @@ var auditActions = map[string]auditRoute{
 	"POST /api/restore":        act(model.AuditRestored),
 	"POST /api/reset":          act(model.AuditFactoryReset),
 	"POST /api/update":         act(model.AuditUpdated),
+	"POST /api/update/auto":    set("autoUpdate"),
 	"POST /api/xray/restart":   act(model.AuditXrayRestarted),
 	"POST /api/panel/restart":  act(model.AuditPanelRestarted),
 	"POST /api/stats/reset":    act(model.AuditStatsReset),
