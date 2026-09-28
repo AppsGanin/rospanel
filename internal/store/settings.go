@@ -73,7 +73,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt int
 	var awgParamsJSON, connPolicyJSON string
-	var walletEn, refFirstOnly int
+	var walletEn, refFirstOnly, winbackEn int
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -123,7 +123,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       sub_tpl_clash, sub_tpl_singbox, sub_tpl_xray,
 		       awg_enabled, awg_port, awg_private_key, awg_public_key, awg_params, awg_name, awg_dns,
 		       wallet_enabled, wallet_topup_min, ref_mode, ref_percent, ref_days, ref_first_only,
-		       billing_periods
+		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -176,7 +176,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&st.SubTplClash, &st.SubTplSingBox, &st.SubTplXray,
 		&awgEn, &st.AWGPort, &st.AWGPrivateKey, &st.AWGPublicKey, &awgParamsJSON, &st.AWGName, &st.AWGDNS,
 		&walletEn, &st.WalletTopupMin, &st.RefMode, &st.RefPercent, &st.RefDays, &refFirstOnly,
-		&billingPeriodsJSON,
+		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays,
 	)
 	if err != nil {
 		return nil, err
@@ -204,6 +204,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		_ = json.Unmarshal([]byte(billingPeriodsJSON), &st.BillingPeriods)
 	}
 	st.RefFirstOnly = refFirstOnly != 0
+	st.Winback.Enabled = winbackEn != 0
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &st.AWGParams)

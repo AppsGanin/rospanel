@@ -101,6 +101,8 @@ type Manager struct {
 	// deviceCheckedAt is when a flush last re-checked the device limits (unix; see
 	// deviceCheckEvery).
 	deviceCheckedAt atomic.Int64
+	// winbackAt is when the win-back sweep last ran (unix); it runs hourly.
+	winbackAt atomic.Int64
 	// accPending buffers sightings between flushes, so the access-log reader never
 	// touches the database on the hot path. Bounded by the throttle above: one entry
 	// per user+IP per flush interval, not per log line.

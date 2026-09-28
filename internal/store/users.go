@@ -1742,3 +1742,10 @@ func (s *Store) StampDeviceOverLimit(now int64) error {
 		return nil
 	})
 }
+
+// SetUserCreatedAt moves a user's join date — what the funnel counts by. For tests
+// and data brought over from elsewhere.
+func (s *Store) SetUserCreatedAt(id, at int64) error {
+	_, err := s.db.Exec(`UPDATE users SET created_at = ? WHERE id = ?`, at, id)
+	return err
+}

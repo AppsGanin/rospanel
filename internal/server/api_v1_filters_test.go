@@ -119,6 +119,12 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 		}
 	}
 
+	// Beta joined long ago, so the funnel's default 30 days leaves it out and all
+	// time does not.
+	if err := st.SetUserCreatedAt(beta.ID, time.Now().AddDate(0, 0, -90).Unix()); err != nil {
+		t.Fatalf("age beta: %v", err)
+	}
+
 	// ---- one biting value per advertised parameter ---------------------------
 	// Keyed "<path>?<param>". The value must exclude something the unfiltered call
 	// returns; identical bodies mean the parameter was read by nobody.
@@ -151,6 +157,7 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 		"/v1/billing/orders?status":          "status=cancelled",
 		"/v1/billing/orders?limit":           "limit=1",
 		"/v1/billing/orders?offset":          "offset=1",
+		"/v1/billing/funnel?days":            "days=0",
 		"/v1/stats/abuse?limit":              "limit=1",
 		"/v1/stats/users?from":               "from=" + day(1),
 		"/v1/stats/users?to":                 "to=" + day(2),

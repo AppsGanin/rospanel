@@ -181,6 +181,29 @@ func TestYooKassaPaymentStatusMapping(t *testing.T) {
 	}
 }
 
+// A refund notification names the refund; the payment it belongs to is re-fetched,
+// and a full refund reads as refunded, a partial one as still paid.
+func TestYooKassaRefundWebhook(t *testing.T) {
+	for _, tc := range []struct {
+		refunded string
+		want     Status
+	}{{"100.00", StatusRefunded}, {"40.00", StatusPaid}} {
+		var asked string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			asked = r.URL.Path
+			_, _ = w.Write([]byte(`{"status":"succeeded","paid":true,"amount":{"value":"100.00","currency":"RUB"},` +
+				`"refunded_amount":{"value":"` + tc.refunded + `","currency":"RUB"}}`))
+		}))
+		y := &YooKassa{shopID: "s", secretKey: "k", http: srv.Client(), base: srv.URL}
+		id, res, err := y.Webhook(context.Background(),
+			[]byte(`{"event":"refund.succeeded","object":{"id":"rf_1","payment_id":"pay_9"}}`), nil)
+		srv.Close()
+		if err != nil || id != "pay_9" || asked != "/payments/pay_9" || res.Status != tc.want {
+			t.Fatalf("refunded %s: id=%q asked=%q res=%+v err=%v", tc.refunded, id, asked, res, err)
+		}
+	}
+}
+
 func TestYooKassaHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

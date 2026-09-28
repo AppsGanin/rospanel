@@ -228,7 +228,7 @@ export function UsersPage({
           <RegistrationsPanel requests={reg.requests} onReload={loadReg} />
         )}
         {tab === "broadcast" && <BroadcastPanel />}
-        {tab === "payments" && <PaymentsPage onPending={setPendingPay} />}
+        {tab === "payments" && <PaymentsPage onPending={setPendingPay} userBotEnabled={userBotEnabled} />}
         {tab === "groups" && <GroupsPanel />}
         {tab === "stats" && <StatsPanel />}
         {tab === "events" && <EventsPanel />}

@@ -132,7 +132,9 @@ func (p rollyPayPayment) result() Result {
 	switch p.Status {
 	case "paid":
 		return amountResult(StatusPaid, p.Amount, rollyCurrency(p.Currency))
-	case "expired", "canceled", "chargeback":
+	case "chargeback":
+		return Result{Status: StatusRefunded}
+	case "expired", "canceled":
 		return Result{Status: StatusCanceled}
 	default: // created, processing
 		return Result{Status: StatusPending}

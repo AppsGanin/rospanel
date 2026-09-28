@@ -392,6 +392,9 @@ func rewardReferrer(tx *sql.Tx, userID, orderID int64, paid paidFor, ref RefRewa
 			}
 			res.RefBanked = true
 		}
+		if _, err := tx.Exec(`UPDATE payment_orders SET ref_days = ? WHERE id = ?`, ref.Days, orderID); err != nil {
+			return err
+		}
 		res.RefUserID, res.RefDays = referrer, ref.Days
 	}
 	return nil
@@ -720,7 +723,7 @@ func joinIDList(ids []int64) string {
 
 // ListPromos returns every promo code, newest first.
 func (s *Store) ListPromos() ([]model.PromoCode, error) {
-	rows, err := s.rdb.Query(`SELECT ` + promoCols + ` FROM promo_codes ORDER BY id DESC`)
+	rows, err := s.rdb.Query(`SELECT ` + promoCols + ` FROM promo_codes WHERE winback_user = 0 ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -750,7 +753,11 @@ func (s *Store) GetPromoByCode(code string) (model.PromoCode, error) {
 // when there is something to enter.
 func (s *Store) CountEnabledPromos() int {
 	var n int
-	_ = s.rdb.QueryRow(`SELECT count(*) FROM promo_codes WHERE enabled = 1`).Scan(&n)
+	// Live codes only: a spent or expired one — every win-back code in time — must not
+	// keep the promo field up for everyone.
+	_ = s.rdb.QueryRow(
+		`SELECT count(*) FROM promo_codes WHERE enabled = 1
+		   AND (expires_at = 0 OR expires_at > unixepoch()) AND (max_uses = 0 OR uses < max_uses)`).Scan(&n)
 	return n
 }
 
@@ -888,7 +895,7 @@ var ErrNotRefundable = errors.New("order cannot be refunded")
 func (s *Store) RefundOrder(orderID, now int64) (userID, kop int64, err error) {
 	err = s.withTx(func(tx *sql.Tx) error {
 		r, err := tx.Exec(
-			`UPDATE payment_orders SET refunded_at = ?
+			`UPDATE payment_orders SET refunded_at = ?, refund_source = 'balance'
 			 WHERE id = ? AND status = 'paid' AND kind = 'plan' AND refunded_at = 0`, now, orderID)
 		if err != nil {
 			return err
@@ -915,6 +922,132 @@ func (s *Store) RefundOrder(orderID, now int64) (userID, kop int64, err error) {
 	return userID, kop, err
 }
 
+// ProviderRefund is what a refund by the payment system took back.
+type ProviderRefund struct {
+	UserID      int64
+	Kind        string // the order's kind
+	Earlier     string // its refund source before: "" or model.RefundToBalance
+	ReturnedKop int64  // the balance part of a plan order, put back on the balance
+	TakenKop    int64  // taken off the user's balance
+	// ShortKop is what should have come off the user's balance but was spent already
+	// — the operator's to settle.
+	ShortKop    int64
+	ReferrerID  int64
+	RefTakenKop int64 // the referral credit taken back from the referrer
+	RefShortKop int64 // the part of it the referrer had spent already
+	RefDays     int   // bonus days taken back from the referrer
+}
+
+// ProviderRefundOrder records that the payment system returned a paid order's money
+// (a refund, or a chargeback), once, and settles the balances in the same
+// transaction:
+//   - a top-up, or an order the operator had already refunded to the balance: what
+//     that money put on the balance comes off it, as far as the balance goes;
+//   - a plan order: the part the balance paid goes back onto it — the caller takes
+//     the plan's time back, and that part was the user's own money;
+//   - the referral credit the money earned comes off the referrer's balance.
+//
+// ErrNotRefundable when the order is not paid or was refunded by the provider before.
+func (s *Store) ProviderRefundOrder(orderID, now int64) (ProviderRefund, error) {
+	var r ProviderRefund
+	err := s.withTx(func(tx *sql.Tx) error {
+		var amountRub, refDays int
+		var balanceKop int64
+		err := tx.QueryRow(
+			`SELECT user_id, kind, amount_rub, balance_kop, refund_source, ref_days FROM payment_orders
+			 WHERE id = ? AND status = 'paid'`, orderID,
+		).Scan(&r.UserID, &r.Kind, &amountRub, &balanceKop, &r.Earlier, &refDays)
+		if errors.Is(err, sql.ErrNoRows) || r.Earlier == model.RefundByProvider {
+			return ErrNotRefundable
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(
+			`UPDATE payment_orders SET refund_source = 'provider',
+			     refunded_at = CASE WHEN refunded_at = 0 THEN ? ELSE refunded_at END
+			 WHERE id = ?`, now, orderID); err != nil {
+			return err
+		}
+		money := int64(amountRub) * 100
+		back := txEntry{Kind: model.TxChargeback, OrderID: orderID, Now: now}
+		switch {
+		case r.Earlier == model.RefundToBalance || r.Kind == model.OrderTopup:
+			if r.TakenKop, err = debitUpTo(tx, r.UserID, money, back); err != nil {
+				return err
+			}
+			r.ShortKop = money - r.TakenKop
+		case balanceKop > 0:
+			if _, err := credit(tx, r.UserID, balanceKop,
+				txEntry{Kind: model.TxRefund, OrderID: orderID, Now: now}); err != nil {
+				return err
+			}
+			r.ReturnedKop = balanceKop
+		}
+		// A negative referral line, so what the referrer "earned" nets it out.
+		var earned int64
+		if err := tx.QueryRow(
+			`SELECT user_id, COALESCE(sum(amount_kop), 0) FROM balance_tx
+			 WHERE kind = 'referral' AND order_id = ? GROUP BY user_id`, orderID,
+		).Scan(&r.ReferrerID, &earned); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if earned > 0 {
+			r.RefTakenKop, err = debitUpTo(tx, r.ReferrerID, earned,
+				txEntry{Kind: model.TxReferral, OrderID: orderID, RefUserID: r.UserID, Now: now})
+			if err != nil {
+				return err
+			}
+			r.RefShortKop = earned - r.RefTakenKop
+		}
+		// Bonus days the payment gave the referrer: off what is still banked first, the
+		// rest off the term they went onto.
+		if refDays > 0 {
+			if err := tx.QueryRow(`SELECT referrer_id FROM users WHERE id = ?`, r.UserID).Scan(&r.ReferrerID); err != nil {
+				return err
+			}
+			if r.ReferrerID != 0 {
+				var banked int
+				if err := tx.QueryRow(`SELECT ref_bonus_days FROM users WHERE id = ?`, r.ReferrerID).Scan(&banked); err != nil &&
+					!errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				fromBank := min(banked, refDays)
+				if _, err := tx.Exec(
+					`UPDATE users SET ref_bonus_days = ref_bonus_days - ?,
+					     expire_at = CASE WHEN ? > 0 AND expire_at > ? THEN max(expire_at - ?, ?) ELSE expire_at END
+					 WHERE id = ?`,
+					fromBank, refDays-fromBank, now, int64(refDays-fromBank)*86400, now, r.ReferrerID); err != nil {
+					return err
+				}
+				r.RefDays = refDays
+			}
+		}
+		return nil
+	})
+	return r, err
+}
+
+// debitUpTo takes up to kop off the balance — all of it, or what there is — and
+// returns what it took.
+func debitUpTo(tx *sql.Tx, userID, kop int64, e txEntry) (int64, error) {
+	var bal int64
+	if err := tx.QueryRow(`SELECT balance_kop FROM users WHERE id = ?`, userID).Scan(&bal); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	take := min(bal, kop)
+	if take <= 0 {
+		return 0, nil
+	}
+	if _, err := debit(tx, userID, take, e); err != nil {
+		return 0, err
+	}
+	return take, nil
+}
+
 // ShortenTerm takes secs off the term of a user still on planID with a running term,
 // never below now, and returns the new end (0 = nothing to shorten).
 func (s *Store) ShortenTerm(userID, planID, secs, now int64) (int64, error) {
@@ -935,7 +1068,7 @@ func (s *Store) ListReferrals(referrerID int64, limit int) ([]model.Referral, er
 	rows, err := s.rdb.Query(
 		`SELECT u.id, u.name, u.created_at,
 		        (SELECT COALESCE(sum(amount_rub), 0) FROM payment_orders
-		         WHERE user_id = u.id AND status = 'paid'),
+		         WHERE user_id = u.id AND status = 'paid' AND refund_source <> 'provider'),
 		        (SELECT COALESCE(sum(amount_kop), 0) FROM balance_tx
 		         WHERE user_id = ? AND kind = 'referral' AND ref_user_id = u.id)
 		 FROM users u WHERE u.referrer_id = ? AND u.referrer_id <> 0 ORDER BY u.id DESC LIMIT ?`,
@@ -987,7 +1120,8 @@ func (s *Store) ListPromoUses(promoID int64, limit int) ([]model.PromoUse, error
 func (s *Store) PromoRevenue(promoID int64) (orders, rub int, err error) {
 	err = s.rdb.QueryRow(
 		`SELECT count(*), COALESCE(sum(amount_rub), 0) FROM payment_orders
-		 WHERE promo_id = ? AND status = 'paid' AND kind = 'plan'`, promoID).Scan(&orders, &rub)
+		 WHERE promo_id = ? AND status = 'paid' AND kind = 'plan' AND refund_source <> 'provider'`,
+		promoID).Scan(&orders, &rub)
 	return orders, rub, err
 }
 
@@ -1000,7 +1134,7 @@ func (s *Store) ReferralStats(top int) (model.ReferralStats, error) {
 		   (SELECT count(DISTINCT o.user_id) FROM users u CROSS JOIN payment_orders o ON o.user_id = u.id
 		    WHERE u.referrer_id <> 0 AND o.status = 'paid' AND o.amount_rub > 0),
 		   (SELECT COALESCE(sum(o.amount_rub), 0) FROM users u CROSS JOIN payment_orders o ON o.user_id = u.id
-		    WHERE u.referrer_id <> 0 AND o.status = 'paid'),
+		    WHERE u.referrer_id <> 0 AND o.status = 'paid' AND o.refund_source <> 'provider'),
 		   (SELECT COALESCE(sum(amount_kop), 0) FROM balance_tx WHERE kind = 'referral')`,
 	).Scan(&st.Invited, &st.Paying, &st.RevenueRub, &st.PaidOutKop)
 	if err != nil {

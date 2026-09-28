@@ -123,6 +123,15 @@ func (rt *Router) apiReferralStats(w http.ResponseWriter, _ *http.Request) {
 	writeAPIData(w, http.StatusOK, st)
 }
 
+func (rt *Router) apiFunnel(w http.ResponseWriter, r *http.Request) {
+	out, err := rt.funnelFor(r)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, out)
+}
+
 func (rt *Router) apiRefundOrder(w http.ResponseWriter, r *http.Request, id int64) {
 	var req apiRefundReq
 	if !apiDecode(w, r, &req) {

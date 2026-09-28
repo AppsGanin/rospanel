@@ -138,7 +138,9 @@ func payPearStatus(status string) Result {
 	switch strings.ToUpper(status) {
 	case "CONFIRMED":
 		return Result{Status: StatusPaid}
-	case "CANCELED", "REFUNDED", "EXPIRED":
+	case "REFUNDED":
+		return Result{Status: StatusRefunded}
+	case "CANCELED", "EXPIRED":
 		return Result{Status: StatusCanceled}
 	default: // NEW, PROCESS
 		return Result{Status: StatusPending}

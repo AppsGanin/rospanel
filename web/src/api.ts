@@ -1938,7 +1938,8 @@ export interface PaymentOrder {
   discount_rub?: number
   promo_code?: string
   periods?: number // of the plan's periods bought
-  refunded_at?: number // when its money went back to the balance (0/absent = never)
+  refunded_at?: number // when its money went back (0/absent = never)
+  refund_source?: 'balance' | 'provider' // to the balance by an operator, or by the payment system
 }
 
 export interface BillingInfo {
@@ -1958,6 +1959,7 @@ export interface BillingInfo {
   ref_days: number
   ref_first: boolean
   periods: PeriodOffer[] // discounts for buying several periods at once
+  winback: WinbackSettings
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
@@ -2026,6 +2028,7 @@ export const saveBilling = (b: {
   ref_days: number
   ref_first: boolean
   periods: PeriodOffer[]
+  winback: WinbackSettings
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',
@@ -2137,6 +2140,24 @@ export interface ReferralStats {
 }
 
 export const getReferralStats = () => api<ReferralStats>('api/billing/referrals')
+
+// Win-back: after_days after a paid term lapses, the user gets a one-use code for
+// percent % off, valid for valid_days.
+export interface WinbackSettings {
+  enabled: boolean
+  after_days: number
+  percent: number
+  valid_days: number
+}
+
+// The users who joined in a period: how many took a trial, paid, and paid again —
+// and what the win-back codes did (all time).
+export interface PaymentFunnel {
+  funnel: { joined: number; trial: number; paid: number; renewed: number }
+  winback: { sent: number; used: number; revenue_rub: number }
+}
+
+export const getPaymentFunnel = (days: number) => api<PaymentFunnel>(`api/payments/funnel?days=${days}`)
 
 export const refundOrder = (id: number, cancel_plan: boolean, current_password: string) =>
   api<{ refund_kop: number }>(`api/billing/orders/${id}/refund`, {

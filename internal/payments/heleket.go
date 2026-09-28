@@ -148,8 +148,12 @@ func heleketStatus(status, amount, currency string) Result {
 	switch status {
 	case "paid", "paid_over":
 		return amountResult(StatusPaid, amount, currency)
-	case "cancel", "fail", "system_fail", "wrong_amount",
-		"locked", "refund_process", "refund_fail", "refund_paid":
+	case "refund_paid":
+		return Result{Status: StatusRefunded}
+	case "refund_process", "refund_fail":
+		// No money moved (yet): the refund is only asked for, or it failed.
+		return Result{Status: StatusPending}
+	case "cancel", "fail", "system_fail", "wrong_amount", "locked":
 		return Result{Status: StatusCanceled}
 	default: // check, process, confirm_check, wrong_amount_waiting, …
 		return Result{Status: StatusPending}

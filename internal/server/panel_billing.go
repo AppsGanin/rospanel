@@ -66,6 +66,7 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"ref_days":      set.RefDays,
 		"ref_first":     set.RefFirstOnly,
 		"periods":       periodOffersOrEmpty(set.BillingPeriods),
+		"winback":       set.Winback,
 		"plans":         plans,
 		"plan_users":    planUsers,
 	})
@@ -86,7 +87,8 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		RefDays     int    `json:"ref_days"`
 		RefFirst    *bool  `json:"ref_first"`
 		// Periods replaces the multi-period discounts; left out (null) keeps them.
-		Periods *[]model.PeriodOffer `json:"periods"`
+		Periods *[]model.PeriodOffer   `json:"periods"`
+		Winback *model.WinbackSettings `json:"winback"` // left out keeps it
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -124,6 +126,9 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Periods != nil {
 		set.BillingPeriods = *req.Periods
+	}
+	if req.Winback != nil {
+		set.Winback = *req.Winback
 	}
 	if err := rt.mgr.SaveBillingSettings(set); err != nil {
 		writeManagerErr(w, err)

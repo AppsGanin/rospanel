@@ -134,7 +134,9 @@ func plategaStatus(status string, amount float64, currency string) Result {
 	switch strings.ToUpper(status) {
 	case "CONFIRMED":
 		return amountResult(StatusPaid, decimalRub(amount), currency)
-	case "FAILED", "CANCELED", "EXPIRED", "CHARGEBACKED":
+	case "CHARGEBACKED":
+		return Result{Status: StatusRefunded}
+	case "FAILED", "CANCELED", "EXPIRED":
 		return Result{Status: StatusCanceled}
 	default: // PENDING, INPROGRESS
 		return Result{Status: StatusPending}

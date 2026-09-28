@@ -29,6 +29,9 @@ const (
 	StatusPending  Status = "pending"  // created, not yet paid
 	StatusPaid     Status = "paid"     // money received
 	StatusCanceled Status = "canceled" // cancelled / expired / failed
+	// StatusRefunded is money returned to the payer after it was paid: a refund made
+	// in the provider's dashboard, or a chargeback.
+	StatusRefunded Status = "refunded"
 )
 
 // Result is a queried payment/invoice state plus the amount the provider recorded
