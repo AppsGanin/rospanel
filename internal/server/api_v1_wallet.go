@@ -2,8 +2,12 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/core"
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 )
 
 // The wallet over the external API: a user's balance and ledger, balance
@@ -13,6 +17,33 @@ type (
 	apiWalletResp struct {
 		Wallet  model.Wallet      `json:"wallet"`
 		History []model.BalanceTx `json:"history"`
+		// RefLink is the user's invite link to the bot, while the referral programme
+		// and the user bot are on.
+		RefLink string `json:"ref_link,omitempty"`
+	}
+	apiAutoRenewReq struct {
+		On *bool `json:"on"` // renew the plan from the balance when its term ends
+	}
+	apiRedeemReq struct {
+		Code string `json:"code"`
+		Lang string `json:"lang,omitempty"` // ru | en: the language of message (default en)
+	}
+	apiRedeemResp struct {
+		Result  *core.PromoResult `json:"result"`
+		Message string            `json:"message"` // what the code did, in words
+	}
+	apiTelegramReq struct {
+		ChatID *int64 `json:"chat_id"` // the user's Telegram ID; 0 unlinks
+	}
+	apiReferrerReq struct {
+		ReferrerID int64  `json:"referrer_id,omitempty"` // the inviting user's id
+		RefCode    string `json:"ref_code,omitempty"`    // or their invite code, as the /start link carries it
+	}
+	// apiPlanQuotes is what one plan costs the user now, for each term on sale.
+	apiPlanQuotes struct {
+		PlanID   int64            `json:"plan_id"`
+		PlanName string           `json:"plan_name"`
+		Quotes   []core.PlanQuote `json:"quotes"`
 	}
 	apiBalanceReq struct {
 		AmountKop int64  `json:"amount_kop"` // kopecks, either sign
@@ -28,6 +59,9 @@ func (rt *Router) apiUserWallet(w http.ResponseWriter, _ *http.Request, id int64
 		writeAPIManagerErr(w, err)
 		return
 	}
+	// The invite code exists whenever the programme runs — an outside bot builds its
+	// own link from it, with or without the panel's user bot.
+	_, _ = rt.mgr.RefCode(id)
 	wal, err := rt.mgr.Wallet(id)
 	if err != nil {
 		writeAPIManagerErr(w, err)
@@ -38,7 +72,177 @@ func (rt *Router) apiUserWallet(w http.ResponseWriter, _ *http.Request, id int64
 		writeAPIManagerErr(w, err)
 		return
 	}
-	writeAPIData(w, http.StatusOK, apiWalletResp{Wallet: wal, History: txs})
+	resp := apiWalletResp{Wallet: wal, History: txs}
+	if set, err := rt.mgr.Settings(); err == nil {
+		resp.RefLink = rt.userRefLink(set, id)
+	}
+	writeAPIData(w, http.StatusOK, resp)
+}
+
+// apiSetAutoRenew turns renewal from the balance on or off, and answers the wallet.
+func (rt *Router) apiSetAutoRenew(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiAutoRenewReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if req.On == nil {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "on is required")
+		return
+	}
+	if _, err := rt.mgr.Store().GetUser(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if err := rt.mgr.SetAutoRenew(r.Context(), id, *req.On); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.apiUserWallet(w, r, id)
+}
+
+// apiLinkTelegram binds (or with 0 unbinds) the user's Telegram, and answers the user.
+func (rt *Router) apiLinkTelegram(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiTelegramReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if req.ChatID == nil {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "chat_id is required (0 unlinks)")
+		return
+	}
+	if err := rt.mgr.LinkUserTelegram(r.Context(), id, *req.ChatID); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.apiUserView(w, *u)
+}
+
+// apiSetReferrer records who invited the user, and answers the wallet.
+func (rt *Router) apiSetReferrer(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiReferrerReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if _, err := rt.mgr.Store().GetUser(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if (req.ReferrerID == 0) == (strings.TrimSpace(req.RefCode) == "") {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "referrer_id or ref_code, one of them")
+		return
+	}
+	if err := rt.mgr.SetReferrer(r.Context(), id, req.ReferrerID, req.RefCode); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.apiUserWallet(w, r, id)
+}
+
+// apiUserSubscription is the user's subscription page as data — for a page drawn
+// elsewhere: status, traffic, term, the subscription link, one-tap imports into each
+// app, every config, devices, and the payment block, worded in ?lang (en by default).
+func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	rt.applyTLSHints(set)
+	lang := i18n.EN
+	if v := r.URL.Query().Get("lang"); v != "" {
+		lang = i18n.Normalize(v)
+	}
+	servers, err := rt.subServers(set, u.ID, "")
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	if hasTurnInbound(servers) {
+		_ = rt.mgr.ClaimTunnelIdentity(u) // the TURN link carries the user's tunnel key
+	}
+	view, err := sub.PageView(*u, set, servers, rt.buildBilling(*u, set, lang, rt.mgr.PaymentMethods()),
+		rt.buildDevices(*u, set, lang), lang)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	view.RefCode, _ = rt.mgr.RefCode(u.ID)
+	writeAPIData(w, http.StatusOK, view)
+}
+
+// apiRedeemPromo enters a promo code for the user, as the bot or the subscription
+// page would: a discount attaches to their next payment, days go onto the plan, a
+// balance code credits the balance.
+func (rt *Router) apiRedeemPromo(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiRedeemReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if _, err := rt.mgr.Store().GetUser(id); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	res, err := rt.mgr.RedeemPromo(r.Context(), id, req.Code)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	lang := i18n.EN
+	if req.Lang != "" {
+		lang = i18n.Normalize(req.Lang)
+	}
+	writeAPIData(w, http.StatusOK, apiRedeemResp{
+		Result:  res,
+		Message: core.PromoMessage(res, lang, rt.mgr.Location(), func(s string) string { return s }),
+	})
+}
+
+// apiUserQuotes prices what the user can buy now — the plan they hold, while a paid
+// one runs; otherwise every paid plan on sale — with their discount code and balance,
+// one quote per term on sale.
+func (rt *Router) apiUserQuotes(w http.ResponseWriter, _ *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	var plans []model.TariffPlan
+	if active := rt.mgr.ActivePaidPlan(*u); active != nil {
+		if active.PeriodDays > 0 { // a lifetime plan has nothing to renew
+			plans = []model.TariffPlan{*active}
+		}
+	} else {
+		all, err := rt.mgr.ListTariffPlans(false)
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		for _, p := range all {
+			if !p.IsFree() {
+				plans = append(plans, p)
+			}
+		}
+	}
+	out := []apiPlanQuotes{}
+	for i := range plans {
+		p := &plans[i]
+		quotes := rt.mgr.PeriodOffers(*u, p)
+		if len(quotes) == 0 {
+			quotes = []core.PlanQuote{rt.mgr.QuotePlan(*u, p)}
+		}
+		out = append(out, apiPlanQuotes{PlanID: p.ID, PlanName: p.Name, Quotes: quotes})
+	}
+	writeAPIData(w, http.StatusOK, out)
 }
 
 func (rt *Router) apiAdjustBalance(w http.ResponseWriter, r *http.Request, id int64) {

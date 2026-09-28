@@ -16,16 +16,21 @@ import (
 // reset — is a permission of its own, so it can be withheld from a role that
 // otherwise manages the section.
 const (
-	PermUsersView      = "users.view"
-	PermUsersManage    = "users.manage"
-	PermUsersDelete    = "users.delete"
-	PermUsersExport    = "users.export"
-	PermGroupsView     = "groups.view"
-	PermGroupsManage   = "groups.manage"
-	PermStatsView      = "stats.view"
-	PermStatsManage    = "stats.manage" // resetting the statistics
-	PermBillingView    = "billing.view"
-	PermBillingManage  = "billing.manage"
+	PermUsersView     = "users.view"
+	PermUsersManage   = "users.manage"
+	PermUsersDelete   = "users.delete"
+	PermUsersExport   = "users.export"
+	PermGroupsView    = "groups.view"
+	PermGroupsManage  = "groups.manage"
+	PermStatsView     = "stats.view"
+	PermStatsManage   = "stats.manage" // resetting the statistics
+	PermBillingView   = "billing.view"
+	PermBillingManage = "billing.manage"
+	// PermBillingSell is what a bot selling on the operator's behalf needs: open an
+	// order, enter a promo code, record who invited a user, switch their renewal. Not
+	// confirming an order, crediting a balance or refunding — those move money
+	// without it arriving, and stay with billing.manage.
+	PermBillingSell    = "billing.sell"
 	PermPayments       = "payments.manage"
 	PermBroadcasts     = "broadcasts.manage"
 	PermServersView    = "servers.view"
@@ -75,6 +80,7 @@ var PermCatalog = []PermSection{
 	{Key: "audit", View: PermAudit},
 	{Key: "usersDelete", Manage: PermUsersDelete},
 	{Key: "usersExport", Manage: PermUsersExport},
+	{Key: "billingSell", Manage: PermBillingSell},
 	{Key: "payments", Manage: PermPayments},
 	{Key: "broadcasts", Manage: PermBroadcasts},
 	{Key: "webhooks", Manage: PermWebhooks},
@@ -134,6 +140,9 @@ var PermImplies = func() map[string][]string {
 	m[PermUsersDelete] = []string{PermUsersView}
 	m[PermUsersExport] = []string{PermUsersView}
 	m[PermPayments] = []string{PermBillingView}
+	// Selling reads the plans and prices it sells; managing billing sells too.
+	m[PermBillingSell] = []string{PermBillingView}
+	m[PermBillingManage] = []string{PermBillingView, PermBillingSell}
 	return m
 }()
 

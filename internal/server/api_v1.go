@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"reflect"
 	"slices"
 	"sort"
@@ -96,6 +97,19 @@ type (
 		// Periods: how many of the plan's periods to buy at once (0 = one); a number the
 		// billing settings offer a discount for.
 		Periods int `json:"periods,omitempty"`
+		// Kind "topup" opens a balance top-up of AmountRub instead of a plan order
+		// (plan_id is then left out); "" or "plan" buys the plan.
+		Kind      string `json:"kind,omitempty"`
+		AmountRub int    `json:"amount_rub,omitempty"`
+		// ExpectExpireAt, with from_balance, is the expiry the caller showed the user
+		// (expire_at from the user or their subscription view): a retried request finds
+		// it moved by the first and buys nothing. Left out, every request buys.
+		ExpectExpireAt *int64 `json:"expect_expire_at,omitempty"`
+		// Lang words the manual-payment instructions: ru | en (default en).
+		Lang string `json:"lang,omitempty"`
+		// ReturnURL is where a hosted payment sends the payer back to (http/https);
+		// left out, they are sent to Telegram.
+		ReturnURL string `json:"return_url,omitempty"`
 	}
 )
 
@@ -212,6 +226,12 @@ func (rt *Router) apiMux() http.Handler {
 	id("GET /v1/users/{id}/wallet", rt.apiUserWallet)
 	id("POST /v1/users/{id}/balance", rt.apiAdjustBalance)
 	id("GET /v1/users/{id}/referrals", rt.apiUserReferrals)
+	id("POST /v1/users/{id}/autorenew", rt.apiSetAutoRenew)
+	id("POST /v1/users/{id}/promo", rt.apiRedeemPromo)
+	id("GET /v1/users/{id}/quotes", rt.apiUserQuotes)
+	id("POST /v1/users/{id}/telegram", rt.apiLinkTelegram)
+	id("GET /v1/users/{id}/subscription", rt.apiUserSubscription)
+	id("POST /v1/users/{id}/referrer", rt.apiSetReferrer)
 
 	hf("GET /v1/billing/providers", rt.apiListProviders)
 	hf("GET /v1/billing/plans", rt.apiListPlans)
@@ -629,16 +649,25 @@ func userMatches(u model.User, q string) bool {
 // apiListUsers lists users with optional filtering (?status, ?search, ?tag) and
 // pagination (?limit, ?offset). The result carries a "meta" block with the total
 // count (after filtering, before the page window) so callers can paginate.
+//
+// ?telegram_id and ?sub_token find one user by an index instead — what an outside bot
+// asks on every message it gets, so it must not read the whole table each time.
 func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
 	set, err := rt.mgr.Store().GetSettings()
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
 	}
-	users, err := rt.mgr.Store().ListUsers()
-	if err != nil {
-		writeAPIManagerErr(w, err)
+	users, ok := rt.apiLookupUser(w, r)
+	if !ok {
 		return
+	}
+	lookup := users != nil
+	if users == nil {
+		if users, err = rt.mgr.Store().ListUsers(); err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
 	}
 	rt.applyTLSHints(set)
 
@@ -663,14 +692,59 @@ func (rt *Router) apiListUsers(w http.ResponseWriter, r *http.Request) {
 	// Window the slice — see api_v1_paging.go for what limit/offset mean.
 	window, meta := page(r, filtered)
 
-	custom := rt.localInbounds()
-	groupsMap, _ := rt.mgr.GroupsForAllUsers()
-	accessMap, _ := rt.mgr.Store().AccessMap()
 	views := make([]userView, 0, len(window))
-	for _, u := range window {
-		views = append(views, makeUserView(u, set, "", custom, groupsMap[u.ID], model.AccessOf(accessMap, u.ID)))
+	if lookup {
+		// One user at most: their own groups and access, not the whole table's.
+		for _, u := range window {
+			views = append(views, rt.userViewFor(u, set, ""))
+		}
+	} else {
+		custom := rt.localInbounds()
+		groupsMap, _ := rt.mgr.GroupsForAllUsers()
+		accessMap, _ := rt.mgr.Store().AccessMap()
+		for _, u := range window {
+			views = append(views, makeUserView(u, set, "", custom, groupsMap[u.ID], model.AccessOf(accessMap, u.ID)))
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": views, "meta": meta})
+}
+
+// apiLookupUser answers ?telegram_id / ?sub_token: the matching user as a list of
+// one (or none), or nil when neither is asked. ok is false when it wrote an error.
+func (rt *Router) apiLookupUser(w http.ResponseWriter, r *http.Request) ([]model.User, bool) {
+	q := r.URL.Query()
+	var u *model.User
+	var err error
+	if q.Has("telegram_id") && q.Has("sub_token") {
+		writeAPIErr(w, http.StatusBadRequest, "bad_request", "telegram_id or sub_token, not both")
+		return nil, false
+	}
+	switch {
+	case q.Has("telegram_id"):
+		chat, perr := strconv.ParseInt(q.Get("telegram_id"), 10, 64)
+		if perr != nil || chat <= 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid telegram_id")
+			return nil, false
+		}
+		u, err = rt.mgr.Store().GetUserByTelegramChatID(chat)
+	case q.Has("sub_token"):
+		tok := strings.TrimSpace(q.Get("sub_token"))
+		if tok == "" {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid sub_token")
+			return nil, false
+		}
+		u, err = rt.mgr.Store().GetUserBySubToken(tok)
+	default:
+		return nil, true
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return []model.User{}, true
+	}
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return nil, false
+	}
+	return []model.User{*u}, true
 }
 
 // atoiOr parses s as an int, returning def on any failure (empty or malformed).
@@ -1052,7 +1126,18 @@ func (rt *Router) apiListPlans(w http.ResponseWriter, r *http.Request) {
 
 func (rt *Router) apiListOrders(w http.ResponseWriter, r *http.Request) {
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	orders, err := rt.mgr.ListPaymentOrders(status)
+	var orders []model.PaymentOrder
+	var err error
+	if s := r.URL.Query().Get("user_id"); s != "" {
+		userID, perr := strconv.ParseInt(s, 10, 64)
+		if perr != nil || userID <= 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "invalid user_id")
+			return
+		}
+		orders, err = rt.mgr.UserPaymentOrders(status, userID)
+	} else {
+		orders, err = rt.mgr.ListPaymentOrders(status)
+	}
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return
@@ -1091,8 +1176,35 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	if !apiDecode(w, r, &req) {
 		return
 	}
+	if req.ReturnURL != "" {
+		if u, err := url.Parse(req.ReturnURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "return_url must be an http(s) address")
+			return
+		}
+	}
+	lang := i18n.EN
+	if req.Lang != "" {
+		lang = i18n.Normalize(req.Lang)
+	}
+	switch req.Kind {
+	case "", model.OrderPlan:
+	case model.OrderTopup:
+		if req.PlanID != 0 || req.FromBalance || req.Periods != 0 {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "a top-up takes amount_rub, not plan_id, from_balance or periods")
+			return
+		}
+		rt.apiCreateTopup(w, r, req, lang)
+		return
+	default:
+		writeAPIRejected(w, "err.orderKind", "kind: plan or topup", nil)
+		return
+	}
 	if req.FromBalance {
-		order, err := rt.mgr.BuyPlanFromBalance(r.Context(), req.UserID, req.PlanID, core.AnyExpiry, max(req.Periods, 1))
+		expect := core.AnyExpiry
+		if req.ExpectExpireAt != nil {
+			expect = *req.ExpectExpireAt
+		}
+		order, err := rt.mgr.BuyPlanFromBalance(r.Context(), req.UserID, req.PlanID, expect, max(req.Periods, 1))
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -1101,7 +1213,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Provider == "" || req.Provider == sub.ManualPayKey {
-		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, max(req.Periods, 1))
+		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), lang, req.UserID, req.PlanID, max(req.Periods, 1))
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -1109,7 +1221,27 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, req.Provider, max(req.Periods, 1))
+	order, err := rt.mgr.StartPlanPaymentReturn(r.Context(), lang, req.UserID, req.PlanID, req.Provider, req.ReturnURL, max(req.Periods, 1))
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "pay_url": order.PayURL})
+}
+
+// apiCreateTopup opens a balance top-up: a manual one (instructions in the message,
+// an admin confirms it) or a hosted provider payment.
+func (rt *Router) apiCreateTopup(w http.ResponseWriter, r *http.Request, req apiCreateOrderReq, lang i18n.Lang) {
+	if req.Provider == "" || req.Provider == sub.ManualPayKey {
+		order, msg, err := rt.mgr.RequestTopupManual(r.Context(), lang, req.UserID, req.AmountRub)
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
+		return
+	}
+	order, err := rt.mgr.StartTopup(r.Context(), lang, req.UserID, req.AmountRub, req.Provider, req.ReturnURL)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

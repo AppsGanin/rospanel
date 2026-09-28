@@ -602,16 +602,20 @@ func (s *Store) GetPaymentOrderByProvider(provider, providerID string) (*model.P
 	return &orders[0], nil
 }
 
-func (s *Store) ListPaymentOrders(status string, limit int) ([]model.PaymentOrder, error) {
+func (s *Store) ListPaymentOrders(status string, userID int64, limit int) ([]model.PaymentOrder, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	q := `SELECT ` + orderCols + `
-	      FROM payment_orders o ` + orderJoins
+	      FROM payment_orders o ` + orderJoins + ` WHERE 1 = 1`
 	args := []any{}
 	if status != "" {
-		q += ` WHERE o.status = ?`
+		q += ` AND o.status = ?`
 		args = append(args, status)
+	}
+	if userID > 0 {
+		q += ` AND o.user_id = ?`
+		args = append(args, userID)
 	}
 	q += ` ORDER BY o.created_at DESC LIMIT ?`
 	args = append(args, limit)

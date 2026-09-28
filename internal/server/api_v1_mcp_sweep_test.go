@@ -151,6 +151,8 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"get_users_by_id_happ_link":     user.ID,
 		"get_users_by_id_wallet":        user.ID,
 		"get_users_by_id_referrals":     user.ID,
+		"get_users_by_id_quotes":        user.ID,
+		"get_users_by_id_subscription":  user.ID,
 		"get_billing_promos_by_id_uses": usedPromo.ID,
 		"get_users_by_id_connections":   user.ID,
 		"get_users_by_id_devices":       user.ID,
@@ -246,6 +248,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 			// those only for an operator who takes transfers by hand. The wallet on: a
 			// refund goes onto the balance.
 			"payment_note": "sweep", "manual": true, "wallet": true,
+			"ref_mode": "percent", "ref_percent": 10,
 		},
 	})
 	promo := newID("post_billing_promos", call("post_billing_promos", map[string]any{
@@ -254,6 +257,10 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_users_by_id_balance", map[string]any{
 		"id": created, "body": map[string]any{"amount_kop": 5000, "note": "sweep"},
 	})
+	call("post_users_by_id_autorenew", map[string]any{"id": created, "body": map[string]any{"on": false}})
+	call("post_users_by_id_promo", map[string]any{"id": created, "body": map[string]any{"code": "SWEEP10"}})
+	call("post_users_by_id_telegram", map[string]any{"id": created, "body": map[string]any{"chat_id": 910001}})
+	call("post_users_by_id_referrer", map[string]any{"id": created, "body": map[string]any{"referrer_id": user.ID}})
 	call("post_payments", map[string]any{
 		"body": map[string]any{
 			"key": "cryptobot", "enabled": false, "config": map[string]any{"token": "1:aa"},
@@ -410,6 +417,10 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 		"post_users_by_id_groups":         map[string]any{"group_ids": []int64{999_003}},
 		"post_users_by_id_plan":           map[string]any{"plan_id": 999_004},
 		"post_users_by_id_balance":        map[string]any{"amount_kop": 100},
+		"post_users_by_id_autorenew":      map[string]any{"on": true},
+		"post_users_by_id_promo":          map[string]any{"code": "SWEEP10"},
+		"post_users_by_id_telegram":       map[string]any{"chat_id": 1},
+		"post_users_by_id_referrer":       map[string]any{"referrer_id": 1},
 		"post_users_by_id_reset_period":   map[string]any{"period": "monthly"},
 		"post_webhooks_by_id": map[string]any{
 			"url": "https://example.com/hook", "events": []string{"user.created"},

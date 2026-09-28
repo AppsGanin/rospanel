@@ -99,7 +99,7 @@ func TestManualPaymentIsOfferedOnlyWhenItIsOn(t *testing.T) {
 	if !strings.Contains(got.Message, set.BillingPaymentNote) {
 		t.Errorf("the instructions carry no payment details: %q", got.Message)
 	}
-	orders, err := st.ListPaymentOrders("", 10)
+	orders, err := st.ListPaymentOrders("", 0, 10)
 	if err != nil || len(orders) != 1 || orders[0].Provider != "" {
 		t.Fatalf("orders = %+v (%v)", orders, err)
 	}

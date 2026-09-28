@@ -530,6 +530,48 @@ func (m *Manager) AttachReferrer(ctx context.Context, userID, chatID int64) {
 	if ref == 0 {
 		return
 	}
+	m.referred(ctx, userID, ref)
+}
+
+// SetReferrer records who invited a user — what an outside bot does with the invite
+// code its /start carried. Once, before the user's first payment, and never the user
+// themselves or someone they invited. refCode, when set, names the referrer instead
+// of refID.
+func (m *Manager) SetReferrer(ctx context.Context, userID, refID int64, refCode string) error {
+	set, err := m.Settings()
+	if err != nil {
+		return err
+	}
+	if !set.RefEnabled() {
+		return invalidCode("err.refOff", "реферальная программа выключена")
+	}
+	if refCode != "" {
+		// Taken as the /start link carries it ("r_<code>") or bare.
+		code := strings.TrimPrefix(strings.TrimSpace(refCode), "r_")
+		if refID = m.store.UserIDByRefCode(code); refID == 0 {
+			return invalidCode("err.refCodeUnknown", "такого кода приглашения нет")
+		}
+	} else if _, err := m.store.GetUser(refID); err != nil {
+		return invalidCode("err.refCodeUnknown", "такого кода приглашения нет")
+	}
+	if paid, err := m.store.HasPaid(userID); err != nil {
+		return err
+	} else if paid {
+		return invalidCode("err.referrerLate", "пригласившего указывают до первой оплаты")
+	}
+	ok, err := m.store.SetReferrer(userID, refID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return invalidCode("err.referrerRefused", "пригласившего не указать: он уже есть, это сам пользователь или его приглашённый")
+	}
+	m.referred(ctx, userID, refID)
+	return nil
+}
+
+// referred journals a new referral and tells the referrer.
+func (m *Manager) referred(ctx context.Context, userID, ref int64) {
 	u, err := m.store.GetUser(userID)
 	if err != nil {
 		return

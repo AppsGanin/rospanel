@@ -584,6 +584,21 @@ func (s *Store) UserIDByRefCode(code string) int64 {
 	return id
 }
 
+// SetReferrer records refID as the user's referrer — only while they have none, and
+// not the user themselves or someone the user invited. Reports whether it was set.
+func (s *Store) SetReferrer(userID, refID int64) (bool, error) {
+	r, err := s.db.Exec(
+		`UPDATE users SET referrer_id = ?
+		 WHERE id = ? AND referrer_id = 0 AND ? <> id
+		   AND EXISTS (SELECT 1 FROM users r WHERE r.id = ? AND r.referrer_id <> ?)`,
+		refID, userID, refID, refID, userID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := r.RowsAffected()
+	return n > 0, nil
+}
+
 // SetSubscriberRef remembers who invited a chat that has not registered yet. The first
 // invite a chat followed is the one that counts.
 func (s *Store) SetSubscriberRef(chatID, refUserID, now int64) error {

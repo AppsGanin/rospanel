@@ -247,7 +247,8 @@ export function eventDetails(e: UserEvent): string {
         limit: num(d, "device_limit"),
       });
     case "user.telegram_linked":
-      return str(d, "username");
+      // The bot knows the @username; a link made through the API has only the ID.
+      return str(d, "username") || (num(d, "chat_id") ? `ID ${num(d, "chat_id")}` : "");
     case "user.device_bound":
     case "user.device_refused": {
       // What the device called itself, and where that put the count against the cap.

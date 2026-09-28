@@ -173,8 +173,8 @@ func TestRolesAreOwnerOnlyAndGuarded(t *testing.T) {
 	}
 	var created model.AdminRole
 	_ = json.Unmarshal(rec.Body.Bytes(), &created)
-	if want := []string{model.PermBillingManage, model.PermBillingView}; !slices.Equal(created.Perms, want) {
-		t.Errorf("created perms = %v, want %v (manage brings view)", created.Perms, want)
+	if want := []string{model.PermBillingManage, model.PermBillingSell, model.PermBillingView}; !slices.Equal(created.Perms, want) {
+		t.Errorf("created perms = %v, want %v (manage brings sell and view)", created.Perms, want)
 	}
 	// The same name twice is refused, whatever the case — a preset's built-in name and
 	// the owner's included.
