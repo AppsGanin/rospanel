@@ -397,6 +397,10 @@
         flex: 0 0 auto;
         margin: 0;
       }
+      .plan {
+        flex-wrap: wrap;
+        row-gap: 10px;
+      }
       .plan + .plan {
         border-top: 1px solid var(--line);
       }
@@ -413,12 +417,224 @@
         font-size: 0.85rem;
         margin-top: 2px;
       }
+      .plan .ppromo {
+        color: #0f9d6b;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-top: 2px;
+      }
       .plan .btn {
         width: auto;
         flex: 0 0 auto;
         margin: 0;
         padding: 10px 16px;
         white-space: nowrap;
+      }
+      /* The page's sections: subscription, payment, referrals. Shown only with
+         billing on; without it the page is the subscription alone, as before. */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        margin: 4px 0 14px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+      .tab {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 9px 6px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tab.active {
+        background: var(--brand);
+        color: var(--on-brand);
+      }
+      /* No browser ring (black on the brand fill) after a tap; the keyboard gets a
+         soft one in the page's colour. */
+      .tab:focus {
+        outline: none;
+      }
+      .tab:focus-visible {
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent);
+      }
+      .pane[hidden] {
+        display: none;
+      }
+      /* The payment tab's history: what came in (green) and what went out. */
+      .tx {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 0;
+      }
+      .tx + .tx {
+        border-top: 1px solid var(--line);
+      }
+      .tx-info {
+        min-width: 0;
+      }
+      .tx-title {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .tx-when {
+        font-size: 0.8rem;
+        margin-top: 2px;
+      }
+      .tx-amt {
+        flex: none;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .tx-amt.in {
+        color: #0f9d6b;
+      }
+      .tx-amt.muted {
+        font-weight: 400;
+        font-size: 0.85rem;
+      }
+      .inline-form {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .inline-form input,
+      .inline-form select,
+      select.periods {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+      }
+      /* The browser's own focus ring (a black outline on top of the border) and the
+         number spinners clash with the page; focus is the brand border instead. */
+      select.periods {
+        display: block;
+        flex: 1 0 100%;
+        width: 100%;
+        margin: 0;
+        padding: 8px 10px;
+        font-size: 0.88rem;
+      }
+      /* The browser's own arrow sits wherever it likes (Safari and Telegram press it
+         against the edge); ours keeps the same inset as the text. */
+      .inline-form select,
+      select.periods {
+        -webkit-appearance: none;
+        appearance: none;
+        padding-right: 36px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238a94a6' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        background-size: 12px 8px;
+      }
+      .inline-form select:focus,
+      select.periods:focus,
+      .inline-form input:focus {
+        outline: none;
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+      }
+      .inline-form input[type="number"] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .inline-form input[type="number"]::-webkit-inner-spin-button,
+      .inline-form input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .inline-form .btn {
+        width: auto;
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 10px 16px;
+        white-space: nowrap;
+      }
+      /* A switch, not the browser's checkbox: Telegram's webview and a dark system
+         theme each draw that one their own way (a grey block on a white card). */
+      .check {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      /* The switch and what it will do are one block with one rule under it. */
+      .renew {
+        border-bottom: 1px solid var(--line);
+      }
+      .check.renew-switch {
+        margin: 0;
+        padding: 12px 0;
+      }
+      .renew-note {
+        margin: -4px 0 0;
+        padding: 0 0 12px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .renew-note.short {
+        color: var(--warning-fg);
+        font-weight: 600;
+      }
+      .check input {
+        -webkit-appearance: none;
+        appearance: none;
+        flex: none;
+        position: relative;
+        width: 42px;
+        height: 24px;
+        margin: 0;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--muted) 35%, transparent);
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .check input::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+        transition: transform 0.15s;
+      }
+      .check input:checked {
+        background: var(--brand);
+      }
+      .check input:checked::after {
+        transform: translateX(18px);
+      }
+      .check input:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent);
+      }
+      .check input:disabled {
+        opacity: 0.6;
+        cursor: default;
       }
       .paylist {
         display: flex;
@@ -595,182 +811,289 @@
       {{end}}
 
       {{if .Billing.Show}}
-      <div class="card">
-        <div id="paywatch" class="paywatch" style="display: none">
-          <span class="spinner"></span>
-          <span
-            >{{.L.PayProcessing}}</span
-          >
-        </div>
-        <div class="bill-cur">
-          <span class="muted">{{.L.CurrentPlan}}</span>
-          <span class="v"
-            >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
-            .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
-          >
-        </div>
-        {{range .Billing.Plans}}
-        <div class="plan">
-          <div class="plan-info">
-            <div class="pname">{{.Name}}</div>
-            <div class="pprice">{{.Label}}</div>
-          </div>
-          <button class="btn" onclick="pay({{.ID}}, this)">{{if $.Billing.Locked}}{{$.L.Renew}}{{else}}{{$.L.Pay}}{{end}}</button>
-        </div>
-        {{end}}
-        {{if .Billing.Cancelable}}
-        <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
-          {{.L.CancelSub}}
-        </button>
-        <p class="muted" style="margin: 10px 0 0">
-          {{.L.ChangePlanNote}}
-        </p>
-        {{else if .Billing.ManualOnly}}
-        <p class="muted" style="margin: 12px 0 0">
-          {{.L.ManualNote}}
-        </p>
-        {{end}}
-        {{if and .Billing.ManualOnly .Billing.Note}}
-        <p class="muted" style="margin: 8px 0 0; white-space: pre-line">{{.Billing.Note}}</p>
-        {{end}}
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="sub" role="tab" aria-selected="true">{{.L.TabSub}}</button>
+        <button type="button" class="tab" data-tab="pay" role="tab" aria-selected="false">{{.L.TabPay}}</button>
+        {{if .Billing.RefLink}}<button type="button" class="tab" data-tab="ref" role="tab" aria-selected="false">{{.L.TabRef}}</button>{{end}}
+      </div>
+      <div id="paywatch" class="paywatch" style="display: none">
+        <span class="spinner"></span>
+        <span>{{.L.PayProcessing}}</span>
       </div>
       {{end}}
 
-      <div class="card">
-        <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
-        <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
-          {{.L.ScanQR}}
-        </p>
-        <button class="btn" onclick="copy('{{.SubURL}}', this)">
-          {{.L.CopyLink}}
-        </button>
-        <button
-          id="openapps-btn"
-          class="btn alt"
-          onclick="openApps()"
-        >
-          {{.L.OpenInApp}}
-        </button>
-        {{if .ShowDownload}}
-        <a
-          class="btn alt"
-          href="{{.SubURL}}?format=clash&amp;dl=1"
-          download="clash.yaml"
-        >
-          {{.L.DownloadClash}}
-        </a>
-        {{end}}
-      </div>
-
-      {{if .Devices.Show}}
-      <div class="card" id="devices-card">
-        <div class="lbl" style="margin-bottom: 8px">
-          {{.L.Devices}} <span class="muted">{{.Devices.CountText}}</span>
-        </div>
-        {{range .Devices.List}}
-        <div class="dev" data-hwid="{{.HWID}}">
-          <div class="dev-info">
-            <div class="dev-name">{{.Title}}</div>
-            <div class="muted dev-sub">
-              {{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}
-            </div>
-            <!-- The id the client sent. Two identical phones look identical without
-                 it, and the person deciding which to remove needs to tell them
-                 apart — it is also what they would quote to support. -->
-            <div class="muted dev-id" title="{{.HWID}}">{{.HWID}}</div>
-          </div>
-          <button class="btn alt dev-del" onclick="unbindDevice(this)">
-            {{$.L.DeviceRemove}}
+      <section class="pane" data-pane="sub">
+        <div class="card">
+          <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
+          <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
+            {{.L.ScanQR}}
+          </p>
+          <button class="btn" onclick="copy('{{.SubURL}}', this)">
+            {{.L.CopyLink}}
           </button>
-        </div>
-        {{else}}
-        <p class="muted" style="margin: 0">{{.L.DevicesEmpty}}</p>
-        {{end}}
-        <p class="muted" style="margin: 10px 0 0">{{.L.DevicesHint}}</p>
-      </div>
-      {{end}}
-
-      {{if .AWG}}
-      <div class="card">
-        <div class="app-row" style="margin: 0 0 8px">
-          <div class="lbl">{{.L.AWGTitle}}</div>
-          <a class="icon-btn" href="{{.L.AWGSite}}" target="_blank" rel="noopener noreferrer"
-             title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.AWGTitle}}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+          <button
+            id="openapps-btn"
+            class="btn alt"
+            onclick="openApps()"
+          >
+            {{.L.OpenInApp}}
+          </button>
+          {{if .ShowDownload}}
+          <a
+            class="btn alt"
+            href="{{.SubURL}}?format=clash&amp;dl=1"
+            download="clash.yaml"
+          >
+            {{.L.DownloadClash}}
           </a>
+          {{end}}
         </div>
-        <p class="muted" style="margin: 0 0 10px">{{.L.AWGHint}}</p>
-        {{range .AWG}}
-        <details>
-          <summary>{{.Label}}</summary>
-          <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
-          <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
-        </details>
-        {{end}}
-      </div>
-      {{end}}
 
-      {{if .Turn}}
-      <div class="card">
-        <div class="lbl" style="margin-bottom: 8px">{{.L.TurnTitle}}</div>
-        <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
-        {{range .Turn}}
-        <details>
-          <summary>{{.Label}}</summary>
-          {{range .Apps}}
-          <div class="app-row">
-            <span class="muted">{{.Name}}</span>
-            <a class="icon-btn" href="{{.AppLink}}" target="_blank" rel="noopener noreferrer"
-               title="{{$.L.AppLink}}" aria-label="{{$.L.AppLink}} — {{.Name}}">
+        {{if .Devices.Show}}
+        <div class="card" id="devices-card">
+          <div class="lbl" style="margin-bottom: 8px">
+            {{.L.Devices}} <span class="muted">{{.Devices.CountText}}</span>
+          </div>
+          {{range .Devices.List}}
+          <div class="dev" data-hwid="{{.HWID}}">
+            <div class="dev-info">
+              <div class="dev-name">{{.Title}}</div>
+              <div class="muted dev-sub">
+                {{if .Sub}}{{.Sub}} · {{end}}{{.LastSeen}}
+              </div>
+              <!-- The id the client sent. Two identical phones look identical without
+                   it, and the person deciding which to remove needs to tell them
+                   apart — it is also what they would quote to support. -->
+              <div class="muted dev-id" title="{{.HWID}}">{{.HWID}}</div>
+            </div>
+            <button class="btn alt dev-del" onclick="unbindDevice(this)">
+              {{$.L.DeviceRemove}}
+            </button>
+          </div>
+          {{else}}
+          <p class="muted" style="margin: 0">{{.L.DevicesEmpty}}</p>
+          {{end}}
+          <p class="muted" style="margin: 10px 0 0">{{.L.DevicesHint}}</p>
+        </div>
+        {{end}}
+
+        {{if .AWG}}
+        <div class="card">
+          <div class="app-row" style="margin: 0 0 8px">
+            <div class="lbl">{{.L.AWGTitle}}</div>
+            <a class="icon-btn" href="{{.L.AWGSite}}" target="_blank" rel="noopener noreferrer"
+               title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.AWGTitle}}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
             </a>
           </div>
-          <a class="btn" href="{{.Href}}">{{$.L.OpenInApp}}</a>
-          <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
-          {{end}}
-          <!-- What the apps take from the link, for setting a client up by hand. -->
+          <p class="muted" style="margin: 0 0 10px">{{.L.AWGHint}}</p>
+          {{range .AWG}}
           <details>
-            <summary>{{$.L.TurnManual}}</summary>
-            <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
-            <div class="copy-row">
-              <code>{{.Peer}}</code>
-              <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
-                <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
-                <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-              </button>
-            </div>
-            {{if .Link}}
-            <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
-            <div class="copy-row">
-              <code>{{.Link}}</code>
-              <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
-                <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
-                <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-              </button>
-            </div>
-            {{else}}
-            <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
-            {{end}}
+            <summary>{{.Label}}</summary>
+            <div class="qr"><img src="{{.QRURL}}" alt="QR" loading="lazy" /></div>
             <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
           </details>
-        </details>
+          {{end}}
+        </div>
         {{end}}
-      </div>
-      {{end}}
 
-      {{if .ShowConfigs}}
-      <div class="card">
-        <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
-        {{range .Links}}
-        <details>
-          <summary>{{.Proto}}</summary>
-          <p><code>{{.URL}}</code></p>
-          <button class="btn alt" onclick="copy('{{.URL}}', this)">
-            {{$.L.Copy}} {{.Proto}}
-          </button>
-        </details>
+        {{if .Turn}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 8px">{{.L.TurnTitle}}</div>
+          <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
+          {{range .Turn}}
+          <details>
+            <summary>{{.Label}}</summary>
+            {{range .Apps}}
+            <div class="app-row">
+              <span class="muted">{{.Name}}</span>
+              <a class="icon-btn" href="{{.AppLink}}" target="_blank" rel="noopener noreferrer"
+                 title="{{$.L.AppLink}}" aria-label="{{$.L.AppLink}} — {{.Name}}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
+              </a>
+            </div>
+            <a class="btn" href="{{.Href}}">{{$.L.OpenInApp}}</a>
+            <button class="btn alt" onclick="copy('{{.Link}}', this)">{{$.L.Copy}}</button>
+            {{end}}
+            <!-- What the apps take from the link, for setting a client up by hand. -->
+            <details>
+              <summary>{{$.L.TurnManual}}</summary>
+              <p class="muted" style="margin: 8px 0 4px">{{$.L.TurnPeer}}</p>
+              <div class="copy-row">
+                <code>{{.Peer}}</code>
+                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Peer}}', this)">
+                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                </button>
+              </div>
+              {{if .Link}}
+              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnLink}}</p>
+              <div class="copy-row">
+                <code>{{.Link}}</code>
+                <button class="icon-btn" type="button" title="{{$.L.Copy}}" aria-label="{{$.L.Copy}}" onclick="copyIcon('{{.Link}}', this)">
+                  <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+                  <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                </button>
+              </div>
+              {{else}}
+              <p class="muted" style="margin: 12px 0 4px">{{$.L.TurnNoLink}}</p>
+              {{end}}
+              <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
+            </details>
+          </details>
+          {{end}}
+        </div>
         {{end}}
-      </div>
+
+        {{if .ShowConfigs}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
+          {{range .Links}}
+          <details>
+            <summary>{{.Proto}}</summary>
+            <p><code>{{.URL}}</code></p>
+            <button class="btn alt" onclick="copy('{{.URL}}', this)">
+              {{$.L.Copy}} {{.Proto}}
+            </button>
+          </details>
+          {{end}}
+        </div>
+        {{end}}
+      </section>
+
+      {{if .Billing.Show}}
+      <section class="pane" data-pane="pay" hidden>
+        <div class="card">
+          <div class="bill-cur">
+            <span class="muted">{{.L.CurrentPlan}}</span>
+            <span class="v"
+              >{{if .Billing.CurrentPlan}}{{.Billing.CurrentPlan}}{{else}}—{{end}}{{if
+              .Billing.ExpireText}} · {{.Billing.ExpireText}}{{end}}</span
+            >
+          </div>
+          {{if .Billing.RenewSwitch}}
+          <!-- Renewal belongs to the plan, not to the top-up below: it is what happens
+               to this subscription when its term ends. -->
+          <div class="renew">
+            <label class="check renew-switch">
+              <span>{{.L.AutoRenew}}</span>
+              <input type="checkbox" role="switch" {{if .Billing.AutoRenew}}checked{{end}} onchange="setAutoRenew(this)" />
+            </label>
+            {{if .Billing.RenewNote}}<p class="renew-note{{if .Billing.RenewShort}} short{{end}}"{{if not .Billing.AutoRenew}} hidden{{end}}>{{.Billing.RenewNote}}</p>{{end}}
+          </div>
+          {{end}}
+          {{range .Billing.Plans}}
+          <div class="plan">
+            <div class="plan-info">
+              <div class="pname">{{.Name}}</div>
+              <div class="pprice">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>
+              {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
+            </div>
+            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else if $.Billing.Locked}}{{$.L.Renew}}{{else}}{{$.L.Pay}}{{end}}</button>
+            {{if .Options}}
+            <!-- The term on its own line under the plan and its button, full width. -->
+            <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
+              {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
+            </select>
+            {{end}}
+          </div>
+          {{end}}
+          {{if .Billing.Cancelable}}
+          <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
+            {{.L.CancelSub}}
+          </button>
+          <p class="muted" style="margin: 10px 0 0">
+            {{.L.ChangePlanNote}}
+          </p>
+          {{else if .Billing.ManualOnly}}
+          <p class="muted" style="margin: 12px 0 0">
+            {{.L.ManualNote}}
+          </p>
+          {{end}}
+          {{if and .Billing.ManualOnly .Billing.Note}}
+          <p class="muted" style="margin: 8px 0 0; white-space: pre-line">{{.Billing.Note}}</p>
+          {{end}}
+        </div>
+
+        {{if .Billing.Promo}}
+        <!-- Its own card: a code discounts a plan, adds days or credits the balance —
+             beside the top-up it read as a bonus to the top-up. -->
+        <div class="card">
+          <div class="lbl">{{.L.PromoTitle}}</div>
+          <div class="inline-form">
+            <input id="promo-code" type="text" autocomplete="off" autocapitalize="characters"
+              placeholder="{{.L.PromoPlaceholder}}" aria-label="{{.L.PromoPlaceholder}}" />
+            <button class="btn alt" onclick="applyPromo(this)">{{.L.PromoApply}}</button>
+          </div>
+        </div>
+        {{end}}
+        {{if .Billing.Wallet}}
+        <div class="card">
+          <div class="bill-cur">
+            <span class="muted">{{.L.Balance}}</span>
+            <span class="v">{{.Billing.Balance}} ₽</span>
+            {{if .Billing.BonusDays}}<span class="muted" style="font-size: 0.85rem">{{.Billing.BonusDays}}</span>{{end}}
+          </div>
+          {{if .Billing.Topup}}
+          <div class="inline-form">
+            <input id="topup-amount" type="number" inputmode="numeric" min="{{.Billing.TopupMin}}"
+              placeholder="{{.Billing.TopupHint}}" aria-label="{{.L.TopupAmount}}" />
+            <button class="btn" onclick="topup(this)">{{.L.Topup}}</button>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+        {{if .Billing.History}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 4px">{{.L.History}}</div>
+          {{range .Billing.History}}
+          <div class="tx">
+            <div class="tx-info">
+              <div class="tx-title">{{.Title}}</div>
+              <div class="muted tx-when">{{.When}}</div>
+            </div>
+            <div class="tx-amt{{if .In}} in{{end}}">{{.Amount}}</div>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </section>
+      {{if .Billing.RefLink}}
+      <section class="pane" data-pane="ref" hidden>
+        <div class="card">
+          <div class="bill-cur">
+            <span class="v">{{.L.RefTitle}}</span>
+            <span class="muted" style="font-size: 0.85rem">{{.Billing.RefHint}}</span>
+          </div>
+          <div class="copy-row" style="margin-top: 8px">
+            <code>{{.Billing.RefLink}}</code>
+            <button class="icon-btn" type="button" title="{{.L.Copy}}" aria-label="{{.L.Copy}}" onclick="copyIcon('{{.Billing.RefLink}}', this)">
+              <svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg>
+              <svg class="ic-done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+            </button>
+          </div>
+          {{if .Billing.RefShare}}
+          <button class="btn" onclick="openExternal('{{.Billing.RefShare}}')">{{.L.Share}}</button>
+          {{end}}
+          <p class="muted" style="margin: 10px 0 0; font-size: 0.85rem">{{.Billing.RefStats}}</p>
+        </div>
+        {{if .Billing.Invitees}}
+        <div class="card">
+          <div class="lbl" style="margin-bottom: 4px">{{.L.RefInvitees}}</div>
+          {{range .Billing.Invitees}}
+          <div class="tx">
+            <div class="tx-info">
+              <div class="tx-title">{{.Title}}</div>
+              {{if .When}}<div class="muted tx-when">{{.When}}</div>{{end}}
+            </div>
+            <div class="tx-amt{{if .In}} in{{end}}{{if .Muted}} muted{{end}}">{{.Amount}}</div>
+          </div>
+          {{end}}
+          {{if .Billing.InviteesMore}}<p class="muted" style="margin: 6px 0 0; font-size: 0.85rem">{{.Billing.InviteesMore}}</p>{{end}}
+        </div>
+        {{end}}
+      </section>
+      {{end}}
       {{end}}
 
     <div
@@ -826,14 +1149,14 @@
     <div
       id="msgmodal"
       class="modal"
-      onclick="if (event.target === this) this.classList.remove('show');"
+      onclick="if (event.target === this) closeMsg();"
     >
       <div class="modal-card">
         <div class="modal-head">
           <b id="msgmodal-title">{{.L.PayTitle}}</b>
           <button
             class="x"
-            onclick="document.getElementById('msgmodal').classList.remove('show')"
+            onclick="closeMsg()"
           >
             ✕
           </button>
@@ -992,7 +1315,8 @@
       // from the provider). Show a spinner while pending; reload once it clears so the
       // new plan/expiry appears.
       var pmWatching = false,
-        pmEverPending = false;
+        pmEverPending = false,
+        pmOrder = 0;
       function checkOrder() {
         if (!ORDER_PATH) return;
         fetch(ORDER_PATH)
@@ -1003,12 +1327,20 @@
             var el = document.getElementById("paywatch");
             if (j && j.pending) {
               pmEverPending = true;
+              pmOrder = j.order_id || pmOrder;
               if (el) el.style.display = "flex";
               setTimeout(checkOrder, 4000);
             } else {
               if (el) el.style.display = "none";
               if (pmEverPending) {
                 pmEverPending = false;
+                // The order that was being watched went through: say so after the
+                // reload, which is what shows its effect.
+                if (j && j.done && j.done.order_id === pmOrder) {
+                  try {
+                    sessionStorage.setItem("rospanel.paidmsg", j.done.message);
+                  } catch (e) {}
+                }
                 location.reload();
               } else {
                 pmWatching = false;
@@ -1025,6 +1357,14 @@
         checkOrder();
       }
       watchPayments(); // covers returning to a page that already has a pending order
+      (function () {
+        var msg = null;
+        try {
+          msg = sessionStorage.getItem("rospanel.paidmsg");
+          sessionStorage.removeItem("rospanel.paidmsg");
+        } catch (e) {}
+        if (msg) showPayMsg(msg, {{.L.PaidTitle}});
+      })();
       function cancelSub(el) {
         if (
           !confirm(
@@ -1057,6 +1397,45 @@
             el.disabled = false;
           });
       }
+      // Tabs. The chosen one survives the reloads the page does itself (after a
+      // payment, a promo code) — per browser tab, so a new visit starts on the
+      // subscription.
+      (function () {
+        var tabs = document.querySelectorAll(".tab");
+        if (!tabs.length) return;
+        var panes = document.querySelectorAll(".pane");
+        var each = function (list, fn) {
+          Array.prototype.forEach.call(list, fn);
+        };
+        function show(name) {
+          var found = false;
+          each(tabs, function (t) {
+            if (t.getAttribute("data-tab") === name) found = true;
+          });
+          if (!found) name = "sub";
+          each(tabs, function (t) {
+            var on = t.getAttribute("data-tab") === name;
+            t.classList.toggle("active", on);
+            t.setAttribute("aria-selected", on ? "true" : "false");
+          });
+          each(panes, function (p) {
+            p.hidden = p.getAttribute("data-pane") !== name;
+          });
+          try {
+            sessionStorage.setItem("rospanel.subtab", name);
+          } catch (e) {}
+        }
+        each(tabs, function (t) {
+          t.addEventListener("click", function () {
+            show(t.getAttribute("data-tab"));
+          });
+        });
+        var saved = null;
+        try {
+          saved = sessionStorage.getItem("rospanel.subtab");
+        } catch (e) {}
+        show(saved || "sub");
+      })();
       var PAY_PROVIDERS = [
         {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
       ];
@@ -1074,19 +1453,172 @@
         }
       }
       // One provider → pay straight away; several → open the method-choice modal.
-      function pay(planId, el) {
+      // A plan with several terms on offer: the chosen one, and the button that
+      // follows it (paying from the balance, or with money).
+      function planPeriods(planId) {
+        var s = document.getElementById("per-" + planId);
+        return s ? parseInt(s.value, 10) || 1 : 1;
+      }
+      function periodPicked(planId) {
+        var s = document.getElementById("per-" + planId),
+          b = document.getElementById("paybtn-" + planId);
+        if (!s || !b) return;
+        var o = s.options[s.selectedIndex];
+        b.textContent = o.getAttribute("data-btn");
+        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
+      }
+      function buyPlan(planId, el) {
+        var n = planPeriods(planId);
+        if (el.getAttribute("data-fb") === "1") payBalance(planId, el, n);
+        else pay(planId, el, n);
+      }
+      var PAY_PERIODS = 1;
+      function pay(planId, el, periods) {
+        PAY_TOPUP = 0; // a top-up dialog closed without choosing leaves no trace
+        PAY_PERIODS = periods || 1;
         if (PAY_PROVIDERS.length <= 1) {
-          startPay(planId, PAY_PROVIDERS[0] || "", el);
+          startPay(planId, PAY_PROVIDERS[0] || "", el, PAY_PERIODS);
         } else {
           PAY_PLAN = planId;
           document.getElementById("paymodal").classList.add("show");
         }
       }
+      var PAY_TOPUP = 0;
       function payWith(provider, el) {
         document.getElementById("paymodal").classList.remove("show");
-        startPay(PAY_PLAN, provider, el);
+        if (PAY_TOPUP) {
+          var amount = PAY_TOPUP;
+          PAY_TOPUP = 0;
+          startTopup(amount, provider, el);
+          return;
+        }
+        startPay(PAY_PLAN, provider, el, PAY_PERIODS);
       }
-      function startPay(planId, provider, el) {
+      var WALLET_PATH = "{{.Billing.WalletPath}}";
+      // post sends a page action and hands back {ok, body}.
+      function post(path, data) {
+        return fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
+          body: JSON.stringify(data),
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, body: j || {} };
+          });
+        });
+      }
+      function busy(el) {
+        var old = el ? el.textContent : "";
+        if (el) {
+          el.textContent = "…";
+          el.disabled = true;
+        }
+        return function () {
+          if (el) {
+            el.textContent = old;
+            el.disabled = false;
+          }
+        };
+      }
+      var RELOAD_ON_CLOSE = false;
+      // closeMsg hides the message; a promo code that changed the page reloads it.
+      function closeMsg() {
+        document.getElementById("msgmodal").classList.remove("show");
+        if (RELOAD_ON_CLOSE) location.reload();
+      }
+      function payBalance(planId, el, periods) {
+        var reset = busy(el);
+        post(PAY_PATH, { plan_id: planId, balance: true, expire_at: {{.Billing.ExpireAt}}, periods: periods || 1 })
+          .then(function (res) {
+            if (res.ok) {
+              location.reload();
+              return;
+            }
+            reset();
+            showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function topup(el) {
+        var input = document.getElementById("topup-amount");
+        var amount = parseInt(input && input.value, 10);
+        if (!amount || amount < {{.Billing.TopupMin}}) {
+          if (input) input.focus();
+          return;
+        }
+        if (PAY_PROVIDERS.length <= 1) {
+          startTopup(amount, PAY_PROVIDERS[0] || "", el);
+        } else {
+          PAY_TOPUP = amount;
+          document.getElementById("paymodal").classList.add("show");
+        }
+      }
+      function startTopup(amount, provider, el) {
+        var reset = busy(el);
+        post(WALLET_PATH + "/topup", { amount: amount, provider: provider })
+          .then(function (res) {
+            reset();
+            if (res.ok && res.body.pay_url) {
+              openExternal(res.body.pay_url);
+              watchPayments();
+            } else if (res.ok && res.body.manual) {
+              showPayMsg(res.body.message || {{.L.OrderCreated}}, {{.L.OrderTitle}});
+            } else {
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function applyPromo(el) {
+        var input = document.getElementById("promo-code");
+        var code = input ? input.value.trim() : "";
+        if (!code) {
+          if (input) input.focus();
+          return;
+        }
+        var reset = busy(el);
+        post(WALLET_PATH + "/promo", { code: code })
+          .then(function (res) {
+            reset();
+            if (res.ok) {
+              RELOAD_ON_CLOSE = true;
+              showPayMsg(res.body.message, {{.L.PromoTitle}});
+            } else {
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+            }
+          })
+          .catch(function () {
+            reset();
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function setAutoRenew(box) {
+        box.disabled = true;
+        post(WALLET_PATH + "/autorenew", { on: box.checked })
+          .then(function (res) {
+            box.disabled = false;
+            if (!res.ok) {
+              box.checked = !box.checked;
+              showPayMsg(res.body.error || {{.L.PayFailed}}, {{.L.Error}});
+              return;
+            }
+            // What the renewal will do shows only while it is on.
+            var note = document.querySelector(".renew-note");
+            if (note) note.hidden = !box.checked;
+          })
+          .catch(function () {
+            box.disabled = false;
+            box.checked = !box.checked;
+            showPayMsg({{.L.NetworkError}}, {{.L.Error}});
+          });
+      }
+      function startPay(planId, provider, el, periods) {
         var old = el ? el.textContent : "";
         if (el) {
           el.textContent = "…";
@@ -1101,7 +1633,7 @@
         fetch(PAY_PATH, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify({ plan_id: planId, provider: provider }),
+          body: JSON.stringify({ plan_id: planId, provider: provider, periods: periods || 1 }),
         })
           .then(function (r) {
             return r.json().then(function (j) {

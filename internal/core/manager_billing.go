@@ -253,6 +253,9 @@ func (m *Manager) SaveBillingSettings(st *model.Settings) error {
 	// is a dead end for every self-registered user: planWriteFor treats the trial as
 	// paid-shaped (it must expire), while EnforceBilling refuses to downgrade anyone
 	// already on the free plan — so the trial expires and nothing ever rescues them.
+	if err := validateWalletSettings(st); err != nil {
+		return err
+	}
 	if st.BillingFreePlanID != 0 && st.BillingFreePlanID == st.BillingTrialPlanID {
 		return invalidCode("err.freeAndTrialMustDiffer", "бесплатный и пробный тарифы должны быть разными: иначе после окончания пробного периода пользователю некуда переходить")
 	}
@@ -413,6 +416,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	}
 	plan := m.PlanName(u.PlanID)
 	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan, "moderation": true})
+	m.AttachReferrer(ctx, u.ID, req.ChatID)
 	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
 	// Gated with the other user-facing notices: an operator who switched them all off
 	// should not still have the bot writing to people.
@@ -667,6 +671,32 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 // what entitles them to a fresh quota on a plan they already hold — see the ResetUsage
 // decision below.
 func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, paidPeriod bool) (store.UserPlanWrite, string, error) {
+	return m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, -1)
+}
+
+// planWriteForPeriods is planWriteFor for several of the plan's periods bought at
+// once: the term is that many periods, and a quota the plan does not refill on its
+// own cycle refills every period — otherwise a 100 GB plan bought for three months
+// would have to last all three.
+func (m *Manager) planWriteForPeriods(u model.User, planID int64, extendFromCurrent, paidPeriod bool, periods int) (store.UserPlanWrite, string, error) {
+	if periods <= 1 {
+		return m.planWriteFor(u, planID, extendFromCurrent, paidPeriod)
+	}
+	plan, err := m.store.GetTariffPlan(planID)
+	if err != nil {
+		return store.UserPlanWrite{}, "", err
+	}
+	w, name, err := m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, plan.PeriodDays*periods)
+	if err == nil && plan.DataLimit > 0 && plan.ResetPeriod == "" && plan.PeriodDays > 0 {
+		w.ResetPeriod = fmt.Sprintf("days:%d", plan.PeriodDays)
+	}
+	return w, name, err
+}
+
+// planWriteForDays is planWriteFor with the term given in days instead of the plan's
+// own period (days < 0 = the plan's period) — a promo code that grants a plan for a
+// week of its own choosing.
+func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent, paidPeriod bool, days int) (store.UserPlanWrite, string, error) {
 	now := time.Now().Unix()
 	if planID == 0 {
 		return store.UserPlanWrite{
@@ -689,13 +719,16 @@ func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, pa
 	// even though its price is 0 — a manual assignment gives period_days of access,
 	// then EnforceBilling downgrades it to the free plan, same as the trial flow.
 	freePlan := plan.IsFree() && plan.ID != set.BillingTrialPlanID
+	if days < 0 {
+		days = plan.PeriodDays
+	}
 	var expire int64
-	if !freePlan && plan.PeriodDays > 0 {
+	if !freePlan && days > 0 {
 		base := now
 		if extendFromCurrent && u.ExpireAt > now {
 			base = u.ExpireAt
 		}
-		expire = base + int64(plan.PeriodDays)*86400
+		expire = base + int64(days)*86400
 	}
 	w := planLimits(u.ID, plan, expire, freePlan, now)
 	w.TrialUsed = u.TrialUsed
@@ -723,6 +756,19 @@ func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, pa
 	if u.PlanID != plan.ID || (paidPeriod && !freePlan && plan.DataLimit > 0) {
 		w.ResetUsage = true
 		w.LastUp, w.LastDown = m.liveCounter(u.ID)
+	}
+	// A term bought as several periods refills the quota every period (see
+	// planWriteForPeriods). A later write on the same plan — one more period, a days
+	// code, an operator's re-assign — keeps that refill while the term still runs past
+	// one period, and keeps its anchor unless the counter starts over anyway: otherwise
+	// the eleven refills of a year bought upfront vanish with the next purchase.
+	if perPeriod := fmt.Sprintf("days:%d", plan.PeriodDays); u.PlanID == plan.ID && u.ResetPeriod == perPeriod &&
+		!freePlan && plan.DataLimit > 0 && plan.ResetPeriod == "" && plan.PeriodDays > 0 &&
+		expire-now > int64(plan.PeriodDays)*86400 {
+		w.ResetPeriod = perPeriod
+		if !w.ResetUsage && u.LastResetAt > 0 {
+			w.ResetAnchor = u.LastResetAt
+		}
 	}
 	return w, plan.Name, nil
 }
@@ -767,28 +813,64 @@ func (m *Manager) isPlanRenewalFor(u model.User, planID int64) bool {
 // first, grant after. Anything that killed the process in between took the money and
 // left no trace that the plan was owed, since every retry path looks for pending
 // orders and the claim had already cleared that flag.
-func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (bool, error) {
+func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (store.ConfirmResult, error) {
 	// Held across the read and the commit: the expiry being computed extends the
 	// user's current one, so a concurrent confirmer must not read the same baseline.
 	m.applyPlanMu.Lock()
 	defer m.applyPlanMu.Unlock()
+	set, err := m.Settings()
+	if err != nil {
+		return store.ConfirmResult{}, err
+	}
+	spec := store.ConfirmSpec{PromoID: order.PromoID, Ref: refReward(set), Now: paidAt}
+	if order.Kind == model.OrderTopup {
+		spec.CreditKop = int64(order.AmountRub) * 100
+		return m.store.ConfirmOrder(order.ID, paidAt, spec)
+	}
 	u, err := m.store.GetUser(order.UserID)
 	if err != nil {
-		return false, err
+		return store.ConfirmResult{}, err
+	}
+	// The user bought a different plan while this order waited (from the balance, say):
+	// granting this one now would overwrite what they already paid for. With a wallet
+	// the money goes to the balance instead; without one the order applies as before.
+	// The same for a second payment of a lifetime plan already held: it has nothing
+	// left to buy.
+	//
+	// And for a discounted order whose code the user has already used (it paid for
+	// another checkout, and this one was superseded): the discount is one per user,
+	// so the money waits on the balance instead of buying a second discounted period.
+	usedCode := order.PromoID != 0 && m.store.PromoUsedBy(order.PromoID, u.ID)
+	if cur := m.ActivePaidPlan(*u); set.WalletEnabled &&
+		(usedCode || cur != nil && (cur.ID != order.PlanID || cur.PeriodDays <= 0)) {
+		spec.CreditKop = int64(order.AmountRub) * 100
+		spec.AsTopup = true
+		spec.PromoID = 0
+		return m.store.ConfirmOrder(order.ID, paidAt, spec)
 	}
 	// Extend from the current expiry only for a renewal of the active paid plan;
 	// buying from trial/free/expired starts from now (no inherited time).
-	w, _, err := m.planWriteFor(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true)
+	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods)
 	if err != nil {
-		return false, err
+		return store.ConfirmResult{}, err
+	}
+	spec.BonusDays = m.withBankedDays(&w, u.ID)
+	spec.Plan = &w
+	// An order the balance helps pay for: the money lands on the balance and the
+	// whole price comes back off it with the plan.
+	if order.BalanceKop > 0 {
+		spec.CreditKop = int64(order.AmountRub) * 100
+		spec.DebitKop = spec.CreditKop + order.BalanceKop
 	}
 	groupsChanged := m.planGroupsChanged(w)
-	claimed, err := m.store.ConfirmPaymentOrder(order.ID, paidAt, w)
-	if err != nil || !claimed {
-		return false, err
+	res, err := m.store.ConfirmOrder(order.ID, paidAt, spec)
+	if err != nil || !res.Claimed {
+		return res, err
 	}
-	m.afterPlanWrite(groupsChanged)
-	return true, nil
+	if res.PlanApplied {
+		m.afterPlanWrite(groupsChanged)
+	}
+	return res, nil
 }
 
 // ActivePaidPlan returns the user's current tariff when it's a paid plan that is
@@ -877,7 +959,14 @@ func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 // It runs off the background poller, so its audit rows are attributed to the system.
 func (m *Manager) EnforceBilling(now int64) error {
 	set, err := m.Settings()
-	if err != nil || !set.BillingEnabled || set.BillingFreePlanID == 0 {
+	if err != nil || !set.BillingEnabled {
+		return nil
+	}
+	// Renewal from the balance first: whoever it renews is no longer expiring.
+	if set.WalletEnabled {
+		m.autoRenew(set, now)
+	}
+	if set.BillingFreePlanID == 0 {
 		return nil
 	}
 	free, err := m.store.GetTariffPlan(set.BillingFreePlanID)
@@ -893,7 +982,7 @@ func (m *Manager) EnforceBilling(now int64) error {
 		if u.PlanID == free.ID {
 			continue
 		}
-		if err := m.applyPlan(ctx, u.ID, free.ID, false, model.EventPlanDowngraded); err != nil {
+		if err := m.downgradeExpired(ctx, u.ID, free.ID, now); err != nil {
 			logErr("billing: downgrade to free failed", "user", u.ID, "err", err)
 			continue
 		}
@@ -902,11 +991,39 @@ func (m *Manager) EnforceBilling(now int64) error {
 	return nil
 }
 
+// downgradeExpired moves a user whose paid period ended to the free plan — re-checked
+// under applyPlanMu, because a payment or a balance purchase confirming while the
+// expired list was being walked has already given them a new term, and the downgrade
+// would overwrite it.
+func (m *Manager) downgradeExpired(ctx context.Context, userID, freeID, now int64) error {
+	m.applyPlanMu.Lock()
+	u, err := m.store.GetUser(userID)
+	if err != nil || u.PlanID == freeID || u.ExpireAt == 0 || u.ExpireAt > now {
+		m.applyPlanMu.Unlock()
+		return err
+	}
+	prevPlan := m.PlanName(u.PlanID)
+	w, planName, err := m.planWriteFor(*u, freeID, false, false)
+	if err != nil {
+		m.applyPlanMu.Unlock()
+		return err
+	}
+	groupsChanged := m.planGroupsChanged(w)
+	err = m.store.ApplyUserPlan(w)
+	m.applyPlanMu.Unlock()
+	if err != nil {
+		return err
+	}
+	m.afterPlanWrite(groupsChanged)
+	m.auditPlan(ctx, userID, u.Name, model.EventPlanDowngraded, prevPlan, planName, w.ExpireAt)
+	return nil
+}
+
 // RequestPlanPayment opens a pending manual order for a paid plan and returns the
 // payment instructions. To keep a spammed "Pay" button from piling up duplicate
 // orders (and admin pings), it reuses the user's latest still-pending manual order
-// for the same plan instead of creating another.
-func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64) (*model.PaymentOrder, string, error) {
+// for the same purchase instead of creating another.
+func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, periods int) (*model.PaymentOrder, string, error) {
 	if !m.ManualPayment() {
 		return nil, "", invalidCode("err.payMethodUnavailable", "способ оплаты недоступен")
 	}
@@ -914,49 +1031,74 @@ func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID
 	if err != nil {
 		return nil, "", invalidCode("err.planNotFound", "тариф не найден")
 	}
-	if plan.IsFree() {
-		return nil, "", invalidCode("err.planIsFree", "этот тариф бесплатный")
+	u, err := m.store.GetUser(userID)
+	if err != nil {
+		return nil, "", err
 	}
 	// Same rules as the automatic path: block switching (and buying a disabled plan)
 	// while a paid one is active — but let an existing subscriber renew the plan
 	// they're already on, even if it's since been disabled (grandfathering).
-	if u, err := m.store.GetUser(userID); err == nil && u.PlanID != planID {
-		if !plan.Enabled {
-			return nil, "", invalidCode("err.planUnavailable", "тариф недоступен")
-		}
-		if cur := m.ActivePaidPlan(*u); cur != nil {
-			return nil, "", invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": cur.Name})
-		}
-	}
-	set, _ := m.Settings()
-	if existing, err := m.store.LatestPendingManualOrder(userID, planID); err == nil && existing != nil {
-		return existing, manualOrderMessage(lang, existing, plan, set), nil // reuse, no new order/notification
-	}
-	order, err := m.store.CreatePaymentOrder(userID, planID, plan.PriceRub)
-	if err != nil {
+	if err := m.checkPlanPurchase(*u, plan); err != nil {
 		return nil, "", err
 	}
-	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.manualOrder",
-		order.ID, escHTML(order.UserName), escHTML(plan.Name), plan.PriceRub))
-	m.audit(ctx, userID, model.EventPaymentCreated, map[string]any{
-		"order_id": order.ID, "plan": plan.Name, "amount_rub": plan.PriceRub, "provider": "manual",
-	})
+	if err := m.checkPeriods(plan, periods); err != nil {
+		return nil, "", err
+	}
+	q := m.QuotePlanFor(*u, plan, periods)
+	if q.MoneyRub == 0 {
+		return nil, "", invalidCode("err.payFromBalance", "баланса хватает — оплатите тариф с баланса")
+	}
+	set, _ := m.Settings()
+	return m.manualOrder(ctx, lang, store.OrderDraft{
+		UserID: userID, PlanID: planID, Kind: model.OrderPlan, AmountRub: q.MoneyRub,
+		BalanceKop: q.BalanceKop, DiscountRub: q.DiscountRub, PromoID: q.PromoID, Periods: q.Periods,
+	}, planSubject(lang, plan.Name, q.Periods), set)
+}
+
+// manualOrder opens (or reuses) a pending manual order and returns the instructions
+// the payer follows. subject names the purchase in the payer's language.
+func (m *Manager) manualOrder(ctx context.Context, lang i18n.Lang, d store.OrderDraft, subject string, set *model.Settings) (*model.PaymentOrder, string, error) {
+	if existing, err := m.store.LatestPendingManualOrder(d.UserID, d.PlanID); err == nil && existing != nil &&
+		existing.Kind == d.Kind && existing.AmountRub == d.AmountRub &&
+		existing.BalanceKop == d.BalanceKop && existing.PromoID == d.PromoID &&
+		max(existing.Periods, 1) == max(d.Periods, 1) {
+		return existing, manualOrderMessage(lang, existing, subject, set), nil // reuse, no new order/notification
+	}
+	order, err := m.store.CreateOrder(d, time.Now().Unix())
+	if err != nil {
+		return nil, "", orderCreateErr(err)
+	}
+	m.supersedePromoOrders(ctx, d.UserID, d.PromoID, order.ID)
+	adminLang := m.botLang()
+	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.manualOrder",
+		order.ID, escHTML(order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub))
+	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, "manual"))
 	m.EmitWebhook(model.WebhookPaymentCreated, order)
-	return order, manualOrderMessage(lang, order, plan, set), nil
+	return order, manualOrderMessage(lang, order, subject, set), nil
 }
 
 // manualOrderMessage builds the user-facing manual-payment instructions for an
 // order: amount, the operator's payment note, and the order number to quote in the
 // transfer comment.
-func manualOrderMessage(lang i18n.Lang, order *model.PaymentOrder, plan *model.TariffPlan, set *model.Settings) string {
-	msg := i18n.T(lang, "order.head", order.ID, plan.Name, plan.PriceRub)
+func manualOrderMessage(lang i18n.Lang, order *model.PaymentOrder, subject string, set *model.Settings) string {
+	msg := i18n.T(lang, "order.head", order.ID, subject, order.AmountRub)
+	if order.DiscountRub > 0 {
+		msg += i18n.T(lang, "order.discount", order.PromoCode, order.DiscountRub)
+	}
+	if order.BalanceKop > 0 {
+		msg += i18n.T(lang, "order.fromBalance", kopText(order.BalanceKop))
+	}
 	// The operator's own payment note is their words, in whatever language they wrote
 	// it — passed through untouched.
 	if set != nil && strings.TrimSpace(set.BillingPaymentNote) != "" {
 		msg += "\n\n" + strings.TrimSpace(set.BillingPaymentNote)
 	}
 	msg += i18n.T(lang, "order.comment", order.ID)
-	msg += i18n.T(lang, "order.afterConfirm")
+	if order.Kind == model.OrderTopup {
+		msg += i18n.T(lang, "order.afterConfirmTopup")
+	} else {
+		msg += i18n.T(lang, "order.afterConfirm")
+	}
 	return msg
 }
 
@@ -968,26 +1110,26 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 	if err != nil {
 		return err
 	}
-	if order.Status != "pending" {
+	// A cancelled order may be confirmed too: the operator says the money arrived (a
+	// transfer made before a newer checkout superseded it, say), and it buys what the
+	// order was for — or lands on the balance when that can no longer be given.
+	if order.Status == "paid" {
 		return invalidCode("err.orderAlreadyHandled", "заказ уже обработан")
 	}
 	now := time.Now().Unix()
 	// The claim and the plan land together — see confirmOrderPaid. Audited as the
 	// payment below rather than as a bare plan switch: one purchase is one event,
 	// and payment.paid already names the plan.
-	claimed, err := m.confirmOrderPaid(order, now)
+	res, err := m.confirmOrderPaid(order, now)
 	if err != nil {
 		return err
 	}
-	if !claimed {
+	if !res.Claimed {
 		return invalidCode("err.orderAlreadyHandled", "заказ уже обработан")
 	}
 	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
-	order.Status, order.PaidAt = "paid", now
-	m.audit(ctx, order.UserID, model.EventPaymentPaid, map[string]any{
-		"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub, "provider": "manual",
-	})
-	m.EmitWebhook(model.WebhookPaymentPaid, order)
+	order.PaidAt = now
+	m.afterOrderPaid(ctx, order, "manual", res)
 	return nil
 }
 

@@ -491,6 +491,7 @@ export function UsersPanel({
       <UserDetail
         user={detail}
         userBotEnabled={userBotEnabled}
+        onOpenUser={openDetail}
         onChanged={refresh}
         onClose={() => {
           setDetail(null);

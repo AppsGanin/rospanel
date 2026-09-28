@@ -226,6 +226,8 @@ type Manager struct {
 	// concurrent confirmers — a webhook + the poll fallback, or two orders for the
 	// same user — which would otherwise lose or double a paid period.
 	applyPlanMu sync.Mutex
+	// promoTry bounds how many promo codes one user may try in a window.
+	promoTry promoTries
 
 	vpnMu       sync.Mutex
 	vpnUp       int64 // current VPN throughput (bytes/sec), from Xray stats deltas

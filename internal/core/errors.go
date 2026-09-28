@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -27,6 +28,19 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string { return e.Msg }
+
+// UserError is err as a person reading in lang should see it. A validation error
+// carries Russian text; for anyone else it is rendered from its code through the
+// English catalog the external API uses. Anything else is shown as it is.
+func UserError(err error, lang i18n.Lang) string {
+	var ve *ValidationError
+	if lang != i18n.RU && errors.As(err, &ve) {
+		if msg, ok := i18n.ErrorEN(ve.Code, ve.Args); ok {
+			return msg
+		}
+	}
+	return err.Error()
+}
 
 // invalid builds a ValidationError with a formatted operator-facing message and no
 // code. Kept for the messages the panel never surfaces; anything an operator can see

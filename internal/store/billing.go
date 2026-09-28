@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -182,10 +183,9 @@ func (s *Store) PurgeCancelledOrders(before int64) (int64, error) {
 }
 
 // CountPendingOrdersForPlan returns how many orders are still awaiting payment for a
-// plan. Every order read inner-joins tariff_plans, so deleting a plan out from under a
-// pending order makes that order invisible to the webhook handler, the poller, the
-// orders list and the cancel path alike — the money can still be captured at the
-// provider with nothing left on this side able to see it, report it, or refund it.
+// plan. Deleting a plan out from under a pending order leaves the payment nothing to
+// grant: the money can still be captured at the provider, and the confirm path then
+// fails on the missing plan with the order left pending.
 func (s *Store) CountPendingOrdersForPlan(planID int64) (int, error) {
 	var n int
 	err := s.db.QueryRow(
@@ -219,7 +219,7 @@ func (s *Store) UserIDsOnPlan(planID int64) ([]int64, error) {
 func (s *Store) PaidByProvider() ([]model.ProviderStat, error) {
 	rows, err := s.db.Query(`
 		SELECT provider, count(*), COALESCE(sum(amount_rub), 0)
-		FROM payment_orders WHERE status = 'paid'
+		FROM payment_orders WHERE status = 'paid' AND provider <> 'balance'
 		GROUP BY provider ORDER BY sum(amount_rub) DESC`)
 	if err != nil {
 		return nil, err
@@ -486,15 +486,22 @@ func (s *Store) CreatePaymentOrder(userID, planID int64, amountRub int) (*model.
 	return s.GetPaymentOrder(id)
 }
 
-const orderCols = `o.id, o.user_id, u.name, o.plan_id, p.name, o.amount_rub, o.status,
-	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at`
+const orderCols = `o.id, o.user_id, u.name, o.plan_id, COALESCE(p.name, ''), o.amount_rub, o.status,
+	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at,
+	o.kind, o.balance_kop, o.discount_rub, o.promo_id, COALESCE(pc.code, ''),
+	o.periods, o.refunded_at`
+
+// orderJoins resolves an order's user, plan and promo code. The plan is a LEFT join:
+// a top-up has none.
+const orderJoins = `
+	JOIN users u ON u.id = o.user_id
+	LEFT JOIN tariff_plans p ON p.id = o.plan_id
+	LEFT JOIN promo_codes pc ON pc.id = o.promo_id`
 
 func (s *Store) GetPaymentOrder(id int64) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.id = ?`, id)
 	if err != nil {
 		return nil, err
@@ -511,9 +518,7 @@ func (s *Store) GetPaymentOrder(id int64) (*model.PaymentOrder, error) {
 func (s *Store) LatestPendingManualOrder(userID, planID int64) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.user_id = ? AND o.plan_id = ? AND o.status = 'pending'
 		   AND (o.provider IS NULL OR o.provider = '')
 		 ORDER BY o.created_at DESC LIMIT 1`, userID, planID)
@@ -533,11 +538,27 @@ func (s *Store) LatestPendingManualOrder(userID, planID int64) (*model.PaymentOr
 func (s *Store) LatestPendingProviderOrder(userID int64) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.user_id = ? AND o.status = 'pending' AND o.provider <> ''
 		 ORDER BY o.created_at DESC LIMIT 1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &orders[0], nil
+}
+
+// LatestPaidOrder returns the user's newest order paid after since (or
+// sql.ErrNoRows) — what a subscription page that watched a payment tells its user
+// once it clears. Purchases from the balance are left out: nothing was waited on.
+func (s *Store) LatestPaidOrder(userID, since int64) (*model.PaymentOrder, error) {
+	orders, err := s.listPaymentOrders(
+		`SELECT `+orderCols+`
+		 FROM payment_orders o`+orderJoins+`
+		 WHERE o.user_id = ? AND o.status = 'paid' AND o.paid_at > ? AND o.provider <> 'balance'
+		 ORDER BY o.paid_at DESC, o.id DESC LIMIT 1`, userID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -553,9 +574,7 @@ func (s *Store) LatestPendingProviderOrder(userID int64) (*model.PaymentOrder, e
 func (s *Store) LatestPendingProviderOrderForPlan(userID, planID int64, provider string) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.user_id = ? AND o.plan_id = ? AND o.provider = ? AND o.status = 'pending'
 		 ORDER BY o.created_at DESC LIMIT 1`, userID, planID, provider)
 	if err != nil {
@@ -571,9 +590,7 @@ func (s *Store) LatestPendingProviderOrderForPlan(userID, planID int64, provider
 func (s *Store) GetPaymentOrderByProvider(provider, providerID string) (*model.PaymentOrder, error) {
 	orders, err := s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.provider = ? AND o.provider_id = ?`, provider, providerID)
 	if err != nil {
 		return nil, err
@@ -589,9 +606,7 @@ func (s *Store) ListPaymentOrders(status string, limit int) ([]model.PaymentOrde
 		limit = 50
 	}
 	q := `SELECT ` + orderCols + `
-	      FROM payment_orders o
-	      JOIN users u ON u.id = o.user_id
-	      JOIN tariff_plans p ON p.id = o.plan_id`
+	      FROM payment_orders o ` + orderJoins
 	args := []any{}
 	if status != "" {
 		q += ` WHERE o.status = ?`
@@ -660,6 +675,8 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 			&o.ID, &o.UserID, &o.UserName, &o.PlanID, &o.PlanName,
 			&o.AmountRub, &o.Status, &o.Provider, &o.ProviderID, &o.PayURL,
 			&o.CreatedAt, &o.PaidAt,
+			&o.Kind, &o.BalanceKop, &o.DiscountRub, &o.PromoID, &o.PromoCode,
+			&o.Periods, &o.RefundedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -673,10 +690,14 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		`UPDATE settings SET billing_enabled = ?,
 		 billing_free_plan_id = ?, billing_trial_plan_id = ?, billing_payment_note = ?,
 		 billing_manual_enabled = ?, billing_manual_label = ?,
+		 wallet_enabled = ?, wallet_topup_min = ?, billing_periods = ?,
+		 ref_mode = ?, ref_percent = ?, ref_days = ?, ref_first_only = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
 		boolToInt(st.BillingManualEnabled), st.BillingManualLabel,
+		boolToInt(st.WalletEnabled), st.WalletTopupMin, periodsJSON(st.BillingPeriods),
+		st.RefMode, st.RefPercent, st.RefDays, boolToInt(st.RefFirstOnly),
 	)
 	return err
 }
@@ -695,9 +716,16 @@ func (s *Store) PendingProviderOrders(limit int) ([]model.PaymentOrder, error) {
 	}
 	return s.listPaymentOrders(
 		`SELECT `+orderCols+`
-		 FROM payment_orders o
-		 JOIN users u ON u.id = o.user_id
-		 JOIN tariff_plans p ON p.id = o.plan_id
+		 FROM payment_orders o`+orderJoins+`
 		 WHERE o.status = 'pending' AND o.provider != '' AND o.provider_id != ''
 		 ORDER BY o.created_at ASC LIMIT ?`, limit)
+}
+
+// periodsJSON stores the multi-period discounts; none is ”.
+func periodsJSON(offers []model.PeriodOffer) string {
+	if len(offers) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(offers)
+	return string(b)
 }

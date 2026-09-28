@@ -149,7 +149,7 @@ func (m *Manager) notifyExpiring(set *model.Settings, users []model.User) {
 		lang := m.userLang(u.TgChatID)
 		m.notifyUser(u.TgChatID, i18n.T(lang, "notify.expiring",
 			i18n.TN(lang, "notify.days", left),
-			time.Unix(u.ExpireAt, 0).In(m.Location()).Format("02.01.2006")))
+			time.Unix(u.ExpireAt, 0).In(m.Location()).Format("02.01.2006"))+m.renewalNotice(set, u, lang))
 	}
 }
 

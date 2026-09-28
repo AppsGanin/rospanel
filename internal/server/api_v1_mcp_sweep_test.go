@@ -129,6 +129,10 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create order: %v", err)
 	}
+	usedPromo := &model.PromoCode{Code: "SWEEPUSE", Kind: model.PromoPercent, Value: 5, Enabled: true}
+	if err := st.SavePromo(usedPromo, 1_700_000_000); err != nil {
+		t.Fatalf("create promo: %v", err)
+	}
 	for _, name := range []string{"sweep-approve", "sweep-reject"} {
 		if _, err := st.CreateRegistrationRequest(int64(len(name)), name, 1_700_000_000); err != nil {
 			t.Fatalf("create registration %s: %v", name, err)
@@ -142,18 +146,21 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	// ---- the read half, generated ------------------------------------------
 	// Which id a GET wants is the only thing a machine can't work out.
 	readIDs := map[string]int64{
-		"get_users_by_id":             user.ID,
-		"get_users_by_id_abuse":       user.ID,
-		"get_users_by_id_happ_link":   user.ID,
-		"get_users_by_id_connections": user.ID,
-		"get_users_by_id_devices":     user.ID,
-		"get_users_by_id_events":      user.ID,
-		"get_nodes_by_id":             node.ID,
-		"get_nodes_by_id_health":      node.ID,
-		"get_nodes_by_id_logs":        model.LocalNodeID,
-		"get_servers_by_id_inbounds":  model.LocalNodeID,
-		"get_servers_by_id_routing":   model.LocalNodeID,
-		"get_billing_orders_by_id":    order.ID,
+		"get_users_by_id":               user.ID,
+		"get_users_by_id_abuse":         user.ID,
+		"get_users_by_id_happ_link":     user.ID,
+		"get_users_by_id_wallet":        user.ID,
+		"get_users_by_id_referrals":     user.ID,
+		"get_billing_promos_by_id_uses": usedPromo.ID,
+		"get_users_by_id_connections":   user.ID,
+		"get_users_by_id_devices":       user.ID,
+		"get_users_by_id_events":        user.ID,
+		"get_nodes_by_id":               node.ID,
+		"get_nodes_by_id_health":        node.ID,
+		"get_nodes_by_id_logs":          model.LocalNodeID,
+		"get_servers_by_id_inbounds":    model.LocalNodeID,
+		"get_servers_by_id_routing":     model.LocalNodeID,
+		"get_billing_orders_by_id":      order.ID,
 	}
 	tools := mcp.BuildTools(OpenAPISpec(base))
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
@@ -236,9 +243,16 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"body": map[string]any{
 			"enabled": true, "free_plan_id": 0, "trial_plan_id": 0,
 			// Manual payment on: the orders below are manual ones, and the panel opens
-			// those only for an operator who takes transfers by hand.
-			"payment_note": "sweep", "manual": true,
+			// those only for an operator who takes transfers by hand. The wallet on: a
+			// refund goes onto the balance.
+			"payment_note": "sweep", "manual": true, "wallet": true,
 		},
+	})
+	promo := newID("post_billing_promos", call("post_billing_promos", map[string]any{
+		"body": map[string]any{"code": "SWEEP10", "kind": "percent", "value": 10, "enabled": true},
+	}))
+	call("post_users_by_id_balance", map[string]any{
+		"id": created, "body": map[string]any{"amount_kop": 5000, "note": "sweep"},
 	})
 	call("post_payments", map[string]any{
 		"body": map[string]any{
@@ -258,6 +272,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"body": map[string]any{"user_id": created, "plan_id": made},
 	}))
 	call("post_billing_orders_by_id_confirm", map[string]any{"id": confirm})
+	call("post_billing_orders_by_id_refund", map[string]any{"id": confirm, "body": map[string]any{"cancel_plan": false}})
 
 	// The event key comes from the catalog rather than a literal: a webhook that
 	// subscribes to an event the panel doesn't have is rejected, and hard-coding one
@@ -345,6 +360,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("delete_inbounds_by_id", map[string]any{"id": inbound})
 	call("delete_groups_by_id", map[string]any{"id": group})
 	call("delete_billing_plans_by_id", map[string]any{"id": target})
+	call("delete_billing_promos_by_id", map[string]any{"id": promo})
 	call("delete_nodes_by_id", map[string]any{"id": added})
 	call("delete_users_by_id", map[string]any{"id": created})
 
@@ -393,6 +409,7 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 		"post_users_by_id_devices_unbind": map[string]any{"all": true},
 		"post_users_by_id_groups":         map[string]any{"group_ids": []int64{999_003}},
 		"post_users_by_id_plan":           map[string]any{"plan_id": 999_004},
+		"post_users_by_id_balance":        map[string]any{"amount_kop": 100},
 		"post_users_by_id_reset_period":   map[string]any{"period": "monthly"},
 		"post_webhooks_by_id": map[string]any{
 			"url": "https://example.com/hook", "events": []string{"user.created"},

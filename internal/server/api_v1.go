@@ -90,6 +90,12 @@ type (
 		// ⇒ a manual order (admin confirms it); set ⇒ a hosted provider payment whose
 		// pay_url is returned.
 		Provider string `json:"provider,omitempty"`
+		// FromBalance buys the plan from the user's balance (after their discount
+		// code) instead of opening an order to pay; refused when the balance falls short.
+		FromBalance bool `json:"from_balance,omitempty"`
+		// Periods: how many of the plan's periods to buy at once (0 = one); a number the
+		// billing settings offer a discount for.
+		Periods int `json:"periods,omitempty"`
 	}
 )
 
@@ -203,6 +209,9 @@ func (rt *Router) apiMux() http.Handler {
 	id("GET /v1/users/{id}/events", rt.apiUserEvents)
 	id("GET /v1/users/{id}/abuse", rt.apiUserAbuse)
 	id("GET /v1/users/{id}/happ-link", rt.apiUserHappLink)
+	id("GET /v1/users/{id}/wallet", rt.apiUserWallet)
+	id("POST /v1/users/{id}/balance", rt.apiAdjustBalance)
+	id("GET /v1/users/{id}/referrals", rt.apiUserReferrals)
 
 	hf("GET /v1/billing/providers", rt.apiListProviders)
 	hf("GET /v1/billing/plans", rt.apiListPlans)
@@ -310,6 +319,12 @@ func (rt *Router) apiMux() http.Handler {
 	// Billing configuration and payment providers — the setup half of selling.
 	hf("GET /v1/billing/settings", rt.apiGetBillingSettings)
 	nodeAudit("POST /v1/billing/settings", "apiBillingSettings", rt.apiSaveBillingSettings)
+	hf("GET /v1/billing/promos", rt.apiListPromos)
+	id("GET /v1/billing/promos/{id}/uses", rt.apiPromoUses)
+	hf("GET /v1/billing/referrals", rt.apiReferralStats)
+	id("POST /v1/billing/orders/{id}/refund", rt.apiRefundOrder)
+	nodeAudit("POST /v1/billing/promos", "apiPromoSaved", rt.apiSavePromo)
+	nodeAudit("DELETE /v1/billing/promos/{id}", "apiPromoDeleted", idFn(rt.apiDeletePromo))
 	hf("GET /v1/payments", rt.apiPaymentProviders)
 	nodeAudit("POST /v1/payments", "apiPaymentProvider", rt.apiSavePaymentProvider)
 
@@ -1075,8 +1090,17 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	if !apiDecode(w, r, &req) {
 		return
 	}
+	if req.FromBalance {
+		order, err := rt.mgr.BuyPlanFromBalance(r.Context(), req.UserID, req.PlanID, core.AnyExpiry, max(req.Periods, 1))
+		if err != nil {
+			writeAPIManagerErr(w, err)
+			return
+		}
+		writeAPIData(w, http.StatusCreated, map[string]any{"order": order})
+		return
+	}
 	if req.Provider == "" || req.Provider == sub.ManualPayKey {
-		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID)
+		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, max(req.Periods, 1))
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -1084,7 +1108,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, req.Provider)
+	order, err := rt.mgr.StartPlanPayment(r.Context(), i18n.EN, req.UserID, req.PlanID, req.Provider, max(req.Periods, 1))
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

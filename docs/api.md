@@ -330,6 +330,15 @@ client will display.
 | `GET` | `/v1/billing/settings` | Billing configuration. |
 | `POST` | `/v1/billing/settings` | Replace it (whole object). |
 | `GET` | `/v1/billing/stats` | Revenue totals, per-provider split, pending backlog. |
+| `GET` | `/v1/billing/promos` | List promo codes. |
+| `POST` | `/v1/billing/promos` | Create (no `id`) or update (`id` set) a promo code. |
+| `DELETE` | `/v1/billing/promos/{id}` | Delete a promo code. |
+| `GET` | `/v1/users/{id}/wallet` | A user's balance, referral standing and newest ledger lines. |
+| `GET` | `/v1/users/{id}/referrals` | The users this user invited, with what they paid. |
+| `GET` | `/v1/billing/promos/{id}/uses` | Who used a promo code, and the money its orders brought. |
+| `GET` | `/v1/billing/referrals` | Referral totals and the top inviters. |
+| `POST` | `/v1/billing/orders/{id}/refund` | Return a paid plan order's price to the balance (once). |
+| `POST` | `/v1/users/{id}/balance` | Correct a user's balance. |
 | `GET` | `/v1/payments` | Every payment provider with its settings form. |
 | `POST` | `/v1/payments` | Configure one provider. |
 
@@ -358,13 +367,56 @@ update: "no free plan" is a real state and must be distinguishable from "unspeci
 
 ```json
 { "enabled": true, "free_plan_id": 1, "trial_plan_id": 2, "payment_note": "card 1234",
-  "manual": true, "manual_label": "" }
+  "manual": true, "manual_label": "", "wallet": true, "topup_min": 100,
+  "ref_mode": "percent", "ref_percent": 10, "ref_days": 7, "ref_first": false }
 ```
 
 Designating a plan as the free or trial one also makes it free and re-applies it to
 everyone already on it — the same rule the panel enforces. `manual` offers manual payment
 beside the providers, `manual_label` is its pay-button label (empty = the default
 wording), and `payment_note` is the text a user paying by hand is shown.
+
+`wallet` lets users keep a balance (top-ups, paying for plans from it, renewal from it);
+`topup_min` is the smallest top-up in roubles. `ref_mode` is what a referrer earns when
+someone they invited pays money: `off`, `percent` (`ref_percent` % of the payment, top-ups
+included, onto the referrer's balance — needs `wallet`) or `days` (`ref_days` days onto their
+plan, for a plan bought with money); `ref_first` pays only for the first such payment. Left
+out, `wallet`, `topup_min`, `ref_mode`, `ref_percent`, `ref_days` and `ref_first` keep their
+stored values.
+
+**Orders and the balance** — an order's `amount_rub` is always the money to be paid in.
+When the user's balance covers part of the price, `balance_kop` is that part (kopecks) and
+`amount_rub` the rest; confirming the order puts the money on the balance and takes the whole
+price off it with the plan. `kind` is `plan` or `topup` (a top-up has `plan_id` 0). A plan
+bought from the balance alone appears as a paid order with `provider` `balance` and
+`amount_rub` 0 — it is not revenue. `discount_rub` and `promo_code` show a discount code.
+When the balance covers the whole price, `POST /v1/billing/orders` answers
+`err.payFromBalance`; send `"from_balance": true` instead to buy the plan from the balance.
+Money that arrives for an order already cancelled (superseded by a newer checkout with the
+same promo code, swept as abandoned, cancelled by hand) counts like any other payment — and
+`POST /v1/billing/orders/{id}/confirm` accepts a cancelled order too: the plan is granted, or,
+with the wallet on, the money goes onto the balance when the plan can no longer be given
+(another plan bought meanwhile, a lifetime plan already held) and the order becomes a `topup`. A user may have at most 3 unpaid top-ups opened within the last hour.
+
+**Promo codes** — `kind` is `percent` / `amount` (a discount on the user's next payment,
+`value` percent or roubles; `plan_ids` limits it to those plans, `first_only` to someone who
+never bought a plan), `days` (`value` days on `plan_id`, or on the user's active paid plan
+when `plan_id` is 0) or `balance` (`value` roubles onto the balance). `max_uses` 0 is
+unlimited, `expires_at` 0 is never; each user may use a code once. Codes are
+case-insensitive.
+
+**Several periods** — `"periods": 3` on `POST /v1/billing/orders` buys three of the plan's
+periods at once, at the discount `periods` in the billing settings names
+(`[{"periods": 3, "percent": 10}]`); a number with no offer is refused. The term is that many
+periods, and a quota the plan does not refill on its own cycle refills every period.
+
+**Refund** — `POST /v1/billing/orders/{id}/refund` with `{ "cancel_plan": false }` puts the
+order's price (money and balance part) back on the user's balance, once; `cancel_plan` also
+takes the days the order paid for off the term (the plan ends only when none is left). Needs the wallet on.
+
+**Balance** — `POST /v1/users/{id}/balance` takes `{ "amount_kop": 10000, "note": "..." }`
+(either sign; the balance cannot go below zero) and answers `{ "balance_kop": ... }`.
+`GET /v1/users/{id}/wallet` answers `{ "wallet": {...}, "history": [...] }`.
 
 **Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.
 Applies the target plan's limits, period and access groups to every user on the source

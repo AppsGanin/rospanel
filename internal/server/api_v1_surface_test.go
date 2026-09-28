@@ -802,3 +802,24 @@ func TestAPINodeGetMatchesTheListShape(t *testing.T) {
 		}
 	}
 }
+
+// A client written before the wallet existed leaves it as it is: a save that omits
+// the wallet fields must neither switch the wallet off nor be refused over a referral
+// mode that needs it.
+func TestAPIBillingSettingsKeepWalletWhenOmitted(t *testing.T) {
+	t.Parallel()
+	rt, st := apiTestRouter(t)
+	set, _ := st.GetSettings()
+	set.BillingEnabled, set.WalletEnabled, set.RefMode, set.RefFirstOnly = true, true, model.RefPercent, true
+	if err := st.SetBillingSettings(set); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"enabled":true,"free_plan_id":0,"trial_plan_id":0,"payment_note":"old client"}`
+	if code, data := apiCall(t, rt, http.MethodPost, "/v1/billing/settings", body); code != http.StatusOK {
+		t.Fatalf("save: %d %s", code, data)
+	}
+	got, _ := st.GetSettings()
+	if !got.WalletEnabled || got.RefMode != model.RefPercent || !got.RefFirstOnly {
+		t.Fatalf("omitted fields changed: wallet=%v mode=%q first=%v", got.WalletEnabled, got.RefMode, got.RefFirstOnly)
+	}
+}

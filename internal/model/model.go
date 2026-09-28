@@ -274,6 +274,18 @@ type PaymentOrder struct {
 	PayURL     string `json:"pay_url,omitempty"`     // hosted payment URL for the user
 	CreatedAt  int64  `json:"created_at"`
 	PaidAt     int64  `json:"paid_at"`
+	// Kind is OrderPlan or OrderTopup. AmountRub is always the money that arrives from
+	// outside; BalanceKop is the part of the price the balance covers, DiscountRub
+	// what the promo code PromoID took off.
+	Kind        string `json:"kind"`
+	BalanceKop  int64  `json:"balance_kop"`
+	DiscountRub int    `json:"discount_rub"`
+	PromoID     int64  `json:"promo_id,omitempty"`
+	PromoCode   string `json:"promo_code,omitempty"`
+	// Periods is how many of the plan's periods the order buys; RefundedAt when its
+	// money was returned to the balance (0 = never).
+	Periods    int   `json:"periods"`
+	RefundedAt int64 `json:"refunded_at,omitempty"`
 }
 
 // RegistrationRequest is a moderated self-registration awaiting an admin decision.
@@ -985,6 +997,21 @@ type Settings struct {
 	// BillingManualLabel is its pay-button label; empty falls back to the dictionary.
 	BillingManualEnabled bool   `json:"-"`
 	BillingManualLabel   string `json:"-"`
+
+	// WalletEnabled lets users keep a balance: top it up, pay for plans from it and
+	// have it renew their plan when it runs out. WalletTopupMin is the smallest
+	// top-up, in roubles.
+	WalletEnabled  bool `json:"-"`
+	WalletTopupMin int  `json:"-"`
+	// RefMode is what a referrer earns when someone they invited pays: RefOff,
+	// RefPercent (RefPercent % of the payment on their balance) or RefDays (RefDays
+	// days on their plan). RefFirstOnly pays only for that person's first payment.
+	RefMode      string `json:"-"`
+	RefPercent   int    `json:"-"`
+	RefDays      int    `json:"-"`
+	RefFirstOnly bool   `json:"-"`
+	// BillingPeriods are the discounts for buying several periods at once.
+	BillingPeriods []PeriodOffer `json:"-"`
 
 	// PaymentWebhookSecret is the random URL segment the provider webhooks are
 	// mounted under (/<secret>/<provider>), so the callback path is fixed yet

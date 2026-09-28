@@ -528,6 +528,17 @@ idempotent and the amount is checked against the order. **Manual payment** is a 
 own beside them: switched on in *Payments → Payment acceptance*, it shows your own details and
 an admin confirms the transfer.
 
+- **Balance** — top up in the bot and on the subscription page, pay for a plan in full or in
+  part, **auto-renew** from the balance (can be turned off).
+- **Promo codes** — a % or ₽ discount, subscription days, a balance credit; usage limit, expiry,
+  limits to plans and to a first purchase.
+- **Referrals** — a personal bot link; invitees' payments earn a % on the balance or days on
+  the subscription.
+- **Longer-term discounts** — a plan for several periods at once, cheaper, traffic refilled
+  every period.
+- **In the panel** — balance and history in the user card, who invited whom, promo code usage,
+  top referrers, refunds to the balance.
+
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected
 > one of them, please [open an issue](https://github.com/AppsGanin/rospanel/issues) and say

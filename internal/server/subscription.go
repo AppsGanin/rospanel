@@ -8,12 +8,16 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/AppsGanin/rospanel/internal/actor"
 	"github.com/AppsGanin/rospanel/internal/branding"
+	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/sub"
@@ -227,6 +231,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 	case "order":
 		rt.handleSubOrder(w, r, *u)
 
+	case "topup", "promo", "autorenew":
+		if !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		rt.handleSubWallet(w, r, leaf, *u, set)
+
 	case "devices/unbind":
 		if !subActionAllowed(r) {
 			rt.currentDecoy().ServeHTTP(w, r)
@@ -337,7 +348,7 @@ func (rt *Router) handleSubCancel(w http.ResponseWriter, r *http.Request, u mode
 		return
 	}
 	if err := rt.mgr.CancelUserPlan(subActorCtx(r, u), u.ID); err != nil {
-		writeManagerErr(w, err)
+		writeSubErr(w, err, lang)
 		return
 	}
 	writeOK(w)
@@ -361,8 +372,28 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 	var req struct {
 		PlanID   int64  `json:"plan_id"`
 		Provider string `json:"provider"`
+		// Balance pays the whole price from the balance, which the page offers only
+		// when the balance covers it. ExpireAt is the expiry the page was rendered with:
+		// a second click after the first one went through is refused.
+		Balance  bool  `json:"balance"`
+		ExpireAt int64 `json:"expire_at"`
+		// Periods: how many of the plan's periods to buy (0 = one).
+		Periods int `json:"periods"`
 	}
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Periods = max(req.Periods, 1)
+	if req.Balance {
+		// A negative expiry would be the API's "no check" — never the page's to send.
+		if req.ExpireAt < 0 {
+			req.ExpireAt = -2
+		}
+		if _, err := rt.mgr.BuyPlanFromBalance(subActorCtx(r, u), u.ID, req.PlanID, req.ExpireAt, req.Periods); err != nil {
+			writeSubErr(w, err, lang)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"done": true})
 		return
 	}
 	// Same "no switching while active" rule as the manager guard, applied here so it
@@ -379,17 +410,17 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 	// admin confirms the transfer later).
 	if req.Provider == sub.ManualPayKey ||
 		(req.Provider == "" && rt.mgr.ManualPayment() && len(rt.mgr.PaymentMethods()) == 0) {
-		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), lang, u.ID, req.PlanID)
+		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Periods)
 		if err != nil {
-			writeManagerErr(w, err)
+			writeSubErr(w, err, lang)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken))
+	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken), req.Periods)
 	if err != nil {
-		writeManagerErr(w, err)
+		writeSubErr(w, err, lang)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"pay_url": order.PayURL})
@@ -403,11 +434,24 @@ const subPaymentWatchWindow = 30 * time.Minute
 // handleSubOrder reports whether the user has an automatic payment still being
 // processed (and recent), so the page can show a "payment in progress" state and
 // poll until the provider webhook/poll confirms it.
-func (rt *Router) handleSubOrder(w http.ResponseWriter, _ *http.Request, u model.User) {
+func (rt *Router) handleSubOrder(w http.ResponseWriter, r *http.Request, u model.User) {
 	order, err := rt.mgr.Store().LatestPendingProviderOrder(u.ID)
 	if err != nil || order == nil ||
 		(order.CreatedAt > 0 && time.Now().Unix()-order.CreatedAt > int64(subPaymentWatchWindow.Seconds())) {
-		writeJSON(w, http.StatusOK, map[string]any{"pending": false})
+		// Nothing waiting: say what the newest payment did, so a page that was
+		// watching it can tell its user — someone paying here may have no bot to be
+		// told in.
+		resp := map[string]any{"pending": false}
+		since := time.Now().Add(-subPaymentWatchWindow).Unix()
+		if paid, err := rt.mgr.Store().LatestPaidOrder(u.ID, since); err == nil {
+			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+			msg := i18n.T(lang, "sub.paidTopup", paid.AmountRub)
+			if paid.Kind == model.OrderPlan {
+				msg = i18n.T(lang, "sub.paidPlan", paid.PlanName)
+			}
+			resp["done"] = map[string]any{"order_id": paid.ID, "message": msg}
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -422,7 +466,7 @@ func (rt *Router) handleSubOrder(w http.ResponseWriter, _ *http.Request, u model
 // page: the active plan, its paid expiry, and the paid tariffs the user can buy or
 // extend. Returns a zero (hidden) block unless billing is on with at least one
 // enabled paid plan.
-func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang) sub.Billing {
+func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang, methods []string) sub.Billing {
 	if !set.BillingEnabled {
 		return sub.Billing{}
 	}
@@ -439,6 +483,7 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	subURL := sub.URL(set, u.SubToken)
 	b := sub.Billing{
 		Show:        true,
+		ExpireAt:    u.ExpireAt,
 		CurrentPlan: rt.mgr.PlanName(u.PlanID),
 		PayPath:     subURL + "/pay",
 		CancelPath:  subURL + "/cancel",
@@ -453,9 +498,12 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	if active := rt.mgr.ActivePaidPlan(u); active != nil {
 		b.Locked = true
 		b.Cancelable = true
-		b.Plans = []sub.BillingPlan{{
-			ID: active.ID, Name: active.Name, Label: payPlanLabel(lang, *active), Current: true,
-		}}
+		// A lifetime plan has nothing to renew.
+		if active.PeriodDays > 0 {
+			b.Plans = []sub.BillingPlan{{
+				ID: active.ID, Name: active.Name, Label: payPlanLabel(lang, *active), Current: true,
+			}}
+		}
 	} else {
 		for _, p := range plans {
 			if p.IsFree() {
@@ -466,6 +514,36 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			})
 		}
 	}
+	// What each plan costs this user now: a discount code shows in the price, and a
+	// balance that covers it turns the button into "pay from balance".
+	for i := range b.Plans {
+		plan, err := rt.mgr.Store().GetTariffPlan(b.Plans[i].ID)
+		if err != nil {
+			continue
+		}
+		q := rt.mgr.QuotePlan(u, plan)
+		if q.DiscountRub > 0 {
+			shown := *plan
+			shown.PriceRub = q.TotalRub
+			b.Plans[i].Label = payPlanLabel(lang, shown)
+			b.Plans[i].OldPrice = i18n.T(lang, "sub.price", plan.PriceRub)
+			b.Plans[i].Promo = i18n.T(lang, "sub.planPromo", q.PromoCode, q.DiscountRub)
+		}
+		b.Plans[i].FromBalance = q.MoneyRub == 0
+		b.Plans[i].Free = q.TotalRub == 0
+		b.Plans[i].Button = payButton(lang, q, b.Locked)
+		// Several periods at once, when the operator sells them: one option each.
+		if offers := rt.mgr.PeriodOffers(u, plan); len(offers) > 1 {
+			for _, o := range offers {
+				b.Plans[i].Options = append(b.Plans[i].Options, sub.PlanOption{
+					Periods: o.Periods, Label: core.PeriodLabel(lang, plan, o),
+					FromBalance: o.MoneyRub == 0, Button: payButton(lang, o, b.Locked),
+				})
+			}
+		}
+	}
+	rt.buildWallet(&b, u, set, lang, subURL)
+	b.History = rt.buildHistory(u, lang)
 	// Manual first: it is the method that needs no setup, so where both are offered it
 	// is the one a user falls back to.
 	b.Manual = rt.mgr.ManualPayment()
@@ -474,18 +552,37 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			Key: sub.ManualPayKey, Label: rt.mgr.ManualPaymentLabel(lang),
 		})
 	}
-	for _, m := range rt.mgr.PaymentMethods() {
+	for _, m := range methods {
 		b.Providers = append(b.Providers, sub.BillingPay{Key: m, Label: rt.mgr.ProviderLabel(m)})
 	}
 	b.ManualOnly = b.Manual && len(b.Providers) == 1
-	// Nothing to pay with: offer no plans rather than a button that can only fail. An
-	// active plan can still be cancelled.
+	// Nothing to pay with: offer no plans rather than a button that can only fail —
+	// except those the balance pays for, and of their terms only the ones it covers.
+	// An active plan can still be cancelled.
 	if len(b.Providers) == 0 {
-		b.Plans = nil
+		kept := b.Plans[:0]
+		for _, p := range b.Plans {
+			if !p.FromBalance {
+				continue
+			}
+			opts := []sub.PlanOption{}
+			for _, o := range p.Options {
+				if o.FromBalance {
+					opts = append(opts, o)
+				}
+			}
+			p.Options = opts
+			if len(opts) <= 1 {
+				p.Options = nil
+			}
+			kept = append(kept, p)
+		}
+		b.Plans = kept
+		b.Topup = false
 	}
-	// Hide only when there's truly nothing to do: no plans to buy/renew and no active
-	// plan to cancel.
-	if len(b.Plans) == 0 && !b.Cancelable {
+	// Hide only when there's truly nothing to do: no plans to buy/renew, no active
+	// plan to cancel, and no wallet to look at.
+	if len(b.Plans) == 0 && !b.Cancelable && !b.Wallet && !b.Promo && b.RefLink == "" {
 		return sub.Billing{}
 	}
 	return b
@@ -541,7 +638,7 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 			slog.Warn("sub: tunnel identity", "user", u.ID, "err", err)
 		}
 	}
-	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang),
+	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang, rt.mgr.PaymentMethods()),
 		rt.buildDevices(u, set, lang), showDownload, lang)
 	if err != nil {
 		return err
@@ -931,4 +1028,292 @@ func (rt *Router) serveAWG(w http.ResponseWriter, r *http.Request, u *model.User
 		return
 	}
 	rt.serveTunnelConf(w, r, conf, ext, sub.AWGFileName(srv.Set))
+}
+
+// buildWallet fills the page's wallet block: balance, top-up, renewal switch, the
+// promo field and the invite link.
+func (rt *Router) buildWallet(b *sub.Billing, u model.User, set *model.Settings, lang i18n.Lang, subURL string) {
+	b.WalletPath = subURL
+	w, err := rt.mgr.Wallet(u.ID)
+	if err != nil {
+		return
+	}
+	if set.WalletEnabled {
+		b.Wallet = true
+		b.Topup = true
+		b.Balance = model.KopText(w.BalanceKop)
+		b.AutoRenew = w.AutoRenew
+		if plan, err := rt.mgr.Store().GetTariffPlan(u.PlanID); err == nil {
+			b.RenewSwitch = !plan.IsFree() && plan.PeriodDays > 0
+		}
+		if r := rt.mgr.Renewal(set, u); r.PriceKop > 0 {
+			when := time.Unix(r.At, 0).In(rt.mgr.Location()).Format("02.01.2006")
+			if r.Covered() {
+				b.RenewNote = i18n.T(lang, "sub.renewCovered", when, model.KopText(r.PriceKop))
+			} else {
+				b.RenewNote = i18n.T(lang, "sub.renewShort", model.KopText(r.PriceKop-r.BalanceKop), when)
+				b.RenewShort = true
+			}
+		}
+		b.TopupMin = max(set.WalletTopupMin, 1)
+		b.TopupHint = i18n.T(lang, "sub.topupHint", b.TopupMin)
+		if w.RefBonusDays > 0 {
+			b.BonusDays = i18n.T(lang, "sub.bonusDays", w.RefBonusDays)
+		}
+	}
+	b.Promo = rt.mgr.PromosOffered()
+	if set.RefEnabled() && set.TGUserBotEnabled {
+		if code, err := rt.mgr.RefCode(u.ID); err == nil && code != "" {
+			bot := botUsername(context.Background(), set.TGUserBotToken, set.TelegramProxyURL())
+			if link := telegram.UserRefLink(bot, code); link != "" {
+				b.RefLink = link
+				b.RefShare = "https://t.me/share/url?url=" + url.QueryEscape(link) +
+					"&text=" + url.QueryEscape(i18n.T(lang, "user.refShareText"))
+				b.RefHint = capitalizeFirst(subRefReward(set, lang))
+				b.RefStats = i18n.T(lang, "sub.refStats", w.Invited, w.Paying)
+				if w.EarnedKop > 0 {
+					b.RefStats += " · " + i18n.T(lang, "sub.refEarned", model.KopText(w.EarnedKop))
+				}
+				rt.buildInvitees(b, u, w.Invited, lang)
+			}
+		}
+	}
+}
+
+// inviteesMax is how many invitees the referral tab lists.
+const inviteesMax = 50
+
+// buildInvitees lists who came by the user's link: when they joined, and what their
+// payments earned the inviter — or, with days as the reward, only whether they paid.
+// What an invitee spent is theirs, not the inviter's, so it is not shown.
+func (rt *Router) buildInvitees(b *sub.Billing, u model.User, invited int, lang i18n.Lang) {
+	refs, err := rt.mgr.Referrals(u.ID, inviteesMax)
+	if err != nil {
+		return
+	}
+	for _, r := range refs {
+		line := sub.HistoryLine{Title: r.Name}
+		if r.CreatedAt > 0 {
+			line.When = i18n.T(lang, "sub.refJoined", time.Unix(r.CreatedAt, 0).In(rt.mgr.Location()).Format("02.01.2006"))
+		}
+		switch {
+		case r.EarnedKop > 0:
+			line.Amount, line.In = "+"+model.KopText(r.EarnedKop)+" ₽", true
+		case r.PaidRub > 0:
+			line.Amount = i18n.T(lang, "sub.refPaid")
+		default:
+			line.Amount, line.Muted = i18n.T(lang, "sub.refNotPaid"), true
+		}
+		b.Invitees = append(b.Invitees, line)
+	}
+	if rest := invited - len(refs); rest > 0 {
+		b.InviteesMore = i18n.T(lang, "sub.refMore", rest)
+	}
+}
+
+// subRefReward says what one paying invitee earns.
+func subRefReward(set *model.Settings, lang i18n.Lang) string {
+	switch {
+	case set.RefMode == model.RefPercent && set.RefFirstOnly:
+		return i18n.T(lang, "user.refRewardPercentFirst", set.RefPercent)
+	case set.RefMode == model.RefPercent:
+		return i18n.T(lang, "user.refRewardPercent", set.RefPercent)
+	case set.RefFirstOnly:
+		return i18n.T(lang, "user.refRewardDaysFirst", i18n.TN(lang, "sub.periodDays", set.RefDays))
+	default:
+		return i18n.T(lang, "user.refRewardDays", i18n.TN(lang, "sub.periodDays", set.RefDays))
+	}
+}
+
+// handleSubWallet serves the page's wallet actions: a top-up, a promo code and the
+// renewal switch. Errors come back as JSON — the caller holds the token.
+func (rt *Router) handleSubWallet(w http.ResponseWriter, r *http.Request, action string, u model.User, set *model.Settings) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	if !set.BillingEnabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(lang, "sub.payUnavailable")})
+		return
+	}
+	ctx := subActorCtx(r, u)
+	switch action {
+	case "topup":
+		var req struct {
+			Amount   int    `json:"amount"`
+			Provider string `json:"provider"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.Provider == sub.ManualPayKey ||
+			(req.Provider == "" && rt.mgr.ManualPayment() && len(rt.mgr.PaymentMethods()) == 0) {
+			_, msg, err := rt.mgr.RequestTopupManual(ctx, lang, u.ID, req.Amount)
+			if err != nil {
+				writeSubErr(w, err, lang)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
+			return
+		}
+		order, err := rt.mgr.StartTopup(ctx, lang, u.ID, req.Amount, req.Provider, sub.URL(set, u.SubToken))
+		if err != nil {
+			writeSubErr(w, err, lang)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"pay_url": order.PayURL})
+	case "promo":
+		var req struct {
+			Code string `json:"code"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		res, err := rt.mgr.RedeemPromo(ctx, u.ID, req.Code)
+		if err != nil {
+			writeSubErr(w, err, lang)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"message": core.PromoMessage(res, lang, rt.mgr.Location(), func(s string) string { return s }),
+		})
+	case "autorenew":
+		var req struct {
+			On bool `json:"on"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if err := rt.mgr.SetAutoRenew(ctx, u.ID, req.On); err != nil {
+			writeSubErr(w, err, lang)
+			return
+		}
+		writeOK(w)
+	}
+}
+
+// historyMax is how many lines the payment tab's history shows.
+const historyMax = 20
+
+// buildHistory lists what came into and went out of the user's money: the balance
+// ledger, and the plans paid for wholly with money (those never touch the ledger,
+// but a user looking for their payment looks here).
+func (rt *Router) buildHistory(u model.User, lang i18n.Lang) []sub.HistoryLine {
+	type dated struct {
+		at   int64
+		line sub.HistoryLine
+	}
+	loc := rt.mgr.Location()
+	when := func(at int64) string { return time.Unix(at, 0).In(loc).Format("02.01.2006 15:04") }
+	var all []dated
+	if txs, err := rt.mgr.BalanceHistory(u.ID, historyMax); err == nil {
+		for _, t := range txs {
+			all = append(all, dated{t.CreatedAt, sub.HistoryLine{
+				Title: historyTitle(t, lang), When: when(t.CreatedAt),
+				Amount: signedRub(t.AmountKop), In: t.AmountKop > 0,
+			}})
+		}
+	}
+	if orders, err := rt.mgr.Store().PaidPlanOrdersOffBalance(u.ID, historyMax); err == nil {
+		for _, o := range orders {
+			method := rt.mgr.ProviderLabel(o.Provider)
+			if o.Provider == "" {
+				method = rt.mgr.ManualPaymentLabel(lang)
+			}
+			all = append(all, dated{o.PaidAt, sub.HistoryLine{
+				Title: i18n.T(lang, "sub.txPlanPaid", termTitle(o.PlanName, o.Periods), method), When: when(o.PaidAt),
+				Amount: signedRub(-int64(o.AmountRub) * 100),
+			}})
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].at > all[j].at })
+	if len(all) > historyMax {
+		all = all[:historyMax]
+	}
+	out := make([]sub.HistoryLine, 0, len(all))
+	for _, d := range all {
+		out = append(out, d.line)
+	}
+	return out
+}
+
+// historyTitle names a ledger line for the user. An operator's note is theirs, not
+// the user's to read, so a correction says only which way it went.
+func historyTitle(t model.BalanceTx, lang i18n.Lang) string {
+	switch t.Kind {
+	case model.TxTopup:
+		return i18n.T(lang, "sub.txTopup")
+	case model.TxPurchase:
+		if t.PlanName != "" {
+			return i18n.T(lang, "sub.txPurchase", t.PlanName)
+		}
+		return i18n.T(lang, "sub.txPurchaseAny")
+	case model.TxRenew:
+		if t.PlanName != "" {
+			return i18n.T(lang, "sub.txRenew", t.PlanName)
+		}
+		return i18n.T(lang, "sub.txRenewAny")
+	case model.TxReferral:
+		return i18n.T(lang, "sub.txReferral")
+	case model.TxPromo:
+		return i18n.T(lang, "sub.txPromo", t.PromoCode)
+	case model.TxRefund:
+		return i18n.T(lang, "sub.txRefund", t.OrderID)
+	}
+	if t.AmountKop > 0 {
+		return i18n.T(lang, "sub.txAdminIn")
+	}
+	return i18n.T(lang, "sub.txAdminOut")
+}
+
+// signedRub renders kopecks with their sign: "+50 ₽", "−199 ₽".
+func signedRub(kop int64) string {
+	if kop < 0 {
+		return "−" + model.KopText(-kop) + " ₽"
+	}
+	return "+" + model.KopText(kop) + " ₽"
+}
+
+// writeSubErr answers a subscription-page action that failed. A validation error is
+// the user's to read, so it comes in their language; anything else is answered the
+// way the panel answers it.
+func writeSubErr(w http.ResponseWriter, err error, lang i18n.Lang) {
+	var ve *core.ValidationError
+	if errors.As(err, &ve) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": core.UserError(err, lang), "code": ve.Code})
+		return
+	}
+	writeManagerErr(w, err)
+}
+
+// capitalizeFirst upper-cases the first letter, for a phrase that stands as a sentence.
+func capitalizeFirst(s string) string {
+	r := []rune(s)
+	if len(r) > 0 {
+		r[0] = unicode.ToUpper(r[0])
+	}
+	return string(r)
+}
+
+// payButton labels a plan's pay button for a quote: taking it free, paying from the
+// balance, renewing, or paying.
+func payButton(lang i18n.Lang, q core.PlanQuote, locked bool) string {
+	switch {
+	case q.TotalRub == 0:
+		return i18n.T(lang, "sub.getFree")
+	case q.MoneyRub == 0:
+		return i18n.T(lang, "sub.payBalance")
+	case locked:
+		return i18n.T(lang, "sub.renew")
+	}
+	return i18n.T(lang, "sub.pay")
+}
+
+// termTitle is a plan's name with the number of periods bought, when more than one.
+func termTitle(plan string, periods int) string {
+	if periods > 1 {
+		return fmt.Sprintf("%s × %d", plan, periods)
+	}
+	return plan
 }
