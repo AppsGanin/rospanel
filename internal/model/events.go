@@ -121,4 +121,4 @@ func ValidUserEvent(k string) bool {
 
 // UserEventRetentionDays is how long audit rows are kept before the retention sweep
 // drops them.
-const UserEventRetentionDays = 90
+const UserEventRetentionDays = 365

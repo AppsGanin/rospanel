@@ -65,4 +65,4 @@ export function EventsPanel() {
 
 // Mirrors model.UserEventRetentionDays — shown so the operator knows the trail is
 // not forever.
-const RETENTION_DAYS = 90;
+const RETENTION_DAYS = 365;

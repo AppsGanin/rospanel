@@ -33,7 +33,7 @@ import {
 const PAGE = 20;
 
 // Mirrors model.AdminAuditRetentionDays.
-const RETENTION_DAYS = 90;
+const RETENTION_DAYS = 365;
 
 // A YYYY-MM-DD date input → unix seconds at the day's start (from) or end (to,
 // inclusive), or 0 when blank. The day is the panel's (see tz.ts), the one every stamp
