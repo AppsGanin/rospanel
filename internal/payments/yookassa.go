@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -46,21 +47,32 @@ func (y *YooKassa) Status(ctx context.Context, providerID string) (Result, error
 
 // Webhook implements Client. YooKassa signs nothing, so the POST body is not
 // trusted for anything but the payment id: the payment is re-fetched over the
-// authenticated API and that answer is what gets reported.
+// authenticated API and that answer is what gets reported. A refund notification
+// (refund.succeeded) carries the refund as its object, and the payment as its
+// payment_id.
 func (y *YooKassa) Webhook(ctx context.Context, body []byte, _ http.Header) (string, Result, error) {
 	var n struct {
+		Event  string `json:"event"`
 		Object struct {
-			ID string `json:"id"`
+			ID        string `json:"id"`
+			PaymentID string `json:"payment_id"`
 		} `json:"object"`
 	}
 	if json.Unmarshal(body, &n) != nil || n.Object.ID == "" {
 		return "", Result{}, fmt.Errorf("YooKassa: malformed notification")
 	}
-	res, err := y.PaymentStatus(ctx, n.Object.ID)
+	id := n.Object.ID
+	if strings.HasPrefix(n.Event, "refund.") {
+		if n.Object.PaymentID == "" {
+			return "", Result{}, fmt.Errorf("YooKassa: refund notification without a payment")
+		}
+		id = n.Object.PaymentID
+	}
+	res, err := y.PaymentStatus(ctx, id)
 	if err != nil {
 		return "", Result{}, err
 	}
-	return n.Object.ID, res, nil
+	return id, res, nil
 }
 
 // YooKassa is a minimal Checkout API client (create payment + status).
@@ -132,6 +144,9 @@ func (y *YooKassa) PaymentStatus(ctx context.Context, paymentID string) (Result,
 			Value    string `json:"value"`
 			Currency string `json:"currency"`
 		} `json:"amount"`
+		RefundedAmount struct {
+			Value string `json:"value"`
+		} `json:"refunded_amount"`
 	}
 	if err := y.do(req, &out); err != nil {
 		return Result{}, err
@@ -142,9 +157,15 @@ func (y *YooKassa) PaymentStatus(ctx context.Context, paymentID string) (Result,
 	} else {
 		res.Currency = "" // unreadable amount → report "unknown", not a bogus 0 RUB
 	}
+	refunded, _ := parseKopecks(out.RefundedAmount.Value)
 	switch out.Status {
 	case "succeeded":
 		res.Status = StatusPaid
+		// Refunded in full: the money went back. A partial refund leaves the payment
+		// standing — the operator settles that one by hand.
+		if refunded > 0 && res.AmountKopecks > 0 && refunded >= res.AmountKopecks {
+			res.Status = StatusRefunded
+		}
 	case "canceled":
 		res.Status = StatusCanceled
 	default: // pending, waiting_for_capture

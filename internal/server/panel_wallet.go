@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/AppsGanin/rospanel/internal/model"
 )
@@ -125,6 +126,38 @@ func (rt *Router) referralStats(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// funnelView is the sales funnel over a period, and what the win-back codes did.
+type funnelView struct {
+	Funnel  model.Funnel       `json:"funnel"`
+	Winback model.WinbackStats `json:"winback"`
+}
+
+// funnelFor reads the funnel for ?days= (30 by default; 0 = all time).
+func (rt *Router) funnelFor(r *http.Request) (funnelView, error) {
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 3650 {
+			days = n
+		}
+	}
+	var out funnelView
+	var err error
+	if out.Funnel, err = rt.mgr.Funnel(days); err != nil {
+		return out, err
+	}
+	out.Winback, err = rt.mgr.WinbackStats()
+	return out, err
+}
+
+func (rt *Router) paymentFunnel(w http.ResponseWriter, r *http.Request) {
+	out, err := rt.funnelFor(r)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // refundOrder returns an order's money to the user's balance. Money moves, so the

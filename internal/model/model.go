@@ -283,10 +283,18 @@ type PaymentOrder struct {
 	PromoID     int64  `json:"promo_id,omitempty"`
 	PromoCode   string `json:"promo_code,omitempty"`
 	// Periods is how many of the plan's periods the order buys; RefundedAt when its
-	// money was returned to the balance (0 = never).
-	Periods    int   `json:"periods"`
-	RefundedAt int64 `json:"refunded_at,omitempty"`
+	// money was returned (0 = never), and RefundSource by whom: RefundToBalance or
+	// RefundByProvider.
+	Periods      int    `json:"periods"`
+	RefundedAt   int64  `json:"refunded_at,omitempty"`
+	RefundSource string `json:"refund_source,omitempty"`
 }
+
+// Who returned an order's money (PaymentOrder.RefundSource).
+const (
+	RefundToBalance  = "balance"  // an operator put it on the user's balance
+	RefundByProvider = "provider" // the payment system refunded it, or a chargeback
+)
 
 // RegistrationRequest is a moderated self-registration awaiting an admin decision.
 // No user exists yet — approval creates one and links ChatID; rejection just drops
@@ -509,6 +517,7 @@ const (
 	WebhookPaymentCreated   = "payment.created"     // order opened
 	WebhookPaymentPaid      = "payment.paid"        // order paid, plan applied
 	WebhookPaymentCancelled = "payment.cancelled"   //
+	WebhookPaymentRefunded  = "payment.refunded"    // money returned: to the balance, or by the payment system
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -525,6 +534,7 @@ var WebhookEventCatalog = []string{
 	WebhookPaymentCreated,
 	WebhookPaymentPaid,
 	WebhookPaymentCancelled,
+	WebhookPaymentRefunded,
 }
 
 // ValidWebhookEvent reports whether k is a known webhook event key.
@@ -1012,6 +1022,8 @@ type Settings struct {
 	RefFirstOnly bool   `json:"-"`
 	// BillingPeriods are the discounts for buying several periods at once.
 	BillingPeriods []PeriodOffer `json:"-"`
+	// Winback sends a user whose paid term lapsed a personal discount code.
+	Winback WinbackSettings `json:"-"`
 
 	// PaymentWebhookSecret is the random URL segment the provider webhooks are
 	// mounted under (/<secret>/<provider>), so the callback path is fixed yet

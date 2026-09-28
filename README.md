@@ -536,8 +536,11 @@ an admin confirms the transfer.
   the subscription.
 - **Longer-term discounts** — a plan for several periods at once, cheaper, traffic refilled
   every period.
+- **Win-back** (off by default) — some days after a paid subscription ends, the user gets a
+  personal one-use discount code in the bot, already applied to the next payment.
 - **In the panel** — balance and history in the user card, who invited whom, promo code usage,
-  top referrers, refunds to the balance.
+  top referrers, refunds to the balance, a sales funnel. A refund or chargeback made by the
+  payment system is picked up by itself: the order leaves revenue and loses what it bought.
 
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected

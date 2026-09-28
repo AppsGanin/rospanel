@@ -902,20 +902,33 @@ func (m *Manager) ActivePaidPlan(u model.User) *model.TariffPlan {
 // instead (plan cleared, expired now). The consumed-trial flag is preserved so
 // cancelling can't reopen a fresh trial.
 func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
+	return m.cancelUserPlan(ctx, userID, true)
+}
+
+// cancelUserPlan is CancelUserPlan; lapse says whether it counts as the user leaving
+// (a win-back code may follow) — a refund taking the plan back does not.
+func (m *Manager) cancelUserPlan(ctx context.Context, userID int64, lapse bool) error {
 	set, err := m.Settings()
 	if err != nil {
 		return err
 	}
 	// The plan being cancelled, captured before it's replaced.
 	cancelled := ""
+	wasPaid := false
 	if u, err := m.store.GetUser(userID); err == nil {
 		cancelled = m.PlanName(u.PlanID)
+		wasPaid = m.ActivePaidPlan(*u) != nil
 	}
 	if set.BillingFreePlanID != 0 {
 		if free, err := m.store.GetTariffPlan(set.BillingFreePlanID); err == nil && free != nil {
 			// Audited as a cancellation, not as the plan switch it's implemented as.
 			if err := m.applyPlan(ctx, userID, free.ID, false, ""); err != nil {
 				return err
+			}
+			// A paid term given up: the moment a win-back counts from. (Without a free
+			// plan the term's end, set to now below, says the same.)
+			if wasPaid && lapse {
+				_ = m.store.SetLapsed(userID, time.Now().Unix())
 			}
 			m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{
 				"plan": cancelled, "moved_to": free.Name,
@@ -950,6 +963,11 @@ func (m *Manager) CancelUserPlan(ctx context.Context, userID int64) error {
 	if err := m.store.ApplyUserPlan(w); err != nil {
 		return err
 	}
+	// The term's end, set to now, reads as a lapse; one a refund caused is no reason
+	// to send a win-back code.
+	if !lapse {
+		_ = m.store.SkipWinback(userID, now)
+	}
 	m.afterPlanWrite(groupsChanged)
 	m.audit(ctx, userID, model.EventPlanCancelled, map[string]any{"plan": cancelled})
 	return nil
@@ -966,6 +984,7 @@ func (m *Manager) EnforceBilling(now int64) error {
 	if set.WalletEnabled {
 		m.autoRenew(set, now)
 	}
+	m.runWinback(set, now)
 	if set.BillingFreePlanID == 0 {
 		return nil
 	}
@@ -1013,6 +1032,11 @@ func (m *Manager) downgradeExpired(ctx context.Context, userID, freeID, now int6
 	m.applyPlanMu.Unlock()
 	if err != nil {
 		return err
+	}
+	// A paid term ended here; the free plan carries no end date to remember it by. A
+	// trial or a free plan running out is no lapse to win back.
+	if ended, err := m.store.GetTariffPlan(u.PlanID); err == nil && !ended.IsFree() {
+		_ = m.store.SetLapsed(userID, u.ExpireAt)
 	}
 	m.afterPlanWrite(groupsChanged)
 	m.auditPlan(ctx, userID, u.Name, model.EventPlanDowngraded, prevPlan, planName, w.ExpireAt)

@@ -50,6 +50,9 @@ func (m *Manager) RefundOrder(ctx context.Context, orderID int64, cancelPlan boo
 			return kop, err
 		}
 	}
+	if after, err := m.store.GetPaymentOrder(order.ID); err == nil {
+		m.EmitWebhook(model.WebhookPaymentRefunded, after)
+	}
 	wal, _ := m.store.GetWalletLite(u.ID)
 	m.notifyUserEvent(set, *u, model.UserNotifyPayment,
 		i18n.T(m.userLang(u.TgChatID), "notify.userRefunded", kopText(kop), order.ID, kopText(wal.BalanceKop)))
@@ -58,14 +61,15 @@ func (m *Manager) RefundOrder(ctx context.Context, orderID int64, cancelPlan boo
 
 // takeBackTerm undoes what a refunded order bought: its own periods come off the end
 // of the term, and only a term that leaves nothing (or a lifetime plan) ends the plan.
-// Whatever else paid for the term — other orders, bonus days — stays paid for.
+// Whatever else paid for the term — other orders, bonus days — stays paid for. Not a
+// lapse the user chose, so no win-back code follows it.
 func (m *Manager) takeBackTerm(ctx context.Context, u model.User, order *model.PaymentOrder) error {
 	active := m.ActivePaidPlan(u)
 	if active == nil || active.ID != order.PlanID {
 		return nil
 	}
 	if active.PeriodDays <= 0 {
-		return m.CancelUserPlan(ctx, u.ID)
+		return m.cancelUserPlan(ctx, u.ID, false)
 	}
 	now := time.Now().Unix()
 	secs := int64(active.PeriodDays) * int64(max(order.Periods, 1)) * 86400
@@ -76,7 +80,7 @@ func (m *Manager) takeBackTerm(ctx context.Context, u model.User, order *model.P
 		return err
 	}
 	if exp > 0 && exp <= now {
-		return m.CancelUserPlan(ctx, u.ID)
+		return m.cancelUserPlan(ctx, u.ID, false)
 	}
 	m.TriggerUserSync()
 	return nil

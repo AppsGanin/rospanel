@@ -226,6 +226,8 @@ func txLabel(kind string, lang i18n.Lang) string {
 		return i18n.T(lang, "user.tx.promo")
 	case model.TxRefund:
 		return i18n.T(lang, "user.tx.refund")
+	case model.TxChargeback:
+		return i18n.T(lang, "user.tx.chargeback")
 	default:
 		return i18n.T(lang, "user.tx.admin")
 	}

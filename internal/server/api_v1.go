@@ -322,6 +322,7 @@ func (rt *Router) apiMux() http.Handler {
 	hf("GET /v1/billing/promos", rt.apiListPromos)
 	id("GET /v1/billing/promos/{id}/uses", rt.apiPromoUses)
 	hf("GET /v1/billing/referrals", rt.apiReferralStats)
+	hf("GET /v1/billing/funnel", rt.apiFunnel)
 	id("POST /v1/billing/orders/{id}/refund", rt.apiRefundOrder)
 	nodeAudit("POST /v1/billing/promos", "apiPromoSaved", rt.apiSavePromo)
 	nodeAudit("DELETE /v1/billing/promos/{id}", "apiPromoDeleted", idFn(rt.apiDeletePromo))

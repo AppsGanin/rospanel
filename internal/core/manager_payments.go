@@ -595,7 +595,7 @@ func (m *Manager) PollPendingPayments() {
 			if err := m.confirmProviderOrder(o.Provider, o.ProviderID, res); err != nil {
 				logErr("payment poll: confirm failed", "order", o.ID, "err", err)
 			}
-		case payments.StatusCanceled:
+		case payments.StatusCanceled, payments.StatusRefunded:
 			m.cancelPendingOrder(o, "provider_cancelled")
 		default:
 			// Still unpaid at the provider, and too old to keep asking about.
@@ -661,6 +661,83 @@ func (m *Manager) HandleProviderWebhook(key string, body []byte, h http.Header) 
 		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
 			m.cancelPendingOrder(*o, "provider_cancelled") // won't clobber an already-paid order
 		}
+	case payments.StatusRefunded:
+		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
+			if o.Status == "paid" {
+				m.providerRefunded(context.Background(), o)
+			} else {
+				m.cancelPendingOrder(*o, "provider_cancelled")
+			}
+		}
 	}
 	return nil
+}
+
+// providerRefunded settles a paid order whose money the payment system returned —
+// a refund made in its dashboard, or a chargeback: the order leaves revenue and can
+// no longer be refunded to the balance (the user would get the money twice), what
+// it put on a balance comes off, and a plan it bought loses the time it paid for.
+// A repeated notification changes nothing.
+func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
+	r, err := m.store.ProviderRefundOrder(o.ID, time.Now().Unix())
+	if errors.Is(err, store.ErrNotRefundable) {
+		return
+	}
+	if err != nil {
+		logErr("payment: provider refund not recorded", "order", o.ID, "err", err)
+		return
+	}
+	cut := false
+	if r.Kind == model.OrderPlan && r.Earlier == "" {
+		if u, err := m.store.GetUser(r.UserID); err == nil {
+			if active := m.ActivePaidPlan(*u); active != nil && active.ID == o.PlanID {
+				if err := m.takeBackTerm(ctx, *u, o); err != nil {
+					logErr("payment: provider refund did not take the plan back", "order", o.ID, "err", err)
+				} else {
+					cut = true
+				}
+			}
+		}
+	}
+	m.audit(ctx, r.UserID, model.EventPaymentRefunded, map[string]any{
+		"order_id": o.ID, "plan": o.PlanName, "amount_rub": o.AmountRub, "source": model.RefundByProvider,
+		"taken_kop": r.TakenKop, "returned_kop": r.ReturnedKop, "ref_taken_kop": r.RefTakenKop,
+		"short_kop": r.ShortKop, "ref_short_kop": r.RefShortKop, "ref_days": r.RefDays,
+		"plan_cut": cut,
+	})
+	lang := m.botLang()
+	var done []string
+	if r.Earlier == model.RefundToBalance {
+		done = append(done, i18n.T(lang, "notify.refundWasBalance"))
+	}
+	if cut {
+		done = append(done, i18n.T(lang, "notify.refundPlanCut"))
+	}
+	if r.TakenKop > 0 {
+		done = append(done, i18n.T(lang, "notify.refundTaken", kopText(r.TakenKop)))
+	}
+	if r.ReturnedKop > 0 {
+		done = append(done, i18n.T(lang, "notify.refundReturned", kopText(r.ReturnedKop)))
+	}
+	if r.RefTakenKop > 0 {
+		done = append(done, i18n.T(lang, "notify.refundRefTaken", kopText(r.RefTakenKop)))
+	}
+	if r.RefDays > 0 {
+		done = append(done, i18n.T(lang, "notify.refundRefDays", r.RefDays))
+	}
+	if r.ShortKop > 0 {
+		done = append(done, i18n.T(lang, "notify.refundShort", kopText(r.ShortKop)))
+	}
+	if r.RefShortKop > 0 {
+		done = append(done, i18n.T(lang, "notify.refundRefShort", kopText(r.RefShortKop)))
+	}
+	if after, err := m.store.GetPaymentOrder(o.ID); err == nil {
+		m.EmitWebhook(model.WebhookPaymentRefunded, after)
+	}
+	msg := i18n.T(lang, "notify.providerRefund", o.ID, escHTML(o.UserName),
+		escHTML(orderSubject(lang, o)), o.AmountRub, escHTML(payments.Label(o.Provider)))
+	if len(done) > 0 {
+		msg += "\n" + strings.Join(done, "\n")
+	}
+	m.notifyAdminEvent(model.AdminEventPayment, msg)
 }

@@ -1260,6 +1260,8 @@ func historyTitle(t model.BalanceTx, lang i18n.Lang) string {
 		return i18n.T(lang, "sub.txPromo", t.PromoCode)
 	case model.TxRefund:
 		return i18n.T(lang, "sub.txRefund", t.OrderID)
+	case model.TxChargeback:
+		return i18n.T(lang, "sub.txChargeback", t.OrderID)
 	}
 	if t.AmountKop > 0 {
 		return i18n.T(lang, "sub.txAdminIn")

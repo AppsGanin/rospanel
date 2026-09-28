@@ -34,7 +34,36 @@ const (
 	TxPromo    = "promo"    // a balance promo code
 	TxAdmin    = "admin"    // an operator's correction
 	TxRefund   = "refund"   // an order's money returned to the balance
+	// TxChargeback takes back what the balance got from money the payment system
+	// then returned to the payer.
+	TxChargeback = "chargeback"
 )
+
+// WinbackSettings is the win-back offer: AfterDays after a paid term lapses, the user
+// gets a one-use code for Percent % off any plan, valid for ValidDays.
+type WinbackSettings struct {
+	Enabled   bool `json:"enabled"`
+	AfterDays int  `json:"after_days"`
+	Percent   int  `json:"percent"`
+	ValidDays int  `json:"valid_days"`
+}
+
+// WinbackStats is what the win-back codes did: how many went out, how many were used,
+// and the money the orders they discounted brought.
+type WinbackStats struct {
+	Sent       int `json:"sent"`
+	Used       int `json:"used"`
+	RevenueRub int `json:"revenue_rub"`
+}
+
+// Funnel follows the users who joined since a moment: how many took a trial, paid
+// for a plan, and paid for one again.
+type Funnel struct {
+	Joined  int `json:"joined"`
+	Trial   int `json:"trial"`
+	Paid    int `json:"paid"`
+	Renewed int `json:"renewed"`
+}
 
 // PeriodOffer is a discount for buying several of a plan's periods at once.
 type PeriodOffer struct {

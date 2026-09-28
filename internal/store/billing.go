@@ -219,7 +219,7 @@ func (s *Store) UserIDsOnPlan(planID int64) ([]int64, error) {
 func (s *Store) PaidByProvider() ([]model.ProviderStat, error) {
 	rows, err := s.db.Query(`
 		SELECT provider, count(*), COALESCE(sum(amount_rub), 0)
-		FROM payment_orders WHERE status = 'paid' AND provider <> 'balance'
+		FROM payment_orders WHERE status = 'paid' AND provider <> 'balance' AND refund_source <> 'provider'
 		GROUP BY provider ORDER BY sum(amount_rub) DESC`)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,8 @@ func (s *Store) PaidByProvider() ([]model.ProviderStat, error) {
 func (s *Store) PaidSumSince(since int64) (int, error) {
 	var v int
 	err := s.db.QueryRow(
-		`SELECT COALESCE(sum(amount_rub), 0) FROM payment_orders WHERE status = 'paid' AND paid_at >= ?`,
+		`SELECT COALESCE(sum(amount_rub), 0) FROM payment_orders
+		 WHERE status = 'paid' AND paid_at >= ? AND refund_source <> 'provider'`,
 		since,
 	).Scan(&v)
 	return v, err
@@ -489,7 +490,7 @@ func (s *Store) CreatePaymentOrder(userID, planID int64, amountRub int) (*model.
 const orderCols = `o.id, o.user_id, u.name, o.plan_id, COALESCE(p.name, ''), o.amount_rub, o.status,
 	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at,
 	o.kind, o.balance_kop, o.discount_rub, o.promo_id, COALESCE(pc.code, ''),
-	o.periods, o.refunded_at`
+	o.periods, o.refunded_at, o.refund_source`
 
 // orderJoins resolves an order's user, plan and promo code. The plan is a LEFT join:
 // a top-up has none.
@@ -676,7 +677,7 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 			&o.AmountRub, &o.Status, &o.Provider, &o.ProviderID, &o.PayURL,
 			&o.CreatedAt, &o.PaidAt,
 			&o.Kind, &o.BalanceKop, &o.DiscountRub, &o.PromoID, &o.PromoCode,
-			&o.Periods, &o.RefundedAt,
+			&o.Periods, &o.RefundedAt, &o.RefundSource,
 		); err != nil {
 			return nil, err
 		}
@@ -692,12 +693,14 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		 billing_manual_enabled = ?, billing_manual_label = ?,
 		 wallet_enabled = ?, wallet_topup_min = ?, billing_periods = ?,
 		 ref_mode = ?, ref_percent = ?, ref_days = ?, ref_first_only = ?,
+		 winback_enabled = ?, winback_after_days = ?, winback_percent = ?, winback_valid_days = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
 		boolToInt(st.BillingManualEnabled), st.BillingManualLabel,
 		boolToInt(st.WalletEnabled), st.WalletTopupMin, periodsJSON(st.BillingPeriods),
 		st.RefMode, st.RefPercent, st.RefDays, boolToInt(st.RefFirstOnly),
+		boolToInt(st.Winback.Enabled), st.Winback.AfterDays, st.Winback.Percent, st.Winback.ValidDays,
 	)
 	return err
 }

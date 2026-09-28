@@ -36,6 +36,8 @@ type (
 		RefFirst    *bool  `json:"ref_first"`     // reward only the invited user's first payment
 		// Periods are the discounts for buying several periods at once; left out keeps them.
 		Periods *[]model.PeriodOffer `json:"periods"`
+		// Winback sends a user whose paid term lapsed a personal discount code; left out keeps it.
+		Winback *model.WinbackSettings `json:"winback"`
 	}
 	apiMigratePlanReq struct {
 		ToPlanID int64 `json:"to_plan_id"`
@@ -70,6 +72,7 @@ func (rt *Router) apiGetBillingSettings(w http.ResponseWriter, _ *http.Request) 
 		RefDays:     set.RefDays,
 		RefFirst:    &set.RefFirstOnly,
 		Periods:     ptrTo(periodOffersOrEmpty(set.BillingPeriods)),
+		Winback:     &set.Winback,
 	})
 }
 
@@ -111,6 +114,9 @@ func (rt *Router) apiSaveBillingSettings(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Periods != nil {
 		set.BillingPeriods = *req.Periods
+	}
+	if req.Winback != nil {
+		set.Winback = *req.Winback
 	}
 	// Designating a plan free/trial also makes it free and re-applies it to everyone
 	// already on it — see core.SaveBillingSettings.

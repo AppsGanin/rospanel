@@ -440,7 +440,7 @@ func TestAuraPayCreateAndWebhookRefetch(t *testing.T) {
 func TestRollyPayStatusMapping(t *testing.T) {
 	cases := map[string]Status{
 		"paid": StatusPaid, "created": StatusPending, "processing": StatusPending,
-		"expired": StatusCanceled, "canceled": StatusCanceled, "chargeback": StatusCanceled,
+		"expired": StatusCanceled, "canceled": StatusCanceled, "chargeback": StatusRefunded,
 	}
 	for api, want := range cases {
 		got := rollyPayPayment{Status: api, Amount: "10.00"}.result()

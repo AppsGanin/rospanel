@@ -161,6 +161,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				"manual_label": "By transfer", "wallet": true, "topup_min": float64(150),
 				"ref_mode": "percent", "ref_percent": float64(15), "ref_days": float64(9),
 				"ref_first": true, "periods": []any{map[string]any{"periods": float64(3), "percent": float64(10)}},
+				"winback": map[string]any{"enabled": true, "after_days": float64(10), "percent": float64(25), "valid_days": float64(5)},
 			},
 			check: func(t *testing.T) map[string]any {
 				set, err := st.GetSettings()
@@ -175,6 +176,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"ref_mode": set.RefMode, "ref_percent": float64(set.RefPercent),
 					"ref_days": float64(set.RefDays), "ref_first": set.RefFirstOnly,
 					"periods": len(set.BillingPeriods) == 1 && set.BillingPeriods[0].Periods == 3 && set.BillingPeriods[0].Percent == 10,
+					"winback": set.Winback == model.WinbackSettings{Enabled: true, AfterDays: 10, Percent: 25, ValidDays: 5},
 				}
 			},
 		},

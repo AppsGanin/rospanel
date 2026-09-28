@@ -460,6 +460,10 @@ func validateWalletSettings(st *model.Settings) error {
 		seen[o.Periods] = true
 	}
 	slices.SortFunc(st.BillingPeriods, func(a, b model.PeriodOffer) int { return a.Periods - b.Periods })
+	if wb := st.Winback; wb.Enabled && (wb.AfterDays < 1 || wb.AfterDays > 365 ||
+		wb.Percent < 1 || wb.Percent > 90 || wb.ValidDays < 1 || wb.ValidDays > 90) {
+		return invalidCode("err.winbackRange", "возврат ушедших: через 1–365 дней, скидка 1–90%, код действует 1–90 дней")
+	}
 	if st.RefPercent < 1 || st.RefPercent > 100 {
 		st.RefPercent = 10
 	}

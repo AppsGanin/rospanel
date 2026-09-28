@@ -74,6 +74,12 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
     ref_days: d.ref_days || 7,
     ref_first: !!d.ref_first,
     periods: d.periods ?? [],
+    winback: {
+      enabled: !!d.winback?.enabled,
+      after_days: d.winback?.after_days || 7,
+      percent: d.winback?.percent || 20,
+      valid_days: d.winback?.valid_days || 7,
+    },
     plans,
   };
 }
@@ -196,7 +202,8 @@ export function BillingPanel() {
     cfg.ref_percent !== saved.ref_percent ||
     cfg.ref_days !== saved.ref_days ||
     cfg.ref_first !== saved.ref_first ||
-    JSON.stringify(cfg.periods) !== JSON.stringify(saved.periods);
+    JSON.stringify(cfg.periods) !== JSON.stringify(saved.periods) ||
+    JSON.stringify(cfg.winback) !== JSON.stringify(saved.winback);
 
   // Which providers have unsaved edits (skip any whose server view we don't have).
   const dirtyProviders = (providers ?? []).filter(
@@ -228,6 +235,13 @@ export function BillingPanel() {
         return t("err.periodOffer");
       seen.add(o.periods);
     }
+    const wb = cfg.winback;
+    if (
+      wb.enabled &&
+      (wb.after_days < 1 || wb.after_days > 365 || wb.percent < 1 || wb.percent > 90 ||
+        wb.valid_days < 1 || wb.valid_days > 90)
+    )
+      return t("err.winbackRange");
     return "";
   };
 
@@ -253,6 +267,7 @@ export function BillingPanel() {
           ref_days: cfg.ref_days,
           ref_first: cfg.ref_first,
           periods: cfg.periods,
+          winback: cfg.winback,
         });
         setSaved({ ...cfg, plans: safePlans });
         // Tell the top nav to re-read billing_enabled so the payments menu item
@@ -548,6 +563,43 @@ export function BillingPanel() {
               onChange={(v) => setCfg({ ...cfg, ref_first: v })}
             />
           )}
+        </Panel>
+
+        <Panel
+          title={t("winback.title")}
+          aside={
+            <Switch
+              checked={cfg.winback.enabled}
+              onChange={(v) => setCfg({ ...cfg, winback: { ...cfg.winback, enabled: v } })}
+            />
+          }
+        >
+          <SettingRow hint={t("winback.hint")} />
+          {(
+            [
+              ["after_days", "winback.afterDays"],
+              ["percent", "winback.percent"],
+              ["valid_days", "winback.validDays"],
+            ] as const
+          ).map(([field, label]) => (
+            <SettingRow
+              key={field}
+              label={t(label)}
+              field={
+                <TextInput
+                  type="number"
+                  value={String(cfg.winback[field])}
+                  disabled={!cfg.winback.enabled}
+                  onChange={(v) =>
+                    setCfg({
+                      ...cfg,
+                      winback: { ...cfg.winback, [field]: Math.max(0, Math.floor(Number(v) || 0)) },
+                    })
+                  }
+                />
+              }
+            />
+          ))}
         </Panel>
 
         <Panel

@@ -404,6 +404,7 @@ var errEN = map[string]string{
 	"err.webhookNoPaymentID":       "{{provider}}: the notification carries no payment id",
 	"err.wgKeyBad":                 "the connection's WireGuard key is missing or damaged",
 	"err.wgLocalPortBad":           "the internal WireGuard port is out of range or the same as the relay port",
+	"err.winbackRange":             "win-back: after 1–365 days, 1–90% off, the code valid 1–90 days",
 	"err.wrongCurrentPassword":     "the current password is wrong",
 	"err.wrongPassword":            "wrong password",
 	"err.xrayRejectedConfig":       "Xray rejected the configuration: {{err}}",

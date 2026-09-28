@@ -66,6 +66,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "user.referred": "teal",
   "balance.autorenew": "gray",
   "payment.refunded": "orange",
+  "promo.winback": "teal",
 };
 
 export function actionMeta(action: string): { label: string; color: Color } {
@@ -308,8 +309,28 @@ export function eventDetails(e: UserEvent): string {
       if (order) parts.push(i18n.t("events.det.order", { id: order }));
       const plan = str(d, "plan");
       if (plan) parts.push(plan);
-      parts.push(`+${fmtKop(num(d, "refund_kop"))} ₽`);
-      if (d.plan_cancelled) parts.push(i18n.t("events.det.planCancelled"));
+      if (d.source === "provider") {
+        // The payment system returned the money: what came off, and what went back.
+        parts.push(`${num(d, "amount_rub").toLocaleString(currentLang())} ₽`, i18n.t("events.det.byProvider"));
+        if (d.plan_cut) parts.push(i18n.t("events.det.planCut"));
+        const taken = num(d, "taken_kop");
+        if (taken) parts.push(`−${fmtKop(taken)} ₽`);
+        const returned = num(d, "returned_kop");
+        if (returned) parts.push(`+${fmtKop(returned)} ₽`);
+        const short = num(d, "short_kop");
+        if (short) parts.push(i18n.t("events.det.notRecovered", { sum: fmtKop(short) }));
+      } else {
+        parts.push(`+${fmtKop(num(d, "refund_kop"))} ₽`);
+        if (d.plan_cancelled) parts.push(i18n.t("events.det.planCancelled"));
+      }
+      break;
+    }
+    case "promo.winback": {
+      const code = str(d, "code");
+      if (code) parts.push(code);
+      parts.push(`−${num(d, "percent")}%`);
+      const until = num(d, "expires_at");
+      if (until) parts.push(i18n.t("events.det.until", { date: fmtDate(until) }));
       break;
     }
     case "balance.autorenew":

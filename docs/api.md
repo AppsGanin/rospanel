@@ -337,6 +337,7 @@ client will display.
 | `GET` | `/v1/users/{id}/referrals` | The users this user invited, with what they paid. |
 | `GET` | `/v1/billing/promos/{id}/uses` | Who used a promo code, and the money its orders brought. |
 | `GET` | `/v1/billing/referrals` | Referral totals and the top inviters. |
+| `GET` | `/v1/billing/funnel?days=30` | Of the users who joined in the last N days (0 = all time): how many took a trial, paid, paid again; plus what win-back codes did. |
 | `POST` | `/v1/billing/orders/{id}/refund` | Return a paid plan order's price to the balance (once). |
 | `POST` | `/v1/users/{id}/balance` | Correct a user's balance. |
 | `GET` | `/v1/payments` | Every payment provider with its settings form. |
@@ -412,7 +413,13 @@ periods, and a quota the plan does not refill on its own cycle refills every per
 
 **Refund** — `POST /v1/billing/orders/{id}/refund` with `{ "cancel_plan": false }` puts the
 order's price (money and balance part) back on the user's balance, once; `cancel_plan` also
-takes the days the order paid for off the term (the plan ends only when none is left). Needs the wallet on.
+takes the days the order paid for off the term (the plan ends only when none is left). Needs the wallet on. A refund or a
+chargeback the payment system reports marks the order `refund_source: "provider"` by itself: it
+leaves revenue, takes back what it bought, and can no longer be refunded to the balance.
+
+**Win-back** — `"winback": {"enabled": true, "after_days": 7, "percent": 20, "valid_days": 7}` in
+the billing settings: that many days after a paid term lapses, the user gets a one-use code for
+that discount, attached to their next payment and sent in the bot.
 
 **Balance** — `POST /v1/users/{id}/balance` takes `{ "amount_kop": 10000, "note": "..." }`
 (either sign; the balance cannot go below zero) and answers `{ "balance_kop": ... }`.
@@ -1070,6 +1077,7 @@ body is never read).
 | `payment.created` | a payment order is opened |
 | `payment.paid` | an order is paid and the plan applied |
 | `payment.cancelled` | an order is cancelled |
+| `payment.refunded` | an order's money went back — to the balance by an operator, or by the payment system (`refund_source`) |
 
 ## Delivery format
 

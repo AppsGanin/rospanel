@@ -489,6 +489,7 @@ const en: Dict = {
     periodsUnavailable: "no such term",
     periodOffer: "term: 2 to 36 periods, discount 0 to 90%, no repeats",
     notRefundable: "only a paid plan order can be refunded, once",
+    winbackRange: "win-back: after 1–365 days, 1–90% off, the code valid 1–90 days",
     promoTaken: "this code already exists",
     announceTooLong: "announcement: at most {{max}} characters (currently {{count}}) — clients will truncate the rest",
     autodeleteRange: "retention for expired users: from 0 (never delete) to {{max}} days",
@@ -864,7 +865,8 @@ const en: Dict = {
       promo_redeemed: "Promo code redeemed",
       user_referred: "Signed up by invite",
       balance_autorenew: "Renewal from balance",
-      payment_refunded: "Refunded to balance",
+      payment_refunded: "Refund",
+      promo_winback: "Win-back code",
       payment_created: "Order created",
       payment_paid: "Paid",
       payment_cancelled: "Order cancelled",
@@ -903,6 +905,9 @@ const en: Dict = {
     },
     det: {
       planCancelled: "plan cancelled",
+      byProvider: "returned by the payment system",
+      notRecovered: "{{sum}} ₽ not recovered",
+      planCut: "time taken back",
       importedFrom: "imported from {{source}}",
       limit: "limit {{value}}",
       noTrafficLimit: "no traffic limit",
@@ -1991,6 +1996,7 @@ const en: Dict = {
     payment_created: "Order created",
     payment_paid: "Paid",
     payment_cancelled: "Order cancelled",
+    payment_refunded: "Money returned",
   },
 
   hooks: {
@@ -2226,8 +2232,21 @@ const en: Dict = {
     yookassaSandbox: "YooKassa has no separate sandbox host — test mode is switched on by using test keys.",
   },
 
+  funnel: {
+    title: "Funnel",
+    days30: "30 days",
+    days90: "90 days",
+    all: "All time",
+    joined: "Joined",
+    trial: "Took a trial",
+    paid: "Paid",
+    renewed: "Paid again",
+    hint: "Users who joined in the period. “Paid again” is a share of those who paid.",
+    winback: "Win-back: {{sent}} codes sent, {{used}} used, bringing {{revenue}} ₽",
+  },
   pay: {
     refunded: "refunded to balance",
+    refundedProvider: "returned by the payment system",
     refund: "Refund",
     refundTitle: "Refund to balance",
     refundHint: "The order's sum goes back to the user's balance. An order can be refunded once.",
@@ -2512,6 +2531,13 @@ const en: Dict = {
     firstOnly: "First payment only",
   },
 
+  winback: {
+    title: "Win-back",
+    hint: "Some days after a paid subscription ends, the user gets a personal one-use discount code in the bot — already applied to their next payment.",
+    afterDays: "After, days",
+    percent: "Discount, %",
+    validDays: "Code valid, days",
+  },
   periods: {
     title: "Longer-term discounts",
     add: "Add a term",

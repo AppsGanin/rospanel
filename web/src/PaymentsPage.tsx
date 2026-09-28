@@ -6,12 +6,17 @@ import {
   confirmPaymentOrder,
   refundOrder,
   getPaymentStats,
+  getPaymentFunnel,
   getReferralStats,
+  getUser,
   listPaymentOrders,
+  type PaymentFunnel,
   type PaymentOrder,
   type PaymentStats,
   type ReferralStats,
+  type User,
 } from "./api";
+import { UserDetail } from "./UserDetail";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { EMPTY_STEP_UP, StepUpFields, stepUpReady, useStepUpDialog, type StepUp } from "./stepup";
@@ -31,6 +36,7 @@ import {
   useWideBox,
   Modal,
   Checkbox,
+  SegmentedControl,
 } from "./ui";
 import { useCan } from "./role";
 import { fmtKop } from "./events";
@@ -115,7 +121,7 @@ function orderWhat(o: PaymentOrder): string {
   if (o.balance_kop && o.provider !== "balance")
     parts.push(td("pay.plusBalance", { sum: fmtKop(o.balance_kop) }));
   if (o.promo_code) parts.push(o.promo_code);
-  if (o.refunded_at) parts.push(td("pay.refunded"));
+  if (o.refunded_at) parts.push(td(o.refund_source === "provider" ? "pay.refundedProvider" : "pay.refunded"));
   return parts.filter(Boolean).join(" · ");
 }
 
@@ -140,8 +146,30 @@ function orderWho(o: PaymentOrder): string {
 // onPending reports the number of orders still waiting for an admin after every
 // read: the tab above this page carries that count, and a confirmed or cancelled
 // order must change it at once rather than at the next poll.
-export function PaymentsPage({ onPending }: { onPending?: (n: number) => void }) {
+export function PaymentsPage({
+  onPending,
+  userBotEnabled = false,
+}: {
+  onPending?: (n: number) => void;
+  userBotEnabled?: boolean;
+}) {
   const { t } = useTranslation();
+  // A referrer's name opens their card — for whoever may read users.
+  const canUsers = useCan("users.view");
+  const [detail, setDetail] = useState<User | null>(null);
+  const openUser = (id: number) => {
+    getUser(id)
+      .then(setDetail)
+      .catch((e) => notifyError(errMessage(e)));
+  };
+  // The funnel follows the users who joined in the last funnelDays (0 = all time).
+  const [funnelDays, setFunnelDays] = useState(30);
+  const [funnel, setFunnel] = useState<PaymentFunnel | null>(null);
+  useEffect(() => {
+    getPaymentFunnel(funnelDays)
+      .then(setFunnel)
+      .catch(() => setFunnel(null));
+  }, [funnelDays]);
   // Crediting or cancelling an order needs billing.manage; the list is billing.view.
   const canManage = useCan("billing.manage");
   const [stats, setStats] = useState<PaymentStats | null>(null);
@@ -343,35 +371,106 @@ export function PaymentsPage({ onPending }: { onPending?: (n: number) => void })
         </Panel>
       </div>
 
-      {/* What the referral programme brought: shown once someone came by a link. */}
-      {refStats && refStats.invited > 0 && (
-        <Panel title={t("ref.title")}>
-          <p className="border-t border-gray-100 px-3.5 py-2.5 text-xs text-ink-muted">
-            {t(refStats.paid_out_kop > 0 ? "ref.statsLine" : "ref.statsLineNoBonus", {
-              invited: refStats.invited,
-              paying: refStats.paying,
-              revenue: refStats.revenue_rub.toLocaleString(currentLang()),
-              paid: fmtKop(refStats.paid_out_kop),
-            })}
-          </p>
-          {refStats.top.length > 0 && (
+      <div className="grid gap-3.5 lg:grid-cols-2">
+        {/* Of the users who joined in the period: how far they got. */}
+        <Panel
+          title={t("funnel.title")}
+          aside={
+            <SegmentedControl
+              size="xs"
+              nav
+              value={String(funnelDays)}
+              onChange={(v) => setFunnelDays(Number(v))}
+              data={[
+                { value: "30", label: t("funnel.days30") },
+                { value: "90", label: t("funnel.days90") },
+                { value: "0", label: t("funnel.all") },
+              ]}
+            />
+          }
+        >
+          {funnel && (
             <>
-              <div className={cn(MICRO, "border-t border-gray-100 px-3.5 py-2")}>{t("ref.top")}</div>
-              {refStats.top.map((r) => (
-                <div
-                  key={r.user_id}
-                  className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-[7px]"
-                >
-                  <span className="truncate text-xs text-ink">{r.name}</span>
-                  <Mono className="shrink-0 text-xs text-ink-muted">
-                    {t("ref.topLine", { invited: r.invited, paying: r.paying, earned: fmtKop(r.earned_kop) })}
-                  </Mono>
+              {(
+                [
+                  ["funnel.joined", funnel.funnel.joined, funnel.funnel.joined],
+                  ["funnel.trial", funnel.funnel.trial, funnel.funnel.joined],
+                  ["funnel.paid", funnel.funnel.paid, funnel.funnel.joined],
+                  ["funnel.renewed", funnel.funnel.renewed, funnel.funnel.paid],
+                ] as const
+              ).map(([label, n, of]) => (
+                <div key={label} className="border-t border-gray-100 px-3.5 py-[7px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-xs text-ink">{t(label)}</span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      {label !== "funnel.joined" && (
+                        <span className="text-[11px] text-ink-muted">{of > 0 ? `${Math.round((n / of) * 100)}%` : "—"}</span>
+                      )}
+                      <Mono className="text-xs text-ink">{n.toLocaleString(currentLang())}</Mono>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-brand-600"
+                      style={{ width: `${funnel.funnel.joined > 0 ? (n / funnel.funnel.joined) * 100 : 0}%` }}
+                    />
+                  </div>
                 </div>
               ))}
+              <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">{t("funnel.hint")}</p>
+              {funnel.winback.sent > 0 && (
+                <p className="border-t border-gray-100 px-3.5 py-2.5 text-xs text-ink-muted">
+                  {t("funnel.winback", {
+                    sent: funnel.winback.sent,
+                    used: funnel.winback.used,
+                    revenue: funnel.winback.revenue_rub.toLocaleString(currentLang()),
+                  })}
+                </p>
+              )}
             </>
           )}
         </Panel>
-      )}
+
+        {/* What the referral programme brought: shown once someone came by a link. */}
+        {refStats && refStats.invited > 0 && (
+          <Panel title={t("ref.title")}>
+            <p className="border-t border-gray-100 px-3.5 py-2.5 text-xs text-ink-muted">
+              {t(refStats.paid_out_kop > 0 ? "ref.statsLine" : "ref.statsLineNoBonus", {
+                invited: refStats.invited,
+                paying: refStats.paying,
+                revenue: refStats.revenue_rub.toLocaleString(currentLang()),
+                paid: fmtKop(refStats.paid_out_kop),
+              })}
+            </p>
+            {refStats.top.length > 0 && (
+              <>
+                <div className={cn(MICRO, "border-t border-gray-100 px-3.5 py-2")}>{t("ref.top")}</div>
+                {refStats.top.map((r) => (
+                  <div
+                    key={r.user_id}
+                    className="flex items-center justify-between gap-3 border-t border-gray-100 px-3.5 py-[7px]"
+                  >
+                    {canUsers ? (
+                      <button
+                        type="button"
+                        className="truncate text-left text-xs font-medium text-brand-600 hover:underline"
+                        onClick={() => openUser(r.user_id)}
+                      >
+                        {r.name}
+                      </button>
+                    ) : (
+                      <span className="truncate text-xs text-ink">{r.name}</span>
+                    )}
+                    <Mono className="shrink-0 text-xs text-ink-muted">
+                      {t("ref.topLine", { invited: r.invited, paying: r.paying, earned: fmtKop(r.earned_kop) })}
+                    </Mono>
+                  </div>
+                ))}
+              </>
+            )}
+          </Panel>
+        )}
+      </div>
 
       <Panel title={t("pay.history")}>
         {orders.length === 0 ? (
@@ -464,6 +563,13 @@ export function PaymentsPage({ onPending }: { onPending?: (n: number) => void })
       </Panel>
 
       {stepUpNode}
+      <UserDetail
+        user={detail}
+        userBotEnabled={userBotEnabled}
+        onOpenUser={openUser}
+        onChanged={() => {}}
+        onClose={() => setDetail(null)}
+      />
       <Modal
         open={!!refund}
         onClose={() => openRefund(null)}
