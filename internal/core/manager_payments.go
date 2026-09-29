@@ -101,7 +101,7 @@ func (m *Manager) PaymentMethods() []string {
 	var out []string
 	for _, d := range payments.All() {
 		p, ok := saved[d.Key]
-		if ok && p.Enabled && d.Configured(p.Config) {
+		if ok && p.Enabled && d.Configured(p.Config) && (d.Key != payments.ProviderStars || m.userBotOn()) {
 			out = append(out, d.Key)
 		}
 	}
@@ -207,7 +207,82 @@ func (m *Manager) providerClient(key string) (payments.Client, error) {
 	if !d.Configured(p.Config) {
 		return nil, invalidCode("err.providerUnconfigured", "{{provider}}: не заполнены настройки", map[string]any{"provider": d.Label})
 	}
+	if key == payments.ProviderStars {
+		// Stars are invoiced by the user bot, with its token and the Telegram route.
+		set, err := m.Settings()
+		if err != nil {
+			return nil, err
+		}
+		if !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+			return nil, invalidCode("err.starsNeedBot", "Telegram Stars принимает пользовательский бот — включите его")
+		}
+		cfg := payments.Config{}
+		for k, v := range p.Config {
+			cfg[k] = v
+		}
+		cfg[payments.StarsBotToken] = strings.TrimSpace(set.TGUserBotToken)
+		cfg[payments.StarsProxy] = set.TelegramProxyURL()
+		return d.New(cfg), nil
+	}
 	return d.New(p.Config), nil
+}
+
+// userBotOn reports whether the user bot runs — what Stars payments need.
+func (m *Manager) userBotOn() bool {
+	set, err := m.Settings()
+	return err == nil && set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != ""
+}
+
+// StarsPreCheckout answers Telegram's "may this payment go ahead": the invoice must
+// be one of ours, for an order not paid yet, asking the star count it is paid with.
+func (m *Manager) StarsPreCheckout(payload, currency string, total int64) error {
+	o, err := m.store.GetPaymentOrderByProvider(payments.ProviderStars, payload)
+	if err != nil {
+		return invalidCode("err.orderNotFound", "заказ не найден")
+	}
+	if o.Status == "paid" {
+		return invalidCode("err.orderAlreadyPaid", "заказ уже оплачен")
+	}
+	if want, ok := payments.StarsPayloadAmount(payload); !ok || currency != "XTR" || total != want {
+		return invalidCode("err.orderAmountChanged", "сумма заказа изменилась — начните оплату заново")
+	}
+	return nil
+}
+
+// ConfirmStarsPayment applies a Stars payment the user bot received. raw is the
+// update as Telegram sent it — it lands in the callback journal, and its
+// telegram_payment_charge_id is what a refund of the stars needs.
+func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw []byte) error {
+	rec := model.PaymentWebhook{
+		At: time.Now().Unix(), Provider: payments.ProviderStars, RemoteIP: "telegram",
+		ProviderID: payload, Status: string(payments.StatusPaid), Body: string(raw),
+	}
+	err := func() error {
+		if want, ok := payments.StarsPayloadAmount(payload); !ok || currency != "XTR" || total != want {
+			rec.Outcome = model.WebhookOutcomeMismatch
+			if o, e := m.store.GetPaymentOrderByProvider(payments.ProviderStars, payload); e == nil {
+				rec.OrderID = o.ID
+			}
+			return fmt.Errorf("stars payment %q: paid %d %s", payload, total, currency)
+		}
+		var err error
+		// The star count was checked against the invoice above; the order's rouble
+		// amount has no star figure to compare with, so none is passed on.
+		rec.Outcome, rec.OrderID, err = m.confirmProviderOrderOutcome(payments.ProviderStars, payload,
+			payments.Result{Status: payments.StatusPaid})
+		return err
+	}()
+	if err != nil {
+		rec.Error = err.Error()
+	}
+	if e := m.store.RecordPaymentWebhook(rec); e != nil {
+		logErr("stars: journal write failed", "err", e)
+	}
+	if err != nil && rec.Outcome == model.WebhookOutcomeMismatch {
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.starsMismatch",
+			rec.OrderID, total, escHTML(payload)))
+	}
+	return err
 }
 
 func (m *Manager) ensureWebhookSecret() error {
@@ -238,6 +313,9 @@ func (m *Manager) PaymentWebhookSecret() string {
 // dashboard: /<random secret>/<provider key>. Empty when the panel doesn't know
 // its own host yet, or before the secret has been generated.
 func (m *Manager) PaymentWebhookURL(key string) string {
+	if key == payments.ProviderStars {
+		return "" // the bot hears about Stars payments; there is no callback to point
+	}
 	set, _ := m.Settings()
 	if set == nil || set.PaymentWebhookSecret == "" || set.Host == "" {
 		return ""

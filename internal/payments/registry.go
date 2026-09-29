@@ -132,10 +132,12 @@ var descriptors = []Descriptor{
 	rollyPayDescriptor(),
 	severPayDescriptor(),
 	plategaDescriptor(),
+	yooMoneyDescriptor(),
 	payPearDescriptor(),
 	auraPayDescriptor(),
 	heleketDescriptor(),
 	cryptoBotDescriptor(),
+	starsDescriptor(),
 }
 
 // All returns every known provider, in display order.

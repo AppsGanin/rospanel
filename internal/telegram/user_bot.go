@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -165,7 +166,7 @@ func (s *UserService) Run(ctx context.Context) {
 		token := strings.TrimSpace(set.TGUserBotToken)
 		client := s.clientFor(token, set.TelegramProxyURL())
 		s.publishCommands(ctx, client, token)
-		updates, err := client.GetUpdates(ctx, s.offset, pollTimeout)
+		updates, err := client.GetUpdatesFor(ctx, s.offset, pollTimeout, userBotUpdates)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -182,12 +183,25 @@ func (s *UserService) Run(ctx context.Context) {
 	}
 }
 
+// userBotUpdates adds the Stars pre-checkout to what a bot gets by default.
+var userBotUpdates = []string{"message", "callback_query", "pre_checkout_query"}
+
 func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("telegram user: handler panic recovered: %v", r)
 		}
 	}()
+	// Payments before the rate gate: a paid invoice must never be dropped as a flood,
+	// and a pre-checkout left unanswered for ten seconds fails the payment.
+	if u.PreCheckout != nil {
+		s.preCheckout(ctx, client, u.PreCheckout)
+		return
+	}
+	if u.Message != nil && u.Message.SuccessfulPayment != nil {
+		s.starsPaid(ctx, client, u.Message)
+		return
+	}
 	// Gate before anything else, trackSubscriber included: it writes a row per
 	// update, and the handlers below answer synchronously on this one goroutine while
 	// each reply waits for the outbound per-chat slot. One chat is otherwise enough to
@@ -1251,5 +1265,32 @@ func (s *UserService) sendMenu(ctx context.Context, client *Client, chatID int64
 func (s *UserService) edit(ctx context.Context, client *Client, chatID, msgID int64, html string, rows [][]InlineButton) {
 	if err := client.EditMenu(ctx, chatID, msgID, html, rows); err != nil {
 		log.Printf("telegram user: edit %d/%d: %v", chatID, msgID, err)
+	}
+}
+
+// preCheckout approves a Stars payment for an order the panel still waits on.
+func (s *UserService) preCheckout(ctx context.Context, client *Client, q *PreCheckoutQuery) {
+	err := s.panel.StarsPreCheckout(q.InvoicePayload, q.Currency, q.TotalAmount)
+	reason := ""
+	if err != nil {
+		var chat int64
+		if q.From != nil {
+			chat = q.From.ID
+		}
+		reason = core.UserError(err, s.lang(chat))
+	}
+	if e := client.AnswerPreCheckout(ctx, q.ID, err == nil, reason); e != nil {
+		log.Printf("telegram user: answer pre-checkout: %v", e)
+	}
+}
+
+// starsPaid applies a Stars payment. The user hears about it the way every paid
+// order is announced.
+func (s *UserService) starsPaid(ctx context.Context, client *Client, m *Message) {
+	p := m.SuccessfulPayment
+	raw, _ := json.Marshal(m)
+	if err := s.panel.ConfirmStarsPayment(p.InvoicePayload, p.Currency, p.TotalAmount, raw); err != nil {
+		log.Printf("telegram user: stars payment %q: %v", p.InvoicePayload, err)
+		s.send(ctx, client, m.Chat.ID, i18n.T(s.lang(m.Chat.ID), "user.starsNotApplied"))
 	}
 }

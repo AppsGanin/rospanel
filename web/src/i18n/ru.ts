@@ -553,6 +553,10 @@ const ru = {
     unknownTimezone: "неизвестный часовой пояс {{value}}",
     blacklistEmpty: "в списке нет ни одного Telegram ID",
     blacklistURL: "адрес списка: {{err}}",
+    orderAlreadyPaid: "заказ уже оплачен",
+    orderAmountChanged: "сумма заказа изменилась — начните оплату заново",
+    orderNotFound: "заказ не найден",
+    starsNeedBot: "Telegram Stars принимает пользовательский бот — включите его",
     webhookNoPaymentID: "{{provider}}: в уведомлении нет идентификатора платежа",
     xrayRejectedConfig: "Xray отклонил конфигурацию: {{err}}",
     zerosslDomainsOnly: "ZeroSSL поддерживает только домены (не IP): {{value}} — это не похоже на домен",
@@ -2216,6 +2220,10 @@ const ru = {
   },
 
   payField: {
+    starsRate: "Цена одной звезды, ₽",
+    yoomoneySecret: "Секрет для уведомлений",
+    yoomoneyWallet: "Номер кошелька",
+    yoomoneyWalletPay: "Кошелёк ЮMoney",
     allMethods: "Все методы (выбор на странице)",
     apiKey: "API-ключ",
     apiToken: "API-токен",
@@ -2238,6 +2246,8 @@ const ru = {
   },
 
   payNote: {
+    stars: "Звёзды в Telegram-боте · цена в ₽ пересчитывается",
+    yoomoney: "Перевод на кошелёк: карта или ЮMoney · ₽",
     cardsSbp: "Карты, СБП · ₽",
     cardsSbpCrypto: "Карты, СБП, крипта · ₽",
     cardsSbpSberpay: "Карты, СБП, SberPay · ₽",
@@ -2246,6 +2256,9 @@ const ru = {
   },
 
   payHelp: {
+    starsRate: "Сколько рублей стоит одна звезда; счёт в звёздах = цена ÷ курс, с округлением вверх. Счета выставляет пользовательский бот.",
+    yoomoneySecret: "yoomoney.ru/transfer/myservices/http-notification: там же укажите адрес уведомлений ниже и включите их.",
+    yoomoneyWallet: "15–16 цифр, начинается с 4100.",
     coinOptional: "Необязательно. Пусто — плательщик выбирает монету сам.",
     displayName: "Показывается пользователю в боте и на странице подписки. Пусто — название провайдера.",
     heleketUuid: "Личный кабинет Heleket → Merchant → UUID.",
@@ -2338,6 +2351,8 @@ const ru = {
     refundCancelPlanHint: "Снимаются дни, оплаченные этим заказом; если срока не останется — тариф отменится",
     refundedTo: "На баланс возвращено {{sum}} ₽",
     provider: {
+      yoomoney: "ЮMoney · карта/кошелёк",
+      stars: "Telegram Stars",
       yookassa: "ЮКасса · карта",
       cryptobot: "CryptoBot · крипта",
       pal24: "PayPalych · карта/СБП",
