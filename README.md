@@ -386,8 +386,8 @@ through `happ://crypt4/…`, so the app never shows its address; the same link c
 the user's card.
 
 A **connect wizard** in 3 steps: the platform is detected, then Happ's official download (the
-Russian App Store separately for iPhone), then the subscription added with one tap. The page can
-be **added to the home screen** and opens like an app. Inside Telegram it looks like part of it:
+Russian App Store separately for iPhone), then the subscription added with one tap. Added to the home
+screen, the page opens like an app. Inside Telegram it looks like part of it:
 the header colour, the system Back button, haptic feedback. Terms show the price per day and the
 saving.
 

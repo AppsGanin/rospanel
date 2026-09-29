@@ -862,12 +862,6 @@
         {{if .DeepLinks}}
         <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
         {{end}}
-        <!-- Put the page on the home screen: a button where the browser offers it, a
-             line on iPhone (Safari has no prompt to call). Not inside Telegram. -->
-        <div class="card" id="install" hidden>
-          <button class="btn alt" id="install-btn" onclick="installApp()" hidden>{{.L.InstallApp}}</button>
-          <p class="muted" id="install-ios" style="margin: 0" hidden>{{.L.InstallIOS}}</p>
-        </div>
         <div class="card">
           <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
           <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
@@ -1337,30 +1331,6 @@
           tgEvent("web_app_expand");
         }
       }
-      // Home screen. Chrome and Edge hand the install prompt over once the page counts
-      // as installable; Safari on iPhone has none, so it gets a line saying how.
-      var INSTALL = null;
-      window.addEventListener("beforeinstallprompt", function (e) {
-        e.preventDefault();
-        INSTALL = e;
-        if (INTG) return;
-        document.getElementById("install").hidden = false;
-        document.getElementById("install-btn").hidden = false;
-      });
-      function installApp() {
-        if (!INSTALL) return;
-        INSTALL.prompt();
-        INSTALL = null;
-        document.getElementById("install").hidden = true;
-      }
-      (function () {
-        var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-        var installed = window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-        if (ios && !installed && !INTG) {
-          document.getElementById("install").hidden = false;
-          document.getElementById("install-ios").hidden = false;
-        }
-      })();
       // Open a URL the right way: in Telegram hand it to the host (external browser);
       // in a normal browser just navigate.
       function openExternal(url) {
