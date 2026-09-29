@@ -184,3 +184,14 @@ func (rt *Router) refundOrder(w http.ResponseWriter, r *http.Request, id int64) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"refund_kop": kop})
 }
+
+// fraudSignals lists the patterns worth a look: trial farms, shared devices,
+// self-invites, promo and payment bursts, failing cards, chargebacks.
+func (rt *Router) fraudSignals(w http.ResponseWriter, _ *http.Request) {
+	sigs, err := rt.mgr.FraudSignals()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sigs)
+}

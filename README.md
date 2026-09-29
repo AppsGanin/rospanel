@@ -546,6 +546,8 @@ an admin confirms the transfer.
 - **Shared blacklist** (off by default) — Telegram accounts other VPN services banned for
   reselling, scanning, sharing or fraud ([BEDOLAGA-DEV/VPN-BLACKLIST](https://github.com/BEDOLAGA-DEV/VPN-BLACKLIST)
   or your own list): they cannot register in the bot; a registered one is marked in its card.
+- **Suspicious activity** — trial farming from one address, one device on several accounts,
+  self-invites, promo and payment bursts, failing cards, chargebacks; each row names the accounts.
 - **Callback journal** — every notification a payment system sent, with its body and what the
   panel did with it (credited, repeat, amount mismatch, no such order, failed the signature
   check); kept 30 days.
