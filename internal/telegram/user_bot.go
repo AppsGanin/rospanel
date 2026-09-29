@@ -1333,8 +1333,12 @@ func (s *UserService) publishMenuButton(ctx context.Context, client *Client) boo
 		if cur.WebApp.URL == url {
 			return true
 		}
-		if cur.WebApp.URL != set.TGMenuURL {
-			return true // the operator's own
+		// Ours is the address last set, or anything under this panel's subscription
+		// path (an older build set a fixed one there); anything else is the operator's.
+		ours := cur.WebApp.URL == set.TGMenuURL ||
+			strings.HasPrefix(cur.WebApp.URL, "https://"+set.Host+"/"+set.SubPathOr()+"/")
+		if !ours {
+			return true
 		}
 	}
 	if err := client.SetChatMenuButton(ctx, i18n.T(i18n.Normalize(set.BotLang()), "user.menuApp"), url); err != nil {
