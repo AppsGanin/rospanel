@@ -996,15 +996,40 @@
               {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
             </select>
             {{end}}
+            {{if .Devices}}
+            <select class="periods" id="dev-{{.ID}}" autocomplete="off">
+              {{range .Devices}}<option value="{{.Extra}}">{{.Label}}</option>{{end}}
+            </select>
+            {{end}}
           </div>
+          {{end}}
+          {{if .Billing.Changes}}
+          <div class="muted" style="margin: 14px 0 6px">{{.L.ChangeTitle}}</div>
+          {{range .Billing.Changes}}
+          <div class="plan">
+            <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
+            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', this)">{{$.L.ChangeBtn}}</button>
+          </div>
+          {{end}}
+          {{end}}
+          {{if .Billing.Addons}}
+          <div class="muted" style="margin: 14px 0 6px">{{.L.AddTitle}}</div>
+          {{range .Billing.Addons}}
+          <div class="plan">
+            <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
+            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '', this)">{{$.L.AddBtn}}</button>
+          </div>
+          {{end}}
           {{end}}
           {{if .Billing.Cancelable}}
           <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
             {{.L.CancelSub}}
           </button>
+          {{if not .Billing.Changes}}
           <p class="muted" style="margin: 10px 0 0">
             {{.L.ChangePlanNote}}
           </p>
+          {{end}}
           {{else if .Billing.ManualOnly}}
           <p class="muted" style="margin: 12px 0 0">
             {{.L.ManualNote}}
@@ -1467,10 +1492,23 @@
         b.textContent = o.getAttribute("data-btn");
         b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
       }
+      // PAY_EXTRA rides along with the next payment: the devices a plan comes with, or
+      // what a change or an add-on buys. The server pays from the balance whatever it
+      // covers.
+      var PAY_EXTRA = {};
       function buyPlan(planId, el) {
         var n = planPeriods(planId);
-        if (el.getAttribute("data-fb") === "1") payBalance(planId, el, n);
+        var d = document.getElementById("dev-" + planId);
+        PAY_EXTRA = d ? { devices: parseInt(d.value, 10) || 0 } : {};
+        if (el.getAttribute("data-fb") === "1" && !(PAY_EXTRA.devices > 0)) payBalance(planId, el, n);
         else pay(planId, el, n);
+      }
+      function buyExtra(kind, planId, n, fb, el) {
+        PAY_EXTRA = { kind: kind };
+        if (kind === "devices") PAY_EXTRA.devices = n;
+        if (kind === "traffic") PAY_EXTRA.pack = n;
+        if (fb === "1") payBalance(planId, el, 1);
+        else pay(planId, el, 1);
       }
       var PAY_PERIODS = 1;
       function pay(planId, el, periods) {
@@ -1528,7 +1566,7 @@
       }
       function payBalance(planId, el, periods) {
         var reset = busy(el);
-        post(PAY_PATH, { plan_id: planId, balance: true, expire_at: {{.Billing.ExpireAt}}, periods: periods || 1 })
+        post(PAY_PATH, Object.assign({ plan_id: planId, balance: true, expire_at: {{.Billing.ExpireAt}}, periods: periods || 1 }, PAY_EXTRA))
           .then(function (res) {
             if (res.ok) {
               location.reload();
@@ -1633,7 +1671,9 @@
         fetch(PAY_PATH, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-RosPanel-Sub": "1" },
-          body: JSON.stringify({ plan_id: planId, provider: provider, periods: periods || 1 }),
+          body: JSON.stringify(
+            Object.assign({ plan_id: planId, provider: provider, periods: periods || 1, expire_at: {{.Billing.ExpireAt}} }, PAY_EXTRA),
+          ),
         })
           .then(function (r) {
             return r.json().then(function (j) {

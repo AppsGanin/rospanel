@@ -64,6 +64,17 @@ type PlanQuote struct {
 	TotalRub          int    `json:"total_rub"`   // price after the discount
 	BalanceKop        int64  `json:"balance_kop"` // the part the balance covers
 	MoneyRub          int    `json:"money_rub"`   // the part to pay with money (0 = the balance covers it all)
+
+	// Kind is what is bought (model.Order*; "" = a plan). Devices: the extra devices a
+	// plan or change comes with, or how many are added; DevicesRub their part of
+	// PriceRub. ExpireAt: the term after a change or an add-on. Upgrade: a change that
+	// is paid for (a cheaper one moves the end date instead). PackGB: a traffic pack.
+	Kind       string `json:"kind,omitempty"`
+	Devices    int    `json:"devices,omitempty"`
+	DevicesRub int    `json:"devices_rub,omitempty"`
+	ExpireAt   int64  `json:"expire_at,omitempty"`
+	Upgrade    bool   `json:"upgrade,omitempty"`
+	PackGB     int    `json:"pack_gb,omitempty"`
 }
 
 // QuotePlan prices a plan for a user: the attached discount code (when it applies to
@@ -77,15 +88,23 @@ func (m *Manager) QuotePlan(u model.User, plan *model.TariffPlan) PlanQuote {
 // the operator offers no discount for is priced as one period.
 func (m *Manager) QuotePlanFor(u model.User, plan *model.TariffPlan, periods int) PlanQuote {
 	set, err := m.Settings()
+	devices := heldDevices(u, plan)
 	if err != nil {
-		return PlanQuote{Periods: 1, PriceRub: plan.PriceRub, TotalRub: plan.PriceRub, MoneyRub: plan.PriceRub}
+		p := periodRub(plan, devices)
+		return PlanQuote{Periods: 1, PriceRub: p, TotalRub: p, MoneyRub: p, Devices: devices}
 	}
+	return m.quotePlan(set, u, plan, periods, devices)
+}
+
+// quotePlan prices periods of plan with devices extra devices for u.
+func (m *Manager) quotePlan(set *model.Settings, u model.User, plan *model.TariffPlan, periods, devices int) PlanQuote {
 	pct, ok := periodPercent(set, plan, periods)
 	if !ok {
 		periods, pct = 1, 0
 	}
-	base := plan.PriceRub * periods
-	q := PlanQuote{Periods: periods, PeriodPercent: pct, PriceRub: base}
+	base := periodRub(plan, devices) * periods
+	q := PlanQuote{Periods: periods, PeriodPercent: pct, PriceRub: base,
+		Devices: devices, DevicesRub: devices * plan.DevicePrice * periods}
 	q.PeriodDiscountRub = base * pct / 100
 	q.TotalRub = base - q.PeriodDiscountRub
 	w, err := m.store.GetWalletLite(u.ID)
@@ -141,9 +160,18 @@ func (m *Manager) PeriodOffers(u model.User, plan *model.TariffPlan) []PlanQuote
 	if err != nil || plan.PeriodDays <= 0 || len(set.BillingPeriods) == 0 {
 		return nil
 	}
-	out := []PlanQuote{m.QuotePlanFor(u, plan, 1)}
+	return m.PeriodOffersWith(u, plan, heldDevices(u, plan))
+}
+
+// PeriodOffersWith is PeriodOffers for devices extra devices.
+func (m *Manager) PeriodOffersWith(u model.User, plan *model.TariffPlan, devices int) []PlanQuote {
+	set, err := m.Settings()
+	if err != nil || plan.PeriodDays <= 0 || len(set.BillingPeriods) == 0 {
+		return nil
+	}
+	out := []PlanQuote{m.quotePlan(set, u, plan, 1, devices)}
 	for _, o := range set.BillingPeriods {
-		out = append(out, m.QuotePlanFor(u, plan, o.Periods))
+		out = append(out, m.quotePlan(set, u, plan, o.Periods, devices))
 	}
 	return out
 }
@@ -221,6 +249,11 @@ const AnyExpiry int64 = -1
 // A second tap on the same button (Telegram delivers both) finds the expiry already
 // moved by the first and is refused, instead of buying the next period too.
 func (m *Manager) BuyPlanFromBalance(ctx context.Context, userID, planID, expectExpire int64, periods int) (*model.PaymentOrder, error) {
+	return m.buyPlanFromBalance(ctx, userID, PlanPurchase(planID, periods), expectExpire)
+}
+
+func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purchase, expectExpire int64) (*model.PaymentOrder, error) {
+	planID, periods := p.PlanID, max(p.Periods, 1)
 	set, err := m.Settings()
 	if err != nil {
 		return nil, err
@@ -250,12 +283,17 @@ func (m *Manager) BuyPlanFromBalance(ctx context.Context, userID, planID, expect
 		m.applyPlanMu.Unlock()
 		return nil, err
 	}
-	q := m.QuotePlanFor(*u, plan, periods)
+	devices, err := wantDevices(*u, plan, p.Devices)
+	if err != nil {
+		m.applyPlanMu.Unlock()
+		return nil, err
+	}
+	q := m.quotePlan(set, *u, plan, periods, devices)
 	if q.MoneyRub > 0 {
 		m.applyPlanMu.Unlock()
 		return nil, invalidCode("err.balanceShort", "на балансе недостаточно средств")
 	}
-	w, _, err := m.planWriteForPeriods(*u, plan.ID, m.isPlanRenewalFor(*u, plan.ID), true, periods)
+	w, _, err := m.planWriteForPeriods(*u, plan.ID, m.isPlanRenewalFor(*u, plan.ID), true, periods, devices)
 	if err != nil {
 		m.applyPlanMu.Unlock()
 		return nil, err
@@ -266,6 +304,7 @@ func (m *Manager) BuyPlanFromBalance(ctx context.Context, userID, planID, expect
 		UserID: u.ID, PlanID: plan.ID, PriceKop: q.BalanceKop,
 		DiscountRub: q.DiscountRub, PromoID: q.PromoID,
 		Plan: w, BonusDays: bonus, Kind: model.TxPurchase, Periods: periods, Now: time.Now().Unix(),
+		Order: store.OrderDraft{Kind: model.OrderPlan, Devices: devices},
 	})
 	m.applyPlanMu.Unlock()
 	if errors.Is(err, store.ErrInsufficientBalance) {
@@ -289,7 +328,7 @@ func (m *Manager) BuyPlanFromBalance(ctx context.Context, userID, planID, expect
 	})
 	adminLang := m.botLang()
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paidBalance",
-		order.ID, escHTML(u.Name), escHTML(plan.Name), kopText(q.BalanceKop)))
+		order.ID, escHTML(u.Name), escHTML(orderSubject(adminLang, order)), kopText(q.BalanceKop)))
 	m.EmitWebhook(model.WebhookPaymentPaid, order)
 	return order, nil
 }
@@ -463,6 +502,15 @@ func validateWalletSettings(st *model.Settings) error {
 	if wb := st.Winback; wb.Enabled && (wb.AfterDays < 1 || wb.AfterDays > 365 ||
 		wb.Percent < 1 || wb.Percent > 90 || wb.ValidDays < 1 || wb.ValidDays > 90) {
 		return invalidCode("err.winbackRange", "возврат ушедших: через 1–365 дней, скидка 1–90%, код действует 1–90 дней")
+	}
+	if len(st.TrafficPacks) > 10 {
+		return invalidCode("err.packsTooMany", "не больше 10 пакетов трафика")
+	}
+	for _, p := range st.TrafficPacks {
+		if p.GB < 1 || p.GB > 100_000 || p.PriceRub < 1 || p.PriceRub > promoValueMaxRub {
+			return invalidCode("err.packRange", "пакет трафика: от 1 до 100000 ГБ, цена от 1 до {{max}} ₽",
+				map[string]any{"max": promoValueMaxRub})
+		}
 	}
 	if st.RefPercent < 1 || st.RefPercent > 100 {
 		st.RefPercent = 10
@@ -645,7 +693,7 @@ func (m *Manager) Renewal(set *model.Settings, u model.User) RenewalOutlook {
 	if err != nil {
 		return RenewalOutlook{}
 	}
-	return RenewalOutlook{PriceKop: int64(plan.PriceRub) * 100, BalanceKop: w.BalanceKop, At: u.ExpireAt, On: w.AutoRenew}
+	return RenewalOutlook{PriceKop: int64(periodRub(plan, heldDevices(u, plan))) * 100, BalanceKop: w.BalanceKop, At: u.ExpireAt, On: w.AutoRenew}
 }
 
 // renewalNotice is the line the "expiring soon" message ends with: the balance will
@@ -695,17 +743,19 @@ func (m *Manager) renewFromBalance(set *model.Settings, userID, now int64) {
 		m.applyPlanMu.Unlock()
 		return
 	}
-	w, _, err := m.planWriteFor(*u, plan.ID, true, true)
+	devices := heldDevices(*u, plan)
+	w, _, err := m.planWriteForPeriods(*u, plan.ID, true, true, 1, devices)
 	if err != nil {
 		m.applyPlanMu.Unlock()
 		return
 	}
 	bonus := m.withBankedDays(&w, u.ID)
 	groupsChanged := m.planGroupsChanged(w)
-	price := int64(plan.PriceRub) * 100
+	price := int64(periodRub(plan, devices)) * 100
 	orderID, err := m.store.BuyFromBalance(store.BalancePurchase{
 		UserID: u.ID, PlanID: plan.ID, PriceKop: price,
 		Plan: w, BonusDays: bonus, Kind: model.TxRenew, Now: now,
+		Order: store.OrderDraft{Kind: model.OrderPlan, Devices: devices},
 	})
 	m.applyPlanMu.Unlock()
 	if errors.Is(err, store.ErrInsufficientBalance) {
@@ -983,7 +1033,7 @@ func (m *Manager) redeemPromoDays(p model.PromoCode, u model.User, now int64, re
 		return invalidCode("err.promoUnavailable", "промокод больше не действует")
 	}
 	// Days go onto a running paid plan; after a trial or a free plan they start now.
-	w, name, err := m.planWriteForDays(u, planID, active != nil, false, p.Value)
+	w, name, err := m.planWriteForDays(u, planID, active != nil, false, p.Value, KeepDevices)
 	if errors.Is(err, sql.ErrNoRows) {
 		return invalidCode("err.promoUnavailable", "промокод больше не действует") // its plan was deleted
 	}

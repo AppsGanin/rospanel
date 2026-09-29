@@ -530,6 +530,11 @@ idempotent and the amount is checked against the order. **Manual payment** is a 
 own beside them: switched on in *Payments → Payment acceptance*, it shows your own details and
 an admin confirms the transfer.
 
+- **Flexible plans** — a plan may sell extra devices (a price per device per period, up to a
+  limit): chosen with the plan, kept and paid for at renewal, added mid-term for the days left.
+  Traffic packs on top of the quota last until it next resets. A user can switch plans while one
+  is active: to a dearer one — pay the difference for the days left, same end date; to a cheaper
+  one — free, the days left are recounted at its price.
 - **Balance** — top up in the bot and on the subscription page, pay for a plan in full or in
   part, **auto-renew** from the balance (can be turned off).
 - **Promo codes** — a % or ₽ discount, subscription days, a balance credit; usage limit, expiry,

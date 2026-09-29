@@ -15,7 +15,8 @@ const userCols = `id, name, uuid, password, sub_token, enabled,
 	reset_period, last_reset_at, last_seen, device_limit, speed_limit, tg_chat_id,
 	plan_id, trial_used, tg_link_code, tg_link_code_at, notified_status,
 	notified_expire_at, notified_quota_at, device_over_since, note, tags, wg_private_key,
-	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot`
+	abuse_action, abuse_until, abuse_prev_speed, abuse_warned_day, hold_seconds, awg_slot,
+	extra_devices, pack_data`
 
 // Lookups by a column whose index is partial. SQLite uses a partial index only when
 // the query's own WHERE implies the index's, and to the planner "sub_token = ?" does
@@ -914,7 +915,7 @@ func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) er
 
 func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) error {
 	_, err := ex.Exec(
-		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ?,
+		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ?, pack_data = 0,
 		   hold_seconds = CASE WHEN ? > 0 THEN 0 ELSE hold_seconds END
 		 WHERE id = ?`,
 		dataLimit, expireAt, deviceLimit, expireAt, id,
@@ -926,7 +927,7 @@ func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) 
 // not part of the write, so a quota saved by a caller that last read the user before
 // their first connection cannot write back the term that connection replaced.
 func (s *Store) SetUserQuota(id, dataLimit int64, deviceLimit int) error {
-	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, device_limit = ? WHERE id = ?`,
+	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, device_limit = ?, pack_data = 0 WHERE id = ?`,
 		dataLimit, deviceLimit, id)
 	return err
 }
@@ -939,7 +940,7 @@ func (s *Store) SetUserQuota(id, dataLimit int64, deviceLimit int) error {
 // can land between them.
 func (s *Store) SetUserLimitsIfTerm(id, dataLimit, expireAt, holdSeconds int64, deviceLimit int, seenExpireAt, seenHoldSeconds int64) (bool, error) {
 	res, err := s.db.Exec(`
-		UPDATE users SET data_limit = ?, expire_at = ?, hold_seconds = ?, device_limit = ?
+		UPDATE users SET data_limit = ?, expire_at = ?, hold_seconds = ?, device_limit = ?, pack_data = 0
 		WHERE id = ? AND expire_at = ? AND hold_seconds = ?`,
 		dataLimit, expireAt, holdSeconds, deviceLimit, id, seenExpireAt, seenHoldSeconds)
 	if err != nil {
@@ -1579,6 +1580,7 @@ func (s *Store) queryUsersOn(db *sql.DB, query string, args ...any) ([]model.Use
 			&u.PlanID, &trialUsed, &u.TgLinkCode, &u.TgLinkCodeAt, &u.NotifiedStatus,
 			&u.NotifiedExpireAt, &u.NotifiedQuotaAt, &u.DeviceOverSince, &u.Note, &tags, &u.WGPrivateKey,
 			&u.AbuseAction, &u.AbuseUntil, &u.AbusePrevSpeed, &u.AbuseWarnedDay, &u.HoldSeconds, &u.AWGSlot,
+			&u.ExtraDevices, &u.PackData,
 		); err != nil {
 			return nil, err
 		}

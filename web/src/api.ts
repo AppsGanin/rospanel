@@ -1970,6 +1970,16 @@ export interface TariffPlan {
   // Access groups the plan grants: whoever is put on the plan joins these groups and
   // leaves them when they move off it. Null/empty = the plan says nothing about access.
   group_ids: number[] | null
+  // Devices beyond device_limit a user may buy: this much each per period, up to
+  // device_max of them (0 = none sold).
+  device_price?: number
+  device_max?: number
+}
+
+// Traffic on sale on top of a plan's quota.
+export interface TrafficPack {
+  gb: number
+  price_rub: number
 }
 
 export interface PaymentOrder {
@@ -1987,7 +1997,9 @@ export interface PaymentOrder {
   paid_at: number
   // plan | topup. amount_rub is the money that came in; balance_kop the part of the
   // price the balance paid; discount_rub what promo_code took off.
-  kind?: 'plan' | 'topup'
+  kind?: 'plan' | 'topup' | 'change' | 'devices' | 'traffic'
+  devices?: number // extra devices a plan comes with, or how many a devices order adds
+  pack_bytes?: number // a traffic order's traffic
   balance_kop?: number
   discount_rub?: number
   promo_code?: string
@@ -2014,6 +2026,8 @@ export interface BillingInfo {
   ref_first: boolean
   periods: PeriodOffer[] // discounts for buying several periods at once
   winback: WinbackSettings
+  traffic_packs: TrafficPack[]
+  plan_change: boolean // users may switch plans while one is active
   plans: TariffPlan[]
   plan_users?: Record<string, number> // plan id → number of users on it
 }
@@ -2083,6 +2097,8 @@ export const saveBilling = (b: {
   ref_first: boolean
   periods: PeriodOffer[]
   winback: WinbackSettings
+  traffic_packs: TrafficPack[]
+  plan_change: boolean
 }) =>
   api<{ ok: boolean }>('api/billing', {
     method: 'POST',

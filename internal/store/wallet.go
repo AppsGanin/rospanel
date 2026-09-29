@@ -97,6 +97,11 @@ type OrderDraft struct {
 	PendingCap   int
 	PendingSince int64
 	Periods      int // of the plan's periods bought; 0 means 1
+	// What the order buys beyond a plan and its periods (see PaymentOrder).
+	Devices      int
+	ChangeFrom   int64
+	ExpectExpire int64
+	PackBytes    int64
 }
 
 // CreateOrder inserts a pending order.
@@ -114,12 +119,14 @@ func (s *Store) CreateOrder(d OrderDraft, now int64) (*model.PaymentOrder, error
 	var id int64
 	err := s.db.QueryRow(
 		`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at,
-		     kind, balance_kop, discount_rub, promo_id, periods)
-		 SELECT ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?
+		     kind, balance_kop, discount_rub, promo_id, periods,
+		     devices, change_from, expect_expire, pack_bytes)
+		 SELECT ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		 WHERE (SELECT count(*) FROM payment_orders
 		        WHERE user_id = ? AND kind = ? AND status = 'pending' AND created_at > ?) < ?
 		 RETURNING id`,
 		d.UserID, d.PlanID, d.AmountRub, now, d.Kind, d.BalanceKop, d.DiscountRub, d.PromoID, d.Periods,
+		d.Devices, d.ChangeFrom, d.ExpectExpire, d.PackBytes,
 		d.UserID, d.Kind, d.PendingSince, limit,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -141,8 +148,10 @@ type RefReward struct {
 
 // ConfirmSpec is everything a paid order delivers, committed with the claim.
 type ConfirmSpec struct {
-	// Plan is the plan the order buys; nil for a top-up.
-	Plan *UserPlanWrite
+	// Plan is the plan the order buys; nil for a top-up. Addon, instead of Plan, is
+	// devices or traffic added to the plan the user holds.
+	Plan  *UserPlanWrite
+	Addon *AddonWrite
 	// CreditKop is money that lands on the balance: a top-up, or the paid part of an
 	// order the balance helps pay for. DebitKop is then the full price taken back off
 	// the balance before the plan is granted.
@@ -199,9 +208,14 @@ func (s *Store) ConfirmOrder(orderID, paidAt int64, spec ConfirmSpec) (ConfirmRe
 				return err
 			}
 		}
-		if spec.Plan != nil {
-			ok := true
-			if spec.DebitKop > 0 {
+		if spec.Plan != nil || spec.Addon != nil {
+			// A change or an add-on priced for a term the user no longer has delivers
+			// nothing — the price was for that term — and nothing is debited for it.
+			ok, err := deliverableOn(tx, spec.Plan, spec.Addon)
+			if err != nil {
+				return err
+			}
+			if ok && spec.DebitKop > 0 {
 				if ok, err = debit(tx, userID, spec.DebitKop,
 					txEntry{Kind: model.TxPurchase, OrderID: orderID, PromoID: spec.PromoID, Now: spec.Now}); err != nil {
 					return err
@@ -209,7 +223,12 @@ func (s *Store) ConfirmOrder(orderID, paidAt int64, spec ConfirmSpec) (ConfirmRe
 			}
 			if ok {
 				// The money is in: a code used meanwhile still delivers what was paid for.
-				if _, err := deliverPlan(tx, userID, *spec.Plan, spec.BonusDays, spec.PromoID, orderID, spec.Now, false); err != nil {
+				if spec.Addon != nil {
+					err = applyAddonOn(tx, *spec.Addon)
+				} else {
+					_, err = deliverPlan(tx, userID, *spec.Plan, spec.BonusDays, spec.PromoID, orderID, spec.Now, false)
+				}
+				if err != nil {
 					return err
 				}
 				res.PlanApplied = true
@@ -250,6 +269,29 @@ func markPaidIfOpenOn(ex execer, id, paidAt int64) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// deliverableOn reports whether a plan write or an add-on still fits the user it was
+// priced for (always, when it names no term to hold to).
+func deliverableOn(tx *sql.Tx, w *UserPlanWrite, a *AddonWrite) (bool, error) {
+	var userID, plan, exp int64
+	switch {
+	case a != nil:
+		userID, plan, exp = a.UserID, a.PlanID, a.RequireExpire
+	case w != nil && w.RequirePlan != 0:
+		userID, plan, exp = w.UserID, w.RequirePlan, w.RequireExpire
+	default:
+		return true, nil
+	}
+	var curPlan, curExp int64
+	err := tx.QueryRow(`SELECT plan_id, expire_at FROM users WHERE id = ?`, userID).Scan(&curPlan, &curExp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return curPlan == plan && (exp == 0 || curExp == exp), nil
 }
 
 // deliverPlan writes a bought plan, spends the banked referral days it includes and
@@ -412,6 +454,10 @@ type BalancePurchase struct {
 	Kind        string // TxPurchase or TxRenew
 	Periods     int    // of the plan's periods bought; 0 means 1
 	Now         int64
+	// Addon, instead of Plan, adds to the plan the user holds. Order carries what the
+	// order row records beyond a plan purchase: its kind and the add-on's details.
+	Addon *AddonWrite
+	Order OrderDraft
 }
 
 // BuyFromBalance debits the balance, records the purchase as a paid order and grants
@@ -422,14 +468,29 @@ type BalancePurchase struct {
 func (s *Store) BuyFromBalance(p BalancePurchase) (int64, error) {
 	var orderID int64
 	err := s.withTx(func(tx *sql.Tx) error {
+		kind := p.Order.Kind
+		if kind == "" {
+			kind = model.OrderPlan
+		}
 		if err := tx.QueryRow(
 			`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at, paid_at,
-			     provider, kind, balance_kop, discount_rub, promo_id, periods)
-			 VALUES (?, ?, 0, 'paid', ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-			p.UserID, p.PlanID, p.Now, p.Now, model.BalanceProvider, model.OrderPlan,
+			     provider, kind, balance_kop, discount_rub, promo_id, periods,
+			     devices, change_from, expect_expire, pack_bytes)
+			 VALUES (?, ?, 0, 'paid', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			p.UserID, p.PlanID, p.Now, p.Now, model.BalanceProvider, kind,
 			p.PriceKop, p.DiscountRub, p.PromoID, max(p.Periods, 1),
+			p.Order.Devices, p.Order.ChangeFrom, p.Order.ExpectExpire, p.Order.PackBytes,
 		).Scan(&orderID); err != nil {
 			return err
+		}
+		plan := &p.Plan
+		if p.Addon != nil {
+			plan = nil
+		}
+		if ok, err := deliverableOn(tx, plan, p.Addon); err != nil {
+			return err
+		} else if !ok {
+			return ErrPlanStale
 		}
 		ok, err := debit(tx, p.UserID, p.PriceKop,
 			txEntry{Kind: p.Kind, OrderID: orderID, PromoID: p.PromoID, Now: p.Now})
@@ -438,6 +499,9 @@ func (s *Store) BuyFromBalance(p BalancePurchase) (int64, error) {
 		}
 		if !ok {
 			return ErrInsufficientBalance
+		}
+		if p.Addon != nil {
+			return applyAddonOn(tx, *p.Addon)
 		}
 		fresh, err := deliverPlan(tx, p.UserID, p.Plan, p.BonusDays, p.PromoID, orderID, p.Now, true)
 		if err != nil {

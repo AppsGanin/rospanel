@@ -120,7 +120,11 @@ const WIDE_MIN = 620;
 function orderWhat(o: PaymentOrder): string {
   let what = o.plan_name ?? "";
   if (o.kind === "topup") what = td("pay.topup");
+  else if (o.kind === "change") what = td("pay.changeTo", { plan: what });
+  else if (o.kind === "devices") what = td("pay.addDevices", { count: o.devices ?? 0 });
+  else if (o.kind === "traffic") what = td("pay.addTraffic", { gb: Math.round((o.pack_bytes ?? 0) / 2 ** 30) });
   else if ((o.periods ?? 1) > 1) what = `${what} × ${o.periods}`;
+  if (o.kind === "plan" && (o.devices ?? 0) > 0) what += ` + ${td("pay.addDevices", { count: o.devices ?? 0 })}`;
   const parts = [what];
   if (o.balance_kop && o.provider !== "balance")
     parts.push(td("pay.plusBalance", { sum: fmtKop(o.balance_kop) }));

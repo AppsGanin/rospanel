@@ -68,6 +68,8 @@ func (rt *Router) getBilling(w http.ResponseWriter, r *http.Request) {
 		"ref_first":     set.RefFirstOnly,
 		"periods":       periodOffersOrEmpty(set.BillingPeriods),
 		"winback":       set.Winback,
+		"traffic_packs": packsOrEmpty(set.TrafficPacks),
+		"plan_change":   set.PlanChange,
 		"plans":         plans,
 		"plan_users":    planUsers,
 	})
@@ -90,6 +92,10 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 		// Periods replaces the multi-period discounts; left out (null) keeps them.
 		Periods *[]model.PeriodOffer   `json:"periods"`
 		Winback *model.WinbackSettings `json:"winback"` // left out keeps it
+		// TrafficPacks replaces the packs on sale; PlanChange lets users switch plans.
+		// Left out keeps them.
+		TrafficPacks *[]model.TrafficPack `json:"traffic_packs"`
+		PlanChange   *bool                `json:"plan_change"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -130,6 +136,12 @@ func (rt *Router) saveBilling(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Winback != nil {
 		set.Winback = *req.Winback
+	}
+	if req.TrafficPacks != nil {
+		set.TrafficPacks = *req.TrafficPacks
+	}
+	if req.PlanChange != nil {
+		set.PlanChange = *req.PlanChange
 	}
 	if err := rt.mgr.SaveBillingSettings(set); err != nil {
 		writeManagerErr(w, err)
@@ -352,4 +364,11 @@ func (rt *Router) listPaymentCallbacks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func packsOrEmpty(p []model.TrafficPack) []model.TrafficPack {
+	if p == nil {
+		return []model.TrafficPack{}
+	}
+	return p
 }

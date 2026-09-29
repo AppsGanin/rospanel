@@ -104,6 +104,10 @@ type pageText struct {
 	Renew          string
 	CancelSub      string
 	ChangePlanNote string
+	ChangeTitle    string
+	ChangeBtn      string
+	AddTitle       string
+	AddBtn         string
 	ManualNote     string
 	ScanQR         string
 	CopyLink       string
@@ -177,6 +181,10 @@ func text(lang i18n.Lang) pageText {
 		Renew:          t("sub.renew"),
 		CancelSub:      t("sub.cancelSub"),
 		ChangePlanNote: t("sub.changePlanNote"),
+		ChangeTitle:    t("sub.changeTitle"),
+		ChangeBtn:      t("sub.changeBtn"),
+		AddTitle:       t("sub.addTitle"),
+		AddBtn:         t("sub.addBtn"),
 		ManualNote:     t("sub.manualNote"),
 		ScanQR:         t("sub.scanQR"),
 		CopyLink:       t("sub.copyLink"),
@@ -398,6 +406,11 @@ type Billing struct {
 
 	// History is what came into and went out of the user's money, newest first.
 	History []HistoryLine `json:"history"`
+
+	// Changes are the plans the user may move to now; Addons what they can add to the
+	// plan they hold.
+	Changes []Extra `json:"changes"`
+	Addons  []Extra `json:"addons"`
 }
 
 // HistoryLine is one line of the payment tab's history.
@@ -429,6 +442,26 @@ type BillingPlan struct {
 	// Options are the terms on offer — one period, and each multi-period discount —
 	// empty when there is only one.
 	Options []PlanOption `json:"options"`
+	// Devices are the device counts a new plan can be bought with (the first is the
+	// plan's own), empty when it sells no extra devices.
+	Devices []DeviceOption `json:"devices"`
+}
+
+// DeviceOption is one device count a plan can be bought with.
+type DeviceOption struct {
+	Extra int    `json:"extra"` // devices beyond the plan's own
+	Label string `json:"label"` // "3 devices (+100 ₽ per period)"
+}
+
+// Extra is a purchase on top of the plan held, or a move to another plan: its kind
+// (change, devices, traffic), the plan (a change) or the count or pack index, what it
+// is and costs, and whether the balance covers it (or it is free).
+type Extra struct {
+	Kind        string `json:"kind"`
+	PlanID      int64  `json:"plan_id"`
+	N           int    `json:"n"`
+	Label       string `json:"label"`
+	FromBalance bool   `json:"from_balance"`
 }
 
 // PlanOption is one term a plan can be bought for.

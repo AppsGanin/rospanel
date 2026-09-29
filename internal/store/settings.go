@@ -73,7 +73,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	var routingCfg, subRulesJSON, subDPIJSON string
 	var masterHideFull, masterHideOver, awgEn, hideOffline, subHappCrypt int
 	var awgParamsJSON, connPolicyJSON string
-	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn int
+	var walletEn, refFirstOnly, winbackEn, autoUpdateNodes, blacklistEn, planChange int
+	var trafficPacksJSON string
 	var billingPeriodsJSON string
 	err := s.rdb.QueryRow(`
 		SELECT id, host, sni, tls_mode, acme_email, cert_path, key_path,
@@ -125,7 +126,8 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       wallet_enabled, wallet_topup_min, ref_mode, ref_percent, ref_days, ref_first_only,
 		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days,
 		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last,
-		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error
+		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
+		       traffic_packs, plan_change
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -181,6 +183,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays,
 		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 		&blacklistEn, &st.BlacklistURL, &st.BlacklistSyncedAt, &st.BlacklistError,
+		&trafficPacksJSON, &planChange,
 	)
 	if err != nil {
 		return nil, err
@@ -211,6 +214,10 @@ func (s *Store) readSettings() (*model.Settings, error) {
 	st.Winback.Enabled = winbackEn != 0
 	st.AutoUpdateNodes = autoUpdateNodes != 0
 	st.BlacklistEnabled = blacklistEn != 0
+	st.PlanChange = planChange != 0
+	if trafficPacksJSON != "" {
+		_ = json.Unmarshal([]byte(trafficPacksJSON), &st.TrafficPacks)
+	}
 	st.AWGPrivateKey = decField(st.AWGPrivateKey)
 	if awgParamsJSON != "" {
 		_ = json.Unmarshal([]byte(awgParamsJSON), &st.AWGParams)

@@ -73,6 +73,13 @@ type Panel interface {
 	BuyPlanFromBalance(ctx context.Context, userID, planID, expectExpire int64, periods int) (*model.PaymentOrder, error)
 	QuotePlanFor(u model.User, plan *model.TariffPlan, periods int) core.PlanQuote
 	PeriodOffers(u model.User, plan *model.TariffPlan) []core.PlanQuote
+	// Purchases beyond a plain plan: extra devices, a plan change, add-ons.
+	QuotePurchase(u model.User, p core.Purchase) (core.PlanQuote, error)
+	StartPurchase(ctx context.Context, lang i18n.Lang, userID int64, p core.Purchase, provider, returnURL string) (*model.PaymentOrder, error)
+	RequestPurchaseManual(ctx context.Context, lang i18n.Lang, userID int64, p core.Purchase) (*model.PaymentOrder, string, error)
+	BuyFromBalance(ctx context.Context, userID int64, p core.Purchase, expectExpire int64) (*model.PaymentOrder, error)
+	ChangeOffers(u model.User) []core.ChangeOffer
+	Addons(u model.User) core.AddonOffers
 	StartTopup(ctx context.Context, lang i18n.Lang, userID int64, amountRub int, provider, returnURL string) (*model.PaymentOrder, error)
 	RequestTopupManual(ctx context.Context, lang i18n.Lang, userID int64, amountRub int) (*model.PaymentOrder, string, error)
 	Wallet(userID int64) (model.Wallet, error)
