@@ -554,6 +554,10 @@ const en: Dict = {
     unknownTimezone: "unknown time zone {{value}}",
     blacklistEmpty: "the list holds no Telegram IDs",
     blacklistURL: "list address: {{err}}",
+    orderAlreadyPaid: "the order is already paid",
+    orderAmountChanged: "the order amount changed — start the payment again",
+    orderNotFound: "order not found",
+    starsNeedBot: "Telegram Stars are taken by the user bot — turn it on",
     webhookNoPaymentID: "{{provider}}: the notification carries no payment id",
     xrayRejectedConfig: "Xray rejected the configuration: {{err}}",
     zerosslDomainsOnly: "ZeroSSL supports domains only (not IPs): {{value}} does not look like a domain",
@@ -2218,6 +2222,10 @@ const en: Dict = {
   },
 
   payField: {
+    starsRate: "Price of one star, ₽",
+    yoomoneySecret: "Notification secret",
+    yoomoneyWallet: "Wallet number",
+    yoomoneyWalletPay: "YooMoney wallet",
     allMethods: "All methods (chosen on the page)",
     apiKey: "API key",
     apiToken: "API token",
@@ -2240,6 +2248,8 @@ const en: Dict = {
   },
 
   payNote: {
+    stars: "Stars in the Telegram bot · ₽ price converted",
+    yoomoney: "Transfer to a wallet: card or YooMoney · ₽",
     cardsSbp: "Cards, SBP · ₽",
     cardsSbpCrypto: "Cards, SBP, crypto · ₽",
     cardsSbpSberpay: "Cards, SBP, SberPay · ₽",
@@ -2248,6 +2258,9 @@ const en: Dict = {
   },
 
   payHelp: {
+    starsRate: "How many roubles one star is worth; the invoice in stars = price ÷ rate, rounded up. The user bot issues the invoices.",
+    yoomoneySecret: "yoomoney.ru/transfer/myservices/http-notification: enter the notification address below there and switch them on.",
+    yoomoneyWallet: "15–16 digits, starts with 4100.",
     coinOptional: "Optional. Leave empty and the payer picks the coin.",
     displayName: "Shown to users in the bot and on the subscription page. Left empty, the provider's own name is used.",
     heleketUuid: "Heleket dashboard → Merchant → UUID.",
@@ -2340,6 +2353,8 @@ const en: Dict = {
     refundCancelPlanHint: "The days this order paid for come off the term; if none is left, the plan ends",
     refundedTo: "{{sum}} ₽ returned to the balance",
     provider: {
+      yoomoney: "YooMoney · card/wallet",
+      stars: "Telegram Stars",
       yookassa: "YooKassa · card",
       cryptobot: "CryptoBot · crypto",
       pal24: "PayPalych · card/SBP",

@@ -81,6 +81,9 @@ type Panel interface {
 	PromosOffered() bool
 	RefCode(userID int64) (string, error)
 	TrackReferral(chatID int64, code string)
+	// Telegram Stars: approving a payment before it is taken, and applying it after.
+	StarsPreCheckout(payload, currency string, total int64) error
+	ConfirmStarsPayment(payload, currency string, total int64, raw []byte) error
 	// TrackSource remembers the tag any other /start payload carried (t.me/bot?start=vk_ads).
 	TrackSource(chatID int64, tag string)
 	AttachReferrer(ctx context.Context, userID, chatID int64)

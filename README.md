@@ -521,7 +521,9 @@ carry its own **traffic refill cycle** (daily / weekly / monthly / yearly) for t
 a free plan refills every term. There's a trial period, a free fallback plan for expired
 users, renewals and user migration between plans. **Payment acceptance** — pick a provider:
 **YooKassa**, **PayPalych**, **RioPay**, **RollyPay**, **SeverPay**, **Platega**, **PayPear**,
-**AuraPay** (cards, SBP, ₽), **CryptoBot** and **Heleket** (crypto). The client pays in the
+**AuraPay** (cards, SBP, ₽), **YooMoney** (a transfer to a personal wallet — no company or
+contract), **CryptoBot** and **Heleket** (crypto), **Telegram Stars** (in the bot, the ₽ price
+converted at your rate). The client pays in the
 bot or on the subscription page, and the plan **activates itself**. A webhook confirms it
 (signature verified), polling covers the case where the webhook never arrives; processing is
 idempotent and the amount is checked against the order. **Manual payment** is a method of its

@@ -64,6 +64,26 @@ type Update struct {
 	// from a chat. It is how the support bot learns a group's id without anyone
 	// having to look one up by hand. Delivered only when asked for explicitly.
 	MyChatMember *ChatMemberUpdated `json:"my_chat_member"`
+	// PreCheckout asks the bot to approve a Telegram Stars payment before it is taken.
+	PreCheckout *PreCheckoutQuery `json:"pre_checkout_query"`
+}
+
+// PreCheckoutQuery is Telegram asking whether a payment for one of the bot's
+// invoices may go ahead. It must be answered within ten seconds.
+type PreCheckoutQuery struct {
+	ID             string `json:"id"`
+	From           *User  `json:"from"`
+	Currency       string `json:"currency"`
+	TotalAmount    int64  `json:"total_amount"`
+	InvoicePayload string `json:"invoice_payload"`
+}
+
+// SuccessfulPayment is the service message a completed payment leaves in the chat.
+type SuccessfulPayment struct {
+	Currency                string `json:"currency"`
+	TotalAmount             int64  `json:"total_amount"`
+	InvoicePayload          string `json:"invoice_payload"`
+	TelegramPaymentChargeID string `json:"telegram_payment_charge_id"`
 }
 
 // ChatMemberUpdated is a change to somebody's membership of a chat.
@@ -103,6 +123,8 @@ type Message struct {
 	Caption         string      `json:"caption"`
 	Photo           []PhotoSize `json:"photo"`
 	Document        *Document   `json:"document"`
+	// SuccessfulPayment is set on the service message a paid invoice leaves.
+	SuccessfulPayment *SuccessfulPayment `json:"successful_payment"`
 
 	// Forum service messages. Telegram emits one of these when an admin creates,
 	// renames, closes or reopens a topic; they carry a real sender and the topic's
@@ -408,6 +430,15 @@ func (c *Client) AnswerCallback(ctx context.Context, id, text string) error {
 		"callback_query_id": id,
 		"text":              text,
 	}, nil)
+}
+
+// AnswerPreCheckout approves a payment, or refuses it with a reason the payer sees.
+func (c *Client) AnswerPreCheckout(ctx context.Context, id string, ok bool, reason string) error {
+	body := map[string]any{"pre_checkout_query_id": id, "ok": ok}
+	if !ok {
+		body["error_message"] = reason
+	}
+	return c.call(ctx, "answerPreCheckoutQuery", body, nil)
 }
 
 // Forum / relay methods. These back the support bot: it opens one topic per user in

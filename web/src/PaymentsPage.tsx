@@ -57,6 +57,8 @@ const PROVIDER_META: Record<
   paypear: { label: "paypear", color: "brand" },
   aurapay: { label: "aurapay", color: "brand" },
   heleket: { label: "heleket", color: "teal" },
+  yoomoney: { label: "yoomoney", color: "brand" },
+  stars: { label: "stars", color: "teal" },
   balance: { label: "balance", color: "teal" },
   "": { label: "manual", color: "gray" },
 };
