@@ -1619,12 +1619,19 @@
       (function () {
         if (!TG) return;
         var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+        // Each on its own: a client that refuses one (before 6.9 the header takes only
+        // a theme key, not a colour) must not skip the rest.
+        var v = function (x) {
+          return TG.isVersionAtLeast && TG.isVersionAtLeast(x);
+        };
         try {
-          if (bg && TG.isVersionAtLeast && TG.isVersionAtLeast("6.1")) {
-            TG.setHeaderColor(bg);
-            TG.setBackgroundColor(bg);
-          }
-          if (bg && TG.isVersionAtLeast && TG.isVersionAtLeast("7.10") && TG.setBottomBarColor) TG.setBottomBarColor(bg);
+          if (bg && v("6.1")) TG.setHeaderColor(v("6.9") ? bg : "bg_color");
+        } catch (e) {}
+        try {
+          if (bg && v("6.1")) TG.setBackgroundColor(bg);
+        } catch (e) {}
+        try {
+          if (bg && v("7.10") && TG.setBottomBarColor) TG.setBottomBarColor(bg);
         } catch (e) {}
         if (!TG.BackButton || !(TG.isVersionAtLeast && TG.isVersionAtLeast("6.1"))) return;
         var openModal = function () {

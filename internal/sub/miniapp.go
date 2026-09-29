@@ -9,17 +9,22 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// MiniAppToken is the path segment of the Mini App entrance, where a subscription
-// token would be: /<sub path>/app. Tokens are long and random, never this.
-const MiniAppToken = "app"
+// The Mini App entrance sits where a subscription token would, at
+// /<sub path>/<settings.MiniAppPath> — a random segment per install, so it is no path
+// a scanner can know to ask for.
 
-// MiniAppURL is the Mini App's fixed address — for the bot's menu button and for
+// IsMiniAppPath reports whether a sub path segment is the Mini App's.
+func IsMiniAppPath(set *model.Settings, seg string) bool {
+	return set.MiniAppPath != "" && seg == set.MiniAppPath
+}
+
+// MiniAppURL is the Mini App's address — for the bot's menu button and for
 // @BotFather's "Configure Mini App" — or "" while the panel has no host.
 func MiniAppURL(set *model.Settings) string {
-	if strings.TrimSpace(set.Host) == "" {
+	if strings.TrimSpace(set.Host) == "" || set.MiniAppPath == "" {
 		return ""
 	}
-	return "https://" + set.Host + "/" + set.SubPathOr() + "/" + MiniAppToken
+	return "https://" + set.Host + "/" + set.SubPathOr() + "/" + set.MiniAppPath
 }
 
 var miniAppTpl = template.Must(template.New("miniapp").Parse(`<!doctype html>
@@ -86,14 +91,16 @@ var miniAppTpl = template.Must(template.New("miniapp").Parse(`<!doctype html>
 // MiniAppPage is the Mini App's first screen: it hands Telegram's initData to the
 // panel and moves on to the user's own page.
 func MiniAppPage(set *model.Settings, lang i18n.Lang) ([]byte, error) {
+	// The operator's own name only: the stock one would name the product to whoever
+	// finds the address.
 	name := branding.Name(set.PanelName)
 	if name == branding.DefaultName {
-		name = i18n.T(lang, "sub.defaultBrand")
+		name = "VPN"
 	}
 	theme := branding.ParseTheme(set.PanelTheme)
 	var b strings.Builder
 	err := miniAppTpl.Execute(&b, map[string]string{
-		"Lang": string(lang), "Brand": name, "Base": "/" + set.SubPathOr() + "/" + MiniAppToken,
+		"Lang": string(lang), "Brand": name, "Base": "/" + set.SubPathOr() + "/" + set.MiniAppPath,
 		"Bg": theme.Bg, "Ink": theme.Text, "Accent": theme.Accent, "OnAccent": branding.OnFill(theme.Accent),
 		"Opening": i18n.T(lang, "sub.miniOpening"), "OpenBot": i18n.T(lang, "sub.miniOpenBot"),
 		"NoTelegram": i18n.T(lang, "sub.miniNoTelegram"), "Failed": i18n.T(lang, "sub.miniFailed"),

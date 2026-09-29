@@ -106,6 +106,7 @@ type Manager struct {
 
 	// miniSignups bounds registrations through the Mini App entrance.
 	miniSignups miniAppSignups
+	miniRegMu   sync.Mutex
 
 	// fraudCache is the last computed fraud signals, from fraudAt.
 	fraudMu    sync.Mutex

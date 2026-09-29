@@ -1301,7 +1301,9 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 			return // not latched: retried next cycle
 		}
 	}
-	s.publishMenuButton(ctx, client)
+	if !s.publishMenuButton(ctx, client) {
+		return // retried next cycle
+	}
 	s.mu.Lock()
 	s.commandsFor = token
 	s.mu.Unlock()
@@ -1310,30 +1312,37 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 // publishMenuButton points the bot's menu button at the Mini App, so a user opens
 // their subscription from any chat screen without a link carrying their token. A
 // web_app button the operator set to somewhere else is left alone.
-func (s *UserService) publishMenuButton(ctx context.Context, client *Client) {
+//
+// Ours is the address this panel last set (settings.TGMenuURL), so a move to another
+// host or path updates it; any other web_app address is the operator's own.
+func (s *UserService) publishMenuButton(ctx context.Context, client *Client) bool {
 	set, err := s.store.GetSettings()
 	if err != nil {
-		return
+		return false
 	}
 	url := sub.MiniAppURL(set)
 	if url == "" {
-		return
+		return true
 	}
 	cur, err := client.GetChatMenuButton(ctx)
 	if err != nil {
 		log.Printf("telegram user: read the menu button: %v", err)
-		return
+		return false
 	}
-	if cur.Type == "web_app" && cur.WebApp != nil && cur.WebApp.URL != url &&
-		!strings.HasPrefix(cur.WebApp.URL, "https://"+set.Host+"/") {
-		return
-	}
-	if cur.Type == "web_app" && cur.WebApp != nil && cur.WebApp.URL == url {
-		return
+	if cur.Type == "web_app" && cur.WebApp != nil {
+		if cur.WebApp.URL == url {
+			return true
+		}
+		if cur.WebApp.URL != set.TGMenuURL {
+			return true // the operator's own
+		}
 	}
 	if err := client.SetChatMenuButton(ctx, i18n.T(i18n.Normalize(set.BotLang()), "user.menuApp"), url); err != nil {
 		log.Printf("telegram user: set the menu button: %v", err)
+		return false
 	}
+	_ = s.store.SetTelegramMenuURL(url)
+	return true
 }
 
 func (s *UserService) send(ctx context.Context, client *Client, chatID int64, html string) {

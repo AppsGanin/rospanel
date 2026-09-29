@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,5 +103,52 @@ func TestMiniAppEnter(t *testing.T) {
 	again, _ := m.MiniAppEnter(ctx, MiniAppUser{ID: 502, FirstName: "Cat"}, "")
 	if again.UserID != u.ID {
 		t.Fatalf("second entry = %+v", again)
+	}
+}
+
+// Opening the app many times at once makes one account.
+func TestMiniAppEnterConcurrent(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "mini2.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.ExecForTest(`UPDATE settings SET tg_user_reg_enabled = 1, tg_user_reg_mode = 'open'`); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{store: st}
+	var wg sync.WaitGroup
+	ids := make([]int64, 16)
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			res, _ := m.MiniAppEnter(context.Background(), MiniAppUser{ID: 900, FirstName: "Dan"}, "")
+			ids[i] = res.UserID
+		}(i)
+	}
+	wg.Wait()
+	users, _ := st.ListUsers()
+	if len(users) != 1 {
+		t.Fatalf("%d accounts from one Telegram user", len(users))
+	}
+	for _, id := range ids {
+		if id != users[0].ID {
+			t.Fatalf("an entry got account %d, want %d", id, users[0].ID)
+		}
+	}
+}
+
+// One chat retrying does not use up everyone's sign-ups.
+func TestMiniAppSignupsPerChat(t *testing.T) {
+	t.Parallel()
+	var l miniAppSignups
+	now := time.Now()
+	if !l.allow(1, now) || l.allow(1, now) {
+		t.Fatal("a chat got two slots in a minute")
+	}
+	if !l.allow(2, now) {
+		t.Fatal("another chat was refused")
 	}
 }

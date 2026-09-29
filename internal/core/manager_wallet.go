@@ -1171,11 +1171,15 @@ func perDay(lang i18n.Lang, rub, days int) string {
 	if days <= 0 || rub <= 0 {
 		return ""
 	}
-	tenths := (rub*10 + days/2) / days
+	// Rounded once: whole roubles from 9.5 up, tenths below, nothing below 0.05.
 	var n string
-	if tenths >= 100 {
-		n = strconv.Itoa((tenths + 5) / 10)
+	if rub*10 >= 95*days {
+		n = strconv.Itoa((2*rub + days) / (2 * days))
 	} else {
+		tenths := (rub*20 + days) / (2 * days)
+		if tenths == 0 {
+			return ""
+		}
 		n = fmt.Sprintf("%d%s%d", tenths/10, i18n.T(lang, "num.decimalSep"), tenths%10)
 	}
 	return i18n.T(lang, "sub.perDay", n)

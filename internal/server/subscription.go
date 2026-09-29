@@ -46,7 +46,7 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		leaf = parts[1]
 	}
 
-	if token == sub.MiniAppToken {
+	if set, err := rt.mgr.Store().GetSettings(); err == nil && sub.IsMiniAppPath(set, token) {
 		handleMiniApp(rt, w, r, leaf)
 		return
 	}
@@ -1456,13 +1456,15 @@ func handleMiniApp(rt *Router, w http.ResponseWriter, r *http.Request, leaf stri
 		var req struct {
 			InitData string `json:"init_data"`
 		}
+		// Anything that is not Telegram's signed data gets the decoy: this answer must
+		// not tell a prober what lives here.
 		if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": i18n.T(lang, "sub.miniFailed")})
+			rt.currentDecoy().ServeHTTP(w, r)
 			return
 		}
 		tu, start, err := core.VerifyInitData(req.InitData, strings.TrimSpace(set.TGUserBotToken), time.Now())
 		if err != nil {
-			writeJSON(w, http.StatusForbidden, map[string]string{"message": i18n.T(lang, "sub.miniNoTelegram")})
+			rt.currentDecoy().ServeHTTP(w, r)
 			return
 		}
 		if tu.Lang != "" {

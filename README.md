@@ -391,7 +391,7 @@ be **added to the home screen** and opens like an app. Inside Telegram it looks 
 the header colour, the system Back button, haptic feedback. Terms show the price per day and the
 saving.
 
-A **Mini App** at the fixed address `/<path>/app` — no token in the link: Telegram signs the
+A **Mini App** at a fixed address (random per install, shown in *Settings → Telegram*) — no token in the link: Telegram signs the
 user's data, the panel finds their account and opens their page. The bot's menu button leads
 here. With the address set in @BotFather (*Configure Mini App*), `t.me/<bot>?startapp=ref_…` and
 `?startapp=<tag>` links carry an invitation and a source tag; a new user is registered on the

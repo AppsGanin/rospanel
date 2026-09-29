@@ -278,6 +278,10 @@ func runServer(dataDir string) {
 	runBG("access flush", accessFlushLoop(mgr))
 	// Payment polling fallback: reconciles pending provider orders in case a webhook
 	// was missed. Idles cheaply when there are no pending orders.
+	// The Mini App's random address segment, made once per install.
+	if err := mgr.EnsureMiniAppPath(); err != nil {
+		log.Printf("mini app: %v", err)
+	}
 	runBG("payment poll", paymentPollLoop(mgr))
 	runBG("external subscriptions", mgr.RunExtSubLoop) // re-read hourly
 	runBG("blacklist", mgr.RunBlacklistLoop)           // shared Telegram blacklist, while enabled

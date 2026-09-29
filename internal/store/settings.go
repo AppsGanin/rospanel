@@ -127,7 +127,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		       billing_periods, winback_enabled, winback_after_days, winback_percent, winback_valid_days,
 		       auto_update_cron, auto_update_nodes, auto_update_last_at, auto_update_last,
 		       blacklist_enabled, blacklist_url, blacklist_synced_at, blacklist_error,
-		       traffic_packs, plan_change
+		       traffic_packs, plan_change, miniapp_path, tg_menu_url
 		FROM settings WHERE id = 1`,
 	).Scan(
 		&st.ID, &st.Host, &st.SNI, &st.TLSMode, &st.ACMEEmail, &st.CertPath, &st.KeyPath,
@@ -183,7 +183,7 @@ func (s *Store) readSettings() (*model.Settings, error) {
 		&billingPeriodsJSON, &winbackEn, &st.Winback.AfterDays, &st.Winback.Percent, &st.Winback.ValidDays,
 		&st.AutoUpdateCron, &autoUpdateNodes, &st.AutoUpdateLastAt, &st.AutoUpdateLast,
 		&blacklistEn, &st.BlacklistURL, &st.BlacklistSyncedAt, &st.BlacklistError,
-		&trafficPacksJSON, &planChange,
+		&trafficPacksJSON, &planChange, &st.MiniAppPath, &st.TGMenuURL,
 	)
 	if err != nil {
 		return nil, err
@@ -806,5 +806,17 @@ func (s *Store) SetAutoUpdate(cron string, nodes bool) error {
 // SetAutoUpdateResult records the last auto-update attempt: when, and what it did.
 func (s *Store) SetAutoUpdateResult(at int64, result string) error {
 	_, err := s.db.Exec(`UPDATE settings SET auto_update_last_at = ?, auto_update_last = ? WHERE id = 1`, at, result)
+	return err
+}
+
+// SetTelegramMenuURL records the address the user bot's menu button was pointed at.
+func (s *Store) SetTelegramMenuURL(url string) error {
+	_, err := s.db.Exec(`UPDATE settings SET tg_menu_url = ? WHERE id = 1`, url)
+	return err
+}
+
+// EnsureMiniAppPath gives the install its random Mini App segment if it has none.
+func (s *Store) EnsureMiniAppPath(gen func() string) error {
+	_, err := s.db.Exec(`UPDATE settings SET miniapp_path = ? WHERE id = 1 AND miniapp_path = ''`, gen())
 	return err
 }
