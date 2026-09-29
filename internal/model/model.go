@@ -1053,6 +1053,10 @@ type Settings struct {
 	// quota; PlanChange lets users switch plans while one is active.
 	TrafficPacks []TrafficPack `json:"-"`
 	PlanChange   bool          `json:"-"`
+	// MiniAppPath is the Mini App's random address segment; TGMenuURL the address the
+	// user bot's menu button was last set to.
+	MiniAppPath string `json:"-"`
+	TGMenuURL   string `json:"-"`
 
 	// AutoUpdateCron is when the panel checks for a newer release and installs it (in
 	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.

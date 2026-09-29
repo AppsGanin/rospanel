@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -91,16 +93,30 @@ type MiniAppResult struct {
 // miniAppSignups bounds registrations through the Mini App: its initData is only
 // signed by Telegram, not rate-limited by it.
 type miniAppSignups struct {
-	mu sync.Mutex
-	at []time.Time
+	mu   sync.Mutex
+	at   []time.Time
+	chat map[int64]time.Time
 }
 
 const miniAppSignupsPerMinute = 20
 
-func (l *miniAppSignups) allow(now time.Time) bool {
+// allow spends a slot: one per chat a minute, and miniAppSignupsPerMinute in all —
+// so one chat retrying cannot use up everyone's.
+func (l *miniAppSignups) allow(chat int64, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	cut := now.Add(-time.Minute)
+	if l.chat == nil {
+		l.chat = map[int64]time.Time{}
+	}
+	for c, t := range l.chat {
+		if !t.After(cut) {
+			delete(l.chat, c)
+		}
+	}
+	if _, busy := l.chat[chat]; busy {
+		return false
+	}
 	kept := l.at[:0]
 	for _, t := range l.at {
 		if t.After(cut) {
@@ -112,6 +128,7 @@ func (l *miniAppSignups) allow(now time.Time) bool {
 		return false
 	}
 	l.at = append(l.at, now)
+	l.chat[chat] = now
 	return true
 }
 
@@ -123,11 +140,25 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 		return MiniAppResult{}, err
 	}
 	chat := tu.ID // a private chat's id is the user's
-	if u, err := m.store.GetUserByTelegramChatID(chat); err == nil {
+	u, err := m.store.GetUserByTelegramChatID(chat)
+	if err == nil {
 		return MiniAppResult{UserID: u.ID}, nil
 	}
+	// Only a real "no such account" may lead to registering one: a failed read taken
+	// for it would mint a trial and move the chat off the account it belongs to.
+	if !errors.Is(err, sql.ErrNoRows) {
+		return MiniAppResult{}, err
+	}
+	// One registration at a time, checked again inside: two opens of the app at once
+	// must not make two accounts.
+	m.miniRegMu.Lock()
+	defer m.miniRegMu.Unlock()
+	if u, err := m.store.GetUserByTelegramChatID(chat); err == nil {
+		return MiniAppResult{UserID: u.ID}, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return MiniAppResult{}, err
+	}
 	now := time.Now()
-	_ = m.store.UpsertSubscriber(chat, 0, tu.Username, tu.FirstName, tu.Lang, now.Unix())
 	if p := strings.TrimSpace(startParam); p != "" {
 		if code, ok := strings.CutPrefix(p, "ref_"); ok {
 			if code != "" {
@@ -138,7 +169,11 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 		}
 	}
 	// Unlinked before: the same account back, not a fresh trial.
-	if u, err := m.store.GetDetachedUserByPrevChat(chat); err == nil && u != nil {
+	u, err = m.store.GetDetachedUserByPrevChat(chat)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return MiniAppResult{}, err
+	}
+	if err == nil && u != nil {
 		if err := m.store.SetUserTelegramChat(u.ID, chat); err != nil {
 			return MiniAppResult{}, err
 		}
@@ -153,9 +188,12 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 	case set.RegMode() == model.RegInvite:
 		// The invite code is asked for in the bot.
 		return MiniAppResult{Reason: "sub.miniRegClosed"}, nil
-	case !m.miniSignups.allow(now):
+	case set.RegMode() == model.RegModeration && m.RegistrationPending(chat):
+		return MiniAppResult{Reason: "sub.miniRequested"}, nil
+	case !m.miniSignups.allow(chat, now):
 		return MiniAppResult{Reason: "sub.miniBusy"}, nil
 	}
+	_ = m.store.UpsertSubscriber(chat, 0, tu.Username, tu.FirstName, tu.Lang, now.Unix())
 	name := strings.TrimSpace(tu.FirstName)
 	if name == "" {
 		name = strconv.FormatInt(tu.ID, 10)
@@ -166,7 +204,7 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 		}
 		return MiniAppResult{Reason: "sub.miniRequested"}, nil
 	}
-	u, err := m.CreateRegisteredUser(ctx, name)
+	u, err = m.CreateRegisteredUser(ctx, name)
 	if err != nil {
 		return MiniAppResult{}, err
 	}
@@ -176,4 +214,13 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 	m.AuditTelegramLinked(ctx, u.ID, tu.Username)
 	m.AttachReferrer(ctx, u.ID, chat)
 	return MiniAppResult{UserID: u.ID}, nil
+}
+
+// EnsureMiniAppPath gives the install its random Mini App address segment, once.
+func (m *Manager) EnsureMiniAppPath() error {
+	return m.store.EnsureMiniAppPath(func() string {
+		b := make([]byte, 12)
+		_, _ = rand.Read(b)
+		return hex.EncodeToString(b)
+	})
 }
