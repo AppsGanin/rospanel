@@ -186,6 +186,7 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 				"period_days": float64(31), "data_limit": float64(1 << 30),
 				"device_limit": float64(5), "speed_limit": float64(2048), "reset_period": "monthly",
 				"sort_order": float64(3), "enabled": true, "group_ids": []any{},
+				"device_price": float64(50), "device_max": float64(3),
 			},
 			// id picks create from update; a create is told to leave it out.
 			derived: []string{"id"},
@@ -201,7 +202,8 @@ func TestMCPFleetWritesReachTheStore(t *testing.T) {
 					"device_limit": float64(p.DeviceLimit), "speed_limit": float64(p.SpeedLimit),
 					"reset_period": p.ResetPeriod,
 					"sort_order":   float64(p.SortOrder), "enabled": p.Enabled,
-					"group_ids": len(p.GroupIDs) == 0,
+					"group_ids":    len(p.GroupIDs) == 0,
+					"device_price": float64(p.DevicePrice), "device_max": float64(p.DeviceMax),
 				}
 			},
 		},

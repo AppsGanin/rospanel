@@ -75,6 +75,13 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 	if p.DataLimit < 0 || p.DeviceLimit < 0 || p.SpeedLimit < 0 {
 		return invalidCode("err.planLimitsNegative", "лимиты тарифа не могут быть отрицательными")
 	}
+	if p.DevicePrice < 0 || p.DevicePrice > promoValueMaxRub || p.DeviceMax < 0 || p.DeviceMax > model.MaxDeviceLimit {
+		return invalidCode("err.planDevicesRange", "доп. устройства: цена от 0 до {{price}} ₽, не больше {{max}} штук",
+			map[string]any{"price": promoValueMaxRub, "max": model.MaxDeviceLimit})
+	}
+	if p.DeviceMax > 0 && p.DevicePrice > 0 && (p.DeviceLimit == 0 || p.PeriodDays == 0 || p.PriceRub == 0) {
+		return invalidCode("err.planDevicesNeedLimit", "доп. устройства продаются только у платного тарифа со сроком и лимитом устройств")
+	}
 	if p.DeviceLimit > model.MaxDeviceLimit {
 		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
 			map[string]any{"max": model.MaxDeviceLimit})
@@ -671,22 +678,24 @@ func (m *Manager) applyPlan(ctx context.Context, userID int64, planID int64, ext
 // what entitles them to a fresh quota on a plan they already hold — see the ResetUsage
 // decision below.
 func (m *Manager) planWriteFor(u model.User, planID int64, extendFromCurrent, paidPeriod bool) (store.UserPlanWrite, string, error) {
-	return m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, -1)
+	return m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, -1, KeepDevices)
 }
 
 // planWriteForPeriods is planWriteFor for several of the plan's periods bought at
 // once: the term is that many periods, and a quota the plan does not refill on its
 // own cycle refills every period — otherwise a 100 GB plan bought for three months
 // would have to last all three.
-func (m *Manager) planWriteForPeriods(u model.User, planID int64, extendFromCurrent, paidPeriod bool, periods int) (store.UserPlanWrite, string, error) {
+//
+// devices is the extra devices the plan comes with (KeepDevices = the ones held).
+func (m *Manager) planWriteForPeriods(u model.User, planID int64, extendFromCurrent, paidPeriod bool, periods, devices int) (store.UserPlanWrite, string, error) {
 	if periods <= 1 {
-		return m.planWriteFor(u, planID, extendFromCurrent, paidPeriod)
+		return m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, -1, devices)
 	}
 	plan, err := m.store.GetTariffPlan(planID)
 	if err != nil {
 		return store.UserPlanWrite{}, "", err
 	}
-	w, name, err := m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, plan.PeriodDays*periods)
+	w, name, err := m.planWriteForDays(u, planID, extendFromCurrent, paidPeriod, plan.PeriodDays*periods, devices)
 	if err == nil && plan.DataLimit > 0 && plan.ResetPeriod == "" && plan.PeriodDays > 0 {
 		w.ResetPeriod = fmt.Sprintf("days:%d", plan.PeriodDays)
 	}
@@ -696,7 +705,7 @@ func (m *Manager) planWriteForPeriods(u model.User, planID int64, extendFromCurr
 // planWriteForDays is planWriteFor with the term given in days instead of the plan's
 // own period (days < 0 = the plan's period) — a promo code that grants a plan for a
 // week of its own choosing.
-func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent, paidPeriod bool, days int) (store.UserPlanWrite, string, error) {
+func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent, paidPeriod bool, days, devices int) (store.UserPlanWrite, string, error) {
 	now := time.Now().Unix()
 	if planID == 0 {
 		return store.UserPlanWrite{
@@ -732,6 +741,16 @@ func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent
 	}
 	w := planLimits(u.ID, plan, expire, freePlan, now)
 	w.TrialUsed = u.TrialUsed
+	// Extra devices ride on the plan's own cap (an unlimited plan has nothing to add
+	// to): the ones asked for, or the ones held when it stays the same plan.
+	if devices == KeepDevices {
+		devices = heldDevices(u, plan)
+	}
+	if !plan.SellsDevices() {
+		devices = 0
+	}
+	w.ExtraDevices = min(max(devices, 0), plan.DeviceMax)
+	w.DeviceLimit += w.ExtraDevices
 	// A different plan means a different quota, so the counter starts over. Without
 	// this the expiry path is a trap: EnforceBilling hands the user the free plan with
 	// a fresh 30-day cycle, the 20 GB they spent on the paid one stays on the counter,
@@ -756,6 +775,12 @@ func (m *Manager) planWriteForDays(u model.User, planID int64, extendFromCurrent
 	if u.PlanID != plan.ID || (paidPeriod && !freePlan && plan.DataLimit > 0) {
 		w.ResetUsage = true
 		w.LastUp, w.LastDown = m.liveCounter(u.ID)
+	}
+	// Bought traffic lasts until the quota starts over: kept when the counter runs on
+	// (the operator re-assigning the plan, a days code), gone with a fresh one.
+	if !w.ResetUsage && u.PlanID == plan.ID && u.PackData > 0 && w.DataLimit > 0 {
+		w.DataLimit += u.PackData
+		w.PackData = u.PackData
 	}
 	// A term bought as several periods refills the quota every period (see
 	// planWriteForPeriods). A later write on the same plan — one more period, a days
@@ -831,6 +856,19 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (sto
 	if err != nil {
 		return store.ConfirmResult{}, err
 	}
+	// A change or an add-on holds itself to the term it was priced for; the store
+	// checks that inside the claim.
+	if isAddonKind(order.Kind) {
+		if err := m.addonOrderSpec(*u, order, &spec); err != nil {
+			return store.ConfirmResult{}, err
+		}
+		groupsChanged := spec.Plan != nil && m.planGroupsChanged(*spec.Plan)
+		res, err := m.store.ConfirmOrder(order.ID, paidAt, spec)
+		if err == nil && res.Claimed && res.PlanApplied {
+			m.afterPlanWrite(groupsChanged)
+		}
+		return res, err
+	}
 	// The user bought a different plan while this order waited (from the balance, say):
 	// granting this one now would overwrite what they already paid for. With a wallet
 	// the money goes to the balance instead; without one the order applies as before.
@@ -850,7 +888,7 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (sto
 	}
 	// Extend from the current expiry only for a renewal of the active paid plan;
 	// buying from trial/free/expired starts from now (no inherited time).
-	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods)
+	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods, order.Devices)
 	if err != nil {
 		return store.ConfirmResult{}, err
 	}
@@ -1048,35 +1086,7 @@ func (m *Manager) downgradeExpired(ctx context.Context, userID, freeID, now int6
 // orders (and admin pings), it reuses the user's latest still-pending manual order
 // for the same purchase instead of creating another.
 func (m *Manager) RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, periods int) (*model.PaymentOrder, string, error) {
-	if !m.ManualPayment() {
-		return nil, "", invalidCode("err.payMethodUnavailable", "способ оплаты недоступен")
-	}
-	plan, err := m.store.GetTariffPlan(planID)
-	if err != nil {
-		return nil, "", invalidCode("err.planNotFound", "тариф не найден")
-	}
-	u, err := m.store.GetUser(userID)
-	if err != nil {
-		return nil, "", err
-	}
-	// Same rules as the automatic path: block switching (and buying a disabled plan)
-	// while a paid one is active — but let an existing subscriber renew the plan
-	// they're already on, even if it's since been disabled (grandfathering).
-	if err := m.checkPlanPurchase(*u, plan); err != nil {
-		return nil, "", err
-	}
-	if err := m.checkPeriods(plan, periods); err != nil {
-		return nil, "", err
-	}
-	q := m.QuotePlanFor(*u, plan, periods)
-	if q.MoneyRub == 0 {
-		return nil, "", invalidCode("err.payFromBalance", "баланса хватает — оплатите тариф с баланса")
-	}
-	set, _ := m.Settings()
-	return m.manualOrder(ctx, lang, store.OrderDraft{
-		UserID: userID, PlanID: planID, Kind: model.OrderPlan, AmountRub: q.MoneyRub,
-		BalanceKop: q.BalanceKop, DiscountRub: q.DiscountRub, PromoID: q.PromoID, Periods: q.Periods,
-	}, planSubject(lang, plan.Name, q.Periods), set)
+	return m.RequestPurchaseManual(ctx, lang, userID, PlanPurchase(planID, periods))
 }
 
 // manualOrder opens (or reuses) a pending manual order and returns the instructions
@@ -1085,7 +1095,7 @@ func (m *Manager) manualOrder(ctx context.Context, lang i18n.Lang, d store.Order
 	if existing, err := m.store.LatestPendingManualOrder(d.UserID, d.PlanID); err == nil && existing != nil &&
 		existing.Kind == d.Kind && existing.AmountRub == d.AmountRub &&
 		existing.BalanceKop == d.BalanceKop && existing.PromoID == d.PromoID &&
-		max(existing.Periods, 1) == max(d.Periods, 1) {
+		max(existing.Periods, 1) == max(d.Periods, 1) && sameExtras(existing, d) {
 		return existing, manualOrderMessage(lang, existing, subject, set), nil // reuse, no new order/notification
 	}
 	order, err := m.store.CreateOrder(d, time.Now().Unix())

@@ -152,6 +152,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 		"get_users_by_id_wallet":        user.ID,
 		"get_users_by_id_referrals":     user.ID,
 		"get_users_by_id_quotes":        user.ID,
+		"get_users_by_id_extras":        user.ID,
 		"get_users_by_id_subscription":  user.ID,
 		"get_billing_promos_by_id_uses": usedPromo.ID,
 		"get_users_by_id_connections":   user.ID,

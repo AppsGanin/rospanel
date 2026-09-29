@@ -15,11 +15,21 @@ func (s *Settings) RefEnabled() bool {
 }
 
 // Payment order kinds. A plan order buys a tariff; a top-up puts its amount on the
-// balance and has no plan.
+// balance and has no plan. A change moves an active plan to another for the rest of
+// its term; devices and traffic add to the plan the user holds.
 const (
-	OrderPlan  = "plan"
-	OrderTopup = "topup"
+	OrderPlan    = "plan"
+	OrderTopup   = "topup"
+	OrderChange  = "change"
+	OrderDevices = "devices"
+	OrderTraffic = "traffic"
 )
+
+// TrafficPack is extra traffic on sale on top of a plan's quota.
+type TrafficPack struct {
+	GB       int `json:"gb"`
+	PriceRub int `json:"price_rub"`
+}
 
 // BalanceProvider is the provider of an order paid entirely from the balance: no
 // money arrived, so its amount_rub is 0 and it never counts as revenue.

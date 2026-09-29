@@ -98,9 +98,15 @@ type (
 		// billing settings offer a discount for.
 		Periods int `json:"periods,omitempty"`
 		// Kind "topup" opens a balance top-up of AmountRub instead of a plan order
-		// (plan_id is then left out); "" or "plan" buys the plan.
-		Kind      string `json:"kind,omitempty"`
-		AmountRub int    `json:"amount_rub,omitempty"`
+		// (plan_id is then left out); "" or "plan" buys the plan. "change" moves the
+		// user's active plan to plan_id for the rest of its term; "devices" adds
+		// devices to the plan held; "traffic" adds traffic pack number pack.
+		Kind string `json:"kind,omitempty"`
+		// Devices: for a plan or a change, the extra devices it comes with (left out =
+		// the ones held); for "devices", how many to add.
+		Devices   *int `json:"devices,omitempty"`
+		Pack      int  `json:"pack,omitempty"`
+		AmountRub int  `json:"amount_rub,omitempty"`
 		// ExpectExpireAt, with from_balance, is the expiry the caller showed the user
 		// (expire_at from the user or their subscription view): a retried request finds
 		// it moved by the first and buys nothing. Left out, every request buys.
@@ -229,6 +235,7 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/autorenew", rt.apiSetAutoRenew)
 	id("POST /v1/users/{id}/promo", rt.apiRedeemPromo)
 	id("GET /v1/users/{id}/quotes", rt.apiUserQuotes)
+	id("GET /v1/users/{id}/extras", rt.apiUserExtras)
 	id("POST /v1/users/{id}/telegram", rt.apiLinkTelegram)
 	id("GET /v1/users/{id}/subscription", rt.apiUserSubscription)
 	id("POST /v1/users/{id}/referrer", rt.apiSetReferrer)
@@ -1189,8 +1196,19 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 	if req.Lang != "" {
 		lang = i18n.Normalize(req.Lang)
 	}
+	p := core.Purchase{Kind: req.Kind, PlanID: req.PlanID, Periods: max(req.Periods, 1), Devices: core.KeepDevices, Pack: req.Pack}
+	if req.Devices != nil {
+		p.Devices = max(*req.Devices, 0)
+	}
 	switch req.Kind {
 	case "", model.OrderPlan:
+		p.Kind = model.OrderPlan
+	case model.OrderChange, model.OrderTraffic:
+	case model.OrderDevices:
+		if req.Devices == nil {
+			writeAPIErr(w, http.StatusBadRequest, "bad_request", "devices: how many to add")
+			return
+		}
 	case model.OrderTopup:
 		if req.PlanID != 0 || req.FromBalance || req.Periods != 0 {
 			writeAPIErr(w, http.StatusBadRequest, "bad_request", "a top-up takes amount_rub, not plan_id, from_balance or periods")
@@ -1199,7 +1217,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		rt.apiCreateTopup(w, r, req, lang)
 		return
 	default:
-		writeAPIRejected(w, "err.orderKind", "kind: plan or topup", nil)
+		writeAPIRejected(w, "err.orderKind", "kind: plan, topup, change, devices or traffic", nil)
 		return
 	}
 	if req.FromBalance {
@@ -1207,7 +1225,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		if req.ExpectExpireAt != nil {
 			expect = *req.ExpectExpireAt
 		}
-		order, err := rt.mgr.BuyPlanFromBalance(r.Context(), req.UserID, req.PlanID, expect, max(req.Periods, 1))
+		order, err := rt.mgr.BuyFromBalance(r.Context(), req.UserID, p, expect)
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -1216,7 +1234,7 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Provider == "" || req.Provider == sub.ManualPayKey {
-		order, msg, err := rt.mgr.RequestPlanPayment(r.Context(), lang, req.UserID, req.PlanID, max(req.Periods, 1))
+		order, msg, err := rt.mgr.RequestPurchaseManual(r.Context(), lang, req.UserID, p)
 		if err != nil {
 			writeAPIManagerErr(w, err)
 			return
@@ -1224,7 +1242,11 @@ func (rt *Router) apiCreateOrder(w http.ResponseWriter, r *http.Request) {
 		writeAPIData(w, http.StatusCreated, map[string]any{"order": order, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPaymentReturn(r.Context(), lang, req.UserID, req.PlanID, req.Provider, req.ReturnURL, max(req.Periods, 1))
+	returnURL := req.ReturnURL
+	if returnURL == "" {
+		returnURL = "https://t.me/"
+	}
+	order, err := rt.mgr.StartPurchase(r.Context(), lang, req.UserID, p, req.Provider, returnURL)
 	if err != nil {
 		writeAPIManagerErr(w, err)
 		return

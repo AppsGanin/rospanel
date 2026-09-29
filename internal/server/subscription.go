@@ -379,38 +379,60 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 		ExpireAt int64 `json:"expire_at"`
 		// Periods: how many of the plan's periods to buy (0 = one).
 		Periods int `json:"periods"`
+		// Kind: "" or plan, change, devices, traffic. Devices: the extra devices a plan
+		// comes with (absent = the ones held), or how many to add. Pack: the traffic pack.
+		Kind    string `json:"kind"`
+		Devices *int   `json:"devices"`
+		Pack    int    `json:"pack"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	req.Periods = max(req.Periods, 1)
-	if req.Balance {
-		// A negative expiry would be the API's "no check" — never the page's to send.
-		if req.ExpireAt < 0 {
-			req.ExpireAt = -2
+	p := core.Purchase{Kind: req.Kind, PlanID: req.PlanID, Periods: req.Periods, Devices: core.KeepDevices, Pack: req.Pack}
+	switch req.Kind {
+	case "", model.OrderPlan:
+		p.Kind = model.OrderPlan
+		if req.Devices != nil {
+			p.Devices = max(*req.Devices, 0)
 		}
-		if _, err := rt.mgr.BuyPlanFromBalance(subActorCtx(r, u), u.ID, req.PlanID, req.ExpireAt, req.Periods); err != nil {
+	case model.OrderChange:
+	case model.OrderDevices:
+		if req.Devices == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(lang, "sub.payFailed")})
+			return
+		}
+		p.Devices = *req.Devices
+	case model.OrderTraffic:
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(lang, "sub.payFailed")})
+		return
+	}
+	// A negative expiry would be the API's "no check" — never the page's to send.
+	if req.ExpireAt < 0 {
+		req.ExpireAt = -2
+	}
+	// What the balance covers is bought from it, whichever button asked: the page
+	// cannot know the price of every combination of term and devices.
+	if !req.Balance {
+		if q, err := rt.mgr.QuotePurchase(u, p); err == nil && q.MoneyRub == 0 {
+			req.Balance = true
+		}
+	}
+	if req.Balance {
+		if _, err := rt.mgr.BuyFromBalance(subActorCtx(r, u), u.ID, p, req.ExpireAt); err != nil {
 			writeSubErr(w, err, lang)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"done": true})
 		return
 	}
-	// Same "no switching while active" rule as the manager guard, applied here so it
-	// also covers the manual branch below (and a hand-crafted request).
-	if req.PlanID != u.PlanID {
-		if active := rt.mgr.ActivePaidPlan(u); active != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": i18n.T(lang, "sub.alreadySubscribed", active.Name)})
-			return
-		}
-	}
 	// Manual payment — asked for by name, or the only method the operator offers ⇒
 	// create a pending order and return the instructions for the page to show (an
 	// admin confirms the transfer later).
 	if req.Provider == sub.ManualPayKey ||
 		(req.Provider == "" && rt.mgr.ManualPayment() && len(rt.mgr.PaymentMethods()) == 0) {
-		_, msg, err := rt.mgr.RequestPlanPayment(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Periods)
+		_, msg, err := rt.mgr.RequestPurchaseManual(subActorCtx(r, u), lang, u.ID, p)
 		if err != nil {
 			writeSubErr(w, err, lang)
 			return
@@ -418,7 +440,7 @@ func (rt *Router) handleSubPay(w http.ResponseWriter, r *http.Request, u model.U
 		writeJSON(w, http.StatusOK, map[string]any{"manual": true, "message": msg})
 		return
 	}
-	order, err := rt.mgr.StartPlanPaymentReturn(subActorCtx(r, u), lang, u.ID, req.PlanID, req.Provider, sub.URL(set, u.SubToken), req.Periods)
+	order, err := rt.mgr.StartPurchase(subActorCtx(r, u), lang, u.ID, p, req.Provider, sub.URL(set, u.SubToken))
 	if err != nil {
 		writeSubErr(w, err, lang)
 		return
@@ -448,6 +470,8 @@ func (rt *Router) handleSubOrder(w http.ResponseWriter, r *http.Request, u model
 			msg := i18n.T(lang, "sub.paidTopup", paid.AmountRub)
 			if paid.Kind == model.OrderPlan {
 				msg = i18n.T(lang, "sub.paidPlan", paid.PlanName)
+			} else if paid.Kind != model.OrderTopup {
+				msg = i18n.T(lang, "notify.userPaidAddon", core.OrderSubject(lang, paid))
 			}
 			resp["done"] = map[string]any{"order_id": paid.ID, "message": msg}
 		}
@@ -532,6 +556,16 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 		b.Plans[i].FromBalance = q.MoneyRub == 0
 		b.Plans[i].Free = q.TotalRub == 0
 		b.Plans[i].Button = payButton(lang, q, b.Locked)
+		// A new plan that sells extra devices: how many to take (a renewal keeps them).
+		if plan.SellsDevices() && plan.ID != u.PlanID {
+			for n := 0; n <= min(plan.DeviceMax, 8); n++ {
+				label := i18n.TN(lang, "sub.devicesOpt", plan.DeviceLimit+n)
+				if n > 0 {
+					label += " " + i18n.T(lang, "sub.devicesOptPrice", n*plan.DevicePrice)
+				}
+				b.Plans[i].Devices = append(b.Plans[i].Devices, sub.DeviceOption{Extra: n, Label: label})
+			}
+		}
 		// Several periods at once, when the operator sells them: one option each.
 		if offers := rt.mgr.PeriodOffers(u, plan); len(offers) > 1 {
 			for _, o := range offers {
@@ -540,6 +574,25 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 					FromBalance: o.MoneyRub == 0, Button: payButton(lang, o, b.Locked),
 				})
 			}
+		}
+	}
+	loc := rt.mgr.Location()
+	for _, o := range rt.mgr.ChangeOffers(u) {
+		label := i18n.T(lang, "sub.changeDown", o.Plan.Name, time.Unix(o.Quote.ExpireAt, 0).In(loc).Format("02.01.2006"))
+		if o.Quote.Upgrade {
+			label = i18n.T(lang, "sub.changeUp", o.Plan.Name, o.Quote.TotalRub)
+		}
+		b.Changes = append(b.Changes, sub.Extra{Kind: model.OrderChange, PlanID: o.Plan.ID, Label: label,
+			FromBalance: o.Quote.MoneyRub == 0})
+	}
+	if a := rt.mgr.Addons(u); a.Any() {
+		for n := 1; n <= min(a.DevicesMax, 5); n++ {
+			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: n,
+				Label: i18n.TN(lang, "sub.addDevices", n, n*a.DevicePrice)})
+		}
+		for i, p := range a.Packs {
+			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderTraffic, PlanID: u.PlanID, N: i,
+				Label: i18n.T(lang, "sub.packLabel", p.GB, p.PriceRub)})
 		}
 	}
 	rt.buildWallet(&b, u, set, lang, subURL)

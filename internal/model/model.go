@@ -175,6 +175,12 @@ type User struct {
 	// derived from the id, so a panel's user ids can grow past the subnet's size.
 	AWGSlot int `json:"-"`
 
+	// ExtraDevices are devices bought beyond the plan's own (already in DeviceLimit);
+	// PackData is traffic bought on top of its quota (already in DataLimit), gone at
+	// the next reset.
+	ExtraDevices int   `json:"extra_devices"`
+	PackData     int64 `json:"pack_data"`
+
 	TgChatID int64 `json:"tg_chat_id"` // linked Telegram chat for the user bot (0 = not linked)
 
 	TgLinkCode   string `json:"-"` // pending one-time Telegram bind code (replaces sub-token deep links)
@@ -237,6 +243,16 @@ type TariffPlan struct {
 	// and what every pre-existing plan has) means the plan says nothing about access —
 	// the user keeps whatever groups they were given by hand.
 	GroupIDs []int64 `json:"group_ids"`
+	// DevicePrice is what one device beyond DeviceLimit costs per period, DeviceMax
+	// how many of them a user may add (0 = none sold). Only for a plan with a device
+	// limit and a term.
+	DevicePrice int `json:"device_price"`
+	DeviceMax   int `json:"device_max"`
+}
+
+// SellsDevices reports whether the plan sells extra devices.
+func (p TariffPlan) SellsDevices() bool {
+	return p.DevicePrice > 0 && p.DeviceMax > 0 && p.DeviceLimit > 0 && p.PeriodDays > 0
 }
 
 // PlanResetPeriods are the cycles a plan may carry explicitly — the calendar ones a
@@ -288,6 +304,13 @@ type PaymentOrder struct {
 	Periods      int    `json:"periods"`
 	RefundedAt   int64  `json:"refunded_at,omitempty"`
 	RefundSource string `json:"refund_source,omitempty"`
+	// Devices: the extra devices a plan or change order comes with, or how many a
+	// devices order adds. ChangeFrom: the plan a change leaves. ExpectExpire: the term
+	// a change or devices order was priced for. PackBytes: a traffic order's traffic.
+	Devices      int   `json:"devices,omitempty"`
+	ChangeFrom   int64 `json:"change_from,omitempty"`
+	ExpectExpire int64 `json:"expect_expire,omitempty"`
+	PackBytes    int64 `json:"pack_bytes,omitempty"`
 }
 
 // Who returned an order's money (PaymentOrder.RefundSource).
@@ -1024,6 +1047,10 @@ type Settings struct {
 	BillingPeriods []PeriodOffer `json:"-"`
 	// Winback sends a user whose paid term lapsed a personal discount code.
 	Winback WinbackSettings `json:"-"`
+	// TrafficPacks are the extra traffic on sale to users with a paid plan that has a
+	// quota; PlanChange lets users switch plans while one is active.
+	TrafficPacks []TrafficPack `json:"-"`
+	PlanChange   bool          `json:"-"`
 
 	// AutoUpdateCron is when the panel checks for a newer release and installs it (in
 	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.

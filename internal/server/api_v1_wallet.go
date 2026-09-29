@@ -38,6 +38,11 @@ type (
 	apiSourceReq struct {
 		Source string `json:"source"` // lower case, letters, digits, "_" and "-", up to 64
 	}
+	// apiExtrasResp is what can be bought on top of the plan held.
+	apiExtrasResp struct {
+		Changes []core.ChangeOffer `json:"changes"`
+		Addons  core.AddonOffers   `json:"addons"`
+	}
 	apiReferrerReq struct {
 		ReferrerID int64  `json:"referrer_id,omitempty"` // the inviting user's id
 		RefCode    string `json:"ref_code,omitempty"`    // or their invite code, as the /start link carries it
@@ -364,4 +369,22 @@ func (rt *Router) apiSetSource(w http.ResponseWriter, r *http.Request, id int64)
 		return
 	}
 	writeAPIData(w, http.StatusOK, apiSourceReq{Source: rt.mgr.UserSource(id)})
+}
+
+// apiUserExtras lists the plan changes and add-ons the user can buy now; each is
+// bought with POST /v1/billing/orders (kind change, devices or traffic).
+func (rt *Router) apiUserExtras(w http.ResponseWriter, _ *http.Request, id int64) {
+	u, err := rt.mgr.Store().GetUser(id)
+	if err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	out := apiExtrasResp{Changes: rt.mgr.ChangeOffers(*u), Addons: rt.mgr.Addons(*u)}
+	if out.Changes == nil {
+		out.Changes = []core.ChangeOffer{}
+	}
+	if out.Addons.Packs == nil {
+		out.Addons.Packs = []model.TrafficPack{}
+	}
+	writeAPIData(w, http.StatusOK, out)
 }

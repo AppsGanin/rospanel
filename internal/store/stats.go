@@ -676,7 +676,10 @@ func (s *Store) RecentConnections(userID int64, limit int) ([]model.Connection, 
 func (s *Store) ResetUserQuota(id, now, lastUp, lastDown int64) error {
 	_, err := s.db.Exec(
 		`UPDATE users SET used_up = 0, used_down = 0, last_up = ?, last_down = ?,
-		 last_reset_at = ? WHERE id = ?`,
+		 last_reset_at = ?,
+		 data_limit = CASE WHEN pack_data > 0 AND data_limit > pack_data THEN data_limit - pack_data ELSE data_limit END,
+		 pack_data = 0
+		 WHERE id = ?`,
 		lastUp, lastDown, now, id,
 	)
 	return err

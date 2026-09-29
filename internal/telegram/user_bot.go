@@ -847,13 +847,28 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 		if s.handleWalletCallback(ctx, client, chatID, msgID, set, u, cb.Data) {
 			return
 		}
+		if s.handlePurchaseCallback(ctx, client, chatID, msgID, set, u, cb.Data) {
+			return
+		}
 		if planStr, ok := strings.CutPrefix(cb.Data, "vu:buy:"); ok {
 			// "vu:buy:<plan>" asks for the term when several are sold;
-			// "vu:buy:<plan>:<periods>" is the term chosen.
-			planStr, nStr, picked := strings.Cut(planStr, ":")
-			planID, _ := strconv.ParseInt(planStr, 10, 64)
-			periods, _ := strconv.Atoi(nStr)
-			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, max(periods, 1), !picked)
+			// "vu:buy:<plan>:<periods>" is the term chosen, and
+			// "vu:buy:<plan>:<periods>:<devices>" the extra devices too.
+			parts := strings.Split(planStr, ":")
+			planID, _ := strconv.ParseInt(parts[0], 10, 64)
+			periods, devices := 1, -1
+			if len(parts) >= 2 {
+				periods, _ = strconv.Atoi(parts[1])
+			}
+			if len(parts) >= 3 {
+				devices, _ = strconv.Atoi(parts[2])
+			}
+			if devices > 0 {
+				s.offerPurchase(ctx, client, chatID, msgID, u, core.Purchase{
+					Kind: model.OrderPlan, PlanID: planID, Periods: max(periods, 1), Devices: devices})
+				return
+			}
+			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, max(periods, 1), len(parts) < 2, devices == 0)
 		} else if rest, ok := strings.CutPrefix(cb.Data, "vu:pay:"); ok {
 			// rest = "<method>:<planID>[:<periods>]", the method being a provider key
 			// or manual
@@ -926,6 +941,12 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 		// A lifetime plan has nothing to renew.
 		if active.PeriodDays > 0 {
 			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnRenewPlan", active.Name), CallbackData: fmt.Sprintf("vu:buy:%d", active.ID)}})
+		}
+		if len(s.panel.ChangeOffers(u)) > 0 {
+			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnChangePlan"), CallbackData: "vu:chg"}})
+		}
+		if s.panel.Addons(u).Any() {
+			rows = append(rows, []InlineButton{{Text: i18n.T(lang, "user.btnAddons"), CallbackData: "vu:add"}})
 		}
 		rows = append(rows,
 			[]InlineButton{{Text: i18n.T(lang, "user.btnCancelSub"), CallbackData: "vu:cancelplan"}},
@@ -1026,7 +1047,8 @@ func (s *UserService) startPayment(ctx context.Context, client *Client, chatID, 
 	s.startProviderPayment(ctx, client, chatID, msgID, u, planID, periods, method)
 }
 
-func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planID int64, periods int, pickTerm bool) {
+// devicesPicked: the extra devices were chosen (none), so they are not asked again.
+func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID, msgID int64, set *model.Settings, u model.User, planID int64, periods int, pickTerm, devicesPicked bool) {
 	lang := s.lang(chatID)
 	if planID <= 0 {
 		s.editUserMenu(ctx, client, chatID, msgID, set, u)
@@ -1054,6 +1076,12 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		if pickTerm && len(offers) == 1 {
 			periods = offers[0].Periods
 		}
+		// A new plan that sells extra devices asks how many, once the term is known; a
+		// renewal keeps the ones held.
+		if !(pickTerm && len(offers) > 1) && plan.SellsDevices() && !devicesPicked && u.PlanID != plan.ID {
+			s.askDevices(ctx, client, chatID, msgID, plan, periods)
+			return
+		}
 		if pickTerm && len(offers) > 1 {
 			var rows [][]InlineButton
 			for _, o := range offers {
@@ -1070,7 +1098,7 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		if q.Periods != max(periods, 1) {
 			// A term button from before the operator changed the offers: ask again
 			// rather than sell one period for the price of the term tapped.
-			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, 1, true)
+			s.handleBuyPlan(ctx, client, chatID, msgID, set, u, planID, 1, true, devicesPicked)
 			return
 		}
 		if q.MoneyRub == 0 {

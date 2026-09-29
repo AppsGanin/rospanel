@@ -80,6 +80,7 @@ var apiRoutePerms = map[string][]string{
 	"POST /v1/users/{id}/autorenew":        {model.PermBillingSell},
 	"POST /v1/users/{id}/promo":            {model.PermBillingSell},
 	"GET /v1/users/{id}/quotes":            {model.PermBillingView},
+	"GET /v1/users/{id}/extras":            {model.PermBillingView},
 	"POST /v1/users/{id}/telegram":         {model.PermUsersManage},
 	"GET /v1/users/{id}/subscription":      {model.PermUsersView},
 	"POST /v1/users/{id}/referrer":         {model.PermBillingSell},

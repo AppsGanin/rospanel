@@ -343,43 +343,18 @@ func (m *Manager) StartPlanPaymentReturn(ctx context.Context, lang i18n.Lang, us
 // may have no Telegram chat at all, and the invoice description they are about to
 // read is on the provider's page, not in the bot.
 func (m *Manager) startPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider, returnURL string, periods int) (*model.PaymentOrder, error) {
-	plan, err := m.store.GetTariffPlan(planID)
-	if err != nil {
-		return nil, invalidCode("err.planNotFound", "тариф не найден")
-	}
-	// No switching between plans while a paid one is active: the user must cancel
-	// the current subscription first. Paying for the SAME plan (renewal/extension)
-	// is always allowed. Fail closed on a user-read error so the guard can't be
-	// bypassed.
-	u, err := m.store.GetUser(userID)
-	if err != nil {
-		return nil, err
-	}
-	if err := m.checkPlanPurchase(*u, plan); err != nil {
-		return nil, err
-	}
-	if err := m.checkPeriods(plan, periods); err != nil {
-		return nil, err
-	}
-	q := m.QuotePlanFor(*u, plan, periods)
-	if q.MoneyRub == 0 {
-		return nil, invalidCode("err.payFromBalance", "баланса хватает — оплатите тариф с баланса")
-	}
-	return m.startProviderOrder(ctx, lang, store.OrderDraft{
-		UserID: userID, PlanID: planID, Kind: model.OrderPlan, AmountRub: q.MoneyRub,
-		BalanceKop: q.BalanceKop, DiscountRub: q.DiscountRub, PromoID: q.PromoID, Periods: q.Periods,
-	}, provider, returnURL, func(id int64) string {
-		return i18n.T(lang, "order.description", planSubject(lang, plan.Name, q.Periods), id)
-	})
+	return m.StartPurchase(ctx, lang, userID, PlanPurchase(planID, periods), provider, returnURL)
 }
 
-// orderSubject names what an order buys, for the operator's alerts and the payment
-// instructions: the plan, or a balance top-up.
+// OrderSubject names what an order bought, in lang: the plan, a balance top-up, a
+// change or an add-on — for the operator's alerts and the payment instructions.
+func OrderSubject(lang i18n.Lang, o *model.PaymentOrder) string { return orderSubject(lang, o) }
+
 func orderSubject(lang i18n.Lang, o *model.PaymentOrder) string {
 	if o.Kind == model.OrderTopup {
 		return i18n.T(lang, "order.topupSubject")
 	}
-	return planSubject(lang, o.PlanName, o.Periods)
+	return purchaseSubject(lang, o.Kind, o.PlanName, o.Periods, o.Devices, int(o.PackBytes>>30))
 }
 
 // planSubject names a plan purchase: "“Standard” plan", or "“Standard” plan × 3" for
@@ -414,7 +389,7 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 		existing != nil && existing.PayURL != "" &&
 		existing.Kind == d.Kind && existing.AmountRub == d.AmountRub &&
 		existing.BalanceKop == d.BalanceKop && existing.PromoID == d.PromoID &&
-		max(existing.Periods, 1) == max(d.Periods, 1) &&
+		max(existing.Periods, 1) == max(d.Periods, 1) && sameExtras(existing, d) &&
 		time.Now().Unix()-existing.CreatedAt < int64(providerOrderReuseWindow.Seconds()) {
 		return existing, nil
 	}
@@ -575,7 +550,7 @@ func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder,
 	byHand := provider == "manual"
 	// A plan order whose plan could not be delivered: the store turned it into a
 	// top-up, the money is on the balance.
-	undelivered := order.Kind == model.OrderPlan && !res.PlanApplied
+	undelivered := (order.Kind == model.OrderPlan || isAddonKind(order.Kind)) && !res.PlanApplied
 	set, _ := m.store.GetSettings()
 	if u, e := m.store.GetUser(order.UserID); e == nil && set != nil {
 		// Gated like the other user-facing notices, so an operator who turns them all
@@ -588,6 +563,8 @@ func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder,
 		case order.Kind == model.OrderTopup:
 			wal, _ := m.store.GetWalletLite(u.ID)
 			msg = i18n.T(lang, "notify.userToppedUp", order.AmountRub, kopText(wal.BalanceKop))
+		case isAddonKind(order.Kind):
+			msg = i18n.T(lang, "notify.userPaidAddon", escHTML(orderSubject(lang, order)))
 		default:
 			msg = i18n.T(lang, "notify.userPaid", escHTML(m.PlanName(order.PlanID)))
 		}
@@ -856,6 +833,15 @@ func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
 		return
 	}
 	cut := false
+	// Devices or traffic the money bought go with it, while the user still holds them.
+	if (r.Kind == model.OrderDevices || r.Kind == model.OrderTraffic) && r.Earlier == "" {
+		if err := m.store.TakeBackAddon(o.UserID, o.PlanID, o.Devices*boolInt(r.Kind == model.OrderDevices), o.PackBytes); err != nil {
+			logErr("payment: provider refund did not take the add-on back", "order", o.ID, "err", err)
+		} else {
+			cut = true
+			m.TriggerUserSync()
+		}
+	}
 	if r.Kind == model.OrderPlan && r.Earlier == "" {
 		if u, err := m.store.GetUser(r.UserID); err == nil {
 			if active := m.ActivePaidPlan(*u); active != nil && active.ID == o.PlanID {
@@ -908,4 +894,17 @@ func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
 		msg += "\n" + strings.Join(done, "\n")
 	}
 	m.notifyAdminEvent(model.AdminEventPayment, msg)
+}
+
+// sameExtras reports whether a pending order buys the same add-ons as a draft.
+func sameExtras(o *model.PaymentOrder, d store.OrderDraft) bool {
+	return o.Devices == d.Devices && o.ChangeFrom == d.ChangeFrom &&
+		o.ExpectExpire == d.ExpectExpire && o.PackBytes == d.PackBytes
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

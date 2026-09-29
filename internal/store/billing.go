@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/model"
@@ -50,7 +51,7 @@ func (s *Store) SetPlanUsersResetPeriod(planID int64, period string, now int64) 
 // ListTariffPlans returns plans sorted for display.
 func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error) {
 	q := `SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-	             speed_limit, reset_period, sort_order, enabled
+	             speed_limit, reset_period, sort_order, enabled, device_price, device_max
 	      FROM tariff_plans`
 	if !includeDisabled {
 		q += ` WHERE enabled = 1`
@@ -61,7 +62,7 @@ func (s *Store) ListTariffPlans(includeDisabled bool) ([]model.TariffPlan, error
 
 func (s *Store) GetTariffPlan(id int64) (*model.TariffPlan, error) {
 	plans, err := s.scanPlans(`SELECT id, slug, name, price_rub, period_days, data_limit, device_limit,
-		speed_limit, reset_period, sort_order, enabled FROM tariff_plans WHERE id = ?`, id)
+		speed_limit, reset_period, sort_order, enabled, device_price, device_max FROM tariff_plans WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -83,18 +84,21 @@ func (s *Store) SaveTariffPlan(p *model.TariffPlan) error {
 		if p.ID == 0 {
 			if err := tx.QueryRow(
 				`INSERT INTO tariff_plans (slug, name, price_rub, period_days, data_limit, device_limit,
-				 speed_limit, reset_period, is_free, sort_order, enabled)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+				 speed_limit, reset_period, is_free, sort_order, enabled, device_price, device_max)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 				p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
 				p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
+				p.DevicePrice, p.DeviceMax,
 			).Scan(&p.ID); err != nil {
 				return err
 			}
 		} else if _, err := tx.Exec(
 			`UPDATE tariff_plans SET slug=?, name=?, price_rub=?, period_days=?, data_limit=?,
-			 device_limit=?, speed_limit=?, reset_period=?, is_free=?, sort_order=?, enabled=? WHERE id=?`,
+			 device_limit=?, speed_limit=?, reset_period=?, is_free=?, sort_order=?, enabled=?,
+			 device_price=?, device_max=? WHERE id=?`,
 			p.Slug, p.Name, p.PriceRub, p.PeriodDays, p.DataLimit, p.DeviceLimit,
-			p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled), p.ID,
+			p.SpeedLimit, p.ResetPeriod, boolToInt(p.IsFree()), p.SortOrder, boolToInt(p.Enabled),
+			p.DevicePrice, p.DeviceMax, p.ID,
 		); err != nil {
 			return err
 		}
@@ -267,7 +271,7 @@ func (s *Store) scanPlans(query string, args ...any) ([]model.TariffPlan, error)
 		var en int
 		if err := rows.Scan(
 			&p.ID, &p.Slug, &p.Name, &p.PriceRub, &p.PeriodDays, &p.DataLimit, &p.DeviceLimit,
-			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en,
+			&p.SpeedLimit, &p.ResetPeriod, &p.SortOrder, &en, &p.DevicePrice, &p.DeviceMax,
 		); err != nil {
 			return nil, err
 		}
@@ -348,6 +352,50 @@ type UserPlanWrite struct {
 	// and adds the user's whole lifetime traffic straight back.
 	ResetUsage       bool
 	LastUp, LastDown int64
+
+	// ExtraDevices is how many devices beyond the plan's the user holds (already in
+	// DeviceLimit); PackData the bought traffic already in DataLimit.
+	ExtraDevices int
+	PackData     int64
+	// RequirePlan / RequireExpire, when set, make the write apply only while the user
+	// is still on that plan with that term — a plan change priced for one term must
+	// not land on another. ErrPlanStale otherwise.
+	RequirePlan   int64
+	RequireExpire int64
+}
+
+// ErrPlanStale is a plan write or an add-on whose user moved on since it was priced.
+var ErrPlanStale = errors.New("the subscription changed since the price was computed")
+
+// AddonWrite adds devices or traffic to the plan a user holds. RequireExpire, when
+// set, holds it to the term it was priced for.
+type AddonWrite struct {
+	UserID        int64
+	PlanID        int64
+	AddDevices    int
+	AddData       int64
+	RequireExpire int64
+}
+
+// applyAddonOn writes an add-on, or ErrPlanStale when the user is no longer on the
+// plan (or the term) it was bought for.
+func applyAddonOn(ex execer, a AddonWrite) error {
+	q := `UPDATE users SET device_limit = device_limit + ?, extra_devices = extra_devices + ?,
+	          data_limit = data_limit + ?, pack_data = pack_data + ?
+	      WHERE id = ? AND plan_id = ?`
+	args := []any{a.AddDevices, a.AddDevices, a.AddData, a.AddData, a.UserID, a.PlanID}
+	if a.RequireExpire != 0 {
+		q += ` AND expire_at = ?`
+		args = append(args, a.RequireExpire)
+	}
+	res, err := ex.Exec(q, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrPlanStale
+	}
+	return nil
 }
 
 // ApplyUserPlan writes a plan assignment atomically.
@@ -355,8 +403,21 @@ func (s *Store) ApplyUserPlan(p UserPlanWrite) error {
 	return s.withTx(func(tx *sql.Tx) error { return applyUserPlanOn(tx, p) })
 }
 
-func applyUserPlanOn(ex execer, p UserPlanWrite) error {
+func applyUserPlanOn(ex *sql.Tx, p UserPlanWrite) error {
+	if p.RequirePlan != 0 {
+		var plan, exp int64
+		if err := ex.QueryRow(`SELECT plan_id, expire_at FROM users WHERE id = ?`, p.UserID).Scan(&plan, &exp); err != nil {
+			return err
+		}
+		if plan != p.RequirePlan || (p.RequireExpire != 0 && exp != p.RequireExpire) {
+			return ErrPlanStale
+		}
+	}
 	if err := setUserLimitsOn(ex, p.UserID, p.DataLimit, p.ExpireAt, p.DeviceLimit); err != nil {
+		return err
+	}
+	if _, err := ex.Exec(`UPDATE users SET extra_devices = ?, pack_data = ? WHERE id = ?`,
+		p.ExtraDevices, p.PackData, p.UserID); err != nil {
 		return err
 	}
 	// A plan decides the term — a date, or none on a free plan — so a hold set by
@@ -490,7 +551,8 @@ func (s *Store) CreatePaymentOrder(userID, planID int64, amountRub int) (*model.
 const orderCols = `o.id, o.user_id, u.name, o.plan_id, COALESCE(p.name, ''), o.amount_rub, o.status,
 	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at,
 	o.kind, o.balance_kop, o.discount_rub, o.promo_id, COALESCE(pc.code, ''),
-	o.periods, o.refunded_at, o.refund_source`
+	o.periods, o.refunded_at, o.refund_source,
+	o.devices, o.change_from, o.expect_expire, o.pack_bytes`
 
 // orderJoins resolves an order's user, plan and promo code. The plan is a LEFT join:
 // a top-up has none.
@@ -682,6 +744,7 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 			&o.CreatedAt, &o.PaidAt,
 			&o.Kind, &o.BalanceKop, &o.DiscountRub, &o.PromoID, &o.PromoCode,
 			&o.Periods, &o.RefundedAt, &o.RefundSource,
+			&o.Devices, &o.ChangeFrom, &o.ExpectExpire, &o.PackBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -698,6 +761,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		 wallet_enabled = ?, wallet_topup_min = ?, billing_periods = ?,
 		 ref_mode = ?, ref_percent = ?, ref_days = ?, ref_first_only = ?,
 		 winback_enabled = ?, winback_after_days = ?, winback_percent = ?, winback_valid_days = ?,
+		 traffic_packs = ?, plan_change = ?,
 		 updated_at = unixepoch() WHERE id = 1`,
 		boolToInt(st.BillingEnabled),
 		st.BillingFreePlanID, st.BillingTrialPlanID, st.BillingPaymentNote,
@@ -705,6 +769,7 @@ func (s *Store) SetBillingSettings(st *model.Settings) error {
 		boolToInt(st.WalletEnabled), st.WalletTopupMin, periodsJSON(st.BillingPeriods),
 		st.RefMode, st.RefPercent, st.RefDays, boolToInt(st.RefFirstOnly),
 		boolToInt(st.Winback.Enabled), st.Winback.AfterDays, st.Winback.Percent, st.Winback.ValidDays,
+		packsJSON(st.TrafficPacks), boolToInt(st.PlanChange),
 	)
 	return err
 }
@@ -735,4 +800,27 @@ func periodsJSON(offers []model.PeriodOffer) string {
 	}
 	b, _ := json.Marshal(offers)
 	return string(b)
+}
+
+// packsJSON is the traffic packs as stored ("" for none).
+func packsJSON(p []model.TrafficPack) string {
+	if len(p) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(p)
+	return string(b)
+}
+
+// TakeBackAddon removes devices and traffic an order added, from a user still on the
+// plan they were bought for — never below what the plan itself gives.
+func (s *Store) TakeBackAddon(userID, planID int64, devices int, data int64) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET
+		     device_limit = device_limit - min(?, extra_devices),
+		     extra_devices = extra_devices - min(?, extra_devices),
+		     data_limit = data_limit - min(?, pack_data),
+		     pack_data = pack_data - min(?, pack_data)
+		 WHERE id = ? AND plan_id = ?`,
+		devices, devices, data, data, userID, planID)
+	return err
 }

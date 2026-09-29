@@ -80,6 +80,8 @@ function toCfg(d: BillingInfo, plans: TariffPlan[]): BillingInfo {
       percent: d.winback?.percent || 20,
       valid_days: d.winback?.valid_days || 7,
     },
+    traffic_packs: d.traffic_packs ?? [],
+    plan_change: d.plan_change ?? true,
     plans,
   };
 }
@@ -203,7 +205,9 @@ export function BillingPanel() {
     cfg.ref_days !== saved.ref_days ||
     cfg.ref_first !== saved.ref_first ||
     JSON.stringify(cfg.periods) !== JSON.stringify(saved.periods) ||
-    JSON.stringify(cfg.winback) !== JSON.stringify(saved.winback);
+    JSON.stringify(cfg.winback) !== JSON.stringify(saved.winback) ||
+    JSON.stringify(cfg.traffic_packs) !== JSON.stringify(saved.traffic_packs) ||
+    cfg.plan_change !== saved.plan_change;
 
   // Which providers have unsaved edits (skip any whose server view we don't have).
   const dirtyProviders = (providers ?? []).filter(
@@ -242,6 +246,8 @@ export function BillingPanel() {
         wb.valid_days < 1 || wb.valid_days > 90)
     )
       return t("err.winbackRange");
+    if (cfg.traffic_packs.some((p) => p.gb < 1 || p.gb > 100_000 || p.price_rub < 1 || p.price_rub > 1_000_000))
+      return t("err.packRange", { max: 1_000_000 });
     return "";
   };
 
@@ -268,6 +274,8 @@ export function BillingPanel() {
           ref_first: cfg.ref_first,
           periods: cfg.periods,
           winback: cfg.winback,
+          traffic_packs: cfg.traffic_packs,
+          plan_change: cfg.plan_change,
         });
         setSaved({ ...cfg, plans: safePlans });
         // Tell the top nav to re-read billing_enabled so the payments menu item
@@ -658,6 +666,69 @@ export function BillingPanel() {
               }
             />
           ))}
+        </Panel>
+
+        <Panel
+          title={t("packs.title")}
+          aside={
+            cfg.traffic_packs.length < 10 && (
+              <IconButton
+                variant="filled"
+                color="brand"
+                title={t("packs.add")}
+                onClick={() => setCfg({ ...cfg, traffic_packs: [...cfg.traffic_packs, { gb: 10, price_rub: 100 }] })}
+              >
+                <IconPlus />
+              </IconButton>
+            )
+          }
+        >
+          <SettingRow hint={t("packs.hint")} />
+          {cfg.traffic_packs.map((p, i) => (
+            <SettingRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: the row's own numbers are being edited
+              key={i}
+              label={t("packs.row", { gb: p.gb })}
+              field={
+                <span className="flex items-center gap-2">
+                  <TextInput
+                    type="number"
+                    value={String(p.gb)}
+                    onChange={(v) => {
+                      const packs = [...cfg.traffic_packs];
+                      packs[i] = { ...p, gb: Math.max(0, Math.floor(Number(v) || 0)) };
+                      setCfg({ ...cfg, traffic_packs: packs });
+                    }}
+                  />
+                  <span className="text-xs text-ink-muted">{t("packs.gbFor")}</span>
+                  <TextInput
+                    type="number"
+                    value={String(p.price_rub)}
+                    onChange={(v) => {
+                      const packs = [...cfg.traffic_packs];
+                      packs[i] = { ...p, price_rub: Math.max(0, Math.floor(Number(v) || 0)) };
+                      setCfg({ ...cfg, traffic_packs: packs });
+                    }}
+                  />
+                  <span className="text-xs text-ink-muted">₽</span>
+                  <IconButton
+                    color="red"
+                    title={t("common.delete")}
+                    onClick={() => setCfg({ ...cfg, traffic_packs: cfg.traffic_packs.filter((_, j) => j !== i) })}
+                  >
+                    <IconTrash size={16} />
+                  </IconButton>
+                </span>
+              }
+            />
+          ))}
+        </Panel>
+
+        <Panel
+          title={t("planChange.title")}
+          aside={<Switch checked={cfg.plan_change} onChange={(v) => setCfg({ ...cfg, plan_change: v })} />}
+        >
+          <SettingRow hint={t("planChange.hint")} />
         </Panel>
 
         <Panel title={t("bill.pricing")}>

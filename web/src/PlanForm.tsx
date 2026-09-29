@@ -25,6 +25,8 @@ export const EMPTY_PLAN = (): TariffPlan => ({
   sort_order: 0,
   enabled: true,
   group_ids: [],
+  device_price: 0,
+  device_max: 0,
 });
 
 
@@ -213,6 +215,28 @@ export function PlanForm({
         />
       </div>
       <p className="text-xs text-ink-muted">{t("bill.resetHint")}</p>
+      {!designated && (
+        <div className="flex flex-col gap-2 border-t border-gray-100 pt-3">
+          <span className="text-sm font-medium text-ink">{t("bill.extraDevices")}</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              type="number"
+              label={t("bill.devicePrice")}
+              value={String(plan.device_price ?? 0)}
+              disabled={!plan.device_limit || !plan.period_days}
+              onChange={(v) => patch({ device_price: Math.max(0, Math.floor(Number(v) || 0)) })}
+            />
+            <TextInput
+              type="number"
+              label={t("bill.deviceMax")}
+              value={String(plan.device_max ?? 0)}
+              disabled={!plan.device_limit || !plan.period_days}
+              onChange={(v) => patch({ device_max: Math.max(0, Math.floor(Number(v) || 0)) })}
+            />
+          </div>
+          <p className="text-xs text-ink-muted">{t("bill.extraDevicesHint")}</p>
+        </div>
+      )}
       {/* Access groups: the plan decides WHICH connections its users may reach, not
           only how much traffic. Ticking nothing keeps the plan silent about access —
           the historical behaviour, and what every existing plan has. */}
