@@ -104,3 +104,16 @@ func capText(s string, n int) string {
 	}
 	return strings.ToValidUTF8(s[:n], "")
 }
+
+// StarsChargeSeen reports whether a Stars payment with this charge id was already
+// applied — Telegram hands a successful_payment again after a restart mid-batch.
+func (s *Store) StarsChargeSeen(payload, chargeID string) bool {
+	if chargeID == "" {
+		return false
+	}
+	var n int
+	_ = s.db.QueryRow(`SELECT count(*) FROM payment_webhooks
+		WHERE provider = 'stars' AND provider_id = ? AND outcome = 'paid' AND instr(body, ?) > 0`,
+		payload, chargeID).Scan(&n)
+	return n > 0
+}

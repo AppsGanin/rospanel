@@ -85,7 +85,7 @@ type Panel interface {
 	Wallet(userID int64) (model.Wallet, error)
 	SetAutoRenew(ctx context.Context, userID int64, on bool) error
 	RedeemPromo(ctx context.Context, userID int64, code string) (*core.PromoResult, error)
-	PromosOffered() bool
+	PromosOfferedTo(userID int64) bool
 	RefCode(userID int64) (string, error)
 	TrackReferral(chatID int64, code string)
 	// Telegram Stars: approving a payment before it is taken, and applying it after.

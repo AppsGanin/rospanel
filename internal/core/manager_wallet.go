@@ -1070,6 +1070,11 @@ func (m *Manager) ListPromos() ([]model.PromoCode, error) { return m.store.ListP
 // PromosOffered reports whether there is any code a user could enter.
 func (m *Manager) PromosOffered() bool { return m.store.CountEnabledPromos() > 0 }
 
+// PromosOfferedTo reports whether the user has a code to enter: a public one, or a
+// personal one of their own (a win-back or an automatic message that could not be
+// attached tells them to enter it).
+func (m *Manager) PromosOfferedTo(userID int64) bool { return m.store.PromosOfferedTo(userID) }
+
 // SavePromo validates and stores a promo code.
 func (m *Manager) SavePromo(p *model.PromoCode) error {
 	// Codes are stored upper-case: the column's NOCASE folds only Latin letters, and

@@ -387,10 +387,26 @@ type AddonWrite struct {
 // applyAddonOn writes an add-on, or ErrPlanStale when the user is no longer on the
 // plan (or the term) it was bought for.
 func applyAddonOn(ex execer, a AddonWrite) error {
-	q := `UPDATE users SET device_limit = device_limit + ?, extra_devices = extra_devices + ?,
+	where, wargs := addonWhere(a)
+	args := append([]any{a.AddDevices, a.AddDevices, a.AddData, a.AddData}, wargs...)
+	res, err := ex.Exec(`UPDATE users SET device_limit = device_limit + ?, extra_devices = extra_devices + ?,
 	          data_limit = data_limit + ?, pack_data = pack_data + ?
-	      WHERE id = ? AND plan_id = ?`
-	args := []any{a.AddDevices, a.AddDevices, a.AddData, a.AddData, a.UserID, a.PlanID}
+	      WHERE `+where, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrPlanStale
+	}
+	return nil
+}
+
+// addonWhere is the condition an add-on is written under: the plan (and term) it was
+// bought for, a cap and a quota to add to, room under the device cap, and the state it
+// was priced on.
+func addonWhere(a AddonWrite) (string, []any) {
+	q := `id = ? AND plan_id = ?`
+	args := []any{a.UserID, a.PlanID}
 	if a.RequireExpire != 0 {
 		q += ` AND expire_at = ?`
 		args = append(args, a.RequireExpire)
@@ -412,14 +428,7 @@ func applyAddonOn(ex execer, a AddonWrite) error {
 		q += ` AND pack_data = ?`
 		args = append(args, a.RequirePack)
 	}
-	res, err := ex.Exec(q, args...)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrPlanStale
-	}
-	return nil
+	return q, args
 }
 
 // ApplyUserPlan writes a plan assignment atomically.
@@ -576,7 +585,7 @@ const orderCols = `o.id, o.user_id, u.name, o.plan_id, COALESCE(p.name, ''), o.a
 	o.provider, o.provider_id, o.pay_url, o.created_at, o.paid_at,
 	o.kind, o.balance_kop, o.discount_rub, o.promo_id, COALESCE(pc.code, ''),
 	o.periods, o.refunded_at, o.refund_source,
-	o.devices, o.change_from, o.expect_expire, o.pack_bytes`
+	o.devices, o.change_from, o.expect_expire, o.pack_bytes, o.devices_before`
 
 // orderJoins resolves an order's user, plan and promo code. The plan is a LEFT join:
 // a top-up has none.
@@ -768,7 +777,7 @@ func (s *Store) listPaymentOrders(query string, args ...any) ([]model.PaymentOrd
 			&o.CreatedAt, &o.PaidAt,
 			&o.Kind, &o.BalanceKop, &o.DiscountRub, &o.PromoID, &o.PromoCode,
 			&o.Periods, &o.RefundedAt, &o.RefundSource,
-			&o.Devices, &o.ChangeFrom, &o.ExpectExpire, &o.PackBytes,
+			&o.Devices, &o.ChangeFrom, &o.ExpectExpire, &o.PackBytes, &o.DevicesBefore,
 		); err != nil {
 			return nil, err
 		}
@@ -844,8 +853,8 @@ func (s *Store) TakeBackAddon(userID, planID int64, devices int, data int64) (bo
 		     extra_devices = extra_devices - min(?, extra_devices),
 		     data_limit = data_limit - min(?, pack_data),
 		     pack_data = pack_data - min(?, pack_data)
-		 WHERE id = ? AND plan_id = ? AND (extra_devices > 0 OR pack_data > 0)`,
-		devices, devices, data, data, userID, planID)
+		 WHERE id = ? AND plan_id = ? AND ((? > 0 AND extra_devices > 0) OR (? > 0 AND pack_data > 0))`,
+		devices, devices, data, data, userID, planID, devices, data)
 	if err != nil {
 		return false, err
 	}

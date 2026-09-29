@@ -308,3 +308,79 @@ func TestAddonDoubleTap(t *testing.T) {
 		t.Fatalf("pack = %d", got.PackData)
 	}
 }
+
+// Round-2 review cases: an add-on that no longer fits, a renewal paid after devices
+// were added, a change off an unlimited plan, a refunded change.
+func TestPurchaseEdgeCases(t *testing.T) {
+	t.Parallel()
+	e := newPurchaseEnv(t)
+	ctx := context.Background()
+	e.fund(t, 300)
+	if _, err := e.m.BuyPlanFromBalance(ctx, e.userID, e.a.ID, e.user(t).ExpireAt, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Two provider orders of +2 devices each on a plan that sells 3: the second must
+	// land on the balance, not stay pending with the money nowhere.
+	var orders []*model.PaymentOrder
+	for range 2 {
+		d, _, err := e.m.purchaseDraft("ru", e.userID, Purchase{Kind: model.OrderDevices, Devices: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err := e.st.CreateOrder(d, time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		orders = append(orders, o)
+	}
+	for i, o := range orders {
+		res, err := e.m.confirmOrderPaid(o, time.Now().Unix())
+		if err != nil || !res.Claimed {
+			t.Fatalf("order %d: %+v %v", i, res, err)
+		}
+		if res.PlanApplied != (i == 0) {
+			t.Fatalf("order %d applied = %v", i, res.PlanApplied)
+		}
+	}
+	if got := e.user(t); got.ExtraDevices != 2 || e.balance(t) != int64(orders[1].AmountRub)*100 {
+		t.Fatalf("extras %d balance %d", got.ExtraDevices, e.balance(t))
+	}
+
+	// A renewal priced with 2 devices, paid after the user holds 3: to the balance.
+	d, _, err := e.m.purchaseDraft("ru", e.userID, PlanPurchase(e.a.ID, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renew, _ := e.st.CreateOrder(d, time.Now().Unix())
+	e.fund(t, 1000)
+	if _, err := e.m.BuyFromBalance(ctx, e.userID, Purchase{Kind: model.OrderDevices, Devices: 1}, PurchaseStamp(e.user(t))); err != nil {
+		t.Fatal(err)
+	}
+	before := e.user(t)
+	if res, err := e.m.confirmOrderPaid(renew, time.Now().Unix()); err != nil || res.PlanApplied {
+		t.Fatalf("stale renewal: %+v %v", res, err)
+	}
+	if after := e.user(t); after.ExpireAt != before.ExpireAt || after.ExtraDevices != 3 {
+		t.Fatalf("stale renewal changed the term: %+v", after)
+	}
+}
+
+func TestChangeOffUnlimitedResets(t *testing.T) {
+	t.Parallel()
+	e := newPurchaseEnv(t)
+	ctx := context.Background()
+	e.fund(t, 600)
+	if _, err := e.m.BuyPlanFromBalance(ctx, e.userID, e.b.ID, e.user(t).ExpireAt, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.ExecForTest(`UPDATE users SET used_up = 300 << 30 WHERE id = ?`, e.userID); err != nil {
+		t.Fatal(err)
+	}
+	// B (unlimited, 600) → A (50 GB, 300): free, and the counter starts over.
+	if _, err := e.m.BuyFromBalance(ctx, e.userID, Purchase{Kind: model.OrderChange, PlanID: e.a.ID, Devices: 0}, e.user(t).ExpireAt); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.user(t); got.PlanID != e.a.ID || got.UsedUp != 0 {
+		t.Fatalf("after change off unlimited: plan %d used %d", got.PlanID, got.UsedUp)
+	}
+}

@@ -68,7 +68,7 @@ func (s *UserService) menuRows(set *model.Settings, u model.User, lang i18n.Lang
 	if set.RefEnabled() {
 		line = append(line, InlineButton{Text: i18n.T(lang, "user.btnInvite"), CallbackData: "vu:ref"})
 	}
-	if s.panel.PromosOffered() {
+	if s.panel.PromosOfferedTo(u.ID) {
 		line = append(line, InlineButton{Text: i18n.T(lang, "user.btnPromo"), CallbackData: "vu:promo"})
 	}
 	if len(line) > 0 {

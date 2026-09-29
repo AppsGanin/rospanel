@@ -102,6 +102,8 @@ type OrderDraft struct {
 	ChangeFrom   int64
 	ExpectExpire int64
 	PackBytes    int64
+	// DevicesBefore: a change's extra devices on the plan it leaves.
+	DevicesBefore int
 }
 
 // CreateOrder inserts a pending order.
@@ -120,13 +122,13 @@ func (s *Store) CreateOrder(d OrderDraft, now int64) (*model.PaymentOrder, error
 	err := s.db.QueryRow(
 		`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at,
 		     kind, balance_kop, discount_rub, promo_id, periods,
-		     devices, change_from, expect_expire, pack_bytes)
-		 SELECT ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		     devices, change_from, expect_expire, pack_bytes, devices_before)
+		 SELECT ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		 WHERE (SELECT count(*) FROM payment_orders
 		        WHERE user_id = ? AND kind = ? AND status = 'pending' AND created_at > ?) < ?
 		 RETURNING id`,
 		d.UserID, d.PlanID, d.AmountRub, now, d.Kind, d.BalanceKop, d.DiscountRub, d.PromoID, d.Periods,
-		d.Devices, d.ChangeFrom, d.ExpectExpire, d.PackBytes,
+		d.Devices, d.ChangeFrom, d.ExpectExpire, d.PackBytes, d.DevicesBefore,
 		d.UserID, d.Kind, d.PendingSince, limit,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -277,7 +279,15 @@ func deliverableOn(tx *sql.Tx, w *UserPlanWrite, a *AddonWrite) (bool, error) {
 	var userID, plan, exp int64
 	switch {
 	case a != nil:
-		userID, plan, exp = a.UserID, a.PlanID, a.RequireExpire
+		// Every condition applyAddonOn writes under, asked before anything is debited:
+		// an add-on that no longer fits must turn the payment into balance, not roll
+		// the paid claim back and leave the money nowhere.
+		q, args := addonWhere(*a)
+		var n int
+		if err := tx.QueryRow(`SELECT count(*) FROM users WHERE `+q, args...).Scan(&n); err != nil {
+			return false, err
+		}
+		return n > 0, nil
 	case w != nil && w.RequirePlan != 0:
 		userID, plan, exp = w.UserID, w.RequirePlan, w.RequireExpire
 	default:
@@ -475,11 +485,11 @@ func (s *Store) BuyFromBalance(p BalancePurchase) (int64, error) {
 		if err := tx.QueryRow(
 			`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at, paid_at,
 			     provider, kind, balance_kop, discount_rub, promo_id, periods,
-			     devices, change_from, expect_expire, pack_bytes)
-			 VALUES (?, ?, 0, 'paid', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			     devices, change_from, expect_expire, pack_bytes, devices_before)
+			 VALUES (?, ?, 0, 'paid', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 			p.UserID, p.PlanID, p.Now, p.Now, model.BalanceProvider, kind,
 			p.PriceKop, p.DiscountRub, p.PromoID, max(p.Periods, 1),
-			p.Order.Devices, p.Order.ChangeFrom, p.Order.ExpectExpire, p.Order.PackBytes,
+			p.Order.Devices, p.Order.ChangeFrom, p.Order.ExpectExpire, p.Order.PackBytes, p.Order.DevicesBefore,
 		).Scan(&orderID); err != nil {
 			return err
 		}
@@ -827,6 +837,16 @@ func (s *Store) GetPromo(id int64) (model.PromoCode, error) {
 // GetPromoByCode reads one code by its text, ignoring case.
 func (s *Store) GetPromoByCode(code string) (model.PromoCode, error) {
 	return scanPromo(s.rdb.QueryRow(`SELECT `+promoCols+` FROM promo_codes WHERE code = ?`, code))
+}
+
+// PromosOfferedTo reports whether the user has any code to enter: a live public
+// one, or a live personal one of their own.
+func (s *Store) PromosOfferedTo(userID int64) bool {
+	var n int
+	_ = s.rdb.QueryRow(
+		`SELECT count(*) FROM promo_codes WHERE enabled = 1 AND (winback_user = 0 OR winback_user = ?)
+		   AND (expires_at = 0 OR expires_at > unixepoch()) AND (max_uses = 0 OR uses < max_uses)`, userID).Scan(&n)
+	return n > 0
 }
 
 // CountEnabledPromos is how many codes are on — the bot offers the promo button only

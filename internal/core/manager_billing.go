@@ -895,15 +895,18 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (sto
 	}
 	// Extend from the current expiry only for a renewal of the active paid plan;
 	// buying from trial/free/expired starts from now (no inherited time).
-	// A renewal keeps the devices held now — ones added after the order was opened
-	// included.
-	devices := order.Devices
+	// A renewal was priced with the devices held then. Devices added since would be
+	// either taken away or carried into the new term unpaid — the money goes to the
+	// balance instead, and the renewal is bought again at its current price.
 	if m.isPlanRenewalFor(*u, order.PlanID) {
-		if plan, err := m.store.GetTariffPlan(order.PlanID); err == nil {
-			devices = max(devices, heldDevices(*u, plan))
+		if plan, err := m.store.GetTariffPlan(order.PlanID); err == nil && heldDevices(*u, plan) != order.Devices {
+			spec.CreditKop = int64(order.AmountRub) * 100
+			spec.AsTopup = true
+			spec.PromoID = 0
+			return m.store.ConfirmOrder(order.ID, paidAt, spec)
 		}
 	}
-	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods, devices)
+	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods, order.Devices)
 	if err != nil {
 		return store.ConfirmResult{}, err
 	}

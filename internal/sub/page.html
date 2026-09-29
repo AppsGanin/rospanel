@@ -1008,7 +1008,7 @@
           {{range .Billing.Changes}}
           <div class="plan">
             <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
-            <button class="btn" onclick="if (confirm({{$.L.ChangeConfirm}} + '\n' + {{.Label}})) buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', this)">{{$.L.ChangeBtn}}</button>
+            <button class="btn" onclick="var b = this; askThen({{$.L.ChangeConfirm}} + '\n' + {{.Label}}, function () { buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', b); })">{{$.L.ChangeBtn}}</button>
           </div>
           {{end}}
           {{end}}
@@ -1512,6 +1512,18 @@
         if (!b.hasAttribute("data-label0")) b.setAttribute("data-label0", b.textContent);
         if ((parseInt(d.value, 10) || 0) > 0) b.textContent = {{.L.Pay}};
         else b.textContent = b.getAttribute("data-label0");
+      }
+      // askThen asks before an action: Telegram's own dialog inside the Mini App (its
+      // webview may refuse window.confirm), the browser's elsewhere.
+      function askThen(msg, fn) {
+        var tg = TG;
+        if (tg && tg.showConfirm && tg.isVersionAtLeast && tg.isVersionAtLeast("6.2")) {
+          tg.showConfirm(msg, function (ok) {
+            if (ok) fn();
+          });
+        } else if (confirm(msg)) {
+          fn();
+        }
       }
       function buyExtra(kind, planId, n, fb, el) {
         PAY_EXTRA = { kind: kind };
