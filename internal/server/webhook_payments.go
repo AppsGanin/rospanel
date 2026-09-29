@@ -29,7 +29,7 @@ func handlePaymentWebhook(rt *Router, w http.ResponseWriter, r *http.Request, le
 	}
 	// The raw body is handed over untouched: several providers sign the exact bytes,
 	// so re-marshalling the JSON here would break their signature check.
-	if err := rt.mgr.HandleProviderWebhook(leaf, body, r.Header); err != nil {
+	if err := rt.mgr.HandleProviderWebhook(leaf, body, r.Header, clientIP(r)); err != nil {
 		log.Printf("[WARN] payment webhook (%s): %v", leaf, err)
 	}
 	w.WriteHeader(http.StatusOK)

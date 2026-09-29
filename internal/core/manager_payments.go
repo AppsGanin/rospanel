@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -426,12 +427,22 @@ func amountMatches(order *model.PaymentOrder, paid payments.Result) bool {
 // paid carries the provider's view of the charge; it is verified against the order
 // before any plan is granted.
 func (m *Manager) confirmProviderOrder(provider, providerID string, paid payments.Result) error {
+	_, _, err := m.confirmProviderOrderOutcome(provider, providerID, paid)
+	return err
+}
+
+// confirmProviderOrderOutcome is confirmProviderOrder that also says what happened
+// (a model.WebhookOutcome*) and which order it was, for the callback journal.
+func (m *Manager) confirmProviderOrderOutcome(provider, providerID string, paid payments.Result) (string, int64, error) {
 	order, err := m.store.GetPaymentOrderByProvider(provider, providerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.WebhookOutcomeNoOrder, 0, err
+	}
 	if err != nil {
-		return err
+		return model.WebhookOutcomeError, 0, err
 	}
 	if order.Status == "paid" {
-		return nil // a re-delivered webhook or an overlapping poll
+		return model.WebhookOutcomeDuplicate, order.ID, nil // a re-delivered webhook or an overlapping poll
 	}
 	// A cancelled order goes on like a pending one: the money was captured (YooKassa
 	// has no invoice TTL and the 24h sweep fired; a newer checkout with the same promo
@@ -456,7 +467,7 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 				order.ID, escHTML(order.UserName), order.AmountRub,
 				paid.AmountKopecks/100, paid.AmountKopecks%100, escHTML(paid.Currency)))
 		}
-		return fmt.Errorf("payment amount does not match order %d", order.ID)
+		return model.WebhookOutcomeMismatch, order.ID, fmt.Errorf("payment amount does not match order %d", order.ID)
 	}
 	// Claim the pending→paid transition and grant the plan in one transaction. A
 	// provider webhook and the polling fallback (or a re-delivered webhook) can reach
@@ -466,16 +477,16 @@ func (m *Manager) confirmProviderOrder(provider, providerID string, paid payment
 	// the order paid with nothing delivered — see confirmOrderPaid.
 	res, err := m.confirmOrderPaid(order, time.Now().Unix())
 	if err != nil {
-		return err
+		return model.WebhookOutcomeError, order.ID, err
 	}
 	if !res.Claimed {
-		return nil // another confirmer already handled this order
+		return model.WebhookOutcomeDuplicate, order.ID, nil // another confirmer already handled this order
 	}
 	// The provider (or the polling fallback) confirmed this, not a person — so the
 	// payment lands in the audit log as a system action.
 	logInfo("payment: order paid", "order", order.ID, "provider", provider, "user", order.UserID, "plan", order.PlanID)
 	m.afterOrderPaid(context.Background(), order, provider, res)
-	return nil
+	return model.WebhookOutcomePaid, order.ID, nil
 }
 
 // afterOrderPaid tells everyone what a confirmed order did: the payer, the operator,
@@ -639,38 +650,117 @@ func (m *Manager) cancelPendingOrder(o model.PaymentOrder, reason string) {
 // client authenticates it (signature, or a re-fetch over the API for providers that
 // sign nothing) and reports what it says about the payment; nothing here trusts the
 // POST body. A callback for a provider that is off or unconfigured is refused —
-// otherwise a stale/forged callback could still move an order.
-func (m *Manager) HandleProviderWebhook(key string, body []byte, h http.Header) error {
+// otherwise a stale/forged callback could still move an order. Every callback lands
+// in the journal with what came of it.
+func (m *Manager) HandleProviderWebhook(key string, body []byte, h http.Header, remoteIP string) error {
+	rec := model.PaymentWebhook{
+		At: time.Now().Unix(), Provider: key, RemoteIP: remoteIP,
+		Headers: webhookHeaders(h), Body: string(body),
+	}
+	err := m.handleProviderWebhook(key, body, h, &rec)
+	if err != nil {
+		rec.Error = err.Error()
+		if rec.Outcome == "" {
+			rec.Outcome = model.WebhookOutcomeError
+		}
+	}
+	if e := m.store.RecordPaymentWebhook(rec); e != nil {
+		logErr("payment webhook: journal write failed", "provider", key, "err", e)
+	}
+	return err
+}
+
+func (m *Manager) handleProviderWebhook(key string, body []byte, h http.Header, rec *model.PaymentWebhook) error {
 	client, err := m.providerClient(key)
 	if err != nil {
+		rec.Outcome = model.WebhookOutcomeRejected
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	providerID, res, err := client.Webhook(ctx, body, h)
+	rec.ProviderID, rec.Status = providerID, string(res.Status)
 	if err != nil {
+		rec.Outcome = model.WebhookOutcomeRejected
 		return err
 	}
 	if providerID == "" {
+		rec.Outcome = model.WebhookOutcomeRejected
 		return invalidCode("err.webhookNoPaymentID", "{{provider}}: в уведомлении нет идентификатора платежа", map[string]any{"provider": payments.Label(key)})
 	}
 	switch res.Status {
 	case payments.StatusPaid:
-		return m.confirmProviderOrder(key, providerID, res)
+		rec.Outcome, rec.OrderID, err = m.confirmProviderOrderOutcome(key, providerID, res)
+		return err
 	case payments.StatusCanceled:
-		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
-			m.cancelPendingOrder(*o, "provider_cancelled") // won't clobber an already-paid order
+		rec.Outcome = model.WebhookOutcomeCancelled
+		o, e := m.store.GetPaymentOrderByProvider(key, providerID)
+		if e != nil {
+			rec.Outcome = model.WebhookOutcomeNoOrder
+			return nil
 		}
+		rec.OrderID = o.ID
+		m.cancelPendingOrder(*o, "provider_cancelled") // won't clobber an already-paid order
 	case payments.StatusRefunded:
+		rec.Outcome = model.WebhookOutcomeRefunded
+		o, e := m.store.GetPaymentOrderByProvider(key, providerID)
+		if e != nil {
+			rec.Outcome = model.WebhookOutcomeNoOrder
+			return nil
+		}
+		rec.OrderID = o.ID
+		if o.Status == "paid" {
+			m.providerRefunded(context.Background(), o)
+		} else {
+			m.cancelPendingOrder(*o, "provider_cancelled")
+		}
+	default:
+		rec.Outcome = model.WebhookOutcomePending
 		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
-			if o.Status == "paid" {
-				m.providerRefunded(context.Background(), o)
-			} else {
-				m.cancelPendingOrder(*o, "provider_cancelled")
-			}
+			rec.OrderID = o.ID
 		}
 	}
 	return nil
+}
+
+// webhookHeaders keeps the headers that explain a callback — its type and the
+// provider's signature — as "Name: value" lines. Cookies, authorization and proxy
+// hop headers stay out of the journal.
+func webhookHeaders(h http.Header) string {
+	names := make([]string, 0, len(h))
+	for k := range h {
+		switch strings.ToLower(k) {
+		case "cookie", "authorization", "proxy-authorization", "x-forwarded-for", "x-real-ip", "forwarded":
+			continue
+		}
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	var b strings.Builder
+	for _, k := range names {
+		for _, v := range h[k] {
+			b.WriteString(k)
+			b.WriteString(": ")
+			b.WriteString(v)
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// PaymentWebhooks lists the callback journal.
+func (m *Manager) PaymentWebhooks(f store.PaymentWebhookFilter) ([]model.PaymentWebhook, error) {
+	return m.store.ListPaymentWebhooks(f)
+}
+
+// PurgeOldPaymentWebhooks drops callbacks past their retention window.
+func (m *Manager) PurgeOldPaymentWebhooks() {
+	cutoff := time.Now().AddDate(0, 0, -model.PaymentWebhookRetentionDays).Unix()
+	if n, err := m.store.PurgePaymentWebhooks(cutoff); err != nil {
+		logErr("payment webhooks: retention sweep failed", "err", err)
+	} else if n > 0 {
+		logInfo("payment webhooks: old rows purged", "count", n)
+	}
 }
 
 // providerRefunded settles a paid order whose money the payment system returned —

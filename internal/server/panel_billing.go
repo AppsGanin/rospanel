@@ -7,6 +7,7 @@ import (
 
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/payments"
+	"github.com/AppsGanin/rospanel/internal/store"
 )
 
 // paymentStats returns the revenue dashboard for the Payments page.
@@ -334,4 +335,21 @@ func periodOffersOrEmpty(o []model.PeriodOffer) []model.PeriodOffer {
 		return []model.PeriodOffer{}
 	}
 	return o
+}
+
+// listPaymentCallbacks is the journal of provider callbacks: what each one said and
+// what the panel did with it. Filters: provider, order, failed=1 (only the ones that
+// went wrong), before (an id, for the next page).
+func (rt *Router) listPaymentCallbacks(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := store.PaymentWebhookFilter{Provider: q.Get("provider"), Failed: q.Get("failed") == "1"}
+	f.OrderID, _ = strconv.ParseInt(q.Get("order"), 10, 64)
+	f.Before, _ = strconv.ParseInt(q.Get("before"), 10, 64)
+	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	out, err := rt.mgr.PaymentWebhooks(f)
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
