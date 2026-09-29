@@ -31,6 +31,7 @@ export interface User {
   telegram_deep_link?: string
   // The linked Telegram account is on the shared blacklist (user card only).
   blacklisted?: boolean
+  source?: string // the /start tag the user came with
   blacklist_reason?: string
   tg_chat_id?: number // linked Telegram chat/user id (0 = not linked)
   system_email: string // Xray client id "u<id>" (logs/stats)
@@ -2189,6 +2190,16 @@ export interface WinbackSettings {
 export interface PaymentFunnel {
   funnel: { joined: number; trial: number; paid: number; renewed: number }
   winback: { sent: number; used: number; revenue_rub: number }
+  // The same split by where the users came from: a /start tag, "~ref" for an invite
+  // link without one, "" for neither.
+  by_source: {
+    source: string
+    joined: number
+    trial: number
+    paid: number
+    renewed: number
+    revenue_rub: number
+  }[]
 }
 
 export const getPaymentFunnel = (days: number) => api<PaymentFunnel>(`api/payments/funnel?days=${days}`)

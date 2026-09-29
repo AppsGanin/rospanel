@@ -878,6 +878,7 @@ const en: Dict = {
       user_referred: "Signed up by invite",
       balance_autorenew: "Renewal from balance",
       payment_refunded: "Refund",
+      user_source: "Source",
       promo_winback: "Win-back code",
       payment_created: "Order created",
       payment_paid: "Paid",
@@ -1636,6 +1637,7 @@ const en: Dict = {
     revokedN_other: "{{count}} sessions ended",
   },
   userDetail: {
+    source: "Came by tag",
     blacklisted: "On the shared VPN blacklist",
     manual: "Manual",
     state: "State",
@@ -2289,6 +2291,11 @@ const en: Dict = {
     },
   },
   funnel: {
+    source: "Source",
+    noSource: "No tag",
+    byInvite: "By invitation",
+    revenue: "Revenue",
+    sourceHint: "A source tag is a link like t.me/<bot>?start=<tag> (Latin letters, digits, _ and -).",
     title: "Funnel",
     days30: "30 days",
     days90: "90 days",

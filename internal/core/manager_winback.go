@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
@@ -113,4 +115,59 @@ func (m *Manager) Funnel(days int) (model.Funnel, error) {
 		since = time.Now().AddDate(0, 0, -days).Unix()
 	}
 	return m.store.Funnel(since)
+}
+
+// sourceMax bounds a source tag: Telegram's own /start payload limit.
+const sourceMax = 64
+
+// NormalizeSource makes a source tag of free text: lower case, letters, digits, "_"
+// and "-" only, at most 64 characters. "" when nothing is left.
+func NormalizeSource(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(s)) {
+		if b.Len() >= sourceMax {
+			break
+		}
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// TrackSource remembers the tag a chat with no account yet arrived with. The first
+// tag a chat brings is the one kept.
+func (m *Manager) TrackSource(chatID int64, tag string) {
+	if tag = NormalizeSource(tag); tag == "" {
+		return
+	}
+	if err := m.store.SetSubscriberSource(chatID, tag, time.Now().Unix()); err != nil {
+		logErr("source: remember tag failed", "chat", chatID, "err", err)
+	}
+}
+
+// SetUserSource sets where a user came from — what an outside bot does with the tag
+// its /start carried. "" clears it.
+func (m *Manager) SetUserSource(ctx context.Context, userID int64, tag string) error {
+	tag = NormalizeSource(tag)
+	if err := m.store.SetUserSource(userID, tag); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalidCode("err.userNotFound", "пользователь не найден")
+		}
+		return err
+	}
+	m.audit(ctx, userID, model.EventUserSource, map[string]any{"source": tag})
+	return nil
+}
+
+// UserSource reads where a user came from.
+func (m *Manager) UserSource(userID int64) string { return m.store.UserSource(userID) }
+
+// FunnelBySource is Funnel split by where the users came from.
+func (m *Manager) FunnelBySource(days int) ([]model.SourceFunnel, error) {
+	var since int64
+	if days > 0 {
+		since = time.Now().AddDate(0, 0, -days).Unix()
+	}
+	return m.store.FunnelBySource(since, 30)
 }

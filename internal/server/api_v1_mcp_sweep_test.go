@@ -262,6 +262,7 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_users_by_id_promo", map[string]any{"id": created, "body": map[string]any{"code": "SWEEP10"}})
 	call("post_users_by_id_telegram", map[string]any{"id": created, "body": map[string]any{"chat_id": 910001}})
 	call("post_users_by_id_referrer", map[string]any{"id": created, "body": map[string]any{"referrer_id": user.ID}})
+	call("post_users_by_id_source", map[string]any{"id": created, "body": map[string]any{"source": "vk_ads"}})
 	call("post_payments", map[string]any{
 		"body": map[string]any{
 			"key": "cryptobot", "enabled": false, "config": map[string]any{"token": "1:aa"},
@@ -422,6 +423,7 @@ func TestMCPToolsRejectMissingIDsWithoutBlamingThePanel(t *testing.T) {
 		"post_users_by_id_promo":          map[string]any{"code": "SWEEP10"},
 		"post_users_by_id_telegram":       map[string]any{"chat_id": 1},
 		"post_users_by_id_referrer":       map[string]any{"referrer_id": 1},
+		"post_users_by_id_source":         map[string]any{"source": "vk"},
 		"post_users_by_id_reset_period":   map[string]any{"period": "monthly"},
 		"post_webhooks_by_id": map[string]any{
 			"url": "https://example.com/hook", "events": []string{"user.created"},

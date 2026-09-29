@@ -680,6 +680,7 @@ func (rt *Router) getUser(w http.ResponseWriter, r *http.Request, id int64) {
 	rt.applyTLSHints(set)
 	v := rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()))
 	v.BlacklistReason, v.Blacklisted = rt.mgr.Blacklisted(u.TgChatID)
+	v.Source = rt.mgr.UserSource(u.ID)
 	writeJSON(w, http.StatusOK, v)
 }
 

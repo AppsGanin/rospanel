@@ -73,6 +73,7 @@ const (
 	EventAutoRenew       = "balance.autorenew" // renewal from the balance switched on or off
 	EventPaymentRefunded = "payment.refunded"  // an order's money returned to the balance
 	EventWinbackSent     = "promo.winback"     // a lapsed user got a personal discount code
+	EventUserSource      = "user.source"       // where the user came from was set by hand or the API
 )
 
 // UserEventCatalog is the stable key list the journal UI iterates over to build its
@@ -122,6 +123,7 @@ var UserEventCatalog = []string{
 	EventAutoRenew,
 	EventPaymentRefunded,
 	EventWinbackSent,
+	EventUserSource,
 }
 
 // ValidUserEvent reports whether k is a known audit action key.

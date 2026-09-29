@@ -65,6 +65,17 @@ type Funnel struct {
 	Renewed int `json:"renewed"`
 }
 
+// SourceFunnel is the funnel for the users who came from one source: a /start tag,
+// "~ref" for an invite link without one, "" for neither.
+type SourceFunnel struct {
+	Source     string `json:"source"`
+	Joined     int    `json:"joined"`
+	Trial      int    `json:"trial"`
+	Paid       int    `json:"paid"`
+	Renewed    int    `json:"renewed"`
+	RevenueRub int64  `json:"revenue_rub"`
+}
+
 // PeriodOffer is a discount for buying several of a plan's periods at once.
 type PeriodOffer struct {
 	Periods int `json:"periods"` // 2 or more

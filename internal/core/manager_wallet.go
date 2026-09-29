@@ -518,9 +518,14 @@ func (m *Manager) TrackReferral(chatID int64, code string) {
 
 // AttachReferrer makes the referrer a freshly registered chat arrived with the new
 // account's referrer, and tells the referrer.
+//
+// It also gives the account the /start tag the chat arrived with (see TrackSource).
 func (m *Manager) AttachReferrer(ctx context.Context, userID, chatID int64) {
 	if chatID == 0 {
 		return
+	}
+	if err := m.store.AttachSourceFromChat(userID, chatID); err != nil {
+		logErr("source: attach failed", "user", userID, "err", err)
 	}
 	ref, err := m.store.AttachReferrerFromChat(userID, chatID)
 	if err != nil {

@@ -232,6 +232,7 @@ func (rt *Router) apiMux() http.Handler {
 	id("POST /v1/users/{id}/telegram", rt.apiLinkTelegram)
 	id("GET /v1/users/{id}/subscription", rt.apiUserSubscription)
 	id("POST /v1/users/{id}/referrer", rt.apiSetReferrer)
+	id("POST /v1/users/{id}/source", rt.apiSetSource)
 
 	hf("GET /v1/billing/providers", rt.apiListProviders)
 	hf("GET /v1/billing/plans", rt.apiListPlans)

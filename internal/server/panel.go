@@ -43,6 +43,8 @@ type userView struct {
 	// reason given. Filled in for the user card only.
 	Blacklisted     bool   `json:"blacklisted,omitempty"`
 	BlacklistReason string `json:"blacklist_reason,omitempty"`
+	// Source is the /start tag the user came with (user card only).
+	Source string `json:"source,omitempty"`
 }
 
 // namedLink is one share link with the node name a client displays for it.

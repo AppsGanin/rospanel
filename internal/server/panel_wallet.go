@@ -130,8 +130,9 @@ func (rt *Router) referralStats(w http.ResponseWriter, _ *http.Request) {
 
 // funnelView is the sales funnel over a period, and what the win-back codes did.
 type funnelView struct {
-	Funnel  model.Funnel       `json:"funnel"`
-	Winback model.WinbackStats `json:"winback"`
+	Funnel   model.Funnel         `json:"funnel"`
+	Winback  model.WinbackStats   `json:"winback"`
+	BySource []model.SourceFunnel `json:"by_source"`
 }
 
 // funnelFor reads the funnel for ?days= (30 by default; 0 = all time).
@@ -145,6 +146,9 @@ func (rt *Router) funnelFor(r *http.Request) (funnelView, error) {
 	var out funnelView
 	var err error
 	if out.Funnel, err = rt.mgr.Funnel(days); err != nil {
+		return out, err
+	}
+	if out.BySource, err = rt.mgr.FunnelBySource(days); err != nil {
 		return out, err
 	}
 	out.Winback, err = rt.mgr.WinbackStats()

@@ -81,6 +81,8 @@ type Panel interface {
 	PromosOffered() bool
 	RefCode(userID int64) (string, error)
 	TrackReferral(chatID int64, code string)
+	// TrackSource remembers the tag any other /start payload carried (t.me/bot?start=vk_ads).
+	TrackSource(chatID int64, tag string)
 	AttachReferrer(ctx context.Context, userID, chatID int64)
 	SetUserNotifier(fn func(chatID int64, html string))
 	SetAdminNotifier(fn func(html string))

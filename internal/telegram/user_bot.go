@@ -348,10 +348,16 @@ func (s *UserService) handleStart(ctx context.Context, client *Client, set *mode
 			return
 		}
 		// An invite link: remembered for when this chat registers. A chat that already
-		// has an account keeps the referrer it had (or none).
-		if code, ok := strings.CutPrefix(strings.TrimSpace(args[0]), refStartPrefix); ok && code != "" {
-			if _, linked := s.findLinkedUser(chatID); !linked {
-				s.panel.TrackReferral(chatID, code)
+		// has an account keeps the referrer it had (or none). Any other payload is a
+		// source tag — which ad or post the person came from — kept the same way.
+		if _, linked := s.findLinkedUser(chatID); !linked {
+			arg := strings.TrimSpace(args[0])
+			if code, ok := strings.CutPrefix(arg, refStartPrefix); ok {
+				if code != "" {
+					s.panel.TrackReferral(chatID, code)
+				}
+			} else {
+				s.panel.TrackSource(chatID, arg)
 			}
 		}
 	}
