@@ -171,3 +171,16 @@ func (m *Manager) FunnelBySource(days int) ([]model.SourceFunnel, error) {
 	}
 	return m.store.FunnelBySource(since, 30)
 }
+
+// FraudSignals lists the patterns worth an operator's look (see store.FraudSignals).
+func (m *Manager) FraudSignals() ([]model.FraudSignal, error) {
+	now := time.Now()
+	sigs, err := m.store.FraudSignals(store.FraudWindow{
+		Since:     now.AddDate(0, 0, -model.FraudWindowDays).Unix(),
+		WeekSince: now.AddDate(0, 0, -7).Unix(),
+	})
+	if sigs == nil {
+		sigs = []model.FraudSignal{}
+	}
+	return sigs, err
+}

@@ -2219,6 +2219,17 @@ export interface PaymentCallback {
   body?: string
 }
 
+// A pattern worth a look: what several accounts share, how often, and who.
+export interface FraudSignal {
+  kind: string
+  key: string
+  count: number
+  at: number
+  users: { id: number; name: string }[]
+}
+
+export const getFraudSignals = () => api<FraudSignal[]>('api/payments/fraud')
+
 export const listPaymentCallbacks = (q: { failed?: boolean; before?: number; order?: number } = {}) => {
   const p = new URLSearchParams()
   if (q.failed) p.set('failed', '1')

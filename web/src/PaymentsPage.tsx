@@ -18,6 +18,7 @@ import {
 } from "./api";
 import { UserDetail } from "./UserDetail";
 import { PaymentCallbacks } from "./PaymentCallbacks";
+import { FraudPanel } from "./FraudPanel";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { EMPTY_STEP_UP, StepUpFields, stepUpReady, useStepUpDialog, type StepUp } from "./stepup";
@@ -597,6 +598,7 @@ export function PaymentsPage({
         )}
       </Panel>
 
+      {canManage && <FraudPanel onOpenUser={canUsers ? openUser : undefined} />}
       {canManage && <PaymentCallbacks providerLabel={(p) => providerMeta(p).label} />}
 
       {stepUpNode}
