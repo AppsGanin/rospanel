@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { td } from "./i18n";
 import { getFraudSignals, type FraudSignal } from "./api";
-import { EmptyState, MICRO, Mono, Panel, cn } from "./ui";
+import { errMessage, notifyError } from "./notify";
+import { Button, EmptyState, MICRO, Mono, Panel, cn } from "./ui";
 
 // The order the kinds are shown in: account abuse first, then money.
 const KINDS = [
@@ -19,18 +20,28 @@ const KINDS = [
 // accounts and what they share, and opens their cards.
 export function FraudPanel({ onOpenUser }: { onOpenUser?: (id: number) => void }) {
   const { t } = useTranslation();
+  // Loaded on demand: the scans behind it are the heaviest reads on the page.
   const [sigs, setSigs] = useState<FraudSignal[] | null>(null);
-  useEffect(() => {
+  const [busy, setBusy] = useState(false);
+  const load = () => {
+    setBusy(true);
     getFraudSignals()
       .then(setSigs)
-      .catch(() => setSigs(null));
-  }, []);
-  if (!sigs) return null;
+      .catch((e) => notifyError(errMessage(e)))
+      .finally(() => setBusy(false));
+  };
 
   return (
-    <Panel title={t("fraud.title")}>
+    <Panel
+      title={t("fraud.title")}
+      aside={
+        <Button size="xs" variant="light" loading={busy} onClick={load}>
+          {t(sigs ? "common.refresh" : "fraud.check")}
+        </Button>
+      }
+    >
       <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">{t("fraud.hint")}</p>
-      {sigs.length === 0 ? (
+      {!sigs ? null : sigs.length === 0 ? (
         <EmptyState title={t("fraud.none")} />
       ) : (
         KINDS.filter((k) => sigs.some((s) => s.kind === k)).map((kind) => (

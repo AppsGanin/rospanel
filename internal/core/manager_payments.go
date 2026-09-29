@@ -270,6 +270,12 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 		// amount has no star figure to compare with, so none is passed on.
 		rec.Outcome, rec.OrderID, err = m.confirmProviderOrderOutcome(payments.ProviderStars, payload,
 			payments.Result{Status: payments.StatusPaid})
+		// Telegram reports each payment once, so a paid order hearing of another one
+		// is a second charge of the same invoice — stars taken for nothing.
+		if err == nil && rec.Outcome == model.WebhookOutcomeDuplicate {
+			rec.Outcome = model.WebhookOutcomeError
+			err = fmt.Errorf("stars: invoice %q paid again after the order was already paid", payload)
+		}
 		return err
 	}()
 	if err != nil {
@@ -278,9 +284,11 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 	if e := m.store.RecordPaymentWebhook(rec); e != nil {
 		logErr("stars: journal write failed", "err", e)
 	}
-	if err != nil && rec.Outcome == model.WebhookOutcomeMismatch {
-		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.starsMismatch",
-			rec.OrderID, total, escHTML(payload)))
+	if err != nil {
+		// Every failure here is stars the user paid and did not get what they paid
+		// for: nothing retries it and nothing else will tell the operator.
+		m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.starsNotApplied",
+			rec.OrderID, total, escHTML(payload), escHTML(rec.Error)))
 	}
 	return err
 }
@@ -773,19 +781,28 @@ func (m *Manager) handleProviderWebhook(key string, body []byte, h http.Header, 
 		rec.Outcome = model.WebhookOutcomePending
 		if o, e := m.store.GetPaymentOrderByProvider(key, providerID); e == nil {
 			rec.OrderID = o.ID
+			// A held transfer (protected, or awaiting the payer's acceptance) is not
+			// reported again once released, and there is no status to poll: the
+			// operator has to settle it.
+			if key == payments.ProviderYooMoney {
+				m.notifyAdminEvent(model.AdminEventPayment, i18n.T(m.botLang(), "notify.yoomoneyHeld",
+					o.ID, escHTML(o.UserName), o.AmountRub))
+			}
 		}
 	}
 	return nil
 }
 
 // webhookHeaders keeps the headers that explain a callback — its type and the
-// provider's signature — as "Name: value" lines. Cookies, authorization and proxy
-// hop headers stay out of the journal.
+// provider's signature — as "Name: value" lines, at most webhookHeadersMax bytes.
+// Anything that can carry a credential is masked: some providers send their API key
+// in a header (Platega's X-Secret), and the journal is read by more people than the
+// provider settings are. Cookies and proxy hop headers stay out altogether.
 func webhookHeaders(h http.Header) string {
 	names := make([]string, 0, len(h))
 	for k := range h {
 		switch strings.ToLower(k) {
-		case "cookie", "authorization", "proxy-authorization", "x-forwarded-for", "x-real-ip", "forwarded":
+		case "cookie", "x-forwarded-for", "x-real-ip", "forwarded":
 			continue
 		}
 		names = append(names, k)
@@ -794,6 +811,12 @@ func webhookHeaders(h http.Header) string {
 	var b strings.Builder
 	for _, k := range names {
 		for _, v := range h[k] {
+			if secretHeader(k) {
+				v = "***"
+			}
+			if b.Len()+len(k)+len(v)+3 > webhookHeadersMax {
+				return b.String()
+			}
 			b.WriteString(k)
 			b.WriteString(": ")
 			b.WriteString(v)
@@ -801,6 +824,25 @@ func webhookHeaders(h http.Header) string {
 		}
 	}
 	return b.String()
+}
+
+// webhookHeadersMax bounds the headers a journal row keeps.
+const webhookHeadersMax = 4 << 10
+
+// secretHeader reports whether a header's name says it may carry a credential. A
+// signature is kept: it is derived from the body, and it is what a failed check is
+// debugged by.
+func secretHeader(name string) bool {
+	n := strings.ToLower(name)
+	if strings.Contains(n, "signature") || n == "sign" || strings.HasSuffix(n, "-sign") {
+		return false
+	}
+	for _, w := range []string{"secret", "token", "key", "auth", "pass", "cred"} {
+		if strings.Contains(n, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // PaymentWebhooks lists the callback journal.
@@ -835,12 +877,18 @@ func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
 	cut := false
 	// Devices or traffic the money bought go with it, while the user still holds them.
 	if (r.Kind == model.OrderDevices || r.Kind == model.OrderTraffic) && r.Earlier == "" {
-		if err := m.store.TakeBackAddon(o.UserID, o.PlanID, o.Devices*boolInt(r.Kind == model.OrderDevices), o.PackBytes); err != nil {
+		taken, err := m.store.TakeBackAddon(o.UserID, o.PlanID, o.Devices*boolInt(r.Kind == model.OrderDevices), o.PackBytes)
+		if err != nil {
 			logErr("payment: provider refund did not take the add-on back", "order", o.ID, "err", err)
-		} else {
+		} else if taken {
 			cut = true
 			m.TriggerUserSync()
 		}
+	}
+	// A change goes back to the plan it left, on the same term, while the user is
+	// still on the plan it bought.
+	if r.Kind == model.OrderChange && r.Earlier == "" {
+		cut = m.revertChange(ctx, o)
 	}
 	if r.Kind == model.OrderPlan && r.Earlier == "" {
 		if u, err := m.store.GetUser(r.UserID); err == nil {
@@ -907,4 +955,35 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// revertChange moves a user back to the plan a refunded change left, keeping the
+// term, and reports whether it did.
+func (m *Manager) revertChange(ctx context.Context, o *model.PaymentOrder) bool {
+	m.applyPlanMu.Lock()
+	u, err := m.store.GetUser(o.UserID)
+	if err != nil || u.PlanID != o.PlanID || o.ChangeFrom == 0 {
+		m.applyPlanMu.Unlock()
+		return false
+	}
+	from, err := m.store.GetTariffPlan(o.ChangeFrom)
+	if err != nil {
+		m.applyPlanMu.Unlock()
+		return false
+	}
+	w, err := m.changeWrite(*u, from.ID, 0, u.ExpireAt)
+	if err != nil {
+		m.applyPlanMu.Unlock()
+		return false
+	}
+	groupsChanged := m.planGroupsChanged(w)
+	err = m.store.ApplyUserPlan(w)
+	m.applyPlanMu.Unlock()
+	if err != nil {
+		logErr("payment: refunded change not reverted", "order", o.ID, "err", err)
+		return false
+	}
+	m.afterPlanWrite(groupsChanged)
+	m.auditPlan(ctx, u.ID, u.Name, model.EventPlanChanged, m.PlanName(o.PlanID), from.Name, w.ExpireAt)
+	return true
 }

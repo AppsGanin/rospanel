@@ -205,7 +205,7 @@ func (m *Manager) checkPlanPurchase(u model.User, plan *model.TariffPlan) error 
 			return invalidCode("err.planUnavailable", "тариф недоступен")
 		}
 		if cur := m.ActivePaidPlan(u); cur != nil {
-			return invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": cur.Name})
+			return invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сменить тариф можно кнопкой «Сменить тариф», или отмените её", map[string]any{"plan": cur.Name})
 		}
 	}
 	return nil
@@ -283,7 +283,7 @@ func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purcha
 		m.applyPlanMu.Unlock()
 		return nil, err
 	}
-	devices, err := wantDevices(*u, plan, p.Devices)
+	devices, err := renewalDevices(m, *u, plan, p.Devices)
 	if err != nil {
 		m.applyPlanMu.Unlock()
 		return nil, err
@@ -880,6 +880,11 @@ func (p *promoTries) allow(userID int64, now time.Time) bool {
 // this user yet.
 func (m *Manager) promoOpen(p model.PromoCode, userID int64) error {
 	now := time.Now().Unix()
+	// A personal code is its owner's alone: handed on, it would let one throwaway
+	// account farm discounts for another.
+	if p.OwnerID != 0 && p.OwnerID != userID {
+		return invalidCode("err.promoUnavailable", "промокод больше не действует")
+	}
 	if !p.Enabled || (p.ExpiresAt > 0 && p.ExpiresAt <= now) || (p.MaxUses > 0 && p.Uses >= p.MaxUses) {
 		return invalidCode("err.promoUnavailable", "промокод больше не действует")
 	}
@@ -1026,7 +1031,7 @@ func (m *Manager) redeemPromoDays(p model.PromoCode, u model.User, now int64, re
 		}
 		planID = active.ID
 	case active != nil && active.ID != planID:
-		return invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сначала отмените её, чтобы сменить тариф", map[string]any{"plan": active.Name})
+		return invalidCode("err.activeSubscription", "у вас активна подписка «{{plan}}» — сменить тариф можно кнопкой «Сменить тариф», или отмените её", map[string]any{"plan": active.Name})
 	}
 	// A plan without a term given "for N days" would never end.
 	if plan, err := m.store.GetTariffPlan(planID); err != nil || plan.IsFree() || plan.PeriodDays <= 0 {

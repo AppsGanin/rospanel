@@ -1,6 +1,8 @@
 package store
 
 import (
+	"strings"
+
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
@@ -10,9 +12,9 @@ const paymentWebhookBodyMax = 16 << 10
 
 // RecordPaymentWebhook stores one provider callback.
 func (s *Store) RecordPaymentWebhook(w model.PaymentWebhook) error {
-	if len(w.Body) > paymentWebhookBodyMax {
-		w.Body = w.Body[:paymentWebhookBodyMax]
-	}
+	w.Body = capText(w.Body, paymentWebhookBodyMax)
+	w.Headers = capText(w.Headers, 4<<10)
+	w.Error = capText(w.Error, 1<<10)
 	_, err := s.db.Exec(
 		`INSERT INTO payment_webhooks (at, provider, remote_ip, provider_id, order_id, status, outcome, error, headers, body)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -93,4 +95,12 @@ func (s *Store) PurgePaymentWebhooks(before int64) (int64, error) {
 			return total, nil
 		}
 	}
+}
+
+// capText cuts s to at most n bytes without splitting a character.
+func capText(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.ToValidUTF8(s[:n], "")
 }

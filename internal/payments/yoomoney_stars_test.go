@@ -36,6 +36,19 @@ func TestYooMoneyWebhook(t *testing.T) {
 	if _, _, err := y.Webhook(context.Background(), []byte(yooMoneyNote("other", f)), nil); err == nil {
 		t.Fatal("a notification signed with another secret was accepted")
 	}
+	// No charged amount, or one the signed amount contradicts: refused, not trusted.
+	g := url.Values{}
+	for k, v := range f {
+		g[k] = v
+	}
+	g.Del("withdraw_amount")
+	if _, _, err := y.Webhook(context.Background(), []byte(yooMoneyNote("s3cret", g)), nil); err == nil {
+		t.Fatal("a notification with no withdraw_amount was accepted")
+	}
+	g.Set("withdraw_amount", "5000.00")
+	if _, _, err := y.Webhook(context.Background(), []byte(yooMoneyNote("s3cret", g)), nil); err == nil {
+		t.Fatal("a withdraw_amount far above the signed amount was accepted")
+	}
 	f.Set("codepro", "true")
 	if _, res, err := y.Webhook(context.Background(), []byte(yooMoneyNote("s3cret", f)), nil); err != nil || res.Status != StatusPending {
 		t.Fatalf("protected transfer = %+v %v", res, err)

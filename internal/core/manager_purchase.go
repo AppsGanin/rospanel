@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/AppsGanin/rospanel/internal/i18n"
@@ -72,6 +74,22 @@ func wantDevices(u model.User, plan *model.TariffPlan, n int) (int, error) {
 	return n, nil
 }
 
+// renewalDevices resolves the devices of a plan purchase. Renewing a term that still
+// runs keeps the devices held: more would start at once on the term already paid for
+// (that is what the devices add-on is for), fewer would take away what was paid for.
+func renewalDevices(m *Manager, u model.User, plan *model.TariffPlan, n int) (int, error) {
+	if cur := m.ActivePaidPlan(u); cur != nil && cur.ID == plan.ID {
+		return heldDevices(u, plan), nil
+	}
+	return wantDevices(u, plan, n)
+}
+
+// PurchaseStamp is what an add-on bought from the balance is held to: the term and
+// what has been added to it. A second tap of the same button finds it changed.
+func PurchaseStamp(u model.User) int64 {
+	return u.ExpireAt + int64(u.ExtraDevices)<<40 + (u.PackData>>20)<<20
+}
+
 // periodRub is one period of plan with extra devices.
 func periodRub(plan *model.TariffPlan, devices int) int {
 	return plan.PriceRub + devices*plan.DevicePrice
@@ -118,7 +136,7 @@ func (m *Manager) quotePurchase(u model.User, p Purchase, now int64) (PlanQuote,
 		if err != nil {
 			return PlanQuote{}, nil, invalidCode("err.planNotFound", "тариф не найден")
 		}
-		devices, err := wantDevices(u, plan, p.Devices)
+		devices, err := renewalDevices(m, u, plan, p.Devices)
 		if err != nil {
 			return PlanQuote{}, nil, err
 		}
@@ -216,7 +234,7 @@ func (m *Manager) quoteChange(set *model.Settings, u model.User, p Purchase, now
 		return PlanQuote{}, nil, err
 	}
 	left := u.ExpireAt - now
-	have := termValueKop(periodRub(cur, heldDevices(u, cur)), cur.PeriodDays, left)
+	have := termValueKop(m.paidPeriodRub(u, cur), cur.PeriodDays, left)
 	want := termValueKop(periodRub(to, devices), to.PeriodDays, left)
 	q := PlanQuote{Kind: model.OrderChange, Periods: 1, Devices: devices, ExpireAt: u.ExpireAt}
 	if want > have {
@@ -232,6 +250,21 @@ func (m *Manager) quoteChange(set *model.Settings, u model.User, p Purchase, now
 	secs.Quo(secs, big.NewInt(int64(periodRub(to, devices))*100))
 	q.ExpireAt = now + max(secs.Int64(), left)
 	return q, to, nil
+}
+
+// paidPeriodRub is what one period of the plan the user holds is worth in a change:
+// its list price, but never more than they last paid for a period of it — a plan
+// bought at a discount, or assigned for nothing, must not turn into more days of
+// another. A plan reached by a paid change was paid at list price.
+func (m *Manager) paidPeriodRub(u model.User, cur *model.TariffPlan) int {
+	list := periodRub(cur, heldDevices(u, cur))
+	if kop, ok := m.store.PlanPaidPerPeriodKop(u.ID, cur.ID); ok {
+		return min(list, int(kop/100))
+	}
+	if m.store.ReachedByChange(u.ID, cur.ID) {
+		return list
+	}
+	return 0
 }
 
 // splitBalance fills in the part of q.TotalRub the balance covers and what is left
@@ -363,7 +396,13 @@ func (m *Manager) BuyFromBalance(ctx context.Context, userID int64, p Purchase, 
 		m.applyPlanMu.Unlock()
 		return nil, err
 	}
-	if expectExpire != AnyExpiry && u.ExpireAt != expectExpire {
+	// A change is held to the term the screen showed; an add-on to the term and what
+	// was added to it (PurchaseStamp), which is what a second tap finds changed.
+	seen := u.ExpireAt
+	if p.Kind == model.OrderDevices || p.Kind == model.OrderTraffic {
+		seen = PurchaseStamp(*u)
+	}
+	if expectExpire != AnyExpiry && seen != expectExpire {
 		m.applyPlanMu.Unlock()
 		return nil, invalidCode("err.purchaseStale", "подписка уже изменилась — обновите страницу и повторите")
 	}
@@ -391,7 +430,9 @@ func (m *Manager) BuyFromBalance(ctx context.Context, userID int64, p Purchase, 
 		bp.Plan = w
 		groupsChanged = m.planGroupsChanged(w)
 	} else {
-		bp.Addon = addonWrite(d)
+		bp.Addon = m.addonWrite(d)
+		// Held to the state it was priced on.
+		bp.Addon.RequireExtra, bp.Addon.RequirePack = u.ExtraDevices, u.PackData
 	}
 	orderID, err := m.store.BuyFromBalance(bp)
 	m.applyPlanMu.Unlock()
@@ -418,23 +459,45 @@ func (m *Manager) BuyFromBalance(ctx context.Context, userID int64, p Purchase, 
 
 // changeWrite moves the user to plan to on the term ending at expire, held to the
 // plan and term they have now.
+//
+// The traffic counter runs on: a change buys a different plan for the same term, not
+// a fresh quota (switching back and forth would otherwise refill it for nothing).
+// Bought traffic goes along, and a term bought as several periods keeps refilling
+// every period of the new plan.
 func (m *Manager) changeWrite(u model.User, to int64, devices int, expire int64) (store.UserPlanWrite, error) {
-	w, _, err := m.planWriteForDays(u, to, false, true, -1, devices)
+	w, _, err := m.planWriteForDays(u, to, false, false, -1, devices)
 	if err != nil {
 		return w, err
 	}
 	w.ExpireAt = expire
+	w.ResetUsage, w.LastUp, w.LastDown = false, 0, 0
+	w.ResetAnchor = u.LastResetAt
+	if w.DataLimit > 0 && u.PackData > 0 {
+		w.DataLimit += u.PackData
+		w.PackData = u.PackData
+	}
+	if plan, err := m.store.GetTariffPlan(to); err == nil && strings.HasPrefix(u.ResetPeriod, "days:") &&
+		plan.DataLimit > 0 && plan.ResetPeriod == "" && plan.PeriodDays > 0 &&
+		expire-time.Now().Unix() > int64(plan.PeriodDays)*86400 {
+		w.ResetPeriod = fmt.Sprintf("days:%d", plan.PeriodDays)
+	}
 	w.RequirePlan, w.RequireExpire = u.PlanID, u.ExpireAt
 	return w, nil
 }
 
 // addonWrite is the add-on an order delivers.
-func addonWrite(o store.OrderDraft) *store.AddonWrite {
-	return &store.AddonWrite{
+func (m *Manager) addonWrite(o store.OrderDraft) *store.AddonWrite {
+	a := &store.AddonWrite{
 		UserID: o.UserID, PlanID: o.PlanID, AddData: o.PackBytes,
-		AddDevices:    map[bool]int{true: o.Devices}[o.Kind == model.OrderDevices],
-		RequireExpire: o.ExpectExpire,
+		RequireExpire: o.ExpectExpire, RequireExtra: -1, RequirePack: -1,
 	}
+	if o.Kind == model.OrderDevices {
+		a.AddDevices = o.Devices
+		if plan, err := m.store.GetTariffPlan(o.PlanID); err == nil {
+			a.MaxDevices = plan.DeviceMax
+		}
+	}
+	return a
 }
 
 // addonOrderSpec fills in what a paid change, devices or traffic order delivers. The
@@ -454,7 +517,7 @@ func (m *Manager) addonOrderSpec(u model.User, order *model.PaymentOrder, spec *
 		spec.Plan = &w
 		return nil
 	}
-	spec.Addon = addonWrite(store.OrderDraft{
+	spec.Addon = m.addonWrite(store.OrderDraft{
 		UserID: order.UserID, PlanID: order.PlanID, Kind: order.Kind,
 		Devices: order.Devices, ExpectExpire: order.ExpectExpire, PackBytes: order.PackBytes,
 	})
@@ -507,11 +570,14 @@ type AddonOffers struct {
 	DevicesMax  int                 `json:"devices_max"`  // 0 = none to add
 	DevicePrice int                 `json:"device_price"` // one device for the rest of the term, roubles
 	Packs       []model.TrafficPack `json:"packs"`
+	// Stamp is what a purchase from the balance passes as its expected state
+	// (expect_expire_at over the API): a second tap finds it changed.
+	Stamp int64 `json:"stamp"`
 }
 
 // Addons lists what the user can add now.
 func (m *Manager) Addons(u model.User) AddonOffers {
-	var out AddonOffers
+	out := AddonOffers{Stamp: PurchaseStamp(u)}
 	set, err := m.Settings()
 	if err != nil || !set.BillingEnabled {
 		return out

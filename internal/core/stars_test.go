@@ -51,7 +51,10 @@ func TestStarsPayment(t *testing.T) {
 	if first.ExpireAt == 0 {
 		t.Fatal("the plan was not granted")
 	}
-	_ = m.ConfirmStarsPayment(payload, "XTR", 56, []byte(`{}`))
+	// A second charge of the paid invoice applies nothing and is reported.
+	if err := m.ConfirmStarsPayment(payload, "XTR", 56, []byte(`{}`)); err == nil {
+		t.Fatal("a second payment of a paid invoice passed silently")
+	}
 	if again, _ := st.GetUser(u.ID); again.ExpireAt != first.ExpireAt {
 		t.Fatal("a repeated payment message extended the plan twice")
 	}
@@ -59,7 +62,7 @@ func TestStarsPayment(t *testing.T) {
 		t.Fatal("pre-checkout passed a paid order")
 	}
 	j, _ := m.PaymentWebhooks(store.PaymentWebhookFilter{})
-	want := []string{model.WebhookOutcomeDuplicate, model.WebhookOutcomePaid, model.WebhookOutcomeMismatch}
+	want := []string{model.WebhookOutcomeError, model.WebhookOutcomePaid, model.WebhookOutcomeMismatch}
 	if len(j) != 3 {
 		t.Fatalf("journal = %d rows", len(j))
 	}

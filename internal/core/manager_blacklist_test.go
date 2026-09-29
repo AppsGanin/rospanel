@@ -10,7 +10,7 @@ import (
 
 func TestParseBlacklist(t *testing.T) {
 	t.Parallel()
-	got := parseBlacklist([]byte("# header\n6923193113 #Причина: скан\n79156181 # sharing\n\nnot-an-id # x\n206090793\n-5 # bad\n"))
+	got, _ := parseBlacklist([]byte("# header\n6923193113 #Причина: скан\n79156181 # sharing\n\nnot-an-id # x\n206090793\n-5 # bad\n"))
 	want := map[int64]string{6923193113: "Причина: скан", 79156181: "sharing", 206090793: ""}
 	if len(got) != len(want) {
 		t.Fatalf("parsed %d entries, want %d: %v", len(got), len(want), got)

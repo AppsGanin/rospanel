@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,16 +24,17 @@ func newRulesManager(t *testing.T) (*Manager, *store.Store, func() []sentMsg) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	if err := st.ExecForTest(`UPDATE settings SET tg_user_bot_enabled = 1, billing_enabled = 1`); err != nil {
+	if err := st.ExecForTest(`UPDATE settings SET tg_user_bot_enabled = 1, billing_enabled = 1, tg_user_reg_enabled = 1, tg_user_reg_mode = 'open'`); err != nil {
 		t.Fatal(err)
 	}
 	m := &Manager{store: st}
 	var mu sync.Mutex
 	var sent []sentMsg
-	m.SetUserMessenger(func(chat int64, html string, _ []model.BroadcastButton) {
+	m.SetUserMessenger(func(chat int64, html string, _ []model.BroadcastButton) error {
 		mu.Lock()
 		sent = append(sent, sentMsg{chat, html})
 		mu.Unlock()
+		return nil
 	})
 	return m, st, func() []sentMsg {
 		mu.Lock()
@@ -138,17 +140,29 @@ func TestAutoRuleCycles(t *testing.T) {
 	if !chats[201] || !chats[300] || len(chats) != 2 {
 		t.Fatalf("first sweep wrote to %v", chats)
 	}
-	// Came back, then went quiet again: a new spell, a new message.
+	// Came back, then went quiet again: a new spell, but within the cooldown — no
+	// second message.
 	if err := st.ExecForTest(`UPDATE users SET last_seen = ? WHERE id = ?`, now.Add(-50*time.Hour).Unix(), idle); err != nil {
 		t.Fatal(err)
 	}
 	m.RunAutoRules(now.Unix())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("second spell inside the cooldown = %+v", got)
+	}
+	// A month later it may write again.
+	if err := st.ExecForTest(`UPDATE auto_rule_sends SET sent_at = sent_at - 31*86400`); err != nil {
+		t.Fatal(err)
+	}
+	m.RunAutoRules(now.Unix())
 	if got := sent(); len(got) != 1 || got[0].chat != 201 {
-		t.Fatalf("second spell = %+v", got)
+		t.Fatalf("second spell after the cooldown = %+v", got)
 	}
 	if err := m.SaveAutoRule(&model.AutoRule{Name: "x", Trigger: model.TriggerNoSignup, DelayHours: 1,
 		Text: "x", DiscountPercent: 10, DiscountDays: 3}); err == nil {
 		t.Fatal("a discount for a chat with no account was accepted")
+	}
+	if err := m.SaveAutoRule(&model.AutoRule{Name: "y", Trigger: model.TriggerIdle, DelayHours: 12, Text: "y"}); err == nil {
+		t.Fatal("an idle rule shorter than the minimum was accepted")
 	}
 }
 
@@ -178,5 +192,33 @@ func TestAutoRuleLapsed(t *testing.T) {
 	m.RunAutoRules(now.Unix())
 	if got := sent(); len(got) != 0 {
 		t.Fatalf("lapsed twice = %+v", got)
+	}
+}
+
+// A spent quota is not idleness; a personal code is its owner's alone.
+func TestAutoRuleIdleQuotaAndOwnCode(t *testing.T) {
+	t.Parallel()
+	m, st, sent := newRulesManager(t)
+	now := time.Now()
+	spent := userWithChat(t, st, "spent", 501, now.Add(-60*24*time.Hour))
+	other := userWithChat(t, st, "other", 502, now.Add(-60*24*time.Hour))
+	if err := st.ExecForTest(`UPDATE users SET last_seen = ?, expire_at = ?, data_limit = 100, used_up = 100 WHERE id = ?`,
+		now.Add(-3*24*time.Hour).Unix(), now.Add(10*24*time.Hour).Unix(), spent); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SaveAutoRule(&model.AutoRule{Name: "idle", Enabled: true, Trigger: model.TriggerIdle, DelayHours: 48, Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	m.RunAutoRules(now.Unix())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("wrote to a user with a spent quota: %+v", got)
+	}
+	// A code made for spent cannot be used by other.
+	code := &model.PromoCode{Kind: model.PromoPercent, Value: 20, ExpiresAt: now.Add(time.Hour).Unix()}
+	if _, err := st.IssueAutoRuleCode(1, store.AutoRuleTarget{UserID: spent, ChatID: 501}, code, func() string { return "GIFTTEST" }, now.Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RedeemPromo(context.Background(), other, "GIFTTEST"); err == nil {
+		t.Fatal("another user redeemed a personal code")
 	}
 }

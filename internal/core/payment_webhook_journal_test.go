@@ -46,6 +46,7 @@ func TestProviderWebhookJournal(t *testing.T) {
 		h := http.Header{}
 		h.Set("Crypto-Pay-Api-Signature", hex.EncodeToString(mac.Sum(nil)))
 		h.Set("Cookie", "session=must-not-be-kept")
+		h.Set("X-Secret", "must-not-be-kept-either")
 		return h
 	}
 	paid := `{"update_type":"invoice_paid","payload":{"invoice_id":777,"status":"paid","amount":"100","fiat":"RUB"}}`
@@ -76,7 +77,7 @@ func TestProviderWebhookJournal(t *testing.T) {
 		t.Error("a rejected callback carries no error text")
 	}
 	for _, r := range got {
-		if strings.Contains(r.Headers, "must-not-be-kept") {
+		if strings.Contains(r.Headers, "must-not-be-kept") || !strings.Contains(r.Headers, "Crypto-Pay-Api-Signature") && r.Outcome == model.WebhookOutcomePaid {
 			t.Fatalf("cookie kept in the journal: %q", r.Headers)
 		}
 	}

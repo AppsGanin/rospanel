@@ -997,7 +997,7 @@
             </select>
             {{end}}
             {{if .Devices}}
-            <select class="periods" id="dev-{{.ID}}" autocomplete="off">
+            <select class="periods" id="dev-{{.ID}}" autocomplete="off" onchange="devPicked({{.ID}})">
               {{range .Devices}}<option value="{{.Extra}}">{{.Label}}</option>{{end}}
             </select>
             {{end}}
@@ -1008,7 +1008,7 @@
           {{range .Billing.Changes}}
           <div class="plan">
             <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
-            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', this)">{{$.L.ChangeBtn}}</button>
+            <button class="btn" onclick="if (confirm({{$.L.ChangeConfirm}} + '\n' + {{.Label}})) buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', this)">{{$.L.ChangeBtn}}</button>
           </div>
           {{end}}
           {{end}}
@@ -1017,7 +1017,7 @@
           {{range .Billing.Addons}}
           <div class="plan">
             <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
-            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '', this)">{{$.L.AddBtn}}</button>
+            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{$.L.AddBtn}}</button>
           </div>
           {{end}}
           {{end}}
@@ -1503,10 +1503,23 @@
         if (el.getAttribute("data-fb") === "1" && !(PAY_EXTRA.devices > 0)) payBalance(planId, el, n);
         else pay(planId, el, n);
       }
+      // Extra devices change the price the button was labelled with: from then on it
+      // just pays, and the server says what from.
+      function devPicked(planId) {
+        var d = document.getElementById("dev-" + planId),
+          b = document.getElementById("paybtn-" + planId);
+        if (!d || !b) return;
+        if (!b.hasAttribute("data-label0")) b.setAttribute("data-label0", b.textContent);
+        if ((parseInt(d.value, 10) || 0) > 0) b.textContent = {{.L.Pay}};
+        else b.textContent = b.getAttribute("data-label0");
+      }
       function buyExtra(kind, planId, n, fb, el) {
         PAY_EXTRA = { kind: kind };
         if (kind === "devices") PAY_EXTRA.devices = n;
         if (kind === "traffic") PAY_EXTRA.pack = n;
+        // An add-on is held to what it adds to, not only the term: a second tap then
+        // buys nothing.
+        if (kind === "devices" || kind === "traffic") PAY_EXTRA.expire_at = {{.Billing.Stamp}};
         if (fb === "1") payBalance(planId, el, 1);
         else pay(planId, el, 1);
       }

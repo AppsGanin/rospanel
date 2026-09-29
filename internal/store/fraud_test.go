@@ -41,7 +41,17 @@ func TestFraudSignals(t *testing.T) {
 	// Five failed card attempts in the week.
 	card := mk("card")
 	for range 5 {
-		exec(`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at, provider) VALUES (?, 1, 100, 'cancelled', ?, 'yookassa')`, card, now)
+		var oid int64
+		if err := s.db.QueryRow(`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at, provider)
+			VALUES (?, 1, 100, 'cancelled', ?, 'yookassa') RETURNING id`, card, now).Scan(&oid); err != nil {
+			t.Fatal(err)
+		}
+		exec(`INSERT INTO payment_webhooks (at, provider, order_id, outcome) VALUES (?, 'yookassa', ?, 'cancelled')`, now, oid)
+	}
+	// Orders swept unpaid are no signal.
+	browse := mk("browse")
+	for range 6 {
+		exec(`INSERT INTO payment_orders (user_id, plan_id, amount_rub, status, created_at, provider) VALUES (?, 1, 100, 'cancelled', ?, 'yookassa')`, browse, now)
 	}
 	// Old data stays out.
 	old := mk("old")

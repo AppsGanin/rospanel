@@ -106,6 +106,7 @@ type pageText struct {
 	ChangePlanNote string
 	ChangeTitle    string
 	ChangeBtn      string
+	ChangeConfirm  string
 	AddTitle       string
 	AddBtn         string
 	ManualNote     string
@@ -183,6 +184,7 @@ func text(lang i18n.Lang) pageText {
 		ChangePlanNote: t("sub.changePlanNote"),
 		ChangeTitle:    t("sub.changeTitle"),
 		ChangeBtn:      t("sub.changeBtn"),
+		ChangeConfirm:  t("sub.changeConfirm"),
 		AddTitle:       t("sub.addTitle"),
 		AddBtn:         t("sub.addBtn"),
 		ManualNote:     t("sub.manualNote"),
@@ -411,6 +413,8 @@ type Billing struct {
 	// plan they hold.
 	Changes []Extra `json:"changes"`
 	Addons  []Extra `json:"addons"`
+	// Stamp is what an add-on bought from the balance is held to (core.PurchaseStamp).
+	Stamp int64 `json:"-"`
 }
 
 // HistoryLine is one line of the payment tab's history.

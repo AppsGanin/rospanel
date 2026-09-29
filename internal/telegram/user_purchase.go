@@ -137,8 +137,12 @@ func (s *UserService) showAddons(ctx context.Context, client *Client, chatID, ms
 	a := s.panel.Addons(u)
 	var rows [][]InlineButton
 	for n := 1; n <= min(a.DevicesMax, 5); n++ {
+		price := n * a.DevicePrice
+		if q, err := s.panel.QuotePurchase(u, core.Purchase{Kind: model.OrderDevices, Devices: n}); err == nil {
+			price = q.PriceRub
+		}
 		rows = append(rows, []InlineButton{{
-			Text:         i18n.TN(lang, "user.addDevices", n, n*a.DevicePrice),
+			Text:         i18n.TN(lang, "user.addDevices", n, price),
 			CallbackData: "vu:x:" + purchaseCode(core.Purchase{Kind: model.OrderDevices, Devices: n}),
 		}})
 	}
@@ -165,7 +169,7 @@ func (s *UserService) askDevices(ctx context.Context, client *Client, chatID, ms
 	}}}
 	for n := 1; n <= min(plan.DeviceMax, 8); n++ {
 		rows = append(rows, []InlineButton{{
-			Text:         i18n.T(lang, "user.devicesMore", plan.DeviceLimit+n, n*plan.DevicePrice*periods),
+			Text:         i18n.T(lang, "user.devicesMore", plan.DeviceLimit+n, n*plan.DevicePrice),
 			CallbackData: fmt.Sprintf("vu:buy:%d:%d:%d", plan.ID, periods, n),
 		}})
 	}
@@ -207,6 +211,12 @@ func (s *UserService) offerPurchase(ctx context.Context, client *Client, chatID,
 		s.editErr(ctx, client, chatID, msgID, err, "vu:plans")
 		return
 	}
+	// A term no longer on sale: ask for it again rather than sell another.
+	if p.Kind == model.OrderPlan && q.Periods != max(p.Periods, 1) {
+		s.edit(ctx, client, chatID, msgID, "⚠️ "+esc(i18n.T(lang, "user.termGone")),
+			[][]InlineButton{{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: fmt.Sprintf("vu:buy:%d", p.PlanID)}}})
+		return
+	}
 	code := purchaseCode(p)
 	text := s.purchaseText(lang, u, p, q)
 	back := []InlineButton{{Text: i18n.T(lang, "user.btnToPlans"), CallbackData: "vu:plans"}}
@@ -215,8 +225,14 @@ func (s *UserService) offerPurchase(ctx context.Context, client *Client, chatID,
 		if p.Kind == model.OrderChange && !q.Upgrade {
 			label = i18n.T(lang, "user.btnChangeFree")
 		}
+		// An add-on is held to what it adds to (a second tap finds that changed); a
+		// plan or a change to the term.
+		expect := u.ExpireAt
+		if p.Kind == model.OrderDevices || p.Kind == model.OrderTraffic {
+			expect = core.PurchaseStamp(u)
+		}
 		s.edit(ctx, client, chatID, msgID, text, [][]InlineButton{
-			{{Text: label, CallbackData: fmt.Sprintf("vu:bx:%d:%s", u.ExpireAt, code)}}, back,
+			{{Text: label, CallbackData: fmt.Sprintf("vu:bx:%d:%s", expect, code)}}, back,
 		})
 		return
 	}
@@ -255,6 +271,9 @@ func (s *UserService) payPurchase(ctx context.Context, client *Client, chatID, m
 		return
 	}
 	msg := i18n.T(lang, "user.orderPay", order.ID, order.AmountRub)
+	if order.DiscountRub > 0 {
+		msg += "\n" + i18n.T(lang, "user.quoteDiscount", esc(order.PromoCode), order.DiscountRub)
+	}
 	if order.BalanceKop > 0 {
 		msg += "\n" + i18n.T(lang, "user.quoteBalance", kop(order.BalanceKop))
 	}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { currentLang, td } from "./i18n";
 import { listPaymentCallbacks, type PaymentCallback } from "./api";
@@ -44,13 +44,19 @@ export function PaymentCallbacks({ providerLabel }: { providerLabel: (p: string)
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<PaymentCallback | null>(null);
 
-  const load = (before?: number) =>
-    listPaymentCallbacks({ failed, before })
+  // Only the newest request's answer lands: a filter switched while a page was on
+  // its way must not get rows of the other filter.
+  const seq = useRef(0);
+  const load = (before?: number) => {
+    const my = ++seq.current;
+    return listPaymentCallbacks({ failed, before })
       .then((r) => {
+        if (my !== seq.current) return;
         setRows((prev) => (before ? [...prev, ...r] : r));
         setMore(r.length === PAGE);
       })
       .catch((e) => notifyError(errMessage(e)));
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reloads when the filter changes; load is redefined every render
   useEffect(() => {

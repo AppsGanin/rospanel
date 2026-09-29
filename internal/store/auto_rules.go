@@ -30,6 +30,23 @@ func scanAutoRule(sc interface{ Scan(...any) error }) (model.AutoRule, error) {
 
 // ListAutoRules returns every rule, oldest first, with what each did.
 func (s *Store) ListAutoRules() ([]model.AutoRule, error) {
+	out, err := s.listAutoRules()
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if out[i].Stats, err = s.autoRuleStats(out[i]); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// ListAutoRulesBare returns the rules without their stats — for the sweep, which
+// has no use for them and must not hold the writer to count them.
+func (s *Store) ListAutoRulesBare() ([]model.AutoRule, error) { return s.listAutoRules() }
+
+func (s *Store) listAutoRules() ([]model.AutoRule, error) {
 	rows, err := s.db.Query(`SELECT ` + autoRuleCols + ` FROM auto_rules ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -44,15 +61,7 @@ func (s *Store) ListAutoRules() ([]model.AutoRule, error) {
 		out = append(out, r)
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range out {
-		if out[i].Stats, err = s.autoRuleStats(out[i]); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // GetAutoRule reads one rule.
@@ -73,6 +82,12 @@ func (s *Store) SaveAutoRule(r *model.AutoRule, now int64) error {
 			r.DiscountPercent, r.DiscountDays, now, now).Scan(&r.ID)
 	}
 	r.UpdatedAt = now
+	// A new trigger starts from scratch: the old one's cycles mean nothing to it, and
+	// left in place they would silence it for everyone the old one wrote to.
+	if _, err := s.db.Exec(`DELETE FROM auto_rule_sends WHERE rule_id = ?
+		AND rule_id IN (SELECT id FROM auto_rules WHERE id = ? AND trigger <> ?)`, r.ID, r.ID, r.Trigger); err != nil {
+		return err
+	}
 	res, err := s.db.Exec(
 		`UPDATE auto_rules SET name = ?, enabled = ?, trigger = ?, delay_hours = ?, text = ?, buttons = ?,
 		     discount_percent = ?, discount_days = ?, updated_at = ? WHERE id = ?`,
@@ -112,10 +127,13 @@ type AutoRuleTarget struct {
 // writer (the read pool is for bounded lookups).
 func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit int) ([]AutoRuleTarget, error) {
 	const reachable = ` s.active = 1 AND s.opt_out = 0 `
+	// One rule writes to one person at most once in AutoRuleCooldownDays, whatever
+	// cycles its trigger goes through.
+	cooldown := now - model.AutoRuleCooldownDays*86400
 	const notSent = ` NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.chat_id = s.chat_id AND x.cycle = %s) `
 	userBase := `FROM users u JOIN tg_subscribers s ON s.chat_id = u.tg_chat_id
 		WHERE u.tg_chat_id <> 0 AND u.enabled = 1 AND` + reachable
-	neverPaid := ` NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid' AND o.amount_rub > 0) `
+	neverPaid := ` NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid' AND o.kind = 'plan') `
 	var q string
 	var args []any
 	switch r.Trigger {
@@ -124,6 +142,7 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 			WHERE` + reachable + `AND s.started_at > ? AND s.started_at <= ?
 			  AND NOT EXISTS (SELECT 1 FROM users u WHERE u.tg_chat_id = s.chat_id AND u.tg_chat_id <> 0)
 			  AND NOT EXISTS (SELECT 1 FROM registration_requests q WHERE q.chat_id = s.chat_id)
+			  AND NOT EXISTS (SELECT 1 FROM users d WHERE d.tg_prev_chat_id = s.chat_id AND d.tg_prev_chat_id <> 0)
 			  AND` + strings.Replace(notSent, "%s", "0", 1)
 		args = []any{floor, cut, r.ID}
 	case model.TriggerNoConnect:
@@ -135,9 +154,13 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 			  AND u.created_at > ? AND u.created_at <= ? AND` + strings.Replace(notSent, "%s", "0", 1)
 		args = []any{floor, cut, r.ID}
 	case model.TriggerIdle:
+		// Only someone who could connect and does not: a spent quota is not idleness.
 		q = `SELECT u.id, s.chat_id, u.last_seen, u.name ` + userBase + `AND u.last_seen > ? AND u.last_seen <= ?
-			  AND (u.expire_at = 0 OR u.expire_at > ?) AND` + strings.Replace(notSent, "%s", "u.last_seen", 1)
-		args = []any{floor, cut, now, r.ID}
+			  AND (u.expire_at = 0 OR u.expire_at > ?)
+			  AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
+			  AND NOT EXISTS (SELECT 1 FROM auto_rule_sends c WHERE c.rule_id = ? AND c.chat_id = s.chat_id AND c.sent_at > ?)
+			  AND` + strings.Replace(notSent, "%s", "u.last_seen", 1)
+		args = []any{floor, cut, now, r.ID, cooldown, r.ID}
 	case model.TriggerLapsed:
 		q = `SELECT id, chat_id, lapse, name FROM (
 			   SELECT u.id, s.chat_id, u.name,
@@ -146,10 +169,11 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 			     AND EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid'
 			                 AND o.kind = 'plan' AND o.refunded_at = 0)
 			     AND NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.refund_source = 'provider')
+			     AND NOT (u.expire_at > ?)
 			 ) t
 			 WHERE t.lapse > ? AND t.lapse <= ?
 			   AND NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.chat_id = t.chat_id AND x.cycle = t.lapse)`
-		args = []any{now, floor, cut, r.ID}
+		args = []any{now, now, floor, cut, r.ID}
 	default:
 		return nil, nil
 	}
@@ -247,12 +271,21 @@ func (s *Store) autoRuleStats(r model.AutoRule) (model.AutoRuleStats, error) {
 	}
 	err := s.db.QueryRow(
 		`SELECT count(*), COALESCE(sum(`+convert+`), 0),
-		        COALESCE((SELECT sum(o.amount_rub) FROM auto_rule_sends y
-		                  JOIN payment_orders o ON o.user_id = y.user_id AND y.user_id <> 0
-		                  WHERE y.rule_id = ?2 AND o.status = 'paid' AND o.refund_source <> 'provider'
-		                    AND o.paid_at > y.sent_at AND o.paid_at <= y.sent_at + ?1), 0),
+		        COALESCE((SELECT sum(o.amount_rub) FROM payment_orders o
+		                  WHERE o.status = 'paid' AND o.refund_source <> 'provider'
+		                    AND EXISTS (SELECT 1 FROM auto_rule_sends y
+		                                WHERE y.rule_id = ?2 AND y.user_id = o.user_id AND y.user_id <> 0
+		                                  AND o.paid_at > y.sent_at AND o.paid_at <= y.sent_at + ?1)), 0),
 		        COALESCE((SELECT sum(uses) FROM promo_codes WHERE auto_rule = ?2), 0)
 		 FROM auto_rule_sends x WHERE x.rule_id = ?2`, window, r.ID,
 	).Scan(&st.Sent, &st.Converted, &st.RevenueRub, &st.CodesUsed)
 	return st, err
+}
+
+// ForgetAutoRuleSend drops a claim whose message did not go out (and gave no code),
+// so the next sweep tries again.
+func (s *Store) ForgetAutoRuleSend(ruleID int64, t AutoRuleTarget) error {
+	_, err := s.db.Exec(`DELETE FROM auto_rule_sends WHERE rule_id = ? AND chat_id = ? AND cycle = ? AND promo_id = 0`,
+		ruleID, t.ChatID, t.Cycle)
+	return err
 }

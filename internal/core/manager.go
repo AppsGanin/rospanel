@@ -103,6 +103,11 @@ type Manager struct {
 	deviceCheckedAt atomic.Int64
 	// winbackAt is when the win-back sweep last ran (unix); it runs hourly.
 	winbackAt atomic.Int64
+
+	// fraudCache is the last computed fraud signals, from fraudAt.
+	fraudMu    sync.Mutex
+	fraudCache []model.FraudSignal
+	fraudAt    time.Time
 	// accPending buffers sightings between flushes, so the access-log reader never
 	// touches the database on the hot path. Bounded by the throttle above: one entry
 	// per user+IP per flush interval, not per log line.
@@ -203,7 +208,7 @@ type Manager struct {
 	// the admin bot to post a signup awaiting moderation with approve/reject buttons.
 	notifyMu      sync.Mutex
 	userNotify    func(chatID int64, html string)
-	userMessage   func(chatID int64, html string, buttons []model.BroadcastButton) // with URL buttons (automatic messages)
+	userMessage   func(chatID int64, html string, buttons []model.BroadcastButton) error // with URL buttons, sent at once (automatic messages)
 	adminNotify   func(html string)
 	adminModerate func(reqID int64, name, plan string)
 	adminLogin    func(LoginAlert) // a sign-in from a new address, with the revoke button

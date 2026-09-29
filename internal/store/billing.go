@@ -375,6 +375,13 @@ type AddonWrite struct {
 	AddDevices    int
 	AddData       int64
 	RequireExpire int64
+	// MaxDevices caps the extra devices held after the add-on (the plan's DeviceMax).
+	MaxDevices int
+	// RequireExtra, when not negative, holds the add-on to the extra devices the user
+	// had when it was priced — a second tap of the same button finds them changed.
+	RequireExtra int
+	// RequirePack likewise for the bought traffic (-1 = no check).
+	RequirePack int64
 }
 
 // applyAddonOn writes an add-on, or ErrPlanStale when the user is no longer on the
@@ -387,6 +394,23 @@ func applyAddonOn(ex execer, a AddonWrite) error {
 	if a.RequireExpire != 0 {
 		q += ` AND expire_at = ?`
 		args = append(args, a.RequireExpire)
+	}
+	// Devices onto a cap and traffic onto a quota: added to "unlimited" (0) they would
+	// make one of just the add-on.
+	if a.AddDevices > 0 {
+		q += ` AND device_limit > 0 AND extra_devices + ? <= ?`
+		args = append(args, a.AddDevices, a.MaxDevices)
+	}
+	if a.AddData > 0 {
+		q += ` AND data_limit > 0`
+	}
+	if a.RequireExtra >= 0 {
+		q += ` AND extra_devices = ?`
+		args = append(args, a.RequireExtra)
+	}
+	if a.RequirePack >= 0 {
+		q += ` AND pack_data = ?`
+		args = append(args, a.RequirePack)
 	}
 	res, err := ex.Exec(q, args...)
 	if err != nil {
@@ -813,14 +837,44 @@ func packsJSON(p []model.TrafficPack) string {
 
 // TakeBackAddon removes devices and traffic an order added, from a user still on the
 // plan they were bought for — never below what the plan itself gives.
-func (s *Store) TakeBackAddon(userID, planID int64, devices int, data int64) error {
-	_, err := s.db.Exec(
+func (s *Store) TakeBackAddon(userID, planID int64, devices int, data int64) (bool, error) {
+	res, err := s.db.Exec(
 		`UPDATE users SET
 		     device_limit = device_limit - min(?, extra_devices),
 		     extra_devices = extra_devices - min(?, extra_devices),
 		     data_limit = data_limit - min(?, pack_data),
 		     pack_data = pack_data - min(?, pack_data)
-		 WHERE id = ? AND plan_id = ?`,
+		 WHERE id = ? AND plan_id = ? AND (extra_devices > 0 OR pack_data > 0)`,
 		devices, devices, data, data, userID, planID)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// PlanPaidPerPeriodKop is what the user last paid for one period of plan, with its
+// extra devices, in kopecks — money and balance together; found false when they
+// never bought it (it was assigned, given by a code, or reached by a change).
+func (s *Store) PlanPaidPerPeriodKop(userID, planID int64) (int64, bool) {
+	var kop, periods int64
+	err := s.db.QueryRow(
+		`SELECT amount_rub * 100 + balance_kop, max(periods, 1) FROM payment_orders
+		 WHERE user_id = ? AND plan_id = ? AND status = 'paid' AND kind = 'plan' AND refunded_at = 0
+		 ORDER BY paid_at DESC, id DESC LIMIT 1`, userID, planID).Scan(&kop, &periods)
+	if err != nil || periods <= 0 {
+		return 0, false
+	}
+	return kop / periods, true
+}
+
+// ReachedByChange reports whether the user's move onto plan was a paid-for change —
+// the difference was paid at the plan's list price.
+func (s *Store) ReachedByChange(userID, planID int64) bool {
+	var n int
+	_ = s.db.QueryRow(
+		`SELECT count(*) FROM payment_orders
+		 WHERE user_id = ? AND plan_id = ? AND status = 'paid' AND kind = 'change' AND refunded_at = 0`,
+		userID, planID).Scan(&n)
+	return n > 0
 }

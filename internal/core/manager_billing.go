@@ -79,8 +79,11 @@ func (m *Manager) SaveTariffPlan(p *model.TariffPlan) error {
 		return invalidCode("err.planDevicesRange", "доп. устройства: цена от 0 до {{price}} ₽, не больше {{max}} штук",
 			map[string]any{"price": promoValueMaxRub, "max": model.MaxDeviceLimit})
 	}
-	if p.DeviceMax > 0 && p.DevicePrice > 0 && (p.DeviceLimit == 0 || p.PeriodDays == 0 || p.PriceRub == 0) {
-		return invalidCode("err.planDevicesNeedLimit", "доп. устройства продаются только у платного тарифа со сроком и лимитом устройств")
+	// Extra devices exist only on a paid plan with a term and a device cap; on any
+	// other they are dropped rather than refused, so a plan made unlimited, lifetime
+	// or free can still be saved.
+	if p.DeviceLimit == 0 || p.PeriodDays == 0 || p.PriceRub == 0 {
+		p.DevicePrice, p.DeviceMax = 0, 0
 	}
 	if p.DeviceLimit > model.MaxDeviceLimit {
 		return invalidCode("err.deviceLimitTooHigh", "лимит устройств не может быть больше {{max}}",
@@ -393,6 +396,10 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	req, err := m.store.GetRegistrationRequest(reqID)
 	if err != nil {
 		return invalidCode("err.requestNotFound", "заявка не найдена")
+	}
+	// Filed before the list was on, or before the account was put on it.
+	if m.RegistrationBlacklisted(req.ChatID) {
+		return invalidCode("err.requestBlacklisted", "этот Telegram-аккаунт в общем чёрном списке — заявку можно только отклонить")
 	}
 	claimed, err := m.store.ClaimRegistrationRequest(reqID)
 	if err != nil {
@@ -888,7 +895,15 @@ func (m *Manager) confirmOrderPaid(order *model.PaymentOrder, paidAt int64) (sto
 	}
 	// Extend from the current expiry only for a renewal of the active paid plan;
 	// buying from trial/free/expired starts from now (no inherited time).
-	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods, order.Devices)
+	// A renewal keeps the devices held now — ones added after the order was opened
+	// included.
+	devices := order.Devices
+	if m.isPlanRenewalFor(*u, order.PlanID) {
+		if plan, err := m.store.GetTariffPlan(order.PlanID); err == nil {
+			devices = max(devices, heldDevices(*u, plan))
+		}
+	}
+	w, _, err := m.planWriteForPeriods(*u, order.PlanID, m.isPlanRenewalFor(*u, order.PlanID), true, order.Periods, devices)
 	if err != nil {
 		return store.ConfirmResult{}, err
 	}

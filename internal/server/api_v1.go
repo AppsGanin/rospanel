@@ -109,7 +109,8 @@ type (
 		AmountRub int  `json:"amount_rub,omitempty"`
 		// ExpectExpireAt, with from_balance, is the expiry the caller showed the user
 		// (expire_at from the user or their subscription view): a retried request finds
-		// it moved by the first and buys nothing. Left out, every request buys.
+		// it moved by the first and buys nothing. Left out, every request buys. For
+		// devices and traffic it is the stamp from GET /v1/users/{id}/extras.
 		ExpectExpireAt *int64 `json:"expect_expire_at,omitempty"`
 		// Lang words the manual-payment instructions: ru | en (default en).
 		Lang string `json:"lang,omitempty"`

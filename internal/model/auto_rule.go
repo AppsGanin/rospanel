@@ -52,3 +52,11 @@ type AutoRuleStats struct {
 
 // AutoRuleConvertDays is how long after a message a payment still counts for it.
 const AutoRuleConvertDays = 30
+
+// AutoRuleCooldownDays is how often at most a rule whose trigger repeats (idle
+// spells) writes to one person.
+const AutoRuleCooldownDays = 30
+
+// AutoRuleIdleMinHours is the shortest delay an idle rule may have: shorter, it
+// would write to everyone who sleeps.
+const AutoRuleIdleMinHours = 48

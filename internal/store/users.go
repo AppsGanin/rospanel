@@ -915,10 +915,11 @@ func (s *Store) SetUserLimits(id, dataLimit, expireAt int64, deviceLimit int) er
 
 func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) error {
 	_, err := ex.Exec(
-		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ?, pack_data = 0,
+		`UPDATE users SET data_limit = ?, expire_at = ?, device_limit = ?,
+		   pack_data = CASE WHEN data_limit = ? THEN pack_data ELSE 0 END,
 		   hold_seconds = CASE WHEN ? > 0 THEN 0 ELSE hold_seconds END
 		 WHERE id = ?`,
-		dataLimit, expireAt, deviceLimit, expireAt, id,
+		dataLimit, expireAt, deviceLimit, dataLimit, expireAt, id,
 	)
 	return err
 }
@@ -927,8 +928,11 @@ func setUserLimitsOn(ex execer, id, dataLimit, expireAt int64, deviceLimit int) 
 // not part of the write, so a quota saved by a caller that last read the user before
 // their first connection cannot write back the term that connection replaced.
 func (s *Store) SetUserQuota(id, dataLimit int64, deviceLimit int) error {
-	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, device_limit = ?, pack_data = 0 WHERE id = ?`,
-		dataLimit, deviceLimit, id)
+	// Bought traffic is part of the limit: it stays while the limit does, and goes
+	// with a limit set anew.
+	_, err := s.db.Exec(`UPDATE users SET data_limit = ?, device_limit = ?,
+		pack_data = CASE WHEN data_limit = ? THEN pack_data ELSE 0 END WHERE id = ?`,
+		dataLimit, deviceLimit, dataLimit, id)
 	return err
 }
 
@@ -940,9 +944,10 @@ func (s *Store) SetUserQuota(id, dataLimit int64, deviceLimit int) error {
 // can land between them.
 func (s *Store) SetUserLimitsIfTerm(id, dataLimit, expireAt, holdSeconds int64, deviceLimit int, seenExpireAt, seenHoldSeconds int64) (bool, error) {
 	res, err := s.db.Exec(`
-		UPDATE users SET data_limit = ?, expire_at = ?, hold_seconds = ?, device_limit = ?, pack_data = 0
+		UPDATE users SET data_limit = ?, expire_at = ?, hold_seconds = ?, device_limit = ?,
+		  pack_data = CASE WHEN data_limit = ? THEN pack_data ELSE 0 END
 		WHERE id = ? AND expire_at = ? AND hold_seconds = ?`,
-		dataLimit, expireAt, holdSeconds, deviceLimit, id, seenExpireAt, seenHoldSeconds)
+		dataLimit, expireAt, holdSeconds, deviceLimit, dataLimit, id, seenExpireAt, seenHoldSeconds)
 	if err != nil {
 		return false, err
 	}

@@ -287,11 +287,17 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 }
 
 // listAutoRules returns the automatic messages with what each did.
-func (rt *Router) listAutoRules(w http.ResponseWriter, _ *http.Request) {
+func (rt *Router) listAutoRules(w http.ResponseWriter, r *http.Request) {
 	rules, err := rt.mgr.ListAutoRules()
 	if err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	// Revenue is billing's to see.
+	if a, ok := sessionAdminFrom(r.Context()); !ok || !a.Perms.Any(model.PermBillingView, model.PermBillingManage) {
+		for i := range rules {
+			rules[i].Stats.RevenueRub = 0
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "triggers": model.AutoRuleTriggers})
 }
@@ -301,6 +307,14 @@ func (rt *Router) saveAutoRule(w http.ResponseWriter, r *http.Request) {
 	var rule model.AutoRule
 	if !decodeJSON(w, r, &rule) {
 		return
+	}
+	// A discount is money: giving one away is billing's decision, the same as a promo
+	// code, not the broadcaster's.
+	if rule.DiscountPercent > 0 {
+		if a, ok := sessionAdminFrom(r.Context()); !ok || !a.Perms.Any(model.PermBillingManage) {
+			writeErrCode(w, http.StatusForbidden, "err.ruleDiscountForbidden", "скидку в автосообщении может задать только тот, кто управляет тарифами")
+			return
+		}
 	}
 	if err := rt.mgr.SaveAutoRule(&rule); err != nil {
 		writeManagerErr(w, err)

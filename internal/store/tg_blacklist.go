@@ -44,7 +44,7 @@ func (s *Store) BlacklistReason(tgID int64) (string, bool) {
 		return "", false
 	}
 	var reason string
-	err := s.db.QueryRow(`SELECT reason FROM tg_blacklist WHERE tg_id = ?`, tgID).Scan(&reason)
+	err := s.rdb.QueryRow(`SELECT reason FROM tg_blacklist WHERE tg_id = ?`, tgID).Scan(&reason)
 	return reason, err == nil
 }
 
