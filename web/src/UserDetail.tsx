@@ -1172,6 +1172,9 @@ export function UserDetail({
                     control={<Code copy>{String(user.tg_chat_id)}</Code>}
                   />
                 )}
+                {user.source && (
+                  <SettingRow label={t('userDetail.source')} control={<Code>{user.source}</Code>} />
+                )}
                 {user.blacklisted && (
                   <p className="danger-tint rounded-lg px-3 py-2 text-xs text-danger">
                     {t('userDetail.blacklisted')}

@@ -541,6 +541,8 @@ an admin confirms the transfer.
 - **In the panel** — balance and history in the user card, who invited whom, promo code usage,
   top referrers, refunds to the balance, a sales funnel. A refund or chargeback made by the
   payment system is picked up by itself: the order leaves revenue and loses what it bought.
+- **Source tags** — a bot link `t.me/<bot>?start=<tag>` marks where a user came from (an ad, a
+  post, a partner); the funnel shows sign-ups, payments and revenue per tag. Own bots set it over the API.
 - **Shared blacklist** (off by default) — Telegram accounts other VPN services banned for
   reselling, scanning, sharing or fraud ([BEDOLAGA-DEV/VPN-BLACKLIST](https://github.com/BEDOLAGA-DEV/VPN-BLACKLIST)
   or your own list): they cannot register in the bot; a registered one is marked in its card.

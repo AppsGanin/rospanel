@@ -419,6 +419,40 @@ export function PaymentsPage({
                 </div>
               ))}
               <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">{t("funnel.hint")}</p>
+              {funnel.by_source.some((s) => s.source !== "") && (
+                <div className="overflow-x-auto border-t border-gray-100">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className={cn(MICRO, "text-left")}>
+                        <th className="px-3.5 py-2 font-medium">{t("funnel.source")}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t("funnel.joined")}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t("funnel.paid")}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t("funnel.renewed")}</th>
+                        <th className="px-3.5 py-2 text-right font-medium">{t("funnel.revenue")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {funnel.by_source.map((s) => (
+                        <tr key={s.source} className="border-t border-gray-100">
+                          <td className="max-w-[10rem] truncate px-3.5 py-[6px] text-ink">
+                            {s.source === "" ? t("funnel.noSource") : s.source === "~ref" ? t("funnel.byInvite") : <Mono>{s.source}</Mono>}
+                          </td>
+                          <td className="px-2 py-[6px] text-right"><Mono>{s.joined}</Mono></td>
+                          <td className="px-2 py-[6px] text-right">
+                            <Mono>{s.paid}</Mono>
+                            <span className="ml-1 text-[11px] text-ink-muted">
+                              {s.joined > 0 ? `${Math.round((s.paid / s.joined) * 100)}%` : ""}
+                            </span>
+                          </td>
+                          <td className="px-2 py-[6px] text-right"><Mono>{s.renewed}</Mono></td>
+                          <td className="px-3.5 py-[6px] text-right"><Mono>{fmtRub(s.revenue_rub)}</Mono></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="border-t border-gray-100 px-3.5 py-2 text-[11px] text-ink-muted">{t("funnel.sourceHint")}</p>
               {funnel.winback.sent > 0 && (
                 <p className="border-t border-gray-100 px-3.5 py-2.5 text-xs text-ink-muted">
                   {t("funnel.winback", {

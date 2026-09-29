@@ -876,6 +876,7 @@ const ru = {
       user_referred: "Регистрация по приглашению",
       balance_autorenew: "Автопродление с баланса",
       payment_refunded: "Возврат",
+      user_source: "Источник",
       promo_winback: "Код возврата",
       payment_created: "Заказ создан",
       payment_paid: "Оплачено",
@@ -1635,6 +1636,7 @@ const ru = {
     revokedN_other: "Завершено {{count}} сессии",
   },
   userDetail: {
+    source: "Пришёл по метке",
     blacklisted: "В общем чёрном списке VPN-сервисов",
     manual: "Вручную",
     state: "Состояние",
@@ -2287,6 +2289,11 @@ const ru = {
     },
   },
   funnel: {
+    source: "Источник",
+    noSource: "Без метки",
+    byInvite: "По приглашению",
+    revenue: "Выручка",
+    sourceHint: "Метка источника — ссылка вида t.me/<бот>?start=<метка> (латиница, цифры, _ и -).",
     title: "Воронка",
     days30: "30 дней",
     days90: "90 дней",

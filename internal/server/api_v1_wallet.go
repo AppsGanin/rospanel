@@ -35,6 +35,9 @@ type (
 	apiTelegramReq struct {
 		ChatID *int64 `json:"chat_id"` // the user's Telegram ID; 0 unlinks
 	}
+	apiSourceReq struct {
+		Source string `json:"source"` // lower case, letters, digits, "_" and "-", up to 64
+	}
 	apiReferrerReq struct {
 		ReferrerID int64  `json:"referrer_id,omitempty"` // the inviting user's id
 		RefCode    string `json:"ref_code,omitempty"`    // or their invite code, as the /start link carries it
@@ -347,4 +350,18 @@ func (rt *Router) apiRefundOrder(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	writeAPIData(w, http.StatusOK, apiRefundResp{RefundKop: kop})
+}
+
+// apiSetSource records where a user came from — the tag an outside bot's /start
+// carried — and answers the tag as stored.
+func (rt *Router) apiSetSource(w http.ResponseWriter, r *http.Request, id int64) {
+	var req apiSourceReq
+	if !apiDecode(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SetUserSource(r.Context(), id, req.Source); err != nil {
+		writeAPIManagerErr(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusOK, apiSourceReq{Source: rt.mgr.UserSource(id)})
 }

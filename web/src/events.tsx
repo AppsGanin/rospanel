@@ -67,6 +67,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "balance.autorenew": "gray",
   "payment.refunded": "orange",
   "promo.winback": "teal",
+  "user.source": "gray",
 };
 
 export function actionMeta(action: string): { label: string; color: Color } {
@@ -206,6 +207,8 @@ export function eventDetails(e: UserEvent): string {
       if (days) parts.push(i18n.t("events.det.extendedDays", { count: days }));
       break;
     }
+    case "user.source":
+      return str(d, "source") || "—";
     case "user.renamed":
       return `${str(d, "from") || "—"} → ${str(d, "to")}`;
     case "user.tags_changed": {
