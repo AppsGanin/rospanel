@@ -280,6 +280,7 @@ func runServer(dataDir string) {
 	// was missed. Idles cheaply when there are no pending orders.
 	runBG("payment poll", paymentPollLoop(mgr))
 	runBG("external subscriptions", mgr.RunExtSubLoop) // re-read hourly
+	runBG("blacklist", mgr.RunBlacklistLoop)           // shared Telegram blacklist, while enabled
 	// Audit-log + connection-row retention: drops rows past their windows.
 	runBG("retention", retentionLoop(mgr))
 	// Re-applies the addresses banned by hand: they never expire, so a ban that did

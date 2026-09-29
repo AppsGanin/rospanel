@@ -541,6 +541,9 @@ an admin confirms the transfer.
 - **In the panel** — balance and history in the user card, who invited whom, promo code usage,
   top referrers, refunds to the balance, a sales funnel. A refund or chargeback made by the
   payment system is picked up by itself: the order leaves revenue and loses what it bought.
+- **Shared blacklist** (off by default) — Telegram accounts other VPN services banned for
+  reselling, scanning, sharing or fraud ([BEDOLAGA-DEV/VPN-BLACKLIST](https://github.com/BEDOLAGA-DEV/VPN-BLACKLIST)
+  or your own list): they cannot register in the bot; a registered one is marked in its card.
 - **Callback journal** — every notification a payment system sent, with its body and what the
   panel did with it (credited, repeat, amount mismatch, no such order, failed the signature
   check); kept 30 days.

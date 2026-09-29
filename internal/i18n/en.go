@@ -137,6 +137,7 @@ var en = map[string]string{
 	"user.badInvite":        "⚠️ Wrong invite code. Try again or contact the administrator.",
 	"user.regClosedWelcome": "👋 This is the VPN subscription bot.\n\nSign-up for new users is closed. Contact the administrator.",
 	"user.regClosed":        "Sign-up is closed. Contact the administrator.",
+	"user.regRefused":       "Sign-up is not available for this account.",
 	"user.welcome":          "👋 <b>Welcome!</b>",
 	"user.hintOpen":         "Press “Sign up” — a VPN subscription will be created automatically.",
 	"user.hintModeration":   "Press “Sign up” — an administrator will review your request and open access.",

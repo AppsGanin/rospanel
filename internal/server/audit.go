@@ -121,6 +121,8 @@ var auditActions = map[string]auditRoute{
 	"POST /api/geo/cadence":                    set("geoCadence"),
 	"POST /api/tls":                            set("tls"),
 	"POST /api/telegram":                       set("telegram"),
+	"POST /api/telegram/blacklist":             set("tgBlacklist"),
+	"POST /api/telegram/blacklist/refresh":     set("tgBlacklistRefresh"),
 	"POST /api/telegram/link":                  set("tgLink"),
 	"POST /api/telegram/link/cancel":           set("tgLinkCancel"),
 	"POST /api/telegram/unlink":                set("tgUnlink"),

@@ -1172,6 +1172,12 @@ export function UserDetail({
                     control={<Code copy>{String(user.tg_chat_id)}</Code>}
                   />
                 )}
+                {user.blacklisted && (
+                  <p className="danger-tint rounded-lg px-3 py-2 text-xs text-danger">
+                    {t('userDetail.blacklisted')}
+                    {user.blacklist_reason ? `: ${user.blacklist_reason}` : ''}
+                  </p>
+                )}
               </>
             ) : user.telegram_link ? (
               <SettingRow
