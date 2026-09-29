@@ -493,6 +493,9 @@ func (rt *Router) panelMux() http.Handler {
 	canPayments("POST /api/payments", rt.savePayments)
 	canBillingView("GET /api/payments/stats", rt.paymentStats)
 	canBillingView("GET /api/payments/funnel", rt.paymentFunnel)
+	// The callbacks carry what the payer told the provider (an email, a phone), so
+	// reading them is for whoever may change billing, not merely view it.
+	canBillingManage("GET /api/payments/callbacks", rt.listPaymentCallbacks)
 	canStatsOrUsersView("GET /api/stats/series", rt.statsSeries)
 	canStatsOrUsersView("GET /api/stats/nodes", rt.statsNodes)
 	canStatsView("GET /api/stats/users", rt.statsByUser)

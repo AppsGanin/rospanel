@@ -2175,6 +2175,30 @@ export interface PaymentFunnel {
 
 export const getPaymentFunnel = (days: number) => api<PaymentFunnel>(`api/payments/funnel?days=${days}`)
 
+// One callback a payment provider sent and what the panel made of it.
+export interface PaymentCallback {
+  id: number
+  at: number
+  provider: string
+  remote_ip: string
+  provider_id: string
+  order_id: number
+  status: string
+  outcome: string
+  error?: string
+  headers?: string
+  body?: string
+}
+
+export const listPaymentCallbacks = (q: { failed?: boolean; before?: number; order?: number } = {}) => {
+  const p = new URLSearchParams()
+  if (q.failed) p.set('failed', '1')
+  if (q.before) p.set('before', String(q.before))
+  if (q.order) p.set('order', String(q.order))
+  p.set('limit', '50')
+  return api<PaymentCallback[]>(`api/payments/callbacks?${p}`)
+}
+
 export const refundOrder = (id: number, cancel_plan: boolean, current_password: string) =>
   api<{ refund_kop: number }>(`api/billing/orders/${id}/refund`, {
     method: 'POST',

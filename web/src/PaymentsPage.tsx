@@ -17,6 +17,7 @@ import {
   type User,
 } from "./api";
 import { UserDetail } from "./UserDetail";
+import { PaymentCallbacks } from "./PaymentCallbacks";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
 import { EMPTY_STEP_UP, StepUpFields, stepUpReady, useStepUpDialog, type StepUp } from "./stepup";
@@ -561,6 +562,8 @@ export function PaymentsPage({
           </div>
         )}
       </Panel>
+
+      {canManage && <PaymentCallbacks providerLabel={(p) => providerMeta(p).label} />}
 
       {stepUpNode}
       <UserDetail

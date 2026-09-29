@@ -2255,6 +2255,26 @@ const en: Dict = {
     yookassaSandbox: "YooKassa has no separate sandbox host — test mode is switched on by using test keys.",
   },
 
+  callbacks: {
+    title: "Payment system callbacks",
+    onlyFailed: "Failures only",
+    all: "All",
+    empty: "No callbacks.",
+    order: "order #{{id}}",
+    headers: "Headers",
+    body: "Body",
+    outcome: {
+      paid: "credited",
+      duplicate: "repeat",
+      cancelled: "cancelled",
+      refunded: "refund",
+      pending: "not paid",
+      mismatch: "amount mismatch",
+      no_order: "no such order",
+      rejected: "failed the check",
+      error: "error",
+    },
+  },
   funnel: {
     title: "Funnel",
     days30: "30 days",

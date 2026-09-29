@@ -541,6 +541,9 @@ an admin confirms the transfer.
 - **In the panel** — balance and history in the user card, who invited whom, promo code usage,
   top referrers, refunds to the balance, a sales funnel. A refund or chargeback made by the
   payment system is picked up by itself: the order leaves revenue and loses what it bought.
+- **Callback journal** — every notification a payment system sent, with its body and what the
+  panel did with it (credited, repeat, amount mismatch, no such order, failed the signature
+  check); kept 30 days.
 
 > [!WARNING]
 > **Payment providers have not yet been verified against live accounts.** If you've connected
