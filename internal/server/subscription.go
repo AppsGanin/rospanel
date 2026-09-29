@@ -609,15 +609,22 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	}
 	if a := rt.mgr.Addons(u); a.Any() {
 		b.Stamp = a.Stamp
-		for n := 1; n <= min(a.DevicesMax, 5); n++ {
-			q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderDevices, Devices: n})
-			if err != nil {
-				continue
+		// Devices as one offer with a count to pick, not a card per count.
+		if a.DevicesMax > 0 {
+			e := sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: 1,
+				Name: i18n.T(lang, "sub.addDevicesTitle"), Sub: i18n.T(lang, "sub.addDevicesEach", a.DevicePrice)}
+			for n := 1; n <= min(a.DevicesMax, 10); n++ {
+				q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderDevices, Devices: n})
+				if err != nil {
+					continue
+				}
+				e.Counts = append(e.Counts, sub.ExtraCount{N: n, Label: i18n.TN(lang, "sub.addDevicesName", n),
+					Button: i18n.T(lang, "sub.buyFor", q.PriceRub), FromBalance: q.MoneyRub == 0})
 			}
-			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: n,
-				Label: i18n.TN(lang, "sub.addDevices", n, q.PriceRub), FromBalance: q.MoneyRub == 0,
-				Name: i18n.TN(lang, "sub.addDevicesName", n), Sub: i18n.T(lang, "sub.addDevicesSub"),
-				Badge: i18n.T(lang, "sub.price", q.PriceRub)})
+			if len(e.Counts) > 0 {
+				e.Badge, e.FromBalance = e.Counts[0].Button, e.Counts[0].FromBalance
+				b.Addons = append(b.Addons, e)
+			}
 		}
 		for i, p := range a.Packs {
 			q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderTraffic, Pack: i})

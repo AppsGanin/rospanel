@@ -459,6 +459,19 @@
         border: 1px solid color-mix(in srgb, var(--brand) 14%, transparent);
         border-radius: 14px;
       }
+      .opt.opt-col {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .opt-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .opt-row select.periods {
+        flex: 1 1 auto;
+        width: auto;
+      }
       .opt-info {
         flex: 1 1 auto;
         min-width: 0;
@@ -1162,6 +1175,20 @@
             <div class="sect-title">{{.L.AddTitle}}</div>
             <div class="sect-hint">{{.L.AddHint}}</div>
             {{range .Billing.Addons}}
+            {{if .Counts}}
+            <div class="opt opt-col">
+              <div class="opt-info">
+                <div class="opt-name">{{.Name}}</div>
+                <div class="opt-sub">{{.Sub}}</div>
+              </div>
+              <div class="opt-row">
+                <select class="periods" id="addn" autocomplete="off" onchange="addnPicked()">
+                  {{range .Counts}}<option value="{{.N}}" data-btn="{{.Button}}" data-fb="{{if .FromBalance}}1{{end}}">{{.Label}}</option>{{end}}
+                </select>
+                <button class="btn alt" id="addn-btn" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, parseInt(document.getElementById('addn').value, 10) || 1, this.getAttribute('data-fb'), this)">{{.Badge}}</button>
+              </div>
+            </div>
+            {{else}}
             <div class="opt">
               <div class="opt-info">
                 <div class="opt-name">{{.Name}}</div>
@@ -1169,6 +1196,7 @@
               </div>
               <button class="btn alt" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{.Badge}}</button>
             </div>
+            {{end}}
             {{end}}
           </div>
           {{end}}
@@ -1819,6 +1847,16 @@
         } else if (confirm(msg)) {
           fn();
         }
+      }
+      // The devices picker: the button follows the count (price, and whether the
+      // balance covers it).
+      function addnPicked() {
+        var s = document.getElementById("addn"),
+          b = document.getElementById("addn-btn");
+        if (!s || !b) return;
+        var o = s.options[s.selectedIndex];
+        b.textContent = o.getAttribute("data-btn");
+        b.setAttribute("data-fb", o.getAttribute("data-fb") || "");
       }
       function buyExtra(kind, planId, n, fb, el) {
         PAY_EXTRA = { kind: kind };

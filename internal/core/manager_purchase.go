@@ -105,6 +105,12 @@ func termValueKop(rub int, periodDays int, secs int64) int64 {
 	return v.Quo(v, big.NewInt(int64(periodDays)*86400)).Int64()
 }
 
+// deviceTermRub is one extra device of plan for the secs left of a term, in whole
+// roubles, at least one.
+func deviceTermRub(plan *model.TariffPlan, secs int64) int {
+	return max(ceilRub(termValueKop(plan.DevicePrice, plan.PeriodDays, secs)), 1)
+}
+
 // ceilRub rounds kopecks up to whole roubles, at least one when there is anything.
 func ceilRub(kop int64) int {
 	if kop <= 0 {
@@ -183,7 +189,9 @@ func (m *Manager) quoteAddon(set *model.Settings, u model.User, p Purchase, now 
 				map[string]any{"max": cur.DeviceMax - held})
 		}
 		q.Devices = p.Devices
-		q.PriceRub = max(ceilRub(termValueKop(p.Devices*cur.DevicePrice, cur.PeriodDays, u.ExpireAt-now)), 1)
+		// One device's share of the term, rounded up once, times the count: the price
+		// per device is the same whatever the count, as the offer shows it.
+		q.PriceRub = p.Devices * deviceTermRub(cur, u.ExpireAt-now)
 	} else {
 		if cur.DataLimit <= 0 || u.DataLimit <= 0 {
 			return PlanQuote{}, nil, invalidCode("err.noQuota", "у тарифа нет лимита трафика — докупать нечего")
@@ -597,7 +605,7 @@ func (m *Manager) Addons(u model.User) AddonOffers {
 	if cur.SellsDevices() {
 		if left := cur.DeviceMax - heldDevices(u, cur); left > 0 {
 			out.DevicesMax = left
-			out.DevicePrice = max(ceilRub(termValueKop(cur.DevicePrice, cur.PeriodDays, u.ExpireAt-now)), 1)
+			out.DevicePrice = deviceTermRub(cur, u.ExpireAt-now)
 		}
 	}
 	if cur.DataLimit > 0 && u.DataLimit > 0 {
