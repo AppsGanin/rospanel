@@ -226,7 +226,9 @@ func (s *Supervisor) SetPublicPort(tag string, port int) {
 	if s.publicPorts == nil {
 		s.publicPorts = map[string]uint16{}
 	}
-	if port == 0 {
+	// Only a real port is kept: anything outside 1–65535 would wrap into another one
+	// when narrowed to 16 bits.
+	if port <= 0 || port > 65535 {
 		delete(s.publicPorts, tag)
 	} else {
 		s.publicPorts[tag] = uint16(port)
