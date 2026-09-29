@@ -105,6 +105,9 @@ type pageText struct {
 	CancelSub      string
 	ChangePlanNote string
 	ChangeTitle    string
+	ChangeHint     string
+	AddHint        string
+	RenewTitle     string
 	WzOpen         string
 	WzStep1        string
 	WzStep1Hint    string
@@ -195,6 +198,9 @@ func text(lang i18n.Lang) pageText {
 		CancelSub:      t("sub.cancelSub"),
 		ChangePlanNote: t("sub.changePlanNote"),
 		ChangeTitle:    t("sub.changeTitle"),
+		ChangeHint:     t("sub.changeHint"),
+		AddHint:        t("sub.addHint"),
+		RenewTitle:     t("sub.renewTitle"),
 		WzOpen:         t("sub.wzOpen"),
 		WzStep1:        t("sub.wzStep1"),
 		WzStep1Hint:    t("sub.wzStep1Hint"),
@@ -489,8 +495,15 @@ type Extra struct {
 	Kind        string `json:"kind"`
 	PlanID      int64  `json:"plan_id"`
 	N           int    `json:"n"`
-	Label       string `json:"label"`
+	Label       string `json:"label"` // the whole offer in one line (the confirmation)
 	FromBalance bool   `json:"from_balance"`
+	// Name, Sub and Badge are the offer as a card: the plan or the add-on, its price
+	// per period or what it lasts, and what taking it costs or gives now. Up marks a
+	// change that is paid for.
+	Name  string `json:"name"`
+	Sub   string `json:"sub"`
+	Badge string `json:"badge"`
+	Up    bool   `json:"up"`
 }
 
 // PlanOption is one term a plan can be bought for.
