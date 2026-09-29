@@ -22,9 +22,21 @@ export function notifySuccess(message: string) {
 //
 // The default fallback is resolved at call time, not at module load, so it follows
 // the language the admin is actually looking at.
+// localArgs translates the arguments that are themselves dictionary keys: a payment
+// provider names its fields by key (payField.*), and an error about a field carries
+// that name — shown verbatim it reads "заполните «payField.starsRate»".
+function localArgs(args?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!args) return args
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(args)) {
+    out[k] = typeof v === 'string' && /^pay(Field|Note|Help)\.[A-Za-z0-9_]+$/.test(v) ? td(v) : v
+  }
+  return out
+}
+
 export function errMessage(e: unknown, fallback?: string): string {
   if (e instanceof ApiError && e.code) {
-    const translated = td(e.code, e.args)
+    const translated = td(e.code, localArgs(e.args))
     if (translated !== e.code) return translated
   }
   if (e instanceof Error) return e.message
