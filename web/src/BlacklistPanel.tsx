@@ -19,6 +19,7 @@ export function BlacklistPanel() {
     setInfo(i);
     setUrl(i.url);
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once on mount; take is redefined every render
   useEffect(() => {
     getBlacklist()
       .then(take)
