@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1154,8 +1155,28 @@ func PeriodLabel(lang i18n.Lang, plan *model.TariffPlan, q PlanQuote) string {
 		days = fmt.Sprintf("%d × %s", q.Periods, days)
 	}
 	label := i18n.T(lang, "sub.periodOption", days, q.TotalRub)
+	if d := perDay(lang, q.TotalRub, plan.PeriodDays*max(q.Periods, 1)); d != "" {
+		label += " · " + d
+	}
 	if q.PeriodPercent > 0 {
 		label += " " + i18n.T(lang, "sub.periodSaved", q.PeriodPercent)
 	}
 	return label
+}
+
+// perDay is a price spread over its days — "6,6 ₽/день" — the figure that makes
+// terms of different lengths comparable. Whole roubles from 10 up, one decimal
+// below; "" without a term.
+func perDay(lang i18n.Lang, rub, days int) string {
+	if days <= 0 || rub <= 0 {
+		return ""
+	}
+	tenths := (rub*10 + days/2) / days
+	var n string
+	if tenths >= 100 {
+		n = strconv.Itoa((tenths + 5) / 10)
+	} else {
+		n = fmt.Sprintf("%d%s%d", tenths/10, i18n.T(lang, "num.decimalSep"), tenths%10)
+	}
+	return i18n.T(lang, "sub.perDay", n)
 }

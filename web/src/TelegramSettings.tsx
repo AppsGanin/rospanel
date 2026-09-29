@@ -166,6 +166,7 @@ export function TelegramSettings() {
   const [linkCode, setLinkCode] = useState("");
   const [botUsername, setBotUsername] = useState("");
   const [userBotUsername, setUserBotUsername] = useState("");
+  const [miniAppURL, setMiniAppURL] = useState("");
   const [supportEnabled, setSupportEnabled] = useState(false);
   const [supportToken, setSupportToken] = useState("");
   const [supportGroupID, setSupportGroupID] = useState("");
@@ -212,6 +213,7 @@ export function TelegramSettings() {
         setLinkCode(cfg.link_code || "");
         setBotUsername(cfg.bot_username || "");
         setUserBotUsername(cfg.user_bot_username || "");
+        setMiniAppURL(cfg.user_miniapp_url || "");
         setSchedule(detectPreset(cfg.backup_cron || ""));
         setBotLang(cfg.lang || "ru");
         setProxy(cfg.proxy || "");
@@ -672,6 +674,14 @@ export function TelegramSettings() {
           }
         />
         {userBotUsername && botLink(userBotUsername)}
+        {miniAppURL && (
+          <SettingRow
+            label={t("tg.miniApp")}
+            hint={t("tg.miniAppHint", { bot: userBotUsername || "bot" })}
+            wideField
+            field={<Code copy>{miniAppURL}</Code>}
+          />
+        )}
         <SettingRow
           label={t("tg.selfSignup")}
           hint={

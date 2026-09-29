@@ -104,6 +104,9 @@ type Manager struct {
 	// winbackAt is when the win-back sweep last ran (unix); it runs hourly.
 	winbackAt atomic.Int64
 
+	// miniSignups bounds registrations through the Mini App entrance.
+	miniSignups miniAppSignups
+
 	// fraudCache is the last computed fraud signals, from fraudAt.
 	fraudMu    sync.Mutex
 	fraudCache []model.FraudSignal

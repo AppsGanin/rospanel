@@ -385,6 +385,18 @@ link can be **reset** (token rotation) without changing UUIDs and passwords. An
 through `happ://crypt4/…`, so the app never shows its address; the same link can be copied from
 the user's card.
 
+A **connect wizard** in 3 steps: the platform is detected, then Happ's official download (the
+Russian App Store separately for iPhone), then the subscription added with one tap. The page can
+be **added to the home screen** and opens like an app. Inside Telegram it looks like part of it:
+the header colour, the system Back button, haptic feedback. Terms show the price per day and the
+saving.
+
+A **Mini App** at the fixed address `/<path>/app` — no token in the link: Telegram signs the
+user's data, the panel finds their account and opens their page. The bot's menu button leads
+here. With the address set in @BotFather (*Configure Mini App*), `t.me/<bot>?startapp=ref_…` and
+`?startapp=<tag>` links carry an invitation and a source tag; a new user is registered on the
+spot while sign-up is open.
+
 **Variables in connection names.** A lane's or a custom inbound's name can carry
 `{server}`, `{user}`, `{used}`, `{left}`, `{total}`, `{expire}` and `{days}`; the panel
 expands them per user when it builds the subscription, so a client can show

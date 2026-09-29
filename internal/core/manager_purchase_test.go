@@ -384,3 +384,15 @@ func TestChangeOffUnlimitedResets(t *testing.T) {
 		t.Fatalf("after change off unlimited: plan %d used %d", got.PlanID, got.UsedUp)
 	}
 }
+
+func TestPerDay(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		rub, days int
+		want      string
+	}{{199, 30, "6,6 ₽/день"}, {1990, 90, "22 ₽/день"}, {300, 30, "10 ₽/день"}, {0, 30, ""}, {100, 0, ""}} {
+		if got := perDay("ru", c.rub, c.days); got != c.want {
+			t.Errorf("perDay(%d, %d) = %q, want %q", c.rub, c.days, got, c.want)
+		}
+	}
+}

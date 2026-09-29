@@ -8,6 +8,13 @@
     <!-- The operator's mark in the tab. Same source the page header uses, so an
          uploaded logo reaches both without a second copy. -->
     <link rel="icon" href="{{.SubURL}}/logo.svg" />
+    <!-- Installable: the page opens from the home screen in a window of its own. -->
+    <link rel="manifest" href="{{.SubURL}}/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="{{.SubURL}}/logo.svg" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="{{.BrandName}}" />
+    <meta name="theme-color" content="{{.Bg}}" />
     <script src="{{.SubURL}}/tg.js"></script>
     <style>
       /* Mulish, self-hosted from this panel (see sub.Font). Google Fonts is
@@ -732,6 +739,35 @@
       .modal.show {
         display: flex;
       }
+      .wz-plats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0 4px;
+      }
+      .chip {
+        border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+        border-radius: 999px;
+        padding: 6px 12px;
+        background: none;
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .chip.on {
+        background: var(--brand);
+        color: var(--on-brand);
+        border-color: var(--brand);
+      }
+      .wz-nav {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .wz-nav .btn {
+        margin-top: 0;
+      }
       .modal-card {
         background: var(--surface);
         border-radius: 18px;
@@ -823,6 +859,15 @@
       {{end}}
 
       <section class="pane" data-pane="sub">
+        {{if .DeepLinks}}
+        <button class="btn" style="margin: 0 0 12px" onclick="openWizard()">{{.L.WzOpen}}</button>
+        {{end}}
+        <!-- Put the page on the home screen: a button where the browser offers it, a
+             line on iPhone (Safari has no prompt to call). Not inside Telegram. -->
+        <div class="card" id="install" hidden>
+          <button class="btn alt" id="install-btn" onclick="installApp()" hidden>{{.L.InstallApp}}</button>
+          <p class="muted" id="install-ios" style="margin: 0" hidden>{{.L.InstallIOS}}</p>
+        </div>
         <div class="card">
           <div class="qr"><img src="{{.SubURL}}/qr.png" alt="QR" /></div>
           <p class="muted" style="text-align: center; margin: 0.8rem 0 0">
@@ -1145,6 +1190,42 @@
       </div>
     </div>
 
+    {{if .DeepLinks}}
+    <!-- Connect in three steps: the app for this device, the subscription added to
+         it with one tap, then connecting. -->
+    <div id="wizard" class="modal" onclick="if (event.target === this) this.classList.remove('show');">
+      <div class="modal-card">
+        <div class="modal-head">
+          <b id="wz-title"></b>
+          <button class="x" onclick="document.getElementById('wizard').classList.remove('show')">✕</button>
+        </div>
+        <div class="wz-step" data-step="1">
+          <p class="muted" style="margin: 0">{{.L.WzStep1Hint}}</p>
+          <div class="wz-plats">
+            {{range .Wizard}}<button type="button" class="chip" data-plat="{{.Key}}" onclick="wzPlat('{{.Key}}')">{{.Name}}</button>{{end}}
+          </div>
+          {{range .Wizard}}
+          <div class="wz-links" data-plat="{{.Key}}" hidden>
+            {{range .Links}}<button class="btn alt" onclick="openExternal('{{.URL}}')">{{.Label}}</button>{{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="wz-step" data-step="2" hidden>
+          <p class="muted" style="margin: 0">{{.L.WzStep2Hint}}</p>
+          {{with index .DeepLinks 0}}<a class="btn" href="{{.Href}}" data-i="0" onclick="return appClick(event)">{{$.L.WzAdd}}</a>{{end}}
+          <button class="btn alt" onclick="document.getElementById('wizard').classList.remove('show'); openApps()">{{.L.WzOther}}</button>
+        </div>
+        <div class="wz-step" data-step="3" hidden>
+          <p style="margin: 0">{{.L.WzStep3Hint}}</p>
+        </div>
+        <div class="wz-nav">
+          <button class="btn alt" id="wz-back" onclick="wzGo(-1)">{{.L.WzBack}}</button>
+          <button class="btn" id="wz-next" onclick="wzGo(1)">{{.L.WzNext}}</button>
+        </div>
+      </div>
+    </div>
+    {{end}}
+
     {{if and .Billing.Providers (gt (len .Billing.Providers) 1)}}
     <div
       id="paymodal"
@@ -1256,11 +1337,79 @@
           tgEvent("web_app_expand");
         }
       }
+      // Home screen. Chrome and Edge hand the install prompt over once the page counts
+      // as installable; Safari on iPhone has none, so it gets a line saying how.
+      var INSTALL = null;
+      window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        INSTALL = e;
+        if (INTG) return;
+        document.getElementById("install").hidden = false;
+        document.getElementById("install-btn").hidden = false;
+      });
+      function installApp() {
+        if (!INSTALL) return;
+        INSTALL.prompt();
+        INSTALL = null;
+        document.getElementById("install").hidden = true;
+      }
+      (function () {
+        var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        var installed = window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+        if (ios && !installed && !INTG) {
+          document.getElementById("install").hidden = false;
+          document.getElementById("install-ios").hidden = false;
+        }
+      })();
       // Open a URL the right way: in Telegram hand it to the host (external browser);
       // in a normal browser just navigate.
       function openExternal(url) {
         if (INTG && tgOpen(url)) return;
         window.location = url;
+      }
+      // The connect wizard. The platform is guessed from Telegram or the browser and
+      // can be switched; the steps are shown one at a time.
+      var WZ_STEP = 1;
+      var WZ_TITLES = [{{.L.WzStep1}}, {{.L.WzStep2}}, {{.L.WzStep3}}];
+      function wzDetect() {
+        var ua = navigator.userAgent || "";
+        var p = (TG && TG.platform) || "";
+        if (/iPhone|iPad|iPod/.test(ua) || p === "ios" || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "ios";
+        if (/Android/.test(ua) || p === "android") return /\bTV\b|AFT|BRAVIA|SMART-TV/i.test(ua) ? "tv" : "android";
+        if (/Mac OS X|Macintosh/.test(ua) || p === "macos") return "macos";
+        if (/Windows/.test(ua)) return "windows";
+        if (/Linux|X11/.test(ua)) return "linux";
+        return "windows";
+      }
+      function wzPlat(key) {
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .chip"), function (c) {
+          c.classList.toggle("on", c.getAttribute("data-plat") === key);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-links"), function (l) {
+          l.hidden = l.getAttribute("data-plat") !== key;
+        });
+      }
+      function wzShow() {
+        Array.prototype.forEach.call(document.querySelectorAll("#wizard .wz-step"), function (s) {
+          s.hidden = parseInt(s.getAttribute("data-step"), 10) !== WZ_STEP;
+        });
+        document.getElementById("wz-title").textContent = WZ_TITLES[WZ_STEP - 1];
+        document.getElementById("wz-back").style.visibility = WZ_STEP > 1 ? "visible" : "hidden";
+        document.getElementById("wz-next").textContent = WZ_STEP < 3 ? {{.L.WzNext}} : {{.L.WzDone}};
+      }
+      function wzGo(d) {
+        if (WZ_STEP === 3 && d > 0) {
+          document.getElementById("wizard").classList.remove("show");
+          return;
+        }
+        WZ_STEP = Math.min(3, Math.max(1, WZ_STEP + d));
+        wzShow();
+      }
+      function openWizard() {
+        WZ_STEP = 1;
+        wzPlat(wzDetect());
+        wzShow();
+        document.getElementById("wizard").classList.add("show");
       }
       // Always show the app-picker modal in place (works inside Telegram too).
       function openApps() {
@@ -1285,6 +1434,7 @@
       // into a tick for the same moment instead.
       function copyIcon(t, el) {
         navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
           el.classList.add("done");
           setTimeout(function () {
             el.classList.remove("done");
@@ -1293,6 +1443,7 @@
       }
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {
+          if (window.haptic) haptic("success");
           var o = el.textContent;
           el.textContent = {{.L.Copied}};
           setTimeout(function () {
@@ -1460,12 +1611,69 @@
           saved = sessionStorage.getItem("rospanel.subtab");
         } catch (e) {}
         show(saved || "sub");
+        window.showTab = show;
       })();
+      // Inside Telegram the page behaves like part of it: the header and the frame
+      // take the page's colour, the system Back button closes what is open (a dialog,
+      // then a tab other than the first), and taps that did something are felt.
+      (function () {
+        if (!TG) return;
+        var bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+        try {
+          if (bg && TG.isVersionAtLeast && TG.isVersionAtLeast("6.1")) {
+            TG.setHeaderColor(bg);
+            TG.setBackgroundColor(bg);
+          }
+          if (bg && TG.isVersionAtLeast && TG.isVersionAtLeast("7.10") && TG.setBottomBarColor) TG.setBottomBarColor(bg);
+        } catch (e) {}
+        if (!TG.BackButton || !(TG.isVersionAtLeast && TG.isVersionAtLeast("6.1"))) return;
+        var openModal = function () {
+          var m = document.querySelector(".modal.show");
+          return m || null;
+        };
+        var onFirstTab = function () {
+          var t = document.querySelector(".tab.active");
+          return !t || t.getAttribute("data-tab") === "sub";
+        };
+        var sync = function () {
+          try {
+            if (openModal() || !onFirstTab()) TG.BackButton.show();
+            else TG.BackButton.hide();
+          } catch (e) {}
+        };
+        TG.BackButton.onClick(function () {
+          var m = openModal();
+          if (m) {
+            m.classList.remove("show");
+          } else if (window.showTab) {
+            window.showTab("sub");
+          }
+          sync();
+        });
+        if (window.MutationObserver) {
+          new MutationObserver(sync).observe(document.body, {
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["class"],
+          });
+        }
+        sync();
+      })();
+      // haptic makes a tap that did something felt, inside Telegram; nothing elsewhere.
+      function haptic(kind) {
+        try {
+          if (TG && TG.HapticFeedback) {
+            if (kind === "success" || kind === "error") TG.HapticFeedback.notificationOccurred(kind);
+            else TG.HapticFeedback.impactOccurred(kind || "light");
+          }
+        } catch (e) {}
+      }
       var PAY_PROVIDERS = [
         {{range $i, $p := .Billing.Providers}}{{if $i}}, {{end}}"{{$p.Key}}"{{end}}
       ];
       var PAY_PLAN = 0;
       function showPayMsg(text, title) {
+        haptic(title === {{.L.Error}} ? "error" : "success");
         var body = document.getElementById("msgmodal-body");
         var head = document.getElementById("msgmodal-title");
         var modal = document.getElementById("msgmodal");

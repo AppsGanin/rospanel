@@ -105,6 +105,20 @@ type pageText struct {
 	CancelSub      string
 	ChangePlanNote string
 	ChangeTitle    string
+	InstallApp     string
+	WzOpen         string
+	WzStep1        string
+	WzStep1Hint    string
+	WzStep2        string
+	WzStep2Hint    string
+	WzStep3        string
+	WzStep3Hint    string
+	WzAdd          string
+	WzOther        string
+	WzBack         string
+	WzNext         string
+	WzDone         string
+	InstallIOS     string
 	ChangeBtn      string
 	ChangeConfirm  string
 	AddTitle       string
@@ -183,6 +197,20 @@ func text(lang i18n.Lang) pageText {
 		CancelSub:      t("sub.cancelSub"),
 		ChangePlanNote: t("sub.changePlanNote"),
 		ChangeTitle:    t("sub.changeTitle"),
+		InstallApp:     t("sub.installApp"),
+		WzOpen:         t("sub.wzOpen"),
+		WzStep1:        t("sub.wzStep1"),
+		WzStep1Hint:    t("sub.wzStep1Hint"),
+		WzStep2:        t("sub.wzStep2"),
+		WzStep2Hint:    t("sub.wzStep2Hint"),
+		WzStep3:        t("sub.wzStep3"),
+		WzStep3Hint:    t("sub.wzStep3Hint"),
+		WzAdd:          t("sub.wzAdd"),
+		WzOther:        t("sub.wzOther"),
+		WzBack:         t("sub.wzBack"),
+		WzNext:         t("sub.wzNext"),
+		WzDone:         t("sub.wzDone"),
+		InstallIOS:     t("sub.installIOS"),
 		ChangeBtn:      t("sub.changeBtn"),
 		ChangeConfirm:  t("sub.changeConfirm"),
 		AddTitle:       t("sub.addTitle"),
@@ -302,6 +330,7 @@ type pageData struct {
 	SubURL    string
 	Links     []protoLink
 	DeepLinks []DeepLink
+	Wizard    []WizardPlatform
 	// AWG lists one card per server whose AmneziaWG lane the user may use: the
 	// config file to import and its QR.
 	AWG []awgCard
@@ -649,6 +678,7 @@ func buildPageData(u model.User, local *model.Settings, servers []Server, billin
 		AWG:         awgCards,
 		Turn:        turnCards,
 		DeepLinks:   DeepLinks(subURL, lang, local.SubHappCrypt),
+		Wizard:      Wizard(lang),
 		StatusLabel: statusLabel,
 		StatusClass: statusClass,
 		Used:        fmtBytes(used),
