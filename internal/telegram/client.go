@@ -697,3 +697,26 @@ func (c *Client) upload(ctx context.Context, method, field string, chatID int64,
 	}
 	return &sent, nil
 }
+
+// MenuButton is the bot's button beside the message field.
+type MenuButton struct {
+	Type   string      `json:"type"` // commands | web_app | default
+	Text   string      `json:"text,omitempty"`
+	WebApp *WebAppInfo `json:"web_app,omitempty"`
+}
+
+// GetChatMenuButton reads the bot's default menu button.
+func (c *Client) GetChatMenuButton(ctx context.Context) (*MenuButton, error) {
+	var b MenuButton
+	if err := c.call(ctx, "getChatMenuButton", map[string]any{}, &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// SetChatMenuButton makes the bot's default menu button open a Mini App.
+func (c *Client) SetChatMenuButton(ctx context.Context, text, url string) error {
+	return c.call(ctx, "setChatMenuButton", map[string]any{
+		"menu_button": MenuButton{Type: "web_app", Text: text, WebApp: &WebAppInfo{URL: url}},
+	}, nil)
+}

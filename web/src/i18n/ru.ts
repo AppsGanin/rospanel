@@ -3003,6 +3003,8 @@ const ru = {
   },
 
   tg: {
+    miniApp: "Mini App",
+    miniAppHint: "Кнопка меню бота открывает его сама. Чтобы работали ссылки t.me/{{bot}}?startapp=ref_… (приглашение) и ?startapp=<метка>, укажите этот адрес в @BotFather → Bot Settings → Configure Mini App.",
     evRegLabel: "Новая регистрация",
     evRegDesc: "Пользователь зарегистрировался в боте.",
     evExpired: "Подписка истекла",

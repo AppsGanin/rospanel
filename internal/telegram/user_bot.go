@@ -1301,9 +1301,39 @@ func (s *UserService) publishCommands(ctx context.Context, client *Client, token
 			return // not latched: retried next cycle
 		}
 	}
+	s.publishMenuButton(ctx, client)
 	s.mu.Lock()
 	s.commandsFor = token
 	s.mu.Unlock()
+}
+
+// publishMenuButton points the bot's menu button at the Mini App, so a user opens
+// their subscription from any chat screen without a link carrying their token. A
+// web_app button the operator set to somewhere else is left alone.
+func (s *UserService) publishMenuButton(ctx context.Context, client *Client) {
+	set, err := s.store.GetSettings()
+	if err != nil {
+		return
+	}
+	url := sub.MiniAppURL(set)
+	if url == "" {
+		return
+	}
+	cur, err := client.GetChatMenuButton(ctx)
+	if err != nil {
+		log.Printf("telegram user: read the menu button: %v", err)
+		return
+	}
+	if cur.Type == "web_app" && cur.WebApp != nil && cur.WebApp.URL != url &&
+		!strings.HasPrefix(cur.WebApp.URL, "https://"+set.Host+"/") {
+		return
+	}
+	if cur.Type == "web_app" && cur.WebApp != nil && cur.WebApp.URL == url {
+		return
+	}
+	if err := client.SetChatMenuButton(ctx, i18n.T(i18n.Normalize(set.BotLang()), "user.menuApp"), url); err != nil {
+		log.Printf("telegram user: set the menu button: %v", err)
+	}
 }
 
 func (s *UserService) send(ctx context.Context, client *Client, chatID int64, html string) {

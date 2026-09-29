@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -44,6 +46,10 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		leaf = parts[1]
 	}
 
+	if token == sub.MiniAppToken {
+		handleMiniApp(rt, w, r, leaf)
+		return
+	}
 	u, err := rt.mgr.Store().GetUserBySubToken(token)
 	if err != nil {
 		rt.currentDecoy().ServeHTTP(w, r)
@@ -178,6 +184,16 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		w.Header().Set("Content-Type", branding.LogoContentType(b))
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write(b)
+
+	case "manifest.webmanifest":
+		// What "add to home screen" installs: this user's page, in a window of its own.
+		logo, err := branding.ReadLogo(rt.dataDir)
+		if err != nil {
+			logo = sub.Logo()
+		}
+		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+		_, _ = w.Write(sub.Manifest(set, u.SubToken, i18n.FromAcceptLanguage(r.Header.Get("Accept-Language")), branding.LogoContentType(logo)))
 
 	case "tg.js":
 		// The Telegram Mini App SDK, proxied through us: the panel fetches it from
@@ -1401,4 +1417,74 @@ func termTitle(plan string, periods int) string {
 		return fmt.Sprintf("%s × %d", plan, periods)
 	}
 	return plan
+}
+
+// handleMiniApp serves the Mini App entrance at /<sub path>/app: the page, the
+// Telegram SDK it loads, and the check of Telegram's initData that sends the user
+// on to their own page. With the user bot off it is the decoy, like any unknown path.
+func handleMiniApp(rt *Router, w http.ResponseWriter, r *http.Request, leaf string) {
+	set, err := rt.mgr.Store().GetSettings()
+	if err != nil || !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+		rt.currentDecoy().ServeHTTP(w, r)
+		return
+	}
+	lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
+	switch leaf {
+	case "":
+		page, err := sub.MiniAppPage(set, lang)
+		if err != nil {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(page)
+	case "tg.js":
+		js, ok := rt.mgr.TelegramWebAppSDK()
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		if ok {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		_, _ = w.Write(js)
+	case "auth":
+		if r.Method != http.MethodPost || !subActionAllowed(r) {
+			rt.currentDecoy().ServeHTTP(w, r)
+			return
+		}
+		var req struct {
+			InitData string `json:"init_data"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": i18n.T(lang, "sub.miniFailed")})
+			return
+		}
+		tu, start, err := core.VerifyInitData(req.InitData, strings.TrimSpace(set.TGUserBotToken), time.Now())
+		if err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"message": i18n.T(lang, "sub.miniNoTelegram")})
+			return
+		}
+		if tu.Lang != "" {
+			lang = i18n.Normalize(tu.Lang)
+		}
+		res, err := rt.mgr.MiniAppEnter(actor.With(r.Context(), actor.UserSelf(tu.FirstName)), tu, start)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]string{"message": i18n.T(lang, "sub.miniFailed")})
+			return
+		}
+		if res.UserID != 0 {
+			if u, err := rt.mgr.Store().GetUser(res.UserID); err == nil && u.SubToken != "" {
+				writeJSON(w, http.StatusOK, map[string]string{"url": sub.URL(set, u.SubToken)})
+				return
+			}
+		}
+		out := map[string]string{"message": i18n.T(lang, res.Reason)}
+		if name := botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()); name != "" {
+			out["bot"] = "https://t.me/" + name
+		}
+		writeJSON(w, http.StatusOK, out)
+	default:
+		rt.currentDecoy().ServeHTTP(w, r)
+	}
 }

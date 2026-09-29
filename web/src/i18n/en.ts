@@ -3004,6 +3004,8 @@ const en: Dict = {
   },
 
   tg: {
+    miniApp: "Mini App",
+    miniAppHint: "The bot's menu button opens it by itself. For t.me/{{bot}}?startapp=ref_… (invitation) and ?startapp=<tag> links, set this address in @BotFather → Bot Settings → Configure Mini App.",
     evRegLabel: "New sign-up",
     evRegDesc: "A user signed up in the bot.",
     evExpired: "Subscription expired",

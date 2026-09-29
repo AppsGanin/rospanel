@@ -10,6 +10,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/i18n"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
@@ -43,6 +44,7 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"user_reg_mode":      set.RegMode(),
 		"user_reg_code":      set.TGUserRegCode,
 		"user_bot_username":  botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
+		"user_miniapp_url":   sub.MiniAppURL(set),
 		"admin_events":       rt.mgr.AdminEventPrefs(),
 		"user_events":        userEvents,
 		"user_expiring_days": expiringDays,
