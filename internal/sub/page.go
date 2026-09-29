@@ -504,6 +504,17 @@ type Extra struct {
 	Sub   string `json:"sub"`
 	Badge string `json:"badge"`
 	Up    bool   `json:"up"`
+	// Counts are the numbers of devices on offer (a devices add-on): each with its
+	// price and button label.
+	Counts []ExtraCount `json:"counts,omitempty"`
+}
+
+// ExtraCount is one count of an add-on in its picker.
+type ExtraCount struct {
+	N           int    `json:"n"`
+	Label       string `json:"label"`
+	Button      string `json:"button"`
+	FromBalance bool   `json:"from_balance"`
 }
 
 // PlanOption is one term a plan can be bought for.
