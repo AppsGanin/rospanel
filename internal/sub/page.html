@@ -430,6 +430,87 @@
         font-weight: 600;
         margin-top: 2px;
       }
+      /* The sections of an active plan: renewal, a move, add-ons. */
+      .sect {
+        padding-top: 14px;
+      }
+      .sect + .sect {
+        margin-top: 6px;
+        border-top: 1px solid var(--line);
+      }
+      .sect-title {
+        font-weight: 700;
+        font-size: 1rem;
+      }
+      .sect-hint {
+        color: var(--muted);
+        font-size: 0.84rem;
+        margin: 2px 0 8px;
+      }
+      .sect select.periods {
+        margin-bottom: 0;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        margin-top: 8px;
+        border: 1px solid color-mix(in srgb, var(--brand) 14%, transparent);
+        border-radius: 14px;
+      }
+      .opt-info {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .opt-name {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .opt-sub {
+        color: var(--muted);
+        font-size: 0.84rem;
+        margin-top: 1px;
+      }
+      .opt .btn {
+        width: auto;
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 9px 14px;
+        white-space: nowrap;
+      }
+      .badge {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+      .badge.up {
+        background: color-mix(in srgb, var(--brand) 12%, transparent);
+        color: var(--accent-fg);
+      }
+      .badge.down {
+        background: color-mix(in srgb, #059669 14%, transparent);
+        color: var(--success-fg);
+      }
+      .linkbtn {
+        display: block;
+        margin: 18px auto 2px;
+        padding: 6px 10px;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.86rem;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      .linkbtn:hover {
+        color: var(--danger-fg);
+      }
       .plan .btn {
         width: auto;
         flex: 0 0 auto;
@@ -1021,6 +1102,23 @@
             {{if .Billing.RenewNote}}<p class="renew-note{{if .Billing.RenewShort}} short{{end}}"{{if not .Billing.AutoRenew}} hidden{{end}}>{{.Billing.RenewNote}}</p>{{end}}
           </div>
           {{end}}
+          {{if .Billing.Locked}}
+          <!-- An active plan: its renewal, a move to another plan, what can be added,
+               and — quietly, last — cancelling it. -->
+          {{range .Billing.Plans}}
+          <div class="sect">
+            <div class="sect-title">{{$.L.RenewTitle}}</div>
+            {{if not .Options}}<div class="sect-hint">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>{{else}}<div class="sect-hint"></div>{{end}}
+            {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
+            {{if .Options}}
+            <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
+              {{range .Options}}<option value="{{.Periods}}" data-fb="{{if .FromBalance}}1{{end}}" data-btn="{{.Button}}">{{.Label}}</option>{{end}}
+            </select>
+            {{end}}
+            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Renew}}{{end}}</button>
+          </div>
+          {{end}}
+          {{else}}
           {{range .Billing.Plans}}
           <div class="plan">
             <div class="plan-info">
@@ -1028,7 +1126,7 @@
               <div class="pprice">{{if .OldPrice}}<s>{{.OldPrice}}</s> {{end}}{{.Label}}</div>
               {{if .Promo}}<div class="ppromo">{{.Promo}}</div>{{end}}
             </div>
-            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else if $.Billing.Locked}}{{$.L.Renew}}{{else}}{{$.L.Pay}}{{end}}</button>
+            <button class="btn" id="paybtn-{{.ID}}" data-fb="{{if .FromBalance}}1{{end}}" onclick="buyPlan({{.ID}}, this)">{{if .Button}}{{.Button}}{{else}}{{$.L.Pay}}{{end}}</button>
             {{if .Options}}
             <!-- The term on its own line under the plan and its button, full width. -->
             <select class="periods" id="per-{{.ID}}" autocomplete="off" onchange="periodPicked({{.ID}})">
@@ -1042,33 +1140,45 @@
             {{end}}
           </div>
           {{end}}
-          {{if .Billing.Changes}}
-          <div class="muted" style="margin: 14px 0 6px">{{.L.ChangeTitle}}</div>
-          {{range .Billing.Changes}}
-          <div class="plan">
-            <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
-            <button class="btn" onclick="var b = this; askThen({{$.L.ChangeConfirm}} + '\n' + {{.Label}}, function () { buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', b); })">{{$.L.ChangeBtn}}</button>
-          </div>
           {{end}}
+          {{if .Billing.Changes}}
+          <div class="sect">
+            <div class="sect-title">{{.L.ChangeTitle}}</div>
+            <div class="sect-hint">{{.L.ChangeHint}}</div>
+            {{range .Billing.Changes}}
+            <div class="opt">
+              <div class="opt-info">
+                <div class="opt-name">{{.Name}}</div>
+                <div class="opt-sub">{{.Sub}}</div>
+                <span class="badge{{if .Up}} up{{else}} down{{end}}">{{.Badge}}</span>
+              </div>
+              <button class="btn alt" onclick="var b = this; askThen({{$.L.ChangeConfirm}} + '\n' + {{.Label}}, function () { buyExtra('{{.Kind}}', {{.PlanID}}, 0, '{{if .FromBalance}}1{{end}}', b); })">{{$.L.ChangeBtn}}</button>
+            </div>
+            {{end}}
+          </div>
           {{end}}
           {{if .Billing.Addons}}
-          <div class="muted" style="margin: 14px 0 6px">{{.L.AddTitle}}</div>
-          {{range .Billing.Addons}}
-          <div class="plan">
-            <div class="plan-info"><div class="pprice">{{.Label}}</div></div>
-            <button class="btn" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{$.L.AddBtn}}</button>
+          <div class="sect">
+            <div class="sect-title">{{.L.AddTitle}}</div>
+            <div class="sect-hint">{{.L.AddHint}}</div>
+            {{range .Billing.Addons}}
+            <div class="opt">
+              <div class="opt-info">
+                <div class="opt-name">{{.Name}}</div>
+                <div class="opt-sub">{{.Sub}}</div>
+              </div>
+              <button class="btn alt" onclick="buyExtra('{{.Kind}}', {{.PlanID}}, {{.N}}, '{{if .FromBalance}}1{{end}}', this)">{{.Badge}}</button>
+            </div>
+            {{end}}
           </div>
           {{end}}
-          {{end}}
           {{if .Billing.Cancelable}}
-          <button class="btn alt" style="margin-top: 8px" onclick="cancelSub(this)">
-            {{.L.CancelSub}}
-          </button>
           {{if not .Billing.Changes}}
-          <p class="muted" style="margin: 10px 0 0">
+          <p class="muted" style="margin: 14px 0 0; font-size: 0.85rem">
             {{.L.ChangePlanNote}}
           </p>
           {{end}}
+          <button class="linkbtn" onclick="cancelSub(this)">{{.L.CancelSub}}</button>
           {{else if .Billing.ManualOnly}}
           <p class="muted" style="margin: 12px 0 0">
             {{.L.ManualNote}}

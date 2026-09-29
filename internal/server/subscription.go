@@ -596,12 +596,16 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	}
 	loc := rt.mgr.Location()
 	for _, o := range rt.mgr.ChangeOffers(u) {
-		label := i18n.T(lang, "sub.changeDown", o.Plan.Name, time.Unix(o.Quote.ExpireAt, 0).In(loc).Format("02.01.2006"))
+		until := time.Unix(o.Quote.ExpireAt, 0).In(loc).Format("02.01.2006")
+		label := i18n.T(lang, "sub.changeDown", o.Plan.Name, until)
+		badge := i18n.T(lang, "sub.changeDownBadge", until)
 		if o.Quote.Upgrade {
 			label = i18n.T(lang, "sub.changeUp", o.Plan.Name, o.Quote.TotalRub)
+			badge = i18n.T(lang, "sub.changeUpBadge", o.Quote.TotalRub)
 		}
 		b.Changes = append(b.Changes, sub.Extra{Kind: model.OrderChange, PlanID: o.Plan.ID, Label: label,
-			FromBalance: o.Quote.MoneyRub == 0})
+			FromBalance: o.Quote.MoneyRub == 0, Name: o.Plan.Name, Sub: payPlanLabel(lang, o.Plan),
+			Badge: badge, Up: o.Quote.Upgrade})
 	}
 	if a := rt.mgr.Addons(u); a.Any() {
 		b.Stamp = a.Stamp
@@ -611,7 +615,9 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 				continue
 			}
 			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: n,
-				Label: i18n.TN(lang, "sub.addDevices", n, q.PriceRub), FromBalance: q.MoneyRub == 0})
+				Label: i18n.TN(lang, "sub.addDevices", n, q.PriceRub), FromBalance: q.MoneyRub == 0,
+				Name: i18n.TN(lang, "sub.addDevicesName", n), Sub: i18n.T(lang, "sub.addDevicesSub"),
+				Badge: i18n.T(lang, "sub.price", q.PriceRub)})
 		}
 		for i, p := range a.Packs {
 			q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderTraffic, Pack: i})
@@ -619,7 +625,9 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 				continue
 			}
 			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderTraffic, PlanID: u.PlanID, N: i,
-				Label: i18n.T(lang, "sub.packLabel", p.GB, p.PriceRub), FromBalance: q.MoneyRub == 0})
+				Label: i18n.T(lang, "sub.packLabel", p.GB, p.PriceRub), FromBalance: q.MoneyRub == 0,
+				Name: i18n.T(lang, "sub.packName", p.GB), Sub: i18n.T(lang, "sub.packSub"),
+				Badge: i18n.T(lang, "sub.price", q.PriceRub)})
 		}
 	}
 	rt.buildWallet(&b, u, set, lang, subURL)
