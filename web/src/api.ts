@@ -1596,6 +1596,25 @@ export const testBroadcast = (
   media: File | null,
 ) => apiForm<{ ok: boolean }>('api/broadcasts/test', broadcastForm(b, media))
 
+// An automatic message: a rule the user bot follows on its own.
+export interface AutoRule {
+  id: number
+  name: string
+  enabled: boolean
+  trigger: string
+  delay_hours: number
+  text: string
+  buttons: BroadcastButton[]
+  discount_percent: number
+  discount_days: number
+  stats?: { sent: number; converted: number; revenue_rub: number; codes_used: number }
+}
+
+export const listAutoRules = () => api<{ rules: AutoRule[]; triggers: string[] }>('api/broadcasts/rules')
+export const saveAutoRule = (r: AutoRule) =>
+  api<AutoRule>('api/broadcasts/rules', { method: 'POST', body: JSON.stringify(r) })
+export const deleteAutoRule = (id: number) => api<void>(`api/broadcasts/rules/${id}`, { method: 'DELETE' })
+
 export const pauseBroadcast = (id: number) =>
   api<Broadcast>(`api/broadcasts/${id}/pause`, { method: 'POST' })
 

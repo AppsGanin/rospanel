@@ -285,3 +285,34 @@ func (rt *Router) testBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w)
 }
+
+// listAutoRules returns the automatic messages with what each did.
+func (rt *Router) listAutoRules(w http.ResponseWriter, _ *http.Request) {
+	rules, err := rt.mgr.ListAutoRules()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "triggers": model.AutoRuleTriggers})
+}
+
+// saveAutoRule creates (no id) or updates an automatic message.
+func (rt *Router) saveAutoRule(w http.ResponseWriter, r *http.Request) {
+	var rule model.AutoRule
+	if !decodeJSON(w, r, &rule) {
+		return
+	}
+	if err := rt.mgr.SaveAutoRule(&rule); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+func (rt *Router) deleteAutoRule(w http.ResponseWriter, _ *http.Request, id int64) {
+	if err := rt.mgr.DeleteAutoRule(id); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeOK(w)
+}

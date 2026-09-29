@@ -452,6 +452,8 @@ var en = map[string]string{
 	"notify.refundShort":              "⚠️ %s ₽ not recovered: the balance was already spent — settle it by hand.",
 	"notify.refundRefShort":           "⚠️ %s ₽ not recovered from the referrer: the bonus was already spent.",
 	"notify.refundRefDays":            "Bonus days taken back from the referrer: %d.",
+	"notify.ruleCode":                 "🎁 Your %d%% discount — code <code>%s</code> is already applied to your next payment. Valid until %s.",
+	"promo.ruleNote":                  "Automatic message “%s”: %s",
 	"notify.winback":                  "💙 Come back! %d%% off any plan — code <code>%s</code> is already applied to your next payment. Valid until %s.",
 	"notify.winbackEnter":             "💙 Come back! %d%% off any plan with code <code>%s</code> — enter it under “Promo code”. Valid until %s.",
 	"promo.winbackNote":               "Win-back: %s",
