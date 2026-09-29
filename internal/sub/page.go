@@ -105,7 +105,6 @@ type pageText struct {
 	CancelSub      string
 	ChangePlanNote string
 	ChangeTitle    string
-	InstallApp     string
 	WzOpen         string
 	WzStep1        string
 	WzStep1Hint    string
@@ -118,7 +117,6 @@ type pageText struct {
 	WzBack         string
 	WzNext         string
 	WzDone         string
-	InstallIOS     string
 	ChangeBtn      string
 	ChangeConfirm  string
 	AddTitle       string
@@ -197,7 +195,6 @@ func text(lang i18n.Lang) pageText {
 		CancelSub:      t("sub.cancelSub"),
 		ChangePlanNote: t("sub.changePlanNote"),
 		ChangeTitle:    t("sub.changeTitle"),
-		InstallApp:     t("sub.installApp"),
 		WzOpen:         t("sub.wzOpen"),
 		WzStep1:        t("sub.wzStep1"),
 		WzStep1Hint:    t("sub.wzStep1Hint"),
@@ -210,7 +207,6 @@ func text(lang i18n.Lang) pageText {
 		WzBack:         t("sub.wzBack"),
 		WzNext:         t("sub.wzNext"),
 		WzDone:         t("sub.wzDone"),
-		InstallIOS:     t("sub.installIOS"),
 		ChangeBtn:      t("sub.changeBtn"),
 		ChangeConfirm:  t("sub.changeConfirm"),
 		AddTitle:       t("sub.addTitle"),

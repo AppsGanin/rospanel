@@ -495,8 +495,6 @@ var en = map[string]string{
 	"order.withDevices_other":         " + %d devices",
 	"notify.userPaidAddon":            "✅ Payment received: %s.",
 	"sub.changeConfirm":               "Move to this plan?",
-	"sub.installApp":                  "📲 Add to home screen",
-	"sub.installIOS":                  "📲 To the home screen: Share → Add to Home Screen — the page opens like an app.",
 	"sub.wzOpen":                      "🚀 Connect in 3 steps",
 	"sub.wzStep1":                     "Step 1 of 3 · Install the app",
 	"sub.wzStep1Hint":                 "We recommend Happ — it runs on every device. Pick yours and install it.",
