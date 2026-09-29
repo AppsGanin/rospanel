@@ -550,6 +550,11 @@ an admin confirms the transfer.
   or your own list): they cannot register in the bot; a registered one is marked in its card.
 - **Suspicious activity** — trial farming from one address, one device on several accounts,
   self-invites, promo and payment bursts, failing cards, chargebacks; each row names the accounts.
+- **Automatic messages** — the bot writes on its own when someone opened it and never registered,
+  registered and never connected, took the trial and never paid, stopped using a live subscription,
+  or let a paid term end; once per occurrence, after the delay you set, optionally with a personal
+  discount code already applied to the next payment. Each rule shows how many it wrote to and how
+  many of them paid within 30 days.
 - **Callback journal** — every notification a payment system sent, with its body and what the
   panel did with it (credited, repeat, amount mismatch, no such order, failed the signature
   check); kept 30 days.

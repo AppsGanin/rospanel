@@ -203,6 +203,7 @@ type Manager struct {
 	// the admin bot to post a signup awaiting moderation with approve/reject buttons.
 	notifyMu      sync.Mutex
 	userNotify    func(chatID int64, html string)
+	userMessage   func(chatID int64, html string, buttons []model.BroadcastButton) // with URL buttons (automatic messages)
 	adminNotify   func(html string)
 	adminModerate func(reqID int64, name, plan string)
 	adminLogin    func(LoginAlert) // a sign-in from a new address, with the revoke button

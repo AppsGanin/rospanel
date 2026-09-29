@@ -129,14 +129,16 @@ var auditActions = map[string]auditRoute{
 	"POST /api/telegram/test-backup":           set("tgTestBackup"),
 	"POST /api/telegram/support/check":         set("tgSupportCheck"),
 
-	"POST /api/broadcasts":             act(model.AuditBroadcastStarted),
-	"POST /api/broadcasts/test":        act(model.AuditBroadcastTest),
-	"POST /api/broadcasts/{id}/pause":  act(model.AuditBroadcastChanged),
-	"POST /api/broadcasts/{id}/resume": act(model.AuditBroadcastChanged),
-	"POST /api/broadcasts/{id}/cancel": act(model.AuditBroadcastChanged),
-	"POST /api/broadcasts/{id}/retry":  act(model.AuditBroadcastChanged),
-	"POST /api/billing":                set("billing"),
-	"POST /api/payments":               set("payments"),
+	"POST /api/broadcasts":              act(model.AuditBroadcastStarted),
+	"POST /api/broadcasts/test":         act(model.AuditBroadcastTest),
+	"POST /api/broadcasts/rules":        act(model.AuditAutoRuleSaved),
+	"DELETE /api/broadcasts/rules/{id}": act(model.AuditAutoRuleDeleted),
+	"POST /api/broadcasts/{id}/pause":   act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/resume":  act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/cancel":  act(model.AuditBroadcastChanged),
+	"POST /api/broadcasts/{id}/retry":   act(model.AuditBroadcastChanged),
+	"POST /api/billing":                 set("billing"),
+	"POST /api/payments":                set("payments"),
 
 	// Tariff plans keep their own actions: they are objects with a lifecycle, not a
 	// settings form — "a plan was deleted" is a different question from "who touched the settings".

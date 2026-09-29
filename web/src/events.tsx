@@ -68,6 +68,7 @@ const ACTION_COLORS: Record<string, Color> = {
   "payment.refunded": "orange",
   "promo.winback": "teal",
   "user.source": "gray",
+  "user.auto_message": "teal",
 };
 
 export function actionMeta(action: string): { label: string; color: Color } {
@@ -207,6 +208,8 @@ export function eventDetails(e: UserEvent): string {
       if (days) parts.push(i18n.t("events.det.extendedDays", { count: days }));
       break;
     }
+    case "user.auto_message":
+      return [str(d, "rule"), str(d, "code")].filter(Boolean).join(" · ");
     case "user.source":
       return str(d, "source") || "—";
     case "user.renamed":

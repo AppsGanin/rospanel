@@ -88,6 +88,8 @@ const (
 	// settings-changed row to find.
 	AuditBroadcastStarted = "broadcast.started"
 	AuditBroadcastChanged = "broadcast.changed"
+	AuditAutoRuleSaved    = "broadcast.rule_saved"
+	AuditAutoRuleDeleted  = "broadcast.rule_deleted"
 	AuditBroadcastTest    = "broadcast.test"
 	AuditUserMessaged     = "broadcast.user_messaged"
 
@@ -180,6 +182,8 @@ var AdminAuditCatalog = []AdminAuditEntry{
 
 	{AuditBroadcastStarted, AuditCatBroadcast},
 	{AuditBroadcastChanged, AuditCatBroadcast},
+	{AuditAutoRuleSaved, AuditCatBroadcast},
+	{AuditAutoRuleDeleted, AuditCatBroadcast},
 	{AuditBroadcastTest, AuditCatBroadcast},
 	{AuditUserMessaged, AuditCatBroadcast},
 

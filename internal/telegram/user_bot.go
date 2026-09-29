@@ -152,6 +152,22 @@ func (s *UserService) Run(ctx context.Context) {
 			}
 		})
 	})
+	s.panel.SetUserMessenger(func(chatID int64, html string, buttons []model.BroadcastButton) {
+		q.submit(func(ctx context.Context) {
+			set, err := s.store.GetSettings()
+			if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
+				return
+			}
+			c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
+			err = c.SendMenu(ctx, chatID, html, broadcastRows(buttons))
+			if err != nil && isBlockedByUser(err) {
+				_ = s.store.SetSubscriberBlocked(chatID, time.Now().Unix())
+			}
+			if err != nil {
+				log.Printf("telegram: automatic message to %d failed: %v", chatID, err)
+			}
+		})
+	})
 	for {
 		if ctx.Err() != nil {
 			return

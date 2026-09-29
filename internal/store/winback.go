@@ -122,9 +122,9 @@ func (s *Store) WinbackStats() (model.WinbackStats, error) {
 		`SELECT count(*), COALESCE(sum(uses), 0),
 		        (SELECT COALESCE(sum(o.amount_rub), 0) FROM promo_codes pc
 		         JOIN payment_orders o ON o.promo_id = pc.id
-		         WHERE pc.winback_user <> 0 AND o.status = 'paid' AND o.kind = 'plan'
+		         WHERE pc.winback_user <> 0 AND pc.auto_rule = 0 AND o.status = 'paid' AND o.kind = 'plan'
 		           AND o.refund_source <> 'provider')
-		 FROM promo_codes WHERE winback_user <> 0`,
+		 FROM promo_codes WHERE winback_user <> 0 AND auto_rule = 0`,
 	).Scan(&st.Sent, &st.Used, &st.RevenueRub)
 	return st, err
 }
