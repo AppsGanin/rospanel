@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -270,9 +271,10 @@ func (m *Manager) ConfirmStarsPayment(payload, currency string, total int64, raw
 		// amount has no star figure to compare with, so none is passed on.
 		rec.Outcome, rec.OrderID, err = m.confirmProviderOrderOutcome(payments.ProviderStars, payload,
 			payments.Result{Status: payments.StatusPaid})
-		// Telegram reports each payment once, so a paid order hearing of another one
-		// is a second charge of the same invoice — stars taken for nothing.
-		if err == nil && rec.Outcome == model.WebhookOutcomeDuplicate {
+		// The same charge again (Telegram re-sends an update the bot did not get past
+		// before a restart) is nothing; another charge of a paid invoice is stars
+		// taken for nothing.
+		if err == nil && rec.Outcome == model.WebhookOutcomeDuplicate && !m.store.StarsChargeSeen(payload, starsCharge(raw)) {
 			rec.Outcome = model.WebhookOutcomeError
 			err = fmt.Errorf("stars: invoice %q paid again after the order was already paid", payload)
 		}
@@ -962,7 +964,8 @@ func boolInt(b bool) int {
 func (m *Manager) revertChange(ctx context.Context, o *model.PaymentOrder) bool {
 	m.applyPlanMu.Lock()
 	u, err := m.store.GetUser(o.UserID)
-	if err != nil || u.PlanID != o.PlanID || o.ChangeFrom == 0 {
+	// Only the term the change bought: renewed since, the days are the new plan's own.
+	if err != nil || u.PlanID != o.PlanID || o.ChangeFrom == 0 || u.ExpireAt != o.ExpectExpire {
 		m.applyPlanMu.Unlock()
 		return false
 	}
@@ -971,7 +974,11 @@ func (m *Manager) revertChange(ctx context.Context, o *model.PaymentOrder) bool 
 		m.applyPlanMu.Unlock()
 		return false
 	}
-	w, err := m.changeWrite(*u, from.ID, 0, u.ExpireAt)
+	back := 0
+	if from.SellsDevices() {
+		back = min(o.DevicesBefore, from.DeviceMax)
+	}
+	w, err := m.changeWrite(*u, from.ID, back, u.ExpireAt)
 	if err != nil {
 		m.applyPlanMu.Unlock()
 		return false
@@ -986,4 +993,15 @@ func (m *Manager) revertChange(ctx context.Context, o *model.PaymentOrder) bool 
 	m.afterPlanWrite(groupsChanged)
 	m.auditPlan(ctx, u.ID, u.Name, model.EventPlanChanged, m.PlanName(o.PlanID), from.Name, w.ExpireAt)
 	return true
+}
+
+// starsCharge reads telegram_payment_charge_id out of a successful_payment message.
+func starsCharge(raw []byte) string {
+	var m struct {
+		SuccessfulPayment struct {
+			ChargeID string `json:"telegram_payment_charge_id"`
+		} `json:"successful_payment"`
+	}
+	_ = json.Unmarshal(raw, &m)
+	return m.SuccessfulPayment.ChargeID
 }

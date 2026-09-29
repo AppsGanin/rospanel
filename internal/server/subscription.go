@@ -1135,7 +1135,7 @@ func (rt *Router) buildWallet(b *sub.Billing, u model.User, set *model.Settings,
 			b.BonusDays = i18n.T(lang, "sub.bonusDays", w.RefBonusDays)
 		}
 	}
-	b.Promo = rt.mgr.PromosOffered()
+	b.Promo = rt.mgr.PromosOfferedTo(u.ID)
 	if link := rt.userRefLink(set, u.ID); link != "" {
 		b.RefLink = link
 		b.RefShare = "https://t.me/share/url?url=" + url.QueryEscape(link) +

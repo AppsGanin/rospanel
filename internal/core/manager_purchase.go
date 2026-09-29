@@ -314,6 +314,9 @@ func (m *Manager) addonDraft(u model.User, p Purchase, q PlanQuote, plan *model.
 	switch p.Kind {
 	case model.OrderChange:
 		d.ChangeFrom = u.PlanID
+		if cur, err := m.store.GetTariffPlan(u.PlanID); err == nil {
+			d.DevicesBefore = heldDevices(u, cur)
+		}
 	case model.OrderTraffic:
 		d.PackBytes = int64(q.PackGB) << 30
 		d.ExpectExpire = 0
@@ -470,8 +473,12 @@ func (m *Manager) changeWrite(u model.User, to int64, devices int, expire int64)
 		return w, err
 	}
 	w.ExpireAt = expire
-	w.ResetUsage, w.LastUp, w.LastDown = false, 0, 0
-	w.ResetAnchor = u.LastResetAt
+	// Off an unlimited plan the counter holds everything ever used — nothing a quota
+	// was measured against — so it starts over.
+	if cur, err := m.store.GetTariffPlan(u.PlanID); err == nil && cur.DataLimit > 0 {
+		w.ResetUsage, w.LastUp, w.LastDown = false, 0, 0
+		w.ResetAnchor = u.LastResetAt
+	}
 	if w.DataLimit > 0 && u.PackData > 0 {
 		w.DataLimit += u.PackData
 		w.PackData = u.PackData

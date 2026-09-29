@@ -311,6 +311,8 @@ type PaymentOrder struct {
 	ChangeFrom   int64 `json:"change_from,omitempty"`
 	ExpectExpire int64 `json:"expect_expire,omitempty"`
 	PackBytes    int64 `json:"pack_bytes,omitempty"`
+	// DevicesBefore: a change's extra devices on the plan it left.
+	DevicesBefore int `json:"devices_before,omitempty"`
 }
 
 // Who returned an order's money (PaymentOrder.RefundSource).

@@ -80,11 +80,11 @@ func (s *Store) FraudSignals(w FraudWindow) ([]model.FraudSignal, error) {
 	// payment system itself reported cancelled — an order left unpaid and swept is
 	// someone browsing prices, not a declined card.
 	if err := add(model.FraudFailedPayments,
-		`SELECT o.user_id, count(*), max(j.at), o.user_id
+		`SELECT o.user_id, count(DISTINCT o.id), max(j.at), o.user_id
 		 FROM payment_webhooks j JOIN payment_orders o ON o.id = j.order_id
 		 WHERE j.outcome = 'cancelled' AND j.at >= ?
-		 GROUP BY o.user_id HAVING count(*) >= ?
-		 ORDER BY count(*) DESC LIMIT ?`, w.WeekSince, model.FraudFailedMin, fraudRowCap); err != nil {
+		 GROUP BY o.user_id HAVING count(DISTINCT o.id) >= ?
+		 ORDER BY count(DISTINCT o.id) DESC LIMIT ?`, w.WeekSince, model.FraudFailedMin, fraudRowCap); err != nil {
 		return nil, err
 	}
 	// Many payments within an hour.

@@ -72,3 +72,34 @@ func TestStarsPayment(t *testing.T) {
 		}
 	}
 }
+
+// The same Stars charge delivered twice (a restart mid-batch) is not an error.
+func TestStarsSameChargeTwice(t *testing.T) {
+	t.Parallel()
+	st, err := store.Open(filepath.Join(t.TempDir(), "stars2.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := &Manager{store: st}
+	u, _ := st.CreateUser("buyer", "uuid-buyer", "pw", "tok", 0, 0, 0)
+	plan := &model.TariffPlan{Slug: "m1", Name: "Месяц", PriceRub: 100, PeriodDays: 30, Enabled: true}
+	if err := st.SaveTariffPlan(plan); err != nil {
+		t.Fatal(err)
+	}
+	order, _ := st.CreatePaymentOrder(u.ID, plan.ID, plan.PriceRub)
+	const payload = "o1-56"
+	if err := st.SetPaymentOrderProvider(order.ID, payments.ProviderStars, payload, "https://t.me/$x"); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"successful_payment":{"telegram_payment_charge_id":"ch-1"}}`)
+	if err := m.ConfirmStarsPayment(payload, "XTR", 56, raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ConfirmStarsPayment(payload, "XTR", 56, raw); err != nil {
+		t.Fatalf("the same charge again was an error: %v", err)
+	}
+	if err := m.ConfirmStarsPayment(payload, "XTR", 56, []byte(`{"successful_payment":{"telegram_payment_charge_id":"ch-2"}}`)); err == nil {
+		t.Fatal("a second charge passed silently")
+	}
+}

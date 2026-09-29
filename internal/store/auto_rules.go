@@ -170,6 +170,7 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 			                 AND o.kind = 'plan' AND o.refunded_at = 0)
 			     AND NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.refund_source = 'provider')
 			     AND NOT (u.expire_at > ?)
+			     AND NOT EXISTS (SELECT 1 FROM tariff_plans lp WHERE lp.id = u.plan_id AND lp.price_rub > 0 AND lp.period_days = 0)
 			 ) t
 			 WHERE t.lapse > ? AND t.lapse <= ?
 			   AND NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.chat_id = t.chat_id AND x.cycle = t.lapse)`
