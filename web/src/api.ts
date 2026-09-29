@@ -29,6 +29,9 @@ export interface User {
   telegram_linked?: boolean
   telegram_link?: string
   telegram_deep_link?: string
+  // The linked Telegram account is on the shared blacklist (user card only).
+  blacklisted?: boolean
+  blacklist_reason?: string
   tg_chat_id?: number // linked Telegram chat/user id (0 = not linked)
   system_email: string // Xray client id "u<id>" (logs/stats)
   sub_url: string
@@ -1437,6 +1440,21 @@ export interface TelegramInfo {
 export type RegMode = 'off' | 'open' | 'moderation' | 'invite'
 
 export const getTelegram = () => api<TelegramInfo>('api/telegram')
+
+// The shared Telegram blacklist: accounts other VPN services banned.
+export interface BlacklistInfo {
+  enabled: boolean
+  url: string
+  default_url: string
+  count: number
+  synced_at: number
+  error?: string
+}
+
+export const getBlacklist = () => api<BlacklistInfo>('api/telegram/blacklist')
+export const saveBlacklist = (enabled: boolean, url: string) =>
+  api<BlacklistInfo>('api/telegram/blacklist', { method: 'POST', body: JSON.stringify({ enabled, url }) })
+export const refreshBlacklist = () => api<BlacklistInfo>('api/telegram/blacklist/refresh', { method: 'POST' })
 
 // Takes an object rather than a positional list: the three bots contribute a dozen
 // fields, half of them same-typed, and a swapped token argument would fail silently.

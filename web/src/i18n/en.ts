@@ -552,6 +552,8 @@ const en: Dict = {
     keyOutranksYou: "the key holds more rights than you — someone who has them can revoke it",
     keyRoleTooBroad: "a key cannot get more rights than you have yourself",
     unknownTimezone: "unknown time zone {{value}}",
+    blacklistEmpty: "the list holds no Telegram IDs",
+    blacklistURL: "list address: {{err}}",
     webhookNoPaymentID: "{{provider}}: the notification carries no payment id",
     xrayRejectedConfig: "Xray rejected the configuration: {{err}}",
     zerosslDomainsOnly: "ZeroSSL supports domains only (not IPs): {{value}} does not look like a domain",
@@ -1199,6 +1201,8 @@ const en: Dict = {
       statusPage: "Status page",
       telegram: "Telegram",
       tgLink: "Telegram · linking",
+      tgBlacklist: "Telegram · shared blacklist",
+      tgBlacklistRefresh: "Telegram · blacklist refreshed",
       tgLinkCancel: "Telegram · linking cancelled",
       tgSupportCheck: "Telegram · support group check",
       tgTestBackup: "Telegram · test backup",
@@ -1632,6 +1636,7 @@ const en: Dict = {
     revokedN_other: "{{count}} sessions ended",
   },
   userDetail: {
+    blacklisted: "On the shared VPN blacklist",
     manual: "Manual",
     state: "State",
     planAndLimits: "Tariff and limits",
@@ -2255,6 +2260,14 @@ const en: Dict = {
     yookassaSandbox: "YooKassa has no separate sandbox host — test mode is switched on by using test keys.",
   },
 
+  blacklist: {
+    title: "Shared blacklist",
+    hint: "Telegram accounts other VPN services banned: reselling, network scanning, sharing, fraud. Such an account cannot register in the bot; one already registered is marked in its card. The list is refreshed every 6 hours.",
+    url: "List address",
+    status: "{{count}} accounts · updated {{when}}",
+    notLoaded: "The list is not loaded",
+    refresh: "Refresh",
+  },
   callbacks: {
     title: "Payment system callbacks",
     onlyFailed: "Failures only",

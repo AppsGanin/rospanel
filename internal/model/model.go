@@ -1034,6 +1034,14 @@ type Settings struct {
 	AutoUpdateLastAt int64  `json:"-"`
 	AutoUpdateLast   string `json:"-"`
 
+	// BlacklistEnabled refuses registration in the user bot to Telegram accounts on
+	// the shared blacklist fetched from BlacklistURL ("" = DefaultBlacklistURL).
+	// BlacklistSyncedAt / BlacklistError are the last fetch.
+	BlacklistEnabled  bool   `json:"-"`
+	BlacklistURL      string `json:"-"`
+	BlacklistSyncedAt int64  `json:"-"`
+	BlacklistError    string `json:"-"`
+
 	// PaymentWebhookSecret is the random URL segment the provider webhooks are
 	// mounted under (/<secret>/<provider>), so the callback path is fixed yet
 	// unguessable and doesn't reveal the hidden panel. Provider credentials

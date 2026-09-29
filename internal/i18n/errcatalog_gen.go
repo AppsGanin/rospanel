@@ -83,6 +83,8 @@ var errEN = map[string]string{
 	"err.banTrusted":               "{{ip}} is in the trusted networks — take it out of them to ban it",
 	"err.billingOff":               "payments are off",
 	"err.binaryPathUnknown":        "could not determine the panel binary's path",
+	"err.blacklistEmpty":           "the list holds no Telegram IDs",
+	"err.blacklistURL":             "list address: {{err}}",
 	"err.blockNotFound":            "that address is not blocked",
 	"err.botCannotManageTopics":    "the bot lacks the “Manage topics” right — without it, it cannot open a topic per user",
 	"err.botNotGroupAdmin":         "the bot must be a group administrator — otherwise it cannot see the operators' replies",

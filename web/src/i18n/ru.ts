@@ -551,6 +551,8 @@ const ru = {
     keyOutranksYou: "у ключа больше прав, чем у вас, — отозвать его может тот, у кого они есть",
     keyRoleTooBroad: "нельзя выдать ключу больше прав, чем у вас самих",
     unknownTimezone: "неизвестный часовой пояс {{value}}",
+    blacklistEmpty: "в списке нет ни одного Telegram ID",
+    blacklistURL: "адрес списка: {{err}}",
     webhookNoPaymentID: "{{provider}}: в уведомлении нет идентификатора платежа",
     xrayRejectedConfig: "Xray отклонил конфигурацию: {{err}}",
     zerosslDomainsOnly: "ZeroSSL поддерживает только домены (не IP): {{value}} — это не похоже на домен",
@@ -1198,6 +1200,8 @@ const ru = {
       statusPage: "Статус-страница",
       telegram: "Telegram",
       tgLink: "Telegram · привязка",
+      tgBlacklist: "Telegram · общий чёрный список",
+      tgBlacklistRefresh: "Telegram · чёрный список обновлён",
       tgLinkCancel: "Telegram · привязка отменена",
       tgSupportCheck: "Telegram · проверка группы поддержки",
       tgTestBackup: "Telegram · тестовый бэкап",
@@ -1631,6 +1635,7 @@ const ru = {
     revokedN_other: "Завершено {{count}} сессии",
   },
   userDetail: {
+    blacklisted: "В общем чёрном списке VPN-сервисов",
     manual: "Вручную",
     state: "Состояние",
     planAndLimits: "Тариф и лимиты",
@@ -2253,6 +2258,14 @@ const ru = {
     yookassaSandbox: "У ЮКассы нет отдельного адреса песочницы — тестовый режим включается тестовыми ключами.",
   },
 
+  blacklist: {
+    title: "Общий чёрный список",
+    hint: "Telegram-аккаунты, забаненные другими VPN-сервисами: перепродажа, сканирование сетей, шаринг, мошенничество. Такой аккаунт не сможет зарегистрироваться в боте, у уже зарегистрированных — пометка в карточке. Список обновляется раз в 6 часов.",
+    url: "Адрес списка",
+    status: "{{count}} аккаунтов · обновлён {{when}}",
+    notLoaded: "Список не загружен",
+    refresh: "Обновить",
+  },
   callbacks: {
     title: "Уведомления платёжных систем",
     onlyFailed: "Только ошибки",

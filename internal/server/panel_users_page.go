@@ -678,7 +678,9 @@ func (rt *Router) getUser(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	}
 	rt.applyTLSHints(set)
-	writeJSON(w, http.StatusOK, rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL())))
+	v := rt.userViewFor(*u, set, botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()))
+	v.BlacklistReason, v.Blacklisted = rt.mgr.Blacklisted(u.TgChatID)
+	writeJSON(w, http.StatusOK, v)
 }
 
 // userBrief is a user as a picker names them.

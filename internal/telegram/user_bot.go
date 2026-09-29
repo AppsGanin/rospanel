@@ -488,6 +488,11 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		s.send(ctx, client, chatID, i18n.T(lang, "user.regClosed"))
 		return
 	}
+	if s.panel.RegistrationBlacklisted(chatID) {
+		log.Printf("telegram user: registration refused to blacklisted chat %d", chatID)
+		s.send(ctx, client, chatID, i18n.T(lang, "user.regRefused"))
+		return
+	}
 	// A chat that already has a pending moderated request must not re-tap its way
 	// through the global rate limit (or spam admins) — short-circuit before both.
 	if set.RegMode() == model.RegModeration && s.panel.RegistrationPending(chatID) {

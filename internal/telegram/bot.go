@@ -49,6 +49,9 @@ type Panel interface {
 	// Request creates the user, RejectRegistrationRequest drops it.
 	RequestRegistration(ctx context.Context, chatID int64, name string) (bool, error)
 	RegistrationPending(chatID int64) bool
+	// RegistrationBlacklisted: the account is on the shared blacklist and the operator
+	// refuses such accounts a signup.
+	RegistrationBlacklisted(tgID int64) bool
 	ApproveRegistrationRequest(ctx context.Context, reqID int64) error
 	RejectRegistrationRequest(ctx context.Context, reqID int64) error
 	// ActivePaidPlan reports the user's active paid plan (nil = none), and

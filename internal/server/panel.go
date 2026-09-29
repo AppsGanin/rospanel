@@ -39,6 +39,10 @@ type userView struct {
 	TelegramLinked   bool             `json:"telegram_linked"`
 	TelegramLink     string           `json:"telegram_link"`      // public user bot URL
 	TelegramDeepLink string           `json:"telegram_deep_link"` // bind this (panel-created) account
+	// Blacklisted: the linked Telegram account is on the shared blacklist, for the
+	// reason given. Filled in for the user card only.
+	Blacklisted     bool   `json:"blacklisted,omitempty"`
+	BlacklistReason string `json:"blacklist_reason,omitempty"`
 }
 
 // namedLink is one share link with the node name a client displays for it.
@@ -557,6 +561,9 @@ func (rt *Router) panelMux() http.Handler {
 	// where full backups go — no permission reaches that far (see model.PermImplies).
 	authedOwner("GET /api/telegram", rt.getTelegram)
 	authedOwner("POST /api/telegram", rt.saveTelegram)
+	authedOwner("GET /api/telegram/blacklist", rt.getBlacklist)
+	authedOwner("POST /api/telegram/blacklist", rt.saveBlacklist)
+	authedOwner("POST /api/telegram/blacklist/refresh", rt.refreshBlacklist)
 	authedOwner("POST /api/telegram/link", rt.genTelegramLink)
 	authedOwner("GET /api/telegram/link/status", rt.telegramLinkStatus)
 	authedOwner("POST /api/telegram/link/cancel", rt.cancelTelegramLink)

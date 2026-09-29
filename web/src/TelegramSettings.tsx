@@ -21,6 +21,7 @@ import {
   type Schedule,
 } from "./CronPicker";
 import i18n, { LANGS } from "./i18n";
+import { BlacklistPanel } from "./BlacklistPanel";
 import { notifyError, notifySuccess, errMessage } from "./notify";
 import {
   Button,
@@ -705,6 +706,8 @@ export function TelegramSettings() {
           />
         )}
       </Panel>
+
+      <BlacklistPanel />
 
       <Panel title={t("tg.userNotifs")}>
         <SettingRow hint={t("tg.userNotifsHint")} />

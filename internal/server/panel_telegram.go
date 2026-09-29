@@ -441,3 +441,38 @@ func botUsernameFresh(ctx context.Context, token, proxy string) string {
 	botNameMu.Unlock()
 	return botUsername(ctx, token, proxy)
 }
+
+// getBlacklist reads the shared Telegram blacklist's settings and state.
+func (rt *Router) getBlacklist(w http.ResponseWriter, _ *http.Request) {
+	info, err := rt.mgr.BlacklistInfo()
+	if err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+// saveBlacklist turns the blacklist on or off and sets where it is fetched from.
+func (rt *Router) saveBlacklist(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		URL     string `json:"url"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.mgr.SaveBlacklist(r.Context(), req.Enabled, req.URL); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.getBlacklist(w, r)
+}
+
+// refreshBlacklist fetches the list now.
+func (rt *Router) refreshBlacklist(w http.ResponseWriter, r *http.Request) {
+	if err := rt.mgr.RefreshBlacklist(r.Context()); err != nil {
+		writeManagerErr(w, err)
+		return
+	}
+	rt.getBlacklist(w, r)
+}
