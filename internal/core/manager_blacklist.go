@@ -38,7 +38,7 @@ func blacklistURL(set *model.Settings) string {
 
 // parseBlacklist reads "<telegram id> # reason" lines. Anything that does not start
 // with a number is skipped, so a comment line or a header does not fail the list.
-func parseBlacklist(body []byte) map[int64]string {
+func parseBlacklist(body []byte) (map[int64]string, error) {
 	out := map[int64]string{}
 	sc := bufio.NewScanner(bytes.NewReader(body))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
@@ -55,7 +55,7 @@ func parseBlacklist(body []byte) map[int64]string {
 		}
 		out[id] = reason
 	}
-	return out
+	return out, sc.Err()
 }
 
 // RefreshBlacklist fetches the list and replaces the stored copy. A failed fetch,
@@ -72,7 +72,17 @@ func (m *Manager) RefreshBlacklist(ctx context.Context) error {
 		_ = m.store.SetBlacklistError(err.Error())
 		return err
 	}
-	entries := parseBlacklist(body)
+	// A body at the cap was cut: its last line may be half an id, and the rest of the
+	// list is missing — keep the copy already stored.
+	if len(body) >= blacklistMaxBytes {
+		_ = m.store.SetBlacklistError("the list is larger than 8 MB")
+		return invalidCode("err.blacklistTooBig", "список больше 8 МБ")
+	}
+	entries, err := parseBlacklist(body)
+	if err != nil {
+		_ = m.store.SetBlacklistError(err.Error())
+		return err
+	}
 	if len(entries) == 0 {
 		err := invalidCode("err.blacklistEmpty", "в списке нет ни одного Telegram ID")
 		_ = m.store.SetBlacklistError("no Telegram ids in the list")

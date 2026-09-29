@@ -95,7 +95,12 @@ func TestPurchaseWithDevices(t *testing.T) {
 	if u2.DeviceLimit != 4 || u2.ExtraDevices != 2 || e.balance(t) != 0 || u2.ExpireAt-u.ExpireAt != 30*86400 {
 		t.Fatalf("after renewal: %+v balance %d", u2, e.balance(t))
 	}
-	if _, err := e.m.QuotePurchase(u2, Purchase{Kind: model.OrderPlan, PlanID: e.a.ID, Devices: 4}); err == nil {
+	// Renewing the running term keeps the devices held, whatever is asked.
+	if q, err := e.m.QuotePurchase(u2, Purchase{Kind: model.OrderPlan, PlanID: e.a.ID, Devices: 3}); err != nil || q.Devices != 2 {
+		t.Fatalf("renewal with more devices = %+v %v", q, err)
+	}
+	stranger, _ := e.st.CreateUser("stranger", "uuid-s", "pw", "tok-s", 0, 0, 0)
+	if _, err := e.m.QuotePurchase(*stranger, Purchase{Kind: model.OrderPlan, PlanID: e.a.ID, Devices: 4}); err == nil {
 		t.Fatal("more devices than the plan sells were quoted")
 	}
 }
@@ -153,7 +158,8 @@ func TestPlanChange(t *testing.T) {
 	t.Parallel()
 	e := newPurchaseEnv(t)
 	ctx := context.Background()
-	if err := e.m.ApplyPlanToUser(ctx, e.userID, e.b.ID, false); err != nil {
+	e.fund(t, 600)
+	if _, err := e.m.BuyPlanFromBalance(ctx, e.userID, e.b.ID, e.user(t).ExpireAt, 1); err != nil {
 		t.Fatal(err)
 	}
 	end := time.Now().Unix() + 10*86400
@@ -242,5 +248,63 @@ func TestChangeOrderStale(t *testing.T) {
 	}
 	if got := e.user(t); got.PlanID != e.b.ID || got.ExpireAt != after.ExpireAt {
 		t.Fatalf("fresh change: %+v", got)
+	}
+}
+
+// Switching back and forth keeps the traffic counter; a plan held for nothing is
+// worth nothing in a change.
+func TestPlanChangeKeepsUsage(t *testing.T) {
+	t.Parallel()
+	e := newPurchaseEnv(t)
+	ctx := context.Background()
+	e.fund(t, 300)
+	if _, err := e.m.BuyPlanFromBalance(ctx, e.userID, e.a.ID, e.user(t).ExpireAt, 1); err != nil {
+		t.Fatal(err)
+	}
+	c := &model.TariffPlan{Slug: "c", Name: "C", PriceRub: 300, PeriodDays: 30, DeviceLimit: 2, DataLimit: 50 << 30, Enabled: true}
+	if err := e.m.SaveTariffPlan(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.ExecForTest(`UPDATE users SET used_up = 40 << 30 WHERE id = ?`, e.userID); err != nil {
+		t.Fatal(err)
+	}
+	u := e.user(t)
+	if _, err := e.m.BuyFromBalance(ctx, e.userID, Purchase{Kind: model.OrderChange, PlanID: c.ID, Devices: KeepDevices}, u.ExpireAt); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.user(t); got.PlanID != c.ID || got.UsedUp != 40<<30 {
+		t.Fatalf("after change: plan %d used %d", got.PlanID, got.UsedUp)
+	}
+	// Assigned by hand, never bought: its days are worth nothing.
+	other, _ := e.st.CreateUser("given", "uuid-g", "pw", "tok-g", 0, 0, 0)
+	if err := e.m.ApplyPlanToUser(ctx, other.ID, e.b.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	g, _ := e.st.GetUser(other.ID)
+	q, err := e.m.QuotePurchase(*g, Purchase{Kind: model.OrderChange, PlanID: e.a.ID, Devices: 0})
+	if err != nil || !q.Upgrade || q.PriceRub < 290 {
+		t.Fatalf("a given plan's change = %+v %v", q, err)
+	}
+}
+
+// Two taps of the same add-on button buy it once.
+func TestAddonDoubleTap(t *testing.T) {
+	t.Parallel()
+	e := newPurchaseEnv(t)
+	ctx := context.Background()
+	e.fund(t, 1000)
+	if _, err := e.m.BuyPlanFromBalance(ctx, e.userID, e.a.ID, e.user(t).ExpireAt, 1); err != nil {
+		t.Fatal(err)
+	}
+	stamp := PurchaseStamp(e.user(t))
+	p := Purchase{Kind: model.OrderTraffic, Pack: 0}
+	if _, err := e.m.BuyFromBalance(ctx, e.userID, p, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.m.BuyFromBalance(ctx, e.userID, p, stamp); err == nil {
+		t.Fatal("the second tap bought a second pack")
+	}
+	if got := e.user(t); got.PackData != 10<<30 {
+		t.Fatalf("pack = %d", got.PackData)
 	}
 }

@@ -95,7 +95,7 @@ type Panel interface {
 	TrackSource(chatID int64, tag string)
 	AttachReferrer(ctx context.Context, userID, chatID int64)
 	SetUserNotifier(fn func(chatID int64, html string))
-	SetUserMessenger(fn func(chatID int64, html string, buttons []model.BroadcastButton))
+	SetUserMessenger(fn func(chatID int64, html string, buttons []model.BroadcastButton) error)
 	SetAdminNotifier(fn func(html string))
 	SetAdminModerationNotifier(fn func(reqID int64, name, plan string))
 	// A sign-in from a new address, and the button under it: end every session of

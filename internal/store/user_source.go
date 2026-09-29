@@ -52,7 +52,9 @@ func (s *Store) UserSource(userID int64) string {
 // neither. revenue_rub is the money they paid in (provider refunds excluded). The
 // biggest limit groups by joined come back.
 func (s *Store) FunnelBySource(since int64, limit int) ([]model.SourceFunnel, error) {
-	rows, err := s.rdb.Query(
+	// Through the writer, like Funnel: it walks the users table, and the read pool is
+	// for bounded lookups.
+	rows, err := s.db.Query(
 		`SELECT CASE WHEN u.source <> '' THEN u.source WHEN u.referrer_id <> 0 THEN '~ref' ELSE '' END AS src,
 		        count(*), COALESCE(sum(u.trial_used <> 0), 0),
 		        COALESCE(sum(p.n >= 1), 0), COALESCE(sum(p.n >= 2), 0), COALESCE(sum(m.rub), 0)

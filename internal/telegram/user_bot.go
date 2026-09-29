@@ -152,21 +152,23 @@ func (s *UserService) Run(ctx context.Context) {
 			}
 		})
 	})
-	s.panel.SetUserMessenger(func(chatID int64, html string, buttons []model.BroadcastButton) {
-		q.submit(func(ctx context.Context) {
-			set, err := s.store.GetSettings()
-			if err != nil || strings.TrimSpace(set.TGUserBotToken) == "" {
-				return
-			}
-			c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
-			err = c.SendMenu(ctx, chatID, html, broadcastRows(buttons))
-			if err != nil && isBlockedByUser(err) {
-				_ = s.store.SetSubscriberBlocked(chatID, time.Now().Unix())
-			}
-			if err != nil {
-				log.Printf("telegram: automatic message to %d failed: %v", chatID, err)
-			}
-		})
+	s.panel.SetUserMessenger(func(chatID int64, html string, buttons []model.BroadcastButton) error {
+		set, err := s.store.GetSettings()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(set.TGUserBotToken) == "" {
+			return fmt.Errorf("the user bot has no token")
+		}
+		c := NewClient(strings.TrimSpace(set.TGUserBotToken), set.TelegramProxyURL())
+		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		err = c.SendMenu(sendCtx, chatID, html, broadcastRows(buttons))
+		if err != nil && isBlockedByUser(err) {
+			_ = s.store.SetSubscriberBlocked(chatID, time.Now().Unix())
+			return nil
+		}
+		return err
 	})
 	for {
 		if ctx.Err() != nil {
@@ -211,7 +213,16 @@ func (s *UserService) handle(ctx context.Context, client *Client, u Update) {
 	// Payments before the rate gate: a paid invoice must never be dropped as a flood,
 	// and a pre-checkout left unanswered for ten seconds fails the payment.
 	if u.PreCheckout != nil {
-		s.preCheckout(ctx, client, u.PreCheckout)
+		// Answered off the loop: Telegram gives ten seconds, and the update before it
+		// in the batch may be a provider call that takes longer.
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("telegram user: pre-checkout panic recovered: %v", r)
+				}
+			}()
+			s.preCheckout(ctx, client, u.PreCheckout)
+		}()
 		return
 	}
 	if u.Message != nil && u.Message.SuccessfulPayment != nil {
@@ -973,9 +984,9 @@ func (s *UserService) showPlans(ctx context.Context, client *Client, chatID, msg
 		if !canPay && q.MoneyRub > 0 {
 			continue
 		}
-		// A discount code the user entered shows in the price it buys.
+		// A discount code the user entered, or devices held, show in the price it buys.
 		label := planButtonLabel(p, lang)
-		if q.DiscountRub > 0 {
+		if q.DiscountRub > 0 || q.Devices > 0 {
 			shown := p
 			shown.PriceRub = q.TotalRub
 			label = "🏷 " + planButtonLabel(shown, lang)
@@ -1078,7 +1089,8 @@ func (s *UserService) handleBuyPlan(ctx context.Context, client *Client, chatID,
 		}
 		// A new plan that sells extra devices asks how many, once the term is known; a
 		// renewal keeps the ones held.
-		if !(pickTerm && len(offers) > 1) && plan.SellsDevices() && !devicesPicked && u.PlanID != plan.ID {
+		if cur := s.panel.ActivePaidPlan(u); !(pickTerm && len(offers) > 1) && plan.SellsDevices() && !devicesPicked &&
+			(cur == nil || cur.ID != plan.ID) {
 			s.askDevices(ctx, client, chatID, msgID, plan, periods)
 			return
 		}

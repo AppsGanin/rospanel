@@ -744,7 +744,8 @@ func (s *Store) UsersDueRenewal(since, horizon int64) ([]model.User, error) {
 		     SELECT u.id FROM users u JOIN tariff_plans p ON p.id = u.plan_id
 		     WHERE p.price_rub > 0 AND p.period_days > 0 AND u.auto_renew = 1 AND u.enabled = 1
 		       AND u.expire_at > ? AND u.expire_at <= ?
-		       AND u.balance_kop >= p.price_rub * 100)`, since, horizon)
+		       AND u.balance_kop >= (p.price_rub + CASE WHEN p.device_price > 0 AND p.device_max > 0
+		           THEN min(u.extra_devices, p.device_max) * p.device_price ELSE 0 END) * 100)`, since, horizon)
 }
 
 // HasBoughtPlan reports whether the user ever bought a plan, with money or from the
@@ -769,14 +770,14 @@ func (s *Store) HasPaid(userID int64) (bool, error) {
 // --- promo codes ---
 
 const promoCols = `id, code, kind, value, plan_ids, plan_id, first_only, max_uses, uses,
-	expires_at, enabled, note, created_at`
+	expires_at, enabled, note, created_at, winback_user`
 
 func scanPromo(sc interface{ Scan(...any) error }) (model.PromoCode, error) {
 	var p model.PromoCode
 	var planIDs string
 	var firstOnly, enabled int
 	err := sc.Scan(&p.ID, &p.Code, &p.Kind, &p.Value, &planIDs, &p.PlanID, &firstOnly,
-		&p.MaxUses, &p.Uses, &p.ExpiresAt, &enabled, &p.Note, &p.CreatedAt)
+		&p.MaxUses, &p.Uses, &p.ExpiresAt, &enabled, &p.Note, &p.CreatedAt, &p.OwnerID)
 	p.PlanIDs = parseIDList(planIDs)
 	p.FirstOnly, p.Enabled = firstOnly != 0, enabled != 0
 	return p, err
@@ -835,7 +836,7 @@ func (s *Store) CountEnabledPromos() int {
 	// Live codes only: a spent or expired one — every win-back code in time — must not
 	// keep the promo field up for everyone.
 	_ = s.rdb.QueryRow(
-		`SELECT count(*) FROM promo_codes WHERE enabled = 1
+		`SELECT count(*) FROM promo_codes WHERE enabled = 1 AND winback_user = 0
 		   AND (expires_at = 0 OR expires_at > unixepoch()) AND (max_uses = 0 OR uses < max_uses)`).Scan(&n)
 	return n
 }

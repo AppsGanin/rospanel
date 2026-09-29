@@ -124,6 +124,9 @@ type PromoCode struct {
 	Enabled   bool    `json:"enabled"`
 	Note      string  `json:"note"`
 	CreatedAt int64   `json:"created_at"`
+	// OwnerID is the only user a personal code (win-back, an automatic message) is
+	// for; 0 = anyone.
+	OwnerID int64 `json:"-"`
 }
 
 // AppliesTo reports whether a discount code may be used on the plan.

@@ -173,14 +173,27 @@ func (m *Manager) FunnelBySource(days int) ([]model.SourceFunnel, error) {
 }
 
 // FraudSignals lists the patterns worth an operator's look (see store.FraudSignals).
+// The scans cost seconds on a large install, so a result is kept for fraudCacheFor.
 func (m *Manager) FraudSignals() ([]model.FraudSignal, error) {
+	m.fraudMu.Lock()
+	defer m.fraudMu.Unlock()
 	now := time.Now()
+	if m.fraudCache != nil && now.Sub(m.fraudAt) < fraudCacheFor {
+		return m.fraudCache, nil
+	}
 	sigs, err := m.store.FraudSignals(store.FraudWindow{
 		Since:     now.AddDate(0, 0, -model.FraudWindowDays).Unix(),
 		WeekSince: now.AddDate(0, 0, -7).Unix(),
 	})
+	if err != nil {
+		return nil, err
+	}
 	if sigs == nil {
 		sigs = []model.FraudSignal{}
 	}
-	return sigs, err
+	m.fraudCache, m.fraudAt = sigs, now
+	return sigs, nil
 }
+
+// fraudCacheFor is how long a computed set of fraud signals is shown again.
+const fraudCacheFor = 5 * time.Minute

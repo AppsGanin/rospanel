@@ -23,6 +23,9 @@ import (
 
 const keyYooMoney = "yoomoney"
 
+// ProviderYooMoney is the YooMoney registry key.
+const ProviderYooMoney = keyYooMoney
+
 const (
 	yooMoneyQuickpay = "https://yoomoney.ru/quickpay/confirm"
 	yooMoneyRUB      = "643"
@@ -137,10 +140,16 @@ func (y *YooMoney) Webhook(_ context.Context, body []byte, _ http.Header) (strin
 		res.Status = StatusPending
 	}
 	// withdraw_amount is what the payer was charged — the order's sum; amount is what
-	// reached the wallet after YooMoney's fee.
-	if k, ok := parseKopecks(f.Get("withdraw_amount")); ok && f.Get("currency") == yooMoneyRUB {
-		res.AmountKopecks, res.Currency = k, "RUB"
+	// reached the wallet after YooMoney's fee. Only amount is signed, so the unsigned
+	// one must agree with it, and without both there is no amount to trust: this
+	// provider fails closed rather than open.
+	charged, ok1 := parseKopecks(f.Get("withdraw_amount"))
+	got, ok2 := parseKopecks(f.Get("amount"))
+	if !ok1 || !ok2 || f.Get("currency") != yooMoneyRUB || got > charged || got*100 < charged*90 {
+		return "", Result{}, fmt.Errorf("YooMoney: the notification's amounts do not add up (amount %q, withdraw_amount %q, currency %q)",
+			f.Get("amount"), f.Get("withdraw_amount"), f.Get("currency"))
 	}
+	res.AmountKopecks, res.Currency = charged, "RUB"
 	return label, res, nil
 }
 

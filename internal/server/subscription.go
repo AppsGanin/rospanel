@@ -546,18 +546,20 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			continue
 		}
 		q := rt.mgr.QuotePlan(u, plan)
-		if q.DiscountRub > 0 {
+		if q.DiscountRub > 0 || q.Devices > 0 {
 			shown := *plan
 			shown.PriceRub = q.TotalRub
 			b.Plans[i].Label = payPlanLabel(lang, shown)
-			b.Plans[i].OldPrice = i18n.T(lang, "sub.price", plan.PriceRub)
+		}
+		if q.DiscountRub > 0 {
+			b.Plans[i].OldPrice = i18n.T(lang, "sub.price", q.PriceRub)
 			b.Plans[i].Promo = i18n.T(lang, "sub.planPromo", q.PromoCode, q.DiscountRub)
 		}
 		b.Plans[i].FromBalance = q.MoneyRub == 0
 		b.Plans[i].Free = q.TotalRub == 0
 		b.Plans[i].Button = payButton(lang, q, b.Locked)
 		// A new plan that sells extra devices: how many to take (a renewal keeps them).
-		if plan.SellsDevices() && plan.ID != u.PlanID {
+		if cur := rt.mgr.ActivePaidPlan(u); plan.SellsDevices() && (cur == nil || cur.ID != plan.ID) {
 			for n := 0; n <= min(plan.DeviceMax, 8); n++ {
 				label := i18n.TN(lang, "sub.devicesOpt", plan.DeviceLimit+n)
 				if n > 0 {
@@ -586,13 +588,22 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 			FromBalance: o.Quote.MoneyRub == 0})
 	}
 	if a := rt.mgr.Addons(u); a.Any() {
+		b.Stamp = a.Stamp
 		for n := 1; n <= min(a.DevicesMax, 5); n++ {
+			q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderDevices, Devices: n})
+			if err != nil {
+				continue
+			}
 			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: n,
-				Label: i18n.TN(lang, "sub.addDevices", n, n*a.DevicePrice)})
+				Label: i18n.TN(lang, "sub.addDevices", n, q.PriceRub), FromBalance: q.MoneyRub == 0})
 		}
 		for i, p := range a.Packs {
+			q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderTraffic, Pack: i})
+			if err != nil {
+				continue
+			}
 			b.Addons = append(b.Addons, sub.Extra{Kind: model.OrderTraffic, PlanID: u.PlanID, N: i,
-				Label: i18n.T(lang, "sub.packLabel", p.GB, p.PriceRub)})
+				Label: i18n.T(lang, "sub.packLabel", p.GB, p.PriceRub), FromBalance: q.MoneyRub == 0})
 		}
 	}
 	rt.buildWallet(&b, u, set, lang, subURL)
@@ -613,6 +624,16 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 	// except those the balance pays for, and of their terms only the ones it covers.
 	// An active plan can still be cancelled.
 	if len(b.Providers) == 0 {
+		onlyBalance := func(list []sub.Extra) []sub.Extra {
+			var out []sub.Extra
+			for _, e := range list {
+				if e.FromBalance {
+					out = append(out, e)
+				}
+			}
+			return out
+		}
+		b.Changes, b.Addons = onlyBalance(b.Changes), onlyBalance(b.Addons)
 		kept := b.Plans[:0]
 		for _, p := range b.Plans {
 			if !p.FromBalance {

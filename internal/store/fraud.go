@@ -15,6 +15,9 @@ import (
 // fraudRowCap bounds each signal's groups: the page is a list to look through.
 const fraudRowCap = 30
 
+// fraudUsersCap bounds the accounts one signal names.
+const fraudUsersCap = 50
+
 // FraudWindow is how far back the signals look.
 type FraudWindow struct {
 	Since     int64 // connections, devices, promo uses, refunds (30 days)
@@ -49,7 +52,7 @@ func (s *Store) FraudSignals(w FraudWindow) ([]model.FraudSignal, error) {
 	}
 	// Inviting oneself: the invitee shares a device, or an address, with the referrer.
 	if err := add(model.FraudSelfReferral,
-		`SELECT key, 2, at, ids FROM (
+		`SELECT min(key), 2, max(at), ids FROM (
 		   SELECT 'hwid:' || a.hwid AS key, max(a.last_seen, b.last_seen) AS at, u.referrer_id || ',' || u.id AS ids
 		   FROM users u
 		   JOIN devices a ON a.user_id = u.id AND a.last_seen >= ?1
@@ -73,12 +76,14 @@ func (s *Store) FraudSignals(w FraudWindow) ([]model.FraudSignal, error) {
 		 ORDER BY max(pu.used_at) DESC LIMIT ?`, w.Since, model.FraudPromoBurstMin, fraudRowCap); err != nil {
 		return nil, err
 	}
-	// Payment attempts that keep failing: a card being tried.
+	// Payment attempts that keep failing: a card being tried. Counted from what the
+	// payment system itself reported cancelled — an order left unpaid and swept is
+	// someone browsing prices, not a declined card.
 	if err := add(model.FraudFailedPayments,
-		`SELECT user_id, count(*), max(created_at), user_id
-		 FROM payment_orders
-		 WHERE status = 'cancelled' AND provider NOT IN ('', 'balance') AND created_at >= ?
-		 GROUP BY user_id HAVING count(*) >= ?
+		`SELECT o.user_id, count(*), max(j.at), o.user_id
+		 FROM payment_webhooks j JOIN payment_orders o ON o.id = j.order_id
+		 WHERE j.outcome = 'cancelled' AND j.at >= ?
+		 GROUP BY o.user_id HAVING count(*) >= ?
 		 ORDER BY count(*) DESC LIMIT ?`, w.WeekSince, model.FraudFailedMin, fraudRowCap); err != nil {
 		return nil, err
 	}
@@ -120,6 +125,11 @@ func (s *Store) fraudGroups(kind, q string, args ...any) ([]model.FraudSignal, e
 		sig.Kind, sig.Key = kind, key.String
 		seen := map[int64]bool{}
 		for _, part := range strings.Split(ids.String, ",") {
+			// A shared address can hold thousands (a carrier's NAT): the count says
+			// how many, the list only names the first few.
+			if len(sig.Users) >= fraudUsersCap {
+				break
+			}
 			if id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64); err == nil && !seen[id] {
 				seen[id] = true
 				sig.Users = append(sig.Users, model.FraudUser{ID: id})
