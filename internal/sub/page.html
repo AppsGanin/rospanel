@@ -796,6 +796,50 @@
         font-weight: 600;
         padding: 4px 0;
       }
+      /* A card that opens on a tap: its title, how many it holds, and a chevron —
+         the lists of configs stay out of the way until someone wants one. */
+      details.fold {
+        margin: 0;
+        border: 0;
+        padding: 0;
+      }
+      details.fold > summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 700;
+        font-size: 1rem;
+        padding: 2px 0;
+        color: var(--ink);
+      }
+      details.fold > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.fold > summary::after {
+        content: "";
+        flex: none;
+        width: 8px;
+        height: 8px;
+        margin: 0 4px 4px 0;
+        border-right: 2px solid var(--muted);
+        border-bottom: 2px solid var(--muted);
+        transform: rotate(45deg);
+        transition: transform 0.15s;
+      }
+      details.fold[open] > summary {
+        margin-bottom: 10px;
+      }
+      details.fold[open] > summary::after {
+        margin: 4px 4px 0 0;
+        transform: rotate(-135deg);
+      }
+      .fold-count {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.85rem;
+      }
       code {
         word-break: break-all;
         font-size: 0.78rem;
@@ -1012,14 +1056,15 @@
 
         {{if .AWG}}
         <div class="card">
-          <div class="app-row" style="margin: 0 0 8px">
-            <div class="lbl">{{.L.AWGTitle}}</div>
+          <details class="fold">
+          <summary><span>{{.L.AWGTitle}} <span class="fold-count">· {{len .AWG}}</span></span></summary>
+          <div class="app-row" style="margin: 0 0 10px">
+            <p class="muted" style="margin: 0">{{.L.AWGHint}}</p>
             <a class="icon-btn" href="{{.L.AWGSite}}" target="_blank" rel="noopener noreferrer"
                title="{{.L.AppLink}}" aria-label="{{.L.AppLink}} — {{.L.AWGTitle}}">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 7.6v.2" /></svg>
             </a>
           </div>
-          <p class="muted" style="margin: 0 0 10px">{{.L.AWGHint}}</p>
           {{range .AWG}}
           <details>
             <summary>{{.Label}}</summary>
@@ -1027,12 +1072,14 @@
             <a class="btn alt" href="{{.ConfURL}}" download>{{$.L.AWGDownload}} · {{.Label}}</a>
           </details>
           {{end}}
+          </details>
         </div>
         {{end}}
 
         {{if .Turn}}
         <div class="card">
-          <div class="lbl" style="margin-bottom: 8px">{{.L.TurnTitle}}</div>
+          <details class="fold">
+          <summary><span>{{.L.TurnTitle}} <span class="fold-count">· {{len .Turn}}</span></span></summary>
           <p class="muted" style="margin: 0 0 10px">{{.L.TurnHint}}</p>
           {{range .Turn}}
           <details>
@@ -1075,12 +1122,14 @@
             </details>
           </details>
           {{end}}
+          </details>
         </div>
         {{end}}
 
         {{if .ShowConfigs}}
         <div class="card">
-          <div class="lbl" style="margin-bottom: 8px">{{.L.SingleConfigs}}</div>
+          <details class="fold">
+          <summary><span>{{.L.SingleConfigs}} <span class="fold-count">· {{len .Links}}</span></span></summary>
           {{range .Links}}
           <details>
             <summary>{{.Proto}}</summary>
@@ -1090,6 +1139,7 @@
             </button>
           </details>
           {{end}}
+          </details>
         </div>
         {{end}}
       </section>
