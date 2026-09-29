@@ -1,5 +1,34 @@
 # Changelog
 
+## [4.2.0](https://github.com/AppsGanin/rospanel/compare/v4.1.0...v4.2.0) (2026-09-29)
+
+
+### Features
+
+* **billing:** a journal of what the payment systems sent ([acbd3d5](https://github.com/AppsGanin/rospanel/commit/acbd3d5f1c0526609468af8f3368bf775f602d54))
+* **billing:** flexible plans — extra devices, traffic packs, plan changes ([0589051](https://github.com/AppsGanin/rospanel/commit/0589051f908facb5b8a9942280d847978c2b1412))
+* **billing:** source tags on bot links and a funnel per source ([4c780aa](https://github.com/AppsGanin/rospanel/commit/4c780aa735f215c6f717e9e5c14e04aa790e40b0))
+* **billing:** suspicious activity on the payments page ([ae04ecc](https://github.com/AppsGanin/rospanel/commit/ae04ecca5e26959cd315c7df162a4a83e00e6c08))
+* **payments:** YooMoney wallet transfers and Telegram Stars ([9f90082](https://github.com/AppsGanin/rospanel/commit/9f900820004fd9c51c6d0e524dccbf68d43d27fd))
+* **sub:** a clearer active-plan block on the subscription page ([f61931b](https://github.com/AppsGanin/rospanel/commit/f61931b5d92c582d8735d74ec6f1d70f710d734a))
+* **sub:** AmneziaWG, TURN and single configs fold away by default ([2172df7](https://github.com/AppsGanin/rospanel/commit/2172df7e217eb7bb926008ef536d249fa3201d9f))
+* **sub:** Mini App entrance, a connect wizard, a home-screen page, Telegram look ([b1edd26](https://github.com/AppsGanin/rospanel/commit/b1edd2680e7916d1d4b8d4ba059bcb6f0940d10b))
+* **telegram:** automatic messages on the customer's way ([3f91bab](https://github.com/AppsGanin/rospanel/commit/3f91babb3594ec93138438cbb6c75e784dae3b80))
+* **telegram:** refuse signups to accounts on the shared VPN blacklist ([cd81586](https://github.com/AppsGanin/rospanel/commit/cd81586325fb44110fd3eb0f5e8f61635a89898b))
+
+
+### Bug Fixes
+
+* **billing:** extra devices cost the same per device whatever the count ([0ad8441](https://github.com/AppsGanin/rospanel/commit/0ad8441fb0966eb414bda4ae26d95654c7b02bcd))
+* **billing:** what the second review of the money fixes found ([e4ca184](https://github.com/AppsGanin/rospanel/commit/e4ca1847319f6e56488aa47e0ed21016a4daed32))
+* **sub:** drop the home-screen block from the subscription page ([e8211fd](https://github.com/AppsGanin/rospanel/commit/e8211fd15e2994a8c8b4124309433bfbbb908cb4))
+* **sub:** what the review of the Mini App entrance found ([7e0116e](https://github.com/AppsGanin/rospanel/commit/7e0116e5a1980c31073d8cfb804e6113927c4d3c))
+* **telegram:** move the menu button off the old Mini App address ([7e54f54](https://github.com/AppsGanin/rospanel/commit/7e54f546afbbb74e871213b63f701a0bfbdfa29f))
+* **web:** biome's exhaustive-deps on the automatic-message and blacklist panels ([a363017](https://github.com/AppsGanin/rospanel/commit/a363017fbe2a5828575cb5574f8e81bf7a774402))
+* **web:** name a payment provider's field in its error, not its dictionary key ([eab4c2b](https://github.com/AppsGanin/rospanel/commit/eab4c2bce594362b2b4f3413802ad055a63f5cb7))
+* what the review of today's features found ([a1d81e9](https://github.com/AppsGanin/rospanel/commit/a1d81e95a645b2ea54cc781820f2adcc70b10cfd))
+* **xray:** keep only a real port as an inbound's public port ([cf641e1](https://github.com/AppsGanin/rospanel/commit/cf641e1aca8126df3add54c6397e8995bbd4e2f3))
+
 ## [4.1.0](https://github.com/AppsGanin/rospanel/compare/v4.0.0...v4.1.0) (2026-09-28)
 
 
