@@ -621,6 +621,14 @@ func (s *UserService) findLinkedUser(chatID int64) (model.User, bool) {
 }
 
 func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set *model.Settings, chatID int64, code string) {
+	s.linkByCode(ctx, client, set, chatID, code, false)
+}
+
+// linkByCode binds the account the code belongs to to this chat. A chat that already
+// belongs to another account is asked first (confirmed=false): the move takes the
+// bot away from that account — its menu, its reminders, its payment notices — and
+// a person with an old bot account and a new one from the website would not notice.
+func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model.Settings, chatID int64, code string, confirmed bool) {
 	lang := s.lang(chatID)
 	u, err := s.store.GetUserByTgLinkCode(code)
 	if err != nil {
@@ -629,6 +637,15 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 	}
 	if u.TgChatID != 0 && u.TgChatID != chatID {
 		s.send(ctx, client, chatID, i18n.T(lang, "user.alreadyLinked"))
+		return
+	}
+	if cur, ok := s.findLinkedUser(chatID); ok && cur.ID != u.ID && !confirmed {
+		s.sendMenu(ctx, client, chatID,
+			i18n.T(lang, "user.relinkAsk", esc(cur.Name), esc(u.Name)),
+			[][]InlineButton{
+				{{Text: i18n.T(lang, "user.btnRelink", u.Name), CallbackData: relinkPrefix + code}},
+				{{Text: i18n.T(lang, "user.btnRelinkKeep"), CallbackData: "vu:menu"}},
+			})
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
@@ -641,6 +658,10 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 	u.TgChatID = chatID
 	s.sendUserMenu(ctx, client, chatID, set, *u)
 }
+
+// relinkPrefix is the callback that confirms moving this chat to the account a link
+// code belongs to.
+const relinkPrefix = "vu:relink:"
 
 // actorFromCtxName is the Telegram identity stamped on ctx by selfActorCtx — the
 // @username the audit row records as the account that was bound.
@@ -855,6 +876,10 @@ func (s *UserService) handleUserCallback(ctx context.Context, client *Client, cb
 	case "vu:cancelyes":
 		s.doCancelPlan(ctx, client, chatID, msgID, set, u)
 	default:
+		if code, ok := strings.CutPrefix(cb.Data, relinkPrefix); ok {
+			s.linkByCode(ctx, client, set, chatID, code, true)
+			return
+		}
 		if s.handleWalletCallback(ctx, client, chatID, msgID, set, u, cb.Data) {
 			return
 		}

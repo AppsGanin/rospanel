@@ -188,6 +188,9 @@ var en = map[string]string{
 	"user.restoreFailed":        "⚠️ Could not restore the account: %s",
 	"user.welcomeBack":          "♻️ Welcome back! Your previous account has been restored.",
 	"user.codeInvalid":          "⚠️ The code is invalid or expired. Open the subscription page and get a new one.",
+	"user.relinkAsk":            "This Telegram is already linked to the account “%s”.\n\nMove it to “%s”? The bot will then show only the new account: menus, reminders and payment notices for “%[1]s” stop coming here. That account and its subscription keep working.",
+	"user.btnRelink":            "Move to “%s”",
+	"user.btnRelinkKeep":        "Keep it as it is",
 	"user.alreadyLinked":        "⚠️ This account is already linked to another chat.",
 	"user.linkChatFailed":       "⚠️ Could not link the chat: %s",
 
