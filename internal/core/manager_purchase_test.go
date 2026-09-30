@@ -172,7 +172,9 @@ func TestPlanChange(t *testing.T) {
 	if err != nil || q.Upgrade || q.TotalRub != 0 {
 		t.Fatalf("downgrade quote = %+v %v", q, err)
 	}
-	if got := q.ExpireAt - time.Now().Unix(); got < 20*86400-60 || got > 20*86400+60 {
+	// Every second between setting the end and quoting is worth two of A, so a slow run
+	// (the race detector on a loaded machine) drifts twice as fast as the clock.
+	if got := q.ExpireAt - time.Now().Unix(); got < 20*86400-300 || got > 20*86400+300 {
 		t.Fatalf("downgrade gives %d s, want ~20 days", got)
 	}
 	if _, err := e.m.BuyFromBalance(ctx, e.userID, down, end); err != nil {
