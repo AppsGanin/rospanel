@@ -73,7 +73,8 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// button fetches YAML from this very URL instead of re-rendering the page.
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
-			if err := rt.servePage(w, *u, set, lang, clientIP(r)); err != nil {
+			access := rt.buildAccess(r, *u, set)
+			if err := rt.servePage(w, *u, set, access, lang, clientIP(r)); err != nil {
 				// Render errors keep the masquerade; an access read that failed is a
 				// different thing and must not look like a successful, empty answer.
 				if errors.Is(err, errSubUnavailable) {
@@ -731,7 +732,7 @@ func hasTurnInbound(servers []sub.Server) bool {
 // lang comes from the caller's Accept-Language: the subscription page is the one
 // surface a VPN *user* sees, and the panel knows nothing about their language
 // preference, so the browser decides it per request.
-func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, lang i18n.Lang, clientIP string) error {
+func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Settings, access sub.Access, lang i18n.Lang, clientIP string) error {
 	// Span the local server + each enabled node so the page's individual-config list
 	// covers every server (single-server ⇒ just the local set).
 	// A required HWID means the browser cannot fetch the machine payload — so the
@@ -749,7 +750,7 @@ func (rt *Router) servePage(w http.ResponseWriter, u model.User, set *model.Sett
 		}
 	}
 	html, err := sub.Page(u, set, servers, rt.buildBilling(u, set, lang, rt.mgr.PaymentMethods()),
-		rt.buildDevices(u, set, lang), showDownload, lang)
+		rt.buildDevices(u, set, lang), access, showDownload, lang)
 	if err != nil {
 		return err
 	}

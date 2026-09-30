@@ -1142,6 +1142,18 @@
           </details>
         </div>
         {{end}}
+
+        <!-- The page's own address is the key to it: say so, and offer the bot to whoever
+             has not linked it. -->
+        <div class="card" id="access-card">
+          <div class="lbl" style="margin-bottom: 6px">{{.L.AccessTitle}}</div>
+          <p class="muted" style="margin: 0 0 10px">{{.L.AccessHint}}</p>
+          <button class="btn alt" onclick="copy('{{.SubURL}}', this)">{{.L.AccessCopy}}</button>
+          {{if .Access.TGLink}}
+          <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer">{{.L.TGBind}}</a>
+          <p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>
+          {{end}}
+        </div>
       </section>
 
       {{if .Billing.Show}}
