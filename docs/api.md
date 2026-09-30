@@ -48,9 +48,11 @@ Authorization: Bearer rp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 A missing or invalid key returns `401`. The surface is per-IP rate-limited.
 
-A key has **full access** or carries an **admin role** picked at creation. With a role it
-reaches exactly what an admin with that role reaches in the panel; anything else answers
-`403` with `"code": "forbidden"`, and the MCP endpoint lists only the tools the role can call.
+A key has **full access** or its **own permissions**, ticked in the same table as an admin
+role's when it is created (and changeable later). It reaches exactly what an admin with those
+permissions reaches in the panel; anything else answers `403` with `"code": "forbidden"`, and
+the MCP endpoint lists only the tools the key can call. Nobody gives a key more than they hold
+themselves, and only the owner gives full access.
 `PATCH /v1/settings` and `PATCH /v1/nodes/{id}` check each field against its section (DNS and
 egress need `routing.manage`, trusted networks and probe settings `security.manage`).
 
@@ -442,8 +444,8 @@ top-up is `{"user_id": 5, "kind": "topup", "amount_rub": 300}` (plus `provider`,
 manual one). Both take `lang` (`ru`/`en`, for the manual-payment instructions) and
 `return_url` (where a hosted payment sends the payer back; Telegram when left out).
 
-**Your own bot or user cabinet** — the key stays on your server, never in a browser. Give it a
-role with `users.manage` (create users, link Telegram) and `billing.sell` (orders, promo codes,
+**Your own bot or user cabinet** — the key stays on your server, never in a browser. Give it
+`users.manage` (create users, link Telegram) and `billing.sell` (orders, promo codes,
 referrers, renewal) — not `billing.manage`, which also confirms orders without payment, credits
 balances and refunds. On each message find the user: `GET /v1/users?telegram_id=<id>` (an
 indexed lookup; an empty list means a newcomer). A newcomer is `POST /v1/users` with a
@@ -1036,9 +1038,9 @@ is the credential**, exactly as secret as the key inside it, and it stops workin
 that key is revoked. Build it by hand from the two values *Settings → API* gives you — the
 base address shown there, and a key at the moment you create it (it is never shown again).
 
-The toolbox is the key's role: the assistant is offered exactly the tools behind routes the role
-can call, and a call to any other answers "unknown tool". For an assistant that should only look,
-create a key with a role that has no write — an assistant acting on a misread sentence then
+The toolbox is the key's permissions: the assistant is offered exactly the tools behind routes
+the key can call, and a call to any other answers "unknown tool". For an assistant that should
+only look, create a key with no write ticked — an assistant acting on a misread sentence then
 cannot delete a customer, whatever it is asked.
 
 Transport is MCP's Streamable HTTP: one JSON-RPC message per `POST`, answered with
@@ -1067,7 +1069,7 @@ one, can put a backup back.
 
 The tool list is generated from the OpenAPI document above, so it never drifts from the API:
 an endpoint added to `/v1` becomes a tool with no one remembering to register it, and a
-removed one disappears. That includes the configuration half — an assistant whose key's role
+removed one disappears. That includes the configuration half — an assistant whose key
 allows it can read and change settings, rewrite a server's routing, take and roll back config
 save-points and restart Xray.
 

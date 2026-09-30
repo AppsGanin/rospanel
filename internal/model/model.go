@@ -492,15 +492,19 @@ type PaymentProvider struct {
 // ever returned once (at creation, in RawKey); the stored record keeps just its
 // HMAC hash and the clear Prefix so the operator can identify it in the UI.
 type APIKey struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Role       string `json:"role"`              // admin role key; "" = full access
-	Prefix     string `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
-	CreatedAt  int64  `json:"created_at"`        // unix seconds
-	LastUsedAt int64  `json:"last_used_at"`      // unix seconds, 0 = never used
-	RevokedAt  int64  `json:"revoked_at"`        // unix seconds, 0 = active
-	RawKey     string `json:"raw_key,omitempty"` // populated only on creation
-	// Perms is what the key may do, resolved from Role on lookup. Never serialised.
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// FullAccess is every permission and the owner's reach besides (backups); only
+	// the owner mints it. Otherwise Grants is what the key may do — its own set, not
+	// a role's.
+	FullAccess bool     `json:"full_access"`
+	Grants     []string `json:"perms"`
+	Prefix     string   `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
+	CreatedAt  int64    `json:"created_at"`        // unix seconds
+	LastUsedAt int64    `json:"last_used_at"`      // unix seconds, 0 = never used
+	RevokedAt  int64    `json:"revoked_at"`        // unix seconds, 0 = active
+	RawKey     string   `json:"raw_key,omitempty"` // populated only on creation
+	// Perms is Grants (or everything) as a set, filled on lookup. Never serialised.
 	Perms PermSet `json:"-"`
 }
 

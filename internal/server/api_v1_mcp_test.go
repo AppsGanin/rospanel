@@ -115,7 +115,7 @@ func TestMCPReadOnlyRoleHidesMutations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("role: %v", err)
 	}
-	k, err := st.CreateAPIKey("reader", role.Key)
+	k, err := st.CreateAPIKey("reader", false, role.Perms)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}

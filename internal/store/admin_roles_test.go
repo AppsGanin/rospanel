@@ -94,13 +94,10 @@ func TestRoleWritesRefuseAMissingRole(t *testing.T) {
 	if err := st.SetAdminRole(9999, model.RoleOperator); !errors.Is(err, ErrAdminNotFound) {
 		t.Errorf("set on a missing admin = %v, want ErrAdminNotFound", err)
 	}
-	if _, err := st.CreateAPIKey("k", "r-gone"); !errors.Is(err, ErrRoleNotFound) {
-		t.Errorf("key with a missing role = %v, want ErrRoleNotFound", err)
-	}
 }
 
-// A role still held by an admin or a live API key cannot go; a revoked key does not
-// hold it, and keeps the role it was issued with as its record.
+// A role still held by an admin cannot go. API keys hold their own permissions, so
+// no key holds a role.
 func TestDeleteAdminRoleRefusesWhileHeld(t *testing.T) {
 	t.Parallel()
 	st := newStore(t)
@@ -112,20 +109,13 @@ func TestDeleteAdminRoleRefusesWhileHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	k, err := st.CreateAPIKey("bot", r.Key)
-	if err != nil {
+	if _, err := st.CreateAPIKey("bot", false, r.Perms); err != nil {
 		t.Fatalf("key: %v", err)
 	}
 	if err := st.DeleteAdminRole(r.Key); !errors.Is(err, ErrRoleInUse) {
-		t.Fatalf("delete held by an admin and a key = %v, want ErrRoleInUse", err)
+		t.Fatalf("delete held by an admin = %v, want ErrRoleInUse", err)
 	}
 	if err := st.SetAdminRole(id, model.RoleOperator); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.DeleteAdminRole(r.Key); !errors.Is(err, ErrRoleInUse) {
-		t.Fatalf("delete held by a key = %v, want ErrRoleInUse", err)
-	}
-	if err := st.RevokeAPIKey(k.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.DeleteAdminRole(r.Key); err != nil {
@@ -134,43 +124,56 @@ func TestDeleteAdminRoleRefusesWhileHeld(t *testing.T) {
 	if _, err := st.GetAdminRole(r.Key); !errors.Is(err, ErrRoleNotFound) {
 		t.Errorf("role still readable after delete: %v", err)
 	}
-	keys, err := st.ListAPIKeys()
-	if err != nil || len(keys) != 1 || keys[0].Role != r.Key {
-		t.Errorf("revoked key after the role went = %+v (%v), want it to keep %s", keys, err, r.Key)
-	}
 }
 
-// A key without a role is full access (every key issued before roles), a key with one
-// holds the role's set, and a key whose role row vanished holds nothing.
-func TestAPIKeyPermsFollowTheRole(t *testing.T) {
+// A key holds its own permissions: full access is everything, a set is that set
+// (with what each permission brings), and changing it reaches the next request. A
+// revoked key's set cannot be changed.
+func TestAPIKeyPermsAreItsOwn(t *testing.T) {
 	t.Parallel()
 	st := newStore(t)
-	full, err := st.CreateAPIKey("legacy", "")
+	full, err := st.CreateAPIKey("legacy", true, []string{model.PermLogs})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.LookupAPIKey(full.RawKey)
-	if err != nil || !got.Perms.Covers(model.FullPermSet()) {
-		t.Fatalf("a key with no role = %v (%v), want every permission", got, err)
+	if err != nil || !got.Perms.Covers(model.FullPermSet()) || !got.FullAccess || len(got.Grants) != 0 {
+		t.Fatalf("a full-access key = %+v (%v), want every permission", got, err)
 	}
 
-	op, err := st.CreateAPIKey("ops", model.RoleOperator)
+	k, err := st.CreateAPIKey("ops", false, []string{model.PermUsersManage})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err = st.LookupAPIKey(op.RawKey)
+	got, err = st.LookupAPIKey(k.RawKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Perms.Has(model.PermUsersManage) || got.Perms.Has(model.PermSettingsView) {
-		t.Errorf("operator key perms = %v", got.Perms.List())
+	if !got.Perms.Has(model.PermUsersManage) || !got.Perms.Has(model.PermUsersView) || got.Perms.Has(model.PermSettingsView) {
+		t.Errorf("key perms = %v", got.Perms.List())
 	}
-	if _, err := st.db.Exec(`UPDATE api_keys SET role = 'gone' WHERE id = ?`, op.ID); err != nil {
+	if err := st.SetAPIKeyPerms(k.ID, false, []string{model.PermStatsView}); err != nil {
 		t.Fatal(err)
 	}
-	got, err = st.LookupAPIKey(op.RawKey)
-	if err != nil || len(got.Perms) != 0 {
-		t.Errorf("a key whose role vanished = %v (%v), want nothing", got.Perms, err)
+	got, _ = st.LookupAPIKey(k.RawKey)
+	if got.Perms.Has(model.PermUsersView) || !got.Perms.Has(model.PermStatsView) {
+		t.Errorf("after the change = %v", got.Perms.List())
+	}
+	if perms, revoked, ok, err := st.APIKeyPerms(k.ID); err != nil || !ok || revoked || !perms.Has(model.PermStatsView) {
+		t.Errorf("APIKeyPerms = %v %v %v %v", perms.List(), revoked, ok, err)
+	}
+	if err := st.RevokeAPIKey(k.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAPIKeyPerms(k.ID, true, nil); !errors.Is(err, ErrAPIKeyNotFound) {
+		t.Errorf("changing a revoked key = %v, want ErrAPIKeyNotFound", err)
+	}
+	empty, err := st.CreateAPIKey("nothing", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.LookupAPIKey(empty.RawKey); len(got.Perms) != 0 {
+		t.Errorf("a key with no permissions = %v", got.Perms.List())
 	}
 }
 

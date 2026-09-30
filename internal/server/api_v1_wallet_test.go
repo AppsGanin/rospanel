@@ -203,7 +203,7 @@ func TestAPISellingKeyAndRequiredFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := st.CreateAPIKey("bot", role.Key)
+	k, err := st.CreateAPIKey("bot", false, role.Perms)
 	if err != nil {
 		t.Fatal(err)
 	}

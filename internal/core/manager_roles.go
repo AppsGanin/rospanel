@@ -125,40 +125,66 @@ func (m *Manager) checkRoleName(key, name string, preset bool) (string, error) {
 	return name, nil
 }
 
-// CreateAPIKey mints a key acting with role ("" = full access), refusing one broader
-// than the admin creating it: holding the API permission must not become a way to
-// get a credential for what your own role withholds.
-func (m *Manager) CreateAPIKey(name, role string, creator model.PermSet) (*model.APIKey, error) {
-	// Full access carries the owner's reach (backups), so only the owner mints it.
-	want := model.OwnerPermSet()
-	if role != "" {
-		if role == model.RoleOwner {
-			return nil, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
-		}
-		r, err := m.store.GetAdminRole(role)
-		if errors.Is(err, store.ErrRoleNotFound) {
-			return nil, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
-		}
-		if err != nil {
-			return nil, err
-		}
-		want = model.NewPermSet(r.Perms)
+// CreateAPIKey mints a key with its own permissions — full access, or the set
+// ticked for it — never broader than the caller's. Full access carries the owner's
+// reach (backups), so only the owner mints it.
+func (m *Manager) CreateAPIKey(name string, full bool, perms []string, creator model.PermSet) (*model.APIKey, error) {
+	want, err := keyGrant(full, perms, creator)
+	if err != nil {
+		return nil, err
 	}
-	if !creator.Covers(want) {
+	return m.store.CreateAPIKey(name, full, want)
+}
+
+// keyGrant checks what a key is to be given: something, and nothing the caller
+// does not hold themselves.
+func keyGrant(full bool, perms []string, caller model.PermSet) ([]string, error) {
+	want := model.OwnerPermSet()
+	var list []string
+	if !full {
+		list = model.NormalizePerms(perms)
+		if len(list) == 0 {
+			return nil, invalidCode("err.keyPermsRequired", "отметьте, что ключ может делать, — или дайте ему полный доступ")
+		}
+		want = model.NewPermSet(list)
+	}
+	if !caller.Covers(want) {
 		return nil, invalidCode("err.keyRoleTooBroad", "нельзя выдать ключу больше прав, чем у вас самих")
 	}
-	k, err := m.store.CreateAPIKey(name, role)
-	if errors.Is(err, store.ErrRoleNotFound) { // deleted between the check and the write
-		return nil, invalidCode("err.unknownRole", "неизвестная роль {{value}}", map[string]any{"value": role})
+	return list, nil
+}
+
+// SetAPIKeyPerms changes what an active key may do: only a key the caller could
+// have issued, and only to what they could issue now.
+func (m *Manager) SetAPIKeyPerms(id int64, full bool, perms []string, caller model.PermSet) error {
+	cur, revoked, ok, err := m.store.APIKeyPerms(id)
+	if err != nil {
+		return err
 	}
-	return k, err
+	if !ok || revoked {
+		return invalidCode("err.keyNotFound", "ключ не найден")
+	}
+	if !caller.Covers(cur) {
+		return invalidCode("err.keyOutranksYou", "у ключа больше прав, чем у вас, — менять или отзывать его может тот, у кого они есть")
+	}
+	want, err := keyGrant(full, perms, caller)
+	if err != nil {
+		return err
+	}
+	if err := m.store.SetAPIKeyPerms(id, full, want); err != nil {
+		if errors.Is(err, store.ErrAPIKeyNotFound) {
+			return invalidCode("err.keyNotFound", "ключ не найден")
+		}
+		return err
+	}
+	return nil
 }
 
 // RevokeAPIKey revokes a key the caller could have issued: one whose permissions
 // their own cover. Otherwise holding the API permission would let a narrow role cut
 // off the owner's full-access integrations.
 func (m *Manager) RevokeAPIKey(id int64, caller model.PermSet) error {
-	perms, ok, err := m.store.APIKeyPerms(id)
+	perms, _, ok, err := m.store.APIKeyPerms(id)
 	if err != nil {
 		return err
 	}
@@ -166,7 +192,7 @@ func (m *Manager) RevokeAPIKey(id int64, caller model.PermSet) error {
 		return invalidCode("err.keyNotFound", "ключ не найден")
 	}
 	if !caller.Covers(perms) {
-		return invalidCode("err.keyOutranksYou", "у ключа больше прав, чем у вас, — отозвать его может тот, у кого они есть")
+		return invalidCode("err.keyOutranksYou", "у ключа больше прав, чем у вас, — менять или отзывать его может тот, у кого они есть")
 	}
 	return m.store.RevokeAPIKey(id)
 }
