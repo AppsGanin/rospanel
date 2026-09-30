@@ -153,38 +153,172 @@ var apiRoutePerms = map[string][]string{
 	"POST /v1/webhooks/{id}/test": {model.PermWebhooks},
 }
 
-// ctxKeyAPIPerms carries what the calling API key may do, set by apiAuth.
-type ctxKeyAPIPerms struct{}
+// apiAccess is what the calling API key may do: its permissions, and — for a key
+// held to exact methods — the methods. Set by apiAuth.
+type apiAccess struct {
+	perms  model.PermSet
+	routes map[string]bool // nil: not held to methods
+}
 
+type ctxKeyAPIAccess struct{}
+
+func withAPIAccess(ctx context.Context, a apiAccess) context.Context {
+	return context.WithValue(ctx, ctxKeyAPIAccess{}, a)
+}
+
+// withAPIPerms is a key held to its permissions alone.
 func withAPIPerms(ctx context.Context, p model.PermSet) context.Context {
-	return context.WithValue(ctx, ctxKeyAPIPerms{}, p)
+	return withAPIAccess(ctx, apiAccess{perms: p})
+}
+
+func apiAccessOf(r *http.Request) apiAccess {
+	a, _ := r.Context().Value(ctxKeyAPIAccess{}).(apiAccess)
+	return a
 }
 
 // apiPerms is what the calling key holds — nothing if apiAuth did not run.
 func apiPerms(r *http.Request) model.PermSet {
-	if p, ok := r.Context().Value(ctxKeyAPIPerms{}).(model.PermSet); ok {
+	if p := apiAccessOf(r).perms; p != nil {
 		return p
 	}
 	return model.PermSet{}
 }
 
-// apiGate wraps one /v1 route in its permission check. A key without the permission
+// apiMayCall reports whether a key may call the /v1 route pattern. A key held to
+// methods calls exactly those (they were checked against its creator when ticked); any
+// other key, the routes its permissions open. A route open to every key stays open.
+func apiMayCall(a apiAccess, pattern string) bool {
+	perms, ok := apiRoutePerms[pattern]
+	if !ok {
+		return false
+	}
+	if len(perms) == 0 {
+		return true
+	}
+	if a.routes != nil {
+		return a.routes[pattern]
+	}
+	return a.perms.Any(perms...)
+}
+
+// apiGate wraps one /v1 route in its permission check. A key that may not call it
 // gets 403 in the API's own envelope.
-func apiGate(perms []string, h http.HandlerFunc) http.HandlerFunc {
+func apiGate(pattern string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !apiPerms(r).Any(perms...) {
-			writeAPIErr(w, http.StatusForbidden, "forbidden", "this API key's role does not allow this operation")
+		if !apiMayCall(apiAccessOf(r), pattern) {
+			writeAPIErr(w, http.StatusForbidden, "forbidden", "this API key does not allow this operation")
 			return
 		}
 		h(w, r)
 	}
 }
 
-// apiRouteAllowed reports whether a key holding p may call the /v1 route pattern —
-// how the MCP endpoint leaves out the tools a key could only get a 403 from.
-func apiRouteAllowed(p model.PermSet, pattern string) bool {
-	perms, ok := apiRoutePerms[pattern]
-	return ok && p.Any(perms...)
+// keyAccess is a stored key's reach as apiMayCall reads it.
+func keyAccess(k model.APIKey) apiAccess {
+	a := apiAccess{perms: k.Perms}
+	if k.FullAccess {
+		a.perms = model.OwnerPermSet()
+		return a
+	}
+	if len(k.Routes) > 0 {
+		a.routes = make(map[string]bool, len(k.Routes))
+		for _, r := range k.Routes {
+			a.routes[r] = true
+		}
+	}
+	return a
+}
+
+// keyRoutes is the methods a key may call — what the panel ticks for it: its own list,
+// or for a key held to its permissions the methods those open.
+func keyRoutes(k model.APIKey) []string {
+	if len(k.Routes) > 0 || k.FullAccess {
+		return k.Routes
+	}
+	a := keyAccess(k)
+	out := []string{}
+	for _, r := range tickableRoutes() {
+		if apiMayCall(a, r.pattern) {
+			out = append(out, r.pattern)
+		}
+	}
+	return out
+}
+
+// apiRoutesPerField are the methods that check each field (or bulk action) against
+// its own permission inside: a key ticked for one gets every permission the route
+// names that its creator holds, so "change settings" is every setting they may
+// change. Any other method gets the first permission it names that the creator holds.
+var apiRoutesPerField = map[string]bool{
+	"PATCH /v1/settings":   true,
+	"PATCH /v1/nodes/{id}": true,
+	"POST /v1/users/bulk":  true,
+}
+
+// keyGrantForRoutes checks the methods ticked for a key against the caller and
+// derives the permissions they carry. Only a method the caller may call themselves
+// can be ticked.
+func keyGrantForRoutes(routes []string, caller model.PermSet) ([]string, error) {
+	if len(routes) == 0 {
+		return nil, model.FieldErr("err.keyPermsRequired", "отметьте, что ключ может делать, — или дайте ему полный доступ")
+	}
+	tickable := map[string]bool{}
+	for _, r := range tickableRoutes() {
+		tickable[r.pattern] = true
+	}
+	var perms []string
+	for _, r := range routes {
+		if !tickable[r] {
+			return nil, model.FieldErr("err.keyRouteUnknown", "нет такого метода API: {{value}}", map[string]any{"value": r})
+		}
+		if !apiMayCall(apiAccess{perms: caller}, r) {
+			return nil, model.FieldErr("err.keyRoleTooBroad", "нельзя выдать ключу больше прав, чем у вас самих")
+		}
+		for _, p := range apiRoutePerms[r] {
+			if !caller.Has(p) {
+				continue
+			}
+			perms = append(perms, p)
+			if !apiRoutesPerField[r] {
+				break
+			}
+		}
+	}
+	return perms, nil
+}
+
+// keyCoveredBy reports whether the caller could have issued this key: every method it
+// may call, and every permission it holds. Otherwise holding the API permission would
+// let a narrow admin change or cut off a key the owner made — one allowed backups,
+// which no permission names.
+func keyCoveredBy(k model.APIKey, caller model.PermSet) bool {
+	if k.FullAccess {
+		return caller.Covers(model.OwnerPermSet())
+	}
+	for _, r := range keyRoutes(k) {
+		if !apiMayCall(apiAccess{perms: caller}, r) {
+			return false
+		}
+	}
+	return caller.Covers(k.Perms)
+}
+
+// tickableRoute is one method a key can be given, in the published spec's order.
+type tickableRoute struct {
+	pattern, method, path, tag string
+}
+
+// tickableRoutes is every method a key may be ticked for: all but the ones open to
+// any key (or to none).
+func tickableRoutes() []tickableRoute {
+	var out []tickableRoute
+	for _, r := range apiSpecRoutes() {
+		pattern := r.method + " " + r.path
+		if perms, ok := apiRoutePerms[pattern]; ok && len(perms) > 0 {
+			out = append(out, tickableRoute{pattern: pattern, method: r.method, path: r.path, tag: r.tag})
+		}
+	}
+	return out
 }
 
 // fieldPerm is one field of a partial update that the panel keeps under a

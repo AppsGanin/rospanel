@@ -109,7 +109,7 @@ func TestDeleteAdminRoleRefusesWhileHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	if _, err := st.CreateAPIKey("bot", false, r.Perms); err != nil {
+	if _, err := st.CreateAPIKey("bot", false, r.Perms, nil); err != nil {
 		t.Fatalf("key: %v", err)
 	}
 	if err := st.DeleteAdminRole(r.Key); !errors.Is(err, ErrRoleInUse) {
@@ -132,7 +132,7 @@ func TestDeleteAdminRoleRefusesWhileHeld(t *testing.T) {
 func TestAPIKeyPermsAreItsOwn(t *testing.T) {
 	t.Parallel()
 	st := newStore(t)
-	full, err := st.CreateAPIKey("legacy", true, []string{model.PermLogs})
+	full, err := st.CreateAPIKey("legacy", true, []string{model.PermLogs}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestAPIKeyPermsAreItsOwn(t *testing.T) {
 		t.Fatalf("a full-access key = %+v (%v), want every permission", got, err)
 	}
 
-	k, err := st.CreateAPIKey("ops", false, []string{model.PermUsersManage})
+	k, err := st.CreateAPIKey("ops", false, []string{model.PermUsersManage}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestAPIKeyPermsAreItsOwn(t *testing.T) {
 	if !got.Perms.Has(model.PermUsersManage) || !got.Perms.Has(model.PermUsersView) || got.Perms.Has(model.PermSettingsView) {
 		t.Errorf("key perms = %v", got.Perms.List())
 	}
-	if err := st.SetAPIKeyPerms(k.ID, false, []string{model.PermStatsView}); err != nil {
+	if err := st.SetAPIKeyPerms(k.ID, false, []string{model.PermStatsView}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = st.LookupAPIKey(k.RawKey)
@@ -165,10 +165,10 @@ func TestAPIKeyPermsAreItsOwn(t *testing.T) {
 	if err := st.RevokeAPIKey(k.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetAPIKeyPerms(k.ID, true, nil); !errors.Is(err, ErrAPIKeyNotFound) {
+	if err := st.SetAPIKeyPerms(k.ID, true, nil, nil); !errors.Is(err, ErrAPIKeyNotFound) {
 		t.Errorf("changing a revoked key = %v, want ErrAPIKeyNotFound", err)
 	}
-	empty, err := st.CreateAPIKey("nothing", false, nil)
+	empty, err := st.CreateAPIKey("nothing", false, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

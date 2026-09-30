@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,7 +37,7 @@ func generateAPIKey() (raw, prefix string, err error) {
 // CreateAPIKey mints a new named key, stores only its HMAC hash, and returns the
 // model record with RawKey populated (shown to the operator exactly once). A key
 // holds its own permissions: full access, or the set given (normalised as stored).
-func (s *Store) CreateAPIKey(name string, full bool, perms []string) (*model.APIKey, error) {
+func (s *Store) CreateAPIKey(name string, full bool, perms, routes []string) (*model.APIKey, error) {
 	raw, prefix, err := generateAPIKey()
 	if err != nil {
 		return nil, err
@@ -45,14 +46,11 @@ func (s *Store) CreateAPIKey(name string, full bool, perms []string) (*model.API
 	if err != nil {
 		return nil, err
 	}
-	stored := ""
-	if !full {
-		stored = model.JoinPerms(perms)
-	}
+	stored, rs := keyColumns(full, perms, routes)
 	now := time.Now().Unix()
 	res, err := s.db.Exec(
-		`INSERT INTO api_keys (name, key_hash, prefix, created_at, perms, full_access) VALUES (?, ?, ?, ?, ?, ?)`,
-		name, hash, prefix, now, stored, boolToInt(full),
+		`INSERT INTO api_keys (name, key_hash, prefix, created_at, perms, full_access, routes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		name, hash, prefix, now, stored, boolToInt(full), rs,
 	)
 	if err != nil {
 		return nil, err
@@ -63,6 +61,7 @@ func (s *Store) CreateAPIKey(name string, full bool, perms []string) (*model.API
 		Name:       name,
 		FullAccess: full,
 		Grants:     grantsOf(full, stored),
+		Routes:     routesOf(full, rs),
 		Prefix:     prefix,
 		CreatedAt:  now,
 		RawKey:     raw,
@@ -81,6 +80,24 @@ func grantsOf(full bool, stored string) []string {
 	return []string{}
 }
 
+// keyColumns is what a key's perms and routes columns hold: nothing for full access.
+func keyColumns(full bool, perms, routes []string) (string, string) {
+	if full {
+		return "", ""
+	}
+	rs := slices.Clone(routes)
+	slices.Sort(rs)
+	return model.JoinPerms(perms), strings.Join(slices.Compact(rs), ",")
+}
+
+// routesOf reads the routes column: the methods a key is held to, or none.
+func routesOf(full bool, stored string) []string {
+	if full || stored == "" {
+		return []string{}
+	}
+	return strings.Split(stored, ",")
+}
+
 // keyPerms is what a key may do.
 func keyPerms(full bool, stored string) model.PermSet {
 	if full {
@@ -93,14 +110,11 @@ func keyPerms(full bool, stored string) model.PermSet {
 var ErrAPIKeyNotFound = errors.New("api key not found")
 
 // SetAPIKeyPerms replaces what an active key may do.
-func (s *Store) SetAPIKeyPerms(id int64, full bool, perms []string) error {
-	stored := ""
-	if !full {
-		stored = model.JoinPerms(perms)
-	}
+func (s *Store) SetAPIKeyPerms(id int64, full bool, perms, routes []string) error {
+	stored, rs := keyColumns(full, perms, routes)
 	res, err := s.db.Exec(
-		`UPDATE api_keys SET perms = ?, full_access = ? WHERE id = ? AND revoked_at = 0`,
-		stored, boolToInt(full), id)
+		`UPDATE api_keys SET perms = ?, full_access = ?, routes = ? WHERE id = ? AND revoked_at = 0`,
+		stored, boolToInt(full), rs, id)
 	if err != nil {
 		return err
 	}
@@ -124,11 +138,11 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 		return nil, err
 	}
 	var k model.APIKey
-	var perms string
+	var perms, routes string
 	err = s.rdb.QueryRow(
-		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access
+		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access, routes
 		 FROM api_keys WHERE key_hash = ?`, hash,
-	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess)
+	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess, &routes)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -140,6 +154,13 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 	}
 	k.Perms = keyPerms(k.FullAccess, perms)
 	k.Grants = grantsOf(k.FullAccess, perms)
+	k.Routes = routesOf(k.FullAccess, routes)
+	if len(k.Routes) > 0 {
+		k.Allowed = make(map[string]bool, len(k.Routes))
+		for _, r := range k.Routes {
+			k.Allowed[r] = true
+		}
+	}
 	now := time.Now().Unix()
 	_, _ = s.db.Exec(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`, now, k.ID)
 	k.LastUsedAt = now
@@ -150,7 +171,7 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 // never populated here — it exists only in the CreateAPIKey response.
 func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access
+		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access, routes
 		 FROM api_keys ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -159,12 +180,14 @@ func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	var out []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		var perms string
+		var perms, routes string
 		if err := rows.Scan(&k.ID, &k.Name, &k.Prefix,
-			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess); err != nil {
+			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess, &routes); err != nil {
 			return nil, err
 		}
 		k.Grants = grantsOf(k.FullAccess, perms)
+		k.Routes = routesOf(k.FullAccess, routes)
+		k.Perms = keyPerms(k.FullAccess, perms)
 		out = append(out, k)
 	}
 	return out, rows.Err()

@@ -594,8 +594,8 @@ panel journal) and **operator** (users, groups, statistics). The single **owner*
 permission and alone reaches what is stronger than any role: admins and roles, the Telegram bots
 (the admin bot's chat receives sign-in alerts and can end any admin's sessions), backups, restore
 and the factory reset, and full-access API keys. Permissions are checked server-side on every request, and a role edit applies to its
-holders on their next request. An **API key** gets its own permissions, ticked in the same table —
-REST and MCP then do exactly that, and no one can give a key more than they hold. A new admin
+holders on their next request. An **API key** is given exact API methods, ticked by section —
+REST and MCP then do exactly those, and no one can give a key more than they hold. A new admin
 gets a temporary password that must be changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
 themselves — a code from an authenticator app (Google Authenticator, Aegis, 1Password) on top
 of the password, the secret encrypted in the database and never handed back out after setup;
@@ -646,8 +646,8 @@ at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, 
 one series per node; a ready **Grafana dashboard** for them is
 [docs/grafana/rospanel.json](docs/grafana/rospanel.json) (Dashboards → New → Import). An **MCP server** hands the same API to an AI assistant, with the tool
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
-a URL and there is nothing to install anywhere. The key's permissions decide which tools
-the assistant gets: for a look-only assistant, tick no write. More in
+a URL and there is nothing to install anywhere. The key's methods decide which tools
+the assistant gets: for a look-only assistant, tick "Read only". More in
 [docs/api.md](docs/api.md).
 
 **Sign-up from your own website** — `POST /v1/signup` registers a client by your site's id (an

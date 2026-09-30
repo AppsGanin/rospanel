@@ -38,7 +38,7 @@ func TestMetricsExposition(t *testing.T) {
 	rt := h.(*Router)
 	rt.setAPIPath("metrics-api")
 	base := "/metrics-api"
-	key, err := st.CreateAPIKey("scraper", true, nil)
+	key, err := st.CreateAPIKey("scraper", true, nil, nil)
 	if err != nil {
 		t.Fatalf("api key: %v", err)
 	}

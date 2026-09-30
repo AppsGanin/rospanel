@@ -253,6 +253,10 @@ func refName(node map[string]any) (string, bool) {
 	return strings.TrimPrefix(ref, "#/components/schemas/"), true
 }
 
+// ToolName is the tool an operation becomes: "get_users_by_id_devices" for
+// GET /v1/users/{id}/devices. Stable, so the panel also names a method by it.
+func ToolName(method, path string) string { return toolName(method, path) }
+
 // toolName is a stable, collision-free name for one operation: the method, then the
 // path with its parameters spelled out.
 //

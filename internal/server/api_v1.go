@@ -194,11 +194,10 @@ func (rt *Router) apiMux() http.Handler {
 			mux.HandleFunc(pattern, h)
 			return
 		}
-		perms, ok := apiRoutePerms[pattern]
-		if !ok {
+		if _, ok := apiRoutePerms[pattern]; !ok {
 			panic("api: route " + pattern + " has no entry in apiRoutePerms")
 		}
-		mux.HandleFunc(pattern, apiGate(perms, h))
+		mux.HandleFunc(pattern, apiGate(pattern, h))
 	}
 	id := func(pattern string, h func(http.ResponseWriter, *http.Request, int64)) {
 		hf(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -413,9 +412,9 @@ func (rt *Router) apiAuth(next http.Handler) http.Handler {
 		}
 		rt.apiKeys.success(ip, "")
 		// The key's name is the actor in the audit log, so a mutation made over the
-		// external API is attributable to the integration that made it; its role's
-		// permissions are what apiGate checks each route against.
-		ctx := withAPIPerms(actor.With(r.Context(), actor.APIKey(ak.Name)), ak.Perms)
+		// external API is attributable to the integration that made it; its methods
+		// and permissions are what apiGate checks each route against.
+		ctx := withAPIAccess(actor.With(r.Context(), actor.APIKey(ak.Name)), keyAccess(*ak))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
