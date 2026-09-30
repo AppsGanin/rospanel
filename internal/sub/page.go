@@ -132,6 +132,8 @@ type pageText struct {
 	AccessCopy     string
 	TGBind         string
 	TGBindHint     string
+	TGChange       string
+	TGChangeCopied string
 	OpenInApp      string
 	DownloadClash  string
 	SingleConfigs  string
@@ -230,6 +232,8 @@ func text(lang i18n.Lang) pageText {
 		AccessCopy:     t("sub.accessCopy"),
 		TGBind:         t("sub.tgBind"),
 		TGBindHint:     t("sub.tgBindHint"),
+		TGChange:       t("sub.tgChange"),
+		TGChangeCopied: t("sub.tgChangeCopied"),
 		OpenInApp:      t("sub.openInApp"),
 		DownloadClash:  t("sub.downloadClash"),
 		SingleConfigs:  t("sub.singleConfigs"),
@@ -827,5 +831,6 @@ func relTime(sec int64, lang i18n.Lang) string {
 // Access is the page's "access to your account" card: the page's own address is the
 // key to it, and Telegram can be linked later.
 type Access struct {
-	TGLink string // the bot's link that binds this account, when not linked yet
+	TGLink   string // the bot's link that binds this account to the Telegram that opens it
+	TGLinked bool   // already linked: the link moves it to another Telegram
 }

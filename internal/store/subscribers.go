@@ -114,3 +114,16 @@ func (s *Store) CountSubscribers() (total, reachable int, err error) {
 		Scan(&total, &reachable)
 	return total, reachable, err
 }
+
+// SetSubscriberUser records which account a chat holds now (0 = none), for the
+// broadcast audiences: an account moved to another Telegram must stop counting
+// the old one as its own. Unlike UpsertSubscriber this does clear the link — it
+// is told, not guessed from a lookup.
+func (s *Store) SetSubscriberUser(chatID, userID int64) error {
+	var uid any
+	if userID != 0 {
+		uid = userID
+	}
+	_, err := s.db.Exec(`UPDATE tg_subscribers SET user_id = ? WHERE chat_id = ?`, uid, chatID)
+	return err
+}

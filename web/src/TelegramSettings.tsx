@@ -155,6 +155,10 @@ export function TelegramSettings() {
   const [userToken, setUserToken] = useState("");
   const [userRegMode, setUserRegMode] = useState<RegMode>("off");
   const [userRegCode, setUserRegCode] = useState("");
+  // The subscription page's Telegram button: binding, and moving to another Telegram.
+  const [userTgBind, setUserTgBind] = useState(true);
+  // Off unless the operator opts in: whoever holds a page link could take the bot account.
+  const [userTgRebind, setUserTgRebind] = useState(false);
   const [adminEvents, setAdminEvents] = useState<AdminEvents>({});
   const [userEvents, setUserEvents] = useState<AdminEvents>({});
   const [expiringDays, setExpiringDays] = useState("3");
@@ -182,6 +186,8 @@ export function TelegramSettings() {
     userToken: "",
     userRegMode: "off" as RegMode,
     userRegCode: "",
+    userTgBind: true,
+    userTgRebind: false,
     adminEvents: {} as AdminEvents,
     userEvents: {} as AdminEvents,
     expiringDays: "3",
@@ -206,6 +212,8 @@ export function TelegramSettings() {
         setUserToken(cfg.user_token);
         setUserRegMode(cfg.user_reg_mode || "off");
         setUserRegCode(cfg.user_reg_code || "");
+        setUserTgBind(cfg.user_tg_bind ?? true);
+        setUserTgRebind(cfg.user_tg_rebind ?? false);
         setAdminEvents(cfg.admin_events || {});
         setUserEvents(cfg.user_events || {});
         setExpiringDays(String(cfg.user_expiring_days || 3));
@@ -233,6 +241,8 @@ export function TelegramSettings() {
           userToken: cfg.user_token,
           userRegMode: cfg.user_reg_mode || "off",
           userRegCode: cfg.user_reg_code || "",
+          userTgBind: cfg.user_tg_bind ?? true,
+          userTgRebind: cfg.user_tg_rebind ?? false,
           adminEvents: cfg.admin_events || {},
           userEvents: cfg.user_events || {},
           expiringDays: String(cfg.user_expiring_days || 3),
@@ -295,6 +305,8 @@ export function TelegramSettings() {
     userToken.trim() !== saved.userToken.trim() ||
     userRegMode !== saved.userRegMode ||
     userRegCode.trim() !== saved.userRegCode.trim() ||
+    userTgBind !== saved.userTgBind ||
+    userTgRebind !== saved.userTgRebind ||
     !sameEvents(adminEvents, saved.adminEvents) ||
     !sameEvents(userEvents, saved.userEvents, USER_EVENTS) ||
     expiringDays !== saved.expiringDays ||
@@ -324,6 +336,8 @@ export function TelegramSettings() {
         user_token: userToken.trim(),
         user_reg_mode: userRegMode,
         user_reg_code: userRegCode.trim(),
+        user_tg_bind: userTgBind,
+        user_tg_rebind: userTgRebind,
         admin_events: adminEvents,
         user_events: userEvents,
         user_expiring_days: Number(expiringDays) || 3,
@@ -343,6 +357,8 @@ export function TelegramSettings() {
         userToken: userToken.trim(),
         userRegMode,
         userRegCode: userRegCode.trim(),
+        userTgBind,
+        userTgRebind,
         adminEvents,
         userEvents,
         expiringDays,
@@ -375,6 +391,8 @@ export function TelegramSettings() {
     setUserToken(saved.userToken);
     setUserRegMode(saved.userRegMode);
     setUserRegCode(saved.userRegCode);
+    setUserTgBind(saved.userTgBind);
+    setUserTgRebind(saved.userTgRebind);
     setAdminEvents(saved.adminEvents);
     setUserEvents(saved.userEvents);
     setExpiringDays(saved.expiringDays);
@@ -675,12 +693,15 @@ export function TelegramSettings() {
         />
         {userBotUsername && botLink(userBotUsername)}
         {miniAppURL && (
+          // The address on a line of its own: beside the hint it ran off the page.
           <SettingRow
             label={t("tg.miniApp")}
             hint={t("tg.miniAppHint", { bot: userBotUsername || "bot" })}
-            wideField
-            field={<Code copy>{miniAppURL}</Code>}
-          />
+          >
+            <Code block copy>
+              {miniAppURL}
+            </Code>
+          </SettingRow>
         )}
         <SettingRow
           label={t("tg.selfSignup")}
@@ -714,6 +735,18 @@ export function TelegramSettings() {
             }
           />
         )}
+        <ToggleRow
+          label={t("tg.pageBind")}
+          hint={t("tg.pageBindHint")}
+          checked={userTgBind}
+          onChange={setUserTgBind}
+        />
+        <ToggleRow
+          label={t("tg.pageRebind")}
+          hint={t("tg.pageRebindHint")}
+          checked={userTgRebind}
+          onChange={setUserTgRebind}
+        />
       </Panel>
 
       <BlacklistPanel />

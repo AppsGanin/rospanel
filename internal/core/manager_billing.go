@@ -333,8 +333,8 @@ func (m *Manager) reapplyPlanToItsUsers(ctx context.Context, planID int64) {
 // CreateRegisteredUser creates an active user from self-registration (trial/free/
 // plain per billing config), links nothing itself, and alerts the admin chats. Used
 // by the open and invite modes; moderation instead goes through RequestRegistration.
-func (m *Manager) CreateRegisteredUser(ctx context.Context, name string) (*model.User, error) {
-	u, err := m.createRegisteredUser(name)
+func (m *Manager) CreateRegisteredUser(ctx context.Context, name string, trial bool) (*model.User, error) {
+	u, err := m.createRegisteredUser(name, trial)
 	if err != nil || u == nil {
 		return u, err
 	}
@@ -435,7 +435,8 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 		m.notifyRegistrationDecision(req.ChatID, "notify.regAlreadyLinked")
 		return nil
 	}
-	u, err := m.createRegisteredUser(req.Name)
+	// One trial per Telegram (see store.ChatHadTrial).
+	u, err := m.createRegisteredUser(req.Name, !m.store.ChatHadTrial(req.ChatID))
 	if err != nil {
 		// Creation failed after the request was claimed — put the request back so it's
 		// retryable instead of vanishing (the applicant keeps waiting otherwise).
@@ -449,6 +450,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
 		return err
 	}
+	_ = m.store.MarkChatTrial(req.ChatID)
 	m.AttachReferrer(ctx, u.ID, req.ChatID)
 	m.announceRegistration(ctx, u, "", true)
 	// Gated with the other user-facing notices: an operator who switched them all off
@@ -485,7 +487,12 @@ func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) er
 }
 
 // createRegisteredUser is the registration body: trial → free → plain user.
-func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
+//
+// trial=false is someone who already had their trial — a Telegram whose account
+// moved to another one: they get an account and can buy, but not a second trial.
+// That is the free plan when there is one (where a finished trial lands anyway),
+// otherwise the trial plan already run out.
+func (m *Manager) createRegisteredUser(name string, trial bool) (*model.User, error) {
 	// Self-registration name comes from the Telegram display name — bound its length
 	// (truncate rather than reject) so it can't bloat the DB / config unboundedly.
 	name = truncateName(name)
@@ -503,7 +510,15 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 	// The trial's length is the trial plan's own period — there is no separate
 	// "trial days" setting to disagree with it. A trial plan without a period would
 	// never expire, so it falls through to the free plan instead.
-	if set.BillingTrialPlanID > 0 {
+	// Without a trial, the free plan when it really exists — a designation pointing at
+	// a deleted plan must not slip through to the unlimited fallback below.
+	freeOK := false
+	if set.BillingFreePlanID > 0 {
+		if p, err := m.store.GetTariffPlan(set.BillingFreePlanID); err == nil && p != nil {
+			freeOK = true
+		}
+	}
+	if set.BillingTrialPlanID > 0 && (trial || !freeOK) {
 		plan, err := m.store.GetTariffPlan(set.BillingTrialPlanID)
 		// Not gated on plan.Enabled: designating a plan as the trial IS the on switch
 		// (clear it in "Pricing" to stop granting trials), and the editor no longer
@@ -515,12 +530,15 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 				return nil, err
 			}
 			expire := now + int64(plan.PeriodDays)*86400
+			if !trial {
+				expire = now // the trial they already had: on the plan, and over
+			}
 			w := planLimits(u.ID, plan, expire, false, now)
 			w.TrialUsed = true
 			if err := m.store.ApplyUserPlan(w); err != nil {
 				return nil, err
 			}
-			logInfo("user registered with trial plan", "user", u.ID, "plan", plan.Name, "days", plan.PeriodDays)
+			logInfo("user registered with trial plan", "user", u.ID, "plan", plan.Name, "days", plan.PeriodDays, "trial", trial)
 			m.TriggerUserSync()
 			return m.store.GetUser(u.ID)
 		}
@@ -532,7 +550,9 @@ func (m *Manager) createRegisteredUser(name string) (*model.User, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := m.store.ApplyUserPlan(planLimits(u.ID, plan, 0, plan.IsFree(), now)); err != nil {
+			w := planLimits(u.ID, plan, 0, plan.IsFree(), now)
+			w.TrialUsed = !trial
+			if err := m.store.ApplyUserPlan(w); err != nil {
 				return nil, err
 			}
 			logInfo("user registered with free plan", "user", u.ID, "plan", plan.Name)

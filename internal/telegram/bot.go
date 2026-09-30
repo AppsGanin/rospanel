@@ -44,7 +44,9 @@ type Panel interface {
 	PlanName(planID int64) string
 	RequestPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, periods int) (*model.PaymentOrder, string, error)
 	// CreateRegisteredUser signs a new user up (active, for the open/invite modes).
-	CreateRegisteredUser(ctx context.Context, name string) (*model.User, error)
+	CreateRegisteredUser(ctx context.Context, name string, trial bool) (*model.User, error)
+	// RotateSubToken reissues the user's subscription link; the old one stops working.
+	RotateSubToken(ctx context.Context, id int64) (*model.User, error)
 	// RequestRegistration records a moderated signup (no user yet); ApproveRegistration
 	// Request creates the user, RejectRegistrationRequest drops it.
 	RequestRegistration(ctx context.Context, chatID int64, name string) (bool, error)

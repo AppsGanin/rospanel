@@ -210,13 +210,15 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 		}
 		return MiniAppResult{Reason: "sub.miniRequested"}, nil
 	}
-	u, err = m.CreateRegisteredUser(ctx, name)
+	// One trial per Telegram (see store.ChatHadTrial).
+	u, err = m.CreateRegisteredUser(ctx, name, !m.store.ChatHadTrial(chat))
 	if err != nil {
 		return MiniAppResult{}, err
 	}
 	if err := m.store.SetUserTelegramChat(u.ID, chat); err != nil {
 		return MiniAppResult{}, err
 	}
+	_ = m.store.MarkChatTrial(chat)
 	m.AuditTelegramLinked(ctx, u.ID, tu.Username)
 	m.AttachReferrer(ctx, u.ID, chat)
 	return MiniAppResult{UserID: u.ID}, nil

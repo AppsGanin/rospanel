@@ -210,6 +210,12 @@ type User struct {
 // TelegramLinkCodeTTL is how long a one-time Telegram bind code stays valid.
 const TelegramLinkCodeTTL = 15 * time.Minute
 
+// UserTgLinkCodeFresh reports whether the code has long enough left to hand out: a
+// link shown with seconds to go is dead by the time it is tapped (or confirmed).
+func (u User) UserTgLinkCodeFresh() bool {
+	return u.UserTgLinkCodeValid() && time.Now().Unix()-u.TgLinkCodeAt <= int64((TelegramLinkCodeTTL-5*time.Minute).Seconds())
+}
+
 // UserTgLinkCodeValid reports whether the user's pending Telegram bind code
 // exists and has not expired.
 func (u User) UserTgLinkCodeValid() bool {
@@ -1078,6 +1084,11 @@ type Settings struct {
 	// user bot's menu button was last set to.
 	MiniAppPath string `json:"-"`
 	TGMenuURL   string `json:"-"`
+	// SubTGBind offers binding Telegram on the subscription page to an account that
+	// has none; SubTGRebind moving a linked account to another Telegram (the bot
+	// refuses the move when it is off).
+	SubTGBind   bool `json:"-"`
+	SubTGRebind bool `json:"-"`
 
 	// AutoUpdateCron is when the panel checks for a newer release and installs it (in
 	// the panel's timezone; "" = never); AutoUpdateNodes has the servers follow.

@@ -399,7 +399,7 @@ func TestAuditSelfRegistrationIsOneRow(t *testing.T) {
 	t.Parallel()
 	m := bulkTestManager(t)
 	ctx := actor.With(context.Background(), actor.UserSelf("@vasya"))
-	u, err := m.CreateRegisteredUser(ctx, "Вася") // billing off ⇒ the plain fallback
+	u, err := m.CreateRegisteredUser(ctx, "Вася", true) // billing off ⇒ the plain fallback
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
