@@ -761,7 +761,6 @@ export interface AdminRole {
   perms: Perm[]
   created_at: number
   admins: number
-  api_keys: number
 }
 
 // The name a role is shown under: what the owner called it, or the preset's own.
@@ -2354,7 +2353,9 @@ export const setUserPlan = (id: number, plan_id: number) =>
 export interface ApiKey {
   id: number
   name: string
-  role: Role // '' = full access
+  // A key holds its own permissions: everything (and the owner's reach), or perms.
+  full_access: boolean
+  perms: Perm[]
   prefix: string
   created_at: number
   last_used_at: number
@@ -2367,21 +2368,27 @@ export interface ApiKeysInfo {
   api_path: string
   base_url: string
   keys: ApiKey[]
-  // Every role, so a key's role reads by name; grantable marks the ones the caller's
-  // own permissions cover — what a new key may be given. full_access says whether
-  // full access is among the choices.
-  roles?: { key: string; name: string; preset: boolean; grantable: boolean }[]
-  full_access?: boolean
+  // The permission table a key is ticked in, what each permission brings, and what
+  // the caller may give: their own permissions, and full access only to the owner.
+  catalog: PermSection[]
+  implies: Partial<Record<Perm, Perm[]>>
+  grantable: Perm[]
+  full_access: boolean
 }
 
 export const getApiKeys = () => api<ApiKeysInfo>('api/apikeys')
 
-// role is the admin role the key acts with; '' = full access. The server refuses a
-// role broader than the caller's own.
-export const createApiKey = (name: string, role: Role = '') =>
+// The server refuses a key broader than the caller's own permissions.
+export const createApiKey = (name: string, full_access: boolean, perms: Perm[]) =>
   api<{ key: ApiKey; base_url: string }>('api/apikeys', {
     method: 'POST',
-    body: JSON.stringify({ name, role }),
+    body: JSON.stringify({ name, full_access, perms }),
+  })
+
+export const setApiKeyPerms = (id: number, full_access: boolean, perms: Perm[]) =>
+  api<{ ok: boolean }>(`api/apikeys/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ full_access, perms }),
   })
 
 export const revokeApiKey = (id: number) =>

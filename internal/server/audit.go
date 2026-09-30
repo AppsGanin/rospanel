@@ -162,6 +162,7 @@ var auditActions = map[string]auditRoute{
 	// lifecycle — worth their own rows, not folded into "settings".
 	"POST /api/apikeys":            act(model.AuditAPIKeyCreated),
 	"DELETE /api/apikeys/{id}":     act(model.AuditAPIKeyRevoked),
+	"POST /api/apikeys/{id}":       act(model.AuditAPIKeyUpdated),
 	"POST /api/webhooks":           act(model.AuditWebhookCreated),
 	"POST /api/webhooks/{id}":      act(model.AuditWebhookUpdated),
 	"DELETE /api/webhooks/{id}":    act(model.AuditWebhookDeleted),

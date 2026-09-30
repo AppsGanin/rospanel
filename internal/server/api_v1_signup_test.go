@@ -19,7 +19,7 @@ func TestAPISignup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := st.CreateAPIKey("site", role.Key)
+	k, err := st.CreateAPIKey("site", false, role.Perms)
 	if err != nil {
 		t.Fatal(err)
 	}

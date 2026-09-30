@@ -594,8 +594,8 @@ panel journal) and **operator** (users, groups, statistics). The single **owner*
 permission and alone reaches what is stronger than any role: admins and roles, the Telegram bots
 (the admin bot's chat receives sign-in alerts and can end any admin's sessions), backups, restore
 and the factory reset, and full-access API keys. Permissions are checked server-side on every request, and a role edit applies to its
-holders on their next request. An **API key** can carry a role too — REST and MCP then do exactly
-what an admin with that role can, and no one can mint a key broader than themselves. A new admin
+holders on their next request. An **API key** gets its own permissions, ticked in the same table —
+REST and MCP then do exactly that, and no one can give a key more than they hold. A new admin
 gets a temporary password that must be changed on first login. **Two-factor authentication** (TOTP): each admin turns it on for
 themselves — a code from an authenticator app (Google Authenticator, Aegis, 1Password) on top
 of the password, the secret encrypted in the database and never handed back out after setup;
@@ -646,8 +646,8 @@ at `/<api-path>/v1/metrics` behind the same key — users, traffic, throughput, 
 one series per node; a ready **Grafana dashboard** for them is
 [docs/grafana/rospanel.json](docs/grafana/rospanel.json) (Dashboards → New → Import). An **MCP server** hands the same API to an AI assistant, with the tool
 list generated from that OpenAPI document: paste `…/v1/mcp/<key>` into an assistant that takes
-a URL and there is nothing to install anywhere. The key's role decides which tools the
-assistant gets: for a look-only assistant, create a key with a role that has no write. More in
+a URL and there is nothing to install anywhere. The key's permissions decide which tools
+the assistant gets: for a look-only assistant, tick no write. More in
 [docs/api.md](docs/api.md).
 
 **Sign-up from your own website** — `POST /v1/signup` registers a client by your site's id (an
@@ -656,14 +656,14 @@ moderation, a rate limit, one account and one trial per id. The site's key needs
 not `users.manage`.
 
 **Connecting an assistant** takes one URL and no local install. Create a key in
-*Settings → API* (with the role you want), take the base address from the same page, and paste:
+*Settings → API* (ticking what it may do), take the base address from the same page, and paste:
 
 ```text
 https://vpn.example.com/<api-path>/v1/mcp/<key>
 ```
 
 The address is the credential — as secret as the key inside it, and dead the moment that key
-is revoked. The assistant is offered only the tools the key's role allows.
+is revoked. The assistant is offered only the tools the key allows.
 
 **Status page** — an optional public page (*Settings → General*) showing which
 servers are up and 90 days of uptime history. Names and availability only: no addresses, no

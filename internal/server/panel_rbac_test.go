@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -208,8 +209,9 @@ func TestRolesAreOwnerOnlyAndGuarded(t *testing.T) {
 	}
 }
 
-// A role holding the API permission cannot mint a key broader than itself: that
-// would turn "may manage keys" into "may do anything".
+// An admin holding the API permission cannot mint a key broader than themselves —
+// that would turn "may manage keys" into "may do anything" — nor widen or touch a
+// key that outranks them.
 func TestAPIKeyCannotOutrankItsCreator(t *testing.T) {
 	t.Parallel()
 	rt, st := rolesTestRouter(t)
@@ -219,27 +221,53 @@ func TestAPIKeyCannotOutrankItsCreator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}
-	reader, err := st.CreateAdminRole("Чтение", []string{model.PermUsersView})
-	if err != nil {
-		t.Fatalf("create role: %v", err)
-	}
 	c := signIn(t, st, "integrator", narrow.Key, false)
 
 	for _, tc := range []struct {
-		role string
+		body string
 		want int
 	}{
-		{"", 400},              // full access
-		{model.RoleAdmin, 400}, // broader than the creator
-		{model.RoleOwner, 400}, // never a key role
-		{"no-such-role", 400},  // unknown
-		{reader.Key, 201},      // a subset
-		{narrow.Key, 201},      // exactly the creator's own
+		{`{"name":"k","full_access":true}`, 400},                  // full access
+		{`{"name":"k","perms":["settings.view"]}`, 400},           // broader than the creator
+		{`{"name":"k","perms":["owner"]}`, 400},                   // never a key's
+		{`{"name":"k","perms":[]}`, 400},                          // nothing at all
+		{`{"name":"k","perms":["users.view"]}`, 201},              // a subset
+		{`{"name":"k","perms":["api.manage","users.view"]}`, 201}, // exactly the creator's own
 	} {
-		body := `{"name":"k","role":"` + tc.role + `"}`
-		if got := callBody(h, "POST", "/api/apikeys", body, c).Code; got != tc.want {
-			t.Errorf("create key with role %q = %d, want %d", tc.role, got, tc.want)
+		if got := callBody(h, "POST", "/api/apikeys", tc.body, c).Code; got != tc.want {
+			t.Errorf("create key %s = %d, want %d", tc.body, got, tc.want)
 		}
+	}
+
+	mine, err := st.CreateAPIKey("mine", false, []string{model.PermUsersView})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := st.CreateAPIKey("owners", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id   int64
+		body string
+		want int
+	}{
+		{mine.ID, `{"perms":["settings.view"]}`, 400}, // widened past the editor
+		{mine.ID, `{"full_access":true}`, 400},
+		{mine.ID, `{"perms":["users.view","api.manage"]}`, 200},
+		{full.ID, `{"perms":["users.view"]}`, 400}, // a key that outranks the editor
+		{9999, `{"perms":["users.view"]}`, 400},
+	} {
+		path := "/api/apikeys/" + strconv.FormatInt(tc.id, 10)
+		if got := callBody(h, "POST", path, tc.body, c).Code; got != tc.want {
+			t.Errorf("change key %d to %s = %d, want %d", tc.id, tc.body, got, tc.want)
+		}
+	}
+	if got, _ := st.LookupAPIKey(full.RawKey); !got.FullAccess {
+		t.Error("the owner's key lost full access")
+	}
+	if got, _ := st.LookupAPIKey(mine.RawKey); !got.Perms.Has(model.PermAPI) {
+		t.Error("the allowed change did not land")
 	}
 }
 
@@ -254,7 +282,7 @@ func TestAPIKeyRoleGatesRESTAndMCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create role: %v", err)
 	}
-	k, err := st.CreateAPIKey("reader", role.Key)
+	k, err := st.CreateAPIKey("reader", false, role.Perms)
 	if err != nil {
 		t.Fatalf("create key: %v", err)
 	}
@@ -367,7 +395,7 @@ func TestBulkDeleteWorksForADeleteOnlyRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("role: %v", err)
 	}
-	k, err := st.CreateAPIKey("cleaner", role.Key)
+	k, err := st.CreateAPIKey("cleaner", false, role.Perms)
 	if err != nil {
 		t.Fatalf("key: %v", err)
 	}

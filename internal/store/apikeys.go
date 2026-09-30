@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"time"
 
@@ -33,9 +34,9 @@ func generateAPIKey() (raw, prefix string, err error) {
 }
 
 // CreateAPIKey mints a new named key, stores only its HMAC hash, and returns the
-// model record with RawKey populated (shown to the operator exactly once). role is
-// the admin role the key acts with; "" is full access.
-func (s *Store) CreateAPIKey(name, role string) (*model.APIKey, error) {
+// model record with RawKey populated (shown to the operator exactly once). A key
+// holds its own permissions: full access, or the set given (normalised as stored).
+func (s *Store) CreateAPIKey(name string, full bool, perms []string) (*model.APIKey, error) {
 	raw, prefix, err := generateAPIKey()
 	if err != nil {
 		return nil, err
@@ -44,29 +45,69 @@ func (s *Store) CreateAPIKey(name, role string) (*model.APIKey, error) {
 	if err != nil {
 		return nil, err
 	}
+	stored := ""
+	if !full {
+		stored = model.JoinPerms(perms)
+	}
 	now := time.Now().Unix()
-	// "" (full access) or a role row that exists as the key is written. Not
-	// roleExists: that one lets "owner" through, which is an admin's role, never a key's.
 	res, err := s.db.Exec(
-		`INSERT INTO api_keys (name, key_hash, prefix, created_at, role)
-		 SELECT ?, ?, ?, ?, ? WHERE ? = '' OR EXISTS (SELECT 1 FROM admin_roles WHERE key = ?)`,
-		name, hash, prefix, now, role, role, role,
+		`INSERT INTO api_keys (name, key_hash, prefix, created_at, perms, full_access) VALUES (?, ?, ?, ?, ?, ?)`,
+		name, hash, prefix, now, stored, boolToInt(full),
 	)
 	if err != nil {
 		return nil, err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return nil, ErrRoleNotFound
-	}
 	id, _ := res.LastInsertId()
 	return &model.APIKey{
-		ID:        id,
-		Name:      name,
-		Role:      role,
-		Prefix:    prefix,
-		CreatedAt: now,
-		RawKey:    raw,
+		ID:         id,
+		Name:       name,
+		FullAccess: full,
+		Grants:     grantsOf(full, stored),
+		Prefix:     prefix,
+		CreatedAt:  now,
+		RawKey:     raw,
 	}, nil
+}
+
+// grantsOf is a key's permission list as the panel shows it: none listed for full
+// access, which is every permission and the owner's reach besides.
+func grantsOf(full bool, stored string) []string {
+	if full {
+		return []string{}
+	}
+	if g := model.SplitPerms(stored); g != nil {
+		return g
+	}
+	return []string{}
+}
+
+// keyPerms is what a key may do.
+func keyPerms(full bool, stored string) model.PermSet {
+	if full {
+		return model.OwnerPermSet()
+	}
+	return permsFor("", sql.NullString{String: stored, Valid: stored != ""})
+}
+
+// ErrAPIKeyNotFound is an id no key has, or one already revoked.
+var ErrAPIKeyNotFound = errors.New("api key not found")
+
+// SetAPIKeyPerms replaces what an active key may do.
+func (s *Store) SetAPIKeyPerms(id int64, full bool, perms []string) error {
+	stored := ""
+	if !full {
+		stored = model.JoinPerms(perms)
+	}
+	res, err := s.db.Exec(
+		`UPDATE api_keys SET perms = ?, full_access = ? WHERE id = ? AND revoked_at = 0`,
+		stored, boolToInt(full), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrAPIKeyNotFound
+	}
+	return nil
 }
 
 // LookupAPIKey resolves a raw key to its record, ignoring revoked keys. The
@@ -83,12 +124,11 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 		return nil, err
 	}
 	var k model.APIKey
-	var perms sql.NullString
+	var perms string
 	err = s.rdb.QueryRow(
-		`SELECT k.id, k.name, k.prefix, k.created_at, k.last_used_at, k.revoked_at, k.role, r.perms
-		 FROM api_keys k LEFT JOIN admin_roles r ON r.key = k.role
-		 WHERE k.key_hash = ?`, hash,
-	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &k.Role, &perms)
+		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access
+		 FROM api_keys WHERE key_hash = ?`, hash,
+	).Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -98,13 +138,8 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 	if !k.Active() {
 		return nil, nil
 	}
-	// No role is full access — every key issued before roles existed. A role that no
-	// longer resolves grants nothing (permsFor), never everything.
-	if k.Role == "" {
-		k.Perms = model.OwnerPermSet()
-	} else {
-		k.Perms = permsFor(k.Role, perms)
-	}
+	k.Perms = keyPerms(k.FullAccess, perms)
+	k.Grants = grantsOf(k.FullAccess, perms)
 	now := time.Now().Unix()
 	_, _ = s.db.Exec(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`, now, k.ID)
 	k.LastUsedAt = now
@@ -115,7 +150,7 @@ func (s *Store) LookupAPIKey(raw string) (*model.APIKey, error) {
 // never populated here — it exists only in the CreateAPIKey response.
 func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, role
+		`SELECT id, name, prefix, created_at, last_used_at, revoked_at, perms, full_access
 		 FROM api_keys ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
@@ -124,10 +159,12 @@ func (s *Store) ListAPIKeys() ([]model.APIKey, error) {
 	var out []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
+		var perms string
 		if err := rows.Scan(&k.ID, &k.Name, &k.Prefix,
-			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &k.Role); err != nil {
+			&k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &perms, &k.FullAccess); err != nil {
 			return nil, err
 		}
+		k.Grants = grantsOf(k.FullAccess, perms)
 		out = append(out, k)
 	}
 	return out, rows.Err()
@@ -144,24 +181,20 @@ func (s *Store) RevokeAPIKey(id int64) error {
 	return err
 }
 
-// APIKeyPerms is what the key with this id may do — its role's set, every
-// permission for a key without one — whether or not it is still active. ok is false
-// when no key has the id.
-func (s *Store) APIKeyPerms(id int64) (model.PermSet, bool, error) {
-	var role string
-	var perms sql.NullString
-	err := s.db.QueryRow(
-		`SELECT k.role, r.perms FROM api_keys k LEFT JOIN admin_roles r ON r.key = k.role
-		 WHERE k.id = ?`, id,
-	).Scan(&role, &perms)
+// APIKeyPerms is what the key with this id may do, whether or not it is still
+// active; revoked says which. ok is false when no key has the id.
+func (s *Store) APIKeyPerms(id int64) (perms model.PermSet, revoked, ok bool, err error) {
+	var stored string
+	var full bool
+	var revokedAt int64
+	err = s.db.QueryRow(
+		`SELECT perms, full_access, revoked_at FROM api_keys WHERE id = ?`, id,
+	).Scan(&stored, &full, &revokedAt)
 	if err == sql.ErrNoRows {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
-	if role == "" {
-		return model.OwnerPermSet(), true, nil
-	}
-	return permsFor(role, perms), true, nil
+	return keyPerms(full, stored), revokedAt != 0, true, nil
 }

@@ -17,19 +17,18 @@ import (
 var (
 	// ErrRoleNotFound is returned when a role key matches no row.
 	ErrRoleNotFound = errors.New("role not found")
-	// ErrRoleInUse refuses deleting a role an admin or an API key still holds: the
-	// account would be left pointing at nothing, which resolves to no permissions —
-	// safe, but a lockout nobody asked for.
+	// ErrRoleInUse refuses deleting a role an admin still holds: the account would be
+	// left pointing at nothing, which resolves to no permissions — safe, but a lockout
+	// nobody asked for. (API keys hold their own permissions, not a role.)
 	ErrRoleInUse = errors.New("role in use")
 )
 
 // ListAdminRoles returns every role, presets first, then by creation, with how many
-// admins and API keys hold each.
+// admins hold each.
 func (s *Store) ListAdminRoles() ([]model.AdminRole, error) {
 	rows, err := s.db.Query(`
 		SELECT r.key, r.name, r.perms, r.created_at,
-		       (SELECT COUNT(1) FROM admins a WHERE a.role = r.key),
-		       (SELECT COUNT(1) FROM api_keys k WHERE k.role = r.key AND k.revoked_at = 0)
+		       (SELECT COUNT(1) FROM admins a WHERE a.role = r.key)
 		FROM admin_roles r
 		ORDER BY (r.key = 'admin') DESC, (r.key = 'operator') DESC, r.created_at, r.key`)
 	if err != nil {
@@ -40,7 +39,7 @@ func (s *Store) ListAdminRoles() ([]model.AdminRole, error) {
 	for rows.Next() {
 		var r model.AdminRole
 		var perms string
-		if err := rows.Scan(&r.Key, &r.Name, &perms, &r.CreatedAt, &r.Admins, &r.APIKeys); err != nil {
+		if err := rows.Scan(&r.Key, &r.Name, &perms, &r.CreatedAt, &r.Admins); err != nil {
 			return nil, err
 		}
 		r.Perms = model.SplitPerms(perms)
@@ -110,16 +109,12 @@ func (s *Store) UpdateAdminRole(key, name string, perms []string) error {
 
 // DeleteAdminRole removes a role nobody holds. The check and the delete share a
 // transaction, and every write of a role key checks the role exists in the same
-// statement (see roleExists), so an assignment cannot land on a deleted role. A
-// revoked API key does not count as holding it and keeps the key it was issued with
-// — the record of what it could do; it can no longer do anything.
+// statement (see roleExists), so an assignment cannot land on a deleted role.
 func (s *Store) DeleteAdminRole(key string) error {
 	return s.withTx(func(tx *sql.Tx) error {
 		var held int
 		if err := tx.QueryRow(`
-			SELECT (SELECT COUNT(1) FROM admins WHERE role = ?)
-			     + (SELECT COUNT(1) FROM api_keys WHERE role = ? AND revoked_at = 0)`,
-			key, key,
+			SELECT COUNT(1) FROM admins WHERE role = ?`, key,
 		).Scan(&held); err != nil {
 			return err
 		}

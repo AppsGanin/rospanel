@@ -78,6 +78,7 @@ const (
 	// The API surface.
 	AuditAPIKeyCreated  = "apikey.created"
 	AuditAPIKeyRevoked  = "apikey.revoked"
+	AuditAPIKeyUpdated  = "apikey.updated" // what the key may do changed
 	AuditWebhookCreated = "webhook.created"
 	AuditWebhookUpdated = "webhook.updated"
 	AuditWebhookDeleted = "webhook.deleted"
@@ -176,6 +177,7 @@ var AdminAuditCatalog = []AdminAuditEntry{
 
 	{AuditAPIKeyCreated, AuditCatAPI},
 	{AuditAPIKeyRevoked, AuditCatAPI},
+	{AuditAPIKeyUpdated, AuditCatAPI},
 	{AuditWebhookCreated, AuditCatAPI},
 	{AuditWebhookUpdated, AuditCatAPI},
 	{AuditWebhookDeleted, AuditCatAPI},

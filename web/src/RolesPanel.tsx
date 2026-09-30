@@ -9,18 +9,15 @@ import {
   type PermSection,
   updateRole,
 } from "./api";
-import { td } from "./i18n";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { PermGrid } from "./PermGrid";
 import { useStepUpDialog } from "./stepup";
 import {
   Button,
-  cn,
   IconButton,
-  IconCheck,
   IconPencil,
   IconPlus,
   IconTrash,
-  MICRO,
   Modal,
   Panel,
   TextInput,
@@ -29,13 +26,6 @@ import {
 // The roles: what each admin may see and do. The owner's alone, like the roster
 // above it. The permission rows come from the server's catalog (GET /api/roles), so
 // a permission added there reaches this editor without a second list to keep in step.
-
-const permLabel = (key: string) => td(`permSection.${key}`);
-
-// The editor's grid: section, then a "view" and a "change" column. A permission of
-// its own sits in the column it reads as — the journal and the logs are things you
-// look at, a backup or an update is something you do.
-const GRID = "minmax(0,1fr) 72px 72px";
 
 export function RolesPanel({
   roles,
@@ -68,29 +58,6 @@ export function RolesPanel({
     setEditing({ key: r.key, preset: r.preset });
     setName(r.name);
     setPerms(new Set(r.perms));
-  };
-
-  // closure is a permission with everything it brings (manage → view, the bots →
-  // what the admin bot reaches…), the same expansion the server stores.
-  const closure = (p: Perm, into = new Set<Perm>()): Set<Perm> => {
-    if (into.has(p)) return into;
-    into.add(p);
-    for (const q of implies[p] ?? []) closure(q, into);
-    return into;
-  };
-
-  // Ticking a box ticks what it brings; unticking one unticks everything that would
-  // bring it back — so the grid never shows a set the server would not store.
-  const toggle = (s: PermSection, which: "view" | "manage", on: boolean) => {
-    const p = s[which];
-    if (!p) return;
-    const next = new Set(perms);
-    if (on) {
-      for (const q of closure(p)) next.add(q);
-    } else {
-      for (const q of [...next]) if (closure(q).has(p)) next.delete(q);
-    }
-    setPerms(next);
   };
 
   const shown = (key: string, n: string) => adminRoleName({ key, name: n });
@@ -156,7 +123,7 @@ export function RolesPanel({
         }
       >
         {roles.map((r) => {
-          const held = r.admins + r.api_keys > 0;
+          const held = r.admins > 0;
           return (
             <div
               key={r.key}
@@ -176,7 +143,7 @@ export function RolesPanel({
                 <p className="truncate text-[11px] text-ink-muted">
                   {t("rolesPanel.permsCount", { count: r.perms.length, total })}
                   {" · "}
-                  {t("rolesPanel.holders", { admins: r.admins, keys: r.api_keys })}
+                  {t("rolesPanel.holders", { admins: r.admins })}
                 </p>
               </div>
               <span className="flex shrink-0 gap-0.5">
@@ -226,47 +193,7 @@ export function RolesPanel({
             }
             autoFocus={!editing?.key}
           />
-          <div className="overflow-hidden rounded-xl border border-gray-200">
-            <div
-              className={cn(MICRO, "grid items-center gap-3 bg-gray-50 px-3.5 py-2")}
-              style={{ gridTemplateColumns: GRID }}
-            >
-              <span>{t("rolesPanel.colSection")}</span>
-              <span className="text-center">{t("rolesPanel.colView")}</span>
-              <span className="text-center">{t("rolesPanel.colManage")}</span>
-            </div>
-            {catalog.map((s) => {
-              // A single permission that reads as looking (stats, logs, the journal)
-              // has only a view; one that reads as doing has only a manage.
-              return (
-                <div
-                  key={s.key}
-                  className="grid items-center gap-3 border-t border-gray-100 px-3.5 py-[7px]"
-                  style={{ gridTemplateColumns: GRID }}
-                >
-                  <span className="min-w-0 text-xs text-ink">{permLabel(s.key)}</span>
-                  <span className="flex justify-center">
-                    {s.view && (
-                      <PermCheck
-                        checked={perms.has(s.view)}
-                        onChange={(v) => toggle(s, "view", v)}
-                        label={`${permLabel(s.key)}: ${t("rolesPanel.colView")}`}
-                      />
-                    )}
-                  </span>
-                  <span className="flex justify-center">
-                    {s.manage && (
-                      <PermCheck
-                        checked={perms.has(s.manage)}
-                        onChange={(v) => toggle(s, "manage", v)}
-                        label={`${permLabel(s.key)}: ${t("rolesPanel.colManage")}`}
-                      />
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <PermGrid catalog={catalog} implies={implies} perms={perms} onChange={setPerms} />
         </div>
       </Modal>
 
@@ -285,39 +212,5 @@ export function RolesPanel({
 
       {stepUpNode}
     </>
-  );
-}
-
-// PermCheck is one box of the grid: the list's own compact check, not the card-style
-// Checkbox, which is built for a single choice with a sentence beside it.
-function PermCheck({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <label className="relative flex cursor-pointer items-center p-1" title={label}>
-      <input
-        type="checkbox"
-        className="sr-only"
-        checked={checked}
-        aria-label={label}
-        onChange={(e) => onChange(e.currentTarget.checked)}
-      />
-      <span
-        className={cn(
-          "flex size-4 items-center justify-center rounded-sm border transition",
-          checked
-            ? "border-brand-600 bg-brand-600 text-onbrand"
-            : "border-gray-300 bg-white hover:border-gray-400",
-        )}
-      >
-        {checked && <IconCheck size={12} />}
-      </span>
-    </label>
   );
 }

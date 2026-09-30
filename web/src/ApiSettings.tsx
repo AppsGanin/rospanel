@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  adminRoleName,
   type ApiKey,
   type ApiKeysInfo,
   createApiKey,
   getApiKeys,
+  type Perm,
   revokeApiKey,
+  setApiKeyPerms,
   setApiPath,
 } from "./api";
 import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
+import { PermGrid } from "./PermGrid";
 import { useCan } from "./role";
 import {
   Button,
@@ -22,13 +24,13 @@ import {
   IconButton,
   IconClose,
   IconExternal,
+  IconPencil,
   IconPlus,
   MICRO,
   Modal,
   Mono,
   Panel,
   SaveBar,
-  Select,
   SettingRow,
   ShowMore,
   Switch,
@@ -40,7 +42,7 @@ import { WebhooksSettings } from "./WebhooksSettings";
 
 // The key roster's columns, the same shape every other list in the panel has.
 const TPL =
-  "minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.7fr) 40px";
+  "minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.7fr) 72px";
 const TPL_NARROW = "minmax(0,1fr) auto";
 const WIDE_MIN = 560;
 
@@ -48,16 +50,18 @@ const WIDE_MIN = 560;
 // and last used, and whether it still works.
 function KeyRow({
   k,
-  roleName,
-  canRevoke,
+  access,
+  canManage,
   wide,
+  onEdit,
   onRevoke,
 }: {
   k: ApiKey;
-  roleName: string;
+  access: string;
   // Only a key the caller could have issued — the server refuses the rest.
-  canRevoke: boolean;
+  canManage: boolean;
   wide: boolean;
+  onEdit: (k: ApiKey) => void;
   onRevoke: (k: ApiKey) => void;
 }) {
   const { t } = useTranslation();
@@ -71,10 +75,15 @@ function KeyRow({
     </span>
   );
   // An icon, like the other row actions in the panel; the word lives in its title.
-  const action = revoked || !canRevoke ? null : (
-    <IconButton color="red" title={t("api.revoke")} onClick={() => onRevoke(k)}>
-      <IconClose size={16} />
-    </IconButton>
+  const action = revoked || !canManage ? null : (
+    <span className="flex gap-0.5">
+      <IconButton title={t("api.editPerms")} onClick={() => onEdit(k)}>
+        <IconPencil size={16} />
+      </IconButton>
+      <IconButton color="red" title={t("api.revoke")} onClick={() => onRevoke(k)}>
+        <IconClose size={16} />
+      </IconButton>
+    </span>
   );
   return (
     <div
@@ -87,7 +96,7 @@ function KeyRow({
       <span className="flex min-w-0 items-center gap-2">
         <span className="truncate text-xs font-medium text-ink">{k.name}</span>
         <Mono className="shrink-0 text-[11px] text-ink-muted">{k.prefix}…</Mono>
-        <span className="truncate text-[11px] text-ink-muted">{roleName}</span>
+        <span className="truncate text-[11px] text-ink-muted">{access}</span>
       </span>
       {wide ? (
         <>
@@ -125,13 +134,17 @@ export function ApiSettings() {
 
 function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   const { t } = useTranslation();
-  // The role a new key is minted with; "" is full access.
-  const [keyRole, setKeyRole] = useState("");
   const [info, setInfo] = useState<ApiKeysInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [adding, setAdding] = useState(false);
+  // The key whose permissions are being ticked: id null is a new one.
+  const [editor, setEditor] = useState<{
+    id: number | null;
+    name: string;
+    full: boolean;
+    perms: Set<Perm>;
+  } | null>(null);
   const [created, setCreated] = useState<ApiKey | null>(null);
   // Ten at a time: the roster grows with every key ever minted (revoked ones stay
   // as a record), and the card is a list to scan, not to scroll.
@@ -172,15 +185,22 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
     if (info) setEnabledDraft(info.enabled);
   }, [info?.enabled]);
 
-  const create = async () => {
+  const save = async () => {
+    if (!editor) return;
     const n = name.trim();
-    if (!n) return;
+    if (editor.id === null && !n) return;
     setCreating(true);
     try {
-      const res = await createApiKey(n, keyRole);
-      setAdding(false);
-      setCreated(res.key);
-      setName("");
+      const perms = editor.full ? [] : [...editor.perms];
+      if (editor.id === null) {
+        const res = await createApiKey(n, editor.full, perms);
+        setCreated(res.key);
+        setName("");
+      } else {
+        await setApiKeyPerms(editor.id, editor.full, perms);
+        notifySuccess(t("api.permsSaved"));
+      }
+      setEditor(null);
       await refresh();
     } catch (e) {
       notifyError(errMessage(e));
@@ -243,13 +263,13 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   if (loading) return <CenterLoader />;
   if (!info) return null;
 
-  // A key's role by name.
-  const keyRoleName = (role: string) => {
-    if (!role) return t("api.fullAccess");
-    const r = info.roles?.find((x) => x.key === role);
-    // A revoked key keeps the role it was issued with, which may since be gone.
-    return r ? adminRoleName(r) : t("api.roleDeleted");
-  };
+  // What a key may do, in a word, and whether the caller may change or revoke it:
+  // only a key they could have issued.
+  const grantable = new Set(info.grantable);
+  const keyAccess = (k: ApiKey) =>
+    k.full_access ? t("api.fullAccess") : t("api.permsCount", { count: k.perms.length });
+  const canManage = (k: ApiKey) =>
+    k.full_access ? info.full_access : k.perms.every((p) => grantable.has(p));
 
   const enabledDirty = enabledDraft !== info.enabled;
 
@@ -325,14 +345,8 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
             title={t("common.create")}
             onClick={() => {
               setName("");
-              // Full access when the caller may hand it out, as every key had before
-              // roles; otherwise the broadest role they may give.
-              setKeyRole(
-                info.full_access
-                  ? ""
-                  : (info.roles?.find((r) => r.grantable)?.key ?? ""),
-              );
-              setAdding(true);
+              // Nothing ticked: a key is given what it needs, not everything by default.
+              setEditor({ id: null, name: "", full: false, perms: new Set() });
             }}
           >
             <IconPlus />
@@ -361,13 +375,12 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
               <KeyRow
                 key={k.id}
                 k={k}
-                roleName={keyRoleName(k.role)}
-                canRevoke={
-                  k.role === ""
-                    ? !!info.full_access
-                    : !!info.roles?.find((r) => r.key === k.role)?.grantable
-                }
+                access={keyAccess(k)}
+                canManage={canManage(k)}
                 wide={wideKeys}
+                onEdit={(k) =>
+                  setEditor({ id: k.id, name: k.name, full: k.full_access, perms: new Set(k.perms) })
+                }
                 onRevoke={revoke}
               />
             ))}
@@ -385,50 +398,67 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
         )}
       </Panel>
 
-      {/* Minting a key: a name, and then the one look anyone gets at the key. */}
+      {/* A key: a name and what it may do, then the one look anyone gets at it. The
+          same dialog changes what an existing key may do. */}
       <Modal
-        open={adding}
-        onClose={() => setAdding(false)}
-        title={t("api.keys")}
-      >
-        <div className="flex flex-col gap-3">
-          <TextInput
-            label={t("api.newKeyName")}
-            value={name}
-            onChange={setName}
-            placeholder={t("api.newKeyPlaceholder")}
-            autoFocus
-          />
-          <Select
-            label={t("api.keyRole")}
-            value={keyRole}
-            onChange={setKeyRole}
-            data={[
-              ...(info.full_access ? [{ value: "", label: t("api.fullAccess") }] : []),
-              ...(info.roles ?? [])
-                .filter((r) => r.grantable)
-                .map((r) => ({ value: r.key, label: adminRoleName(r) })),
-            ]}
-          />
+        open={!!editor}
+        onClose={() => setEditor(null)}
+        size="lg"
+        title={
+          editor?.id != null ? t("api.keyPermsOf", { name: editor.name }) : t("api.keys")
+        }
+        footer={
           <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              color="gray"
-              size="sm"
-              onClick={() => setAdding(false)}
-            >
+            <Button variant="outline" color="gray" size="sm" onClick={() => setEditor(null)}>
               {t("common.cancel")}
             </Button>
             <Button
               size="sm"
-              onClick={create}
+              onClick={save}
               loading={creating}
-              disabled={!name.trim()}
+              disabled={
+                !editor ||
+                (editor.id === null && !name.trim()) ||
+                (!editor.full && editor.perms.size === 0)
+              }
             >
-              {t("common.create")}
+              {editor?.id != null ? t("common.save") : t("common.create")}
             </Button>
           </div>
-        </div>
+        }
+      >
+        {editor && (
+          <div className="flex flex-col gap-3">
+            {editor.id === null && (
+              <TextInput
+                label={t("api.newKeyName")}
+                value={name}
+                onChange={setName}
+                placeholder={t("api.newKeyPlaceholder")}
+                autoFocus
+              />
+            )}
+            <p className="text-xs text-ink-muted">{t("api.keyPermsHint")}</p>
+            {info.full_access && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3.5 py-2.5">
+                <span className="text-xs font-medium text-ink">{t("api.fullAccess")}</span>
+                <Switch
+                  checked={editor.full}
+                  onChange={(v) => setEditor({ ...editor, full: v })}
+                />
+              </div>
+            )}
+            {!editor.full && (
+              <PermGrid
+                catalog={info.catalog}
+                implies={info.implies}
+                perms={editor.perms}
+                allowed={grantable}
+                onChange={(perms) => setEditor({ ...editor, perms })}
+              />
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* One-time reveal of a freshly created key. */}

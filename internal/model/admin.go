@@ -29,10 +29,9 @@ type AdminRole struct {
 	Preset    bool     `json:"preset"`
 	Perms     []string `json:"perms"`
 	CreatedAt int64    `json:"created_at"`
-	// Admins and APIKeys count who holds the role — a role still held cannot be
-	// deleted, so the editor says why before anyone tries.
-	Admins  int `json:"admins"`
-	APIKeys int `json:"api_keys"`
+	// Admins counts who holds the role — a role still held cannot be deleted, so the
+	// editor says why before anyone tries.
+	Admins int `json:"admins"`
 }
 
 // PresetRoleNames are the names the panel shows for the owner and for a preset nobody
