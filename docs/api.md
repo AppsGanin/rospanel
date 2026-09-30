@@ -48,11 +48,12 @@ Authorization: Bearer rp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 A missing or invalid key returns `401`. The surface is per-IP rate-limited.
 
-A key has **full access** or its **own permissions**, ticked in the same table as an admin
-role's when it is created (and changeable later). It reaches exactly what an admin with those
-permissions reaches in the panel; anything else answers `403` with `"code": "forbidden"`, and
-the MCP endpoint lists only the tools the key can call. Nobody gives a key more than they hold
-themselves, and only the owner gives full access.
+A key has **full access** or the **API methods ticked for it** (`GET /v1/users`,
+`POST /v1/signup`, …) when it is created, changeable later. It calls exactly those; anything
+else answers `403` with `"code": "forbidden"`, and the MCP endpoint lists only those tools.
+Nobody ticks a method they may not call themselves, and only the owner gives full access (or
+backups). A key made before methods could be ticked keeps reaching what its permissions open,
+until it is edited.
 `PATCH /v1/settings` and `PATCH /v1/nodes/{id}` check each field against its section (DNS and
 egress need `routing.manage`, trusted networks and probe settings `security.manage`).
 

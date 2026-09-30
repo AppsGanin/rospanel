@@ -98,7 +98,7 @@ func (rt *Router) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// a 403 anyway; listing them would just hand the assistant tools that always fail.
 	var tools []mcp.Tool
 	for _, t := range mcp.BuildTools(OpenAPISpec(apiBaseURL(r, rt.currentAPIPath()))) {
-		if apiRouteAllowed(ak.Perms, t.Route()) {
+		if apiMayCall(ak.Access, t.Route()) {
 			tools = append(tools, t)
 		}
 	}
@@ -135,13 +135,14 @@ func (rt *Router) mcpAuth(w http.ResponseWriter, r *http.Request, key string) (*
 		return nil, false
 	}
 	rt.apiKeys.success(ip, "")
-	return &apiKeyIdentity{Name: ak.Name, Perms: ak.Perms}, true
+	return &apiKeyIdentity{Name: ak.Name, Perms: ak.Perms, Access: keyAccess(*ak)}, true
 }
 
 // apiKeyIdentity is the little the MCP path needs to know about the caller.
 type apiKeyIdentity struct {
-	Name  string
-	Perms model.PermSet
+	Name   string
+	Perms  model.PermSet
+	Access apiAccess
 }
 
 // mcpDispatch runs a tool call against the panel's own REST surface, in process.

@@ -2353,9 +2353,13 @@ export const setUserPlan = (id: number, plan_id: number) =>
 export interface ApiKey {
   id: number
   name: string
-  // A key holds its own permissions: everything (and the owner's reach), or perms.
+  // A key holds its own reach: everything (and the owner's), or the API methods ticked
+  // for it ("GET /v1/users"). perms is what those methods may do inside.
   full_access: boolean
   perms: Perm[]
+  routes: string[]
+  // Whether this admin could have issued it — and so may change or revoke it.
+  can_manage?: boolean
   prefix: string
   created_at: number
   last_used_at: number
@@ -2368,27 +2372,34 @@ export interface ApiKeysInfo {
   api_path: string
   base_url: string
   keys: ApiKey[]
-  // The permission table a key is ticked in, what each permission brings, and what
-  // the caller may give: their own permissions, and full access only to the owner.
-  catalog: PermSection[]
-  implies: Partial<Record<Perm, Perm[]>>
-  grantable: Perm[]
+  // Every API method a key can be ticked for, in the spec's sections; grantable is
+  // whether this admin may give it. Full access only to the owner.
+  routes: ApiRoute[]
   full_access: boolean
+}
+
+export interface ApiRoute {
+  route: string // "GET /v1/users"
+  method: string
+  path: string
+  tag: string // the section, named by apiTag.<tag>
+  key: string // names it: apiRoute.<key>
+  grantable: boolean
 }
 
 export const getApiKeys = () => api<ApiKeysInfo>('api/apikeys')
 
-// The server refuses a key broader than the caller's own permissions.
-export const createApiKey = (name: string, full_access: boolean, perms: Perm[]) =>
+// The server refuses a key broader than the caller's own reach.
+export const createApiKey = (name: string, full_access: boolean, routes: string[]) =>
   api<{ key: ApiKey; base_url: string }>('api/apikeys', {
     method: 'POST',
-    body: JSON.stringify({ name, full_access, perms }),
+    body: JSON.stringify({ name, full_access, routes }),
   })
 
-export const setApiKeyPerms = (id: number, full_access: boolean, perms: Perm[]) =>
+export const setApiKeyAccess = (id: number, full_access: boolean, routes: string[]) =>
   api<{ ok: boolean }>(`api/apikeys/${id}`, {
     method: 'POST',
-    body: JSON.stringify({ full_access, perms }),
+    body: JSON.stringify({ full_access, routes }),
   })
 
 export const revokeApiKey = (id: number) =>

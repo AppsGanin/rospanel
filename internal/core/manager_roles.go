@@ -127,13 +127,14 @@ func (m *Manager) checkRoleName(key, name string, preset bool) (string, error) {
 
 // CreateAPIKey mints a key with its own permissions — full access, or the set
 // ticked for it — never broader than the caller's. Full access carries the owner's
-// reach (backups), so only the owner mints it.
-func (m *Manager) CreateAPIKey(name string, full bool, perms []string, creator model.PermSet) (*model.APIKey, error) {
+// reach (backups), so only the owner mints it. routes, when given, hold the key to
+// those API methods; the caller has checked them against the route table.
+func (m *Manager) CreateAPIKey(name string, full bool, perms, routes []string, creator model.PermSet) (*model.APIKey, error) {
 	want, err := keyGrant(full, perms, creator)
 	if err != nil {
 		return nil, err
 	}
-	return m.store.CreateAPIKey(name, full, want)
+	return m.store.CreateAPIKey(name, full, want, routes)
 }
 
 // keyGrant checks what a key is to be given: something, and nothing the caller
@@ -156,7 +157,7 @@ func keyGrant(full bool, perms []string, caller model.PermSet) ([]string, error)
 
 // SetAPIKeyPerms changes what an active key may do: only a key the caller could
 // have issued, and only to what they could issue now.
-func (m *Manager) SetAPIKeyPerms(id int64, full bool, perms []string, caller model.PermSet) error {
+func (m *Manager) SetAPIKeyPerms(id int64, full bool, perms, routes []string, caller model.PermSet) error {
 	cur, revoked, ok, err := m.store.APIKeyPerms(id)
 	if err != nil {
 		return err
@@ -171,7 +172,7 @@ func (m *Manager) SetAPIKeyPerms(id int64, full bool, perms []string, caller mod
 	if err != nil {
 		return err
 	}
-	if err := m.store.SetAPIKeyPerms(id, full, want); err != nil {
+	if err := m.store.SetAPIKeyPerms(id, full, want, routes); err != nil {
 		if errors.Is(err, store.ErrAPIKeyNotFound) {
 			return invalidCode("err.keyNotFound", "ключ не найден")
 		}

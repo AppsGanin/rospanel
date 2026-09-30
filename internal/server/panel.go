@@ -522,7 +522,7 @@ func (rt *Router) panelMux() http.Handler {
 	canAPI("GET /api/apikeys", rt.listAPIKeys)
 	canAPI("POST /api/apikeys", rt.createAPIKey)
 	canAPI("DELETE /api/apikeys/{id}", withID(rt.revokeAPIKey))
-	canAPI("POST /api/apikeys/{id}", withID(rt.setAPIKeyPerms))
+	canAPI("POST /api/apikeys/{id}", withID(rt.setAPIKeyAccess))
 	canAPI("POST /api/settings/api-path", rt.setAPIPathSettings)
 	canServersOrRoutingView("GET /api/nodes", rt.listNodes)
 	canServersManage("POST /api/nodes/master-name", rt.setMasterName)

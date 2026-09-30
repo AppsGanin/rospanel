@@ -499,11 +499,18 @@ type APIKey struct {
 	// a role's.
 	FullAccess bool     `json:"full_access"`
 	Grants     []string `json:"perms"`
-	Prefix     string   `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
-	CreatedAt  int64    `json:"created_at"`        // unix seconds
-	LastUsedAt int64    `json:"last_used_at"`      // unix seconds, 0 = never used
-	RevokedAt  int64    `json:"revoked_at"`        // unix seconds, 0 = active
-	RawKey     string   `json:"raw_key,omitempty"` // populated only on creation
+	// Routes, when set, are the API methods the key may call ("GET /v1/users"), and
+	// Grants what those methods may do inside (the fields a PATCH may carry). Empty on
+	// a key held to its permissions alone — every key made before methods could be
+	// ticked.
+	Routes []string `json:"routes"`
+	// Allowed is Routes as a set, filled on lookup; nil = not held to methods.
+	Allowed    map[string]bool `json:"-"`
+	Prefix     string          `json:"prefix"`            // leading clear part, e.g. "rp_A1b2C3"
+	CreatedAt  int64           `json:"created_at"`        // unix seconds
+	LastUsedAt int64           `json:"last_used_at"`      // unix seconds, 0 = never used
+	RevokedAt  int64           `json:"revoked_at"`        // unix seconds, 0 = active
+	RawKey     string          `json:"raw_key,omitempty"` // populated only on creation
 	// Perms is Grants (or everything) as a set, filled on lookup. Never serialised.
 	Perms PermSet `json:"-"`
 }

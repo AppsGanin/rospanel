@@ -184,6 +184,7 @@ var errEN = map[string]string{
 	"err.keyOutranksYou":           "the key holds more rights than you — someone who has them can change or revoke it",
 	"err.keyPermsRequired":         "tick what the key may do — or give it full access",
 	"err.keyRoleTooBroad":          "a key cannot get more rights than you have yourself",
+	"err.keyRouteUnknown":          "no such API method: {{value}}",
 	"err.laneBadID":                "invalid lane id “{{id}}”: latin letters and digits only (up to 16 characters); warp/opera/direct are taken",
 	"err.laneDupID":                "duplicate lane id “{{id}}”",
 	"err.laneNoName":               "lane “{{id}}” has no name",

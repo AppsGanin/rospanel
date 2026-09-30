@@ -5,15 +5,14 @@ import {
   type ApiKeysInfo,
   createApiKey,
   getApiKeys,
-  type Perm,
   revokeApiKey,
-  setApiKeyPerms,
+  setApiKeyAccess,
   setApiPath,
 } from "./api";
 import { fmtStamp } from "./format";
 import { useShowMore } from "./hooks";
 import { errMessage, notifyError, notifySuccess } from "./notify";
-import { PermGrid } from "./PermGrid";
+import { RouteGrid } from "./RouteGrid";
 import { useCan } from "./role";
 import {
   Button,
@@ -138,12 +137,12 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  // The key whose permissions are being ticked: id null is a new one.
+  // The key whose methods are being ticked: id null is a new one.
   const [editor, setEditor] = useState<{
     id: number | null;
     name: string;
     full: boolean;
-    perms: Set<Perm>;
+    routes: Set<string>;
   } | null>(null);
   const [created, setCreated] = useState<ApiKey | null>(null);
   // Ten at a time: the roster grows with every key ever minted (revoked ones stay
@@ -191,13 +190,13 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
     if (editor.id === null && !n) return;
     setCreating(true);
     try {
-      const perms = editor.full ? [] : [...editor.perms];
+      const routes = editor.full ? [] : [...editor.routes];
       if (editor.id === null) {
-        const res = await createApiKey(n, editor.full, perms);
+        const res = await createApiKey(n, editor.full, routes);
         setCreated(res.key);
         setName("");
       } else {
-        await setApiKeyPerms(editor.id, editor.full, perms);
+        await setApiKeyAccess(editor.id, editor.full, routes);
         notifySuccess(t("api.permsSaved"));
       }
       setEditor(null);
@@ -263,13 +262,10 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   if (loading) return <CenterLoader />;
   if (!info) return null;
 
-  // What a key may do, in a word, and whether the caller may change or revoke it:
-  // only a key they could have issued.
-  const grantable = new Set(info.grantable);
+  // What a key may do, in a word. Whether the caller may change or revoke it — only a
+  // key they could have issued — is the server's to say (can_manage).
   const keyAccess = (k: ApiKey) =>
-    k.full_access ? t("api.fullAccess") : t("api.permsCount", { count: k.perms.length });
-  const canManage = (k: ApiKey) =>
-    k.full_access ? info.full_access : k.perms.every((p) => grantable.has(p));
+    k.full_access ? t("api.fullAccess") : t("api.permsCount", { count: k.routes.length });
 
   const enabledDirty = enabledDraft !== info.enabled;
 
@@ -346,7 +342,7 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
             onClick={() => {
               setName("");
               // Nothing ticked: a key is given what it needs, not everything by default.
-              setEditor({ id: null, name: "", full: false, perms: new Set() });
+              setEditor({ id: null, name: "", full: false, routes: new Set() });
             }}
           >
             <IconPlus />
@@ -376,10 +372,10 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
                 key={k.id}
                 k={k}
                 access={keyAccess(k)}
-                canManage={canManage(k)}
+                canManage={!!k.can_manage}
                 wide={wideKeys}
                 onEdit={(k) =>
-                  setEditor({ id: k.id, name: k.name, full: k.full_access, perms: new Set(k.perms) })
+                  setEditor({ id: k.id, name: k.name, full: k.full_access, routes: new Set(k.routes) })
                 }
                 onRevoke={revoke}
               />
@@ -419,7 +415,7 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
               disabled={
                 !editor ||
                 (editor.id === null && !name.trim()) ||
-                (!editor.full && editor.perms.size === 0)
+                (!editor.full && editor.routes.size === 0)
               }
             >
               {editor?.id != null ? t("common.save") : t("common.create")}
@@ -449,12 +445,10 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
               </div>
             )}
             {!editor.full && (
-              <PermGrid
-                catalog={info.catalog}
-                implies={info.implies}
-                perms={editor.perms}
-                allowed={grantable}
-                onChange={(perms) => setEditor({ ...editor, perms })}
+              <RouteGrid
+                routes={info.routes}
+                selected={editor.routes}
+                onChange={(routes) => setEditor({ ...editor, routes })}
               />
             )}
           </div>
