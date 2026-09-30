@@ -445,10 +445,10 @@ top-up is `{"user_id": 5, "kind": "topup", "amount_rub": 300}` (plus `provider`,
 manual one). Both take `lang` (`ru`/`en`, for the manual-payment instructions) and
 `return_url` (where a hosted payment sends the payer back; Telegram when left out).
 
-**Your own bot or user cabinet** — the key stays on your server, never in a browser. Give it
-`users.manage` (create users, link Telegram) and `billing.sell` (orders, promo codes,
-referrers, renewal) — not `billing.manage`, which also confirms orders without payment, credits
-balances and refunds. On each message find the user: `GET /v1/users?telegram_id=<id>` (an
+**Your own bot or user cabinet** — the key stays on your server, never in a browser. Tick the
+methods it calls: creating users and linking Telegram, opening orders, promo codes, referrers,
+renewal — and leave out confirming an order, correcting a balance and refunds, which move money
+without it arriving. On each message find the user: `GET /v1/users?telegram_id=<id>` (an
 indexed lookup; an empty list means a newcomer). A newcomer is `POST /v1/users` with a
 `plan_id` (the trial or free plan — a user with no plan gets no payment block), then
 `POST /v1/users/{id}/telegram` with `{"chat_id": <id>}` and, when their `/start` carried an
@@ -473,9 +473,9 @@ A new account answers `201 "created"` with the account, a request `202 "pending"
 (asking again while it waits files nothing). Optional: `name` (the external id when left out),
 `source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), and `ip` — the
 client's address, for a limit of one sign-up a minute per address (per /64 for IPv6) and per id,
-20 a minute in all; over it the answer is `429` with `Retry-After`. The site's key needs only
-`users.signup` (plus `users.view` and `billing.sell` to show and sell); unlike `users.manage` it
-cannot make a user on its own terms. `user.registered` and `registration.rejected` carry the
+20 a minute in all; over it the answer is `429` with `Retry-After`. Tick the site's key for
+`POST /v1/signup` (plus what it shows and sells) and not `POST /v1/users`: it then cannot make a
+user on its own terms. `user.registered` and `registration.rejected` carry the
 `external_id`, and `GET /v1/users?external_id=` finds the account again.
 
 **Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.

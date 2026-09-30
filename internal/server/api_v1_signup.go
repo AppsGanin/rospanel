@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/AppsGanin/rospanel/internal/core"
-	"github.com/AppsGanin/rospanel/internal/model"
 )
 
 // POST /v1/signup: self-registration for the operator's own website. See
@@ -28,7 +27,7 @@ type (
 		Status string `json:"status"` // created | existing | pending
 		UserID int64  `json:"user_id,omitempty"`
 		// User is the account in full: always for a new one, and for an existing one
-		// only to a key that may read users.
+		// only to a key that may read a user (GET /v1/users/{id}).
 		User      *userView `json:"user,omitempty"`
 		RequestID int64     `json:"request_id,omitempty"`
 	}
@@ -62,8 +61,8 @@ func (rt *Router) apiSignup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// An existing account is someone else's sign-up as far as this call knows: a key
-	// that may only sign up must not read accounts by guessing their ids.
-	if res.User != nil && (res.Status == core.SignupCreated || apiPerms(r).Has(model.PermUsersView)) {
+	// that may not read a user must not read accounts by guessing their ids.
+	if res.User != nil && (res.Status == core.SignupCreated || apiMayCall(apiAccessOf(r), "GET /v1/users/{id}")) {
 		set, err := rt.mgr.Store().GetSettings()
 		if err != nil {
 			writeAPIManagerErr(w, err)

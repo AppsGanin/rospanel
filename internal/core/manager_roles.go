@@ -145,7 +145,7 @@ func keyGrant(full bool, perms []string, caller model.PermSet) ([]string, error)
 	if !full {
 		list = model.NormalizePerms(perms)
 		if len(list) == 0 {
-			return nil, invalidCode("err.keyPermsRequired", "отметьте, что ключ может делать, — или дайте ему полный доступ")
+			return nil, invalidCode("err.keyPermsRequired", "отметьте хотя бы один метод API")
 		}
 		want = model.NewPermSet(list)
 	}

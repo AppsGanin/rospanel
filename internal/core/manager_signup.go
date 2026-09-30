@@ -75,7 +75,7 @@ func signupAddrKey(s string) (string, error) {
 	}
 	a, err := netip.ParseAddr(s)
 	if err != nil {
-		return "", invalidCode("err.signupIPInvalid", "ip — не адрес IPv4 или IPv6")
+		return "", invalidCode("err.signupIPInvalid", "ip должен быть адресом IPv4 или IPv6")
 	}
 	a = a.Unmap()
 	if a.Is6() {

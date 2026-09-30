@@ -8,18 +8,14 @@ import (
 	"github.com/AppsGanin/rospanel/internal/model"
 )
 
-// A website's key holds users.signup: it registers clients under the panel's rules —
-// created, then the same account again, 429 inside the minute — and cannot create a
-// user on its own terms.
+// A website's key ticked for POST /v1/signup registers clients under the panel's
+// rules — created, then the same account again, 429 inside the minute — and cannot
+// create a user on its own terms.
 func TestAPISignup(t *testing.T) {
 	t.Parallel()
 	h, _, st := nodeAPITestServer(t)
 	base, _ := apiFixture(t, h, st)
-	role, err := st.CreateAdminRole("site", []string{model.PermUsersSignup})
-	if err != nil {
-		t.Fatal(err)
-	}
-	k, err := st.CreateAPIKey("site", false, role.Perms, nil)
+	k, err := st.CreateAPIKey("site", false, []string{model.PermUsersManage}, []string{"POST /v1/signup"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,16 +86,4 @@ func TestAPISignup(t *testing.T) {
 	if rec := apiDo(t, h, http.MethodPost, base+"/v1/users", k.RawKey, `{"name":"free-for-all"}`); rec.Code != http.StatusForbidden {
 		t.Fatalf("a sign-up key created a user directly: %d", rec.Code)
 	}
-}
-
-// Whoever may create users on any terms may sign them up under the rules as well.
-func TestUsersManageImpliesSignup(t *testing.T) {
-	t.Parallel()
-	got := model.NormalizePerms([]string{model.PermUsersManage})
-	for _, p := range got {
-		if p == model.PermUsersSignup {
-			return
-		}
-	}
-	t.Fatalf("users.manage normalises to %v, without users.signup", got)
 }

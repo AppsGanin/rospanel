@@ -6,11 +6,10 @@ import (
 )
 
 // Manage carries view: a form you may save but not read is not a permission anybody
-// means, so a role saved with only "manage" gets both (and, for users, sign-up, which
-// is creating a user under the rules).
+// means, so a role saved with only "manage" gets both.
 func TestNormalizePermsAddsViewAndDropsUnknown(t *testing.T) {
 	got := NormalizePerms([]string{PermUsersManage, "superuser", PermUsersManage, " " + PermLogs + " "})
-	want := []string{PermLogs, PermUsersManage, PermUsersSignup, PermUsersView}
+	want := []string{PermLogs, PermUsersManage, PermUsersView}
 	if !slices.Equal(got, want) {
 		t.Errorf("NormalizePerms = %v, want %v", got, want)
 	}

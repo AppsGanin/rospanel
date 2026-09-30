@@ -137,11 +137,12 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  // The key whose methods are being ticked: id null is a new one.
+  // The key whose methods are being ticked: id null is a new one. A key is always
+  // given methods; "everything available" is the broadest, and an old full-access
+  // key opens with every method ticked and is saved as that list.
   const [editor, setEditor] = useState<{
     id: number | null;
     name: string;
-    full: boolean;
     routes: Set<string>;
   } | null>(null);
   const [created, setCreated] = useState<ApiKey | null>(null);
@@ -190,13 +191,13 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
     if (editor.id === null && !n) return;
     setCreating(true);
     try {
-      const routes = editor.full ? [] : [...editor.routes];
+      const routes = [...editor.routes];
       if (editor.id === null) {
-        const res = await createApiKey(n, editor.full, routes);
+        const res = await createApiKey(n, false, routes);
         setCreated(res.key);
         setName("");
       } else {
-        await setApiKeyAccess(editor.id, editor.full, routes);
+        await setApiKeyAccess(editor.id, false, routes);
         notifySuccess(t("api.permsSaved"));
       }
       setEditor(null);
@@ -342,7 +343,7 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
             onClick={() => {
               setName("");
               // Nothing ticked: a key is given what it needs, not everything by default.
-              setEditor({ id: null, name: "", full: false, routes: new Set() });
+              setEditor({ id: null, name: "", routes: new Set() });
             }}
           >
             <IconPlus />
@@ -375,7 +376,7 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
                 canManage={!!k.can_manage}
                 wide={wideKeys}
                 onEdit={(k) =>
-                  setEditor({ id: k.id, name: k.name, full: k.full_access, routes: new Set(k.routes) })
+                  setEditor({ id: k.id, name: k.name, routes: new Set(k.routes) })
                 }
                 onRevoke={revoke}
               />
@@ -415,7 +416,7 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
               disabled={
                 !editor ||
                 (editor.id === null && !name.trim()) ||
-                (!editor.full && editor.routes.size === 0)
+                editor.routes.size === 0
               }
             >
               {editor?.id != null ? t("common.save") : t("common.create")}
@@ -435,22 +436,11 @@ function ApiKeysSettings({ withWebhooks }: { withWebhooks: boolean }) {
               />
             )}
             <p className="text-xs text-ink-muted">{t("api.keyPermsHint")}</p>
-            {info.full_access && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3.5 py-2.5">
-                <span className="text-xs font-medium text-ink">{t("api.fullAccess")}</span>
-                <Switch
-                  checked={editor.full}
-                  onChange={(v) => setEditor({ ...editor, full: v })}
-                />
-              </div>
-            )}
-            {!editor.full && (
-              <RouteGrid
-                routes={info.routes}
-                selected={editor.routes}
-                onChange={(routes) => setEditor({ ...editor, routes })}
-              />
-            )}
+            <RouteGrid
+              routes={info.routes}
+              selected={editor.routes}
+              onChange={(routes) => setEditor({ ...editor, routes })}
+            />
           </div>
         )}
       </Modal>
