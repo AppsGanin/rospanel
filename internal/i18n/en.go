@@ -528,7 +528,7 @@ var en = map[string]string{
 	"sub.packName":                    "+%d GB of traffic",
 	"sub.packSub":                     "Lasts until the traffic next resets",
 	"sub.addDevicesTitle":             "Extra devices",
-	"sub.addDevicesEach":              "%d ₽ each until the end of the term — connect more devices at once",
+	"sub.addDevicesEach":              "%d ₽ each until %s (%s left) — connect more devices at once",
 	"sub.buyFor":                      "Buy · %d ₽",
 	"sub.changeTitle":                 "Change plan",
 	"sub.changeBtn":                   "Switch",
