@@ -1150,8 +1150,8 @@
           <p class="muted" style="margin: 0 0 10px">{{.L.AccessHint}}</p>
           <button class="btn alt" onclick="copy('{{.SubURL}}', this)">{{.L.AccessCopy}}</button>
           {{if .Access.TGLink}}
-          <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer">{{.L.TGBind}}</a>
-          <p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>
+          <a class="btn alt" style="margin-top: 14px" href="{{.Access.TGLink}}" target="_blank" rel="noopener noreferrer" onclick="return tgAccess(this, {{.Access.TGLinked}})">{{if .Access.TGLinked}}{{.L.TGChange}}{{else}}{{.L.TGBind}}{{end}}</a>
+          {{if not .Access.TGLinked}}<p class="muted" style="margin: 6px 0 0">{{.L.TGBindHint}}</p>{{end}}
           {{end}}
         </div>
       </section>
@@ -1610,6 +1610,26 @@
             el.classList.remove("done");
           }, 1200);
         });
+      }
+      // The Telegram button of the access card. Inside Telegram the page is open in the
+      // Telegram the account is linked to, where "change" would only reopen the same
+      // bot: it copies the link instead, to open in the other one. "Link" opens the bot
+      // the way Telegram opens its own links. A browser just follows the link.
+      function tgAccess(el, linked) {
+        if (!INTG) return true;
+        if (linked) {
+          navigator.clipboard.writeText(el.href).then(function () {
+            if (window.haptic) haptic("success");
+            var o = el.textContent;
+            el.textContent = {{.L.TGChangeCopied}};
+            setTimeout(function () {
+              el.textContent = o;
+            }, 2500);
+          });
+          return false;
+        }
+        openExternal(el.href);
+        return false;
       }
       function copy(t, el) {
         navigator.clipboard.writeText(t).then(function () {

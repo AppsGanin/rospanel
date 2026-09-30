@@ -1416,6 +1416,10 @@ export interface TelegramInfo {
   user_reg_code: string // invite code (mode === 'invite')
   user_bot_username: string // user bot @username
   user_miniapp_url?: string // the Mini App address for @BotFather ("" without a host)
+  // The subscription page's Telegram button: binding an account that has none (on by
+  // default), and moving a linked one to another Telegram (off by default).
+  user_tg_bind?: boolean
+  user_tg_rebind?: boolean
   admin_events: Record<string, boolean> // admin notification categories (key→on)
   // What the USER bot tells the person themselves, and how many days ahead the
   // expiry warning goes out.
@@ -1469,6 +1473,8 @@ export const saveTelegram = (t: {
   user_token: string
   user_reg_mode: RegMode
   user_reg_code: string
+  user_tg_bind: boolean
+  user_tg_rebind: boolean
   admin_events: Record<string, boolean>
   user_events: Record<string, boolean>
   user_expiring_days: number

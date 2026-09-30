@@ -1266,10 +1266,44 @@ func (s *Store) SetUserTelegramChat(userID, chatID int64) error {
 	if _, err := tx.Exec(dropPrevTelegramChatSQL, chatID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = ? WHERE id = ?`, chatID, userID); err != nil {
+	// The account is actively owned now, so it keeps no "previous chat" of its own:
+	// left behind, a displaced account would let that old chat restore it
+	// (GetDetachedUserByPrevChat) — the Telegram its owner moved it away from.
+	if _, err := tx.Exec(`UPDATE users SET tg_chat_id = ?, tg_prev_chat_id = 0 WHERE id = ?`, chatID, userID); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// MarkChatTrial records that this Telegram signed itself up — and so had its trial.
+func (s *Store) MarkChatTrial(chatID int64) error {
+	if chatID == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO tg_trial_chats (chat_id, at) VALUES (?, ?)`, chatID, time.Now().Unix())
+	return err
+}
+
+// ChatHadTrial reports whether this Telegram already signed itself up. A failed read
+// answers yes: a trial wrongly withheld costs the person a purchase, one wrongly
+// given away is the hole this closes.
+func (s *Store) ChatHadTrial(chatID int64) bool {
+	var one int
+	err := s.rdb.QueryRow(`SELECT 1 FROM tg_trial_chats WHERE chat_id = ?`, chatID).Scan(&one)
+	return !errors.Is(err, sql.ErrNoRows)
+}
+
+// ClaimUserTgLinkCode spends a user's link code once: false when it is not (or no
+// longer) theirs — two chats confirming the same code at once get one winner.
+func (s *Store) ClaimUserTgLinkCode(userID int64, code string) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE users SET tg_link_code = '', tg_link_code_at = 0 WHERE id = ? AND tg_link_code = ? AND tg_link_code <> ''`,
+		userID, code)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ClearUserTelegramChat unlinks a VPN user's Telegram chat, remembering the chat

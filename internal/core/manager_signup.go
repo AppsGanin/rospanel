@@ -195,7 +195,7 @@ func (m *Manager) signupReferrer(set *model.Settings, code string) int64 {
 // for any self-registration — and gives it the external id, source and referrer.
 // Caller holds signupMu.
 func (m *Manager) createWebUser(ctx context.Context, ext, name, source string, refID int64) (*model.User, error) {
-	u, err := m.createRegisteredUser(name)
+	u, err := m.createRegisteredUser(name, true)
 	if err != nil {
 		return nil, err
 	}

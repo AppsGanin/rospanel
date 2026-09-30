@@ -110,7 +110,7 @@ func TestTrialGrantedRegardlessOfEnabledFlag(t *testing.T) {
 		t.Fatal("precondition failed: trial plan should be disabled for this test")
 	}
 
-	u, err := m.createRegisteredUser("newcomer")
+	u, err := m.createRegisteredUser("newcomer", true)
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

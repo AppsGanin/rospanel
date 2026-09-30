@@ -718,6 +718,20 @@ func (m *Manager) GenerateUserTgLinkCode(userID int64) (string, error) {
 	if u.TgChatID != 0 {
 		return "", invalidCode("err.tgAlreadyLinked", "Telegram уже привязан к этому пользователю")
 	}
+	return m.mintTgLinkCode(userID)
+}
+
+// UserTgBindCode is the code the subscription page's Telegram button carries: the
+// one still valid, or a fresh one — for a linked user too, whose owner is moving the
+// account to another Telegram (the bot asks before it moves, and tells the old one).
+func (m *Manager) UserTgBindCode(u model.User) (string, error) {
+	if u.UserTgLinkCodeFresh() {
+		return u.TgLinkCode, nil
+	}
+	return m.mintTgLinkCode(u.ID)
+}
+
+func (m *Manager) mintTgLinkCode(userID int64) (string, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err

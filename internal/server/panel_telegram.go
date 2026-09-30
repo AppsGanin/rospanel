@@ -45,6 +45,8 @@ func (rt *Router) getTelegram(w http.ResponseWriter, r *http.Request) {
 		"user_reg_code":      set.TGUserRegCode,
 		"user_bot_username":  botUsername(r.Context(), set.TGUserBotToken, set.TelegramProxyURL()),
 		"user_miniapp_url":   sub.MiniAppURL(set),
+		"user_tg_bind":       set.SubTGBind,
+		"user_tg_rebind":     set.SubTGRebind,
 		"admin_events":       rt.mgr.AdminEventPrefs(),
 		"user_events":        userEvents,
 		"user_expiring_days": expiringDays,
@@ -70,16 +72,20 @@ func or[T any](sent *T, current T) T {
 
 func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Enabled     *bool           `json:"enabled"`
-		Token       *string         `json:"token"`
-		BackupCron  *string         `json:"backup_cron"`
-		Lang        *string         `json:"lang"`
-		UserEnabled *bool           `json:"user_enabled"`
-		UserToken   *string         `json:"user_token"`
-		UserRegMode *string         `json:"user_reg_mode"`
-		UserRegCode *string         `json:"user_reg_code"`
-		AdminEvents map[string]bool `json:"admin_events"`
-		UserEvents  map[string]bool `json:"user_events"`
+		Enabled     *bool   `json:"enabled"`
+		Token       *string `json:"token"`
+		BackupCron  *string `json:"backup_cron"`
+		Lang        *string `json:"lang"`
+		UserEnabled *bool   `json:"user_enabled"`
+		UserToken   *string `json:"user_token"`
+		UserRegMode *string `json:"user_reg_mode"`
+		UserRegCode *string `json:"user_reg_code"`
+		// The subscription page's Telegram button: binding, and moving to another
+		// Telegram.
+		UserTGBind   *bool           `json:"user_tg_bind"`
+		UserTGRebind *bool           `json:"user_tg_rebind"`
+		AdminEvents  map[string]bool `json:"admin_events"`
+		UserEvents   map[string]bool `json:"user_events"`
 		// UserExpiringDays is a pointer like the rest: absent means "leave it", and
 		// zero is a value the operator can never have meant.
 		UserExpiringDays *int `json:"user_expiring_days"`
@@ -158,6 +164,12 @@ func (rt *Router) saveTelegram(w http.ResponseWriter, r *http.Request) {
 	if err := rt.mgr.SaveTelegramConfig(cfg); err != nil {
 		writeManagerErr(w, err)
 		return
+	}
+	if req.UserTGBind != nil || req.UserTGRebind != nil {
+		if err := rt.mgr.Store().SetSubTGBinding(or(req.UserTGBind, cur.SubTGBind), or(req.UserTGRebind, cur.SubTGRebind)); err != nil {
+			writeManagerErr(w, err)
+			return
+		}
 	}
 	if req.AdminEvents != nil {
 		if err := rt.mgr.SaveAdminEventPrefs(req.AdminEvents); err != nil {

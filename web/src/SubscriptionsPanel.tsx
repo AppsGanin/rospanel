@@ -262,6 +262,7 @@ export function SubscriptionsPanel() {
           checked={s.sub_hide_offline}
           onChange={(v) => patch({ sub_hide_offline: v })}
         />
+
         <SettingRow
           label={t("subs.announce")}
           hint={

@@ -488,6 +488,11 @@ func (s *UserService) handleCallback(ctx context.Context, client *Client, cb *Ca
 		s.handleUserCallback(ctx, client, cb, set, u)
 		return
 	}
+	// A new Telegram taking over an account (changed from the subscription page).
+	if code, ok := strings.CutPrefix(cb.Data, relinkPrefix); ok {
+		s.linkByCode(ctx, client, set, chatID, code, true)
+		return
+	}
 
 	switch cb.Data {
 	case "vu:reg":
@@ -568,7 +573,11 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 	}
 	// Open / invite: create the account and show its menu right away. CreateRegistered
 	// User applies the trial/free plan when billing is on, else a plain account.
-	u, err := s.panel.CreateRegisteredUser(ctx, name)
+	// One trial per Telegram: a chat that signed up before — its account since moved
+	// to another Telegram, deleted, whatever — gets an account and can buy, but a new
+	// trial each time would never end.
+	trial := !s.store.ChatHadTrial(chatID)
+	u, err := s.panel.CreateRegisteredUser(ctx, name, trial)
 	if err != nil {
 		s.send(ctx, client, chatID, i18n.T(lang, "user.createFailed", esc(core.UserError(err, lang))))
 		return
@@ -577,12 +586,17 @@ func (s *UserService) doRegister(ctx context.Context, client *Client, chatID int
 		s.send(ctx, client, chatID, i18n.T(lang, "user.linkFailed", esc(core.UserError(err, lang))))
 		return
 	}
+	_ = s.store.MarkChatTrial(chatID)
 	log.Printf("telegram user: registered user %d from chat %d", u.ID, chatID)
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
 	s.panel.AttachReferrer(ctx, u.ID, chatID)
 	u.TgChatID = chatID
+	created := i18n.T(lang, "user.accountCreated")
+	if !trial && set.BillingEnabled {
+		created += "\n\n" + i18n.T(lang, "user.noTrialAgain")
+	}
 	s.sendMenu(ctx, client, chatID,
-		i18n.T(lang, "user.accountCreated")+"\n\n"+userSelfCard(*u, set, s.panel, lang),
+		created+"\n\n"+userSelfCard(*u, set, s.panel, lang),
 		s.menuRows(set, *u, lang))
 }
 
@@ -624,10 +638,13 @@ func (s *UserService) linkUserFromCode(ctx context.Context, client *Client, set 
 	s.linkByCode(ctx, client, set, chatID, code, false)
 }
 
-// linkByCode binds the account the code belongs to to this chat. A chat that already
-// belongs to another account is asked first (confirmed=false): the move takes the
-// bot away from that account — its menu, its reminders, its payment notices — and
-// a person with an old bot account and a new one from the website would not notice.
+// linkByCode binds the account the code belongs to to this chat. A move is asked
+// about first (confirmed=false), both ways it can go:
+//   - this chat belongs to another account: the move takes the bot away from that
+//     one — its menu, its reminders, its payment notices — and a person with an old
+//     bot account and a new one from the website would not notice;
+//   - the account is linked to another Telegram (its owner changing Telegram from
+//     the subscription page): the old Telegram loses the account, and is told so.
 func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model.Settings, chatID int64, code string, confirmed bool) {
 	lang := s.lang(chatID)
 	u, err := s.store.GetUserByTgLinkCode(code)
@@ -635,26 +652,78 @@ func (s *UserService) linkByCode(ctx context.Context, client *Client, set *model
 		s.send(ctx, client, chatID, i18n.T(lang, "user.codeInvalid"))
 		return
 	}
+	oldChat := int64(0)
 	if u.TgChatID != 0 && u.TgChatID != chatID {
-		s.send(ctx, client, chatID, i18n.T(lang, "user.alreadyLinked"))
+		// Moving a linked account to another Telegram is the operator's to allow.
+		if !set.SubTGRebind {
+			s.send(ctx, client, chatID, i18n.T(lang, "user.alreadyLinked"))
+			return
+		}
+		oldChat = u.TgChatID
+	}
+	cur, curOK := s.findLinkedUser(chatID)
+	here := curOK && cur.ID != u.ID
+	if !confirmed && (oldChat != 0 || here) {
+		var text string
+		switch {
+		case oldChat != 0 && here:
+			text = i18n.T(lang, "user.rebindAsk", esc(u.Name)) + "\n\n" + i18n.T(lang, "user.relinkAlsoHere", esc(cur.Name))
+		case oldChat != 0:
+			text = i18n.T(lang, "user.rebindAsk", esc(u.Name))
+		default:
+			text = i18n.T(lang, "user.relinkAsk", esc(cur.Name), esc(u.Name))
+		}
+		// "Keep it as it is" goes back to where this chat was: its account's menu, or
+		// the welcome screen for a chat with none.
+		keep := "vu:cancel"
+		if curOK {
+			keep = "vu:menu"
+		}
+		s.sendMenu(ctx, client, chatID, text, [][]InlineButton{
+			{{Text: i18n.T(lang, "user.btnRelink", u.Name), CallbackData: relinkPrefix + code}},
+			{{Text: i18n.T(lang, "user.btnRelinkKeep"), CallbackData: keep}},
+		})
 		return
 	}
-	if cur, ok := s.findLinkedUser(chatID); ok && cur.ID != u.ID && !confirmed {
-		s.sendMenu(ctx, client, chatID,
-			i18n.T(lang, "user.relinkAsk", esc(cur.Name), esc(u.Name)),
-			[][]InlineButton{
-				{{Text: i18n.T(lang, "user.btnRelink", u.Name), CallbackData: relinkPrefix + code}},
-				{{Text: i18n.T(lang, "user.btnRelinkKeep"), CallbackData: "vu:menu"}},
-			})
+	// Already this chat's (the page's button pressed in the Telegram it is linked
+	// to): nothing to link, and nothing to record.
+	if u.TgChatID == chatID {
+		s.sendUserMenu(ctx, client, chatID, set, *u)
+		return
+	}
+	// Spend the code before acting on it: two chats confirming the same one at once
+	// must not both move the account.
+	if ok, err := s.store.ClaimUserTgLinkCode(u.ID, code); err != nil || !ok {
+		s.send(ctx, client, chatID, i18n.T(lang, "user.codeInvalid"))
 		return
 	}
 	if err := s.store.SetUserTelegramChat(u.ID, chatID); err != nil {
 		s.send(ctx, client, chatID, i18n.T(lang, "user.linkChatFailed", esc(core.UserError(err, lang))))
 		return
 	}
-	_ = s.store.ClearUserTgLinkCode(u.ID) // one-time: burn the code
+	// The broadcast audiences follow the account: this chat holds it now, the one it
+	// left does not.
+	_ = s.store.SetSubscriberUser(chatID, u.ID)
+	if oldChat != 0 {
+		_ = s.store.SetSubscriberUser(oldChat, 0)
+	}
 	log.Printf("telegram user: user %d linked to chat %d via link code", u.ID, chatID)
 	s.panel.AuditTelegramLinked(ctx, u.ID, actorFromCtxName(ctx))
+	// Taken from another Telegram: the subscription link is reissued, so a link that
+	// leaked — the way someone else got to move the account — works no more, here or
+	// in the apps. The new Telegram gets the new link; the one the account left is
+	// told, which is where its owner learns of a move they did not make.
+	if oldChat != 0 {
+		if nu, err := s.panel.RotateSubToken(ctx, u.ID); err != nil {
+			log.Printf("telegram user: reissuing the link of user %d after a move: %v", u.ID, err)
+		} else {
+			u = nu
+			if link := subWebAppURL(set, *u); link != "" {
+				s.send(ctx, client, chatID, i18n.T(lang, "user.rebindNewLink", link))
+			}
+		}
+		s.send(ctx, client, oldChat, i18n.T(s.lang(oldChat), "user.rebindNotice", esc(u.Name)))
+	}
 	u.TgChatID = chatID
 	s.sendUserMenu(ctx, client, chatID, set, *u)
 }
