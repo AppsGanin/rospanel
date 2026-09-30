@@ -90,32 +90,36 @@ type MiniAppResult struct {
 	Reason string // "" = UserID is set; else sub.miniRegClosed | sub.miniRequested | sub.miniRefused | sub.miniBusy
 }
 
-// miniAppSignups bounds registrations through the Mini App: its initData is only
-// signed by Telegram, not rate-limited by it.
-type miniAppSignups struct {
-	mu   sync.Mutex
-	at   []time.Time
-	chat map[int64]time.Time
+// signupLimiter bounds self-registrations that no one else rate-limits: the Mini
+// App's initData is only signed by Telegram, and a website's sign-up call comes from
+// the operator's own backend on behalf of anyone who reaches its form.
+type signupLimiter struct {
+	mu  sync.Mutex
+	at  []time.Time
+	key map[string]time.Time
 }
 
-const miniAppSignupsPerMinute = 20
+const signupsPerMinute = 20
 
-// allow spends a slot: one per chat a minute, and miniAppSignupsPerMinute in all —
-// so one chat retrying cannot use up everyone's.
-func (l *miniAppSignups) allow(chat int64, now time.Time) bool {
+// allow spends a slot: one a minute for each key (a chat, a website id, an address),
+// and signupsPerMinute in all — so one caller retrying cannot use up everyone's. A
+// key already busy refuses the attempt without spending anything.
+func (l *signupLimiter) allow(now time.Time, keys ...string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	cut := now.Add(-time.Minute)
-	if l.chat == nil {
-		l.chat = map[int64]time.Time{}
+	if l.key == nil {
+		l.key = map[string]time.Time{}
 	}
-	for c, t := range l.chat {
+	for k, t := range l.key {
 		if !t.After(cut) {
-			delete(l.chat, c)
+			delete(l.key, k)
 		}
 	}
-	if _, busy := l.chat[chat]; busy {
-		return false
+	for _, k := range keys {
+		if _, busy := l.key[k]; busy {
+			return false
+		}
 	}
 	kept := l.at[:0]
 	for _, t := range l.at {
@@ -124,11 +128,13 @@ func (l *miniAppSignups) allow(chat int64, now time.Time) bool {
 		}
 	}
 	l.at = kept
-	if len(l.at) >= miniAppSignupsPerMinute {
+	if len(l.at) >= signupsPerMinute {
 		return false
 	}
 	l.at = append(l.at, now)
-	l.chat[chat] = now
+	for _, k := range keys {
+		l.key[k] = now
+	}
 	return true
 }
 
@@ -190,7 +196,7 @@ func (m *Manager) MiniAppEnter(ctx context.Context, tu MiniAppUser, startParam s
 		return MiniAppResult{Reason: "sub.miniRegClosed"}, nil
 	case set.RegMode() == model.RegModeration && m.RegistrationPending(chat):
 		return MiniAppResult{Reason: "sub.miniRequested"}, nil
-	case !m.miniSignups.allow(chat, now):
+	case !m.miniSignups.allow(now, "tg:"+strconv.FormatInt(chat, 10)):
 		return MiniAppResult{Reason: "sub.miniBusy"}, nil
 	}
 	_ = m.store.UpsertSubscriber(chat, 0, tu.Username, tu.FirstName, tu.Lang, now.Unix())

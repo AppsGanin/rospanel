@@ -177,8 +177,9 @@ monitor pointed here keeps working.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/v1/users` | List users (filter + paginate); `?telegram_id=` or `?sub_token=` finds one. |
+| `GET` | `/v1/users` | List users (filter + paginate); `?telegram_id=`, `?sub_token=` or `?external_id=` finds one. |
 | `POST` | `/v1/users` | Create a user. |
+| `POST` | `/v1/signup` | Sign up a website client under the self-registration rules (see below). |
 | `POST` | `/v1/users/bulk` | Apply one action to many users at once. |
 | `GET` | `/v1/users/{id}` | Get one user. |
 | `PATCH` | `/v1/users/{id}` | Update name / limits / expiry or a term from the first connection / device limit / speed limit / enabled. |
@@ -456,6 +457,23 @@ that signs people in by their subscription link finds them with `?sub_token=`.
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`; list them
 only when `show_configs`), devices, the payment block (`billing`) and the operator's colours
 (`brand`) — worded in `?lang`; the actions go through the endpoints above.
+
+**Sign-up from your website** — `POST /v1/signup` with `{"external_id": "ann@example.com"}`
+registers a client by your site's own id under the rules the user bot keeps: closed
+registration refuses (`err.signupClosed`), the invite mode wants `invite`
+(`err.signupBadInvite`), moderation files a request, and the account gets the trial or free plan
+like a bot sign-up. One account per `external_id` — compared exactly, so lower-case an e-mail
+first — so signing up again returns it (`200`, `"status": "existing"`, its `user_id`; the
+account in full only to a key with `users.view`) instead of a second trial. The site must
+pass only an id it has verified (a confirmed e-mail): whoever passes it gets that account.
+A new account answers `201 "created"` with the account, a request `202 "pending"` with `request_id`
+(asking again while it waits files nothing). Optional: `name` (the external id when left out),
+`source` (the funnel's tag), `ref` (an invite code; an unknown one is ignored), and `ip` — the
+client's address, for a limit of one sign-up a minute per address (per /64 for IPv6) and per id,
+20 a minute in all; over it the answer is `429` with `Retry-After`. The site's key needs only
+`users.signup` (plus `users.view` and `billing.sell` to show and sell); unlike `users.manage` it
+cannot make a user on its own terms. `user.registered` and `registration.rejected` carry the
+`external_id`, and `GET /v1/users?external_id=` finds the account again.
 
 **Migrate** — body `{ "to_plan_id": 3 }`, response `{ "data": { "migrated": 12 } }`.
 Applies the target plan's limits, period and access groups to every user on the source
@@ -941,13 +959,14 @@ delivery is the result: `{ "data": { "status": 502, "ok": false, "error": "…" 
 
 ### Registrations
 
-The moderated signup queue (only meaningful while the user bot is in moderation mode —
-`moderation` says whether it is).
+The moderated signup queue (only meaningful while self-registration is in moderation mode —
+`moderation` says whether it is). A request is a Telegram chat's (`chat_id`) or a website
+client's (`external_id`, from `POST /v1/signup`).
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/v1/registrations` | Pending signups. |
-| `POST` | `/v1/registrations/{id}/approve` | Create the account and link its Telegram chat. |
+| `POST` | `/v1/registrations/{id}/approve` | Create the account and link its Telegram chat or website id. |
 | `POST` | `/v1/registrations/{id}/reject` | Drop the request. |
 
 ### Monitoring
@@ -1104,7 +1123,8 @@ body is never read).
 | --- | --- |
 | `user.created` | a user is created (panel or API) |
 | `user.deleted` | a user is deleted |
-| `user.registered` | a user self-registers via the Telegram user bot |
+| `user.registered` | a user self-registers: the Telegram user bot, the Mini App or `POST /v1/signup` (with `external_id`) |
+| `registration.rejected` | an operator rejects a moderated sign-up (`telegram_id` or `external_id`) |
 | `user.expired` | a subscription lapses |
 | `user.limited` | a user exhausts their traffic quota |
 | `user.device_limited` | a user exceeds their device limit |

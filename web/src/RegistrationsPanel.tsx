@@ -68,10 +68,10 @@ export function RegistrationsPanel({
                 {r.name}
               </span>
               <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-                Telegram
+                {r.external_id ? t("reg.site") : "Telegram"}
               </span>
-              <Mono className="shrink-0 text-[11px] text-ink-muted">
-                {r.chat_id}
+              <Mono className="min-w-0 shrink truncate text-[11px] text-ink-muted">
+                {r.external_id || r.chat_id}
               </Mono>
               <Mono className="shrink-0 text-[11px] text-ink-muted">
                 {fmtDateTime(r.created_at)}

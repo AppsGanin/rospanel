@@ -19,6 +19,7 @@ func TestUserLookupsUseTheirIndexes(t *testing.T) {
 		{"telegram chat detach", detachTelegramChatSQL, "idx_users_tg_chat"},
 		{"previous chat drop", dropPrevTelegramChatSQL, "idx_users_tg_prev_chat"},
 		{"detached account by previous chat", detachedUserByPrevChatSQL, "idx_users_tg_prev_chat"},
+		{"website id", userByExternalIDSQL, "idx_users_external_id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows, err := st.db.Query(`EXPLAIN QUERY PLAN `+tc.sql, int64(42))

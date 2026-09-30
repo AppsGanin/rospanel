@@ -45,6 +45,9 @@ type userView struct {
 	BlacklistReason string `json:"blacklist_reason,omitempty"`
 	// Source is the /start tag the user came with (user card only).
 	Source string `json:"source,omitempty"`
+	// ExternalID is the website's id for a client it signed up (POST /v1/signup);
+	// filled for one user at a time, not in lists.
+	ExternalID string `json:"external_id,omitempty"`
 }
 
 // namedLink is one share link with the node name a client displays for it.
@@ -119,7 +122,9 @@ func (rt *Router) userViewFor(u model.User, set *model.Settings, bot string) use
 	if err != nil {
 		access = model.UnrestrictedAccess()
 	}
-	return makeUserView(u, set, bot, rt.localInbounds(), groups, access)
+	v := makeUserView(u, set, bot, rt.localInbounds(), groups, access)
+	v.ExternalID = rt.mgr.Store().UserExternalID(u.ID)
+	return v
 }
 
 // applyTLSHints fills the per-request TLS fields used by link/sub generation. When
