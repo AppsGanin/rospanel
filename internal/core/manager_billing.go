@@ -338,13 +338,31 @@ func (m *Manager) CreateRegisteredUser(ctx context.Context, name string) (*model
 	if err != nil || u == nil {
 		return u, err
 	}
-	plan := m.PlanName(u.PlanID)
-	lang := m.botLang()
-	m.notifyAdminEvent(model.AdminEventRegistered,
-		i18n.T(lang, "notify.registered", escHTML(u.Name))+planLine(lang, plan))
-	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan})
-	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
+	m.announceRegistration(ctx, u, "", false)
 	return u, nil
+}
+
+// announceRegistration tells the operator and the webhooks about a self-registered
+// account: the journal row and user.registered, and — unless an operator just
+// approved it themselves — the admin alert. externalID is a website client's id,
+// carried in the event so the site can tell whose account it is.
+func (m *Manager) announceRegistration(ctx context.Context, u *model.User, externalID string, moderated bool) {
+	plan := m.PlanName(u.PlanID)
+	details := map[string]any{"plan": plan}
+	if moderated {
+		details["moderation"] = true
+	} else {
+		lang := m.botLang()
+		m.notifyAdminEvent(model.AdminEventRegistered,
+			i18n.T(lang, "notify.registered", escHTML(u.Name))+planLine(lang, plan))
+	}
+	data := userEventData(*u)
+	if externalID != "" {
+		details["external_id"] = externalID
+		data["external_id"] = externalID
+	}
+	m.audit(ctx, u.ID, model.EventUserRegistered, details)
+	m.EmitWebhook(model.WebhookUserRegistered, data)
 }
 
 func planLine(lang i18n.Lang, plan string) string {
@@ -397,6 +415,9 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	if err != nil {
 		return invalidCode("err.requestNotFound", "заявка не найдена")
 	}
+	if req.ExternalID != "" {
+		return m.approveWebRequest(ctx, req)
+	}
 	// Filed before the list was on, or before the account was put on it.
 	if m.RegistrationBlacklisted(req.ChatID) {
 		return invalidCode("err.requestBlacklisted", "этот Telegram-аккаунт в общем чёрном списке — заявку можно только отклонить")
@@ -428,10 +449,8 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 		_, _ = m.store.CreateRegistrationRequest(req.ChatID, req.Name, req.CreatedAt)
 		return err
 	}
-	plan := m.PlanName(u.PlanID)
-	m.audit(ctx, u.ID, model.EventUserRegistered, map[string]any{"plan": plan, "moderation": true})
 	m.AttachReferrer(ctx, u.ID, req.ChatID)
-	m.EmitWebhook(model.WebhookUserRegistered, userEventData(*u))
+	m.announceRegistration(ctx, u, "", true)
 	// Gated with the other user-facing notices: an operator who switched them all off
 	// should not still have the bot writing to people.
 	m.notifyRegistrationDecision(req.ChatID, "notify.regApproved")
@@ -453,7 +472,15 @@ func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) er
 	if !claimed {
 		return nil // another admin already decided this request
 	}
-	m.notifyRegistrationDecision(req.ChatID, "notify.regRejected")
+	data := map[string]any{"request_id": req.ID, "name": req.Name}
+	if req.ExternalID != "" {
+		// A website client hears it from the site, which the event tells.
+		data["external_id"] = req.ExternalID
+	} else {
+		data["telegram_id"] = req.ChatID
+		m.notifyRegistrationDecision(req.ChatID, "notify.regRejected")
+	}
+	m.EmitWebhook(model.WebhookRegistrationRejected, data)
 	return nil
 }
 

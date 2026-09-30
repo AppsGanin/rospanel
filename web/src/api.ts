@@ -32,6 +32,7 @@ export interface User {
   // The linked Telegram account is on the shared blacklist (user card only).
   blacklisted?: boolean
   source?: string // the /start tag the user came with
+  external_id?: string // the website's id for a client it signed up
   blacklist_reason?: string
   tg_chat_id?: number // linked Telegram chat/user id (0 = not linked)
   system_email: string // Xray client id "u<id>" (logs/stats)
@@ -1644,7 +1645,8 @@ export const messageUser = (id: number, text: string, media: File | null) => {
 // exists until a request is approved.
 export interface RegistrationRequest {
   id: number
-  chat_id: number
+  chat_id: number // 0 for a website sign-up
+  external_id?: string // the website's id for its client
   name: string
   created_at: number
 }

@@ -1175,6 +1175,12 @@ export function UserDetail({
                 {user.source && (
                   <SettingRow label={t('userDetail.source')} control={<Code>{user.source}</Code>} />
                 )}
+                {user.external_id && (
+                  <SettingRow
+                    label={t('userDetail.externalId')}
+                    control={<Code copy>{user.external_id}</Code>}
+                  />
+                )}
                 {user.blacklisted && (
                   <p className="danger-tint rounded-lg px-3 py-2 text-xs text-danger">
                     {t('userDetail.blacklisted')}

@@ -143,12 +143,22 @@ func TestMiniAppEnterConcurrent(t *testing.T) {
 // One chat retrying does not use up everyone's sign-ups.
 func TestMiniAppSignupsPerChat(t *testing.T) {
 	t.Parallel()
-	var l miniAppSignups
+	var l signupLimiter
 	now := time.Now()
-	if !l.allow(1, now) || l.allow(1, now) {
+	if !l.allow(now, "tg:1") || l.allow(now, "tg:1") {
 		t.Fatal("a chat got two slots in a minute")
 	}
-	if !l.allow(2, now) {
+	if !l.allow(now, "tg:2") {
 		t.Fatal("another chat was refused")
+	}
+	// Any one busy key refuses the attempt, and a refused attempt holds no slot.
+	if l.allow(now, "ext:a", "tg:2") {
+		t.Fatal("a busy key did not refuse")
+	}
+	if !l.allow(now, "ext:a") {
+		t.Fatal("a refused attempt kept its other key busy")
+	}
+	if !l.allow(now.Add(61*time.Second), "tg:1") {
+		t.Fatal("a key stayed busy past its minute")
 	}
 }

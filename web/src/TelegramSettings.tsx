@@ -710,7 +710,6 @@ export function TelegramSettings() {
                 value={userRegCode}
                 onChange={setUserRegCode}
                 placeholder={t("tg.invitePlaceholder")}
-                disabled={!userEnabled}
               />
             }
           />

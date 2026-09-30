@@ -325,10 +325,17 @@ const (
 // No user exists yet — approval creates one and links ChatID; rejection just drops
 // the request.
 type RegistrationRequest struct {
-	ID        int64  `json:"id"`
-	ChatID    int64  `json:"chat_id"`
-	Name      string `json:"name"`
-	CreatedAt int64  `json:"created_at"`
+	ID     int64 `json:"id"`
+	ChatID int64 `json:"chat_id"` // a Telegram request; 0 for a website one
+	// ExternalID is the website's own id for its client (POST /v1/signup); "" for a
+	// Telegram request.
+	ExternalID string `json:"external_id,omitempty"`
+	Name       string `json:"name"`
+	// What a website request came with, applied when it is approved. A Telegram
+	// request keeps these on the chat instead.
+	Source     string `json:"-"`
+	ReferrerID int64  `json:"-"`
+	CreatedAt  int64  `json:"created_at"`
 }
 
 // SupportGroup is a group the support bot has been added to — an option in the
@@ -535,7 +542,7 @@ func (h Webhook) Subscribed(event string) bool {
 const (
 	WebhookUserCreated      = "user.created"        // created via panel or API
 	WebhookUserDeleted      = "user.deleted"        //
-	WebhookUserRegistered   = "user.registered"     // self-registered via the user bot
+	WebhookUserRegistered   = "user.registered"     // self-registered: the user bot, the Mini App or POST /v1/signup
 	WebhookUserExpired      = "user.expired"        // subscription lapsed
 	WebhookUserLimited      = "user.limited"        // traffic quota exhausted
 	WebhookUserDeviceLimit  = "user.device_limited" //
@@ -543,6 +550,8 @@ const (
 	WebhookPaymentPaid      = "payment.paid"        // order paid, plan applied
 	WebhookPaymentCancelled = "payment.cancelled"   //
 	WebhookPaymentRefunded  = "payment.refunded"    // money returned: to the balance, or by the payment system
+	// A moderated sign-up the operator turned down. Approval is user.registered.
+	WebhookRegistrationRejected = "registration.rejected"
 )
 
 // WebhookEventCatalog is the stable key list the settings UI iterates over (display
@@ -553,6 +562,7 @@ var WebhookEventCatalog = []string{
 	WebhookUserCreated,
 	WebhookUserDeleted,
 	WebhookUserRegistered,
+	WebhookRegistrationRejected,
 	WebhookUserExpired,
 	WebhookUserLimited,
 	WebhookUserDeviceLimit,

@@ -362,6 +362,11 @@ func TestMCPEveryToolAnswers(t *testing.T) {
 	call("post_nodes_by_id_update", map[string]any{"id": added})
 	call("post_nodes_update_all", map[string]any{})
 
+	// Sign-up is refused while registration is closed, as it is by default.
+	if err := st.SetTelegramUserBot(false, "", model.RegOpen, ""); err != nil {
+		t.Fatalf("open registration: %v", err)
+	}
+	call("post_signup", map[string]any{"body": map[string]any{"external_id": "sweep@example.com"}})
 	call("post_registrations_by_id_approve", map[string]any{"id": regs[0].ID})
 	call("post_registrations_by_id_reject", map[string]any{"id": regs[1].ID})
 

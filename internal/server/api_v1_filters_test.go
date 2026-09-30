@@ -43,9 +43,13 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 	if err := st.SetUserEnabled(beta.ID, false); err != nil {
 		t.Fatalf("disable beta: %v", err)
 	}
-	// Alpha has a Telegram, so ?telegram_id and ?sub_token each find one of two.
+	// Alpha has a Telegram and a website id, so ?telegram_id, ?sub_token and
+	// ?external_id each find one of two.
 	if err := st.SetUserTelegramChat(alpha.ID, 777001); err != nil {
 		t.Fatalf("link alpha: %v", err)
+	}
+	if err := st.SetUserExternalID(alpha.ID, "alpha@example.com"); err != nil {
+		t.Fatalf("external id alpha: %v", err)
 	}
 	// One tagged user, so ?tag has someone to leave out.
 	if err := st.SetUserTags(alpha.ID, []string{"vip"}); err != nil {
@@ -166,6 +170,7 @@ func TestAPIQueryFiltersActuallyFilter(t *testing.T) {
 		"/v1/users?telegram_id":              "telegram_id=777001",
 		"/v1/users/{id}/subscription?lang":   "lang=ru",
 		"/v1/users?sub_token":                "sub_token=" + alpha.SubToken,
+		"/v1/users?external_id":              "external_id=alpha@example.com",
 		"/v1/stats/abuse?limit":              "limit=1",
 		"/v1/stats/users?from":               "from=" + day(1),
 		"/v1/stats/users?to":                 "to=" + day(2),

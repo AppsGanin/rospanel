@@ -16,10 +16,14 @@ import (
 // reset — is a permission of its own, so it can be withheld from a role that
 // otherwise manages the section.
 const (
-	PermUsersView     = "users.view"
-	PermUsersManage   = "users.manage"
-	PermUsersDelete   = "users.delete"
-	PermUsersExport   = "users.export"
+	PermUsersView   = "users.view"
+	PermUsersManage = "users.manage"
+	PermUsersDelete = "users.delete"
+	PermUsersExport = "users.export"
+	// PermUsersSignup is what the operator's website needs to register its clients
+	// (POST /v1/signup): under the panel's self-registration rules, without the power
+	// to create a user on any terms, edit or delete one.
+	PermUsersSignup   = "users.signup"
 	PermGroupsView    = "groups.view"
 	PermGroupsManage  = "groups.manage"
 	PermStatsView     = "stats.view"
@@ -80,6 +84,7 @@ var PermCatalog = []PermSection{
 	{Key: "audit", View: PermAudit},
 	{Key: "usersDelete", Manage: PermUsersDelete},
 	{Key: "usersExport", Manage: PermUsersExport},
+	{Key: "usersSignup", Manage: PermUsersSignup},
 	{Key: "billingSell", Manage: PermBillingSell},
 	{Key: "payments", Manage: PermPayments},
 	{Key: "broadcasts", Manage: PermBroadcasts},
@@ -139,6 +144,8 @@ var PermImplies = func() map[string][]string {
 	// export, the plans the providers take payment for.
 	m[PermUsersDelete] = []string{PermUsersView}
 	m[PermUsersExport] = []string{PermUsersView}
+	// Whoever may create users on any terms may also sign them up under the rules.
+	m[PermUsersManage] = []string{PermUsersView, PermUsersSignup}
 	m[PermPayments] = []string{PermBillingView}
 	// Selling reads the plans and prices it sells; managing billing sells too.
 	m[PermBillingSell] = []string{PermBillingView}

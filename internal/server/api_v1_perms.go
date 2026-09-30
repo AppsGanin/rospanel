@@ -32,6 +32,7 @@ var apiRoutePerms = map[string][]string{
 
 	"GET /v1/users":                       {model.PermUsersView},
 	"POST /v1/users":                      {model.PermUsersManage},
+	"POST /v1/signup":                     {model.PermUsersSignup},
 	"POST /v1/users/bulk":                 {model.PermUsersManage, model.PermUsersDelete}, // per action (bulkActionPerm)
 	"GET /v1/users/{id}":                  {model.PermUsersView},
 	"PATCH /v1/users/{id}":                {model.PermUsersManage},

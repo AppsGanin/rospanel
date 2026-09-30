@@ -107,6 +107,7 @@ func apiSpecRoutes() []oaRoute {
 				{name: "tag", typ: "string", desc: "only users carrying this tag (exact, case-insensitive)"},
 				{name: "telegram_id", typ: "integer", desc: "the user linked to this Telegram ID (an indexed lookup)"},
 				{name: "sub_token", typ: "string", desc: "the user whose subscription token this is (an indexed lookup)"},
+				{name: "external_id", typ: "string", desc: "the user a website signed up with this id (POST /v1/signup; an indexed lookup)"},
 				{name: "limit", typ: "integer", desc: "page size (<=0 = all from offset)"},
 				{name: "offset", typ: "integer", desc: "number of users to skip"},
 			},
@@ -114,6 +115,13 @@ func apiSpecRoutes() []oaRoute {
 		{method: "POST", path: "/v1/users", tag: "Users", summary: "Create a user",
 			req: t(apiCreateUserReq{}), reqRequired: []string{"name"},
 			resp: t(userView{}), status: 201},
+		{method: "POST", path: "/v1/signup", tag: "Users",
+			summary: "Sign up a website client under the self-registration rules (closed registration, " +
+				"invite code, moderation, one account and trial per external_id, a rate limit): " +
+				"201 created, 200 already has one, 202 filed for moderation, 429 try again in a minute",
+			destructive: true,
+			req:         t(apiSignupReq{}), reqRequired: []string{"external_id"},
+			resp: t(apiSignupResp{}), status: 201},
 		{method: "POST", path: "/v1/users/bulk", tag: "Users", summary: "Apply one action to many users",
 			req: t(apiBulkReq{}), reqRequired: []string{"ids", "action"}, resp: t(oaAffectedResp{})},
 		{method: "GET", path: "/v1/users/{id}", tag: "Users", summary: "Get a user",

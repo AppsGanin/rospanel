@@ -26,6 +26,37 @@ func (s *Store) CreateRegistrationRequest(chatID int64, name string, now int64) 
 	return s.GetRegistrationRequestByChat(chatID)
 }
 
+// regRequestCols reads a request of either kind: a chat's has no external id, a
+// website client's no chat, and each missing one reads as its zero value.
+const regRequestCols = `id, COALESCE(chat_id, 0), COALESCE(external_id, ''), name, source, referrer_id, created_at`
+
+// CreateWebRegistrationRequest files a pending request for a website client, with
+// the source tag and referrer it came with. One per external id, like one per chat
+// (ErrRegistrationPending).
+func (s *Store) CreateWebRegistrationRequest(externalID, name, source string, referrerID, now int64) (*model.RegistrationRequest, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO registration_requests (external_id, name, source, referrer_id, created_at) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(external_id) DO NOTHING`,
+		externalID, name, source, referrerID, now)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrRegistrationPending
+	}
+	return s.GetRegistrationRequestByExternal(externalID)
+}
+
+// GetRegistrationRequestByExternal returns a website client's pending request, or nil
+// when none.
+func (s *Store) GetRegistrationRequestByExternal(externalID string) (*model.RegistrationRequest, error) {
+	r, err := s.scanRegistrationRequest(`WHERE external_id = ?`, externalID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return r, err
+}
+
 // ErrRegistrationPending means the chat already has a pending request.
 var ErrRegistrationPending = errors.New("registration already pending")
 
@@ -46,8 +77,8 @@ func (s *Store) GetRegistrationRequestByChat(chatID int64) (*model.RegistrationR
 func (s *Store) scanRegistrationRequest(where string, args ...any) (*model.RegistrationRequest, error) {
 	var r model.RegistrationRequest
 	err := s.db.QueryRow(
-		`SELECT id, chat_id, name, created_at FROM registration_requests `+where, args...).
-		Scan(&r.ID, &r.ChatID, &r.Name, &r.CreatedAt)
+		`SELECT `+regRequestCols+` FROM registration_requests `+where, args...).
+		Scan(&r.ID, &r.ChatID, &r.ExternalID, &r.Name, &r.Source, &r.ReferrerID, &r.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +87,7 @@ func (s *Store) scanRegistrationRequest(where string, args ...any) (*model.Regis
 
 // ListRegistrationRequests returns all pending requests, oldest first.
 func (s *Store) ListRegistrationRequests() ([]model.RegistrationRequest, error) {
-	rows, err := s.db.Query(`SELECT id, chat_id, name, created_at FROM registration_requests ORDER BY created_at ASC`)
+	rows, err := s.db.Query(`SELECT ` + regRequestCols + ` FROM registration_requests ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +95,7 @@ func (s *Store) ListRegistrationRequests() ([]model.RegistrationRequest, error) 
 	var out []model.RegistrationRequest
 	for rows.Next() {
 		var r model.RegistrationRequest
-		if err := rows.Scan(&r.ID, &r.ChatID, &r.Name, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.ChatID, &r.ExternalID, &r.Name, &r.Source, &r.ReferrerID, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

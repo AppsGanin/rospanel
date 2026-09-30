@@ -650,6 +650,11 @@ a URL and there is nothing to install anywhere. The key's role decides which too
 assistant gets: for a look-only assistant, create a key with a role that has no write. More in
 [docs/api.md](docs/api.md).
 
+**Sign-up from your own website** — `POST /v1/signup` registers a client by your site's id (an
+e-mail, an account number) under the bot's rules: closed registration, the invite code,
+moderation, a rate limit, one account and one trial per id. The site's key needs `users.signup`,
+not `users.manage`.
+
 **Connecting an assistant** takes one URL and no local install. Create a key in
 *Settings → API* (with the role you want), take the base address from the same page, and paste:
 
