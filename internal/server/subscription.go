@@ -611,8 +611,13 @@ func (rt *Router) buildBilling(u model.User, set *model.Settings, lang i18n.Lang
 		b.Stamp = a.Stamp
 		// Devices as one offer with a count to pick, not a card per count.
 		if a.DevicesMax > 0 {
+			// The price is for the rest of the term, so the term is named: the date it
+			// runs to and the days that leaves.
+			left := max((u.ExpireAt-time.Now().Unix()+86399)/86400, 1)
+			until := time.Unix(u.ExpireAt, 0).In(loc).Format("02.01")
 			e := sub.Extra{Kind: model.OrderDevices, PlanID: u.PlanID, N: 1,
-				Name: i18n.T(lang, "sub.addDevicesTitle"), Sub: i18n.T(lang, "sub.addDevicesEach", a.DevicePrice)}
+				Name: i18n.T(lang, "sub.addDevicesTitle"),
+				Sub:  i18n.T(lang, "sub.addDevicesEach", a.DevicePrice, until, i18n.TN(lang, "notify.days", int(left)))}
 			for n := 1; n <= min(a.DevicesMax, 10); n++ {
 				q, err := rt.mgr.QuotePurchase(u, core.Purchase{Kind: model.OrderDevices, Devices: n})
 				if err != nil {

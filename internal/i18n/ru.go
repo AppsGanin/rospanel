@@ -551,7 +551,7 @@ var ru = map[string]string{
 	"sub.packName":                    "+%d ГБ трафика",
 	"sub.packSub":                     "Действует до ближайшего сброса трафика",
 	"sub.addDevicesTitle":             "Дополнительные устройства",
-	"sub.addDevicesEach":              "%d ₽ за каждое до конца срока — можно подключить больше устройств одновременно",
+	"sub.addDevicesEach":              "%d ₽ за каждое до %s (осталось %s) — можно подключить больше устройств одновременно",
 	"sub.buyFor":                      "Купить · %d ₽",
 	"sub.changeTitle":                 "Сменить тариф",
 	"sub.changeBtn":                   "Перейти",
