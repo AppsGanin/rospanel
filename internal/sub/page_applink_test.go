@@ -24,7 +24,7 @@ func TestAWGCardLinksToTheAmneziaSite(t *testing.T) {
 		{i18n.RU, "https://amnezia.org/ru/downloads", "https://amnezia.org/downloads"},
 		{i18n.EN, "https://amnezia.org/downloads", "https://amnezia.org/ru/downloads"},
 	} {
-		html, err := Page(u, set, []Server{{Set: set, Access: model.UnrestrictedAccess()}}, Billing{}, Devices{}, true, c.lang)
+		html, err := Page(u, set, []Server{{Set: set, Access: model.UnrestrictedAccess()}}, Billing{}, Devices{}, Access{}, true, c.lang)
 		if err != nil {
 			t.Fatalf("%s render: %v", c.lang, err)
 		}

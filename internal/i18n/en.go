@@ -53,6 +53,11 @@ var en = map[string]string{
 	"sub.allPlusTV":    "All platforms · TV",
 
 	"sub.scanQR":        "Scan the QR code in your app, or press the button below",
+	"sub.accessTitle":   "Access to your account",
+	"sub.accessHint":    "This page is your account; there is no password. Save its link in your bookmarks or notes.",
+	"sub.accessCopy":    "Copy the account link",
+	"sub.tgBind":        "Link Telegram",
+	"sub.tgBindHint":    "Notifications and managing your subscription in the bot.",
 	"sub.copyLink":      "Copy the subscription link",
 	"sub.copied":        "Copied",
 	"sub.openInApp":     "Open in the app",

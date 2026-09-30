@@ -97,7 +97,7 @@ func TestPageListsExternalServers(t *testing.T) {
 	u := model.User{ID: 1, UUID: "u", Password: "p", SubToken: "tok"}
 	servers := []Server{{Set: local, Access: model.UnrestrictedAccess(), External: ext}}
 
-	html, err := Page(u, local, servers, Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, local, servers, Billing{}, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestPageAddressesThePanelNotWhicheverServerIsFirst(t *testing.T) {
 	}
 	u := model.User{ID: 1, UUID: "u", Password: "p", SubToken: "tok"}
 
-	html, err := Page(u, local, []Server{{Set: node, Access: model.UnrestrictedAccess()}}, Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, local, []Server{{Set: node, Access: model.UnrestrictedAccess()}}, Billing{}, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

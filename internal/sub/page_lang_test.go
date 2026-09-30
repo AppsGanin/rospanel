@@ -34,7 +34,7 @@ func langTestServers() []Server {
 func TestPageEnglishHasNoRussian(t *testing.T) {
 	u := model.User{Name: "Alice", SubToken: "tok", DataLimit: 5 << 30, UsedUp: 1 << 30}
 	servers := langTestServers()
-	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.EN)
+	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, Access{}, true, i18n.EN)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestPageEnglishHasNoRussian(t *testing.T) {
 func TestPageRussianStillRussian(t *testing.T) {
 	u := model.User{Name: "Алиса", SubToken: "tok"}
 	servers := langTestServers()
-	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestPageRussianStillRussian(t *testing.T) {
 func TestPageSwitchesWithLanguage(t *testing.T) {
 	u := model.User{Name: "Alice", SubToken: "tok"}
 	servers := langTestServers()
-	en, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, true, i18n.EN)
+	en, err := Page(u, servers[0].Set, servers, Billing{}, Devices{}, Access{}, true, i18n.EN)
 	if err != nil {
 		t.Fatalf("render en: %v", err)
 	}

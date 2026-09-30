@@ -27,7 +27,7 @@ func TestPageBillingBlock(t *testing.T) {
 			{Key: "cryptobot", Label: "Криптовалютой (CryptoBot)"},
 		},
 	}
-	html, err := Page(u, set, One(set), billing, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), billing, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestPageBillingLocked(t *testing.T) {
 		Plans:       []BillingPlan{{ID: 3, Name: "Стандарт", Label: "199 ₽ / 30 дн.", Current: true}},
 		Providers:   []BillingPay{{Key: "cryptobot", Label: "Криптовалютой (CryptoBot)"}},
 	}
-	html, err := Page(u, set, One(set), billing, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), billing, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestPageBillingManual(t *testing.T) {
 		Plans:      []BillingPlan{{ID: 5, Name: "Месяц", Label: "199 ₽ / 30 дн."}},
 		Note:       "Переведите на карту 0000",
 	}
-	html, err := Page(u, set, One(set), billing, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), billing, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestPageBillingManual(t *testing.T) {
 func TestPageBillingHidden(t *testing.T) {
 	u := model.User{Name: "Ann", SubToken: "tok123"}
 	set := &model.Settings{Host: "vpn.example.com"}
-	html, err := Page(u, set, One(set), Billing{}, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), Billing{}, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestPageTabs(t *testing.T) {
 	set := &model.Settings{Host: "vpn.example.com"}
 	render := func(b Billing) string {
 		t.Helper()
-		html, err := Page(u, set, One(set), b, Devices{}, true, i18n.RU)
+		html, err := Page(u, set, One(set), b, Devices{}, Access{}, true, i18n.RU)
 		if err != nil {
 			t.Fatalf("render: %v", err)
 		}
@@ -176,7 +176,7 @@ func TestPageInvitees(t *testing.T) {
 		},
 		InviteesMore: "и ещё 3",
 	}
-	html, err := Page(u, set, One(set), billing, Devices{}, true, i18n.RU)
+	html, err := Page(u, set, One(set), billing, Devices{}, Access{}, true, i18n.RU)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
