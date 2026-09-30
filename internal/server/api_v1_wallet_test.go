@@ -183,7 +183,8 @@ func TestAPISubscriptionView(t *testing.T) {
 	}
 }
 
-// A bot's key holds billing.sell: it opens orders but cannot mark one paid or credit a
+// A bot's key made with billing.sell — a permission since retired — is held at startup
+// to the methods it opened: it opens orders but cannot mark one paid or credit a
 // balance. A body that leaves out the one field that matters is refused, not read as
 // "unlink" or "off".
 func TestAPISellingKeyAndRequiredFields(t *testing.T) {
@@ -199,13 +200,19 @@ func TestAPISellingKeyAndRequiredFields(t *testing.T) {
 	if err := st.SetBillingSettings(set); err != nil {
 		t.Fatal(err)
 	}
-	role, err := st.CreateAdminRole("seller", []string{model.PermUsersManage, model.PermBillingSell})
+	k, err := st.CreateAPIKey("bot", false, []string{model.PermUsersManage}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	k, err := st.CreateAPIKey("bot", false, role.Perms, nil)
-	if err != nil {
+	// As a release before methods stored it: the retired permission in the list.
+	if err := st.ExecForTest(`UPDATE api_keys SET perms = 'billing.sell,billing.view,users.manage,users.view' WHERE id = ?`, k.ID); err != nil {
 		t.Fatal(err)
+	}
+	if n, err := ConvertLegacyAPIKeys(st); err != nil || n != 1 {
+		t.Fatalf("convert: %d, %v", n, err)
+	}
+	if n, _ := ConvertLegacyAPIKeys(st); n != 0 {
+		t.Fatalf("a converted key was converted again (%d)", n)
 	}
 	u, _ := mgr.CreateUser(t.Context(), "buyer", 0, 0)
 	id := itoa64(u.ID)

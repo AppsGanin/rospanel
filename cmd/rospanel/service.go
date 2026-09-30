@@ -276,12 +276,18 @@ func runServer(dataDir string) {
 	// Writes the buffered access-log sightings. RecordAccess only buffers, so this
 	// is what actually persists who connected from where.
 	runBG("access flush", accessFlushLoop(mgr))
-	// Payment polling fallback: reconciles pending provider orders in case a webhook
-	// was missed. Idles cheaply when there are no pending orders.
 	// The Mini App's random address segment, made once per install.
 	if err := mgr.EnsureMiniAppPath(); err != nil {
 		log.Printf("mini app: %v", err)
 	}
+	// API keys still on permissions alone are held to the methods those open, once.
+	if n, err := server.ConvertLegacyAPIKeys(mgr.Store()); err != nil {
+		log.Printf("api keys: %v", err)
+	} else if n > 0 {
+		log.Printf("api keys: %d held to the API methods their permissions opened", n)
+	}
+	// Payment polling fallback: reconciles pending provider orders in case a webhook
+	// was missed. Idles cheaply when there are no pending orders.
 	runBG("payment poll", paymentPollLoop(mgr))
 	runBG("external subscriptions", mgr.RunExtSubLoop) // re-read hourly
 	runBG("blacklist", mgr.RunBlacklistLoop)           // shared Telegram blacklist, while enabled

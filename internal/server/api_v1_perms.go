@@ -32,7 +32,7 @@ var apiRoutePerms = map[string][]string{
 
 	"GET /v1/users":                       {model.PermUsersView},
 	"POST /v1/users":                      {model.PermUsersManage},
-	"POST /v1/signup":                     {model.PermUsersSignup},
+	"POST /v1/signup":                     {model.PermUsersManage},
 	"POST /v1/users/bulk":                 {model.PermUsersManage, model.PermUsersDelete}, // per action (bulkActionPerm)
 	"GET /v1/users/{id}":                  {model.PermUsersView},
 	"PATCH /v1/users/{id}":                {model.PermUsersManage},
@@ -67,7 +67,7 @@ var apiRoutePerms = map[string][]string{
 	"DELETE /v1/billing/plans/{id}":        {model.PermBillingManage},
 	"POST /v1/billing/plans/{id}/migrate":  {model.PermBillingManage},
 	"GET /v1/billing/orders":               {model.PermBillingView},
-	"POST /v1/billing/orders":              {model.PermBillingSell},
+	"POST /v1/billing/orders":              {model.PermBillingManage},
 	"GET /v1/billing/orders/{id}":          {model.PermBillingView},
 	"POST /v1/billing/orders/{id}/confirm": {model.PermBillingManage},
 	"POST /v1/billing/orders/{id}/cancel":  {model.PermBillingManage},
@@ -78,13 +78,13 @@ var apiRoutePerms = map[string][]string{
 	"DELETE /v1/billing/promos/{id}":       {model.PermBillingManage},
 	"GET /v1/users/{id}/wallet":            {model.PermBillingView},
 	"GET /v1/users/{id}/referrals":         {model.PermBillingView},
-	"POST /v1/users/{id}/autorenew":        {model.PermBillingSell},
-	"POST /v1/users/{id}/promo":            {model.PermBillingSell},
+	"POST /v1/users/{id}/autorenew":        {model.PermBillingManage},
+	"POST /v1/users/{id}/promo":            {model.PermBillingManage},
 	"GET /v1/users/{id}/quotes":            {model.PermBillingView},
 	"GET /v1/users/{id}/extras":            {model.PermBillingView},
 	"POST /v1/users/{id}/telegram":         {model.PermUsersManage},
 	"GET /v1/users/{id}/subscription":      {model.PermUsersView},
-	"POST /v1/users/{id}/referrer":         {model.PermBillingSell},
+	"POST /v1/users/{id}/referrer":         {model.PermBillingManage},
 	"POST /v1/users/{id}/source":           {model.PermUsersManage},
 	"GET /v1/billing/promos/{id}/uses":     {model.PermBillingView},
 	"GET /v1/billing/referrals":            {model.PermBillingView},
@@ -230,9 +230,9 @@ func keyAccess(k model.APIKey) apiAccess {
 }
 
 // keyRoutes is the methods a key may call — what the panel ticks for it: its own list,
-// or for a key held to its permissions the methods those open.
+// or for a key held to its permissions (full access included) the methods those open.
 func keyRoutes(k model.APIKey) []string {
-	if len(k.Routes) > 0 || k.FullAccess {
+	if len(k.Routes) > 0 {
 		return k.Routes
 	}
 	a := keyAccess(k)
@@ -260,7 +260,7 @@ var apiRoutesPerField = map[string]bool{
 // can be ticked.
 func keyGrantForRoutes(routes []string, caller model.PermSet) ([]string, error) {
 	if len(routes) == 0 {
-		return nil, model.FieldErr("err.keyPermsRequired", "отметьте, что ключ может делать, — или дайте ему полный доступ")
+		return nil, model.FieldErr("err.keyPermsRequired", "отметьте хотя бы один метод API")
 	}
 	tickable := map[string]bool{}
 	for _, r := range tickableRoutes() {

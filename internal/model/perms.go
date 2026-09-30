@@ -16,25 +16,16 @@ import (
 // reset — is a permission of its own, so it can be withheld from a role that
 // otherwise manages the section.
 const (
-	PermUsersView   = "users.view"
-	PermUsersManage = "users.manage"
-	PermUsersDelete = "users.delete"
-	PermUsersExport = "users.export"
-	// PermUsersSignup is what the operator's website needs to register its clients
-	// (POST /v1/signup): under the panel's self-registration rules, without the power
-	// to create a user on any terms, edit or delete one.
-	PermUsersSignup   = "users.signup"
-	PermGroupsView    = "groups.view"
-	PermGroupsManage  = "groups.manage"
-	PermStatsView     = "stats.view"
-	PermStatsManage   = "stats.manage" // resetting the statistics
-	PermBillingView   = "billing.view"
-	PermBillingManage = "billing.manage"
-	// PermBillingSell is what a bot selling on the operator's behalf needs: open an
-	// order, enter a promo code, record who invited a user, switch their renewal. Not
-	// confirming an order, crediting a balance or refunding — those move money
-	// without it arriving, and stay with billing.manage.
-	PermBillingSell    = "billing.sell"
+	PermUsersView      = "users.view"
+	PermUsersManage    = "users.manage"
+	PermUsersDelete    = "users.delete"
+	PermUsersExport    = "users.export"
+	PermGroupsView     = "groups.view"
+	PermGroupsManage   = "groups.manage"
+	PermStatsView      = "stats.view"
+	PermStatsManage    = "stats.manage" // resetting the statistics
+	PermBillingView    = "billing.view"
+	PermBillingManage  = "billing.manage"
 	PermPayments       = "payments.manage"
 	PermBroadcasts     = "broadcasts.manage"
 	PermServersView    = "servers.view"
@@ -84,8 +75,6 @@ var PermCatalog = []PermSection{
 	{Key: "audit", View: PermAudit},
 	{Key: "usersDelete", Manage: PermUsersDelete},
 	{Key: "usersExport", Manage: PermUsersExport},
-	{Key: "usersSignup", Manage: PermUsersSignup},
-	{Key: "billingSell", Manage: PermBillingSell},
 	{Key: "payments", Manage: PermPayments},
 	{Key: "broadcasts", Manage: PermBroadcasts},
 	{Key: "webhooks", Manage: PermWebhooks},
@@ -144,12 +133,7 @@ var PermImplies = func() map[string][]string {
 	// export, the plans the providers take payment for.
 	m[PermUsersDelete] = []string{PermUsersView}
 	m[PermUsersExport] = []string{PermUsersView}
-	// Whoever may create users on any terms may also sign them up under the rules.
-	m[PermUsersManage] = []string{PermUsersView, PermUsersSignup}
 	m[PermPayments] = []string{PermBillingView}
-	// Selling reads the plans and prices it sells; managing billing sells too.
-	m[PermBillingSell] = []string{PermBillingView}
-	m[PermBillingManage] = []string{PermBillingView, PermBillingSell}
 	return m
 }()
 

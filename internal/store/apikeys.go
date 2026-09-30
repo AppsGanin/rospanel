@@ -221,3 +221,34 @@ func (s *Store) APIKeyPerms(id int64) (perms model.PermSet, revoked, ok bool, er
 	}
 	return keyPerms(full, stored), revokedAt != 0, true, nil
 }
+
+// PermsOnlyAPIKey is an active key held to its permissions alone, with the list as
+// stored — permissions later releases retired included, which reading it through
+// the catalog would drop.
+type PermsOnlyAPIKey struct {
+	ID    int64
+	Perms []string
+}
+
+// PermsOnlyAPIKeys lists the active keys not held to methods and not full access.
+func (s *Store) PermsOnlyAPIKeys() ([]PermsOnlyAPIKey, error) {
+	rows, err := s.db.Query(
+		`SELECT id, perms FROM api_keys WHERE routes = '' AND full_access = 0 AND revoked_at = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PermsOnlyAPIKey
+	for rows.Next() {
+		var k PermsOnlyAPIKey
+		var perms string
+		if err := rows.Scan(&k.ID, &perms); err != nil {
+			return nil, err
+		}
+		if perms != "" {
+			k.Perms = strings.Split(perms, ",")
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}

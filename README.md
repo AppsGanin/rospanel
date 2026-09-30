@@ -652,8 +652,8 @@ the assistant gets: for a look-only assistant, tick "Read only". More in
 
 **Sign-up from your own website** — `POST /v1/signup` registers a client by your site's id (an
 e-mail, an account number) under the bot's rules: closed registration, the invite code,
-moderation, a rate limit, one account and one trial per id. The site's key needs `users.signup`,
-not `users.manage`.
+moderation, a rate limit, one account and one trial per id. Tick the site's key for this method,
+not for creating users.
 
 **Connecting an assistant** takes one URL and no local install. Create a key in
 *Settings → API* (ticking what it may do), take the base address from the same page, and paste:
