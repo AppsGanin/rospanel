@@ -38,6 +38,12 @@ type View struct {
 	Brand   ViewBrand  `json:"brand"`
 	Devices Devices    `json:"devices"`
 	Billing *Billing   `json:"billing,omitempty"` // absent while billing shows nothing
+	// TGLink is the user bot's link that binds this account to the Telegram it is
+	// opened in — or, when TGLinked, moves it there. Absent while the bot or the
+	// switches in Settings → Telegram leave nothing to offer. Its code lasts 15
+	// minutes: fetch the view again rather than keep the link.
+	TGLink   string `json:"tg_link,omitempty"`
+	TGLinked bool   `json:"tg_linked"`
 }
 
 // ViewTexts are a View's figures in words.

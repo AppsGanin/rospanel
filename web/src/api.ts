@@ -1036,6 +1036,9 @@ export interface SubSettings {
   sub_order_mode: string
   // Drop a node from subscriptions while it is offline (off by default).
   sub_hide_offline: boolean
+  // The operator's own subscription page: browsers opening a subscription link are
+  // redirected there, {token} replaced by the user's token. Empty = the panel's page.
+  sub_page_url: string
 }
 
 // HWIDSettings gates device binding: which installs may fetch the subscription and

@@ -59,6 +59,7 @@ const EMPTY_SUB: SubSettings = {
   sub_happ_crypt: false,
   sub_order_mode: "manual",
   sub_hide_offline: false,
+  sub_page_url: "",
 };
 
 // Requiring an id is the default: a cap a client can dodge by staying silent is not
@@ -128,6 +129,7 @@ export function SubscriptionsPanel() {
           sub_happ_crypt: d.sub_happ_crypt ?? false,
           sub_order_mode: d.sub_order_mode ?? "manual",
           sub_hide_offline: d.sub_hide_offline ?? false,
+          sub_page_url: d.sub_page_url ?? "",
         };
         load(init);
         loadHwid(d.hwid ?? EMPTY_HWID);
@@ -278,6 +280,18 @@ export function SubscriptionsPanel() {
             onChange={(v) => patch({ sub_announce: v })}
           />
         </SettingRow>
+        <SettingRow
+          label={t("subs.pageURL")}
+          hint={t("subs.pageURLHint")}
+          field={
+            <TextInput
+              placeholder="https://example.com/cabinet?sub={token}"
+              value={s.sub_page_url}
+              mono
+              onChange={(v) => patch({ sub_page_url: v })}
+            />
+          }
+        />
         <ToggleRow
           label={t("subs.showConfigs")}
           hint={t("subs.showConfigsHint")}

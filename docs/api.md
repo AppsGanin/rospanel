@@ -458,8 +458,11 @@ invite code, `POST /v1/users/{id}/referrer` with `{"ref_code": "r_…"}` (with o
 that signs people in by their subscription link finds them with `?sub_token=`.
 `GET /v1/users/{id}/subscription` has everything the subscription page shows — status,
 traffic, term, `sub_url`, one-tap imports per app (`apps`), every config (`links`; list them
-only when `show_configs`), devices, the payment block (`billing`) and the operator's colours
-(`brand`) — worded in `?lang`; the actions go through the endpoints above.
+only when `show_configs`), devices, the payment block (`billing`), the operator's colours
+(`brand`) and `tg_link` — the user bot's link that binds the account to the Telegram it is
+opened in (moves it there when `tg_linked`; absent while the switches in Settings → Telegram
+offer nothing, and good for 15 minutes) — worded in `?lang`; the actions go through the
+endpoints above.
 
 **Sign-up from your website** — `POST /v1/signup` with `{"external_id": "ann@example.com"}`
 registers a client by your site's own id under the rules the user bot keeps: closed
@@ -737,7 +740,7 @@ curl -X PATCH $BASE/v1/settings -H "Authorization: Bearer $KEY" \
   "device_count_mode": "auto",
   "local_backup_cron": "", "local_backup_keep": 7,
   "sub_path": "sub", "warp_enabled": false, "warp_registered": true,
-  "sub_order_mode": "manual", "sub_happ_crypt": false,
+  "sub_order_mode": "manual", "sub_happ_crypt": false, "sub_page_url": "",
   "trusted_nets": ["198.51.100.0/24", "203.0.113.10/32"]
 } }
 ```
@@ -747,12 +750,16 @@ curl -X PATCH $BASE/v1/settings -H "Authorization: Bearer $KEY" \
 that connect to the first entry spread across the fleet; hide-when-full and hide-when-over
 still apply. `sub_happ_crypt` makes the subscription page's Happ button, and
 `GET /v1/users/{id}/happ-link`, hand out an encrypted `happ://crypt4/` link instead of the
-plain address. `trusted_nets` are the IPs and networks the panel never bans on its own —
+plain address. `sub_page_url` is your own subscription page: a browser opening a subscription
+link is redirected there (`302`), `{token}` replaced by the user's token — e.g.
+`https://example.com/cabinet?sub={token}`, then `GET /v1/users?sub_token=` finds the user. Apps
+fetching the subscription, and `?format=` downloads, are not redirected; `""` brings back the
+panel's page. `trusted_nets` are the IPs and networks the panel never bans on its own —
 not for guessing the SOCKS/HTTP password, not for scanning the panel, not under the source
 policy (a refusal is still journaled). Sending it replaces the whole list; entries are
 stored as prefixes (`198.51.100.7/24` becomes `198.51.100.0/24`), networks wider than an
 IPv4 /8 or an IPv6 /32 are refused, and bans already in place inside the list are lifted.
-An unknown `sub_order_mode` or a bad `trusted_nets` entry is refused before any field of
+An unknown `sub_order_mode`, a bad `sub_page_url` or `trusted_nets` entry is refused before any field of
 the body is written.
 
 `device_count_mode` decides what a user's device limit counts. `auto` (the default) counts

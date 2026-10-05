@@ -153,7 +153,8 @@ func (rt *Router) apiSetReferrer(w http.ResponseWriter, r *http.Request, id int6
 
 // apiUserSubscription is the user's subscription page as data — for a page drawn
 // elsewhere: status, traffic, term, the subscription link, one-tap imports into each
-// app, every config, devices, and the payment block, worded in ?lang (en by default).
+// app, every config, devices, the payment block and the Telegram bind link, worded in
+// ?lang (en by default).
 func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id int64) {
 	u, err := rt.mgr.Store().GetUser(id)
 	if err != nil {
@@ -185,6 +186,8 @@ func (rt *Router) apiUserSubscription(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	view.RefCode, _ = rt.mgr.RefCode(u.ID)
+	view.TGLink = rt.buildAccess(r, *u, set).TGLink
+	view.TGLinked = u.TgChatID != 0
 	writeAPIData(w, http.StatusOK, view)
 }
 

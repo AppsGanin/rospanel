@@ -533,6 +533,7 @@ const en: Dict = {
     providerFieldRequired: "{{provider}}: fill in “{{field}}”",
     providerUnconfigured: "{{provider}}: the settings are incomplete",
     realityDestInvalid: "the REALITY masquerade domain {{value}} does not look real",
+    subPageURL: "your own subscription page: a full http(s) address, {token} is the user's token",
     subPathReserved: "the subscription path “{{path}}” is reserved by the panel — pick another one",
     tcpPortTaken: "TCP port {{port}} is already taken — pick a different one",
     textTooLong: "the text is longer than {{limit}} characters (currently {{count}}) — Telegram will refuse it",
@@ -1310,6 +1311,8 @@ const en: Dict = {
   },
 
   subs: {
+    pageURL: "Your own subscription page",
+    pageURLHint: "A browser opening a subscription link goes to this address, {token} is the user's token. Apps get the subscription as before. Empty — the panel's page.",
     showConfigs: "Individual configs on the page",
     showConfigsHint: "A card with per-protocol links and copy buttons. Off — the subscription link only.",
     happCrypt: "Encrypted link for Happ",

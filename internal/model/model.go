@@ -905,6 +905,10 @@ type Settings struct {
 	// v2RayTun) via the subscription's Announce header. Empty ⇒ no announcement.
 	// Clients only render the first 200 characters; the panel enforces that limit.
 	SubAnnounce string `json:"-"`
+	// SubPageURL is the operator's own subscription page: a browser opening a
+	// subscription link is redirected there, {token} replaced by the user's token.
+	// Empty ⇒ the panel's own page. Apps fetching the subscription never see it.
+	SubPageURL string `json:"-"`
 
 	// HWID device binding (Settings → Subscriptions). When enabled, a client that
 	// identifies itself with an x-hwid header is bound to the user on first fetch and
@@ -1534,6 +1538,28 @@ func (s *Settings) SubPathOr() string {
 		return p
 	}
 	return "sub"
+}
+
+// SubPageToken is the placeholder SubPageURL replaces with the user's token.
+const SubPageToken = "{token}"
+
+// SubPageRedirect is where a browser opening the user's subscription link goes, or
+// "" for the panel's own page.
+func (s *Settings) SubPageRedirect(token string) string {
+	if s.SubPageURL == "" {
+		return ""
+	}
+	return strings.ReplaceAll(s.SubPageURL, SubPageToken, url.QueryEscape(token))
+}
+
+// ValidSubPageURL reports whether raw is an absolute http(s) address, up to 2048
+// characters, once {token} is filled in.
+func ValidSubPageURL(raw string) bool {
+	if len(raw) > 2048 || strings.ContainsAny(raw, " \t\r\n") {
+		return false
+	}
+	u, err := url.Parse(strings.ReplaceAll(raw, SubPageToken, "t"))
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
 }
 
 // RealitySID returns the primary (first) REALITY shortId — the one embedded in
