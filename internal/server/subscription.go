@@ -72,6 +72,13 @@ func handleSub(rt *Router, w http.ResponseWriter, r *http.Request, rest string) 
 		// even from a browser — that's how the page's own "download Clash config"
 		// button fetches YAML from this very URL instead of re-rendering the page.
 		if isBrowser(r) && r.URL.Query().Get("format") == "" {
+			// The operator draws the page on their own site: the browser goes there,
+			// while apps keep fetching the subscription from this very address.
+			if to := set.SubPageRedirect(u.SubToken); to != "" {
+				w.Header().Set("Cache-Control", "no-store")
+				http.Redirect(w, r, to, http.StatusFound)
+				return
+			}
 			lang := i18n.FromAcceptLanguage(r.Header.Get("Accept-Language"))
 			access := rt.buildAccess(r, *u, set)
 			if err := rt.servePage(w, *u, set, access, lang, clientIP(r)); err != nil {

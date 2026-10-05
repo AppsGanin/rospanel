@@ -655,6 +655,11 @@ e-mail, an account number) under the bot's rules: closed registration, the invit
 moderation, a rate limit, one account and one trial per id. Tick the site's key for this method,
 not for creating users.
 
+**Your own subscription page** — `GET /v1/users/{id}/subscription` is the page as data: figures,
+app imports, configs, devices, offers and the Telegram bind link (`tg_link`). Set
+*Settings → Subscriptions → Your own subscription page* (`https://example.com/cabinet?sub={token}`)
+and a browser opening a subscription link goes to your site; apps fetch the subscription as before.
+
 **Connecting an assistant** takes one URL and no local install. Create a key in
 *Settings → API* (ticking what it may do), take the base address from the same page, and paste:
 

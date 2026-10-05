@@ -368,6 +368,7 @@ var errEN = map[string]string{
 	"err.starsNeedBot":             "Telegram Stars are taken by the user bot — turn it on",
 	"err.streamingUnsupported":     "streaming is not supported",
 	"err.subOrderMode":             "unknown server ordering mode",
+	"err.subPageURL":               "your own subscription page: a full http(s) address, {token} is the user's token",
 	"err.subPathCharset":           "subscription path: Latin letters, digits, “-” and “_”, 1–32 characters",
 	"err.subPathReserved":          "the subscription path “{{path}}” is reserved by the panel — pick another one",
 	"err.subPathSameAsPanel":       "the subscription path cannot be the same as the panel's secret path",

@@ -660,6 +660,10 @@ func (m *Manager) SaveSubSettings(st *model.Settings) error {
 			"объявление: не длиннее {{max}} символов (сейчас {{count}}) — клиенты обрежут остальное",
 			map[string]any{"max": announceMaxRunes, "count": n})
 	}
+	st.SubPageURL = strings.TrimSpace(st.SubPageURL)
+	if st.SubPageURL != "" && !model.ValidSubPageURL(st.SubPageURL) {
+		return invalidCode("err.subPageURL", "адрес своей страницы подписки: полный http(s)-адрес, {token} — токен пользователя")
+	}
 	if reservedSubPaths[strings.ToLower(st.SubPath)] {
 		return invalidCode("err.subPathReserved", "путь подписки «{{path}}» зарезервирован панелью — выберите другой", map[string]any{"path": st.SubPath})
 	}
