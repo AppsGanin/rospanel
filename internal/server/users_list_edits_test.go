@@ -148,6 +148,7 @@ func TestEveryWriteUnderAUsersIDEditsOnlyThatUser(t *testing.T) {
 		"POST /api/users/{id}/enabled":          "that user's switch",
 		"POST /api/users/{id}/name":             "that user's name",
 		"POST /api/users/{id}/note":             "that user's note",
+		"POST /api/users/{id}/mailing":          "that user's mailing switch, not on the list",
 		"POST /api/users/{id}/tags":             "that user's tags",
 		"POST /api/users/{id}/devices/unbind":   "that user's devices, counted per page",
 		"POST /api/users/{id}/rotate-sub":       "a token the list does not show",

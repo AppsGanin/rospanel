@@ -73,17 +73,43 @@ type webhookPayload struct {
 	Data      any    `json:"data"`
 }
 
-// userEventData is the compact user payload shared by the user.* events.
-func userEventData(u model.User) map[string]any {
-	return map[string]any{
-		"id":         u.ID,
-		"name":       u.Name,
-		"status":     u.Status,
-		"enabled":    u.Enabled,
-		"expire_at":  u.ExpireAt,
-		"data_limit": u.DataLimit,
-		"plan_id":    u.PlanID,
+// userEventData is the compact user payload shared by the user.* events, with the ids
+// an external system knows the user by: its own (external_id, "" when none) and the
+// Telegram (telegram_id, 0 when none). Built before a deletion, since afterwards the
+// external id is gone with the row.
+func (m *Manager) userEventData(u model.User) map[string]any {
+	return m.usersEventData([]model.User{u})[0]
+}
+
+// usersEventData is userEventData for many users, how each is reached read at once:
+// besides the ids, whether mailings go to them (mailing) and their language (lang,
+// "" when unknown).
+func (m *Manager) usersEventData(users []model.User) []map[string]any {
+	ids := make([]int64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
 	}
+	contacts, err := m.store.UserContacts(ids)
+	if err != nil {
+		logErr("webhook: reading the external ids failed", "users", len(ids), "err", err)
+	}
+	out := make([]map[string]any, len(users))
+	for i, u := range users {
+		out[i] = map[string]any{
+			"id":          u.ID,
+			"name":        u.Name,
+			"status":      u.Status,
+			"enabled":     u.Enabled,
+			"expire_at":   u.ExpireAt,
+			"data_limit":  u.DataLimit,
+			"plan_id":     u.PlanID,
+			"external_id": contacts[u.ID].ExternalID,
+			"telegram_id": u.TgChatID,
+			"mailing":     !contacts[u.ID].MailingOff,
+			"lang":        contactLang(contacts[u.ID]),
+		}
+	}
+	return out
 }
 
 // emitUserWebhook sends an event about one user: the usual user fields plus what the
@@ -93,7 +119,7 @@ func (m *Manager) emitUserWebhook(event string, userID int64, extra map[string]a
 	if err != nil {
 		return
 	}
-	d := userEventData(*u)
+	d := m.userEventData(*u)
 	for k, v := range extra {
 		d[k] = v
 	}
@@ -117,8 +143,7 @@ func (m *Manager) emitUsersWebhook(event string, ids []int64, extra map[string]a
 			continue
 		}
 		items := make([]any, 0, len(users))
-		for _, u := range users {
-			d := userEventData(u)
+		for _, d := range m.usersEventData(users) {
 			for k, v := range extra {
 				d[k] = v
 			}
@@ -126,6 +151,32 @@ func (m *Manager) emitUsersWebhook(event string, ids []int64, extra map[string]a
 		}
 		m.EmitWebhookEach(event, items)
 	}
+}
+
+// emitPaymentWebhook sends a payment.* event: the order's own fields, the user as the
+// order left them (user, with the ids an external system knows them by) and their
+// balance (user_balance_kop — the order's own balance_kop is the part of the price
+// the balance covered), plus what the event adds.
+func (m *Manager) emitPaymentWebhook(event string, order *model.PaymentOrder, extra map[string]any) {
+	if !m.webhookWanted(event) {
+		return
+	}
+	d := map[string]any{}
+	if raw, err := json.Marshal(order); err == nil {
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber() // ids and kopecks stay exact
+		_ = dec.Decode(&d)
+	}
+	if u, err := m.store.GetUser(order.UserID); err == nil {
+		d["user"] = m.userEventData(*u)
+	}
+	if wal, err := m.store.GetWalletLite(order.UserID); err == nil {
+		d["user_balance_kop"] = wal.BalanceKop
+	}
+	for k, v := range extra {
+		d[k] = v
+	}
+	m.EmitWebhook(event, d)
 }
 
 // emitChangeBought reports a paid change of plan as plan.changed, beside the order's

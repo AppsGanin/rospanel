@@ -54,7 +54,8 @@ const GROUPS: { key: string; events: string[] }[] = [
       "balance.adjusted",
     ],
   },
-  { key: "referral", events: ["user.referred", "referral.reward", "promo.winback"] },
+  { key: "referral", events: ["user.referred", "referral.reward", "promo.winback", "promo.redeemed"] },
+  { key: "messages", events: ["user.message", "user.auto_message", "broadcast.sent", "user.mailing"] },
 ];
 
 export function WebhookEventGrid({

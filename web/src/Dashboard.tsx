@@ -5,6 +5,7 @@ import { getMe, logout, type Perm, type Role } from "./api";
 import { Credentials } from "./Credentials";
 import { ChangelogModal } from "./ChangelogModal";
 import { LangChoice, LangPills } from "./LangSwitch";
+import { type MessageHooks, MessageHooksContext } from "./messageHooks";
 import { BrandLogo } from "./Logo";
 import { OverviewPanel } from "./OverviewPanel";
 import { useIsOwner, usePerms } from "./role";
@@ -88,11 +89,21 @@ export function Dashboard({
   // OFF, so every action behind them would answer 400.
   const [billing, setBilling] = useState(billingEnabled);
   const [userBot, setUserBot] = useState(userBotEnabled);
+  const [hooks, setHooks] = useState<MessageHooks>({
+    message: false,
+    broadcast: false,
+    autoMessage: false,
+  });
   const refreshFlags = () =>
     getMe()
       .then((m) => {
         setBilling(!!m.billing_enabled);
         setUserBot(!!m.user_bot_enabled);
+        setHooks({
+          message: !!m.message_hook,
+          broadcast: !!m.broadcast_hook,
+          autoMessage: !!m.auto_message_hook,
+        });
         onPerms(m.role, m.perms ?? []);
         // Another admin may have moved the panel's timezone since sign-in.
         setPanelTimezone(m.timezone);
@@ -122,7 +133,7 @@ export function Dashboard({
   const canUsers =
     has("users.view", "groups.view", "stats.view") ||
     (billing && has("billing.view")) ||
-    (userBot && has("broadcasts.manage"));
+    ((userBot || hooks.broadcast || hooks.autoMessage) && has("broadcasts.manage"));
   const canServers = has("servers.view", "routing.view");
   const canSettings =
     isOwner ||
@@ -307,7 +318,9 @@ export function Dashboard({
             )}
             {NAV.length > 0 && tab === "overview" && <OverviewPanel />}
             {tab === "users" && (
-              <UsersPage userBotEnabled={userBot} billingEnabled={billing} />
+              <MessageHooksContext.Provider value={hooks}>
+                <UsersPage userBotEnabled={userBot} billingEnabled={billing} />
+              </MessageHooksContext.Provider>
             )}
             {tab === "nodes" && <NodesPanel />}
             {tab === "settings" && <SettingsPanel />}

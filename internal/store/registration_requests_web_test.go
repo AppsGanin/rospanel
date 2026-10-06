@@ -13,14 +13,14 @@ func TestWebRegistrationRequests(t *testing.T) {
 	if _, err := st.CreateRegistrationRequest(555, "chat", 1); err != nil {
 		t.Fatalf("chat request: %v", err)
 	}
-	a, err := st.CreateWebRegistrationRequest("a@example.com", "A", "vk", 7, 2)
+	a, err := st.CreateWebRegistrationRequest("a@example.com", "A", "vk", "", 7, 2)
 	if err != nil {
 		t.Fatalf("web request a: %v", err)
 	}
-	if _, err := st.CreateWebRegistrationRequest("b@example.com", "B", "", 0, 3); err != nil {
+	if _, err := st.CreateWebRegistrationRequest("b@example.com", "B", "", "", 0, 3); err != nil {
 		t.Fatalf("web request b: %v", err)
 	}
-	if _, err := st.CreateWebRegistrationRequest("a@example.com", "A again", "", 0, 4); !errors.Is(err, ErrRegistrationPending) {
+	if _, err := st.CreateWebRegistrationRequest("a@example.com", "A again", "", "", 0, 4); !errors.Is(err, ErrRegistrationPending) {
 		t.Fatalf("second request for one id: %v", err)
 	}
 	if a.ChatID != 0 || a.ExternalID != "a@example.com" || a.Source != "vk" || a.ReferrerID != 7 {

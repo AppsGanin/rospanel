@@ -1354,8 +1354,11 @@ func (rt *Router) buildHistory(u model.User, lang i18n.Lang) []sub.HistoryLine {
 	if orders, err := rt.mgr.Store().PaidPlanOrdersOffBalance(u.ID, historyMax); err == nil {
 		for _, o := range orders {
 			method := rt.mgr.ProviderLabel(o.Provider)
-			if o.Provider == "" {
+			switch o.Provider {
+			case "":
 				method = rt.mgr.ManualPaymentLabel(lang)
+			case model.ExternalPayProvider:
+				method = i18n.T(lang, "pay.external")
 			}
 			all = append(all, dated{o.PaidAt, sub.HistoryLine{
 				Title: i18n.T(lang, "sub.txPlanPaid", termTitle(o.PlanName, o.Periods), method), When: when(o.PaidAt),

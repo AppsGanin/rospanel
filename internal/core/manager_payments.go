@@ -77,6 +77,9 @@ func (m *Manager) methodLabel(lang i18n.Lang, key string) string {
 	if key == "" || key == "manual" {
 		return i18n.T(lang, "pay.manual")
 	}
+	if key == model.ExternalPayProvider {
+		return i18n.T(lang, "pay.external")
+	}
 	return m.ProviderLabel(key)
 }
 
@@ -454,7 +457,7 @@ func (m *Manager) startProviderOrder(ctx context.Context, lang i18n.Lang, d stor
 		order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub,
 		escHTML(m.methodLabel(adminLang, provider))))
 	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, provider))
-	m.EmitWebhook(model.WebhookPaymentCreated, order)
+	m.emitPaymentWebhook(model.WebhookPaymentCreated, order, nil)
 	return order, nil
 }
 
@@ -601,7 +604,11 @@ func (m *Manager) afterOrderPaid(ctx context.Context, order *model.PaymentOrder,
 	m.notifyReferral(set, res, order)
 	order.Status = "paid"
 	m.audit(ctx, order.UserID, model.EventPaymentPaid, orderAudit(order, provider))
-	m.EmitWebhook(model.WebhookPaymentPaid, order)
+	var extra map[string]any
+	if undelivered {
+		extra = map[string]any{"undelivered": true}
+	}
+	m.emitPaymentWebhook(model.WebhookPaymentPaid, order, extra)
 	m.emitChangeBought(order) // an undelivered change was turned into a top-up above
 }
 
@@ -943,7 +950,9 @@ func (m *Manager) providerRefunded(ctx context.Context, o *model.PaymentOrder) {
 		done = append(done, i18n.T(lang, "notify.refundRefShort", kopText(r.RefShortKop)))
 	}
 	if after, err := m.store.GetPaymentOrder(o.ID); err == nil {
-		m.EmitWebhook(model.WebhookPaymentRefunded, after)
+		m.emitPaymentWebhook(model.WebhookPaymentRefunded, after, map[string]any{
+			"taken_kop": r.TakenKop, "returned_kop": r.ReturnedKop, "plan_cancelled": cut,
+		})
 	}
 	msg := i18n.T(lang, "notify.providerRefund", o.ID, m.adminUserByID(o.UserID, o.UserName),
 		escHTML(orderSubject(lang, o)), o.AmountRub, escHTML(payments.Label(o.Provider)))

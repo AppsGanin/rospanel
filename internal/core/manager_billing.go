@@ -349,7 +349,7 @@ func (m *Manager) CreateRegisteredUser(ctx context.Context, name string, trial b
 func (m *Manager) announceRegistration(ctx context.Context, u *model.User, externalID string, req *model.RegistrationRequest) {
 	plan := m.PlanName(u.PlanID)
 	details := map[string]any{"plan": plan}
-	data := userEventData(*u)
+	data := m.userEventData(*u)
 	if req != nil {
 		// Approved: the event names the request the 202 or registration.requested
 		// handed out, and the Telegram it was filed from.
@@ -442,6 +442,12 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	// code), don't mint a duplicate — just let the applicant know they're set.
 	if existing, _ := m.store.GetUserByTelegramChatID(req.ChatID); existing != nil {
 		m.notifyRegistrationDecision(req.ChatID, "notify.regAlreadyLinked")
+		// The request is closed without an account of its own: an external system
+		// holding it pending hears so, and which account the Telegram already has.
+		m.EmitWebhook(model.WebhookRegistrationRejected, map[string]any{
+			"request_id": req.ID, "name": req.Name, "telegram_id": req.ChatID,
+			"reason": "has_account", "user_id": existing.ID,
+		})
 		return nil
 	}
 	// One trial per Telegram (see store.ChatHadTrial).
@@ -462,6 +468,7 @@ func (m *Manager) ApproveRegistrationRequest(ctx context.Context, reqID int64) e
 	_ = m.store.MarkChatTrial(req.ChatID)
 	m.AttachReferrer(ctx, u.ID, req.ChatID)
 	u.TgChatID = req.ChatID
+	m.giveLang(u, req.Lang)
 	m.announceRegistration(ctx, u, "", req)
 	// The same Telegram a bot or Mini App sign-up links, approved here instead.
 	m.emitTelegramWebhook(model.WebhookUserTelegramLinked, *u, req.ChatID)
@@ -486,7 +493,7 @@ func (m *Manager) RejectRegistrationRequest(ctx context.Context, reqID int64) er
 	if !claimed {
 		return nil // another admin already decided this request
 	}
-	data := map[string]any{"request_id": req.ID, "name": req.Name}
+	data := map[string]any{"request_id": req.ID, "name": req.Name, "reason": "operator"}
 	if req.ExternalID != "" {
 		// A website client hears it from the site, which the event tells.
 		data["external_id"] = req.ExternalID
@@ -1192,7 +1199,7 @@ func (m *Manager) manualOrder(ctx context.Context, lang i18n.Lang, d store.Order
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.manualOrder",
 		order.ID, m.adminUserByID(order.UserID, order.UserName), escHTML(orderSubject(adminLang, order)), order.AmountRub))
 	m.audit(ctx, d.UserID, model.EventPaymentCreated, orderAudit(order, "manual"))
-	m.EmitWebhook(model.WebhookPaymentCreated, order)
+	m.emitPaymentWebhook(model.WebhookPaymentCreated, order, nil)
 	return order, manualOrderMessage(lang, order, subject, set), nil
 }
 
@@ -1248,7 +1255,11 @@ func (m *Manager) ConfirmPayment(ctx context.Context, orderID int64) error {
 	}
 	logInfo("billing: order confirmed", "order", orderID, "user", order.UserID, "plan", order.PlanID)
 	order.PaidAt = now
-	m.afterOrderPaid(ctx, order, "manual", res)
+	by := "manual"
+	if order.Provider == model.ExternalPayProvider {
+		by = model.ExternalPayProvider // the operator hears of it like a provider payment
+	}
+	m.afterOrderPaid(ctx, order, by, res)
 	return nil
 }
 
@@ -1271,7 +1282,7 @@ func (m *Manager) CancelPayment(ctx context.Context, orderID int64) error {
 		m.audit(ctx, order.UserID, model.EventPaymentCancelled, map[string]any{
 			"order_id": order.ID, "plan": order.PlanName, "amount_rub": order.AmountRub,
 		})
-		m.EmitWebhook(model.WebhookPaymentCancelled, order)
+		m.emitPaymentWebhook(model.WebhookPaymentCancelled, order, nil)
 	} else {
 		m.EmitWebhook(model.WebhookPaymentCancelled, map[string]any{"id": orderID})
 	}

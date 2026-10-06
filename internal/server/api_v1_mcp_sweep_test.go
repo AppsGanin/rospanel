@@ -576,7 +576,7 @@ func TestAPINamesTheKindOfBadField(t *testing.T) {
 // the request struct without being wired into the handler fails here.
 func TestMCPUserWritesReachTheStore(t *testing.T) {
 	t.Parallel()
-	h, _, st := nodeAPITestServer(t)
+	h, mgr, st := nodeAPITestServer(t)
 	base, key := apiFixture(t, h, st)
 	url := base + "/v1/mcp/" + key
 
@@ -695,6 +695,13 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 	if got := st.UserExternalID(created.ID); got != "sweep@example.com" {
 		t.Errorf("patch_users_by_id: external_id did not land: %q", got)
 	}
+
+	// The mailing switch and the language: patch-only, kept off the user view's row.
+	call("patch_users_by_id", map[string]any{"id": created.ID, "body": map[string]any{"mailing": false, "lang": "en"}})
+	if mailing, lang, _ := mgr.UserContact(created.ID); mailing || lang != "en" {
+		t.Errorf("patch_users_by_id: mailing/lang did not land: %v %q", mailing, lang)
+	}
+
 	// And that an empty list clears the tags, since "omit" and "empty" differ here.
 	call("patch_users_by_id", map[string]any{"id": created.ID, "body": map[string]any{"tags": []any{}, "note": ""}})
 	cleared, err := st.GetUser(created.ID)
@@ -717,7 +724,7 @@ func TestMCPUserWritesReachTheStore(t *testing.T) {
 			switch name {
 			case "plan_id", "group_ids": // applied by their own tools, checked in the sweep
 				continue
-			case "external_id": // patch-only, checked above
+			case "external_id", "mailing", "lang": // patch-only, checked above
 				if tool.Name == "patch_users_by_id" {
 					continue
 				}

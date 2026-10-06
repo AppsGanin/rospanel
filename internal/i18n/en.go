@@ -586,6 +586,7 @@ var en = map[string]string{
 	"order.afterConfirm":              "\n\nThe service is activated once an administrator confirms the payment.",
 	"order.description":               "“%s” plan, order #%d",
 	"pay.manual":                      "manual",
+	"pay.external":                    "external system",
 	"pay.manualMethod":                "Manual transfer",
 	"sub.unavailable":                 "unavailable",
 	"sub.payUnavailable":              "payment is unavailable",

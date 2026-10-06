@@ -44,21 +44,37 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 	if err != nil {
 		return nil, err
 	}
-	// Delivery runs on the user bot's token; without it nothing would ever be sent
-	// and the broadcast would sit at 0 % with no explanation.
-	if !set.TGUserBotEnabled || strings.TrimSpace(set.TGUserBotToken) == "" {
+	// Delivery runs on the user bot's token, and — with a webhook on broadcast.sent —
+	// through the external system to the accounts the bot does not reach. With
+	// neither nothing would ever be sent and the broadcast would sit at 0 % with no
+	// explanation.
+	bot := set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != ""
+	hook := m.webhookWanted(model.WebhookBroadcastSent)
+	switch {
+	case !bot && !hook:
 		return nil, invalidCode("err.enableUserBotFirst", "сначала включите пользовательского бота — рассылка идёт через него")
+	case !bot && b.MediaKind != "":
+		return nil, invalidCode("err.attachmentNeedsBot", "вложение доставляет только бот в Telegram — отправьте текст")
 	}
 
-	chats, err := m.audienceChats(b.Audience)
-	if err != nil {
-		return nil, err
+	var chats []int64
+	if bot {
+		if chats, err = m.audienceChats(b.Audience); err != nil {
+			return nil, err
+		}
 	}
-	if len(chats) == 0 {
+	var hookUsers []model.User
+	if hook {
+		if hookUsers, err = m.audienceHookUsers(b.Audience, bot); err != nil {
+			return nil, err
+		}
+	}
+	if len(chats) == 0 && len(hookUsers) == 0 {
 		return nil, invalidCode("err.audienceEmpty", "в выбранной аудитории нет получателей")
 	}
 
 	b.CreatedBy = actor.From(ctx).Name
+	b.HookUsers = len(hookUsers)
 	now := time.Now().Unix()
 	id, err := m.store.CreateBroadcast(b, now)
 	if err != nil {
@@ -67,14 +83,73 @@ func (m *Manager) CreateBroadcast(ctx context.Context, b *model.Broadcast) (*mod
 	if err := m.store.AddBroadcastTargets(id, chats); err != nil {
 		return nil, err
 	}
+	if len(hookUsers) > 0 {
+		m.broadcastHooks.Store(id, hookUsers)
+	}
 	// Left paused: the caller starts it once anything else it needs is in place
 	// (an attachment is written to disk under the id this call just produced).
 	return m.store.GetBroadcast(id)
 }
 
-// StartBroadcast begins delivery of a freshly created broadcast.
+// StartBroadcast begins delivery of a freshly created broadcast: the bot's run, and
+// broadcast.sent to the external system. One with nothing for the bot is done then.
 func (m *Manager) StartBroadcast(id int64) error {
-	return m.store.SetBroadcastStatus(id, model.BroadcastRunning, time.Now().Unix())
+	now := time.Now().Unix()
+	if err := m.store.SetBroadcastStatus(id, model.BroadcastRunning, now); err != nil {
+		return err
+	}
+	b, err := m.store.GetBroadcast(id)
+	if err != nil {
+		return err
+	}
+	if users, ok := m.broadcastHooks.LoadAndDelete(id); ok {
+		m.emitBroadcast(b, users.([]model.User))
+	}
+	if b.Total == 0 {
+		return m.store.SetBroadcastStatus(id, model.BroadcastDone, now)
+	}
+	return nil
+}
+
+// AbandonBroadcast cancels a created broadcast that never started, and lets go of
+// the accounts it held for the external system.
+func (m *Manager) AbandonBroadcast(id int64) {
+	m.broadcastHooks.Delete(id)
+	_ = m.SetBroadcastStatus(id, model.BroadcastCancelled)
+}
+
+// emitBroadcast hands a broadcast to the external system: the message (Telegram
+// HTML, its URL buttons, the attachment's kind and name — the file goes only to
+// Telegram) and the accounts it is for, by the panel's id and the system's own.
+func (m *Manager) emitBroadcast(b *model.Broadcast, users []model.User) {
+	ids := make([]int64, len(users))
+	for i, u := range users {
+		ids[i] = u.ID
+	}
+	ext, err := m.store.UserExternalIDs(ids)
+	if err != nil {
+		logErr("broadcast: reading the external ids failed", "broadcast", b.ID, "err", err)
+	}
+	type recipient struct {
+		ID         int64  `json:"id"`
+		ExternalID string `json:"external_id"`
+	}
+	rcpt := make([]recipient, len(users))
+	for i, u := range users {
+		rcpt[i] = recipient{u.ID, ext[u.ID]}
+	}
+	buttons := b.Buttons
+	if buttons == nil {
+		buttons = []model.BroadcastButton{}
+	}
+	d := map[string]any{
+		"id": b.ID, "text": b.Text, "buttons": buttons, "audience": b.Audience,
+		"telegram_recipients": b.Total, "users": rcpt,
+	}
+	if b.MediaKind != "" {
+		d["media_kind"], d["media_name"] = b.MediaKind, b.MediaName
+	}
+	m.EmitWebhook(model.WebhookBroadcastSent, d)
 }
 
 func validateBroadcast(b *model.Broadcast) error {
@@ -127,10 +202,7 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[int64]model.User, len(users))
-	for _, u := range users {
-		byID[u.ID] = u
-	}
+	byID, byChat := rosterMaps(users)
 
 	now := time.Now().Unix()
 	out := make([]int64, 0, len(subs))
@@ -140,41 +212,136 @@ func (m *Manager) audienceChats(audience string) ([]int64, error) {
 		// a zero-value user — so "never connected" collected ex-customers who
 		// had connected yesterday, while the audience documented to hold them
 		// ("without an account") excluded them.
-		u, linked := byID[s.UserID]
+		u, linked := chatAccount(s, byID, byChat)
+		if linked && u.MailingOff {
+			continue // the account said no to mailings (the API, the operator)
+		}
 		keep := false
 		switch audience {
 		case model.AudienceAll:
 			keep = true
-		case model.AudienceLinked:
-			keep = linked
 		case model.AudienceUnlinked:
 			keep = !linked
-		case model.AudienceActive:
-			keep = linked && u.Status == model.StatusActive
-		case model.AudienceExpired:
-			keep = linked && u.Status == model.StatusExpired
-		case model.AudienceNever:
-			keep = linked && u.LastSeen == 0
 		default:
-			if n, ok := model.AudienceDays(audience, model.AudienceSeenPrefix); ok {
-				keep = linked && u.LastSeen > 0 && now-u.LastSeen <= int64(n)*86400
-			} else if n, ok := model.AudienceDays(audience, model.AudienceUnseenPrefix); ok {
-				// "Never connected" counts as not seen — someone who never arrived is
-				// the clearest case of what this filter looks for — but only once the
-				// account is itself older than the horizon. Otherwise "you have not been
-				// online for 90 days" lands on people who registered this morning.
-				old := now-u.CreatedAt.Unix() > int64(n)*86400
-				stale := u.LastSeen > 0 && now-u.LastSeen > int64(n)*86400
-				keep = linked && (stale || (u.LastSeen == 0 && old))
-			} else if n, ok := model.AudienceDays(audience, model.AudienceExpiringPrefix); ok {
-				keep = linked && u.ExpireAt > now && u.ExpireAt-now <= int64(n)*86400
-			}
+			keep = linked && audienceKeeps(audience, u, now)
 		}
 		if keep {
 			out = append(out, s.ChatID)
 		}
 	}
 	return out, nil
+}
+
+func rosterMaps(users []model.User) (byID, byChat map[int64]model.User) {
+	byID = make(map[int64]model.User, len(users))
+	byChat = make(map[int64]model.User, len(users))
+	for _, u := range users {
+		byID[u.ID] = u
+		if u.TgChatID != 0 {
+			byChat[u.TgChatID] = u
+		}
+	}
+	return byID, byChat
+}
+
+// chatAccount finds the account behind a chat: the one holding it (users.tg_chat_id).
+// The subscriber row's user_id only when no account holds the chat and that account
+// holds no other: the bot alone keeps that column, so an approval, an API link or a
+// move to another Telegram leaves it behind.
+func chatAccount(s model.Subscriber, byID, byChat map[int64]model.User) (model.User, bool) {
+	if u, ok := byChat[s.ChatID]; ok {
+		return u, true
+	}
+	u, ok := byID[s.UserID]
+	return u, ok && u.TgChatID == 0
+}
+
+// audienceKeeps reports whether an account belongs to an audience.
+func audienceKeeps(audience string, u model.User, now int64) bool {
+	switch audience {
+	case model.AudienceAll, model.AudienceLinked:
+		return true
+	case model.AudienceUnlinked:
+		return false
+	case model.AudienceActive:
+		return u.Status == model.StatusActive
+	case model.AudienceExpired:
+		return u.Status == model.StatusExpired
+	case model.AudienceNever:
+		return u.LastSeen == 0
+	}
+	if n, ok := model.AudienceDays(audience, model.AudienceSeenPrefix); ok {
+		return u.LastSeen > 0 && now-u.LastSeen <= int64(n)*86400
+	}
+	if n, ok := model.AudienceDays(audience, model.AudienceUnseenPrefix); ok {
+		// "Never connected" counts as not seen — someone who never arrived is the
+		// clearest case of what this filter looks for — but only once the account is
+		// itself older than the horizon. Otherwise "you have not been online for 90
+		// days" lands on people who registered this morning.
+		old := now-u.CreatedAt.Unix() > int64(n)*86400
+		stale := u.LastSeen > 0 && now-u.LastSeen > int64(n)*86400
+		return stale || (u.LastSeen == 0 && old)
+	}
+	if n, ok := model.AudienceDays(audience, model.AudienceExpiringPrefix); ok {
+		return u.ExpireAt > now && u.ExpireAt-now <= int64(n)*86400
+	}
+	return false
+}
+
+// audienceHookUsers resolves an audience to the accounts the external system writes
+// to: every one in it the bot does not reach (no Telegram, a Telegram that blocked
+// the bot or never started it, or the bot off), except who turned mailings off in
+// the bot.
+func (m *Manager) audienceHookUsers(audience string, bot bool) ([]model.User, error) {
+	users, err := m.store.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+	optedOut, err := m.store.OptedOutChats()
+	if err != nil {
+		return nil, err
+	}
+	// The accounts the bot's own run reaches, found as audienceChats finds them.
+	reached := map[int64]bool{}
+	if bot {
+		subs, err := m.store.ListReachableSubscribers()
+		if err != nil {
+			return nil, err
+		}
+		byID, byChat := rosterMaps(users)
+		for _, s := range subs {
+			if u, ok := chatAccount(s, byID, byChat); ok {
+				reached[u.ID] = true
+			}
+		}
+	}
+	now := time.Now().Unix()
+	var out []model.User
+	for _, u := range users {
+		if reached[u.ID] || u.MailingOff || (u.TgChatID != 0 && optedOut[u.TgChatID]) || !audienceKeeps(audience, u, now) {
+			continue
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+// AudienceHookPreview is how many accounts an audience sends to the external system
+// right now (0 while no webhook takes broadcast.sent).
+func (m *Manager) AudienceHookPreview(audience string) (int, error) {
+	audience = strings.TrimSpace(audience)
+	if audience == "" {
+		audience = model.AudienceAll
+	}
+	if !model.ValidAudience(audience) || !m.webhookWanted(model.WebhookBroadcastSent) {
+		return 0, nil
+	}
+	set, err := m.store.GetSettings()
+	if err != nil {
+		return 0, err
+	}
+	users, err := m.audienceHookUsers(audience, set.TGUserBotEnabled && strings.TrimSpace(set.TGUserBotToken) != "")
+	return len(users), err
 }
 
 // AudiencePreview reports how many recipients an audience currently resolves to, so

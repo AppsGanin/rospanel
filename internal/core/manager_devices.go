@@ -102,7 +102,7 @@ func (m *Manager) AdmitDevice(ctx context.Context, u model.User, set *model.Sett
 			"hwid": d.HWID, "os": d.OS, "model": d.Model,
 			"devices": adm.Count, "device_limit": capacity,
 		})
-		bound := userEventData(u)
+		bound := m.userEventData(u)
 		bound["device"] = map[string]any{"hwid": d.HWID, "os": d.OS, "model": d.Model}
 		bound["devices"], bound["device_limit"] = adm.Count, capacity
 		m.EmitWebhook(model.WebhookUserDeviceBound, bound)
@@ -134,7 +134,7 @@ func (m *Manager) reportDeviceRefusal(
 		i18n.T(m.userLang(u.TgChatID), "notify.userDeviceRefused"), count, capacity))
 	// A new install turned away, as opposed to the status: what was refused, so the
 	// user can be told which device and why.
-	d2 := userEventData(u)
+	d2 := m.userEventData(u)
 	d2["refused"] = true
 	d2["device"] = map[string]any{"hwid": d.HWID, "os": d.OS, "model": d.Model}
 	d2["devices"], d2["device_limit"] = count, capacity

@@ -190,7 +190,7 @@ func (m *Manager) ImportUsers(ctx context.Context, req ImportRequest) (*ImportRe
 			details = map[string]any{"data_limit": u.DataLimit, "hold_seconds": u.HoldSeconds, "imported_from": source}
 		}
 		m.auditNamed(ctx, u.ID, u.Name, model.EventUserCreated, details)
-		m.EmitWebhook(model.WebhookUserCreated, userEventData(*u))
+		m.EmitWebhook(model.WebhookUserCreated, m.userEventData(*u))
 	}
 	if res.Created > 0 {
 		logInfo("import: users created", "source", source, "created", res.Created, "skipped", res.Skipped, "failed", len(res.Failed))

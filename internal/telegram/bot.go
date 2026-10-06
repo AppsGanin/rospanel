@@ -67,6 +67,9 @@ type Panel interface {
 	PaymentMethods() []string
 	ManualPayment() bool
 	ManualPaymentLabel(lang i18n.Lang) string
+
+	// SetChatMailing is the mailing switch: the chat, and the account holding it.
+	SetChatMailing(ctx context.Context, chatID int64, on bool) error
 	ProviderLabel(key string) string
 	StartPlanPayment(ctx context.Context, lang i18n.Lang, userID, planID int64, provider string, periods int) (*model.PaymentOrder, error)
 

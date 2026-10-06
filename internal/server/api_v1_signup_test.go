@@ -14,7 +14,7 @@ import (
 // create a user on its own terms.
 func TestAPISignup(t *testing.T) {
 	t.Parallel()
-	h, _, st := nodeAPITestServer(t)
+	h, mgr, st := nodeAPITestServer(t)
 	base, _ := apiFixture(t, h, st)
 	k, err := st.CreateAPIKey("site", false, []string{model.PermUsersManage}, []string{"POST /v1/signup"})
 	if err != nil {
@@ -35,9 +35,15 @@ func TestAPISignup(t *testing.T) {
 	if err := st.SetTelegramUserBot(false, "", model.RegOpen, ""); err != nil {
 		t.Fatal(err)
 	}
-	code, first, body := signup(`{"external_id":"a@example.com","ip":"203.0.113.1"}`)
+	code, first, body := signup(`{"external_id":"a@example.com","ip":"203.0.113.1","lang":"en"}`)
 	if code != http.StatusCreated || first.Status != "created" || first.User == nil || first.User.SubURL == "" {
 		t.Fatalf("sign-up: %d %s", code, body)
+	}
+	if first.User.Lang == nil || *first.User.Lang != "en" || first.User.Mailing == nil || !*first.User.Mailing {
+		t.Fatalf("lang/mailing of a new account: %s", body)
+	}
+	if code, _, body := signup(`{"external_id":"x@example.com","lang":"de"}`); code != http.StatusBadRequest {
+		t.Fatalf("an unknown language: %d %s", code, body)
 	}
 	if first.UserID != first.User.ID || first.User.ExternalID != "a@example.com" {
 		t.Fatalf("created: %s", body)
@@ -59,9 +65,20 @@ func TestAPISignup(t *testing.T) {
 	if err := st.SetTelegramUserBot(false, "", model.RegModeration, ""); err != nil {
 		t.Fatal(err)
 	}
-	code, pending, body := signup(`{"external_id":"c@example.com"}`)
+	code, pending, body := signup(`{"external_id":"c@example.com","lang":"en"}`)
 	if code != http.StatusAccepted || pending.Status != "pending" || pending.RequestID == 0 || pending.User != nil {
 		t.Fatalf("moderated: %d %s", code, body)
+	}
+	// The language waits with the request and is the account's once approved.
+	if err := mgr.ApproveRegistrationRequest(t.Context(), pending.RequestID); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := st.UserIDByExternalID("c@example.com")
+	if err != nil || approved == 0 {
+		t.Fatalf("approved account: %d %v", approved, err)
+	}
+	if _, lang, _ := mgr.UserContact(approved); lang != "en" {
+		t.Fatalf("approved account's lang = %q, want en", lang)
 	}
 
 	// Found again by the site's id, with a key that may read users — and in full from
@@ -82,6 +99,22 @@ func TestAPISignup(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &list) != nil ||
 		len(list.Data) != 1 || list.Data[0].ID != first.User.ID {
 		t.Fatalf("lookup: %d %s", rec.Code, rec.Body.String())
+	}
+	// The whole list names how each is reached too: a roster mirrored from it must not
+	// read everyone as unsubscribed.
+	if err := mgr.SetUserMailing(t.Context(), first.User.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	rec = apiDo(t, h, http.MethodGet, base+"/v1/users", admin, "")
+	list.Data = nil
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &list) != nil || len(list.Data) < 2 {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, v := range list.Data {
+		want := v.ID != first.User.ID
+		if v.Mailing == nil || *v.Mailing != want || (v.ID == first.User.ID && v.ExternalID != "a@example.com") {
+			t.Fatalf("list entry %d: mailing %v external %q, want mailing %v", v.ID, v.Mailing, v.ExternalID, want)
+		}
 	}
 
 	if rec := apiDo(t, h, http.MethodPost, base+"/v1/users", k.RawKey, `{"name":"free-for-all"}`); rec.Code != http.StatusForbidden {

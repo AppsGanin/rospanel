@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/telegram"
 )
 
@@ -33,7 +34,9 @@ const (
 // not to watch a progress bar for a single recipient.
 //
 // It goes through the USER bot, the same one the person already talks to, so the
-// message lands in a conversation they recognise rather than from a stranger.
+// message lands in a conversation they recognise rather than from a stranger. With a
+// webhook on user.message it also goes to the external system — the only way to reach
+// someone without Telegram.
 func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) {
 	// Same multipart shape as a broadcast, and the same parser: whether a file goes
 	// out as a photo or a document should not depend on which screen sent it.
@@ -65,18 +68,26 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 		writeErrCode(w, http.StatusNotFound, "err.userNotFound", "пользователь не найден")
 		return
 	}
-	if u.TgChatID == 0 {
-		writeErrCode(w, http.StatusBadRequest, "err.userHasNoTelegram", "у пользователя не привязан Telegram")
-		return
-	}
 	set, err := rt.mgr.Settings()
 	if err != nil {
 		writeManagerErr(w, err)
 		return
 	}
 	token := strings.TrimSpace(set.TGUserBotToken)
-	if !set.TGUserBotEnabled || token == "" {
+	viaBot := u.TgChatID != 0 && set.TGUserBotEnabled && token != ""
+	// An external system that takes user.message delivers it to whoever the bot
+	// does not reach.
+	hook := rt.mgr.WebhookWanted(model.WebhookUserMessage)
+	switch {
+	case viaBot:
+	case !hook && u.TgChatID == 0:
+		writeErrCode(w, http.StatusBadRequest, "err.userHasNoTelegram", "у пользователя не привязан Telegram")
+		return
+	case !hook:
 		writeErrCode(w, http.StatusBadRequest, "err.enableUserBotToMessage", "включите пользовательского бота — сообщение идёт через него")
+		return
+	case file != nil:
+		writeErrCode(w, http.StatusBadRequest, "err.attachmentNeedsBot", "вложение доставляет только бот в Telegram — отправьте текст")
 		return
 	}
 
@@ -85,30 +96,40 @@ func (rt *Router) messageUser(w http.ResponseWriter, r *http.Request, id int64) 
 	// entry cannot answer the only question it exists for.
 	auditTarget(r, u.Name)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-	client := telegram.NewClient(token, set.TelegramProxyURL())
-	// Buttons ride along when a caller sends them, rather than being parsed and
-	// dropped: accepting a field and ignoring it answers 200 for a message that isn't
-	// what was asked for.
-	rows := telegram.BroadcastButtonRows(b.Buttons)
-	var sendErr error
-	switch {
-	case file == nil:
-		sendErr = client.SendMenu(ctx, u.TgChatID, text, rows)
-	case b.MediaKind == "photo":
-		_, sendErr = client.UploadPhoto(ctx, u.TgChatID, b.MediaName, text, rows, file)
-	default:
-		_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, rows, file)
-	}
-	if err := sendErr; err != nil {
-		if telegram.IsUnreachable(err) {
+	sent := false
+	if viaBot {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		client := telegram.NewClient(token, set.TelegramProxyURL())
+		// Buttons ride along when a caller sends them, rather than being parsed and
+		// dropped: accepting a field and ignoring it answers 200 for a message that
+		// isn't what was asked for.
+		rows := telegram.BroadcastButtonRows(b.Buttons)
+		var sendErr error
+		switch {
+		case file == nil:
+			sendErr = client.SendMenu(ctx, u.TgChatID, text, rows)
+		case b.MediaKind == "photo":
+			_, sendErr = client.UploadPhoto(ctx, u.TgChatID, b.MediaName, text, rows, file)
+		default:
+			_, sendErr = client.UploadDocument(ctx, u.TgChatID, b.MediaName, text, rows, file)
+		}
+		switch {
+		case sendErr == nil:
+			sent = true
+		case hook && text != "":
+			// The external system still gets it — the operator learns which way it went.
+		case telegram.IsUnreachable(sendErr):
 			writeErrCode(w, http.StatusBadGateway, "err.userUnreachable",
 				"пользователь заблокировал бота или удалил аккаунт — сообщение не доставлено")
 			return
+		default:
+			writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", sendErr.Error())
+			return
 		}
-		writeErrDetail(w, http.StatusBadGateway, "err.sendFailed", "не удалось отправить: ", err.Error())
-		return
 	}
-	writeOK(w)
+	if hook {
+		rt.mgr.EmitUserMessage(u.ID, text, b.Buttons, b.MediaKind, b.MediaName, sent)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "telegram": sent, "webhook": hook})
 }

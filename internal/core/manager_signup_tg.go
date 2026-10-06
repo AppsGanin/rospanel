@@ -91,6 +91,9 @@ func (m *Manager) signupTelegram(ctx context.Context, req SignupRequest, addrKey
 		if err != nil || r == nil {
 			return SignupResult{}, errors.Join(errors.New("signup: the request vanished as it was filed"), err)
 		}
+		if req.Lang != "" {
+			_ = m.store.SetRegistrationRequestLang(r.ID, req.Lang)
+		}
 		return SignupResult{Status: SignupPending, RequestID: r.ID}, nil
 	}
 	u, err := m.createRegisteredUser(name, !m.store.ChatHadTrial(chat))
@@ -107,6 +110,7 @@ func (m *Manager) signupTelegram(ctx context.Context, req SignupRequest, addrKey
 	u.TgChatID = chat
 	_ = m.store.MarkChatTrial(chat)
 	m.AttachReferrer(ctx, u.ID, chat)
+	m.giveLang(u, req.Lang)
 	m.announceRegistration(ctx, u, "", nil)
 	m.AuditTelegramLinked(ctx, u.ID, "")
 	if fresh, err := m.store.GetUser(u.ID); err == nil {

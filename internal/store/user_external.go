@@ -50,3 +50,36 @@ func (s *Store) UserExternalID(userID int64) string {
 	_ = s.db.QueryRow(`SELECT external_id FROM users WHERE id = ?`, userID).Scan(&id)
 	return id
 }
+
+// UserExternalIDs reads the website ids of several accounts at once; accounts without
+// one are absent from the map.
+func (s *Store) UserExternalIDs(ids []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	const chunk = 900
+	for start := 0; start < len(ids); start += chunk {
+		part := ids[start:min(start+chunk, len(ids))]
+		args := make([]any, len(part))
+		for i, id := range part {
+			args[i] = id
+		}
+		rows, err := s.rdb.Query(`SELECT id, external_id FROM users
+			WHERE external_id <> '' AND id IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id int64
+			var ext string
+			if err := rows.Scan(&id, &ext); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[id] = ext
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}

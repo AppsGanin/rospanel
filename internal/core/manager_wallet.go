@@ -330,7 +330,7 @@ func (m *Manager) buyPlanFromBalance(ctx context.Context, userID int64, p Purcha
 	adminLang := m.botLang()
 	m.notifyAdminEvent(model.AdminEventPayment, i18n.T(adminLang, "notify.paidBalance",
 		order.ID, m.adminUser(*u), escHTML(orderSubject(adminLang, order)), kopText(q.BalanceKop)))
-	m.EmitWebhook(model.WebhookPaymentPaid, order)
+	m.emitPaymentWebhook(model.WebhookPaymentPaid, order, nil)
 	return order, nil
 }
 
@@ -349,7 +349,7 @@ func (m *Manager) supersedePromoOrders(ctx context.Context, userID, promoID, kee
 		m.audit(ctx, o.UserID, model.EventPaymentCancelled, map[string]any{
 			"order_id": o.ID, "plan": o.PlanName, "amount_rub": o.AmountRub, "reason": "superseded",
 		})
-		m.EmitWebhook(model.WebhookPaymentCancelled, o)
+		m.emitPaymentWebhook(model.WebhookPaymentCancelled, &o, nil)
 	}
 }
 
@@ -785,7 +785,7 @@ func (m *Manager) renewFromBalance(set *model.Settings, userID, now int64) {
 	m.notifyUserEvent(set, *u, model.UserNotifyPayment,
 		i18n.T(lang, "notify.userRenewed", escHTML(plan.Name), until, kopText(wal.BalanceKop)))
 	if order, err := m.store.GetPaymentOrder(orderID); err == nil {
-		m.EmitWebhook(model.WebhookPaymentPaid, order)
+		m.emitPaymentWebhook(model.WebhookPaymentPaid, order, map[string]any{"renewal": true})
 	}
 }
 
@@ -1015,6 +1015,14 @@ func (m *Manager) RedeemPromo(ctx context.Context, userID int64, code string) (*
 	m.auditNamed(ctx, u.ID, u.Name, model.EventPromoRedeemed, map[string]any{
 		"code": p.Code, "kind": p.Kind, "value": p.Value,
 	})
+	extra := map[string]any{"code": p.Code, "kind": p.Kind, "value": p.Value}
+	if res.PlanName != "" {
+		extra["plan"] = res.PlanName
+	}
+	if wal, err := m.store.GetWalletLite(userID); err == nil && set.WalletEnabled {
+		extra["balance_kop"] = wal.BalanceKop
+	}
+	m.emitUserWebhook(model.WebhookPromoRedeemed, userID, extra)
 	return res, nil
 }
 

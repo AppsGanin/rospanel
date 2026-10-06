@@ -116,9 +116,21 @@ func (s *Store) DeleteAutoRule(id int64) error {
 // AutoRuleTarget is someone a rule is due to write to.
 type AutoRuleTarget struct {
 	UserID int64 // 0 = a chat with no account
-	ChatID int64
+	ChatID int64 // where the bot sends it; the negated UserID for Web
+	Web    bool  // reached through the external system, not the bot
 	Cycle  int64
 	Name   string
+}
+
+// key is what a send is kept under (auto_rule_sends.chat_id): the negated account id
+// for an account — it hears a rule once per cycle whatever chat it has, and a
+// Telegram that moved between accounts carries none of another's sends — and the chat
+// for one with no account.
+func (t AutoRuleTarget) key() int64 {
+	if t.UserID != 0 {
+		return -t.UserID
+	}
+	return t.ChatID
 }
 
 // AutoRuleTargets returns who reached the rule's trigger in (floor, cut] and has not
@@ -126,13 +138,45 @@ type AutoRuleTarget struct {
 // blocked, not unsubscribed. It walks users and subscribers, so it reads through the
 // writer (the read pool is for bounded lookups).
 func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit int) ([]AutoRuleTarget, error) {
+	return s.autoRuleTargets(r, floor, cut, now, limit, false, false)
+}
+
+// AutoRuleWebTargets is AutoRuleTargets for the accounts the external system writes
+// to: those the bot cannot reach — no Telegram, a Telegram that never started the bot
+// or blocked it — or, with the bot off (everyone), every account. Not someone who
+// turned mailings off in the bot. Their sends are keyed by the negated account id (a
+// private chat's id is positive), and a target's Web is set. No sign-up trigger: it
+// is about a chat with no account.
+func (s *Store) AutoRuleWebTargets(r model.AutoRule, floor, cut, now int64, limit int, everyone bool) ([]AutoRuleTarget, error) {
+	if r.Trigger == model.TriggerNoSignup {
+		return nil, nil
+	}
+	return s.autoRuleTargets(r, floor, cut, now, limit, true, everyone)
+}
+
+func (s *Store) autoRuleTargets(r model.AutoRule, floor, cut, now int64, limit int, web, everyone bool) ([]AutoRuleTarget, error) {
 	const reachable = ` s.active = 1 AND s.opt_out = 0 `
 	// One rule writes to one person at most once in AutoRuleCooldownDays, whatever
 	// cycles its trigger goes through.
 	cooldown := now - model.AutoRuleCooldownDays*86400
 	const notSent = ` NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.chat_id = s.chat_id AND x.cycle = %s) `
+	// An account hears a rule once per cycle whichever way it went — the bot or the
+	// external system — so its sends are found by the account, not the chat.
+	const notSentUser = ` NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.user_id = u.id AND x.user_id <> 0 AND x.cycle = %s) `
+	chat := `s.chat_id`
 	userBase := `FROM users u JOIN tg_subscribers s ON s.chat_id = u.tg_chat_id
-		WHERE u.tg_chat_id <> 0 AND u.enabled = 1 AND` + reachable
+		WHERE u.tg_chat_id <> 0 AND u.enabled = 1 AND u.mailing_off = 0 AND` + reachable + `AND`
+	if web {
+		chat = `-u.id`
+		userBase = `FROM users u
+		WHERE u.enabled = 1 AND u.mailing_off = 0
+		  AND NOT EXISTS (SELECT 1 FROM tg_subscribers o WHERE o.chat_id = u.tg_chat_id AND u.tg_chat_id <> 0 AND o.opt_out = 1)`
+		if !everyone {
+			userBase += `
+		  AND NOT EXISTS (SELECT 1 FROM tg_subscribers b WHERE b.chat_id = u.tg_chat_id AND u.tg_chat_id <> 0 AND b.active = 1)`
+		}
+		userBase += ` AND`
+	}
 	neverPaid := ` NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid' AND o.kind = 'plan') `
 	var q string
 	var args []any
@@ -146,34 +190,34 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 			  AND` + strings.Replace(notSent, "%s", "0", 1)
 		args = []any{floor, cut, r.ID}
 	case model.TriggerNoConnect:
-		q = `SELECT u.id, s.chat_id, 0, u.name ` + userBase + `AND u.last_seen = 0
-			  AND u.created_at > ? AND u.created_at <= ? AND` + strings.Replace(notSent, "%s", "0", 1)
+		q = `SELECT u.id, ` + chat + `, 0, u.name ` + userBase + ` u.last_seen = 0
+			  AND u.created_at > ? AND u.created_at <= ? AND` + strings.Replace(notSentUser, "%s", "0", 1)
 		args = []any{floor, cut, r.ID}
 	case model.TriggerTrialNoPay:
-		q = `SELECT u.id, s.chat_id, 0, u.name ` + userBase + `AND u.trial_used <> 0 AND` + neverPaid + `
-			  AND u.created_at > ? AND u.created_at <= ? AND` + strings.Replace(notSent, "%s", "0", 1)
+		q = `SELECT u.id, ` + chat + `, 0, u.name ` + userBase + ` u.trial_used <> 0 AND` + neverPaid + `
+			  AND u.created_at > ? AND u.created_at <= ? AND` + strings.Replace(notSentUser, "%s", "0", 1)
 		args = []any{floor, cut, r.ID}
 	case model.TriggerIdle:
 		// Only someone who could connect and does not: a spent quota is not idleness.
-		q = `SELECT u.id, s.chat_id, u.last_seen, u.name ` + userBase + `AND u.last_seen > ? AND u.last_seen <= ?
+		q = `SELECT u.id, ` + chat + `, u.last_seen, u.name ` + userBase + ` u.last_seen > ? AND u.last_seen <= ?
 			  AND (u.expire_at = 0 OR u.expire_at > ?)
 			  AND (u.data_limit = 0 OR u.used_up + u.used_down < u.data_limit)
-			  AND NOT EXISTS (SELECT 1 FROM auto_rule_sends c WHERE c.rule_id = ? AND c.chat_id = s.chat_id AND c.sent_at > ?)
-			  AND` + strings.Replace(notSent, "%s", "u.last_seen", 1)
+			  AND NOT EXISTS (SELECT 1 FROM auto_rule_sends c WHERE c.rule_id = ? AND c.user_id = u.id AND c.user_id <> 0 AND c.sent_at > ?)
+			  AND` + strings.Replace(notSentUser, "%s", "u.last_seen", 1)
 		args = []any{floor, cut, now, r.ID, cooldown, r.ID}
 	case model.TriggerLapsed:
 		q = `SELECT id, chat_id, lapse, name FROM (
-			   SELECT u.id, s.chat_id, u.name,
+			   SELECT u.id, ` + chat + ` AS chat_id, u.name,
 			          max(u.lapsed_at, CASE WHEN u.expire_at > 0 AND u.expire_at <= ? THEN u.expire_at ELSE 0 END) AS lapse
 			   ` + userBase + `
-			     AND EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid'
+			         EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.status = 'paid'
 			                 AND o.kind = 'plan' AND o.refunded_at = 0)
 			     AND NOT EXISTS (SELECT 1 FROM payment_orders o WHERE o.user_id = u.id AND o.refund_source = 'provider')
 			     AND NOT (u.expire_at > ?)
 			     AND NOT EXISTS (SELECT 1 FROM tariff_plans lp WHERE lp.id = u.plan_id AND lp.price_rub > 0 AND lp.period_days = 0)
 			 ) t
 			 WHERE t.lapse > ? AND t.lapse <= ?
-			   AND NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.chat_id = t.chat_id AND x.cycle = t.lapse)`
+			   AND NOT EXISTS (SELECT 1 FROM auto_rule_sends x WHERE x.rule_id = ? AND x.user_id = t.id AND x.user_id <> 0 AND x.cycle = t.lapse)`
 		args = []any{now, now, floor, cut, r.ID}
 	default:
 		return nil, nil
@@ -191,6 +235,7 @@ func (s *Store) AutoRuleTargets(r model.AutoRule, floor, cut, now int64, limit i
 		if err := rows.Scan(&t.UserID, &t.ChatID, &t.Cycle, &t.Name); err != nil {
 			return nil, err
 		}
+		t.Web = web
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -203,7 +248,7 @@ var ErrAutoRuleSent = errors.New("the rule already wrote to this chat for this c
 func (s *Store) RecordAutoRuleSend(ruleID int64, t AutoRuleTarget, now int64) (bool, error) {
 	res, err := s.db.Exec(
 		`INSERT OR IGNORE INTO auto_rule_sends (rule_id, chat_id, cycle, user_id, sent_at) VALUES (?, ?, ?, ?, ?)`,
-		ruleID, t.ChatID, t.Cycle, t.UserID, now)
+		ruleID, t.key(), t.Cycle, t.UserID, now)
 	if err != nil {
 		return false, err
 	}
@@ -218,7 +263,7 @@ func (s *Store) IssueAutoRuleCode(ruleID int64, t AutoRuleTarget, p *model.Promo
 	err = s.withTx(func(tx *sql.Tx) error {
 		res, err := tx.Exec(
 			`INSERT OR IGNORE INTO auto_rule_sends (rule_id, chat_id, cycle, user_id, sent_at) VALUES (?, ?, ?, ?, ?)`,
-			ruleID, t.ChatID, t.Cycle, t.UserID, now)
+			ruleID, t.key(), t.Cycle, t.UserID, now)
 		if err != nil {
 			return err
 		}
@@ -241,7 +286,7 @@ func (s *Store) IssueAutoRuleCode(ruleID int64, t AutoRuleTarget, p *model.Promo
 			return err
 		}
 		if _, err := tx.Exec(`UPDATE auto_rule_sends SET promo_id = ? WHERE rule_id = ? AND chat_id = ? AND cycle = ?`,
-			p.ID, ruleID, t.ChatID, t.Cycle); err != nil {
+			p.ID, ruleID, t.key(), t.Cycle); err != nil {
 			return err
 		}
 		r, err := tx.Exec(
@@ -287,6 +332,6 @@ func (s *Store) autoRuleStats(r model.AutoRule) (model.AutoRuleStats, error) {
 // so the next sweep tries again.
 func (s *Store) ForgetAutoRuleSend(ruleID int64, t AutoRuleTarget) error {
 	_, err := s.db.Exec(`DELETE FROM auto_rule_sends WHERE rule_id = ? AND chat_id = ? AND cycle = ? AND promo_id = 0`,
-		ruleID, t.ChatID, t.Cycle)
+		ruleID, t.key(), t.Cycle)
 	return err
 }

@@ -19,6 +19,7 @@ import {
   unlinkUserTelegram,
   setResetPeriod,
   setUserEnabled,
+  setUserMailing,
   setUserLimits,
   setUserPlan,
   setUserGroups,
@@ -53,6 +54,7 @@ import {
 } from './format'
 import { useShowMore } from './hooks'
 import { HtmlEditor } from './HtmlEditor'
+import { useMessageHooks } from './messageHooks'
 import { errMessage, notifyError, notifySuccess } from './notify'
 import { TrafficArea } from './charts'
 import { NodeTrafficSplit } from './NodeTrafficSplit'
@@ -168,6 +170,10 @@ export function UserDetail({
   const [tgLink, setTgLink] = useState<{ url: string; mins: number } | null>(null)
   const [eventsOpen, setEventsOpen] = useState(false)
   const [msgOpen, setMsgOpen] = useState(false)
+  const hooks = useMessageHooks()
+  // The bot delivers to a linked chat; anyone else hears it through the external
+  // system, when one takes user.message.
+  const viaBot = !!user?.telegram_linked && userBotEnabled
   const [msgText, setMsgText] = useState('')
   const [msgMedia, setMsgMedia] = useState<File | null>(null)
   const msgFileRef = useRef<HTMLInputElement>(null)
@@ -605,6 +611,14 @@ export function UserDetail({
             <IconButton title={t('userDetail.rename')} onClick={() => setRenaming(true)}>
               <IconPencil />
             </IconButton>
+            {/* A broadcast to one person: through the bot to a linked chat, or to the
+                external system that takes user.message. With neither the button could
+                only ever produce an error. */}
+            {(viaBot || hooks.message) && (
+              <IconButton title={t('userDetail.sendMessage')} onClick={() => setMsgOpen(true)}>
+                <IconSend />
+              </IconButton>
+            )}
             <IconButton
               title={t('userDetail.rotate')}
               onClick={async () => {
@@ -681,6 +695,15 @@ export function UserDetail({
             </StateRow>
             <StateRow label={t('userDetail.lastOnline')}>
               <Mono>{fmtLastSeen(user.last_seen)}</Mono>
+            </StateRow>
+            <StateRow label={t('userDetail.mailing')}>
+              <Switch
+                checked={user.mailing !== false}
+                onChange={(v) => setUserMailing(user.id, v).then(onChanged).catch(fail)}
+              />
+            </StateRow>
+            <StateRow label={t('userDetail.lang')}>
+              <Mono>{user.lang ? user.lang.toUpperCase() : '—'}</Mono>
             </StateRow>
             <StateRow label={t('groups.title')}>
               {!(user.groups ?? []).some((g) => g.limits_access) ? (
@@ -1139,17 +1162,6 @@ export function UserDetail({
                   label={t('userDetail.botLinked')}
                   control={
                     <span className="flex items-center gap-2">
-                      {/* A broadcast to one person. Shown only with a linked chat AND a
-                          running user bot — it is the bot that delivers, so without it
-                          the button could only ever produce an error. */}
-                      {userBotEnabled && (
-                        <IconButton
-                          title={t('userDetail.sendMessage')}
-                          onClick={() => setMsgOpen(true)}
-                        >
-                          <IconSend />
-                        </IconButton>
-                      )}
                       <IconButton
                         color="red"
                         title={t('userDetail.unlink')}
@@ -1295,7 +1307,9 @@ export function UserDetail({
           {msgMedia
             ? t('userDetail.captionLimit', { n: [...msgText].length })
             : `${[...msgText].length} / 4096`}
+          {!viaBot && ` · ${t('userDetail.messageViaHook')}`}
         </p>
+        {viaBot && (
         <div className="mt-3">
           <input
             ref={msgFileRef}
@@ -1327,6 +1341,7 @@ export function UserDetail({
             </Button>
           )}
         </div>
+        )}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="light" color="gray" onClick={() => setMsgOpen(false)}>
             {t('common.cancel')}
@@ -1340,11 +1355,11 @@ export function UserDetail({
             onClick={async () => {
               setSending(true)
               try {
-                await messageUser(user.id, msgText.trim(), msgMedia)
+                const res = await messageUser(user.id, msgText.trim(), msgMedia)
                 setMsgText('')
                 setMsgMedia(null)
                 setMsgOpen(false)
-                notifySuccess(t('userDetail.messageSent'))
+                notifySuccess(t(res.telegram ? 'userDetail.messageSent' : 'userDetail.messageSentHook'))
               } catch (e) {
                 notifyError(errMessage(e))
               } finally {

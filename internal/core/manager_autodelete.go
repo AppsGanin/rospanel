@@ -52,6 +52,8 @@ func (m *Manager) PurgeExpiredUsers() {
 	for _, u := range doomed {
 		ids = append(ids, u.ID)
 	}
+	// The payloads first: the external ids leave with the rows.
+	gone := m.usersEventData(doomed)
 	n, err := m.store.DeleteUsers(ids)
 	if err != nil {
 		logErr("autodelete: deleting expired users failed", "count", len(ids), "err", err)
@@ -63,13 +65,13 @@ func (m *Manager) PurgeExpiredUsers() {
 	m.TriggerUserSync()
 
 	ctx := actor.With(context.Background(), actor.System)
-	for _, u := range doomed {
+	for i, u := range doomed {
 		m.auditNamed(ctx, u.ID, u.Name, model.EventUserDeleted, map[string]any{
 			"reason":     "autodelete",
 			"expire_at":  u.ExpireAt,
 			"after_days": set.UserAutoDeleteDays,
 		})
-		m.EmitWebhook(model.WebhookUserDeleted, userEventData(u))
+		m.EmitWebhook(model.WebhookUserDeleted, gone[i])
 	}
 	logInfo("autodelete: expired users removed", "count", n, "after_days", set.UserAutoDeleteDays)
 }
