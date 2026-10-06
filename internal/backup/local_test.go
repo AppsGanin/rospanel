@@ -211,3 +211,31 @@ func mustSize(t *testing.T, path string) int64 {
 	}
 	return fi.Size()
 }
+
+// A plugin's database travels with the backup; its pre-update snapshot and the
+// engine's compiled code do not.
+func TestWriteLocalPluginFiles(t *testing.T) {
+	dir := seedDataDir(t)
+	for _, name := range []string{"plugins/crm.db", "plugins/crm.db.prev", "plugins/crm.db.restore", "plugins/crm.db-wal", "cache/wasm/abc"} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path, err := WriteLocal(dir, Manifest{}, nil, time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(listArchive(t, path), " ")
+	if !strings.Contains(got, "plugins/crm.db") {
+		t.Errorf("the plugin database is missing: %s", got)
+	}
+	for _, not := range []string{"crm.db.prev", "crm.db.restore", "crm.db-wal", "cache/"} {
+		if strings.Contains(got, not) {
+			t.Errorf("archive carries %s: %s", not, got)
+		}
+	}
+}

@@ -1,0 +1,321 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/AppsGanin/rospanel/internal/plugin"
+	"github.com/AppsGanin/rospanel/internal/plugin/manifest"
+)
+
+// The admin side of plugins (internal/plugin). Installing is two steps on purpose:
+// the package is uploaded and inspected — the consent screen shows what it asks
+// for — and only then installed, with the operator's password, against the exact
+// package they looked at (its sha256 and what it asks for are part of the request).
+// The bytes wait here between the two, so a 5 MB zip is not sent twice.
+
+const pluginUploadTTL = 15 * time.Minute
+
+type pluginUpload struct {
+	raw []byte
+	at  time.Time
+}
+
+// pluginUploads keeps inspected packages by sha256 until they are installed or go stale.
+type pluginUploads struct {
+	mu sync.Mutex
+	m  map[string]pluginUpload
+}
+
+func (u *pluginUploads) put(sha string, raw []byte) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.m == nil {
+		u.m = map[string]pluginUpload{}
+	}
+	for k, v := range u.m {
+		if time.Since(v.at) > pluginUploadTTL {
+			delete(u.m, k)
+		}
+	}
+	if len(u.m) >= 8 { // a handful of operators at most; never a store
+		for k := range u.m {
+			delete(u.m, k)
+			break
+		}
+	}
+	u.m[sha] = pluginUpload{raw: raw, at: time.Now()}
+}
+
+func (u *pluginUploads) take(sha string) ([]byte, bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	v, ok := u.m[sha]
+	if !ok || time.Since(v.at) > pluginUploadTTL {
+		delete(u.m, sha)
+		return nil, false
+	}
+	delete(u.m, sha)
+	return v.raw, true
+}
+
+// pluginInspection is what the consent screen shows.
+type pluginInspection struct {
+	SHA256     string             `json:"sha256"`
+	Size       int                `json:"size"`
+	Manifest   *manifest.Manifest `json:"manifest"`
+	Readme     string             `json:"readme,omitempty"`
+	RiskyPerms []string           `json:"risky_perms,omitempty"`
+	Exports    []string           `json:"exports"`
+	// Installed is the version already installed under this id, for an update.
+	Installed string `json:"installed,omitempty"`
+	// Added lists what an update asks for beyond the installed version.
+	AddedPerms []string `json:"added_perms,omitempty"`
+	AddedNet   []string `json:"added_net,omitempty"`
+}
+
+func (rt *Router) pluginHost(w http.ResponseWriter) *plugin.Host {
+	if rt.plugins == nil {
+		writeErrCode(w, http.StatusServiceUnavailable, "err.internal", "внутренняя ошибка сервера")
+		return nil
+	}
+	return rt.plugins
+}
+
+func (rt *Router) listPlugins(w http.ResponseWriter, _ *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"plugins": h.List()})
+}
+
+// inspectPlugin takes a package as the request body (application/zip), or a URL
+// to fetch it from ({"url": …}), and returns what the consent screen shows.
+func (rt *Router) inspectPlugin(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	var raw []byte
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var req struct {
+			URL string `json:"url"`
+		}
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		b, err := fetchPluginPackage(r.Context(), req.URL)
+		if err != nil {
+			writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
+			return
+		}
+		raw = b
+	} else {
+		r.Body = http.MaxBytesReader(w, r.Body, manifest.MaxPackage+1)
+		b, err := io.ReadAll(r.Body)
+		if err != nil || len(b) > manifest.MaxPackage {
+			writeErrCode(w, http.StatusRequestEntityTooLarge, "err.pluginTooLarge", "пакет больше 5 МБ")
+			return
+		}
+		raw = b
+	}
+	pkg, err := h.Inspect(raw)
+	if err != nil {
+		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
+		return
+	}
+	m := pkg.Manifest
+	out := pluginInspection{
+		SHA256: pkg.SHA256, Size: len(raw), Manifest: m, Readme: pkg.Readme, Exports: m.Exports(),
+	}
+	for _, p := range m.Permissions {
+		if slices.Contains(manifest.RiskyPerms, p) {
+			out.RiskyPerms = append(out.RiskyPerms, p)
+		}
+	}
+	if cur, err := h.Get(m.ID); err == nil && cur.Manifest != nil {
+		out.Installed = cur.Version
+		for _, p := range m.Permissions {
+			if !slices.Contains(cur.Manifest.Permissions, p) {
+				out.AddedPerms = append(out.AddedPerms, p)
+			}
+		}
+		for _, n := range m.Net {
+			if !slices.Contains(cur.Manifest.Net, n) {
+				out.AddedNet = append(out.AddedNet, n)
+			}
+		}
+	}
+	rt.pluginUploads.put(pkg.SHA256, raw)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// fetchPluginPackage downloads a package for "install by URL", through the same
+// guarded fetcher plugins use: an admin's URL must not reach the box's own ports.
+func fetchPluginPackage(ctx context.Context, raw string) ([]byte, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" {
+		return nil, errors.New("enter an http(s) link to a .zip")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	resp, err := plugin.NewFetcher().Fetch(ctx, []string{strings.ToLower(u.Hostname())}, plugin.FetchRequest{URL: u.String()})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != http.StatusOK {
+		return nil, errors.New("the link answered " + http.StatusText(resp.Status))
+	}
+	return []byte(resp.Body), nil
+}
+
+// pluginInstallBody is the consent plus the password.
+type pluginInstallBody struct {
+	SHA256          string   `json:"sha256"`
+	Perms           []string `json:"perms"`
+	Net             []string `json:"net"`
+	CurrentPassword string   `json:"current_password"`
+}
+
+func (rt *Router) installPlugin(w http.ResponseWriter, r *http.Request) {
+	rt.installOrUpdatePlugin(w, r, "")
+}
+
+func (rt *Router) updatePlugin(w http.ResponseWriter, r *http.Request) {
+	rt.installOrUpdatePlugin(w, r, r.PathValue("id"))
+}
+
+func (rt *Router) installOrUpdatePlugin(w http.ResponseWriter, r *http.Request, updateID string) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	var req pluginInstallBody
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !rt.verifyStepUp(w, r, req.CurrentPassword) {
+		return
+	}
+	raw, ok := rt.pluginUploads.take(req.SHA256)
+	if !ok {
+		writeErrCode(w, http.StatusGone, "err.pluginUploadExpired", "загрузка устарела — выберите файл ещё раз")
+		return
+	}
+	consent := plugin.Consent{SHA256: req.SHA256, Perms: req.Perms, Net: req.Net}
+	var info *plugin.Info
+	var err error
+	if updateID == "" {
+		info, err = h.Install(r.Context(), raw, consent)
+	} else {
+		pkg, perr := h.Inspect(raw)
+		if perr == nil && pkg.Manifest.ID != updateID {
+			writeErrDetail(w, http.StatusBadRequest, "err.pluginWrongID", "это другой плагин: ", pkg.Manifest.ID)
+			return
+		}
+		info, err = h.Update(r.Context(), raw, consent)
+	}
+	if err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (rt *Router) pluginAction(fn func(*plugin.Host, context.Context, string) (*plugin.Info, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		h := rt.pluginHost(w)
+		if h == nil {
+			return
+		}
+		info, err := fn(h, r.Context(), r.PathValue("id"))
+		if err != nil {
+			writePluginErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, info)
+	}
+}
+
+func (rt *Router) configurePlugin(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	var req struct {
+		Values map[string]string `json:"values"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	info, err := h.SetConfig(r.Context(), r.PathValue("id"), req.Values)
+	if err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (rt *Router) uninstallPlugin(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	keep := r.URL.Query().Get("keep_data") == "1"
+	if err := h.Uninstall(r.Context(), r.PathValue("id"), keep); err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (rt *Router) pluginLogs(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	lines, err := h.Logs(r.PathValue("id"))
+	if err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"lines": lines})
+}
+
+func (rt *Router) pluginCode(w http.ResponseWriter, r *http.Request) {
+	h := rt.pluginHost(w)
+	if h == nil {
+		return
+	}
+	code, err := h.Code(r.PathValue("id"))
+	if err != nil {
+		writePluginErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"code": code})
+}
+
+// writePluginErr maps the host's errors to the panel's codes.
+func writePluginErr(w http.ResponseWriter, err error) {
+	var problems manifest.Problems
+	switch {
+	case errors.Is(err, plugin.ErrNotFound):
+		writeErrCode(w, http.StatusNotFound, "err.pluginNotFound", "плагин не установлен")
+	case errors.Is(err, plugin.ErrExists):
+		writeErrCode(w, http.StatusConflict, "err.pluginExists", "такой плагин уже установлен — обновите его")
+	case errors.Is(err, plugin.ErrConsent):
+		writeErrCode(w, http.StatusConflict, "err.pluginConsent", "пакет изменился после проверки — загрузите его ещё раз")
+	case errors.As(err, &problems):
+		writeErrDetail(w, http.StatusBadRequest, "err.pluginInvalid", "пакет не подходит: ", err.Error())
+	default:
+		writeErrDetail(w, http.StatusUnprocessableEntity, "err.pluginFailed", "плагин не запустился: ", err.Error())
+	}
+}

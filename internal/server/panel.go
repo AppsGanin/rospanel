@@ -12,6 +12,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/core"
 	"github.com/AppsGanin/rospanel/internal/link"
 	"github.com/AppsGanin/rospanel/internal/model"
+	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/store"
 	"github.com/AppsGanin/rospanel/internal/sub"
 	"github.com/AppsGanin/rospanel/internal/telegram"
@@ -315,6 +316,8 @@ func (rt *Router) panelMux() http.Handler {
 	canGroupsList := on(model.PermGroupsView, model.PermUsersView, model.PermBillingView)
 	canUsersView := on(model.PermUsersView)
 	canWebhooks := on(model.PermWebhooks)
+	canPluginsView := on(model.PermPluginsView)
+	canPluginsManage := on(model.PermPluginsManage)
 	mux.HandleFunc("POST /api/login", rt.login)
 	mux.HandleFunc("POST /api/logout", rt.logout)
 	// Branding reads are unauthenticated: the login screen (under the secret path)
@@ -576,6 +579,19 @@ func (rt *Router) panelMux() http.Handler {
 	canServersManage("POST /api/nodes/{id}/xray-restart", withID(rt.nodeXrayRestart))
 	canUpdate("POST /api/nodes/update-all", rt.updateAllNodes)
 	canServersManage("POST /api/nodes/{id}/provision", withID(rt.provisionNode))
+	// Plugins (panel_plugins.go): reading lists them, their logs and their code;
+	// everything else changes what code the panel runs.
+	canPluginsView("GET /api/plugins", rt.listPlugins)
+	canPluginsView("GET /api/plugins/{id}/logs", rt.pluginLogs)
+	canPluginsView("GET /api/plugins/{id}/code", rt.pluginCode)
+	canPluginsManage("POST /api/plugins/inspect", rt.inspectPlugin)
+	canPluginsManage("POST /api/plugins", rt.installPlugin)
+	canPluginsManage("POST /api/plugins/{id}/update", rt.updatePlugin)
+	canPluginsManage("POST /api/plugins/{id}/rollback", rt.pluginAction((*plugin.Host).Rollback))
+	canPluginsManage("POST /api/plugins/{id}/enable", rt.pluginAction((*plugin.Host).Enable))
+	canPluginsManage("POST /api/plugins/{id}/disable", rt.pluginAction((*plugin.Host).Disable))
+	canPluginsManage("POST /api/plugins/{id}/config", rt.configurePlugin)
+	canPluginsManage("DELETE /api/plugins/{id}", rt.uninstallPlugin)
 	canWebhooks("GET /api/webhooks", rt.listWebhooks)
 	canWebhooks("POST /api/webhooks", rt.createWebhook)
 	canWebhooks("POST /api/webhooks/{id}", withID(rt.updateWebhook))

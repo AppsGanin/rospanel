@@ -1,0 +1,6 @@
+{
+  "userCreated": "🆕 New user: {name}",
+  "paymentPaid": "💳 Payment of {amount} ₽ — {name}",
+  "nodeDown": "🔴 Server not answering: {name}",
+  "nodeUp": "🟢 Server back: {name}"
+}

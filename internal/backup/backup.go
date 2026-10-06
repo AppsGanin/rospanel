@@ -70,7 +70,9 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// LocalBackupDir is skipped for a sharper reason: it holds previous archives,
 		// so including it would nest every backup inside the next one and blow the
 		// size up geometrically.
+		// cache/ holds the plugin engine's compiled code, rebuilt on the next start.
 		if info.IsDir() && (path == filepath.Join(dataDir, "bin") ||
+			path == filepath.Join(dataDir, "cache") ||
 			path == filepath.Join(dataDir, "geo") ||
 			path == filepath.Join(dataDir, "opera") ||
 			path == filepath.Join(dataDir, "logs") ||
@@ -97,7 +99,10 @@ func WriteWithManifest(dataDir string, m Manifest, w io.Writer) error {
 		// that compounds.
 		if strings.HasSuffix(base, ".bak") || strings.Contains(base, ".bak-") ||
 			strings.Contains(base, ".bak.") || strings.HasSuffix(base, ".new") ||
-			strings.HasSuffix(base, ".tgz") || strings.Contains(base, ".corrupt-") {
+			strings.HasSuffix(base, ".tgz") || strings.Contains(base, ".corrupt-") ||
+			strings.HasSuffix(base, ".db.prev") || strings.HasSuffix(base, ".db.restore") {
+			// .db.prev/.db.restore: a plugin database's pre-update snapshot and a
+			// restore in flight — copies, like the .bak files.
 			return nil
 		}
 		rel, err := filepath.Rel(dataDir, path)

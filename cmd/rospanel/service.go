@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/AppsGanin/rospanel/internal/http80"
 	"github.com/AppsGanin/rospanel/internal/model"
 	"github.com/AppsGanin/rospanel/internal/netinfo"
+	"github.com/AppsGanin/rospanel/internal/plugin"
 	"github.com/AppsGanin/rospanel/internal/proxyproto"
 	"github.com/AppsGanin/rospanel/internal/server"
 	"github.com/AppsGanin/rospanel/internal/store"
@@ -332,6 +334,7 @@ func runServer(dataDir string) {
 	if err != nil {
 		log.Fatalf("build router: %v", err)
 	}
+	startPlugins(runBG, handler.(*server.Router), mgr, st, dataDir)
 	// Serve HTTP/2 cleartext too: Xray's VLESS inbound offers ALPN h2, so non-VPN
 	// traffic arrives as HTTP/2 (prior-knowledge) over the plaintext fallback.
 	// UnencryptedHTTP2 lets the loopback panel speak both HTTP/1.1 and HTTP/2 —
@@ -849,4 +852,40 @@ func resolveXrayBin(bin, downloadDir string) string {
 	}
 	log.Printf("xray: ready — %s (downloaded in %s)", p, time.Since(t0).Round(time.Second))
 	return p
+}
+
+// startPlugins brings up the plugin host (internal/plugin). Nothing is compiled or
+// run until a plugin is enabled, so a panel without plugins pays nothing. Loading
+// runs in the background: a plugin is never a reason for the panel to start late,
+// and one that fails to load is marked and left for the operator.
+func startPlugins(runBG func(string, func(context.Context)), rt *server.Router, mgr *core.Manager, st *store.Store, dataDir string) {
+	host := plugin.New(plugin.Deps{
+		Store:        st,
+		DataDir:      dataDir,
+		PanelVersion: version.Version,
+		API:          rt.PluginAPI,
+		Fetch:        plugin.NewFetcher(),
+		Notify:       mgr.NotifyPluginPaused,
+		Stopped:      mgr.DropPluginDeliveries,
+		Logger:       slog.Default(),
+	})
+	rt.SetPlugins(host)
+	st.OnCheckpoint(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		host.CheckpointAll(ctx)
+	})
+	runBG("plugins", func(ctx context.Context) {
+		if err := host.Start(ctx); err != nil {
+			log.Printf("plugins: %v", err)
+		}
+		mgr.SetPluginEvents(host)
+		tick(ctx, 15*time.Second, func() {
+			safeTick("plugins cron", func() { host.RunCron(ctx, time.Now().In(mgr.Location())) })
+		})
+		host.WaitCron(2 * time.Second)
+		closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = host.Close(closeCtx)
+	})
 }

@@ -234,7 +234,7 @@ export interface UserEvent {
   user_id: number
   user_name: string
   action: string
-  actor_kind: 'admin' | 'apikey' | 'telegram' | 'user' | 'system'
+  actor_kind: 'admin' | 'apikey' | 'telegram' | 'user' | 'system' | 'plugin'
   actor_name: string
   details: Record<string, unknown> | null
   created_at: number
@@ -747,6 +747,8 @@ export type Perm =
   | 'logs.view'
   | 'audit.view'
   | 'system.update'
+  | 'plugins.view'
+  | 'plugins.manage'
 
 // PermSection is one row of the role editor, as the server's catalog lists it: a
 // section with a view and/or manage permission, or a permission of its own.
@@ -3302,3 +3304,148 @@ export const resetConnections = () =>
   api<ConnectionsStatus>('api/connections/reset', { method: 'POST' })
 export const resetNodeConnections = (id: number) =>
   api<ConnectionsStatus>(`api/nodes/${id}/connections/reset`, { method: 'POST' })
+
+// --- Plugins (internal/plugin) ---
+
+// PluginText is a user-facing string a plugin wrote: plain, or per language.
+export type PluginText = string | Record<string, string>
+
+export interface PluginField {
+  key: string
+  kind: 'text' | 'secret' | 'bool' | 'number' | 'textarea' | 'select'
+  label: PluginText
+  help?: PluginText
+  placeholder?: string
+  optional?: boolean
+  default?: string
+  options?: { value: string; label: PluginText }[]
+}
+
+export interface PluginManifest {
+  id: string
+  version: string
+  api: number
+  panel?: string
+  name: PluginText
+  description?: PluginText
+  author?: string
+  homepage?: string
+  license?: string
+  permissions?: Perm[]
+  net?: string[]
+  settings?: PluginField[]
+  provides: {
+    events?: string[]
+    hooks?: string[]
+    cron?: { name: string; schedule: string }[]
+    payment?: { label: PluginText }
+    http?: boolean
+    channel?: { label: PluginText }
+    user_fields?: { key: string; label: PluginText }[]
+    actions?: { key: string; label: PluginText; scope: string }[]
+    widgets?: { key: string; label: PluginText }[]
+    sub_blocks?: boolean
+    bot?: { menu?: boolean; commands?: string[] }
+    price?: boolean
+    subscription?: boolean
+  }
+  db_quota_mb?: number
+  memory_mb?: number
+  experimental?: string[]
+}
+
+export type PluginStatus = 'active' | 'paused' | 'error' | 'disabled'
+
+export interface PluginInfo {
+  id: string
+  version: string
+  manifest: PluginManifest | null
+  enabled: boolean
+  status: PluginStatus
+  status_error?: string
+  config: Record<string, string>
+  secrets_set?: string[]
+  prev_version?: string
+  installed_at: number
+  updated_at: number
+  sha256: string
+  db_bytes: number
+  missing_setup?: string[]
+}
+
+export interface PluginInspection {
+  sha256: string
+  size: number
+  manifest: PluginManifest
+  readme?: string
+  risky_perms?: Perm[]
+  exports: string[]
+  installed?: string
+  added_perms?: Perm[]
+  added_net?: string[]
+}
+
+export interface PluginLogLine {
+  at: number
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
+export const listPlugins = () => api<{ plugins: PluginInfo[] }>('api/plugins')
+
+export const inspectPluginFile = async (file: Blob): Promise<PluginInspection> => {
+  const res = await fetch('api/plugins/inspect', {
+    method: 'POST',
+    body: file,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/zip', ...CSRF_HEADER },
+  })
+  if (res.status === 401) onUnauthorized?.()
+  const data = parseBody(await res.text(), res.status, res.ok)
+  if (!res.ok) throw apiError(data, res.status)
+  return data as unknown as PluginInspection
+}
+
+export const inspectPluginURL = (url: string) =>
+  api<PluginInspection>('api/plugins/inspect', { method: 'POST', body: JSON.stringify({ url }) })
+
+const consentBody = (p: PluginInspection, currentPassword: string) =>
+  JSON.stringify({
+    sha256: p.sha256,
+    perms: p.manifest.permissions ?? [],
+    net: p.manifest.net ?? [],
+    current_password: currentPassword,
+  })
+
+export const installPlugin = (p: PluginInspection, currentPassword: string) =>
+  api<PluginInfo>('api/plugins', { method: 'POST', body: consentBody(p, currentPassword) })
+
+export const updatePlugin = (id: string, p: PluginInspection, currentPassword: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/update`, {
+    method: 'POST',
+    body: consentBody(p, currentPassword),
+  })
+
+const pluginPost = (id: string, what: string) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/${what}`, { method: 'POST' })
+
+export const enablePlugin = (id: string) => pluginPost(id, 'enable')
+export const disablePlugin = (id: string) => pluginPost(id, 'disable')
+export const rollbackPlugin = (id: string) => pluginPost(id, 'rollback')
+
+export const configurePlugin = (id: string, values: Record<string, string>) =>
+  api<PluginInfo>(`api/plugins/${encodeURIComponent(id)}/config`, {
+    method: 'POST',
+    body: JSON.stringify({ values }),
+  })
+
+export const uninstallPlugin = (id: string, keepData: boolean) =>
+  api<{ ok: boolean }>(`api/plugins/${encodeURIComponent(id)}${keepData ? '?keep_data=1' : ''}`, {
+    method: 'DELETE',
+  })
+
+export const getPluginLogs = (id: string) =>
+  api<{ lines: PluginLogLine[] }>(`api/plugins/${encodeURIComponent(id)}/logs`)
+
+export const getPluginCode = (id: string) =>
+  api<{ code: string }>(`api/plugins/${encodeURIComponent(id)}/code`)

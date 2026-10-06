@@ -170,6 +170,16 @@ var auditActions = map[string]auditRoute{
 	"DELETE /api/webhooks/{id}":    act(model.AuditWebhookDeleted),
 	"POST /api/webhooks/{id}/test": skip, // a test delivery changes nothing
 
+	// Plugins: what code the panel runs. Inspecting only reads an upload.
+	"POST /api/plugins/inspect":       skip,
+	"POST /api/plugins":               act(model.AuditPluginInstalled),
+	"POST /api/plugins/{id}/update":   act(model.AuditPluginUpdated),
+	"POST /api/plugins/{id}/rollback": act(model.AuditPluginRolledBack),
+	"POST /api/plugins/{id}/enable":   act(model.AuditPluginEnabled),
+	"POST /api/plugins/{id}/disable":  act(model.AuditPluginDisabled),
+	"POST /api/plugins/{id}/config":   act(model.AuditPluginConfigured),
+	"DELETE /api/plugins/{id}":        act(model.AuditPluginUninstalled),
+
 	// Nodes: each is a managed server with its own lifecycle. One section-style
 	// action; the node is the target. regen-join mints a fresh install credential.
 	"POST /api/nodes":                        set("nodeAdded"),

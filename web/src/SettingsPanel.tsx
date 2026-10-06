@@ -8,6 +8,7 @@ import { navigate, useRoute } from "./router";
 import { SubscriptionsPanel } from "./SubscriptionsPanel";
 import { TelegramSettings } from "./TelegramSettings";
 import type { Perm } from "./api";
+import { PluginsPanel } from "./PluginsPanel";
 import { useIsOwner, usePerms } from "./role";
 import { cn, ReadOnly } from "./ui";
 
@@ -26,7 +27,8 @@ const SUBTABS: {
     | "settings.tabTelegram"
     | "settings.tabBilling"
     | "settings.tabAbuse"
-    | "settings.tabApi";
+    | "settings.tabApi"
+    | "settings.tabPlugins";
   view: Perm[];
   manage?: Perm;
   // The owner's alone, whatever a role holds (the bots — see panelMux).
@@ -43,6 +45,7 @@ const SUBTABS: {
   { value: "billing", label: "settings.tabBilling", view: ["billing.view"] },
   { value: "abuse", label: "settings.tabAbuse", view: ["security.view"], manage: "security.manage" },
   { value: "api", label: "settings.tabApi", view: ["api.manage", "webhooks.manage"] },
+  { value: "plugins", label: "settings.tabPlugins", view: ["plugins.view"], manage: "plugins.manage" },
 ];
 
 
@@ -103,6 +106,7 @@ export function SettingsPanel() {
           {tab === "billing" && <BillingPanel />}
           {tab === "abuse" && <AbuseSettings />}
           {tab === "api" && <ApiSettings />}
+          {tab === "plugins" && <PluginsPanel />}
         </ReadOnly>
       </div>
     </div>

@@ -325,6 +325,15 @@ type Manager struct {
 	// manager without webhookCh sends no webhooks at all.
 	webhookCh   chan webhookJob
 	webhookKick chan struct{}
+	// pluginKick wakes the plugins' own dispatcher (see manager_plugin_events.go);
+	// plugins is the host it delivers to, set once the host exists.
+	pluginKick chan struct{}
+	pluginsMu  sync.RWMutex
+	plugins    PluginEvents
+	// pluginBusy names the plugins a worker is delivering to right now (see
+	// deliverPluginEvent).
+	pluginBusyMu sync.Mutex
+	pluginBusy   map[string]bool
 
 	operaDir string            // dir holding the opera-proxy helper binary
 	operaSup *opera.Supervisor // runs/restarts the opera-proxy helper
@@ -460,6 +469,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 		operaSup:       opera.New(filepath.Join(operaDir, "opera-proxy")),
 		webhookCh:      make(chan webhookJob, webhookWorkers),
 		webhookKick:    make(chan struct{}, 1),
+		pluginKick:     make(chan struct{}, 1),
 		nodes:          newNodeRegistry(),
 		probes:         newProbeRegistry(),
 		checks:         newCheckRegistry(),
@@ -519,6 +529,7 @@ func New(st *store.Store, sup *xray.Supervisor, opts xray.Options, tls TLSPaths,
 	m.runAsync(m.shaperLoop)              // per-user speed caps follow the addresses users connect from
 	m.runAsync(m.healthLoop)              // probe Opera/Hola lane liveness for the UI
 	m.startWebhookWorkers()               // drain the outbound-webhook delivery queue
+	m.startPluginEventWorkers()           // ...and the plugins' deliveries, apart from it
 	m.runAsync(m.prewarmRoutingTemplates) // warm the routing-template cache so the first
 	//                                  Happ/INCY sub pull after a restart doesn't block
 	// NOTE: telegram-web-app.js is deliberately NOT prewarmed here. The cold path in

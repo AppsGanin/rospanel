@@ -309,10 +309,13 @@ func (m *Manager) onXrayCrash(err error) {
 	// unlabelled alarm in a fleet chat is a guess about which server is down.
 	lang := m.botLang()
 	msg := i18n.T(lang, "notify.xrayCrashed", model.LocalNodeName)
+	reason := ""
 	if err != nil {
-		msg += "\n" + i18n.T(lang, "notify.reason", escHTML(err.Error()))
+		reason = err.Error()
+		msg += "\n" + i18n.T(lang, "notify.reason", escHTML(reason))
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+	m.EmitWebhook(model.WebhookXrayDown, map[string]any{"node_id": 0, "name": model.LocalNodeName, "reason": reason})
 }
 
 // probeDigestHour is the local hour the daily scanner summary is sent at.
@@ -466,10 +469,12 @@ func (m *Manager) onXrayRecover() {
 	}
 	lang := m.botLang()
 	msg := i18n.T(lang, "notify.xrayBack", model.LocalNodeName)
-	if down := time.Since(at); down > time.Second {
+	down := time.Since(at)
+	if down > time.Second {
 		msg += "\n" + i18n.T(lang, "notify.downtime", fmtDowntime(down, lang))
 	}
 	m.notifyAdminEvent(model.AdminEventXrayDown, msg)
+	m.EmitWebhook(model.WebhookXrayUp, map[string]any{"node_id": 0, "name": model.LocalNodeName, "down_seconds": int64(down.Seconds())})
 }
 
 // fmtDowntime renders an outage length the way a person would say it.
