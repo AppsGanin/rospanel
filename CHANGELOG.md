@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.0](https://github.com/AppsGanin/rospanel/compare/v4.2.0...v4.3.0) (2026-10-01)
+
+
+### Features
+
+* **api:** an API key holds its own permissions instead of a role ([835feb4](https://github.com/AppsGanin/rospanel/commit/835feb44a2c00edd062063d772ca16dbe801757e))
+* **api:** methods only for keys; retire the API-only permissions ([a3a6b97](https://github.com/AppsGanin/rospanel/commit/a3a6b97440f8480a92b1a6727b11863de53d4d77))
+* **api:** tick exact API methods for a key ([110a72b](https://github.com/AppsGanin/rospanel/commit/110a72bfdfb9b8d2318a78f98587bf21505a117b))
+* **api:** website sign-up under the self-registration rules ([07b417e](https://github.com/AppsGanin/rospanel/commit/07b417e3aa0ceb0f6d1723b2b53aceae13a7b0f5))
+* **sub:** an access card — the page is the account, keep its link ([48f8352](https://github.com/AppsGanin/rospanel/commit/48f835268125456c13d89db956ead5de21bd45b2))
+* **sub:** the device add-on names its term — the date and the days left ([e859d3b](https://github.com/AppsGanin/rospanel/commit/e859d3b0a9295bdf6bbdb22d99cbc5c2c1a6c47d))
+* **telegram:** ask before a link code moves a chat off another account ([5b095f2](https://github.com/AppsGanin/rospanel/commit/5b095f2bfa3f586458b22be1b08513b1fc1a10f9))
+* **telegram:** change Telegram from the subscription page, with switches ([f781103](https://github.com/AppsGanin/rospanel/commit/f781103772308160f74feaa704fab3cb82304155))
+
 ## [4.2.0](https://github.com/AppsGanin/rospanel/compare/v4.1.0...v4.2.0) (2026-09-29)
 
 
