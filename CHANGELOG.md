@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.4.0](https://github.com/AppsGanin/rospanel/compare/v4.3.0...v4.4.0) (2026-10-06)
+
+
+### Features
+
+* **sub:** your own page keeps the subscription settings ([ae2713e](https://github.com/AppsGanin/rospanel/commit/ae2713eea6dd270e1eddf45a44518b1b142b1c2d))
+* **sub:** your own subscription page — browsers go to your site, the view carries tg_link ([e321f4c](https://github.com/AppsGanin/rospanel/commit/e321f4c9afce03028d05098de6156aa8205fd31c))
+* **telegram:** a mailing switch on the bot's screens, admin notices that tell users apart ([6929491](https://github.com/AppsGanin/rospanel/commit/6929491a19811f1a74722dfc03d6b1c3e9b0c081))
+* user agreement and privacy policy ([48f32e5](https://github.com/AppsGanin/rospanel/commit/48f32e592aa8e234cb84e182f746b2e386af7048))
+* **webhooks:** reach users without Telegram; mailing and language over the API ([50ffdf1](https://github.com/AppsGanin/rospanel/commit/50ffdf1407518a5ee1b850ad59b47fde3db1b12e))
+* **webhooks:** reminders, a durable outbox and the events an external system needs ([3f3b463](https://github.com/AppsGanin/rospanel/commit/3f3b46332c294a33698c7a755c90edfc9030e997))
+
 ## [4.3.0](https://github.com/AppsGanin/rospanel/compare/v4.2.0...v4.3.0) (2026-10-01)
 
 
